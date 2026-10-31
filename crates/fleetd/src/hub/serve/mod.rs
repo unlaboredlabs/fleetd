@@ -135,6 +135,7 @@ pub fn hub_start(argv: &[String]) -> ExitCode {
     };
     let ansi = std::io::IsTerminal::is_terminal(&std::io::stderr());
     let _ = tracing_subscriber::fmt()
+        .with_env_filter(crate::stages::log_filter())
         .with_writer(std::io::stderr)
         .with_ansi(ansi)
         .with_target(false)

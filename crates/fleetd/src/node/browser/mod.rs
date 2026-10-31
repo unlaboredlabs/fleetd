@@ -644,7 +644,7 @@ impl Broker {
         cwd: String,
         purpose: String,
     ) -> Result<BrowserCallResult, McpToolError> {
-        let started = Instant::now();
+        let mut stages = crate::stages::Stages::new("node browser");
         if let Some(open) = self.live(&thread) {
             return Err(refuse(
                 ErrorCode::Invalid,
@@ -668,10 +668,12 @@ impl Broker {
             ));
         };
         let pool = self.pool().await?;
+        stages.done("install");
         let secrets_for = self.secrets_for.clone();
         let secrets_thread = thread.clone();
         let secrets = tokio::task::spawn_blocking(move || secrets_for(&secrets_thread));
         let navi = lock(&self.navis).get(&thread).cloned();
+        let warm = pool.warm();
         let browser = match &navi {
             Some(navi) => {
                 let lease = self.kept.take(&navi.name).map_err(|why| {
@@ -692,6 +694,11 @@ impl Broker {
                 "try session_start again",
             )
         })?;
+        stages.done(match &navi {
+            Some(_) => "navi browser",
+            None if warm > 0 => "warm browser",
+            None => "cold browser",
+        });
         let secrets = secrets
             .await
             .map_err(|e| e.to_string())
@@ -705,7 +712,9 @@ impl Broker {
                     "try again; if it keeps failing, check the node's log",
                 )
             })?;
+        stages.done("secrets");
         let id = new_id();
+        stages.id(id.as_str());
         let fence = match &navi {
             Some(navi) => {
                 let staging = local::uploads_dir(&self.home).join(id.as_str());
@@ -733,6 +742,9 @@ impl Broker {
             }
             None => None,
         };
+        if fence.is_some() {
+            stages.done("fence");
+        }
         let ffmpeg = lock(&self.ffmpeg).clone();
         let dir = upload::recordings_dir(&self.home).join(id.as_str());
         let session = Session::open(
@@ -758,6 +770,7 @@ impl Broker {
                 "try session_start again",
             )
         })?;
+        stages.done("session open");
         lock(&self.sessions).insert(thread.clone(), session.clone());
         {
             let broker = Arc::downgrade(self);
@@ -789,7 +802,7 @@ impl Broker {
             udid: None,
             desktop: None,
             worktree: None,
-            start_ms: started.elapsed().as_millis() as u64,
+            start_ms: stages.total_ms(),
         }))
     }
 

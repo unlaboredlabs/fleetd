@@ -60,6 +60,8 @@ const WAIT_MS: i64 = SCREEN_WAIT_MINUTES * 60_000;
 const INSTALL_WAIT: Duration = Duration::from_secs(300);
 /// Between tries while the screen's machine holds a command back.
 const INSTALL_RETRY: Duration = Duration::from_secs(3);
+/// How long a start's answer waits for the runner's report of the screen live, which races it over the link.
+const RECORD_WAIT: Duration = Duration::from_secs(5);
 
 pub fn register(tools: &mut Registry) {
     tools.add("screen_open", screen_open);
@@ -329,6 +331,7 @@ async fn screen_open(
     caller: Caller,
     input: ScreenOpenInput,
 ) -> Result<ScreenOpenOutput, ToolError> {
+    let mut stages = crate::stages::Stages::new("hub screen_open");
     let r = input.project_ref;
     if !is_human(&caller) {
         return Err(ToolError::new(
@@ -364,6 +367,7 @@ async fn screen_open(
         return Err(ToolError::new(ErrorCode::Failed, why)
             .with_fix("Pick a machine that can host it: machine_roles lists what each can."));
     }
+    stages.done("checks");
     // A PR's build is there before anything starts or waits: a PR without one is refused now, plainly.
     let found = match &input.pr {
         Some(pr) => Some(find_build(&hub, &r, input.kind, pr).await?),
@@ -382,6 +386,7 @@ async fn screen_open(
     } else {
         None
     };
+    stages.done("seal");
     let pr = input.pr.as_ref();
     let taken = match sealed {
         None => None,
@@ -411,6 +416,7 @@ async fn screen_open(
             Ok(Some((start, wait)))
         })?,
     };
+    stages.done("place");
     match taken {
         Some((start, None)) => {
             let session = launch(&hub, start, None, None).await?;
@@ -724,6 +730,8 @@ async fn launch(
     build: Option<(ScreenPr, Build)>,
     wait: Option<&str>,
 ) -> Result<Option<BrowserSession>, ToolError> {
+    let mut stages = crate::stages::Stages::new("hub screen launch");
+    stages.id(start.place.key.as_str());
     let place = &start.place;
     let answer = hub
         .node_commands
@@ -743,6 +751,7 @@ async fn launch(
         },
         Err(_) => None,
     };
+    stages.done("node start");
     let Some(id) = id else {
         super::calls::cancel(hub, place).await;
         let why = match answer {
@@ -765,6 +774,7 @@ async fn launch(
         Ok(())
     })?;
     tracing::info!(runner = %place.runner, session = %id, "a person's screen started");
+    stages.id(id.as_str());
     // The build goes in while the screen is still fleetd's: a person's control holds agent-device back.
     if let (Some(_), Some(wait)) = (&build, wait) {
         set_stage(hub, &place.origin, wait, ScreenStage::Installing, None);
@@ -790,8 +800,13 @@ async fn launch(
         )
         .with_fix("Try again, or open the screen without a PR."));
     }
-    // Theirs from the start: the runner reported it live before it answered, so the hub has it.
-    if let Some(session) = crate::hub::browser::get(&hub.db, &id)?
+    // Theirs from the start, once the hub has it: the runner's report of it live may come after its answer.
+    let session = recorded(hub, &id).await?;
+    stages.done("recorded");
+    if session.is_none() {
+        tracing::warn!(runner = %place.runner, session = %id, "a person's screen started but wasn't reported live");
+    }
+    if let Some(session) = session
         && let Err(e) = crate::hub::browser::tools::change_control(
             hub,
             &session,
@@ -804,7 +819,27 @@ async fn launch(
     {
         tracing::warn!(session = %id, error = %e.message, "a person's screen started without their control");
     }
+    stages.done("control");
     Ok(crate::hub::browser::get(&hub.db, &id)?)
+}
+
+/// Screen `id` as the hub has it, once its runner's report of it live is in, waiting for that up to [`RECORD_WAIT`]:
+/// the report and the start's answer travel apart. None: it never came.
+async fn recorded(hub: &Hub, id: &BrowserSessionId) -> Result<Option<BrowserSession>, StoreError> {
+    // Listening before the first read: a report that lands between the two still wakes it.
+    let mut reports = hub.link.browser_live.await_control(id);
+    let deadline = tokio::time::Instant::now() + RECORD_WAIT;
+    loop {
+        if let Some(session) = crate::hub::browser::get(&hub.db, id)? {
+            return Ok(Some(session));
+        }
+        if !matches!(
+            tokio::time::timeout_at(deadline, reports.recv()).await,
+            Ok(Some(_))
+        ) {
+            return Ok(None);
+        }
+    }
 }
 
 /// Finds PR `pr`'s build for a `kind` screen of project `r`: a PR of one of the project's repos, with a CI build there.

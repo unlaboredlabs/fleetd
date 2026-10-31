@@ -143,6 +143,7 @@ impl Display {
     /// Starts a display now (blocking: a second or so for a container, less for Xvfb). A container sees `mount`, a
     /// folder of the host, read-only at the same path.
     pub fn start(settings: &Settings, mount: Option<&Path>) -> Result<Self, String> {
+        let mut stages = crate::stages::Stages::new("node display");
         let mut cookie = [0u8; 16];
         rand::thread_rng().fill_bytes(&mut cookie);
         let mut tag = [0u8; 6];
@@ -159,6 +160,7 @@ impl Display {
         if made.is_err() {
             let _ = std::fs::remove_dir_all(&dir);
         }
+        stages.done(settings.backend.as_str());
         made
     }
 

@@ -215,6 +215,9 @@ impl Session {
     pub fn set_watcher(&self, watcher: Option<Arc<FrameSlot>>) {
         let mut live = lock(&self.live);
         live.watcher = watcher;
+        if live.watcher.is_some() {
+            tracing::debug!(target: "fleetd::stages", screen = %self.id, ms = self.offset_ms(), frame = live.last.is_some(), "desktop watched");
+        }
         if let (Some(watcher), Some(last)) = (&live.watcher, &live.last) {
             let mut last = last.clone();
             last.control = self.control();
@@ -253,6 +256,9 @@ impl Session {
         }
         let mut live = lock(&self.live);
         live.seq += 1;
+        if live.seq == 1 {
+            tracing::debug!(target: "fleetd::stages", screen = %self.id, ms = self.offset_ms(), watched = live.watcher.is_some(), "desktop's first frame");
+        }
         let frame = BrowserFrame {
             session_id: self.id.clone(),
             seq: live.seq,

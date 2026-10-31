@@ -323,10 +323,10 @@ fn stored_models_and_efforts_become_the_two_profiles() {
     // Found by content, not as the last migration, so later migrations don't break this test.
     let profiles_at = MIGRATIONS
         .iter()
-        .position(|m| m.contains("CREATE TABLE project_settings"))
+        .position(|m| m.sql.contains("CREATE TABLE project_settings"))
         .expect("the profiles migration");
     for m in &MIGRATIONS[..profiles_at] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     let tasks = [
         (1, "claude-opus-5-5", "medium"),
@@ -349,7 +349,7 @@ fn stored_models_and_efforts_become_the_two_profiles() {
                   ('n', 'c', 2, 0, 0, NULL, 'lead', 'x', 0), ('h', 'd', 30, 4, 0, NULL, NULL, 'x', 0);",
     )
     .unwrap();
-    conn.execute_batch(MIGRATIONS[profiles_at]).unwrap();
+    conn.execute_batch(MIGRATIONS[profiles_at].sql).unwrap();
 
     let profiles: Vec<(String, Option<String>, Option<String>)> = conn
         .prepare("SELECT json_extract(data, '$.profile'), json_extract(data, '$.model'), json_extract(data, '$.effort') FROM tasks ORDER BY n")
@@ -405,10 +405,10 @@ fn routed_intents_go_on_an_older_hub() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     let gone = MIGRATIONS
         .iter()
-        .position(|m| m.contains("type = 'intake.routed'"))
+        .position(|m| m.sql.contains("type = 'intake.routed'"))
         .expect("the router migration");
     for m in &MIGRATIONS[..gone] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     conn.execute_batch(
         r#"INSERT INTO events (created_ms, type, data) VALUES (0, 'intake.routed', '{"workstreamId":"W1"}'),
@@ -416,7 +416,7 @@ fn routed_intents_go_on_an_older_hub() {
     )
     .unwrap();
     for m in &MIGRATIONS[gone..] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     let types: Vec<String> = conn
         .prepare("SELECT type FROM events")
@@ -436,10 +436,10 @@ fn the_retro_goes_on_an_older_hub() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     let last = MIGRATIONS
         .iter()
-        .position(|m| m.contains("DROP TABLE retro_runs"))
+        .position(|m| m.sql.contains("DROP TABLE retro_runs"))
         .unwrap();
     for m in &MIGRATIONS[..last] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     let p = r#""projectRef":{"machineId":"lab-a","projectId":"p1"}"#;
     let change = r#""playbook":{"proposalId":"R1","playbook":"bugfix","summary":"reviewers 1 → 0","diff":"-a\n+b"}"#;
@@ -465,7 +465,7 @@ fn the_retro_goes_on_an_older_hub() {
     )
     .unwrap();
     // Only this one: a later migration drops the incidents table.
-    conn.execute_batch(MIGRATIONS[last]).unwrap();
+    conn.execute_batch(MIGRATIONS[last].sql).unwrap();
 
     let strings = |sql: &str| -> Vec<String> {
         conn.prepare(sql)
@@ -493,10 +493,10 @@ fn unused_tables_and_events_go_on_an_older_hub() {
     // Found by content, not as the last migration, so later migrations don't break this test.
     let drop = MIGRATIONS
         .iter()
-        .position(|m| m.contains("DROP TABLE status_eta"))
+        .position(|m| m.sql.contains("DROP TABLE status_eta"))
         .unwrap();
     for m in &MIGRATIONS[..drop] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     conn.execute_batch(
         r#"INSERT INTO intake_routes (client_request_id, data) VALUES ('c1', '{}');
@@ -504,7 +504,7 @@ fn unused_tables_and_events_go_on_an_older_hub() {
           (0, 'workstream.running', '{"workstreamId":"W1"}');"#,
     )
     .unwrap();
-    conn.execute_batch(MIGRATIONS[drop]).unwrap();
+    conn.execute_batch(MIGRATIONS[drop].sql).unwrap();
 
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
     assert_eq!(
@@ -530,10 +530,10 @@ fn tasks_and_changes_from_an_older_hub_drop_what_they_served() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     let no_value_bar = MIGRATIONS
         .iter()
-        .position(|m| m.contains("json_remove(data, '$.serves')"))
+        .position(|m| m.sql.contains("json_remove(data, '$.serves')"))
         .expect("the value bar migration");
     for m in &MIGRATIONS[..no_value_bar] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     conn.execute_batch(
         r#"INSERT INTO tasks (machine_id, project_id, workstream_id, state, data)
@@ -542,7 +542,7 @@ fn tasks_and_changes_from_an_older_hub_drop_what_they_served() {
           VALUES ('o/r', 1, 'merged', 'm', 'p', 0, '{"changeId":"X1","serves":"done:0"}');"#,
     )
     .unwrap();
-    conn.execute_batch(MIGRATIONS[no_value_bar]).unwrap();
+    conn.execute_batch(MIGRATIONS[no_value_bar].sql).unwrap();
 
     let data: (String, String) = conn
         .query_row(
@@ -569,10 +569,10 @@ fn tiers_and_review_waivers_go_on_an_older_hub() {
     // Found by content, not as the last migration, so later migrations don't break this test.
     let gone = MIGRATIONS
         .iter()
-        .position(|m| m.contains("DROP TABLE IF EXISTS review_waivers"))
+        .position(|m| m.sql.contains("DROP TABLE IF EXISTS review_waivers"))
         .expect("the one-review migration");
     for m in &MIGRATIONS[..gone] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     conn.execute_batch(
         r#"INSERT INTO review_waivers (change_id, patch_id, reason) VALUES ('X1', 'p', 'polish loop');
@@ -585,7 +585,7 @@ fn tiers_and_review_waivers_go_on_an_older_hub() {
     )
     .unwrap();
     for m in &MIGRATIONS[gone..] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     let one = |sql: &str| -> String { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
     assert_eq!(
@@ -607,10 +607,10 @@ fn finish_all_workstreams_from_an_older_hub_read_back_plain() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     let no_finish_all = MIGRATIONS
         .iter()
-        .position(|m| m.contains("json_remove(data, '$.parent')"))
+        .position(|m| m.sql.contains("json_remove(data, '$.parent')"))
         .expect("the finish-all migration");
     for m in &MIGRATIONS[..no_finish_all] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     let pin = format!("finish-all@{}", "a".repeat(40));
     conn.execute_batch(&format!(
@@ -621,7 +621,7 @@ fn finish_all_workstreams_from_an_older_hub_read_back_plain() {
         INSERT INTO playbook_versions (ref, text) VALUES ('{pin}', 'x');"#
     ))
     .unwrap();
-    conn.execute_batch(MIGRATIONS[no_finish_all]).unwrap();
+    conn.execute_batch(MIGRATIONS[no_finish_all].sql).unwrap();
 
     let rows: Vec<(String, String)> = conn
         .prepare("SELECT state, data FROM workstreams ORDER BY n")
@@ -656,10 +656,10 @@ fn incidents_go_on_an_older_hub() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     let gone = MIGRATIONS
         .iter()
-        .position(|m| m.contains("DROP TABLE incidents"))
+        .position(|m| m.sql.contains("DROP TABLE incidents"))
         .expect("the incidents migration");
     for m in &MIGRATIONS[..gone] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     conn.execute_batch(
         r#"INSERT INTO incidents (class, machine_id, project_id, data) VALUES ('policy_bypass', 'm', 'p', '{}');
@@ -668,7 +668,7 @@ fn incidents_go_on_an_older_hub() {
     )
     .unwrap();
     for m in &MIGRATIONS[gone..] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
     assert_eq!(
@@ -692,10 +692,10 @@ fn train_blocked_events_go_on_an_older_hub() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     let gone = MIGRATIONS
         .iter()
-        .position(|m| m.contains("'train.blocked'"))
+        .position(|m| m.sql.contains("'train.blocked'"))
         .expect("the train.blocked migration");
     for m in &MIGRATIONS[..gone] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     conn.execute_batch(
         r#"INSERT INTO events (created_ms, type, data) VALUES (0, 'train.blocked', '{"error":"x"}'),
@@ -703,7 +703,7 @@ fn train_blocked_events_go_on_an_older_hub() {
     )
     .unwrap();
     for m in &MIGRATIONS[gone..] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     let types: Vec<String> = conn
         .prepare("SELECT type FROM events")
@@ -722,10 +722,10 @@ fn playbook_pins_go_on_an_older_hub() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     let gone = MIGRATIONS
         .iter()
-        .position(|m| m.contains("DROP TABLE playbook_versions"))
+        .position(|m| m.sql.contains("DROP TABLE playbook_versions"))
         .expect("the playbooks migration");
     for m in &MIGRATIONS[..gone] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     let pin = format!("bugfix@{}", "a".repeat(40));
     conn.execute_batch(&format!(
@@ -735,7 +735,7 @@ fn playbook_pins_go_on_an_older_hub() {
     ))
     .unwrap();
     for m in &MIGRATIONS[gone..] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     let data: String = conn
         .query_row("SELECT data FROM workstreams", [], |r| r.get(0))
@@ -791,10 +791,10 @@ fn stored_done_when_checks_become_plain_lines() {
     // Found by content, not as the last migration, so later migrations don't break this test.
     let at = MIGRATIONS
         .iter()
-        .position(|m| m.contains("DROP TABLE claims"))
+        .position(|m| m.sql.contains("DROP TABLE claims"))
         .expect("the close migration");
     for m in &MIGRATIONS[..at] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     let ts = "2026-10-18T10:00:00.000Z";
     let workstream = serde_json::json!({
@@ -826,7 +826,7 @@ fn stored_done_when_checks_become_plain_lines() {
            INSERT INTO claims (workstream_id, machine_id, project_id) VALUES ('W1', 'devbox', 'storefront');"#,
     )
     .unwrap();
-    conn.execute_batch(MIGRATIONS[at]).unwrap();
+    conn.execute_batch(MIGRATIONS[at].sql).unwrap();
     let (state, data): (String, String) = conn
         .query_row("SELECT state, data FROM workstreams", [], |r| {
             Ok((r.get(0)?, r.get(1)?))
@@ -883,10 +883,10 @@ fn workstreams_are_open_done_or_stopped_on_an_older_hub() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     let at = MIGRATIONS
         .iter()
-        .position(|m| m.contains("THEN 'stopped' ELSE 'open'"))
+        .position(|m| m.sql.contains("THEN 'stopped' ELSE 'open'"))
         .expect("the open, done or stopped migration");
     for m in &MIGRATIONS[..at] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     let ts = "2026-10-18T10:00:00.000Z";
     for (n, state) in [
@@ -932,7 +932,7 @@ fn workstreams_are_open_done_or_stopped_on_an_older_hub() {
         )
         .unwrap();
     }
-    conn.execute_batch(MIGRATIONS[at]).unwrap();
+    conn.execute_batch(MIGRATIONS[at].sql).unwrap();
 
     let strings = |sql: &str| -> Vec<String> {
         conn.prepare(sql)
@@ -968,10 +968,10 @@ fn plans_go_and_a_claim_keeps_its_other_keys() {
     // Found by content, not as the last migration, so later migrations don't break this test.
     let at = MIGRATIONS
         .iter()
-        .position(|m| m.contains("DROP TABLE plan_items"))
+        .position(|m| m.sql.contains("DROP TABLE plan_items"))
         .expect("the plans migration");
     for m in &MIGRATIONS[..at] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     conn.execute_batch(
         r##"INSERT INTO work_claims (repo_key, base, state, owner_key, expires_ms, data)
@@ -980,7 +980,7 @@ fn plans_go_and_a_claim_keeps_its_other_keys() {
                     ('github.com/acme/shop', 'main', 'active', 'k1', 0, '{"claimId":"C2","keys":[{"issue":"#13"}]}');"##,
     )
     .unwrap();
-    conn.execute_batch(MIGRATIONS[at]).unwrap();
+    conn.execute_batch(MIGRATIONS[at].sql).unwrap();
     let keys: Vec<String> = conn
         .prepare("SELECT json_extract(data, '$.keys') FROM work_claims ORDER BY n")
         .unwrap()
@@ -1016,7 +1016,7 @@ fn the_shipped_migrations_are_the_list_older_hubs_ran() {
     let mut hash = Sha256::new();
     for m in &MIGRATIONS[..86] {
         // A file starts with its comment, which the old list kept in Rust.
-        let sql: Vec<&str> = m.lines().skip_while(|l| l.starts_with("--")).collect();
+        let sql: Vec<&str> = m.sql.lines().skip_while(|l| l.starts_with("--")).collect();
         hash.update(sql.join("\n").trim());
         hash.update([0]);
     }
@@ -1040,7 +1040,7 @@ fn a_hub_at_the_old_lists_end_upgrades_to_a_fresh_hubs_schema() {
     {
         let conn = rusqlite::Connection::open(home.path().join("hub.sqlite")).unwrap();
         for m in &MIGRATIONS[..86] {
-            conn.execute_batch(m).unwrap();
+            conn.execute_batch(m.sql).unwrap();
         }
         conn.pragma_update(None, "user_version", 86).unwrap();
         // A row the old schema holds stays: no migration ran again over it.
@@ -1072,10 +1072,10 @@ fn profiles_become_rows_and_each_project_keeps_what_it_allowed() {
     // Found by content, not as the last migration, so later migrations don't break this test.
     let at = MIGRATIONS
         .iter()
-        .position(|m| m.contains("CREATE TABLE profiles ("))
+        .position(|m| m.sql.contains("CREATE TABLE profiles ("))
         .expect("the profiles migration");
     for m in &MIGRATIONS[..at] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     conn.execute_batch(
         r#"INSERT INTO projects (machine_id, project_id, search, last_activity_at, data) VALUES
@@ -1088,7 +1088,7 @@ fn profiles_become_rows_and_each_project_keeps_what_it_allowed() {
              ('devbox', 'on', 'high', 'claude-haiku-5-5', 'low', NULL, '2026-10-01T00:00:00.000Z');"#,
     )
     .unwrap();
-    conn.execute_batch(MIGRATIONS[at]).unwrap();
+    conn.execute_batch(MIGRATIONS[at].sql).unwrap();
     let profiles: Vec<(i64, String, String, String, bool, bool)> = conn
         .prepare("SELECT id, name, model, effort, fast, is_default FROM profiles ORDER BY id")
         .unwrap()
@@ -1185,10 +1185,10 @@ fn google_and_notion_go_on_an_older_hub_and_their_secrets_are_queued_to_forget()
     // Found by content, not as the last migration, so later migrations don't break this test.
     let gone = MIGRATIONS
         .iter()
-        .position(|m| m.contains("DROP TABLE google_client"))
+        .position(|m| m.sql.contains("DROP TABLE google_client"))
         .expect("the no-Google-or-Notion migration");
     for m in &MIGRATIONS[..gone] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
     let sealed = |m: &str| format!(r#"{{"machineId":"{m}","fingerprint":"5ec2e7a1"}}"#);
     let server = |name: &str, kind: &str, holders: &[&str]| {
@@ -1218,9 +1218,9 @@ fn google_and_notion_go_on_an_older_hub_and_their_secrets_are_queued_to_forget()
         INSERT INTO google_mail_state (id, pulled_ms) VALUES (1, 5);"#,
     )
     .unwrap();
-    conn.execute_batch(MIGRATIONS[gone]).unwrap();
+    conn.execute_batch(MIGRATIONS[gone].sql).unwrap();
     for m in &MIGRATIONS[gone + 1..] {
-        conn.execute_batch(m).unwrap();
+        conn.execute_batch(m.sql).unwrap();
     }
 
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };

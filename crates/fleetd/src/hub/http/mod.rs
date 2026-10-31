@@ -156,6 +156,11 @@ pub async fn serve(
     let shutdown = hub.shutdown.clone();
     let app = router(hub, tools);
     let stop = shutdown.clone();
+    // Nagle off, as on the node's end of its link: small frames that answer each other (a screen's start, its control,
+    // its first frame; the app's calls) would each wait out a delayed ack.
+    let listener = axum::serve::ListenerExt::tap_io(listener, |tcp| {
+        let _ = tcp.set_nodelay(true);
+    });
     let mut server = tokio::spawn(async move {
         axum::serve(
             listener,

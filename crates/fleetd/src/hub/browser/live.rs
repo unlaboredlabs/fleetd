@@ -1,7 +1,8 @@
 //! Live view: who watches which browser session, and their frames. A node sends a session's frames only while the hub
-//! watches it (`browser_watch` on, sent with the first watcher, off after the last), and again after a reconnect. The
+//! watches it (`browser_watch` on, sent with each new watcher, off after the last), and again after a reconnect. The
 //! hub keeps no frame: each goes out to the app connections watching its session as it comes, and a slow one skips
-//! frames rather than queueing them.
+//! frames rather than queueing them. A node answers each `on` with the session's newest frame, so a watcher who joins
+//! a still page (a phone beside the desktop) sees it at once, not at its next change.
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 
@@ -33,6 +34,8 @@ pub struct Live {
     /// When a person last sent input to each session, in the hub clock's ms: a person's own screen idles out on it
     /// (machine_roles/screens.rs).
     inputs: Mutex<HashMap<BrowserSessionId, i64>>,
+    /// Sessions watched with no frame from their node yet, since when: the wait for the first goes to the debug log.
+    first: Mutex<HashMap<BrowserSessionId, std::time::Instant>>,
 }
 
 impl Default for Live {
@@ -42,6 +45,7 @@ impl Default for Live {
             controls: Mutex::default(),
             watched: Mutex::default(),
             inputs: Mutex::default(),
+            first: Mutex::default(),
         }
     }
 }
@@ -75,11 +79,20 @@ impl Live {
             .get(&frame.session_id)
             .is_some_and(|(m, _)| m == machine);
         if watched {
+            let waited = self
+                .first
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(&frame.session_id);
+            if let Some(since) = waited {
+                tracing::debug!(target: "fleetd::stages", screen = %frame.session_id, ms = since.elapsed().as_millis() as u64, "watched screen's first frame");
+            }
             let _ = self.frames.send(frame);
         }
     }
 
-    /// Starts watching `session` on `machine`; its node starts sending frames with the first watcher.
+    /// Starts watching `session` on `machine`: its node starts sending frames with the first watcher, and sends its newest
+    /// again for each one after it.
     pub fn watch(
         self: &Arc<Self>,
         link: &Arc<NodeLinkServer>,
@@ -96,8 +109,12 @@ impl Live {
             entry.1 == 1
         };
         if first {
-            link.send_to(machine, watch_frame(session, true));
+            self.first
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(session.clone(), std::time::Instant::now());
         }
+        link.send_to(machine, watch_frame(session, true));
         Watch {
             live: Arc::downgrade(self),
             link: Arc::downgrade(link),
@@ -244,6 +261,10 @@ impl Drop for Watch {
             }
         };
         if let (Some(machine), Some(link)) = (last, self.link.upgrade()) {
+            live.first
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(&self.session);
             link.send_to(&machine, watch_frame(&self.session, false));
         }
     }

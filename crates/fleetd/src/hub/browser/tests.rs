@@ -526,11 +526,27 @@ async fn a_takeover_request_waits_on_you_until_a_person_has_control() {
 }
 
 #[tokio::test]
-async fn live_frames_go_only_to_watchers_of_their_session_and_the_node_hears_the_first_and_last() {
+async fn live_frames_go_only_to_their_watchers_and_the_node_hears_each_watch_and_the_last() {
     use fleetd_contracts::browser::{BrowserFrame, BrowserSessionId};
+    use fleetd_contracts::node_link::{CAP_BROWSER, HubToNode};
     let (hub, _clock, _home) = hub();
     let live = hub.link.browser_live.clone();
     let devbox = MachineId::unchecked("devbox");
+    let mut node = hub.link.test_link(&devbox, &[CAP_BROWSER]);
+    // What the node heard of watches, until the link is quiet for a moment.
+    async fn heard(
+        node: &mut tokio::sync::mpsc::UnboundedReceiver<HubToNode>,
+    ) -> Vec<(String, bool)> {
+        let mut said = Vec::new();
+        while let Ok(Some(frame)) =
+            tokio::time::timeout(Duration::from_millis(200), node.recv()).await
+        {
+            if let HubToNode::BrowserWatch(w) = frame {
+                said.push((w.session_id.to_string(), w.on));
+            }
+        }
+        said
+    }
     let (s1, s2) = (
         BrowserSessionId::unchecked(S1),
         BrowserSessionId::unchecked(S2),
@@ -544,6 +560,11 @@ async fn live_frames_go_only_to_watchers_of_their_session_and_the_node_hears_the
     let mut first = live.watch(&hub.link, &devbox, &s1);
     let second = live.watch(&hub.link, &devbox, &s1);
     assert_eq!(live.watchers(&s1), 2);
+    // Each watcher asks: the node answers each with the newest frame, so the second sees a still page too.
+    assert_eq!(
+        heard(&mut node).await,
+        [(S1.to_owned(), true), (S1.to_owned(), true)]
+    );
     assert_eq!(
         live.rewatch(&devbox).len(),
         1,
@@ -558,9 +579,11 @@ async fn live_frames_go_only_to_watchers_of_their_session_and_the_node_hears_the
     assert!(first.frames.try_recv().is_err());
     drop(second);
     assert_eq!(live.watchers(&s1), 1);
+    assert!(heard(&mut node).await.is_empty(), "one still watches");
     drop(first);
     assert_eq!(live.watchers(&s1), 0);
     assert_eq!(live.watchers(&s2), 0);
+    assert_eq!(heard(&mut node).await, [(S1.to_owned(), false)]);
 }
 
 #[tokio::test]

@@ -49,6 +49,12 @@ const BROKEN: &[u8] = b"not an app";
 /// when asked, takes device steps sealed with a screen's relay key (an install fails for a file holding [`BROKEN`]), and
 /// ends a screen.
 fn runner(hub: &Arc<Hub>, m: &str) -> mpsc::UnboundedReceiver<Seen> {
+    runner_reporting(hub, m, false)
+}
+
+/// [`runner`], whose report of a screen live comes `late`, after its answer to the start, as a real node's can (its
+/// reports go out on their own task).
+fn runner_reporting(hub: &Arc<Hub>, m: &str, late: bool) -> mpsc::UnboundedReceiver<Seen> {
     let secret = crypto_box::SecretKey::generate(&mut crypto_box::aead::OsRng);
     let public = B64.encode(secret.public_key().as_bytes());
     let machine = serde_json::from_value(json!({
@@ -105,9 +111,19 @@ fn runner(hub: &Arc<Hub>, m: &str) -> mpsc::UnboundedReceiver<Seen> {
                             n += 1;
                             let id = format!("B{n:032x}");
                             let kind = s.kind.unwrap_or_default().as_str().to_owned();
-                            // A node reports its screen live before it answers the start.
-                            let answer = hub.link.answer_lead_call(&m, report(&key, &id, &kind, "live", "agent")).await;
-                            assert!(answer.error.is_none(), "{:?}", answer.error);
+                            // A node reports its screen live as it answers the start: before it, or just after.
+                            let live = report(&key, &id, &kind, "live", "agent");
+                            if late {
+                                let (hub, m) = (hub.clone(), m.clone());
+                                tokio::spawn(async move {
+                                    tokio::time::sleep(Duration::from_millis(300)).await;
+                                    let answer = hub.link.answer_lead_call(&m, live).await;
+                                    assert!(answer.error.is_none(), "{:?}", answer.error);
+                                });
+                            } else {
+                                let answer = hub.link.answer_lead_call(&m, live).await;
+                                assert!(answer.error.is_none(), "{:?}", answer.error);
+                            }
                             screens.insert(id.clone(), (key.clone(), kind));
                             json!({ "op": "session_start", "sessionId": id, "cdp": "ws://127.0.0.1:1/x", "startMs": 5 })
                         }
@@ -263,6 +279,31 @@ async fn a_person_opens_a_screen_on_the_machine_they_pick_and_drives_it_from_the
     let end = next(&mut mac1).await;
     assert_eq!((end.op.as_str(), end.key), ("session_end", started.key));
     assert_eq!(live_on(&hub, "mac1"), 0);
+}
+
+/// The runner's report of the screen live, which travels apart from its answer to the start, comes after it: the
+/// person still gets the screen in screen_open's answer, in their control, and so does the list.
+#[tokio::test]
+async fn a_screen_reported_live_after_its_start_answers_is_still_the_persons_at_once() {
+    let (hub, _home, _clock) = setup();
+    let _mac1 = runner_reporting(&hub, "mac1", true);
+    let (_, desk) = person(&hub, "Ada", "operate");
+    let out = call(&hub, &desk, "screen_open", open("mac1", "browser"))
+        .await
+        .unwrap();
+    let session = &out["session"];
+    assert_eq!(session["state"], "live", "{out}");
+    assert_eq!(session["control"], "human", "{out}");
+    let listed = call(
+        &hub,
+        &desk,
+        "browser_sessions",
+        json!({ "projectRef": { "machineId": "devbox", "projectId": "app" } }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(listed["sessions"][0]["sessionId"], session["sessionId"]);
+    assert_eq!(listed["sessions"][0]["control"], "human");
 }
 
 #[tokio::test]

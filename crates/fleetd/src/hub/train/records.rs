@@ -495,10 +495,10 @@ mod tests {
         // Found by content, not as the last migration, so later migrations don't break this test.
         let at = MIGRATIONS
             .iter()
-            .position(|m| m.contains("DROP TABLE train_bypasses"))
+            .position(|m| m.sql.contains("DROP TABLE train_bypasses"))
             .unwrap();
         for m in &MIGRATIONS[..at] {
-            conn.execute_batch(m).unwrap();
+            conn.execute_batch(m.sql).unwrap();
         }
         conn.execute_batch(
             r#"INSERT INTO trains (repo, machine_id, project_id, frozen, watch_since_ms)
@@ -509,7 +509,7 @@ mod tests {
                  (0, 'train.resumed', '{}'), (0, 'github.drift', '{}'), (0, 'pr.merged', '{}');"#,
         )
         .unwrap();
-        conn.execute_batch(MIGRATIONS[at]).unwrap();
+        conn.execute_batch(MIGRATIONS[at].sql).unwrap();
 
         let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
         assert_eq!(

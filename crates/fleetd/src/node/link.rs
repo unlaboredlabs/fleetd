@@ -297,16 +297,15 @@ async fn run_link_once(
         Ok(url) => url,
         Err(why) => return LinkEnd::Lost(why),
     };
-    let ws = match tokio_tungstenite::connect_async_with_config(
-        url.as_str(),
-        Some(link_config()),
-        false,
-    )
-    .await
-    {
-        Ok((ws, _)) => ws,
-        Err(error) => return LinkEnd::Lost(format!("cannot reach the hub: {error}")),
-    };
+    // Nagle off: the link's frames are small and answer each other, and holding one back for the last's ack costs a
+    // delayed ack (40 ms) per round trip, as a screen's start and its first frame have several.
+    let ws =
+        match tokio_tungstenite::connect_async_with_config(url.as_str(), Some(link_config()), true)
+            .await
+        {
+            Ok((ws, _)) => ws,
+            Err(error) => return LinkEnd::Lost(format!("cannot reach the hub: {error}")),
+        };
     let (mut sink, mut stream) = ws.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
     // Answered once every frame queued before it is written: what an update's answer waits on before its restart.
