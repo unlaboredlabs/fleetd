@@ -167,3 +167,24 @@ pub fn sites(
     )?;
     rows.collect()
 }
+
+/// The card the Navi pays with, as its `op://vault/item` reference.
+pub fn card(db: &Connection, r: &ProjectRef) -> rusqlite::Result<Option<String>> {
+    Ok(db
+        .prepare_cached("SELECT card_ref FROM assistants WHERE machine_id = ? AND project_id = ?")?
+        .query_row(
+            params![r.machine_id.as_str(), r.project_id.as_str()],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()?
+        .flatten())
+}
+
+/// `None`: the Navi has no card.
+pub fn set_card(db: &Connection, r: &ProjectRef, card: Option<&str>) -> rusqlite::Result<()> {
+    db.prepare_cached(
+        "UPDATE assistants SET card_ref = ? WHERE machine_id = ? AND project_id = ?",
+    )?
+    .execute(params![card, r.machine_id.as_str(), r.project_id.as_str()])?;
+    Ok(())
+}

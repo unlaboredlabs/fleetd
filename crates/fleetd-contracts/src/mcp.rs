@@ -1277,6 +1277,29 @@ output!(NaviSiteRevokeOutput {
     sites: Vec<NaviSite>,
 });
 
+// navi_purchases, navi_card_set: the card a Navi pays with (a Credit Card item in its person's 1Password, kept as its
+// op:// reference only) and every purchase it asked for, newest first (D265 navi.purchases). Only its owner sets the
+// card, from their own device.
+input!(NaviPurchasesInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+});
+output!(NaviPurchasesOutput {
+    /// Absent until the person picks one: the Navi can't pay until then.
+    card: Option<crate::purchase::NaviCard>,
+    /// Newest first, at most 200.
+    purchases: Vec<crate::purchase::PurchaseLogEntry>,
+});
+input!(NaviCardSetInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+    /// A Credit Card item, `op://<vault>/<item>`, as onepassword_cards lists it; absent: the Navi has no card.
+    card: Option<crate::purchase::OpItemReference>,
+});
+output!(NaviCardSetOutput {
+    card: Option<crate::purchase::NaviCard>,
+});
+
 // navi_signins_forget: a Navi's browser keeps its sign-ins (its own browser profile) between sessions (D221); this ends
 // its browser session, if one is open, and deletes them, so its next visit to each site starts signed out.
 input!(NaviSigninsForgetInput {
@@ -3161,6 +3184,19 @@ output!(TelegramPauseOutput {
 input!(TelegramRemoveInput { navi: ProjectRef });
 output!(TelegramRemoveOutput { ok: True });
 
+// onepassword_cards: the Credit Card items the caller's own 1Password token reads, for a Navi's card picker: each
+// item's reference and name, never its number, expiry or code.
+input!(OnePasswordCardsInput {
+    /// Where to list them; default: the first machine online that holds the token.
+    machine_id: Option<MachineId>,
+});
+output!(OnePasswordCardsOutput {
+    machine_id: MachineId,
+    cards: Vec<crate::purchase::OnePasswordCard>,
+    /// Why none could be listed, the token masked; absent when it worked.
+    error: Option<String>,
+});
+
 // sidebar_order_get, sidebar_order_set: a person's own order of the projects and Navis in their sidebar (W214,
 // `hub/sidebar_order`), the same on each of their desktops; nobody else's sidebar follows it.
 /// The most projects and Navis an order names.
@@ -3286,6 +3322,8 @@ tools! {
     telegram_unpair => TelegramUnpair, Operate, TelegramUnpairInput, TelegramUnpairOutput;
     telegram_pause => TelegramPause, Operate, TelegramPauseInput, TelegramPauseOutput;
     telegram_remove => TelegramRemove, Operate, TelegramRemoveInput, TelegramRemoveOutput;
+    navi_purchases => NaviPurchases, Read, NaviPurchasesInput, NaviPurchasesOutput;
+    navi_card_set => NaviCardSet, Operate, NaviCardSetInput, NaviCardSetOutput;
     project_settings_get => ProjectSettingsGet, Read, ProjectSettingsGetInput, ProjectSettingsGetOutput;
     project_settings_set => ProjectSettingsSet, Operate, ProjectSettingsSetInput, ProjectSettingsSetOutput;
     // Human keys only (the handler checks): a person sets a project's environment.
@@ -3320,6 +3358,7 @@ tools! {
     onepassword_set => OnePasswordSet, Operate, OnePasswordSetInput, OnePasswordSetOutput;
     onepassword_remove => OnePasswordRemove, Operate, OnePasswordRemoveInput, OnePasswordRemoveOutput;
     onepassword_test => OnePasswordTest, Operate, OnePasswordTestInput, OnePasswordTestOutput;
+    onepassword_cards => OnePasswordCards, Operate, OnePasswordCardsInput, OnePasswordCardsOutput;
     // Human keys only (the set handler checks): a person's own sidebar order.
     sidebar_order_get => SidebarOrderGet, Read, SidebarOrderGetInput, SidebarOrderGetOutput;
     sidebar_order_set => SidebarOrderSet, Read, SidebarOrderSetInput, SidebarOrderSetOutput;

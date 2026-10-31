@@ -1,7 +1,19 @@
 {
   "$defs": {
+    "Amount": {
+      "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$",
+      "type": "string"
+    },
+    "BrowserSessionId": {
+      "pattern": "^B[0-9a-f]{32}$",
+      "type": "string"
+    },
     "ChatRequestId": {
       "pattern": "^Q[1-9][0-9]*$",
+      "type": "string"
+    },
+    "Currency": {
+      "pattern": "^[A-Z]{3}$",
       "type": "string"
     },
     "DecisionKey": {
@@ -118,6 +130,10 @@
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
+        "purchase": {
+          "$ref": "#/$defs/Purchase",
+          "description": "approval of a Navi's purchase (purchase_request), instead of a gated run: approving it lets the Navi's node fill\nits card into that checkout once. Only a person answers it, in every approval mode."
+        },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
         },
@@ -159,6 +175,22 @@
     },
     "McpToolName": {
       "pattern": "^[A-Za-z0-9_.:/-]{1,128}$",
+      "type": "string"
+    },
+    "NaviCard": {
+      "description": "The card a Navi pays with: a Credit Card item in its person's 1Password. Only the reference is kept.",
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/OpItemReference"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "type": "object"
+    },
+    "OpItemReference": {
+      "pattern": "^op://[^/?\\r\\n]+/[^/?\\r\\n]+$",
       "type": "string"
     },
     "PersonId": {
@@ -238,6 +270,108 @@
       ],
       "type": "object"
     },
+    "Purchase": {
+      "description": "A purchase as its request keeps it: what the person approves.",
+      "properties": {
+        "card": {
+          "$ref": "#/$defs/NaviCard",
+          "description": "The Navi's card when it asked."
+        },
+        "filledAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When its card was filled into the checkout; absent until then. A purchase fills once."
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/PurchaseItem"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId",
+          "description": "The browser session that asked, the one its fill is for."
+        },
+        "shop": {
+          "$ref": "#/$defs/PurchaseShop"
+        },
+        "total": {
+          "$ref": "#/$defs/PurchaseTotal"
+        }
+      },
+      "required": [
+        "shop",
+        "total",
+        "items",
+        "card",
+        "sessionId"
+      ],
+      "type": "object"
+    },
+    "PurchaseItem": {
+      "description": "One thing in the basket.",
+      "properties": {
+        "amount": {
+          "$ref": "#/$defs/Amount",
+          "description": "Its price in the total's currency, when the checkout shows one."
+        },
+        "name": {
+          "description": "What it is, as the checkout names it: `Double room, 12-14 Nov, 2 nights`.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "quantity": {
+          "description": "How many; absent: 1.",
+          "maximum": 10000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "PurchaseShop": {
+      "description": "The shop the Navi buys from.",
+      "properties": {
+        "domain": {
+          "$ref": "#/$defs/ShopDomain",
+          "description": "The checkout page's host: `shop.example.com`. The card fills only on it (and its subdomains) and in its\npayment provider's frames."
+        },
+        "name": {
+          "description": "Its name, as the shop calls itself: `Hotel Adlon`.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain",
+        "name"
+      ],
+      "type": "object"
+    },
+    "PurchaseTotal": {
+      "description": "The total the checkout shows, with everything in it (taxes, fees, shipping).",
+      "properties": {
+        "amount": {
+          "$ref": "#/$defs/Amount"
+        },
+        "currency": {
+          "$ref": "#/$defs/Currency"
+        }
+      },
+      "required": [
+        "amount",
+        "currency"
+      ],
+      "type": "object"
+    },
     "ReadyPath": {
       "type": "string"
     },
@@ -311,6 +445,10 @@
       "type": "string"
     },
     "SetupInput": {
+      "type": "string"
+    },
+    "ShopDomain": {
+      "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){0,20}$",
       "type": "string"
     },
     "ThreadId": {

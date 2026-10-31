@@ -334,6 +334,10 @@ pub enum LeadCall {
     BrowserSession(BrowserSessionCall),
     BrowserRecordingPart(BrowserRecordingPartCall),
     BrowserTakeover(BrowserTakeoverCall),
+    /// Made by the node for a Navi's purchase_request and purchase_fill (purchase.rs), never by the session itself.
+    PurchaseOpen(crate::purchase::PurchaseOpenCall),
+    PurchaseClaim(crate::purchase::PurchaseClaimCall),
+    PurchaseFilled(crate::purchase::PurchaseFilledCall),
     /// Made by the node for its agent's session tools (machine_roles.rs): placed by the hub, relayed when elsewhere.
     SessionRoute(crate::machine_roles::SessionRouteCall),
     /// Try it (preview.rs): a writer's or lead's suggestion, a proposed preview setting, and the lead's start in a
@@ -546,6 +550,9 @@ pub enum LeadCallResult {
     BrowserSession(BrowserSessionResult),
     BrowserRecordingPart(BrowserRecordingPartResult),
     BrowserTakeover(BrowserSessionResult),
+    PurchaseOpen(RequestResult),
+    PurchaseClaim(crate::purchase::PurchaseClaimed),
+    PurchaseFilled(RequestResult),
     SessionRoute(crate::machine_roles::SessionRouteResult),
     PreviewSuggest(crate::preview::PreviewSuggestResult),
     PreviewConfigPropose(RequestResult),

@@ -28,6 +28,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("navi_site_revoke", revoke_site);
     tools.add("navi_signins_forget", forget_signins);
     tools.add("navi_asks", navi_asks);
+    super::purchases::register(tools);
 }
 
 async fn navi_asks(

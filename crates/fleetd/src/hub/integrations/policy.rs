@@ -139,7 +139,34 @@ const TRADED: (&[&str], &[&str]) = (
     ],
 );
 const SPEND: &[&str] = &[
-    "pay", "payment", "payments", "purchase", "buy", "checkout", "charge",
+    "pay",
+    "payment",
+    "payments",
+    "purchase",
+    "buy",
+    "checkout",
+    "charge",
+    "book",
+    "reserve",
+    "subscribe",
+    "rent",
+];
+/// Making one of these spends money, as a flight's or a shop's `create_order` or `confirm_booking` does; reading one
+/// (`list_orders`, `get_booking`) doesn't.
+const SPENT: &[&str] = &[
+    "order",
+    "orders",
+    "booking",
+    "bookings",
+    "reservation",
+    "reservations",
+    "ticket",
+    "tickets",
+    "subscription",
+];
+const READS: &[&str] = &[
+    "get", "list", "search", "find", "read", "show", "fetch", "view", "lookup", "query",
+    "describe", "track", "status", "cancel",
 ];
 const DELETE: &[&str] = &[
     "delete", "remove", "trash", "destroy", "erase", "purge", "drop",
@@ -173,7 +200,7 @@ pub fn never(tool: &str) -> Option<Never> {
 pub fn guess(tool: &str) -> ToolAction {
     let w = words(tool);
     let has = |list: &[&str]| w.iter().any(|x| list.contains(&x.as_str()));
-    if has(SPEND) {
+    if has(SPEND) || (has(SPENT) && !has(READS)) {
         ToolAction::Spend
     } else if has(DELETE) {
         ToolAction::Delete

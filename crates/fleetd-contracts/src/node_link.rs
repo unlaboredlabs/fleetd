@@ -178,6 +178,10 @@ pub const CAP_ONEPASSWORD: &str = "onepassword";
 /// `telegram`: the node keeps Navis' Telegram bot tokens and long-polls the Bot API for them (`telegram.rs`).
 pub const CAP_TELEGRAM: &str = "telegram";
 
+/// The node lists a person's 1Password Credit Card items (`onepassword_cards`) and fills an approved purchase's card
+/// (`purchase_request`, `purchase_fill`; D265).
+pub const CAP_ONEPASSWORD_CARDS: &str = "onepassword_cards";
+
 /// `claude_models`: the node lists the models the hub's API key offers, for the profiles' model picker.
 pub const CAP_CLAUDE_MODELS: &str = "claude_models";
 

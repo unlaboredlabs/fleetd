@@ -450,6 +450,8 @@ pub enum BrowserCall {
     RequestTakeover(RequestTakeoverCall),
     Desktop(DesktopCall),
     Device(DeviceCall),
+    PurchaseRequest(crate::purchase::PurchaseRequestCall),
+    PurchaseFill(crate::purchase::PurchaseFillCall),
 }
 
 impl BrowserCall {
@@ -461,6 +463,8 @@ impl BrowserCall {
             Self::RequestTakeover(_) => "request_takeover",
             Self::Desktop(_) => "desktop",
             Self::Device(_) => "device",
+            Self::PurchaseRequest(_) => "purchase_request",
+            Self::PurchaseFill(_) => "purchase_fill",
         }
     }
 }
@@ -690,6 +694,16 @@ pub enum BrowserCallResult {
     RequestTakeover(TakeoverRequested),
     Desktop(DesktopDone),
     Device(DeviceDone),
+    PurchaseRequest(PurchaseAsked),
+    PurchaseFill(Filled),
+}
+
+/// A purchase the person was asked to approve: its request, and what to do next.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PurchaseAsked {
+    pub request_id: crate::chat::ChatRequestId,
+    pub message: String,
 }
 
 /// The session's browser, ready for the agent's `agent-browser`; or its emulator, ready for `agent-device`.

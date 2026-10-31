@@ -41,6 +41,7 @@ pub mod project_settings;
 pub mod projects;
 pub mod prompts;
 pub mod prs;
+pub mod purchase;
 pub mod push;
 pub mod repos;
 pub mod schema;

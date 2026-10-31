@@ -14,6 +14,7 @@ import { configLines, configWords } from "../tryit/model";
 import { Exact, HiddenWarning, marks } from "./Exact";
 import { patchLocal, useLocal, type Failed } from "./local";
 import { prose } from "./prose";
+import { cardLabel, money, payQuestion, totalWords } from "./purchase";
 import { actionWarning, actionWords, answerWords, confirmWords } from "./toolPreview";
 import {
   approvalOffline,
@@ -346,7 +347,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
   const { local, shown, busy, failed, confirming, setConfirming, run, refocus, focused } = useSent(key, item, read, machine, section);
   const outcome = approvalOutcome(shown);
   const offline = approvalOffline(shown.state, live);
-  const { gated, permission, previewConfig } = item;
+  const { gated, permission, previewConfig, purchase } = item;
   const preview = permission?.preview;
   const warning = preview === undefined ? undefined : actionWarning(preview.action);
   const confirm = useRef<HTMLDivElement>(null);
@@ -401,12 +402,15 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
     }
   };
 
-  const destructive = gated?.class === "irreversible" || preview?.action === "delete" || preview?.action === "spend";
+  const destructive = gated?.class === "irreversible" || preview?.action === "delete" || preview?.action === "spend" || purchase !== undefined;
+  const navi = asker ?? "Navi";
   return (
-    <Shell ref={section} label={previewConfig === undefined ? "Command to approve" : "Try it setting to approve"} requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
+    <Shell ref={section} label={purchase !== undefined ? "Purchase to approve" : previewConfig === undefined ? "Command to approve" : "Try it setting to approve"} requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
-          {previewConfig !== undefined
+          {purchase !== undefined
+            ? "Purchase"
+            : previewConfig !== undefined
             ? "Try it setting"
             : preview !== undefined
               ? `${actionWords(preview.action)} · MCP server`
@@ -414,6 +418,11 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
                 ? "Permission"
                 : "Command"}
         </Text>
+        {purchase === undefined ? null : (
+          <Text size="xs" tone="danger" strong>
+            Costs money
+          </Text>
+        )}
         {warning === undefined ? null : (
           <Text size="xs" tone={warning.tone} strong>
             {warning.text}
@@ -426,7 +435,9 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
         )}
       </div>
       <Text as="p" strong className={cx(s.title)}>
-        {previewConfig !== undefined
+        {purchase !== undefined
+          ? marks(`${navi} wants to pay ${totalWords(purchase.total)} at ${purchase.shop.name}`)
+          : previewConfig !== undefined
           ? prose(previewConfig.why)
           : gated !== undefined
             ? prose(gated.reason)
@@ -458,10 +469,48 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
           ...(gated?.secretEnv ?? []).flatMap((e) => [e.name, e.secretKey]),
           permission?.toolName,
           preview?.title,
+          purchase?.shop.name,
+          purchase?.shop.domain,
+          ...(purchase?.items ?? []).map((i) => i.name),
         ]}
         lines={[previewConfig?.why, gated?.reason, previewConfig === undefined ? undefined : configLines(previewConfig.config).join("\n"), permission?.summary, preview?.input]}
       />
       <div className={s.detail}>
+        {/* A purchase: exactly what is bought and for how much, then where and with which card. */}
+        {purchase !== undefined ? (
+          <>
+            <dl className={s.receipt}>
+              {purchase.items.map((i, n) => (
+                <Fragment key={n}>
+                  <dt>
+                    <Text size="sm">{marks(`${i.quantity !== undefined && i.quantity > 1 ? `${String(i.quantity)} × ` : ""}${i.name}`)}</Text>
+                  </dt>
+                  <dd>
+                    <Text size="sm" tone="quiet">
+                      {i.amount === undefined ? "" : money(i.amount, purchase.total.currency)}
+                    </Text>
+                  </dd>
+                </Fragment>
+              ))}
+              <dt className={s.total}>
+                <Text size="sm" strong>
+                  Total
+                </Text>
+              </dt>
+              <dd className={s.total}>
+                <Text size="sm" strong>
+                  {totalWords(purchase.total)}
+                </Text>
+              </dd>
+            </dl>
+            <Text size="xs" tone="quiet">
+              <InlineCode>
+                <Exact text={purchase.shop.domain} ltr />
+              </InlineCode>
+              {` · with ${cardLabel(purchase.card)} from 1Password. fleetd fills the card into this checkout once; ${navi} never sees it.`}
+            </Text>
+          </>
+        ) : null}
         {/* A proposed Try it setting: its commands as they would run, in order. */}
         {previewConfig !== undefined ? (
           <Code code={configLines(previewConfig.config).join("\n")} bare>
@@ -489,7 +538,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
           <Text size="xs" tone="quiet">
             {`${configWords(previewConfig.config)} Approved, it is how this project runs Try it on ${machine}; nothing runs until someone asks.`}
           </Text>
-        ) : (
+        ) : purchase !== undefined ? null : (
           <Text size="xs" tone="quiet">
             on {machine}
             {gated?.cwd === undefined ? null : (
@@ -526,11 +575,11 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
       {shown.state !== "open" ? null : confirming ? (
         <div ref={confirm} tabIndex={-1} role="group" aria-labelledby={`${item.requestId}-confirm`} className={s.confirm}>
           <Text as="p" id={`${item.requestId}-confirm`} size="sm" tone="danger" strong className={cx(s.line)}>
-            {preview === undefined ? `Run this on ${machine}? It can't be undone.` : confirmWords(preview).question}
+            {purchase !== undefined ? payQuestion(purchase) : preview === undefined ? `Run this on ${machine}? It can't be undone.` : confirmWords(preview).question}
           </Text>
           <div className={s.actions}>
             <Button variant="danger" disabled={!canAnswer} onClick={() => answer("approve")}>
-              {preview === undefined ? "Yes, run it" : confirmWords(preview).yes}
+              {purchase !== undefined ? "Yes, pay" : preview === undefined ? "Yes, run it" : confirmWords(preview).yes}
             </Button>
             <Button variant="secondary" disabled={!canAnswer} onClick={cancel}>
               Cancel
@@ -543,13 +592,13 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
       ) : (
         <div className={s.actions}>
           <Button ref={approveButton} variant={destructive ? "danger" : "primary"} disabled={!canAnswer} onClick={approve}>
-            {preview !== undefined ? answerWords(preview.action).yes : item.note === undefined ? "Approve" : "Approve again"}
+            {purchase !== undefined ? `Pay ${totalWords(purchase.total)}` : preview !== undefined ? answerWords(preview.action).yes : item.note === undefined ? "Approve" : "Approve again"}
           </Button>
           <Button variant="secondary" disabled={!canAnswer} onClick={() => answer("deny")}>
-            {preview !== undefined ? answerWords(preview.action).no : "Deny"}
+            {purchase !== undefined ? "Don't buy" : preview !== undefined ? answerWords(preview.action).no : "Deny"}
           </Button>
           <Text size="xs" tone="quiet" className={cx(s.whenFocused)}>
-            {preview === undefined ? "Enter approves · Esc denies" : `Enter: ${answerWords(preview.action).yes} · Esc: ${answerWords(preview.action).no}`}
+            {purchase !== undefined ? "Enter: Pay · Esc: Don't buy" : preview === undefined ? "Enter approves · Esc denies" : `Enter: ${answerWords(preview.action).yes} · Esc: ${answerWords(preview.action).no}`}
           </Text>
         </div>
       )}

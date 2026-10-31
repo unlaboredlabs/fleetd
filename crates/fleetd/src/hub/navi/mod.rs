@@ -18,13 +18,15 @@
 //! An archived Navi keeps its chat, memory and folder; its lead is stopped and doesn't start again until it is brought
 //! back, and a message to it waits until then. Its factory bridge (messages to other projects' leads, the factory's
 //! status, wakes when that work lands) is `bridge`; the app reads a Navi's asks with `navi_asks` (`tools`). A Navi
-//! searches and reads back through its own chat with `recall`.
+//! searches and reads back through its own chat with `recall`. It pays at a checkout with its person's card, after they
+//! approve each purchase (D265, `purchases`).
 pub mod bridge;
 #[cfg(test)]
 mod mcp_fresh_tests;
 pub mod owner;
 #[cfg(test)]
 mod owner_tests;
+pub mod purchases;
 pub mod recall;
 pub mod sites;
 pub mod store;

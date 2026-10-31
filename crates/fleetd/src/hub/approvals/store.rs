@@ -20,6 +20,7 @@ pub struct NewRequest {
     pub gated: Option<fleetd_contracts::ledger::GatedRunSpec>,
     pub permission: Option<fleetd_contracts::ledger::ToolPermission>,
     pub preview_config: Option<fleetd_contracts::preview::PreviewConfigProposeCall>,
+    pub purchase: Option<fleetd_contracts::purchase::Purchase>,
     pub at: Timestamp,
     pub at_ms: i64,
 }
@@ -80,6 +81,7 @@ impl Requests {
                 "gated": new.gated,
                 "permission": new.permission,
                 "previewConfig": new.preview_config,
+                "purchase": new.purchase,
                 "createdAt": new.at,
             }))
         };

@@ -1,0 +1,39 @@
+{
+  "note": "A Navi's purchases (D265): a hotel booking waiting for Pay, with its basket, total and card; and a train ticket already approved and filled, folded. devbox; no personal data.",
+  "items": [
+    {
+      "kind": "command_approval",
+      "requestId": "Q21",
+      "machineId": "devbox",
+      "state": "ran",
+      "purchase": {
+        "shop": { "domain": "tickets.rail.example", "name": "Rail Example" },
+        "total": { "amount": "38.50", "currency": "EUR" },
+        "items": [{ "name": "Berlin to Hamburg, 14 Nov 08:12, 2nd class", "quantity": 1, "amount": "38.50" }],
+        "card": { "ref": "op://Personal/Visa" },
+        "sessionId": "B00000000000000000000000000000021",
+        "filledAt": "2026-10-31T08:41:12.000Z"
+      },
+      "note": "card filled into the checkout: the card's number, expiry, security code",
+      "answeredAt": "2026-10-31T08:40:02.000Z",
+      "finishedAt": "2026-10-31T08:41:12.000Z",
+      "by": "human:desk"
+    },
+    {
+      "kind": "command_approval",
+      "requestId": "Q22",
+      "machineId": "devbox",
+      "state": "open",
+      "purchase": {
+        "shop": { "domain": "hotel-devbox.example", "name": "Hotel Devbox" },
+        "total": { "amount": "264.40", "currency": "EUR" },
+        "items": [
+          { "name": "Double room, 14-16 Nov, 2 nights", "quantity": 1, "amount": "258.00" },
+          { "name": "City tax, 2 nights", "quantity": 2, "amount": "3.20" }
+        ],
+        "card": { "ref": "op://Personal/Visa" },
+        "sessionId": "B00000000000000000000000000000022"
+      }
+    }
+  ]
+}

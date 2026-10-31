@@ -132,9 +132,39 @@ after that, or a command's own network use. Browser commands inside an open page
 snapshots, a script in the page. A command such as `curl` reaches the network unasked too: the sandbox limits what a
 command writes and reads, not where it sends. So commands and screens aren't held to the approval rule for sends, and
 a click or a form that leads to another site isn't asked. Its Android, iOS and desktop screens (`agent-device`) don't
-ask per site at all. Nor is the final Send or Pay button on a site you allowed: that final click is left to you by
+ask per site at all. Nor is the final Send button on a site you allowed: that final click is left to you by
 instruction only. The Navi is told to hand it to you with a takeover, but that's its prompt, not fleetd's rules. Only
-allow sites where that's fine, such as your bank's when you mean to watch.
+allow sites where that's fine, such as your bank's when you mean to watch. Paying is different: the Navi has no card
+until you approve a [purchase](#purchases).
+
+## Purchases {#purchases}
+
+A Navi can book a hotel or a flight, or buy something online, with a card you keep in 1Password. You approve each
+purchase; fleetd fills the card into the checkout, and the Navi never sees it.
+
+1. **Pick a card.** In the Navi's settings, **Payments** lists the Credit Card items your 1Password token reads
+   (Settings › You › 1Password). Pick one. fleetd keeps only its `op://vault/item` reference.
+2. **The Navi asks.** At the checkout's payment step it calls `purchase_request` with the shop's domain and name, the
+   total and currency, and what is in the basket. The page must be on that domain. Your chat shows a purchase card:
+   the shop, the total, each item, and the card. It always asks you, whatever approval mode the Navi runs in: no
+   checker or rule answers a purchase.
+3. **You approve.** **Pay** approves that exact purchase; **Don't buy** tells the Navi no.
+4. **The card is filled.** Within 15 minutes of your approval the Navi calls `purchase_fill`. Its node reads the card
+   from 1Password and types the number, expiry, security code and name into the checkout's fields: on the shop's own
+   page and in the card frames of payment providers (Stripe, Adyen, Braintree, Checkout.com, Square, PayPal, Mollie,
+   Worldpay), even when they're on another site. It fills once per approval, and only on the approved shop.
+5. **The Navi pays.** It checks the total and clicks Pay or Book itself. If your bank asks to confirm (3-D Secure, a
+   code, its app), it hands the browser to you with a takeover, and finishes once you hand it back.
+
+| | |
+|---|---|
+| What the Navi sees | Never the card's number, expiry or code. From the fill on, its browser session refuses to read values back (scripts of its own, `get value`, page snapshots). Every answer it gets, its transcript and the recording are scrubbed of the card. Filled fields show as blurred dots in the video, the live view and screenshots. |
+| Wrong shop | A request whose domain isn't the page's is refused. A fill on any other site gets nothing; the approval stays good for the shop until its 15 minutes run out. |
+| Never | Trading, crypto and moving money between accounts are refused, even approved. A command of a payment CLI (`stripe`, `shopify`, `paypal` and the like) through `gated_run` only you can approve. |
+| While you decide | The browser session doesn't close for being idle, so a held room or fare stays held, for up to 2 hours. |
+
+**Payments** in the Navi's settings also lists every purchase it asked for: the shop, the amount, when, and what you
+said.
 
 ## Sign-ins {#sign-ins}
 
@@ -304,6 +334,9 @@ keep; no `attachmentId` removes it) and `project_avatar_get {machineId, projectI
 one it has. Each returns the
 Navi as a project summary with `kind: "assistant"`, `createdBy` (the id and name of the key that made it) and, once
 archived, `archivedAt`. Every other project has no `kind`. Talk to a Navi with `chat_send`, as to any project.
+`navi_purchases {machineId, projectId}` reads a Navi's card and its purchase log; `navi_card_set {machineId,
+projectId, card?}` picks its card (a person's own device only) from `onepassword_cards {machineId?}`, the Credit Card
+items their 1Password token reads.
 `navi_asks {navi}` lists what a Navi asked other projects for, with the orders opened for each, on a hub whose ready
 frame names the `navi_asks` feature. `navi_signins_forget {machineId, projectId}` forgets a Navi's
 [sign-ins](#sign-ins); it needs the Navi's machine online and on a fleetd that keeps them. Hub links are `hub_links_get {navi?}`, `hub_link_mint {label, projects?}`,

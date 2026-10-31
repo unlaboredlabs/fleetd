@@ -462,6 +462,7 @@ pub fn build_on_with(
     crate::hub::automations::calls::register_lead_calls(&hub);
     crate::hub::checklist::calls::register_lead_calls(&hub);
     crate::hub::browser::calls::register_lead_calls(&hub);
+    crate::hub::navi::purchases::register_lead_calls(&hub);
     crate::hub::machine_roles::wire(&hub);
     crate::hub::preview::wire(&hub);
     crate::hub::skills::calls::register_lead_calls(&hub);

@@ -154,6 +154,8 @@ export const fixtures = [
   "inline-reopened",
   // A Navi's integration cards (fixtures/inline/integrations.json).
   "inline-integrations",
+  // A Navi's purchases: a hotel waiting for Pay, a train ticket approved and filled (fixtures/inline/purchases.json).
+  "inline-purchases",
   // Approvals whose fields hide or reorder text (fixtures/inline/hidden.json).
   "inline-hidden",
   // W237: a Navi's Telegram, a setup step a fixture (fixtures/telegram).
@@ -1113,7 +1115,7 @@ export const screens: readonly Screen[] = [
   // not run, denied, running).
   // ...and a Navi's integration cards: a send, a delete, an answered send; and approvals whose hidden characters show
   // as marks.
-  { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-hidden"], variant: "inline" },
+  { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-purchases", "inline-hidden"], variant: "inline" },
   // The same chat offline from the disk cache: an open item says it can't be answered now, and a secret never claims
   // the hub doesn't know its machine.
   {

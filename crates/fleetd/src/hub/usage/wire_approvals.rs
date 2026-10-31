@@ -309,7 +309,13 @@ pub fn request_outcome(r: &HumanRequest) -> (String, String) {
         ),
         (_, _, Some(p)) => format!("tool prompt {} {}", p.tool_name, clip(&p.summary, 120)),
         _ if r.preview_config.is_some() => "your proposed preview setting".into(),
-        _ => "request".into(),
+        _ => match &r.purchase {
+            Some(p) => format!(
+                "your purchase at {} ({} {})",
+                p.shop.domain, p.total.amount, p.total.currency
+            ),
+            None => "request".into(),
+        },
     };
     let evidence = r.evidence.as_ref().map_or("", |e| e.as_str());
     let order = r
@@ -318,6 +324,26 @@ pub fn request_outcome(r: &HumanRequest) -> (String, String) {
         .and_then(|s| parse_secret_sink(s.sink.as_str()))
         .and_then(|s| s.order);
     let outcome = match r.state {
+        RequestState::Approved if r.purchase.is_some() => format!(
+            "approved{}: call purchase_fill with requestId {} within {} minutes, on that checkout with its card \
+             fields showing, then click Pay yourself",
+            r.answered_by
+                .as_deref()
+                .map_or(String::new(), |b| format!(" by {b}")),
+            r.request_id,
+            fleetd_contracts::purchase::FILL_WINDOW_MINUTES
+        ),
+        RequestState::Denied if r.purchase.is_some() => format!(
+            "denied{}{}; don't buy it, nor another way: say in the chat that you didn't",
+            r.answered_by
+                .as_deref()
+                .map_or(String::new(), |b| format!(" by {b}")),
+            if evidence.is_empty() {
+                String::new()
+            } else {
+                format!(": {evidence}")
+            }
+        ),
         RequestState::Stored if order.is_some() => format!(
             "set for {}'s agents on {machine} ({evidence}): each gets it at its next turn, until the order closes; \
              you never see the value",

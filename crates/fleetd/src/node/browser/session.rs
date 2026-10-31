@@ -77,6 +77,9 @@ pub struct Session {
     /// The fields filled from 1Password, by `backendNodeId`: the driver may not write to them.
     filled_fields: Mutex<std::collections::HashSet<i64>>,
     last_active: Mutex<Instant>,
+    /// Until when the session waits on a person (a purchase's approval, a takeover such as a bank's confirmation): it
+    /// isn't idle meanwhile, so a held fare or room isn't lost.
+    held_until: Mutex<Option<Instant>>,
     /// The hash of the last DOM snapshot written: an unchanged page isn't written again.
     last_dom: Mutex<Option<[u8; 32]>>,
     /// One DOM capture at a time, in order.
@@ -171,6 +174,7 @@ impl Session {
             credentials_filled: AtomicU64::new(0),
             filled_fields: Mutex::default(),
             last_active: Mutex::new(Instant::now()),
+            held_until: Mutex::new(None),
             last_dom: Mutex::default(),
             dom_turn: tokio::sync::Mutex::new(()),
             _screencast: Mutex::default(),
@@ -261,8 +265,18 @@ impl Session {
         *lock(&self.last_active) = Instant::now();
     }
 
+    /// How long nothing touched it; none while it waits on a person ([`Session::hold`]).
     pub fn idle_for(&self) -> Duration {
+        if lock(&self.held_until).is_some_and(|until| until > Instant::now()) {
+            return Duration::ZERO;
+        }
         lock(&self.last_active).elapsed()
+    }
+
+    /// The session waits on a person for at most `for_at_most` (`None`: no more): it doesn't idle out meanwhile.
+    pub fn hold(&self, for_at_most: Option<Duration>) {
+        *lock(&self.held_until) = for_at_most.map(|d| Instant::now() + d);
+        self.touch();
     }
 
     pub fn control(&self) -> BrowserControl {
@@ -488,6 +502,7 @@ impl Session {
             // Handed back: the agent's first command takes control again and sees the page as the person left it.
             BrowserControl::HandingBack => {
                 self.set_control(BrowserControl::Agent);
+                *lock(&self.held_until) = None;
                 let hook = lock(&self.on_control).clone();
                 if let Some(hook) = hook {
                     hook(BrowserControl::Agent);

@@ -12,6 +12,10 @@
       },
       "type": "object"
     },
+    "Amount": {
+      "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$",
+      "type": "string"
+    },
     "AskBlock": {
       "description": "A question for the human, as buttons: Approve and Deny without `options`, one of `options` with them. The\nanswer is the human's chat reply (`chat_send` with the button's label as its text), so only the human answers\nit; an agent's message never does. A command that needs approval still goes through `gated_run`.",
       "properties": {
@@ -99,6 +103,10 @@
         "bytes"
       ],
       "type": "object"
+    },
+    "BrowserSessionId": {
+      "pattern": "^B[0-9a-f]{32}$",
+      "type": "string"
     },
     "ChartBlock": {
       "description": "A line, bar or area chart: `x` labels along the bottom, one value per label in each series.",
@@ -739,7 +747,7 @@
       "type": "object"
     },
     "CommandApprovalItem": {
-      "description": "A risky command (prod write, spend, delete, credential use), a session's permission prompt or an agent's proposed\npreview setting waits for the human: exactly what it would do, then Approve or Deny. Answered with\n`approval_answer`, naming `requestId`. Exactly one of `gated`, `permission` and `previewConfig`.",
+      "description": "A risky command (prod write, spend, delete, credential use), a session's permission prompt or an agent's proposed\npreview setting waits for the human: exactly what it would do, then Approve or Deny. Answered with\n`approval_answer`, naming `requestId`. Exactly one of `gated`, `permission`, `previewConfig` and `purchase`.",
       "properties": {
         "answeredAt": {
           "$ref": "#/$defs/Timestamp"
@@ -787,6 +795,10 @@
           "$ref": "#/$defs/PreviewConfigProposeCall",
           "description": "An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.\nOlder apps show it as an approval with neither command nor permission.\nBoxed: the setting is large beside the item's other fields, and every chat item would carry its size."
         },
+        "purchase": {
+          "$ref": "#/$defs/Purchase",
+          "description": "A Navi's purchase (purchase_request): the shop, the total, what it buys and the card. Approved, the Navi's node\nfills the card into that checkout once. Boxed, as `previewConfig` is."
+        },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
         },
@@ -823,6 +835,10 @@
         }
       ],
       "x-open": true
+    },
+    "Currency": {
+      "pattern": "^[A-Z]{3}$",
+      "type": "string"
     },
     "DecisionKey": {
       "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80",
@@ -1037,6 +1053,22 @@
       "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
       "type": "string"
     },
+    "NaviCard": {
+      "description": "The card a Navi pays with: a Credit Card item in its person's 1Password. Only the reference is kept.",
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/OpItemReference"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "type": "object"
+    },
+    "OpItemReference": {
+      "pattern": "^op://[^/?\\r\\n]+/[^/?\\r\\n]+$",
+      "type": "string"
+    },
     "PersonId": {
       "pattern": "^p_[a-z2-7]{8}$",
       "type": "string"
@@ -1218,6 +1250,108 @@
       ],
       "type": "object"
     },
+    "Purchase": {
+      "description": "A purchase as its request keeps it: what the person approves.",
+      "properties": {
+        "card": {
+          "$ref": "#/$defs/NaviCard",
+          "description": "The Navi's card when it asked."
+        },
+        "filledAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When its card was filled into the checkout; absent until then. A purchase fills once."
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/PurchaseItem"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId",
+          "description": "The browser session that asked, the one its fill is for."
+        },
+        "shop": {
+          "$ref": "#/$defs/PurchaseShop"
+        },
+        "total": {
+          "$ref": "#/$defs/PurchaseTotal"
+        }
+      },
+      "required": [
+        "shop",
+        "total",
+        "items",
+        "card",
+        "sessionId"
+      ],
+      "type": "object"
+    },
+    "PurchaseItem": {
+      "description": "One thing in the basket.",
+      "properties": {
+        "amount": {
+          "$ref": "#/$defs/Amount",
+          "description": "Its price in the total's currency, when the checkout shows one."
+        },
+        "name": {
+          "description": "What it is, as the checkout names it: `Double room, 12-14 Nov, 2 nights`.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "quantity": {
+          "description": "How many; absent: 1.",
+          "maximum": 10000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "PurchaseShop": {
+      "description": "The shop the Navi buys from.",
+      "properties": {
+        "domain": {
+          "$ref": "#/$defs/ShopDomain",
+          "description": "The checkout page's host: `shop.example.com`. The card fills only on it (and its subdomains) and in its\npayment provider's frames."
+        },
+        "name": {
+          "description": "Its name, as the shop calls itself: `Hotel Adlon`.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain",
+        "name"
+      ],
+      "type": "object"
+    },
+    "PurchaseTotal": {
+      "description": "The total the checkout shows, with everything in it (taxes, fees, shipping).",
+      "properties": {
+        "amount": {
+          "$ref": "#/$defs/Amount"
+        },
+        "currency": {
+          "$ref": "#/$defs/Currency"
+        }
+      },
+      "required": [
+        "amount",
+        "currency"
+      ],
+      "type": "object"
+    },
     "ReadyPath": {
       "type": "string"
     },
@@ -1363,6 +1497,10 @@
       "type": "string"
     },
     "SetupInput": {
+      "type": "string"
+    },
+    "ShopDomain": {
+      "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){0,20}$",
       "type": "string"
     },
     "SkillName": {

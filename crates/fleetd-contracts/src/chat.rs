@@ -164,7 +164,7 @@ pub enum CommandApprovalState {
 
 /// A risky command (prod write, spend, delete, credential use), a session's permission prompt or an agent's proposed
 /// preview setting waits for the human: exactly what it would do, then Approve or Deny. Answered with
-/// `approval_answer`, naming `requestId`. Exactly one of `gated`, `permission` and `previewConfig`.
+/// `approval_answer`, naming `requestId`. Exactly one of `gated`, `permission`, `previewConfig` and `purchase`.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -181,6 +181,9 @@ pub struct CommandApprovalItem {
     /// Older apps show it as an approval with neither command nor permission.
     /// Boxed: the setting is large beside the item's other fields, and every chat item would carry its size.
     pub preview_config: Option<Box<crate::preview::PreviewConfigProposeCall>>,
+    /// A Navi's purchase (purchase_request): the shop, the total, what it buys and the card. Approved, the Navi's node
+    /// fills the card into that checkout once. Boxed, as `previewConfig` is.
+    pub purchase: Option<Box<crate::purchase::Purchase>>,
     pub state: CommandApprovalState,
     pub exit_code: Option<i64>,
     /// The end of the output, once it ran.

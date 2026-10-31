@@ -216,6 +216,19 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
     add("What", r.permission.summary, { mono: true });
     // The summary is a first line or a path: the input is the rest of the command, or the file's content.
     if (r.permission.input !== undefined) add("Input", JSON.stringify(r.permission.input, null, 2), { mono: true, lines: true });
+  } else if (r.purchase !== undefined) {
+    // A Navi's purchase: exactly what is bought, for how much, where and with which card, all on the card's face.
+    const { shop, total, items, card } = r.purchase;
+    wants = `wants to pay ${total.amount} ${total.currency} at ${shop.name}`;
+    risk = "money";
+    add("Shop", shop.domain, { mono: true });
+    add(
+      "Buying",
+      items.map((i) => `${i.quantity !== undefined && i.quantity > 1 ? `${String(i.quantity)} × ` : ""}${i.name}${i.amount === undefined ? "" : ` · ${i.amount} ${total.currency}`}`).join("\n"),
+      { lines: true },
+    );
+    add("Total", `${total.amount} ${total.currency}`);
+    add("Card", card.ref.replace(/^op:\/\/([^/]+)\/(.+)$/u, "$2 ($1)"));
   } else if (r.previewConfig !== undefined) {
     wants = "proposes how Try it runs this project";
     add("Setting", JSON.stringify(r.previewConfig, null, 2), { mono: true, lines: true });

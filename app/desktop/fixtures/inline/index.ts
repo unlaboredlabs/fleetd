@@ -5,7 +5,8 @@
 // inline-failures fails them and the secret save, for the one-line failure with Retry; inline-reopened reopens two
 // approvals after Approve, as a hub does when the node is offline; inline-offline is that chat from the disk cache
 // with no hub. inline-integrations is a chat of a Navi's integration cards (fixtures/inline/integrations.json): a
-// message to send, a page to delete, and a send already approved. inline-hidden holds
+// message to send, a page to delete, and a send already approved. inline-purchases is a Navi's purchases
+// (fixtures/inline/purchases.json): a hotel waiting for Pay, a train ticket approved and filled. inline-hidden holds
 // approvals whose fields hide or reorder text (fixtures/inline/hidden.json), each character shown as its mark, and an
 // email in several languages shown as written.
 import { Fixture } from "../kit/fixture.ts";
@@ -16,6 +17,7 @@ import { heldCache } from "../offline/held.ts";
 import data from "./items.json" with { type: "json" };
 import hidden from "./hidden.json" with { type: "json" };
 import integrations from "./integrations.json" with { type: "json" };
+import purchases from "./purchases.json" with { type: "json" };
 
 /** A real X25519 public key (the Rust seal sample's), so sealing works in a fixture run. */
 const BOX_PUB_KEY = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
@@ -74,14 +76,14 @@ const inlineItems = (
       projectRef,
       state: item["state"] ?? "open",
       text: text(
-        item["text"],
+        item["text"] ?? (item["purchase"] === undefined ? undefined : "Pay at the checkout"),
         text((item["gated"] as JsonObject | undefined)?.["reason"], text((item["permission"] as JsonObject | undefined)?.["summary"], "A tool prompt")),
       ),
       createdAt: at(i + 2),
       ...opt("evidence", item["note"]),
       ...(secret
         ? { secret: { key: item["name"] ?? "", sink: item["sink"] ?? "", ...opt("envName", item["envName"]), ...opt("fingerprint", item["fingerprint"]) } }
-        : { ...opt("gated", item["gated"]), ...opt("permission", item["permission"]), ...opt("exitCode", item["exitCode"]), ...opt("outputTail", item["outputTail"]) }),
+        : { ...opt("gated", item["gated"]), ...opt("permission", item["permission"]), ...opt("purchase", item["purchase"]), ...opt("exitCode", item["exitCode"]), ...opt("outputTail", item["outputTail"]) }),
       ...opt("answeredAt", item["answeredAt"]),
       ...opt("finishedAt", item["finishedAt"]),
     };
@@ -174,7 +176,8 @@ export default defineGroup({
     // A Navi's integration cards in a chat of their own (fixtures/inline/integrations.json), so the chat above keeps
     // every state of the two inline items in view.
     const cards = inlineItems(base("typical"), "inline-integrations", "A chat with a Navi's integration approvals: a message to send, a page to delete, and an answered send.", integrations.items);
+    const bought = inlineItems(base("typical"), "inline-purchases", "A chat with a Navi's purchases: a hotel booking waiting for Pay, and a train ticket approved and filled.", purchases.items);
     const marked = inlineItems(base("typical"), "inline-hidden", "A chat with approvals whose fields hide or reorder text, each shown as its mark, and an email in several languages shown as written.", hidden.items);
-    return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards, marked];
+    return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards, bought, marked];
   },
 });

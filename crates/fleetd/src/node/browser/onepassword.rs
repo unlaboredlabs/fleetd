@@ -3,7 +3,8 @@
 //! and a service account token: the project's or order's secret variable `OP_SERVICE_ACCOUNT_TOKEN`, else the token
 //! the person whose work it is saved in Settings › Your accounts (onepassword_tokens.rs). The node keeps it out of
 //! every agent's environment. Each session keeps what it resolved (not one-time codes, which change every 30 s) and
-//! backs off when 1Password rate-limits the token. The same helper lists a token's vaults for its Test.
+//! backs off when 1Password rate-limits the token. The same helper lists a token's vaults for its Test, and its
+//! Credit Card items for a Navi's card picker; it reads a card's details for an approved purchase only (cards.rs).
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -45,9 +46,54 @@ pub struct CredError {
 
 pub type CredFuture = Pin<Box<dyn Future<Output = Result<Credential, CredError>> + Send>>;
 
+/// A Credit Card item's details, wiped when dropped. `month` is two digits, `year` four.
+pub struct Card {
+    pub number: Zeroizing<String>,
+    pub month: Zeroizing<String>,
+    pub year: Zeroizing<String>,
+    pub cvc: Zeroizing<String>,
+    pub name: Zeroizing<String>,
+}
+
+pub type CardFuture = Pin<Box<dyn Future<Output = Result<Card, CredError>> + Send>>;
+
 /// Where values come from: 1Password, or a test's fake vault.
 pub trait Vault: Send + Sync + 'static {
     fn resolve(&self, reference: &str) -> CredFuture;
+    /// A Credit Card item's details, by its `op://vault/item` reference.
+    fn card(&self, reference: &str) -> CardFuture {
+        let reference = reference.to_owned();
+        Box::pin(async move {
+            Err(CredError {
+                message: format!("{reference} can't be read as a card here"),
+                rate_limited: false,
+            })
+        })
+    }
+}
+
+/// A card's expiry as 1Password keeps it (`MM/YYYY`, `MM/YY`, `YYYYMM`, `MMYYYY`), as a two-digit month and a
+/// four-digit year.
+pub fn expiry(value: &str) -> Option<(String, String)> {
+    let digits: String = value.chars().filter(char::is_ascii_digit).collect();
+    let (month, year) = match (value.contains('/'), digits.len()) {
+        (true, _) => {
+            let (m, y) = value.split_once('/')?;
+            (m.trim().to_owned(), y.trim().to_owned())
+        }
+        (false, 6) if digits.starts_with("20") => (digits[4..].to_owned(), digits[..4].to_owned()),
+        (false, 6) => (digits[..2].to_owned(), digits[2..].to_owned()),
+        (false, 4) => (digits[..2].to_owned(), digits[2..].to_owned()),
+        _ => return None,
+    };
+    let month: u32 = month.parse().ok().filter(|m| (1..=12).contains(m))?;
+    let year = match year.len() {
+        2 => format!("20{year}"),
+        4 => year,
+        _ => return None,
+    };
+    year.parse::<u32>().ok()?;
+    Some((format!("{month:02}"), year))
 }
 
 /// Makes a vault from the token; the node's makes the SDK helper's.
@@ -152,7 +198,8 @@ pub fn origin_allowed(page: &str, urls: &[String]) -> bool {
 }
 
 /// The helper the node runs under Node.js: the token as its first line in, then one JSON line in per reference (or
-/// `{"vaults":true}` for the names of the vaults the token reads), one out, over a client made once.
+/// `{"vaults":true}` for the names of the vaults the token reads, `{"cards":true}` for its Credit Card items,
+/// `{"card":"op://vault/item"}` for one's details), one out, over a client made once.
 pub const HELPER: &str = r#"// fleetd's 1Password helper: resolves op:// references with the SDK and a service account token. The token is the
 // first line on stdin, not in the environment, where the user's other processes could read it.
 import { createClient, RateLimitExceededError } from "@1password/sdk";
@@ -189,6 +236,45 @@ async function websites(reference) {
   return (item.websites ?? []).map((w) => w.url).filter(Boolean);
 }
 
+// op://vault/item: a Credit Card item's details, for an approved purchase's fill only.
+async function card(reference) {
+  const [vaultName, itemName] = reference.slice("op://".length).split("?")[0].split("/");
+  vaults ??= await client.vaults.list();
+  const vault = named(vaults, vaultName, "vault");
+  if (!items.has(vault.id)) items.set(vault.id, await client.items.list(vault.id));
+  const overview = named(items.get(vault.id), itemName, "item");
+  if (overview.category !== "CreditCard") throw new Error(`${itemName} is not a Credit Card item`);
+  const item = await client.items.get(vault.id, overview.id);
+  const fields = item.fields ?? [];
+  const field = (ids, types, titles) =>
+    (fields.find((f) => ids.includes(f.id)) ??
+      fields.find((f) => types.includes(f.fieldType)) ??
+      fields.find((f) => titles.test(f.title ?? "")))?.value ?? "";
+  return {
+    number: field(["ccnum", "number"], ["CreditCardNumber"], /number/i),
+    expiry: field(["expiry"], ["MonthYear"], /expir/i),
+    cvc: field(["cvv"], [], /verification|cvv|cvc|security code/i),
+    name: field(["cardholder"], [], /cardholder|name on card/i),
+  };
+}
+
+// Every Credit Card item the token reads: names and references only.
+async function cards() {
+  vaults ??= await client.vaults.list();
+  const out = [];
+  for (const vault of vaults) {
+    if (!items.has(vault.id)) items.set(vault.id, await client.items.list(vault.id));
+    const all = items.get(vault.id);
+    for (const item of all.filter((i) => i.category === "CreditCard")) {
+      const plain = (s) => !/[/?\r\n]/.test(s);
+      const vaultPart = plain(vault.title) && vaults.filter((v) => v.title === vault.title).length === 1 ? vault.title : vault.id;
+      const itemPart = plain(item.title) && all.filter((i) => i.title === item.title).length === 1 ? item.title : item.id;
+      out.push({ ref: `op://${vaultPart}/${itemPart}`, title: item.title, vault: vault.title });
+    }
+  }
+  return out;
+}
+
 for await (const line of createInterface({ input: process.stdin })) {
   if (token === undefined) {
     token = JSON.parse(line).token ?? "";
@@ -197,10 +283,14 @@ for await (const line of createInterface({ input: process.stdin })) {
   let answer;
   try {
     client ??= await createClient({ auth: token, integrationName: "fleetd", integrationVersion: "1" });
-    const { ref, vaults: list } = JSON.parse(line);
+    const { ref, vaults: list, card: cardRef, cards: listCards } = JSON.parse(line);
     if (list) {
       vaults ??= await client.vaults.list();
       answer = { vaults: vaults.map((v) => v.title) };
+    } else if (listCards) {
+      answer = { cards: await cards() };
+    } else if (cardRef) {
+      answer = { card: await card(cardRef) };
     } else {
       const urls = await websites(ref);
       // An item without a website fills nowhere, so its value isn't read.
@@ -385,6 +475,51 @@ impl OnePassword {
             .collect())
     }
 
+    /// The Credit Card items the token reads: a Navi's card picker.
+    pub async fn cards(
+        &self,
+    ) -> Result<Vec<fleetd_contracts::purchase::OnePasswordCard>, CredError> {
+        let parsed = self.exchange(json!({ "cards": true })).await?;
+        Ok(parsed["cards"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|c| serde_json::from_value(c.clone()).ok())
+            .collect())
+    }
+
+    async fn card(&self, reference: &str) -> Result<Card, CredError> {
+        let fail = |message: &str| CredError {
+            message: message.to_owned(),
+            rate_limited: false,
+        };
+        let mut parsed = self.exchange(json!({ "card": reference })).await?;
+        let mut take = |key: &str| match parsed["card"].get_mut(key).map(Value::take) {
+            Some(Value::String(value)) => Zeroizing::new(value),
+            _ => Zeroizing::new(String::new()),
+        };
+        let (number, expires, cvc, name) =
+            (take("number"), take("expiry"), take("cvc"), take("name"));
+        let number = Zeroizing::new(
+            number
+                .chars()
+                .filter(char::is_ascii_digit)
+                .collect::<String>(),
+        );
+        if number.len() < 12 {
+            return Err(fail("the item has no card number"));
+        }
+        let (month, year) =
+            expiry(&expires).ok_or_else(|| fail("the item has no expiry date fleetd can read"))?;
+        Ok(Card {
+            number,
+            month: Zeroizing::new(month),
+            year: Zeroizing::new(year),
+            cvc,
+            name,
+        })
+    }
+
     async fn ask(&self, reference: &str) -> Result<Credential, CredError> {
         let fail = |message: &str| CredError {
             message: message.to_owned(),
@@ -415,6 +550,11 @@ impl Vault for OnePasswordVault {
         let (helper, reference) = (self.0.clone(), reference.to_owned());
         Box::pin(async move { helper.ask(&reference).await })
     }
+
+    fn card(&self, reference: &str) -> CardFuture {
+        let (helper, reference) = (self.0.clone(), reference.to_owned());
+        Box::pin(async move { helper.card(&reference).await })
+    }
 }
 
 /// The node's vaults: the SDK helper with the session's token.
@@ -431,7 +571,8 @@ pub const FAKE_TOKEN: &str = "ops_devbox-fake-service-account";
 
 /// A fake `@1password/sdk` at the pinned version in `home`'s install, so the node runs its real helper against it
 /// with no npm and no 1Password: it takes [`FAKE_TOKEN`] only, refuses any other in an error that echoes it, reads
-/// vaults Agents and Shared, and in Agents an item Shop on https://shop.devbox.test. None without Node.js.
+/// vaults Agents and Shared, in Agents an item Shop on https://shop.devbox.test and in Shared a Credit Card item Visa.
+/// None without Node.js.
 #[cfg(test)]
 pub fn fake_sdk(home: &Path) -> Option<()> {
     std::process::Command::new("node")
@@ -455,7 +596,18 @@ export async function createClient({ auth }) {
     vaults: { list: async () => [{ id: "v1", title: "Agents" }, { id: "v2", title: "Shared" }] },
     items: {
       list: async (vault) =>
-        vault === "v1" ? [{ id: "i1", title: "Shop", websites: [{ url: "https://shop.devbox.test/login" }] }] : [],
+        vault === "v1"
+          ? [{ id: "i1", title: "Shop", category: "Login", websites: [{ url: "https://shop.devbox.test/login" }] }]
+          : [{ id: "i2", title: "Visa", category: "CreditCard", websites: [] }],
+      get: async (vault, item) => ({
+        id: item,
+        fields: [
+          { id: "cardholder", title: "cardholder name", fieldType: "Text", value: "Ada Devbox" },
+          { id: "ccnum", title: "number", fieldType: "CreditCardNumber", value: "4242 4242 4242 4242" },
+          { id: "cvv", title: "verification number", fieldType: "Concealed", value: "737" },
+          { id: "expiry", title: "expiry date", fieldType: "MonthYear", value: "03/2030" },
+        ],
+      }),
     },
     secrets: { resolve: async (ref) => `pw-${ref.split("/").at(-1)}` },
   };
@@ -481,6 +633,22 @@ mod tests {
         let shop = helper.ask("op://Agents/Shop/password").await.unwrap();
         assert_eq!(shop.value.as_str(), "pw-password");
         assert_eq!(shop.urls, ["https://shop.devbox.test/login"]);
+        let cards = helper.cards().await.unwrap();
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].reference.as_str(), "op://Shared/Visa");
+        assert_eq!(
+            (cards[0].title.as_str(), cards[0].vault.as_str()),
+            ("Visa", "Shared")
+        );
+        let card = helper.card("op://Shared/Visa").await.unwrap();
+        assert_eq!(card.number.as_str(), "4242424242424242");
+        assert_eq!((card.month.as_str(), card.year.as_str()), ("03", "2030"));
+        assert_eq!(
+            (card.cvc.as_str(), card.name.as_str()),
+            ("737", "Ada Devbox")
+        );
+        let login = helper.card("op://Agents/Shop").await.err().unwrap();
+        assert_eq!(login.message, "1Password: Shop is not a Credit Card item");
         let refused = OnePassword::new(home.path(), Zeroizing::new("ops_wrong".into()))
             .vault_names()
             .await
@@ -489,6 +657,22 @@ mod tests {
             refused.message,
             "1Password: invalid service account token ops_wrong"
         );
+    }
+
+    #[test]
+    fn an_expiry_reads_in_each_way_1password_keeps_it() {
+        for (kept, month, year) in [
+            ("03/2030", "03", "2030"),
+            ("3/30", "03", "2030"),
+            ("203003", "03", "2030"),
+            ("032030", "03", "2030"),
+            ("0330", "03", "2030"),
+        ] {
+            assert_eq!(expiry(kept), Some((month.into(), year.into())), "{kept}");
+        }
+        for bad in ["", "13/2030", "march", "03/203"] {
+            assert_eq!(expiry(bad), None, "{bad}");
+        }
     }
 
     #[test]

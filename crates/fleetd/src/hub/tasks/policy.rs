@@ -35,11 +35,14 @@ pub const WORKER_OPS: &[&str] = &[
     "preview_config_propose",
     "chat_image",
 ];
-/// The calls a task's node makes for it: its browser sessions (node/browser).
+/// The calls a task's node makes for it: its browser sessions (node/browser), and a Navi's purchases in them.
 pub const NODE_OPS: &[&str] = &[
     "browser_session",
     "browser_recording_part",
     "browser_takeover",
+    "purchase_open",
+    "purchase_claim",
+    "purchase_filled",
     "session_route",
     "session_step",
 ];

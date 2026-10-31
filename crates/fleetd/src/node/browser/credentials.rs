@@ -37,8 +37,8 @@ pub struct Credentials {
     filled: Mutex<HashMap<String, Secrets>>,
 }
 
-struct SessionVault {
-    vault: Arc<dyn Vault>,
+pub(super) struct SessionVault {
+    pub(super) vault: Arc<dyn Vault>,
     cache: Cache,
 }
 
@@ -51,7 +51,7 @@ impl Credentials {
         }
     }
 
-    fn filled(&self, thread: &str, reference: &str, value: &str) {
+    pub(super) fn filled(&self, thread: &str, reference: &str, value: &str) {
         let mut filled = lock(&self.filled);
         let values = filled.entry(thread.to_owned()).or_default();
         if !values.0.iter().any(|(_, v)| v == value) {
@@ -84,7 +84,7 @@ impl Broker {
     }
 
     /// The session's vault: the one made at its first fill, or a new one with the token from its secrets.
-    async fn vault(&self, session: &Session) -> Result<Arc<SessionVault>, McpToolError> {
+    pub(super) async fn vault(&self, session: &Session) -> Result<Arc<SessionVault>, McpToolError> {
         self.vault_by(session.id.to_string(), session.thread.clone())
             .await
     }

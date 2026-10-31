@@ -1,6 +1,6 @@
 //! Each person's 1Password service account token (D235; the wire types are `onepassword.rs`). The tools,
-//! `onepassword_get`, `onepassword_set`, `onepassword_remove` and `onepassword_test`, are a person's own, from their
-//! own devices. The token comes sealed to each machine's box key; the hub relays each box to its node and keeps only
+//! `onepassword_get`, `onepassword_set`, `onepassword_remove`, `onepassword_test` and `onepassword_cards` (the Credit
+//! Card items it reads, for a Navi's card picker), are a person's own, from their own devices. The token comes sealed to each machine's box key; the hub relays each box to its node and keeps only
 //! the fingerprint it answers (`onepassword_tokens`), never a box or the token.
 //!
 //! At a launch the hub names the person whose work it is ([`for_task`], [`for_lead`]: the Claude accounts' rule, a
@@ -17,11 +17,11 @@ use fleetd_contracts::claude_accounts::{ClaudeSeal, ClaudeSealedOn};
 use fleetd_contracts::ids::{MachineId, ProjectRef};
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::mcp::{
-    ErrorCode, OnePasswordGetInput, OnePasswordGetOutput, OnePasswordRemoveInput,
-    OnePasswordRemoveOutput, OnePasswordSetInput, OnePasswordSetOutput, OnePasswordTestInput,
-    OnePasswordTestOutput,
+    ErrorCode, OnePasswordCardsInput, OnePasswordCardsOutput, OnePasswordGetInput,
+    OnePasswordGetOutput, OnePasswordRemoveInput, OnePasswordRemoveOutput, OnePasswordSetInput,
+    OnePasswordSetOutput, OnePasswordTestInput, OnePasswordTestOutput,
 };
-use fleetd_contracts::node_link::CAP_ONEPASSWORD;
+use fleetd_contracts::node_link::{CAP_ONEPASSWORD, CAP_ONEPASSWORD_CARDS};
 use fleetd_contracts::onepassword::{OnePasswordTest, OnePasswordToken};
 use fleetd_contracts::people::{Person, PersonId};
 use fleetd_contracts::prim::True;
@@ -38,6 +38,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("onepassword_set", set);
     tools.add("onepassword_remove", remove);
     tools.add("onepassword_test", test);
+    tools.add("onepassword_cards", cards);
 }
 
 /// The person's saved token, as the tools show it.
@@ -280,6 +281,88 @@ async fn remove(
     })
 }
 
+/// The machine a person's token is tested or read on: the one asked for, which must hold it, else the first online.
+fn holding(
+    hub: &Hub,
+    held: &[ClaudeSealedOn],
+    asked: Option<&MachineId>,
+) -> Result<MachineId, ToolError> {
+    let machine_id = match asked {
+        Some(m) if held.iter().any(|s| &s.machine_id == m) => m.clone(),
+        Some(m) => {
+            return Err(error(
+                ErrorCode::Invalid,
+                format!("{m} doesn't hold it."),
+                format!("Save it again while {m} is online."),
+            ));
+        }
+        None => held
+            .iter()
+            .map(|s| s.machine_id.clone())
+            .find(|m| node_ready(hub, m).is_ok())
+            .ok_or_else(|| {
+                error(
+                    ErrorCode::MachineOffline,
+                    "No machine holding it is online to read it on.",
+                    "Start a node, then try again.",
+                )
+            })?,
+    };
+    node_ready(hub, &machine_id)?;
+    Ok(machine_id)
+}
+
+/// The Credit Card items the caller's token reads, listed on a machine holding it: never a card's details.
+async fn cards(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: OnePasswordCardsInput,
+) -> Result<OnePasswordCardsOutput, ToolError> {
+    let person = me(&hub, &caller)?;
+    let id = &person.person_id;
+    let held = token(&hub.db, id)?
+        .ok_or_else(|| {
+            error(
+                ErrorCode::NotFound,
+                "You have no 1Password token saved.",
+                "Paste a service account token in Settings › You › 1Password first.",
+            )
+        })?
+        .sealed_on;
+    let machine_id = holding(&hub, &held, input.machine_id.as_ref())?;
+    if !hub.link.node_can(&machine_id, CAP_ONEPASSWORD_CARDS) {
+        return Err(error(
+            ErrorCode::Invalid,
+            format!("{machine_id}'s node is too old to list 1Password cards."),
+            format!("Update fleetd on {machine_id} and restart its node."),
+        ));
+    }
+    let listed = hub
+        .executors
+        .onepassword_cards(&machine_id, id.clone())
+        .await
+        .map_err(from_executor)?;
+    let (cards, error) = match listed {
+        Ok(cards) => (cards, None),
+        Err(why) => (Vec::new(), Some(why)),
+    };
+    let next = match (&error, cards.is_empty()) {
+        (Some(_), _) => Some("Check the token in Settings › You › 1Password, then try again.".to_owned()),
+        (None, true) => Some(
+            "This token reads no Credit Card item: add the card to a vault it reads in 1Password, then try again."
+                .to_owned(),
+        ),
+        (None, false) => None,
+    };
+    Ok(OnePasswordCardsOutput {
+        machine_id,
+        cards,
+        error,
+        next,
+        truncated: None,
+    })
+}
+
 async fn test(
     hub: Arc<Hub>,
     caller: Caller,
@@ -296,28 +379,7 @@ async fn test(
             )
         })?
         .sealed_on;
-    let machine_id = match &input.machine_id {
-        Some(m) if held.iter().any(|s| &s.machine_id == m) => m.clone(),
-        Some(m) => {
-            return Err(error(
-                ErrorCode::Invalid,
-                format!("{m} doesn't hold it."),
-                format!("Save it again while {m} is online."),
-            ));
-        }
-        None => held
-            .iter()
-            .map(|s| s.machine_id.clone())
-            .find(|m| node_ready(&hub, m).is_ok())
-            .ok_or_else(|| {
-                error(
-                    ErrorCode::MachineOffline,
-                    "No machine holding it is online to test it on.",
-                    "Start a node, then test again.",
-                )
-            })?,
-    };
-    node_ready(&hub, &machine_id)?;
+    let machine_id = holding(&hub, &held, input.machine_id.as_ref())?;
     let listed = hub
         .executors
         .onepassword_test(&machine_id, id.clone())

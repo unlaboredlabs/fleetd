@@ -4,6 +4,7 @@ import type { ChatItem, CommandApprovalItem, GatedClass, GatedRunSpec, HumanRequ
 import { shellWord } from "../../../shared/hidden";
 import type { HubError } from "../../../shared/hub";
 import { shortElapsed } from "../chat/format";
+import { purchaseOutcome, purchaseTitle } from "./purchase";
 import { answeredWords, previewNeedsConfirm, previewOutcome } from "./toolPreview";
 
 /**
@@ -103,6 +104,7 @@ const took = (item: CommandApprovalItem): string | undefined => {
 /** The one line an answered approval folds to, or undefined while it waits for Approve / Deny. */
 export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined => {
   if (item.previewConfig !== undefined) return configOutcome(item);
+  if (item.purchase !== undefined) return purchaseOutcome(item);
   if (item.permission?.preview !== undefined) return previewOutcome(item.permission.preview, item);
   const time = took(item);
   switch (item.state) {
@@ -152,9 +154,11 @@ export const secretOutcome = (item: SecretRequestItem): Outcome | undefined => {
   return NEWER;
 };
 
-/** Only a command that can't be undone asks once more before it runs. */
+/** A command that can't be undone, a delete or a spend, and every purchase, ask once more before they run. */
 export const needsConfirm = (item: CommandApprovalItem): boolean =>
-  item.gated?.class === "irreversible" || (item.permission?.preview !== undefined && previewNeedsConfirm(item.permission.preview));
+  item.gated?.class === "irreversible" ||
+  item.purchase !== undefined ||
+  (item.permission?.preview !== undefined && previewNeedsConfirm(item.permission.preview));
 
 /** The lead's line without its code marks, for a folded row's plain text. */
 const plain = (text: string): string => text.replace(/`/gu, "");
@@ -164,7 +168,9 @@ export const approvalTitle = (item: CommandApprovalItem): string =>
   plain(
     item.previewConfig !== undefined
       ? `How to run Try it: ${item.previewConfig.why}`
-      : (item.gated?.reason ??
+      : item.purchase !== undefined
+        ? purchaseTitle(item.purchase)
+        : (item.gated?.reason ??
           (item.permission === undefined
             ? "An agent's request"
             : item.permission.preview !== undefined

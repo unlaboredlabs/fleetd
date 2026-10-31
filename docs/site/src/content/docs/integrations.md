@@ -17,8 +17,8 @@ The hub decides each call, not the Navi. The model can't talk its way past it.
 |---|---|---|
 | **Reads** | The tools you ticked as only reading when you connected the server | Runs without asking. |
 | **Writes, sends, deletes, shares** | Every other tool | Asks you in the chat, **every time**, with exactly what it would send. There is no "always allow". |
-| **Spending** | A `pay`, `purchase` or `checkout` tool | Asks you, marked **Costs money**, and asks once more before it runs. |
-| **Never** | Moving money between accounts (`transfer`, `send_money`, `send_transaction`), trading (`buy_stock`, `sell`, and any `place_order` or `submit_order`, a shop's or a restaurant's too), creating accounts in your name; sending or storing what looks like a password, key or token; a call too large to show on the card in full | Refused, even if you would approve it. The Navi is told to leave it to you. Place orders yourself, or through a screen you take over. |
+| **Spending** | A `pay`, `purchase`, `checkout`, `book`, `reserve` or `subscribe` tool, and one that makes an order, a booking or a reservation (`create_order`, `confirm_booking`; reading one, such as `list_orders`, doesn't count) | Asks you, marked **Costs money**, and asks once more before it runs. Only you answer it, whatever approval mode the Navi runs in. |
+| **Never** | Moving money between accounts (`transfer`, `send_money`, `send_transaction`), trading and crypto (`buy_stock`, `sell`, `buy_crypto`, and any `place_order` or `submit_order`, which could be a broker's), creating accounts in your name; sending or storing what looks like a password, key or token; a call too large to show on the card in full | Refused, even if you would approve it. The Navi is told to leave it to you. A shop's checkout goes through a [purchase](/docs/navi#purchases) instead. |
 
 The same rules cover the MCP servers in your own claude setup: every one of their tools asks.
 
