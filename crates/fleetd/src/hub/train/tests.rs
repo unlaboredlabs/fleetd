@@ -1123,9 +1123,7 @@ struct FakeHost {
     /// Bases the landing scanner watches.
     watched: Mutex<HashSet<String>>,
     /// The project's train settings; None reads as unreadable.
-    train: Mutex<Option<fleetd_contracts::project_settings::TrainSettings>>,
     /// The checkouts whose train settings were read, in order.
-    train_read: Mutex<Vec<ProjectRef>>,
     /// The project's GitHub repos and their checkouts: none known unless a test sets them.
     repos: Mutex<Vec<(String, ProjectRef)>>,
     /// Orders opened through the host, in order: request id and text. Each is `W<100 + n>`, open until closed.
@@ -1202,13 +1200,6 @@ impl FakeHost {
 }
 
 impl TrainHost for FakeHost {
-    fn train_settings(
-        &self,
-        checkout: &ProjectRef,
-    ) -> Option<fleetd_contracts::project_settings::TrainSettings> {
-        self.train_read.lock().unwrap().push(checkout.clone());
-        self.train.lock().unwrap().clone()
-    }
     fn github_repos(&self, _: &ProjectRef) -> Vec<(String, ProjectRef)> {
         self.repos.lock().unwrap().clone()
     }
@@ -1587,8 +1578,6 @@ impl Kit {
             ws_closed: Mutex::default(),
             branches: Mutex::default(),
             watched: Mutex::default(),
-            train: Mutex::new(Some(Default::default())),
-            train_read: Mutex::default(),
             repos: Mutex::default(),
             orders: Mutex::default(),
             closed_orders: Mutex::default(),
@@ -6000,18 +5989,18 @@ const REPOS: [RepoCi; 2] = [
     },
 ];
 
-fn train_settings(
-    fast: &[&str],
-    after: &[&str],
-) -> fleetd_contracts::project_settings::TrainSettings {
-    serde_json::from_value(json!({ "fastChecks": fast, "afterMerge": after })).unwrap()
+/// The base's `.fleetd/train.json` with these lists, read afresh at the train's next pass.
+fn train_file(kit: &Kit, fast: &[&str], after: &[&str]) {
+    let file = json!({ "fastChecks": fast, "afterMerge": after }).to_string();
+    kit.commit("main", &[(".fleetd/train.json", Some(&file))], None);
+    kit.train.repo_checks.lock().unwrap().clear();
 }
 
 /// A kit on `repo`'s CI, with no wait for CI that doesn't finish at once.
 fn kit_on(repo: &RepoCi) -> Kit {
     let kit = Kit::with(FakeCi::Actions, one_poll);
     *kit.gh.required.lock().unwrap() = Some(repo.required.iter().map(|s| s.to_string()).collect());
-    *kit.host.train.lock().unwrap() = Some(train_settings(repo.fast, &[]));
+    train_file(&kit, repo.fast, &[]);
     let runs = repo.runs;
     answer_checks(&kit, runs);
     kit
@@ -6069,7 +6058,7 @@ async fn the_train_never_waits_on_a_check_outside_the_fast_set() {
 
     // The slow check in the fast set: the train waits for it, here until its (zero) timeout.
     let kit = kit_on(&REPOS[0]);
-    *kit.host.train.lock().unwrap() = Some(train_settings(&["e2e (macos-latest)"], &[]));
+    train_file(&kit, &["e2e (macos-latest)"], &[]);
     let a = kit
         .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
         .await;
@@ -6087,10 +6076,7 @@ async fn the_train_never_waits_on_a_check_outside_the_fast_set() {
     );
 
     // Marked after-merge only, it is never waited for again.
-    *kit.host.train.lock().unwrap() = Some(train_settings(
-        &["e2e (macos-latest)"],
-        &["e2e (macos-latest)"],
-    ));
+    train_file(&kit, &["e2e (macos-latest)"], &["e2e (macos-latest)"]);
     let b = kit
         .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
         .await;
@@ -6121,7 +6107,7 @@ async fn the_train_never_waits_on_a_check_outside_the_fast_set() {
         "{:?}",
         stopped.last_error
     );
-    *kit.host.train.lock().unwrap() = Some(train_settings(&[], &["docs"]));
+    train_file(&kit, &[], &["docs"]);
     let b = kit
         .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
         .await;
@@ -6129,11 +6115,12 @@ async fn the_train_never_waits_on_a_check_outside_the_fast_set() {
     assert_eq!(state_of(&kit, &b), ChangeState::Merged);
 }
 
-/// Unreadable settings are no license to skip checks: the train waits for every check, as before.
+/// An unreadable train file is no license to skip checks: the train waits for every check, as before.
 #[tokio::test(flavor = "multi_thread")]
-async fn unreadable_train_settings_wait_for_every_check() {
+async fn an_unreadable_train_file_waits_for_every_check() {
     let kit = kit_on(&REPOS[0]);
-    *kit.host.train.lock().unwrap() = None;
+    kit.commit("main", &[(".fleetd/train.json", Some("{"))], None);
+    kit.train.repo_checks.lock().unwrap().clear();
     let a = kit
         .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
         .await;
@@ -7230,7 +7217,7 @@ async fn an_added_fast_check_that_reports_late_is_waited_for() {
     let clock = Arc::new(Sleeps::default());
     let kit = Kit::on_clock(FakeCi::Actions, clock);
     *kit.gh.required.lock().unwrap() = Some(vec!["build".into()]);
-    *kit.host.train.lock().unwrap() = Some(train_settings(&["integration"], &[]));
+    train_file(&kit, &["integration"], &[]);
     let (reads, log) = (Arc::new(Mutex::new(0u32)), kit.gh.log.clone());
     let seen = reads.clone();
     answer_checks(&kit, move || {
@@ -7258,7 +7245,7 @@ async fn an_added_fast_check_that_reports_late_is_waited_for() {
     // Never registered: CI times out naming it, and nothing merges.
     let kit = Kit::with(FakeCi::Actions, one_poll);
     *kit.gh.required.lock().unwrap() = Some(vec!["build".into()]);
-    *kit.host.train.lock().unwrap() = Some(train_settings(&["integration"], &[]));
+    train_file(&kit, &["integration"], &[]);
     answer_checks(&kit, || vec![run(1, "build", Some("success"))]);
     let a = kit
         .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
@@ -7279,7 +7266,7 @@ async fn an_added_fast_check_that_reports_late_is_waited_for() {
 #[tokio::test(flavor = "multi_thread")]
 async fn with_no_required_checks_the_train_waits_for_the_added_ones_only() {
     let kit = Kit::with(FakeCi::Actions, one_poll);
-    *kit.host.train.lock().unwrap() = Some(train_settings(&["integration"], &[]));
+    train_file(&kit, &["integration"], &[]);
     answer_checks(&kit, || {
         vec![run(1, "integration", Some("success")), run(2, "slow", None)]
     });
@@ -7289,7 +7276,7 @@ async fn with_no_required_checks_the_train_waits_for_the_added_ones_only() {
     assert!(kit.train.step(REPO).await);
     assert_eq!(state_of(&kit, &a), ChangeState::Merged);
 
-    *kit.host.train.lock().unwrap() = Some(train_settings(&[], &[]));
+    train_file(&kit, &[], &[]);
     let b = kit
         .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
         .await;
@@ -7690,7 +7677,7 @@ async fn a_check_that_fails_after_the_merge_opens_one_fix_order() {
         let kit = Kit::build(FakeCi::Actions, |_| {}, false, clock.clone());
         *kit.gh.required.lock().unwrap() =
             Some(repo.required.iter().map(|s| s.to_string()).collect());
-        *kit.host.train.lock().unwrap() = Some(train_settings(repo.fast, &[]));
+        train_file(&kit, repo.fast, &[]);
         // The slow check runs while the train merges, then fails on main.
         let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let (now, slow, names) = (
@@ -7776,7 +7763,7 @@ async fn a_check_red_on_main_holds_nothing_and_its_note_says_whether_a_fix_is_un
     let clock = Arc::new(Dial::default());
     let kit = Kit::build(FakeCi::Actions, |_| {}, false, clock.clone());
     *kit.gh.required.lock().unwrap() = Some(vec!["unit".into()]);
-    *kit.host.train.lock().unwrap() = Some(train_settings(&[], &[]));
+    train_file(&kit, &[], &[]);
     let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let now = failed.clone();
     answer_checks(&kit, move || {

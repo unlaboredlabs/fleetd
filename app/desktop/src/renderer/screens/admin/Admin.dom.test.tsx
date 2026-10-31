@@ -268,8 +268,8 @@ it("never counts setup left on Settings' entry for a member", async () => {
   expect(sent("setup_list")).toEqual([]);
 });
 
-it("tells a member who follows a link to a Hub page, or an old Administration one, that it isn't theirs, and reads nothing of it", async () => {
-  for (const hash of ["#/settings/hub/people", "#/admin/people", "#/settings/hub/accounts", "#/admin/hub"]) {
+it("tells a member who follows a link to a Hub page that it isn't theirs, and reads nothing of it", async () => {
+  for (const hash of ["#/settings/hub/people", "#/settings/hub/accounts", "#/settings/hub/tools"]) {
     window.location.hash = hash;
     await render({ me: bob, admin: false });
     expect(host.querySelector("[data-screen='settings.hub.denied']"), hash).not.toBeNull();
@@ -279,12 +279,6 @@ it("tells a member who follows a link to a Hub page, or an old Administration on
   }
   expect(sent("people_list")).toEqual([]);
   expect(sent("claude_settings_get")).toEqual([]);
-});
-
-it("opens an old Administration link on the Hub page that has it now", async () => {
-  window.location.hash = "#/settings/hub/people";
-  await render({ me: sam, admin: true });
-  expect(row("Sam Rivera").textContent).toContain("you");
 });
 
 it("lists the people with their roles and devices, and changes a role", async () => {
@@ -381,7 +375,7 @@ it("lets a hub with no hub_info at all reach the Hub group, whose Every project 
   expect(hubGroup()).not.toBeNull();
   act(() => root.unmount());
   root = createRoot(host);
-  window.location.hash = "#/admin/hub";
+  window.location.hash = "#/settings/hub/tools";
   await render(null, "page", true);
   expect(host.querySelector("[data-screen='settings.hub.tools']")).not.toBeNull();
 });

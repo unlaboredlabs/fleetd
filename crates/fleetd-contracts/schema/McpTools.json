@@ -15813,14 +15813,6 @@
         "title": {
           "type": "string"
         },
-        "train": {
-          "$ref": "#/$defs/TrainSettings",
-          "default": {
-            "afterMerge": [],
-            "fastChecks": []
-          },
-          "description": "How the merge train treats the checks of the project's repo; none set by default."
-        },
         "workspaceRoot": {
           "type": "string"
         },
@@ -15897,7 +15889,7 @@
         },
         "repo": {
           "$ref": "#/$defs/RepoName",
-          "description": "The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title, keepWorktrees and train are the project's either way."
+          "description": "The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title and keepWorktrees are the project's either way."
         },
         "setup": {
           "$ref": "#/$defs/WorktreeSetup",
@@ -15909,10 +15901,6 @@
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
-        },
-        "train": {
-          "$ref": "#/$defs/TrainSettings",
-          "description": "Replaces how the merge train treats the repo's checks: the checks it also waits for, and those left for\nafter the merge."
         }
       },
       "required": [
@@ -22149,36 +22137,6 @@
         "chips",
         "mergedToday"
       ],
-      "type": "object"
-    },
-    "TrainSettings": {
-      "description": "How the merge train treats the checks of the project's repo. It waits only for its fast set: the checks the base\nbranch requires, read from its ruleset or branch protection, plus `fastChecks`, each until it reports, however late\nit starts. It never waits for any other check; one of those that has already failed when the fast set is green\nstill stops the merge, unless it is in `afterMerge`. A check the base requires is always in the fast set: GitHub\nwon't merge without it. With no required check and none added, it waits for every check. After a merge it watches\nevery check outside the fast set on the merged commit; one that fails there opens a fix order for the project,\nonce per failure.",
-      "properties": {
-        "afterMerge": {
-          "default": [],
-          "description": "Checks that never stop a merge, even once failed: they only run after it.",
-          "items": {
-            "maxLength": 200,
-            "minLength": 1,
-            "type": "string"
-          },
-          "maxItems": 50,
-          "type": "array",
-          "uniqueItems": true
-        },
-        "fastChecks": {
-          "default": [],
-          "description": "Checks the train waits for besides the required ones.",
-          "items": {
-            "maxLength": 200,
-            "minLength": 1,
-            "type": "string"
-          },
-          "maxItems": 50,
-          "type": "array",
-          "uniqueItems": true
-        }
-      },
       "type": "object"
     },
     "TrainState": {

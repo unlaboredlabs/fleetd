@@ -2,10 +2,10 @@
 // picture (Picture.tsx), its name, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx), its
 // worktrees, its agents' environment variables, a Navi's Telegram (Telegram.tsx), approvals (NaviApprovals.tsx) and
 // integrations (its MCP servers; its linked hubs are in You › Hubs), its browser's sign-ins and a way to its skills
-// (NaviSignins.tsx), its card and purchases (NaviPayments.tsx), the merge train's checks (TrainSetting.tsx), and deleting
-// it. Its memory refresh is on its Instructions & memory. Reads project_settings_get; writes project_settings_set,
-// project_env_set (through main, which seals each secret to the project machine's key) and project_remove. A secret's
-// value is write-only: typed here once, sealed in main, and only its fingerprint ever comes back.
+// (NaviSignins.tsx), its card and purchases (NaviPayments.tsx), and deleting it. Its memory refresh is on its
+// Instructions & memory. Reads project_settings_get; writes project_settings_set, project_env_set (through main, which
+// seals each secret to the project machine's key) and project_remove. A secret's value is write-only: typed here once,
+// sealed in main, and only its fingerprint ever comes back.
 import { useEffect, useState } from "react";
 import { Button, Dialog, Field, Input, Radio, RadioGroup, Separator, Switch, Text, Textarea, Truncate } from "../../ui";
 import type { ProjectEnvVar, ProjectSettings as Settings, ToolInput } from "../../../shared/contracts";
@@ -41,7 +41,6 @@ import {
 import { RepoSetting } from "./RepoSetting";
 import { isOwn } from "./repoModel";
 import { replaceRoute, type SettingsRoute } from "./route";
-import { TrainSetting } from "./TrainSetting";
 import s from "./settings.module.css";
 
 type Echo = { ok: boolean; text: string };
@@ -161,7 +160,6 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
           <Separator />
         </>
       ) : null}
-      <TrainSetting settings={settings} />
       <Separator />
       <Setting reveal="projects.delete" label="Delete project" help="Stops its agents and removes it from fleetd, with its fleetd worktrees.">
         <Text size="sm" tone="quiet">

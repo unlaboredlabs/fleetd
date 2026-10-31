@@ -1,13 +1,11 @@
 //! A project's own settings (Settings › Projects in the app): `project_settings_get`, `project_settings_set` and
 //! `project_env_set`, and what the hub keeps of them: `project_settings.keep_worktrees`,
 //! `project_settings.memory_refresh` (the nightly memory refresh, on by default), `project_settings.setup` (the
-//! commands each new worktree runs before its agent starts, sent with each task's launch), `project_settings.train`
-//! (the checks the merge train waits for, and those it leaves for after the merge) and the `project_env` rows.
+//! commands each new worktree runs before its agent starts, sent with each task's launch) and the `project_env` rows.
 //!
 //! A repo of the project (W79) can have its own `setup` (`repos.setup`): a call that names the repo reads and writes
-//! it, and an empty one is the project's. A task's launch reads its repo's, for now always the project's own repo (none for a plain directory). The merge train's rules are the
-//! repo's: a call that names the repo reads and writes `project_settings.train` of its checkout, which the repo's train
-//! reads. Everything else is the project's.
+//! it, and an empty one is the project's. A task's launch reads its repo's, for now always the project's own repo (none
+//! for a plain directory). Everything else is the project's.
 //!
 //! A variable is set on the project's node first, which keeps the value and adds it to every claude it starts for
 //! the project; only then does the hub record it. The hub's row holds a plain variable's value and a secret's
@@ -29,8 +27,7 @@ use fleetd_contracts::project_settings::{
     ENV_TOTAL_MAX_BYTES, ENV_VALUE_MAX_BYTES, env_total_over,
 };
 use fleetd_contracts::project_settings::{
-    EnvValue, EnvVarKind, EnvVarName, EnvVarSet, PROJECT_ENV_MAX, ProjectEnvVar, TrainSettings,
-    WorktreeSetup,
+    EnvValue, EnvVarKind, EnvVarName, EnvVarSet, PROJECT_ENV_MAX, ProjectEnvVar, WorktreeSetup,
 };
 use fleetd_contracts::repos::{ProjectRepo, RepoId, RepoName};
 use fleetd_contracts::secrets::{Base64Alphabet, SEAL_OVERHEAD, SecretFingerprint, base64_bytes};
@@ -157,22 +154,6 @@ impl ProjectSettingsStore<'_> {
         })
     }
 
-    /// How the merge train treats the project's repo's checks; the defaults when none are set.
-    pub fn train(&self, r: &ProjectRef) -> Result<TrainSettings, StoreError> {
-        let saved: Option<Option<String>> = self.db.with(|c| {
-            Ok(c.query_row(
-                "SELECT train FROM project_settings WHERE machine_id = ? AND project_id = ?",
-                params![r.machine_id.as_str(), r.project_id.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?)
-        })?;
-        Ok(saved
-            .flatten()
-            .and_then(|json| serde_json::from_str(&json).ok())
-            .unwrap_or_default())
-    }
-
     /// The setup commands a new worktree of `repo` runs: the repo's own, else the project's; `repo` none (the project's
     /// own directory, or a plain directory): the project's.
     pub fn setup_in(
@@ -236,21 +217,6 @@ impl ProjectSettingsStore<'_> {
             c.execute(
                 &format!("UPDATE repos SET {column} = ? WHERE n = ?"),
                 params![json, n],
-            )?;
-            Ok(())
-        })
-    }
-
-    /// Replaces the train settings; the defaults clear them.
-    pub fn set_train(&self, r: &ProjectRef, train: &TrainSettings) -> Result<(), StoreError> {
-        let json = (*train != TrainSettings::default())
-            .then(|| serde_json::to_string(train))
-            .transpose()?;
-        self.db.with(|c| {
-            c.execute(
-                "INSERT INTO project_settings (machine_id, project_id, train) VALUES (?, ?, ?)
-                 ON CONFLICT (machine_id, project_id) DO UPDATE SET train = excluded.train",
-                params![r.machine_id.as_str(), r.project_id.as_str(), json],
             )?;
             Ok(())
         })
@@ -446,7 +412,6 @@ async fn settings_of(
         memory_refresh: store.memory_refresh(r)?,
         env: store.env(r)?,
         setup: store.setup_in(r, repo_id)?.unwrap_or_default(),
-        train: store.train(repo.map_or(r, |repo| &repo.checkout))?,
         worktrees,
         worktrees_unknown,
     })
@@ -523,14 +488,8 @@ async fn set(
     if let Some(setup) = &input.setup {
         hub.db.project_settings().set_setup_in(&r, repo_id, setup)?;
     }
-    if let Some(train) = &input.train {
-        // The train's rules are the repo's: its checkout's, read by the repo's train whichever project enqueues.
-        let checkout = repo.as_ref().map_or(&r, |repo| &repo.checkout);
-        hub.db.project_settings().set_train(checkout, train)?;
-    }
     let settings = settings_of(&hub, &r, repo.as_ref()).await?;
     let next = if input.memory_refresh.is_some()
-        && input.train.is_none()
         && input.setup.is_none()
         && input.keep_worktrees.is_none()
     {
@@ -539,8 +498,6 @@ async fn set(
         } else {
             "The nightly memory refresh is off for this project; memory stays as the lead and you write it.".to_owned()
         }
-    } else if input.train.is_some() && input.setup.is_none() && input.keep_worktrees.is_none() {
-        "The merge train uses these settings from its next pass.".to_owned()
     } else if input.setup.as_ref().is_some_and(|s| !s.is_empty())
         && !hub
             .link

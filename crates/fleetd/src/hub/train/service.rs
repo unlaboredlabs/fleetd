@@ -1754,18 +1754,11 @@ impl Train {
         Ok(!ci.workflows.is_empty() || ci.required_checks.iter().any(|c| c != TRAIN_CONTEXT))
     }
 
-    /// The fast set of a head into `base`: its required checks and the repo's own, from the settings of the project
-    /// that owns the repo's train and the base's `.fleetd/train.json`. None while the base's rules, those settings or
-    /// that file can't be read: then every check counts.
+    /// The fast set of a head into `base`: its required checks and the repo's own, from the base's
+    /// `.fleetd/train.json`. None while the base's rules or that file can't be read: then every check counts.
     pub(super) async fn fast(&self, repo: &str, base: &str) -> Option<Fast> {
         let required = self.ci_config(repo, base).await.ok()?.required_checks;
-        let train = self.records.train(repo)?;
-        let checkout = self.train_checkout(repo, &train.project_ref);
-        let settings = self.host.train_settings(&checkout)?;
-        Some(Fast::new(
-            &required,
-            settings.with(&self.repo_checks(repo, base).await?),
-        ))
+        Some(Fast::new(&required, self.repo_checks(repo, base).await?))
     }
 
     /// `base`'s CI config, read at most every `CI_CONFIG_TTL_MS`.
