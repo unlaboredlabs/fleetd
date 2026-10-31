@@ -75,6 +75,9 @@ const SYMBOLS = {
   hand: ["hand.raised.fill", "back_hand"],
   handBack: ["arrow.uturn.backward", "undo"],
   keyboardHide: ["keyboard.chevron.compact.down", "keyboard_hide"],
+  pageBack: ["chevron.backward", "arrow_back"],
+  pageForward: ["chevron.forward", "arrow_forward"],
+  reload: ["arrow.clockwise", "refresh"],
 } as const satisfies Record<string, readonly [Extract<SymbolViewProps["name"], string>, AndroidSymbol]>;
 
 export type IconName = keyof typeof SYMBOLS;

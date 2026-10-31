@@ -5,6 +5,7 @@
 // at a time: its frames go to the live view's listener alone (onFrame), never through the state, which would draw the
 // whole app again with each.
 import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
+import type { Navigation } from "./screen";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { memoryPins, Pins, type PinStore } from "./pins";
 import { registerDevice, signOut, type PushDeps } from "./push";
@@ -225,7 +226,7 @@ export class Session {
   }
 
   /** A touch or typing on a screen this phone's person took over. */
-  input(sessionId: string, input: BrowserInput): void {
+  input(sessionId: string, input: BrowserInput | Navigation): void {
     this.#client.input(sessionId, input);
   }
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { BrowserSession } from "./desktop";
 import {
+  addressable,
+  addressOf,
   BACKSPACE,
   cardTitle,
   clampView,
@@ -19,6 +21,7 @@ import {
   MAX_ZOOM,
   pixelsPerPoint,
   screenCards,
+  SEARCH,
   SLOP,
   toFrame,
   typed,
@@ -215,5 +218,30 @@ describe("a screen of your own on its way", () => {
     // An agent's screen is never the one it waited for.
     expect(waitOutcome({ sessions: [screen("B1")] }, wait, AT)).toEqual({ t: "gone" });
     expect(waitOutcome({ sessions: [], waits: [{ ...wait, stage: "failed", error: "The machine went offline." }] }, wait, AT)).toEqual({ t: "failed", error: "The machine went offline." });
+  });
+});
+
+describe("the address bar", () => {
+  it("is a browser's, while it's yours and running", () => {
+    expect(addressable("browser", "human", false)).toBe(true);
+    expect(addressable("browser", "agent", false)).toBe(false);
+    expect(addressable("ios", "human", false)).toBe(false);
+    expect(addressable("browser", "human", true)).toBe(false);
+    expect(addressable(undefined, "human", false)).toBe(false);
+  });
+
+  it("goes where Safari would: a URL as typed, a host over https (http for a local one), anything else a search", () => {
+    expect(addressOf("https://www.booking.com/hotel?x=1")).toBe("https://www.booking.com/hotel?x=1");
+    expect(addressOf("  booking.com ")).toBe("https://booking.com");
+    expect(addressOf("booking.com/hotel/x")).toBe("https://booking.com/hotel/x");
+    expect(addressOf("localhost:5173")).toBe("http://localhost:5173");
+    expect(addressOf("192.168.1.10/admin")).toBe("http://192.168.1.10/admin");
+    expect(addressOf("hotels in lisbon")).toBe(`${SEARCH}hotels%20in%20lisbon`);
+    expect(addressOf("captcha")).toBe(`${SEARCH}captcha`);
+    // Nothing, and the schemes the node refuses.
+    expect(addressOf("   ")).toBeNull();
+    expect(addressOf("javascript:alert(1)")).toBeNull();
+    expect(addressOf("file:///etc/hosts")).toBeNull();
+    expect(addressOf("x".repeat(3000))!.length).toBe(2048);
   });
 });

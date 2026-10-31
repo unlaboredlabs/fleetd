@@ -317,3 +317,35 @@ export const waitLine = (w: Wait, machine: string): string => {
   const ahead = w.ahead ?? 0;
   return ahead === 0 ? `Waiting for a slot on ${machine}: you're next.` : `Waiting for a slot on ${machine}: ${String(ahead)} ${ahead === 1 ? "person" : "people"} ahead of you.`;
 };
+
+// ---- the address bar: where a browser you drive goes ----
+
+/**
+ * A page's own moves, which a person driving a browser sends (contracts browser.rs BrowserInput, from #923): an address,
+ * back, forward, reload. The node takes only http and https addresses.
+ */
+export type Navigation = { readonly kind: "navigate"; readonly url: string } | { readonly kind: "back" } | { readonly kind: "forward" } | { readonly kind: "reload" };
+
+/** Whether the address bar is offered: a browser (a device's screen has none), yours to drive, still running. */
+export const addressable = (kind: ScreenCard["kind"] | undefined, control: Control, ended: boolean): boolean => kind === "browser" && control === "human" && !ended;
+
+/** Where a search goes when what was typed isn't an address. */
+export const SEARCH = "https://www.google.com/search?q=";
+
+/**
+ * What the address bar sends for what was typed, as Safari reads it: an http(s) URL as it is; a host (`booking.com`,
+ * `localhost:5173`, an IP) with https (http for a local one); anything else a search. Null for nothing, or for another
+ * scheme (`javascript:`, `file:`), which the node refuses anyway.
+ */
+export const addressOf = (typedText: string): string | null => {
+  const text = typedText.trim();
+  if (text === "") return null;
+  if (/^https?:\/\//iu.test(text)) return text.slice(0, 2048);
+  // A scheme other than http(s): `javascript:…`, `file:…`, `about:…`. A host with a port (`localhost:5173`) isn't one.
+  if (/^[a-z][a-z0-9+.-]*:(?!\d)/iu.test(text)) return null;
+  if (!/\s/u.test(text) && /^(localhost|\d{1,3}(\.\d{1,3}){3}|[^\s/.]+(\.[^\s/.]+)+)(:\d+)?(\/.*)?$/iu.test(text)) {
+    const local = /^(localhost|127\.|10\.|192\.168\.|100\.)/u.test(text);
+    return `${local ? "http" : "https"}://${text}`.slice(0, 2048);
+  }
+  return `${SEARCH}${encodeURIComponent(text)}`.slice(0, 2048);
+};

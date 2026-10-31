@@ -6,6 +6,7 @@
 // time can be watched (browser_watch, sent again on each ready, as the desktop's main does): its frames come as
 // `browser_frame`s, and a person's touches on a screen they took over go as `browser_input`.
 import { leadLaneId, type BrowserFrame, type BrowserInput, type CallOutcome, type ChatDelta, type FleetStatus, type HubError, type HubEvent, type HubState, type LiveFrame, type ProjectRef, type ToolInput, type ToolName, type ToolOutput } from "../desktop";
+import type { Navigation } from "../screen";
 
 export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 /** From dialling to `ready`. */
@@ -193,7 +194,7 @@ export class HubClient {
   }
 
   /** A person's touch or typing on a screen they took over; dropped while there's no link, as a stale tap must not land later. */
-  input(sessionId: string, input: BrowserInput): void {
+  input(sessionId: string, input: BrowserInput | Navigation): void {
     if (this.#ready && this.#screens) this.#send({ t: "browser_input", session: sessionId, input });
   }
 

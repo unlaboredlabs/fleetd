@@ -7,7 +7,9 @@
 // a second, two images stacked so a new frame never flashes while it decodes. Pinch zooms about the fingers, two
 // fingers move the zoomed page. Yours, one finger drives the page (screen.ts): a tap clicks, a drag scrolls, a touch
 // held a moment presses and drags, for a slider or a press-and-hold check; the keyboard button types into the page.
-// Leaving while it's yours asks whether to hand it back first, so its agent isn't left waiting.
+// Leaving while it's yours asks whether to hand it back first, so its agent isn't left waiting. A browser that's yours
+// has Safari's moves too: tap its site at the top to type where it goes (screen.ts addressOf), reload beside it, and
+// back and forward by the keyboard button.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
@@ -18,7 +20,7 @@ import Animated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withSpring
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { zoomAbout, isNavi, type BrowserFrame } from "../desktop";
 import { useHub, type RootParams } from "../hubContext";
-import { cardOf, clampView, controlLine, controlOf, ENTER, fingerCancel, fingerDown, fingerHeld, fingerMove, fingerUp, FramePacer, HOLD_MS, hostOf, IDLE, BACKSPACE, KIND_WORD, MAX_ZOOM, pixelsPerPoint, toFrame, typed, type Finger, type Size, type Step } from "../screen";
+import { addressable, addressOf, cardOf, clampView, controlLine, controlOf, ENTER, fingerCancel, fingerDown, fingerHeld, fingerMove, fingerUp, FramePacer, HOLD_MS, hostOf, IDLE, BACKSPACE, KIND_WORD, MAX_ZOOM, pixelsPerPoint, toFrame, typed, type Finger, type Navigation, type Size, type Step } from "../screen";
 import { space, type, useTheme } from "../theme";
 import { Avatar } from "../ui/Avatar";
 import { Glass, GlassGroup } from "../ui/Glass";
@@ -254,6 +256,20 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
     if (!yours) keys.current?.blur();
   }, [yours]);
 
+  // The address bar: the site at the top becomes a field while you type where the page goes.
+  const [editing, setEditing] = useState(false);
+  const [address, setAddress] = useState("");
+  const go = (to: Navigation) => {
+    haptics.tap();
+    session.input(sessionId, to);
+  };
+  const submitAddress = () => {
+    const url = addressOf(address);
+    setEditing(false);
+    if (url === null) return haptics.warning();
+    go({ kind: "navigate", url });
+  };
+
   // The touch hint, once each time the page becomes yours.
   const [hint, setHint] = useState(false);
   useEffect(() => {
@@ -267,6 +283,11 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   const fit = Math.min(box.width / frameSize.width, box.height / frameSize.height);
   const page = { width: frameSize.width * fit, height: frameSize.height * fit };
   const host = hostOf(newest?.url);
+  const canGo = addressable(card?.kind, control, ended);
+  const keyboardUp = typing || editing;
+  useEffect(() => {
+    if (!canGo) setEditing(false);
+  }, [canGo]);
   const kind = card === undefined ? "screen" : KIND_WORD[card.kind];
   const status = ended ? "Ended" : control === "agent" && card?.reason === undefined && newest === undefined ? "Connecting…" : controlLine(control, who, own);
   const ground = t.dark ? "#000000" : t.grouped;
@@ -343,18 +364,66 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
               <Icon name="close" size={20} color={t.label} weight="semibold" />
             </Pressable>
           </Glass>
-          <Glass style={styles.title}>
-            <Avatar name={who} navi={navi} size={28} picture={project} />
-            <View style={styles.titleText}>
-              <Text style={[type.headline, { color: t.label }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-                {host === "" ? who : host}
-              </Text>
-              <Text style={[type.caption2, { color: yours ? t.accent : t.secondary }]} numberOfLines={1} maxFontSizeMultiplier={1.3} accessibilityLiveRegion="polite">
-                {status}
-              </Text>
-            </View>
-          </Glass>
-          <View style={styles.round} />
+          {editing ? (
+            <Glass style={[styles.title, styles.field]}>
+              <TextInput
+                value={address}
+                onChangeText={setAddress}
+                onSubmitEditing={submitAddress}
+                onBlur={() => setEditing(false)}
+                autoFocus
+                selectTextOnFocus
+                keyboardType="url"
+                returnKeyType="go"
+                autoCorrect={false}
+                autoCapitalize="none"
+                spellCheck={false}
+                autoComplete="off"
+                textContentType="URL"
+                clearButtonMode="while-editing"
+                placeholder="Search or enter address"
+                placeholderTextColor={t.tertiary}
+                selectionColor={t.accent}
+                keyboardAppearance={t.dark ? "dark" : "light"}
+                accessibilityLabel="Address"
+                style={[type.body, styles.fieldInput, { color: t.label }]}
+              />
+            </Glass>
+          ) : (
+            <Pressable
+              disabled={!canGo}
+              accessibilityRole={canGo ? "button" : "header"}
+              accessibilityHint={canGo ? "Type where the page goes" : undefined}
+              onPress={() => {
+                haptics.tap();
+                keys.current?.blur();
+                setAddress(newest?.url ?? "");
+                setEditing(true);
+              }}
+              style={({ pressed }) => [styles.titleHit, pressed && styles.pressed]}
+            >
+              <Glass style={styles.title}>
+                <Avatar name={who} navi={navi} size={28} picture={project} />
+                <View style={styles.titleText}>
+                  <Text style={[type.headline, { color: t.label }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                    {host === "" ? (canGo ? "Enter an address" : who) : host}
+                  </Text>
+                  <Text style={[type.caption2, { color: yours ? t.accent : t.secondary }]} numberOfLines={1} maxFontSizeMultiplier={1.3} accessibilityLiveRegion="polite">
+                    {status}
+                  </Text>
+                </View>
+              </Glass>
+            </Pressable>
+          )}
+          {canGo && !editing ? (
+            <Glass interactive style={styles.round}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Reload the page" style={styles.roundHit} onPress={() => go({ kind: "reload" })}>
+                <Icon name="reload" size={19} color={t.label} weight="semibold" />
+              </Pressable>
+            </Glass>
+          ) : (
+            <View style={styles.round} />
+          )}
         </View>
 
         {/* The touch hint, a moment after it's yours. */}
@@ -367,11 +436,21 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
         ) : null}
 
         {/* The one control, and the keyboard while it's yours. */}
-        <View style={[styles.toolbar, { paddingBottom: typing ? space.sm : Math.max(insets.bottom, space.md) }]} pointerEvents="box-none">
+        <View style={[styles.toolbar, { paddingBottom: keyboardUp ? space.sm : Math.max(insets.bottom, space.md) }]} pointerEvents="box-none">
           {ended ? (
             <Action label="Done" onPress={() => navigation.goBack()} prominent />
           ) : yours ? (
             <GlassGroup style={styles.row} spacing={10}>
+              {canGo ? (
+                <Glass interactive style={styles.pair}>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Back a page" style={styles.roundHit} onPress={() => go({ kind: "back" })}>
+                    <Icon name="pageBack" size={19} color={t.label} weight="semibold" />
+                  </Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Forward a page" style={styles.roundHit} onPress={() => go({ kind: "forward" })}>
+                    <Icon name="pageForward" size={19} color={t.label} weight="semibold" />
+                  </Pressable>
+                </Glass>
+              ) : null}
               <Glass interactive style={styles.round}>
                 <Pressable accessibilityRole="button" accessibilityLabel={typing ? "Hide the keyboard" : "Type on the page"} accessibilityState={{ selected: typing }} style={styles.roundHit} onPress={toggleKeys}>
                   <Icon name={typing ? "keyboardHide" : "keyboard"} size={20} color={typing ? t.accent : t.label} />
@@ -459,6 +538,10 @@ const styles = StyleSheet.create({
   bar: { position: "absolute", left: space.lg, right: space.lg, height: BAR, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm },
   round: { width: 48, height: 48, borderRadius: 24 },
   roundHit: { flex: 1, alignItems: "center", justifyContent: "center" },
+  titleHit: { flexShrink: 1 },
+  field: { flex: 1, paddingLeft: space.lg },
+  fieldInput: { flex: 1, height: 48, paddingVertical: 0 },
+  pair: { width: 96, height: 48, borderRadius: 24, flexDirection: "row" },
   title: { flexShrink: 1, flexDirection: "row", alignItems: "center", gap: space.sm, borderRadius: 24, height: 48, paddingLeft: 10, paddingRight: space.lg },
   titleText: { flexShrink: 1 },
   ask: { position: "absolute", left: space.lg, right: space.lg },

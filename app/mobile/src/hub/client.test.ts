@@ -169,6 +169,9 @@ describe("watching a screen", () => {
     expect(shown).toEqual([{ sessionId: "Bsee", seq: 1, jpegB64: "AA==", width: 4, height: 3, control: "agent" }]);
     client.input("Bsee", { kind: "mouse", action: "pressed", x: 1, y: 2, button: "left", clickCount: 1 });
     expect(hub.sentOf("browser_input")).toEqual([{ t: "browser_input", session: "Bsee", input: { kind: "mouse", action: "pressed", x: 1, y: 2, button: "left", clickCount: 1 } }]);
+    // A browser you drive goes elsewhere, as #923's navigate input.
+    client.input("Bsee", { kind: "navigate", url: "https://booking.com" });
+    expect(hub.sentOf("browser_input").at(-1)).toEqual({ t: "browser_input", session: "Bsee", input: { kind: "navigate", url: "https://booking.com" } });
     // Stopped: the hub hears it, and a frame still on its way is dropped.
     client.watch(null);
     expect(hub.sentOf("browser_watch").at(-1)).toEqual({ t: "browser_watch" });

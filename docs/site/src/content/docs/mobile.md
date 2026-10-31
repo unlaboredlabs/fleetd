@@ -106,6 +106,8 @@ site's name.
 - **Take Over** gives you the page once its machine confirms it. Then a **tap** clicks, a **drag** scrolls the page,
   and a touch **held** a moment presses and drags (a slider, a press-and-hold check). The keyboard button types into
   the page, Return included.
+- A browser that's yours has an address bar: tap its site at the top and type an address (`booking.com` goes to
+  `https://booking.com`) or words to search for. Reload is beside it, and back and forward are by the keyboard button.
 - **Hand Back** gives it back to its agent, which sees the page as you left it. Closing the view while you have
   control asks whether to hand it back first; **Keep Control** leaves it yours, and its card opens it again.
 
@@ -116,7 +118,7 @@ recording. What you type goes to the page; the action log says that you took ove
 
 **New Screen**, on a project's or Navi's ⓘ page, opens a screen of your own: a browser unless you pick another kind
 that one of your machines can host, and the machine when more than one can. It opens in the live view with you in
-control, and **End Screen** closes it. A Navi's browser runs on the Navi's own profile, so a site you sign in to there
+control, and **End Screen** closes it. A browser starts on a blank page: tap the bar at the top to say where it goes. A Navi's browser runs on the Navi's own profile, so a site you sign in to there
 stays signed in for it. On a full machine, **Wait** keeps your place for its next slot, and the screen opens once it
 has one. A PR's build or Try it preview opens from the desktop app. See [Open one yourself](/docs/browser-sessions#yours).
 
