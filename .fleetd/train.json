@@ -8,5 +8,9 @@
     "qa (ubuntu-latest, 2/4)",
     "qa (ubuntu-latest, 3/4)",
     "qa (ubuntu-latest, 4/4)"
+  ],
+  "afterMerge": [
+    "site-external-links",
+    "desktop-budgets"
   ]
 }

@@ -12,6 +12,7 @@ const pages = {
     <pre class="case" data-text="code">## Do not re-ask
 - share.public_link = eac3e0fe-ec61-4954-4f78-67240a80c42b @ 3e760f96</pre>
     <p class="case">Inline <code>share.window</code> keys are fine in code, e.g. fleetd.sh, app-pair.json, v1.2.3 and end-to-end tests.</p>
+    <p class="case">Shown as code: <span class="mono">mcp_servers_get</span> ran on <span class="mono">4f1c2ab</span>, SA=<span class="mono">fleetd-gmail-reader@acme.iam.gserviceaccount.com</span>.</p>
     <p class="case">A follow-up note - with a dash mid-sentence - costs $1,840 at 08:15:17 on 2026-10-19, order W1 task T12.</p>
     <h2 class="case">Why you are woken</h2>
     <ul class="case"><li>The human settled 2 of your asks.</li><li>See the answers since your last wake.</li></ul>

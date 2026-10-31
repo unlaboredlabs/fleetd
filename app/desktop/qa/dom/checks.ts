@@ -3,7 +3,8 @@
 //
 // Text-slot contract with the design system (E2): `data-text="code"` marks code views (exempt from the raw-text rule
 // and allowed to scroll sideways). Everything else is held to the APP-WIDE TEXT RULE: wrap, or truncate with an
-// ellipsis; never clip, spill or overlap.
+// ellipsis; never clip, spill or overlap. Text set in a monospace font is shown as code too (a tool name, a hash, a
+// value to copy), so the raw-text rule leaves it alone.
 
 import { allowlist, type CheckId } from "./allowlist.ts";
 import { findRawText } from "./text-rules.ts";
@@ -228,7 +229,9 @@ export function runChecks(opts: CheckOptions): Finding[] {
     if (!el || !node.data.trim() || el.closest("script, style, noscript, template") || hidden(el)) continue;
     let block: Element = el;
     while (block.parentElement && ["inline", "contents"].includes(style(block).display)) block = block.parentElement;
-    if (!exempt(el, "raw-text")) blockText.set(block, (blockText.get(block) ?? "") + node.data);
+    if (!exempt(el, "raw-text") && !/\bmonospace\b/.test(style(el).fontFamily)) {
+      blockText.set(block, (blockText.get(block) ?? "") + node.data);
+    }
     range.selectNodeContents(node);
     for (const r of range.getClientRects()) {
       const rect = rectOf(r);

@@ -162,7 +162,19 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         # Electron fetches its binary on first launch; fetch it here so the first test isn't timed on a download.
         run: pnpm exec install-electron
+      # The fixtures are cached under a hash of every file their build reads (scripts/fixtures-key.ts follows the part
+      # of the app they import), so a shard whose fixtures a run has built before (main's, or this PR's last) skips
+      # that minute. The QA build takes seconds and isn't cached.
       - if: steps.scope.outputs.run == 'true'
+        id: fixtures-key
+        run: echo "key=$(node scripts/fixtures-key.ts)" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true'
+        id: fixtures
+        uses: actions/cache@v5
+        with:
+          path: app/desktop/fixtures/*.json
+          key: fixtures-${{ runner.os }}-${{ steps.fixtures-key.outputs.key }}
+      - if: steps.scope.outputs.run == 'true' && steps.fixtures.outputs.cache-hit != 'true'
         # Build output of app/desktop/fixtures, validated against the contracts' JSON Schemas.
         run: pnpm fixtures
       - if: steps.scope.outputs.run == 'true'

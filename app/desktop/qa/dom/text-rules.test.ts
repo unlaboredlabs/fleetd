@@ -37,6 +37,7 @@ describe("findRawText", () => {
       "$200/mo plan → $1,840 of usage this week, 40×",
       "08:15:17 on 2026-10-19, order W12 task T3 ask A4 steer S1",
       "e.g. fleetd.sh, app-pair.json, version v1.2.3, Node.js",
+      "Read menu.pdf from example.com.au and report.csv from acme.co.uk",
       "A follow-up for end-to-end tests that are up-to-date",
       "Usage over the last-7-days window",
       "Worked for 3s · 1 tool call",
