@@ -298,12 +298,16 @@ fn first_line(text: &str) -> String {
     js_take(text.trim().split('\n').next().unwrap_or(""), 280).to_owned()
 }
 
-/// Applies the latest visible assistant text.
+/// `latest_message_tail`'s length.
+pub const MESSAGE_KEPT: usize = 4096;
+
+/// Applies the latest visible assistant text. A long one keeps its head and its tail, and a Refs line of every PR URL,
+/// attachment id and commit SHA in it, so a task's result made from it loses none (tasks::render::result_text).
 pub fn with_assistant_text(summary: &Summary, text: Option<&str>) -> Summary {
     match text {
         Some(text) if !text.trim().is_empty() => Summary {
             headline: first_line(text),
-            latest_message_tail: keep_tail(text, 4096),
+            latest_message_tail: crate::hub::tasks::render::result_text(text, MESSAGE_KEPT),
             ..summary.clone()
         },
         _ => summary.clone(),

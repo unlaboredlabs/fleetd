@@ -787,3 +787,33 @@ fn an_ended_runs_cause_reaches_the_summary_and_its_event() {
         .unwrap();
     assert!(data.get("endCause").is_none());
 }
+
+/// A final message well over what a summary keeps loses neither its head nor its ids: the PR URL and attachment ids
+/// at its start reach the task's result, itself cut again, through the Refs line.
+#[test]
+fn a_long_final_message_keeps_its_head_and_ids_through_to_the_result() {
+    use crate::hub::tasks::render::{TAIL_MAX, result_text};
+    let text = format!(
+        "Done: https://github.com/o/r/pull/872, screenshots F31 and F32.\n{}\nLeft: nothing.",
+        "Then a long account of the work. ".repeat(400)
+    );
+    assert!(js_len(&text) > 3 * MESSAGE_KEPT);
+    let base = to_thread_summary(MACHINE, &a_done(), None, NOW);
+    let kept = with_assistant_text(&base, Some(&text)).latest_message_tail;
+    assert!(js_len(&kept) <= MESSAGE_KEPT, "{}", js_len(&kept));
+    assert!(
+        kept.starts_with("Done: https://github.com/o/r/pull/872"),
+        "{kept}"
+    );
+    let result = result_text(&kept, TAIL_MAX);
+    assert!(
+        result.starts_with("Done: https://github.com/o/r/pull/872"),
+        "{result}"
+    );
+    assert!(
+        result.ends_with("\n\nRefs: https://github.com/o/r/pull/872 F31 F32"),
+        "{result}"
+    );
+    assert!(result.contains("Left: nothing."), "{result}");
+    assert_eq!(result.matches("Refs: ").count(), 1, "{result}");
+}

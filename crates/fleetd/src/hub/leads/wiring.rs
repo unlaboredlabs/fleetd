@@ -1,6 +1,6 @@
 //! The leads area's links into areas already on main: its ports over the executor, the write queue, the
 //! ledger and the requests; the ledger's WorkstreamLookup; and its lead calls.
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
@@ -201,12 +201,15 @@ impl ledger::WorkstreamLookup for Lookup {
     }
 }
 
-struct Calls(Arc<Area>);
+/// Holds the area weakly: the area's ports hold the link, which holds the registry this sits in.
+struct Calls(Weak<Area>);
 
 impl LeadCallHandler for Calls {
     fn handle(&self, caller: LeadCaller, call: LeadCall) -> LeadCallFuture {
-        let area = Arc::clone(&self.0);
+        let area = self.0.upgrade();
         Box::pin(async move {
+            let area = area
+                .ok_or_else(|| McpToolError::new(ErrorCode::Failed, "The hub is shutting down."))?;
             area.lead_call(&caller.project_ref, &caller.by, call)
                 .await
                 .map_err(McpToolError::from)
@@ -228,15 +231,19 @@ const OUTCOME_WORKSTREAMS: usize = 20;
 
 /// Called once in `serve::build_on`, after the areas below leads are built.
 pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
-    // project_get shows the project's lead, the profiles its tasks may run on, and its open workstreams.
-    let outcome = Arc::clone(area);
+    // project_get shows the project's lead, the profiles its tasks may run on, and its open workstreams. Weak: the
+    // area's ports hold the executors these hooks sit in.
+    let outcome = Arc::downgrade(area);
     links
         .executors
         .hooks
         .extend_project_get(Arc::new(move |_hub, project_ref| {
-            let area = Arc::clone(&outcome);
+            let area = outcome.upgrade();
             Box::pin(async move {
                 let mut extra = crate::hub::executor::tools::ProjectExtra::default();
+                let Some(area) = area else {
+                    return Ok(extra);
+                };
                 let internal = |e: LeadError| McpToolError::from(e);
                 if let Some(lead) = area.leads.get(&project_ref).map_err(internal)? {
                     extra.fields.insert(
@@ -283,7 +290,7 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
     links
         .decisions
         .set_workstreams(Arc::new(Lookup(Arc::clone(&area.records))));
-    let calls: Arc<dyn LeadCallHandler> = Arc::new(Calls(Arc::clone(area)));
+    let calls: Arc<dyn LeadCallHandler> = Arc::new(Calls(Arc::downgrade(area)));
     for op in super::calls::OPS {
         links.lead_calls.register(op, Arc::clone(&calls));
     }

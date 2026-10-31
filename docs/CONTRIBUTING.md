@@ -64,7 +64,11 @@ cargo test --workspace
 ```
 
 The node's seal test opens what Rust seals with libsodium from `tests/lab`; without `npm ci --prefix tests/lab` it
-skips that half. CI runs all of these on every PR, and the desktop app's checks above.
+skips that half. CI runs all of these on every PR, and the desktop app's checks above. The required `rust (linux)` job
+runs the workspace tests with [cargo-nextest](https://nexte.st), a process per test (`cargo nextest run --workspace
+--profile ci`, then `cargo test --workspace --doc`): one `cargo test` process runs them slower, as background work
+earlier tests leave behind piles up. The `ci` profile in `.config/nextest.toml` retries the tests that drive
+a real Chrome (`node::browser`, `node::relay_tests`) twice and lists the ones that passed only on a retry as flaky.
 
 `crates/fleetd` must not link macOS frameworks, because the darwin binaries are cross-built on Linux. The
 `darwin-deps` CI job checks this: rusqlite takes only named features such as `bundled`, chrono has no `clock`, and

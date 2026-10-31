@@ -3,7 +3,7 @@
 //! drops an entry at once (say, after a merge that touched the file). No file is the default policy. A broken file
 //! is an error with a fix, never a silent fallback, so a typo can't drop a deny rule.
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::UNIX_EPOCH;
 
 use fleetd_contracts::ids::ProjectRef;
@@ -49,7 +49,8 @@ pub trait PolicySource: Send + Sync {
 /// Reads the file from the project's workspace through the machine's node.
 pub struct NodePolicySource {
     /// WorkspaceFiles.read, by project id, so a project just added reads before the hub's view of the node has it.
-    pub executors: Arc<crate::hub::executor::Executors>,
+    /// Weak: the executors hold the policies, so a strong link back would keep a stopped hub alive.
+    pub executors: Weak<crate::hub::executor::Executors>,
 }
 
 impl PolicySource for NodePolicySource {
@@ -58,7 +59,13 @@ impl PolicySource for NodePolicySource {
         project_ref: &'a ProjectRef,
     ) -> BoxFut<'a, Result<Option<String>, LeadError>> {
         Box::pin(async move {
-            self.executors
+            let Some(executors) = self.executors.upgrade() else {
+                return Err(LeadError::new(
+                    ErrorCode::Failed,
+                    "The hub is shutting down.",
+                ));
+            };
+            executors
                 .read_project_file(
                     &project_ref.machine_id,
                     &project_ref.project_id,
