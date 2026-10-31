@@ -57,6 +57,14 @@ DevTools-driven tests; never ship one. `pnpm debug-guard-check` checks both.
 
 ## Checks
 
+Before every push, run `scripts/check.sh`. It runs CI's quick Linux checks for what changed since `origin/main`,
+committed or not, scoped as CI scopes them: `rust-lint` (fmt, clippy, the migrations check), `rust-docs` (the
+generated docs pages, the lab scenarios), `rust-tests` (the tests of the modules the changed files are in, two levels
+deep, e.g. `hub::train::`), `site` (site/docs is the current build, the site and link checks, no personal identifiers)
+and `desktop` (typecheck, lint, unit tests). It ends with each check that failed and its command. Name checks to run
+only those, changed or not: `scripts/check.sh rust-lint site`. `scripts/check.sh qa` runs the desktop QA screens,
+which take long and only run when named. CI still runs the full Rust suite, the doctests and the rest.
+
 ```sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings

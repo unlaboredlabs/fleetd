@@ -1,2 +1,2 @@
 Fix your PR {{pr}}: {{problem}}.{{findings}}
-On {{branch}}: fix it (only blocking findings; for a conflict, rebase onto the latest base and resolve it), push to the same PR, and stop. The train takes the new head by itself, and reviews it again if its patch changed. Never merge it yourself.
+On {{branch}}: fix it (only blocking findings; for a conflict, rebase onto the latest base and resolve it), run the repo's quick pre-push checks (docs/CONTRIBUTING.md or the README names them) and check the fix against each finding, push to the same PR, and stop. The train takes the new head by itself, and reviews it again if its patch changed. Never merge it yourself.
