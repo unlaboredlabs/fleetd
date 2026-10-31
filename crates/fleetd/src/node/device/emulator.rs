@@ -31,6 +31,8 @@ pub struct Emulator {
     pgid: Option<i32>,
     pub port: u16,
     pub serial: String,
+    /// scrcpy's server is on it already (the pool pushed it while the copy waited).
+    pub pushed: bool,
     /// The emulator's first lines, to say why a boot failed.
     said: Arc<Mutex<Vec<String>>>,
 }
@@ -132,6 +134,7 @@ pub fn spawn(sdk: &Sdk, port: u16, read_only: bool) -> Result<Emulator, String> 
         pgid,
         port,
         serial: format!("emulator-{port}"),
+        pushed: false,
         said,
     })
 }
@@ -275,7 +278,7 @@ impl Pool {
         &self.sdk
     }
 
-    /// Boots a copy now.
+    /// Boots a copy now, and puts scrcpy's server on it for its session's stream.
     async fn boot(&self) -> Result<Emulator, String> {
         let claim = {
             let mut ports = lock(&self.ports);
@@ -289,15 +292,32 @@ impl Pool {
             }
         };
         let port = claim.port.expect("a claimed port");
+        let t = Instant::now();
         let mut emulator = spawn(&self.sdk, port, true)?;
         let serial = emulator.serial.clone();
         wait_booted(&self.sdk, &serial, &mut emulator, BOOT_TIMEOUT).await?;
+        let boot_ms = t.elapsed().as_millis() as u64;
+        let t = Instant::now();
+        match super::scrcpy::push_server(&self.sdk, &serial).await {
+            Ok(()) => emulator.pushed = true,
+            Err(why) => {
+                tracing::warn!(serial, error = %why, "scrcpy's server not pushed ahead; the session pushes it")
+            }
+        }
+        tracing::debug!(
+            kind = "android",
+            serial,
+            boot_ms,
+            push_ms = t.elapsed().as_millis() as u64,
+            "screen timing: a warm emulator"
+        );
         claim.keep();
         Ok(emulator)
     }
 
     /// A booted copy, or one booted now when none waits; the pool refills behind it.
     pub async fn take(self: &Arc<Self>) -> Result<Lent, String> {
+        let t = Instant::now();
         let warm = loop {
             let next = lock(&self.warm).pop_front();
             match next {
@@ -311,10 +331,18 @@ impl Pool {
                 None => break None,
             }
         };
+        let cold = warm.is_none();
         let emulator = match warm {
             Some(emulator) => emulator,
             None => self.boot().await?,
         };
+        tracing::debug!(
+            kind = "android",
+            serial = %emulator.serial,
+            cold,
+            take_ms = t.elapsed().as_millis() as u64,
+            "screen timing: an emulator taken"
+        );
         self.refill();
         Ok(Lent {
             emulator,

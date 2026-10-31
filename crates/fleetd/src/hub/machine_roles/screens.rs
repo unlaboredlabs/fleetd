@@ -59,7 +59,7 @@ const WAIT_MS: i64 = SCREEN_WAIT_MINUTES * 60_000;
 /// How long a PR's build may take to install, a simulator's XCTest runner starting first included.
 const INSTALL_WAIT: Duration = Duration::from_secs(300);
 /// Between tries while the screen's machine holds a command back.
-const INSTALL_RETRY: Duration = Duration::from_secs(3);
+const INSTALL_RETRY: Duration = Duration::from_secs(1);
 /// How long a start's answer waits for the runner's report of the screen live, which races it over the link.
 const RECORD_WAIT: Duration = Duration::from_secs(5);
 

@@ -16,6 +16,7 @@ use super::simctl::{self, Simctl};
 use super::{IosConfig, PrepState, Simulators, health_from, xcode_from};
 use crate::node::browser::SessionHooks;
 use crate::node::device::Router;
+use crate::node::device::agent_device;
 use crate::node::device::scrcpy::{Frame, Input};
 use crate::node::device::tests::{TestHub, command_item, hub, read_file, sessions};
 use crate::node::mask::Secrets;
@@ -730,10 +731,16 @@ async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simu
     assert!(start_ms < 10_000, "{start_ms} ms");
     let udid = result["udid"].as_str().unwrap().to_owned();
     eprintln!("the session's clone: {udid}");
+    // Its commands use the clone's own agent-device home, where the pool started the runner before it lent the clone
+    // (with no session beside it, as here); one the pool couldn't start, the session starts now.
     assert!(
-        super::wrapper::starting_path(&home, THREAD).exists(),
-        "the session's runner starts ahead"
+        agent_device::session_dir(&home, THREAD)
+            .join(agent_device::LENT)
+            .is_file(),
+        "the session's commands use its clone's home"
     );
+    let pooled = !super::wrapper::starting_path(&home, THREAD).exists();
+    eprintln!("the clone's runner was started in the pool: {pooled}");
     let live = wait_listed(&hub, &id).await;
     assert_eq!(live["kind"], "ios", "{live}");
     let refused = call(&router, json!({ "op": "session_start", "purpose": "Shop" })).await;

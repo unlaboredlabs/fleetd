@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::json;
 
-use crate::node::device::agent_device::{self, PAUSED, VERSION};
+use crate::node::device::agent_device::{self, LENT, PAUSED, VERSION};
 
 /// The directory put first on a session's PATH: it holds only the `agent-device` wrapper.
 pub fn bin_dir(home: &Path) -> PathBuf {
@@ -62,8 +62,8 @@ pub fn starting_path(home: &Path, thread: &str) -> PathBuf {
 }
 
 /// The wrapper: refuses while the session's control file says a person has the simulator, waits while the session's
-/// runner starts ([`starting_path`]), else runs agent-device on
-/// the node's simulator set with the runner the golden built. A daemon that is stopped stops its XCTest runner: by
+/// runner starts ([`starting_path`]), switches to the clone's own agent-device home when the session's names one
+/// ([`LENT`]), else runs agent-device on the node's simulator set with the runner the golden built. A daemon that is stopped stops its XCTest runner: by
 /// default agent-device leaves it running for a next daemon to take over, and fleetd's daemons have none (each lives
 /// as long as its session, or the golden's prepare). The runner's xcodebuild left behind relaunches it after the
 /// simulator shuts down, which boots the simulator again: a golden booted again can't be cloned.
@@ -90,7 +90,10 @@ pub fn wrapper_script(entry: &Path, home: &Path, xctestrun: Option<&Path>) -> St
          if [ -n \"$FLEETD_DEVICE_CONTROL\" ] && [ -e \"$FLEETD_DEVICE_CONTROL\" ]; then\n  \
          echo '{paused}' >&2\n  exit 75\nfi\n\
          if [ -n \"$FLEETD_RUNNER_STARTING\" ]; then\n  \
-         while pid=$(cat \"$FLEETD_RUNNER_STARTING\" 2>/dev/null) && [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; do sleep 1; done\n\
+         while pid=$(cat \"$FLEETD_RUNNER_STARTING\" 2>/dev/null) && [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; do sleep 0.2; done\n\
+         fi\n\
+         if [ -n \"$AGENT_DEVICE_HOME\" ] && lent=$(cat \"$AGENT_DEVICE_HOME/{LENT}\" 2>/dev/null) && [ -n \"$lent\" ]; then\n  \
+         AGENT_DEVICE_HOME=\"$lent\"\n  AGENT_DEVICE_STATE_DIR=\"$lent/state\"\n  export AGENT_DEVICE_HOME AGENT_DEVICE_STATE_DIR\n\
          fi\n\
          AGENT_DEVICE_IOS_SIMULATOR_DEVICE_SET='{set}'\n\
          AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH='{runner}'\n\
@@ -138,10 +141,30 @@ pub fn built_xctestrun(home: &Path) -> Result<PathBuf, String> {
         })
 }
 
-/// Points the session's agent-device at its clone.
-pub fn write_config(home: &Path, thread: &str, udid: &str) -> std::io::Result<()> {
+/// Points the session's agent-device at its clone, and its commands at the clone's own agent-device home (`lent`), where
+/// the pool started the clone's runner, when it has one.
+pub fn write_config(
+    home: &Path,
+    thread: &str,
+    udid: &str,
+    lent: Option<&Path>,
+) -> std::io::Result<()> {
     let dir = agent_device::session_dir(home, thread);
-    crate::node::config::mkdir_private(&dir)?;
+    write_device(&dir, udid)?;
+    match lent {
+        Some(lent) => {
+            crate::node::secrets::write_atomic(&dir.join(LENT), lent.to_string_lossy().as_bytes())
+        }
+        None => match std::fs::remove_file(dir.join(LENT)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        },
+    }
+}
+
+/// Writes the config of the agent-device home `dir`, naming the simulator `udid`.
+pub fn write_device(dir: &Path, udid: &str) -> std::io::Result<()> {
+    crate::node::config::mkdir_private(dir)?;
     let config = json!({ "platform": "ios", "udid": udid });
     crate::node::secrets::write_atomic(&dir.join("config.json"), format!("{config}\n").as_bytes())
 }
@@ -201,7 +224,13 @@ mod tests {
     #[test]
     fn the_config_names_the_lent_clone() {
         let home = tempfile::tempdir().unwrap();
-        write_config(home.path(), "s1", "8A1B2C3D-0000-4000-8000-000000000002").unwrap();
+        write_config(
+            home.path(),
+            "s1",
+            "8A1B2C3D-0000-4000-8000-000000000002",
+            None,
+        )
+        .unwrap();
         let config: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(
                 agent_device::session_dir(home.path(), "s1").join("config.json"),
@@ -274,6 +303,57 @@ mod tests {
                  /n/device/agent-device/node_modules/agent-device/.tmp/fleetd-runner"
             );
         }
+    }
+
+    #[test]
+    fn the_wrapper_switches_to_the_clones_home_the_session_was_lent() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = dir.path().join("fake.mjs");
+        std::fs::write(
+            &fake,
+            "console.log(process.env.AGENT_DEVICE_HOME, process.env.AGENT_DEVICE_STATE_DIR)\n",
+        )
+        .unwrap();
+        let wrapper = dir.path().join("agent-device");
+        std::fs::write(&wrapper, wrapper_script(&fake, Path::new("/n"), None)).unwrap();
+        std::fs::set_permissions(
+            &wrapper,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        let own = dir.path().join("sessions/s1/agent-device");
+        std::fs::create_dir_all(&own).unwrap();
+        let run = || {
+            let out = std::process::Command::new(&wrapper)
+                .arg("snapshot")
+                .env("AGENT_DEVICE_HOME", &own)
+                .env("AGENT_DEVICE_STATE_DIR", own.join("state"))
+                .env_remove("FLEETD_DEVICE_CONTROL")
+                .env_remove("FLEETD_RUNNER_STARTING")
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).trim().to_owned()
+        };
+        let node = std::process::Command::new("node")
+            .arg("--version")
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if !node {
+            return;
+        }
+        assert_eq!(
+            run(),
+            format!("{} {}", own.display(), own.join("state").display()),
+            "its own home while nothing is lent"
+        );
+        let clone = dir.path().join("device/ios/clones/AAAA 1");
+        write_config(dir.path(), "s1", "AAAA-1", Some(&clone)).unwrap();
+        assert_eq!(
+            run(),
+            format!("{} {}", clone.display(), clone.join("state").display())
+        );
+        write_config(dir.path(), "s1", "AAAA-1", None).unwrap();
+        assert!(!own.join(LENT).exists());
     }
 
     #[test]

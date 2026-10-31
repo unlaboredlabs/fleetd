@@ -307,7 +307,8 @@ control, the agent's `agent-device` commands answer that a person has control.
   Each screen gets its own copy, started from that snapshot with `-read-only`: nothing done in it is kept, and the
   copy is killed at `session_end`.
 - **Starts from a warm pool.** A copy boots in about 8 seconds on a KVM machine. The node keeps one booted for the
-  next screen and boots another behind it, so `session_start` takes well under a second.
+  next screen, with scrcpy's server already on it, and boots another behind it, so `session_start` takes well under a
+  second and the stream starts without a copy.
 - **Recorded through scrcpy.** The node runs [scrcpy](https://github.com/Genymobile/scrcpy)'s server on the emulator
   and decodes its screen stream itself. The recording is an `actions` file as a browser screen's, and a `video` (a
   WebM, VP9, 576×1280). There's no `dom` file.
@@ -356,12 +357,14 @@ storage work as for a browser screen.
   runtime on a plain iPhone. It boots the golden once, waits for its first-boot work to settle, has agent-device build
   its XCTest runner for it, and shuts it down. Each screen gets a clone of the golden (`simctl clone`), which is
   deleted at `session_end` along with everything done in it.
-- **Starts from a warm pool.** The node keeps one clone booted for the next screen and clones and boots another
-  behind it, so `session_start` doesn't wait for a boot. With no clone ready, `session_start` answers at once that
+- **Starts from a warm pool.** The node keeps one clone booted for the next screen, with agent-device's XCTest runner
+  already started in it, and clones, boots and starts another behind it. So `session_start` doesn't wait for a boot,
+  and the first agent-device command doesn't wait for the runner. Each clone's runner runs from an agent-device home
+  made for that clone alone, which is deleted with the clone. With no clone ready, `session_start` answers at once that
   one is starting and about how long it takes, rather than wait out the boot. When boots keep failing, the pool waits
-  before the next one: a minute, doubling up to half an hour, and back to normal after a boot that works. The
-  screen's agent-device starts its XCTest runner as the screen starts. An agent-device command sent before the
-  runner is up waits for it, so a screen only ever has one runner.
+  before the next one: a minute, doubling up to half an hour, and back to normal after a boot that works. If the pool
+  couldn't start a clone's runner, the screen starts it as it starts. An agent-device command sent before the runner
+  is up waits for it, so a screen only ever has one runner.
 - **Recorded by the simulator.** The video is `simctl io recordVideo`'s H.264 MP4 (`video_mp4`), at the screen's full
   size. The action log is the same as an Android screen's, and there's no `dom` file.
 - **Live view and takeover.** `simctl` can't stream, so a person watching gets screenshots in a loop, which runs only

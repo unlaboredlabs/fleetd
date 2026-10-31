@@ -462,6 +462,12 @@ impl Devices {
             )
         })?;
         lock(&self.sessions).insert(thread.clone(), session.clone());
+        tracing::debug!(
+            kind = "android",
+            session = %session.id,
+            start_ms = started.elapsed().as_millis() as u64,
+            "screen timing: started from the warm pool"
+        );
         session.step(
             "session_start",
             json!({ "purpose": purpose, "kind": "android", "serial": serial }),

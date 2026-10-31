@@ -108,9 +108,19 @@ pub async fn pump(
     control: impl Fn() -> BrowserControl,
     slot: Arc<FrameSlot>,
 ) {
+    let watched = std::time::Instant::now();
+    let mut first = true;
     loop {
         let frame = frames.borrow_and_update().clone();
         if let Some(frame) = frame {
+            if first {
+                first = false;
+                tracing::debug!(
+                    session = %session,
+                    first_frame_ms = watched.elapsed().as_millis() as u64,
+                    "screen timing: a watch's first frame went to the hub"
+                );
+            }
             let out = browser_frame(&session, &frame, control());
             slot.replace(session.as_str(), to_json(&NodeToHub::BrowserFrame(out)));
         }

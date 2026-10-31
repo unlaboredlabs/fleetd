@@ -431,7 +431,8 @@ impl Simulators {
                 let this = simulators.clone();
                 tokio::spawn(async move {
                     let simctl = Simctl::new(set_dir(&this.home));
-                    let cleared = pool::clear(&simctl, Some(&golden.udid)).await;
+                    let cleared = pool::clear(&simctl, Some(&golden.udid)).await
+                        + pool::clear_homes(&this.home);
                     if cleared > 0 {
                         tracing::info!(cleared, "iOS simulators a stopped node left were deleted");
                     }
@@ -495,6 +496,7 @@ impl Simulators {
     fn ready(&self, golden: Golden) {
         let pool = Pool::new(
             Simctl::new(set_dir(&self.home)),
+            self.home.clone(),
             golden,
             self.config.pool.unwrap_or(1),
         );
@@ -627,7 +629,8 @@ impl Simulators {
             })?;
         // From here to the map nothing waits, so a start that goes away leaves no half-made session behind.
         let udid = lent.udid.clone();
-        wrapper::write_config(&self.home, &thread, &udid).map_err(|e| {
+        let runner_up = lent.runner_up();
+        wrapper::write_config(&self.home, &thread, &udid, Some(&lent.home)).map_err(|e| {
             refuse(
                 ErrorCode::Failed,
                 format!("The node could not point agent-device at the simulator: {e}."),
@@ -658,7 +661,16 @@ impl Simulators {
             )
         })?;
         lock(&self.sessions).insert(thread.clone(), session.clone());
-        session.start_runner();
+        if !runner_up {
+            session.start_runner();
+        }
+        tracing::debug!(
+            kind = "ios",
+            session = %session.id,
+            start_ms = started.elapsed().as_millis() as u64,
+            runner_up,
+            "screen timing: started from the warm pool"
+        );
         session.step(
             "session_start",
             json!({
