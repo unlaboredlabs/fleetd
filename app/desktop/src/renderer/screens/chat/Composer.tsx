@@ -13,7 +13,7 @@ interface ProjectRef {
 }
 
 import { ArrowUp, Check, Paperclip, Reply, Square, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
@@ -49,9 +49,11 @@ export interface ChatComposerProps {
   onCancelReply?: () => void;
   /** Who reads it, when not "the lead": a Navi's name. */
   who?: string | undefined;
+  /** Docked to the box's top, inside its outline (and its focus ring): the live strip. */
+  top?: ReactNode;
 }
 
-export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCancelReply, who }: ChatComposerProps) {
+export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCancelReply, who, top }: ChatComposerProps) {
   const projectKey = keyOf(project);
   const [draft, setDraft, drafts] = useDraft(projectKey);
   const working = useData(selectLeadWorking(projectKey));
@@ -246,6 +248,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
   return (
     <div className={c.composer} data-composer data-screen="chat.composer">
       <div className={c.box}>
+        {top}
         {skills.popup}
         {replyTo !== undefined ? (
           <div className={c.replying}>

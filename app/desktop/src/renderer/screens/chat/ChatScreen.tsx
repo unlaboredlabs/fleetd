@@ -293,12 +293,22 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       )}
       {data.missing ? null : (
         <div className={s.composer}>
-          {strip ? (
-            <Boundary part="the live strip">
-              <LiveStrip project={project} />
-            </Boundary>
-          ) : null}
-          <ChatComposer project={project} autoFocus recall={recall} onSent={onSent} replyTo={replyTo} onCancelReply={() => setReplyTo(undefined)} who={who} />
+          <ChatComposer
+            project={project}
+            autoFocus
+            recall={recall}
+            onSent={onSent}
+            replyTo={replyTo}
+            onCancelReply={() => setReplyTo(undefined)}
+            who={who}
+            top={
+              strip ? (
+                <Boundary part="the live strip">
+                  <LiveStrip project={project} />
+                </Boundary>
+              ) : null
+            }
+          />
         </div>
       )}
     </div>
