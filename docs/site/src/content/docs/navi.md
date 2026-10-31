@@ -160,7 +160,7 @@ purchase; fleetd fills the card into the checkout, and the Navi never sees it.
 |---|---|
 | What the Navi sees | Never the card's number, expiry or code. From the fill on, its browser session refuses to read values back (scripts of its own, `get value`, page snapshots). Every answer it gets, its transcript and the recording are scrubbed of the card. Filled fields show as blurred dots in the video, the live view and screenshots. |
 | Wrong shop | A request whose domain isn't the page's is refused. A fill on any other site gets nothing; the approval stays good for the shop until its 15 minutes run out. |
-| Never | Trading, crypto and moving money between accounts are refused, even approved. A command of a payment CLI (`stripe`, `shopify`, `paypal` and the like) through `gated_run` only you can approve. |
+| Never | Paying an exchange or a broker (trading, crypto) or a money-transfer service is refused, even approved. That's decided by who is paid, not by what the basket says: an airport transfer is a purchase like any other. A command of a payment CLI (`stripe`, `shopify`, `paypal` and the like) through `gated_run` only you can approve. |
 | While you decide | The browser session doesn't close for being idle, so a held room or fare stays held, for up to 2 hours. |
 
 **Payments** in the Navi's settings also lists every purchase it asked for: the shop, the amount, when, and what you

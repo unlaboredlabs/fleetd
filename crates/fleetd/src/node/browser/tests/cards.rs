@@ -211,6 +211,10 @@ fn card_forms() -> Vec<String> {
         "03/30".to_owned(),
         "03%2F30".to_owned(),
         "03/2030".to_owned(),
+        // The code is too short to mask everywhere: it must never be a value of its own, a JSON string or an attribute.
+        format!("\"{CVC}\""),
+        format!("value=\\\"{CVC}"),
+        format!("value='{CVC}"),
     ]
 }
 
@@ -304,7 +308,7 @@ async fn an_approved_purchase_fills_the_card_into_the_providers_frame_once_and_t
     hub.db
         .with(|c| Ok(crate::hub::navi::store::set_card(c, &project, Some(CARD))?))
         .unwrap();
-    // A shop other than the page's is refused before anyone is asked; so is trading.
+    // A shop other than the page's is refused before anyone is asked.
     let elsewhere = call(
         &rig.broker,
         purchase("hotel.devbox.test", "Double room, 2 nights"),
@@ -317,14 +321,6 @@ async fn an_approved_purchase_fills_the_card_into_the_providers_frame_once_and_t
             .unwrap()
             .contains("not hotel.devbox.test"),
         "{elsewhere}"
-    );
-    let crypto = call(&rig.broker, purchase("127.0.0.1", "Bitcoin, 0.01 BTC")).await;
-    assert!(
-        crypto["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("never trades"),
-        "{crypto}"
     );
     assert!(
         hub.approvals.purchases(&convert(&project), 10).is_empty(),
@@ -414,7 +410,7 @@ async fn an_approved_purchase_fills_the_card_into_the_providers_frame_once_and_t
         .iter()
         .find(|t| t["type"] == "iframe" && t["url"].as_str().is_some_and(|u| u.ends_with("/card")))
         .map(|t| t["targetId"].clone());
-    let (in_frame, context) = match frame_target {
+    let (in_frame, context, frame_id) = match frame_target {
         Some(target) => {
             let attached = driver
                 .ok(
@@ -423,7 +419,11 @@ async fn an_approved_purchase_fills_the_card_into_the_providers_frame_once_and_t
                     json!({ "targetId": target, "flatten": true }),
                 )
                 .await;
-            (attached["sessionId"].as_str().unwrap().to_owned(), None)
+            (
+                attached["sessionId"].as_str().unwrap().to_owned(),
+                None,
+                None,
+            )
         }
         None => {
             let tree = driver.ok(Some(&page), "Page.getFrameTree", json!({})).await;
@@ -445,7 +445,11 @@ async fn an_approved_purchase_fills_the_card_into_the_providers_frame_once_and_t
                     json!({ "frameId": child }),
                 )
                 .await;
-            (page.clone(), world["executionContextId"].as_i64())
+            (
+                page.clone(),
+                world["executionContextId"].as_i64(),
+                Some(child),
+            )
         }
     };
     for (session, context, expression) in [
@@ -484,13 +488,22 @@ async fn an_approved_purchase_fills_the_card_into_the_providers_frame_once_and_t
             .await;
         assert!(answer.get("error").is_some(), "{method}: {answer}");
     }
-    // Screenshots and the accessibility tree still work, and hold no card.
-    for (session, method) in [
-        (&in_frame, "Accessibility.getFullAXTree"),
-        (&page, "Page.captureScreenshot"),
+    // Screenshots and the accessibility tree (agent-browser's snapshots) still work, and hold no card: a filled field's
+    // value is redacted there, the code's too.
+    let in_card_frame = frame_id.map_or(json!({}), |f| json!({ "frameId": f }));
+    for (session, method, params) in [
+        (&in_frame, "Accessibility.getFullAXTree", in_card_frame),
+        (&page, "Accessibility.getFullAXTree", json!({})),
+        (&page, "Page.captureScreenshot", json!({})),
     ] {
-        let answer = driver.send(Some(session), method, json!({})).await;
+        let answer = driver.send(Some(session), method, params).await;
         assert!(answer.get("error").is_none(), "{method}: {answer}");
+        if method == "Accessibility.getFullAXTree" {
+            assert!(
+                answer.to_string().contains("***filled***"),
+                "a filled field shows redacted: {answer}"
+            );
+        }
         heard.push_str(&answer.to_string());
     }
 

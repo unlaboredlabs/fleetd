@@ -254,20 +254,59 @@ impl VideoSink {
 
 /// What a session scrubs: its project's and order's secrets as every session's reports are masked, and each value
 /// filled into its browser in every form a page or a trace may show it.
-pub struct Scrub(Masker);
+///
+/// A value too short to mask wherever it appears (a card's 3-digit code, under [`crate::node::mask::MIN_LEN`]) is
+/// masked where it is a field's value: a whole JSON string, and an HTML `value` attribute.
+pub struct Scrub(Masker, Vec<(String, String)>);
 
 impl Scrub {
     /// Every form a page or a trace may show a value in ([`Masker::thorough`]), for both kinds.
     pub fn new(secrets: &[(String, String)]) -> Self {
-        Self(Masker::thorough(secrets))
+        let short = secrets
+            .iter()
+            .filter(|(_, v)| !v.is_empty() && v.len() < crate::node::mask::MIN_LEN)
+            .map(|(name, value)| (format!("***{name}***"), value.clone()))
+            .collect();
+        Self(Masker::thorough(secrets), short)
     }
 
     pub fn text(&self, text: &str) -> String {
-        self.0.text(text).into_owned()
+        let mut out = self.0.text(text).into_owned();
+        for (shown, value) in &self.1 {
+            if out == *value {
+                return shown.clone();
+            }
+            for (open, close) in [
+                ("\"", "\""),
+                ("'", "'"),
+                ("&quot;", "&quot;"),
+                ("\\\"", "\\\""),
+            ] {
+                out = out.replace(
+                    &format!("value={open}{value}{close}"),
+                    &format!("value={open}{shown}{close}"),
+                );
+            }
+        }
+        out
     }
 
     pub fn value(&self, value: &mut serde_json::Value) {
         self.0.value(value);
+        if self.1.is_empty() {
+            return;
+        }
+        match value {
+            serde_json::Value::String(s) => {
+                let scrubbed = self.text(s);
+                if scrubbed != *s {
+                    *s = scrubbed;
+                }
+            }
+            serde_json::Value::Array(items) => items.iter_mut().for_each(|i| self.value(i)),
+            serde_json::Value::Object(map) => map.values_mut().for_each(|v| self.value(v)),
+            _ => {}
+        }
     }
 }
 

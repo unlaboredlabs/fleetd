@@ -350,7 +350,62 @@ pub fn outgoing(session: &Session, message: Value) -> Value {
     }
     let mut message = message;
     session.scrub().value(&mut message);
+    for nodes in ["/result/nodes", "/params/nodes"] {
+        if let Some(nodes) = message.pointer_mut(nodes).and_then(Value::as_array_mut) {
+            redact_filled(session, nodes);
+        }
+    }
     message
+}
+
+/// What an accessibility tree (agent-browser's snapshots) says of a field the session filled: never its value, nor the
+/// text inside it, whatever the value's length.
+fn redact_filled(session: &Session, nodes: &mut [Value]) {
+    let filled = |n: &Value| {
+        n["backendDOMNodeId"]
+            .as_i64()
+            .is_some_and(|b| session.is_filled_field(b))
+    };
+    let fields: std::collections::HashSet<String> = nodes
+        .iter()
+        .filter(|n| filled(n))
+        .filter_map(|n| n["nodeId"].as_str().map(str::to_owned))
+        .collect();
+    if fields.is_empty() {
+        return;
+    }
+    // Everything under a filled field: its text, however deep.
+    let mut inside = std::collections::HashSet::new();
+    loop {
+        let before = inside.len();
+        for n in nodes.iter() {
+            if n["parentId"]
+                .as_str()
+                .is_some_and(|p| fields.contains(p) || inside.contains(p))
+                && let Some(id) = n["nodeId"].as_str()
+            {
+                inside.insert(id.to_owned());
+            }
+        }
+        if inside.len() == before {
+            break;
+        }
+    }
+    for n in nodes.iter_mut() {
+        let id = n["nodeId"].as_str().unwrap_or_default().to_owned();
+        let keys: &[&str] = if fields.contains(&id) {
+            &["value"]
+        } else if inside.contains(&id) {
+            &["value", "name"]
+        } else {
+            continue;
+        };
+        for key in keys {
+            if n[*key].is_object() {
+                n[*key]["value"] = "***filled***".into();
+            }
+        }
+    }
 }
 
 /// The page the session follows, as its target says.

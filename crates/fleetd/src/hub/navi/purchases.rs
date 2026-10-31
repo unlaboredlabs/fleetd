@@ -58,17 +58,58 @@ pub fn card(hub: &Hub, r: &ProjectRef) -> Result<Option<NaviCard>, crate::hub::s
         .map(|reference| NaviCard { reference }))
 }
 
-/// What no purchase may be, even approved: trading (shares, crypto) or moving money (transfers, funds), by the words of
-/// its shop and its items.
+/// Exchanges and brokers: paying one buys holdings, which is trading (crypto included), whatever the basket says.
+const TRADING_SITES: &[&str] = &[
+    "coinbase.com",
+    "binance.com",
+    "kraken.com",
+    "crypto.com",
+    "bitstamp.net",
+    "gemini.com",
+    "bitpanda.com",
+    "kucoin.com",
+    "okx.com",
+    "bybit.com",
+    "robinhood.com",
+    "etrade.com",
+    "schwab.com",
+    "fidelity.com",
+    "vanguard.com",
+    "interactivebrokers.com",
+    "trading212.com",
+    "etoro.com",
+    "degiro.com",
+    "webull.com",
+];
+/// Money-transfer services: paying one moves money to someone, not a purchase.
+const MONEY_SITES: &[&str] = &[
+    "wise.com",
+    "westernunion.com",
+    "remitly.com",
+    "moneygram.com",
+    "xoom.com",
+    "worldremit.com",
+    "venmo.com",
+    "cash.app",
+    "revolut.com",
+];
+
+/// What no purchase may be, even approved: a payment to an exchange or a broker (trading, crypto), or to a
+/// money-transfer service (moving money). Decided by who is paid, never by words in the shop's or the items' names:
+/// an airport transfer, chicken stock or fair-trade coffee is a purchase like any other.
 pub fn refused_purchase(
     p: &fleetd_contracts::purchase::PurchaseRequestCall,
 ) -> Option<crate::hub::integrations::policy::Never> {
-    use crate::hub::integrations::policy::{Never, never};
-    std::iter::once(p.shop.name.as_str())
-        .chain(std::iter::once(p.shop.domain.as_str()))
-        .chain(p.items.iter().map(|i| i.name.as_str()))
-        .filter_map(never)
-        .find(|n| matches!(n, Never::Money | Never::Trading))
+    use crate::hub::integrations::policy::Never;
+    use fleetd_contracts::purchase::on_domain;
+    let domain = p.shop.domain.as_str();
+    if TRADING_SITES.iter().any(|s| on_domain(domain, s)) {
+        return Some(Never::Trading);
+    }
+    MONEY_SITES
+        .iter()
+        .any(|s| on_domain(domain, s))
+        .then_some(Never::Money)
 }
 
 fn refused(e: crate::hub::approvals::ApprovalRefused) -> McpToolError {
@@ -238,4 +279,46 @@ async fn card_set(
         next,
         truncated: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hub::integrations::policy::Never;
+
+    fn purchase(domain: &str, item: &str) -> fleetd_contracts::purchase::PurchaseRequestCall {
+        serde_json::from_value(serde_json::json!({
+            "shop": { "domain": domain, "name": "A shop" },
+            "total": { "amount": "10", "currency": "EUR" },
+            "items": [{ "name": item }],
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn the_floor_is_who_is_paid_never_the_words_in_the_basket() {
+        for (domain, item) in [
+            ("taxi.example.com", "Airport transfer"),
+            ("book.air.example", "Berlin to Lisbon, 1 transfer"),
+            ("groceries.example", "Chicken stock"),
+            ("stock.adobe.com", "Adobe Stock, 10 images"),
+            ("coffee.example", "Fair trade coffee"),
+            ("hardware.example", "Copper wire, 10 m"),
+            ("shop.example", "Money clip"),
+        ] {
+            assert_eq!(refused_purchase(&purchase(domain, item)), None, "{item}");
+        }
+        assert_eq!(
+            refused_purchase(&purchase("www.coinbase.com", "Order")),
+            Some(Never::Trading)
+        );
+        assert_eq!(
+            refused_purchase(&purchase("robinhood.com", "Order")),
+            Some(Never::Trading)
+        );
+        assert_eq!(
+            refused_purchase(&purchase("wise.com", "Order")),
+            Some(Never::Money)
+        );
+    }
 }
