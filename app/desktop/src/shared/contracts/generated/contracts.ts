@@ -251,6 +251,8 @@ export type AgentsListOutput = {
   truncated?: boolean;
 };
 
+export type Amount = string;
+
 export type AndroidHealth = {
   /** The command a person runs to fix it, when there is one. */
   fix?: string;
@@ -1676,7 +1678,7 @@ export type CloneTarget = {
 /**
  * A risky command (prod write, spend, delete, credential use), a session's permission prompt or an agent's proposed
  * preview setting waits for the human: exactly what it would do, then Approve or Deny. Answered with
- * `approval_answer`, naming `requestId`. Exactly one of `gated`, `permission` and `previewConfig`.
+ * `approval_answer`, naming `requestId`. Exactly one of `gated`, `permission`, `previewConfig` and `purchase`.
  */
 export type CommandApprovalItem = {
   answeredAt?: Timestamp;
@@ -1704,6 +1706,11 @@ export type CommandApprovalItem = {
    * Boxed: the setting is large beside the item's other fields, and every chat item would carry its size.
    */
   previewConfig?: PreviewConfigProposeCall;
+  /**
+   * A Navi's purchase (purchase_request): the shop, the total, what it buys and the card. Approved, the Navi's node
+   * fills the card into that checkout once. Boxed, as `previewConfig` is.
+   */
+  purchase?: Purchase;
   requestId: ChatRequestId;
   state: CommandApprovalState;
 };
@@ -1751,6 +1758,8 @@ export type CriticalPath = {
   startMs: number;
   totals: CategoryMs[];
 };
+
+export type Currency = string;
 
 /** Who answered a permission prompt. */
 export type DecidedBy = "lead" | "human" | "policy" | "hub_rule";
@@ -2718,6 +2727,11 @@ export type HumanRequest = {
    */
   previewConfig?: PreviewConfigProposeCall;
   projectRef: ProjectRef;
+  /**
+   * approval of a Navi's purchase (purchase_request), instead of a gated run: approving it lets the Navi's node fill
+   * its card into that checkout once. Only a person answers it, in every approval mode.
+   */
+  purchase?: Purchase;
   requestId: ChatRequestId;
   /** secret only. */
   secret?: SecretRequest;
@@ -4009,6 +4023,24 @@ export type NaviAsksOutput = {
   truncated?: boolean;
 };
 
+/** The card a Navi pays with: a Credit Card item in its person's 1Password. Only the reference is kept. */
+export type NaviCard = {
+  ref: OpItemReference;
+};
+
+export type NaviCardSetInput = {
+  /** A Credit Card item, `op://<vault>/<item>`, as onepassword_cards lists it; absent: the Navi has no card. */
+  card?: OpItemReference;
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type NaviCardSetOutput = {
+  card?: NaviCard;
+  next?: string;
+  truncated?: boolean;
+};
+
 export type NaviCreateInput = {
   /** Where it lives; absent: the best worker (see `project_discover.best`). */
   machineId?: MachineId;
@@ -4034,6 +4066,20 @@ export type NaviListOutput = {
   /** Oldest first. */
   navis: ProjectSummary[];
   next?: string;
+  truncated?: boolean;
+};
+
+export type NaviPurchasesInput = {
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type NaviPurchasesOutput = {
+  /** Absent until the person picks one: the Navi can't pay until then. */
+  card?: NaviCard;
+  next?: string;
+  /** Newest first, at most 200. */
+  purchases: PurchaseLogEntry[];
   truncated?: boolean;
 };
 
@@ -4180,6 +4226,27 @@ export type NotifyPolicy = {
   quiet: QuietWindow[];
 };
 
+/** A Credit Card item a person's 1Password token reads, for the Navi's card picker. */
+export type OnePasswordCard = {
+  ref: OpItemReference;
+  title: string;
+  vault: string;
+};
+
+export type OnePasswordCardsInput = {
+  /** Where to list them; default: the first machine online that holds the token. */
+  machineId?: MachineId;
+};
+
+export type OnePasswordCardsOutput = {
+  cards: OnePasswordCard[];
+  /** Why none could be listed, the token masked; absent when it worked. */
+  error?: string;
+  machineId: MachineId;
+  next?: string;
+  truncated?: boolean;
+};
+
 export type OnePasswordGetInput = { [key: string]: unknown };
 
 export type OnePasswordGetOutput = {
@@ -4239,6 +4306,8 @@ export type OnePasswordToken = {
   /** Each machine whose node holds it. Work on a machine missing here has no token from the person. */
   sealedOn: ClaudeSealedOn[];
 };
+
+export type OpItemReference = string;
 
 /** One order (workstream) as the board shows it. */
 export type OrderCard = {
@@ -5741,6 +5810,59 @@ export type PromptWarning = {
 
 export type PromptWarningCode = "placeholder_missing" | "placeholder_unknown" | "safety_rule_missing" | "too_long";
 
+/** A purchase as its request keeps it: what the person approves. */
+export type Purchase = {
+  /** The Navi's card when it asked. */
+  card: NaviCard;
+  /** When its card was filled into the checkout; absent until then. A purchase fills once. */
+  filledAt?: Timestamp;
+  items: PurchaseItem[];
+  /** The browser session that asked, the one its fill is for. */
+  sessionId: BrowserSessionId;
+  shop: PurchaseShop;
+  total: PurchaseTotal;
+};
+
+/** One thing in the basket. */
+export type PurchaseItem = {
+  /** Its price in the total's currency, when the checkout shows one. */
+  amount?: Amount;
+  /** What it is, as the checkout names it: `Double room, 12-14 Nov, 2 nights`. */
+  name: string;
+  /** How many; absent: 1. */
+  quantity?: number;
+};
+
+/** One purchase in a Navi's log: what it was, and what the person and the node did with it. */
+export type PurchaseLogEntry = {
+  answeredAt?: Timestamp;
+  /** Who approved or denied it: `human:<device>`. */
+  answeredBy?: string;
+  askedAt: Timestamp;
+  /** What happened last, in one line. */
+  note?: string;
+  purchase: Purchase;
+  requestId: ChatRequestId;
+  state: RequestState;
+};
+
+/** The shop the Navi buys from. */
+export type PurchaseShop = {
+  /**
+   * The checkout page's host: `shop.example.com`. The card fills only on it (and its subdomains) and in its
+   * payment provider's frames.
+   */
+  domain: ShopDomain;
+  /** Its name, as the shop calls itself: `Hotel Adlon`. */
+  name: string;
+};
+
+/** The total the checkout shows, with everything in it (taxes, fees, shipping). */
+export type PurchaseTotal = {
+  amount: Amount;
+  currency: Currency;
+};
+
 export type PushBadgeInput = { [key: string]: unknown };
 
 export type PushBadgeOutput = {
@@ -6378,6 +6500,8 @@ export type SetupWay = {
   /** Names the way where a step has several: "the hub's API key". */
   label?: string;
 };
+
+export type ShopDomain = string;
 
 /** `sidebar.order`: whose sidebar order changed. */
 export type SidebarOrderData = {
@@ -8411,12 +8535,15 @@ export interface ToolMap {
   metrics_retention_set: { input: MetricsRetentionSetInput; output: MetricsRetentionSetOutput };
   navi_archive: { input: NaviArchiveInput; output: NaviArchiveOutput };
   navi_asks: { input: NaviAsksInput; output: NaviAsksOutput };
+  navi_card_set: { input: NaviCardSetInput; output: NaviCardSetOutput };
   navi_create: { input: NaviCreateInput; output: NaviCreateOutput };
   navi_list: { input: NaviListInput; output: NaviListOutput };
+  navi_purchases: { input: NaviPurchasesInput; output: NaviPurchasesOutput };
   navi_rename: { input: NaviRenameInput; output: NaviRenameOutput };
   navi_signins_forget: { input: NaviSigninsForgetInput; output: NaviSigninsForgetOutput };
   navi_site_revoke: { input: NaviSiteRevokeInput; output: NaviSiteRevokeOutput };
   navi_sites: { input: NaviSitesInput; output: NaviSitesOutput };
+  onepassword_cards: { input: OnePasswordCardsInput; output: OnePasswordCardsOutput };
   onepassword_get: { input: OnePasswordGetInput; output: OnePasswordGetOutput };
   onepassword_remove: { input: OnePasswordRemoveInput; output: OnePasswordRemoveOutput };
   onepassword_set: { input: OnePasswordSetInput; output: OnePasswordSetOutput };

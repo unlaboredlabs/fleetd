@@ -1197,6 +1197,37 @@ impl SessionService {
                 let answer = telegram.call(&project_id, call).await.map_err(invalid)?;
                 Ok(SessionOutput::Telegram { answer })
             }
+            SessionCall::OnePasswordCards { person_id } => {
+                let home = &self.inner.config.home;
+                let token = match super::onepassword_tokens::read(home, &person_id) {
+                    Ok(Some(token)) => token,
+                    Ok(None) => {
+                        return Ok(SessionOutput::OnePasswordCards {
+                            cards: Vec::new(),
+                            error: Some(
+                                "this machine holds no 1Password token of yours: save it again while it is online"
+                                    .into(),
+                            ),
+                        });
+                    }
+                    Err(why) => {
+                        return Ok(SessionOutput::OnePasswordCards {
+                            cards: Vec::new(),
+                            error: Some(why),
+                        });
+                    }
+                };
+                let helper = super::browser::onepassword::OnePassword::new(home, token.clone());
+                let (cards, error) = match helper.cards().await {
+                    Ok(cards) => (cards, None),
+                    Err(e) => {
+                        let name = super::browser::onepassword::TOKEN_ENV.to_owned();
+                        let masker = super::mask::Masker::new(&[(name, token.to_string())]);
+                        (Vec::new(), Some(masker.text(&e.message).into_owned()))
+                    }
+                };
+                Ok(SessionOutput::OnePasswordCards { cards, error })
+            }
             SessionCall::ClaudeModels => {
                 let (models, error) =
                     match super::claude_accounts::hub_models(&self.inner.config.home).await {

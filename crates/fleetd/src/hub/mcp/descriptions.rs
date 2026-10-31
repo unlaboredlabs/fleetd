@@ -89,6 +89,14 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Take back a site a Navi may fetch and open without asking: its next fetch or visit there asks the person again. Answers the sites it still may.",
     ),
     (
+        "navi_purchases",
+        "A Navi's card and its purchase log: the Credit Card item in its person's 1Password it pays with (kept as an op:// reference only, never the card's details), and every purchase it asked for, newest first, with its shop, total, items, state, when it was asked and answered, and by whom. A purchase always asks the person; approved, the Navi's node fills the card into that checkout once.",
+    ),
+    (
+        "navi_card_set",
+        "A person's own device only, for their own Navi. Pick the card a Navi pays with: card is a Credit Card item, op://<vault>/<item>, as onepassword_cards lists it; absent, the Navi has no card and can't pay. Only the reference is kept.",
+    ),
+    (
         "navi_signins_forget",
         "Forget a Navi's sign-ins: its browser keeps the sites it signed into (cookies and site storage, in a browser profile of its own on its machine) between sessions; this ends its open browser session, if any, and deletes that profile, so its next visit to each site starts signed out. Deleting the Navi deletes it too.",
     ),
@@ -235,6 +243,10 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "onepassword_remove",
         "A person's own device only. Remove the caller's 1Password token; each online node holding it forgets it.",
+    ),
+    (
+        "onepassword_cards",
+        "A person's own device only. List the Credit Card items the caller's 1Password token reads, for a Navi's card picker: each item's op:// reference, title and vault, never its number, expiry or code (machineId, default the first online machine holding the token). error says why none could be listed, the token masked.",
     ),
     (
         "onepassword_test",

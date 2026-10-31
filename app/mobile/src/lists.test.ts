@@ -166,6 +166,32 @@ describe("approvals", () => {
     const deletes: HumanRequest = { ...r, permission: { requestId: "p2", threadId: "t1", toolName: "mcp__crm__delete_contact", summary: "", preview } };
     expect(approvalView(deletes, "Ada").risk).toBe("irreversible");
   });
+
+  it("shows a Navi's purchase whole: the shop, what it buys, the total and the card", () => {
+    const r: HumanRequest = {
+      ...asked("r1"),
+      text: "Pay 264.40 EUR at Hotel Devbox (hotel-devbox.example) with Visa (Personal)",
+      purchase: {
+        shop: { domain: "hotel-devbox.example", name: "Hotel Devbox" },
+        total: { amount: "264.40", currency: "EUR" },
+        items: [
+          { name: "Double room, 2 nights", quantity: 1, amount: "258.00" },
+          { name: "City tax", quantity: 2, amount: "3.20" },
+        ],
+        card: { ref: "op://Personal/Visa" },
+        sessionId: "B00000000000000000000000000000022",
+      },
+    };
+    const view = approvalView(r, "Ada");
+    expect(view.title).toBe("Ada wants to pay 264.40 EUR at Hotel Devbox");
+    expect(view.risk).toBe("money");
+    expect(view.fields.filter((f) => f.label !== "Asked").map((f) => [f.label, f.value, f.more === true])).toEqual([
+      ["Shop", "hotel-devbox.example", false],
+      ["Buying", "Double room, 2 nights · 258.00 EUR\n2 × City tax · 3.20 EUR", false],
+      ["Total", "264.40 EUR", false],
+      ["Card", "Visa (Personal)", false],
+    ]);
+  });
 });
 
 describe("chatList", () => {

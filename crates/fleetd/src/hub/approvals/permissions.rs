@@ -212,6 +212,7 @@ impl Approvals {
                     site,
                 }),
                 preview_config: None,
+                purchase: None,
                 at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
                 at_ms: now,
             })

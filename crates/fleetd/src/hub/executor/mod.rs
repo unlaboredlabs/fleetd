@@ -2644,6 +2644,28 @@ impl Executors {
         }
     }
 
+    /// Has the node list the Credit Card items a person's 1Password token reads: references and names, else why not,
+    /// the token masked. Only to a node listing `CAP_ONEPASSWORD_CARDS`.
+    pub async fn onepassword_cards(
+        &self,
+        machine_id: &MachineId,
+        person_id: fleetd_contracts::people::PersonId,
+    ) -> Result<Result<Vec<fleetd_contracts::purchase::OnePasswordCard>, String>, ExecutorError>
+    {
+        let op = NodeOperation::Read;
+        let call = SessionCall::OnePasswordCards { person_id };
+        match self
+            .call(machine_id, op, call, ONEPASSWORD_TEST_TIMEOUT)
+            .await?
+        {
+            SessionOutput::OnePasswordCards {
+                error: Some(error), ..
+            } => Ok(Err(error)),
+            SessionOutput::OnePasswordCards { cards, .. } => Ok(Ok(cards)),
+            _ => Err(failed(machine_id, op, "the node sent no list of cards")),
+        }
+    }
+
     /// Has the node list the models the hub's API key offers. Only to a node listing `CAP_CLAUDE_MODELS`.
     pub async fn claude_models(
         &self,

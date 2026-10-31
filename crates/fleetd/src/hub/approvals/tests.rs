@@ -99,6 +99,7 @@ impl Fake {
                 ),
                 permission: None,
                 preview_config: None,
+                purchase: None,
                 at: fleetd_contracts::ids::Timestamp("2026-10-18T10:00:00.000Z".into()),
                 at_ms: 0,
             })
@@ -1398,4 +1399,221 @@ async fn through_the_relay_a_custom_server_gets_its_policy() {
     assert_eq!(open[0].permission.as_ref().unwrap().request_id, "q3");
     assert_eq!(card(&open[0])["action"], "delete");
     assert_eq!(card(&open[0])["title"], "Use delete_contact on crm");
+}
+
+fn purchase_call(session: &str) -> fleetd_contracts::purchase::PurchaseOpenCall {
+    serde_json::from_value(json!({
+        "sessionId": session,
+        "page": "https://hotel.devbox.test/checkout",
+        "purchase": {
+            "shop": { "domain": "hotel.devbox.test", "name": "Hotel Devbox" },
+            "total": { "amount": "129.90", "currency": "EUR" },
+            "items": [{ "name": "Double room, 2 nights", "quantity": 1, "amount": "129.90" }],
+        },
+    }))
+    .unwrap()
+}
+
+fn visa() -> fleetd_contracts::purchase::NaviCard {
+    serde_json::from_value(json!({ "ref": "op://Personal/Visa" })).unwrap()
+}
+
+fn approvals_at(
+    fake: &Arc<Fake>,
+    clock: Arc<crate::hub::store::test_clock::ManualClock>,
+) -> Arc<Approvals> {
+    Approvals::new(ApprovalsDeps {
+        requests: fake.requests.clone(),
+        nodes: fake.clone(),
+        hub: fake.clone(),
+        events: fake.clone(),
+        clock,
+    })
+}
+
+const B1: &str = "B0123456789abcdef0123456789abcdef";
+
+/// A Navi's purchase is a request of its own class: it opens a card with the shop, the total, the items and the card,
+/// only a person answers it, and approved it is filled once, by the session that asked, within its window.
+#[tokio::test]
+async fn a_purchase_always_asks_a_person_and_its_card_fills_once_within_its_window() {
+    use fleetd_contracts::browser::BrowserSessionId;
+    let fake = Arc::new(Fake::default());
+    let clock = crate::hub::store::test_clock::ManualClock::at(1_790_000_000_000);
+    let a = approvals_at(&fake, clock.clone());
+    let open = a
+        .open_purchase(&p1(), purchase_call(B1), visa())
+        .await
+        .unwrap();
+    assert_eq!(open.state, RequestState::Open);
+    assert_eq!(
+        open.text.as_str(),
+        "Pay 129.90 EUR at Hotel Devbox (hotel.devbox.test) with Visa (Personal)"
+    );
+    assert!(
+        purchases::person_only(&open),
+        "no mode, checker or rule answers it"
+    );
+    let ChatItem::CommandApproval(item) = chat_item(&open) else {
+        panic!("a purchase shows as an approval");
+    };
+    let shown = item.purchase.expect("the card shows the purchase");
+    assert_eq!(shown.shop.domain.as_str(), "hotel.devbox.test");
+    assert_eq!(shown.card.label(), "Visa (Personal)");
+    assert!(item.gated.is_none() && item.permission.is_none());
+    let session = BrowserSessionId::unchecked(B1);
+
+    // Unanswered: nothing fills it. Nor does a key that isn't a person's.
+    let early = a
+        .claim_purchase(&p1(), &open.request_id, &session)
+        .await
+        .unwrap_err();
+    assert!(early.message.contains("hasn't answered"), "{early:?}");
+    let by_agent = a.answer(&agent(), "Q1", true, None).await.unwrap_err();
+    assert_eq!(by_agent.code, "forbidden");
+
+    // Approved: the Navi is woken, and runs nothing here.
+    let approved = a.answer(&person(), "Q1", true, None).await.unwrap();
+    assert_eq!(approved.state, RequestState::Approved);
+    assert_eq!(*fake.woken.lock().unwrap(), ["Q1 approved"]);
+    assert!(fake.runs.lock().unwrap().is_empty());
+
+    // Another browser session can't fill it.
+    let other = BrowserSessionId::unchecked("Bffffffffffffffffffffffffffffffff");
+    let wrong = a
+        .claim_purchase(&p1(), &open.request_id, &other)
+        .await
+        .unwrap_err();
+    assert_eq!(wrong.code, "forbidden");
+
+    // A fill that typed nothing gives the claim back; one that typed fills it for good.
+    let claimed = a
+        .claim_purchase(&p1(), &open.request_id, &session)
+        .await
+        .unwrap();
+    assert_eq!(
+        (claimed.domain.as_str(), claimed.card.as_str()),
+        ("hotel.devbox.test", "op://Personal/Visa")
+    );
+    let twice = a
+        .claim_purchase(&p1(), &open.request_id, &session)
+        .await
+        .unwrap_err();
+    assert!(twice.message.contains("fills once"), "{twice:?}");
+    let untyped = serde_json::from_value(json!({
+        "requestId": "Q1", "ok": false, "typed": false, "message": "no card number field on the checkout",
+    }))
+    .unwrap();
+    let back = a.purchase_filled(&p1(), untyped).await.unwrap();
+    assert_eq!(back.state, RequestState::Approved);
+    a.claim_purchase(&p1(), &open.request_id, &session)
+        .await
+        .unwrap();
+    let typed = serde_json::from_value(json!({
+        "requestId": "Q1", "ok": true, "typed": true, "message": "the card's number, expiry, security code",
+    }))
+    .unwrap();
+    let done = a.purchase_filled(&p1(), typed).await.unwrap();
+    assert_eq!(done.state, RequestState::Ran);
+    assert!(done.purchase.unwrap().filled_at.is_some());
+    let again = a
+        .claim_purchase(&p1(), &open.request_id, &session)
+        .await
+        .unwrap_err();
+    assert!(again.message.contains("fills once"), "{again:?}");
+
+    // Past its window, an approval fills nothing and ends.
+    let late = a
+        .open_purchase(&p1(), purchase_call(B1), visa())
+        .await
+        .unwrap();
+    a.answer(&person(), late.request_id.as_str(), true, None)
+        .await
+        .unwrap();
+    clock.advance(std::time::Duration::from_secs(
+        60 * fleetd_contracts::purchase::FILL_WINDOW_MINUTES as u64 + 1,
+    ));
+    let expired = a
+        .claim_purchase(&p1(), &late.request_id, &session)
+        .await
+        .unwrap_err();
+    assert!(expired.message.contains("expired"), "{expired:?}");
+    assert_eq!(
+        fake.request(late.request_id.as_str()).state,
+        RequestState::Failed
+    );
+
+    // Denied: the Navi hears it, and nothing fills it.
+    let no = a
+        .open_purchase(&p1(), purchase_call(B1), visa())
+        .await
+        .unwrap();
+    a.answer(
+        &person(),
+        no.request_id.as_str(),
+        false,
+        Some("too dear".into()),
+    )
+    .await
+    .unwrap();
+    assert!(
+        fake.woken
+            .lock()
+            .unwrap()
+            .contains(&format!("{} denied", no.request_id))
+    );
+    let denied = a
+        .claim_purchase(&p1(), &no.request_id, &session)
+        .await
+        .unwrap_err();
+    assert!(denied.message.contains("is denied"), "{denied:?}");
+    // Another project's purchase is none of this one's.
+    let elsewhere = ProjectRef {
+        machine_id: "lab-a".into(),
+        project_id: "p2".into(),
+    };
+    let foreign = a
+        .claim_purchase(&elsewhere, &open.request_id, &session)
+        .await
+        .unwrap_err();
+    assert_eq!(foreign.code, "not_found");
+}
+
+/// What only a person may answer, in every approval mode (ask_all, checker, yolo): a purchase, an MCP tool that spends,
+/// and a command of a payment CLI. Anything else a mode may decide.
+#[test]
+fn purchases_spending_tools_and_payment_clis_are_the_persons_alone() {
+    let mut r = Fake::default().stored();
+    assert!(!purchases::person_only(&r), "ls is not a purchase");
+    for program in ["stripe", "/usr/local/bin/stripe", "shopify", "link-cli"] {
+        r.gated = Some(
+            serde_json::from_value(json!({ "argv": [program, "charges", "create"], "cwd": "/w/p1", "class": "irreversible", "reason": "x", "timeoutSec": 60 }))
+                .unwrap(),
+        );
+        assert!(purchases::person_only(&r), "{program}");
+    }
+    r.gated = Some(
+        serde_json::from_value(json!({ "argv": ["curl", "-X", "POST", "https://api.devbox.test/pay"], "cwd": "/w/p1", "class": "money", "reason": "x", "timeoutSec": 60 }))
+            .unwrap(),
+    );
+    assert!(purchases::person_only(&r), "a command classed money");
+    r.gated = None;
+    let spend = crate::hub::integrations::policy::preview(
+        "flights",
+        "create_order",
+        crate::hub::integrations::policy::guess("create_order"),
+        &json!({ "flight": "LH 123" }),
+    )
+    .unwrap();
+    r.permission = Some(
+        serde_json::from_value(json!({
+            "threadId": "t1", "requestId": "p-1", "toolName": "mcp__flights__create_order", "summary": "",
+            "preview": spend,
+        }))
+        .unwrap(),
+    );
+    assert!(
+        purchases::person_only(&r),
+        "an MCP tool that makes an order spends"
+    );
 }

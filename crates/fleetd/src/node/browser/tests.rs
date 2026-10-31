@@ -28,6 +28,8 @@ use crate::hub::store::HubDb;
 use crate::node::mask::Masker;
 use crate::node::util::AbortOnDrop;
 
+/// A Navi's purchases: a fake checkout with a payment provider's card frame, and a fake 1Password.
+mod cards;
 /// Logins from 1Password, with a fake one.
 mod credentials;
 /// A Navi's sign-ins, kept between its sessions.
@@ -101,6 +103,8 @@ pub(crate) fn ffmpeg() -> Option<PathBuf> {
 struct TestHub {
     hub: Arc<Hub>,
     project: ProjectRef,
+    /// Who the calls come from: a task of the project's, unless a test makes it the project's lead (a Navi's).
+    agent: std::sync::Mutex<CallerAgent>,
 }
 
 impl HubCalls for TestHub {
@@ -113,7 +117,7 @@ impl HubCalls for TestHub {
         let caller = LeadCaller {
             project_ref: self.project.clone(),
             by: crate::hub::link::lead_calls::lead_by(&self.project),
-            agent: CallerAgent::Task(fleetd_contracts::tasks::TaskId::unchecked("T1")),
+            agent: self.agent.lock().unwrap().clone(),
         };
         handler.handle(caller, call)
     }
@@ -147,7 +151,13 @@ fn hub(home: &Path) -> Arc<TestHub> {
             .unwrap()],
         )
         .unwrap();
-    Arc::new(TestHub { hub, project })
+    Arc::new(TestHub {
+        hub,
+        project,
+        agent: std::sync::Mutex::new(CallerAgent::Task(
+            fleetd_contracts::tasks::TaskId::unchecked("T1"),
+        )),
+    })
 }
 
 /// A local site: a login form at /, and /login, which greets whoever signed in; /remember?user=… signs in for a day

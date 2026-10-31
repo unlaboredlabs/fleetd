@@ -6,12 +6,15 @@
 //!   runs those bytes and the exit code and output tail go to the lead.
 //! - approval of a preview setting (`preview_config_propose`, W58): once a person approves it, it becomes the
 //!   project's `preview` and the lead hears so.
+//! - approval of a Navi's purchase (`purchase_request`, purchases.rs): only a person answers it, in every approval mode;
+//!   once approved, the Navi's node fills its card into that checkout, once.
 //! - approval of a tool prompt: a session's permission prompt (a Navi's lead runs in `manual` mode), answered on its
 //!   node with exactly the input shown (permissions.rs).
 //!
 //! Every change is announced as `request.opened` / `request.updated`; the chat shows each request as its item
 //! ([`chat_item`]).
 pub mod permissions;
+pub mod purchases;
 pub mod store;
 pub mod tools;
 
@@ -345,6 +348,7 @@ pub fn chat_item(r: &HumanRequest) -> ChatItem {
             gated: r.gated.clone(),
             permission: r.permission.clone().map(Box::new),
             preview_config: r.preview_config.clone().map(Box::new),
+            purchase: r.purchase.clone().map(Box::new),
             state: match r.state {
                 RequestState::Approved => CommandApprovalState::Approved,
                 RequestState::Denied => CommandApprovalState::Denied,
@@ -418,7 +422,12 @@ impl Approvals {
             (_, Some(g), _) => shown_argv(&g.argv.iter().cloned().collect::<Vec<_>>()),
             (_, _, Some(p)) => format!("{} {}", p.tool_name, p.summary),
             _ if r.preview_config.is_some() => "a preview setting".into(),
-            _ => String::new(),
+            _ => r.purchase.as_ref().map_or(String::new(), |p| {
+                format!(
+                    "purchase at {} ({} {})",
+                    p.shop.domain, p.total.amount, p.total.currency
+                )
+            }),
         };
         self.deps
             .events
@@ -550,6 +559,7 @@ impl Approvals {
             gated: None,
             permission: None,
             preview_config: None,
+            purchase: None,
             at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
         })
@@ -832,6 +842,7 @@ impl Approvals {
             gated: Some(gated),
             permission: None,
             preview_config: None,
+            purchase: None,
             at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
         })
@@ -859,6 +870,7 @@ impl Approvals {
             gated: None,
             permission: None,
             preview_config: Some(call),
+            purchase: None,
             at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
         })
@@ -966,6 +978,11 @@ impl Approvals {
         }
         if approve && let Some(proposed) = &answered.preview_config {
             return self.save_preview(&answered, &proposed.config).await;
+        }
+        // A purchase runs nothing here: the Navi hears the answer, and its node fills the card if it was approved.
+        if answered.purchase.is_some() {
+            self.deps.hub.wake_request(&answered).await;
+            return Ok(answered);
         }
         if approve {
             let me = self.clone();

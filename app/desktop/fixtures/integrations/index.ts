@@ -18,6 +18,7 @@ const navi = (f: Fixture): { machineId: string; projectId: string } => {
   first["kind"] = "assistant";
   first["title"] = "Home";
   const ref = { machineId: asText(first["machineId"]), projectId: asText(first["projectId"]) };
+  f.answer("navi_purchases", ref, { purchases: [] });
   f.answer("project_settings_get", ref, {
     settings: {
       ...ref,
@@ -93,6 +94,43 @@ const adding = (base: Fixture): Fixture => {
   return f;
 };
 
+/** A Navi's Payments: the card it pays with, the Credit Card items the person's 1Password reads, and its purchases. */
+const payments = (base: Fixture): Fixture => {
+  const f = Fixture.from(base, "integrations-payments", "A Navi's Payments: it pays with Visa from 1Password, and its purchases: a hotel waiting, a train ticket filled, a flight not bought.");
+  const ref = navi(f);
+  f.answer("mcp_servers_get", { project: ref }, { global: [], project: [], userServers: true });
+  const card = { ref: "op://Personal/Visa" };
+  const entry = (requestId: string, state: string, shop: [string, string], amount: string, asked: string, extra: JsonObject = {}): JsonObject => ({
+    requestId,
+    state,
+    askedAt: asked,
+    purchase: {
+      shop: { name: shop[0], domain: shop[1] },
+      total: { amount, currency: "EUR" },
+      items: [{ name: shop[0], quantity: 1, amount }],
+      card,
+      sessionId: `B0000000000000000000000000000${requestId.slice(1).padStart(4, "0")}`,
+    },
+    ...extra,
+  });
+  f.answer("navi_purchases", ref, {
+    card,
+    purchases: [
+      entry("Q22", "open", ["Hotel Devbox", "hotel-devbox.example"], "264.40", "2026-10-31T08:58:00.000Z"),
+      entry("Q21", "ran", ["Rail Example", "tickets.rail.example"], "38.50", "2026-10-31T08:39:00.000Z", { answeredAt: "2026-10-31T08:40:02.000Z", answeredBy: "human:desk" }),
+      entry("Q17", "denied", ["Air Example", "book.air.example"], "412.00", "2026-10-29T17:12:00.000Z", { answeredAt: "2026-10-29T17:20:00.000Z", answeredBy: "human:desk" }),
+    ],
+  });
+  f.answer("onepassword_cards", {}, {
+    machineId: ref.machineId,
+    cards: [
+      { ref: "op://Personal/Visa", title: "Visa", vault: "Personal" },
+      { ref: "op://Shared/Company Amex", title: "Company Amex", vault: "Shared" },
+    ],
+  });
+  return f;
+};
+
 export default defineGroup({
-  fixtures: (base) => [empty(base("typical")), connected(base("typical")), adding(base("typical"))],
+  fixtures: (base) => [empty(base("typical")), connected(base("typical")), adding(base("typical")), payments(base("typical"))],
 });

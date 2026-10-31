@@ -930,6 +930,8 @@ impl Router {
             BrowserCall::Device(call) => devices.device(&thread, call.clone()).await,
             BrowserCall::FillCredential(_)
             | BrowserCall::RequestTakeover(_)
+            | BrowserCall::PurchaseRequest(_)
+            | BrowserCall::PurchaseFill(_)
             | BrowserCall::Desktop(_) => Err(refuse(
                 ErrorCode::Invalid,
                 format!(
@@ -966,9 +968,11 @@ impl Router {
                     .request_takeover(&thread, call.reason.clone())
                     .await
             }
-            BrowserCall::FillCredential(_) => Err(refuse(
+            BrowserCall::FillCredential(_)
+            | BrowserCall::PurchaseRequest(_)
+            | BrowserCall::PurchaseFill(_) => Err(refuse(
                 ErrorCode::Invalid,
-                "fill_credential is for browser sessions.",
+                format!("{} is for browser sessions.", frame.call.op()),
                 "do without it and say so in your result",
             )),
             BrowserCall::Device(_) => Err(refuse(
@@ -1001,6 +1005,8 @@ impl Router {
             BrowserCall::Device(call) => simulators.device(&thread, call.clone()).await,
             BrowserCall::FillCredential(_)
             | BrowserCall::RequestTakeover(_)
+            | BrowserCall::PurchaseRequest(_)
+            | BrowserCall::PurchaseFill(_)
             | BrowserCall::Desktop(_) => Err(refuse(
                 ErrorCode::Invalid,
                 format!("{} is not available in iOS sessions yet.", frame.call.op()),

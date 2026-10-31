@@ -27,6 +27,7 @@ use fleetd_contracts::lead_calls::{
 use fleetd_contracts::memory::{ForgetCall, MemoryReadCall, RememberCall};
 use fleetd_contracts::navi::{ChatReadCall, ChatSearchCall, FactoryStatusCall, ProjectMessageCall};
 use fleetd_contracts::preview::{PreviewConfigProposeCall, PreviewStartCall, PreviewSuggestCall};
+use fleetd_contracts::purchase::{PurchaseFillCall, PurchaseRequestCall};
 use fleetd_contracts::schema::inline_schema;
 use fleetd_contracts::skills::{SkillInstallCall, SkillSaveCall};
 use fleetd_contracts::verification::ReviewVerdict;
@@ -508,6 +509,33 @@ static TOOLS: &[Tool] = &[
          lead for the reference; never ask anyone for a password.",
         inline_schema::<FillCredentialCall>,
     ),
+    Tool {
+        worker: false,
+        ..browser(
+            "purchase_request",
+            "A Navi's call: ask the person to approve paying at the checkout open in your browser session, with the \
+             card they picked for you. Call it on the checkout page once the basket and total are final: shop is its \
+             domain (the page's host) and name, total the amount (`129.90`) and currency (`EUR`) with everything in \
+             it, items what is being bought. It always asks the person, whatever else you may do unasked; end your \
+             turn on that page and you are woken with the answer. Approved, call purchase_fill. Never type card \
+             details yourself. Trading, moving money between accounts and crypto stay refused.",
+            inline_schema::<PurchaseRequestCall>,
+        )
+    }
+    .needs("The person approves this exact purchase in the chat."),
+    Tool {
+        worker: false,
+        ..browser(
+            "purchase_fill",
+            "A Navi's call: once the person approved a purchase, fill its card into the checkout's card fields \
+             (the shop's page and its payment provider's frames, such as Stripe's) without seeing it: requestId is \
+             what purchase_request returned. Call it on that checkout with its card form showing, within 15 minutes \
+             of the approval; it fills once. Then check the total and click Pay or Book yourself. A bank's \
+             confirmation (3-D Secure, a code, its app) goes to the person with request_takeover. From the fill on \
+             the session refuses reading values back.",
+            inline_schema::<PurchaseFillCall>,
+        )
+    },
 ];
 
 /// A verdict without what the hub fills in from the session: its task and the head it reviewed.

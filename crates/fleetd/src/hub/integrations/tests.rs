@@ -129,11 +129,24 @@ fn blocked_stays_blocked_even_when_marked_as_reading() {
     ] {
         assert_eq!(blocked(trade, json!({})), Never::Trading.why(), "{trade}");
     }
-    // Buying something that isn't a holding is spending: it asks, marked as such.
+    // Buying something that isn't a holding is spending: it asks, marked as such, and only a person answers it.
     assert_eq!(
         ask("mcp__bank__buy_ticket", json!({})).action,
         ToolAction::Spend
     );
+    // So is making an order, a booking or a reservation, whatever the tool calls it; reading one isn't.
+    for spends in [
+        "mcp__flights__create_order",
+        "mcp__flights__book_flight",
+        "mcp__hotels__confirmBooking",
+        "mcp__hotels__reserve_room",
+        "mcp__tables__make_reservation",
+    ] {
+        assert_eq!(ask(spends, json!({})).action, ToolAction::Spend, "{spends}");
+    }
+    for reads in ["mcp__flights__list_orders", "mcp__hotels__get_booking"] {
+        assert_ne!(ask(reads, json!({})).action, ToolAction::Spend, "{reads}");
+    }
     assert_eq!(
         blocked("mcp__bank__create_account", json!({})),
         Never::Accounts.why()

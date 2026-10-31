@@ -80,6 +80,12 @@ describe("what the lead waits on", () => {
       message: { item: { kind: "command_approval", state: "open", previewConfig: { config: {}, why: "how it runs" } } } as unknown as ChatMessage,
     });
     expect(waitingOn([inline("g1", "gated", "open"), setting], LOADED, NOW, "UTC")).toEqual({ what: "1 command to approve, 1 Try it setting to approve", targets: [{ id: "g1" }, { id: "p1" }] });
+    // So does a Navi's purchase.
+    const purchase = item("q1", "lead", "", at(19, 9, 7), {
+      kind: "gated",
+      message: { item: { kind: "command_approval", state: "open", purchase: { shop: { domain: "a.example", name: "A" } } } } as unknown as ChatMessage,
+    });
+    expect(waitingOn([purchase], LOADED, NOW, "UTC")).toEqual({ what: "1 purchase to approve", targets: [{ id: "q1" }] });
   });
 
   it("counts an open approval or secret on a page not loaded, from the hub's list, and goes there too", () => {

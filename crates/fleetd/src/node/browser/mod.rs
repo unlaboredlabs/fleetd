@@ -11,6 +11,7 @@
 //! fresh profile as before. Its browser reads and writes only in the Navi's folder (local.rs): no `file:` page, no
 //! upload or download elsewhere.
 pub mod agent_browser;
+pub mod cards;
 pub mod cdp;
 pub mod chrome;
 pub mod credentials;
@@ -223,6 +224,8 @@ pub struct Broker {
     secrets_for: SecretsFor,
     /// 1Password: each session's vault and what it resolved (credentials.rs).
     credentials: credentials::Credentials,
+    /// Where a purchase's card may fill besides its shop (cards.rs).
+    cards: cards::Cards,
     /// Recordings being uploaded now: one upload each.
     uploading: Mutex<HashSet<PathBuf>>,
     /// Reports for the hub, sent in order by one task.
@@ -388,6 +391,7 @@ impl Broker {
             hub: hub.clone(),
             secrets_for,
             credentials: credentials::Credentials::new(home),
+            cards: cards::Cards::default(),
             uploading: Mutex::default(),
             reports: {
                 let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Report>();
@@ -640,6 +644,10 @@ impl Broker {
                 "No iOS session is open.",
                 "start one with session_start kind ios",
             )),
+            BrowserCall::PurchaseRequest(call) => {
+                cards::purchase_request(self, &thread, call).await
+            }
+            BrowserCall::PurchaseFill(call) => cards::purchase_fill(self, &thread, call).await,
         }
     }
 
@@ -992,6 +1000,9 @@ impl Broker {
             reason: reason.clone(),
         });
         self.in_turn(&session, call).await?;
+        // A person may take a while (a bank's confirmation, a captcha): the session waits for them, and a held fare or
+        // room with it.
+        session.hold(Some(cards::WAIT_ON_PERSON));
         session.step(
             "request_takeover",
             json!({ "reason": reason.as_str() }),

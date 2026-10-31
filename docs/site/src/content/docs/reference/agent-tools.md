@@ -84,6 +84,8 @@ Every lead gets these.
 | [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
 | [`fill_credential`](#fill_credential) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
+| [`purchase_request`](#purchase_request) | A Navi's call: ask the person to approve paying at the checkout open in your browser session, with the card they picked for you. | The person approves this exact purchase in the chat. |
+| [`purchase_fill`](#purchase_fill) | A Navi's call: once the person approved a purchase, fill its card into the checkout's card fields (the shop's page and its payment provider's frames, such as Stripe's) without seeing it: requestId is what purchase_request returned. | No |
 
 ### spawn_agent
 
@@ -1045,6 +1047,67 @@ Fill a login field of your browser session from 1Password without seeing the val
   "arguments": {
     "ref": "op://Staging/Shop admin/password",
     "target": "input[name=password]"
+  }
+}
+```
+
+### purchase_request
+
+A Navi's call: ask the person to approve paying at the checkout open in your browser session, with the card they picked for you. Call it on the checkout page once the basket and total are final: shop is its domain (the page's host) and name, total the amount (`129.90`) and currency (`EUR`) with everything in it, items what is being bought. It always asks the person, whatever else you may do unasked; end your turn on that page and you are woken with the answer. Approved, call purchase_fill. Never type card details yourself. Trading, moving money between accounts and crypto stay refused.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `items` | object[] | yes | Everything being bought. At most 50 items. |
+| `items[].amount` | string | no | Its price in the total's currency, when the checkout shows one. |
+| `items[].name` | string | yes | What it is, as the checkout names it: `Double room, 12-14 Nov, 2 nights`. At most 200 characters. |
+| `items[].quantity` | integer | no | How many; absent: 1. 1 to 10000. |
+| `shop` | object | yes | The shop the Navi buys from. |
+| `shop.domain` | string | yes | The checkout page's host: `shop.example.com`. The card fills only on it (and its subdomains) and in its payment provider's frames. |
+| `shop.name` | string | yes | Its name, as the shop calls itself: `Hotel Adlon`. At most 120 characters. |
+| `total` | object | yes | The total the checkout shows, with everything in it (taxes, fees, shipping). |
+| `total.amount` | string | yes | Matches `^(0\|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$`. |
+| `total.currency` | string | yes | Matches `^[A-Z]{3}$`. |
+
+**Who may call:** a lead, answered by its node, which runs the browser. **Needs a human:** The person approves this exact purchase in the chat.
+
+```json
+{
+  "name": "purchase_request",
+  "arguments": {
+    "items": [
+      {
+        "amount": "129.90",
+        "name": "Double room, 12-14 Nov, 2 nights",
+        "quantity": 1
+      }
+    ],
+    "shop": {
+      "domain": "hotel.example.com",
+      "name": "Hotel Example"
+    },
+    "total": {
+      "amount": "129.90",
+      "currency": "EUR"
+    }
+  }
+}
+```
+
+### purchase_fill
+
+A Navi's call: once the person approved a purchase, fill its card into the checkout's card fields (the shop's page and its payment provider's frames, such as Stripe's) without seeing it: requestId is what purchase_request returned. Call it on that checkout with its card form showing, within 15 minutes of the approval; it fills once. Then check the total and click Pay or Book yourself. A bank's confirmation (3-D Secure, a code, its app) goes to the person with request_takeover. From the fill on the session refuses reading values back.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `requestId` | string | yes | The purchase's request, as purchase_request returned it: `Q12`. |
+
+**Who may call:** a lead, answered by its node, which runs the browser. **Needs a human:** no.
+
+```json
+{
+  "name": "purchase_fill",
+  "arguments": {
+    "requestId": "Q12"
   }
 }
 ```

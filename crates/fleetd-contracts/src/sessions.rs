@@ -294,6 +294,12 @@ pub enum SessionCall {
         project_id: ProjectId,
         call: crate::telegram::TelegramCall,
     },
+    /// The Credit Card items the person's token reads, for a Navi's card picker: their references and names, never a
+    /// card's details. Only nodes listing [`crate::node_link::CAP_ONEPASSWORD_CARDS`] get it.
+    #[serde(rename = "onepassword_cards", rename_all = "camelCase")]
+    OnePasswordCards {
+        person_id: crate::people::PersonId,
+    },
     /// The models the hub's API key offers, from the Models API at its endpoint. Only nodes listing
     /// [`crate::node_link::CAP_CLAUDE_MODELS`] get it.
     ClaudeModels,
@@ -803,6 +809,13 @@ pub enum SessionOutput {
     /// Answer to `telegram`.
     Telegram {
         answer: crate::telegram::TelegramAnswer,
+    },
+    /// Answer to `onepassword_cards`: the token's Credit Card items, else why not, the token masked.
+    #[serde(rename = "onepassword_carded")]
+    OnePasswordCards {
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        cards: Vec<crate::purchase::OnePasswordCard>,
+        error: Option<String>,
     },
     /// Answer to `claude_models`: each model's id and display name, else why they weren't read, the key masked.
     ClaudeModels {

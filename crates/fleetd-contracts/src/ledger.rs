@@ -433,6 +433,9 @@ pub struct HumanRequest {
     /// approval of an agent's proposed preview setting (preview_config_propose), instead of a gated run: approving it
     /// saves it as the project's `preview`.
     pub preview_config: Option<crate::preview::PreviewConfigProposeCall>,
+    /// approval of a Navi's purchase (purchase_request), instead of a gated run: approving it lets the Navi's node fill
+    /// its card into that checkout once. Only a person answers it, in every approval mode.
+    pub purchase: Option<crate::purchase::Purchase>,
     /// What happened, in one line: "fingerprint ab12cd34", "exit 0 on devbox, approved by human:desk", or why it did
     /// not run (and so is open again).
     pub evidence: Option<Text<0, 2000>>,
@@ -451,8 +454,8 @@ pub struct HumanRequest {
 }
 checked!(HumanRequest, |r| request_kind_rule(r));
 
-/// Each kind carries its own fields only: a secret its `secret`; an approval exactly one of `gated`, `permission` and
-/// `previewConfig`.
+/// Each kind carries its own fields only: a secret its `secret`; an approval exactly one of `gated`, `permission`,
+/// `previewConfig` and `purchase`.
 pub fn request_kind_rule(r: &HumanRequest) -> Result<(), String> {
     match r.kind {
         RequestKind::Secret => {
@@ -460,6 +463,7 @@ pub fn request_kind_rule(r: &HumanRequest) -> Result<(), String> {
                 || r.gated.is_some()
                 || r.permission.is_some()
                 || r.preview_config.is_some()
+                || r.purchase.is_some()
             {
                 return Err("a secret request has a secret and nothing else".into());
             }
@@ -476,10 +480,12 @@ pub fn request_kind_rule(r: &HumanRequest) -> Result<(), String> {
                 r.gated.is_some(),
                 r.permission.is_some(),
                 r.preview_config.is_some(),
+                r.purchase.is_some(),
             ];
             if r.secret.is_some() || held.iter().filter(|h| **h).count() != 1 {
                 return Err(
-                    "an approval has exactly one of a gated run, a tool prompt and a preview setting".into(),
+                    "an approval has exactly one of a gated run, a tool prompt, a preview setting and a purchase"
+                        .into(),
                 );
             }
         }

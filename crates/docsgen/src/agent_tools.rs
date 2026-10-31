@@ -754,6 +754,12 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "ref": "op://Staging/Shop admin/password",
             "target": "input[name=password]",
         }),
+        (_, "purchase_request") => json!({
+            "shop": { "domain": "hotel.example.com", "name": "Hotel Example" },
+            "total": { "amount": "129.90", "currency": "EUR" },
+            "items": [{ "name": "Double room, 12-14 Nov, 2 nights", "quantity": 1, "amount": "129.90" }],
+        }),
+        (_, "purchase_fill") => json!({ "requestId": "Q12" }),
         (_, "desktop") => json!({
             "action": "left_click",
             "coordinate": [640, 412],

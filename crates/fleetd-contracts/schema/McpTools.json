@@ -636,6 +636,10 @@
       ],
       "type": "object"
     },
+    "Amount": {
+      "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$",
+      "type": "string"
+    },
     "ApprovalAnswerInput": {
       "properties": {
         "decision": {
@@ -4278,7 +4282,7 @@
       "type": "object"
     },
     "CommandApprovalItem": {
-      "description": "A risky command (prod write, spend, delete, credential use), a session's permission prompt or an agent's proposed\npreview setting waits for the human: exactly what it would do, then Approve or Deny. Answered with\n`approval_answer`, naming `requestId`. Exactly one of `gated`, `permission` and `previewConfig`.",
+      "description": "A risky command (prod write, spend, delete, credential use), a session's permission prompt or an agent's proposed\npreview setting waits for the human: exactly what it would do, then Approve or Deny. Answered with\n`approval_answer`, naming `requestId`. Exactly one of `gated`, `permission`, `previewConfig` and `purchase`.",
       "properties": {
         "answeredAt": {
           "$ref": "#/$defs/Timestamp"
@@ -4325,6 +4329,10 @@
         "previewConfig": {
           "$ref": "#/$defs/PreviewConfigProposeCall",
           "description": "An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.\nOlder apps show it as an approval with neither command nor permission.\nBoxed: the setting is large beside the item's other fields, and every chat item would carry its size."
+        },
+        "purchase": {
+          "$ref": "#/$defs/Purchase",
+          "description": "A Navi's purchase (purchase_request): the shop, the total, what it buys and the card. Approved, the Navi's node\nfills the card into that checkout once. Boxed, as `previewConfig` is."
         },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
@@ -4497,6 +4505,10 @@
         "offPathMs"
       ],
       "type": "object"
+    },
+    "Currency": {
+      "pattern": "^[A-Z]{3}$",
+      "type": "string"
     },
     "DecidedBy": {
       "description": "Who answered a permission prompt.",
@@ -7226,6 +7238,10 @@
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
+        "purchase": {
+          "$ref": "#/$defs/Purchase",
+          "description": "approval of a Navi's purchase (purchase_request), instead of a gated run: approving it lets the Navi's node fill\nits card into that checkout once. Only a person answers it, in every approval mode."
+        },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
         },
@@ -9809,6 +9825,12 @@
         "navi_asks.output": {
           "$ref": "#/$defs/NaviAsksOutput"
         },
+        "navi_card_set.input": {
+          "$ref": "#/$defs/NaviCardSetInput"
+        },
+        "navi_card_set.output": {
+          "$ref": "#/$defs/NaviCardSetOutput"
+        },
         "navi_create.input": {
           "$ref": "#/$defs/NaviCreateInput"
         },
@@ -9820,6 +9842,12 @@
         },
         "navi_list.output": {
           "$ref": "#/$defs/NaviListOutput"
+        },
+        "navi_purchases.input": {
+          "$ref": "#/$defs/NaviPurchasesInput"
+        },
+        "navi_purchases.output": {
+          "$ref": "#/$defs/NaviPurchasesOutput"
         },
         "navi_rename.input": {
           "$ref": "#/$defs/NaviRenameInput"
@@ -9844,6 +9872,12 @@
         },
         "navi_sites.output": {
           "$ref": "#/$defs/NaviSitesOutput"
+        },
+        "onepassword_cards.input": {
+          "$ref": "#/$defs/OnePasswordCardsInput"
+        },
+        "onepassword_cards.output": {
+          "$ref": "#/$defs/OnePasswordCardsOutput"
         },
         "onepassword_get.input": {
           "$ref": "#/$defs/OnePasswordGetInput"
@@ -10573,10 +10607,14 @@
         "navi_archive.output",
         "navi_asks.input",
         "navi_asks.output",
+        "navi_card_set.input",
+        "navi_card_set.output",
         "navi_create.input",
         "navi_create.output",
         "navi_list.input",
         "navi_list.output",
+        "navi_purchases.input",
+        "navi_purchases.output",
         "navi_rename.input",
         "navi_rename.output",
         "navi_signins_forget.input",
@@ -10585,6 +10623,8 @@
         "navi_site_revoke.output",
         "navi_sites.input",
         "navi_sites.output",
+        "onepassword_cards.input",
+        "onepassword_cards.output",
         "onepassword_get.input",
         "onepassword_get.output",
         "onepassword_remove.input",
@@ -12238,6 +12278,51 @@
       ],
       "type": "object"
     },
+    "NaviCard": {
+      "description": "The card a Navi pays with: a Credit Card item in its person's 1Password. Only the reference is kept.",
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/OpItemReference"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "type": "object"
+    },
+    "NaviCardSetInput": {
+      "properties": {
+        "card": {
+          "$ref": "#/$defs/OpItemReference",
+          "description": "A Credit Card item, `op://<vault>/<item>`, as onepassword_cards lists it; absent: the Navi has no card."
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "NaviCardSetOutput": {
+      "properties": {
+        "card": {
+          "$ref": "#/$defs/NaviCard"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "NaviCreateInput": {
       "properties": {
         "machineId": {
@@ -12306,6 +12391,46 @@
       },
       "required": [
         "navis"
+      ],
+      "type": "object"
+    },
+    "NaviPurchasesInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "NaviPurchasesOutput": {
+      "properties": {
+        "card": {
+          "$ref": "#/$defs/NaviCard",
+          "description": "Absent until the person picks one: the Navi can't pay until then."
+        },
+        "next": {
+          "type": "string"
+        },
+        "purchases": {
+          "description": "Newest first, at most 200.",
+          "items": {
+            "$ref": "#/$defs/PurchaseLogEntry"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "purchases"
       ],
       "type": "object"
     },
@@ -12530,6 +12655,63 @@
       ],
       "type": "object"
     },
+    "OnePasswordCard": {
+      "description": "A Credit Card item a person's 1Password token reads, for the Navi's card picker.",
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/OpItemReference"
+        },
+        "title": {
+          "type": "string"
+        },
+        "vault": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "title",
+        "vault"
+      ],
+      "type": "object"
+    },
+    "OnePasswordCardsInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Where to list them; default: the first machine online that holds the token."
+        }
+      },
+      "type": "object"
+    },
+    "OnePasswordCardsOutput": {
+      "properties": {
+        "cards": {
+          "items": {
+            "$ref": "#/$defs/OnePasswordCard"
+          },
+          "type": "array"
+        },
+        "error": {
+          "description": "Why none could be listed, the token masked; absent when it worked.",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machineId",
+        "cards"
+      ],
+      "type": "object"
+    },
     "OnePasswordGetInput": {
       "type": "object"
     },
@@ -12691,6 +12873,10 @@
         "savedAt"
       ],
       "type": "object"
+    },
+    "OpItemReference": {
+      "pattern": "^op://[^/?\\r\\n]+/[^/?\\r\\n]+$",
+      "type": "string"
     },
     "OrderCard": {
       "description": "One order (workstream) as the board shows it.",
@@ -16777,6 +16963,143 @@
       ],
       "type": "string"
     },
+    "Purchase": {
+      "description": "A purchase as its request keeps it: what the person approves.",
+      "properties": {
+        "card": {
+          "$ref": "#/$defs/NaviCard",
+          "description": "The Navi's card when it asked."
+        },
+        "filledAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When its card was filled into the checkout; absent until then. A purchase fills once."
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/PurchaseItem"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId",
+          "description": "The browser session that asked, the one its fill is for."
+        },
+        "shop": {
+          "$ref": "#/$defs/PurchaseShop"
+        },
+        "total": {
+          "$ref": "#/$defs/PurchaseTotal"
+        }
+      },
+      "required": [
+        "shop",
+        "total",
+        "items",
+        "card",
+        "sessionId"
+      ],
+      "type": "object"
+    },
+    "PurchaseItem": {
+      "description": "One thing in the basket.",
+      "properties": {
+        "amount": {
+          "$ref": "#/$defs/Amount",
+          "description": "Its price in the total's currency, when the checkout shows one."
+        },
+        "name": {
+          "description": "What it is, as the checkout names it: `Double room, 12-14 Nov, 2 nights`.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "quantity": {
+          "description": "How many; absent: 1.",
+          "maximum": 10000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "PurchaseLogEntry": {
+      "description": "One purchase in a Navi's log: what it was, and what the person and the node did with it.",
+      "properties": {
+        "answeredAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "answeredBy": {
+          "description": "Who approved or denied it: `human:<device>`.",
+          "type": "string"
+        },
+        "askedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "note": {
+          "description": "What happened last, in one line.",
+          "type": "string"
+        },
+        "purchase": {
+          "$ref": "#/$defs/Purchase"
+        },
+        "requestId": {
+          "$ref": "#/$defs/ChatRequestId"
+        },
+        "state": {
+          "$ref": "#/$defs/RequestState"
+        }
+      },
+      "required": [
+        "requestId",
+        "purchase",
+        "state",
+        "askedAt"
+      ],
+      "type": "object"
+    },
+    "PurchaseShop": {
+      "description": "The shop the Navi buys from.",
+      "properties": {
+        "domain": {
+          "$ref": "#/$defs/ShopDomain",
+          "description": "The checkout page's host: `shop.example.com`. The card fills only on it (and its subdomains) and in its\npayment provider's frames."
+        },
+        "name": {
+          "description": "Its name, as the shop calls itself: `Hotel Adlon`.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain",
+        "name"
+      ],
+      "type": "object"
+    },
+    "PurchaseTotal": {
+      "description": "The total the checkout shows, with everything in it (taxes, fees, shipping).",
+      "properties": {
+        "amount": {
+          "$ref": "#/$defs/Amount"
+        },
+        "currency": {
+          "$ref": "#/$defs/Currency"
+        }
+      },
+      "required": [
+        "amount",
+        "currency"
+      ],
+      "type": "object"
+    },
     "PushBadgeInput": {
       "type": "object"
     },
@@ -18456,6 +18779,10 @@
         "checks"
       ],
       "type": "object"
+    },
+    "ShopDomain": {
+      "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){0,20}$",
+      "type": "string"
     },
     "SidebarOrderGetInput": {
       "type": "object"
