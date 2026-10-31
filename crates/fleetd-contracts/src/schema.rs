@@ -109,6 +109,7 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(crate::browser::ScreenWaitEventData: ScreenWait);
         data!(crate::people::PeopleChangedData: PeopleChanged);
         data!(crate::people::SidebarOrderData: SidebarOrder);
+        data!(crate::people::ChatPinsData: ChatPins);
         data!(crate::machine_setup::MachineAddStepData: MachineAddStep);
         data!(SteerEventData: SteerQueued, SteerDelivered, SteerAcknowledged, SteerUnacknowledged, SteerWithdrawn,
             SteerFailed);

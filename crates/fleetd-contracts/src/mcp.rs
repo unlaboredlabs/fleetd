@@ -3093,6 +3093,25 @@ output!(SidebarOrderSetOutput {
     order: Vec<ProjectRef>
 });
 
+// chat_pins_get, chat_pins_set: a person's own pinned chats (W232, `hub/chat_pins`), in their order, the same on each
+// of their phones; nobody else's list follows them.
+/// The most chats a person pins, as Messages allows.
+pub const CHAT_PINS_MAX: usize = 9;
+input!(ChatPinsGetInput {});
+output!(ChatPinsGetOutput {
+    /// The caller's pinned chats by ref, in their order; empty until they pin one, and for a key with no person.
+    pins: Vec<ProjectRef>,
+    /// Whether they ever set them: until then a phone sends up the pins it kept on its own.
+    set: bool,
+});
+input!(ChatPinsSetInput {
+    /// The caller's pinned chats in their new order; it replaces the one before.
+    pins: UniqueList<ProjectRef, 0, CHAT_PINS_MAX>,
+});
+output!(ChatPinsSetOutput {
+    pins: Vec<ProjectRef>
+});
+
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
 macro_rules! tools {
     ($($name:ident => $variant:ident, $scope:ident, $input:ty, $output:ty;)*) => {
@@ -3211,6 +3230,8 @@ tools! {
     // Human keys only (the set handler checks): a person's own sidebar order.
     sidebar_order_get => SidebarOrderGet, Read, SidebarOrderGetInput, SidebarOrderGetOutput;
     sidebar_order_set => SidebarOrderSet, Read, SidebarOrderSetInput, SidebarOrderSetOutput;
+    chat_pins_get => ChatPinsGet, Read, ChatPinsGetInput, ChatPinsGetOutput;
+    chat_pins_set => ChatPinsSet, Read, ChatPinsSetInput, ChatPinsSetOutput;
     wake_set => WakeSet, Operate, WakeSetInput, WakeSetOutput;
     wake_list => WakeList, Read, WakeListInput, WakeListOutput;
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;

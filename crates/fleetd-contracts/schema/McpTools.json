@@ -3009,6 +3009,72 @@
       ],
       "type": "object"
     },
+    "ChatPinsGetInput": {
+      "type": "object"
+    },
+    "ChatPinsGetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "pins": {
+          "description": "The caller's pinned chats by ref, in their order; empty until they pin one, and for a key with no person.",
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "type": "array"
+        },
+        "set": {
+          "description": "Whether they ever set them: until then a phone sends up the pins it kept on its own.",
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "pins",
+        "set"
+      ],
+      "type": "object"
+    },
+    "ChatPinsSetInput": {
+      "properties": {
+        "pins": {
+          "description": "The caller's pinned chats in their new order; it replaces the one before.",
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "maxItems": 9,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "pins"
+      ],
+      "type": "object"
+    },
+    "ChatPinsSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "pins": {
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "pins"
+      ],
+      "type": "object"
+    },
     "ChatReplyTo": {
       "description": "The bubble a human message answers: a lead message and the bubble's place in it, as `parts` counts (0 for a\nmessage of one bubble). The lead reads that bubble whole over the reply, and when it was written.",
       "properties": {
@@ -6559,6 +6625,11 @@
           "type": "string"
         },
         {
+          "const": "chat.pins",
+          "description": "A person pinned, unpinned or reordered their chats; `data` is `people::ChatPinsData`. Only that person's own\ndevices see it; chat_pins_get reads the pins.",
+          "type": "string"
+        },
+        {
           "const": "machine_add.step",
           "description": "A machine_add started, moved a step or ended; `data` is `machine_setup::MachineAddStepData`.\nmachine_add_status reads the rest.",
           "type": "string"
@@ -9302,6 +9373,18 @@
         "chat_nudge_clear.output": {
           "$ref": "#/$defs/ChatNudgeClearOutput"
         },
+        "chat_pins_get.input": {
+          "$ref": "#/$defs/ChatPinsGetInput"
+        },
+        "chat_pins_get.output": {
+          "$ref": "#/$defs/ChatPinsGetOutput"
+        },
+        "chat_pins_set.input": {
+          "$ref": "#/$defs/ChatPinsSetInput"
+        },
+        "chat_pins_set.output": {
+          "$ref": "#/$defs/ChatPinsSetOutput"
+        },
         "chat_send.input": {
           "$ref": "#/$defs/ChatSendInput"
         },
@@ -10280,6 +10363,10 @@
         "chat_history.output",
         "chat_nudge_clear.input",
         "chat_nudge_clear.output",
+        "chat_pins_get.input",
+        "chat_pins_get.output",
+        "chat_pins_set.input",
+        "chat_pins_set.output",
         "chat_send.input",
         "chat_send.output",
         "chat_stop.input",

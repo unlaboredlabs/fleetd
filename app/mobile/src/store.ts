@@ -241,8 +241,12 @@ const applyEvent = (s: State, event: HubEvent): State => {
   return settled === undefined || settled === sends ? out : { ...out, sends: { ...out.sends, [key]: settled } };
 };
 
-/** What an event asks the session to read again: the open requests, or a whole snapshot when the projects changed. */
-export const effectsOf = (event: HubEvent): { readonly requests: boolean; readonly snapshot: boolean } => ({
+/**
+ * What an event asks the session to read again: the open requests, a whole snapshot when the projects changed, or the
+ * pinned chats when this person changed them on another device.
+ */
+export const effectsOf = (event: HubEvent): { readonly requests: boolean; readonly snapshot: boolean; readonly pins: boolean } => ({
   requests: event.type.startsWith("request."),
   snapshot: event.type === "project.added" || event.type === "project.removed" || event.type === "project.settings",
+  pins: event.type === "chat.pins",
 });

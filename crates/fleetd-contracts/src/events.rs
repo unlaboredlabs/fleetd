@@ -276,6 +276,10 @@ pub enum HubEventType {
     /// own devices see it; sidebar_order_get reads the order.
     #[serde(rename = "sidebar.order")]
     SidebarOrder,
+    /// A person pinned, unpinned or reordered their chats; `data` is `people::ChatPinsData`. Only that person's own
+    /// devices see it; chat_pins_get reads the pins.
+    #[serde(rename = "chat.pins")]
+    ChatPins,
     /// A machine_add started, moved a step or ended; `data` is `machine_setup::MachineAddStepData`.
     /// machine_add_status reads the rest.
     #[serde(rename = "machine_add.step")]
@@ -369,6 +373,7 @@ impl HubEventType {
             Self::ScreenWait => "screen.wait",
             Self::PeopleChanged => "people.changed",
             Self::SidebarOrder => "sidebar.order",
+            Self::ChatPins => "chat.pins",
             Self::MachineAddStep => "machine_add.step",
         }
     }

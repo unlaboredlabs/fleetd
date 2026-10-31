@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chatItems, type ChatMessage, type HumanRequest } from "./desktop";
 import { fakeHub } from "./hub/fake";
 import { lists } from "./lists";
+import { memoryPins } from "./pins";
 import { Session } from "./session";
 
 const REF = { machineId: "m1", projectId: "navi" };
@@ -217,6 +218,44 @@ describe("Session", () => {
     hub.answer("chat_history", page([message(2, "A long one")]));
     await flush();
     expect(session.state.chats[KEY]?.messages.map((m) => m.text)).toEqual(["Hi", "A long one"]);
+  });
+});
+
+describe("Pinned chats", () => {
+  const pinCalls = (hub: ReturnType<typeof fakeHub>, tool: string) => hub.sentOf("call").filter((c) => c.tool === tool);
+
+  it("read on each live link: this phone's own go up to a hub that never had them, then follow another device's", async () => {
+    const hub = fakeHub();
+    const store = memoryPins(["m1/shop"]);
+    const session = new Session({ hub: "http://devbox:4790", key: "key_abc", transport: hub.transport, pins: store });
+    session.start();
+    hub.ready();
+    expect(pinCalls(hub, "chat_pins_get")).toHaveLength(1);
+    hub.answer("chat_pins_get", { pins: [], set: false });
+    await flush();
+    expect(pinCalls(hub, "chat_pins_set").at(-1)?.input).toEqual({ pins: [{ machineId: "m1", projectId: "shop" }] });
+    hub.answer("chat_pins_set", { pins: [{ machineId: "m1", projectId: "shop" }] });
+    await flush();
+
+    // Pinned on the person's other phone: this one reads them again.
+    hub.link.frame({ t: "event", seq: 2, type: "chat.pins", at: AT, data: { personId: "p_abcd2345" } });
+    expect(pinCalls(hub, "chat_pins_get")).toHaveLength(2);
+    hub.answer("chat_pins_get", { pins: [REF, { machineId: "m1", projectId: "shop" }], set: true });
+    await flush();
+    expect(store.saved()).toEqual([KEY, "m1/shop"]);
+  });
+
+  it("shows a pin made here at once and sends it", async () => {
+    const hub = fakeHub();
+    const store = memoryPins();
+    const session = new Session({ hub: "http://devbox:4790", key: "key_abc", transport: hub.transport, pins: store });
+    session.start();
+    hub.ready();
+    hub.answer("chat_pins_get", { pins: [], set: true });
+    await flush();
+    void session.setPins([KEY]);
+    expect(store.saved()).toEqual([KEY]);
+    expect(pinCalls(hub, "chat_pins_set").at(-1)?.input).toEqual({ pins: [REF] });
   });
 });
 

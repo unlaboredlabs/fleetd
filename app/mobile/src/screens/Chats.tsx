@@ -1,12 +1,13 @@
-// Chats, as Telegram and Messages list them: one list, the chats with an approval waiting for you on top with its
-// count, then your pinned chats, then whatever spoke last, each a full-bleed row with its avatar, its newest message
+// Chats, as Telegram and Messages list them: your pinned chats as Messages' grid of large avatars over the list
+// (Pinned.tsx), then the chats with an approval waiting for you on top with its count, then whatever spoke last, each a full-bleed row with its avatar, its newest message
 // and when, and a count of what you haven't read (grey when muted). Its bars are Messages' on iOS 26: a compact top
 // with the person's avatar on the left, which opens Settings and shows the link to the hub as a dot, and + on the
 // right; at the bottom, a round button whose menu narrows the list to the unread, the chats that need you, the pinned,
 // the Navis or the projects, beside the search field (ui/Toolbar.tsx). A build without that bar keeps search on top
 // and the filters in the header (Android: a row of chips over the list). Swipe a row right to mark it read or unread or to pin it, left to mute
-// it, as a chat swipes in Messages (ui/SwipeRow.tsx); hold it for the same in iOS's own menu (ui/HoldMenu.tsx). Pin, mute and read
-// live on this phone (prefs.ts). Search finds chats by name and messages by their words (search.ts). Pulling down reads
+// it, as a chat swipes in Messages (ui/SwipeRow.tsx); hold it or a pinned avatar for the same in iOS's own menu
+// (ui/HoldMenu.tsx). A filter or a search shows the pinned chats as rows. Pins are kept per person on the hub
+// (pins.ts); mute and read live on this phone (prefs.ts). Search finds chats by name and messages by their words (search.ts). Pulling down reads
 // the hub again.
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -18,7 +19,8 @@ import { filterChoices, filterLabel, meAvatar, type FilterChoice, type LinkTone 
 import { listTime } from "../chatView";
 import { useHub, type RootParams } from "../hubContext";
 import { chatList, type ChatRow, type Filter } from "../lists";
-import { MAX_PINNED } from "../prefs";
+import { pinnedSplit } from "../pinnedGrid";
+import { MAX_PINNED, togglePin } from "../prefs";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
 import { matchesName, queryOf, searchMessages, type MessageHit } from "../search";
 import { phaseOf, type ChatMessage } from "../desktop";
@@ -38,6 +40,7 @@ import { SwipeRow, useSwipes, type SwipeAction } from "../ui/SwipeRow";
 import { Toolbar, bottomBar } from "../ui/Toolbar";
 import { useLinkDown, useLinkHeader } from "./linkHeader";
 import { newChatItems } from "./manage";
+import { PinnedGrid } from "./Pinned";
 import { useRefreshing } from "./refresh";
 import { useNow } from "./time";
 
@@ -112,9 +115,10 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
 
   const all = chatList(state, prefs);
   const shown = chatList(state, prefs, filter);
+  const split = useMemo(() => pinnedSplit(shown ?? [], prefs.pinned, filter, query), [shown, prefs.pinned, filter, query]);
   const lines = useMemo((): readonly Line[] => {
     if (shown === undefined || all === undefined) return [];
-    if (query === "") return shown.map((row) => ({ t: "chat", key: row.key, row }));
+    if (query === "") return split.rows.map((row) => ({ t: "chat", key: row.key, row }));
     const chats = all.filter((r) => matchesName(r.project.title, query));
     const sources: Record<Key, ChatMessage[]> = {};
     for (const [k, ms] of [...Object.entries(state.corpus), ...Object.entries(state.latest), ...Object.entries(state.chats).map(([k, c]) => [k, c.messages] as const)]) sources[k] = [...(sources[k] ?? []), ...ms];
@@ -123,10 +127,18 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
       ...(chats.length === 0 ? [] : [{ t: "head" as const, key: "h:chats", title: "Chats" }, ...chats.map((row) => ({ t: "chat" as const, key: `c:${row.key}`, row }))]),
       ...(hits.length === 0 ? [] : [{ t: "head" as const, key: "h:messages", title: "Messages" }, ...hits.map((hit) => ({ t: "hit" as const, key: `m:${hit.messageId}`, hit }))]),
     ];
-  }, [shown, all, query, state.corpus, state.latest, state.chats, state.projects]);
+  }, [shown, all, split, query, state.corpus, state.latest, state.chats, state.projects]);
   const arrived = useArrived(lines.map((l) => l.key));
 
   const open = (key: Key, messageId?: string) => root.navigate("Chat", messageId === undefined ? { key } : { key, messageId });
+  // Pins of chats this hub no longer has don't count toward the most.
+  const pins = prefs.pinned.filter((k) => state.projects?.[k] !== undefined);
+  const pin = (row: ChatRow) => {
+    const next = togglePin(pins, row.key, !row.pinned);
+    if (next !== null) return void session.setPins(next);
+    haptics.warning();
+    Alert.alert(`You can pin up to ${String(MAX_PINNED)} chats`, "Unpin one to pin this one.");
+  };
   const counts = { unread: all?.filter((r) => (r.unread > 0 && !r.muted) || r.markedUnread).length ?? 0, needsYou: all?.filter((r) => r.approvals > 0).length ?? 0 };
   const choices = filterChoices(counts);
   const pick = (f: Filter) => {
@@ -196,7 +208,10 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
           />
         }
         ListHeaderComponent={
-          Platform.OS === "android" && query === "" && all !== undefined && all.length > 0 ? <Filters choices={choices} value={filter} onChange={pick} counts={counts} /> : undefined
+          <>
+            {Platform.OS === "android" && query === "" && all !== undefined && all.length > 0 ? <Filters choices={choices} value={filter} onChange={pick} counts={counts} /> : null}
+            {split.grid.length === 0 ? null : <PinnedGrid rows={split.grid} onOpen={(row) => open(row.key)} menu={(row) => rowActions(row, pin)} label={rowLabel} />}
+          </>
         }
         ListEmptyComponent={empty}
         renderItem={({ item: line, index }) => {
@@ -211,7 +226,7 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
               ) : line.t === "hit" ? (
                 <HitRow hit={line.hit} picture={state.projects?.[line.hit.key]} title={state.projects?.[line.hit.key]?.title ?? ""} navi={all?.find((r) => r.key === line.hit.key)?.navi ?? false} separator={separator} onPress={() => open(line.hit.key, line.hit.messageId)} />
               ) : (
-                <SwipingChat row={line.row} separator={separator} onPress={() => open(line.row.key)} />
+                <SwipingChat row={line.row} separator={separator} onPress={() => open(line.row.key)} onPin={pin} />
               )}
             </Animated.View>
           );
@@ -308,22 +323,17 @@ function Filters({ choices, value, onChange, counts }: { choices: readonly Filte
 
 /**
  * What can be done to a chat from the list: swiped, held, or with VoiceOver's actions. Read is up to the chat's newest
- * message, so what comes after counts again. A pin past the most says why it didn't take.
+ * message, so what comes after counts again. `pin` pins or unpins it, and says why a pin past the most didn't take.
  */
-const rowActions = (row: ChatRow, pinsFull: boolean): readonly [MenuItem, MenuItem, MenuItem] => {
+const rowActions = (row: ChatRow, pin: (row: ChatRow) => void): readonly [MenuItem, MenuItem, MenuItem] => {
   const unread = row.unread > 0 || row.markedUnread;
-  const pin = () => {
-    if (row.pinned || !pinsFull) return dispatchPrefs({ t: "pin", key: row.key, on: !row.pinned });
-    haptics.warning();
-    Alert.alert(`You can pin up to ${String(MAX_PINNED)} chats`, "Unpin one to pin this one.");
-  };
   return [
     {
       label: unread ? "Mark as Read" : "Mark as Unread",
       icon: unread ? "read" : "unread",
       onPress: () => dispatchPrefs(unread ? { t: "read", key: row.key, seq: row.lastSeq } : { t: "unread", key: row.key }),
     },
-    { label: row.pinned ? "Unpin" : "Pin", icon: row.pinned ? "unpin" : "pin", onPress: pin },
+    { label: row.pinned ? "Unpin" : "Pin", icon: row.pinned ? "unpin" : "pin", onPress: () => pin(row) },
     { label: row.muted ? "Unmute" : "Mute", icon: row.muted ? "unmute" : "mute", onPress: () => dispatchPrefs({ t: "mute", key: row.key, on: !row.muted }) },
   ];
 };
@@ -335,9 +345,9 @@ const FILLED: Partial<Record<IconName, IconName>> = { read: "readFill", unread: 
  * A chat row that swipes, as in Messages: right for read (blue, a full swipe's) and pin (orange), left for mute
  * (indigo, a full swipe's too).
  */
-function SwipingChat({ row, separator, onPress }: { row: ChatRow; separator: boolean; onPress: () => void }) {
+function SwipingChat({ row, separator, onPress, onPin }: { row: ChatRow; separator: boolean; onPress: () => void; onPin: (row: ChatRow) => void }) {
   const t = useTheme();
-  const acts = rowActions(row, usePrefs().pinned.length >= MAX_PINNED);
+  const acts = rowActions(row, onPin);
   const [read, pin, mute] = acts;
   const swipe = (a: MenuItem, color: string): SwipeAction => ({ label: a.label, icon: FILLED[a.icon] ?? a.icon, color, onPress: a.onPress });
   return (

@@ -8,6 +8,7 @@ pub mod auth;
 pub mod automations;
 pub mod browser;
 pub mod chat;
+pub mod chat_pins;
 pub mod checklist;
 pub mod checks;
 pub mod claude_accounts;

@@ -1,8 +1,10 @@
 // One paired hub at work: the client, the state the screens read, and the calls behind them. A snapshot (on every
 // connection) reads the open requests again, reloads the open chat's latest page and sends again what the link cut
-// off; events re-read what they changed (store.ts effectsOf). Screens subscribe and dispatch nothing themselves.
+// off; events re-read what they changed (store.ts effectsOf). Screens subscribe and dispatch nothing themselves. The
+// person's pinned chats sync with the hub on each live link (pins.ts).
 import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type ChatReplyTo, type ChatSend, type FlowDeps, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
+import { memoryPins, Pins, type PinStore } from "./pins";
 import { registerDevice, signOut, type PushDeps } from "./push";
 import { initial, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
 
@@ -17,6 +19,8 @@ export interface SessionOptions {
   readonly newId?: () => string;
   /** Registers this phone for push on each session's first live link, and again with each new token. */
   readonly push?: PushDeps;
+  /** Where this phone keeps its copy of the pinned chats (prefsStore.ts); in memory without one. */
+  readonly pins?: PinStore;
 }
 
 const randomId = (): string => `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
@@ -34,6 +38,7 @@ export class Session {
   readonly #key: string;
   readonly #push: PushDeps | undefined;
   #unsubscribeToken: (() => void) | undefined;
+  readonly #pins: Pins;
 
   constructor(options: SessionOptions) {
     this.#now = options.now ?? Date.now;
@@ -42,6 +47,7 @@ export class Session {
     this.#push = options.push;
     this.#state = initial({ phase: "connecting", hub: options.hub, attempt: 0 });
     this.#client = new HubClient({ hub: options.hub, key: options.key, transport: options.transport, emit: (f) => this.#onFrame(f) });
+    this.#pins = new Pins((tool, input) => this.#client.call(tool, input), options.pins ?? memoryPins());
   }
 
   get state(): State {
@@ -106,6 +112,11 @@ export class Session {
   refresh(): void {
     if (this.#state.hub.phase === "live") this.#client.resync();
     else this.wake();
+  }
+
+  /** The pinned chats as they are now (pinned, unpinned or moved here): this phone's copy at once, then the hub. */
+  setPins(keys: readonly Key[]): Promise<void> {
+    return this.#pins.set(keys);
   }
 
   openChat(key: Key | null): void {
@@ -284,6 +295,7 @@ export class Session {
       const effects = effectsOf(frame.event);
       if (effects.requests) void this.#readRequests();
       if (effects.snapshot) this.#client.resync();
+      if (effects.pins) void this.#pins.read();
     }
     const open = this.#open === null ? undefined : this.#state.chats[this.#open];
     if (this.#open !== null && open !== undefined && open !== before) {
@@ -294,7 +306,10 @@ export class Session {
   }
 
   #onState(state: HubState): void {
-    if (state.phase === "live") void this.#readInfo();
+    if (state.phase === "live") {
+      void this.#readInfo();
+      void this.#pins.read();
+    }
     if (state.phase !== "live" || this.#registered) return;
     this.#registered = true;
     void this.#register();
