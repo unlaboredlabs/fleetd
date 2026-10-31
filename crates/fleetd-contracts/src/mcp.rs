@@ -1300,6 +1300,30 @@ output!(NaviCardSetOutput {
     card: Option<crate::purchase::NaviCard>,
 });
 
+// navi_approvals, navi_approvals_set: how a Navi's risky actions are approved (W239), and the log of those that ran
+// without asking its person, newest first.
+input!(NaviApprovalsInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+});
+output!(NaviApprovalsOutput {
+    approvals: crate::navi::NaviApprovals,
+    /// Newest first, at most `AUTO_APPROVED_MAX`.
+    log: Vec<crate::navi::AutoApproved>,
+});
+input!(NaviApprovalsSetInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+    mode: crate::navi::NaviApprovalMode,
+    /// The checker's model; absent: the hub's default.
+    model: Option<ModelName>,
+    /// The checker's effort; absent: the hub's default.
+    effort: Option<Effort>,
+});
+output!(NaviApprovalsSetOutput {
+    approvals: crate::navi::NaviApprovals,
+});
+
 // navi_signins_forget: a Navi's browser keeps its sign-ins (its own browser profile) between sessions (D221); this ends
 // its browser session, if one is open, and deletes them, so its next visit to each site starts signed out.
 input!(NaviSigninsForgetInput {
@@ -3314,6 +3338,9 @@ tools! {
     project_icon_set => ProjectIconSet, Operate, ProjectIconSetInput, ProjectIconSetOutput;
     navi_sites => NaviSites, Read, NaviSitesInput, NaviSitesOutput;
     navi_site_revoke => NaviSiteRevoke, Operate, NaviSiteRevokeInput, NaviSiteRevokeOutput;
+    navi_approvals => NaviApprovals, Read, NaviApprovalsInput, NaviApprovalsOutput;
+    // Human keys only (the handler checks): a person decides what their Navi does without asking.
+    navi_approvals_set => NaviApprovalsSet, Operate, NaviApprovalsSetInput, NaviApprovalsSetOutput;
     navi_signins_forget => NaviSigninsForget, Operate, NaviSigninsForgetInput, NaviSigninsForgetOutput;
     telegram_get => TelegramGet, Read, TelegramGetInput, TelegramGetOutput;
     telegram_set => TelegramSet, Operate, TelegramSetInput, TelegramSetOutput;

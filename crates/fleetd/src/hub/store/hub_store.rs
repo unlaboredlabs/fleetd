@@ -267,6 +267,8 @@ impl HubStore {
                 "memory_refresh_lines",
                 "assistants",
                 "navi_sites",
+                "navi_approvals",
+                "navi_auto_approved",
                 "project_avatars",
                 "project_icons",
                 "skill_versions",

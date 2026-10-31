@@ -1,8 +1,8 @@
 // Settings › Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
 // picture (Picture.tsx), its name, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx), its
-// worktrees, its agents' environment variables, a Navi's Telegram (Telegram.tsx) and integrations (its MCP servers; its
-// linked hubs are in You › Hubs), its browser's sign-ins and a way to its skills (NaviSignins.tsx), its card and
-// purchases (NaviPayments.tsx), the merge train's checks (TrainSetting.tsx), and deleting
+// worktrees, its agents' environment variables, a Navi's Telegram (Telegram.tsx), approvals (NaviApprovals.tsx) and
+// integrations (its MCP servers; its linked hubs are in You › Hubs), its browser's sign-ins and a way to its skills
+// (NaviSignins.tsx), its card and purchases (NaviPayments.tsx), the merge train's checks (TrainSetting.tsx), and deleting
 // it. Its memory refresh is on its Instructions & memory. Reads project_settings_get; writes project_settings_set,
 // project_env_set (through main, which seals each secret to the project machine's key) and project_remove. A secret's
 // value is write-only: typed here once, sealed in main, and only its fingerprint ever comes back.
@@ -19,6 +19,7 @@ import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { IntegrationsSection } from "./Integrations";
 import { isNavi } from "./integrationsModel";
+import { ApprovalsSetting } from "./NaviApprovals";
 import { PaymentsSetting } from "./NaviPayments";
 import { NaviSkillsSetting, SigninsSetting } from "./NaviSignins";
 import { TelegramSetting } from "./Telegram";
@@ -147,6 +148,8 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       {navi ? (
         <>
           <TelegramSetting projectRef={ref} />
+          <Separator />
+          <ApprovalsSetting projectRef={ref} />
           <Separator />
           <IntegrationsSection projectRef={ref} />
           <Separator />

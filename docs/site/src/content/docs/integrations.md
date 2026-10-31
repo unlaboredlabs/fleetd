@@ -1,6 +1,6 @@
 ---
 title: Integrations
-description: Connect a Navi to any MCP server, with your own credentials. Tools you mark as reads run unasked; everything else asks you, on a card that shows exactly what it would send.
+description: Connect a Navi to any MCP server, with your own credentials. Tools you mark as reads run unasked; everything else goes by the Navi's approval mode, and a card shows exactly what it would send.
 ---
 
 A Navi can reach any service with an MCP server. You connect each one yourself in the Navi's settings, under
@@ -16,11 +16,14 @@ The hub decides each call, not the Navi. The model can't talk its way past it.
 | | Examples | What happens |
 |---|---|---|
 | **Reads** | The tools you ticked as only reading when you connected the server | Runs without asking. |
-| **Writes, sends, deletes, shares** | Every other tool | Asks you in the chat, **every time**, with exactly what it would send. There is no "always allow". |
+| **Writes, sends, deletes, shares** | Every other tool | Goes by the Navi's [approval mode](/docs/navi#approvals). By default a checker model judges it first: what you asked for runs, with one line in the chat; anything else asks you in the chat with exactly what it would send. With **Ask me about everything** each one asks you; with **YOLO** none does. |
 | **Spending** | A `pay`, `purchase`, `checkout`, `book`, `reserve` or `subscribe` tool, and one that makes an order, a booking or a reservation (`create_order`, `confirm_booking`; reading one, such as `list_orders`, doesn't count) | Asks you, marked **Costs money**, and asks once more before it runs. Only you answer it, whatever approval mode the Navi runs in. |
 | **Never** | Moving money between accounts (`transfer`, `send_money`, `send_transaction`), trading and crypto (`buy_stock`, `sell`, `buy_crypto`, and any `place_order` or `submit_order`, which could be a broker's), creating accounts in your name; sending or storing what looks like a password, key or token; a call too large to show on the card in full | Refused, even if you would approve it. The Navi is told to leave it to you. A shop's checkout goes through a [purchase](/docs/navi#purchases) instead. |
 
-The same rules cover the MCP servers in your own claude setup: every one of their tools asks.
+The **Never** row and spending hold in every mode, YOLO included, and fleetd's own rules make the checker's go an
+ask for a recipient only an email or a page named, a public share, a forwarding rule and the like (see
+[Approvals](/docs/navi#approvals)). The same rules cover the MCP servers in your own claude setup: none of their tools
+counts as a read.
 
 ## The approval card {#card}
 
@@ -37,7 +40,11 @@ deletes; share or grant shares; pay or buy spends; anything else changes somethi
 A character that hides or reorders text shows as a mark such as ⟨U+200B⟩, under **Contains hidden characters**. See
 [Hidden characters](/docs/approvals-and-secrets#hidden).
 
-The buttons name the act: **Send it** and **Don't send**, **Share it**, **Delete it**, **Pay**, **Do it**. Either runs
+A card the Navi's checker sent to you says why under the title. One it blocked says so in red, with **Approve
+anyway** and **Keep it blocked**. A Navi's final click on a site (`confirm_step`) shows **Confirms · on a site**, the
+button and what it does, and the page's screenshot.
+
+The buttons name the act: **Send it** and **Don't send**, **Share it**, **Delete it**, **Pay**, **Click it**, **Do it**. Either runs
 exactly that input, or tells the Navi no; <kbd>Enter</kbd> and <kbd>Esc</kbd> do the same. A delete or a spend asks once
 more in the card before it runs. Once answered, the card folds to what you decided: "Approved: a send · you
 approved at 09:12". The tool may still refuse or fail; what it did is in the Navi's chat.

@@ -635,3 +635,38 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- A Navi's approvals: its three modes, one under another, and what ran without asking ---- */
+.modes {
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.approvedLog {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.approvedRow {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--hairline);
+}
+.approvedRow:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.approvedAt {
+  white-space: nowrap;
+}
+.approvedText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-g5ptsecz"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Integrations | fleetd docs</title><link rel="canonical" href="https://fleetd.sh/docs/integrations.html"/><link rel="sitemap" href="/docs/sitemap-index.xml"/><link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin/><link rel="preload" href="/fonts/plex-sans-Medium.woff2" as="font" type="font/woff2" crossorigin/><link rel="shortcut icon" href="/docs/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v7.4.0"/><meta name="generator" content="Starlight v0.42.6"/><meta property="og:title" content="Integrations"/><meta property="og:type" content="article"/><meta property="og:url" content="https://fleetd.sh/docs/integrations.html"/><meta property="og:locale" content="en"/><meta property="og:description" content="Connect a Navi to any MCP server, with your own credentials. Tools you mark as reads run unasked; everything else asks you, on a card that shows exactly what it would send."/><meta property="og:site_name" content="fleetd docs"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="Connect a Navi to any MCP server, with your own credentials. Tools you mark as reads run unasked; everything else asks you, on a card that shows exactly what it would send."/><script>
+<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-g5ptsecz"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Integrations | fleetd docs</title><link rel="canonical" href="https://fleetd.sh/docs/integrations.html"/><link rel="sitemap" href="/docs/sitemap-index.xml"/><link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin/><link rel="preload" href="/fonts/plex-sans-Medium.woff2" as="font" type="font/woff2" crossorigin/><link rel="shortcut icon" href="/docs/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v7.4.0"/><meta name="generator" content="Starlight v0.42.6"/><meta property="og:title" content="Integrations"/><meta property="og:type" content="article"/><meta property="og:url" content="https://fleetd.sh/docs/integrations.html"/><meta property="og:locale" content="en"/><meta property="og:description" content="Connect a Navi to any MCP server, with your own credentials. Tools you mark as reads run unasked; everything else goes by the Navi's approval mode, and a card shows exactly what it would send."/><meta property="og:site_name" content="fleetd docs"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="Connect a Navi to any MCP server, with your own credentials. Tools you mark as reads run unasked; everything else goes by the Navi's approval mode, and a card shows exactly what it would send."/><script>
 	window.StarlightThemeProvider = (() => {
 		const storedTheme =
 			typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
@@ -94,7 +94,7 @@ refuses an integration on any other project.</p>
 <tr>
 <td><strong>Writes, sends, deletes, shares</strong></td>
 <td>Every other tool</td>
-<td>Asks you in the chat, <strong>every time</strong>, with exactly what it would send. There is no “always allow”.</td>
+<td>Goes by the Navi’s <a href="/docs/navi#approvals">approval mode</a>. By default a checker model judges it first: what you asked for runs, with one line in the chat; anything else asks you in the chat with exactly what it would send. With <strong>Ask me about everything</strong> each one asks you; with <strong>YOLO</strong> none does.</td>
 </tr>
 <tr>
 <td><strong>Spending</strong></td>
@@ -108,7 +108,10 @@ refuses an integration on any other project.</p>
 </tr>
 </tbody>
 </table>
-<p>The same rules cover the MCP servers in your own claude setup: every one of their tools asks.</p>
+<p>The <strong>Never</strong> row and spending hold in every mode, YOLO included, and fleetd’s own rules make the checker’s go an
+ask for a recipient only an email or a page named, a public share, a forwarding rule and the like (see
+<a href="/docs/navi#approvals">Approvals</a>). The same rules cover the MCP servers in your own claude setup: none of their tools
+counts as a read.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="card">The approval card</h2><a class="sl-anchor-link" href="#card"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “The approval card”</span></a></div>
 <p>An ask shows in the Navi’s chat as a card.</p>
 <table>
@@ -133,7 +136,10 @@ refuses an integration on any other project.</p>
 deletes; share or grant shares; pay or buy spends; anything else changes something.</p>
 <p>A character that hides or reorders text shows as a mark such as ⟨U+200B⟩, under <strong>Contains hidden characters</strong>. See
 <a href="/docs/approvals-and-secrets#hidden">Hidden characters</a>.</p>
-<p>The buttons name the act: <strong>Send it</strong> and <strong>Don’t send</strong>, <strong>Share it</strong>, <strong>Delete it</strong>, <strong>Pay</strong>, <strong>Do it</strong>. Either runs
+<p>A card the Navi’s checker sent to you says why under the title. One it blocked says so in red, with <strong>Approve
+anyway</strong> and <strong>Keep it blocked</strong>. A Navi’s final click on a site (<code dir="auto">confirm_step</code>) shows <strong>Confirms · on a site</strong>, the
+button and what it does, and the page’s screenshot.</p>
+<p>The buttons name the act: <strong>Send it</strong> and <strong>Don’t send</strong>, <strong>Share it</strong>, <strong>Delete it</strong>, <strong>Pay</strong>, <strong>Click it</strong>, <strong>Do it</strong>. Either runs
 exactly that input, or tells the Navi no; <kbd>Enter</kbd> and <kbd>Esc</kbd> do the same. A delete or a spend asks once
 more in the card before it runs. Once answered, the card folds to what you decided: “Approved: a send · you
 approved at 09:12”. The tool may still refuse or fail; what it did is in the Navi’s chat.</p>

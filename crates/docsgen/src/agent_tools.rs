@@ -708,6 +708,13 @@ fn example(role: Role, tool: &str) -> Option<Value> {
         (Role::Lead, "factory_status") => json!({ "project": "storefront" }),
         (Role::Lead, "chat_search") => json!({ "words": "dentist saturday", "from": "2026-10-01" }),
         (Role::Lead, "chat_read") => json!({ "messageId": "m412", "before": 3, "after": 3 }),
+        (Role::Lead, "confirm_step") => json!({
+            "site": "lupa.example",
+            "button": "Complete reservation",
+            "does": "Books a table for 2 at Lupa, Saturday 8 pm, under Sam",
+            "page": "Lupa · Sat Nov 7 · 8:00 pm · 2 guests · Sam Rivera",
+            "screenshot": "F12"
+        }),
         (Role::Lead, "usage_resume") => json!({ "machineId": "devbox" }),
         (Role::Lead, "change_enqueue") => json!({
             "prUrl": "https://github.com/acme/shop/pull/42",

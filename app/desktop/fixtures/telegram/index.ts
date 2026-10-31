@@ -6,6 +6,7 @@ import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { arr } from "../kit/stress.ts";
 import { asText, isObject, type JsonObject } from "../kit/json.ts";
+import { profilesList } from "../settings/profiles.ts";
 
 const AT = "2026-10-31T09:00:00.000Z";
 
@@ -30,6 +31,8 @@ const navi = (f: Fixture): { machineId: string; projectId: string } => {
   });
   f.answer("mcp_servers_get", { project: ref }, { global: [], project: [], userServers: true });
   f.answer("navi_purchases", ref, { purchases: [] });
+  f.answer("navi_approvals", ref, { approvals: { mode: "checker", model: "claude-sonnet-5-5", effort: "medium", defaults: true }, log: [] });
+  f.answer("profiles_list", {}, profilesList());
   return ref;
 };
 

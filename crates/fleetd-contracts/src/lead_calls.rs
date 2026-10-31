@@ -354,6 +354,8 @@ pub enum LeadCall {
     ChatRead(ChatReadCall),
     /// A Navi writes one of its own skills (hub/skills/saves.rs): only a Navi's lead makes it.
     SkillSave(SkillSaveCall),
+    /// A Navi's final Confirm or Submit click on a site, through its approval mode (hub/navi/confirm.rs).
+    ConfirmStep(crate::navi::ConfirmStepCall),
 }
 
 /// The call's `op` tag, as on the wire.
@@ -563,6 +565,7 @@ pub enum LeadCallResult {
     ChatSearch(ChatSearchResult),
     ChatRead(ChatReadResult),
     SkillSave(SkillSaveResult),
+    ConfirmStep(crate::navi::ConfirmStepResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

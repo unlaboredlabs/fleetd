@@ -111,6 +111,7 @@ impl Fake {
             transcript: Some(dir.path().join("transcript.jsonl")),
             sandbox: None,
             host_dir: None,
+            isolated: false,
         };
         let mut handle = spawn_retrying(&runner, spec);
         // Init comes once the escaping child has written its pid.

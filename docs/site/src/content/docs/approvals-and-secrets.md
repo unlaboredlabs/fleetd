@@ -38,9 +38,11 @@ back. If an answer doesn't go through, the item says why in one line; click Retr
 
 ## Approve a Navi's integration call {#integrations}
 
-A Navi asks before any call through its [integrations](/docs/integrations) that you didn't mark as a read. Its card
-shows the tool and its whole input, exactly as it runs. Approve sends exactly that, once: there is no "always allow". Moving money, trading and creating
-accounts are refused even if approved. See [The approval card](/docs/integrations#card).
+A call through a Navi's [integrations](/docs/integrations) that you didn't mark as a read goes by the Navi's
+[approval mode](/docs/navi#approvals): its checker lets what you asked for through and asks you about the rest, or
+every call asks, or none does. A card shows the tool and its whole input, exactly as it runs, and the checker's reason
+when it had one. Approve sends exactly that, once. Moving money, trading and creating accounts are refused even if
+approved. See [The approval card](/docs/integrations#card).
 
 ## Hidden characters {#hidden}
 
@@ -111,10 +113,10 @@ take only a human key. `requests_list` lists every secret and approval request w
 ## Approve a Navi's tool call {#tool-approvals}
 
 A [Navi](/docs/navi)'s lead runs with claude's permission prompts on: any tool off its short allow-list (a command, an
-MCP server's write, its first visit to a site) asks first. fleetd shows the ask in the Navi's chat as an approval with
-the tool and its input. Approve runs the tool with exactly that input;
-Deny tells the Navi you said no, with your reason if you type one. There is no "always allow". If the Navi's run
-ends before you answer, the approval closes by itself.
+MCP server's write, its first visit to a site) raises a prompt. Its [approval mode](/docs/navi#approvals) decides
+it; one that asks you shows in the Navi's chat as an approval with the tool and its input. Approve runs the tool with
+exactly that input; Deny tells the Navi you said no, with your reason if you type one. A card the checker blocked
+says why, with **Approve anyway**. If the Navi's run ends before you answer, the approval closes by itself.
 
 ## Tool permission rules {#tool-rules}
 

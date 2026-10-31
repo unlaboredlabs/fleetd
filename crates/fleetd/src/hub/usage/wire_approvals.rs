@@ -254,6 +254,131 @@ impl ApprovalHub for OpsPorts {
         })
     }
 
+    fn navi_image<'a>(
+        &'a self,
+        project: &'a ports::ProjectRef,
+        id: &'a fleetd_contracts::mcp::AttachmentId,
+    ) -> BoxFut<'a, bool> {
+        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
+        Box::pin(async move {
+            let Some(r) = r else {
+                return false;
+            };
+            self.hub()
+                .db
+                .with(|c| Ok(crate::hub::intake::attachments::claim_own(c, &r, id)?))
+                .unwrap_or(false)
+        })
+    }
+
+    fn navi_approvals(
+        &self,
+        project: &ports::ProjectRef,
+    ) -> BoxFut<'_, Option<fleetd_contracts::navi::NaviApprovals>> {
+        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
+        Box::pin(async move {
+            let r = r?;
+            let db = &self.hub().db;
+            crate::hub::navi::of(db, &r).ok().flatten()?;
+            match db.with(|c| Ok(crate::hub::navi::checker::approvals(c, &r)?)) {
+                Ok(settings) => Some(settings),
+                Err(error) => {
+                    // Unread, a Navi asks the person about every risky action.
+                    tracing::warn!(%error, "approvals: a Navi's approval settings were not read");
+                    Some(fleetd_contracts::navi::NaviApprovals {
+                        mode: fleetd_contracts::navi::NaviApprovalMode::Ask,
+                        model: fleetd_contracts::effort::ModelName::unchecked(
+                            fleetd_contracts::navi::CHECKER_MODEL,
+                        ),
+                        effort: fleetd_contracts::navi::CHECKER_EFFORT,
+                        defaults: true,
+                    })
+                }
+            }
+        })
+    }
+
+    fn navi_check<'a>(
+        &'a self,
+        project: &'a ports::ProjectRef,
+        thread_id: &'a str,
+        action: &'a crate::hub::navi::checker::Action,
+        settings: &'a fleetd_contracts::navi::NaviApprovals,
+    ) -> BoxFut<'a, fleetd_contracts::ledger::CheckerNote> {
+        use crate::hub::navi::checker;
+        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
+        Box::pin(async move {
+            let hub = self.hub();
+            let failed = |why: &str| fleetd_contracts::ledger::CheckerNote {
+                verdict: fleetd_contracts::ledger::CheckerVerdict::Ask,
+                reason: fleetd_contracts::prim::Line::unchecked(clip(why, 300)),
+            };
+            let Some(r) = r else {
+                return failed("the checker couldn't find the Navi");
+            };
+            let owner = crate::hub::navi::of(&hub.db, &r)
+                .ok()
+                .flatten()
+                .and_then(|n| n.owner);
+            let thread = ThreadRef {
+                machine_id: r.machine_id.clone(),
+                thread_id: fleetd_contracts::ids::ThreadId::unchecked(thread_id),
+            };
+            let (person_messages, navi_last_question) =
+                checker::person_messages(&hub, &r).unwrap_or_default();
+            let name = owner
+                .as_ref()
+                .and_then(|p| {
+                    crate::hub::people::People::new(hub.db.clone(), hub.clock.clone())
+                        .get(p)
+                        .ok()
+                        .flatten()
+                })
+                .map(|p| p.name.to_string());
+            let allowed_sites = hub
+                .db
+                .with(|c| Ok(crate::hub::navi::store::sites(c, &r)?))
+                .unwrap_or_default()
+                .into_iter()
+                .map(|s| s.site)
+                .collect();
+            let now = crate::hub::store::iso_ms(crate::hub::store::now_ms(hub.clock.as_ref()));
+            let context = checker::Context {
+                person: serde_json::json!({ "name": name }),
+                person_messages,
+                navi_last_question,
+                reads: checker::reads(&hub, &thread).await,
+                allowed_sites,
+                today: now.get(..10).unwrap_or_default().to_owned(),
+            };
+            let turn = crate::hub::executor::turn::executors(
+                &hub,
+                crate::hub::executor::turn::Owner::ApprovalCheck,
+            );
+            checker::check(&hub, &turn, &r, owner.as_ref(), settings, action, &context).await
+        })
+    }
+
+    fn navi_auto_approved<'a>(
+        &'a self,
+        project: &'a ports::ProjectRef,
+        action: &'a crate::hub::navi::checker::Action,
+        by: fleetd_contracts::navi::AutoApprovedBy,
+        reason: Option<&'a str>,
+    ) -> BoxFut<'a, ()> {
+        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
+        Box::pin(async move {
+            let Some(r) = r else {
+                return;
+            };
+            if let Err(error) =
+                crate::hub::navi::checker::auto_approved(&self.hub(), &r, action, by, reason)
+            {
+                tracing::warn!(%error, "approvals: an auto-approved action was not logged");
+            }
+        })
+    }
+
     fn order_refusal(
         &self,
         project: &ports::ProjectRef,

@@ -495,6 +495,12 @@ fn hosts_dir(home: &Path) -> PathBuf {
     home.join("hosts")
 }
 
+/// The one empty folder isolated turns run in (`SessionLaunch::isolated`): in the node's home, which a Navi's sandbox
+/// hides, so no session can put a CLAUDE.md or settings there.
+fn isolated_dir(home: &Path) -> PathBuf {
+    home.join("isolated")
+}
+
 fn permission_item_id(request_id: &str) -> String {
     format!("permission-{request_id}")
 }
@@ -1989,6 +1995,16 @@ impl SessionService {
                     Some(branch.to_string()),
                 )
             }
+            _ if launch.isolated => {
+                let dir = isolated_dir(&self.inner.config.home);
+                super::config::mkdir_private(&dir).map_err(|e| {
+                    error(
+                        SessionErrorCode::Internal,
+                        format!("{}: {e}", dir.display()),
+                    )
+                })?;
+                (dir, Vec::new(), None, None)
+            }
             _ => (root.clone(), Vec::new(), None, None),
         };
         let at = now();
@@ -2709,7 +2725,13 @@ impl SessionService {
         let scratch = share::scratch_env(&scratch);
         env.retain(|(k, _)| !scratch.iter().any(|(s, _)| s == k));
         env.extend(scratch);
-        let mut plugin_dirs: Vec<PathBuf> = skills.plugin_dir.into_iter().collect();
+        // An isolated turn reads nothing but its message: no skills, no project settings.
+        let isolated = row.local.cwd == isolated_dir(&config.home);
+        let mut plugin_dirs: Vec<PathBuf> = skills
+            .plugin_dir
+            .into_iter()
+            .filter(|_| !isolated)
+            .collect();
         if let Some(browser) = self.inner.browser.get()
             && row.local.role.cli_arg().is_some()
         {
@@ -2783,6 +2805,7 @@ impl SessionService {
             transcript: Some(transcript),
             host_dir: sandbox.is_none().then(|| hosts_dir(&config.home).join(id)),
             sandbox,
+            isolated,
         };
         Ok((spec, secrets, order_digest))
     }

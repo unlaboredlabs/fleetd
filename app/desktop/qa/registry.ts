@@ -156,6 +156,10 @@ export const fixtures = [
   "inline-integrations",
   // A Navi's purchases: a hotel waiting for Pay, a train ticket approved and filled (fixtures/inline/purchases.json).
   "inline-purchases",
+  // A Navi's approval checker at work (fixtures/inline/checker.json), and its approvals in its settings
+  // (fixtures/integrations).
+  "inline-checker",
+  "integrations-approvals",
   // Approvals whose fields hide or reorder text (fixtures/inline/hidden.json).
   "inline-hidden",
   // W237: a Navi's Telegram, a setup step a fixture (fixtures/telegram).
@@ -1115,7 +1119,7 @@ export const screens: readonly Screen[] = [
   // not run, denied, running).
   // ...and a Navi's integration cards: a send, a delete, an answered send; and approvals whose hidden characters show
   // as marks.
-  { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-purchases", "inline-hidden"], variant: "inline" },
+  { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-purchases", "inline-checker", "inline-hidden"], variant: "inline" },
   // The same chat offline from the disk cache: an open item says it can't be answered now, and a secret never claims
   // the hub doesn't know its machine.
   {
@@ -2415,6 +2419,19 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("button", { name: "Delete “Never estimate time.”" }).click();
       await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
+    },
+  },
+  // A Navi's approvals (W239): the three modes with the checker on, its model and effort, and what ran without asking.
+  {
+    id: "settings.projects",
+    variant: "integrations-approvals",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["integrations-approvals"],
+    open: async (page) => {
+      const part = page.getByRole("region", { name: "Approvals" });
+      await expect(part.getByRole("radio", { name: /Checker decides/u })).toBeChecked();
+      await expect(page.getByRole("list", { name: "Ran without asking" }).getByRole("listitem")).toHaveCount(4);
+      await part.scrollIntoViewIfNeeded();
     },
   },
   // Import memory under it: a ChatGPT export pasted, then what Add to Memory added.

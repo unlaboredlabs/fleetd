@@ -451,6 +451,23 @@ export type AttachmentRef = {
  */
 export type Attention = "loud" | "urgent";
 
+/** One risky action a Navi ran without asking its person, as its settings' log shows it. */
+export type AutoApproved = {
+  at: Timestamp;
+  by: AutoApprovedBy;
+  /** The quiet line in the Navi's chat that told the person. */
+  messageId?: ChatMessageId;
+  /** The checker's reason; absent in YOLO. */
+  reason?: string;
+  /** The tool the Navi's session asked for: `mcp__mail__send_message`, `WebFetch`. */
+  tool: string;
+  /** What it did, in one line: "Send on mail to sam@example.com", "Open example.org". */
+  what: string;
+};
+
+/** What let an action run without asking the person. */
+export type AutoApprovedBy = "checker" | "yolo";
+
 export type Automation = {
   automationId: AutomationId;
   createdAt: Timestamp;
@@ -1305,6 +1322,16 @@ export type ChatStopOutput = {
   stopped: boolean;
   truncated?: boolean;
 };
+
+/** What a Navi's approval checker said of an action it didn't let through. */
+export type CheckerNote = {
+  /** Its reason, in one line. A checker that failed or answered nothing readable says so here. */
+  reason: string;
+  verdict: CheckerVerdict;
+};
+
+/** The checker's verdict on a risky action: go runs it, ask brings the person's card, block refuses it. */
+export type CheckerVerdict = "go" | "ask" | "block";
 
 export type ChecklistBlock = {
   items: ChecklistItem[];
@@ -3975,6 +4002,52 @@ export type MouseAction = "pressed" | "released" | "moved" | "wheel";
 
 /** A mouse button, as CDP names it. */
 export type MouseButton = "none" | "left" | "middle" | "right";
+
+/**
+ * How a Navi's risky actions are approved (W239, D263): its sends, replies, shares and invites through an
+ * integration, and a site it opens on its own for the first time. Whatever the mode, moving money, trading and
+ * placing orders are refused, and so is a credential in outgoing content.
+ */
+export type NaviApprovalMode = "ask" | "checker" | "yolo";
+
+/** A Navi's approval settings: its mode, and the checker's model and effort. */
+export type NaviApprovals = {
+  /** Whether model and effort are the hub's defaults, not a pick of the person's. */
+  defaults: boolean;
+  effort: Effort;
+  mode: NaviApprovalMode;
+  /** The checker's model: the person's pick, else [`CHECKER_MODEL`]. */
+  model: ModelName;
+};
+
+export type NaviApprovalsInput = {
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type NaviApprovalsOutput = {
+  approvals: NaviApprovals;
+  /** Newest first, at most `AUTO_APPROVED_MAX`. */
+  log: AutoApproved[];
+  next?: string;
+  truncated?: boolean;
+};
+
+export type NaviApprovalsSetInput = {
+  /** The checker's effort; absent: the hub's default. */
+  effort?: Effort;
+  machineId: MachineId;
+  mode: NaviApprovalMode;
+  /** The checker's model; absent: the hub's default. */
+  model?: ModelName;
+  projectId: ProjectId;
+};
+
+export type NaviApprovalsSetOutput = {
+  approvals: NaviApprovals;
+  next?: string;
+  truncated?: boolean;
+};
 
 export type NaviArchiveInput = {
   /** False brings an archived Navi back. Default true. */
@@ -7735,13 +7808,19 @@ export type Tokens = {
 };
 
 /** What an asking tool would do, for the card's heading and its urgency. */
-export type ToolAction = "send" | "write" | "delete" | "share" | "spend";
+export type ToolAction = "send" | "write" | "delete" | "share" | "spend" | "confirm";
 
 /**
  * An approval raised by a session's tool permission prompt instead of a gated command: answering it answers the prompt
  * on the project's node. Its machine is the request's project's.
  */
 export type ToolPermission = {
+  /**
+   * A Navi's approval checker judged it before it reached the person (W239): why it asks them, or why it refused
+   * it. A blocked prompt was already refused on its node; approving it anyway lets the Navi run exactly this input
+   * once, when it asks again.
+   */
+  checker?: CheckerNote;
   /**
    * The tool's input exactly as the session asked (at most 64 KiB of JSON): approved, the tool runs with exactly
    * this. Absent when the node didn't send it; the tool then runs with what the session asked.
@@ -7753,6 +7832,8 @@ export type ToolPermission = {
    */
   preview?: ToolPreview;
   requestId: string;
+  /** A Navi's `confirm_step`: its screenshot of the page, the project's, for the card. */
+  screenshot?: AttachmentId;
   /**
    * A Navi's first fetch or browser visit to this site (its host, such as `example.com`): approved, the Navi may
    * fetch and open it without asking from then on, until a person revokes it (`navi_site_revoke`).
@@ -8533,6 +8614,8 @@ export interface ToolMap {
   memory_undo: { input: MemoryUndoInput; output: MemoryUndoOutput };
   metrics_get: { input: MetricsGetInput; output: MetricsGetOutput };
   metrics_retention_set: { input: MetricsRetentionSetInput; output: MetricsRetentionSetOutput };
+  navi_approvals: { input: NaviApprovalsInput; output: NaviApprovalsOutput };
+  navi_approvals_set: { input: NaviApprovalsSetInput; output: NaviApprovalsSetOutput };
   navi_archive: { input: NaviArchiveInput; output: NaviArchiveOutput };
   navi_asks: { input: NaviAsksInput; output: NaviAsksOutput };
   navi_card_set: { input: NaviCardSetInput; output: NaviCardSetOutput };

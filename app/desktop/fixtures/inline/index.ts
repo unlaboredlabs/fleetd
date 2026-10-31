@@ -6,9 +6,11 @@
 // approvals after Approve, as a hub does when the node is offline; inline-offline is that chat from the disk cache
 // with no hub. inline-integrations is a chat of a Navi's integration cards (fixtures/inline/integrations.json): a
 // message to send, a page to delete, and a send already approved. inline-purchases is a Navi's purchases
-// (fixtures/inline/purchases.json): a hotel waiting for Pay, a train ticket approved and filled. inline-hidden holds
+// (fixtures/inline/purchases.json): a hotel waiting for Pay, a train ticket approved and filled. inline-checker is a
+// Navi's chat with its approval checker at work (fixtures/inline/checker.json). inline-hidden holds
 // approvals whose fields hide or reorder text (fixtures/inline/hidden.json), each character shown as its mark, and an
 // email in several languages shown as written.
+import fs from "node:fs";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject, JsonValue } from "../kit/json.ts";
@@ -18,6 +20,7 @@ import data from "./items.json" with { type: "json" };
 import hidden from "./hidden.json" with { type: "json" };
 import integrations from "./integrations.json" with { type: "json" };
 import purchases from "./purchases.json" with { type: "json" };
+import checker from "./checker.json" with { type: "json" };
 
 /** A real X25519 public key (the Rust seal sample's), so sealing works in a fixture run. */
 const BOX_PUB_KEY = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
@@ -58,16 +61,16 @@ const inlineItems = (
       messageId: `m${String(i + 3)}`,
       projectRef,
       seq: i + 3,
-      author: "lead",
-      text: "",
+      // A `line` is fleetd's own quiet line between the cards, no card of its own.
+      ...(typeof item["line"] === "string" ? { author: "system", text: item["line"] } : { author: "lead", text: "", item }),
       attachments: [],
-      item,
       createdAt: at(i + 2),
       state: "final",
     })),
   ];
   // The same requests as the hub holds them (requests_list), which the items read their current state from.
-  const requests = items.map((item, i): JsonObject => {
+  const requests = items.flatMap((item, i): JsonObject[] => (typeof item["line"] === "string" ? [] : [request(item, i)]));
+  function request(item: JsonObject, i: number): JsonObject {
     const secret = item["kind"] === "secret_request";
     const opt = (key: string, value: JsonValue | undefined): JsonObject => (value === undefined ? {} : { [key]: value });
     return {
@@ -87,7 +90,7 @@ const inlineItems = (
       ...opt("answeredAt", item["answeredAt"]),
       ...opt("finishedAt", item["finishedAt"]),
     };
-  });
+  }
   f.answer("requests_list", { limit: 100 }, { requests });
   // As the hub answers: the request, now approved or denied (approval_answer's output is the request).
   for (const r of requests) {
@@ -177,7 +180,16 @@ export default defineGroup({
     // every state of the two inline items in view.
     const cards = inlineItems(base("typical"), "inline-integrations", "A chat with a Navi's integration approvals: a message to send, a page to delete, and an answered send.", integrations.items);
     const bought = inlineItems(base("typical"), "inline-purchases", "A chat with a Navi's purchases: a hotel booking waiting for Pay, and a train ticket approved and filled.", purchases.items);
+    // A Navi's checker: a quiet line for what it let through, a card it asks with, a blocked forward and a final
+    // Confirm on a site with its screenshot (fixtures/inline/checker.json, booking.png).
+    const checked = inlineItems(base("typical"), "inline-checker", "A Navi's chat with its approval checker at work: a line for what it let through, a send it asks about, a forward it blocked and a final Confirm with the page's screenshot.", checker.items);
+    const projects = arr(checked.snapshot?.["projects"]);
+    const first = projects[0] as JsonObject | undefined;
+    const id = (v: JsonValue | undefined, fallback: string) => (typeof v === "string" ? v : fallback);
+    const shotRef = { machineId: id(first?.["machineId"], "devbox"), projectId: id(first?.["projectId"], "storefront") };
+    const png = fs.readFileSync(new URL("./booking.png", import.meta.url));
+    checked.answer("attachment_get", { projectRef: shotRef, attachmentId: "F7" }, { attachmentId: "F7", name: "lupa-confirm.png", mime: "image/png", bytes: png.length, dataB64: png.toString("base64") });
     const marked = inlineItems(base("typical"), "inline-hidden", "A chat with approvals whose fields hide or reorder text, each shown as its mark, and an email in several languages shown as written.", hidden.items);
-    return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards, bought, marked];
+    return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards, bought, checked, marked];
   },
 });

@@ -234,6 +234,16 @@ memory, which the hub writes the way the lead's `remember` does:
 Nothing else changes: no project's memory, nobody else's. The list above the import shows the new entries at once,
 on every device.
 
+### A Navi's approval checker {#navi-checker}
+
+Before a Navi's risky action (a send, a share, a first visit to a site, a final Confirm on a site) reaches you, its
+[checker](/docs/navi#approvals) judges it in one model turn: a fresh session with no tools at all, on your own
+Claude, on the checker's model and effort (Sonnet 5.5 at medium unless you pick another). Its system prompt is
+`navi.checker`, which an admin can change on the Prompts page; its one message is the action, where each part came
+from, your recent messages and the Navi's last question, as JSON inside `<action_review>`. It never gets the mail,
+pages or files the Navi read. It answers go, ask or block with a one-line reason; fleetd's own rules (the floors, and
+the cases that always ask) hold past it, and anything else it answers asks you.
+
 ### The nightly refresh {#memory-refresh}
 
 Each night the lead tidies each project's memory, so what was said in chat but never remembered isn't lost, and what

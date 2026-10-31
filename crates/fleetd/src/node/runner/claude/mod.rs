@@ -159,6 +159,7 @@ explained! {
         "Write" => "A Navi writes anything but what its sandbox hides or keeps read-only.",
         "NotebookEdit" => "A Navi writes anything but what its sandbox hides or keeps read-only.",
         "WebFetch" => "A Navi fetches a site unasked only once the person allowed or linked it.",
+        "mcp__fleetd__confirm_step" => "A Navi's final Confirm on a site goes through its approval mode, like a send.",
     ]
 }
 
@@ -248,7 +249,18 @@ pub fn role_answer(
         return None;
     }
     if tool == "Bash" {
-        // A command runs unasked (D208): the OS sandbox holds its writes, and its agent-browser daemon's.
+        // A command runs unasked (D208): the OS sandbox holds its writes, and its agent-browser daemon's. Only one that
+        // would wipe the machine or the person's home is refused (W239).
+        let command = input
+            .get("command")
+            .and_then(|c| c.as_str())
+            .unwrap_or_default();
+        let home = crate::node::util::home_dir();
+        if let Some(why) = crate::hub::navi::shell_guard::refused(command, home.to_str()) {
+            return Some(PermissionDecision::Deny {
+                message: fleetd_contracts::prim::Text::unchecked(why),
+            });
+        }
         // Only a browser visit goes on to the hub's site gate.
         return crate::hub::navi::sites::visit(tool, input)
             .is_none()
@@ -636,7 +648,14 @@ impl ClaudeRunner {
             args.push(system.display().to_string());
         }
         args.push("--setting-sources".into());
-        args.push("user,project,local".into());
+        args.push(
+            if spec.isolated {
+                "user"
+            } else {
+                "user,project,local"
+            }
+            .into(),
+        );
         for dir in &spec.add_dirs {
             args.push("--add-dir".into());
             args.push(dir.display().to_string());
@@ -996,6 +1015,18 @@ mod tests {
                 "{runs}"
             );
         }
+        // Only the obvious wipes are refused, with why.
+        for wipes in [
+            "rm -rf ~",
+            "rm -rf /",
+            "mkfs.ext4 /dev/sdb1",
+            "dd if=/dev/zero of=/dev/sda",
+        ] {
+            let Some(PermissionDecision::Deny { message }) = answer(wipes) else {
+                panic!("{wipes}")
+            };
+            assert!(message.as_str().starts_with("Refused by fleetd"), "{wipes}");
+        }
         // A browser visit goes on to the hub's site gate, which allows a site the person allowed or linked.
         for visits in [
             "agent-browser open https://x.example",
@@ -1319,6 +1350,7 @@ mod tests {
             transcript: None,
             sandbox: None,
             host_dir: None,
+            isolated: false,
         }
     }
 

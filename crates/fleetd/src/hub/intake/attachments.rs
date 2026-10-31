@@ -614,6 +614,34 @@ pub fn claim(hub: &Hub, ids: &[AttachmentId], project: &ProjectRef) -> Result<()
     Ok(())
 }
 
+/// Whether attachment `id` is project `r`'s own (a file a person gave it, or an image its lead or tasks made with
+/// `chat_image`); if so it is marked the project's, kept past the unused-upload cleanup and read by the app, as
+/// [`show`] marks a message's.
+pub fn claim_own(
+    c: &rusqlite::Connection,
+    r: &ProjectRef,
+    id: &AttachmentId,
+) -> rusqlite::Result<bool> {
+    let key = format!("{}/{}", r.machine_id, r.project_id);
+    let lead = crate::hub::link::lead_calls::lead_by(r);
+    let n: i64 = id.as_str()[1..].parse().unwrap_or(0);
+    let ours = c
+        .query_row(
+            "SELECT 1 FROM attachments WHERE n = ?1 AND (project = ?2 OR (project IS NULL AND by = ?3))",
+            params![n, key, lead],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if ours {
+        c.execute(
+            "UPDATE attachments SET project = ?1 WHERE n = ?2 AND project IS NULL",
+            params![key, n],
+        )?;
+    }
+    Ok(ours)
+}
+
 /// A final lead message's parts, each `image` or `clip` block checked against project `r`: one whose attachment is
 /// the project's (a file a person gave it, or an image its lead or tasks made with `chat_image`) stays and marks the
 /// file the project's, so it is kept past the unused-upload cleanup and the app reads it; any other shows as its text.

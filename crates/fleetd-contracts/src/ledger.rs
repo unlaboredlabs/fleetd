@@ -352,6 +352,30 @@ pub struct ToolPermission {
     /// A Navi's first fetch or browser visit to this site (its host, such as `example.com`): approved, the Navi may
     /// fetch and open it without asking from then on, until a person revokes it (`navi_site_revoke`).
     pub site: Option<String>,
+    /// A Navi's approval checker judged it before it reached the person (W239): why it asks them, or why it refused
+    /// it. A blocked prompt was already refused on its node; approving it anyway lets the Navi run exactly this input
+    /// once, when it asks again.
+    pub checker: Option<CheckerNote>,
+    /// A Navi's `confirm_step`: its screenshot of the page, the project's, for the card.
+    pub screenshot: Option<crate::mcp::AttachmentId>,
+}
+
+/// What a Navi's approval checker said of an action it didn't let through.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckerNote {
+    pub verdict: CheckerVerdict,
+    /// Its reason, in one line. A checker that failed or answered nothing readable says so here.
+    pub reason: Line<1, 300>,
+}
+
+/// The checker's verdict on a risky action: go runs it, ask brings the person's card, block refuses it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckerVerdict {
+    Go,
+    Ask,
+    Block,
 }
 
 /// What a lead needs a person for that chat can't carry safely: a secret value (entered in a masked field and sealed to

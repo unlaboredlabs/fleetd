@@ -215,3 +215,109 @@ pub fn ask_footer(handle: &AskHandle) -> String {
         "(Ask {handle}. If you open an order for it, pass asked: \"{handle}\" to brief, so Navi hears when it lands.)"
     )
 }
+
+/// How a Navi's risky actions are approved (W239, D263): its sends, replies, shares and invites through an
+/// integration, and a site it opens on its own for the first time. Whatever the mode, moving money, trading and
+/// placing orders are refused, and so is a credential in outgoing content.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum NaviApprovalMode {
+    /// Every risky action asks the person on a card; no checker runs.
+    Ask,
+    /// A fresh checker model judges each risky action first: go runs it, ask brings the card, block refuses it.
+    #[default]
+    Checker,
+    /// Nothing asks and no checker runs: every risky action runs, past the hard floors.
+    Yolo,
+}
+
+impl NaviApprovalMode {
+    pub const ALL: [Self; 3] = [Self::Ask, Self::Checker, Self::Yolo];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::Checker => "checker",
+            Self::Yolo => "yolo",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|m| m.as_str() == text)
+    }
+}
+
+/// The checker's model when the person picked none.
+pub const CHECKER_MODEL: &str = "claude-sonnet-5-5";
+/// The checker's effort when the person picked none.
+pub const CHECKER_EFFORT: crate::effort::Effort = crate::effort::Effort::Medium;
+
+/// A Navi's approval settings: its mode, and the checker's model and effort.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NaviApprovals {
+    pub mode: NaviApprovalMode,
+    /// The checker's model: the person's pick, else [`CHECKER_MODEL`].
+    pub model: crate::effort::ModelName,
+    pub effort: crate::effort::Effort,
+    /// Whether model and effort are the hub's defaults, not a pick of the person's.
+    pub defaults: bool,
+}
+
+/// What let an action run without asking the person.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoApprovedBy {
+    /// The checker said go.
+    Checker,
+    /// The Navi is in YOLO.
+    Yolo,
+}
+
+/// The most auto-approved entries `navi_approvals` answers.
+pub const AUTO_APPROVED_MAX: usize = 200;
+
+/// One risky action a Navi ran without asking its person, as its settings' log shows it.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoApproved {
+    pub at: Timestamp,
+    pub by: AutoApprovedBy,
+    /// The tool the Navi's session asked for: `mcp__mail__send_message`, `WebFetch`.
+    pub tool: Line<1, 200>,
+    /// What it did, in one line: "Send on mail to sam@example.com", "Open example.org".
+    pub what: Line<1, 300>,
+    /// The checker's reason; absent in YOLO.
+    pub reason: Option<Line<1, 300>>,
+    /// The quiet line in the Navi's chat that told the person.
+    pub message_id: Option<ChatMessageId>,
+}
+
+/// `confirm_step`: a Navi's lead calls it right before the final Confirm or Submit click on a site that doesn't pay or
+/// order (booking a table, cancelling a subscription, sending a form, an expense, a return, a post). The call goes
+/// through the Navi's approval mode like a send: the checker's go, the person's approval or YOLO let it through, and
+/// its answer says to click. A payment never goes through here.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmStepCall {
+    /// The site the page is on: `opentable.com`.
+    pub site: Line<1, 253>,
+    /// The button's label, as the page shows it: "Complete reservation".
+    pub button: Line<1, 120>,
+    /// What clicking it does, in one or two plain sentences: "Books a table for 2 at Lupa, Sat 8 pm, under Sam".
+    pub does: Line<1, 500>,
+    /// What the page shows around the button: the details being confirmed.
+    pub page: Option<crate::prim::Text<0, 4000>>,
+    /// A screenshot of the page from `chat_image`, for the person's card.
+    pub screenshot: Option<crate::mcp::AttachmentId>,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmStepResult {
+    pub button: Line<1, 120>,
+    pub next: Option<String>,
+}

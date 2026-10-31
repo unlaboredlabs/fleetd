@@ -58,6 +58,8 @@ pub enum ToolAction {
     Share,
     /// Pays or buys: money leaves the person's account.
     Spend,
+    /// A Navi's final Confirm or Submit click on a site (`confirm_step`): a booking, a cancellation, a form sent.
+    Confirm,
 }
 
 /// The tool's input as it runs, pretty-printed, at most this many characters. It is never cut: an input past it is

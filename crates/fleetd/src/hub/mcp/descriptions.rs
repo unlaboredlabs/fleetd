@@ -97,6 +97,14 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "A person's own device only, for their own Navi. Pick the card a Navi pays with: card is a Credit Card item, op://<vault>/<item>, as onepassword_cards lists it; absent, the Navi has no card and can't pay. Only the reference is kept.",
     ),
     (
+        "navi_approvals",
+        "How a Navi's risky actions (sends, replies, shares, invites, a site it opens on its own the first time) are approved: mode ask (a card for every one), checker (default: a fresh tool-less model on the owner's Claude judges each first; go runs it with a quiet chat line, ask brings the card with its reason, block refuses it and the person may approve it anyway) or yolo (nothing asks); the checker's model and effort; and the log of actions that ran without asking, newest first, each with the checker's reason and its chat line. Money, trading and credentials in outgoing content stay refused in every mode, and spending always asks.",
+    ),
+    (
+        "navi_approvals_set",
+        "Set how a Navi's risky actions are approved: mode ask, checker or yolo, and the checker's model and effort (absent: the hub's defaults). A person's key only, never an agent's.",
+    ),
+    (
         "navi_signins_forget",
         "Forget a Navi's sign-ins: its browser keeps the sites it signed into (cookies and site storage, in a browser profile of its own on its machine) between sessions; this ends its open browser session, if any, and deletes that profile, so its next visit to each site starts signed out. Deleting the Navi deletes it too.",
     ),

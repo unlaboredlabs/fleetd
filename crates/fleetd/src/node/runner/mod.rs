@@ -92,6 +92,9 @@ pub struct SessionSpec {
     /// restarted node re-adopts it. None: the node owns the process, which ends with it. A sandboxed session never
     /// gets one: its sandbox joins a box that ends with the node.
     pub host_dir: Option<PathBuf>,
+    /// An isolated turn (`SessionLaunch::isolated`): only the user's own settings (`--setting-sources user`), so no
+    /// CLAUDE.md or settings of a project folder load.
+    pub isolated: bool,
 }
 
 /// Commands to a live session's process. A session's host reads them off its socket, and a node sends them to hosts an
