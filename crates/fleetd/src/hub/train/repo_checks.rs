@@ -205,7 +205,7 @@ mod tests {
             .after_merge
             .iter()
             .map(|c| c.as_str().to_string())
-            .filter(|c| mac.contains(c) || !ci_job(c))
+            .filter(|c| !ci_job(c))
             .collect();
         after.sort();
         mac.sort();
