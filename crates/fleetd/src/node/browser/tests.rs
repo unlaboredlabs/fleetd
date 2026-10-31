@@ -1519,6 +1519,172 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
     );
 }
 
+/// Serves `/` (a page framing `/frame` from `localhost`, another site, as
+/// reCAPTCHA's box is) and `/frame` (a big checkbox that tells its parent when it changes).
+async fn framing_site() -> (String, AbortOnDrop) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let serving = tokio::spawn(async move {
+        while let Ok((mut tcp, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let mut head = Vec::new();
+                let mut chunk = [0u8; 4096];
+                while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match tcp.read(&mut chunk).await {
+                        Ok(0) | Err(_) => return,
+                        Ok(n) => head.extend_from_slice(&chunk[..n]),
+                    }
+                }
+                let page = if head.starts_with(b"GET /frame") {
+                    "<html><body style=margin:0><input type=checkbox id=box style=width:300px;height:300px;margin:0 \
+                     onchange=\"parent.postMessage('checked:' + this.checked, '*')\"></body></html>"
+                        .to_owned()
+                } else {
+                    format!(
+                        "<html><head><title>Framing</title></head><body style=margin:0>\
+                         <iframe id=f src=http://localhost:{port}/frame \
+                         style=position:absolute;left:0;top:0;width:300px;height:300px;border:0></iframe>\
+                         <script>addEventListener('message', e => {{ document.title = e.data; }});</script>\
+                         </body></html>"
+                    )
+                };
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{page}",
+                    page.len()
+                );
+                let _ = tcp.write_all(response.as_bytes()).await;
+            });
+        }
+    });
+    (format!("http://127.0.0.1:{port}/"), AbortOnDrop(serving))
+}
+
+/// The next frame that comes by itself (nothing here repaints the page), or None in `wait`.
+async fn frame_within(frames: &Arc<super::FrameSlot>, wait: Duration) -> Option<Value> {
+    let deadline = Instant::now() + wait;
+    loop {
+        if let Some(line) = frames.take().pop() {
+            return Some(serde_json::from_str(&line).unwrap());
+        }
+        let left = deadline.checked_duration_since(Instant::now())?;
+        let _ = tokio::time::timeout(left, frames.notify.notified()).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_persons_tap_in_another_sites_frame_lands_and_the_page_keeps_streaming() {
+    use fleetd_contracts::browser::{BrowserControlTo, BrowserInput, BrowserSessionId};
+    let Some(rig) = rig().await else { return };
+    let (site, _site) = framing_site().await;
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Tick the box" }),
+    )
+    .await;
+    let id = BrowserSessionId::unchecked(started["result"]["sessionId"].as_str().unwrap());
+    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap())
+        .await
+        .unwrap();
+    let page = driver.page().await;
+    driver
+        .ok(Some(&page), "Page.navigate", json!({ "url": site }))
+        .await;
+    driver
+        .wait_for(&page, "document.readyState === 'complete'")
+        .await;
+    // The box's frame has loaded, from the other site: in the page's process (the headless shell), or in one of its
+    // own (Chrome, with site isolation, as reCAPTCHA's box is on a Chrome).
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let tree = driver.ok(Some(&page), "Page.getFrameTree", json!({})).await;
+        let targets = driver.ok(None, "Target.getTargets", json!({})).await;
+        let inside = tree["frameTree"]["childFrames"][0]["frame"]["url"]
+            .as_str()
+            .is_some_and(|u| u.starts_with("http://localhost:"));
+        let own = targets["targetInfos"].as_array().unwrap().iter().any(|t| {
+            t["type"] == "iframe"
+                && t["url"]
+                    .as_str()
+                    .is_some_and(|u| u.starts_with("http://localhost:"))
+        });
+        if inside || own {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the frame never loaded: {tree} {targets}"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    let frames = Arc::new(super::FrameSlot::default());
+    rig.broker.watch(&id, Some(frames.clone()));
+    let first = next_frame(&rig, &frames).await;
+    let width = first["width"].as_f64().unwrap();
+    rig.broker
+        .control(&id, BrowserControlTo::Human, "human:phone");
+    let session = rig.broker.live(THREAD).unwrap();
+    let (_, own) = session.page().unwrap();
+    let inner = session
+        .cdp
+        .call(
+            Some(&own),
+            "Runtime.evaluate",
+            json!({ "expression": "innerWidth", "returnByValue": true }),
+        )
+        .await
+        .unwrap()["result"]["value"]
+        .as_f64()
+        .unwrap();
+    // Settled: what the page sent before the tap is gone.
+    while frame_within(&frames, Duration::from_millis(500))
+        .await
+        .is_some()
+    {}
+
+    // A tap as the phone sends one: pressed and released, no move before, in the frame's pixels.
+    let at = 150.0 * width / inner;
+    for action in ["pressed", "released"] {
+        let tap: BrowserInput = serde_json::from_value(json!({
+            "kind": "mouse", "action": action, "x": at, "y": at, "button": "left", "clickCount": 1,
+        }))
+        .unwrap();
+        rig.broker.input(&id, tap);
+    }
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let title = session
+            .cdp
+            .call(
+                Some(&own),
+                "Runtime.evaluate",
+                json!({ "expression": "document.title", "returnByValue": true }),
+            )
+            .await
+            .unwrap()["result"]["value"]
+            .clone();
+        if title == "checked:true" {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the tap never reached the frame's box: {title}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    // The ticked box repainted the page: its frame reaches the watcher, saying the person drives.
+    let after = frame_within(&frames, FRAME_WAIT)
+        .await
+        .expect("no frame after the person's tap");
+    assert_eq!(after["control"], "human");
+    assert!(after["seq"].as_u64() > first["seq"].as_u64(), "{after}");
+
+    rig.broker
+        .control(&id, BrowserControlTo::Agent, "human:phone");
+    rig.broker.watch(&id, None);
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+}
+
 /// Once the hub lists the session live: the node reports it in the background, so a loaded run (CI) can call the hub
 /// before the report lands.
 async fn live_on_hub(hub: &TestHub) {
