@@ -126,11 +126,15 @@ export interface SkillOffers {
   readonly turnOff: boolean;
 }
 
-/** `own`: the Navi is the person's (the hub refuses another's). */
+/** `own`: the Navi is the person's (the hub refuses another's). A skill in its folder is the folder's: the hub can't
+ * turn it off, only taking it out of the folder does. */
 export const offers = (s: Pick<Skill, "origin" | "install">, own: boolean): SkillOffers => {
   const mine = own && kindOf(s) === "own";
-  return { edit: mine, delete: mine, history: hubKept(s.origin), turnOff: own };
+  return { edit: mine, delete: mine, history: hubKept(s.origin), turnOff: own && kindOf(s) !== "folder" };
 };
+
+/** Off for the Navi: a folder's skill never is, whatever an older hub said. */
+export const isOff = (s: Pick<Skill, "origin" | "install" | "off">): boolean => s.off === true && kindOf(s) !== "folder";
 
 /** The view's line under the description: where it is from and its version. */
 export const sourceLine = (s: Skill, navi: string, versions: number): string => {

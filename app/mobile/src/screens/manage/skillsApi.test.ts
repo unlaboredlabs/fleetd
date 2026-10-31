@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HubEvent } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { deleteSkill, listSkills, readSkill, restoreSkill, saveSkill, touchesSkills, turnSkillOff } from "./skillsApi";
+import { deleteSkill, listSkills, readSkill, readSkillView, restoreSkill, saveSkill, touchesSkills, turnSkillOff } from "./skillsApi";
 
 const AT = "2026-10-31T10:00:00Z";
 const REF = { machineId: "devbox", projectId: "nova" };
@@ -43,6 +43,24 @@ describe("a Navi's skills", () => {
     expect(last("skill_get")).toEqual({ origin: "project", projectRef: REF, name: "weekly-invoices", version: 1 });
     hub.answer("skill_get", { skill: SKILL, text: "v1 text" });
     await expect(older).resolves.toMatchObject({ ok: true, value: { text: "v1 text", versions: [] } });
+  });
+
+  it("reads a skill's view with whether it is off, its last use and its rival from its list row, which skill_get leaves out", async () => {
+    const { hub, session, last } = setup();
+    const view = readSkillView(session, REF, "project", "weekly-invoices");
+    expect(last("skill_get")).toEqual({ origin: "project", projectRef: REF, name: "weekly-invoices" });
+    expect(last("skills_list")).toEqual({ projectRef: REF });
+    hub.answer("skill_get", { skill: SKILL, text: "v2 text", versions: [V2] });
+    hub.answer("skills_list", { skills: [{ ...SKILL, origin: "global", off: false }, { ...SKILL, off: true, lastUsedAt: AT, shadowedBy: "repo_agents" }] });
+    await expect(view).resolves.toEqual({ ok: true, value: { skill: { ...SKILL, off: true, lastUsedAt: AT, shadowedBy: "repo_agents" }, text: "v2 text", versions: [V2] } });
+  });
+
+  it("reads a skill's view as on when the list doesn't name it", async () => {
+    const { hub, session } = setup();
+    const view = readSkillView(session, REF, "project", "weekly-invoices");
+    hub.answer("skill_get", { skill: { ...SKILL, off: true }, text: "t", versions: [] });
+    hub.fail("skills_list", "machine_offline", "devbox is offline.");
+    await expect(view).resolves.toEqual({ ok: true, value: { skill: SKILL, text: "t", versions: [] } });
   });
 
   it("saves the person's edit with their why, and without an empty one", async () => {

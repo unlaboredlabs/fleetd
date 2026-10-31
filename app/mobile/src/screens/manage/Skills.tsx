@@ -15,7 +15,7 @@ import { EmptyState } from "../../ui/States";
 import { useNow } from "../time";
 import { errorWords, Problem, Symbol, useRead } from "./parts";
 import { listSkills, touchesSkills } from "./skillsApi";
-import { kindOf, rowLine, skillGroups, skillKey, type Kind, type Skill } from "./skillsModel";
+import { isOff, kindOf, rowLine, skillGroups, skillKey, type Kind, type Skill } from "./skillsModel";
 
 export function Skills({ navigation, route }: ChatInfoProps<"Skills">) {
   const t = useTheme();
@@ -104,7 +104,7 @@ const tileColor = (t: Palette, kind: Kind): string => (kind === "own" ? t.accent
 /** `icon` is ListSection's sign to inset the separator past the tile. */
 function SkillRow({ skill: s, line, onPress }: { skill: Skill; line: string | undefined; icon: true; onPress: () => void }) {
   const t = useTheme();
-  const off = s.off === true;
+  const off = isOff(s);
   const label = [s.name, s.description, off ? "Off" : undefined, line].filter((x) => x !== undefined && x !== "").join(", ");
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress}>

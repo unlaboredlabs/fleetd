@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ago, diffChunks, diffSummary, kindOf, offers, rowLine, skillGroups, skillsShown, sourceLine, splitSkill, versionLine, whoOf, type Skill, type SkillVersion } from "./skillsModel";
+import { ago, diffChunks, diffSummary, isOff, kindOf, offers, rowLine, skillGroups, skillsShown, sourceLine, splitSkill, versionLine, whoOf, type Skill, type SkillVersion } from "./skillsModel";
 
 const NOW = Date.parse("2026-10-31T12:00:00Z");
 const clock = { nowMs: NOW };
@@ -66,8 +66,16 @@ describe("a skill's view", () => {
     expect(offers(skill("a"), true)).toEqual({ edit: true, delete: true, history: true, turnOff: true });
     expect(offers(skill("a", { install }), true)).toEqual({ edit: false, delete: false, history: true, turnOff: true });
     expect(offers(skill("a", { origin: "global" }), true)).toEqual({ edit: false, delete: false, history: true, turnOff: true });
-    expect(offers(skill("a", { origin: "repo_agents" }), true)).toEqual({ edit: false, delete: false, history: false, turnOff: true });
+    expect(offers(skill("a", { origin: "repo_agents" }), true)).toEqual({ edit: false, delete: false, history: false, turnOff: false });
+    expect(offers(skill("a", { origin: "repo_claude" }), true)).toEqual({ edit: false, delete: false, history: false, turnOff: false });
     expect(offers(skill("a"), false)).toEqual({ edit: false, delete: false, history: true, turnOff: false });
+  });
+
+  it("never shows a skill from its folder as off: the hub can't turn one off", () => {
+    expect(isOff(skill("a", { off: true }))).toBe(true);
+    expect(isOff(skill("a", { origin: "global", off: true }))).toBe(true);
+    expect(isOff(skill("a", { origin: "repo_agents", off: true }))).toBe(false);
+    expect(isOff(skill("a"))).toBe(false);
   });
 
   it("splits the frontmatter from the steps", () => {

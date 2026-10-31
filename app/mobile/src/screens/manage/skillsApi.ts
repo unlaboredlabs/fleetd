@@ -1,6 +1,6 @@
 // The hub calls behind a Navi's Skills screens, each as the desktop makes it: the list (skills_list), a skill and its
-// versions (skill_get, an older version's text by `version`), the person's edit (skill_set), a restore (skill_revert),
-// Turn Off (skill_off) and Delete (skill_delete). Every write fires skills.changed, which the screens read again on.
+// versions (skill_get, an older version's text by `version`; its view adds its skills_list row), the person's edit
+// (skill_set), a restore (skill_revert), Turn Off (skill_off) and Delete (skill_delete). Every write fires skills.changed, which the screens read again on.
 import type { HubError, HubEvent, ProjectRef, SkillOrigin } from "../../desktop";
 import type { Hub, Result } from "./api";
 import type { Skill, SkillRead } from "./skillsModel";
@@ -22,6 +22,20 @@ export const readSkill = async (hub: Hub, p: ProjectRef, origin: SkillOrigin, na
   if (!r.ok) return r;
   const out = r.output as Partial<SkillRead> & Pick<SkillRead, "skill" | "text">;
   return { ok: true, value: { skill: out.skill, text: out.text, versions: out.versions ?? [] } };
+};
+
+/**
+ * A skill's view: skill_get's text and versions, with what only skills_list knows for the Navi: whether it is off there,
+ * when it was last used, and whether another of its name wins.
+ */
+export const readSkillView = async (hub: Hub, p: ProjectRef, origin: SkillOrigin, name: string): Promise<Result<SkillRead>> => {
+  const [got, listed] = await Promise.all([readSkill(hub, p, origin, name), listSkills(hub, p)]);
+  if (!got.ok) return got;
+  const row = listed.ok ? listed.value.find((s) => s.origin === origin && s.name === name) : undefined;
+  const { off: _off, lastUsedAt: _used, shadowedBy: _shadowed, ...skill } = got.value.skill;
+  const { off, lastUsedAt, shadowedBy } = row ?? {};
+  const known = { ...(off === undefined ? {} : { off }), ...(lastUsedAt === undefined ? {} : { lastUsedAt }), ...(shadowedBy === undefined ? {} : { shadowedBy }) };
+  return { ok: true, value: { ...got.value, skill: { ...skill, ...known } } };
 };
 
 /** The person's edit of one of the Navi's own skills, a new version with their line on why when they gave one. */

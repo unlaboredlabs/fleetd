@@ -1,9 +1,9 @@
 // A skill's view, pushed from a Navi's Skills: its name, what it does and where it is from over its SKILL.md, read as
 // formatted text; then its History, whether the Navi uses it, and Delete, asking first. Edit in the bar opens the
 // editor (SkillEdit.tsx). What the person may do follows what it is (skillsModel offers): a hub-wide or installed
-// skill is only turned off here.
+// skill is only turned off here, and one in the Navi's folder is only read.
 import { StackActions } from "@react-navigation/native";
-import { useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { isYours } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
@@ -15,8 +15,8 @@ import { EmptyState } from "../../ui/States";
 import { useNow } from "../time";
 import { confirmDestructive, errorWords, Problem, useRead } from "./parts";
 import { SkillTile, useSkillsChanged } from "./Skills";
-import { deleteSkill, readSkill, turnSkillOff } from "./skillsApi";
-import { kindOf, offers, rowLine, sourceLine, splitSkill } from "./skillsModel";
+import { deleteSkill, readSkillView, turnSkillOff } from "./skillsApi";
+import { isOff, kindOf, offers, rowLine, sourceLine, splitSkill } from "./skillsModel";
 
 export function Skill({ navigation, route }: ChatInfoProps<"Skill">) {
   const t = useTheme();
@@ -24,12 +24,14 @@ export function Skill({ navigation, route }: ChatInfoProps<"Skill">) {
   const { state, session } = useHub();
   const { key, origin, name } = route.params;
   const p = state.projects?.[key];
-  const read = useRead(() => (p === undefined ? Promise.resolve(undefined) : readSkill(session, p, origin, name)), [session, p?.machineId, p?.projectId, origin, name]);
+  const read = useRead(() => (p === undefined ? Promise.resolve(undefined) : readSkillView(session, p, origin, name)), [session, p?.machineId, p?.projectId, origin, name]);
   useSkillsChanged(session, p, read.reload);
   const [busy, setBusy] = useState<"off" | "delete" | null>(null);
-  // The switch moves at once; the hub's answer (or the read after skills.changed) settles it.
+  // The switch moves at once; the read after the hub's answer settles it.
   const [offNow, setOffNow] = useState<boolean | null>(null);
   const r = read.value;
+  // A fresh read says where the switch stands.
+  useEffect(() => setOffNow(null), [r]);
   const v = r?.ok === true ? r.value : undefined;
   const can = v === undefined || p === undefined ? undefined : offers(v.skill, isYours(p, state.me));
   const live = state.hub.phase === "live";
@@ -66,7 +68,7 @@ export function Skill({ navigation, route }: ChatInfoProps<"Skill">) {
   }
   const { skill: s, text, versions } = r.value;
   const { body } = splitSkill(text);
-  const off = offNow ?? s.off === true;
+  const off = offNow ?? isOff(s);
   const last = rowLine(s, now, state.meName);
 
   const setOff = (value: boolean) => {
@@ -75,8 +77,10 @@ export function Skill({ navigation, route }: ChatInfoProps<"Skill">) {
     setBusy("off");
     void turnSkillOff(session, p, s.name, value).then((res) => {
       setBusy(null);
-      setOffNow(null);
-      if (!res.ok) return Alert.alert(value ? "Couldn't turn it off" : "Couldn't turn it on", errorWords(res.error));
+      if (!res.ok) {
+        setOffNow(null);
+        return Alert.alert(value ? "Couldn't turn it off" : "Couldn't turn it on", errorWords(res.error));
+      }
       read.reload();
     });
   };
