@@ -293,7 +293,7 @@ jobs:
     # The workspace's clippy for both darwin targets, cross-checked on Linux with cargo-zigbuild as the release
     # cross-builds them: code under cfg(target_os = "macos") that doesn't compile, or warns, fails here. It runs nothing;
     # mac.yml runs the macOS-only tests nightly. Like the other Rust jobs, only when a Rust-related path changed
-    # (.github/rust-scope.sh); otherwise it reports success at once, as the train waits for it (.fleetd/train.json).
+    # (.github/rust-scope.sh); otherwise it reports success at once, so the required check reports on every PR.
     name: rust (darwin)
     runs-on: ubuntu-latest
     timeout-minutes: 20
