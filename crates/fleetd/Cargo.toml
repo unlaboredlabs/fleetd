@@ -60,7 +60,6 @@ unicode-normalization = { workspace = true }
 
 # hub: leads, intake, playbooks
 serde_path_to_error = { workspace = true }
-sha1 = { workspace = true }
 cliclack = "0.5"
 # fleetd pair: the pairing link as a QR in the terminal
 qrcode = { version = "0.14", default-features = false }
