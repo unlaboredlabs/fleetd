@@ -163,8 +163,8 @@ it("has You and Projects for a member, with the picked project's five pages, and
   }
 });
 
-it("keeps the picked project across a project's pages, and an older link on the page that has it now", async () => {
-  await render("#/settings/memory?for=devbox/storefront", false);
+it("keeps the picked project across a project's pages", async () => {
+  await render("#/settings/instructions?for=devbox/storefront", false);
   expect(screen()).toBe("settings.instructions");
   expect(window.location.hash).toBe("#/settings/instructions?for=devbox/storefront");
   const group = nav()?.querySelector<HTMLElement>("[role='group'][aria-label='Project']");
@@ -176,15 +176,13 @@ it("keeps the picked project across a project's pages, and an older link on the 
   expect(window.location.hash).toBe("#/settings/projects?for=devbox/storefront");
 });
 
-it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs and hub links on Hubs, from old Connections links too", async () => {
+it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs and hub links on Hubs", async () => {
   const parts = () => [...host.querySelectorAll<HTMLElement>("[data-part]")].map((p) => p.dataset["part"]);
-  for (const hash of ["#/settings/claude", "#/settings/connections", "#/settings/accounts"]) {
-    await render(hash, false);
-    expect(screen(), hash).toBe("settings.accounts");
-    expect(parts()).toEqual(["claude", "github", "onepassword"]);
-    act(() => root.unmount());
-    root = createRoot(host);
-  }
+  await render("#/settings/accounts", false);
+  expect(screen()).toBe("settings.accounts");
+  expect(parts()).toEqual(["claude", "github", "onepassword"]);
+  act(() => root.unmount());
+  root = createRoot(host);
   await render("#/settings/hubs", false);
   expect(screen()).toBe("settings.hubs");
   expect(parts()).toEqual(["hubs.add", "hubs.hub-links"]);

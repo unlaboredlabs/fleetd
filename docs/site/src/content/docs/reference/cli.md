@@ -327,15 +327,6 @@ fleetd project profile <name> [--model <model>] [--effort low|medium|high|xhigh|
 
 create or change a task profile (owner or admin), or delete one. A new one needs `--model` and `--effort`. `--default` makes it the one the lead, every review and helper calls run on
 
-### fleetd project set {#project-set-fast-check}
-
-```text
-fleetd project set <machine>/<project> [--fast-check <check>]... [--after-merge <check>]...
-    [--home <dir>] [--hub <url>]
-```
-
-how the merge train treats the repo's checks. It waits only for its fast set: the checks the base branch requires, plus each `--fast-check`, each until it reports. Each `--after-merge` never stops a merge, even once failed. A check outside the fast set that fails after the merge opens a fix order. Each option replaces its list; none empties it
-
 ### fleetd navi create {#navi-create}
 
 ```text

@@ -5375,8 +5375,6 @@ export type ProjectSettings = {
   /** What runs in each new worktree before its agent starts; no commands when none are set. */
   setup: WorktreeSetup;
   title: string;
-  /** How the merge train treats the checks of the project's repo; none set by default. */
-  train?: TrainSettings;
   workspaceRoot: string;
   /** From the node, now: absent while it is offline or too old to say. */
   worktrees?: ProjectWorktrees;
@@ -5403,17 +5401,12 @@ export type ProjectSettingsSetInput = {
   /** Turns the nightly memory refresh on or off for the project. */
   memoryRefresh?: boolean;
   projectId: ProjectId;
-  /** The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title, keepWorktrees and train are the project's either way. */
+  /** The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title and keepWorktrees are the project's either way. */
   repo?: RepoName;
   /** Replaces the project's setup commands and their settings; no commands turns setup off. */
   setup?: WorktreeSetup;
   /** The project's name in fleetd; its folder keeps its own. */
   title?: string;
-  /**
-   * Replaces how the merge train treats the repo's checks: the checks it also waits for, and those left for
-   * after the merge.
-   */
-  train?: TrainSettings;
 };
 
 export type ProjectSettingsSetOutput = {
@@ -7692,22 +7685,6 @@ export type TrainLive = {
   /** Merged since 00:00 UTC. */
   mergedToday: number;
   repo: GitHubRepo;
-};
-
-/**
- * How the merge train treats the checks of the project's repo. It waits only for its fast set: the checks the base
- * branch requires, read from its ruleset or branch protection, plus `fastChecks`, each until it reports, however late
- * it starts. It never waits for any other check; one of those that has already failed when the fast set is green
- * still stops the merge, unless it is in `afterMerge`. A check the base requires is always in the fast set: GitHub
- * won't merge without it. With no required check and none added, it waits for every check. After a merge it watches
- * every check outside the fast set on the merged commit; one that fails there opens a fix order for the project,
- * once per failure.
- */
-export type TrainSettings = {
-  /** Checks that never stop a merge, even once failed: they only run after it. */
-  afterMerge?: string[];
-  /** Checks the train waits for besides the required ones. */
-  fastChecks?: string[];
 };
 
 /** One serial train per repo. */

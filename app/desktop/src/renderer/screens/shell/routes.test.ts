@@ -75,28 +75,6 @@ describe("routes", () => {
     expect(parseHash("#/settings/hub.people")).toEqual({ id: "settings", tab: "general" });
   });
 
-  it("opens an Administration link on the Hub page that has it now", () => {
-    for (const [old, tab] of [
-      ["", "hub.people"],
-      ["people", "hub.people"],
-      ["invites", "hub.people"],
-      ["machines", "hub.machines"],
-      ["connections", "hub.accounts"],
-      ["claude", "hub.accounts"],
-      ["github", "hub.accounts"],
-      ["hub", "hub.tools"],
-      ["skills", "hub.tools"],
-      ["setup", "hub.setup"],
-      ["nope", "hub.people"],
-    ]) {
-      expect(parseHash(`#/admin/${old ?? ""}`), old).toEqual({ id: "settings", tab });
-    }
-    expect(parseHash("#/admin/machines/laptop")).toEqual({ id: "settings", tab: "hub.machines", machine: "laptop" });
-    expect(parseHash("#/admin/hub?prompt=lead.start&view=update")).toEqual({ id: "settings", tab: "hub.prompts", prompt: "lead.start", view: "update" });
-    expect(parseHash("#/admin/people?prompt=lead.start")).toEqual({ id: "settings", tab: "hub.people" });
-    expect(parseHash("#/admin/people?at=h2")).toEqual({ id: "settings", tab: "hub.people", at: "h2" });
-  });
-
   it("opens the Factory on the project a Status row links it to, else on every project", () => {
     expect(toHash({ id: "factory", project: null })).toBe("#/factory");
     expect(toHash({ id: "factory", project: storefront })).toBe("#/factory?project=devbox/storefront");
@@ -108,19 +86,16 @@ describe("routes", () => {
     }
   });
 
-  it("opens Agent time as a tab of the Factory, and an older #/time link on it", () => {
+  it("opens Agent time as a tab of the Factory", () => {
     expect(toHash({ id: "time", orderId: null })).toBe("#/factory/time");
     expect(toHash({ id: "time", orderId: "W14" })).toBe("#/factory/time/order/W14");
     expect(parseHash("#/factory/time")).toEqual({ id: "time", orderId: null });
     expect(parseHash("#/factory/time/order/W14")).toEqual({ id: "time", orderId: "W14" });
     expect(parseHash("#/factory/time/nope")).toEqual({ id: "time", orderId: null });
-    expect(parseHash("#/time")).toEqual({ id: "time", orderId: null });
-    expect(parseHash("#/time/order/W14")).toEqual({ id: "time", orderId: "W14" });
-    expect(toHash(parseHash("#/time/order/W14"))).toBe("#/factory/time/order/W14");
   });
 
   it("sends the removed surfaces, unknown and malformed hashes home", () => {
-    for (const hash of ["", "#/board", "#/board/devbox/storefront", "#/order/W14?inbox&ask=A1", "#/inbox", "#/project/devbox", "#/prs", "#/prs/devbox/storefront", "#/agents", "#/agents/devbox/storefront/T1", "#/x", "#/project/%E0%A4%A/b"]) {
+    for (const hash of ["", "#/board", "#/board/devbox/storefront", "#/order/W14?inbox&ask=A1", "#/inbox", "#/project/devbox", "#/prs", "#/prs/devbox/storefront", "#/agents", "#/agents/devbox/storefront/T1", "#/time", "#/admin/people", "#/x", "#/project/%E0%A4%A/b"]) {
       expect(parseHash(hash)).toEqual(HOME);
     }
     expect(parseHash("#/status/project/devbox/storefront")).toEqual({ id: "status" });

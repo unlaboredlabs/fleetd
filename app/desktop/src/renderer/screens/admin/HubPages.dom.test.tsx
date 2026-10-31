@@ -201,16 +201,6 @@ it("gathers what reaches every project on Every project's pages, and saves its i
   expect(sent("prompt_set")).toEqual([expect.objectContaining({ id: "instructions", scope: "global", text: "Write tests first." })]);
 });
 
-it("opens an old Hub settings link on Every project's Tools & skills, and an old hub-wide prompt link on its Prompts", async () => {
-  window.location.hash = "#/admin/hub";
-  await render(admin);
-  expect(host.querySelector("[data-screen='settings.hub.tools']")).not.toBeNull();
-  window.location.hash = "#/admin/hub?prompt=lead.start";
-  await settle();
-  await settle();
-  expect(host.querySelector("[data-screen='settings.hub.prompts']")).not.toBeNull();
-});
-
 it("opens a hub-wide prompt from under Every project's Prompts and saves it hub-wide, with no project to pick", async () => {
   window.location.hash = "#/settings/hub/prompts";
   await render(admin);

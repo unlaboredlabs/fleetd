@@ -1351,9 +1351,6 @@ pub struct ProjectSettings {
     pub env: Vec<crate::project_settings::ProjectEnvVar>,
     /// What runs in each new worktree before its agent starts; no commands when none are set.
     pub setup: crate::project_settings::WorktreeSetup,
-    /// How the merge train treats the checks of the project's repo; none set by default.
-    #[serde(default)]
-    pub train: crate::project_settings::TrainSettings,
     /// From the node, now: absent while it is offline or too old to say.
     pub worktrees: Option<crate::project_settings::ProjectWorktrees>,
     /// Why `worktrees` is absent.
@@ -1367,7 +1364,7 @@ input!(
     ProjectSettingsSetInput {
         machine_id: MachineId,
         project_id: ProjectId,
-        /// The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title, keepWorktrees and train are the project's either way.
+        /// The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title and keepWorktrees are the project's either way.
         repo: Option<crate::repos::RepoName>,
         /// The project's name in fleetd; its folder keeps its own.
         title: Option<Line<1, 200>>,
@@ -1376,9 +1373,6 @@ input!(
         memory_refresh: Option<bool>,
         /// Replaces the project's setup commands and their settings; no commands turns setup off.
         setup: Option<crate::project_settings::WorktreeSetup>,
-        /// Replaces how the merge train treats the repo's checks: the checks it also waits for, and those left for
-        /// after the merge.
-        train: Option<crate::project_settings::TrainSettings>,
     }
 );
 checked!(ProjectSettingsSetInput, |input| {
@@ -1386,9 +1380,8 @@ checked!(ProjectSettingsSetInput, |input| {
         && input.keep_worktrees.is_none()
         && input.memory_refresh.is_none()
         && input.setup.is_none()
-        && input.train.is_none()
     {
-        return Err("expected title, keepWorktrees, memoryRefresh, setup, train or more".into());
+        return Err("expected title, keepWorktrees, memoryRefresh, setup or more".into());
     }
     Ok(())
 });

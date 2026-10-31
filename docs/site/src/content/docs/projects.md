@@ -108,8 +108,7 @@ The same actions are in Settings → Projects → Repos, and agents have `projec
 
 ## Project settings {#settings}
 
-Open a project's settings in the desktop app: Settings → Projects, then pick the project. Machines → a project's
-**…** menu → **Settings…** opens the same page.
+Open a project's settings in the desktop app: Settings → Projects, then pick the project.
 
 | Setting | Does |
 |---|---|
@@ -119,7 +118,6 @@ Open a project's settings in the desktop app: Settings → Projects, then pick t
 | Keep finished worktrees | Off (the default): a reader's worktree goes when its task finishes, and a writer's once its pull request merges; any left behind go in the [nightly cleanup](#cleanup). On: they stay on the machine. |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
 | MCP servers | The project's own MCP servers for its agents, and the global ones it gets. See [MCP servers](/docs/mcp-servers). |
-| Merge train | The checks the train also waits for before a merge, and those left for after it. See [Which checks it waits for](/docs/merge-train#fast-set). |
 | Delete project | See [Delete a project](#delete). |
 
 Its **Instructions & memory** page has **Refresh memory every night**: on (the default), around 04:00 on a day with

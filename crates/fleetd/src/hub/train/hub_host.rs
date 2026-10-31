@@ -93,19 +93,6 @@ impl TrainHost for HubHost {
         })
     }
 
-    fn train_settings(
-        &self,
-        project_ref: &ProjectRef,
-    ) -> Option<fleetd_contracts::project_settings::TrainSettings> {
-        match self.hub()?.db.project_settings().train(project_ref) {
-            Ok(train) => Some(train),
-            Err(error) => {
-                tracing::warn!(%error, "train: its settings not read");
-                None
-            }
-        }
-    }
-
     fn open_order<'a>(
         &'a self,
         project_ref: &'a ProjectRef,

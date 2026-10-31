@@ -82,7 +82,6 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "projects.worktrees", label: "Worktrees", tab: "projects", keywords: ["worktree", "cleanup", "keep", "base branch", "branch", "disk"] },
   { key: "projects.env", label: "Environment variables", tab: "projects", keywords: ["env", ".env", "secrets", "api key", "token", "variables"] },
   { key: "projects.setup", label: "Default setup", tab: "projects", keywords: ["setup commands", "setup", "install", "dependencies", "codegen", "worktree", "lockfile", "pnpm"] },
-  { key: "projects.train", label: "Merge train", tab: "projects", keywords: ["merge", "train", "checks", "ci", "required", "fast", "after merge"] },
   { key: "projects.telegram", label: "Telegram", tab: "projects", keywords: ["navi", "bot", "botfather", "phone", "pair"] },
   { key: "projects.approvals", label: "Approvals", tab: "projects", keywords: ["navi", "checker", "approve", "ask me", "yolo", "auto", "model", "effort"] },
   { key: "projects.approved", label: "Ran without asking", tab: "projects", keywords: ["navi", "checker", "log", "auto-approved", "yolo", "history"] },

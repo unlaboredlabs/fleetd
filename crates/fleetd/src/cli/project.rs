@@ -59,13 +59,6 @@ pub const PROJECT_USAGE: &str =
              create or change a task profile (owner or admin), or delete one. A new
              one needs --model and --effort. --default makes it the one the lead,
              every review and helper calls run on
-  project set <machine>/<project> [--fast-check <check>]... [--after-merge <check>]...
-         [--home <dir>] [--hub <url>]
-             how the merge train treats the repo's checks. It waits only for its fast
-             set: the checks the base branch requires, plus each --fast-check, each
-             until it reports. Each --after-merge never stops a merge, even once
-             failed. A check outside the fast set that fails after the merge opens a
-             fix order. Each option replaces its list; none empties it
 ";
 
 const SPEC: Spec = Spec {
@@ -89,8 +82,6 @@ const SPEC: Spec = Spec {
         ("rename", Kind::Str),
         ("default", Kind::Bool),
         ("delete", Kind::Bool),
-        ("fast-check", Kind::Multi),
-        ("after-merge", Kind::Multi),
         ("name", Kind::Str),
         ("new", Kind::Str),
         ("git-init", Kind::Bool),
@@ -755,31 +746,6 @@ async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), 
         _ => count_of(v, "max-agents")?.map(Some),
     };
     let fleet_cap = count_of(v, "fleet-cap")?;
-    let train = v.has("fast-check") || v.has("after-merge");
-    if train {
-        let (machine, project) = find(client, v).await?;
-        let at = json!({ "machineId": machine, "projectId": s(&project, "/projectId") });
-        let current = call(client, "project_settings_get", at.clone()).await?;
-        let mut settings = current["settings"]["train"].clone();
-        // `none` alone empties the list.
-        for (option, key) in [("fast-check", "fastChecks"), ("after-merge", "afterMerge")] {
-            if v.has(option) {
-                let names = v.multi(option);
-                settings[key] = if names == ["none"] {
-                    json!([])
-                } else {
-                    json!(names)
-                };
-            }
-        }
-        let mut input = at;
-        input["train"] = settings;
-        let body = call(client, "project_settings_set", input).await?;
-        out.success(body.get("next").and_then(Value::as_str).unwrap_or("Set."));
-        if allowed.is_none() && max_agents.is_none() && fleet_cap.is_none() {
-            return Ok(());
-        }
-    }
     if let Some(allowed) = &allowed {
         let (machine, project) = find(client, v).await?;
         let body = call(
@@ -809,10 +775,10 @@ async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), 
                 None => input["project"]["followDefault"] = json!(true),
             }
         }
-        (Some(_), None) if allowed.is_none() && !train => {
+        (Some(_), None) if allowed.is_none() => {
             return Err(Stop(
                 2,
-                "give --max-agents <n>, --profiles <names>, --fast-check or --after-merge for the project".into(),
+                "give --max-agents <n> or --profiles <names> for the project".into(),
                 None,
             ));
         }
