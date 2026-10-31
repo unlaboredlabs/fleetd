@@ -75,7 +75,9 @@ pub struct Session {
     scrub: Mutex<Arc<Scrub>>,
     pub credentials_filled: AtomicU64,
     /// The fields filled from 1Password, by `backendNodeId`: the driver may not write to them.
-    filled_fields: Mutex<std::collections::HashSet<i64>>,
+    filled_fields: Mutex<std::collections::HashMap<String, FilledOn>>,
+    /// The driver's own target sessions, by session id: the target each is on, from its attach events.
+    driver_targets: Mutex<std::collections::HashMap<String, String>>,
     last_active: Mutex<Instant>,
     /// Until when the session waits on a person (a purchase's approval, a takeover such as a bank's confirmation): it
     /// isn't idle meanwhile, so a held fare or room isn't lost.
@@ -101,6 +103,12 @@ pub struct Session {
 }
 
 pub type ControlHook = Arc<dyn Fn(BrowserControl) + Send + Sync>;
+
+/// The fields filled on one target, and the site it was on then.
+pub struct FilledOn {
+    site: String,
+    nodes: std::collections::HashSet<i64>,
+}
 
 /// The live view's state.
 #[derive(Default)]
@@ -173,6 +181,7 @@ impl Session {
             secrets: Mutex::new(opened.secrets),
             credentials_filled: AtomicU64::new(0),
             filled_fields: Mutex::default(),
+            driver_targets: Mutex::default(),
             last_active: Mutex::new(Instant::now()),
             held_until: Mutex::new(None),
             last_dom: Mutex::default(),
@@ -446,12 +455,51 @@ impl Session {
     }
 
     /// A field the node fills from 1Password, by its `backendNodeId`.
-    pub fn filled_field(&self, backend: i64) {
-        lock(&self.filled_fields).insert(backend);
+    /// A field the node filled from 1Password, by its target, the site the target was on and its `backendNodeId`,
+    /// which is unique only within one renderer process: it counts until that target moves to another site, which
+    /// may put it in another process ([`Session::target_moved`]).
+    /// `field_site` is the field's own document's host, for a target the browser hasn't said the address of.
+    pub fn filled_field(&self, target: &str, field_site: &str, backend: i64) {
+        // The target's own address, as targetInfoChanged reports it: what target_moved compares with.
+        let site = lock(&self.live)
+            .urls
+            .get(target)
+            .and_then(|u| super::onepassword::host_of(u))
+            .unwrap_or_else(|| field_site.to_owned());
+        let mut filled = lock(&self.filled_fields);
+        let on = filled.entry(target.to_owned()).or_insert_with(|| FilledOn {
+            site,
+            nodes: std::collections::HashSet::new(),
+        });
+        on.nodes.insert(backend);
     }
 
-    pub fn is_filled_field(&self, backend: i64) -> bool {
-        lock(&self.filled_fields).contains(&backend)
+    /// Whether `backend` is a field the node filled on `target`; with no target known, on any.
+    pub fn is_filled_field(&self, target: Option<&str>, backend: i64) -> bool {
+        let filled = lock(&self.filled_fields);
+        match target {
+            Some(target) => filled
+                .get(target)
+                .is_some_and(|on| on.nodes.contains(&backend)),
+            None => filled.values().any(|on| on.nodes.contains(&backend)),
+        }
+    }
+
+    /// The target the driver's session `driver` is on, if its attach was seen.
+    pub fn driver_target(&self, driver: &str) -> Option<String> {
+        lock(&self.driver_targets).get(driver).cloned()
+    }
+
+    /// The target now shows `url`: on another site (or gone, `None`), its filled fields are no more.
+    fn target_moved(&self, target: &str, url: Option<&str>) {
+        let mut filled = lock(&self.filled_fields);
+        let site = url.and_then(super::onepassword::host_of);
+        if filled
+            .get(target)
+            .is_some_and(|on| site.as_deref() != Some(on.site.as_str()))
+        {
+            filled.remove(target);
+        }
     }
 
     /// The page the session follows: (targetId, CDP sessionId).
@@ -513,8 +561,25 @@ impl Session {
         }
     }
 
-    /// A message from the browser on its way to the driver (credentials.rs).
+    /// A message from the browser on its way to the driver (credentials.rs). The driver's attaches say which target
+    /// each of its sessions is on.
     pub fn outgoing(&self, message: Value) -> Value {
+        match message["method"].as_str() {
+            Some("Target.attachedToTarget") => {
+                if let (Some(driver), Some(target)) = (
+                    message["params"]["sessionId"].as_str(),
+                    message["params"]["targetInfo"]["targetId"].as_str(),
+                ) {
+                    lock(&self.driver_targets).insert(driver.to_owned(), target.to_owned());
+                }
+            }
+            Some("Target.detachedFromTarget") => {
+                if let Some(driver) = message["params"]["sessionId"].as_str() {
+                    lock(&self.driver_targets).remove(driver);
+                }
+            }
+            _ => {}
+        }
         super::credentials::outgoing(self, message)
     }
 
@@ -898,6 +963,7 @@ async fn screencast(
                 let info = &event.params["targetInfo"];
                 if let (Some(target), Some(url)) = (info["targetId"].as_str(), info["url"].as_str())
                 {
+                    session.target_moved(target, Some(url));
                     lock(&session.live)
                         .urls
                         .insert(target.to_owned(), url.to_owned());
@@ -932,6 +998,9 @@ async fn screencast(
                     _ => ("", event.params["sessionId"].as_str().unwrap_or_default()),
                 };
                 lock(&session.live).urls.remove(target);
+                if !target.is_empty() {
+                    session.target_moved(target, None);
+                }
                 let was_current = {
                     let mut pages = lock(&session.pages);
                     let current = pages.current().cloned();

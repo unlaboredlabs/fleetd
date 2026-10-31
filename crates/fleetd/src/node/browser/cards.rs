@@ -464,6 +464,8 @@ const PICK: &str = "function(values) { const options = [...this.options]; \
 /// One document the card may fill in: the CDP session it is reached through, and its frame.
 struct Doc {
     session: String,
+    /// The target the document is in: the page's, or a frame's in another process.
+    target: String,
     frame: String,
 }
 
@@ -472,6 +474,7 @@ struct Doc {
 /// hidden from the driver.
 async fn docs(
     session: &Session,
+    page_target: &str,
     page_session: &str,
     allowed: &(dyn Fn(&str) -> bool + Sync),
 ) -> Vec<Doc> {
@@ -479,6 +482,7 @@ async fn docs(
     let mut known = std::collections::HashSet::new();
     let walk = |tree: &Value,
                 via: &str,
+                in_target: &str,
                 docs: &mut Vec<Doc>,
                 known: &mut std::collections::HashSet<String>| {
         let mut stack = vec![tree.clone()];
@@ -489,6 +493,7 @@ async fn docs(
                 if allowed(frame["url"].as_str().unwrap_or_default()) {
                     docs.push(Doc {
                         session: via.to_owned(),
+                        target: in_target.to_owned(),
                         frame: id.to_owned(),
                     });
                 }
@@ -503,7 +508,13 @@ async fn docs(
         .call(Some(page_session), "Page.getFrameTree", json!({}))
         .await
     {
-        walk(&tree["frameTree"], page_session, &mut docs, &mut known);
+        walk(
+            &tree["frameTree"],
+            page_session,
+            page_target,
+            &mut docs,
+            &mut known,
+        );
     }
     // Frames in other processes are targets of their own: attached here, their own frames added, until none is new.
     let mut attached = std::collections::HashSet::new();
@@ -541,7 +552,7 @@ async fn docs(
                 .call(Some(&own), "Page.getFrameTree", json!({}))
                 .await
             {
-                walk(&tree["frameTree"], &own, &mut docs, &mut known);
+                walk(&tree["frameTree"], &own, &target, &mut docs, &mut known);
             }
         }
     }
@@ -556,12 +567,12 @@ pub async fn fill_card(
     card: &Card,
     allowed: &(dyn Fn(&str) -> bool + Sync),
 ) -> Result<String, CardError> {
-    let Some((_, page)) = session.page() else {
+    let Some((page_target, page)) = session.page() else {
         return Err(not_typed("the browser has no page"));
     };
     let mut typed = false;
     let mut filled: Vec<Role> = Vec::new();
-    for doc in docs(session, &page, allowed).await {
+    for doc in docs(session, &page_target, &page, allowed).await {
         if Role::ALL.iter().all(|r| filled.contains(r)) {
             break;
         }
@@ -642,7 +653,8 @@ pub async fn fill_card(
                     .pointer("/node/backendNodeId")
                     .and_then(Value::as_i64)
             {
-                session.filled_field(backend);
+                let site = host_of(about["url"].as_str().unwrap_or_default()).unwrap_or_default();
+                session.filled_field(&doc.target, &site, backend);
             }
             if about["tag"] == "select" {
                 let values = select_values(role, card);

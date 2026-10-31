@@ -121,7 +121,7 @@ async fn checkout() -> (String, Arc<std::sync::Mutex<Vec<String>>>, AbortOnDrop)
                 } else if head.starts_with("GET /3ds") {
                     (
                         "text/html",
-                        "<html><body><p>Confirm the payment in your bank app</p></body></html>"
+                        "<html><head><title>Bank</title></head><body><h1>Order 42 confirmed</h1><p>Confirm the payment in your bank app</p><button>Continue shopping</button></body></html>"
                             .to_owned(),
                     )
                 } else {
@@ -541,6 +541,36 @@ async fn an_approved_purchase_fills_the_card_into_the_providers_frame_once_and_t
         Duration::ZERO,
         "held while the person confirms"
     );
+
+    // A page from another site after the fill reads as it is: a node id there names nothing the node filled.
+    driver
+        .ok(
+            Some(&page),
+            "Page.navigate",
+            json!({ "url": format!("{}/3ds", shop.replace("127.0.0.1", "localhost")) }),
+        )
+        .await;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while driver.eval(&page, "document.title").await != "Bank" {
+        assert!(Instant::now() < deadline, "the bank's page loads");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let tree = driver
+        .ok_settled(Some(&page), "Accessibility.getFullAXTree", json!({}))
+        .await
+        .to_string();
+    for text in [
+        "Order 42 confirmed",
+        "Confirm the payment in your bank app",
+        "Continue shopping",
+    ] {
+        assert!(tree.contains(text), "{text} reads normally: {tree}");
+    }
+    assert!(
+        !tree.contains("***filled***"),
+        "nothing on another site is redacted: {tree}"
+    );
+    heard.push_str(&tree);
 
     heard.push_str(&serde_json::to_string(&driver.events).unwrap());
     assert_clean("what the Navi heard", &heard);

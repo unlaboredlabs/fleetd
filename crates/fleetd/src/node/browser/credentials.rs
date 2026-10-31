@@ -350,9 +350,13 @@ pub fn outgoing(session: &Session, message: Value) -> Value {
     }
     let mut message = message;
     session.scrub().value(&mut message);
+    // By the target the answer comes from: a node id names a field only within its own process.
+    let target = message["sessionId"]
+        .as_str()
+        .and_then(|s| session.driver_target(s));
     for nodes in ["/result/nodes", "/params/nodes"] {
         if let Some(nodes) = message.pointer_mut(nodes).and_then(Value::as_array_mut) {
-            redact_filled(session, nodes);
+            redact_filled(session, target.as_deref(), nodes);
         }
     }
     message
@@ -360,11 +364,11 @@ pub fn outgoing(session: &Session, message: Value) -> Value {
 
 /// What an accessibility tree (agent-browser's snapshots) says of a field the session filled: never its value, nor the
 /// text inside it, whatever the value's length.
-fn redact_filled(session: &Session, nodes: &mut [Value]) {
+fn redact_filled(session: &Session, target: Option<&str>, nodes: &mut [Value]) {
     let filled = |n: &Value| {
         n["backendDOMNodeId"]
             .as_i64()
-            .is_some_and(|b| session.is_filled_field(b))
+            .is_some_and(|b| session.is_filled_field(target, b))
     };
     let fields: std::collections::HashSet<String> = nodes
         .iter()
@@ -460,7 +464,7 @@ pub async fn fill(
 ) -> Result<(), FillError> {
     let mut typed = false;
     let fail = |message: String, typed: bool| FillError { message, typed };
-    let Some((_, page)) = session.page() else {
+    let Some((page_target, page)) = session.page() else {
         return Err(fail("the browser has no page".into(), false));
     };
     let call = |method: &'static str, params: Value| session.cdp.call(Some(&page), method, params);
@@ -526,7 +530,9 @@ pub async fn fill(
     }
     // From here the driver may not write to this field (filled_field_refusal).
     if let Some(backend) = backend {
-        session.filled_field(backend);
+        let site = super::onepassword::host_of(field["url"].as_str().unwrap_or_default())
+            .unwrap_or_default();
+        session.filled_field(&page_target, &site, backend);
     }
     let typing = async {
         on(FOCUS).await?;
@@ -594,7 +600,10 @@ pub async fn filled_field_refusal(session: &Session, command: &Value) -> Option<
     else {
         return unknown();
     };
-    session.is_filled_field(backend).then(|| {
+    let target = command["sessionId"]
+        .as_str()
+        .and_then(|s| session.driver_target(s));
+    session.is_filled_field(target.as_deref(), backend).then(|| {
         format!(
             "{method} is off on this field: this browser session filled it from 1Password, and nothing may change \
              it until the session ends."
