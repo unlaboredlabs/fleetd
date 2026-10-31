@@ -128,28 +128,14 @@ impl SessionConfig {
     /// The user's own claude setup and the optional `<fleetd dir>/claude.env`, from `$HOME`, so a lab node with its own
     /// HOME needs no flag. A dedicated config dir comes from the node config (`claudeConfigDir`), else from a
     /// `CLAUDE_CONFIG_DIR` the node itself was started with.
-    /// `FLEETD_NODE_IDLE_REAP_SEC` and `FLEETD_NODE_RETRY_SCHEDULE_MS` (e.g. `500,1000,2000`) exist for tests and
-    /// the lab only.
     pub fn for_node(home: &Path) -> Self {
         let fleetd = crate::home::fleetd_dir();
         let base_env = session_env(|key| std::env::var(key).ok());
-        let idle_reap = std::env::var("FLEETD_NODE_IDLE_REAP_SEC")
-            .ok()
-            .and_then(|s| s.trim().parse().ok())
-            .map_or(Duration::from_secs(600), Duration::from_secs);
-        let retry_schedule_ms = std::env::var("FLEETD_NODE_RETRY_SCHEDULE_MS")
-            .ok()
-            .and_then(|s| {
-                s.split(',')
-                    .map(|n| n.trim().parse().ok())
-                    .collect::<Option<Vec<u64>>>()
-            })
-            // Drawn once per node, so machines hit by one outage don't all come back at the same second.
-            .unwrap_or_else(|| {
-                (1..=failure::MAX_RUN_RETRIES)
-                    .filter_map(failure::retry_delay_ms)
-                    .collect()
-            });
+        let idle_reap = Duration::from_secs(600);
+        // Drawn once per node, so machines hit by one outage don't all come back at the same second.
+        let retry_schedule_ms = (1..=failure::MAX_RUN_RETRIES)
+            .filter_map(failure::retry_delay_ms)
+            .collect();
         // fleetd's old default, which a node unit written by an older `machine add` still sets in the environment:
         // sessions are back on the user's own setup.
         let from_env = std::env::var("CLAUDE_CONFIG_DIR")

@@ -19,7 +19,8 @@ fleetd is one Cargo workspace and the desktop app. The shipped `fleetd` is one s
   hub may extend gets `#[schemars(extend("x-open" = true))]`, so the app's type also admits values it doesn't know
   yet.
 - `app/desktop`: the desktop app, Electron + React (see below). Its own pnpm workspace, outside Cargo.
-- `tests/lab`: the end-to-end lab suite.
+- `tests/lab`: the factory lab (`factory/`, offline, in CI), and the tools that record claude's fixtures, the site's
+  captures and the demo.
 - `site/` and `.github/release/`: the `fleetd.sh` installer and site, and the release pipeline. `docs/site/` is
   the docs' Starlight site, built into `site/docs/` by the Vercel build; `crates/docsgen` writes its generated pages.
 
@@ -27,10 +28,7 @@ fleetd is one Cargo workspace and the desktop app. The shipped `fleetd` is one s
 
 `app/desktop` needs Node 24 and pnpm (the version in its `package.json`). In that directory: `pnpm install`, then
 `pnpm dev` (hot reload), `pnpm build` and `pnpm start` (the built app), and `pnpm typecheck`, `pnpm lint` and
-`pnpm test`, which CI's `desktop` job runs. Electron downloads its binary on first launch. `npm --prefix tests/lab
-run lab -- desktop` (after `pnpm build:test`) drives the built app against a lab hub: auth, snapshot, events, calls, live,
-liveness, reconnect and pairing. `run lab -- desktop-offline` drives its window through a hub stop, a quit and a restart: the
-chat kept on screen, a message queued offline and sent once.
+`pnpm test`, which CI's `desktop` job runs. Electron downloads its binary on first launch.
 
 `FLEETD_HUB_URL` + `FLEETD_AGENT_KEY` connect for one run without saving anything; `FLEETD_HOME` moves every file the
 app keeps (the saved key, the migration marker) and keeps it off the OS keychain; `FLEETD_FIXTURE=<name>` replaces the
@@ -59,40 +57,6 @@ CI runs.
 `crates/fleetd` must not link macOS frameworks, because the darwin binaries are cross-built on Linux. The
 `darwin-deps` CI job checks this: rusqlite takes only named features such as `bundled`, chrono has no `clock`, and
 TLS uses webpki roots.
-
-## Lab suite
-
-The lab runs the release binary end to end: a hub and two nodes, driven through a real MCP client. Each node is a
-`fleetd node` with its own HOME under the lab directory, so it has its own `~/.fleetd` and its own `~/.claude`,
-which its sessions use as a real machine's sessions use the user's. The lab copies your `claude` login material into
-it (the login variables and `apiKeyHelper` from `~/.claude/settings.json`, and `.credentials.json` if you have one),
-deletes the copies when the run ends, and never writes under your real `~/.claude` or `~/.fleetd`. It isn't run in CI. Mechanics
-scenarios run small `claude` turns on `claude-opus-5-5` at medium effort. Behaviour scenarios run the lead (and, in `eff`, the writer)
-on the model fleetd ships, `claude-opus-5-5` at high effort, because the prompts are written for it: the `chat` lead,
-`steer`, and `eff`'s slices. The lab needs Node 24 or newer to run its TypeScript. The m7, m9, time and
-demo scenarios also use your `gh` login and the public lab repository `unlaboredlabs/fleetd-lab`.
-
-```sh
-cargo build --release -p fleetd && npm ci --prefix tests/lab
-FLEETD_LAB_SLOT=7 npm --prefix tests/lab run lab -- m1   # name scenarios, or none for the full suite
-```
-
-`FLEETD_LAB_SLOT` (0-9) gives each run its own directory and ports, so parallel runs don't collide. Every slot shares
-the one lab repository and works in its own branch namespace: slot N's train merges into `slot/N/main`, and its task
-branches are `slot/N/fleetd/...` (the lab writes `branchPrefix` into the project's untracked policy file). Before and
-after a run the lab closes the namespace's open PRs, deletes its branches and resets `slot/N/main` to the `seed` tag;
-it never touches another namespace or the repository's `main` (the demo closes only the PRs and branches it made). A
-run leases its namespace with the branch `lease/<namespace>` for up to 4 hours and drops it on exit, so a second run on
-a busy namespace, from any worktree or machine, stops and says which run holds it; an expired lease is taken over. `FLEETD_LAB_REPO` picks
-another repository. Set one up, with its clone, using `node tests/lab/labRepo.ts --repo <owner/name> --clone
-~/src/fleetd-lab/slot-N/lab-repo`: it never creates the repository, and it adds the rulesets (`slot/*/main` requires
-the `ci` check and the `fleetd/train` status, `noci/*/main` only `fleetd/train`, squash merges only). Repository
-admins may bypass those rulesets, and they have no deletion or force-push rule, so the lab can reset a namespace's main;
-that holds for the lab repository only. `FLEETD_BIN` picks another binary. The lab stops only the processes it
-started, so it is safe to run next to a fleetd you use day to day.
-
-`tests/lab` is TypeScript run directly by Node: relative imports with `.ts` extensions and erasable syntax only
-(`npm --prefix tests/lab run typecheck`).
 
 ## The site
 

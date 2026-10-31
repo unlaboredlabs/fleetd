@@ -186,7 +186,7 @@ export const seedRepo = (dir: string, title: string) => {
 
 /** Options for one node process. */
 export interface NodeOptions {
-  /** Added to the node's environment (e.g. FLEETD_NODE_IDLE_REAP_SEC, FLEETD_NODE_RETRY_SCHEDULE_MS). */
+  /** Added to the node's environment. */
   readonly env?: Readonly<Record<string, string>>;
   /** Directories put first on the node's PATH, which its claude children inherit (e.g. a lab-only claude shim). */
   readonly pathPrefix?: ReadonlyArray<string>;

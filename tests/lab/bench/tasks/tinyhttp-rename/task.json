@@ -1,8 +1,0 @@
-{
-  "title": "Rename two core packages and their helpers across the tinyhttp monorepo",
-  "kind": "cross-cutting refactor",
-  "codebase": "tinyhttp (MIT), snapshot of 781bfbc",
-  "base": "bench/tinyhttp-rename/base",
-  "baseSha": "6a7a9d63806deb1bba54c67018a771e14e64a288",
-  "timeoutMin": 120
-}

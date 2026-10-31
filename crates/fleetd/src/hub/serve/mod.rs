@@ -294,7 +294,7 @@ pub fn build_on_with(
         linked.upgrade().is_none_or(|l| !l.node_lacks(m, cap))
     }));
     let watchdog = crate::hub::watchdog::Watchdog::new(
-        crate::hub::watchdog::stall_ms_from_env(),
+        crate::hub::watchdog::STALL_MS,
         executors.clone(),
         store.clone(),
         events.clone(),
