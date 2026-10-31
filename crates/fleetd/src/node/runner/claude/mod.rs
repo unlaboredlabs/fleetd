@@ -554,6 +554,9 @@ pub struct ClaudeRunner {
     pub binary: PathBuf,
     /// [`failure::classify`]; replaceable so tests can see the evidence a run left.
     pub classify: Classify,
+    /// The fleetd binary that runs session hosts ([`super::host`]): a spec with a host dir starts under one. None: the
+    /// node owns every process itself.
+    pub host: Option<PathBuf>,
 }
 
 impl ClaudeRunner {
@@ -561,6 +564,7 @@ impl ClaudeRunner {
         Self {
             binary,
             classify: Arc::new(failure::classify),
+            host: None,
         }
     }
 
@@ -713,29 +717,72 @@ impl Runner for ClaudeRunner {
             ),
             None => None,
         };
+        let env: Vec<(String, String)> = spec
+            .env
+            .iter()
+            .filter(|(k, _)| {
+                !NESTING_VARS.contains(&k.as_str())
+                    && !SUBAGENTS_ON_ENV.contains(&k.as_str())
+                    && k != process::SESSION_MARKER
+                    && k != setup::FLEETD_ENV_SOURCE
+                    && !SESSION_ENV.iter().any(|(set, _)| set == k)
+                    && k != HELPER_MODEL_ENV.0
+            })
+            .cloned()
+            .chain(
+                SUBAGENTS_OFF_ENV
+                    .iter()
+                    .map(|(k, v)| ((*k).to_owned(), (*v).to_owned())),
+            )
+            .chain([(HELPER_MODEL_ENV.0.to_owned(), spec.helper_model.clone())])
+            .chain(
+                SESSION_ENV
+                    .iter()
+                    .map(|(k, v)| ((*k).to_owned(), (*v).to_owned())),
+            )
+            .chain([(process::SESSION_MARKER.to_owned(), marker.clone())])
+            .collect();
+        // A session that isn't sandboxed starts under a host of its own, which outlives the node; one whose host
+        // doesn't come up starts as the node's own process.
+        if let (Some(exe), Some(dir), None) = (&self.host, &spec.host_dir, &spec.sandbox) {
+            let launched = super::host::launch(super::host::Launch {
+                exe,
+                dir,
+                session_id: &spec.session_id,
+                transcript: spec.transcript.as_deref(),
+                program: &self.binary,
+                args: self.args(&spec),
+                cwd: &spec.cwd,
+                env: &env,
+                scope: scope.as_ref(),
+            });
+            match launched {
+                Ok(handle) => return Ok(handle),
+                Err(super::host::LaunchError::Refused(refused))
+                    if refused.missing && !self.binary.exists() =>
+                {
+                    return Err(RunnerError::Missing { binary });
+                }
+                Err(super::host::LaunchError::Refused(refused)) => {
+                    return Err(refuse(format!(
+                        "{} (cwd {})",
+                        refused.message,
+                        spec.cwd.display()
+                    )));
+                }
+                Err(super::host::LaunchError::NoHost(why)) => tracing::warn!(
+                    session_id = %spec.session_id,
+                    "the session starts without a host, so it ends with the node: {why}"
+                ),
+            }
+        }
         let build = |program: PathBuf, args: Vec<String>, scope: Option<&scope::Scope>| {
             let mut cmd = tokio::process::Command::new(program);
             cmd.args(args)
                 .current_dir(&spec.cwd)
                 .env_clear()
-                .envs(
-                    spec.env
-                        .iter()
-                        .filter(|(k, _)| {
-                            !NESTING_VARS.contains(&k.as_str())
-                                && !SUBAGENTS_ON_ENV.contains(&k.as_str())
-                                && k != process::SESSION_MARKER
-                                && k != setup::FLEETD_ENV_SOURCE
-                                && !SESSION_ENV.iter().any(|(set, _)| set == k)
-                                && k != HELPER_MODEL_ENV.0
-                        })
-                        .map(|(k, v)| (k, v)),
-                )
-                .envs(SUBAGENTS_OFF_ENV.iter().copied())
-                .env(HELPER_MODEL_ENV.0, &spec.helper_model)
-                .envs(SESSION_ENV.iter().copied())
+                .envs(env.iter().map(|(k, v)| (k, v)))
                 .envs(scope.iter().flat_map(|s| s.env.iter().map(|(k, v)| (k, v))))
-                .env(process::SESSION_MARKER, &marker)
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
@@ -782,6 +829,30 @@ impl Runner for ClaudeRunner {
     fn profile_of(&self, model: &str, effort: Effort) -> ProfileName {
         guide::profile_of(model, effort)
     }
+}
+
+/// Starts claude as `program args…` with this process's environment and working directory, as a session's host does
+/// ([`super::host::main`]): the same session task as a process the node owns. `marker` is the spawn's, set on claude
+/// whatever this process carries: the sweeps at its end kill everything marked with it.
+pub fn hosted(
+    program: &Path,
+    args: Vec<String>,
+    session_id: &str,
+    marker: String,
+    transcript: Option<PathBuf>,
+) -> std::io::Result<SessionHandle> {
+    process::adopt_orphans();
+    let child = tokio::process::Command::new(program)
+        .args(args)
+        .env(process::SESSION_MARKER, &marker)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .process_group(0)
+        .kill_on_drop(true)
+        .spawn()?;
+    let mapper = StreamMapper::new(session_id.to_owned(), Arc::new(failure::classify));
+    Ok(session::start(child, marker, mapper, transcript))
 }
 
 fn effort_flag(effort: Effort) -> &'static str {
@@ -1247,6 +1318,7 @@ mod tests {
             env: Vec::new(),
             transcript: None,
             sandbox: None,
+            host_dir: None,
         }
     }
 

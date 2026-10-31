@@ -16,6 +16,7 @@ use tokio::sync::mpsc;
 use crate::node::runner::claude::failure;
 use crate::node::runner::claude::mapper::{Now, StreamMapper};
 use crate::node::runner::claude::protocol::{Input, Line};
+use crate::node::runner::host;
 use crate::node::runner::{
     BoxFut, ExitInfo, ProfileModel, Runner, RunnerError, RunnerEvent, SessionCommand,
     SessionHandle, SessionSpec,
@@ -41,6 +42,9 @@ pub struct FakeRunner {
     pub spawns: Mutex<Vec<SessionSpec>>,
     /// Every command any process received, with the spawn index.
     pub commands: Arc<Mutex<Vec<(usize, SessionCommand)>>>,
+    /// A spec with a host dir starts under a host in this process (`runner::host`), which outlives the service as a
+    /// real host outlives the node.
+    pub hosted: bool,
 }
 
 impl FakeRunner {
@@ -85,6 +89,7 @@ impl FakeRunner {
             refuse_next: Mutex::new(None),
             spawns: Mutex::new(Vec::new()),
             commands: Arc::new(Mutex::new(Vec::new())),
+            hosted: false,
         }
     }
 
@@ -144,6 +149,7 @@ impl Runner for FakeRunner {
         let refusal = self.refuse_next.lock().unwrap().take();
         let mapper = StreamMapper::new(spec.session_id.clone(), Arc::new(failure::classify));
         let denied = spec.disallowed_tools.clone();
+        let host_dir = spec.host_dir.clone().filter(|_| self.hosted);
         let index = {
             let mut spawns = self.spawns.lock().unwrap();
             spawns.push(spec);
@@ -171,10 +177,24 @@ impl Runner for FakeRunner {
             out: Vec::new(),
         };
         tokio::spawn(process.run());
-        Ok(SessionHandle {
+        let handle = SessionHandle {
             pid: self.next_pid.fetch_add(1, Ordering::Relaxed),
             commands: cmd_tx,
             events: ev_rx,
+            link: None,
+        };
+        let Some(dir) = host_dir else {
+            return Ok(handle);
+        };
+        let hosted = || -> std::io::Result<SessionHandle> {
+            std::fs::create_dir_all(&dir)?;
+            let marker = format!("fake.{}", handle.pid);
+            host::serve_here(&dir, handle, marker, std::future::pending(), host::LINGER)?;
+            Ok(host::connect(&dir)?.0)
+        };
+        hosted().map_err(|e| RunnerError::Spawn {
+            binary: "fake".into(),
+            message: e.to_string(),
         })
     }
 

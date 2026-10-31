@@ -28,9 +28,10 @@ pub const RECHECK: Duration = Duration::from_secs(10 * 60);
 pub struct Scope {
     /// `systemd-run`, as found on the node's PATH.
     pub program: PathBuf,
-    /// The node's own unit when it runs as one (`fleetd-node.service`). Each scope is `PartOf=` it, so stopping or
-    /// restarting the node still stops its agents, as when they shared its cgroup, and `Before=` it, so systemd stops
-    /// the scopes only after the node's own shutdown has interrupted its agents and given them their grace.
+    /// The node's own unit when it runs as one (`fleetd-node.service`). A scope of a process the node owns (a Navi's)
+    /// is `PartOf=` it, so stopping or restarting the node still stops it, as when they shared its cgroup, and `Before=`
+    /// it, so systemd stops the scope only after the node's own shutdown has interrupted it and given it its grace. A
+    /// session host's scope ([`super::host`]) is neither: it outlives the node.
     pub node_unit: Option<String>,
     /// `OOMPolicy=continue` on the scope: a process killed for memory fails alone, not the whole agent. An older
     /// systemd that can't set it on a scope still gets a scope, which keeps the node alive.

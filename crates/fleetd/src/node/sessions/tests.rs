@@ -625,6 +625,243 @@ async fn a_restarted_node_closes_what_was_running_and_the_next_send_resumes() {
     assert_eq!(spec.cwd, dir.path());
 }
 
+fn under_hosts(fixture: &str) -> FakeRunner {
+    let mut runner = FakeRunner::fixture(fixture);
+    runner.hosted = true;
+    runner
+}
+
+/// A session under a host goes on through a node restart: the stopping node only lets go of the host, and the next one
+/// re-adopts it with its run and its pending question as they were. Nothing is started again, and the question is
+/// answered once. That each event arrives once is `runner::host`'s tests'.
+#[tokio::test]
+async fn a_hosted_session_runs_on_through_a_node_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("sessions.sqlite");
+    let mut before = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        under_hosts("permission-allow"),
+    )
+    .await;
+    before.project(dir.path()).await;
+    before
+        .ok(launch(
+            "s1",
+            RuntimeMode::ApprovalRequired,
+            SessionWorkspace::Root,
+        ))
+        .await;
+    let pending = before
+        .summary(|s| s.status == SessionStatus::Waiting)
+        .await
+        .pending_permission
+        .unwrap();
+    let pid = before.service.session("s1").unwrap().local.pid;
+    assert!(pid.is_some());
+    let host_dir = dir.path().join("node/hosts/s1");
+    assert!(
+        crate::node::runner::host::Registration::read(&host_dir).is_some(),
+        "the session's host registered"
+    );
+    let first = before.runner.clone();
+    before.service.shutdown().await;
+    drop(before);
+    // The process got nothing from the stopping node: no interrupt, no shutdown.
+    assert!(
+        !first.received().iter().any(|c| matches!(
+            c,
+            SessionCommand::Interrupt | SessionCommand::Shutdown { .. }
+        )),
+        "{:?}",
+        first.received()
+    );
+
+    let mut after = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        under_hosts("permission-allow"),
+    )
+    .await;
+    let row = after.service.store().session("s1").unwrap().unwrap();
+    assert_eq!(row.local.pid, pid, "the same process, re-adopted");
+    assert_eq!(row.summary.status, SessionStatus::Waiting);
+    assert_eq!(
+        row.summary
+            .pending_permission
+            .as_ref()
+            .map(|p| &p.request_id),
+        Some(&pending.request_id)
+    );
+    assert_eq!(
+        row.summary.latest_run.as_ref().map(|r| r.status),
+        Some(RunStatus::Waiting)
+    );
+    assert!(host_dir.exists(), "its host stays registered");
+
+    after
+        .ok(SessionCall::Answer {
+            session_id: ThreadId::unchecked("s1"),
+            request_id: NonEmpty::unchecked(pending.request_id.as_str()),
+            by: None,
+            decision: PermissionDecision::Allow {
+                updated_input: None,
+            },
+        })
+        .await;
+    let done = after.settled("r1").await;
+    assert_eq!(done.latest_run.unwrap().status, RunStatus::Completed);
+    assert_eq!(done.latest_assistant_tail.as_deref(), Some("DONE"));
+    assert!(after.runner.spawned().is_empty(), "nothing started again");
+    let answers = first
+        .received()
+        .into_iter()
+        .filter(|c| matches!(c, SessionCommand::Answer { .. }))
+        .count();
+    assert_eq!(answers, 1);
+}
+
+/// A session whose workspace went while its node was down isn't re-adopted into a deleted directory: its process ends,
+/// and its run closes as the node's restart, for the next send to rebuild the workspace and resume.
+#[tokio::test]
+async fn a_hosted_session_whose_workspace_is_gone_is_not_re_adopted() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("sessions.sqlite");
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    let mut before = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        under_hosts("permission-allow"),
+    )
+    .await;
+    before.project(&root).await;
+    before
+        .ok(launch(
+            "s1",
+            RuntimeMode::ApprovalRequired,
+            SessionWorkspace::Root,
+        ))
+        .await;
+    before.summary(|s| s.status == SessionStatus::Waiting).await;
+    let first = before.runner.clone();
+    before.service.shutdown().await;
+    drop(before);
+    std::fs::remove_dir_all(&root).unwrap();
+
+    let after = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        under_hosts("permission-allow"),
+    )
+    .await;
+    let row = after.service.store().session("s1").unwrap().unwrap();
+    assert_eq!(row.local.pid, None);
+    assert_eq!(
+        row.summary.latest_run.unwrap().end,
+        Some(RunEnd::NodeRestarted)
+    );
+    assert!(!dir.path().join("node/hosts/s1").exists());
+    assert!(
+        first
+            .received()
+            .iter()
+            .any(|c| matches!(c, SessionCommand::Shutdown { .. })),
+        "its process was ended: {:?}",
+        first.received()
+    );
+}
+
+/// A session whose host died while the node was down resumes as before hosts: its run closes as the node's restart,
+/// its question is cancelled, the host's dir goes, and the next send resumes the claude session.
+#[tokio::test]
+async fn a_session_whose_host_is_gone_resumes_from_its_thread() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("sessions.sqlite");
+    let mut before = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        under_hosts("permission-allow"),
+    )
+    .await;
+    before.project(dir.path()).await;
+    before
+        .ok(launch(
+            "s1",
+            RuntimeMode::ApprovalRequired,
+            SessionWorkspace::Root,
+        ))
+        .await;
+    before.summary(|s| s.status == SessionStatus::Waiting).await;
+    before.service.shutdown().await;
+    drop(before);
+    // Its host no longer answers.
+    let host_dir = dir.path().join("node/hosts/s1");
+    std::fs::remove_file(host_dir.join("sock")).unwrap();
+
+    let mut after = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        under_hosts("permission-allow"),
+    )
+    .await;
+    let row = after.service.store().session("s1").unwrap().unwrap();
+    assert_eq!(row.local.pid, None);
+    assert_eq!(row.summary.pending_permission, None);
+    let run = row.summary.latest_run.unwrap();
+    assert_eq!(run.status, RunStatus::Interrupted);
+    assert_eq!(run.end, Some(RunEnd::NodeRestarted));
+    assert!(!host_dir.exists());
+
+    after.ok(send("s1", "r2")).await;
+    after.summary(|s| s.status == SessionStatus::Waiting).await;
+    let spec = &after.runner.spawned()[0];
+    assert!(spec.resume);
+    assert_eq!(spec.host_dir.as_deref(), Some(host_dir.as_path()));
+}
+
+/// A host whose session the node no longer runs (its row is gone, or names no process) is stopped at the node's
+/// start, with its session.
+#[tokio::test]
+async fn a_host_no_session_runs_on_is_stopped() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("sessions.sqlite");
+    let mut before = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        under_hosts("permission-allow"),
+    )
+    .await;
+    before.project(dir.path()).await;
+    before
+        .ok(launch(
+            "s1",
+            RuntimeMode::ApprovalRequired,
+            SessionWorkspace::Root,
+        ))
+        .await;
+    before.summary(|s| s.status == SessionStatus::Waiting).await;
+    let first = before.runner.clone();
+    before.service.shutdown().await;
+    drop(before);
+    let store = NodeStore::open(&db).unwrap();
+    let mut row = store.session("s1").unwrap().unwrap();
+    row.local.pid = None;
+    row.local.pid_start = None;
+    store.commit(&row, &[], false).unwrap();
+
+    let _after = hub(dir.path(), store, under_hosts("permission-allow")).await;
+    assert!(!dir.path().join("node/hosts/s1").exists());
+    assert!(
+        first
+            .received()
+            .iter()
+            .any(|c| matches!(c, SessionCommand::Shutdown { .. })),
+        "its process was ended: {:?}",
+        first.received()
+    );
+}
+
 /// A lead's and a Navi's voice is in their system prompt, which claude never compacts: after a compaction and a
 /// restart of their node, the claude that resumes each gets lead.voice verbatim again, and no first message had it.
 #[tokio::test]

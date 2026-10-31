@@ -70,7 +70,9 @@ offline, or doesn't come back, is skipped and named in the result.
 
 An update never waits for work to finish. Restarts happen right away, and what they cut off carries on by itself:
 
-- A lead's turn and running agents resume in their threads and worktrees once their machine is back.
+- Leads and agents keep running through their node's restart, mid-step included: each runs under a small host process
+  of its own that the restarted node picks up again. Navis, and an agent whose process ended while its node was down,
+  resume in their threads and worktrees once their machine is back.
 - The merge train takes up the change it was merging.
 - An approved command that was running goes back to you as interrupted, with its result unknown. It never runs again
   by itself: check whether it ran before you approve it again.

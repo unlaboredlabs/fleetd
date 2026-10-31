@@ -4,7 +4,8 @@
 //! the path opens the new one, which may not speak the running node's socket. At start the node hard-links its running
 //! binary to `<node home>/bin/fleetd-agent-<pid>` (copying it when the home is on another filesystem). The link keeps
 //! the running binary's file, whatever the update does to the installed path, for as long as this node runs; the next
-//! node start removes the links of nodes that are gone.
+//! node start removes the links of nodes that are gone, but not one a session's host still runs from
+//! (`runner::host`): the sessions it re-adopts keep starting their fleetd tools from it.
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -55,11 +56,12 @@ pub fn pin_from(exe: &Path, home: &Path, pid: u32) -> std::io::Result<PathBuf> {
     Ok(target)
 }
 
-/// Removes the pins of processes that no longer run; never this one's.
+/// Removes the pins of processes that no longer run, unless a running process was started from one; never this one's.
 fn sweep(dir: &Path, pid: u32) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
+    let running = running_exes();
     for entry in entries.flatten() {
         let name = entry.file_name();
         let Some(other) = name
@@ -69,11 +71,27 @@ fn sweep(dir: &Path, pid: u32) {
         else {
             continue;
         };
-        if other as u32 == pid || alive(other) {
+        if other as u32 == pid || alive(other) || running.contains(&entry.path()) {
             continue;
         }
         let _ = std::fs::remove_file(entry.path());
     }
+}
+
+/// The binaries this user's processes run, as `/proc/<pid>/exe` names them. Empty off Linux.
+fn running_exes() -> std::collections::HashSet<PathBuf> {
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return Default::default();
+    };
+    entries
+        .flatten()
+        .filter(|e| {
+            e.file_name()
+                .to_str()
+                .is_some_and(|n| n.parse::<u32>().is_ok())
+        })
+        .filter_map(|e| std::fs::read_link(e.path().join("exe")).ok())
+        .collect()
 }
 
 fn alive(pid: i32) -> bool {
@@ -145,5 +163,43 @@ mod tests {
         // Pinning again for the same process replaces its own.
         pin_from(&exe, &home, 4243).unwrap();
         assert!(bin.join("fleetd-agent-4243").exists());
+    }
+
+    /// A session's host runs from the pin of the node that started it, and its re-adopted session's fleetd tools
+    /// still start from that path after the node restarted. The host here is this test binary, linked as a pin of a
+    /// node that's gone, waiting in [`waits`].
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_pin_a_running_host_was_started_from_is_kept() {
+        let exe = std::env::current_exe().unwrap();
+        let dir = tempfile::tempdir_in(exe.parent().unwrap()).unwrap();
+        let home = dir.path().join("node");
+        let bin = home.join("bin");
+        super::super::config::mkdir_private(&bin).unwrap();
+        let used = bin.join("fleetd-agent-2147483001");
+        std::fs::hard_link(&exe, &used).unwrap();
+        let mut host = std::process::Command::new(&used)
+            .args(["--ignored", "--exact", "node::self_exe::tests::waits"])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let exe_of = format!("/proc/{}/exe", host.id());
+        while std::fs::read_link(&exe_of).ok().as_ref() != Some(&used) {
+            assert!(host.try_wait().unwrap().is_none(), "the host runs");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        pin_from(&exe, &home, 4244).unwrap();
+        assert!(used.exists(), "a running process's pin stays");
+        host.kill().unwrap();
+        host.wait().unwrap();
+        pin_from(&exe, &home, 4244).unwrap();
+        assert!(!used.exists(), "and goes once nothing runs from it");
+    }
+
+    /// What the host of the test above runs.
+    #[test]
+    #[ignore = "run by a_pin_a_running_host_was_started_from_is_kept"]
+    fn waits() {
+        std::thread::sleep(std::time::Duration::from_secs(30));
     }
 }
