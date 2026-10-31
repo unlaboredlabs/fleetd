@@ -654,6 +654,7 @@ async fn a_card_the_checker_judged_says_why() {
             })),
             preview_config: None,
             purchase: None,
+            secure_input: None,
             state: CommandApprovalState::Open,
             exit_code: None,
             output_tail: None,
