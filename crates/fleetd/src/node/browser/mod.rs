@@ -175,6 +175,11 @@ pub trait SessionHooks: Send + Sync + 'static {
     /// The hub ended the agent session's screen `session`, its task having ended: it closes, if it is still the
     /// screen the agent session holds. Any other screen it holds stays.
     fn screen_ended(&self, thread: &str, session: &str);
+    /// Whether the agent session holds a screen, here or on another machine: its idle claude isn't reaped then, so the
+    /// screen waits for its next turn until the screen's own idle limit ends it.
+    fn holds_screen(&self, _thread: &str) -> bool {
+        false
+    }
     /// The values filled into the session's browsers from 1Password, when there are more than `known`: masked in what
     /// the session reports, as its own secrets are.
     fn filled_since(&self, thread: &str, known: usize) -> Option<Secrets>;
@@ -1149,6 +1154,10 @@ impl SessionHooks for Broker {
             Some(cdp) => agent_browser::env(&self.home, thread, &cdp, path),
             None => Vec::new(),
         }
+    }
+
+    fn holds_screen(&self, thread: &str) -> bool {
+        self.live(thread).is_some()
     }
 
     /// Ends the agent session's browser session, if it has one: its recording goes to the hub now, not after the

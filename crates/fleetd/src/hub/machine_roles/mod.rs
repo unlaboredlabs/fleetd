@@ -163,10 +163,9 @@ pub fn auto_sessions(load: Option<&NodeLoad>, agents: i64) -> (i64, String) {
     (fits, why)
 }
 
-/// How long a task's screen outlasts the end of its last turn: a screen's idle limit on its node, 30 minutes unless
-/// the node sets another. A task is done or failed at the end of every turn, and a wake (wait_ci, its lead's message)
-/// continues it, its screen still open.
-pub const TURN_WAIT_MS: i64 = 30 * 60 * 1000;
+/// How long a task's screen outlasts the end of its last turn: a screen's idle limit, 30 minutes. A task is done or
+/// failed at the end of every turn, and a wake (wait_ci, its lead's message) continues it, its screen still open.
+pub const TURN_WAIT_MS: i64 = screens::IDLE_MS;
 
 /// Whether the task `column` names (`T<n>`, or NULL for a lead's) has ended as of `now`: cancelled, or done or failed
 /// [`TURN_WAIT_MS`] ago and not continued since.

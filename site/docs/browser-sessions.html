@@ -93,8 +93,9 @@ session rather than taken warm, so the sites it signed into stay signed in (<a h
 stopped or it went idle), or after 30 minutes without an <code dir="auto">agent-browser</code> command. A screen never outlives its task:
 once the task is cancelled (its order closed, say), or has stayed done or failed for 30 minutes with nothing waking it,
 the hub ends any screen it left open and the node kills it, wherever it runs. A task waiting between turns (on
-<code dir="auto">wait_ci</code>, or a message from its lead) keeps its screen, and its next turn picks it up. When a node starts, it kills
-any Chrome or other process an earlier session left running in its scratch folder. When the agent needs a person (a
+<code dir="auto">wait_ci</code>, or a message from its lead) keeps its screen, and its claude, for the screen’s 30 minutes: a next turn
+within them picks the screen up. When a node starts, it kills any Chrome or other process an earlier session left
+running in its scratch folder. When the agent needs a person (a
 captcha, a confirmation only you can give), it calls <strong><code dir="auto">request_takeover</code></strong> with what you should do. The tools are on
 the <a href="/docs/reference/agent-tools#session_start">Agent tools</a> page.
 The hub decides which machine a screen runs on, by the machines’ <a href="/docs/machines#roles">roles</a>: the agent’s own when it
