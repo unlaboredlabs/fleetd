@@ -23,7 +23,11 @@ pub type AppCallId = Text<1, 64>;
 ///   the `browser.session` event exist. A machine whose node is older answers a watch or a takeover with
 ///   `machine_offline`.
 /// - `navi_asks`: the `navi_asks` tool, a Navi's asks of other projects and the orders opened for them.
-pub const APP_FEATURES: [&str; 3] = ["presence", "browser_sessions", "navi_asks"];
+/// - `screen_open`: people open and end screens of their own (the `screen_open` and `screen_end` tools), so the app
+///   shows New screen.
+///
+/// The desktop app's `features.test.ts` checks that every feature it gates on is named here.
+pub const APP_FEATURES: [&str; 4] = ["presence", "browser_sessions", "navi_asks", "screen_open"];
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "t", rename_all = "snake_case", rename_all_fields = "camelCase")]
