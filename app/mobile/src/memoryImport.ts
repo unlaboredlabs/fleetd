@@ -1,0 +1,85 @@
+// Import Memory (screens/ImportMemory.tsx), as Grok's: the person copies fleetd's export prompt into another
+// assistant, pastes its answer back, and the hub distills it into entries in their own memory, saying how many it
+// added. The hub's two calls sit behind ImportClient; the screen's states are this reducer's, so they're tested
+// without a phone.
+import type { HubError } from "./desktop";
+
+export type Result<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: HubError };
+
+/** What an import added to the person's memory. */
+export interface Imported {
+  readonly added: number;
+}
+
+/** The hub's side: its export prompt, and the pasted answer turned into memory entries. */
+export interface ImportClient {
+  readonly prompt: () => Promise<Result<string>>;
+  readonly add: (text: string) => Promise<Result<Imported>>;
+}
+
+/** Distilling is a model turn on the person's own Claude: it can take a while. */
+export const IMPORT_MS = 180_000;
+
+/** A hub without the import calls says so, rather than leave the screen loading. */
+export const unsupported: ImportClient = {
+  prompt: () => Promise.resolve({ ok: false, error: { code: "unsupported", message: "This hub can't import memory yet.", fix: "Update fleetd, then try again." } }),
+  add: () => Promise.resolve({ ok: false, error: { code: "unsupported", message: "This hub can't import memory yet.", fix: "Update fleetd, then try again." } }),
+};
+
+/** The hub's import calls, for this session. */
+export const importClient = (_hub: unknown): ImportClient => unsupported;
+
+export type PromptState = { readonly t: "loading" } | { readonly t: "ready"; readonly text: string } | { readonly t: "failed"; readonly error: HubError };
+
+/** The paste and what became of it: being written, sent and distilling, added (how many), or refused. */
+export type Phase = { readonly t: "editing" } | { readonly t: "working" } | { readonly t: "done"; readonly added: number } | { readonly t: "failed"; readonly error: HubError };
+
+export interface ImportState {
+  readonly prompt: PromptState;
+  readonly text: string;
+  readonly phase: Phase;
+  /** The prompt was just copied: its button says so for a moment. */
+  readonly copied: boolean;
+}
+
+export type ImportMsg =
+  | { readonly t: "prompt"; readonly result: Result<string> }
+  | { readonly t: "reloadPrompt" }
+  | { readonly t: "copied" }
+  | { readonly t: "copiedShown" }
+  | { readonly t: "typed"; readonly text: string }
+  | { readonly t: "add" }
+  | { readonly t: "added"; readonly result: Result<Imported> };
+
+export const initialImport: ImportState = { prompt: { t: "loading" }, text: "", phase: { t: "editing" }, copied: false };
+
+export const importStep = (s: ImportState, m: ImportMsg): ImportState => {
+  switch (m.t) {
+    case "prompt":
+      return { ...s, prompt: m.result.ok ? { t: "ready", text: m.result.value } : { t: "failed", error: m.result.error } };
+    case "reloadPrompt":
+      return { ...s, prompt: { t: "loading" } };
+    case "copied":
+      return s.prompt.t === "ready" ? { ...s, copied: true } : s;
+    case "copiedShown":
+      return { ...s, copied: false };
+    case "typed":
+      // Nothing changes under a paste being distilled; editing after an outcome starts over.
+      return s.phase.t === "working" ? s : { ...s, text: m.text, phase: { t: "editing" } };
+    case "add":
+      return canAdd(s) ? { ...s, phase: { t: "working" } } : s;
+    case "added":
+      if (s.phase.t !== "working") return s;
+      // Added: the paste is done with. Refused: it stays, to try again.
+      return m.result.ok ? { ...s, text: "", phase: { t: "done", added: m.result.value.added } } : { ...s, phase: { t: "failed", error: m.result.error } };
+  }
+};
+
+/** Add to Memory: something pasted, and not already on its way. */
+export const canAdd = (s: ImportState): boolean => s.text.trim() !== "" && s.phase.t !== "working";
+
+/** What an import came to: a title, and what it means. */
+export const addedWords = (added: number): { readonly title: string; readonly detail: string } =>
+  added === 0
+    ? { title: "Nothing New", detail: "Your memory already has all of it." }
+    : { title: added === 1 ? "Added 1 Entry" : `Added ${String(added)} Entries`, detail: "Your Navis and every lead read it from now on." };

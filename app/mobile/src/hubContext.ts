@@ -62,6 +62,11 @@ export type ChatInfoParams = {
 };
 /** A ChatInfo screen's props: its own stack's, and the root stack's above it (Photo, back to the chats list). */
 export type ChatInfoProps<T extends keyof ChatInfoParams> = CompositeScreenProps<NativeStackScreenProps<ChatInfoParams, T>, NativeStackScreenProps<RootParams>>;
+/** Settings, a stack of its own from the avatar on Chats (App.tsx SettingsScreens), and what it pushes. */
+export type SettingsParams = {
+  Settings: undefined;
+  ImportMemory: undefined;
+};
 export type PairParams = {
   Welcome: undefined;
   Scan: undefined;

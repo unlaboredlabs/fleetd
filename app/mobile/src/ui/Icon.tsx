@@ -67,6 +67,7 @@ const SYMBOLS = {
   sealed: ["checkmark.seal.fill", "verified"],
   bubble: ["bubble.left.fill", "chat_bubble"],
   pdf: ["doc.richtext", "picture_as_pdf"],
+  import: ["square.and.arrow.down", "download"],
 } as const satisfies Record<string, readonly [Extract<SymbolViewProps["name"], string>, AndroidSymbol]>;
 
 export type IconName = keyof typeof SYMBOLS;
