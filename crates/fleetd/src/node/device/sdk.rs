@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use sha1::Digest as _;
+use sha2::Digest as _;
 
 /// The pins, together: a change to any of them installs again, and makes the snapshot again.
 pub const PINS: &str = "platform-tools 37.0.1, emulator 37.2.12, android-35 google_apis x86_64 r09, scrcpy 5.0.1, \
@@ -298,7 +298,10 @@ async fn download(package: &Package, file: &Path) -> Result<(), String> {
         .map_err(|e| format!("cannot download {name}: {e}"))?;
     let mut out =
         std::fs::File::create(file).map_err(|e| format!("cannot write {}: {e}", file.display()))?;
-    let (mut sha1, mut sha256) = (sha1::Sha1::new(), sha2::Sha256::new());
+    let (mut sha1, mut sha256) = (
+        ring::digest::Context::new(&ring::digest::SHA1_FOR_LEGACY_USE_ONLY),
+        sha2::Sha256::new(),
+    );
     while let Some(chunk) = response
         .chunk()
         .await
@@ -312,7 +315,7 @@ async fn download(package: &Package, file: &Path) -> Result<(), String> {
             .map_err(|e| format!("cannot write {}: {e}", file.display()))?;
     }
     let (got, want) = match package.check {
-        Check::Sha1(want) => (hex(&sha1.finalize()), want),
+        Check::Sha1(want) => (hex(sha1.finish().as_ref()), want),
         Check::Sha256(want) => (hex(&sha2::Digest::finalize(sha256)), want),
     };
     if got != want {

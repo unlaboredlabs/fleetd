@@ -9,7 +9,7 @@
 # - rust-docs: the docs' generated pages (docsgen --check), `fleetd help` for the site check, the lab scenarios.
 # - rust-tests: the workspace tests of the modules the changed files are in, two levels deep (a change to
 #   crates/fleetd/src/hub/train/batch.rs runs hub::train::), and the other crates' tests whole. CI's `rust (linux)`
-#   runs every test and the doctests.
+#   runs every test.
 # - site: a build of docs/site, the site's pages and links, no personal identifiers, and the landing page fits every
 #   width. The identifier check runs on every call; it reads every tracked file.
 # - desktop: app/desktop's case clashes, typecheck, lint and unit tests.

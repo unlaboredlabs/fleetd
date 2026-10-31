@@ -19,7 +19,7 @@ url = "2"
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.8", features = ["ws"] }
 # webpki roots, not native certs: the macOS framework deps native-certs pulls in break the darwin cross-build.
-tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
 tracing = "0.1"
@@ -38,7 +38,6 @@ rand = "0.8"
 zeroize = "1"
 serde_yaml_ng = "0.10"
 unicode-normalization = "0.1"
-sha1 = "0.10"
 serde_path_to_error = "0.1"
 
 [workspace.lints.rust]
