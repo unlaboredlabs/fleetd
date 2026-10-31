@@ -412,6 +412,8 @@ pub struct SecretDeliver {
     pub env_name: Option<EnvName>,
     /// An order: sink's project, whose agents the order's are. Only nodes listing [`CAP_ORDER_ENV`] get one.
     pub project_id: Option<ProjectId>,
+    /// A fill: sink's request (a Navi's secure input): the one field of its browser session this value fills.
+    pub request_id: Option<crate::chat::ChatRequestId>,
 }
 
 /// Node -> hub, one per `secret_deliver`: the sink was written (0600) and the buffer wiped, or why not.

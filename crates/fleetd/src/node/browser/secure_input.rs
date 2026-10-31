@@ -39,6 +39,11 @@ pub struct Waiting {
     pub label: String,
 }
 
+/// Where a typed secure input waits: by its browser session and its request, as a session may wait for several.
+fn waiting_key(session: &str, request: &str) -> String {
+    format!("{session}/{request}")
+}
+
 /// The session's page, or why the value can't go there.
 async fn on_site(session: &Session, domain: &str) -> Result<(), String> {
     let page = page_url(session).await.unwrap_or_default();
@@ -217,7 +222,7 @@ pub async fn request(
     let id = opened.request_id;
     if typed {
         lock(&broker.cards.waiting).insert(
-            session.id.to_string(),
+            waiting_key(session.id.as_str(), id.as_str()),
             Waiting {
                 request_id: id.to_string(),
                 domain,
@@ -278,11 +283,19 @@ pub async fn deliver(
             "that browser session has ended: ask the Navi to open the page and ask again".into(),
         );
     };
-    let Some(waiting) = lock(&broker.cards.waiting).remove(&sink.path) else {
-        return fail("nothing waits for it in that browser session: it was filled already".into());
+    let Some(request) = frame.request_id.as_ref() else {
+        return fail(
+            "the hub didn't say which secure input this is: update fleetd on the hub".into(),
+        );
+    };
+    let key = waiting_key(&sink.path, request.as_str());
+    let Some(waiting) = lock(&broker.cards.waiting).remove(&key) else {
+        return fail(format!(
+            "nothing waits for {request} in that browser session: it was filled already"
+        ));
     };
     let give_back = |waiting: Waiting| {
-        lock(&broker.cards.waiting).insert(sink.path.clone(), waiting);
+        lock(&broker.cards.waiting).insert(key.clone(), waiting);
     };
     let sealed = Zeroizing::new(
         base64::Engine::decode(

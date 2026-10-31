@@ -431,7 +431,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
   const destructive = blocked || gated?.class === "irreversible" || preview?.action === "delete" || preview?.action === "spend" || purchase !== undefined;
   const navi = asker ?? "Navi";
   return (
-    <Shell ref={section} label={purchase !== undefined ? "Purchase to approve" : previewConfig === undefined ? "Command to approve" : "Try it setting to approve"} requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} site={(purchase?.shop ?? secureInput?.site)?.domain} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
+    <Shell ref={section} label={purchase !== undefined ? "Purchase to approve" : secureInput !== undefined ? "Secure input to approve" : previewConfig === undefined ? "Command to approve" : "Try it setting to approve"} requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} site={(purchase?.shop ?? secureInput?.site)?.domain} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
           {purchase !== undefined

@@ -766,6 +766,10 @@ impl Approvals {
         if sink.order.is_some() {
             input["projectId"] = json!(r.project_ref.project_id);
         }
+        // A secure input's value fills its own field, of the several its browser session may wait for.
+        if sink.fill.is_some() {
+            input["requestId"] = json!(id);
+        }
         // The ciphertext is never queued: the person enters it again once the node is back.
         let delivered = self
             .deps

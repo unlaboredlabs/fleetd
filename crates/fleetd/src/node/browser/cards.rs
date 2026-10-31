@@ -51,7 +51,7 @@ pub const PAYMENT_FRAMES: &[&str] = &[
 #[derive(Default)]
 pub struct Cards {
     extra_frames: std::sync::Mutex<Vec<String>>,
-    /// By browser session id: the typed secure input it waits for (secure_input.rs).
+    /// By browser session id and request id: the typed secure inputs it waits for (secure_input.rs).
     pub(super) waiting:
         std::sync::Mutex<std::collections::HashMap<String, super::secure_input::Waiting>>,
 }

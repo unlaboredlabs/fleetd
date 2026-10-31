@@ -17,6 +17,8 @@ const CVC: &str = "737";
 const HOLDER: &str = "Ada Devbox";
 /// A secure input the person types, and one from a Passport item.
 const TYPED: &str = "C01X00T47";
+/// A second secure input in the same session: a code texted to the person.
+const CODE: &str = "482913";
 const PASSPORT: &str = "P5551234X";
 const PASSPORT_REF: &str = "op://Personal/Passport/number";
 
@@ -145,11 +147,12 @@ async fn checkout() -> (String, Arc<std::sync::Mutex<Vec<String>>>, AbortOnDrop)
                     // A field in the site's own frame, which says what it holds once typed in, and whether it shows.
                     (
                         "text/html",
-                        "<html><body><label>Passport number <input id=passport name=passport></label><script>\
+                        "<html><body><label>Passport number <input id=passport name=passport></label>\
+                         <label>Code texted to you <input id=code name=code></label><script>\
                          parent.postMessage({ ready: true }, '*');\
-                         passport.addEventListener('input', () => fetch('/typed', { method: 'POST', body: \
-                           JSON.stringify({ value: passport.value, \
-                             masked: getComputedStyle(passport).filter.includes('blur') }) }));\
+                         for (const f of [passport, code]) f.addEventListener('input', () => fetch('/typed', \
+                           { method: 'POST', body: JSON.stringify({ field: f.id, value: f.value, \
+                             masked: getComputedStyle(f).filter.includes('blur') }) }));\
                          </script></body></html>"
                             .to_owned(),
                     )
@@ -881,28 +884,73 @@ async fn what_the_person_types_fills_the_sites_own_frame_once_and_the_navi_never
         "held while the person types"
     );
 
-    // The person's app seals it to the node; the node fills the site's own frame, not the decoy on another site.
+    // A second field the same page needs, asked for while the first waits: each request fills its own field.
+    let second = call(&rig.broker, secure("127.0.0.1", "#code", None)).await;
+    let second_id = second["result"]["requestId"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{second}"))
+        .to_owned();
+    assert_ne!(second_id, id);
+
+    // The person's app seals each to the node, which fills the site's own frame, never the decoy on another site. The
+    // second is entered first: it still fills its own field.
     let key_home = tempfile::tempdir().unwrap();
     let key = crate::node::identity::load_or_create_box_key(key_home.path()).unwrap();
-    let frame: fleetd_contracts::node_link::SecretDeliver = serde_json::from_value(json!({
-        "id": "s1", "sink": sink, "secretKey": "navi.secure_input",
-        "sealed": B64.encode(key.seal(TYPED.as_bytes()).unwrap()),
-    }))
-    .unwrap();
-    let delivered =
-        super::super::secure_input::deliver(&rig.broker, &frame, Some(&key), "devbox").await;
+    let frame = |request: &str, value: &str| -> fleetd_contracts::node_link::SecretDeliver {
+        serde_json::from_value(json!({
+            "id": "s1", "sink": sink, "secretKey": "navi.secure_input", "requestId": request,
+            "sealed": B64.encode(key.seal(value.as_bytes()).unwrap()),
+        }))
+        .unwrap()
+    };
+    let delivered = super::super::secure_input::deliver(
+        &rig.broker,
+        &frame(&second_id, CODE),
+        Some(&key),
+        "devbox",
+    )
+    .await;
     assert!(delivered.fingerprint.is_some(), "{delivered:?}");
     let got = typed(&kept).await;
-    assert_eq!(got["value"], TYPED);
+    assert_eq!(
+        (got["field"].as_str(), got["value"].as_str()),
+        (Some("code"), Some(CODE))
+    );
+    let delivered =
+        super::super::secure_input::deliver(&rig.broker, &frame(&id, TYPED), Some(&key), "devbox")
+            .await;
+    assert!(delivered.fingerprint.is_some(), "{delivered:?}");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while kept.lock().unwrap().len() < 2 {
+        assert!(Instant::now() < deadline, "the passport field got it");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let got: Value = serde_json::from_str(&kept.lock().unwrap()[1]).unwrap();
+    assert_eq!(
+        (got["field"].as_str(), got["value"].as_str()),
+        (Some("passport"), Some(TYPED))
+    );
     assert_eq!(got["masked"], true, "the filled field shows dots, blurred");
     assert_eq!(
         kept.lock().unwrap().len(),
-        1,
+        2,
         "the decoy on another site got nothing"
     );
     let again =
-        super::super::secure_input::deliver(&rig.broker, &frame, Some(&key), "devbox").await;
+        super::super::secure_input::deliver(&rig.broker, &frame(&id, TYPED), Some(&key), "devbox")
+            .await;
     assert!(again.error.unwrap().as_str().contains("filled already"));
+    let unnamed: fleetd_contracts::node_link::SecretDeliver = serde_json::from_value(json!({
+        "id": "s2", "sink": sink, "secretKey": "navi.secure_input",
+        "sealed": B64.encode(key.seal(TYPED.as_bytes()).unwrap()),
+    }))
+    .unwrap();
+    let unnamed =
+        super::super::secure_input::deliver(&rig.broker, &unnamed, Some(&key), "devbox").await;
+    assert!(
+        unnamed.error.is_some(),
+        "a value for no request fills nothing"
+    );
 
     // Nothing reads it back.
     let answer = driver
@@ -920,7 +968,7 @@ async fn what_the_person_types_fills_the_sites_own_frame_once_and_the_navi_never
     );
     heard.push_str(&answer.to_string());
     heard.push_str(&serde_json::to_string(&driver.events).unwrap());
-    assert!(!heard.contains(TYPED), "{heard}");
+    assert!(!heard.contains(TYPED) && !heard.contains(CODE), "{heard}");
     drop(driver);
     call(&rig.broker, json!({ "op": "session_end" })).await;
     for (path, text) in texts(&rig.node_home.path().join("browser")) {

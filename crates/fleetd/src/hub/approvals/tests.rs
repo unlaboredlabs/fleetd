@@ -2344,6 +2344,17 @@ async fn a_secure_input_is_a_sealed_field_or_an_approval_only_a_person_answers()
     .unwrap();
     let refused = a.request_secret(&p1(), aimed).await.unwrap_err();
     assert!(refused.message.contains("secure input"), "{refused:?}");
+    // What the person types goes to the node naming its request: one of the several its session may wait for.
+    a.submit_secret(&person(), typed.request_id.as_str(), "sealed-bytes")
+        .await
+        .unwrap();
+    let (machine, sent) = fake.secrets.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(machine, "lab-a");
+    assert_eq!(sent["requestId"], typed.request_id.as_str());
+    assert_eq!(
+        fake.request(typed.request_id.as_str()).state,
+        RequestState::Stored
+    );
     let session = BrowserSessionId::unchecked(B1);
     let not_claimable = a
         .claim_secure_input(&p1(), &typed.request_id, &session)
