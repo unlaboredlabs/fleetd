@@ -18,6 +18,7 @@ const navi = (f: Fixture): { machineId: string; projectId: string } => {
   first["kind"] = "assistant";
   first["title"] = "Home";
   const ref = { machineId: asText(first["machineId"]), projectId: asText(first["projectId"]) };
+  f.answer("navi_purchases", ref, { purchases: [] });
   f.answer("project_settings_get", ref, {
     settings: {
       ...ref,

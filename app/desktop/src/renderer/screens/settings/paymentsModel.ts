@@ -30,8 +30,8 @@ export const purchaseState = (entry: PurchaseLogEntry): string => {
   }
 };
 
-/** One purchase as its log line: the shop and what it cost. */
+/** One purchase as its log line: the shop, by its name, and what it cost. */
 export const purchaseLine = (entry: PurchaseLogEntry): { shop: string; amount: string } => ({
-  shop: `${entry.purchase.shop.name} · ${entry.purchase.shop.domain}`,
+  shop: entry.purchase.shop.name,
   amount: totalWords(entry.purchase.total),
 });

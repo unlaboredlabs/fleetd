@@ -31,8 +31,8 @@ export const itemLines = (purchase: Purchase): string[] =>
     return `${many}${item.name}${price}`;
   });
 
-/** What the folded row says it was about. */
-export const purchaseTitle = (purchase: Purchase): string => `${totalWords(purchase.total)} at ${purchase.shop.name} (${purchase.shop.domain})`;
+/** What the folded row says it was about, in the person's words: the shop's name, not its domain. */
+export const purchaseTitle = (purchase: Purchase): string => `${totalWords(purchase.total)} at ${purchase.shop.name}`;
 
 /** The one line an answered purchase folds to, or undefined while it waits. */
 export const purchaseOutcome = (item: CommandApprovalItem): Outcome | undefined => {

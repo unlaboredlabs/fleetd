@@ -23,7 +23,7 @@ describe("a purchase card", () => {
     const [room, tax] = itemLines(purchase);
     expect(room).toMatch(/^2 × Double room, 12-14 Nov · .*129\.90/u);
     expect(tax).toBe("City tax");
-    expect(purchaseTitle(purchase)).toMatch(/259\.80 at Hotel Devbox \(hotel\.devbox\.test\)$/u);
+    expect(purchaseTitle(purchase)).toMatch(/259\.80 at Hotel Devbox$/u);
     expect(payQuestion(purchase)).toMatch(/^Pay .*259\.80 at Hotel Devbox with Visa \(Personal\)\?$/u);
   });
 

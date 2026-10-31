@@ -29,6 +29,7 @@ const navi = (f: Fixture): { machineId: string; projectId: string } => {
     },
   });
   f.answer("mcp_servers_get", { project: ref }, { global: [], project: [], userServers: true });
+  f.answer("navi_purchases", ref, { purchases: [] });
   return ref;
 };
 
