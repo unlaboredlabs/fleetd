@@ -260,10 +260,6 @@ pub enum HubEventType {
     /// `browser::BrowserSessionEventData`. browser_sessions reads the rest.
     #[serde(rename = "browser.session")]
     BrowserSession,
-    /// A preview started, moved a step, became ready, ended or failed; `data` is `preview::PreviewEventData`.
-    /// previews_list reads the rest.
-    #[serde(rename = "preview.state")]
-    PreviewState,
     /// A person's screen on its way (`screen_open`) moved a stage, opened, failed or was given up; `data` is
     /// `browser::ScreenWaitEventData`. browser_sessions reads the rest.
     #[serde(rename = "screen.wait")]
@@ -369,7 +365,6 @@ impl HubEventType {
             Self::ChecklistChanged => "checklist.changed",
             Self::SkillsChanged => "skills.changed",
             Self::BrowserSession => "browser.session",
-            Self::PreviewState => "preview.state",
             Self::ScreenWait => "screen.wait",
             Self::PeopleChanged => "people.changed",
             Self::SidebarOrder => "sidebar.order",

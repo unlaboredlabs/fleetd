@@ -606,10 +606,10 @@ async fn an_unknown_repo_is_refused_and_changes_nothing() {
     assert!(s["settings"].get("repo").is_none());
 }
 
-/// Naming a repo reads and writes its own setup and preview, the project's when it has none; leaving it out keeps the
-/// project's, and the rest are the project's either way. A launch in the own repo and a preview read the own repo's.
+/// Naming a repo reads and writes its own setup, the project's when it has none; leaving it out keeps the project's,
+/// and the rest are the project's either way. A launch in the own repo reads the own repo's.
 #[tokio::test]
-async fn a_repos_setup_and_preview_are_its_own_and_fall_back_to_the_projects() {
+async fn a_repos_setup_is_its_own_and_falls_back_to_the_projects() {
     let (hub, _home) = hub();
     let _calls = node(&hub, true).await;
     let r = json!({ "machineId": "lab", "projectId": "p1" });
@@ -625,7 +625,6 @@ async fn a_repos_setup_and_preview_are_its_own_and_fall_back_to_the_projects() {
     let set = |input| call(&hub, &human, "project_settings_set", input);
     set(with(json!({
         "setup": { "commands": ["make deps"] },
-        "preview": { "web": { "start": "make serve" } },
     })))
     .await
     .unwrap();
@@ -637,26 +636,22 @@ async fn a_repos_setup_and_preview_are_its_own_and_fall_back_to_the_projects() {
         .unwrap();
     assert_eq!(s["settings"]["repo"], "app");
     assert_eq!(s["settings"]["setup"]["commands"], json!(["make deps"]));
-    assert_eq!(s["settings"]["preview"]["web"]["start"], "make serve");
 
     let s = set(with(json!({
         "repo": "app",
         "setup": { "commands": ["pnpm install"] },
-        "preview": { "web": { "start": "pnpm dev" } },
         "keepWorktrees": true,
     })))
     .await
     .unwrap();
     assert_eq!(s["settings"]["repo"], "app");
     assert_eq!(s["settings"]["setup"]["commands"], json!(["pnpm install"]));
-    assert_eq!(s["settings"]["preview"]["web"]["start"], "pnpm dev");
     assert_eq!(s["settings"]["keepWorktrees"], true);
     let own = call(&hub, &human, "project_settings_get", r.clone())
         .await
         .unwrap();
     assert!(own["settings"].get("repo").is_none());
     assert_eq!(own["settings"]["setup"]["commands"], json!(["make deps"]));
-    assert_eq!(own["settings"]["preview"]["web"]["start"], "make serve");
     assert_eq!(own["settings"]["keepWorktrees"], true);
     let own_repo = hub.repos.own(&project()).unwrap().map(|repo| repo.repo_id);
     let task_setup =
@@ -665,23 +660,15 @@ async fn a_repos_setup_and_preview_are_its_own_and_fall_back_to_the_projects() {
         serde_json::to_value(task_setup).unwrap()["commands"],
         json!(["pnpm install"])
     );
-    let preview = crate::hub::projects::settings::preview_config(&hub, &project()).unwrap();
-    assert_eq!(
-        serde_json::to_value(preview).unwrap()["web"]["start"],
-        "pnpm dev"
-    );
 
     // Emptied, the repo's are the project's again.
-    set(with(
-        json!({ "repo": "app", "setup": { "commands": [] }, "preview": {} }),
-    ))
-    .await
-    .unwrap();
+    set(with(json!({ "repo": "app", "setup": { "commands": [] } })))
+        .await
+        .unwrap();
     let s = call(&hub, &human, "project_settings_get", app)
         .await
         .unwrap();
     assert_eq!(s["settings"]["setup"]["commands"], json!(["make deps"]));
-    assert_eq!(s["settings"]["preview"]["web"]["start"], "make serve");
 
     let refused = call(
         &hub,

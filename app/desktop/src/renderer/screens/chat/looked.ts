@@ -1,7 +1,7 @@
-// A message the lead nudged you about (or an agent's Try it line) stops waiting once you have seen it: once half of
-// it, or half the window's height of it, has stayed in view for a moment while the window has focus. A row the list
-// passes on its way to where it opens doesn't count; one that scrolled into view while you were elsewhere counts once
-// you come back to it and it is still there.
+// A message the lead nudged you about stops waiting once you have seen it: once half of it, or half the window's height
+// of it, has stayed in view for a moment while the window has focus. A row the list passes on its way to where it
+// opens doesn't count; one that scrolled into view while you were elsewhere counts once you come back to it and it is
+// still there.
 import { useEffect, type RefObject } from "react";
 import { useBubbleActions } from "./actions";
 

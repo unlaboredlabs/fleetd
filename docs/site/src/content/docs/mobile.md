@@ -120,7 +120,7 @@ recording. What you type goes to the page; the action log says that you took ove
 that one of your machines can host, and the machine when more than one can. It opens in the live view with you in
 control, and **End Screen** closes it. A browser starts on a blank page: tap the bar at the top to say where it goes. A Navi's browser runs on the Navi's own profile, so a site you sign in to there
 stays signed in for it. On a full machine, **Wait** keeps your place for its next slot, and the screen opens once it
-has one. A PR's build or Try it preview opens from the desktop app. See [Open one yourself](/docs/browser-sessions#yours).
+has one. A PR's build opens from the desktop app. See [Open one yourself](/docs/browser-sessions#yours).
 
 ## Update fleetd {#update}
 
@@ -335,4 +335,4 @@ when the app is built: a build you already installed keeps asking where it was b
 
 ## Not yet {#not-yet}
 
-- Secrets, settings, a screen's recording, and a PR's build or Try it preview in a screen: use the desktop app.
+- Secrets, settings, a screen's recording, and a PR's build in a screen: use the desktop app.

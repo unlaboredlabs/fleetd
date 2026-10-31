@@ -1118,7 +1118,7 @@ export type ChatMessage = {
    */
   memoryRefreshed?: MemoryRefreshed;
   messageId: ChatMessageId;
-  /** The lead flagged it for the person's look (`nudge`), or it is an agent's Try it suggestion. */
+  /** The lead flagged it for the person's look (`nudge`). */
   nudge?: ChatNudge;
   /**
    * A final lead message of more than one bubble, or with a block: its bubbles in order. Absent: `text` is one
@@ -1127,11 +1127,6 @@ export type ChatMessage = {
   parts?: ChatPart[];
   /** A human message: the person who wrote it. Absent from a hub before people. */
   person?: PersonRef;
-  /**
-   * An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app
-   * shows it as one line with Try it. Nothing runs from it.
-   */
-  previewSuggestion?: PreviewSuggestion;
   projectRef: ProjectRef;
   /** A system line "Remembered: …" or "Forgot: …": what the lead's `remember` or `forget` wrote, which `memory_undo` takes back. */
   remembered?: RememberedItem;
@@ -1690,9 +1685,9 @@ export type CloneTarget = {
 };
 
 /**
- * A risky command (prod write, spend, delete, credential use), a session's permission prompt or an agent's proposed
- * preview setting waits for the human: exactly what it would do, then Approve or Deny. Answered with
- * `approval_answer`, naming `requestId`. Exactly one of `gated`, `permission`, `previewConfig` and `purchase`.
+ * A risky command (prod write, spend, delete, credential use), a session's permission prompt, a purchase or a secure
+ * input waits for the human: exactly what it would do, then Approve or Deny. Answered with `approval_answer`, naming
+ * `requestId`. Exactly one of `gated`, `permission`, `purchase` and `secureInput`.
  */
 export type CommandApprovalItem = {
   answeredAt?: Timestamp;
@@ -1710,19 +1705,13 @@ export type CommandApprovalItem = {
   /** The end of the output, once it ran. */
   outputTail?: string;
   /**
-   * A session's permission prompt: the tool and what it would do. Boxed, as `previewConfig` is: with its input it
-   * is large beside the item's other fields.
+   * A session's permission prompt: the tool and what it would do. Boxed: with its input it is large beside the
+   * item's other fields, and every chat item would carry its size.
    */
   permission?: ToolPermission;
   /**
-   * An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.
-   * Older apps show it as an approval with neither command nor permission.
-   * Boxed: the setting is large beside the item's other fields, and every chat item would carry its size.
-   */
-  previewConfig?: PreviewConfigProposeCall;
-  /**
    * A Navi's purchase (purchase_request): the shop, the total, what it buys and the card. Approved, the Navi's node
-   * fills the card into that checkout once. Boxed, as `previewConfig` is.
+   * fills the card into that checkout once. Boxed, as `permission` is.
    */
   purchase?: Purchase;
   requestId: ChatRequestId;
@@ -2477,7 +2466,6 @@ export type KnownHubEventType =
   | "checklist.changed"
   | "skills.changed"
   | "browser.session"
-  | "preview.state"
   | "screen.wait"
   | "people.changed"
   | "sidebar.order"
@@ -2737,11 +2725,6 @@ export type HumanRequest = {
   outputTail?: string;
   /** approval of a session's tool prompt, instead of a gated run. */
   permission?: ToolPermission;
-  /**
-   * approval of an agent's proposed preview setting (preview_config_propose), instead of a gated run: approving it
-   * saves it as the project's `preview`.
-   */
-  previewConfig?: PreviewConfigProposeCall;
   projectRef: ProjectRef;
   /**
    * approval of a Navi's purchase (purchase_request), instead of a gated run: approving it lets the Navi's node fill
@@ -4853,193 +4836,6 @@ export type KnownPrState = "open" | "draft" | "merged" | "closed";
 /** KnownPrState, or a value from a newer hub. */
 export type PrState = KnownPrState | (string & {});
 
-/** One preview as the hub keeps it. */
-export type Preview = {
-  askedBy: PreviewAsker;
-  endReason?: PreviewEndReason;
-  endedAt?: Timestamp;
-  /** The commit it runs: the PR's head, or the order's merge, once checked out. */
-  head?: string;
-  /** When it ends if no one uses it, while it runs. */
-  idleUntil?: Timestamp;
-  /** Where it runs. */
-  machineId: MachineId;
-  /** One plain line when something needs saying: why it failed, that a newer commit is on the PR. */
-  note?: string;
-  of: PreviewOf;
-  previewId: PreviewId;
-  projectRef: ProjectRef;
-  readyAt?: Timestamp;
-  /** The browser session the app shows it in, held by the person from the start. */
-  sessionId?: BrowserSessionId;
-  startedAt: Timestamp;
-  state: PreviewState;
-  steps?: PreviewStep[];
-  target: PreviewTarget;
-  /** Where the person's own devices open it on the tailnet, once ready: `http://devbox:8414`. */
-  url?: string;
-};
-
-/** Who asked for a preview, in the words the app shows ("you", "the lead, because you asked at 09:02"). */
-export type PreviewAsker = {
-  /** The person's chat message a lead started it for. */
-  messageId?: ChatMessageId;
-  words: string;
-};
-
-/**
- * A project's preview setting (Settings › Projects › Try it, or `project_settings_set {preview}`). Nothing runs
- * because of it: it says how to run a preview someone asks for.
- */
-export type PreviewConfig = {
-  /** A preview no one used for this many minutes ends. */
-  idleMinutes?: number;
-  web?: WebPreview;
-};
-
-/**
- * `preview_config_propose`: how to run the project's preview, for the person to approve as a card in the chat.
- * Nothing is saved until they do. Answered with the request, as `gated_run` is.
- */
-export type PreviewConfigProposeCall = {
-  config: PreviewConfig;
-  why: string;
-};
-
-export type PreviewEndInput = {
-  previewId: PreviewId;
-};
-
-export type PreviewEndOutput = {
-  next?: string;
-  preview: Preview;
-  truncated?: boolean;
-};
-
-/** Why a preview ended. */
-export type KnownPreviewEndReason = "ended" | "idle" | "cap" | "done" | "lost";
-/** KnownPreviewEndReason, or a value from a newer hub. */
-export type PreviewEndReason = KnownPreviewEndReason | (string & {});
-
-/** `preview.state`: a preview started, moved a step, became ready, ended or failed. previews_list reads the rest. */
-export type PreviewEventData = {
-  of: PreviewOf;
-  previewId: PreviewId;
-  projectRef: ProjectRef;
-  state: PreviewState;
-};
-
-export type PreviewFeedbackInput = {
-  /** Add the last this-many seconds of the preview's session recording; absent or 0: none. */
-  clipSeconds?: number;
-  /** The screenshot with its pins drawn, and any other file, from attachment_put. */
-  files?: AttachmentId[];
-  pins: PreviewPin[];
-  previewId: PreviewId;
-};
-
-export type PreviewFeedbackOutput = {
-  /** Where it went, in words: "#14's writer, at its next step", "the lead, who decides how it's fixed". */
-  deliveredTo: string;
-  next?: string;
-  truncated?: boolean;
-};
-
-export type PreviewId = string;
-
-/** What a preview is of: one PR, or an order's PRs merged together onto their base on a scratch branch (D162). */
-export type PreviewOf = {
-  kind: "pr";
-  number: number;
-  repo: GitHubRepo;
-} | {
-  kind: "order";
-  workstreamId: WorkstreamId;
-};
-
-/**
- * A point the person marked on a preview's screen, and what they said about it. `x` and `y` are where across and
- * down, in ten-thousandths of the screen.
- */
-export type PreviewPin = {
-  /** The page's address or screen when it was marked. */
-  at?: string;
-  /** The person's words; none: see the screenshot. */
-  note?: string;
-  /** What is under the pin, as the page names it: `the button "Pay"`. */
-  what?: string;
-  x: number;
-  y: number;
-};
-
-export type PreviewStartInput = {
-  of: PreviewOf;
-  projectRef: ProjectRef;
-  target?: PreviewTarget;
-};
-
-export type PreviewStartOutput = {
-  next?: string;
-  preview: Preview;
-  truncated?: boolean;
-};
-
-export type KnownPreviewState = "starting" | "ready" | "ended" | "failed";
-/** KnownPreviewState, or a value from a newer hub. */
-export type PreviewState = KnownPreviewState | (string & {});
-
-/**
- * One step of a preview's start, in the words the app shows: "Build: pnpm build", "reused: pnpm-lock.yaml hasn't
- * changed".
- */
-export type PreviewStep = {
-  detail?: string;
-  /** A failed step's output, its end, masked. */
-  outputTail?: string;
-  state: PreviewStepState;
-  /** How long it took, once over. */
-  tookMs?: number;
-  words: string;
-};
-
-export type PreviewStepState = "queued" | "running" | "done" | "failed" | "reused";
-
-/** An agent's suggestion to try a PR: one line with a Try it button, once per PR. Nothing runs from it. */
-export type PreviewSuggestion = {
-  at: Timestamp;
-  /** Who suggests it: "#14's writer". */
-  by: string;
-  of: PreviewOf;
-  projectRef: ProjectRef;
-  /** Why a person should try it, in a line. */
-  why: string;
-};
-
-/** What a preview runs: phase 1 is the web; Android, iOS and the desktop follow. */
-export type KnownPreviewTarget = "web";
-/** KnownPreviewTarget, or a value from a newer hub. */
-export type PreviewTarget = KnownPreviewTarget | (string & {});
-
-export type PreviewsListInput = {
-  /** Only those of this PR or order. */
-  of?: PreviewOf;
-  projectRef: ProjectRef;
-};
-
-export type PreviewsListOutput = {
-  /**
-   * The caller's key may start previews on this project: a human key with admin or operate on its machine (D162).
-   * False: it only opens running ones. Absent from older hubs: the app offers Try it and shows a refusal.
-   */
-  canStart?: boolean;
-  next?: string;
-  /** Running ones first, then the newest that ended. */
-  previews: Preview[];
-  /** Agents' suggestions to try a PR, for those with no preview yet. */
-  suggestions: PreviewSuggestion[];
-  truncated?: boolean;
-};
-
 /**
  * One task profile (Settings › Hub › Every project › Profiles): what an agent on it runs on. Exactly one is the hub's default, which
  * every project allows and the lead, every review and claude's helper calls run on.
@@ -5573,10 +5369,8 @@ export type ProjectSettings = {
    * Absent from older hubs.
    */
   memoryRefresh?: boolean;
-  /** How to run a preview someone asks for (Try it); absent when none is set, and from older hubs. */
-  preview?: PreviewConfig;
   projectId: ProjectId;
-  /** The repo `setup` and `preview` are for; absent when they are the project's, and from older hubs. */
+  /** The repo `setup` is for; absent when it is the project's, and from older hubs. */
   repo?: RepoName;
   /** What runs in each new worktree before its agent starts; no commands when none are set. */
   setup: WorktreeSetup;
@@ -5593,7 +5387,7 @@ export type ProjectSettings = {
 export type ProjectSettingsGetInput = {
   machineId: MachineId;
   projectId: ProjectId;
-  /** The repo whose setup and preview to read (its own, else the project's); absent: the project's. */
+  /** The repo whose setup to read (its own, else the project's); absent: the project's. */
   repo?: RepoName;
 };
 
@@ -5608,13 +5402,8 @@ export type ProjectSettingsSetInput = {
   machineId: MachineId;
   /** Turns the nightly memory refresh on or off for the project. */
   memoryRefresh?: boolean;
-  /** Replaces how a preview runs; one with no target turns Try it off for the project. */
-  preview?: PreviewConfig;
   projectId: ProjectId;
-  /**
-   * The repo whose own setup and preview to set, an empty one giving it the project's; absent: the
-   * project's. Title, keepWorktrees and train are the project's either way.
-   */
+  /** The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title, keepWorktrees and train are the project's either way. */
   repo?: RepoName;
   /** Replaces the project's setup commands and their settings; no commands turns setup off. */
   setup?: WorktreeSetup;
@@ -6022,8 +5811,6 @@ export type QuietWindow = {
   from: Timestamp;
   to: Timestamp;
 };
-
-export type ReadyPath = string;
 
 /** A commit that reached the base outside the train, as `work_list` shows it: what the hub's `Landings` reads back. */
 export type RecentLanding = {
@@ -8213,26 +8000,6 @@ export type WakeTarget = {
   threadId: ThreadId;
 };
 
-/**
- * How a project's web app is built and run for a preview, each command with `sh -c` in the preview's worktree and
- * the project's variables, as setup commands run (#501).
- */
-export type WebPreview = {
-  /** Builds the app; none for an app the start command builds itself. */
-  build?: string;
-  /** Files whose contents decide what setup makes, such as lockfiles. */
-  inputs?: SetupInput[];
-  /** Asked until it answers, for at most 2 minutes after the start. */
-  ready?: ReadyPath;
-  /**
-   * Run first, in order: install dependencies, generate code. Skipped when `inputs` haven't changed since a
-   * preview of this project last ran them on this machine.
-   */
-  setup?: string[];
-  /** Serves the app on `127.0.0.1:$PORT`; it runs until the preview ends. */
-  start: string;
-};
-
 /** A command, file edit or tool call. Secrets in its summary and output are replaced by `[secret]`. */
 export type WorkAction = {
   action: ActionItem;
@@ -8651,10 +8418,6 @@ export interface ToolMap {
   pr_files: { input: PrFilesInput; output: PrFilesOutput };
   pr_get: { input: PrGetInput; output: PrGetOutput };
   pr_list: { input: PrListInput; output: PrListOutput };
-  preview_end: { input: PreviewEndInput; output: PreviewEndOutput };
-  preview_feedback: { input: PreviewFeedbackInput; output: PreviewFeedbackOutput };
-  preview_start: { input: PreviewStartInput; output: PreviewStartOutput };
-  previews_list: { input: PreviewsListInput; output: PreviewsListOutput };
   profile_create: { input: ProfileCreateInput; output: ProfileCreateOutput };
   profile_delete: { input: ProfileDeleteInput; output: ProfileDeleteOutput };
   profile_update: { input: ProfileUpdateInput; output: ProfileUpdateOutput };
@@ -8752,7 +8515,6 @@ export interface HubEventDataMap {
   "people.changed": PeopleChangedData;
   "pr.merged": TrainEventData;
   "pr.merged_outside": TrainEventData;
-  "preview.state": PreviewEventData;
   "project.add_failed": ProjectAddFailedData;
   "project.added": ProjectAddedData;
   "project.clone_progress": CloneProgressData;

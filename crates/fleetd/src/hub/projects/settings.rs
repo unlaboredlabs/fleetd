@@ -2,12 +2,10 @@
 //! `project_env_set`, and what the hub keeps of them: `project_settings.keep_worktrees`,
 //! `project_settings.memory_refresh` (the nightly memory refresh, on by default), `project_settings.setup` (the
 //! commands each new worktree runs before its agent starts, sent with each task's launch), `project_settings.train`
-//! (the checks the merge train waits for, and those it leaves for after the merge), `project_settings.preview` (how a
-//! preview someone asks for runs, W58) and the `project_env` rows.
+//! (the checks the merge train waits for, and those it leaves for after the merge) and the `project_env` rows.
 //!
-//! A repo of the project (W79) can have its own `setup` and `preview` (`repos.setup`, `repos.preview`): a call that
-//! names the repo reads and writes those, and an empty one is the project's. A task's launch and a preview read their
-//! repo's, for now always the project's own repo (none for a plain directory). The merge train's rules are the
+//! A repo of the project (W79) can have its own `setup` (`repos.setup`): a call that names the repo reads and writes
+//! it, and an empty one is the project's. A task's launch reads its repo's, for now always the project's own repo (none for a plain directory). The merge train's rules are the
 //! repo's: a call that names the repo reads and writes `project_settings.train` of its checkout, which the repo's train
 //! reads. Everything else is the project's.
 //!
@@ -26,7 +24,6 @@ use fleetd_contracts::mcp::{
 };
 use fleetd_contracts::model::ProjectSummary;
 use fleetd_contracts::node_link::CAP_PROJECT_SETTINGS;
-use fleetd_contracts::preview::PreviewConfig;
 use fleetd_contracts::prim::Count;
 use fleetd_contracts::project_settings::{
     ENV_TOTAL_MAX_BYTES, ENV_VALUE_MAX_BYTES, env_total_over,
@@ -176,36 +173,6 @@ impl ProjectSettingsStore<'_> {
             .unwrap_or_default())
     }
 
-    /// How a preview of the project runs (Try it); none until a person sets one or approves an agent's proposal.
-    pub fn preview(&self, r: &ProjectRef) -> Result<Option<PreviewConfig>, StoreError> {
-        let saved: Option<Option<String>> = self.db.with(|c| {
-            Ok(c.query_row(
-                "SELECT preview FROM project_settings WHERE machine_id = ? AND project_id = ?",
-                params![r.machine_id.as_str(), r.project_id.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?)
-        })?;
-        Ok(saved
-            .flatten()
-            .and_then(|json| serde_json::from_str(&json).ok()))
-    }
-
-    /// Replaces how a preview runs; one with no target turns Try it off for the project.
-    pub fn set_preview(&self, r: &ProjectRef, preview: &PreviewConfig) -> Result<(), StoreError> {
-        let json = (!preview.targets().is_empty())
-            .then(|| serde_json::to_string(preview))
-            .transpose()?;
-        self.db.with(|c| {
-            c.execute(
-                "INSERT INTO project_settings (machine_id, project_id, preview) VALUES (?, ?, ?)
-                 ON CONFLICT (machine_id, project_id) DO UPDATE SET preview = excluded.preview",
-                params![r.machine_id.as_str(), r.project_id.as_str(), json],
-            )?;
-            Ok(())
-        })
-    }
-
     /// The setup commands a new worktree of `repo` runs: the repo's own, else the project's; `repo` none (the project's
     /// own directory, or a plain directory): the project's.
     pub fn setup_in(
@@ -240,40 +207,7 @@ impl ProjectSettingsStore<'_> {
         self.set_repo_json(repo, "setup", json)
     }
 
-    /// How a preview of `repo` runs: the repo's own setting, else the project's; `repo` none: the project's.
-    pub fn preview_in(
-        &self,
-        r: &ProjectRef,
-        repo: Option<&RepoId>,
-    ) -> Result<Option<PreviewConfig>, StoreError> {
-        if let Some(repo) = repo
-            && let Some(preview) = self
-                .repo_json(repo, "preview")?
-                .and_then(|json| serde_json::from_str(&json).ok())
-        {
-            return Ok(Some(preview));
-        }
-        self.preview(r)
-    }
-
-    /// Replaces how a preview of `repo` runs; one with no target gives it the project's. `repo` none: the project's, as
-    /// `set_preview`.
-    pub fn set_preview_in(
-        &self,
-        r: &ProjectRef,
-        repo: Option<&RepoId>,
-        preview: &PreviewConfig,
-    ) -> Result<(), StoreError> {
-        let Some(repo) = repo else {
-            return self.set_preview(r, preview);
-        };
-        let json = (!preview.targets().is_empty())
-            .then(|| serde_json::to_string(preview))
-            .transpose()?;
-        self.set_repo_json(repo, "preview", json)
-    }
-
-    /// A repo's own `setup` or `preview`, as JSON; none when it takes the project's.
+    /// A repo's own `setup`, as JSON; none when it takes the project's.
     fn repo_json(&self, repo: &RepoId, column: &'static str) -> Result<Option<String>, StoreError> {
         let Some(n) = crate::hub::repos::store::number(repo) else {
             return Ok(None);
@@ -412,13 +346,6 @@ pub fn task_setup(
     hub.db.project_settings().setup_in(r, repo)
 }
 
-/// How a preview of the project runs: its repo's setting, else the project's. A preview's repo is, for now, the
-/// project's own (none for a plain directory).
-pub fn preview_config(hub: &Hub, r: &ProjectRef) -> Result<Option<PreviewConfig>, StoreError> {
-    let repo = hub.repos.own(r)?.map(|repo| repo.repo_id);
-    hub.db.project_settings().preview_in(r, repo.as_ref())
-}
-
 fn project_ref(machine_id: &MachineId, project_id: &ProjectId) -> ProjectRef {
     ProjectRef {
         machine_id: machine_id.clone(),
@@ -482,7 +409,7 @@ pub(super) fn repo_named(
     .with_fix(fix))
 }
 
-/// The project's settings, with `setup` and `preview` those of `repo` when one is given.
+/// The project's settings, with `setup` that of `repo` when one is given.
 async fn settings_of(
     hub: &Hub,
     r: &ProjectRef,
@@ -520,7 +447,6 @@ async fn settings_of(
         env: store.env(r)?,
         setup: store.setup_in(r, repo_id)?.unwrap_or_default(),
         train: store.train(repo.map_or(r, |repo| &repo.checkout))?,
-        preview: store.preview_in(r, repo_id)?,
         worktrees,
         worktrees_unknown,
     })
@@ -602,14 +528,8 @@ async fn set(
         let checkout = repo.as_ref().map_or(&r, |repo| &repo.checkout);
         hub.db.project_settings().set_train(checkout, train)?;
     }
-    if let Some(preview) = &input.preview {
-        hub.db
-            .project_settings()
-            .set_preview_in(&r, repo_id, preview)?;
-    }
     let settings = settings_of(&hub, &r, repo.as_ref()).await?;
     let next = if input.memory_refresh.is_some()
-        && input.preview.is_none()
         && input.train.is_none()
         && input.setup.is_none()
         && input.keep_worktrees.is_none()
@@ -619,13 +539,6 @@ async fn set(
         } else {
             "The nightly memory refresh is off for this project; memory stays as the lead and you write it.".to_owned()
         }
-    } else if input.preview.is_some()
-        && input.train.is_none()
-        && input.setup.is_none()
-        && input.keep_worktrees.is_none()
-    {
-        "Try it runs previews this way from the next one someone asks for; nothing starts now."
-            .to_owned()
     } else if input.train.is_some() && input.setup.is_none() && input.keep_worktrees.is_none() {
         "The merge train uses these settings from its next pass.".to_owned()
     } else if input.setup.as_ref().is_some_and(|s| !s.is_empty())

@@ -81,7 +81,6 @@ impl Approvals {
             secret: None,
             gated: None,
             permission: None,
-            preview_config: None,
             purchase: Some(Purchase {
                 shop: purchase.shop,
                 total: purchase.total,

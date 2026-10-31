@@ -1087,11 +1087,6 @@
           "type": "string"
         },
         {
-          "const": "preview.state",
-          "description": "A preview started, moved a step, became ready, ended or failed; `data` is `preview::PreviewEventData`.\npreviews_list reads the rest.",
-          "type": "string"
-        },
-        {
           "const": "screen.wait",
           "description": "A person's screen on its way (`screen_open`) moved a stage, opened, failed or was given up; `data` is\n`browser::ScreenWaitEventData`. browser_sessions reads the rest.",
           "type": "string"
@@ -1636,7 +1631,7 @@
           "items": {
             "$ref": "#/$defs/ChatOpenNudge"
           },
-          "maxItems": 6,
+          "maxItems": 3,
           "minItems": 1,
           "type": "array"
         },

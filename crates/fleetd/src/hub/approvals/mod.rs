@@ -4,8 +4,6 @@
 //!   makes it one variable of an open order's agents on the project's machine, until the order closes.
 //! - approval of a command (`gated_run`): the exact command is stored; once a person approves it, the project's node
 //!   runs those bytes and the exit code and output tail go to the lead.
-//! - approval of a preview setting (`preview_config_propose`, W58): once a person approves it, it becomes the
-//!   project's `preview` and the lead hears so.
 //! - approval of a Navi's purchase (`purchase_request`, purchases.rs): only a person answers it, in every approval mode;
 //!   once approved, the Navi's node fills its card into that checkout, once.
 //! - approval of a tool prompt: a session's permission prompt (a Navi's lead runs in `manual` mode), answered on its
@@ -34,7 +32,6 @@ use fleetd_contracts::lead_calls::RequestSecretCall;
 use fleetd_contracts::ledger::{
     GatedRunSpec, HumanRequest, RequestKind, RequestState, SecretRequest,
 };
-use fleetd_contracts::preview::{PreviewConfig, PreviewConfigProposeCall};
 use regex::Regex;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -264,12 +261,6 @@ pub trait ApprovalHub: Send + Sync {
         by: fleetd_contracts::navi::AutoApprovedBy,
         reason: Option<&'a str>,
     ) -> BoxFut<'a, ()>;
-    /// Saves an approved preview setting as the project's `preview`. `Err`: why it could not.
-    fn preview_config_save(
-        &self,
-        project: &ProjectRef,
-        config: &PreviewConfig,
-    ) -> BoxFut<'_, Result<(), String>>;
 }
 
 /// A variable a node saved for one order's agents.
@@ -389,7 +380,6 @@ pub fn chat_item(r: &HumanRequest) -> ChatItem {
             machine_id: r.project_ref.machine_id.clone(),
             gated: r.gated.clone(),
             permission: r.permission.clone().map(Box::new),
-            preview_config: r.preview_config.clone().map(Box::new),
             purchase: r.purchase.clone().map(Box::new),
             secure_input: r.secure_input.clone().map(Box::new),
             state: match r.state {
@@ -476,7 +466,6 @@ impl Approvals {
             (Some(s), _, _) => format!("secret {}", s.key),
             (_, Some(g), _) => shown_argv(&g.argv.iter().cloned().collect::<Vec<_>>()),
             (_, _, Some(p)) => format!("{} {}", p.tool_name, p.summary),
-            _ if r.preview_config.is_some() => "a preview setting".into(),
             _ => r.purchase.as_ref().map_or(String::new(), |p| {
                 format!(
                     "purchase at {} ({} {})",
@@ -620,7 +609,6 @@ impl Approvals {
             }),
             gated: None,
             permission: None,
-            preview_config: None,
             purchase: None,
             secure_input: None,
             at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
@@ -918,79 +906,12 @@ impl Approvals {
             secret: None,
             gated: Some(gated),
             permission: None,
-            preview_config: None,
             purchase: None,
             secure_input: None,
             at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
         })
         .await
-    }
-
-    /// `preview_config_propose`: opens the approval holding exactly the proposed preview setting; nothing is saved
-    /// until a person approves it.
-    pub async fn propose_preview(
-        &self,
-        project: &ProjectRef,
-        call: PreviewConfigProposeCall,
-        workstream_id: Option<fleetd_contracts::ledger::WorkstreamId>,
-    ) -> Result<HumanRequest, ApprovalRefused> {
-        let now = system_ms(self.deps.clock.now());
-        self.create(NewRequest {
-            project_ref: contract_project(project),
-            workstream_id,
-            kind: RequestKind::Approval,
-            text: clip(
-                &format!("Save how Try it runs this project: {}", call.why),
-                500,
-            ),
-            secret: None,
-            gated: None,
-            permission: None,
-            preview_config: Some(call),
-            purchase: None,
-            secure_input: None,
-            at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
-            at_ms: now,
-        })
-        .await
-    }
-
-    /// An approved preview setting: saved as the project's, then the lead hears it ran (or why it could not).
-    async fn save_preview(
-        &self,
-        r: &HumanRequest,
-        config: &PreviewConfig,
-    ) -> Result<HumanRequest, ApprovalRefused> {
-        let saved = self
-            .deps
-            .hub
-            .preview_config_save(&project_of(r), config)
-            .await;
-        let at = self.now();
-        let by = r.answered_by.clone().unwrap_or_default();
-        let done = self
-            .change_from(&r.request_id, RequestState::Approved, |r| {
-                r.finished_at = Some(fleetd_contracts::ids::Timestamp(at));
-                match &saved {
-                    Ok(()) => {
-                        r.state = RequestState::Ran;
-                        r.evidence = Some(fleetd_contracts::prim::Text::unchecked(format!(
-                            "saved as the project's preview setting, approved by {by}"
-                        )));
-                    }
-                    Err(why) => {
-                        r.state = RequestState::Failed;
-                        r.evidence = Some(fleetd_contracts::prim::Text::unchecked(clip(
-                            &format!("not saved: {why}"),
-                            EVIDENCE_MAX,
-                        )));
-                    }
-                }
-            })
-            .await?;
-        self.deps.hub.wake_request(&done).await;
-        Ok(done)
     }
 
     /// `approval_answer`: a person approves or denies an open approval. A command runs on the project's node; a tool
@@ -1054,9 +975,6 @@ impl Approvals {
         if answered.permission.is_some() {
             self.answer_prompt(&answered, reason.as_deref()).await;
             return Ok(self.get(request_id).unwrap_or(answered));
-        }
-        if approve && let Some(proposed) = &answered.preview_config {
-            return self.save_preview(&answered, &proposed.config).await;
         }
         // A purchase or a secure input runs nothing here: the Navi hears the answer, and its node fills it if approved.
         if answered.purchase.is_some() || answered.secure_input.is_some() {

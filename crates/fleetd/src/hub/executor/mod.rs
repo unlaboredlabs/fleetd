@@ -85,8 +85,8 @@ const CLAUDE_TEST_TIMEOUT: Duration = Duration::from_secs(100);
 const ONEPASSWORD_TEST_TIMEOUT: Duration = Duration::from_secs(230);
 /// Forgetting a Navi's sign-ins: the node waits up to 20 s for the browser on its profile to close, then deletes it.
 const SIGNINS_TIMEOUT: Duration = Duration::from_secs(30);
-/// The node first stops the project's claude processes and waits up to 12 s for them to exit, then up to 10 s for its
-/// previews to end, removes its worktrees, and forgets a Navi's sign-ins ([`SIGNINS_TIMEOUT`]).
+/// The node first stops the project's claude processes and waits up to 12 s for them to exit, then removes its
+/// worktrees, and forgets a Navi's sign-ins ([`SIGNINS_TIMEOUT`]).
 const REMOVE_TIMEOUT: Duration = Duration::from_secs(70);
 /// The node's stop waits up to 25 s for claude to exit (its kill ladder, then a SIGKILL).
 const STOP_TIMEOUT: Duration = Duration::from_secs(40);

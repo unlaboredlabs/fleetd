@@ -67,7 +67,7 @@ pub struct NodeFacts {
     pub claude: Option<String>,
     /// Its node lists `claude_install`.
     pub can_install_claude: bool,
-    /// What runs on it that can't carry on through its node's restart (live sessions, previews), in words; None when
+    /// What runs on it that can't carry on through its node's restart (live sessions), in words; None when
     /// nothing does. Agents' runs aren't in it: they carry on by themselves.
     pub busy: Option<String>,
 }
@@ -1213,7 +1213,7 @@ impl Updates {
             );
         }
         // The node holds its agents' tool calls that haven't started, and waits for those running to finish (and for
-        // what else can't carry on through a restart: a live session, a preview), so the restart finds its agents
+        // what else can't carry on through a restart: a live session), so the restart finds its agents
         // between steps. At the deadline it updates whatever runs; Update now doesn't wait.
         let by = now_ms(self.clock.as_ref()) + ms(self.drain());
         let mut said = None;

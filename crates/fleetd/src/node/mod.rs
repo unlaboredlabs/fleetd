@@ -24,7 +24,6 @@ pub mod mcp_servers;
 pub mod onepassword_tokens;
 pub mod order_env;
 pub mod power;
-pub mod preview;
 pub mod project_env;
 pub mod relay;
 #[cfg(test)]
@@ -143,7 +142,6 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         warm_builds: None,
         enrolled: false,
         browser: None,
-        preview: None,
         device: None,
         ios: None,
         desktop: None,
@@ -366,19 +364,6 @@ async fn run_node(
     if sessions_router.is_some() {
         node_sessions.set_browser(router.clone());
     }
-    let preview_config = config.preview.clone().unwrap_or_default();
-    let previews = preview_config.enabled().then(|| {
-        let sessions = node_sessions.clone();
-        preview::Previews::for_node(
-            home,
-            &preview_config,
-            Arc::new(move |id| sessions.project_workspace(id)),
-            broker.clone(),
-        )
-    });
-    if let Some(previews) = &previews {
-        node_sessions.set_previews(previews.clone());
-    }
     let telegram = telegram::Telegram::start(home, telegram::TELEGRAM, telegram::Timing::default());
     node_sessions.set_telegram(telegram.clone());
     // The hold the node before this one kept for its update ends with it: what it held goes on now.
@@ -434,7 +419,6 @@ async fn run_node(
             box_key,
             home: home.to_path_buf(),
         }),
-        previews: previews.clone(),
         sessions: sessions_router.clone(),
         hosted,
     };
@@ -449,9 +433,6 @@ async fn run_node(
         () = shutdown_signal() => {
             telegram.shutdown();
             node_sessions.shutdown().await;
-            if let Some(previews) = &previews {
-                previews.stop_all().await;
-            }
             if let Some(router) = &sessions_router {
                 router.shutdown().await;
             }

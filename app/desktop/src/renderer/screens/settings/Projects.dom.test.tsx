@@ -505,16 +505,15 @@ describe("Settings → Projects → Repos", () => {
     expect(text).toContain("main");
     expect(text).toContain("/home/w/src/storefront on devbox");
     expect(text).toContain("Uses the default: pnpm install");
-    expect(text).toContain("Uses the project's: none");
     expect(calls).toContainEqual({ tool: "project_settings_get", input: { machineId: "devbox", projectId: "p1", repo: "web" } });
   });
 
-  it("shows two repos, each with the setup and preview that apply to it", async () => {
+  it("shows two repos, each with the setup that applies to it", async () => {
     repos = [web, api];
     answers = [{ ...settings, setup: { ...settings.setup, commands: ["pnpm install"] } }];
     repoAnswers = {
       web: answers[0] as Settings,
-      api: { ...settings, repo: "api", setup: { ...settings.setup, commands: ["go mod download", "make gen"] }, preview: { web: { start: "make serve" } } },
+      api: { ...settings, repo: "api", setup: { ...settings.setup, commands: ["go mod download", "make gen"] } },
     };
     await renderRepos();
     expect([...section().querySelectorAll('[role="listitem"]')].map((x) => x.getAttribute("aria-label"))).toEqual(["web", "api"]);
@@ -525,9 +524,7 @@ describe("Settings → Projects → Repos", () => {
     // Its checkout isn't a listed project: shown by its id, on its machine.
     expect(text).toContain("p9 on devbox");
     expect(text).toContain("go mod download; make gen");
-    expect(text).toContain("make serve");
     expect(text).not.toContain("Uses the default");
-    expect(text).not.toContain("Uses the project's");
   });
 
   it("adds a repo by its path on the machine, or clones one from GitHub", async () => {

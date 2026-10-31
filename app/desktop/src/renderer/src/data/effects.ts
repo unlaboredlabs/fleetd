@@ -114,8 +114,6 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // A session started, changed hands, ended or its recording landed: the Sessions view's list reads it again. A
   // recording, once read, never changes.
   if (type === "browser.session" || type === "screen.wait") out.push({ tool: "browser_sessions" });
-  // A preview started, moved a step, became ready, ended or failed: Try it reads the project's previews again.
-  if (type === "preview.state") out.push({ tool: "previews_list" });
   // The hub's setup steps read their status from the doctor's checks.
   if (type === "doctor.changed") out.push({ tool: "doctor_list" }, { tool: "setup_list" });
   // Add machine: a run started, moved a step or ended.

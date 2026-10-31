@@ -881,7 +881,6 @@ fn request(
             secret: r.secret,
             gated: r.gated,
             permission: r.permission,
-            preview_config: None,
             purchase: None,
             secure_input: None,
             at: AT.to_owned().into(),

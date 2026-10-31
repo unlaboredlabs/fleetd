@@ -344,11 +344,6 @@ pub enum LeadCall {
     SecureInputFilled(crate::secure_input::SecureInputFilledCall),
     /// Made by the node for its agent's session tools (machine_roles.rs): placed by the hub, relayed when elsewhere.
     SessionRoute(crate::machine_roles::SessionRouteCall),
-    /// Try it (preview.rs): a writer's or lead's suggestion, a proposed preview setting, and the lead's start in a
-    /// turn answering the person.
-    PreviewSuggest(crate::preview::PreviewSuggestCall),
-    PreviewConfigPropose(crate::preview::PreviewConfigProposeCall),
-    PreviewStart(crate::preview::PreviewStartCall),
     SessionStep(crate::machine_roles::SessionStepCall),
     /// Navi's factory bridge (navi.rs): only a Navi's lead makes them.
     ProjectMessage(ProjectMessageCall),
@@ -563,9 +558,6 @@ pub enum LeadCallResult {
     SecureInputClaim(crate::secure_input::SecureInputClaimed),
     SecureInputFilled(RequestResult),
     SessionRoute(crate::machine_roles::SessionRouteResult),
-    PreviewSuggest(crate::preview::PreviewSuggestResult),
-    PreviewConfigPropose(RequestResult),
-    PreviewStart(crate::preview::PreviewStartResult),
     SessionStep(crate::machine_roles::SessionStepResult),
     ProjectMessage(ProjectMessageResult),
     FactoryStatus(FactoryStatusResult),

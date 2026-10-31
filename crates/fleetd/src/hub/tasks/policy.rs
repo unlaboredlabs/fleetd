@@ -1,11 +1,9 @@
 //! Who may start and steer agents: enforced on every lead-side call by the hub, whatever a prompt says or a tool list
 //! offers. A lead is depth 0 and its tasks depth 1; nothing goes deeper, so a task's agent never starts another agent.
 //! A lead has at most [`max_open_tasks`] tasks open at once.
-use fleetd_contracts::browser::BrowserSessionState;
 use fleetd_contracts::lead_calls::LeadCall;
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::memory::MemoryScope;
-use fleetd_contracts::preview::PreviewId;
 use fleetd_contracts::tasks::TaskId;
 
 /// A lead's tasks are depth 1; a call that would start an agent below that is refused.
@@ -21,9 +19,8 @@ pub fn max_open_tasks(max_agents: i64) -> usize {
 }
 
 /// The calls a task's agent makes: its review verdict (`report`), a question for its lead, reading its brief, its
-/// project's decisions and its PRs' reviews, Try it's suggestion and proposed setting (never a preview's start:
-/// only the person or a lead answering them starts one, D161), an image for its lead to show, and a wait on CI that
-/// wakes it. Only a lead closes work.
+/// project's decisions and its PRs' reviews, an image for its lead to show, and a wait on CI that wakes it. Only a
+/// lead closes work.
 pub const WORKER_OPS: &[&str] = &[
     "review_verdict",
     "ask_lead",
@@ -31,8 +28,6 @@ pub const WORKER_OPS: &[&str] = &[
     "decisions_search",
     "review_read",
     "wait_ci",
-    "preview_suggest",
-    "preview_config_propose",
     "chat_image",
 ];
 /// The calls a task's node makes for it: its browser sessions (node/browser), and a Navi's purchases in them.
@@ -49,8 +44,6 @@ pub const NODE_OPS: &[&str] = &[
     "session_route",
     "session_step",
 ];
-/// What an ended preview's session still sends: its recording, and its report as it closes.
-pub const ENDED_PREVIEW_OPS: &[&str] = &["browser_session", "browser_recording_part"];
 /// The calls that start an agent.
 pub const SPAWN_OPS: &[&str] = &["task_spawn"];
 /// The only calls of a nightly memory refresh's session (hub/memory/refresh).
@@ -65,12 +58,6 @@ pub enum CallerAgent {
     Lead,
     /// A task's agent.
     Task(TaskId),
-    /// No agent: a preview's browser session, which the person holds from the start (hub/preview). Its node reports
-    /// the session and uploads its recording under the preview's id.
-    Preview(PreviewId),
-    /// That session once its preview ended, for as long as its node may still upload (hub/preview's
-    /// `HELD_UPLOAD_MS`): it only uploads its recording and reports itself closing.
-    EndedPreview(PreviewId),
     /// A project's nightly memory refresh: a lead session of its own that only reads and writes memory.
     MemoryRefresh,
 }
@@ -79,7 +66,7 @@ impl CallerAgent {
     pub fn depth(&self) -> u32 {
         match self {
             CallerAgent::Person | CallerAgent::Lead | CallerAgent::MemoryRefresh => 0,
-            CallerAgent::Task(_) | CallerAgent::Preview(_) | CallerAgent::EndedPreview(_) => 1,
+            CallerAgent::Task(_) => 1,
         }
     }
 }
@@ -109,30 +96,13 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
                 )
                 .with_fix(
                     "A task reports its review verdict (report), asks its lead (ask_lead), reads its brief \
-                     (brief_read), decisions (decisions_search) and its PRs' reviews (review_read), and may suggest \
-                     the person try its PR (preview_suggest), propose how to run it (preview_config_propose), upload \
-                     an image for your lead to show (chat_image) or wait on CI (wait_ci). Put anything else in your \
+                     (brief_read), decisions (decisions_search) and its PRs' reviews (review_read), and may upload an \
+                     image for your lead to show (chat_image) or wait on CI (wait_ci). Put anything else in your \
                      result or ask your lead.",
                 ));
             }
             Ok(())
         }
-        CallerAgent::Preview(preview) if !NODE_OPS.contains(&op) => Err(McpToolError::new(
-            ErrorCode::Forbidden,
-            format!(
-                "{op} isn't a call of preview {preview}'s session, which only reports itself and its recording."
-            ),
-        )),
-        CallerAgent::Preview(_) => Ok(()),
-        CallerAgent::EndedPreview(preview) if !ENDED_PREVIEW_OPS.contains(&op) => {
-            Err(McpToolError::new(
-                ErrorCode::Forbidden,
-                format!(
-                    "preview {preview} has ended: its session only uploads its recording and reports itself closing."
-                ),
-            ))
-        }
-        CallerAgent::EndedPreview(_) => Ok(()),
         CallerAgent::MemoryRefresh if !MEMORY_REFRESH_OPS.contains(&op) => Err(McpToolError::new(
             ErrorCode::Forbidden,
             format!("{op} isn't a call of the nightly memory refresh, which only reads and writes memory."),
@@ -160,7 +130,7 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
     }
 }
 
-/// [`check`], and what only the call itself says: an ended preview's session reports itself closing, never live.
+/// [`check`], and what only the call itself says.
 pub fn check_call(agent: &CallerAgent, call: &LeadCall) -> Result<(), McpToolError> {
     check(agent, &fleetd_contracts::lead_calls::op_name(call))?;
     // The refresh adds to a person's own memory, but never changes or removes what is there.
@@ -175,20 +145,6 @@ pub fn check_call(agent: &CallerAgent, call: &LeadCall) -> Result<(), McpToolErr
             "The nightly refresh only adds to user memory: it never replaces or removes an entry there.",
         )
         .with_fix("Add the lesson as a new user memory entry, or leave user memory as it is."));
-    }
-    if let (CallerAgent::EndedPreview(preview), LeadCall::BrowserSession(report)) = (agent, call)
-        && matches!(
-            report.state,
-            BrowserSessionState::Live | BrowserSessionState::Expired
-        )
-    {
-        return Err(McpToolError::new(
-            ErrorCode::Forbidden,
-            format!(
-                "preview {preview} has ended, so its session can't be {}: it only reports itself closing.",
-                report.state.as_str()
-            ),
-        ));
     }
     Ok(())
 }
@@ -241,7 +197,6 @@ mod tests {
             "close",
             "gated_run",
             "claim_done",
-            "preview_start",
         ] {
             let refused = check(&task(), op).unwrap_err();
             assert_eq!(
@@ -262,61 +217,6 @@ mod tests {
                 ErrorCode::Invalid
             );
         }
-    }
-
-    #[test]
-    fn a_previews_session_only_reports_itself() {
-        let preview = CallerAgent::Preview(PreviewId::unchecked(format!("P{}", "a".repeat(32))));
-        for op in NODE_OPS {
-            assert_eq!(check(&preview, op), Ok(()), "{op}");
-        }
-        for op in [
-            "task_spawn",
-            "preview_start",
-            "preview_suggest",
-            "ask_lead",
-            "gated_run",
-        ] {
-            assert_eq!(
-                check(&preview, op).unwrap_err().code,
-                ErrorCode::Forbidden,
-                "{op}"
-            );
-        }
-    }
-
-    #[test]
-    fn an_ended_previews_session_only_uploads_and_reports_itself_closing() {
-        let ended = CallerAgent::EndedPreview(PreviewId::unchecked(format!("P{}", "a".repeat(32))));
-        for op in ENDED_PREVIEW_OPS {
-            assert_eq!(check(&ended, op), Ok(()), "{op}");
-        }
-        for op in ["browser_takeover", "session_route", "preview_suggest"] {
-            assert_eq!(
-                check(&ended, op).unwrap_err().code,
-                ErrorCode::Forbidden,
-                "{op}"
-            );
-        }
-        let report = |state: &str| -> LeadCall {
-            serde_json::from_value(serde_json::json!({
-                "op": "browser_session", "sessionId": format!("B{}", "c".repeat(32)), "threadId": "t",
-                "purpose": "Try #14", "state": state, "startedAt": "2026-10-26T10:00:00.000Z", "files": [],
-            }))
-            .unwrap()
-        };
-        for state in ["uploading", "recorded", "lost"] {
-            assert_eq!(check_call(&ended, &report(state)), Ok(()), "{state}");
-        }
-        for state in ["live", "expired"] {
-            assert_eq!(
-                check_call(&ended, &report(state)).unwrap_err().code,
-                ErrorCode::Forbidden,
-                "{state}"
-            );
-        }
-        let running = CallerAgent::Preview(PreviewId::unchecked(format!("P{}", "a".repeat(32))));
-        assert_eq!(check_call(&running, &report("live")), Ok(()));
     }
 
     #[test]

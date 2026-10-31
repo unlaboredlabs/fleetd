@@ -9,7 +9,7 @@ import { useData, useDataLayer } from "../../src/data/react";
 import { HubText } from "./HubText";
 import { openAddProject } from "./store";
 
-/** The hub gives the node 70 s: it stops the project's processes, ends its previews and browser, then removes it. */
+/** The hub gives the node 70 s: it stops the project's processes and browser, then removes it. */
 const REMOVE_MS = 80_000;
 
 export interface RemoveTarget {

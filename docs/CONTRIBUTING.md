@@ -37,10 +37,6 @@ app keeps (the saved key, the migration marker) and keeps it off the OS keychain
 hub with `fixtures/<name>.json` (or an absolute path; `FLEETD_FIXTURE_DIR` moves the directory) and shows a
 "Sample data" banner; a release build ignores it.
 
-`pnpm fixtures && PORT=5180 pnpm web:preview` serves the renderer in a plain browser on `127.0.0.1:$PORT`, no Electron
-and no hub: `web/stand-in.ts` stands in for the preload with a fixture (`?fixture=<name>`, `agents-work` by default;
-the picker in the corner lists them). It is what a PR's Try it runs; only `web/vite.config.ts` loads it, never a build.
-
 `pnpm build` makes the release build, which refuses to start with `--remote-debugging-*` or `--inspect*`.
 `pnpm build:test` (and `pnpm qa:build`) set `MAIN_VITE_FLEETD_TEST_BUILD=1`, which is inlined at build time, for
 DevTools-driven tests; never ship one. `pnpm debug-guard-check` checks both.

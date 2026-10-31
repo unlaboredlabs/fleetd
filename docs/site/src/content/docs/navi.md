@@ -248,8 +248,8 @@ session is still signed in there. No login page, captcha or approve-on-your-phon
   aren't saved either: each session that fills one still refuses to read it back.
 - **Where:** on the Navi's machine, under fleetd's node directory (`browser/navis/<project id>`). The Navi's sandbox
   hides that directory, so the Navi's commands can't read the cookies. Only the browser fleetd starts for it uses them.
-- **Whose:** that Navi's alone. Another Navi, a project's agents and the browser in a preview each start with a fresh,
-  empty profile that is thrown away when the session ends.
+- **Whose:** that Navi's alone. Another Navi and a project's agents each start with a fresh, empty profile that is
+  thrown away when the session ends.
 - **One at a time:** one browser runs on the profile. If the Navi opens a second session while one is open in another
   of its chats, the second is refused until the first ends.
 - **Its machine only:** a Navi's browser always runs on the Navi's own machine, where its profile and folder are,

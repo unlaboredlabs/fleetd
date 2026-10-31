@@ -102,7 +102,7 @@ pub async fn route(
                 "A session belongs to an agent's session, and this call comes from none.",
             ));
         }
-        CallerAgent::Lead | CallerAgent::Preview(_) | CallerAgent::EndedPreview(_) => None,
+        CallerAgent::Lead => None,
         CallerAgent::Task(t) => Some(t.clone()),
     };
     let Some(thread) = call.frame.thread_id.clone() else {
