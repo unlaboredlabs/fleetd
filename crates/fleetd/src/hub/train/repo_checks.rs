@@ -1,5 +1,6 @@
-//! A repo's own train checks. A repo that commits `.fleetd/train.json` on its base sets them there: `fastChecks`, more checks the train waits for on each PR and batch, and `afterMerge`, checks that never stop
-//! a merge. Beside the workflows, a renamed job and its name here change in one PR.
+//! A repo's own train checks. A repo that commits `.fleetd/train.json` on its base sets them there: `fastChecks`, more
+//! checks the train waits for on each PR and batch, and `afterMerge`, checks that never stop a merge. Beside the
+//! workflows, a renamed job and its name here change in one PR.
 use fleetd_contracts::project_settings::{CheckName, TRAIN_CHECKS_MAX, TrainSettings};
 use serde::Deserialize;
 

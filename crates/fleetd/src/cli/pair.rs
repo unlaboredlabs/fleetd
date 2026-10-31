@@ -478,8 +478,7 @@ mod tests {
 
     #[test]
     fn reads_the_listen_address_of_a_running_hub() {
-        let line =
-            "/home/u/.fleetd/bin/fleetd hub start --home /h --listen 127.0.0.1:4796 --queue-ttl 60";
+        let line = "/home/u/.fleetd/bin/fleetd hub start --home /h --listen 127.0.0.1:4796";
         assert_eq!(listen_from_args(line).as_deref(), Some("127.0.0.1:4796"));
         assert_eq!(
             listen_from_args("fleetd hub start --listen=[::1]:4790").as_deref(),

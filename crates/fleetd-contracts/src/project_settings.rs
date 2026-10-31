@@ -190,13 +190,13 @@ pub const TRAIN_CHECKS_MAX: usize = 50;
 /// A check as GitHub names it on a commit: a check run's name, such as `test (ubuntu-latest)`, or a status's context.
 pub type CheckName = crate::prim::Text<1, 200>;
 
-/// How the merge train treats a repo's checks, from its base's `.fleetd/train.json`. It waits only for its fast set: the checks the base
-/// branch requires, read from its ruleset or branch protection, plus `fastChecks`, each until it reports, however late
-/// it starts. It never waits for any other check; one of those that has already failed when the fast set is green
-/// still stops the merge, unless it is in `afterMerge`. A check the base requires is always in the fast set: GitHub
-/// won't merge without it. With no required check and none added, it waits for every check. After a merge it watches
-/// every check outside the fast set on the merged commit; one that fails there opens a fix order for the project,
-/// once per failure.
+/// How the merge train treats a repo's checks, from its base's `.fleetd/train.json`. It waits only for its fast set:
+/// the checks the base branch requires, read from its ruleset or branch protection, plus `fastChecks`, each until it
+/// reports, however late it starts. It never waits for any other check; one of those that has already failed when the
+/// fast set is green still stops the merge, unless it is in `afterMerge`. A check the base requires is always in the
+/// fast set: GitHub won't merge without it. With no required check and none added, it waits for every check. After a
+/// merge it watches every check outside the fast set on the merged commit; one that fails there opens a fix order for
+/// the project, once per failure.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TrainSettings {
