@@ -1,7 +1,6 @@
 //! What usage_status reads from a machine: how its Claude runner is logged in. It comes from the node's `runner_info`,
 //! which names the login kind and never carries a credential.
-//! The executor implements [`UsageSource`] over the node link.
-use super::ports::BoxFut;
+//! `OpsPorts::read` (wire.rs) reads it over the node link.
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -16,11 +15,6 @@ pub enum LoginKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UsageReading {
     pub login: LoginKind,
-}
-
-/// Fails (with the executor's message) when the machine is offline.
-pub trait UsageSource: Send + Sync {
-    fn read(&self, machine_id: &str) -> BoxFut<'_, Result<UsageReading, String>>;
 }
 
 /// `RunnerInfo.login_kind`: "subscription", "api_key", "token" (an `ANTHROPIC_AUTH_TOKEN` gateway, which always

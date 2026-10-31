@@ -15,13 +15,9 @@ pub use crate::hub::store::now_ms;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// `HubDb::with` for these areas' own queries. A failed query is a defect here.
-pub trait DbRun {
-    fn run<R>(&self, f: impl FnOnce(&Connection) -> R) -> R;
-}
-
-impl DbRun for HubDb {
-    fn run<R>(&self, f: impl FnOnce(&Connection) -> R) -> R {
+impl HubDb {
+    /// `HubDb::with` for the queue's and wakes' own queries. A failed query is a defect here.
+    pub fn run<R>(&self, f: impl FnOnce(&Connection) -> R) -> R {
         let mut out = None;
         self.with(|conn| {
             out = Some(f(conn));

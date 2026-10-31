@@ -22,7 +22,7 @@ use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ThreadId, ThreadRef};
 use fleetd_contracts::sessions::SendMode;
 use fleetd_contracts::steer::SteerId;
-use ports::{DbRun, ExecutorError, SendOpts, ThreadWriter, emit, now_ms};
+use ports::{ExecutorError, SendOpts, ThreadWriter, emit, now_ms};
 
 /// How long a write to an offline machine waits in the queue.
 pub const DEFAULT_TTL: Duration = Duration::from_secs(24 * 3600);

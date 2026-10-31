@@ -5,11 +5,8 @@ use super::checks::{self, CmdOutcome, DoctorCheck, Entry, HostProbe, MachineView
 use super::config::{HubConfig, MachineSetup, Platform, restart_command};
 use crate::clock::Clock;
 use crate::hub::store::{iso_ms, system_ms};
-use crate::hub::usage::ports::{BoxFut, EventLog, NewEvent};
-use crate::hub::usage::service::UsageStatus;
+use crate::hub::usage::ports::{EventLog, NewEvent};
 use crate::hub::usage::time::clip;
-use fleetd_contracts::node_link::NodeDisk;
-use fleetd_contracts::sessions::{RunnerInfo, WorktreeBase};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
@@ -41,70 +38,14 @@ pub struct ActionOutcome {
     pub probe: Option<HostProbe>,
 }
 
-/// The hub services the checks read.
-pub trait DoctorFleet: Send + Sync {
-    fn machines(&self) -> BoxFut<'_, Vec<MachineView>>;
-    /// Usage::status with the machine's UsageSource reading.
-    fn usage(&self, machine_id: &str) -> BoxFut<'_, UsageStatus>;
-    /// NodeCommands::run_action: `probe`; `Err` is the link's message.
-    fn node_action(
-        &self,
-        machine_id: &str,
-        action: &str,
-    ) -> BoxFut<'_, Result<ActionOutcome, String>>;
-    /// The node's runner (`runner_info` over the link): claude's version, login and conformance. `None` while the
-    /// machine's node can't answer it; its claude checks then wait for it.
-    fn runner_info(&self, machine_id: &str) -> BoxFut<'_, Option<RunnerInfo>>;
-    /// Free space where the machine's worktrees live, as its node's heartbeat last reported it, and why the guard
-    /// holds new agents there, if it does.
-    fn guard(&self, _machine_id: &str) -> (Option<NodeDisk>, Option<String>) {
-        (None, None)
-    }
-    /// Whether the machine can host android sessions, as its node's heartbeat last reported it.
-    fn android(&self, _machine_id: &str) -> Option<fleetd_contracts::node_link::AndroidHealth> {
-        None
-    }
-    /// Whether the machine can host iOS sessions, as its node's heartbeat last reported it.
-    fn ios(&self, _machine_id: &str) -> Option<fleetd_contracts::node_link::IosHealth> {
-        None
-    }
-    /// Whether the machine can host Linux desktop sessions, as its node's heartbeat last reported it.
-    fn desktop(&self, _machine_id: &str) -> Option<fleetd_contracts::node_link::DesktopHealth> {
-        None
-    }
-    /// Where each of the machine's projects last started a worktree, by project title.
-    fn bases(&self, _machine_id: &str) -> Vec<(String, WorktreeBase)> {
-        Vec::new()
-    }
-    /// The repos whose ready PRs the merge train holds for want of CI.
-    fn repos_without_ci(&self) -> Vec<String> {
-        Vec::new()
-    }
-    /// The machine's recovery breaker while it is open: its agents kept dying, so their resumes wait.
-    fn recovery_paused(&self, _machine_id: &str) -> Option<checks::RecoveryPaused> {
-        None
-    }
-    /// Sessions the machine's node runs that no task or lead owns, as the sweep reported them.
-    fn unowned_sessions(&self, _machine_id: &str) -> Vec<checks::UnownedSession> {
-        Vec::new()
-    }
-    /// The hub's Claude accounts (teams step 8), for the Claude checks; `None` while they can't be read.
-    fn claude_setup(&self) -> BoxFut<'_, Option<checks::ClaudeSetupView>> {
-        Box::pin(async { None })
-    }
-    /// What the hub keeps of its optional setup: people, the GitHub App.
-    fn setup_facts(&self) -> checks::SetupFacts {
-        checks::SetupFacts::default()
-    }
-}
-
 pub struct DoctorDeps {
     /// Where the hub listens, for its own reachability check.
     pub listen_host: String,
     pub listen_port: u16,
     /// `<hub home>`, whose setup.json is read at each run.
     pub home: std::path::PathBuf,
-    pub fleet: Arc<dyn DoctorFleet>,
+    /// The hub services the checks read.
+    pub fleet: Arc<crate::hub::usage::wire::OpsPorts>,
     pub events: Arc<dyn EventLog>,
     pub clock: Arc<dyn Clock>,
 }

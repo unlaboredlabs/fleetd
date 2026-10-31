@@ -19,7 +19,7 @@ use tokio::task::JoinHandle;
 use crate::clock::Clock;
 use crate::hub::queue::WriteQueue;
 use crate::hub::queue::js_round;
-use crate::hub::queue::ports::{DbRun, UsageHold, emit, now_ms};
+use crate::hub::queue::ports::{UsageHold, emit, now_ms};
 use crate::hub::store::{EventLog, HubDb, NewEvent};
 use crate::hub::store::{iso_ms, parse_ms};
 use fleetd_contracts::events::HubEventType;

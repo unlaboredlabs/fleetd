@@ -2,7 +2,7 @@
 //! `Hub` exists) and bound to it in `serve::start_loops`. Every method reads the other areas through `Hub`.
 use super::ports::{self, BoxFut, NewEvent, ThreadRef, WaitInput, WaitPage};
 use super::service::{UsageOwners, UsageQueue};
-use super::source::{UsageReading, UsageSource};
+use super::source::UsageReading;
 use super::state::{Owner, ParkedKind, ParkedThread};
 use crate::hub::api::Hub;
 use crate::hub::store;
@@ -198,8 +198,9 @@ fn machine(m: &str) -> Option<fleetd_contracts::ids::MachineId> {
     convert(&m)
 }
 
-impl UsageSource for OpsPorts {
-    fn read(&self, machine_id: &str) -> BoxFut<'_, Result<UsageReading, String>> {
+impl OpsPorts {
+    /// The machine's login, from its runner; fails (with the executor's message) when the machine is offline.
+    pub fn read(&self, machine_id: &str) -> BoxFut<'_, Result<UsageReading, String>> {
         let m = machine(machine_id);
         Box::pin(async move {
             let m = m.ok_or("not a machine id")?;
@@ -216,13 +217,13 @@ impl UsageSource for OpsPorts {
     }
 }
 
-use crate::hub::doctor::DoctorFleet;
 use crate::hub::doctor::checks::MachineView;
 use crate::hub::doctor::service::ActionOutcome;
 use crate::hub::usage::service::UsageStatus;
 
-impl DoctorFleet for OpsPorts {
-    fn machines(&self) -> BoxFut<'_, Vec<MachineView>> {
+/// What the doctor's checks read from the hub.
+impl OpsPorts {
+    pub fn machines(&self) -> BoxFut<'_, Vec<MachineView>> {
         Box::pin(async move {
             self.hub()
                 .store
@@ -231,17 +232,15 @@ impl DoctorFleet for OpsPorts {
                 .unwrap_or_default()
         })
     }
-    fn usage(&self, machine_id: &str) -> BoxFut<'_, UsageStatus> {
+    pub fn usage(&self, machine_id: &str) -> BoxFut<'_, UsageStatus> {
         let m = machine_id.to_string();
         Box::pin(async move {
             let hub = self.hub();
-            hub.usage
-                .status(&m, UsageSource::read(self, &m).await)
-                .await
+            hub.usage.status(&m, self.read(&m).await).await
         })
     }
     /// The runner as the node last reported it (pushed events keep it fresh), else asked for now.
-    fn runner_info(
+    pub fn runner_info(
         &self,
         machine_id: &str,
     ) -> BoxFut<'_, Option<fleetd_contracts::sessions::RunnerInfo>> {
@@ -255,7 +254,7 @@ impl DoctorFleet for OpsPorts {
             }
         })
     }
-    fn guard(
+    pub fn guard(
         &self,
         machine_id: &str,
     ) -> (
@@ -268,22 +267,22 @@ impl DoctorFleet for OpsPorts {
         let link = &self.hub().link;
         (link.load(&m).and_then(|l| l.disk), link.paused(&m))
     }
-    fn android(&self, machine_id: &str) -> Option<fleetd_contracts::node_link::AndroidHealth> {
+    pub fn android(&self, machine_id: &str) -> Option<fleetd_contracts::node_link::AndroidHealth> {
         let m = machine(machine_id)?;
         self.hub().link.load(&m).and_then(|l| l.android)
     }
-    fn ios(&self, machine_id: &str) -> Option<fleetd_contracts::node_link::IosHealth> {
+    pub fn ios(&self, machine_id: &str) -> Option<fleetd_contracts::node_link::IosHealth> {
         let m = machine(machine_id)?;
         self.hub().link.load(&m).and_then(|l| l.ios)
     }
-    fn desktop(&self, machine_id: &str) -> Option<fleetd_contracts::node_link::DesktopHealth> {
+    pub fn desktop(&self, machine_id: &str) -> Option<fleetd_contracts::node_link::DesktopHealth> {
         let m = machine(machine_id)?;
         self.hub().link.load(&m).and_then(|l| l.desktop)
     }
-    fn repos_without_ci(&self) -> Vec<String> {
+    pub fn repos_without_ci(&self) -> Vec<String> {
         self.hub().train.repos_without_ci()
     }
-    fn setup_facts(&self) -> crate::hub::doctor::checks::SetupFacts {
+    pub fn setup_facts(&self) -> crate::hub::doctor::checks::SetupFacts {
         let hub = self.hub();
         let people = crate::hub::people::People::new(hub.db.clone(), hub.clock.clone());
         crate::hub::doctor::checks::SetupFacts {
@@ -291,7 +290,10 @@ impl DoctorFleet for OpsPorts {
             github_app: hub.github_app.get().ok().flatten(),
         }
     }
-    fn bases(&self, machine_id: &str) -> Vec<(String, fleetd_contracts::sessions::WorktreeBase)> {
+    pub fn bases(
+        &self,
+        machine_id: &str,
+    ) -> Vec<(String, fleetd_contracts::sessions::WorktreeBase)> {
         let hub = self.hub();
         hub.tasks
             .latest_bases(machine_id)
@@ -307,7 +309,7 @@ impl DoctorFleet for OpsPorts {
             })
             .collect()
     }
-    fn recovery_paused(
+    pub fn recovery_paused(
         &self,
         machine_id: &str,
     ) -> Option<crate::hub::doctor::checks::RecoveryPaused> {
@@ -321,7 +323,7 @@ impl DoctorFleet for OpsPorts {
             until: crate::hub::tasks::sweep::clock_time(paused.until_ms),
         })
     }
-    fn claude_setup(&self) -> BoxFut<'_, Option<crate::hub::doctor::checks::ClaudeSetupView>> {
+    pub fn claude_setup(&self) -> BoxFut<'_, Option<crate::hub::doctor::checks::ClaudeSetupView>> {
         Box::pin(async move {
             let hub = self.hub();
             let read = || -> Result<_, crate::hub::store::StoreError> {
@@ -351,7 +353,7 @@ impl DoctorFleet for OpsPorts {
             logged(read(), "reading the hub's Claude accounts")
         })
     }
-    fn unowned_sessions(
+    pub fn unowned_sessions(
         &self,
         machine_id: &str,
     ) -> Vec<crate::hub::doctor::checks::UnownedSession> {
@@ -368,7 +370,7 @@ impl DoctorFleet for OpsPorts {
             })
             .collect()
     }
-    fn node_action(
+    pub fn node_action(
         &self,
         machine_id: &str,
         action: &str,
