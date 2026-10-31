@@ -20,10 +20,8 @@
 //! text deltas of one message are already read and waiting, they go out as one [`RunnerEvent::Delta`]; a delta is
 //! never held back waiting for more. The 100 ms per-session window of §3.5 is the session service's.
 use std::collections::VecDeque;
-use std::io::Write;
 use std::os::unix::process::ExitStatusExt;
-use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
@@ -49,8 +47,6 @@ const RESWEEPS: usize = 2;
 /// Events waiting for the session service. Past this, stdout is no longer read, so claude blocks on its own writes
 /// instead of the node buffering without bound. Kill timers and commands keep running.
 const QUEUE_MAX: usize = 1024;
-/// Transcripts are cut to their newer half past this size.
-const TRANSCRIPT_MAX: u64 = 20 * 1024 * 1024;
 
 enum Out {
     Stdout(String),
@@ -69,12 +65,7 @@ enum Phase {
     Killed,
 }
 
-pub(super) fn start(
-    mut child: Child,
-    marker: String,
-    mapper: StreamMapper,
-    transcript: Option<PathBuf>,
-) -> SessionHandle {
+pub(super) fn start(mut child: Child, marker: String, mapper: StreamMapper) -> SessionHandle {
     let pid = child.id().unwrap_or_default();
     process::track(pid as i32);
     let (out_tx, out_rx) = mpsc::channel(64);
@@ -96,7 +87,6 @@ pub(super) fn start(
         marker,
         mapper,
         stdin,
-        transcript: transcript.map(Transcript::open),
         queue: VecDeque::new(),
         pending_delta: None,
         swept: Vec::new(),
@@ -119,7 +109,6 @@ struct Session {
     mapper: StreamMapper,
     /// `None` once stdin is closed.
     stdin: Option<mpsc::UnboundedSender<String>>,
-    transcript: Option<Transcript>,
     queue: VecDeque<RunnerEvent>,
     pending_delta: Option<RunnerEvent>,
     /// Everything any sweep of this session found, killed again at the exit.
@@ -223,10 +212,6 @@ impl Session {
         };
         let events = self.mapper.exited(exit, &Now::system());
         self.push(events);
-        // The transcript is complete by the time anyone sees the exit.
-        if let Some(transcript) = self.transcript.take() {
-            transcript.close().await;
-        }
         self.flush_delta();
         // In its own task, so the exit is not held up by it. A later spawn of the session has another marker.
         tokio::spawn(resweep(self.marker.clone()));
@@ -243,7 +228,6 @@ impl Session {
         match out {
             Out::Stdout(line) => match serde_json::from_str::<Line>(&line) {
                 Ok(decoded) => {
-                    self.record("out", &line, true);
                     let mapped = self.mapper.feed(decoded, &Now::system());
                     for reply in mapped.replies {
                         self.write(reply);
@@ -252,14 +236,12 @@ impl Session {
                 }
                 // Not stream-json (a warning printed to stdout): keep it with stderr, where a failure shows it.
                 Err(_) => {
-                    self.record("out", &line, false);
                     if !line.trim().is_empty() {
                         self.mapper.stderr(&line);
                     }
                 }
             },
             Out::Stderr(line) => {
-                self.record("stderr", &line, false);
                 self.mapper.stderr(&line);
             }
             Out::Eof => {}
@@ -357,7 +339,6 @@ impl Session {
             return false;
         };
         let line = serde_json::to_string(&input).expect("stdin lines serialize");
-        self.record("in", &line, true);
         stdin.send(line).is_ok()
     }
 
@@ -386,12 +367,6 @@ impl Session {
     fn flush_delta(&mut self) {
         if let Some(delta) = self.pending_delta.take() {
             self.queue.push_back(delta);
-        }
-    }
-
-    fn record(&self, dir: &str, line: &str, json: bool) {
-        if let Some(transcript) = &self.transcript {
-            transcript.record(dir, line, json);
         }
     }
 }
@@ -455,76 +430,6 @@ async fn write_lines(mut stdin: ChildStdin, mut lines: mpsc::UnboundedReceiver<S
             break;
         }
     }
-}
-
-/// Raw stdin, stdout and stderr in the fixtures' line format, so a transcript can become a fixture. Written by its
-/// own thread so disk never delays the stream.
-struct Transcript {
-    tx: std::sync::mpsc::Sender<String>,
-    writer: std::thread::JoinHandle<()>,
-    started: Instant,
-}
-
-impl Transcript {
-    fn open(path: PathBuf) -> Self {
-        let (tx, rx) = std::sync::mpsc::channel::<String>();
-        let writer = std::thread::spawn(move || {
-            let Ok(mut file) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&path)
-            else {
-                return;
-            };
-            let mut size = file.metadata().map_or(0, |m| m.len());
-            for record in rx {
-                if file.write_all(record.as_bytes()).is_err() {
-                    return;
-                }
-                size += record.len() as u64;
-                if size > TRANSCRIPT_MAX {
-                    match keep_newer_half(&path) {
-                        Ok((reopened, kept)) => (file, size) = (reopened, kept),
-                        Err(_) => return,
-                    }
-                }
-            }
-        });
-        Self {
-            tx,
-            writer,
-            started: Instant::now(),
-        }
-    }
-
-    async fn close(self) {
-        drop(self.tx);
-        let writer = self.writer;
-        let _ = tokio::task::spawn_blocking(move || writer.join()).await;
-    }
-
-    fn record(&self, dir: &str, line: &str, json: bool) {
-        let ms = self.started.elapsed().as_millis();
-        let record = if json {
-            format!("{{\"dir\":\"{dir}\",\"ms\":{ms},\"msg\":{line}}}\n")
-        } else {
-            let raw = serde_json::to_string(line).unwrap_or_default();
-            format!("{{\"dir\":\"{dir}\",\"ms\":{ms},\"raw\":{raw}}}\n")
-        };
-        let _ = self.tx.send(record);
-    }
-}
-
-fn keep_newer_half(path: &PathBuf) -> std::io::Result<(std::fs::File, u64)> {
-    let bytes = std::fs::read(path)?;
-    let half = bytes.len() / 2;
-    let start = bytes[half..]
-        .iter()
-        .position(|b| *b == b'\n')
-        .map_or(bytes.len(), |i| half + i + 1);
-    std::fs::write(path, &bytes[start..])?;
-    let file = std::fs::OpenOptions::new().append(true).open(path)?;
-    Ok((file, (bytes.len() - start) as u64))
 }
 
 #[cfg(all(test, target_os = "linux"))]

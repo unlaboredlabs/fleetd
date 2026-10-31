@@ -109,7 +109,7 @@ pub(crate) fn session_env(var: impl Fn(&str) -> Option<String>) -> Vec<(String, 
 /// Where sessions live and what their processes get.
 #[derive(Clone, Debug)]
 pub struct SessionConfig {
-    /// The node home: `worktrees/`, `sessions/<id>/` (the MCP config) and `transcripts/` live here.
+    /// The node home: `worktrees/` and `sessions/<id>/` (the MCP config) live here.
     pub home: PathBuf,
     /// A dedicated `CLAUDE_CONFIG_DIR` for every session (`node join --claude-config-dir`). None: the user's own
     /// claude setup (`~/.claude`), so their login, proxy settings and MCP servers work as in their own shell.
@@ -421,7 +421,7 @@ fn runner_error(e: RunnerError) -> SessionError {
     }
 }
 
-/// Ids become path components (worktrees, transcripts), so they are kept to a safe alphabet.
+/// Ids become path components (worktrees), so they are kept to a safe alphabet.
 pub(crate) fn path_safe(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
@@ -2605,9 +2605,6 @@ impl SessionService {
             id,
         );
         super::secrets::write_atomic(&mcp, session_mcp.json.as_bytes())?;
-        let transcripts = config.home.join("transcripts");
-        super::config::mkdir_private(&transcripts)?;
-        let transcript = transcripts.join(format!("{id}.jsonl"));
 
         let mut env = config.runner_env();
         // The session's Claude account in place of the machine's own login and gateway, read at each start. One the
@@ -2800,7 +2797,6 @@ impl SessionService {
             settings: Some(settings),
             plugin_dirs,
             env,
-            transcript: Some(transcript),
             host_dir: sandbox.is_none().then(|| hosts_dir(&config.home).join(id)),
             sandbox,
             isolated,

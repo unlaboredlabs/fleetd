@@ -768,7 +768,6 @@ impl Runner for ClaudeRunner {
                 exe,
                 dir,
                 session_id: &spec.session_id,
-                transcript: spec.transcript.as_deref(),
                 program: &self.binary,
                 args: self.args(&spec),
                 cwd: &spec.cwd,
@@ -838,7 +837,7 @@ impl Runner for ClaudeRunner {
             scope::failed(&why);
         }
         let mapper = StreamMapper::new(spec.session_id.clone(), self.classify.clone());
-        Ok(session::start(child, marker, mapper, spec.transcript))
+        Ok(session::start(child, marker, mapper))
     }
 
     fn profile(&self, profile: &ProfileName) -> ProfileModel {
@@ -858,7 +857,6 @@ pub fn hosted(
     args: Vec<String>,
     session_id: &str,
     marker: String,
-    transcript: Option<PathBuf>,
 ) -> std::io::Result<SessionHandle> {
     process::adopt_orphans();
     let child = tokio::process::Command::new(program)
@@ -871,7 +869,7 @@ pub fn hosted(
         .kill_on_drop(true)
         .spawn()?;
     let mapper = StreamMapper::new(session_id.to_owned(), Arc::new(failure::classify));
-    Ok(session::start(child, marker, mapper, transcript))
+    Ok(session::start(child, marker, mapper))
 }
 
 fn effort_flag(effort: Effort) -> &'static str {
@@ -1347,7 +1345,6 @@ mod tests {
             settings: None,
             plugin_dirs: Vec::new(),
             env: Vec::new(),
-            transcript: None,
             sandbox: None,
             host_dir: None,
             isolated: false,

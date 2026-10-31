@@ -51,7 +51,6 @@ fn spec(dir: &Path) -> SessionSpec {
             ),
             ("GO".into(), dir.join("go").display().to_string()),
         ],
-        transcript: Some(dir.join("transcript.jsonl")),
         sandbox: None,
         host_dir: Some(dir.join("hosts/s")),
         isolated: false,
@@ -173,9 +172,6 @@ async fn a_hosted_session_outlives_its_node_and_each_event_arrives_once() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     assert!(stat(registration.pid).is_none());
-    // Its transcript is the host's to write, as the node's was.
-    let transcript = std::fs::read_to_string(dir.path().join("transcript.jsonl")).unwrap();
-    assert!(transcript.contains("\"model\":\"m6\""));
 }
 
 /// A machine removed for good: `fleetd session-host stop-all` (a step of `fleetd machine remove`) ends every session
