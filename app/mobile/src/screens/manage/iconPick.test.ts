@@ -16,4 +16,8 @@ describe("the icon sheet's pick", () => {
     expect(standing(pickOver(JOY, undefined), "0f1e2d3c4b5a6978")).toBeNull();
     expect(standing(pickOver(JOY, "a1b2c3d4e5f60718"), "0f1e2d3c4b5a6978")).toBeNull();
   });
+
+  it("stays when the photo it was picked over is removed: the face is still the person's choice", () => {
+    expect(standing(pickOver(JOY, "a1b2c3d4e5f60718"), undefined)).toEqual(JOY);
+  });
 });
