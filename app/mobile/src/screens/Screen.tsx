@@ -7,7 +7,9 @@
 // a second, two images stacked so a new frame never flashes while it decodes. Pinch zooms about the fingers, two
 // fingers move the zoomed page. Yours, one finger drives the page (screen.ts): a tap clicks, a drag scrolls, a touch
 // held a moment presses and drags, for a slider or a press-and-hold check; the keyboard button types into the page.
-// Leaving while it's yours asks whether to hand it back first, so its agent isn't left waiting.
+// Leaving while it's yours asks whether to hand it back first, so its agent isn't left waiting. A browser that's yours
+// has Safari's moves too: tap its site at the top to type where it goes (screen.ts addressOf), reload beside it, and
+// back and forward by the keyboard button.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
@@ -16,9 +18,10 @@ import { GestureDetector, usePanGesture, usePinchGesture, useSimultaneousGesture
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import Animated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { scheduleOnRN } from "react-native-worklets";
 import { zoomAbout, isNavi, type BrowserFrame } from "../desktop";
 import { useHub, type RootParams } from "../hubContext";
-import { cardOf, clampView, controlLine, controlOf, ENTER, fingerCancel, fingerDown, fingerHeld, fingerMove, fingerUp, FramePacer, HOLD_MS, hostOf, IDLE, BACKSPACE, KIND_WORD, MAX_ZOOM, pixelsPerPoint, toFrame, typed, type Finger, type Size, type Step } from "../screen";
+import { addressable, addressOf, BACKSPACE, cardOf, clampView, controlLine, controlOf, ENTER, FramePacer, hostOf, KIND_WORD, MAX_ZOOM, NAVIGATE, PageTouches, pixelsPerPoint, toFrame, typed, type Navigation, type Size } from "../screen";
 import { space, type, useTheme } from "../theme";
 import { Avatar } from "../ui/Avatar";
 import { Glass, GlassGroup } from "../ui/Glass";
@@ -172,69 +175,67 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
     },
   });
 
-  // One finger, on the JS thread: the page's while it's yours (screen.ts's finger), else it moves the zoomed page.
-  const finger = useRef<Finger>(IDLE);
-  const hold = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const off = useRef(false);
+  // One finger. Its gesture runs on the UI thread, where what it captured stays as the view first drew it (the page
+  // not yet yours): it only moves the zoomed page while you watch (yoursV, a shared value) and hands each touch to the
+  // JS thread, where PageTouches (screen.ts) reads whether the page is yours as the touch lands.
   const latest = useRef({ yours, box, frameSize });
   latest.current = { yours, box, frameSize };
-  const view = () => ({ zoom: zoom.value, x: x.value, y: y.value });
-  const touch = (px: number, py: number) => {
-    const { box: b, frameSize: f } = latest.current;
-    return { at: { x: px, y: py }, frame: toFrame({ x: px, y: py }, b, f, view()), t: Date.now() };
-  };
-  const apply = (step: Step) => {
-    finger.current = step.finger;
-    for (const input of step.send) session.input(sessionId, input);
-    if (step.send.some((i) => i.kind === "mouse" && i.action === "pressed")) haptics.tap();
-  };
-  const clearHold = () => {
-    if (hold.current !== undefined) clearTimeout(hold.current);
-    hold.current = undefined;
-  };
+  const yoursV = useSharedValue(yours);
+  useEffect(() => {
+    yoursV.value = yours;
+  }, [yoursV, yours]);
+  const touches = useMemo(
+    () =>
+      new PageTouches({
+        yours: () => latest.current.yours,
+        where: (px, py) => {
+          const { box: b, frameSize: f } = latest.current;
+          return { at: { x: px, y: py }, frame: toFrame({ x: px, y: py }, b, f, { zoom: zoom.value, x: x.value, y: y.value }), t: Date.now() };
+        },
+        scale: () => pixelsPerPoint(latest.current.box, latest.current.frameSize, { zoom: zoom.value, x: x.value, y: y.value }),
+        send: (input) => {
+          session.input(sessionId, input);
+          if (input.kind === "mouse" && input.action === "pressed") haptics.tap();
+        },
+      }),
+    [session, sessionId, zoom, x, y],
+  );
+  const touchDown = useCallback((px: number, py: number) => touches.down(px, py), [touches]);
+  const touchMove = useCallback((px: number, py: number, pointers: number) => touches.move(px, py, pointers), [touches]);
+  const touchUp = useCallback((px: number, py: number) => touches.up(px, py), [touches]);
+  const touchPinch = useCallback(() => touches.pinch(), [touches]);
   const one = usePanGesture({
-    runOnJS: true,
     minDistance: 0,
     maxPointers: 1,
+    // A second finger ends this gesture before any update counts two: its touch says so first.
+    onTouchesDown: (e) => {
+      "worklet";
+      if (e.numberOfTouches > 1) scheduleOnRN(touchPinch);
+    },
     onBegin: (e) => {
-      off.current = false;
-      if (!latest.current.yours) return;
-      apply(fingerDown(finger.current, touch(e.x, e.y)));
-      clearHold();
-      hold.current = setTimeout(() => apply(fingerHeld(finger.current)), HOLD_MS);
+      "worklet";
+      scheduleOnRN(touchDown, e.x, e.y);
     },
     onUpdate: (e) => {
-      if (off.current) return;
-      // A second finger: it's a pinch, not a touch on the page.
-      if (e.numberOfPointers > 1) {
-        off.current = true;
-        clearHold();
-        return apply(fingerCancel(finger.current));
-      }
-      if (!latest.current.yours) {
-        x.value += e.changeX;
-        y.value += e.changeY;
+      "worklet";
+      if (yoursV.value) {
+        scheduleOnRN(touchMove, e.x, e.y, e.numberOfPointers);
         return;
       }
-      const before = finger.current.t;
-      apply(fingerMove(finger.current, touch(e.x, e.y), pixelsPerPoint(latest.current.box, latest.current.frameSize, view())));
-      if (before === "down" && (finger.current as Finger).t === "scrolling") clearHold();
+      x.value += e.changeX;
+      y.value += e.changeY;
     },
     onFinalize: (e) => {
-      clearHold();
-      if (!latest.current.yours) {
-        settle();
-        return;
-      }
-      if (off.current || e.canceled) apply(fingerCancel(finger.current));
-      else apply(fingerUp(finger.current, touch(e.x, e.y)));
+      "worklet";
+      scheduleOnRN(touchUp, e.x, e.y);
+      if (!yoursV.value) settle();
     },
   });
-  useEffect(() => () => clearHold(), []);
-  // Handed back or ended mid-touch: the finger lets go.
+  // Handed back, ended or closed mid-touch: the finger lets go.
   useEffect(() => {
-    if (!yours) finger.current = fingerCancel(finger.current).finger;
-  }, [yours]);
+    if (!yours) touches.release();
+  }, [yours, touches]);
+  useEffect(() => () => touches.release(), [touches]);
   const gestures = useSimultaneousGestures(pinch, pan, one);
   const moved = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }, { translateY: y.value }, { scale: zoom.value }] }));
 
@@ -254,6 +255,36 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
     if (!yours) keys.current?.blur();
   }, [yours]);
 
+  // The address bar: the site at the top becomes a field while you type where the page goes.
+  const [editing, setEditing] = useState(false);
+  const [address, setAddress] = useState("");
+  const go = (to: Navigation) => {
+    haptics.tap();
+    session.input(sessionId, to);
+  };
+  // A touch, typing or page move the hub refused (a hub or node without page moves, a screen no longer yours): said,
+  // never dropped.
+  const [refused, setRefused] = useState<string | null>(null);
+  useEffect(
+    () =>
+      session.onInputError((e) => {
+        haptics.warning();
+        setRefused(e.message);
+      }),
+    [session],
+  );
+  useEffect(() => {
+    if (refused === null) return;
+    const timer = setTimeout(() => setRefused(null), HINT_MS);
+    return () => clearTimeout(timer);
+  }, [refused]);
+  const submitAddress = () => {
+    const url = addressOf(address);
+    setEditing(false);
+    if (url === null) return haptics.warning();
+    go({ kind: "navigate", url });
+  };
+
   // The touch hint, once each time the page becomes yours.
   const [hint, setHint] = useState(false);
   useEffect(() => {
@@ -267,6 +298,11 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   const fit = Math.min(box.width / frameSize.width, box.height / frameSize.height);
   const page = { width: frameSize.width * fit, height: frameSize.height * fit };
   const host = hostOf(newest?.url);
+  const canGo = addressable(state.hub.phase === "live" && state.hub.features?.includes(NAVIGATE) === true, card?.kind, control, ended);
+  const keyboardUp = typing || editing;
+  useEffect(() => {
+    if (!canGo) setEditing(false);
+  }, [canGo]);
   const kind = card === undefined ? "screen" : KIND_WORD[card.kind];
   const status = ended ? "Ended" : control === "agent" && card?.reason === undefined && newest === undefined ? "Connecting…" : controlLine(control, who, own);
   const ground = t.dark ? "#000000" : t.grouped;
@@ -343,19 +379,80 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
               <Icon name="close" size={20} color={t.label} weight="semibold" />
             </Pressable>
           </Glass>
-          <Glass style={styles.title}>
-            <Avatar name={who} navi={navi} size={28} picture={project} />
-            <View style={styles.titleText}>
-              <Text style={[type.headline, { color: t.label }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-                {host === "" ? who : host}
-              </Text>
-              <Text style={[type.caption2, { color: yours ? t.accent : t.secondary }]} numberOfLines={1} maxFontSizeMultiplier={1.3} accessibilityLiveRegion="polite">
-                {status}
-              </Text>
-            </View>
-          </Glass>
-          <View style={styles.round} />
+          {editing ? (
+            <Glass style={[styles.title, styles.field]}>
+              <TextInput
+                value={address}
+                onChangeText={setAddress}
+                onSubmitEditing={submitAddress}
+                onBlur={() => setEditing(false)}
+                autoFocus
+                selectTextOnFocus
+                keyboardType="url"
+                returnKeyType="go"
+                autoCorrect={false}
+                autoCapitalize="none"
+                spellCheck={false}
+                autoComplete="off"
+                textContentType="URL"
+                clearButtonMode="while-editing"
+                placeholder="Search or enter address"
+                placeholderTextColor={t.tertiary}
+                selectionColor={t.accent}
+                keyboardAppearance={t.dark ? "dark" : "light"}
+                accessibilityLabel="Address"
+                style={[type.body, styles.fieldInput, { color: t.label }]}
+              />
+            </Glass>
+          ) : (
+            <Pressable
+              disabled={!canGo}
+              accessibilityRole={canGo ? "button" : "header"}
+              accessibilityHint={canGo ? "Type where the page goes" : undefined}
+              onPress={() => {
+                haptics.tap();
+                keys.current?.blur();
+                setAddress(newest?.url ?? "");
+                setEditing(true);
+              }}
+              style={({ pressed }) => [styles.titleHit, pressed && styles.pressed]}
+            >
+              <Glass style={styles.title}>
+                <Avatar name={who} navi={navi} size={28} picture={project} />
+                <View style={styles.titleText}>
+                  <Text style={[type.headline, { color: t.label }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                    {host === "" ? (canGo ? "Enter an address" : who) : host}
+                  </Text>
+                  <Text style={[type.caption2, { color: yours ? t.accent : t.secondary }]} numberOfLines={1} maxFontSizeMultiplier={1.3} accessibilityLiveRegion="polite">
+                    {status}
+                  </Text>
+                </View>
+              </Glass>
+            </Pressable>
+          )}
+          {canGo && !editing ? (
+            <Glass interactive style={styles.round}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Reload the page" style={styles.roundHit} onPress={() => go({ kind: "reload" })}>
+                <Icon name="reload" size={19} color={t.label} weight="semibold" />
+              </Pressable>
+            </Glass>
+          ) : (
+            <View style={styles.round} />
+          )}
         </View>
+
+        {/* An input the hub refused. */}
+        {refused === null ? null : (
+          <Animated.View entering={FadeIn.duration(reduce ? 0 : dur.quick).easing(ease.snap)} exiting={FadeOut.duration(reduce ? 0 : dur.quick)} style={[styles.ask, { top: insets.top + BAR + space.md }]} accessibilityLiveRegion="assertive">
+            <Glass style={styles.askGlass}>
+              <Icon name="error" size={18} color={t.danger} />
+              <View style={styles.askText}>
+                <Text style={[type.subhead, styles.strong, { color: t.label }]}>The page didn't take that</Text>
+                <Text style={[type.subhead, { color: t.label }]}>{refused}</Text>
+              </View>
+            </Glass>
+          </Animated.View>
+        )}
 
         {/* The touch hint, a moment after it's yours. */}
         {hint && !typing ? (
@@ -367,11 +464,21 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
         ) : null}
 
         {/* The one control, and the keyboard while it's yours. */}
-        <View style={[styles.toolbar, { paddingBottom: typing ? space.sm : Math.max(insets.bottom, space.md) }]} pointerEvents="box-none">
+        <View style={[styles.toolbar, { paddingBottom: keyboardUp ? space.sm : Math.max(insets.bottom, space.md) }]} pointerEvents="box-none">
           {ended ? (
             <Action label="Done" onPress={() => navigation.goBack()} prominent />
           ) : yours ? (
             <GlassGroup style={styles.row} spacing={10}>
+              {canGo ? (
+                <Glass interactive style={styles.pair}>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Back a page" style={styles.roundHit} onPress={() => go({ kind: "back" })}>
+                    <Icon name="pageBack" size={19} color={t.label} weight="semibold" />
+                  </Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Forward a page" style={styles.roundHit} onPress={() => go({ kind: "forward" })}>
+                    <Icon name="pageForward" size={19} color={t.label} weight="semibold" />
+                  </Pressable>
+                </Glass>
+              ) : null}
               <Glass interactive style={styles.round}>
                 <Pressable accessibilityRole="button" accessibilityLabel={typing ? "Hide the keyboard" : "Type on the page"} accessibilityState={{ selected: typing }} style={styles.roundHit} onPress={toggleKeys}>
                   <Icon name={typing ? "keyboardHide" : "keyboard"} size={20} color={typing ? t.accent : t.label} />
@@ -459,6 +566,10 @@ const styles = StyleSheet.create({
   bar: { position: "absolute", left: space.lg, right: space.lg, height: BAR, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm },
   round: { width: 48, height: 48, borderRadius: 24 },
   roundHit: { flex: 1, alignItems: "center", justifyContent: "center" },
+  titleHit: { flexShrink: 1 },
+  field: { flex: 1, paddingLeft: space.lg },
+  fieldInput: { flex: 1, height: 48, paddingVertical: 0 },
+  pair: { width: 96, height: 48, borderRadius: 24, flexDirection: "row" },
   title: { flexShrink: 1, flexDirection: "row", alignItems: "center", gap: space.sm, borderRadius: 24, height: 48, paddingLeft: 10, paddingRight: space.lg },
   titleText: { flexShrink: 1 },
   ask: { position: "absolute", left: space.lg, right: space.lg },

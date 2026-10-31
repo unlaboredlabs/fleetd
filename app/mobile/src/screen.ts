@@ -159,6 +159,9 @@ export interface Step {
 const mouse = (action: "pressed" | "released" | "moved", at: Point, clickCount = 1): BrowserInput =>
   action === "moved" ? { kind: "mouse", action, x: at.x, y: at.y, button: "left" } : { kind: "mouse", action, x: at.x, y: at.y, button: "left", clickCount };
 
+/** The pointer comes to a point first, button up, as a mouse does before it presses: a page's hover and focus follow it. */
+const hover = (at: Point): BrowserInput => ({ kind: "mouse", action: "moved", x: at.x, y: at.y, button: "none" });
+
 const near = (a: Point, b: Point, d: number): boolean => Math.hypot(a.x - b.x, a.y - b.y) <= d;
 
 /** A finger lands. Off the frame, it does nothing. */
@@ -189,7 +192,7 @@ export const fingerMove = (f: Finger, touch: Touch, scale: number): Step => {
 /** The hold's time came with the finger still down and still: it presses where it landed. */
 export const fingerHeld = (f: Finger): Step => {
   if (f.t !== "down" || f.start.frame === null) return { finger: f, send: [] };
-  return { finger: { t: "holding", last: f.start.frame }, send: [mouse("pressed", f.start.frame)] };
+  return { finger: { t: "holding", last: f.start.frame }, send: [hover(f.start.frame), mouse("pressed", f.start.frame)] };
 };
 
 /** The finger lifts: a tap clicks (twice, soon after another nearby), a hold releases, a scroll just ends. */
@@ -200,7 +203,7 @@ export const fingerUp = (f: Finger, touch: Touch): Step => {
   // From the first tap's lift to the second's touch.
   const double = f.lastTap !== undefined && f.start.t - f.lastTap.t <= DOUBLE_MS && near(f.start.at, f.lastTap.at, DOUBLE_NEAR);
   const n = double ? 2 : 1;
-  return { finger: double ? IDLE : { t: "idle", lastTap: touch }, send: [mouse("pressed", at, n), mouse("released", at, n)] };
+  return { finger: double ? IDLE : { t: "idle", lastTap: touch }, send: [hover(at), mouse("pressed", at, n), mouse("released", at, n)] };
 };
 
 /** The touch was taken away (a second finger came for a pinch, the view closed): a press held is let go. */
@@ -317,3 +320,140 @@ export const waitLine = (w: Wait, machine: string): string => {
   const ahead = w.ahead ?? 0;
   return ahead === 0 ? `Waiting for a slot on ${machine}: you're next.` : `Waiting for a slot on ${machine}: ${String(ahead)} ${ahead === 1 ? "person" : "people"} ahead of you.`;
 };
+
+// ---- the address bar: where a browser you drive goes ----
+
+/**
+ * A page's own moves, which a person driving a browser sends (contracts browser.rs BrowserInput, from #923): an address,
+ * back, forward, reload. The node takes only http and https addresses.
+ */
+export type Navigation = { readonly kind: "navigate"; readonly url: string } | { readonly kind: "back" } | { readonly kind: "forward" } | { readonly kind: "reload" };
+
+/** The `ready` feature that says the hub takes the page moves (contracts app.rs APP_FEATURES, from #923). */
+export const NAVIGATE = "browser_navigate";
+
+/**
+ * Whether the address bar, Reload, Back and Forward are offered: on a hub that takes them (`served`), for a browser (a
+ * device's screen has none), yours to drive, still running.
+ */
+export const addressable = (served: boolean, kind: ScreenCard["kind"] | undefined, control: Control, ended: boolean): boolean =>
+  served && kind === "browser" && control === "human" && !ended;
+
+/** Where a search goes when what was typed isn't an address. */
+export const SEARCH = "https://www.google.com/search?q=";
+
+/**
+ * What the address bar sends for what was typed, as Safari reads it: an http(s) URL as it is; a host (`booking.com`,
+ * `localhost:5173`, an IP) with https (http for a local one); anything else a search. Null for nothing, or for another
+ * scheme (`javascript:`, `file:`), which the node refuses anyway.
+ */
+export const addressOf = (typedText: string): string | null => {
+  const text = typedText.trim();
+  if (text === "") return null;
+  if (/^https?:\/\//iu.test(text)) return text.slice(0, 2048);
+  // A scheme other than http(s): `javascript:…`, `file:…`, `about:…`. A host with a port (`localhost:5173`) isn't one.
+  if (/^[a-z][a-z0-9+.-]*:(?!\d)/iu.test(text)) return null;
+  if (!/\s/u.test(text) && /^(localhost|\d{1,3}(\.\d{1,3}){3}|[^\s/.]+(\.[^\s/.]+)+)(:\d+)?(\/.*)?$/iu.test(text)) {
+    const local = /^(localhost|127\.|10\.|192\.168\.|100\.)/u.test(text);
+    return `${local ? "http" : "https"}://${text}`.slice(0, 2048);
+  }
+  return `${SEARCH}${encodeURIComponent(text)}`.slice(0, 2048);
+};
+
+// ---- the finger on the JS thread ----
+
+/** What a finger on the page needs, read when each touch happens (never kept from when the view first drew). */
+export interface TouchDeps {
+  /** Whether the page is the person's to drive now. */
+  readonly yours: () => boolean;
+  /** Where a point in the box is, on screen and in the frame, now. */
+  readonly where: (x: number, y: number) => Touch;
+  /** Frame pixels per point at the view's zoom now. */
+  readonly scale: () => number;
+  readonly send: (input: BrowserInput) => void;
+  readonly later?: (run: () => void, ms: number) => unknown;
+  readonly cancel?: (timer: unknown) => void;
+}
+
+/**
+ * One finger on the page, as the live view's gesture hands it over: the finger's steps above, the hold's timer, and
+ * whether the touch is the page's at all, decided as it lands from what `yours` says then. The gesture's own callbacks
+ * run on the UI thread, where a value they captured stays as it was when the view first drew (the page not yet
+ * yours), so they decide nothing: they only hand each touch here.
+ */
+export class PageTouches {
+  readonly #deps: TouchDeps;
+  #finger: Finger = IDLE;
+  #hold: unknown;
+  /** This touch went to a second finger (a pinch), or was never the page's. */
+  #off = false;
+  #mine = false;
+
+  constructor(deps: TouchDeps) {
+    this.#deps = deps;
+  }
+
+  down(x: number, y: number): void {
+    this.#off = false;
+    this.#mine = this.#deps.yours();
+    this.#clearHold();
+    if (!this.#mine) return;
+    this.#apply(fingerDown(this.#finger, this.#deps.where(x, y)));
+    this.#hold = (this.#deps.later ?? ((run, ms) => setTimeout(run, ms)))(() => {
+      this.#hold = undefined;
+      this.#apply(fingerHeld(this.#finger));
+    }, HOLD_MS);
+  }
+
+  move(x: number, y: number, pointers: number): void {
+    if (this.#off || !this.#mine) return;
+    // A second finger: it's a pinch, not a touch on the page.
+    if (pointers > 1) {
+      this.#off = true;
+      this.#clearHold();
+      return this.#apply(fingerCancel(this.#finger));
+    }
+    const before = this.#finger.t;
+    this.#apply(fingerMove(this.#finger, this.#deps.where(x, y), this.#deps.scale()));
+    if (before === "down" && (this.#finger as Finger).t === "scrolling") this.#clearHold();
+  }
+
+  /**
+   * A second finger landed: it's a pinch, not a touch on the page. The one-finger gesture then ends without an update
+   * that says so, and its lift must not click.
+   */
+  pinch(): void {
+    if (!this.#mine || this.#off) return;
+    this.#off = true;
+    this.#clearHold();
+    this.#apply(fingerCancel(this.#finger));
+  }
+
+  /**
+   * The finger lifted. A quick tap never moves far enough to start the gesture, which then ends as "cancelled": that
+   * is a tap all the same, so only a second finger (pinch) cancels a touch here.
+   */
+  up(x: number, y: number): void {
+    this.#clearHold();
+    if (!this.#mine) return;
+    this.#mine = false;
+    this.#apply(this.#off ? fingerCancel(this.#finger) : fingerUp(this.#finger, this.#deps.where(x, y)));
+  }
+
+  /** The page stopped being the person's (handed back, ended) or the view closed: a press held is let go. */
+  release(): void {
+    this.#clearHold();
+    this.#mine = false;
+    this.#apply(fingerCancel(this.#finger));
+  }
+
+  #apply(step: Step): void {
+    this.#finger = step.finger;
+    for (const input of step.send) this.#deps.send(input);
+  }
+
+  #clearHold(): void {
+    if (this.#hold !== undefined) (this.#deps.cancel ?? ((t) => clearTimeout(t as ReturnType<typeof setTimeout>)))(this.#hold);
+    this.#hold = undefined;
+  }
+}

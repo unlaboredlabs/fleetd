@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { BrowserSession } from "./desktop";
 import {
+  addressable,
+  addressOf,
   BACKSPACE,
   cardTitle,
   clampView,
@@ -17,8 +19,10 @@ import {
   hostOf,
   IDLE,
   MAX_ZOOM,
+  PageTouches,
   pixelsPerPoint,
   screenCards,
+  SEARCH,
   SLOP,
   toFrame,
   typed,
@@ -125,15 +129,17 @@ const run = (steps: ((f: Finger) => { finger: Finger; send: readonly unknown[] }
 describe("a finger on a page you took over", () => {
   it("clicks where it tapped, and double-clicks on a second tap soon and near", () => {
     const one = run([(f) => fingerDown(f, at(10, 20)), (f) => fingerMove(f, at(12, 21, 50), 4), (f) => fingerUp(f, at(12, 21, 90))]);
+    // The pointer comes to the point first, as a mouse does: a page's hover and focus follow it.
     expect(one.sent).toEqual([
+      { kind: "mouse", action: "moved", x: 40, y: 80, button: "none" },
       { kind: "mouse", action: "pressed", x: 40, y: 80, button: "left", clickCount: 1 },
       { kind: "mouse", action: "released", x: 40, y: 80, button: "left", clickCount: 1 },
     ]);
     const two = run([(f) => fingerDown(f, at(11, 20, 90 + DOUBLE_MS - 10)), (f) => fingerUp(f, at(11, 20, 90 + DOUBLE_MS + 40))], one.finger);
-    expect(two.sent).toMatchObject([{ action: "pressed", clickCount: 2 }, { action: "released", clickCount: 2 }]);
+    expect(two.sent).toMatchObject([{ action: "moved" }, { action: "pressed", clickCount: 2 }, { action: "released", clickCount: 2 }]);
     // Too late: two single clicks.
     const late = run([(f) => fingerDown(f, at(11, 20, 1000)), (f) => fingerUp(f, at(11, 20, 1050))], one.finger);
-    expect(late.sent).toMatchObject([{ clickCount: 1 }, { clickCount: 1 }]);
+    expect(late.sent).toMatchObject([{ action: "moved" }, { clickCount: 1 }, { clickCount: 1 }]);
   });
 
   it("scrolls the page with the finger once it moves past the slop, and clicks nothing", () => {
@@ -149,12 +155,13 @@ describe("a finger on a page you took over", () => {
   it("held still a moment, presses, drags with the button down, and lets go where it lifts", () => {
     const { sent } = run([(f) => fingerDown(f, at(10, 10)), fingerHeld, (f) => fingerMove(f, at(60, 10, 500), 4), (f) => fingerUp(f, at(60, 10, 600))]);
     expect(sent).toEqual([
+      { kind: "mouse", action: "moved", x: 40, y: 40, button: "none" },
       { kind: "mouse", action: "pressed", x: 40, y: 40, button: "left", clickCount: 1 },
       { kind: "mouse", action: "moved", x: 240, y: 40, button: "left" },
       { kind: "mouse", action: "released", x: 240, y: 40, button: "left", clickCount: 1 },
     ]);
     // A hold whose finger already scrolled presses nothing.
-    expect(run([(f) => fingerDown(f, at(10, 10)), (f) => fingerMove(f, at(10, 60, 50), 4), fingerHeld]).sent).toHaveLength(1);
+    expect(run([(f) => fingerDown(f, at(10, 10)), (f) => fingerMove(f, at(10, 60, 50), 4), fingerHeld]).sent).toMatchObject([{ action: "wheel" }]);
   });
 
   it("lets go of a press when a pinch takes the touch, and does nothing off the page", () => {
@@ -215,5 +222,76 @@ describe("a screen of your own on its way", () => {
     // An agent's screen is never the one it waited for.
     expect(waitOutcome({ sessions: [screen("B1")] }, wait, AT)).toEqual({ t: "gone" });
     expect(waitOutcome({ sessions: [], waits: [{ ...wait, stage: "failed", error: "The machine went offline." }] }, wait, AT)).toEqual({ t: "failed", error: "The machine went offline." });
+  });
+});
+
+describe("the address bar", () => {
+  it("is a browser's, while it's yours and running, on a hub that takes page moves", () => {
+    expect(addressable(true, "browser", "human", false)).toBe(true);
+    expect(addressable(true, "browser", "agent", false)).toBe(false);
+    expect(addressable(true, "ios", "human", false)).toBe(false);
+    expect(addressable(true, "browser", "human", true)).toBe(false);
+    expect(addressable(true, undefined, "human", false)).toBe(false);
+    // A hub without the page moves (#923) would refuse them: no bar at all.
+    expect(addressable(false, "browser", "human", false)).toBe(false);
+  });
+
+  it("goes where Safari would: a URL as typed, a host over https (http for a local one), anything else a search", () => {
+    expect(addressOf("https://www.booking.com/hotel?x=1")).toBe("https://www.booking.com/hotel?x=1");
+    expect(addressOf("  booking.com ")).toBe("https://booking.com");
+    expect(addressOf("booking.com/hotel/x")).toBe("https://booking.com/hotel/x");
+    expect(addressOf("localhost:5173")).toBe("http://localhost:5173");
+    expect(addressOf("192.168.1.10/admin")).toBe("http://192.168.1.10/admin");
+    expect(addressOf("hotels in lisbon")).toBe(`${SEARCH}hotels%20in%20lisbon`);
+    expect(addressOf("captcha")).toBe(`${SEARCH}captcha`);
+    // Nothing, and the schemes the node refuses.
+    expect(addressOf("   ")).toBeNull();
+    expect(addressOf("javascript:alert(1)")).toBeNull();
+    expect(addressOf("file:///etc/hosts")).toBeNull();
+    expect(addressOf("x".repeat(3000))!.length).toBe(2048);
+  });
+});
+
+describe("the finger on the JS thread", () => {
+  it("reads whether the page is yours as each touch lands, holds and lets go", () => {
+    let yours = false;
+    const sent: unknown[] = [];
+    const timers: (() => void)[] = [];
+    const touches = new PageTouches({
+      yours: () => yours,
+      where: (x, y) => at(x, y),
+      scale: () => 4,
+      send: (i) => sent.push(i),
+      later: (run) => timers.push(run),
+      cancel: () => undefined,
+    });
+    touches.down(10, 10);
+    touches.up(10, 10);
+    expect(sent).toEqual([]);
+    yours = true;
+    touches.down(10, 10);
+    touches.up(10, 10);
+    expect(sent).toMatchObject([{ action: "moved" }, { action: "pressed" }, { action: "released" }]);
+    // Held: pressed by the timer, then let go when the page stops being yours.
+    touches.down(30, 30);
+    timers.at(-1)!();
+    touches.release();
+    expect(sent.slice(3)).toMatchObject([{ action: "moved", x: 120 }, { action: "pressed", x: 120 }, { action: "released", x: 120 }]);
+    // A second finger: a pinch, nothing for the page, whether an update counted it or only its touch did.
+    touches.down(10, 10);
+    touches.move(40, 40, 2);
+    touches.up(40, 40);
+    expect(sent).toHaveLength(6);
+    touches.down(10, 10);
+    touches.pinch();
+    touches.up(10, 10);
+    expect(sent).toHaveLength(6);
+    // A pinch while a press is held lets it go, and its lift clicks nothing more.
+    touches.down(30, 30);
+    timers.at(-1)!();
+    touches.pinch();
+    touches.up(30, 30);
+    expect(sent.slice(6)).toMatchObject([{ action: "moved" }, { action: "pressed" }, { action: "released" }]);
+    expect(sent).toHaveLength(9);
   });
 });

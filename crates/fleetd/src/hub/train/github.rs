@@ -678,6 +678,22 @@ impl TrainGitHub {
         })
     }
 
+    /// A GraphQL query with string `vars`: its `data`, or an error when GitHub answers with errors.
+    pub async fn graphql(&self, query: &str, vars: &[(&str, &str)]) -> Result<Value, GhError> {
+        let mut fields = vec![("query", query)];
+        fields.extend_from_slice(vars);
+        match self.call("POST", "graphql", &fields).await? {
+            Reply::Ok(v) if v["errors"].is_null() => Ok(v["data"].clone()),
+            Reply::Ok(v) => Err(GhError::failed(format!(
+                "gh api graphql failed: {}",
+                v["errors"][0]["message"].as_str().unwrap_or("an error")
+            ))),
+            Reply::Err { message, .. } => {
+                Err(GhError::failed(format!("gh api graphql failed: {message}")))
+            }
+        }
+    }
+
     pub async fn pull(&self, repo: &str, n: i64) -> Result<Pull, GhError> {
         self.json("GET", &format!("repos/{repo}/pulls/{n}"), &[])
             .await

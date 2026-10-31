@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { backoff, HubClient, PROBE_EVERY_MS, READY_TIMEOUT_MS, socketUrl, type HubFrame } from "./client";
+import { backoff, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, READY_TIMEOUT_MS, socketUrl, type HubFrame } from "./client";
 import { fakeHub } from "./fake";
 
 const HUB = "http://devbox:4790";
@@ -169,11 +169,31 @@ describe("watching a screen", () => {
     expect(shown).toEqual([{ sessionId: "Bsee", seq: 1, jpegB64: "AA==", width: 4, height: 3, control: "agent" }]);
     client.input("Bsee", { kind: "mouse", action: "pressed", x: 1, y: 2, button: "left", clickCount: 1 });
     expect(hub.sentOf("browser_input")).toEqual([{ t: "browser_input", session: "Bsee", input: { kind: "mouse", action: "pressed", x: 1, y: 2, button: "left", clickCount: 1 } }]);
+    // A browser you drive goes elsewhere, as #923's navigate input.
+    client.input("Bsee", { kind: "navigate", url: "https://booking.com" });
+    expect(hub.sentOf("browser_input").at(-1)).toEqual({ t: "browser_input", session: "Bsee", input: { kind: "navigate", url: "https://booking.com" } });
     // Stopped: the hub hears it, and a frame still on its way is dropped.
     client.watch(null);
     expect(hub.sentOf("browser_watch").at(-1)).toEqual({ t: "browser_watch" });
     hub.link.frame(frame("Bsee", 3));
     expect(frames.filter((f) => f.t === "browser_frame")).toHaveLength(1);
+  });
+
+  it("hands a refusal of what was just sent to the live view, and asks for the events again all the same", () => {
+    const { hub, client, frames } = setup();
+    client.start();
+    hub.ready(["browser_sessions"]);
+    hub.link.frame(snapshot);
+    const events = hub.sentOf("events").length;
+    client.input("Bsee", { kind: "navigate", url: "https://booking.com" });
+    hub.link.frame({ t: "error", code: "invalid", message: "Unknown or malformed message." });
+    expect(frames.at(-1)).toEqual({ t: "browser_error", error: { code: "invalid", message: "Unknown or malformed message.", fix: undefined } });
+    // In case it was the event stream's: asked again, from where it was.
+    vi.advanceTimersByTime(INPUT_REFUSAL_MS + 10);
+    expect(hub.sentOf("events")).toHaveLength(events + 1);
+    // Long after any input, an id-less error is the event stream's again.
+    hub.link.frame({ t: "error", code: "failed", message: "stream ended" });
+    expect(frames.at(-1)).toMatchObject({ t: "error" });
   });
 
   it("drops a touch while the link is down, rather than land it later", () => {

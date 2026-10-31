@@ -1,2 +1,3 @@
 Fix your PR {{pr}}: {{problem}}.{{findings}}
 On {{branch}}: fix it (only blocking findings; for a conflict, rebase onto the latest base and resolve it), run the repo's quick pre-push checks (docs/CONTRIBUTING.md or the README names them) and check the fix against each finding, push to the same PR, and stop. The train takes the new head by itself, and reviews it again if its patch changed. Never merge it yourself.
+Never reset or rebase your commit onto a freshly fetched base while your files are still an older tree's: the commit then undoes others' merged work. Rebuild your branch from the latest base and re-apply only your own changes instead.

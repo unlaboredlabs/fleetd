@@ -57,7 +57,7 @@ The ask is a notification too, on the desktop and on your phone, where tapping i
 
 On the [phone](/docs/mobile#screens), a live screen shows as a card in its chat, and opens full screen: pinch to zoom,
 **Take Over**, then a tap clicks, a drag scrolls and a held touch presses and drags; the keyboard button types into the
-page, and **Hand Back** returns it. It's the same live view and takeover, at most 12 frames a second.
+page, the site at the top is its address bar, and **Hand Back** returns it. It's the same live view and takeover, at most 12 frames a second.
 
 Once it has ended, the screen plays its recording, the panel's whole width. **Steps**, at the end of the player's
 controls, opens its steps beside the recording (under it in a narrow panel). Each step jumps the recording to its
