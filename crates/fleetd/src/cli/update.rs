@@ -28,10 +28,6 @@ pub struct UpdateArgs {
     /// edge or stable (nightly, Edge's earlier name, is edge). Default: the channel this build came from.
     #[arg(long)]
     pub channel: Option<String>,
-    /// Restart the hub and node even when this binary is current. Kept for scripts from before restarts stopped
-    /// waiting for work.
-    #[arg(long)]
-    pub restart_now: bool,
     /// Restart the node without waiting for its agents to finish their step.
     #[arg(long)]
     pub now: bool,
@@ -96,8 +92,7 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
     if gpui.is_some() {
         println!("this replaces the earlier fleetd app with the new one, which keeps its pairing");
     }
-    let restart_due =
-        !services.is_empty() && (cli_latest.is_some() || pending.is_some() || args.restart_now);
+    let restart_due = !services.is_empty() && (cli_latest.is_some() || pending.is_some());
     if args.check || (!restart_due && gpui.is_none()) {
         if args.check && (cli_latest.is_some() || gpui.is_some()) {
             println!("run `fleetd update` to install");

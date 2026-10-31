@@ -90,7 +90,7 @@ pub async fn node_command(argv: &[String]) -> u8 {
                     .map_err(|error| error.to_string()),
             )
         }
-        Some("run" | "serve") => exit(
+        Some("run") => exit(
             crate::node::run(crate::node::RunArgs { home })
                 .await
                 .map_err(|error| error.to_string()),

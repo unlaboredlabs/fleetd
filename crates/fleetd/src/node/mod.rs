@@ -1,6 +1,6 @@
 //! The per-machine node: hub link, the session service that runs claude itself, the lead socket, cmd checks, sealed secrets, gated runs and node actions.
 //!
-//! The CLI calls [`join`] for `fleetd node join` and [`run`] for `fleetd node run` / `node serve`. Both run until
+//! The CLI calls [`join`] for `fleetd node join` and [`run`] for `fleetd node run`. Both run until
 //! SIGINT or SIGTERM (`Ok`) or a failure the node cannot retry past (`Err`, exit 1 with `fleetd: <message>`).
 pub mod actions;
 pub mod browser;
@@ -78,7 +78,7 @@ pub struct JoinArgs {
     pub claude_config_dir: Option<String>,
 }
 
-/// `fleetd node run` / `node serve`.
+/// `fleetd node run`.
 #[derive(Clone, Debug, Default)]
 pub struct RunArgs {
     pub home: Option<PathBuf>,
