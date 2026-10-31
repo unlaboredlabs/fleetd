@@ -88,10 +88,11 @@ pub(super) fn flaky_text(sha: &str, flaky: &[Flaky]) -> String {
 }
 
 impl Train {
-    /// Re-runs each job of `red` that failed (not cancelled) on its own, once (`FAILED_RERUNS`), with the jobs that need
-    /// it (`rerun_jobs`): whether it re-ran one now. None when the failure stands: a job re-run once failed again, a
-    /// check isn't an Actions job, or GitHub refused the re-run `RERUN_TRIES` times. Each job it re-ran goes in `flaky`,
-    /// with the test its log names. `runs` all the checks on the head.
+    /// Re-runs each job of `red` that failed (not cancelled), and each cancelled job of its workflow run, on its own,
+    /// once (`FAILED_RERUNS`), with the jobs that need it (`rerun_jobs`): whether it re-ran one now. None when the
+    /// failure stands: a job re-run once failed again, a check isn't an Actions job, or GitHub refused the re-run
+    /// `RERUN_TRIES` times. Each failed job it re-ran goes in `flaky`, with the test its log names. `runs` all the
+    /// checks on the head.
     pub(super) async fn rerun_failed(
         &self,
         repo: &str,
@@ -100,17 +101,27 @@ impl Train {
         reruns: &mut Reruns,
         flaky: &mut Vec<Flaky>,
     ) -> Option<bool> {
-        let mut failed: Vec<&CheckRun> = red
-            .iter()
-            .filter(|r| r.conclusion.as_deref() != Some("cancelled"))
-            .collect();
-        // Oldest first, as a run re-runs one job at a time: a job that failed because one it needs did (ci.yml's
-        // `rust (linux)` after a shard) is written after it, and GitHub re-runs it with that one. Re-run alone first,
-        // it would fail again on the old result.
-        failed.sort_by(|a, b| a.id.total_cmp(&b.id));
+        let cancelled = |r: &CheckRun| r.conclusion.as_deref() == Some("cancelled");
+        let mut failed: Vec<&CheckRun> = red.iter().filter(|r| !cancelled(r)).collect();
         if failed.is_empty() {
             return Some(false);
         }
+        // A job that failed because one it needs was cancelled (ci.yml's `rust (linux)` after a shard) passes only
+        // once that one re-runs: the cancelled jobs of a failed job's run are re-run with it.
+        let failed_runs: Vec<u64> = failed.iter().filter_map(|r| r.workflow_run()).collect();
+        let beside: Vec<CheckRun> = super::github::latest(runs.to_vec())
+            .into_iter()
+            .filter(|r| {
+                cancelled(r)
+                    && r.workflow_run()
+                        .is_some_and(|run| failed_runs.contains(&run))
+            })
+            .filter(|r| !failed.iter().any(|f| f.name == r.name))
+            .collect();
+        failed.extend(&beside);
+        // Oldest first, as a run re-runs one job at a time: a job that failed because one it needs did is written after
+        // it, and GitHub re-runs it with that one. Re-run alone first, it would fail again on the old result.
+        failed.sort_by(|a, b| a.id.total_cmp(&b.id));
         let out = self
             .rerun_jobs(repo, &failed, runs, reruns, FAILED_RERUNS)
             .await;
@@ -118,7 +129,7 @@ impl Train {
             return None;
         }
         for r in failed {
-            if !reran(reruns, r) || flaky.iter().any(|f| f.check == r.name) {
+            if cancelled(r) || !reran(reruns, r) || flaky.iter().any(|f| f.check == r.name) {
                 continue;
             }
             let test = match r.job() {
