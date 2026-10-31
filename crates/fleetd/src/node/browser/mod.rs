@@ -409,7 +409,7 @@ impl Broker {
             _loop: Mutex::default(),
             config,
         });
-        match Proxy::start(Arc::downgrade(&broker)).await {
+        match Proxy::start(&broker.home, Arc::downgrade(&broker)).await {
             Ok(proxy) => *lock(&broker.proxy) = Some(proxy),
             Err(e) => tracing::warn!(error = %e, "browser proxy not started"),
         }
