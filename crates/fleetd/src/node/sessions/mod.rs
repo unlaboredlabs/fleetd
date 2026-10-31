@@ -72,6 +72,10 @@ const USAGE_EVERY: Duration = Duration::from_secs(1);
 const INTERRUPT_GRACE: Duration = Duration::from_secs(5);
 /// `stop`: stdin closed, SIGTERM after this.
 const STOP_GRACE: Duration = Duration::from_secs(5);
+/// A screen's idle limit, 30 minutes without a command by default: by then the screen of an idle agent session has
+/// ended by itself, so holding its claude any longer keeps nothing.
+const SCREEN_IDLE: Duration = Duration::from_secs(30 * 60);
+
 /// An idle process gets stdin closed, and SIGTERM after this if it is still there.
 const REAP_GRACE: Duration = Duration::from_secs(10);
 const EXIT_WAIT: Duration = Duration::from_secs(20);
@@ -4315,9 +4319,12 @@ impl SessionService {
         });
     }
 
-    /// Idle processes cost RAM: close stdin on any without an active run for `idle_reap`. The next send resumes.
+    /// Idle processes cost RAM: close stdin on any without an active run for `idle_reap`. The next send resumes. One
+    /// that holds a screen waits for [`SCREEN_IDLE`] instead: its exit ends the screen, which its next turn (after a
+    /// wait_ci, say) picks up again.
     async fn reap(&self) {
         let idle_reap = self.inner.config.idle_reap;
+        let hooks = self.inner.browser.get();
         let candidates: Vec<String> = self
             .st()
             .live
@@ -4330,7 +4337,13 @@ impl SessionService {
                 .store()
                 .session(&id)
                 .is_ok_and(|r| r.is_some_and(|r| r.summary.active_run_id.is_none()));
-            if !idle {
+            let screen = hooks.is_some_and(|b| b.holds_screen(&id));
+            let waited = self
+                .st()
+                .live
+                .get(&id)
+                .is_some_and(|l| l.last_active.elapsed() >= SCREEN_IDLE.max(idle_reap));
+            if !idle || (screen && !waited) {
                 continue;
             }
             let commands = self.st().live.get_mut(&id).map(|l| {

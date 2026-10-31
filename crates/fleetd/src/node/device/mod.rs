@@ -1127,4 +1127,8 @@ impl SessionHooks for Router {
     fn screen_ended(&self, thread: &str, session: &str) {
         self.end_screen(thread, session);
     }
+
+    fn holds_screen(&self, thread: &str) -> bool {
+        self.live(thread)
+    }
 }
