@@ -138,6 +138,9 @@ struct Session {
     /// The browser watch's forwarder, which holds the watch, and the slot for its newest frame.
     browser: Option<tokio::task::JoinHandle<()>>,
     browser_slot: Arc<live::LiveSlot>,
+    /// The last reason a person's `browser_input` was refused, logged once until it changes: a refused drag would
+    /// otherwise log every move.
+    input_refused: Option<String>,
     live_slot: Arc<live::LiveSlot>,
     budget: Arc<live::ConnBudget>,
 }
@@ -226,10 +229,16 @@ impl Session {
                 }
             }
             AppClientMessage::BrowserInput { session, input } => {
-                if let Err(refused) =
-                    crate::hub::browser::live::input(&self.hub, &info, &session, input)
-                {
-                    self.send(error_frame(&refused, None));
+                match crate::hub::browser::live::input(&self.hub, &info, &session, input) {
+                    Ok(()) => self.input_refused = None,
+                    Err(refused) => {
+                        // The reason only: never the input, which may be typed text.
+                        if self.input_refused.as_deref() != Some(refused.message.as_str()) {
+                            tracing::warn!(session = %session, code = ?refused.code, reason = %refused.message, "a person's browser input refused");
+                            self.input_refused = Some(refused.message.clone());
+                        }
+                        self.send(error_frame(&refused, None));
+                    }
                 }
             }
             AppClientMessage::Chat { project } => {
@@ -399,6 +408,7 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
         chat: None,
         browser: None,
         browser_slot: Arc::default(),
+        input_refused: None,
         live_slot: Arc::default(),
         budget: Arc::default(),
     };

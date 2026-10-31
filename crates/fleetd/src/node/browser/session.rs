@@ -204,12 +204,19 @@ impl Session {
         {
             let weak = Arc::downgrade(&session);
             *lock(&session._inputs) = Some(AbortOnDrop(tokio::spawn(async move {
+                // Logged once until the reason changes, and never the input itself: it may be typed text.
+                let mut failing: Option<String> = None;
                 while let Some(input) = queued.recv().await {
                     let Some(session) = weak.upgrade() else {
                         return;
                     };
-                    if let Err(why) = session.input(input).await {
-                        tracing::debug!(session = %session.id, error = %why, "browser input not delivered");
+                    match session.input(input).await {
+                        Ok(()) => failing = None,
+                        Err(why) if failing.as_deref() != Some(why.as_str()) => {
+                            tracing::warn!(session = %session.id, error = %why, "a person's browser input not delivered");
+                            failing = Some(why);
+                        }
+                        Err(_) => {}
                     }
                 }
             })));
