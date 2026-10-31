@@ -28,7 +28,6 @@ const settings: Settings = {
   projectId: "p1",
   title: "storefront",
   workspaceRoot: "/home/w/src/storefront",
-  keepWorktrees: false,
   setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] },
   env: [
     { name: "API_URL", kind: "plain", value: "https://staging.example", bytes: 23, updatedAt: AT },
@@ -256,15 +255,6 @@ describe("Settings → Projects", () => {
       { machineId: "devbox", projectId: "p1", boxPubKey: KEY, set: [{ kind: "secret", name: "DB_PASSWORD", value: CHAIN }], remove: [] },
     ]);
     expect(JSON.stringify(calls)).not.toContain(SECRET);
-  });
-
-  it("turns keep finished worktrees on", async () => {
-    await render();
-    const toggle = document.querySelector<HTMLElement>('section[aria-label="Worktrees"] [role="switch"]');
-    if (toggle === null) throw new Error("no switch");
-    await click(toggle);
-    await settle();
-    expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", keepWorktrees: true });
   });
 
   it("turns the nightly memory refresh off, on by default, beside the project's memory", async () => {

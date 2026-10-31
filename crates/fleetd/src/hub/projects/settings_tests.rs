@@ -361,7 +361,7 @@ async fn a_rename_shows_at_once_in_the_apps_snapshot_and_tells_them_to_read_it()
 }
 
 #[tokio::test]
-async fn the_name_and_keep_worktrees_save_and_a_delete_removes_the_worktrees_and_the_settings() {
+async fn the_name_saves_and_a_delete_removes_the_worktrees_and_the_settings() {
     let (hub, _home) = hub();
     let mut calls = node(&hub, true).await;
     let get = json!({ "machineId": "lab", "projectId": "p1" });
@@ -370,7 +370,6 @@ async fn the_name_and_keep_worktrees_save_and_a_delete_removes_the_worktrees_and
         .unwrap();
     let s = &settings["settings"];
     assert_eq!(s["title"], "app");
-    assert_eq!(s["keepWorktrees"], false);
     assert_eq!(s["worktrees"]["baseBranch"], "main");
     assert_eq!(s["worktrees"]["worktrees"][0]["uncommitted"], true);
     assert!(matches!(
@@ -378,12 +377,15 @@ async fn the_name_and_keep_worktrees_save_and_a_delete_removes_the_worktrees_and
         Some(SessionCall::ProjectWorktrees { .. })
     ));
 
-    let set = call(&hub, &person(), "project_settings_set",
-        json!({ "machineId": "lab", "projectId": "p1", "title": "Storefront", "keepWorktrees": true }))
+    let set = call(
+        &hub,
+        &person(),
+        "project_settings_set",
+        json!({ "machineId": "lab", "projectId": "p1", "title": "Storefront" }),
+    )
     .await
     .unwrap();
     assert_eq!(set["settings"]["title"], "Storefront");
-    assert_eq!(set["settings"]["keepWorktrees"], true);
     let Some(SessionCall::ProjectUpsert {
         title,
         workspace_root,
@@ -396,13 +398,7 @@ async fn the_name_and_keep_worktrees_save_and_a_delete_removes_the_worktrees_and
         (title.as_str(), workspace_root.as_str()),
         ("Storefront", "/work/app")
     );
-    assert!(
-        hub.db
-            .project_settings()
-            .keep_worktrees(&project())
-            .unwrap()
-    );
-    // A row keepWorktrees made allows no profile but the default.
+    // A saved project allows no profile but the default.
     assert_eq!(hub.db.profiles().allowed(&project()).unwrap(), ["high"]);
 
     call(
@@ -433,12 +429,6 @@ async fn the_name_and_keep_worktrees_save_and_a_delete_removes_the_worktrees_and
     assert!(removed);
     // The node's project_removed: the hub forgets the project and its settings with it.
     hub.store.project_remove(&project()).unwrap();
-    assert!(
-        !hub.db
-            .project_settings()
-            .keep_worktrees(&project())
-            .unwrap()
-    );
     assert!(
         hub.db
             .project_settings()
@@ -514,7 +504,7 @@ async fn an_unknown_repo_is_refused_and_changes_nothing() {
         ),
         (
             "project_settings_set",
-            json!({ "machineId": "lab", "projectId": "p1", "repo": "api", "keepWorktrees": true }),
+            json!({ "machineId": "lab", "projectId": "p1", "repo": "api", "title": "API" }),
         ),
     ] {
         let refused = call(&hub, &person(), tool, input).await;
@@ -523,12 +513,6 @@ async fn an_unknown_repo_is_refused_and_changes_nothing() {
             "{tool}: {refused:?}"
         );
     }
-    assert!(
-        !hub.db
-            .project_settings()
-            .keep_worktrees(&project())
-            .unwrap()
-    );
     let s = call(
         &hub,
         &person(),
@@ -574,19 +558,16 @@ async fn a_repos_setup_is_its_own_and_falls_back_to_the_projects() {
     let s = set(with(json!({
         "repo": "app",
         "setup": { "commands": ["pnpm install"] },
-        "keepWorktrees": true,
     })))
     .await
     .unwrap();
     assert_eq!(s["settings"]["repo"], "app");
     assert_eq!(s["settings"]["setup"]["commands"], json!(["pnpm install"]));
-    assert_eq!(s["settings"]["keepWorktrees"], true);
     let own = call(&hub, &human, "project_settings_get", r.clone())
         .await
         .unwrap();
     assert!(own["settings"].get("repo").is_none());
     assert_eq!(own["settings"]["setup"]["commands"], json!(["make deps"]));
-    assert_eq!(own["settings"]["keepWorktrees"], true);
     let own_repo = hub.repos.own(&project()).unwrap().map(|repo| repo.repo_id);
     let task_setup =
         crate::hub::projects::settings::task_setup(&hub, &project(), own_repo.as_ref()).unwrap();

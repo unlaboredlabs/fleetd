@@ -1340,9 +1340,6 @@ pub struct ProjectSettings {
     pub workspace_root: String,
     /// The repo `setup` is for; absent when it is the project's, and from older hubs.
     pub repo: Option<crate::repos::RepoName>,
-    /// True: a finished task's worktree stays on the machine. False (the default): a reader's goes when it finishes
-    /// and a writer's once its PR merges.
-    pub keep_worktrees: bool,
     /// True (the default): each night the lead tidies the project's memory, with a line in the chat to undo it.
     /// Absent from older hubs.
     #[serde(default = "default_true")]
@@ -1364,11 +1361,11 @@ input!(
     ProjectSettingsSetInput {
         machine_id: MachineId,
         project_id: ProjectId,
-        /// The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title and keepWorktrees are the project's either way.
+        /// The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title is the
+        /// project's either way.
         repo: Option<crate::repos::RepoName>,
         /// The project's name in fleetd; its folder keeps its own.
         title: Option<Line<1, 200>>,
-        keep_worktrees: Option<bool>,
         /// Turns the nightly memory refresh on or off for the project.
         memory_refresh: Option<bool>,
         /// Replaces the project's setup commands and their settings; no commands turns setup off.
@@ -1376,12 +1373,8 @@ input!(
     }
 );
 checked!(ProjectSettingsSetInput, |input| {
-    if input.title.is_none()
-        && input.keep_worktrees.is_none()
-        && input.memory_refresh.is_none()
-        && input.setup.is_none()
-    {
-        return Err("expected title, keepWorktrees, memoryRefresh, setup or more".into());
+    if input.title.is_none() && input.memory_refresh.is_none() && input.setup.is_none() {
+        return Err("expected title, memoryRefresh, setup or more".into());
     }
     Ok(())
 });
@@ -3550,7 +3543,8 @@ mod tests {
         assert_eq!(get.repo.as_ref().map(|r| r.as_str()), Some("api"));
         in_repo["repo"] = json!("Api");
         assert!(decode::<ProjectSettingsGetInput>(in_repo).is_err());
-        let set = json!({ "machineId": "devbox", "projectId": "p1", "repo": "api", "keepWorktrees": true });
+        let set =
+            json!({ "machineId": "devbox", "projectId": "p1", "repo": "api", "title": "API" });
         let set: ProjectSettingsSetInput = decode(set).unwrap();
         assert_eq!(set.repo.as_ref().map(|r| r.as_str()), Some("api"));
         // A repo alone sets nothing.

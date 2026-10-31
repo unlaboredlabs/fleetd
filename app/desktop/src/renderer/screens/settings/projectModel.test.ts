@@ -103,7 +103,6 @@ describe("Settings → Projects", () => {
       projectId: "p1",
       title: "storefront",
       workspaceRoot: "/w",
-      keepWorktrees: false,
       env: [],
       setup: {},
       worktrees: {

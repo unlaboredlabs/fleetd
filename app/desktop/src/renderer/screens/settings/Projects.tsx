@@ -250,7 +250,6 @@ function NameSetting({ settings }: { settings: Settings }) {
 }
 
 function WorktreeSetting({ settings }: { settings: Settings }) {
-  const { busy, echo, save } = useSave();
   const w = settings.worktrees;
   const unsaved = unsavedWorktrees(settings).length;
   return (
@@ -277,19 +276,6 @@ function WorktreeSetting({ settings }: { settings: Settings }) {
           {settings.worktreesUnknown ?? "Its machine hasn't said where they are."}
         </Text>
       )}
-      <Switch
-        label="Keep finished worktrees"
-        description="Off: a reader's worktree goes when its task finishes, and a writer's once its pull request merges. On: they stay on the machine until you delete the project."
-        checked={settings.keepWorktrees}
-        disabled={busy}
-        onCheckedChange={(keep) =>
-          save(
-            { machineId: settings.machineId, projectId: settings.projectId, keepWorktrees: keep },
-            keep ? "Finished worktrees stay." : "Finished worktrees go again.",
-          )
-        }
-      />
-      <EchoLine echo={echo} />
     </Setting>
   );
 }

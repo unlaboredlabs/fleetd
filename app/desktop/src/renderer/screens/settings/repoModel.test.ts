@@ -7,7 +7,6 @@ const project: ProjectSettings = {
   projectId: "p1",
   title: "storefront",
   workspaceRoot: "/home/w/src/storefront",
-  keepWorktrees: false,
   setup: { commands: ["pnpm install"], timeoutSec: 600, runAnyway: false, inputs: [] },
   env: [],
 };

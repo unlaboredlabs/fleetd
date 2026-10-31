@@ -21,7 +21,6 @@ const settings = (extra: Partial<ProjectSettings> = {}): ProjectSettings => ({
   title: "storefront",
   workspaceRoot: "/home/ada/src/shop",
   env: [],
-  keepWorktrees: false,
   setup: { commands: [] } as unknown as ProjectSettings["setup"],
   worktrees: { dir: "/home/ada/.fleetd/worktrees/shop", worktrees: [] },
   ...extra,

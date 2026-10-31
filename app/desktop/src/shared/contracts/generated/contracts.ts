@@ -5359,11 +5359,6 @@ export type ProjectSetOutput = {
 export type ProjectSettings = {
   /** Its agents' variables, by name. A secret's value is never here. */
   env: ProjectEnvVar[];
-  /**
-   * True: a finished task's worktree stays on the machine. False (the default): a reader's goes when it finishes
-   * and a writer's once its PR merges.
-   */
-  keepWorktrees: boolean;
   machineId: MachineId;
   /**
    * True (the default): each night the lead tidies the project's memory, with a line in the chat to undo it.
@@ -5397,12 +5392,14 @@ export type ProjectSettingsGetOutput = {
 };
 
 export type ProjectSettingsSetInput = {
-  keepWorktrees?: boolean;
   machineId: MachineId;
   /** Turns the nightly memory refresh on or off for the project. */
   memoryRefresh?: boolean;
   projectId: ProjectId;
-  /** The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title and keepWorktrees are the project's either way. */
+  /**
+   * The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title is the
+   * project's either way.
+   */
   repo?: RepoName;
   /** Replaces the project's setup commands and their settings; no commands turns setup off. */
   setup?: WorktreeSetup;
