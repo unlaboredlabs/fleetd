@@ -7,7 +7,20 @@ import type { Outcome } from "./request";
 
 /** The kicker over the card's title: "Sends · MCP server". */
 export const actionWords = (action: ToolAction): string =>
-  action === "send" ? "Sends" : action === "delete" ? "Deletes" : action === "share" ? "Shares" : action === "spend" ? "Spends money" : "Changes";
+  action === "send"
+    ? "Sends"
+    : action === "delete"
+      ? "Deletes"
+      : action === "share"
+        ? "Shares"
+        : action === "spend"
+          ? "Spends money"
+          : action === "confirm"
+            ? "Confirms"
+            : "Changes";
+
+/** Where the act happens, after the kicker's verb: a Navi's final click is on a site; anything else, an MCP server. */
+export const actionPlace = (p: ToolPreview): string => (p.action === "confirm" ? "on a site" : "MCP server");
 
 /** The one amber or red word, for what needs a second look. */
 export const actionWarning = (action: ToolAction): { readonly text: string; readonly tone: "danger" | "warning" } | undefined =>
@@ -23,7 +36,22 @@ export const answerWords = (action: ToolAction): { readonly yes: string; readonl
         ? { yes: "Delete it", no: "Don't delete" }
         : action === "spend"
           ? { yes: "Pay", no: "Don't pay" }
-          : { yes: "Do it", no: "Don't" };
+          : action === "confirm"
+            ? { yes: "Click it", no: "Don't click" }
+            : { yes: "Do it", no: "Don't" };
+
+/** A Navi's final click on a site (`confirm_step`): the site and the button, read from what it runs with. */
+export const confirmStep = (p: ToolPreview): { readonly site: string; readonly button: string } => {
+  try {
+    const input = JSON.parse(p.input) as { site?: unknown; button?: unknown };
+    return { site: typeof input.site === "string" ? input.site : "", button: typeof input.button === "string" ? input.button : "" };
+  } catch {
+    return { site: "", button: p.title };
+  }
+};
+
+/** A blocked action's buttons: the checker refused it, and the person may still let it run once. */
+export const blockedWords = { yes: "Approve anyway", no: "Keep it blocked" } as const;
 
 /** A delete or a spend asks once more in the card before it runs. */
 export const previewNeedsConfirm = (p: ToolPreview): boolean => p.action === "delete" || p.action === "spend";
@@ -31,7 +59,7 @@ export const previewNeedsConfirm = (p: ToolPreview): boolean => p.action === "de
 export const confirmWords = (p: ToolPreview): { readonly question: string; readonly yes: string } =>
   p.action === "spend" ? { question: "Spend this money? It can't be taken back here.", yes: "Yes, pay" } : { question: "Delete it? It can't be undone.", yes: "Yes, delete it" };
 
-const ACT_WORDS: Readonly<Record<ToolAction, string>> = { send: "a send", write: "a change", delete: "a delete", share: "a share", spend: "a payment" };
+const ACT_WORDS: Readonly<Record<ToolAction, string>> = { send: "a send", write: "a change", delete: "a delete", share: "a share", spend: "a payment", confirm: "a click on a site" };
 
 /**
  * The line an answered card folds to: what the person decided ("Approved: a send"), or undefined while it waits. Never "Sent": the hub knows the answer, not the tool's result, and the tool may still

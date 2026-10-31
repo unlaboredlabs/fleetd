@@ -263,7 +263,7 @@ impl Tasks {
         Ok(())
     }
 
-    /// Whether a task (in any state), a lead, a memory refresh or a memory import runs in the thread.
+    /// Whether a task (in any state), a lead, a memory refresh, a memory import or an approval check runs in the thread.
     fn owned_thread(&self, r: &ThreadRef) -> Result<bool, StoreError> {
         if self.db(|c| TaskRecords::by_thread(c, r))?.is_some() {
             return Ok(true);
@@ -272,7 +272,8 @@ impl Tasks {
             c.prepare_cached(
                 "SELECT EXISTS (SELECT 1 FROM leads WHERE machine_id = ?1 AND thread_id = ?2)
                    OR EXISTS (SELECT 1 FROM memory_refreshes WHERE machine_id = ?1 AND thread_id = ?2)
-                   OR EXISTS (SELECT 1 FROM memory_imports WHERE machine_id = ?1 AND thread_id = ?2)",
+                   OR EXISTS (SELECT 1 FROM memory_imports WHERE machine_id = ?1 AND thread_id = ?2)
+                   OR EXISTS (SELECT 1 FROM approval_checks WHERE machine_id = ?1 AND thread_id = ?2)",
             )?
             .query_row([r.machine_id.as_str(), r.thread_id.as_str()], |row| {
                 row.get(0)

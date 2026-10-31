@@ -943,6 +943,64 @@
       ],
       "type": "string"
     },
+    "AutoApproved": {
+      "description": "One risky action a Navi ran without asking its person, as its settings' log shows it.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "$ref": "#/$defs/AutoApprovedBy"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId",
+          "description": "The quiet line in the Navi's chat that told the person."
+        },
+        "reason": {
+          "description": "The checker's reason; absent in YOLO.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "tool": {
+          "description": "The tool the Navi's session asked for: `mcp__mail__send_message`, `WebFetch`.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "what": {
+          "description": "What it did, in one line: \"Send on mail to sam@example.com\", \"Open example.org\".",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "by",
+        "tool",
+        "what"
+      ],
+      "type": "object"
+    },
+    "AutoApprovedBy": {
+      "description": "What let an action run without asking the person.",
+      "oneOf": [
+        {
+          "const": "checker",
+          "description": "The checker said go.",
+          "type": "string"
+        },
+        {
+          "const": "yolo",
+          "description": "The Navi is in YOLO.",
+          "type": "string"
+        }
+      ]
+    },
     "Automation": {
       "properties": {
         "automationId": {
@@ -3233,6 +3291,35 @@
         "message"
       ],
       "type": "object"
+    },
+    "CheckerNote": {
+      "description": "What a Navi's approval checker said of an action it didn't let through.",
+      "properties": {
+        "reason": {
+          "description": "Its reason, in one line. A checker that failed or answered nothing readable says so here.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "verdict": {
+          "$ref": "#/$defs/CheckerVerdict"
+        }
+      },
+      "required": [
+        "verdict",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "CheckerVerdict": {
+      "description": "The checker's verdict on a risky action: go runs it, ask brings the person's card, block refuses it.",
+      "enum": [
+        "go",
+        "ask",
+        "block"
+      ],
+      "type": "string"
     },
     "ChecklistBlock": {
       "properties": {
@@ -9813,6 +9900,18 @@
         "metrics_retention_set.output": {
           "$ref": "#/$defs/MetricsRetentionSetOutput"
         },
+        "navi_approvals.input": {
+          "$ref": "#/$defs/NaviApprovalsInput"
+        },
+        "navi_approvals.output": {
+          "$ref": "#/$defs/NaviApprovalsOutput"
+        },
+        "navi_approvals_set.input": {
+          "$ref": "#/$defs/NaviApprovalsSetInput"
+        },
+        "navi_approvals_set.output": {
+          "$ref": "#/$defs/NaviApprovalsSetOutput"
+        },
         "navi_archive.input": {
           "$ref": "#/$defs/NaviArchiveInput"
         },
@@ -10603,6 +10702,10 @@
         "metrics_get.output",
         "metrics_retention_set.input",
         "metrics_retention_set.output",
+        "navi_approvals.input",
+        "navi_approvals.output",
+        "navi_approvals_set.input",
+        "navi_approvals_set.output",
         "navi_archive.input",
         "navi_archive.output",
         "navi_asks.input",
@@ -12145,6 +12248,136 @@
         "builtin"
       ],
       "type": "string"
+    },
+    "NaviApprovalMode": {
+      "description": "How a Navi's risky actions are approved (W239, D263): its sends, replies, shares and invites through an\nintegration, and a site it opens on its own for the first time. Whatever the mode, moving money, trading and\nplacing orders are refused, and so is a credential in outgoing content.",
+      "oneOf": [
+        {
+          "const": "ask",
+          "description": "Every risky action asks the person on a card; no checker runs.",
+          "type": "string"
+        },
+        {
+          "const": "checker",
+          "description": "A fresh checker model judges each risky action first: go runs it, ask brings the card, block refuses it.",
+          "type": "string"
+        },
+        {
+          "const": "yolo",
+          "description": "Nothing asks and no checker runs: every risky action runs, past the hard floors.",
+          "type": "string"
+        }
+      ]
+    },
+    "NaviApprovals": {
+      "description": "A Navi's approval settings: its mode, and the checker's model and effort.",
+      "properties": {
+        "defaults": {
+          "description": "Whether model and effort are the hub's defaults, not a pick of the person's.",
+          "type": "boolean"
+        },
+        "effort": {
+          "$ref": "#/$defs/Effort"
+        },
+        "mode": {
+          "$ref": "#/$defs/NaviApprovalMode"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelName",
+          "description": "The checker's model: the person's pick, else [`CHECKER_MODEL`]."
+        }
+      },
+      "required": [
+        "mode",
+        "model",
+        "effort",
+        "defaults"
+      ],
+      "type": "object"
+    },
+    "NaviApprovalsInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "NaviApprovalsOutput": {
+      "properties": {
+        "approvals": {
+          "$ref": "#/$defs/NaviApprovals"
+        },
+        "log": {
+          "description": "Newest first, at most `AUTO_APPROVED_MAX`.",
+          "items": {
+            "$ref": "#/$defs/AutoApproved"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "approvals",
+        "log"
+      ],
+      "type": "object"
+    },
+    "NaviApprovalsSetInput": {
+      "properties": {
+        "effort": {
+          "$ref": "#/$defs/Effort",
+          "description": "The checker's effort; absent: the hub's default."
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "mode": {
+          "$ref": "#/$defs/NaviApprovalMode"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelName",
+          "description": "The checker's model; absent: the hub's default."
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "mode"
+      ],
+      "type": "object"
+    },
+    "NaviApprovalsSetOutput": {
+      "properties": {
+        "approvals": {
+          "$ref": "#/$defs/NaviApprovals"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "approvals"
+      ],
+      "type": "object"
     },
     "NaviArchiveInput": {
       "properties": {
@@ -22437,12 +22670,21 @@
           "const": "spend",
           "description": "Pays or buys: money leaves the person's account.",
           "type": "string"
+        },
+        {
+          "const": "confirm",
+          "description": "A Navi's final Confirm or Submit click on a site (`confirm_step`): a booking, a cancellation, a form sent.",
+          "type": "string"
         }
       ]
     },
     "ToolPermission": {
       "description": "An approval raised by a session's tool permission prompt instead of a gated command: answering it answers the prompt\non the project's node. Its machine is the request's project's.",
       "properties": {
+        "checker": {
+          "$ref": "#/$defs/CheckerNote",
+          "description": "A Navi's approval checker judged it before it reached the person (W239): why it asks them, or why it refused\nit. A blocked prompt was already refused on its node; approving it anyway lets the Navi run exactly this input\nonce, when it asks again."
+        },
         "input": {
           "description": "The tool's input exactly as the session asked (at most 64 KiB of JSON): approved, the tool runs with exactly\nthis. Absent when the node didn't send it; the tool then runs with what the session asked."
         },
@@ -22453,6 +22695,10 @@
         "requestId": {
           "minLength": 1,
           "type": "string"
+        },
+        "screenshot": {
+          "$ref": "#/$defs/AttachmentId",
+          "description": "A Navi's `confirm_step`: its screenshot of the page, the project's, for the card."
         },
         "site": {
           "description": "A Navi's first fetch or browser visit to this site (its host, such as `example.com`): approved, the Navi may\nfetch and open it without asking from then on, until a person revokes it (`navi_site_revoke`).",

@@ -112,28 +112,80 @@ On Ubuntu 23.10 and later, AppArmor may also block the user namespaces bubblewra
 for a Navi, so it needs unprivileged user namespaces too (on Debian before 11: `sudo sysctl
 kernel.unprivileged_userns_clone=1`). A Mac uses its built-in `sandbox-exec`.
 
-Anything hard to undo, or that someone else sees, waits for you every time: sending an email or message, accepting an
-invite, making or changing a calendar event, uploading or sharing a file, spending, posting publicly, deleting,
-signing or accepting terms, changing a password. There is no "always allow". Through an integration that's fleetd's
-rule. Through a command, a site or a screen it's the Navi's instruction: it runs such a command with `gated_run`,
-which asks with exactly that command.
+### Approvals {#approvals}
+
+A Navi's risky actions are the ones that reach outside: a send, reply, forward, share or invite through an
+integration, a site it opens on its own for the first time, and the final Confirm or Submit on a site
+(`confirm_step`). Its **Approvals** setting (Settings › Projects › the Navi) decides who approves them (decision
+`navi.approval-checker`, D263):
+
+| Mode | What happens |
+|---|---|
+| **Checker decides** (default) | A fresh model judges each risky action first. **Go** runs it and puts one quiet line in the chat: "Let through without asking you: send_message on gmail, to sam@example.org. The checker's reason: you asked to tell Sam that Saturday works". **Ask** brings the approval card, with the checker's reason on it. **Block** refuses it and tells you why, on a card with **Approve anyway**. |
+| **Ask me about everything** | Every risky action waits for you on a card. No checker runs. |
+| **YOLO** | No checker runs and nothing asks, not even for the cases fleetd's own rules ask about below (a recipient only an email named, a public share, a link carrying data). The floors still hold. Each action still gets its line in the chat. |
+
+The checker runs on your own Claude ([Claude accounts](/docs/people#claude)), as a session with no tools at all, in
+an empty folder of fleetd's own rather than the Navi's (so no `CLAUDE.md`, settings or skills the Navi wrote reach it),
+on **Sonnet 5.5 at medium effort** by default. Pick another model (Opus 5.5, Haiku 5.5, Fable 5.1) or effort in the
+same setting. It reads only:
+
+- the action exactly as it runs: the tool, the recipients or the link, the full text;
+- where each part came from: your messages (`person`), text you pasted (`person (pasted text)`), your contacts,
+  the thread being replied to, your sent mail, an event's attendees, your files, a site you allowed, or
+  `untrusted: an email from …` / `a web page on …` for anything only content the Navi read says, else `navi`;
+- your recent messages to the Navi, and its last question to you, marked as the Navi's.
+
+It never sees the mail, pages or files the Navi read, nor the Navi's own explanation of the action. Its prompt is
+`navi.checker` ([What agents are told](/docs/what-agents-are-told)).
+
+fleetd's own rules hold whatever the checker says:
+
+- **Floors**, in every mode, YOLO too: moving money, trading and placing orders are refused, by the tool's name or
+  by a link that does it (its path says transfer or trade and it carries an amount), and so is a password, key or
+  token anywhere in what goes out, a link it opens included. Spending, and a site whose link only mentions money or
+  trading (`/wiki/Bitcoin`), always wait for you on a card; on a site you allowed, such a link opens. A final Confirm
+  whose button cancels, returns or refunds an order goes through the mode like any other; one that pays or places an
+  order is handed to you.
+- **It asks you at least** when a recipient, share target, forwarding address or site came only from content the
+  Navi read; when a link carries data (an email address, a long code, text quoted from your mail), even on a site you
+  allowed; for a public or anyone-with-the-link share, edit access for someone new, a rule that forwards your mail to
+  another domain, an address on a domain one or two letters off a contact's, more than 10 recipients at once, or a
+  one-time code or an encoded blob in the text.
+- **A checker that fails asks.** A timeout, an error or an answer fleetd can't read brings the card. A model that
+  refuses to answer brings it too, saying "the checker flagged this as a likely attack".
+
+**Approve anyway** on a blocked card tells the Navi it may run exactly that call once: when it asks again with the
+same input, it runs without the checker. **Keep it blocked** leaves it refused.
+
+**Ran without asking**, under Approvals, lists every action the checker let through or YOLO ran, newest first:
+when, what, the checker's reason, and **Show in chat**, which opens its line. `navi_approvals {machineId, projectId}`
+reads the mode and the log; `navi_approvals_set {machineId, projectId, mode, model?, effort?}` sets them, from your
+own key only.
+
+**A final Confirm on a site.** Before the last click of a step that doesn't pay or order (booking a table, cancelling
+a subscription, sending a form, an expense, a return, a post), the Navi calls `confirm_step` with the site, the
+button, what it does and a screenshot. It goes through the mode like a send: on a card you see the screenshot, and
+**Click it** lets the Navi click. A Pay, Buy or Order button never goes this way: the Navi hands that click to you.
+
+**Commands.** A Navi's shell commands never ask, in any mode. The one exception is a command that would wipe the
+machine or your home folder (`rm -rf ~`, `rm -rf /`, `mkfs`, `dd` onto a disk, a fork bomb): it's refused, with why.
 
 This is enforced outside the model. A Navi's lead runs in Claude Code's `manual` permission mode with a short
-allow-list ([Agent tools](/docs/reference/agent-tools#claude-code-tools)). Its file tools and fetches always raise a
-permission prompt, whatever your own Claude Code settings allow. The node answers the file tools and the shell
-commands. Every other prompt goes to the hub, which allows a site you allowed before or linked in your message.
-Anything else becomes an approval in the Navi's chat, with the tool and exactly what it would get: the recipients, the
-full text. **Approve** runs the tool with exactly that input. **Deny** tells the Navi you said no, with your reason if
-you give one. A prompt that goes away on its own (the run ended) closes its approval. Moving money, trading and
-creating accounts through an integration are blocked even if approved.
+allow-list ([Agent tools](/docs/reference/agent-tools#claude-code-tools)). Its file tools, fetches and
+`confirm_step` always raise a permission prompt, whatever your own Claude Code settings allow. The node answers the
+file tools and the shell commands. Every other prompt goes to the hub, which allows a site you allowed before or
+linked in your message, and decides the rest by the mode above. On a card, **Approve** runs the tool with exactly the
+input shown. **Deny** tells the Navi you said no, with your reason if you give one. A prompt that goes away on its own
+(the run ended) closes its approval. Through a command or a screen, a send is the Navi's instruction, not fleetd's
+rule: it runs such a command with `gated_run`, which asks with exactly that command.
 
 **What commands and screens can still do.** The site gate covers fetching and opening a site; it doesn't follow a page
 after that, or a command's own network use. Browser commands inside an open page run unasked: clicks, fills, typing,
 snapshots, a script in the page. A command such as `curl` reaches the network unasked too: the sandbox limits what a
 command writes and reads, not where it sends. So commands and screens aren't held to the approval rule for sends, and
 a click or a form that leads to another site isn't asked. Its Android, iOS and desktop screens (`agent-device`) don't
-ask per site at all. Nor is the final Send button on a site you allowed: that final click is left to you by
-instruction only. The Navi is told to hand it to you with a takeover, but that's its prompt, not fleetd's rules. Only
+ask per site at all. That the Navi calls `confirm_step` before a final click is its prompt, not fleetd's rules. Only
 allow sites where that's fine, such as your bank's when you mean to watch. Paying is different: the Navi has no card
 until you approve a [purchase](#purchases).
 

@@ -21,6 +21,10 @@
 //! searches and reads back through its own chat with `recall`. It pays at a checkout with its person's card, after they
 //! approve each purchase (D265, `purchases`).
 pub mod bridge;
+pub mod checker;
+#[cfg(test)]
+mod checker_tests;
+pub mod confirm;
 #[cfg(test)]
 mod mcp_fresh_tests;
 pub mod owner;
@@ -28,6 +32,10 @@ pub mod owner;
 mod owner_tests;
 pub mod purchases;
 pub mod recall;
+pub mod review;
+#[cfg(test)]
+mod review_tests;
+pub mod shell_guard;
 pub mod sites;
 pub mod store;
 #[cfg(test)]
@@ -40,7 +48,8 @@ use fleetd_contracts::auth::Role;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadRef};
 use fleetd_contracts::mcp::{
-    ErrorCode, NaviArchiveInput, NaviArchiveOutput, NaviCreateInput, NaviCreateOutput,
+    ErrorCode, NaviApprovalsInput, NaviApprovalsOutput, NaviApprovalsSetInput,
+    NaviApprovalsSetOutput, NaviArchiveInput, NaviArchiveOutput, NaviCreateInput, NaviCreateOutput,
     NaviListInput, NaviListOutput, NaviRenameInput, NaviRenameOutput, NaviSigninsForgetInput,
     NaviSigninsForgetOutput, NaviSiteRevokeInput, NaviSiteRevokeOutput, NaviSitesInput,
     NaviSitesOutput,
@@ -49,7 +58,9 @@ use fleetd_contracts::model::{ProjectCreator, ProjectKind, ProjectSummary};
 use fleetd_contracts::node_link::{CAP_ASSISTANT, CAP_NAVI_SIGNINS};
 use fleetd_contracts::projects::ProjectAddedData;
 
-use crate::hub::api::{Caller, Hub, ToolError, allows, error, offline, require, unknown_project};
+use crate::hub::api::{
+    Caller, Hub, ToolError, allows, error, is_human, offline, require, unknown_project,
+};
 use crate::hub::executor::tools::from_executor;
 use crate::hub::store::{HubDb, NewEvent, StoreError, iso_ms, now_ms};
 
@@ -405,6 +416,64 @@ pub fn sites(
     Ok(NaviSitesOutput {
         sites,
         next,
+        truncated: None,
+    })
+}
+
+/// How a Navi's risky actions are approved, and what ran without asking.
+pub fn approvals(
+    hub: &Hub,
+    caller: &Caller,
+    input: NaviApprovalsInput,
+) -> Result<NaviApprovalsOutput, ToolError> {
+    let r = ProjectRef {
+        machine_id: input.machine_id,
+        project_id: input.project_id,
+    };
+    require(caller, Role::Read, Some(&r.machine_id))?;
+    navi_of(hub, &r)?;
+    let (approvals, log) = hub
+        .db
+        .with(|c| Ok((checker::approvals(c, &r)?, checker::log(c, &r)?)))?;
+    Ok(NaviApprovalsOutput {
+        approvals,
+        log,
+        next: None,
+        truncated: None,
+    })
+}
+
+/// A person sets how their Navi's risky actions are approved: only a person, never an agent, not even the Navi.
+pub fn set_approvals(
+    hub: &Hub,
+    caller: &Caller,
+    input: NaviApprovalsSetInput,
+) -> Result<NaviApprovalsSetOutput, ToolError> {
+    let r = ProjectRef {
+        machine_id: input.machine_id,
+        project_id: input.project_id,
+    };
+    require(caller, Role::Operate, Some(&r.machine_id))?;
+    if !is_human(caller) {
+        return Err(error(
+            ErrorCode::Forbidden,
+            "Only a person decides what their Navi does without asking.",
+            "Change it in the desktop app: the Navi's settings, Approvals.",
+        ));
+    }
+    let navi = navi_of(hub, &r)?;
+    let approvals = hub.db.with(|c| {
+        checker::set_approvals(c, &r, input.mode, input.model.as_ref(), input.effort)?;
+        Ok(checker::approvals(c, &r)?)
+    })?;
+    changed(
+        hub,
+        &navi,
+        format!("{}'s approvals: {}", navi.title, approvals.mode.as_str()),
+    )?;
+    Ok(NaviApprovalsSetOutput {
+        approvals,
+        next: None,
         truncated: None,
     })
 }

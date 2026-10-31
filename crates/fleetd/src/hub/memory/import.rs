@@ -10,11 +10,9 @@
 //! kinds (instructions, then preferences) first, so what doesn't fit is the least lasting. One `memory.changed` at
 //! the end refreshes the lists.
 use std::sync::Arc;
-use std::time::Duration;
 
 use fleetd_contracts::effort::ProfileName;
-use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::{ProjectRef, ThreadRef};
+use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::mcp::{ErrorCode, MemoryImportOutput};
 use fleetd_contracts::mcp_servers::McpSessionConfig;
 use fleetd_contracts::memory::{
@@ -25,139 +23,19 @@ use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::node_link::CAP_ALLOWED_ONLY;
 use fleetd_contracts::people::PersonId;
 use fleetd_contracts::prim::{Count, List, Text};
-use fleetd_contracts::sessions::{MessageRole, SessionRole};
-use rusqlite::{OptionalExtension, params};
+use fleetd_contracts::sessions::SessionRole;
 use serde::Deserialize;
 
 use super::{Target, You};
 use crate::hub::api::{Hub, ToolError};
 use crate::hub::claude_accounts::{Whose, launch_account};
+pub use crate::hub::executor::turn::Turn;
+use crate::hub::executor::turn::{self, Owner};
 use crate::hub::executor::{LaunchInput, LaunchOptions};
-use crate::hub::leads::hooks::BoxFuture;
-use crate::hub::store::{HubDb, StoreError, now_ms};
-
-/// A turn still going after this long is stopped, and the import fails.
-pub const TURN_LIMIT: Duration = Duration::from_secs(240);
-const END_EVENTS: [HubEventType; 4] = [
-    HubEventType::ThreadCompleted,
-    HubEventType::ThreadFailed,
-    HubEventType::ThreadInterrupted,
-    HubEventType::ThreadUsageLimited,
-];
-
-/// Runs one session to its end on a project's machine and gives back its last reply: the hub's executors, or a
-/// test's fake model.
-pub trait Turn: Send + Sync {
-    fn run(
-        &self,
-        r: &ProjectRef,
-        person: Option<&PersonId>,
-        input: LaunchInput,
-        options: LaunchOptions,
-    ) -> BoxFuture<Result<String, String>>;
-}
-
-struct Executors(Arc<Hub>);
-
-impl Turn for Executors {
-    fn run(
-        &self,
-        r: &ProjectRef,
-        person: Option<&PersonId>,
-        input: LaunchInput,
-        options: LaunchOptions,
-    ) -> BoxFuture<Result<String, String>> {
-        let hub = Arc::clone(&self.0);
-        let (r, person) = (r.clone(), person.cloned());
-        Box::pin(async move {
-            let started = now_ms(hub.clock.as_ref());
-            let mut seq = hub.events.subscribe();
-            let (thread_id, _) = hub
-                .executors
-                .launch(&r.machine_id, &input, options)
-                .await
-                .map_err(|e| e.to_string())?;
-            let thread = ThreadRef {
-                machine_id: r.machine_id.clone(),
-                thread_id,
-            };
-            owned(&hub.db, &r, &thread, person.as_ref(), started).map_err(|e| e.to_string())?;
-            let waited = tokio::time::timeout(TURN_LIMIT, async {
-                loop {
-                    if let Some(completed) = ended(&hub.db, &thread, started)? {
-                        return Ok(completed);
-                    }
-                    if seq.changed().await.is_err() {
-                        return Ok(false);
-                    }
-                }
-            })
-            .await;
-            let reply = match waited {
-                Err(_) => Err("it ran past its time".to_owned()),
-                Ok(Err(e)) => Err(StoreError::to_string(&e)),
-                Ok(Ok(false)) => Err("it stopped before it answered".to_owned()),
-                Ok(Ok(true)) => match hub.executors.messages(&thread).await {
-                    Ok(messages) => messages
-                        .into_iter()
-                        .rev()
-                        .find(|m| m.role == MessageRole::Assistant && !m.text.trim().is_empty())
-                        .map(|m| m.text)
-                        .ok_or_else(|| "it answered nothing".to_owned()),
-                    Err(e) => Err(e.to_string()),
-                },
-            };
-            // Its work is done either way; a session left running holds the person's paste in a process.
-            if let Err(e) = hub.executors.stop(&thread, false).await {
-                tracing::warn!(thread = %thread.thread_id, "memory import: session not stopped: {e}");
-            }
-            reply
-        })
-    }
-}
 
 /// The hub's executors, which run the import's turn on the project's machine.
 pub fn executors(hub: &Arc<Hub>) -> impl Turn + use<> {
-    Executors(Arc::clone(hub))
-}
-
-fn owned(
-    db: &HubDb,
-    r: &ProjectRef,
-    thread: &ThreadRef,
-    person: Option<&PersonId>,
-    started: i64,
-) -> Result<(), StoreError> {
-    db.with(|c| {
-        c.execute(
-            "INSERT OR IGNORE INTO memory_imports (machine_id, thread_id, project_id, person_id, started_ms)
-             VALUES (?, ?, ?, ?, ?)",
-            params![
-                thread.machine_id.as_str(),
-                thread.thread_id.as_str(),
-                r.project_id.as_str(),
-                person.map(PersonId::as_str),
-                started
-            ],
-        )?;
-        Ok(())
-    })
-}
-
-/// Whether the session ended after `started_ms`: true when it completed.
-fn ended(db: &HubDb, thread: &ThreadRef, started_ms: i64) -> Result<Option<bool>, StoreError> {
-    let types: Vec<&str> = END_EVENTS.iter().map(|t| t.as_str()).collect();
-    let types = serde_json::to_string(&types)?;
-    let ty: Option<String> = db.with(|c| {
-        Ok(c.query_row(
-            "SELECT type FROM events WHERE type IN (SELECT value FROM json_each(?1)) AND machine_id = ?2
-               AND json_extract(data, '$.threadId') = ?3 AND created_ms >= ?4 ORDER BY seq LIMIT 1",
-            params![types, thread.machine_id.as_str(), thread.thread_id.as_str(), started_ms],
-            |row| row.get(0),
-        )
-        .optional()?)
-    })?;
-    Ok(ty.map(|t| t == HubEventType::ThreadCompleted.as_str()))
+    turn::executors(hub, Owner::MemoryImport)
 }
 
 /// The export prompt every app shows, as the hub's prompts say it now.

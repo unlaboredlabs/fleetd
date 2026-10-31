@@ -1,4 +1,5 @@
-//! navi_create, navi_list, navi_rename, navi_archive, navi_sites, navi_site_revoke and navi_signins_forget: thin over
+//! navi_create, navi_list, navi_rename, navi_archive, navi_sites, navi_site_revoke, navi_approvals, navi_approvals_set
+//! and navi_signins_forget: thin over
 //! the Navi service. And
 //! navi_asks: the app's read of what a Navi asked other projects for (`project_message`), with each order opened for
 //! it and its state. Read-only; the app calls it on a hub that names the `navi_asks` feature.
@@ -7,10 +8,11 @@ use std::sync::Arc;
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::mcp::{
-    ErrorCode, NaviArchiveInput, NaviArchiveOutput, NaviAsksInput, NaviAsksOutput, NaviCreateInput,
-    NaviCreateOutput, NaviListInput, NaviListOutput, NaviRenameInput, NaviRenameOutput,
-    NaviSigninsForgetInput, NaviSigninsForgetOutput, NaviSiteRevokeInput, NaviSiteRevokeOutput,
-    NaviSitesInput, NaviSitesOutput,
+    ErrorCode, NaviApprovalsInput, NaviApprovalsOutput, NaviApprovalsSetInput,
+    NaviApprovalsSetOutput, NaviArchiveInput, NaviArchiveOutput, NaviAsksInput, NaviAsksOutput,
+    NaviCreateInput, NaviCreateOutput, NaviListInput, NaviListOutput, NaviRenameInput,
+    NaviRenameOutput, NaviSigninsForgetInput, NaviSigninsForgetOutput, NaviSiteRevokeInput,
+    NaviSiteRevokeOutput, NaviSitesInput, NaviSitesOutput,
 };
 use fleetd_contracts::navi::{NAVI_ASKS_MAX, NaviAsk, NaviAskOrder};
 use fleetd_contracts::prim::List;
@@ -26,6 +28,8 @@ pub fn register(tools: &mut Registry) {
     tools.add("navi_archive", archive);
     tools.add("navi_sites", sites);
     tools.add("navi_site_revoke", revoke_site);
+    tools.add("navi_approvals", approvals);
+    tools.add("navi_approvals_set", set_approvals);
     tools.add("navi_signins_forget", forget_signins);
     tools.add("navi_asks", navi_asks);
     super::purchases::register(tools);
@@ -145,6 +149,22 @@ async fn revoke_site(
     input: NaviSiteRevokeInput,
 ) -> Result<NaviSiteRevokeOutput, ToolError> {
     super::revoke_site(&hub, &caller, input)
+}
+
+async fn approvals(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: NaviApprovalsInput,
+) -> Result<NaviApprovalsOutput, ToolError> {
+    super::approvals(&hub, &caller, input)
+}
+
+async fn set_approvals(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: NaviApprovalsSetInput,
+) -> Result<NaviApprovalsSetOutput, ToolError> {
+    super::set_approvals(&hub, &caller, input)
 }
 
 async fn forget_signins(

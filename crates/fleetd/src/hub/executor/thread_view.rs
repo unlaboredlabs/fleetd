@@ -258,6 +258,24 @@ pub fn actions_of(view: &ThreadView, limit: usize, failed_only: bool) -> Vec<(St
     out
 }
 
+/// What a tool call or command read: its call (the tool's name and input, or the command line) and its whole output
+/// as the view holds it. None for anything else, or with no output.
+pub fn read_of(item: &ThreadItem) -> Option<(String, String)> {
+    let (call, output) = match &item.kind {
+        ItemKind::Tool {
+            tool_name,
+            input,
+            output,
+            ..
+        } => (format!("{tool_name} {input}"), output.as_deref()?),
+        ItemKind::Command {
+            command, output, ..
+        } => (command.clone(), output.as_deref()?),
+        _ => return None,
+    };
+    (!output.is_empty()).then(|| (js_take(&call, 500).to_owned(), output.to_owned()))
+}
+
 /// Newest-first tail rows with their ids, and whether any text was trimmed to its limit.
 pub fn tail_of(
     view: &ThreadView,

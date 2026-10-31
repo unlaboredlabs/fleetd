@@ -14,8 +14,9 @@ import { configLines, configWords } from "../tryit/model";
 import { Exact, HiddenWarning, marks } from "./Exact";
 import { patchLocal, useLocal, type Failed } from "./local";
 import { prose } from "./prose";
+import { Media } from "../chat/blocks/Media";
 import { cardLabel, money, payQuestion, totalWords } from "./purchase";
-import { actionWarning, actionWords, answerWords, confirmWords } from "./toolPreview";
+import { actionPlace, actionWarning, actionWords, answerWords, blockedWords, confirmStep, confirmWords } from "./toolPreview";
 import {
   approvalOffline,
   approvalOutcome,
@@ -315,6 +316,9 @@ function SecretItem({ item, read }: { item: SecretRequestItem; read: number | un
   );
 }
 
+/** A reason as one sentence: its own final stop, or one added. */
+const sentence = (text: string): string => (/[.!?]$/u.test(text.trim()) ? text.trim() : `${text.trim()}.`);
+
 /** A keydown from a control inside the card does what that control does: Enter on Deny denies. */
 const fromControl = (e: KeyboardEvent<HTMLElement>): boolean =>
   e.target !== e.currentTarget && (e.target as HTMLElement).closest("button, input, textarea, select, a, [role=button]") !== null;
@@ -349,7 +353,11 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
   const offline = approvalOffline(shown.state, live);
   const { gated, permission, previewConfig, purchase } = item;
   const preview = permission?.preview;
-  const warning = preview === undefined ? undefined : actionWarning(preview.action);
+  // The Navi's approval checker judged it first: why it asks, or why it refused it (the person may approve it anyway).
+  const checker = permission?.checker;
+  const blocked = checker?.verdict === "block";
+  const warning = blocked ? { text: "Blocked by the checker", tone: "danger" as const } : preview === undefined ? undefined : actionWarning(preview.action);
+  const words = blocked ? blockedWords : preview === undefined ? undefined : answerWords(preview.action);
   const confirm = useRef<HTMLDivElement>(null);
   const approveButton = useRef<HTMLButtonElement>(null);
   const canAnswer = live && !busy && shown.state === "open";
@@ -402,7 +410,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
     }
   };
 
-  const destructive = gated?.class === "irreversible" || preview?.action === "delete" || preview?.action === "spend" || purchase !== undefined;
+  const destructive = blocked || gated?.class === "irreversible" || preview?.action === "delete" || preview?.action === "spend" || purchase !== undefined;
   const navi = asker ?? "Navi";
   return (
     <Shell ref={section} label={purchase !== undefined ? "Purchase to approve" : previewConfig === undefined ? "Command to approve" : "Try it setting to approve"} requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
@@ -413,7 +421,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
             : previewConfig !== undefined
             ? "Try it setting"
             : preview !== undefined
-              ? `${actionWords(preview.action)} · MCP server`
+              ? `${actionWords(preview.action)} · ${actionPlace(preview)}`
               : gated === undefined
                 ? "Permission"
                 : "Command"}
@@ -441,6 +449,15 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
           ? prose(previewConfig.why)
           : gated !== undefined
             ? prose(gated.reason)
+            : preview?.action === "confirm"
+              ? (
+                  <>
+                    {marks(`${asker ?? "Navi"} wants to click “${confirmStep(preview).button}” on `)}
+                    <InlineCode>
+                      <Exact text={confirmStep(preview).site} ltr />
+                    </InlineCode>
+                  </>
+                )
             : preview !== undefined
               ? (
                   <>
@@ -475,6 +492,12 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
         ]}
         lines={[previewConfig?.why, gated?.reason, previewConfig === undefined ? undefined : configLines(previewConfig.config).join("\n"), permission?.summary, preview?.input]}
       />
+      {checker === undefined ? null : (
+        <Text as="p" size="sm" tone={blocked ? "danger" : "quiet"} className={cx(s.line)} data-checker={checker.verdict}>
+          {prose(blocked ? `The checker refused it: ${sentence(checker.reason)} Approve it anyway and ${asker ?? "Navi"} runs exactly this, once.` : `The checker asks you: ${checker.reason}`)}
+        </Text>
+      )}
+      {permission?.screenshot === undefined ? null : <Media media={{ attachmentId: permission.screenshot, caption: "What the page shows" }} clip={false} />}
       <div className={s.detail}>
         {/* A purchase: exactly what is bought and for how much, then where and with which card. */}
         {purchase !== undefined ? (
@@ -592,13 +615,13 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
       ) : (
         <div className={s.actions}>
           <Button ref={approveButton} variant={destructive ? "danger" : "primary"} disabled={!canAnswer} onClick={approve}>
-            {purchase !== undefined ? `Pay ${totalWords(purchase.total)}` : preview !== undefined ? answerWords(preview.action).yes : item.note === undefined ? "Approve" : "Approve again"}
+            {purchase !== undefined ? `Pay ${totalWords(purchase.total)}` : words !== undefined ? words.yes : item.note === undefined ? "Approve" : "Approve again"}
           </Button>
           <Button variant="secondary" disabled={!canAnswer} onClick={() => answer("deny")}>
-            {purchase !== undefined ? "Don't buy" : preview !== undefined ? answerWords(preview.action).no : "Deny"}
+            {purchase !== undefined ? "Don't buy" : words !== undefined ? words.no : "Deny"}
           </Button>
           <Text size="xs" tone="quiet" className={cx(s.whenFocused)}>
-            {purchase !== undefined ? "Enter: Pay · Esc: Don't buy" : preview === undefined ? "Enter approves · Esc denies" : `Enter: ${answerWords(preview.action).yes} · Esc: ${answerWords(preview.action).no}`}
+            {purchase !== undefined ? "Enter: Pay · Esc: Don't buy" : words === undefined ? "Enter approves · Esc denies" : `Enter: ${words.yes} · Esc: ${words.no}`}
           </Text>
         </div>
       )}

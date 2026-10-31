@@ -13,12 +13,17 @@ use std::sync::Arc;
 
 use fleetd_contracts::chat::ChatRequestId;
 use fleetd_contracts::events::{HubEvent, HubEventType};
-use fleetd_contracts::ledger::{HumanRequest, RequestKind, RequestState, ToolPermission};
+use fleetd_contracts::ledger::{
+    CheckerNote, CheckerVerdict, HumanRequest, RequestKind, RequestState, ToolPermission,
+};
+use fleetd_contracts::navi::{AutoApprovedBy, NaviApprovalMode};
 use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
 use fleetd_contracts::time::DecidedBy;
 use serde_json::Value;
 
 use crate::hub::integrations::policy::{self, Verdict};
+use crate::hub::navi::checker::{self, Action};
+use crate::hub::navi::confirm;
 use crate::hub::navi::sites::{self, Visit};
 
 use super::store::{NewRequest, RequestFilter};
@@ -40,6 +45,13 @@ const THREAD_EVENTS: [&str; 6] = [
     "thread.interrupted",
     "thread.usage_limited",
 ];
+
+/// Whether the checker blocked the prompt this card shows.
+fn blocked(p: &ToolPermission) -> bool {
+    p.checker
+        .as_ref()
+        .is_some_and(|c| c.verdict == CheckerVerdict::Block)
+}
 
 /// The thread and prompt a request answers.
 fn prompt_of(r: &HumanRequest) -> Option<(&str, &ToolPermission)> {
@@ -69,7 +81,7 @@ impl Approvals {
         }
     }
 
-    pub(super) async fn on_thread_event(&self, event: &HubEvent) {
+    pub(super) async fn on_thread_event(self: &Arc<Self>, event: &HubEvent) {
         let (Some(machine_id), Some(thread_id), Some(project_id)) = (
             event.machine_id.as_ref(),
             event.thread_id.as_ref(),
@@ -130,8 +142,14 @@ impl Approvals {
         self.raise(&project, thread_id, &prompt).await;
     }
 
-    /// Answers a new prompt by the hub's policy, or opens the approval a person answers.
-    async fn raise(&self, project: &ProjectRef, thread_id: &str, prompt: &PendingPermission) {
+    /// Answers a new prompt by the hub's policy, or decides it by the Navi's approval mode: a card the person answers,
+    /// the checker's verdict, or (YOLO) at once.
+    async fn raise(
+        self: &Arc<Self>,
+        project: &ProjectRef,
+        thread_id: &str,
+        prompt: &PendingPermission,
+    ) {
         let (tool, summary) = (prompt.tool_name.as_str(), prompt.summary.as_str());
         let machine = &project.machine_id;
         let servers = self.deps.hub.mcp_servers(project).await;
@@ -151,6 +169,12 @@ impl Approvals {
             _ if prompt.input.is_none() => (deny(UNSHOWN), None),
             Some(Verdict::Block(why)) => (deny(why), None),
             Some(Verdict::Ask(preview)) => (None, Some(preview)),
+            // A Navi's final Confirm on a site: a payment is refused, anything else is a risky action like a send.
+            None if tool == confirm::TOOL => match confirm::refused(&input) {
+                _ if prompt.input.is_none() => (deny(UNSHOWN), None),
+                Some(why) => (deny(why), None),
+                None => (None, confirm::preview(&input).map(Box::new)),
+            },
             None => (None, None),
         };
         // A Navi's fetch or browser visit: a site the person allowed before goes through; any other asks, and its
@@ -158,11 +182,28 @@ impl Approvals {
         let mut site = None;
         let mut decided = decided;
         if let Some(visit) = sites::visit(tool, &input) {
+            // The floor first, on any site, allowed or not, in every mode: a credential in the link. (A path that says
+            // money or trading asks, through the mode: `review::visit_money`.)
+            let mut shown = match &input {
+                Value::Object(o) => o.clone(),
+                _ => serde_json::Map::new(),
+            };
+            shown.insert("tool".to_owned(), Value::String(tool.to_owned()));
+            if decided.is_none()
+                && let Some(why) = crate::hub::navi::review::floor(&Value::Object(shown))
+            {
+                decided = deny(why);
+            }
             let host = match &visit {
                 Visit::Site(host) => Some(host.as_str()),
                 Visit::Unknown => None,
             };
+            // A link that carries data (an address, a long code) goes through the Navi's mode even on an allowed site.
+            let data = crate::hub::navi::review::visit_url(&input)
+                .is_some_and(|u| crate::hub::navi::review::carries_data(&u, &[]));
             match self.deps.hub.navi_site(project, host).await {
+                _ if decided.is_some() => {}
+                Some(true) if data => site = host.map(str::to_owned),
                 Some(true) => {
                     decided = Some(PermissionDecision::Allow {
                         updated_input: None,
@@ -173,25 +214,284 @@ impl Approvals {
             }
         }
         if let Some(decision) = decided {
-            if let Err(e) = self
-                .deps
-                .nodes
-                .answer_permission(
-                    machine,
+            self.answer_by_rule(machine, thread_id, prompt, decision)
+                .await;
+            return;
+        }
+        let action = Action {
+            tool: tool.to_owned(),
+            summary: summary.to_owned(),
+            input: input.clone(),
+            preview: preview.as_deref().cloned(),
+            site: site.clone(),
+        };
+        // What the person approved anyway after the checker blocked it runs once, when the Navi asks again.
+        if prompt.input.is_some() && self.approved_anyway(project, &action).await {
+            let allow = PermissionDecision::Allow {
+                updated_input: None,
+            };
+            self.answer_by_rule(machine, thread_id, prompt, allow).await;
+            return;
+        }
+        let settings = match prompt.input {
+            Some(_) => self.deps.hub.navi_approvals(project).await,
+            None => None,
+        };
+        let risky = action.preview.is_some() || action.site.is_some();
+        match settings.as_ref().map(|s| s.mode) {
+            _ if checker::always_asks(&action) => {}
+            Some(NaviApprovalMode::Yolo) => {
+                // YOLO skips the checker and every ask, never the floors: money, trading, a credential in what goes
+                // out or a link it opens, a command that wipes the machine. A link that says money or trading goes
+                // to the person.
+                let mut shown = match &input {
+                    Value::Object(o) => o.clone(),
+                    _ => serde_json::Map::new(),
+                };
+                shown.insert("tool".to_owned(), Value::String(tool.to_owned()));
+                let shown = Value::Object(shown);
+                let refused = crate::hub::navi::review::floor(&shown).or_else(|| {
+                    (tool == "Bash")
+                        .then(|| input.get("command").and_then(Value::as_str))
+                        .flatten()
+                        .and_then(|c| crate::hub::navi::shell_guard::refused(c, None))
+                });
+                if let Some(why) = refused {
+                    self.answer_by_rule(machine, thread_id, prompt, deny(why).unwrap())
+                        .await;
+                    return;
+                }
+                if crate::hub::navi::review::visit_money(&shown).is_some() {
+                    self.file(project, thread_id, prompt, action, None).await;
+                    return;
+                }
+                self.go(
+                    project,
                     thread_id,
-                    prompt.request_id.as_str(),
-                    decision,
-                    Some(DecidedBy::HubRule),
+                    prompt,
+                    &action,
+                    AutoApprovedBy::Yolo,
+                    None,
                 )
-                .await
-            {
+                .await;
+                return;
+            }
+            Some(NaviApprovalMode::Checker) if risky => {
+                let key = (
+                    machine.clone(),
+                    thread_id.to_owned(),
+                    prompt.request_id.to_string(),
+                );
+                if !self.checking.lock().unwrap().insert(key.clone()) {
+                    return;
+                }
+                let (me, project, thread_id, prompt) = (
+                    Arc::clone(self),
+                    project.clone(),
+                    thread_id.to_owned(),
+                    prompt.clone(),
+                );
+                let settings = settings.unwrap();
+                // A checker turn takes seconds to minutes: the follower goes on with other prompts meanwhile.
+                tokio::spawn(async move {
+                    let note = me
+                        .deps
+                        .hub
+                        .navi_check(&project, &thread_id, &action, &settings)
+                        .await;
+                    me.checked(&project, &thread_id, &prompt, action, note)
+                        .await;
+                    me.checking.lock().unwrap().remove(&key);
+                    me.idle.notify_waiters();
+                });
+                return;
+            }
+            _ => {}
+        }
+        self.file(project, thread_id, prompt, action, None).await;
+    }
+
+    /// Answers a prompt by a hub rule, without asking anyone.
+    async fn answer_by_rule(
+        &self,
+        machine: &str,
+        thread_id: &str,
+        prompt: &PendingPermission,
+        decision: PermissionDecision,
+    ) -> bool {
+        match self
+            .deps
+            .nodes
+            .answer_permission(
+                machine,
+                thread_id,
+                prompt.request_id.as_str(),
+                decision,
+                Some(DecidedBy::HubRule),
+            )
+            .await
+        {
+            Ok(()) => true,
+            Err(e) => {
                 tracing::warn!(
                     error = e.message,
                     "approvals: the policy's answer to a prompt was not delivered"
                 );
+                false
             }
+        }
+    }
+
+    /// Runs an action nobody was asked about: answered on its node, then one quiet line in the Navi's chat and an
+    /// entry in its auto-approved log. A first visit's site is allowed from then on, as a person's approval allows it.
+    async fn go(
+        &self,
+        project: &ProjectRef,
+        thread_id: &str,
+        prompt: &PendingPermission,
+        action: &Action,
+        by: AutoApprovedBy,
+        reason: Option<&str>,
+    ) {
+        let allow = PermissionDecision::Allow {
+            updated_input: None,
+        };
+        if !self
+            .answer_by_rule(&project.machine_id, thread_id, prompt, allow)
+            .await
+        {
             return;
         }
+        if let Some(site) = &action.site {
+            let who = match by {
+                AutoApprovedBy::Checker => "checker",
+                AutoApprovedBy::Yolo => "yolo",
+            };
+            self.deps.hub.navi_site_allow(project, site, who).await;
+        }
+        self.deps
+            .hub
+            .navi_auto_approved(project, action, by, reason)
+            .await;
+    }
+
+    /// The checker's verdict on a prompt, once it came: go runs it; ask files the card with its reason; block refuses
+    /// it on its node and files a card the person may approve anyway. A prompt gone meanwhile (answered elsewhere, its
+    /// run ended) is left alone.
+    async fn checked(
+        &self,
+        project: &ProjectRef,
+        thread_id: &str,
+        prompt: &PendingPermission,
+        action: Action,
+        note: CheckerNote,
+    ) {
+        let still = self
+            .deps
+            .nodes
+            .pending_permission(&project.machine_id, thread_id)
+            .await
+            .is_some_and(|p| p.request_id == prompt.request_id);
+        if !still {
+            return;
+        }
+        match note.verdict {
+            CheckerVerdict::Go => {
+                self.go(
+                    project,
+                    thread_id,
+                    prompt,
+                    &action,
+                    AutoApprovedBy::Checker,
+                    Some(note.reason.as_str()),
+                )
+                .await
+            }
+            CheckerVerdict::Ask => {
+                self.file(project, thread_id, prompt, action, Some(note))
+                    .await
+            }
+            CheckerVerdict::Block => {
+                let why = format!(
+                    "Blocked by fleetd's approval checker: {} The person was told, and can approve it anyway; don't \
+                     try it another way. If they approve it, call it again with exactly the same input.",
+                    note.reason.as_str().trim_end_matches('.').to_owned() + "."
+                );
+                let deny = PermissionDecision::Deny {
+                    message: fleetd_contracts::prim::Text::unchecked(clip(&why, 2000)),
+                };
+                if self
+                    .answer_by_rule(&project.machine_id, thread_id, prompt, deny)
+                    .await
+                {
+                    self.file(project, thread_id, prompt, action, Some(note))
+                        .await;
+                }
+            }
+        }
+    }
+
+    /// Whether the person approved exactly this call anyway after the checker blocked it, and it hasn't run since: it
+    /// runs now, once.
+    async fn approved_anyway(&self, project: &ProjectRef, action: &Action) -> bool {
+        let approved = self
+            .deps
+            .requests
+            .list(&RequestFilter {
+                states: Some(vec![RequestState::Approved]),
+                kind: Some(RequestKind::Approval),
+                limit: i64::MAX,
+                ..Default::default()
+            })
+            .unwrap_or_default();
+        let Some(r) = approved.into_iter().find(|r| {
+            project_of(r) == *project
+                && r.permission.as_ref().is_some_and(|p| {
+                    blocked(p)
+                        && p.tool_name.as_str() == action.tool
+                        && p.input.as_ref() == Some(&action.input)
+                })
+        }) else {
+            return false;
+        };
+        let at = self.now();
+        self.change_from(&r.request_id, RequestState::Approved, |r| {
+            r.state = RequestState::Ran;
+            r.evidence = Some(fleetd_contracts::prim::Text::unchecked(
+                "ran: the Navi asked again with exactly the input approved",
+            ));
+            r.finished_at = Some(fleetd_contracts::ids::Timestamp(at));
+        })
+        .await
+        .is_ok()
+    }
+
+    /// Opens the approval a person answers: the tool, exactly what it runs with, and the checker's word when it had one.
+    async fn file(
+        &self,
+        project: &ProjectRef,
+        thread_id: &str,
+        prompt: &PendingPermission,
+        action: Action,
+        checker: Option<CheckerNote>,
+    ) {
+        let (tool, summary) = (prompt.tool_name.as_str(), prompt.summary.as_str());
+        let Action {
+            input,
+            preview,
+            site,
+            ..
+        } = action;
+        // A confirm step's screenshot shows on its card once it is the Navi's own image (`chat_image`).
+        let screenshot = match input.get("screenshot").and_then(Value::as_str) {
+            Some(id) if tool == confirm::TOOL => {
+                match fleetd_contracts::mcp::AttachmentId::new(id) {
+                    Ok(id) if self.deps.hub.navi_image(project, &id).await => Some(id),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
         let now = system_ms(self.deps.clock.now());
         if let Err(e) = self
             .create(NewRequest {
@@ -206,10 +506,12 @@ impl Approvals {
                     request_id: prompt.request_id.clone(),
                     tool_name: prompt.tool_name.clone(),
                     summary: prompt.summary.clone(),
-                    preview,
+                    preview: preview.map(Box::new),
                     // What approving runs: the prompt's input.
                     input: prompt.input.as_ref().map(|_| input.clone()),
                     site,
+                    checker,
+                    screenshot,
                 }),
                 preview_config: None,
                 purchase: None,
@@ -239,8 +541,21 @@ impl Approvals {
                 Vec::new()
             })
             .into_iter()
-            .filter(|r| r.permission.is_some())
+            // A blocked prompt's card was refused on its node already: no prompt of a run waits on it.
+            .filter(|r| r.permission.as_ref().is_some_and(|p| !blocked(p)))
             .collect()
+    }
+
+    /// Waits until no checker runs: the tests' way to see a verdict land.
+    #[cfg(test)]
+    pub(super) async fn checks_done(&self) {
+        loop {
+            let idle = self.idle.notified();
+            if self.checking.lock().unwrap().is_empty() {
+                return;
+            }
+            idle.await;
+        }
     }
 
     /// Closes a prompt's open request nobody needs to answer any more: denied, with why.
@@ -270,6 +585,21 @@ impl Approvals {
         let machine = &project.machine_id;
         let by = r.answered_by.clone().unwrap_or_else(|| "a person".into());
         let allow = r.state == RequestState::Approved;
+        // Its prompt was refused already: approved anyway, the Navi hears so and runs exactly this input once when it
+        // asks again; kept blocked, nothing changes.
+        if blocked(p) {
+            if allow
+                && let Ok(approved) = self
+                    .note(
+                        &r.request_id,
+                        "approved anyway: call it again with exactly the same input, and it runs once",
+                    )
+                    .await
+            {
+                self.deps.hub.wake_request(&approved).await;
+            }
+            return;
+        }
         if allow && let Some(site) = &p.site {
             self.deps.hub.navi_site_allow(&project, site, &by).await;
         }

@@ -72,6 +72,7 @@ Every lead gets these.
 | [`factory_status`](#factory_status) | A Navi's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this Navi's asks to it with the orders opened for them, plus the hubs this Navi is linked to. | No |
 | [`chat_search`](#chat_search) | A Navi's call: search your own chat, all of it, back to its start, for the messages holding every one of words (any order and case), optionally from and to a day (2026-10-20) or time, in UTC. | No |
 | [`chat_read`](#chat_read) | A Navi's call: read the messages around one of your own chat by its id from chat_search, oldest first: before and after say how many on each side (5 when absent, at most 10). | No |
+| [`confirm_step`](#confirm_step) | A Navi's call, right before the final Confirm or Submit click on a site that doesn't pay or order (booking a table, cancelling a subscription, sending a form, an expense, a return, a post): site, the button's label, what clicking it does, the page's details and a screenshot from chat_image. | No |
 | [`usage_resume`](#usage_resume) | Lift the usage pause on your project's machine now and send every agent parked there "continue": only once you know its login has capacity again (the human says so, or a turn of yours just went through). | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`review_read`](#review_read) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
@@ -782,6 +783,33 @@ A Navi's call: read the messages around one of your own chat by its id from chat
 }
 ```
 
+### confirm_step
+
+A Navi's call, right before the final Confirm or Submit click on a site that doesn't pay or order (booking a table, cancelling a subscription, sending a form, an expense, a return, a post): site, the button's label, what clicking it does, the page's details and a screenshot from chat_image. It goes through your approval mode like a send: once it returns, click that button, once. Denied, don't click it. A payment, order or trade never goes through here: hand that click to the person with request_takeover.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `button` | string | yes | The button's label, as the page shows it: "Complete reservation". At most 120 characters. |
+| `does` | string | yes | What clicking it does, in one or two plain sentences: "Books a table for 2 at Lupa, Sat 8 pm, under Sam". At most 500 characters. |
+| `page` | string | no | What the page shows around the button: the details being confirmed. At most 4000 characters. |
+| `screenshot` | string | no | A screenshot of the page from `chat_image`, for the person's card. |
+| `site` | string | yes | The site the page is on: `opentable.com`. At most 253 characters. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "confirm_step",
+  "arguments": {
+    "button": "Complete reservation",
+    "does": "Books a table for 2 at Lupa, Saturday 8 pm, under Sam",
+    "page": "Lupa · Sat Nov 7 · 8:00 pm · 2 guests · Sam Rivera",
+    "screenshot": "F12",
+    "site": "lupa.example"
+  }
+}
+```
+
 ### usage_resume
 
 Lift the usage pause on your project's machine now and send every agent parked there "continue": only once you know its login has capacity again (the human says so, or a turn of yours just went through). At most once per 10 minutes per machine; an agent whose login is still limited parks again with the real reset. The human can also press Resume in the app or run fleetd usage resume &lt;machine>.
@@ -1475,6 +1503,7 @@ fleetd also blocks any tool like these that a newer Claude Code adds: a session 
 | `Read`, `Glob`, `Grep` | A Navi reads anything but what its sandbox hides. |
 | `Edit`, `Write`, `NotebookEdit` | A Navi writes anything but what its sandbox hides or keeps read-only. |
 | `WebFetch` | A Navi fetches a site unasked only once the person allowed or linked it. |
+| `mcp__fleetd__confirm_step` | A Navi's final Confirm on a site goes through its approval mode, like a send. |
 
 ## Settings fleetd forces
 

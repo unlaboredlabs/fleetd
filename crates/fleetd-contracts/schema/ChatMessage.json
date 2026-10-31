@@ -706,6 +706,35 @@
       "pattern": "^Q[1-9][0-9]*$",
       "type": "string"
     },
+    "CheckerNote": {
+      "description": "What a Navi's approval checker said of an action it didn't let through.",
+      "properties": {
+        "reason": {
+          "description": "Its reason, in one line. A checker that failed or answered nothing readable says so here.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "verdict": {
+          "$ref": "#/$defs/CheckerVerdict"
+        }
+      },
+      "required": [
+        "verdict",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "CheckerVerdict": {
+      "description": "The checker's verdict on a risky action: go runs it, ask brings the person's card, block refuses it.",
+      "enum": [
+        "go",
+        "ask",
+        "block"
+      ],
+      "type": "string"
+    },
     "ChecklistBlock": {
       "properties": {
         "items": {
@@ -1632,12 +1661,21 @@
           "const": "spend",
           "description": "Pays or buys: money leaves the person's account.",
           "type": "string"
+        },
+        {
+          "const": "confirm",
+          "description": "A Navi's final Confirm or Submit click on a site (`confirm_step`): a booking, a cancellation, a form sent.",
+          "type": "string"
         }
       ]
     },
     "ToolPermission": {
       "description": "An approval raised by a session's tool permission prompt instead of a gated command: answering it answers the prompt\non the project's node. Its machine is the request's project's.",
       "properties": {
+        "checker": {
+          "$ref": "#/$defs/CheckerNote",
+          "description": "A Navi's approval checker judged it before it reached the person (W239): why it asks them, or why it refused\nit. A blocked prompt was already refused on its node; approving it anyway lets the Navi run exactly this input\nonce, when it asks again."
+        },
         "input": {
           "description": "The tool's input exactly as the session asked (at most 64 KiB of JSON): approved, the tool runs with exactly\nthis. Absent when the node didn't send it; the tool then runs with what the session asked."
         },
@@ -1648,6 +1686,10 @@
         "requestId": {
           "minLength": 1,
           "type": "string"
+        },
+        "screenshot": {
+          "$ref": "#/$defs/AttachmentId",
+          "description": "A Navi's `confirm_step`: its screenshot of the page, the project's, for the card."
         },
         "site": {
           "description": "A Navi's first fetch or browser visit to this site (its host, such as `example.com`): approved, the Navi may\nfetch and open it without asking from then on, until a person revokes it (`navi_site_revoke`).",

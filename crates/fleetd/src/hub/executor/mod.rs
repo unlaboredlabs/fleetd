@@ -12,6 +12,7 @@ pub mod repos;
 pub mod shell_mapper;
 pub mod thread_view;
 pub mod tools;
+pub mod turn;
 
 pub use tools::register;
 
@@ -194,6 +195,13 @@ pub struct LaunchOptions {
     pub claude_account: Option<fleetd_contracts::claude_accounts::ClaudeAccount>,
     /// The person whose 1Password token its fill_credential falls back on (`hub::onepassword`).
     pub onepassword: Option<fleetd_contracts::people::PersonId>,
+    /// An isolated turn (`SessionLaunch::isolated`): an empty folder of the node's own, user settings only.
+    pub isolated: bool,
+    /// This model and effort in place of the profile's: a Navi's approval checker runs on its own.
+    pub model: Option<(
+        fleetd_contracts::effort::ModelName,
+        fleetd_contracts::effort::Effort,
+    )>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1681,11 +1689,17 @@ impl Executors {
                     .as_ref()
                     .map_or_else(|| input.profile.clone(), |c| c.profile.clone()),
             ),
-            model: chosen
-                .as_ref()
-                .and_then(|c| c.model.as_ref())
-                .map(|m| NonEmpty::unchecked(m.as_str())),
-            effort: chosen.as_ref().map(|c| c.effort),
+            model: match &options.model {
+                Some((model, _)) => Some(NonEmpty::unchecked(model.as_str())),
+                None => chosen
+                    .as_ref()
+                    .and_then(|c| c.model.as_ref())
+                    .map(|m| NonEmpty::unchecked(m.as_str())),
+            },
+            effort: match &options.model {
+                Some((_, effort)) => Some(*effort),
+                None => chosen.as_ref().map(|c| c.effort),
+            },
             fast: chosen.as_ref().is_some_and(|c| c.fast),
             helper_model: chosen
                 .as_ref()
@@ -1711,6 +1725,7 @@ impl Executors {
             setup: options.setup.map(Box::new),
             claude_account: options.claude_account.clone(),
             onepassword: options.onepassword,
+            isolated: options.isolated,
         };
         let mcp_launched = launch
             .mcp
@@ -2074,6 +2089,27 @@ impl Executors {
             (a.created_at.as_str(), a.id.as_str()).cmp(&(b.created_at.as_str(), b.id.as_str()))
         });
         Ok(messages)
+    }
+
+    /// What the session read lately: its newest tool calls and commands, each with its call and its whole output (a cut
+    /// one fetched from the node), newest first. For a Navi's approval checker to search, never to send on.
+    pub async fn reads(
+        self: &Arc<Self>,
+        r: &ThreadRef,
+        limit: usize,
+    ) -> Result<Vec<(String, String)>, ExecutorError> {
+        self.summary_of(r)?;
+        let w = self.view(r).await?;
+        let ids: Vec<String> = thread_view::actions_of(&w.state.lock().unwrap().view, limit, false)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        self.fill_outputs(r, &w, &ids).await?;
+        let state = w.state.lock().unwrap();
+        Ok(ids
+            .iter()
+            .filter_map(|id| thread_view::read_of(state.view.items.get(id)?))
+            .collect())
     }
 
     /// Newest first.

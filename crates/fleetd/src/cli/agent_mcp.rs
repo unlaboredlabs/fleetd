@@ -25,7 +25,9 @@ use fleetd_contracts::lead_calls::{
     TaskSpawnCall, UsageResumeCall, WaitCiCall,
 };
 use fleetd_contracts::memory::{ForgetCall, MemoryReadCall, RememberCall};
-use fleetd_contracts::navi::{ChatReadCall, ChatSearchCall, FactoryStatusCall, ProjectMessageCall};
+use fleetd_contracts::navi::{
+    ChatReadCall, ChatSearchCall, ConfirmStepCall, FactoryStatusCall, ProjectMessageCall,
+};
 use fleetd_contracts::preview::{PreviewConfigProposeCall, PreviewStartCall, PreviewSuggestCall};
 use fleetd_contracts::purchase::{PurchaseFillCall, PurchaseRequestCall};
 use fleetd_contracts::schema::inline_schema;
@@ -338,6 +340,16 @@ static TOOLS: &[Tool] = &[
          before and after say how many on each side (5 when absent, at most 10). With both 0 it reads that one \
          message whole. Read-only.",
         inline_schema::<ChatReadCall>,
+    ),
+    lead(
+        "confirm_step",
+        "confirm_step",
+        "A Navi's call, right before the final Confirm or Submit click on a site that doesn't pay or order (booking a \
+         table, cancelling a subscription, sending a form, an expense, a return, a post): site, the button's label, \
+         what clicking it does, the page's details and a screenshot from chat_image. It goes through your approval \
+         mode like a send: once it returns, click that button, once. Denied, don't click it. A payment, order or \
+         trade never goes through here: hand that click to the person with request_takeover.",
+        inline_schema::<ConfirmStepCall>,
     ),
     lead(
         "usage_resume",
@@ -1066,6 +1078,7 @@ mod tests {
             "factory_status",
             "chat_search",
             "chat_read",
+            "confirm_step",
             "review_read",
             "preview_suggest",
             "preview_config_propose",

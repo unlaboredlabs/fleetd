@@ -68,6 +68,20 @@ const snapshotWith = (repos: ProjectRepo[], navi = false): HubFrame => ({
 let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
+/** A Navi's approvals as navi_approvals answers them, and what ran without asking. */
+let approvals: { mode: string; model: string; effort: string; defaults: boolean };
+const approvedLog = [
+  {
+    at: "2026-10-31T14:05:00.000Z",
+    by: "checker",
+    tool: "mcp__gmail__send_message",
+    what: "`send_message` on `gmail`, to sam@friends.example",
+    reason: "you asked to tell Sam that Saturday works",
+    messageId: "m398",
+  },
+  { at: "2026-10-30T18:02:00.000Z", by: "yolo", tool: "mcp__linear__create_issue", what: "`create_issue` on `linear`", messageId: "m350" },
+];
+
 /** What project_settings_get answers, in turn; the last one again once they run out. */
 let answers: Settings[];
 let envRequests: ProjectEnvRequest[];
@@ -87,6 +101,7 @@ beforeEach(() => {
   root = createRoot(host);
   calls = [];
   answers = [settings];
+  approvals = { mode: "checker", model: "claude-sonnet-5-5", effort: "medium", defaults: true };
   envRequests = [];
   repos = [];
   repoAnswers = {};
@@ -124,6 +139,25 @@ const render = async (page: "project" | "instructions" = "project") => {
       }
       const now = (tool === "project_settings_get" && answers.length > 1 ? answers.shift() : answers[0]) ?? settings;
       if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
+      if (tool === "navi_approvals") return Promise.resolve({ ok: true, output: { approvals, log: approvedLog } });
+      if (tool === "navi_approvals_set") {
+        const set = input as { mode: string; model?: string; effort?: string };
+        approvals = { mode: set.mode, model: set.model ?? "claude-sonnet-5-5", effort: set.effort ?? "medium", defaults: set.model === undefined };
+        return Promise.resolve({ ok: true, output: { approvals } });
+      }
+      if (tool === "profiles_list") {
+        return Promise.resolve({
+          ok: true,
+          output: {
+            profiles: [],
+            models: [
+              { id: "claude-sonnet-5-5", displayName: "Sonnet 5.5", fast: false },
+              { id: "claude-opus-5-5", displayName: "Opus 5.5", fast: true },
+            ],
+            modelsFrom: "builtin",
+          },
+        });
+      }
       if (tool === "project_repo_add") {
         const url = (input as { url?: string }).url;
         return Promise.resolve({
@@ -334,6 +368,26 @@ describe("Settings → Projects", () => {
     expect(calls.find((c) => c.tool === "navi_signins_forget")?.input).toEqual({ machineId: "devbox", projectId: "p1" });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.body.textContent).toContain("Its next browser session starts signed out of every site.");
+  });
+
+  it("sets a Navi's approval mode and lists what ran without asking, each with its chat line", async () => {
+    navi = true;
+    answers = [{ ...settings, title: "Adri", workspaceRoot: "/home/w/.fleetd/node/navi/adri", worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
+    await render();
+    await settle();
+    const part = document.querySelector('section[aria-label="Approvals"]');
+    expect(part?.textContent).toContain("Checker decides");
+    expect(part?.textContent).toContain("Sonnet 5.5 · medium effort (the default)");
+    expect(part?.querySelector<HTMLButtonElement>('[role="radio"][aria-checked="true"]')?.closest("label")?.textContent).toContain("Checker decides");
+    const log = document.querySelector('ul[aria-label="Ran without asking"]');
+    expect(log?.querySelectorAll("li")).toHaveLength(2);
+    expect(log?.textContent).toContain("Checker: you asked to tell Sam that Saturday works");
+    expect(log?.textContent).toContain("YOLO: nothing asks");
+    const yolo = [...(part?.querySelectorAll<HTMLElement>("label") ?? [])].find((l) => l.textContent.startsWith("YOLO"))?.querySelector<HTMLElement>('[role="radio"]');
+    if (!yolo) throw new Error("no YOLO choice");
+    await click(yolo);
+    await settle();
+    expect(calls.find((c) => c.tool === "navi_approvals_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", mode: "yolo" });
   });
 
   it("keeps Delete off while the machine can't list the worktrees, and refuses when a fresh listing fails", async () => {

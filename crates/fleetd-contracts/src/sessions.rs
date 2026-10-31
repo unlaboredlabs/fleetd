@@ -129,6 +129,12 @@ pub struct SessionLaunch {
     /// `OP_SERVICE_ACCOUNT_TOKEN` of their own (`onepassword.rs`): its order's starter, or its Navi's owner. Only
     /// nodes listing [`crate::node_link::CAP_ONEPASSWORD`] get it.
     pub onepassword: Option<crate::people::PersonId>,
+    /// A tool-less turn the hub reads (a Navi's approval check): it runs in an empty folder in the node's own home,
+    /// which no Navi can write, with only the person's user settings (no project or local settings, no CLAUDE.md of a
+    /// project, no skills), so nothing a session wrote reaches it. Only nodes listing
+    /// [`crate::node_link::CAP_ISOLATED`] get it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub isolated: bool,
 }
 
 /// A session's place among fleetd's agents, which decides the MCP tools it gets. The hub enforces the same split on

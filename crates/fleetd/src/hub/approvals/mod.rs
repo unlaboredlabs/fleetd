@@ -223,6 +223,34 @@ pub trait ApprovalHub: Send + Sync {
     fn navi_site(&self, project: &ProjectRef, site: Option<&str>) -> BoxFut<'_, Option<bool>>;
     /// A person approved a Navi's first visit to `site`: from now on it fetches and opens it without asking.
     fn navi_site_allow(&self, project: &ProjectRef, site: &str, by: &str) -> BoxFut<'_, ()>;
+    /// Whether `id` is an image of the Navi's own (`chat_image`); if so it becomes the project's, for its card.
+    fn navi_image<'a>(
+        &'a self,
+        project: &'a ProjectRef,
+        id: &'a fleetd_contracts::mcp::AttachmentId,
+    ) -> BoxFut<'a, bool>;
+    /// For a Navi, how its risky actions are approved; `None` for any other project.
+    fn navi_approvals(
+        &self,
+        project: &ProjectRef,
+    ) -> BoxFut<'_, Option<fleetd_contracts::navi::NaviApprovals>>;
+    /// The Navi's approval checker's verdict on one of its lead's actions (`hub/navi/checker.rs`): ask for anything
+    /// but a readable verdict.
+    fn navi_check<'a>(
+        &'a self,
+        project: &'a ProjectRef,
+        thread_id: &'a str,
+        action: &'a crate::hub::navi::checker::Action,
+        settings: &'a fleetd_contracts::navi::NaviApprovals,
+    ) -> BoxFut<'a, fleetd_contracts::ledger::CheckerNote>;
+    /// A Navi's action ran without asking: one quiet line in its chat, and an entry in its auto-approved log.
+    fn navi_auto_approved<'a>(
+        &'a self,
+        project: &'a ProjectRef,
+        action: &'a crate::hub::navi::checker::Action,
+        by: fleetd_contracts::navi::AutoApprovedBy,
+        reason: Option<&'a str>,
+    ) -> BoxFut<'a, ()>;
     /// Saves an approved preview setting as the project's `preview`. `Err`: why it could not.
     fn preview_config_save(
         &self,
@@ -368,11 +396,19 @@ pub fn chat_item(r: &HumanRequest) -> ChatItem {
 
 pub struct Approvals {
     deps: ApprovalsDeps,
+    /// The prompts a Navi's checker is judging now (machine, thread, prompt): each is judged once.
+    checking: std::sync::Mutex<std::collections::HashSet<(String, String, String)>>,
+    /// Told whenever a checker's verdict landed.
+    idle: tokio::sync::Notify,
 }
 
 impl Approvals {
     pub fn new(deps: ApprovalsDeps) -> Arc<Self> {
-        Arc::new(Approvals { deps })
+        Arc::new(Approvals {
+            deps,
+            checking: Default::default(),
+            idle: tokio::sync::Notify::new(),
+        })
     }
 
     /// Runs until the hub stops: first the approved commands a stopped hub never finished go back to the person, then

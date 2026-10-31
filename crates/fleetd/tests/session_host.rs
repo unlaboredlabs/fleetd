@@ -54,6 +54,7 @@ fn spec(dir: &Path) -> SessionSpec {
         transcript: Some(dir.join("transcript.jsonl")),
         sandbox: None,
         host_dir: Some(dir.join("hosts/s")),
+        isolated: false,
     }
 }
 

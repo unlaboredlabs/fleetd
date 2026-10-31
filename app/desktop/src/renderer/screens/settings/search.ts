@@ -84,6 +84,8 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "projects.setup", label: "Default setup", tab: "projects", keywords: ["setup commands", "setup", "install", "dependencies", "codegen", "worktree", "lockfile", "pnpm"] },
   { key: "projects.train", label: "Merge train", tab: "projects", keywords: ["merge", "train", "checks", "ci", "required", "fast", "after merge"] },
   { key: "projects.telegram", label: "Telegram", tab: "projects", keywords: ["navi", "bot", "botfather", "phone", "pair"] },
+  { key: "projects.approvals", label: "Approvals", tab: "projects", keywords: ["navi", "checker", "approve", "ask me", "yolo", "auto", "model", "effort"] },
+  { key: "projects.approved", label: "Ran without asking", tab: "projects", keywords: ["navi", "checker", "log", "auto-approved", "yolo", "history"] },
   { key: "projects.integrations", label: "Integrations", tab: "projects", keywords: ["navi", "mcp", "connect"] },
   { key: "projects.payments", label: "Payments", tab: "projects", keywords: ["navi", "card", "credit card", "pay", "purchase", "buy", "book", "checkout", "1password"] },
   { key: "projects.signins", label: "Sign-ins", tab: "projects", keywords: ["navi", "browser", "sign in", "login", "logged in", "cookies", "forget", "sign out"] },

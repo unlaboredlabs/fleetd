@@ -107,6 +107,10 @@ pub const CAP_WORKTREE_SETUP: &str = "worktree_setup";
 /// session only on a node that lists it.
 pub const CAP_ALLOWED_ONLY: &str = "allowed_only";
 
+/// `SessionLaunch::isolated`: an empty folder of the node's own and user settings only, for a turn whose input must
+/// be the hub's alone. The hub runs a Navi's approval checker only on a node that lists it.
+pub const CAP_ISOLATED: &str = "isolated";
+
 /// Browser sessions' live view and takeover: `browser_watch`, `browser_input` and `browser_control`, and the node's
 /// `browser_frame`s.
 pub const CAP_BROWSER: &str = "browser";
