@@ -1,11 +1,11 @@
 //! What fleetd says about claude outside the adapter: the model each profile runs on when no setting chose one, and the
-//! words and commands a person reads ([`RunnerGuide`]).
+//! words and commands a person reads ([`Guide`]).
 use fleetd_contracts::effort::{Effort, ProfileName};
 use fleetd_contracts::sessions::RunnerInfo;
 
 use super::setup::ClaudeSetup;
 use super::{ALWAYS_DISALLOWED, failure, version};
-use crate::node::runner::{ProfileModel, RunnerGuide};
+use crate::node::runner::ProfileModel;
 
 /// The model every claude fleetd starts runs on, helper calls included, unless a profile's setting chose another.
 pub const MODEL: &str = "claude-opus-5-5";
@@ -36,49 +36,62 @@ pub struct Guide;
 
 pub static GUIDE: Guide = Guide;
 
-impl RunnerGuide for Guide {
-    fn name(&self) -> &'static str {
+/// What a person reads and runs about claude, from what its probe reported ([`RunnerInfo`]).
+impl Guide {
+    /// The runner's command as messages name it, e.g. "claude"; also the prefix of its doctor checks.
+    pub fn name(&self) -> &'static str {
         "claude"
     }
 
-    fn product(&self) -> &'static str {
+    /// What a person installs, e.g. "Claude Code".
+    pub fn product(&self) -> &'static str {
         "Claude Code"
     }
 
-    fn install(&self) -> String {
+    /// The command that installs it on a machine without it.
+    pub fn install(&self) -> String {
         version::INSTALL.to_owned()
     }
 
-    fn install_tested(&self) -> String {
+    /// The command that installs exactly the tested version, from nothing.
+    pub fn install_tested(&self) -> String {
         format!("{} -s {}", version::INSTALL, version::TESTED)
     }
 
-    fn pin_tested(&self) -> String {
+    /// The command that puts the tested version over an installed one.
+    pub fn pin_tested(&self) -> String {
         format!("claude install {}", version::TESTED)
     }
 
-    fn login_fix(&self, proxy: bool) -> &'static str {
+    /// How to log it in; behind a proxy, the proxy holds the login.
+    pub fn login_fix(&self, proxy: bool) -> &'static str {
         failure::login_fix(proxy)
     }
 
-    fn version_problem(&self, found: &str) -> Option<(String, Option<String>)> {
+    /// A version fleetd wasn't tested with: what to say about `found` and the command that fixes it. None when
+    /// tested.
+    pub fn version_problem(&self, found: &str) -> Option<(String, Option<String>)> {
         let verdict = version::check(found);
         Some((verdict.problem(found)?, verdict.fix()))
     }
 
-    fn setup(&self, info: &RunnerInfo) -> String {
+    /// The setup sessions use, in a person's words: version, login, proxy, config dir.
+    pub fn setup(&self, info: &RunnerInfo) -> String {
         ClaudeSetup::from_info(info).to_string()
     }
 
-    fn protocol(&self) -> &'static str {
+    /// The protocol the probe checks it speaks, e.g. "the stream-json protocol".
+    pub fn protocol(&self) -> &'static str {
         "the stream-json protocol"
     }
 
-    fn denied_tools(&self) -> &'static [&'static str] {
+    /// The tools no session of this runner ever gets.
+    pub fn denied_tools(&self) -> &'static [&'static str] {
         ALWAYS_DISALLOWED
     }
 
-    fn profile(&self, p: &ProfileName) -> ProfileModel {
+    /// The model and effort a profile runs on when no setting chose them ([`Runner::profile`]).
+    pub fn profile(&self, p: &ProfileName) -> ProfileModel {
         profile(p)
     }
 }
