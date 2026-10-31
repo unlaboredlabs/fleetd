@@ -401,6 +401,16 @@ async fn the_person_edits_reverts_turns_off_and_deletes_a_navis_skill() {
     .unwrap();
     assert_eq!(hub.db.skills().bundles(&r).len(), 1);
 
+    // Only the hub's skills turn off: one it doesn't keep (a folder's) is refused, so no list says Off for it.
+    let folder = call(
+        &hub,
+        "skill_off",
+        json!({ "projectRef": r, "name": "notes", "off": true }),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(folder, CallError::Tool(e) if e.code == ErrorCode::NotFound));
+
     // Delete takes its history with it: saved again, it starts over at version 1.
     call(
         &hub,

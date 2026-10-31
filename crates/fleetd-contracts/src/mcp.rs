@@ -2175,8 +2175,8 @@ checked!(SkillRevertInput, |input| {
 output!(SkillRevertOutput {
     skill: crate::skills::SkillSummary
 });
-// skill_off: turns a skill off in one project, or back on (a human key's write): while off, its sessions don't get
-// it. Any skill the project's sessions get: its own, a global one, its repo's.
+// skill_off: turns a skill the hub keeps off in one project, or back on (a human key's write): while off, its sessions
+// don't get it. The project's own skills and the global ones; a repo's (or a Navi's folder's) change in their folder.
 input!(SkillOffInput {
     project_ref: ProjectRef,
     name: crate::skills::SkillName,

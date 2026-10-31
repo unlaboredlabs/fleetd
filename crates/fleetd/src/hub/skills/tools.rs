@@ -186,7 +186,9 @@ async fn skills_list(
         let uses = versions::uses(&hub.db, r)?;
         for s in &mut list {
             if let Some(u) = uses.get(s.name.as_str()) {
-                s.off = u.off.then_some(true);
+                // Off holds back the hub's skills only: a repo's reaches its sessions from the checkout.
+                let kept = matches!(s.origin, SkillOrigin::Project | SkillOrigin::Global);
+                s.off = (u.off && kept).then_some(true);
                 s.last_used_at = u.last_used_ms.map(|ms| iso_ms(ms).into());
             }
         }
@@ -507,6 +509,20 @@ async fn skill_off(
 ) -> Result<SkillOffOutput, ToolError> {
     require_human(&caller, "skill_off")?;
     known_project(&hub, &caller, &input.project_ref, Role::Operate)?;
+    let skills = hub.db.skills();
+    let kept = skills
+        .get(SkillScope::Project, Some(&input.project_ref), &input.name)
+        .is_some()
+        || skills.get(SkillScope::Global, None, &input.name).is_some();
+    if input.off && !kept {
+        return Err(ToolError::new(
+            ErrorCode::NotFound,
+            format!("The hub keeps no skill called {} for this project.", input.name),
+        )
+        .with_fix(
+            "Only the hub's skills turn off here: one in the repo's or a Navi's folder reaches its sessions from              there, so remove it from that folder.",
+        ));
+    }
     versions::set_off(&hub.db, &input.project_ref, &input.name, input.off)?;
     changed(
         &hub,

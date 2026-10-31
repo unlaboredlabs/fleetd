@@ -190,7 +190,7 @@ function SkillView({ project, name }: { project: ProjectKey; name: string }) {
                 ]}
               />
               <span className={s.spacer} />
-              <OffSwitch project={project} skill={listed} />
+              {listed.origin === "project" || listed.origin === "global" ? <OffSwitch project={project} skill={listed} /> : null}
               {own ? (
                 <Button size="sm" onClick={() => setEditing(true)}>
                   Edit

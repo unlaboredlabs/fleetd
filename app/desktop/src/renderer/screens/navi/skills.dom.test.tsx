@@ -206,6 +206,18 @@ it("turns a skill off, and deletes it after asking", async () => {
   expect(window.location.hash).toBe("#/project/devbox/ada/skills");
 });
 
+it("offers no off switch for a skill in its folder, which reaches its sessions from there", async () => {
+  SKILLS.push({ name: "notes", origin: "repo_claude", description: "Notes.", path: ".claude/skills/notes/SKILL.md" });
+  try {
+    await mount(view("notes"));
+    expect(host.querySelector("[data-screen=skill]")).not.toBeNull();
+    expect(host.querySelector("[role=switch]")).toBeNull();
+    expect(button("Edit")).toBeUndefined();
+  } finally {
+    SKILLS.pop();
+  }
+});
+
 it("puts one quiet line in the chat, linking to the skill", async () => {
   await mount(<SkillSavedLine project={ADA} saved={{ name: "taxes", version: 2, created: false, why: "The person wants a PDF copy." }} />);
   expect(host.textContent).toBe("Updated the skill taxes: The person wants a PDF copy.");
