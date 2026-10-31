@@ -67,6 +67,7 @@ Every lead gets these.
 | [`automation_runs`](#automation_runs) | An automation's runs, newest first, with the order each opened; with runId, that run and its whole webhook body. | No |
 | [`checklist`](#checklist) | Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done. | No |
 | [`skill_install`](#skill_install) | Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. | No |
+| [`skill_save`](#skill_save) | A Navi's call: save one of your own skills, new or changed, as its whole SKILL.md (frontmatter with name and description, then the steps), with why in one line. | No |
 | [`project_message`](#project_message) | A Navi's call: write to another project's lead in its chat, as this Navi, never as the person: "please add X", or a question. | No |
 | [`factory_status`](#factory_status) | A Navi's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this Navi's asks to it with the orders opened for them, plus the hubs this Navi is linked to. | No |
 | [`chat_search`](#chat_search) | A Navi's call: search your own chat, all of it, back to its start, for the messages holding every one of words (any order and case), optionally from and to a day (2026-10-20) or time, in UTC. | No |
@@ -664,6 +665,29 @@ Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/r
   "arguments": {
     "scope": "project",
     "source": "vercel-labs/agent-skills@web-design-guidelines"
+  }
+}
+```
+
+### skill_save
+
+A Navi's call: save one of your own skills, new or changed, as its whole SKILL.md (frontmatter with name and description, then the steps), with why in one line. No one approves it: the person sees every version in your Skills, with who, when and why, and can edit, revert or turn it off. Your next session lists it as fleetd:&lt;name>; it is yours only. To improve one, save it again whole.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | yes | The skill's folder name, also its frontmatter `name`: `weekly-invoices`. |
+| `text` | string | yes | The whole `SKILL.md`: frontmatter (`name`, a `description` of what it does and when to use it), then the steps. At most 64000 characters. |
+| `why` | string | yes | One line on why: what it learned, or what the person corrected. At most 300 characters. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "skill_save",
+  "arguments": {
+    "name": "weekly-invoices",
+    "text": "---\nname: weekly-invoices\ndescription: Download the week's invoices from the supplier portal as PDFs. Use every Monday, or when the person asks for invoices.\n---\n\n1. Open the portal's Billing page.\n2. Filter to the last 7 days.\n3. Download each as PDF into invoices/.\n",
+    "why": "Worked out where the portal hides the PDF download."
   }
 }
 ```

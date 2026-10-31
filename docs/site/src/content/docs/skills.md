@@ -94,6 +94,9 @@ A lead can install skills too, with its `skill_install` tool, when you ask it to
 vercel-labs/agent-skills@web-design-guidelines for this project"). It installs into its own project only, from GitHub
 or other remote sources.
 
+Every change to a project or global skill's `SKILL.md` is kept as a version: who made it, when and why. A
+[Navi](/docs/navi#skills) also saves skills of its own, and its Skills show each version with a diff and Restore.
+
 ## Name a skill in the chat {#chat}
 
 Type `$` in the composer to pick a skill by name. The message you send names it, and the lead's copy lists it with its
