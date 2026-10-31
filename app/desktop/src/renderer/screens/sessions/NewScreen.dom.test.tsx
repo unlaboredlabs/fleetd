@@ -2,8 +2,7 @@
 // New screen (D239): the Screens tab's button opens the picker; it lists the machines that can host the kind picked,
 // opens the screen there and goes to its live view; a full machine waits for a slot, and the wait shows in the list
 // with Cancel. An iOS or Android screen takes an open PR's build: the picker follows it in the hub until the screen is
-// yours, or says why it failed; a browser with a PR opens its Try it preview. The palette's "New screen…" opens the same
-// picker.
+// yours, or says why it failed. The palette's "New screen…" opens the same picker.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -114,7 +113,6 @@ const mount = async () => {
         }
         return Promise.resolve({ ok: true, output: { prs: PRS } });
       }
-      if (tool === "preview_start") return Promise.resolve({ ok: true, output: { preview: {} } });
       if (tool === "screen_open" && (input as { pr?: unknown }).pr !== undefined) {
         waits = [OPENING];
         return Promise.resolve({ ok: true, output: { waiting: OPENING } });
@@ -310,26 +308,6 @@ it("says why a PR's build didn't open, and clears it when closed", async () => {
   await settle();
   expect(picker()).toBeNull();
   expect(calls.filter((c) => c.tool === "screen_end").map((c) => c.input)).toEqual([{ waitId: "W2" }]);
-});
-
-it("opens a browser with a PR as its Try it preview, with no machine to pick", async () => {
-  await mount();
-  act(() => button("New screen")?.click());
-  await settle();
-  expect(document.querySelector("[aria-label='PR preview']")?.textContent).toBe("None");
-  await pickPr("#12 Swipe to reply");
-  expect(document.querySelector("[aria-labelledby='screen-host']")).toBeNull();
-  expect(picker()?.textContent).toContain("Opens #12’s Try it preview");
-  act(() => button("Open preview")?.click());
-  await settle();
-  expect(calls.find((c) => c.tool === "preview_start")?.input).toEqual({
-    projectRef: { machineId: project.machineId, projectId: project.projectId },
-    of: { kind: "pr", repo: "acme/app", number: 12 },
-    target: "web",
-  });
-  expect(calls.some((c) => c.tool === "screen_open")).toBe(false);
-  expect(picker()).toBeNull();
-  expect(window.location.hash).toContain("prs");
 });
 
 it("says plainly when the project's PRs can't be read, and reads them again on Retry", async () => {

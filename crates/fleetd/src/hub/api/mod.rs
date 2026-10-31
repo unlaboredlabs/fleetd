@@ -147,8 +147,6 @@ pub struct Hub {
     pub updates: Arc<crate::hub::update::Updates>,
     /// Session relays waiting for their runner's side (machine_roles/relay.rs).
     pub relays: Arc<crate::hub::machine_roles::relay::Relays>,
-    /// Which node link last spoke of each running preview (hub/preview).
-    pub previews: Arc<crate::hub::preview::Previews>,
     /// Machines added and removed from the app (hub/machine_setup).
     pub machine_setup: Arc<crate::hub::machine_setup::MachineSetup>,
     /// The hub's own GitHub App and its tokens (hub/github_app).
@@ -194,7 +192,6 @@ pub fn registry() -> Registry {
     crate::hub::machine_roles::tools::register(&mut tools);
     crate::hub::machine_roles::screens::register(&mut tools);
     crate::hub::machine_setup::tools::register(&mut tools);
-    crate::hub::preview::tools::register(&mut tools);
     crate::hub::skills::tools::register(&mut tools);
     crate::hub::time::tools::register(&mut tools);
     crate::hub::update::tools::register(&mut tools);

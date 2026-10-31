@@ -713,7 +713,7 @@ async fn the_newest_build_is_downloaded_ahead_and_update_only_swaps_it_in() {
     assert!(tampered.fetched.lock().unwrap().is_empty());
 }
 
-/// A machine running what a restart would end (a live session, a preview) is updated once that ends, and says so
+/// A machine running what a restart would end (a live session) is updated once that ends, and says so
 /// meanwhile.
 #[tokio::test]
 async fn a_busy_machine_waits_for_what_runs_on_it_and_says_so() {
@@ -842,7 +842,7 @@ async fn a_node_with_busy_agents_installs_by_the_deadline() {
         Some(Answer::BackOn(NEW)),
     ));
     fake.steps.lock().unwrap().insert("builder".into(), 5);
-    fake.nodes.lock().unwrap()[0].busy = Some("1 preview".into());
+    fake.nodes.lock().unwrap()[0].busy = Some("1 live session".into());
     let updates = area(home.path(), &fake);
     updates.start(None, false).unwrap();
     until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
@@ -865,11 +865,9 @@ async fn a_node_with_busy_agents_installs_by_the_deadline() {
     let waited = std::time::Instant::now();
     tokio::spawn(after.clone().resume());
     let run = until(&after, |r| node_part(r, "builder").agents == Some(5)).await;
-    assert!(
-        node_part(&run, "builder").message.unwrap().starts_with(
-            "waits for 5 agents to finish their step, and for 1 preview; installs by "
-        )
-    );
+    assert!(node_part(&run, "builder").message.unwrap().starts_with(
+        "waits for 5 agents to finish their step, and for 1 live session; installs by "
+    ));
     let run = until(&after, |r| r.finished_at.is_some()).await;
     assert!(waited.elapsed() >= Duration::from_millis(200), "it waited");
     assert_eq!(node_part(&run, "builder").state, UpdateState::Done);

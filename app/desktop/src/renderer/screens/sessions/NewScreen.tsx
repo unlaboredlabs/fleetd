@@ -5,9 +5,8 @@
 //
 // A PR, optionally: an iOS or Android screen takes its CI build, which the hub installs before the person gets it. That
 // goes on in the hub (a slow simulator can take minutes): the picker follows it from the Screens list's row and lands
-// in the live view once the screen is theirs; closed meanwhile, the row shows in Screens until then. A project's browser
-// with a PR opens the PR's Try it preview instead: it runs on the project's machine, in a browser of the person's own,
-// on the PR's Try it tab. Opened from the top of the Screens tab and from the palette's "New screen…".
+// in the live view once the screen is theirs; closed meanwhile, the row shows in Screens until then. Opened from the top
+// of the Screens tab and from the palette's "New screen…".
 //
 // Opened, it lands in its live view at once: the hub's answer goes into the Screens list before the view mounts, so the
 // view watches its frames from its first render. An answer without the screen (a hub that answers before it has it)
@@ -23,8 +22,6 @@ import { isNavi } from "../navi/model";
 import { projectKey } from "../../src/data/store";
 import { currentRoute, navigate } from "../shell/navigation";
 import { panelRoute, type ProjectKey } from "../shell/routes";
-import { refusalWords } from "../tryit/hub";
-import { openTry } from "../tryit/open";
 import type { BrowserSession, BrowserSessionsOutput } from "../../../shared/contracts";
 import {
   canOpen,
@@ -39,7 +36,6 @@ import {
   slotLine,
   startingLine,
   takesBuild,
-  takesPr,
   type ScreenKind,
 } from "./pickScreen";
 import { screenMark } from "./timing";
@@ -135,13 +131,11 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
   const hosts = hostsFor(machines, kind, naviHome);
   const host = pickHost(hosts, picked);
   const projectRef = { machineId: project.machineId, projectId: project.projectId };
-  const offersPr = takesPr(kind, navi !== undefined);
+  const offersPr = takesBuild(kind);
   const prs = useToolQuery("pr_list", { projectRef }, { enabled: offersPr });
   const choices = prChoices(prs.data?.prs ?? []);
   const [prPicked, setPr] = useState(NO_PR);
   const pr = offersPr ? choices.find((c) => c.value === prPicked) : undefined;
-  // A browser with a PR is the PR's Try it preview, on the project's own machine: no machine to pick.
-  const web = kind === "browser" && pr !== undefined;
   // An open with a PR's build going in, followed until the screen is the person's.
   const [opening, setOpening] = useState<{ readonly waitId: string; readonly threadId?: string; readonly pr: number; readonly machine: string } | null>(null);
   // Read while the picker is open: the screens there at the press, then the one it opened, when the answer leaves it out.
@@ -194,23 +188,8 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
     onClose();
   };
 
-  const openPreview = async (of: { readonly repo: string; readonly number: number }) => {
-    setBusy(true);
-    setError(null);
-    const out = await layer.call("preview_start", { projectRef, of: { kind: "pr", repo: of.repo, number: of.number }, target: "web" });
-    setBusy(false);
-    if (!out.ok) {
-      setError({ message: refusalWords(out.error) });
-      return;
-    }
-    void layer.queryClient.invalidateQueries({ queryKey: ["call", "previews_list"] });
-    onClose();
-    openTry(project, of.repo, of.number);
-  };
-
   const open = async () => {
     if (busy) return;
-    if (web) return openPreview(pr);
     if (host === undefined) return;
     screenMark("click");
     setBusy(true);
@@ -296,15 +275,13 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
       }}
       title="New screen"
       description={
-        web
-          ? "The PR’s app in a browser of your own, as Try it runs it. It ends when you press End, or when no one uses it."
-          : navi !== undefined && kind === "browser"
+        navi !== undefined && kind === "browser"
             ? `A browser on ${navi}’s saved sign-ins: sites you sign in to stay signed in for ${navi}. You’re in control; it ends when you close it or after 30 minutes idle.`
             : "You’re in control from the start. It’s recorded like agents’ screens, and ends when you close it or after 30 minutes idle."
       }
       footer={
         <>
-          {busy && slow && !web ? (
+          {busy && slow ? (
             <span className={s.starting} role="status">
               <Text size="sm" tone="quiet">
                 {startingLine(kind)}
@@ -314,8 +291,8 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
           <Button variant="quiet" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" disabled={busy || (!web && (host === undefined || !host.online))} onClick={() => void open()}>
-            {busy ? (web ? "Starting…" : "Opening…") : web ? "Open preview" : openWord(host)}
+          <Button variant="primary" disabled={busy || host === undefined || !host.online} onClick={() => void open()}>
+            {busy ? "Opening…" : openWord(host)}
           </Button>
         </>
       }
@@ -349,45 +326,43 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
             );
           })}
         </div>
-        {web ? null : (
-          <div className={s.hosts}>
-            <Text id="screen-host" size="xs" tone="quiet">
-              On
+        <div className={s.hosts}>
+          <Text id="screen-host" size="xs" tone="quiet">
+            On
+          </Text>
+          {loading ? (
+            <Text size="sm" tone="quiet">
+              Reading machines…
             </Text>
-            {loading ? (
-              <Text size="sm" tone="quiet">
-                Reading machines…
-              </Text>
-            ) : hosts.length === 0 ? (
-              <Text size="sm" tone="quiet">
-                No machine can host this yet. A hub admin turns screens on for a machine in Settings › Hub › Machines.
-              </Text>
-            ) : (
-              <RadioGroup value={host?.machineId ?? ""} onValueChange={setPicked} disabled={busy} aria-labelledby="screen-host">
-                {hosts.map((h) => (
-                  <Radio
-                    key={h.machineId}
-                    value={h.machineId}
-                    label={h.name}
-                    disabled={!h.online}
-                    description={
-                      <Text size="xs" tone={h.full && h.online ? "warning" : "inherit"}>
-                        {slotLine(h)}
-                      </Text>
-                    }
-                  />
-                ))}
-              </RadioGroup>
-            )}
-          </div>
-        )}
+          ) : hosts.length === 0 ? (
+            <Text size="sm" tone="quiet">
+              No machine can host this yet. A hub admin turns screens on for a machine in Settings › Hub › Machines.
+            </Text>
+          ) : (
+            <RadioGroup value={host?.machineId ?? ""} onValueChange={setPicked} disabled={busy} aria-labelledby="screen-host">
+              {hosts.map((h) => (
+                <Radio
+                  key={h.machineId}
+                  value={h.machineId}
+                  label={h.name}
+                  disabled={!h.online}
+                  description={
+                    <Text size="xs" tone={h.full && h.online ? "warning" : "inherit"}>
+                      {slotLine(h)}
+                    </Text>
+                  }
+                />
+              ))}
+            </RadioGroup>
+          )}
+        </div>
         {offersPr ? (
           <div className={s.hosts}>
             <Text id="screen-pr" size="xs" tone="quiet">
-              {takesBuild(kind) ? "PR build" : "PR preview"}
+              PR build
             </Text>
             <Select
-              aria-label={takesBuild(kind) ? "PR build" : "PR preview"}
+              aria-label="PR build"
               value={pr?.value ?? NO_PR}
               onValueChange={(v) => {
                 setPr(v);
@@ -410,14 +385,10 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
                 {prs.data === undefined
                   ? "Reading the project’s PRs…"
                   : pr !== undefined
-                    ? web
-                      ? `Opens #${String(pr.number)}’s Try it preview: it builds and runs on the project’s machine, in a browser of your own on its Try it tab.`
-                      : "Its newest CI build is installed before you get control."
+                    ? "Its newest CI build is installed before you get control."
                     : choices.length === 0
                       ? (prs.data.githubError ?? "The project has no open PRs.")
-                      : takesBuild(kind)
-                        ? "Optional: an open PR whose CI build to install."
-                        : "Optional: an open PR to try in its preview."}
+                      : "Optional: an open PR whose CI build to install."}
               </Text>
             )}
           </div>

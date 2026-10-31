@@ -612,35 +612,6 @@ impl AgentDirectory for Directory {
             .hub
             .upgrade()
             .ok_or_else(|| failed("the hub is shutting down".into()))?;
-        // A preview's session, held by the person: its node names it by the preview's id.
-        if let Ok(id) = fleetd_contracts::preview::PreviewId::new(thread.thread_id.as_str()) {
-            let preview = crate::hub::preview::get(&hub, &id)
-                .map_err(|e| failed(e.to_string()))?
-                .filter(|p| p.machine_id == thread.machine_id);
-            return match preview {
-                Some(p) if !p.state.is_over() => Ok((CallerAgent::Preview(id), p.project_ref)),
-                // Its recording uploads once the session closes, after the preview ended: only that, and its
-                // closing report (policy::check_call).
-                Some(p)
-                    if crate::hub::preview::uploads_after_end(
-                        &p,
-                        crate::hub::store::now_ms(hub.clock.as_ref()),
-                    ) =>
-                {
-                    Ok((CallerAgent::EndedPreview(id), p.project_ref))
-                }
-                Some(_) => Err(McpToolError::new(
-                    ErrorCode::Forbidden,
-                    format!(
-                        "preview {id} ended over a week ago, so its session makes no more calls"
-                    ),
-                )),
-                None => Err(McpToolError::new(
-                    ErrorCode::Forbidden,
-                    format!("the hub holds no preview {id} on {}", thread.machine_id),
-                )),
-            };
-        }
         // A nightly memory refresh, whose calls the policy holds to memory.
         if let Some(project_ref) = crate::hub::memory::refresh::project_of_thread(&hub.db, thread)
             .map_err(|e| failed(e.to_string()))?

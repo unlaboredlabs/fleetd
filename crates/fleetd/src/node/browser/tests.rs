@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use fleetd_contracts::browser::{BrowserCallFrame, BrowserControl, RecordingFile};
+use fleetd_contracts::browser::{BrowserCallFrame, BrowserControl};
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::lead_calls::{LeadCall, op_name};
 use fleetd_contracts::sessions::ThreadItem;
@@ -2719,87 +2719,4 @@ async fn a_secret_a_get_form_encoded_is_masked_everywhere_it_goes() {
             assert!(!text.contains(leak), "{file} has {leak}: {text}");
         }
     }
-}
-
-/// A preview's session (node/preview): no agent drives it, the person holds it from the start, it opens on the
-/// preview's address, and it is recorded like any other.
-#[tokio::test]
-async fn a_held_session_is_the_persons_from_the_start_on_its_url_and_recorded() {
-    let Some(rig) = rig().await else {
-        return;
-    };
-    let holder = format!("P{}", "a".repeat(32));
-    let id = rig
-        .broker
-        .open_held(
-            &holder,
-            "/work/storefront",
-            "Try feat",
-            "data:text/html,<title>held</title><p>checkout</p>",
-            crate::node::mask::Secrets(Vec::new()),
-        )
-        .await
-        .expect("it opens");
-    let session = rig
-        .broker
-        .live(&holder)
-        .expect("it is live under its holder");
-    assert_eq!(session.id, id);
-    assert_eq!(
-        session.control(),
-        BrowserControl::Human,
-        "the person holds it"
-    );
-    assert!(
-        rig.broker
-            .open_held(
-                &holder,
-                "/w",
-                "again",
-                "about:blank",
-                crate::node::mask::Secrets(Vec::new())
-            )
-            .await
-            .is_err(),
-        "a second one for the same holder"
-    );
-
-    // The page is the preview's.
-    let (_, page) = session.page().expect("a page");
-    let mut title = String::new();
-    for _ in 0..100 {
-        let answer = session
-            .cdp
-            .call(
-                Some(&page),
-                "Runtime.evaluate",
-                json!({ "expression": "document.title", "returnByValue": true }),
-            )
-            .await
-            .unwrap_or_default();
-        title = answer["result"]["value"]
-            .as_str()
-            .unwrap_or_default()
-            .to_owned();
-        if title == "held" {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    assert_eq!(title, "held");
-
-    // Recorded: its start and that the person holds it, in its action log.
-    let actions = std::fs::read_to_string(session.dir.join(RecordingFile::Actions.file_name()))
-        .unwrap_or_default();
-    assert!(
-        actions.contains("session_start") && actions.contains("takeover"),
-        "{actions}"
-    );
-    assert!(actions.contains("\"person\""), "{actions}");
-
-    drop(session);
-    rig.broker.end_held(&holder).await;
-    assert!(rig.broker.live(&holder).is_none(), "it ended");
-    // Ending it again is nothing.
-    rig.broker.end_held(&holder).await;
 }

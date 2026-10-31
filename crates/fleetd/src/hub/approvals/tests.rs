@@ -33,9 +33,6 @@ struct Fake {
     order_save_fails: Mutex<bool>,
     /// Each variable recorded for an order.
     order_saved: Mutex<Vec<OrderEnvSaved>>,
-    /// Each preview setting saved for a project; a reason fails the save.
-    previews_saved: Mutex<Vec<(ProjectRef, PreviewConfig)>>,
-    preview_save_fails: Mutex<Option<String>>,
     /// Each permission answer the node took: machine, thread, prompt and decision.
     answers: Mutex<Vec<(String, String, String, PermissionDecision)>>,
     /// The node fails each answer with this.
@@ -75,8 +72,6 @@ impl Default for Fake {
             open_orders: Mutex::new(vec!["W7"]),
             order_save_fails: Mutex::new(false),
             order_saved: Mutex::default(),
-            previews_saved: Mutex::default(),
-            preview_save_fails: Mutex::default(),
             answers: Mutex::default(),
             answer_fails: Mutex::default(),
             pending: Mutex::default(),
@@ -118,7 +113,6 @@ impl Fake {
                         .unwrap(),
                 ),
                 permission: None,
-                preview_config: None,
                 purchase: None,
                 secure_input: None,
                 at: fleetd_contracts::ids::Timestamp("2026-10-18T10:00:00.000Z".into()),
@@ -278,23 +272,6 @@ impl ApprovalHub for Fake {
         } else {
             self.order_saved.lock().unwrap().push(saved);
             Ok(())
-        };
-        Box::pin(async move { result })
-    }
-    fn preview_config_save(
-        &self,
-        project: &ProjectRef,
-        config: &PreviewConfig,
-    ) -> BoxFut<'_, Result<(), String>> {
-        let result = match self.preview_save_fails.lock().unwrap().clone() {
-            Some(why) => Err(why),
-            None => {
-                self.previews_saved
-                    .lock()
-                    .unwrap()
-                    .push((project.clone(), config.clone()));
-                Ok(())
-            }
         };
         Box::pin(async move { result })
     }
@@ -846,73 +823,6 @@ fn only_one_guarded_write_moves_a_request() {
         })
         .unwrap_err();
     assert_eq!(moved.to_string(), "Q1 is already approved");
-}
-
-fn proposal() -> PreviewConfigProposeCall {
-    serde_json::from_value(json!({
-        "config": { "web": { "setup": ["pnpm install --frozen-lockfile"], "start": "pnpm preview --port $PORT" } },
-        "why": "the shop is a Vite app",
-    }))
-    .unwrap()
-}
-
-/// An agent's proposed preview setting waits as an approval card holding it; only a person's Approve saves it, and the
-/// lead hears it was saved. Denied, nothing is saved.
-#[tokio::test]
-async fn an_approved_preview_setting_is_saved_and_a_denied_one_never_is() {
-    let fake = Arc::new(Fake::default());
-    let a = approvals(&fake);
-    let open = a.propose_preview(&p1(), proposal(), None).await.unwrap();
-    assert_eq!(open.state, RequestState::Open);
-    assert_eq!(
-        open.text.as_str(),
-        "Save how Try it runs this project: the shop is a Vite app"
-    );
-    let item = serde_json::to_value(chat_item(&open)).unwrap();
-    assert_eq!(item["kind"], "command_approval");
-    assert_eq!(
-        item["previewConfig"]["config"]["web"]["start"],
-        "pnpm preview --port $PORT"
-    );
-    assert!(item.get("gated").is_none());
-    assert!(fake.previews_saved.lock().unwrap().is_empty());
-
-    assert_eq!(
-        a.answer(&agent(), "Q1", true, None).await.unwrap_err().code,
-        "forbidden",
-        "an agent never approves its own proposal"
-    );
-    let saved = a.answer(&person(), "Q1", true, None).await.unwrap();
-    assert_eq!(saved.state, RequestState::Ran);
-    assert_eq!(
-        saved.evidence.as_ref().map(|e| e.as_str()),
-        Some("saved as the project's preview setting, approved by human:desk")
-    );
-    assert_eq!(
-        fake.previews_saved.lock().unwrap().as_slice(),
-        [(p1(), proposal().config)]
-    );
-    assert!(
-        fake.runs.lock().unwrap().is_empty(),
-        "nothing runs on the node"
-    );
-    assert_eq!(fake.woken.lock().unwrap().as_slice(), ["Q1 ran"]);
-
-    a.propose_preview(&p1(), proposal(), None).await.unwrap();
-    let denied = a
-        .answer(&person(), "Q2", false, Some("not yet".into()))
-        .await
-        .unwrap();
-    assert_eq!(denied.state, RequestState::Denied);
-    assert_eq!(fake.previews_saved.lock().unwrap().len(), 1);
-
-    *fake.preview_save_fails.lock().unwrap() = Some("the project is gone".into());
-    a.propose_preview(&p1(), proposal(), None).await.unwrap();
-    let failed = a.answer(&person(), "Q3", true, None).await.unwrap();
-    assert_eq!(
-        (failed.state, failed.evidence.as_ref().map(|e| e.as_str())),
-        (RequestState::Failed, Some("not saved: the project is gone"))
-    );
 }
 
 /// Teams: an approval and a secret record the person who answered, next to their device.

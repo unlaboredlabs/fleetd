@@ -105,7 +105,6 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(crate::work::WorkLandedData: WorkLanded);
         data!(crate::checklist::ChecklistChangedData: ChecklistChanged);
         data!(crate::browser::BrowserSessionEventData: BrowserSession);
-        data!(crate::preview::PreviewEventData: PreviewState);
         data!(crate::browser::ScreenWaitEventData: ScreenWait);
         data!(crate::people::PeopleChangedData: PeopleChanged);
         data!(crate::people::SidebarOrderData: SidebarOrder);

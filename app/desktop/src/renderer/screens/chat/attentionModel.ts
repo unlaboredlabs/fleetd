@@ -1,7 +1,7 @@
 // What the lead is waiting on you for, in a few words, for the quiet line above the composer: an open approval or
 // secret first (the lead can't go on without it), loaded or not, else the questions of its newest message since you last wrote that
 // asks any; nothing when it asks nothing. Below all of that, what there is to look at: the messages the lead nudged
-// you about (a showcase, something to try, a risk) and agents' Try it suggestions, until seen. Pure.
+// you about (a showcase, something to try, a risk), until seen. Pure.
 import type { ChatOpenItem, ChatOpenNudge } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { bubblesOf } from "./bubbles";
@@ -50,25 +50,24 @@ export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }
   // which comes before what's loaded.
   const loaded = new Set(items.map((i) => i.id));
   const unloaded = away.filter((o) => !loaded.has(o.messageId) && (o.kind === "command_approval" || o.kind === "secret_request"));
-  // A proposed Try it setting and a Navi's purchase are approvals too, said as what they are once their page is loaded.
+  // A Navi's purchase is an approval too, said as what it is once its page is loaded.
   const kindOf = (i: ChatItem) => {
     const item = i.message?.item;
     if (i.kind !== "gated") return item?.kind === "secret_request" && item.secureInput !== undefined ? "input" : "secret";
     if (item?.kind !== "command_approval") return "command";
     if (item.secureInput !== undefined) return "fill";
-    return item.previewConfig !== undefined ? "setting" : item.purchase !== undefined ? "purchase" : "command";
+    return item.purchase !== undefined ? "purchase" : "command";
   };
   const open = [...unloaded.map((o) => ({ id: o.messageId, kind: o.kind === "command_approval" ? "command" : "secret" })), ...items.filter(openItem).map((i) => ({ id: i.id, kind: kindOf(i) }))];
   if (open.length > 0) {
     const count = (kind: string) => open.filter((i) => i.kind === kind).length;
-    const [approvals, settings, purchases, secrets] = [count("command"), count("setting"), count("purchase"), count("secret")];
+    const [approvals, purchases, secrets] = [count("command"), count("purchase"), count("secret")];
     const [inputs, fills] = [count("input"), count("fill")];
     const parts = [
       approvals > 0 ? `${plural(approvals, "command")} to approve` : "",
       purchases > 0 ? `${plural(purchases, "purchase")} to approve` : "",
       fills > 0 ? `${plural(fills, "secure input")} to approve` : "",
       inputs > 0 ? `${plural(inputs, "secure input")} to enter` : "",
-      settings > 0 ? `${plural(settings, "Try it setting")} to approve` : "",
       secrets > 0 ? `${plural(secrets, "secret")} to enter` : "",
     ];
     return { what: parts.filter((p) => p !== "").join(", "), targets: open.map((i) => ({ id: i.id })) };
@@ -110,7 +109,7 @@ export const sameLooks = (a: readonly LookAt[], b: readonly LookAt[]): boolean =
 /**
  * What there is to look at, oldest first: the hub's waiting nudges, less those this app cleared since (seen or
  * dismissed, by their key), those a loaded message says no longer wait (that same flag of it), and those a day old.
- * Show goes to a lead message's first bubble, and to a Try it line as it is.
+ * Show goes to a lead message's first bubble.
  */
 export function lookingAt(nudges: readonly ChatOpenNudge[] | undefined, items: readonly ChatItem[] | undefined, cleared: ReadonlySet<string>, nowMs: number): readonly LookAt[] {
   if (nudges === undefined) return [];

@@ -1,8 +1,7 @@
 //! Nudges: a message worth the person's look, a showcase, something to try or a risk. The lead flags the message it
-//! just wrote with `nudge`; an agent's Try it suggestion comes flagged. One waits, below what the lead waits on you
-//! for, until the person has seen its message or dismissed it (`chat_nudge_clear`), and fades on its own after a
-//! day, marked expired the next time the project's nudges are read; a project keeps [`CHAT_NUDGES_MAX`] waiting of
-//! each kind (the lead's, and Try it suggestions), a newer one past that clearing the oldest of its kind. In the app
+//! just wrote with `nudge`. One waits, below what the lead waits on you for, until the person has seen its message or
+//! dismissed it (`chat_nudge_clear`), and fades on its own after a day, marked expired the next time the project's
+//! nudges are read; a project keeps [`CHAT_NUDGES_MAX`] waiting, a newer one past that clearing the oldest. In the app
 //! only: it sends no notification.
 use std::sync::{Arc, Weak};
 
@@ -133,14 +132,10 @@ impl Chat {
         reason: Line<1, 200>,
     ) -> Result<ChatNudge, StoreError> {
         let now = self.now();
-        // Its kind's: a Try it suggestion counts against suggestions only, so they never push out the lead's flags.
-        let suggestion = message.preview_suggestion.is_some();
         let others: Vec<ChatMessage> = self
             .open_nudges(&message.project_ref)?
             .into_iter()
-            .filter(|m| {
-                m.message_id != message.message_id && m.preview_suggestion.is_some() == suggestion
-            })
+            .filter(|m| m.message_id != message.message_id)
             .collect();
         let over = (others.len() + 1).saturating_sub(CHAT_NUDGES_MAX);
         for old in others.into_iter().take(over) {

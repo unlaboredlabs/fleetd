@@ -52,3 +52,6 @@ fleetd/stack
 # The memory budget is gone: the caps alone hold agents back, never the memory an agent is estimated to take.
 memory budget
 seen on this project
+
+# Try it (previews of a PR, W58) is gone.
+\bpreviews?_(start|end|list|suggest|feedback|config_propose)\b

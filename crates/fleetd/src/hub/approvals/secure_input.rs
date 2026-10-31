@@ -62,7 +62,6 @@ impl Approvals {
             secret,
             gated: None,
             permission: None,
-            preview_config: None,
             purchase: None,
             secure_input: Some(SecureInput {
                 site: input.site,

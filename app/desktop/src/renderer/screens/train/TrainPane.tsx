@@ -1,15 +1,13 @@
 // The panel's Train: the project's merge train at a glance. What merges now and at which stage (with the checks it
 // waits on), the queue in train order with what holds each one, and the merges and refusals of late, a batch shown as
-// one group. Each PR opens in the PRs tab, and Try it beside one whose preview is starting or ready reopens it
-// (screens/tryit; phase 1 starts none from here). Read through the data layer and refetched on the hub's change and PR events; nothing polls, and
-// nothing here moves the train.
+// one group. Each PR opens in the PRs tab. Read through the data layer and refetched on the hub's change and PR events;
+// nothing polls, and nothing here moves the train.
 import { useMemo, type ReactNode } from "react";
 import type { ChangesListInput, ProjectRef } from "../../../shared/contracts";
 import { useData, useToolQueries, useToolQuery } from "../../src/data/react";
 import { Button, cx, Dot, EmptyState, StateGlyph, Text, Truncate, useArrivals, useArrived, useBeatRef, useLeavers, type GlyphState } from "../../ui";
 import { when } from "../prs/words";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
-import { TryItButton } from "../tryit/Suggestion";
 import { changesOf, checkLines, lineReads, onTrain, trainReads, STAGE_WORD, stageLine, trainViews, WAITING_WORD, type Moving, type QueueRow, type Recent, type TrainPr, type TrainView } from "./model";
 import s from "./train.module.css";
 
@@ -244,12 +242,7 @@ function Head({ moving, project, nowMs }: { moving: Moving; project: ProjectRef;
       </Text>
       <div className={moving.prs.length > 1 ? s.batch : undefined}>
         {moving.prs.map((pr) => (
-          <div key={pr.changeId} className={s.tryRow}>
-            <PrLink pr={pr} project={project} />
-            <span className={s.rowTry}>
-              <TryItButton project={project} repo={pr.repo} number={pr.number} variant="quiet" reopenOnly />
-            </span>
-          </div>
+          <PrLink key={pr.changeId} pr={pr} project={project} />
         ))}
       </div>
       {checks !== undefined && checks.shown.length > 0 ? (
@@ -311,9 +304,6 @@ function QueueItem({ row, project }: { row: QueueRow; project: ProjectRef }) {
           </span>
         ) : null}
       </PrLink>
-      <span className={s.rowTry}>
-        <TryItButton project={project} repo={row.pr.repo} number={row.pr.number} variant="quiet" reopenOnly />
-      </span>
     </div>
   );
 }

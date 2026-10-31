@@ -14,12 +14,10 @@ import { shortClock } from "./format";
 import { isMineRow, latestLabel, newestKey, type Arrival, type Row, type TopState } from "./model";
 import { MessageView, useEnter } from "./Bubble";
 import { useBubbleActions } from "./actions";
-import { useLooked } from "./looked";
 import { markOf, useShown } from "./shown";
 import { RefreshedChanges, RememberedUndo } from "./Remembered";
 import { KeptWorktrees } from "./KeptWorktrees";
 import { SkillSavedLine } from "./SkillSaved";
-import { ChatSuggestion } from "../tryit/Suggestion";
 import { useNow, useOnScreen } from "../live";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
 import { InlineChatItem } from "../inline";
@@ -102,23 +100,6 @@ function Waited({ id, children }: { id: string; children: ReactNode }) {
   return (
     <div ref={box} className={cx(s.waitedBox, shown && s.waited)} tabIndex={shown ? -1 : undefined}>
       {children}
-    </div>
-  );
-}
-
-/** An agent's suggestion to try a PR, flagged to look at: ringed while it is what Show went to, and seen in view. */
-function Suggested({ item, project }: { item: ChatItem; project: ProjectRef }) {
-  const mark = markOf(useBubbleActions()?.shown, item.id);
-  const box = useRef<HTMLDivElement>(null);
-  const shown = useShown(box, mark);
-  useLooked(box, item.id);
-  const suggestion = item.message?.previewSuggestion;
-  if (suggestion === undefined) return null;
-  return (
-    <div className={s.quietRow} data-entry="event">
-      <div ref={box} className={cx(s.waitedBox, shown && s.waited)} tabIndex={shown ? -1 : undefined}>
-        <ChatSuggestion project={project} suggestion={suggestion} at={shortClock(item.at)} />
-      </div>
     </div>
   );
 }
@@ -232,8 +213,6 @@ const RowView = memo(function RowView(props: {
         </div>
       );
     case "event":
-      // An agent's suggestion to try a PR: a line of its own, with Try it (screens/tryit), flagged to look at.
-      if (r.item.message?.previewSuggestion !== undefined) return <Suggested item={r.item} project={project} />;
       // The night's memory refresh: its counts with Undo all, opening to each change with Undo.
       if (r.item.message?.memoryRefreshed !== undefined) {
         return (

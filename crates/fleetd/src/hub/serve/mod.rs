@@ -440,7 +440,6 @@ pub fn build_on_with(
         metrics: crate::hub::metrics::Metrics::new(hosts),
         updates,
         relays: Arc::default(),
-        previews: Arc::default(),
         machine_setup: Arc::default(),
         github_app,
         builds,
@@ -464,7 +463,6 @@ pub fn build_on_with(
     crate::hub::browser::calls::register_lead_calls(&hub);
     crate::hub::navi::purchases::register_lead_calls(&hub);
     crate::hub::machine_roles::wire(&hub);
-    crate::hub::preview::wire(&hub);
     crate::hub::skills::calls::register_lead_calls(&hub);
     crate::hub::skills::saves::register_lead_calls(&hub);
     crate::hub::skills::versions::watch_uses(&hub);
@@ -505,12 +503,8 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(tokio::spawn(crate::hub::machine_roles::screens::run(
         hub.clone(),
     )));
-    loops.push(tokio::spawn(crate::hub::preview::run_sweep(hub.clone())));
     loops.push(tokio::spawn(crate::hub::tasks::ci_wait::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::memory::refresh::run(hub.clone())));
-    loops.push(tokio::spawn(crate::hub::preview::run_untracked(
-        hub.clone(),
-    )));
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
     loops.push(crate::hub::queue::start_loops(hub));
     loops.extend(crate::hub::usage::wire::start(hub));

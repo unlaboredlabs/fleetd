@@ -10,7 +10,6 @@ import { marked } from "../../../shared/hidden";
 import type { HubError } from "../../../shared/hub";
 import { Button, Code, cx, InlineCode, Input, Text, Truncate } from "../../ui";
 import { useData, useDataLayer, useReadOf, useToolQuery } from "../../src/data/react";
-import { configLines, configWords } from "../tryit/model";
 import { Exact, HiddenWarning, marks } from "./Exact";
 import { patchLocal, useLocal, type Failed } from "./local";
 import { prose } from "./prose";
@@ -369,7 +368,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
   const { local, shown, busy, failed, confirming, setConfirming, run, refocus, focused } = useSent(key, item, read, machine, section);
   const outcome = approvalOutcome(shown);
   const offline = approvalOffline(shown.state, live);
-  const { gated, permission, previewConfig, purchase, secureInput } = item;
+  const { gated, permission, purchase, secureInput } = item;
   const preview = permission?.preview;
   // The Navi's approval checker judged it first: why it asks, or why it refused it (the person may approve it anyway).
   const checker = permission?.checker;
@@ -431,15 +430,13 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
   const destructive = blocked || gated?.class === "irreversible" || preview?.action === "delete" || preview?.action === "spend" || purchase !== undefined;
   const navi = asker ?? "Navi";
   return (
-    <Shell ref={section} label={purchase !== undefined ? "Purchase to approve" : secureInput !== undefined ? "Secure input to approve" : previewConfig === undefined ? "Command to approve" : "Try it setting to approve"} requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} site={(purchase?.shop ?? secureInput?.site)?.domain} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
+    <Shell ref={section} label={purchase !== undefined ? "Purchase to approve" : secureInput !== undefined ? "Secure input to approve" : "Command to approve"} requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} site={(purchase?.shop ?? secureInput?.site)?.domain} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
           {purchase !== undefined
             ? "Purchase"
             : secureInput !== undefined
             ? "Secure input · 1Password"
-            : previewConfig !== undefined
-            ? "Try it setting"
             : preview !== undefined
               ? `${actionWords(preview.action)} · ${actionPlace(preview)}`
               : gated === undefined
@@ -467,8 +464,6 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
           ? marks(`${navi} wants to pay ${totalWords(purchase.total)} at ${purchase.shop.name}`)
           : secureInput !== undefined
           ? marks(`${navi} wants to fill ${secureInput.label} for ${secureInput.site.name} from 1Password`)
-          : previewConfig !== undefined
-          ? prose(previewConfig.why)
           : gated !== undefined
             ? prose(gated.reason)
             : preview?.action === "confirm"
@@ -516,7 +511,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
           secureInput?.label,
           secureInput?.ref,
         ]}
-        lines={[previewConfig?.why, gated?.reason, previewConfig === undefined ? undefined : configLines(previewConfig.config).join("\n"), permission?.summary, preview?.input]}
+        lines={[gated?.reason, permission?.summary, preview?.input]}
       />
       {checker === undefined ? null : (
         <Text as="p" size="sm" tone={blocked ? "danger" : "quiet"} className={cx(s.line)} data-checker={checker.verdict}>
@@ -575,12 +570,6 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
             </Text>
           </>
         ) : null}
-        {/* A proposed Try it setting: its commands as they would run, in order. */}
-        {previewConfig !== undefined ? (
-          <Code code={configLines(previewConfig.config).join("\n")} bare>
-            {marks(configLines(previewConfig.config).join("\n"), true)}
-          </Code>
-        ) : null}
         {/* Each word isolated, so a right-to-left word can't swap the order its neighbours read in. */}
         {gated !== undefined ? (
           <Code code={shellLine(gated.argv)} bare>
@@ -593,16 +582,12 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
           </Code>
         ) : null}
         {preview !== undefined ? <PreviewDetail preview={preview} /> : null}
-        {gated === undefined && previewConfig === undefined && permission !== undefined && preview === undefined ? (
+        {gated === undefined && permission !== undefined && preview === undefined ? (
           <Code code={permission.summary} bare>
             {marks(permission.summary, true)}
           </Code>
         ) : null}
-        {previewConfig !== undefined ? (
-          <Text size="xs" tone="quiet">
-            {`${configWords(previewConfig.config)} Approved, it is how this project runs Try it on ${machine}; nothing runs until someone asks.`}
-          </Text>
-        ) : purchase !== undefined || secureInput !== undefined ? null : (
+        {purchase !== undefined || secureInput !== undefined ? null : (
           <Text size="xs" tone="quiet">
             on {machine}
             {gated?.cwd === undefined ? null : (

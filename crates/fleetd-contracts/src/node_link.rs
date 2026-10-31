@@ -150,9 +150,6 @@ pub const CAP_UPDATE_HOLD: &str = "update_hold";
 /// `session_host`: the node hosts sessions for agents on other machines (machine_roles.rs).
 pub const CAP_SESSION_HOST: &str = "session_host";
 
-/// `previews`: the node runs previews (preview.rs): it takes `preview_run` and `preview_stop`.
-pub const CAP_PREVIEWS: &str = "previews";
-
 /// `SessionRole::Assistant` (a Navi's lead) and a relative `project_upsert` root under the node's home (its folder).
 pub const CAP_ASSISTANT: &str = "assistant";
 
@@ -608,9 +605,6 @@ pub enum NodeToHub {
     /// A watched browser session's screen; only while the hub watches it.
     BrowserFrame(crate::browser::BrowserFrame),
     SessionHostResult(crate::machine_roles::SessionHostResult),
-    PreviewRunResult(crate::preview::PreviewRunResult),
-    /// A preview moved: a step, ready, used, ended, failed.
-    PreviewReport(crate::preview::PreviewReport),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -634,9 +628,6 @@ pub enum HubToNode {
     BrowserControl(crate::browser::BrowserControlFrame),
     /// Only to nodes that list [`CAP_SESSION_HOST`].
     SessionHost(crate::machine_roles::SessionHostFrame),
-    /// Only to nodes that list [`CAP_PREVIEWS`].
-    PreviewRun(crate::preview::PreviewRunFrame),
-    PreviewStop(crate::preview::PreviewStopFrame),
     /// Only to nodes that list [`CAP_SESSION_HOST`].
     RelayDial(crate::machine_roles::RelayDialFrame),
     /// Only to nodes that list [`CAP_SESSION_HOST`].

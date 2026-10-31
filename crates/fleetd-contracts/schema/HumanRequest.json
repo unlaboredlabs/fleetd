@@ -156,10 +156,6 @@
           "$ref": "#/$defs/ToolPermission",
           "description": "approval of a session's tool prompt, instead of a gated run."
         },
-        "previewConfig": {
-          "$ref": "#/$defs/PreviewConfigProposeCall",
-          "description": "approval of an agent's proposed preview setting (preview_config_propose), instead of a gated run: approving it\nsaves it as the project's `preview`."
-        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
@@ -254,41 +250,6 @@
       "required": [
         "personId",
         "name"
-      ],
-      "type": "object"
-    },
-    "PreviewConfig": {
-      "description": "A project's preview setting (Settings › Projects › Try it, or `project_settings_set {preview}`). Nothing runs\nbecause of it: it says how to run a preview someone asks for.",
-      "properties": {
-        "idleMinutes": {
-          "default": 30,
-          "description": "A preview no one used for this many minutes ends.",
-          "maximum": 240,
-          "minimum": 5,
-          "type": "integer"
-        },
-        "web": {
-          "$ref": "#/$defs/WebPreview"
-        }
-      },
-      "type": "object"
-    },
-    "PreviewConfigProposeCall": {
-      "description": "`preview_config_propose`: how to run the project's preview, for the person to approve as a card in the chat.\nNothing is saved until they do. Answered with the request, as `gated_run` is.",
-      "properties": {
-        "config": {
-          "$ref": "#/$defs/PreviewConfig"
-        },
-        "why": {
-          "maxLength": 300,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "config",
-        "why"
       ],
       "type": "object"
     },
@@ -412,9 +373,6 @@
         "currency"
       ],
       "type": "object"
-    },
-    "ReadyPath": {
-      "type": "string"
     },
     "RequestKind": {
       "description": "What a lead needs a person for that chat can't carry safely: a secret value (entered in a masked field and sealed to\nthe sink's node, never in a transcript), or an approval of a risky command (a gated run, or a session's tool\nprompt). The lead asks everything else in chat.",
@@ -550,9 +508,6 @@
       ],
       "type": "object"
     },
-    "SetupInput": {
-      "type": "string"
-    },
     "ShopDomain": {
       "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){1,20}$",
       "type": "string"
@@ -678,56 +633,6 @@
         "action",
         "title",
         "input"
-      ],
-      "type": "object"
-    },
-    "WebPreview": {
-      "description": "How a project's web app is built and run for a preview, each command with `sh -c` in the preview's worktree and\nthe project's variables, as setup commands run (#501).",
-      "properties": {
-        "build": {
-          "description": "Builds the app; none for an app the start command builds itself.",
-          "maxLength": 2000,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "inputs": {
-          "default": [],
-          "description": "Files whose contents decide what setup makes, such as lockfiles.",
-          "items": {
-            "$ref": "#/$defs/SetupInput"
-          },
-          "maxItems": 20,
-          "type": "array",
-          "uniqueItems": true
-        },
-        "ready": {
-          "$ref": "#/$defs/ReadyPath",
-          "default": "/",
-          "description": "Asked until it answers, for at most 2 minutes after the start."
-        },
-        "setup": {
-          "default": [],
-          "description": "Run first, in order: install dependencies, generate code. Skipped when `inputs` haven't changed since a\npreview of this project last ran them on this machine.",
-          "items": {
-            "maxLength": 2000,
-            "minLength": 1,
-            "pattern": "^[^\\r\\n]*$",
-            "type": "string"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "start": {
-          "description": "Serves the app on `127.0.0.1:$PORT`; it runs until the preview ends.",
-          "maxLength": 2000,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "start"
       ],
       "type": "object"
     },

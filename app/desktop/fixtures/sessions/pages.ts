@@ -1,7 +1,6 @@
 // The Sessions fixture's web pages: a made-up shop and a made-up payments dashboard, drawn as 1280×800 SVG so a
 // session's frames and video look like a real page's without a real site in them (media.ts renders them to the JPEG
-// frames and the WebM the fixture serves), and the same pages as the HTML a step's DOM snapshot holds (html.ts). Its
-// drawing parts draw the Try it fixture's checkout too (fixtures/tryit/pages.ts).
+// frames and the WebM the fixture serves), and the same pages as the HTML a step's DOM snapshot holds (html.ts).
 
 export const W = 1280;
 export const H = 800;

@@ -323,12 +323,6 @@ fn content(item: &CommandApprovalItem) -> (String, String) {
         text.push_str(&format!("\n\nwhy: {}", g.reason.as_str()));
         return ("run a command".to_owned(), text);
     }
-    if let Some(p) = &item.preview_config {
-        return (
-            "save how Try it runs this project".to_owned(),
-            serde_json::to_string_pretty(&p.config).unwrap_or_default(),
-        );
-    }
     if let Some(p) = &item.purchase {
         let mut text = format!("{} ({})\n", p.shop.name, p.shop.domain);
         for i in p.items.iter() {

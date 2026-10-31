@@ -733,23 +733,7 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             json!({ "url": "https://github.com/acme/storefront/actions/runs/4242" })
         }
         (_, "review_read") => json!({ "pr": "https://github.com/acme/storefront/pull/7" }),
-        (_, "preview_suggest") => json!({
-            "prUrl": "https://github.com/acme/storefront/pull/7",
-            "why": "The checkout's buttons read differently in German and Dutch",
-        }),
         (_, "chat_image") => json!({ "path": "shots/checkout-after.png" }),
-        (_, "preview_config_propose") => json!({
-            "config": { "web": {
-                "setup": ["pnpm install --frozen-lockfile"],
-                "build": "pnpm build",
-                "start": "pnpm preview --port $PORT --host 127.0.0.1",
-                "inputs": ["pnpm-lock.yaml"],
-            } },
-            "why": "The storefront is a Vite app",
-        }),
-        (_, "preview_start") => json!({
-            "of": { "kind": "pr", "repo": "acme/storefront", "number": 7 },
-        }),
         (_, "session_start") => json!({
             "purpose": "Check that signup works on the staging site",
         }),

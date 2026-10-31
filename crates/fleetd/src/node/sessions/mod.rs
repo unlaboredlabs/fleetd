@@ -627,8 +627,6 @@ struct Inner {
     /// The node's browser broker, once it runs: a lead's and a task's claude get agent-browser pointed at their
     /// session, and their browser commands are logged.
     browser: std::sync::OnceLock<Arc<dyn crate::node::browser::SessionHooks>>,
-    /// The node's previews: a removed project's end, and its preview worktrees go.
-    previews: std::sync::OnceLock<Arc<crate::node::preview::Previews>>,
     /// Navis' Telegram bridges: a removed project's is forgotten.
     telegram: std::sync::OnceLock<Arc<crate::node::telegram::Telegram>>,
 }
@@ -769,10 +767,6 @@ impl SessionService {
         }
     }
 
-    pub fn set_previews(&self, previews: Arc<crate::node::preview::Previews>) {
-        let _ = self.inner.previews.set(previews);
-    }
-
     pub fn set_telegram(&self, telegram: Arc<crate::node::telegram::Telegram>) {
         let _ = self.inner.telegram.set(telegram);
     }
@@ -801,7 +795,6 @@ impl SessionService {
                 running: watch::Sender::new(0),
                 span_wake: Arc::new(tokio::sync::Notify::new()),
                 browser: std::sync::OnceLock::new(),
-                previews: std::sync::OnceLock::new(),
                 telegram: std::sync::OnceLock::new(),
             }),
         };
@@ -1633,11 +1626,6 @@ impl SessionService {
         self.store()
             .session(id)?
             .ok_or_else(|| not_found(format!("no session {id} on this machine")))
-    }
-
-    /// A project's checkout on this machine, for its previews.
-    pub fn project_workspace(&self, project_id: &str) -> Option<PathBuf> {
-        self.project_root(project_id).ok()
     }
 
     /// A Navi's folder on this machine, by its project: one whose sessions are a Navi's (assistant). None for any other
@@ -4058,12 +4046,6 @@ impl SessionService {
         }
         if let Some(telegram) = self.inner.telegram.get() {
             telegram.forget(project_id);
-        }
-        // Its previews end and their worktrees go whatever `remove_worktrees` says: they hold no work.
-        if let (Some(previews), Ok(root)) =
-            (self.inner.previews.get(), self.project_root(project_id))
-        {
-            previews.forget_project(project_id.as_str(), &root).await;
         }
         // Only once every process of the project has exited: none still works in a worktree that goes.
         if remove_worktrees {

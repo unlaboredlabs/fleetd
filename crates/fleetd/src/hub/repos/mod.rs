@@ -3,7 +3,7 @@
 //! adding it saw one, or its work is bound to a remote. Every project the hub has cached gets it at start, and again
 //! whenever its node reports it, its work is bound, or its repos are read. A plain directory has none.
 //!
-//! The hub stores them, serves them in `ProjectSummary.repos`, and keeps a repo's own `setup` and `preview` on its row
+//! The hub stores them, serves them in `ProjectSummary.repos`, and keeps a repo's own `setup` on its row
 //! (`projects::settings`). `project_repo_add` and `project_repo_remove` (`projects::repos`) add and remove the others:
 //! each a node checkout of its own, which stops showing as a project while another project holds it.
 use std::sync::Arc;
