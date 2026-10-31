@@ -3,7 +3,7 @@
 // icon as a sheet, and Move and Scale for its picture over everything), and the two ways in: the Chats list's + menu and a chat's bar. App.tsx
 // adds these to its navigators.
 import { useNavigation } from "@react-navigation/native";
-import { createNativeStackNavigator, type NativeStackNavigationOptions } from "@react-navigation/native-stack";
+import { createNativeStackNavigator, type NativeStackHeaderItemMenu, type NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { Alert, Platform, Pressable } from "react-native";
 import type { ChatInfoParams, RootParams } from "../../hubContext";
 import { useTheme, type Palette } from "../../theme";
@@ -50,27 +50,24 @@ export const manageScreens = (Stack: RootStack, t: Palette) => (
   </Stack.Group>
 );
 
+/** The Chats list's + on iOS: New Navi or New Project, in iOS's own pull-down menu, a round glass button in the bar. */
+export const newChatItems = (navigate: (name: "NewNavi" | "NewProject") => void): NativeStackHeaderItemMenu => ({
+  type: "menu",
+  label: "New",
+  icon: { type: "sfSymbol", name: "plus" },
+  accessibilityLabel: "New Navi or project",
+  menu: {
+    items: [
+      { type: "action", label: "New Navi", description: "A personal assistant", icon: { type: "sfSymbol", name: "sparkles" }, onPress: () => navigate("NewNavi") },
+      { type: "action", label: "New Project", description: "A repo or a folder", icon: { type: "sfSymbol", name: "folder.badge.plus" }, onPress: () => navigate("NewProject") },
+    ],
+  },
+});
+
 /** The Chats list's +: New Navi or New Project, in iOS's own pull-down menu (an alert's choices on Android). */
 export const newChatOptions = (t: Palette, navigate: (name: "NewNavi" | "NewProject") => void): NativeStackNavigationOptions => {
   const open = (name: "NewNavi" | "NewProject") => () => navigate(name);
-  if (Platform.OS === "ios") {
-    return {
-      unstable_headerRightItems: () => [
-        {
-          type: "menu",
-          label: "New",
-          icon: { type: "sfSymbol", name: "plus" },
-          accessibilityLabel: "New Navi or project",
-          menu: {
-            items: [
-              { type: "action", label: "New Navi", description: "A personal assistant", icon: { type: "sfSymbol", name: "sparkles" }, onPress: open("NewNavi") },
-              { type: "action", label: "New Project", description: "A repo or a folder", icon: { type: "sfSymbol", name: "folder.badge.plus" }, onPress: open("NewProject") },
-            ],
-          },
-        },
-      ],
-    };
-  }
+  if (Platform.OS === "ios") return { unstable_headerRightItems: () => [newChatItems(navigate)] };
   return {
     headerRight: () => (
       <Pressable
@@ -113,7 +110,7 @@ function ChatInfo() {
 }
 
 /** The back button of a stack's first screen, which leaves the stack, as the system's own. */
-const backTo = (t: Palette, onPress: () => void): NativeStackNavigationOptions =>
+export const backTo = (t: Palette, onPress: () => void): NativeStackNavigationOptions =>
   Platform.OS === "ios"
     ? { unstable_headerLeftItems: () => [{ type: "button", label: "Back", icon: { type: "sfSymbol", name: "chevron.left" }, accessibilityLabel: "Back", onPress }] }
     : {

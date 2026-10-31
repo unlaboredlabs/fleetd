@@ -4,12 +4,12 @@
 // forgets both. A pairing link (`fleetd://pair?…`, from a QR code scanned with iOS's Camera) opens the app and, once
 // confirmed, pairs it.
 //
-// Navigation is iOS's own (react-native-screens): UIKit's tab bar for Chats and Settings (a drawn one on Android), each
-// a stack with a large title that collapses on scroll, and a chat pushed over them, which a swipe from the edge takes
-// back. An approval has no screen of its own: its chat floats to the top of Chats, and its card in the chat answers it.
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { createNativeBottomTabNavigator } from "@react-navigation/bottom-tabs/unstable";
-import { createNavigationContainerRef, NavigationContainer } from "@react-navigation/native";
+// Navigation is iOS's own (react-native-screens): Chats, as Messages on iOS 26, with a compact bar on top and the
+// search field and filters in a toolbar at the bottom, no tab bar; the person's avatar at its top left pushes
+// Settings, a stack with a large title of its own, and a chat is pushed over the list, which a swipe from the edge
+// takes back. An approval has no screen of its own: its chat floats to the top of Chats, and its card in the chat
+// answers it.
+import { createNavigationContainerRef, NavigationContainer, useNavigation } from "@react-navigation/native";
 import { createNativeStackNavigator, type NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
@@ -21,19 +21,17 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { webSocketTransport } from "./src/hub/socket";
 import type { Paired } from "./src/hub/pair";
 import { pairLinkStep } from "./src/hub/pairLink";
-import { HubContext, SessionContext, useHub, type HubContextValue, type PairParams, type RootParams, type TabParams } from "./src/hubContext";
-import { approvals } from "./src/lists";
+import { HubContext, SessionContext, type HubContextValue, type PairParams, type RootParams } from "./src/hubContext";
 import { pushDeps, useTappedRoute } from "./src/notifications";
 import { chatAt, type Route } from "./src/push";
 import { Chat, chatOptions } from "./src/screens/Chat";
 import { Chats, searchBar } from "./src/screens/Chats";
 import { Pair, Scan, Welcome } from "./src/screens/Connect";
-import { infoOptions, manageScreens, newChatOptions } from "./src/screens/manage";
+import { backTo, infoOptions, manageScreens, newChatOptions } from "./src/screens/manage";
 import { Settings } from "./src/screens/Settings";
 import { Session } from "./src/session";
 import { navigationTheme, useTheme, type Palette } from "./src/theme";
 import { haptics } from "./src/ui/haptics";
-import { Icon, sfSymbol, type IconName } from "./src/ui/Icon";
 import { SwipeGroup, useSwipeGroup } from "./src/ui/SwipeRow";
 import { forgetPaired, forgetPush, loadPaired, pairWith } from "./src/vault";
 
@@ -129,7 +127,7 @@ export default function App() {
   );
 }
 
-/** A large title that collapses into a translucent bar, as Messages' and Settings'. */
+/** A large title that collapses into a translucent bar, as Settings'. */
 const largeTitle = (t: Palette): NativeStackNavigationOptions => ({
   headerLargeTitleEnabled: true,
   headerLargeTitleShadowVisible: false,
@@ -251,27 +249,27 @@ function Root() {
     // A screen under another (the chats list under a chat) doesn't draw again while it's covered: a streamed reply
     // changes the state with every word.
     <RootStack.Navigator screenOptions={{ headerTintColor: t.accent, contentStyle: { backgroundColor: t.bg }, freezeOnBlur: true }}>
-      <RootStack.Screen name="Home" component={Tabs} options={{ headerShown: false, title: "Chats" }} />
+      <RootStack.Screen name="Home" component={ChatsHome} options={{ headerShown: false, title: "Chats" }} />
+      <RootStack.Screen name="Settings" component={SettingsScreens} options={{ headerShown: false }} />
       <RootStack.Screen name="Chat" component={Chat} options={({ route }) => ({ ...chatOptions(t), ...infoOptions(t, () => nav.navigate("ChatInfo", { screen: "Info", params: { key: route.params.key } })) })} />
       {manageScreens(RootStack, t)}
     </RootStack.Navigator>
   );
 }
 
-const NativeTabBar = createNativeBottomTabNavigator<TabParams>();
-const TabBar = createBottomTabNavigator<TabParams>();
 const ChatsStack = createNativeStackNavigator<{ Chats: undefined }>();
 const SettingsStack = createNativeStackNavigator<{ Settings: undefined }>();
 
-function ChatsTab() {
+/** The chats list in a stack of its own, whose bar and toolbar (ui/Toolbar.tsx) slide away under a chat. */
+function ChatsHome() {
   const t = useTheme();
   const swiped = useSwipeGroup();
   return (
     <SwipeGroup swipes={swiped}>
-      {/* A touch on the tab away from the rows closes the open one: the list's space and filters, and the native
-          navigation bar's large title, + and search field, which only a view around the navigator hears. */}
+      {/* A touch on the screen away from the rows closes the open one: the list's space, and the native bars' avatar,
+          +, filters button and search field, which only a view around the navigator hears. */}
       <View style={styles.fill} onTouchStart={swiped.touched}>
-        <ChatsStack.Navigator screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.bg } }}>
+        <ChatsStack.Navigator screenOptions={{ headerTintColor: t.label, headerShadowVisible: false, contentStyle: { backgroundColor: t.bg }, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.bg } }) }}>
           <ChatsStack.Screen name="Chats" component={Chats} options={{ headerSearchBarOptions: searchBar, ...newChatOptions(t, (name) => nav.navigate(name)) }} />
         </ChatsStack.Navigator>
       </View>
@@ -279,67 +277,14 @@ function ChatsTab() {
   );
 }
 
-function SettingsTab() {
+/** Settings, from the avatar on Chats: a stack of its own with its large title, as the chat's Info, and a way back. */
+function SettingsScreens() {
   const t = useTheme();
+  const root = useNavigation();
   return (
     <SettingsStack.Navigator screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.grouped } }}>
-      <SettingsStack.Screen name="Settings" component={Settings} />
+      <SettingsStack.Screen name="Settings" component={Settings} options={backTo(t, () => root.goBack())} />
     </SettingsStack.Navigator>
-  );
-}
-
-const TABS = [
-  { name: "ChatsTab", component: ChatsTab, title: "Chats", icon: "chats", iconOn: "chatsOn" },
-  { name: "SettingsTab", component: SettingsTab, title: "Settings", icon: "settings", iconOn: "settingsOn" },
-] as const satisfies ReadonlyArray<{ name: keyof TabParams; component: () => React.JSX.Element; title: string; icon: IconName; iconOn: IconName }>;
-
-function Tabs() {
-  const t = useTheme();
-  const { state } = useHub();
-  // The approvals waiting, whose chats are on top of Chats: seen from Settings too.
-  const waiting = approvals(state.requests).length;
-  const badge = (name: keyof TabParams) => (name === "ChatsTab" && waiting > 0 ? { tabBarBadge: String(waiting) } : {});
-  if (Platform.OS === "ios") {
-    return (
-      <NativeTabBar.Navigator screenOptions={{ tabBarActiveTintColor: t.accent }}>
-        {TABS.map((tab) => (
-          <NativeTabBar.Screen
-            key={tab.name}
-            name={tab.name}
-            component={tab.component}
-            options={{
-              title: tab.title,
-              ...badge(tab.name),
-              tabBarIcon: ({ focused }) => ({ type: "sfSymbol", name: sfSymbol(focused ? tab.iconOn : tab.icon) }),
-            }}
-          />
-        ))}
-      </NativeTabBar.Navigator>
-    );
-  }
-  return (
-    <TabBar.Navigator
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: t.accent,
-        tabBarInactiveTintColor: t.secondary,
-        tabBarStyle: { backgroundColor: t.bg, borderTopColor: t.separator },
-      }}
-    >
-      {TABS.map((tab) => (
-        <TabBar.Screen
-          key={tab.name}
-          name={tab.name}
-          component={tab.component}
-          options={{
-            title: tab.title,
-            ...badge(tab.name),
-            tabBarBadgeStyle: { backgroundColor: t.danger, color: "#FFFFFF" },
-            tabBarIcon: ({ color, focused }) => <Icon name={focused ? tab.iconOn : tab.icon} size={24} color={color} />,
-          }}
-        />
-      ))}
-    </TabBar.Navigator>
   );
 }
 

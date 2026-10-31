@@ -91,7 +91,7 @@ export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & P
  * The chats list's filters, as Telegram's folders: everything, what you haven't read, the chats with an approval
  * waiting for you, the Navis, the projects.
  */
-export type Filter = "all" | "unread" | "needsYou" | "navis" | "projects";
+export type Filter = "all" | "unread" | "needsYou" | "pinned" | "navis" | "projects";
 
 export interface ChatRow extends Row {
   readonly pinned: boolean;
@@ -136,6 +136,8 @@ export const chatList = (s: Parameters<typeof lists>[0], prefs: Prefs, filter: F
       return rows.filter((r) => r.unread > 0 || r.markedUnread || r.want !== undefined);
     case "needsYou":
       return rows.filter((r) => r.approvals > 0);
+    case "pinned":
+      return rows.filter((r) => r.pinned);
     case "navis":
       return rows.filter((r) => r.navi);
     case "projects":

@@ -194,6 +194,8 @@ describe("chatList", () => {
     expect(chatList(s, prefs, "unread")?.map((r) => r.key)).toEqual(["m1/shop", "m1/a"]);
     expect(chatList(s, prefs, "navis")?.map((r) => r.key)).toEqual(["m1/b", "m1/a"]);
     expect(chatList(s, prefs, "projects")?.map((r) => r.key)).toEqual(["m1/shop"]);
+    expect(chatList(s, prefs, "pinned")).toEqual([]);
+    expect(chatList(s, { ...prefs, pinned: ["m1/a", "m1/shop"] }, "pinned")?.map((r) => r.key)).toEqual(["m1/a", "m1/shop"]);
   });
 
   it("floats a chat with an approval waiting above the pinned, and Needs you shows only those", () => {

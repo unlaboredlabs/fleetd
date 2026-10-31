@@ -1,15 +1,20 @@
 // Chats, as Telegram and Messages list them: one list, the chats with an approval waiting for you on top with its
 // count, then your pinned chats, then whatever spoke last, each a full-bleed row with its avatar, its newest message
-// and when, and a count of what you haven't read (grey when muted). Filters above it narrow it to the unread, the chats
-// that need you, the Navis or the projects. Swipe a row right to mark it read or unread or to pin it, left to mute
+// and when, and a count of what you haven't read (grey when muted). Its bars are Messages' on iOS 26: a compact top
+// with the person's avatar on the left, which opens Settings and shows the link to the hub as a dot, and + on the
+// right; at the bottom, a round button whose menu narrows the list to the unread, the chats that need you, the pinned,
+// the Navis or the projects, beside the search field (ui/Toolbar.tsx). A build without that bar keeps search on top
+// and the filters in the header (Android: a row of chips over the list). Swipe a row right to mark it read or unread or to pin it, left to mute
 // it, as a chat swipes in Messages (ui/SwipeRow.tsx); hold it for the same in iOS's own menu (ui/HoldMenu.tsx). Pin, mute and read
 // live on this phone (prefs.ts). Search finds chats by name and messages by their words (search.ts). Pulling down reads
 // the hub again.
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import type { NativeStackHeaderItemMenu, NativeStackNavigationOptions } from "@react-navigation/native-stack";
+import { Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
+import { filterChoices, filterLabel, meAvatar, type FilterChoice, type LinkTone } from "../chatsBar";
 import { listTime } from "../chatView";
 import { useHub, type RootParams } from "../hubContext";
 import { chatList, type ChatRow, type Filter } from "../lists";
@@ -30,25 +35,28 @@ import { SkeletonRow } from "../ui/Skeleton";
 import { StateGlyph } from "../ui/StateGlyph";
 import { Badge, EmptyState } from "../ui/States";
 import { SwipeRow, useSwipes, type SwipeAction } from "../ui/SwipeRow";
-import { useLinkHeader } from "./linkHeader";
+import { Toolbar, bottomBar } from "../ui/Toolbar";
+import { useLinkDown, useLinkHeader } from "./linkHeader";
+import { newChatItems } from "./manage";
 import { useRefreshing } from "./refresh";
 import { useNow } from "./time";
 
 const AVATAR = 56;
+/**
+ * The person's avatar in the bar: drawn at 38 pt over a 34 pt view, as iOS sizes the bar's glass circle to the view
+ * (45 pt round, the same as +'s) and a wider one would stretch it into a capsule. It fills the glass, as in Messages.
+ */
+const ME_BOX = 34;
+const ME = 38;
 
 /**
- * The search field, under the large title as in Messages (iOS 26 would put it in a toolbar, which tabs don't show). It
- * has to be in the screen's options from its first frame (App.tsx): one set later never shows. Chats adds its handlers.
+ * The search field: in iOS 26's bottom toolbar, beside the filters (ui/Toolbar.tsx), as in Messages; without that bar,
+ * under the title. It has to be in the screen's options from its first frame (App.tsx): one set later never shows.
+ * Chats adds its handlers.
  */
-export const searchBar = { placeholder: "Search", placement: "stacked", hideWhenScrolling: false } as const;
-
-const FILTERS: ReadonlyArray<{ readonly id: Filter; readonly label: string }> = [
-  { id: "all", label: "All" },
-  { id: "unread", label: "Unread" },
-  { id: "needsYou", label: "Needs you" },
-  { id: "navis", label: "Navis" },
-  { id: "projects", label: "Projects" },
-];
+export const searchBar = bottomBar
+  ? ({ placeholder: "Search", placement: "integrated", allowToolbarIntegration: true, hideWhenScrolling: false } as const)
+  : ({ placeholder: "Search", placement: "stacked", hideWhenScrolling: false } as const);
 
 type Line = { readonly t: "head"; readonly key: string; readonly title: string } | { readonly t: "chat"; readonly key: string; readonly row: ChatRow } | { readonly t: "hit"; readonly key: string; readonly hit: MessageHit };
 
@@ -67,18 +75,21 @@ const useArrived = (keys: readonly string[]): ReadonlySet<string> => {
 export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined }, "Chats">) {
   const t = useTheme();
   const reduce = useReduceMotion();
-  const { state, session } = useHub();
+  const { state, session, paired } = useHub();
   const prefs = usePrefs();
   const root = useNavigation<NavigationProp<RootParams>>();
   const [typed, setTyped] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const refreshing = useRefreshing(state.projects, state.hub.phase);
   const query = queryOf(typed);
-  // The tab holds the open row (App.tsx ChatsTab), so a touch on the navigation bar closes it too. Leaving the list
-  // (another tab, a chat opened from a notification) closes it as well.
+  // The list's stack holds the open row (App.tsx ChatsHome), so a touch on its bars closes it too. Leaving the list
+  // (Settings, a chat opened from a notification) closes it as well.
   const swiped = useSwipes();
-  useLinkHeader(navigation, "Chats");
+  // No title: the bar says "Connecting…" while the link is down, and the avatar's dot says it the rest of the time.
+  useLinkHeader(navigation, "", { spinner: false });
   useEffect(() => navigation.addListener("blur", swiped.close), [navigation, swiped]);
+  const link = useLinkDown();
+  const me = meAvatar(state.meName, paired.hubName, link === undefined ? "live" : state.hub.phase);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -117,6 +128,35 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
 
   const open = (key: Key, messageId?: string) => root.navigate("Chat", messageId === undefined ? { key } : { key, messageId });
   const counts = { unread: all?.filter((r) => (r.unread > 0 && !r.muted) || r.markedUnread).length ?? 0, needsYou: all?.filter((r) => r.approvals > 0).length ?? 0 };
+  const choices = filterChoices(counts);
+  const pick = (f: Filter) => {
+    // VoiceOver picks a filter without a touch on the list.
+    swiped.close();
+    if (f === filter) return;
+    haptics.select();
+    setFilter(f);
+  };
+
+  // The bar's sides: the avatar on the left; + on the right, and the filters' menu beside it where there's no bottom bar.
+  const choicesKey = JSON.stringify(choices);
+  useLayoutEffect(() => {
+    const openSettings = () => {
+      swiped.close();
+      root.navigate("Settings");
+    };
+    const avatar = <MeButton initial={me.initial} tone={me.tone} label={me.label} onPress={openSettings} />;
+    const filters = filterMenu(choices, filter, pick);
+    const add = newChatItems((name) => root.navigate(name));
+    const options: Partial<NativeStackNavigationOptions> =
+      Platform.OS === "ios"
+        ? {
+            unstable_headerLeftItems: () => [{ type: "custom", element: avatar }],
+            unstable_headerRightItems: () => (bottomBar ? [add] : [add, filters]),
+          }
+        : { headerLeft: () => avatar };
+    navigation.setOptions(options);
+    // The choices by their value, as they're made again each render; `pick` changes with the filter.
+  }, [navigation, root, swiped, me.initial, me.tone, me.label, filter, choicesKey]);
 
   const empty =
     shown === undefined ? (
@@ -136,70 +176,100 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
     );
 
   return (
-    <Animated.FlatList
-      data={lines}
-      keyExtractor={(l) => l.key}
-      contentInsetAdjustmentBehavior="automatic"
-      keyboardDismissMode="on-drag"
-      keyboardShouldPersistTaps="handled"
-      onScrollBeginDrag={swiped.close}
-      {...(reduce ? {} : { itemLayoutAnimation: rowMove })}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing.on}
-          onRefresh={() => {
-            haptics.tap();
-            refreshing.start(() => session.refresh());
-          }}
-          tintColor={t.secondary}
-        />
-      }
-      ListHeaderComponent={
-        query === "" && all !== undefined && all.length > 0 ? (
-          <Filters
-            value={filter}
-            onChange={(f) => {
-              // VoiceOver picks a filter without a touch on the list.
-              swiped.close();
-              setFilter(f);
+    <>
+      <Animated.FlatList
+        data={lines}
+        keyExtractor={(l) => l.key}
+        contentInsetAdjustmentBehavior="automatic"
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={swiped.close}
+        {...(reduce ? {} : { itemLayoutAnimation: rowMove })}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing.on}
+            onRefresh={() => {
+              haptics.tap();
+              refreshing.start(() => session.refresh());
             }}
-            counts={counts}
+            tintColor={t.secondary}
           />
-        ) : undefined
-      }
-      ListEmptyComponent={empty}
-      renderItem={({ item: line, index }) => {
-        const next = lines[index + 1];
-        const separator = next !== undefined && next.t !== "head";
-        return (
-          <Animated.View {...(arrived.has(line.key) ? { entering: rowIn(reduce) } : {})} exiting={rowOut}>
-            {line.t === "head" ? (
-              <Text style={[type.subhead, styles.section, { color: t.secondary }]} accessibilityRole="header">
-                {line.title}
-              </Text>
-            ) : line.t === "hit" ? (
-              <HitRow hit={line.hit} picture={state.projects?.[line.hit.key]} title={state.projects?.[line.hit.key]?.title ?? ""} navi={all?.find((r) => r.key === line.hit.key)?.navi ?? false} separator={separator} onPress={() => open(line.hit.key, line.hit.messageId)} />
-            ) : (
-              <SwipingChat row={line.row} separator={separator} onPress={() => open(line.row.key)} />
-            )}
-          </Animated.View>
-        );
-      }}
-    />
+        }
+        ListHeaderComponent={
+          Platform.OS === "android" && query === "" && all !== undefined && all.length > 0 ? <Filters choices={choices} value={filter} onChange={pick} counts={counts} /> : undefined
+        }
+        ListEmptyComponent={empty}
+        renderItem={({ item: line, index }) => {
+          const next = lines[index + 1];
+          const separator = next !== undefined && next.t !== "head";
+          return (
+            <Animated.View {...(arrived.has(line.key) ? { entering: rowIn(reduce) } : {})} exiting={rowOut}>
+              {line.t === "head" ? (
+                <Text style={[type.subhead, styles.section, { color: t.secondary }]} accessibilityRole="header">
+                  {line.title}
+                </Text>
+              ) : line.t === "hit" ? (
+                <HitRow hit={line.hit} picture={state.projects?.[line.hit.key]} title={state.projects?.[line.hit.key]?.title ?? ""} navi={all?.find((r) => r.key === line.hit.key)?.navi ?? false} separator={separator} onPress={() => open(line.hit.key, line.hit.messageId)} />
+              ) : (
+                <SwipingChat row={line.row} separator={separator} onPress={() => open(line.row.key)} />
+              )}
+            </Animated.View>
+          );
+        }}
+      />
+      {/* After the list: the screen's first view is the scroll view the bars follow. */}
+      <Toolbar filters={choices} selected={filter} label={filterLabel(filter)} onSelect={pick} />
+    </>
+  );
+}
+
+/** The filters as a menu in the bar, iOS's own, the one that's on ticked: where there's no bottom bar for them. */
+const filterMenu = (choices: readonly FilterChoice[], filter: Filter, onPick: (f: Filter) => void): NativeStackHeaderItemMenu => ({
+  type: "menu",
+  label: "Filter",
+  icon: { type: "sfSymbol", name: "line.3.horizontal.decrease" },
+  accessibilityLabel: filterLabel(filter),
+  ...(filter === "all" ? {} : { variant: "prominent" }),
+  menu: {
+    items: choices.map((c) => ({
+      type: "action",
+      label: c.title,
+      ...(c.subtitle === undefined ? {} : { description: c.subtitle }),
+      icon: { type: "sfSymbol", name: c.symbol },
+      state: c.id === filter ? "on" : "off",
+      onPress: () => onPick(c.id),
+    })),
+  },
+});
+
+const DOT: Record<LinkTone, "success" | "warning" | "tertiary"> = { live: "success", busy: "warning", down: "tertiary" };
+
+/**
+ * The person's avatar at the top left, as the account button of iOS 26's apps: their initial on a round color in the
+ * bar's glass, and a dot at its foot for the link to the hub. It opens Settings.
+ */
+function MeButton({ initial, tone, label, onPress }: { initial: string; tone: LinkTone; label: string; onPress: () => void }) {
+  const t = useTheme();
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} hitSlop={6} style={styles.me}>
+      <View style={styles.meFace}>
+        <Avatar name={initial} navi size={ME} />
+        <View style={[styles.meDot, { backgroundColor: t[DOT[tone]], borderColor: t.bg }]} />
+      </View>
+    </Pressable>
   );
 }
 
 /**
- * The list's filters, as Telegram's folder tabs on iOS 26: a Liquid Glass capsule each, as the tab bar's, the chosen
- * one tinted with the accent rather than filled. Without glass, quiet fills and the accent. Unread counts its chats in
- * the accent, Needs you its approvals' chats in the rows' approval orange.
+ * Android's filters, a row of chips over the list, as Telegram's folder tabs: the chosen one filled with the accent.
+ * Unread counts its chats in the accent, Needs you its approvals' chats in the rows' approval orange.
  */
-function Filters({ value, onChange, counts }: { value: Filter; onChange: (f: Filter) => void; counts: { readonly unread: number; readonly needsYou: number } }) {
+function Filters({ choices, value, onChange, counts }: { choices: readonly FilterChoice[]; value: Filter; onChange: (f: Filter) => void; counts: { readonly unread: number; readonly needsYou: number } }) {
   const t = useTheme();
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters} accessibilityRole="tablist">
       <GlassGroup style={styles.filterGroup} spacing={4}>
-        {FILTERS.map((f) => {
+        {choices.map(({ id, title }) => ({ id, label: id === "all" ? "All" : title })).map((f) => {
           const on = f.id === value;
           const count = f.id === "unread" || f.id === "needsYou" ? counts[f.id] : 0;
           const tone = f.id === "needsYou" ? t.warning : t.accentFill;
@@ -219,11 +289,7 @@ function Filters({ value, onChange, counts }: { value: Filter; onChange: (f: Fil
               accessibilityRole="tab"
               accessibilityState={{ selected: on }}
               accessibilityLabel={count > 0 ? `${f.label}, ${String(count)}` : f.label}
-              onPress={() => {
-                if (on) return;
-                haptics.select();
-                onChange(f.id);
-              }}
+              onPress={() => onChange(f.id)}
             >
               {liquidGlass ? (
                 <Glass interactive style={styles.filter} {...(on ? { tint: t.accentFill } : {})}>
@@ -416,4 +482,7 @@ const styles = StyleSheet.create({
   marks: { flexDirection: "row", alignItems: "center", gap: 4, paddingTop: 2 },
   match: { fontWeight: "600" },
   separator: { position: "absolute", left: 0, right: 0, bottom: 0, height: StyleSheet.hairlineWidth },
+  me: { width: ME_BOX, height: ME_BOX },
+  meFace: { position: "absolute", left: (ME_BOX - ME) / 2, top: (ME_BOX - ME) / 2, width: ME, height: ME },
+  meDot: { position: "absolute", right: -1, bottom: -1, width: 12, height: 12, borderRadius: 6, borderWidth: 2 },
 });

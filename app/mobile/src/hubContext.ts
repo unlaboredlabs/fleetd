@@ -34,12 +34,10 @@ export const useSession = (): Session => {
   return session;
 };
 
-export type TabParams = {
-  ChatsTab: undefined;
-  SettingsTab: undefined;
-};
 export type RootParams = {
-  Home: NavigatorScreenParams<TabParams> | undefined;
+  Home: undefined;
+  /** The person's avatar on Chats opens it. */
+  Settings: undefined;
   /**
    * `messageId`: a search hit; `requestId`: an approval, at its card. Either is scrolled to and lit for a moment.
    * `tap`: one notification tap from the next, so a second tap on the same one while the chat is open lands again.

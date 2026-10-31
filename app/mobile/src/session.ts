@@ -236,7 +236,7 @@ export class Session {
   async #readInfo(): Promise<void> {
     const r = await this.#client.call("hub_info", {});
     if (!r.ok) return;
-    this.#dispatch({ t: "admin", admin: r.output.admin === true, me: r.output.me?.personId });
+    this.#dispatch({ t: "admin", admin: r.output.admin === true, me: r.output.me?.personId, meName: r.output.me?.name });
     if (r.output.admin === true) void loadRun(this.updates);
   }
 
