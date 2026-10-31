@@ -7,19 +7,31 @@
 //! another's build). Cargo keeps a moved target's dependencies fresh; the taker's tracked files are touched so its
 //! own crates always rebuild from its sources.
 //!
+//! A pool keeps at most `warmBuilds` targets (node.json, 2 by default): each one is a whole target, often many GB, and
+//! cargo never cleans one. One that goes is first renamed out of the pool (`.gone-…`), so a reader taking it at the
+//! same moment gets it whole or not at all, never half deleted. Once a day the node prunes every pool to that many,
+//! drops builds older than `MAX_AGE` and what an interrupted removal left.
+//!
 //! Dependencies come from setup commands: the project's own when it has them, else one install per lockfile whose
 //! app the commits touch, with the package manager's shared cache. Either way time-boxed and never stopping the
 //! reader: a failed setup is told to it and it starts anyway.
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use fleetd_contracts::project_settings::{SETUP_COMMANDS_MAX, WorktreeSetup};
 use sha2::{Digest, Sha256};
 
 use super::worktree::git;
 
-/// Warm targets a checkout's pool keeps; a reader finishing when it is full pushes the oldest out.
-pub const KEEP: usize = 3;
+/// Warm targets a checkout's pool keeps unless node.json's `warmBuilds` says otherwise; a reader finishing when it is
+/// full pushes the oldest out.
+pub const KEEP: usize = 2;
+/// A warm target older than this is pruned: its dependencies are likely stale by then.
+pub const MAX_AGE: Duration = Duration::from_secs(7 * 24 * 3600);
+/// How often the node prunes the pools.
+pub const PRUNE_EVERY: Duration = Duration::from_secs(24 * 3600);
+/// The start of the name a target leaving its pool is renamed to before it is removed.
+const GONE: &str = ".gone-";
 /// Each of a reader's setup commands' time limit, at most.
 pub const SETUP_LIMIT_SEC: i64 = 300;
 
@@ -41,29 +53,107 @@ const INSTALLS: [(&str, &str); 4] = [
     ("bun.lock", "bun install --frozen-lockfile"),
 ];
 
+/// How many warm targets each pool keeps on this machine: node.json's `warmBuilds`, else `KEEP`. 0 keeps none.
+pub fn keep(home: &Path) -> usize {
+    super::config::read_config(home)
+        .ok()
+        .flatten()
+        .and_then(|c| c.warm_builds)
+        .map_or(KEEP, |n| n as usize)
+}
+
+/// Every checkout's pool sits here.
+fn pools(home: &Path) -> PathBuf {
+    home.join("cache").join("targets")
+}
+
 /// Where the warm targets of the checkout at `root` wait: `<node home>/cache/targets/<16 hex of its path's SHA-256>`.
 pub fn pool(home: &Path, root: &Path) -> PathBuf {
     let digest = Sha256::digest(root.to_string_lossy().as_bytes());
     let name: String = digest[..8].iter().map(|b| format!("{b:02x}")).collect();
-    home.join("cache").join("targets").join(name)
+    pools(home).join(name)
 }
 
-/// The pool's targets, newest first.
+/// The pool's targets, newest first; none leaving it.
 fn waiting(pool: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(pool) else {
         return Vec::new();
     };
-    let mut all: Vec<PathBuf> = entries.filter_map(Result::ok).map(|e| e.path()).collect();
+    let mut all: Vec<PathBuf> = entries
+        .filter_map(Result::ok)
+        .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
+        .map(|e| e.path())
+        .collect();
     all.sort();
     all.reverse();
     all
 }
 
+/// When a target entered its pool, from its name.
+fn given_at(target: &Path) -> Option<SystemTime> {
+    let name = target.file_name()?.to_string_lossy();
+    let nanos: u64 = name.split('-').next()?.parse().ok()?;
+    Some(SystemTime::UNIX_EPOCH + Duration::from_nanos(nanos))
+}
+
+/// Takes `target` out of its pool and removes it. Renamed out first, so a reader's `take` of the same one either got
+/// it whole before or finds it gone; when the reader won, nothing is removed. Whether it went.
+fn evict(target: &Path) -> bool {
+    let (Some(pool), Some(name)) = (target.parent(), target.file_name()) else {
+        return false;
+    };
+    let gone = pool.join(format!("{GONE}{}", name.to_string_lossy()));
+    if std::fs::rename(target, &gone).is_err() {
+        return false;
+    }
+    // Left behind on a failure, it is out of the pool and the next prune removes it.
+    if let Err(e) = std::fs::remove_dir_all(&gone) {
+        tracing::warn!(target = %gone.display(), "old warm build not removed: {e}");
+    }
+    true
+}
+
+/// Prunes the pool to its newest `keep`, dropping those older than `MAX_AGE` at `now` and what an interrupted removal
+/// left. How many went.
+fn prune_pool(pool: &Path, keep: usize, now: SystemTime) -> usize {
+    let mut gone = 0;
+    if let Ok(entries) = std::fs::read_dir(pool) {
+        for left in entries.filter_map(Result::ok) {
+            if left.file_name().to_string_lossy().starts_with(GONE)
+                && std::fs::remove_dir_all(left.path()).is_ok()
+            {
+                gone += 1;
+            }
+        }
+    }
+    for (i, target) in waiting(pool).into_iter().enumerate() {
+        let old = given_at(&target)
+            .and_then(|at| now.duration_since(at).ok())
+            .is_some_and(|age| age > MAX_AGE);
+        if (i >= keep || old) && evict(&target) {
+            gone += 1;
+        }
+    }
+    gone
+}
+
+/// The node's daily cleanup: every checkout's pool pruned to `keep`, as `prune_pool`. How many targets went.
+pub fn prune(home: &Path, keep: usize) -> usize {
+    let Ok(entries) = std::fs::read_dir(pools(home)) else {
+        return 0;
+    };
+    let now = SystemTime::now();
+    entries
+        .filter_map(Result::ok)
+        .map(|pool| prune_pool(&pool.path(), keep, now))
+        .sum()
+}
+
 /// Hands the `target/` of a reader's worktree, which is about to go, to its checkout's pool, and drops the pool's
-/// oldest past `KEEP`.
-pub fn give(home: &Path, root: &Path, worktree: &Path) {
+/// oldest past `keep`. With `keep` 0 it goes with the worktree.
+pub fn give(home: &Path, root: &Path, worktree: &Path, keep: usize) {
     let target = worktree.join("target");
-    if !target.is_dir() || !worktree.join("Cargo.lock").is_file() {
+    if keep == 0 || !target.is_dir() || !worktree.join("Cargo.lock").is_file() {
         return;
     }
     let pool = pool(home, root);
@@ -79,10 +169,8 @@ pub fn give(home: &Path, root: &Path, worktree: &Path) {
         tracing::warn!(target = %target.display(), "warm build not handed on: {e}");
         return;
     }
-    for old in waiting(&pool).into_iter().skip(KEEP) {
-        if let Err(e) = std::fs::remove_dir_all(&old) {
-            tracing::warn!(target = %old.display(), "old warm build not removed: {e}");
-        }
+    for old in waiting(&pool).into_iter().skip(keep) {
+        evict(&old);
     }
 }
 
@@ -312,7 +400,7 @@ mod tests {
         assert!(!take(home.path(), root.path(), &first));
         std::fs::create_dir_all(first.join("target/debug")).unwrap();
         std::fs::write(first.join("target/debug/built"), "x").unwrap();
-        give(home.path(), root.path(), &first);
+        give(home.path(), root.path(), &first, KEEP);
         assert!(!first.join("target").exists());
         assert_eq!(waiting(&pool(home.path(), root.path())).len(), 1);
 
@@ -342,7 +430,7 @@ mod tests {
             std::fs::create_dir_all(wt.join("target")).unwrap();
             std::fs::write(wt.join("Cargo.lock"), "lock").unwrap();
             std::fs::write(wt.join("target/n"), i.to_string()).unwrap();
-            give(home.path(), root.path(), &wt);
+            give(home.path(), root.path(), &wt, KEEP);
         }
         let left = waiting(&pool(home.path(), root.path()));
         assert_eq!(left.len(), KEEP);
@@ -354,9 +442,129 @@ mod tests {
         // A worktree without a Cargo.lock has no build to hand on.
         let plain = root.path().join("plain");
         std::fs::create_dir_all(plain.join("target")).unwrap();
-        give(home.path(), root.path(), &plain);
+        give(home.path(), root.path(), &plain, KEEP);
         assert!(plain.join("target").exists());
         drop_pool(home.path(), root.path());
         assert!(!pool(home.path(), root.path()).exists());
+    }
+
+    /// A target in the pool with `n` in it, given `days` ago.
+    fn waiting_target(pool: &Path, days: u64, n: &str) -> PathBuf {
+        let at = SystemTime::now() - Duration::from_secs(days * 24 * 3600);
+        let nanos = at
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let target = pool.join(format!("{nanos:024}-1"));
+        std::fs::create_dir_all(target.join("debug")).unwrap();
+        std::fs::write(target.join("n"), n).unwrap();
+        target
+    }
+
+    #[test]
+    fn the_cap_comes_from_node_json_and_two_by_default() {
+        let home = tempfile::tempdir().unwrap();
+        assert_eq!(keep(home.path()), 2);
+        let config = |extra: &str| {
+            std::fs::write(
+                home.path().join("node.json"),
+                format!(
+                    r#"{{"hub":"http://devbox:4790","machineId":"m1","name":"devbox","tags":[],"enrolled":true{extra}}}"#
+                ),
+            )
+            .unwrap();
+        };
+        config("");
+        assert_eq!(keep(home.path()), 2);
+        config(r#","warmBuilds":5"#);
+        assert_eq!(keep(home.path()), 5);
+        config(r#","warmBuilds":0"#);
+        assert_eq!(keep(home.path()), 0);
+        // None kept: a reader's build goes with its worktree.
+        let wt = home.path().join("wt");
+        std::fs::create_dir_all(wt.join("target")).unwrap();
+        std::fs::write(wt.join("Cargo.lock"), "lock").unwrap();
+        give(home.path(), Path::new("/src/app"), &wt, 0);
+        assert!(wt.join("target").exists());
+        assert!(waiting(&pool(home.path(), Path::new("/src/app"))).is_empty());
+    }
+
+    #[test]
+    fn the_daily_prune_keeps_the_newest_young_ones_in_every_pool() {
+        let home = tempfile::tempdir().unwrap();
+        let a = pool(home.path(), Path::new("/src/a"));
+        let b = pool(home.path(), Path::new("/src/b"));
+        for (days, n) in [(0, "a0"), (1, "a1"), (2, "a2"), (3, "a3")] {
+            waiting_target(&a, days, n);
+        }
+        waiting_target(&b, 0, "b0");
+        waiting_target(&b, 8, "b-old");
+        // What a removal cut off in the middle left behind.
+        std::fs::create_dir_all(b.join(".gone-000-1/debug")).unwrap();
+        assert_eq!(prune(home.path(), 2), 2 + 1 + 1);
+        let left = |pool: &Path| -> Vec<String> {
+            waiting(pool)
+                .iter()
+                .map(|t| std::fs::read_to_string(t.join("n")).unwrap())
+                .collect()
+        };
+        assert_eq!(left(&a), ["a0", "a1"]);
+        assert_eq!(
+            left(&b),
+            ["b0"],
+            "older than a week goes even under the cap"
+        );
+        assert_eq!(std::fs::read_dir(&b).unwrap().count(), 1, "no leftovers");
+        assert_eq!(prune(home.path(), 2), 0);
+        assert_eq!(prune(&home.path().join("none"), 2), 0);
+    }
+
+    /// The reviewer's race: the pool trimmed while a reader takes the same target. Each side renames it, so exactly
+    /// one wins: the reader gets it whole, or the eviction removes it and the reader takes another or none.
+    #[test]
+    fn a_target_leaving_the_pool_is_never_taken_half_removed() {
+        let home = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        checkout(root.path(), "src/lib.rs");
+        let pool = pool(home.path(), root.path());
+        let reader = |name: &str| {
+            let path = root.path().join("wt").join(name);
+            sh(
+                root.path(),
+                &format!("git worktree add -q --detach {} HEAD", path.display()),
+            );
+            path
+        };
+        // The reader won: the eviction finds it gone and removes nothing.
+        waiting_target(&pool, 1, "older");
+        let newest = waiting_target(&pool, 0, "newest");
+        let first = reader("first");
+        assert!(take(home.path(), root.path(), &first));
+        assert!(!evict(&newest));
+        assert_eq!(
+            std::fs::read_to_string(first.join("target/n")).unwrap(),
+            "newest"
+        );
+        assert!(first.join("target/debug").is_dir());
+        // The eviction won: it is out of the pool before any of it is removed, so the reader takes the next.
+        let newer = waiting_target(&pool, 0, "newer");
+        let gone = pool.join(format!(
+            "{GONE}{}",
+            newer.file_name().unwrap().to_string_lossy()
+        ));
+        std::fs::rename(&newer, &gone).unwrap();
+        let second = reader("second");
+        assert!(take(home.path(), root.path(), &second));
+        assert_eq!(
+            std::fs::read_to_string(second.join("target/n")).unwrap(),
+            "older"
+        );
+        // A half-removed one is never handed out, and the prune clears it.
+        let third = reader("third");
+        assert!(!take(home.path(), root.path(), &third));
+        assert!(!third.join("target").exists());
+        assert!(gone.exists());
+        assert_eq!(prune(home.path(), KEEP), 1);
+        assert!(!gone.exists());
     }
 }

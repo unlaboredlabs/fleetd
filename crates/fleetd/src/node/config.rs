@@ -33,6 +33,9 @@ pub struct NodeConfig {
     /// GB of disk to allow per new agent's worktree when the hub decides how many more fit. Absent or 0: 5 GB.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disk_per_agent_gb: Option<u64>,
+    /// Warm cargo builds each checkout keeps for its next readers and reviewers (node/warm). Absent: 2. 0 keeps none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warm_builds: Option<u64>,
     /// True once the hub has accepted this node's key.
     pub enrolled: bool,
     /// Browser sessions for agents (node/browser): on unless `enabled` is false.

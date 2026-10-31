@@ -812,6 +812,7 @@ impl SessionService {
         if removed > 0 {
             tracing::info!(removed, "removed clones a previous node left half done");
         }
+        service.spawn_warm_pruner();
         service.spawn_reaper();
         service.spawn_prober();
         service.spawn_span_flusher(service.inner.span_wake.clone());
@@ -3641,7 +3642,7 @@ impl SessionService {
                 Some(branch) => worktree::remove(&root, &path, &branch, &base_ref),
                 None => {
                     // Its build goes on to the next reader of the checkout.
-                    super::warm::give(&home, &root, &path);
+                    super::warm::give(&home, &root, &path, super::warm::keep(&home));
                     worktree::remove_detached(&root, &path).map(|()| false)
                 }
             })
@@ -4064,6 +4065,24 @@ impl SessionService {
             Ok(frame) => st.machine(frame),
             Err(e) => tracing::warn!(error = %e, "cannot log the runner's state"),
         }
+    }
+
+    /// Prunes the readers' warm builds now and once a day (`warm::prune`), so they never fill the disk.
+    fn spawn_warm_pruner(&self) {
+        let weak = Arc::downgrade(&self.inner);
+        tokio::spawn(async move {
+            loop {
+                let Some(home) = weak.upgrade().map(|inner| inner.config.home.clone()) else {
+                    return;
+                };
+                let gone =
+                    blocking(move || super::warm::prune(&home, super::warm::keep(&home))).await;
+                if gone > 0 {
+                    tracing::info!(gone, "pruned warm builds");
+                }
+                tokio::time::sleep(super::warm::PRUNE_EVERY).await;
+            }
+        });
     }
 
     fn spawn_reaper(&self) {
