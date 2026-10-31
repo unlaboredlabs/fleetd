@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Settings' Hub group (D211): People, Machines, Every project (Profiles, Tools & skills, Instructions & memory,
 // Prompts), Hub accounts, and Setup while required steps are left; machine roles and caps on Machines; Claude and
-// GitHub on Hub accounts with the way back into the guided setup; and the hub-wide instructions, memory caps, MCP
+// GitHub on Hub accounts with the way back into the guided setup; and the hub-wide instructions, MCP
 // servers, skills and prompts on Every project's pages, its prompts nested under its Prompts in the sidebar and saved
 // hub-wide. A project's pages keep its own: its Prompts never offer a hub-wide save, and its Instructions are a
 // project's.
@@ -192,7 +192,7 @@ it("gathers what reaches every project on Every project's pages, and saves its i
   expect(parts()).toEqual(["hub.mcp", "hub.skills"]);
   window.location.hash = "#/settings/hub/instructions";
   await settle();
-  expect(parts()).toEqual(["hub.instructions", "hub.memory-caps", "hub.shared-memory"]);
+  expect(parts()).toEqual(["hub.instructions", "hub.shared-memory"]);
   expect(host.querySelector("#machine-roles")).toBeNull();
   const text = host.querySelector<HTMLTextAreaElement>("textarea[aria-label='Instructions for every project']");
   if (text === null) throw new Error("no instructions");

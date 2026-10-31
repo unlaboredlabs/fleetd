@@ -118,7 +118,6 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.skills", label: "Hub-wide skills", tab: "hub.tools", keywords: ["skill", "skills", "SKILL.md", "skills.sh", "global", "every project"] },
   { key: "hub.instructions", label: "Instructions for every project", tab: "hub.instructions", keywords: ["custom instructions", "rules", "global", "hub-wide"] },
   { key: "hub.shared-memory", label: "Shared memory", tab: "hub.instructions", keywords: ["user.md", "memory", "shared", "retire", "old"] },
-  { key: "hub.memory-caps", label: "Memory caps", tab: "hub.instructions", keywords: ["memory", "cap", "limit", "lines", "size", "MEMORY.md", "user.md"] },
   page("hub.prompts", ["templates", "system prompt", "hub-wide", "global", "every project"]),
   page("hub.accounts", ["connections", "claude api key", "api key", "github app", "guided setup"]),
   { key: "admin.claude", label: "Hub Claude API key", tab: "hub.accounts", keywords: ["claude", "api key", "anthropic", "endpoint", "leads", "members may use"] },

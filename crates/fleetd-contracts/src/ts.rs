@@ -124,21 +124,6 @@ fn constants() -> Vec<(&'static str, &'static str, Value)> {
             crate::steer::STEER_TEXT_MAX.into(),
         ),
         (
-            "MEMORY_FILE_CAP_MAX",
-            "Highest cap memory_caps_set gives one memory file.",
-            crate::memory::FILE_CAP_MAX.into(),
-        ),
-        (
-            "MEMORY_PROJECT_CAP_MAX",
-            "Highest cap memory_caps_set gives one project's memory together.",
-            crate::memory::PROJECT_CAP_MAX.into(),
-        ),
-        (
-            "MEMORY_CAP_MIN",
-            "Lowest cap memory_caps_set gives a memory file or a project.",
-            crate::memory::CAP_MIN.into(),
-        ),
-        (
             "SLEPT_SHOWN_MS",
             "How long a machine's sleep stays shown.",
             crate::model::SLEPT_SHOWN_MS.into(),

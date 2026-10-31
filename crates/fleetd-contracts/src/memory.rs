@@ -17,7 +17,7 @@ use crate::ids::{ProjectRef, Timestamp};
 use crate::people::PersonId;
 use crate::prim::{Count, Int, Line, List, Text};
 
-/// The caps' defaults, in characters; a hub admin changes them with memory_caps_set.
+/// The caps, in characters.
 pub const USER_CAP: usize = 16_000;
 pub const INDEX_CAP: usize = 16_000;
 pub const TOPIC_CAP: usize = 32_000;

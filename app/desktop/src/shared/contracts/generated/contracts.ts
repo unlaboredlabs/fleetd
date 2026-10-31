@@ -49,15 +49,6 @@ export const CHAT_TEXT_MAX = 100000;
 /** Longest steer, in UTF-16 units. */
 export const STEER_TEXT_MAX = 20000;
 
-/** Highest cap memory_caps_set gives one memory file. */
-export const MEMORY_FILE_CAP_MAX = 100000;
-
-/** Highest cap memory_caps_set gives one project's memory together. */
-export const MEMORY_PROJECT_CAP_MAX = 400000;
-
-/** Lowest cap memory_caps_set gives a memory file or a project. */
-export const MEMORY_CAP_MIN = 1000;
-
 /** How long a machine's sleep stays shown. */
 export const SLEPT_SHOWN_MS = 3600000;
 
@@ -3585,38 +3576,6 @@ export type MemoryCaps = {
   project: number;
   /** Each topic file. */
   topic: number;
-  /** Each person's own memory (the shared `user.md` too). */
-  user: number;
-};
-
-/**
- * What memory writes are held to, in characters. A write past a cap is refused; a file already past a lowered cap
- * stays as it is until it is next written.
- */
-export type MemoryCapsSetInput = {
-  /** Each project's `MEMORY.md`. */
-  index: number;
-  /** A project's files together, `MEMORY.md` included. */
-  project: number;
-  /** Each topic file. */
-  topic: number;
-  /** Each person's own memory (the shared `user.md` too). */
-  user: number;
-};
-
-/**
- * What memory writes are held to, in characters. A write past a cap is refused; a file already past a lowered cap
- * stays as it is until it is next written.
- */
-export type MemoryCapsSetOutput = {
-  /** Each project's `MEMORY.md`. */
-  index: number;
-  next?: string;
-  /** A project's files together, `MEMORY.md` included. */
-  project: number;
-  /** Each topic file. */
-  topic: number;
-  truncated?: boolean;
   /** Each person's own memory (the shared `user.md` too). */
   user: number;
 };
@@ -8344,7 +8303,6 @@ export interface ToolMap {
   mcp_server_test: { input: McpServerTestInput; output: McpServerTestOutput };
   mcp_servers_get: { input: McpServersGetInput; output: McpServersGetOutput };
   mcp_settings_set: { input: McpSettingsSetInput; output: McpSettingsSetOutput };
-  memory_caps_set: { input: MemoryCapsSetInput; output: MemoryCapsSetOutput };
   memory_get: { input: MemoryGetInput; output: MemoryGetOutput };
   memory_import: { input: MemoryImportInput; output: MemoryImportOutput };
   memory_refresh_run: { input: MemoryRefreshRunInput; output: MemoryRefreshRunOutput };

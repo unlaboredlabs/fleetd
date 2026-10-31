@@ -9778,12 +9778,6 @@
         "mcp_settings_set.output": {
           "$ref": "#/$defs/McpSettingsSetOutput"
         },
-        "memory_caps_set.input": {
-          "$ref": "#/$defs/MemoryCapsSetInput"
-        },
-        "memory_caps_set.output": {
-          "$ref": "#/$defs/MemoryCapsSetOutput"
-        },
         "memory_get.input": {
           "$ref": "#/$defs/MemoryGetInput"
         },
@@ -10588,8 +10582,6 @@
         "mcp_servers_get.output",
         "mcp_settings_set.input",
         "mcp_settings_set.output",
-        "memory_caps_set.input",
-        "memory_caps_set.output",
         "memory_get.input",
         "memory_get.output",
         "memory_import.input",
@@ -10990,84 +10982,6 @@
           "maximum": 100000,
           "minimum": 1000,
           "type": "integer"
-        },
-        "user": {
-          "description": "Each person's own memory (the shared `user.md` too).",
-          "maximum": 100000,
-          "minimum": 1000,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "user",
-        "index",
-        "topic",
-        "project"
-      ],
-      "type": "object"
-    },
-    "MemoryCapsSetInput": {
-      "description": "What memory writes are held to, in characters. A write past a cap is refused; a file already past a lowered cap\nstays as it is until it is next written.",
-      "properties": {
-        "index": {
-          "description": "Each project's `MEMORY.md`.",
-          "maximum": 100000,
-          "minimum": 1000,
-          "type": "integer"
-        },
-        "project": {
-          "description": "A project's files together, `MEMORY.md` included.",
-          "maximum": 400000,
-          "minimum": 1000,
-          "type": "integer"
-        },
-        "topic": {
-          "description": "Each topic file.",
-          "maximum": 100000,
-          "minimum": 1000,
-          "type": "integer"
-        },
-        "user": {
-          "description": "Each person's own memory (the shared `user.md` too).",
-          "maximum": 100000,
-          "minimum": 1000,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "user",
-        "index",
-        "topic",
-        "project"
-      ],
-      "type": "object"
-    },
-    "MemoryCapsSetOutput": {
-      "description": "What memory writes are held to, in characters. A write past a cap is refused; a file already past a lowered cap\nstays as it is until it is next written.",
-      "properties": {
-        "index": {
-          "description": "Each project's `MEMORY.md`.",
-          "maximum": 100000,
-          "minimum": 1000,
-          "type": "integer"
-        },
-        "next": {
-          "type": "string"
-        },
-        "project": {
-          "description": "A project's files together, `MEMORY.md` included.",
-          "maximum": 400000,
-          "minimum": 1000,
-          "type": "integer"
-        },
-        "topic": {
-          "description": "Each topic file.",
-          "maximum": 100000,
-          "minimum": 1000,
-          "type": "integer"
-        },
-        "truncated": {
-          "type": "boolean"
         },
         "user": {
           "description": "Each person's own memory (the shared `user.md` too).",
