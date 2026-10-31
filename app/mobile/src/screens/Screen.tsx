@@ -203,9 +203,15 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   const touchDown = useCallback((px: number, py: number) => touches.down(px, py), [touches]);
   const touchMove = useCallback((px: number, py: number, pointers: number) => touches.move(px, py, pointers), [touches]);
   const touchUp = useCallback((px: number, py: number) => touches.up(px, py), [touches]);
+  const touchPinch = useCallback(() => touches.pinch(), [touches]);
   const one = usePanGesture({
     minDistance: 0,
     maxPointers: 1,
+    // A second finger ends this gesture before any update counts two: its touch says so first.
+    onTouchesDown: (e) => {
+      "worklet";
+      if (e.numberOfTouches > 1) scheduleOnRN(touchPinch);
+    },
     onBegin: (e) => {
       "worklet";
       scheduleOnRN(touchDown, e.x, e.y);

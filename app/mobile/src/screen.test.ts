@@ -277,10 +277,21 @@ describe("the finger on the JS thread", () => {
     timers.at(-1)!();
     touches.release();
     expect(sent.slice(3)).toMatchObject([{ action: "moved", x: 120 }, { action: "pressed", x: 120 }, { action: "released", x: 120 }]);
-    // A second finger: a pinch, nothing for the page.
+    // A second finger: a pinch, nothing for the page, whether an update counted it or only its touch did.
     touches.down(10, 10);
     touches.move(40, 40, 2);
     touches.up(40, 40);
     expect(sent).toHaveLength(6);
+    touches.down(10, 10);
+    touches.pinch();
+    touches.up(10, 10);
+    expect(sent).toHaveLength(6);
+    // A pinch while a press is held lets it go, and its lift clicks nothing more.
+    touches.down(30, 30);
+    timers.at(-1)!();
+    touches.pinch();
+    touches.up(30, 30);
+    expect(sent.slice(6)).toMatchObject([{ action: "moved" }, { action: "pressed" }, { action: "released" }]);
+    expect(sent).toHaveLength(9);
   });
 });

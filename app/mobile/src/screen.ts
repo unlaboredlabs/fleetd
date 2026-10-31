@@ -419,8 +419,19 @@ export class PageTouches {
   }
 
   /**
+   * A second finger landed: it's a pinch, not a touch on the page. The one-finger gesture then ends without an update
+   * that says so, and its lift must not click.
+   */
+  pinch(): void {
+    if (!this.#mine || this.#off) return;
+    this.#off = true;
+    this.#clearHold();
+    this.#apply(fingerCancel(this.#finger));
+  }
+
+  /**
    * The finger lifted. A quick tap never moves far enough to start the gesture, which then ends as "cancelled": that
-   * is a tap all the same, so only a second finger (a pinch) cancels a touch here.
+   * is a tap all the same, so only a second finger (pinch) cancels a touch here.
    */
   up(x: number, y: number): void {
     this.#clearHold();
