@@ -273,6 +273,14 @@ pub struct AskLeadCall {
     pub question: Text<1, 4000>,
 }
 
+/// `wait_ci`: a task asks to be woken when a GitHub Actions run (its URL) or the checks on a PR's head (the PR's URL)
+/// finish. Its thread then continues with one line: the outcome and the failing jobs.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WaitCiCall {
+    /// An Actions run's URL (`…/actions/runs/<id>`, anything after it ignored) or a PR's, in one of the project's repos.
+    pub url: Text<1, 500>,
+}
+
 /// `usage_resume` for a lead: lifts the usage pause on the machine its project runs on (the only one it may name) and
 /// sends every thread parked there "continue". At most once per 10 minutes per machine; recorded as the lead's.
 #[skip_serializing_none]
@@ -304,6 +312,7 @@ pub enum LeadCall {
     AskLead(AskLeadCall),
     BriefRead(BriefReadCall),
     ReviewRead(ReviewReadCall),
+    WaitCi(WaitCiCall),
     Remember(RememberCall),
     Forget(ForgetCall),
     MemoryRead(MemoryReadCall),
@@ -474,6 +483,16 @@ pub struct ReviewReadResult {
     pub next: Option<String>,
 }
 
+/// A wait `wait_ci` keeps until what it names finishes, then wakes its task.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WaitCiResult {
+    /// The run or PR waited on, as fleetd reads it.
+    pub url: Text<1, 500>,
+    pub next: Option<String>,
+}
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -506,6 +525,7 @@ pub enum LeadCallResult {
     AskLead(AskLeadResult),
     BriefRead(BriefReadResult),
     ReviewRead(ReviewReadResult),
+    WaitCi(WaitCiResult),
     Remember(RememberResult),
     Forget(RememberResult),
     MemoryRead(MemoryReadResult),

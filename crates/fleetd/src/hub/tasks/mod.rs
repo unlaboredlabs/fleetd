@@ -10,6 +10,9 @@ mod brief_tests;
 pub mod cap;
 #[cfg(test)]
 mod cap_tests;
+pub mod ci_wait;
+#[cfg(test)]
+mod ci_wait_tests;
 pub mod duplicates;
 #[cfg(test)]
 mod duplicates_tests;
