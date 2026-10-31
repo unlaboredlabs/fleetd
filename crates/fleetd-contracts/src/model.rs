@@ -24,6 +24,8 @@ pub enum MachineStatus {
 pub struct Machine {
     pub machine_id: MachineId,
     pub name: String,
+    /// Always empty: machines have no tags. Kept for older apps, which read the list.
+    #[serde(default)]
     pub tags: Vec<String>,
     pub status: MachineStatus,
     pub last_seen_at: Timestamp,

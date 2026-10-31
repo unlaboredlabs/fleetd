@@ -18,8 +18,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("token-file", Kind::Str),
     ("enroll-only", Kind::Bool),
     ("machine", Kind::Str),
-    ("tags", Kind::Str),
-    ("name", Kind::Str),
     ("claude-config-dir", Kind::Str),
 ];
 
@@ -82,8 +80,6 @@ pub async fn node_command(argv: &[String]) -> u8 {
                 hub,
                 token,
                 machine,
-                tags: v.str("tags").map(crate::node::parse_tags),
-                name: v.string("name"),
                 home,
                 enroll_only: v.flag("enroll-only"),
                 claude_config_dir: v.string("claude-config-dir").filter(|d| !d.is_empty()),

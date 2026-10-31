@@ -72,7 +72,6 @@ pub struct LinkSettings {
     pub hub: String,
     pub machine_id: String,
     pub name: String,
-    pub tags: Vec<String>,
     pub node_version: String,
 }
 
@@ -350,7 +349,8 @@ async fn run_link_once(
     send(NodeToHub::Hello(NodeHello {
         machine_id: MachineId::unchecked(shared.settings.machine_id.clone()),
         name: shared.settings.name.clone(),
-        tags: shared.settings.tags.clone(),
+        // Tags are gone; an older hub still reads the list.
+        tags: Vec::new(),
         node_version: shared.settings.node_version.clone(),
         protocol: ProtocolVersion::CURRENT,
         pub_key: Text::unchecked(shared.identity.pub_key()),

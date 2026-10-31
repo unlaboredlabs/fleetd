@@ -87,7 +87,6 @@ fn resolve(
     let args = AddArgs {
         host: host.map(|h| h.as_str().to_owned()),
         machine_id: machine_id.map(|m| m.as_str().to_owned()),
-        tags: Vec::new(),
         dry_run: false,
         hub_url: None,
         ssh_config: host.and_then(|h| recorded_ssh_config(hub, h.as_str(), machine_id)),

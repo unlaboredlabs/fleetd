@@ -93,7 +93,7 @@ stop and remove the hub's service; its data stays unless `--purge`, which also r
 ### fleetd machine add {#machine-add}
 
 ```text
-fleetd machine add <ssh-host> | --local [--machine-id <id>] [--tags a,b] [--dry-run] [--no-service]
+fleetd machine add <ssh-host> | --local [--machine-id <id>] [--dry-run] [--no-service]
     [--hub-url <url>] [--ssh-config <file>] [--home <hub home>]
     [--claude-config-dir <dir>]
 ```
@@ -411,8 +411,8 @@ takes effect at once, also on a running hub
 ### fleetd node join {#node-join}
 
 ```text
-fleetd node join --hub <url> (--token <token> | --token-file <file|->) --machine <id> [--tags a,b]
-    [--name <name>] [--home <dir>] [--enroll-only] [--claude-config-dir <dir>]
+fleetd node join --hub <url> (--token <token> | --token-file <file|->) --machine <id>
+    [--home <dir>] [--enroll-only] [--claude-config-dir <dir>]
 ```
 
 enroll this machine with the hub, then keep its link up (node home default `~/.fleetd/node`); `--token-file` - reads the token from stdin; `--enroll-only` exits once the hub has accepted this node; sessions use your own claude setup (`~/.claude`) unless `--claude-config-dir` names a dedicated one

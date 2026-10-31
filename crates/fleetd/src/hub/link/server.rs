@@ -829,7 +829,6 @@ impl NodeLinkServer {
         let machine: Machine = serde_json::from_value(json!({
             "machineId": machine_id,
             "name": hello.name,
-            "tags": hello.tags,
             // Until the runner check answers.
             "status": "degraded",
             "lastSeenAt": at,

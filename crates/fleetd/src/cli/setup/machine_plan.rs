@@ -14,7 +14,7 @@ use crate::node::runner::claude::version::{self, VersionVerdict};
 pub use crate::node::runner::claude::version::INSTALL as CLAUDE_INSTALL;
 
 /// The node.json fields `machine add` sets; the rest (cmdRoots, …) are the user's or the node's and are kept.
-const NODE_CONFIG_OWNED: [&str; 5] = ["hub", "machineId", "name", "tags", "claudeConfigDir"];
+const NODE_CONFIG_OWNED: [&str; 4] = ["hub", "machineId", "name", "claudeConfigDir"];
 
 /// Where fleetd puts things on a machine, under the SSH user's home.
 #[derive(Clone, Debug)]
@@ -203,7 +203,6 @@ pub fn local_target() -> (String, String) {
 #[derive(Clone)]
 pub struct MachineAddInput {
     pub machine_id: String,
-    pub tags: Vec<String>,
     pub hub_url: String,
     pub git_identity: Option<GitIdentity>,
     /// sha256 of the fleetd binary this hub copies to the machine: the one running now.
@@ -446,7 +445,6 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         "hub": input.hub_url,
         "machineId": input.machine_id,
         "name": input.machine_id,
-        "tags": input.tags,
         "claudeConfigDir": config_dir,
     });
     let enrolled = get("enrolled") == Some(Value::Bool(true))
@@ -469,9 +467,6 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             "--machine".into(),
             input.machine_id.clone(),
         ];
-        if !input.tags.is_empty() {
-            argv.extend(["--tags".to_owned(), input.tags.join(",")]);
-        }
         if let Some(dir) = desired["claudeConfigDir"].as_str() {
             argv.extend(["--claude-config-dir".to_owned(), dir.to_owned()]);
         }
@@ -705,7 +700,6 @@ mod tests {
     fn input() -> MachineAddInput {
         MachineAddInput {
             machine_id: "mac-mini".into(),
-            tags: vec!["macos".into(), "xcode".into()],
             hub_url: "https://devbox.example.ts.net".into(),
             git_identity: Some(GitIdentity {
                 name: "ada-lovelace".into(),
@@ -765,16 +759,16 @@ mod tests {
             ["create fleetd's directories", "make sure the node runs"]
         );
 
-        // Tags changed: only the owned keys are rewritten, cmdRoots and the rest stay.
-        let retagged = plan_machine_add(
+        // Its claude config dir changed: only the owned keys are rewritten, cmdRoots and the rest stay.
+        let moved = plan_machine_add(
             &facts,
             &MachineAddInput {
-                tags: vec!["gpu".into()],
+                claude_config_dir: Some("/srv/claude".into()),
                 ..set_up
             },
         )
         .unwrap();
-        let update = retagged
+        let update = moved
             .steps
             .iter()
             .find(|s| s.title == "update the node's settings")
@@ -783,7 +777,7 @@ mod tests {
             panic!()
         };
         let written: Value = serde_json::from_str(text).unwrap();
-        assert_eq!(written["tags"], json!(["gpu"]));
+        assert_eq!(written["claudeConfigDir"], "/srv/claude");
         assert_eq!(written["cmdRoots"], json!(["/srv"]));
     }
 

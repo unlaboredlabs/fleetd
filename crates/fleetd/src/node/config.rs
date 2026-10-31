@@ -15,7 +15,6 @@ pub struct NodeConfig {
     pub hub: String,
     pub machine_id: String,
     pub name: String,
-    pub tags: Vec<String>,
     /// Directories the hub's `cmd` checks may run in (and below). Absent: the user's home directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cmd_roots: Option<Vec<String>>,
