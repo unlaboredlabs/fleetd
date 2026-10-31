@@ -65,8 +65,9 @@ describe("a chat's screen cards", () => {
 });
 
 describe("who has control", () => {
-  it("is what the newest frame says, sooner than the list, else the list", () => {
-    expect(controlOf({ control: "agent" }, { control: "human" })).toBe("human");
+  it("is what the hub lists, else what the newest frame says: a still page's last frame may be from before", () => {
+    expect(controlOf({ control: "human" }, { control: "agent" })).toBe("human");
+    expect(controlOf(undefined, { control: "human" })).toBe("human");
     expect(controlOf({ control: "handing_back" }, undefined)).toBe("handing_back");
     // A newer hub's word for it reads as the agent's.
     expect(controlOf({ control: "robot" }, undefined)).toBe("agent");

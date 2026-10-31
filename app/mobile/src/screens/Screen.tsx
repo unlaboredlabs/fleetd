@@ -71,7 +71,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   const shownFrame = slots[slots.top] ?? slots.a ?? slots.b;
 
   const card = listed === undefined ? undefined : cardOf(listed);
-  const control = listed === undefined ? (newest === undefined ? "agent" : controlOf({ control: newest.control }, undefined)) : controlOf(listed, newest);
+  const control = controlOf(listed, newest);
   const yours = control === "human";
   const ended = listed !== undefined && listed.state !== "live";
   const own = card?.own === true;
@@ -291,7 +291,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
     <View style={[styles.fill, { backgroundColor: ground }]}>
       <StatusBar style={t.dark ? "light" : "dark"} />
       <KeyboardAvoidingView behavior="padding" style={styles.fill}>
-        <View style={[styles.stage, { paddingTop: insets.top + BAR + space.sm, paddingBottom: (typing ? 0 : insets.bottom) + TOOLBAR + space.md }]}>
+        <View style={[styles.stage, { paddingTop: insets.top + BAR + space.sm, paddingBottom: space.sm }]}>
           <GestureDetector gesture={gestures}>
             <View
               style={styles.box}
@@ -467,7 +467,8 @@ const styles = StyleSheet.create({
   strong: { fontWeight: "600" },
   hint: { position: "absolute", left: 0, right: 0, alignItems: "center" },
   hintGlass: { borderRadius: 18, paddingHorizontal: space.lg, paddingVertical: space.sm },
-  toolbar: { position: "absolute", left: 0, right: 0, bottom: 0, alignItems: "center", paddingTop: space.sm },
+  // In the column under the page, not over it: the keyboard's padding lifts it with the page above.
+  toolbar: { alignItems: "center", paddingTop: space.sm },
   row: { flexDirection: "row", alignItems: "center", gap: 10 },
   action: { height: 48, borderRadius: 24, minWidth: 180 },
   actionHit: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: space.sm, paddingHorizontal: space.xl },

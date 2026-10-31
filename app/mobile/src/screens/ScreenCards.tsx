@@ -60,10 +60,15 @@ function Card({ card, who, onOpen }: { card: ScreenCard; who: string; onOpen: ()
           <Text style={[type.subhead, styles.strong, { color: t.label }]} numberOfLines={1}>
             {title}
           </Text>
-          <View style={[styles.dot, { backgroundColor: asking ? t.warning : yours ? t.accent : t.success }]} />
-          <Text style={[type.caption, { color: t.secondary }]} numberOfLines={1}>
-            {state}
-          </Text>
+          {/* Asking, the card's warm ground and its hand say so: the title keeps the room. */}
+          {asking ? null : (
+            <>
+              <View style={[styles.dot, { backgroundColor: yours ? t.accent : t.success }]} />
+              <Text style={[type.caption, styles.state, { color: t.secondary }]} numberOfLines={1}>
+                {state}
+              </Text>
+            </>
+          )}
         </View>
         <Text style={[type.footnote, { color: asking ? t.label : t.secondary }]} numberOfLines={2}>
           {line}
@@ -84,6 +89,7 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   strong: { fontWeight: "600", flexShrink: 1 },
   dot: { width: 6, height: 6, borderRadius: 3 },
+  state: { flexShrink: 0 },
   button: { minHeight: 34, borderRadius: 17, paddingHorizontal: 14, justifyContent: "center" },
   pressed: { opacity: PRESSED_OPACITY },
 });

@@ -9,9 +9,12 @@ import type { BrowserFrame, BrowserInput, BrowserSession } from "./desktop";
 /** Who drives a screen now: its agent, the person, or the agent again from its next step. */
 export type Control = "agent" | "human" | "handing_back";
 
-/** The screen's control as its newest frame says it (sooner than the list), else as the hub listed it. */
-export const controlOf = (session: Pick<BrowserSession, "control">, frame: Pick<BrowserFrame, "control"> | undefined): Control => {
-  const c = frame?.control ?? session.control;
+/**
+ * The screen's control as the hub lists it (browser_control's answer and each browser.session event keep it current),
+ * else as its newest frame says it: a still page sends no new frame when its control changes.
+ */
+export const controlOf = (session: Pick<BrowserSession, "control"> | undefined, frame: Pick<BrowserFrame, "control"> | undefined): Control => {
+  const c = session?.control ?? frame?.control;
   return c === "human" ? "human" : c === "handing_back" ? "handing_back" : "agent";
 };
 
