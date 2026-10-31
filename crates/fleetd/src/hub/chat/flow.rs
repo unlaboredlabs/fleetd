@@ -367,11 +367,11 @@ async fn go(
     mut message: fleetd_contracts::chat::ChatMessage,
     now: bool,
 ) -> (fleetd_contracts::chat::ChatMessage, Option<String>) {
-    // Files that can't be placed yet leave the message to `deliver`, which says why it waits. A cold lead takes it as
-    // the first message of a fresh session, as a lead that doesn't exist yet does.
+    // Files that can't be placed yet leave the message to `deliver`, which says why it waits. A lead due a fresh session
+    // (cold, or its MCP servers changed) takes it as the first message of one, as a lead that doesn't exist yet does.
     let starts = match hub.leads.leads.get(r) {
         Ok(None) => true,
-        Ok(Some(_)) => hub.leads.leads.cold(r),
+        Ok(Some(_)) => hub.leads.leads.fresh_due(r),
         Err(_) => false,
     };
     let first = match starts {
@@ -388,7 +388,7 @@ async fn go(
         false => None,
     };
     if let Some(first) = &first
-        && let Ok(Some(_)) = hub.leads.leads.fresh_if_cold(r, first).await
+        && let Ok(Some(_)) = hub.leads.leads.fresh_if_due(r, first).await
     {
         sent(hub, &mut message, ChatDelivery::Turn);
         return (message, None);

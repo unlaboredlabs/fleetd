@@ -332,7 +332,8 @@ pub struct LeadWakes {
     /// The idle stretch (when its slots last moved) whose idle line the project's lead was shown: one line per
     /// stretch, not one per wake. Lost on a hub restart, which starts a new stretch anyway.
     idle_shown: std::sync::Mutex<HashMap<ProjectRef, i64>>,
-    /// Set once by `Area::new`: a wake to a cold lead starts a fresh session (`Leads::fresh_if_cold`).
+    /// Set once by `Area::new`: a wake to a cold lead, or to one whose MCP servers changed, starts a fresh session
+    /// (`Leads::fresh_if_due`).
     pub leads: OnceLock<Weak<Leads>>,
 }
 
@@ -580,10 +581,10 @@ impl LeadWakes {
             .db
             .prompts()
             .for_thread(&r.machine_id, lead.thread_id.as_str());
-        // A cold lead gets its events in the first message of a fresh session, which carries the state block itself.
+        // A lead due a fresh session gets its events in the first message of a fresh session, which carries the state block itself.
         let fresh = match self.leads.get().and_then(Weak::upgrade) {
             Some(leads) => leads
-                .fresh_if_cold(
+                .fresh_if_due(
                     r,
                     &render_wake(&self.ctx.db.prompts().current(Some(r)), "", &triggers),
                 )

@@ -22,6 +22,7 @@ use super::records::{LeadRecords, StoredLead, WorkstreamFilter};
 use super::wakes::{LeadWakes, Trigger, trigger_lines};
 use super::{Ctx, now_iso};
 use crate::hub::executor::LaunchInput;
+use crate::hub::mcp_servers::LeadMcpSet;
 use crate::hub::prompts::Audience;
 use crate::hub::store::{HubDb, NewEvent, WaitInput, now_ms, parse_ms};
 
@@ -218,36 +219,62 @@ impl Leads {
             .await
     }
 
+    /// The project's lead and when its thread last moved, while it is idle: a turn in progress is never cut short.
+    fn idle(&self, r: &ProjectRef) -> Option<(StoredLead, Option<i64>)> {
+        let lead = self.records.lead_get(r).ok()??;
+        let thread = ThreadRef {
+            machine_id: r.machine_id.clone(),
+            thread_id: lead.thread_id.clone(),
+        };
+        let thread = self.ctx.store.thread_get(&thread).ok()??;
+        let since = parse_ms(thread.thread.last_progress_at.as_str());
+        (lead_state(Some(&thread.thread), false) == LeadState::Idle).then_some((lead, since))
+    }
+
     /// Whether the project's lead is idle and has been since before [`LEAD_FRESH_AFTER`]: its prompt cache is gone, so
     /// its next turn would write its whole history to the cache again.
     pub fn cold(&self, r: &ProjectRef) -> bool {
-        let Ok(Some(lead)) = self.records.lead_get(r) else {
-            return false;
-        };
-        let thread = ThreadRef {
-            machine_id: r.machine_id.clone(),
-            thread_id: lead.thread_id,
-        };
-        let Ok(Some(thread)) = self.ctx.store.thread_get(&thread) else {
-            return false;
-        };
-        let idle_since = parse_ms(thread.thread.last_progress_at.as_str());
-        lead_state(Some(&thread.thread), false) == LeadState::Idle
-            && idle_since.is_some_and(|at| {
+        self.idle(r).is_some_and(|(_, since)| {
+            since.is_some_and(|at| {
                 now_ms(self.ctx.clock.as_ref()) - at > LEAD_FRESH_AFTER.as_millis() as i64
             })
+        })
     }
 
-    /// When the lead is [`Self::cold`]: a fresh lead session instead, from the digest (and memory) like any start,
-    /// then the chat's tail and `first`. The lead coordinates from state and memory, not from an unbounded history.
-    /// None when the lead is not cold, or there is none.
-    pub async fn fresh_if_cold(
+    /// While the project's lead is idle and its project's MCP servers for it differ from those its session started
+    /// with (one added, edited, removed, or its key replaced): those it started with, and those it would get now. A
+    /// running claude keeps the servers it started with, so only a fresh session gets them. A session started before
+    /// fleetd kept them takes the current ones as its own.
+    fn mcp_changed(&self, r: &ProjectRef) -> Option<(LeadMcpSet, LeadMcpSet)> {
+        let lead = self.records.lead_get(r).ok()??;
+        let now = self.ctx.db.mcp_servers().lead_set(r).ok()?;
+        let Some(before) = self.records.lead_mcp_get(r, &lead.thread_id).ok()? else {
+            let _ = self.records.lead_mcp_put(r, &lead.thread_id, &now);
+            return None;
+        };
+        (before != now && self.idle(r).is_some()).then_some((before, now))
+    }
+
+    /// Whether the lead's next turn starts a fresh session: it is [`Self::cold`], or its MCP servers changed.
+    pub fn fresh_due(&self, r: &ProjectRef) -> bool {
+        self.cold(r) || self.mcp_changed(r).is_some()
+    }
+
+    /// When [`Self::fresh_due`]: a fresh lead session instead, from the digest (and memory) like any start, then the
+    /// chat's tail and `first`. The lead coordinates from state and memory, not from an unbounded history. None when
+    /// it isn't due, or there is no lead. A server it gets now that it didn't before gets one line in the chat.
+    pub async fn fresh_if_due(
         &self,
         r: &ProjectRef,
         first: &str,
     ) -> Result<Option<Lead>, LeadError> {
         let _guard = self.lock.lock().await;
-        let Some(existing) = self.records.lead_get(r)?.filter(|_| self.cold(r)) else {
+        let changed = self.mcp_changed(r);
+        let Some(existing) = self
+            .records
+            .lead_get(r)?
+            .filter(|_| changed.is_some() || self.cold(r))
+        else {
             return Ok(None);
         };
         let project = self.project_of(r)?;
@@ -264,6 +291,13 @@ impl Leads {
         let lead = self
             .launch(r, &project, existing.session_generation + 1, Some(&first))
             .await?;
+        if let Some((before, now)) = changed
+            && let Some(line) = connected_line(&now.new_since(&before))
+            && let Some(chat) = self.ctx.hooks.chat.get()
+            && let Err(error) = chat.system_line(r, &line)
+        {
+            tracing::warn!(%error, "the lead's new MCP servers were not said in the chat");
+        }
         Ok(Some(lead))
     }
 
@@ -451,8 +485,16 @@ impl Leads {
         } else {
             SessionRole::Lead
         };
+        // Read before the launch: a change that lands meanwhile starts the next turn fresh again.
+        let mcp = self.ctx.db.mcp_servers().lead_set(r);
         let thread_id = self.ctx.ports().launch(&r.machine_id, input, role).await?;
         self.wakes.idle_sent(r, idle);
+        match mcp.map(|set| self.records.lead_mcp_put(r, &thread_id, &set)) {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) | Err(error) => {
+                tracing::warn!(%error, "the lead's MCP servers were not kept")
+            }
+        }
         let at: Timestamp = at.into();
         // Every later message to this thread renders from the texts it starts with.
         let text_sha = self
@@ -496,6 +538,18 @@ impl Leads {
         })?;
         self.with_state(lead)
     }
+}
+
+/// The chat's line for the MCP servers a fresh lead session gets that its last one didn't: none for none.
+fn connected_line(names: &[&str]) -> Option<String> {
+    let (last, rest) = names.split_last()?;
+    Some(match rest {
+        [] => format!("{last} is connected: I can use it now."),
+        _ => format!(
+            "{} and {last} are connected: I can use them now.",
+            rest.join(", ")
+        ),
+    })
 }
 
 /// A lead idle this long has lost its prompt cache (1 hour for leads): starting it fresh costs a few thousand tokens,

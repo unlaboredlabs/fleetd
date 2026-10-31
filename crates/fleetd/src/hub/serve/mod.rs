@@ -378,6 +378,7 @@ pub fn build_on_with(
         tracing::warn!(error = %e, "projects: interrupted clones not closed");
     }
     let chat = crate::hub::chat::Chat::new(db.clone(), events.clone(), clock.clone());
+    let _ = leads.ctx.hooks.chat.set(chat.clone());
     let automations = crate::hub::automations::Automations::new(
         db.clone(),
         events.clone(),

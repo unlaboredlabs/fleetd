@@ -258,6 +258,59 @@ impl McpServerStore<'_> {
             servers,
         })
     }
+
+    /// What a lead's or Navi's session of the project gets: [`Self::session_config`]'s servers for the lead role, each
+    /// as a fingerprint of what the node writes for it and of its secrets' keys on the project's machine.
+    pub fn lead_set(&self, r: &ProjectRef) -> Result<LeadMcpSet, StoreError> {
+        use sha2::Digest;
+        let servers = self
+            .servers_for(r)?
+            .iter()
+            .filter(|s| s.enabled && s.roles.lead)
+            .filter_map(|s| {
+                let session = for_session(s, &r.machine_id)?;
+                // A replaced key is a new value on the node: its fingerprint there changes.
+                let keys: Vec<_> = s
+                    .values()
+                    .filter_map(|(_, v)| v.sealed_on.iter().find(|k| k.machine_id == r.machine_id))
+                    .map(|k| &k.fingerprint)
+                    .collect();
+                let what = serde_json::json!({
+                    "secrets": session.secrets, "transport": session.transport, "env": session.env,
+                    "headers": session.headers, "keys": keys,
+                });
+                let print = sha2::Sha256::digest(what.to_string().as_bytes());
+                Some((s.name.to_string(), format!("{print:x}")))
+            })
+            .collect();
+        Ok(LeadMcpSet {
+            user_servers: self.user_servers()?,
+            servers,
+        })
+    }
+}
+
+/// The MCP servers a lead's or Navi's session started with, as [`McpServerStore::lead_set`] reads them: one that started
+/// with another set than its project has now starts fresh at its next turn (`Leads::fresh_due`). Other roles' servers,
+/// a server's other roles and its read tools are not in it, so changing those leaves the lead's session as it is.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LeadMcpSet {
+    /// The person's own servers come too.
+    pub user_servers: bool,
+    /// Fingerprint by server name.
+    pub servers: BTreeMap<String, String>,
+}
+
+impl LeadMcpSet {
+    /// The servers in `self` that `before` didn't have, or had otherwise, by name.
+    pub fn new_since(&self, before: &LeadMcpSet) -> Vec<&str> {
+        self.servers
+            .iter()
+            .filter(|(name, print)| before.servers.get(*name) != Some(*print))
+            .map(|(name, _)| name.as_str())
+            .collect()
+    }
 }
 
 pub fn now(hub: &crate::hub::api::Hub) -> Timestamp {

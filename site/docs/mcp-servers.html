@@ -113,9 +113,14 @@ is off: that’s how to turn a global server off for one project.</p>
 <p>A command server starts in the agent’s working directory with the agent’s environment, the
 <a href="/docs/projects#env">project’s variables</a> included, plus its own environment.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="takes-effect">When a change takes effect</h2><a class="sl-anchor-link" href="#takes-effect"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “When a change takes effect”</span></a></div>
-<p>An agent started after you save gets the change. An agent already running keeps the servers its claude started with;
-fleetd hands it the change with its next message, and it takes effect the next time that agent’s process starts (after
-it was idle or stopped; it runs on through a node restart). Removing a server works the same way.</p>
+<p>An agent started after you save gets the change. A lead or a Navi already running gets it at its next turn: when a
+server it gets was added, edited or removed, or had its key replaced, that turn starts a fresh session, as
+<a href="/docs/what-agents-are-told#pinning">a cold lead’s does</a>, with the latest part of the chat. A turn in progress is never
+cut short: the change waits for the next one. The chat then says once that the server is there (“docs is connected: I
+can use it now”). A change that doesn’t reach the lead, such as a server for writers only, leaves its session as it is.</p>
+<p>A task already running keeps the servers its claude started with; fleetd hands it the change with its next message, and
+it takes effect the next time that agent’s process starts (after it was idle or stopped; it runs on through a node
+restart). Removing a server works the same way.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="secrets">Secrets</h2><a class="sl-anchor-link" href="#secrets"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Secrets”</span></a></div>
 <p>Mark a value <strong>Secret</strong> for a token, a password or an <code dir="auto">Authorization</code> header. It is sealed in the app to each machine’s
 key, as a <a href="/docs/projects#env">project’s secret variables</a> are: a project server’s to its machine, a global one’s to

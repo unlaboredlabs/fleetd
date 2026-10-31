@@ -311,6 +311,11 @@ Each session keeps the exact prompt versions it started with. An edit reaches ne
 attempt, a lead at its next start. To give a running lead your edit now, start a fresh one with `lead_start {fresh: true}` from an
 [MCP client](/docs/mcp-clients).
 
+A lead's or Navi's next turn starts a fresh session by itself, between turns and never in the middle of one, when it has
+been idle for over an hour (its prompt cache is gone) or when the [MCP servers](/docs/mcp-servers#takes-effect) it gets
+were added, edited or removed since its session started. A fresh session starts like any lead, then reads the last few
+chat messages before the one it answers.
+
 ## See exactly what an agent was told {#told}
 
 Open an agent in the Agents tab beside a project's chat (⌥⌘B), then **What it was told**. It shows the exact first
