@@ -1197,10 +1197,10 @@ impl Executors {
     ) {
         self.follow_active(machine_id, event);
         self.flag_refused(machine_id, event);
-        if let MachineEvent::Steer(receipt) = event {
-            if let Some(hub) = self.steer_hub.get().and_then(std::sync::Weak::upgrade) {
-                crate::hub::steer::on_receipt(&hub, machine_id, receipt);
-            }
+        if let MachineEvent::Steer(receipt) = event
+            && let Some(hub) = self.steer_hub.get().and_then(std::sync::Weak::upgrade)
+        {
+            crate::hub::steer::on_receipt(&hub, machine_id, receipt);
         }
         let ids: Vec<String> = match event {
             MachineEvent::Snapshot { sessions, .. } => {
