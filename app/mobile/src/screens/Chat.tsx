@@ -254,7 +254,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       answer: (text) => now.current.send(text),
       openSkill: (name) => {
         haptics.tap();
-        navigation.navigate("ChatInfo", { screen: "Skill", params: { key: now.current.chatKey, origin: "project", name }, initial: false });
+        // Its Info screen under it, with its key: `initial: false` would make one without.
+        const key = now.current.chatKey;
+        navigation.navigate("ChatInfo", { state: { index: 1, routes: [{ name: "Info", params: { key } }, { name: "Skill", params: { key, origin: "project", name } }] } });
       },
     }),
     [navigation],

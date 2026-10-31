@@ -5,7 +5,8 @@
 import { usePreventRemove } from "@react-navigation/native";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, TextInput, View } from "react-native";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { HubError } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
@@ -17,6 +18,10 @@ import { readSkill, saveSkill } from "./skillsApi";
 export function SkillEdit({ navigation, route }: ChatInfoProps<"SkillEdit">) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  // The sheet reaches the screen's bottom, so the keyboard's height is what it covers: the field ends above it.
+  const keyboard = useReanimatedKeyboardAnimation();
+  const bottom = Math.max(insets.bottom, space.md);
+  const above = useAnimatedStyle(() => ({ paddingBottom: Math.max(bottom, -keyboard.height.value + space.md) }));
   const { state, session } = useHub();
   const { key, name } = route.params;
   const p = state.projects?.[key];
@@ -87,42 +92,40 @@ export function SkillEdit({ navigation, route }: ChatInfoProps<"SkillEdit">) {
     );
   }
   return (
-    <KeyboardAvoidingView behavior="padding" style={[styles.fill, { backgroundColor: t.grouped }]} keyboardVerticalOffset={0}>
-      <View style={[styles.fill, styles.body, { paddingBottom: Math.max(insets.bottom, space.md) }]}>
-        <View style={[styles.group, { backgroundColor: t.cell }]}>
-          <TextInput
-            value={why}
-            onChangeText={setWhy}
-            placeholder="What you changed (optional)"
-            placeholderTextColor={t.tertiary}
-            maxLength={300}
-            returnKeyType="next"
-            editable={!busy}
-            selectionColor={t.accent}
-            style={[type.body, styles.why, { color: t.label }]}
-            accessibilityLabel="What you changed"
-          />
-        </View>
-        <View style={[styles.group, styles.fill, { backgroundColor: t.cell }]}>
-          <TextInput
-            value={text}
-            onChangeText={setText}
-            multiline
-            scrollEnabled
-            autoCapitalize="none"
-            autoCorrect={false}
-            spellCheck={false}
-            smartInsertDelete={false}
-            editable={!busy}
-            textAlignVertical="top"
-            selectionColor={t.accent}
-            style={[styles.fill, styles.text, { color: t.label }]}
-            accessibilityLabel="SKILL.md"
-          />
-        </View>
-        <Problem text={error === null ? undefined : `Not saved: ${errorWords(error)}`} />
+    <Animated.View style={[styles.fill, styles.body, { backgroundColor: t.grouped }, above]}>
+      <View style={[styles.group, { backgroundColor: t.cell }]}>
+        <TextInput
+          value={why}
+          onChangeText={setWhy}
+          placeholder="What you changed (optional)"
+          placeholderTextColor={t.tertiary}
+          maxLength={300}
+          returnKeyType="next"
+          editable={!busy}
+          selectionColor={t.accent}
+          style={[type.body, styles.why, { color: t.label }]}
+          accessibilityLabel="What you changed"
+        />
       </View>
-    </KeyboardAvoidingView>
+      <View style={[styles.group, styles.fill, { backgroundColor: t.cell }]}>
+        <TextInput
+          value={text}
+          onChangeText={setText}
+          multiline
+          scrollEnabled
+          autoCapitalize="none"
+          autoCorrect={false}
+          spellCheck={false}
+          smartInsertDelete={false}
+          editable={!busy}
+          textAlignVertical="top"
+          selectionColor={t.accent}
+          style={[styles.fill, styles.text, { color: t.label }]}
+          accessibilityLabel="SKILL.md"
+        />
+      </View>
+      <Problem text={error === null ? undefined : `Not saved: ${errorWords(error)}`} />
+    </Animated.View>
   );
 }
 
