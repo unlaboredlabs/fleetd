@@ -9650,6 +9650,12 @@
         "memory_get.output": {
           "$ref": "#/$defs/MemoryGetOutput"
         },
+        "memory_import.input": {
+          "$ref": "#/$defs/MemoryImportInput"
+        },
+        "memory_import.output": {
+          "$ref": "#/$defs/MemoryImportOutput"
+        },
         "memory_refresh_run.input": {
           "$ref": "#/$defs/MemoryRefreshRunInput"
         },
@@ -10390,6 +10396,8 @@
         "memory_caps_set.output",
         "memory_get.input",
         "memory_get.output",
+        "memory_import.input",
+        "memory_import.output",
         "memory_refresh_run.input",
         "memory_refresh_run.output",
         "memory_set.input",
@@ -10955,6 +10963,109 @@
       ],
       "type": "object"
     },
+    "MemoryImportInput": {
+      "properties": {
+        "text": {
+          "description": "The other assistant's answer. Absent or blank: only the prompt.",
+          "maxLength": 100000,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "MemoryImportOutput": {
+      "properties": {
+        "added": {
+          "description": "Written to your memory, in the order they went in. Empty without text.",
+          "items": {
+            "$ref": "#/$defs/MemoryImported"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        "cap": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "chars": {
+          "description": "Your memory's length after the import, and its cap.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next": {
+          "type": "string"
+        },
+        "prompt": {
+          "description": "The export prompt to copy, the same text every app shows.",
+          "maxLength": 20000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "skipped": {
+          "description": "Distilled but not written, and why.",
+          "items": {
+            "$ref": "#/$defs/MemorySkipped"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "prompt",
+        "added",
+        "skipped",
+        "chars",
+        "cap"
+      ],
+      "type": "object"
+    },
+    "MemoryImportSkip": {
+      "description": "Why an imported entry wasn't written.",
+      "oneOf": [
+        {
+          "const": "duplicate",
+          "description": "The memory already says it.",
+          "type": "string"
+        },
+        {
+          "const": "secret",
+          "description": "It held a key, token or password; `text` shows it with the value cut out.",
+          "type": "string"
+        },
+        {
+          "const": "full",
+          "description": "No room left under the cap: the more durable entries (instructions and preferences first) went in instead.",
+          "type": "string"
+        }
+      ]
+    },
+    "MemoryImported": {
+      "description": "An entry an import wrote to the person's own memory.",
+      "properties": {
+        "replaced": {
+          "description": "The whole entry already there that it merged with and replaced.",
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
     "MemoryNote": {
       "description": "An entry `remember` wrote that is still in its file: when, and the chat line that said so.",
       "properties": {
@@ -11231,6 +11342,24 @@
       },
       "required": [
         "file"
+      ],
+      "type": "object"
+    },
+    "MemorySkipped": {
+      "properties": {
+        "text": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "why": {
+          "$ref": "#/$defs/MemoryImportSkip"
+        }
+      },
+      "required": [
+        "text",
+        "why"
       ],
       "type": "object"
     },
@@ -16273,7 +16402,7 @@
         },
         {
           "const": "oneshot",
-          "description": "The input of a tool-less one-shot `claude -p`. None ships now; kept while the app names its group.",
+          "description": "The input of a tool-less one-shot session (the memory import), or a text a person takes to another assistant\n(the memory export).",
           "type": "string"
         },
         {

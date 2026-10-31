@@ -7,9 +7,12 @@
 //! `remember` or `forget` (`calls`; the nightly `refresh` makes them too) or a person's edit in the app (`tools`), one
 //! write at a time. A write past a cap is refused, never truncated, so the lead merges entries in that turn.
 pub mod calls;
+pub mod import;
 pub mod refresh;
 pub mod tools;
 
+#[cfg(test)]
+mod import_tests;
 #[cfg(test)]
 mod people_tests;
 #[cfg(test)]

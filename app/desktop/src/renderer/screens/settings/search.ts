@@ -66,6 +66,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "onepassword", label: "1Password", tab: "accounts", keywords: ["1password", "one password", "password", "logins", "sign in", "vault", "fill", "credentials"] },
   { key: "onepassword.token", label: "1Password service account", tab: "accounts", keywords: ["1password", "service account", "token", "ops_", "OP_SERVICE_ACCOUNT_TOKEN", "vault", "test"] },
   page("your-memory", ["memory", "remember", "remembered", "user.md", "preferences", "how I work", "you", "forget"]),
+  { key: "import-memory", label: "Import memory", tab: "your-memory", keywords: ["import", "chatgpt", "claude", "grok", "other assistant", "export", "bring", "memory"] },
   page("devices", ["devices", "phone", "signed in", "keys"]),
   { key: "devices.pair", label: "Pair a phone", tab: "devices", keywords: ["phone", "iphone", "android", "mobile", "pair", "qr", "scan", "code"] },
   page("hubs", ["hub", "pair", "connection", "server", "personal", "work", "team", "company"]),

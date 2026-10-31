@@ -82,6 +82,23 @@ function memory(f: Fixture) {
   }
   f.answer("memory_set", undefined, { file: user });
   f.answer("memory_undo", undefined, { ok: true });
+  // Import memory: the hub's export prompt as it ships, and what an import of a ChatGPT export added.
+  f.answer("memory_import", undefined, {
+    prompt: fs.readFileSync(new URL("../../../../crates/fleetd/assets/prompts/memory.export.md", import.meta.url), "utf8").trimEnd(),
+    added: [
+      { text: "Keep answers short and skip the pleasantries." },
+      { text: "Likes plain, dense docs over marketing copy." },
+      { text: "Name is Sam Rivera; lives in Lisbon." },
+      { text: "Staff engineer at Acme, leads the payments platform." },
+      { text: "Ledgerline: a double-entry bookkeeping API in Rust, in beta with three customers." },
+    ],
+    skipped: [
+      { text: "Concise. State first, then what you need from me.", why: "duplicate" },
+      { text: "Deploy notes: the staging key is [secret]", why: "secret" },
+    ],
+    chars: 612,
+    cap: 4000,
+  });
 }
 
 /**
