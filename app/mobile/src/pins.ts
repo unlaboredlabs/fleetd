@@ -28,6 +28,12 @@ export const memoryPins = (start: readonly Key[] = []): PinStore => {
   };
 };
 
+/**
+ * The hub won't keep them: a hub from before pins has no such tool, and a key with no person may not set any. Anything
+ * else (offline, the link dropped mid-call, no answer in time, a failure on the hub) leaves the change to send again.
+ */
+const refused = (code: string): boolean => code === "not_found" || code === "forbidden";
+
 export class Pins {
   readonly #call: PinCall;
   readonly #store: PinStore;
@@ -50,7 +56,7 @@ export class Pins {
     const edits = this.#edits;
     const r = await this.#call("chat_pins_get", {});
     if (!r.ok) {
-      if (r.error.code !== "offline") this.#onHub = false;
+      if (refused(r.error.code)) this.#onHub = false;
       return;
     }
     this.#onHub = true;
@@ -86,9 +92,9 @@ export class Pins {
           this.#onHub = true;
           continue;
         }
-        // Offline: again on the next live link. Refused (an older hub, a key with no person): kept here alone.
-        if (r.error.code === "offline") this.#dirty = true;
-        else this.#onHub = false;
+        // Refused: kept here alone. Else again on the next live link, over what the hub has.
+        if (refused(r.error.code)) this.#onHub = false;
+        else this.#dirty = true;
         return;
       }
     } finally {

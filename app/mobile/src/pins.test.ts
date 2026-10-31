@@ -90,6 +90,35 @@ describe("Pins", () => {
     expect(hub.calls).toHaveLength(0);
   });
 
+  it("keeps a pin whose set the link dropped or never answered, and sends it again", async () => {
+    for (const code of ["disconnected", "timeout"]) {
+      const hub = fakeCalls();
+      const store = memoryPins();
+      const pins = new Pins(hub.call, store);
+      void pins.set(["m1/a"]);
+      await hub.next("chat_pins_set", { error: { code } });
+      // The next live link sends it again rather than reading the hub's older pins over it.
+      void pins.read();
+      expect(await hub.next("chat_pins_set", { output: { pins: [ref("m1/a")] } })).toEqual({ pins: [ref("m1/a")] });
+      expect(hub.calls).toHaveLength(0);
+      expect(store.saved()).toEqual(["m1/a"]);
+    }
+  });
+
+  it("sends a pin made after a read the link dropped, when the link is back", async () => {
+    const hub = fakeCalls();
+    const store = memoryPins();
+    const pins = new Pins(hub.call, store);
+    void pins.read();
+    await hub.next("chat_pins_get", { error: { code: "disconnected" } });
+    // Pinned while the link is down.
+    void pins.set(["m1/a"]);
+    await hub.next("chat_pins_set", { error: { code: "offline" } });
+    void pins.read();
+    expect(await hub.next("chat_pins_set", { output: { pins: [ref("m1/a")] } })).toEqual({ pins: [ref("m1/a")] });
+    expect(store.saved()).toEqual(["m1/a"]);
+  });
+
   it("keeps them on this phone alone with a hub that doesn't keep them", async () => {
     const hub = fakeCalls();
     const store = memoryPins(["m1/a"]);

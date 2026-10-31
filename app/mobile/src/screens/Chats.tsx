@@ -213,7 +213,8 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
             {split.grid.length === 0 ? null : <PinnedGrid rows={split.grid} onOpen={(row) => open(row.key)} menu={(row) => rowActions(row, pin)} label={rowLabel} />}
           </>
         }
-        ListEmptyComponent={empty}
+        // Every chat pinned: the grid is the list, with nothing under it.
+        ListEmptyComponent={split.grid.length > 0 ? undefined : empty}
         renderItem={({ item: line, index }) => {
           const next = lines[index + 1];
           const separator = next !== undefined && next.t !== "head";
