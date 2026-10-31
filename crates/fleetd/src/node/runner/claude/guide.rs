@@ -113,7 +113,7 @@ mod tests {
     fn the_tested_install_is_the_installer_pinned() {
         assert_eq!(
             GUIDE.install_tested(),
-            "curl -fsSL https://claude.ai/install.sh | bash -s 2.1.302"
+            "curl -fsSL https://claude.ai/install.sh | bash -s 2.1.314"
         );
     }
 }

@@ -78,7 +78,7 @@ const check = (name: string, status: string, message: string, fix?: JsonObject):
 /** laptop just after it joined: claude installed and logged out, its identity set, no project yet, Android not ready. */
 const LAPTOP_CHECKS: JsonObject[] = [
   check("online", "ok", "laptop is online."),
-  check("claude_version", "ok", "laptop runs claude 2.1.302, the version fleetd was tested with."),
+  check("claude_version", "ok", "laptop runs claude 2.1.314, the version fleetd was tested with."),
   check("claude_login", "fail", "laptop: claude is not logged in, so its sessions can't start.", { kind: "manual", label: "Log claude in on laptop", command: "claude auth login" }),
   check("runner_conformance", "ok", "claude speaks the stream-json protocol fleetd expects."),
   check("commit_identity", "ok", "laptop commits as dev@example.com, the hub's identity."),

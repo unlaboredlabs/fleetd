@@ -84,16 +84,16 @@ These apply to every worker.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| "claude 2.1.302, not logged in, so its sessions can't start" `[claude_login]` | `claude` on that machine is logged out, or its login expired. | `claude auth login` on that machine, or log in through your proxy. |
+| "claude 2.1.314, not logged in, so its sessions can't start" `[claude_login]` | `claude` on that machine is logged out, or its login expired. | `claude auth login` on that machine, or log in through your proxy. |
 | "~/.claude/settings.json on devbox sets ANTHROPIC_BASE_URL in its "env", which claude applies over the Claude account fleetd gives each session there." `[claude_account_override]` ! | The hub runs work on [Claude accounts](/docs/people#claude), and that machine's claude settings name a credential or gateway of their own, which would win over the account. Read only: fleetd never changes the file. | Move those variables out of the settings' `"env"` (into [claude.env](/docs/config-and-files#claude-env) for the machine's own login), then restart the node. |
 | "claude is not installed on laptop" `[claude_version]` | No `claude` on the machine's `PATH`. | `curl -fsSL https://claude.ai/install.sh \| bash` |
 | "claude 2.1.296 is older than fleetd is tested with" `[claude_version]` ! | An older `claude`. It may work: fleetd checks its protocol at every start. | `claude update` |
-| "claude 2.2.0 is newer than fleetd is tested with" `[claude_version]` ! | A `claude` past fleetd's tested range. Sessions run. | If they misbehave, `claude install 2.1.302` |
-| "`claude --version` printed …, which fleetd can't read" `[claude_version]` | A broken install. | `curl -fsSL https://claude.ai/install.sh \| bash -s 2.1.302` |
-| "did not answer fleetd's protocol probe as expected" `[runner_conformance]` | This `claude` speaks a different protocol. | `claude install 2.1.302` |
+| "claude 2.2.0 is newer than fleetd is tested with" `[claude_version]` ! | A `claude` past fleetd's tested range. Sessions run. | If they misbehave, `claude install 2.1.314` |
+| "`claude --version` printed …, which fleetd can't read" `[claude_version]` | A broken install. | `curl -fsSL https://claude.ai/install.sh \| bash -s 2.1.314` |
+| "did not answer fleetd's protocol probe as expected" `[runner_conformance]` | This `claude` speaks a different protocol. | `claude install 2.1.314` |
 | "`claude --version` and the running claude disagree" `[runner_conformance]` | Two `claude` installs on `PATH`. | Reinstall with `curl -fsSL https://claude.ai/install.sh \| bash`, and remove the other. |
 | "has not probed its claude yet" `[runner_conformance]` | The node just started. | Nothing: it clears by itself. |
-| An agent's activity says "claude offered its own agent tools (…)" | A newer `claude` has an agent tool fleetd's deny list didn't name. fleetd stopped that session, and the next start denies the tool. | Nothing. If it happens again, `claude install 2.1.302`. |
+| An agent's activity says "claude offered its own agent tools (…)" | A newer `claude` has an agent tool fleetd's deny list didn't name. fleetd stopped that session, and the next start denies the tool. | Nothing. If it happens again, `claude install 2.1.314`. |
 
 fleetd is tested with claude `>=2.1.300, <2.2.0`; other versions run, with a warning. A machine whose claude is
 missing or logged out runs no sessions until it is fixed. Updating fleetd moves claude to the version it was tested

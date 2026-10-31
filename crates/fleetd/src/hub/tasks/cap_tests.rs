@@ -310,7 +310,7 @@ impl Node {
         );
         frame(
             json!({ "t": "machine_event", "seq": 2, "at": AT, "event": { "type": "runner_info", "runner": "claude",
-            "version": "2.1.302", "supported": ">=2.1.300, <2.2.0", "versionOk": true, "login": "logged_in",
+            "version": "2.1.314", "supported": ">=2.1.300, <2.2.0", "versionOk": true, "login": "logged_in",
             "loginKind": "subscription", "conformanceOk": true } }),
         );
         frame(
