@@ -1,14 +1,18 @@
 //! The agent's only way to its session's browser: a CDP WebSocket on 127.0.0.1 at
 //! `/devtools/browser/<token>`, one token per agent session, which the node puts in the session's
-//! `AGENT_BROWSER_CDP` when it starts its claude. Chrome itself has no debugging port; its pipe is the node's
+//! `AGENT_BROWSER_CDP` when it starts its claude. A claude runs on through a node restart and keeps that
+//! environment, so the port and the tokens do too: the port is kept in `browser/proxy.json`, with the key each
+//! token is signed with. Chrome itself has no debugging port; its pipe is the node's
 //! (cdp.rs). The proxy forwards the driver's commands under ids of its own, sends back their answers and the events
 //! the driver may see, and answers itself instead when the agent may not drive now (a person has control) or when the
 //! command is one the session refuses (see [`Session::refusal`](super::session::Session::refusal)).
-use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 
 use futures_util::{SinkExt, StreamExt};
 use rand::RngCore;
+use ring::hmac;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -24,12 +28,27 @@ use crate::node::util::AbortOnDrop;
 const MAX_MESSAGE: usize = 128 << 20;
 const PATH: &str = "/devtools/browser/";
 
-/// The proxy's listener and the token of each agent session.
+/// The proxy's listener and the key its tokens are signed with.
 pub struct Proxy {
     pub port: u16,
-    /// token -> agent session.
-    tokens: Mutex<HashMap<String, String>>,
+    key: hmac::Key,
     _accept: Mutex<Option<AbortOnDrop>>,
+}
+
+/// What a node restart keeps of the proxy, in `browser/proxy.json` (0600): an agent's URL names both.
+#[derive(Serialize, Deserialize)]
+struct Kept {
+    port: u16,
+    /// Hex, 32 bytes.
+    key: String,
+}
+
+fn kept_path(home: &Path) -> PathBuf {
+    home.join("browser").join("proxy.json")
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -42,12 +61,45 @@ pub fn refused(id: &Value, message: &str) -> Value {
 }
 
 impl Proxy {
-    pub async fn start(broker: Weak<Broker>) -> std::io::Result<Arc<Self>> {
-        let listener = TcpListener::bind("127.0.0.1:0").await?;
+    /// Listens on the port the node's last run did, so the claudes that ran on through its restart still reach
+    /// it; on a new one only when that port is taken.
+    pub async fn start(home: &Path, broker: Weak<Broker>) -> std::io::Result<Arc<Self>> {
+        let path = kept_path(home);
+        let kept = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| serde_json::from_str::<Kept>(&text).ok())
+            .filter(|kept| kept.key.len() == 64);
+        let listener = match &kept {
+            Some(kept) => match TcpListener::bind(("127.0.0.1", kept.port)).await {
+                Ok(listener) => listener,
+                Err(e) => {
+                    tracing::warn!(port = kept.port, error = %e, "browser proxy: its port is taken; the agents that ran on through the restart lose their browser");
+                    TcpListener::bind("127.0.0.1:0").await?
+                }
+            },
+            None => TcpListener::bind("127.0.0.1:0").await?,
+        };
         let port = listener.local_addr()?.port();
+        let key = match kept {
+            Some(kept) => kept.key,
+            None => {
+                let mut bytes = [0u8; 32];
+                rand::rngs::OsRng.fill_bytes(&mut bytes);
+                hex(&bytes)
+            }
+        };
+        if let Some(dir) = path.parent() {
+            crate::node::config::mkdir_private(dir)?;
+        }
+        let text = serde_json::to_string(&Kept {
+            port,
+            key: key.clone(),
+        })
+        .map_err(std::io::Error::other)?;
+        crate::node::secrets::write_atomic(&path, format!("{text}\n").as_bytes())?;
         let proxy = Arc::new(Self {
             port,
-            tokens: Mutex::default(),
+            key: hmac::Key::new(hmac::HMAC_SHA256, key.as_bytes()),
             _accept: Mutex::default(),
         });
         let weak = Arc::downgrade(&proxy);
@@ -61,24 +113,20 @@ impl Proxy {
         Ok(proxy)
     }
 
-    /// The agent session's URL, made on first ask; the same for as long as the node runs.
+    /// The agent session's URL: `<thread>.<its signature>`, the same across node restarts.
     pub fn url(&self, thread: &str) -> String {
-        let mut tokens = lock(&self.tokens);
-        let token = match tokens.iter().find(|(_, t)| *t == thread) {
-            Some((token, _)) => token.clone(),
-            None => {
-                let mut bytes = [0u8; 24];
-                rand::thread_rng().fill_bytes(&mut bytes);
-                let token: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-                tokens.insert(token.clone(), thread.to_owned());
-                token
-            }
-        };
-        format!("ws://127.0.0.1:{}{PATH}{token}", self.port)
+        let signature = hex(hmac::sign(&self.key, thread.as_bytes()).as_ref());
+        format!("ws://127.0.0.1:{}{PATH}{thread}.{signature}", self.port)
     }
 
     fn thread_of(&self, token: &str) -> Option<String> {
-        lock(&self.tokens).get(token).cloned()
+        let (thread, signature) = token.rsplit_once('.')?;
+        let signature = (0..signature.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(signature.get(i..i + 2)?, 16).ok())
+            .collect::<Option<Vec<u8>>>()?;
+        hmac::verify(&self.key, thread.as_bytes(), &signature).ok()?;
+        Some(thread.to_owned())
     }
 }
 
@@ -233,5 +281,74 @@ fn command_in(session: &Arc<Session>, command: Value, out: &mpsc::UnboundedSende
     }
     if !session.cdp.forward(command) {
         let _ = out.send(refused(&id, "the browser closed").to_string());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio_tungstenite::tungstenite::Error;
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    /// What the proxy at `url` answers a driver's handshake: the HTTP status it refuses with.
+    async fn status(url: &str) -> Result<u16, String> {
+        match tokio_tungstenite::connect_async(url).await {
+            Err(Error::Http(response)) => Ok(response.status().as_u16()),
+            Err(e) => Err(e.to_string()),
+            Ok(_) => Ok(101),
+        }
+    }
+
+    #[test]
+    fn an_agents_url_still_reaches_the_proxy_after_a_node_restart() {
+        let home = tempfile::tempdir().unwrap();
+        // The node's last run: dropping its runtime closes its listener, as its exit does.
+        let before = runtime().block_on(async {
+            let proxy = Proxy::start(home.path(), Weak::new()).await.unwrap();
+            proxy.url("thread-1")
+        });
+        runtime().block_on(async {
+            let proxy = Proxy::start(home.path(), Weak::new()).await.unwrap();
+            assert_eq!(proxy.url("thread-1"), before, "same port, same token");
+            // Known (no session open here, so 409), where it used to be a refused connection.
+            assert_eq!(status(&before).await, Ok(409));
+            let token = before.rsplit_once('/').unwrap().1;
+            let (_, signature) = token.rsplit_once('.').unwrap();
+            assert_eq!(proxy.thread_of(token).as_deref(), Some("thread-1"));
+            assert_eq!(proxy.thread_of(&format!("thread-2.{signature}")), None);
+            assert_eq!(proxy.thread_of("thread-1"), None);
+            assert_eq!(proxy.thread_of("thread-1.zz"), None);
+            let forged = before.replace(&format!(".{signature}"), ".00");
+            assert_eq!(status(&forged).await, Ok(403));
+        });
+        let text = std::fs::read_to_string(kept_path(home.path())).unwrap();
+        assert!(text.contains(&format!(
+            "\"port\":{}",
+            before.split(':').nth(2).unwrap().split('/').next().unwrap()
+        )));
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(kept_path(home.path()))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[test]
+    fn a_taken_port_gives_a_new_one() {
+        let home = tempfile::tempdir().unwrap();
+        runtime().block_on(async {
+            let first = Proxy::start(home.path(), Weak::new()).await.unwrap();
+            // Still listening: the next start can't have its port.
+            let second = Proxy::start(home.path(), Weak::new()).await.unwrap();
+            assert_ne!(first.port, second.port);
+            assert_eq!(status(&second.url("t")).await, Ok(409));
+        });
     }
 }
