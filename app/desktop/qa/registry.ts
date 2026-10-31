@@ -840,6 +840,37 @@ export const screens: readonly Screen[] = [
       await expect(panel.locator('[data-section="asked"]')).toHaveCount(0);
     },
   },
+  // A Navi's Skills (navi/SkillsPane): what it learned, installed and gets from every project; one skill rendered,
+  // in the wide panel; its history, the newest version open to its diff.
+  {
+    id: "chat",
+    route: `${ADA_ROUTE}/skills`,
+    fixtures: ["navi-two"],
+    variant: "navi-skills",
+    open: async (page) => {
+      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="skills"]').waitFor();
+    },
+  },
+  {
+    id: "chat",
+    route: `${ADA_ROUTE}/skills/weekly-invoices`,
+    fixtures: ["navi-two"],
+    variant: "navi-skill",
+    open: async (page) => {
+      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="skill"]').waitFor();
+    },
+  },
+  {
+    id: "chat",
+    route: `${ADA_ROUTE}/skills/weekly-invoices`,
+    fixtures: ["navi-two"],
+    variant: "navi-skill-history",
+    open: async (page) => {
+      const panel = page.getByRole("complementary", { name: "Project panel" });
+      await panel.getByRole("button", { name: /^History/u }).click();
+      await panel.getByRole("region", { name: "Version 2 to 3" }).waitFor();
+    },
+  },
   // An archived Navi still open: the palette offers its own views, never a code project's.
   {
     id: "palette",

@@ -157,7 +157,7 @@ function SkillView({ project, name }: { project: ProjectKey; name: string }) {
       <div className={s.scroll}>
         <header className={s.head}>
           <div className={s.title}>
-            <Text as="h2" size="md" className={s.titleName}>
+            <Text as="h2" size="lg" className={s.titleName}>
               {name}
             </Text>
             {listed.off === true ? (
