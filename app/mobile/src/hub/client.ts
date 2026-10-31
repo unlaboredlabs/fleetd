@@ -321,10 +321,10 @@ export class HubClient {
         if (frame.id?.startsWith(PROBE_ID) === true) return;
         if (frame.id !== undefined) this.#settle(frame.id, { ok: false, error });
         else if (!this.#ready) this.#refuse(frame.message);
-        // The hub answers a browser_input only to refuse it: that's the live view's to say, and the events go on.
-        else if (Date.now() - this.#inputAt < INPUT_REFUSAL_MS) this.#options.emit({ t: "browser_error", error });
         else {
-          this.#options.emit({ t: "error", error });
+          // The hub answers a browser_input only to refuse it: one soon after is likely that, the live view's to say.
+          // Ask for the events again all the same, in case it was the event stream's: asking again costs nothing.
+          this.#options.emit(Date.now() - this.#inputAt < INPUT_REFUSAL_MS ? { t: "browser_error", error } : { t: "error", error });
           this.#scheduleResume();
         }
         return;

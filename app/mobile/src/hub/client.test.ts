@@ -179,7 +179,7 @@ describe("watching a screen", () => {
     expect(frames.filter((f) => f.t === "browser_frame")).toHaveLength(1);
   });
 
-  it("hands a refusal of what was just sent to the live view, and keeps the event stream going", () => {
+  it("hands a refusal of what was just sent to the live view, and asks for the events again all the same", () => {
     const { hub, client, frames } = setup();
     client.start();
     hub.ready(["browser_sessions"]);
@@ -188,8 +188,9 @@ describe("watching a screen", () => {
     client.input("Bsee", { kind: "navigate", url: "https://booking.com" });
     hub.link.frame({ t: "error", code: "invalid", message: "Unknown or malformed message." });
     expect(frames.at(-1)).toEqual({ t: "browser_error", error: { code: "invalid", message: "Unknown or malformed message.", fix: undefined } });
+    // In case it was the event stream's: asked again, from where it was.
     vi.advanceTimersByTime(INPUT_REFUSAL_MS + 10);
-    expect(hub.sentOf("events")).toHaveLength(events);
+    expect(hub.sentOf("events")).toHaveLength(events + 1);
     // Long after any input, an id-less error is the event stream's again.
     hub.link.frame({ t: "error", code: "failed", message: "stream ended" });
     expect(frames.at(-1)).toMatchObject({ t: "error" });

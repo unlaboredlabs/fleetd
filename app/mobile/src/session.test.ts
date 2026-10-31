@@ -369,7 +369,7 @@ describe("a tap on a screen just taken over", () => {
       send: (input) => session.input(id, input),
     });
     touches.down(10, 20);
-    touches.up(10, 20, false);
+    touches.up(10, 20);
     expect(hub.sentOf("browser_input")).toEqual([]);
     const reads = hub.sentOf("call").filter((c) => c.tool === "browser_sessions").length;
     const taking = session.control(id, "human");
@@ -378,8 +378,9 @@ describe("a tap on a screen just taken over", () => {
     // No read of the list since: the hub's answer to Take Over is enough.
     expect(hub.sentOf("call").filter((c) => c.tool === "browser_sessions")).toHaveLength(reads);
     touches.down(10, 20);
-    touches.up(10, 20, false);
+    touches.up(10, 20);
     expect(hub.sentOf("browser_input")).toEqual([
+      { t: "browser_input", session: id, input: { kind: "mouse", action: "moved", x: 40, y: 80, button: "none" } },
       { t: "browser_input", session: id, input: { kind: "mouse", action: "pressed", x: 40, y: 80, button: "left", clickCount: 1 } },
       { t: "browser_input", session: id, input: { kind: "mouse", action: "released", x: 40, y: 80, button: "left", clickCount: 1 } },
     ]);

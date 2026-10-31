@@ -129,15 +129,17 @@ const run = (steps: ((f: Finger) => { finger: Finger; send: readonly unknown[] }
 describe("a finger on a page you took over", () => {
   it("clicks where it tapped, and double-clicks on a second tap soon and near", () => {
     const one = run([(f) => fingerDown(f, at(10, 20)), (f) => fingerMove(f, at(12, 21, 50), 4), (f) => fingerUp(f, at(12, 21, 90))]);
+    // The pointer comes to the point first, as a mouse does: a page's hover and focus follow it.
     expect(one.sent).toEqual([
+      { kind: "mouse", action: "moved", x: 40, y: 80, button: "none" },
       { kind: "mouse", action: "pressed", x: 40, y: 80, button: "left", clickCount: 1 },
       { kind: "mouse", action: "released", x: 40, y: 80, button: "left", clickCount: 1 },
     ]);
     const two = run([(f) => fingerDown(f, at(11, 20, 90 + DOUBLE_MS - 10)), (f) => fingerUp(f, at(11, 20, 90 + DOUBLE_MS + 40))], one.finger);
-    expect(two.sent).toMatchObject([{ action: "pressed", clickCount: 2 }, { action: "released", clickCount: 2 }]);
+    expect(two.sent).toMatchObject([{ action: "moved" }, { action: "pressed", clickCount: 2 }, { action: "released", clickCount: 2 }]);
     // Too late: two single clicks.
     const late = run([(f) => fingerDown(f, at(11, 20, 1000)), (f) => fingerUp(f, at(11, 20, 1050))], one.finger);
-    expect(late.sent).toMatchObject([{ clickCount: 1 }, { clickCount: 1 }]);
+    expect(late.sent).toMatchObject([{ action: "moved" }, { clickCount: 1 }, { clickCount: 1 }]);
   });
 
   it("scrolls the page with the finger once it moves past the slop, and clicks nothing", () => {
@@ -153,12 +155,13 @@ describe("a finger on a page you took over", () => {
   it("held still a moment, presses, drags with the button down, and lets go where it lifts", () => {
     const { sent } = run([(f) => fingerDown(f, at(10, 10)), fingerHeld, (f) => fingerMove(f, at(60, 10, 500), 4), (f) => fingerUp(f, at(60, 10, 600))]);
     expect(sent).toEqual([
+      { kind: "mouse", action: "moved", x: 40, y: 40, button: "none" },
       { kind: "mouse", action: "pressed", x: 40, y: 40, button: "left", clickCount: 1 },
       { kind: "mouse", action: "moved", x: 240, y: 40, button: "left" },
       { kind: "mouse", action: "released", x: 240, y: 40, button: "left", clickCount: 1 },
     ]);
     // A hold whose finger already scrolled presses nothing.
-    expect(run([(f) => fingerDown(f, at(10, 10)), (f) => fingerMove(f, at(10, 60, 50), 4), fingerHeld]).sent).toHaveLength(1);
+    expect(run([(f) => fingerDown(f, at(10, 10)), (f) => fingerMove(f, at(10, 60, 50), 4), fingerHeld]).sent).toMatchObject([{ action: "wheel" }]);
   });
 
   it("lets go of a press when a pinch takes the touch, and does nothing off the page", () => {
@@ -263,21 +266,21 @@ describe("the finger on the JS thread", () => {
       cancel: () => undefined,
     });
     touches.down(10, 10);
-    touches.up(10, 10, false);
+    touches.up(10, 10);
     expect(sent).toEqual([]);
     yours = true;
     touches.down(10, 10);
-    touches.up(10, 10, false);
-    expect(sent).toMatchObject([{ action: "pressed" }, { action: "released" }]);
+    touches.up(10, 10);
+    expect(sent).toMatchObject([{ action: "moved" }, { action: "pressed" }, { action: "released" }]);
     // Held: pressed by the timer, then let go when the page stops being yours.
     touches.down(30, 30);
     timers.at(-1)!();
     touches.release();
-    expect(sent.slice(2)).toMatchObject([{ action: "pressed", x: 120 }, { action: "released", x: 120 }]);
+    expect(sent.slice(3)).toMatchObject([{ action: "moved", x: 120 }, { action: "pressed", x: 120 }, { action: "released", x: 120 }]);
     // A second finger: a pinch, nothing for the page.
     touches.down(10, 10);
     touches.move(40, 40, 2);
-    touches.up(40, 40, false);
-    expect(sent).toHaveLength(4);
+    touches.up(40, 40);
+    expect(sent).toHaveLength(6);
   });
 });

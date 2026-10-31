@@ -159,6 +159,9 @@ export interface Step {
 const mouse = (action: "pressed" | "released" | "moved", at: Point, clickCount = 1): BrowserInput =>
   action === "moved" ? { kind: "mouse", action, x: at.x, y: at.y, button: "left" } : { kind: "mouse", action, x: at.x, y: at.y, button: "left", clickCount };
 
+/** The pointer comes to a point first, button up, as a mouse does before it presses: a page's hover and focus follow it. */
+const hover = (at: Point): BrowserInput => ({ kind: "mouse", action: "moved", x: at.x, y: at.y, button: "none" });
+
 const near = (a: Point, b: Point, d: number): boolean => Math.hypot(a.x - b.x, a.y - b.y) <= d;
 
 /** A finger lands. Off the frame, it does nothing. */
@@ -189,7 +192,7 @@ export const fingerMove = (f: Finger, touch: Touch, scale: number): Step => {
 /** The hold's time came with the finger still down and still: it presses where it landed. */
 export const fingerHeld = (f: Finger): Step => {
   if (f.t !== "down" || f.start.frame === null) return { finger: f, send: [] };
-  return { finger: { t: "holding", last: f.start.frame }, send: [mouse("pressed", f.start.frame)] };
+  return { finger: { t: "holding", last: f.start.frame }, send: [hover(f.start.frame), mouse("pressed", f.start.frame)] };
 };
 
 /** The finger lifts: a tap clicks (twice, soon after another nearby), a hold releases, a scroll just ends. */
@@ -200,7 +203,7 @@ export const fingerUp = (f: Finger, touch: Touch): Step => {
   // From the first tap's lift to the second's touch.
   const double = f.lastTap !== undefined && f.start.t - f.lastTap.t <= DOUBLE_MS && near(f.start.at, f.lastTap.at, DOUBLE_NEAR);
   const n = double ? 2 : 1;
-  return { finger: double ? IDLE : { t: "idle", lastTap: touch }, send: [mouse("pressed", at, n), mouse("released", at, n)] };
+  return { finger: double ? IDLE : { t: "idle", lastTap: touch }, send: [hover(at), mouse("pressed", at, n), mouse("released", at, n)] };
 };
 
 /** The touch was taken away (a second finger came for a pinch, the view closed): a press held is let go. */
@@ -415,11 +418,15 @@ export class PageTouches {
     if (before === "down" && (this.#finger as Finger).t === "scrolling") this.#clearHold();
   }
 
-  up(x: number, y: number, canceled: boolean): void {
+  /**
+   * The finger lifted. A quick tap never moves far enough to start the gesture, which then ends as "cancelled": that
+   * is a tap all the same, so only a second finger (a pinch) cancels a touch here.
+   */
+  up(x: number, y: number): void {
     this.#clearHold();
     if (!this.#mine) return;
     this.#mine = false;
-    this.#apply(this.#off || canceled ? fingerCancel(this.#finger) : fingerUp(this.#finger, this.#deps.where(x, y)));
+    this.#apply(this.#off ? fingerCancel(this.#finger) : fingerUp(this.#finger, this.#deps.where(x, y)));
   }
 
   /** The page stopped being the person's (handed back, ended) or the view closed: a press held is let go. */

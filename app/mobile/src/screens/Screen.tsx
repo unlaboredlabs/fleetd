@@ -20,7 +20,6 @@ import Animated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withSpring
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 import { zoomAbout, isNavi, type BrowserFrame } from "../desktop";
-import { INPUT_REFUSAL_MS } from "../hub/client";
 import { useHub, type RootParams } from "../hubContext";
 import { addressable, addressOf, BACKSPACE, cardOf, clampView, controlLine, controlOf, ENTER, FramePacer, hostOf, KIND_WORD, MAX_ZOOM, NAVIGATE, PageTouches, pixelsPerPoint, toFrame, typed, type Navigation, type Size } from "../screen";
 import { space, type, useTheme } from "../theme";
@@ -203,7 +202,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   );
   const touchDown = useCallback((px: number, py: number) => touches.down(px, py), [touches]);
   const touchMove = useCallback((px: number, py: number, pointers: number) => touches.move(px, py, pointers), [touches]);
-  const touchUp = useCallback((px: number, py: number, canceled: boolean) => touches.up(px, py, canceled), [touches]);
+  const touchUp = useCallback((px: number, py: number) => touches.up(px, py), [touches]);
   const one = usePanGesture({
     minDistance: 0,
     maxPointers: 1,
@@ -222,7 +221,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
     },
     onFinalize: (e) => {
       "worklet";
-      scheduleOnRN(touchUp, e.x, e.y, e.canceled);
+      scheduleOnRN(touchUp, e.x, e.y);
       if (!yoursV.value) settle();
     },
   });
@@ -253,18 +252,16 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   // The address bar: the site at the top becomes a field while you type where the page goes.
   const [editing, setEditing] = useState(false);
   const [address, setAddress] = useState("");
-  const movedAt = useRef(-Infinity);
   const go = (to: Navigation) => {
     haptics.tap();
-    movedAt.current = Date.now();
     session.input(sessionId, to);
   };
-  // A page move the hub refused (a hub or node without them, a screen no longer yours): said, never dropped.
+  // A touch, typing or page move the hub refused (a hub or node without page moves, a screen no longer yours): said,
+  // never dropped.
   const [refused, setRefused] = useState<string | null>(null);
   useEffect(
     () =>
       session.onInputError((e) => {
-        if (Date.now() - movedAt.current > INPUT_REFUSAL_MS) return;
         haptics.warning();
         setRefused(e.message);
       }),
@@ -438,13 +435,13 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
           )}
         </View>
 
-        {/* A page move the hub refused. */}
+        {/* An input the hub refused. */}
         {refused === null ? null : (
           <Animated.View entering={FadeIn.duration(reduce ? 0 : dur.quick).easing(ease.snap)} exiting={FadeOut.duration(reduce ? 0 : dur.quick)} style={[styles.ask, { top: insets.top + BAR + space.md }]} accessibilityLiveRegion="assertive">
             <Glass style={styles.askGlass}>
               <Icon name="error" size={18} color={t.danger} />
               <View style={styles.askText}>
-                <Text style={[type.subhead, styles.strong, { color: t.label }]}>Couldn't go there</Text>
+                <Text style={[type.subhead, styles.strong, { color: t.label }]}>The page didn't take that</Text>
                 <Text style={[type.subhead, { color: t.label }]}>{refused}</Text>
               </View>
             </Glass>
