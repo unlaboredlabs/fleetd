@@ -352,7 +352,6 @@ impl TaskPorts for HubTaskPorts {
                 branch: c.branch,
                 worktree_path: c.worktree_path,
                 paths: c.paths,
-                pull_request_urls: c.pull_request_urls,
             })
         })
     }

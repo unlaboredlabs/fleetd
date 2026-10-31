@@ -96,12 +96,6 @@ impl Decisions {
         Ok(decision)
     }
 
-    /// `forget Dn`: an active decision stops answering its key.
-    pub fn retire(&self, decision_id: &str) -> Result<Decision, LedgerError> {
-        self.ctx
-            .write(|db| repo::retire_decision(db, decision_id, None))
-    }
-
     /// A person overturns an active decision in one write: with `value`, a new decision on its key and scope
     /// supersedes it; without, it is retired with who and why. `project` is the decision's project.
     pub fn overturn(
@@ -218,21 +212,6 @@ impl Decisions {
         cited.sort_by_key(|d| repo::decision_n(d.decision_id.as_str()));
         cited.dedup_by(|a, b| a.decision_id == b.decision_id);
         Ok(cited)
-    }
-
-    /// The active decision for `key`, looked up in the workstream, then the project, then globally.
-    pub fn resolve(&self, key: &str, chain: &Chain) -> Result<Option<Decision>, LedgerError> {
-        self.ctx.read(|db| repo::resolve(db, key, chain))
-    }
-
-    /// Active decisions on `key` at project or workstream scope in the project, oldest first.
-    pub fn active_on_key(
-        &self,
-        key: &str,
-        project_ref: &ProjectRef,
-    ) -> Result<Vec<Decision>, LedgerError> {
-        self.ctx
-            .read(|db| repo::active_on_key(db, key, project_ref))
     }
 
     /// FTS5 over key, value and why; best match first, active only.

@@ -8,9 +8,7 @@ use fleetd_contracts::mcp::{
 };
 use fleetd_contracts::prim::List;
 
-use crate::hub::api::{
-    Caller, Hub, Registry, ToolError, require, unknown_project,
-};
+use crate::hub::api::{Caller, Hub, Registry, ToolError, require, unknown_project};
 use crate::hub::leads::events::Event;
 use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::orders::notes::require_human;

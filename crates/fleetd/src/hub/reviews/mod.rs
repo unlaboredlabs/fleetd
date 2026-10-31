@@ -5,4 +5,4 @@ pub mod rules;
 pub mod service;
 pub mod verdicts;
 
-pub use service::{REVIEWS_BY, Reviews, build};
+pub use service::{Reviews, build};

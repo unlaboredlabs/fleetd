@@ -81,7 +81,6 @@ pub struct ThreadChanges {
     pub branch: Option<String>,
     pub worktree_path: Option<String>,
     pub paths: Vec<String>,
-    pub pull_request_urls: Vec<String>,
 }
 
 /// A rebuild of a thread's worktree: its source, and when the node did it.

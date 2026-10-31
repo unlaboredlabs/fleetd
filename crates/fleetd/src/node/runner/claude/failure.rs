@@ -402,13 +402,8 @@ pub fn retryable(class: FailureClass) -> bool {
     matches!(class, FailureClass::Overloaded | FailureClass::Network)
 }
 
-/// A run that ran out of context: the hub may answer it with `/compact`.
-pub fn context_full(evidence: &FailureEvidence) -> bool {
-    evidence.terminal_reason.as_deref() == Some("prompt_too_long")
-        || CONTEXT_FULL.is_match(&evidence.text)
-}
-
-/// [`context_full`] from a recorded failure's message, which keeps claude's text ("Prompt is too long").
+/// A run that ran out of context, from a recorded failure's message, which keeps claude's text ("Prompt is too long"):
+/// the hub may answer it with `/compact`.
 pub fn context_full_text(message: &str) -> bool {
     CONTEXT_FULL.is_match(message)
 }
@@ -430,22 +425,14 @@ pub fn retry_delay_with(attempt: u32, unit: f64) -> Option<u64> {
     Some((base as f64 * factor / 1000.0).round() as u64 * 1000)
 }
 
-/// How to log claude in, run on the machine. Sessions use the user's own claude setup, so it is the same login as
-/// their own `claude`; when that goes through a proxy, the proxy holds the login.
-pub const LOGIN_FIX: &str = "claude auth login (or, when claude goes through your proxy, log in with your proxy as you normally do)";
-
-/// [`LOGIN_FIX`] for a machine whose sessions do or don't go through a proxy.
+/// How to log claude in on a machine whose sessions do or don't go through a proxy. Sessions use the user's own
+/// claude setup, so it is the same login as their own `claude`; through a proxy, the proxy holds the login.
 pub fn login_fix(proxy: bool) -> &'static str {
     if proxy {
         "log in with your proxy as you normally do"
     } else {
         "claude auth login"
     }
-}
-
-/// The fix for an Auth failure on `machine`.
-pub fn auth_fix(machine: &str) -> String {
-    format!("On {machine}: {LOGIN_FIX}")
 }
 
 /// claude's own words first, then how the process ended, then the tail of its stderr; at most 4000 UTF-16 units.
@@ -768,11 +755,6 @@ mod tests {
         assert_eq!((f.class, f.api_status), (Auth, Some(401)));
         assert!(f.message.contains("OAuth token has expired"));
         assert!(!retryable(Auth));
-        assert_eq!(
-            auth_fix("devbox"),
-            "On devbox: claude auth login (or, when claude goes through your proxy, log in with your proxy as you \
-             normally do)"
-        );
     }
 
     #[test]
@@ -904,8 +886,8 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(classify(&e).unwrap().class, InvalidRequest);
-        assert!(context_full(&e));
-        assert!(!context_full(&evidence("invalid-model")));
+        assert!(context_full_text(&e.text));
+        assert!(!context_full_text(&evidence("invalid-model").text));
         let unexplained_400 = FailureEvidence {
             assistant_error: Some("unknown".into()),
             terminal_reason: None,
