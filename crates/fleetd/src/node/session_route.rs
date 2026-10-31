@@ -108,10 +108,11 @@ impl Router {
         });
     }
 
-    /// The agent session's iOS screen on another machine is gone: so is its forwarding agent-device.
+    /// The agent session's iOS screen on another machine is gone: so is its forwarding agent-device. The forwarder goes
+    /// first, so a session the node no longer counts as remote never has one left on its PATH.
     fn forget_device(&self, thread: &str) {
-        self.remotes.lock().remove(thread);
         remote_device::remove_forwarder(&self.home, thread);
+        self.remotes.lock().remove(thread);
     }
 
     /// Ends the agent session's iOS screen on another machine, through the hub, as its `session_end` would.
