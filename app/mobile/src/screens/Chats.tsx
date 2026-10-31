@@ -132,20 +132,16 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
     haptics.select();
     setFilter(f);
   };
-  const pickRef = useRef(pick);
-  pickRef.current = pick;
 
   // The bar's sides: the avatar on the left; + on the right, and the filters' menu beside it where there's no bottom bar.
-  const openSettings = () => {
-    swiped.close();
-    root.navigate("Settings");
-  };
-  const settingsRef = useRef(openSettings);
-  settingsRef.current = openSettings;
   const choicesKey = JSON.stringify(choices);
   useLayoutEffect(() => {
-    const avatar = <MeButton initial={me.initial} tone={me.tone} label={me.label} onPress={() => settingsRef.current()} />;
-    const filters = filterMenu(choices, filter, (f) => pickRef.current(f));
+    const openSettings = () => {
+      swiped.close();
+      root.navigate("Settings");
+    };
+    const avatar = <MeButton initial={me.initial} tone={me.tone} label={me.label} onPress={openSettings} />;
+    const filters = filterMenu(choices, filter, pick);
     const add = newChatItems((name) => root.navigate(name));
     const options: Partial<NativeStackNavigationOptions> =
       Platform.OS === "ios"
@@ -155,8 +151,8 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
           }
         : { headerLeft: () => avatar };
     navigation.setOptions(options);
-    // The choices by their value: they're made again each render.
-  }, [navigation, root, me.initial, me.tone, me.label, filter, choicesKey]);
+    // The choices by their value, as they're made again each render; `pick` changes with the filter.
+  }, [navigation, root, swiped, me.initial, me.tone, me.label, filter, choicesKey]);
 
   const empty =
     shown === undefined ? (
