@@ -2131,8 +2131,8 @@ async fn an_allowed_site_doesnt_skip_the_gate_for_a_link_that_carries_data() {
     );
 }
 
-/// YOLO skips the checker and every ask, never the floors: a key in a link it opens, or a link that performs a
-/// transfer, is refused; a link that only says money or trading goes to the person on a card; a plain visit runs.
+/// YOLO skips the checker and every ask, never the floors: a key in a link it opens, or a link that moves money, is
+/// refused; a link that only mentions a transfer, like any plain visit, runs.
 #[tokio::test]
 async fn yolo_keeps_the_floors_on_links_and_site_visits() {
     let fake = checker_navi(NaviApprovalMode::Yolo);
@@ -2150,34 +2150,67 @@ async fn yolo_keeps_the_floors_on_links_and_site_visits() {
     .await;
     prompted(&a, &fake, fetch("q4", "https://dentist.example/hours")).await;
     let answers = fake.answers.lock().unwrap().clone();
-    assert_eq!(
-        answers.len(),
-        3,
-        "the link that only says transfer waits for the person"
-    );
+    assert_eq!(answers.len(), 4);
     for (_, _, id, decision) in &answers[..2] {
         let PermissionDecision::Deny { message } = decision else {
             panic!("{id}: {decision:?}")
         };
         assert!(message.as_str().starts_with("Blocked by fleetd"), "{id}");
     }
-    assert!(allowed(&answers[2].3));
-    let open = requests(&fake);
-    assert_eq!(open.len(), 1);
-    assert_eq!(
-        open[0].permission.as_ref().unwrap().request_id.as_str(),
-        "q3"
-    );
-    assert_eq!(
-        fake.auto.lock().unwrap().len(),
-        1,
-        "only the plain visit ran"
-    );
+    assert!(answers[2..].iter().all(|a| allowed(&a.3)));
+    assert!(requests(&fake).is_empty());
+    assert_eq!(fake.auto.lock().unwrap().len(), 2);
     assert!(fake.checked.lock().unwrap().is_empty());
 }
 
+/// A purchase is the person's alone (`purchases::person_only`): a booking or checkout tool always brings the card,
+/// never the checker's go nor YOLO's run.
+#[tokio::test]
+async fn a_purchase_asks_the_person_under_the_checker_and_yolo() {
+    for mode in [NaviApprovalMode::Checker, NaviApprovalMode::Yolo] {
+        let fake = checker_navi(mode);
+        *fake.verdict.lock().unwrap() = verdict(CheckerVerdict::Go, "you asked to book it");
+        let a = approvals(&fake);
+        let booking = json!({ "hotel": "Hotel Devbox", "nights": 2, "total": "129.90 EUR" });
+        send(
+            &a,
+            &fake,
+            "q1",
+            "mcp__crm__confirm_booking",
+            booking.clone(),
+        )
+        .await;
+        send(
+            &a,
+            &fake,
+            "q2",
+            "mcp__crm__checkout_cart",
+            json!({ "cart": "c1" }),
+        )
+        .await;
+        let open = requests(&fake);
+        assert_eq!(open.len(), 2, "{mode:?}");
+        for r in &open {
+            assert!(
+                super::purchases::person_only(r),
+                "{mode:?}: {}",
+                r.text.as_str()
+            );
+            assert!(r.permission.as_ref().unwrap().checker.is_none());
+        }
+        assert!(
+            fake.answers.lock().unwrap().is_empty(),
+            "{mode:?}: nothing runs unasked"
+        );
+        assert!(
+            fake.checked.lock().unwrap().is_empty() && fake.auto.lock().unwrap().is_empty(),
+            "{mode:?}"
+        );
+    }
+}
+
 /// Reading about money or trading is no transfer: a link that says bitcoin, stock or register is never refused, and on
-/// a site the person allowed it goes through, in every mode. (Elsewhere the checker's code rules ask: review_tests.)
+/// a site the person allowed it goes through, in every mode.
 #[tokio::test]
 async fn reading_about_money_or_trading_is_never_refused() {
     let links = [

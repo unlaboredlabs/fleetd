@@ -674,7 +674,7 @@ fn distance(a: &str, b: &str) -> usize {
 /// The floors, refused in every mode, YOLO's too: moving money or trading by the tool's name or by a link that
 /// performs it (its path says transfer or trade and its query carries the amount), and what looks like a password, key
 /// or token anywhere in what goes out, a link it opens included. Why, or None. A link that only mentions money or
-/// trading is [`visit_money`]'s: it asks, since "bitcoin" or "register" in a link is mostly reading.
+/// trading ("bitcoin", "register") is reading, and follows the mode like any other.
 /// `action` is the tool's input with its `tool` (and `kind`) beside it.
 pub fn floor(action: &Value) -> Option<&'static str> {
     let tool = format!(
@@ -724,22 +724,11 @@ pub fn floor(action: &Value) -> Option<&'static str> {
     credential.then_some(policy::Never::Credential.why())
 }
 
-/// A visit whose path or query says money or trading (`/transfer`, `/trade`, `?amount=`): never run unasked, in any
-/// mode; the person decides. Why, or None.
-pub fn visit_money(action: &Value) -> Option<&'static str> {
-    let url = url::Url::parse(&visit_url(action)?).ok()?;
-    let words = format!("{} {}", url.path(), url.query().unwrap_or_default());
-    policy::never(&words).map(|_| "the link it opens says money or trading, so you decide")
-}
-
 pub fn rules(review: &Review) -> Option<CheckerNote> {
     let tool = tool_text(review);
     let url = visit_url(&review.action);
     if let Some(why) = floor(&review.action) {
         return Some(note(CheckerVerdict::Block, why));
-    }
-    if let Some(why) = visit_money(&review.action) {
-        return Some(ask(why));
     }
     let outgoing: Vec<String> = leaves(&review.action)
         .into_iter()

@@ -143,10 +143,10 @@ fleetd's own rules hold whatever the checker says:
 
 - **Floors**, in every mode, YOLO too: moving money, trading and placing orders are refused, by the tool's name or
   by a link that does it (its path says transfer or trade and it carries an amount), and so is a password, key or
-  token anywhere in what goes out, a link it opens included. Spending, and a site whose link only mentions money or
-  trading (`/wiki/Bitcoin`), always wait for you on a card; on a site you allowed, such a link opens. A final Confirm
-  whose button cancels, returns or refunds an order goes through the mode like any other; one that pays or places an
-  order is handed to you.
+  token anywhere in what goes out, a link it opens included. Any other link, one about Bitcoin or the stock market
+  too, follows the mode. A [purchase](#purchases) and any other spending only you answer: no checker or YOLO does. A
+  final Confirm whose button cancels, returns or refunds an order goes through the mode like any other; a payment
+  goes through a purchase.
 - **It asks you at least** when a recipient, share target, forwarding address or site came only from content the
   Navi read; when a link carries data (an email address, a long code, text quoted from your mail), even on a site you
   allowed; for a public or anyone-with-the-link share, edit access for someone new, a rule that forwards your mail to

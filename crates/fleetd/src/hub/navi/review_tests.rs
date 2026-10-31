@@ -206,10 +206,10 @@ fn confirm_step_cases_hold_with_the_code_rules() {
     }
 }
 
-/// A link that only mentions money or trading asks whatever the checker says; one that performs a transfer or a trade
-/// (its query carries the amount) is refused.
+/// A link that only mentions money or trading is reading: it goes as the checker says. One that moves money or trades
+/// (its path says transfer or trade and its query carries the amount) is refused whatever it says.
 #[test]
-fn a_link_about_money_asks_and_one_that_moves_it_is_refused() {
+fn a_link_about_money_follows_the_checker_and_one_that_moves_it_is_refused() {
     let visit = |url: &str| Review {
         person_messages: vec!["Look this up for me.".to_owned()],
         action: json!({ "tool": "WebFetch", "kind": "visit", "url": url }),
@@ -221,7 +221,7 @@ fn a_link_about_money_asks_and_one_that_moves_it_is_refused() {
         "https://www.google.com/search?q=how+to+sell+my+car",
     ] {
         let got = review::decide(&visit(reading), &says("go")).verdict;
-        assert_eq!(got, CheckerVerdict::Ask, "{reading}");
+        assert_eq!(got, CheckerVerdict::Go, "{reading}");
         assert!(review::floor(&visit(reading).action).is_none(), "{reading}");
     }
     for moving in [

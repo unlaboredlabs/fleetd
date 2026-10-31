@@ -182,8 +182,8 @@ impl Approvals {
         let mut site = None;
         let mut decided = decided;
         if let Some(visit) = sites::visit(tool, &input) {
-            // The floor first, on any site, allowed or not, in every mode: a credential in the link. (A path that says
-            // money or trading asks, through the mode: `review::visit_money`.)
+            // The floors first, on any site, allowed or not, in every mode: a credential in the link, or a link that
+            // moves money or trades. Any other link follows the mode.
             let mut shown = match &input {
                 Value::Object(o) => o.clone(),
                 _ => serde_json::Map::new(),
@@ -238,12 +238,15 @@ impl Approvals {
             None => None,
         };
         let risky = action.preview.is_some() || action.site.is_some();
+        // A purchase, a spend and a payment command are the person's alone (`purchases::person_only`): no checker and
+        // no YOLO answers them.
+        let person_only = checker::always_asks(&action)
+            || super::purchases::person_only(&self.prospect(project, thread_id, prompt, &action));
         match settings.as_ref().map(|s| s.mode) {
-            _ if checker::always_asks(&action) => {}
+            _ if person_only => {}
             Some(NaviApprovalMode::Yolo) => {
                 // YOLO skips the checker and every ask, never the floors: money, trading, a credential in what goes
-                // out or a link it opens, a command that wipes the machine. A link that says money or trading goes
-                // to the person.
+                // out or a link it opens, a link that moves money or trades, a command that wipes the machine.
                 let mut shown = match &input {
                     Value::Object(o) => o.clone(),
                     _ => serde_json::Map::new(),
@@ -259,10 +262,6 @@ impl Approvals {
                 if let Some(why) = refused {
                     self.answer_by_rule(machine, thread_id, prompt, deny(why).unwrap())
                         .await;
-                    return;
-                }
-                if crate::hub::navi::review::visit_money(&shown).is_some() {
-                    self.file(project, thread_id, prompt, action, None).await;
                     return;
                 }
                 self.go(
@@ -309,6 +308,50 @@ impl Approvals {
             _ => {}
         }
         self.file(project, thread_id, prompt, action, None).await;
+    }
+
+    /// The request a prompt's card would be, before there is one: what `purchases::person_only` judges.
+    fn prospect(
+        &self,
+        project: &ProjectRef,
+        thread_id: &str,
+        prompt: &PendingPermission,
+        action: &Action,
+    ) -> HumanRequest {
+        HumanRequest {
+            request_id: ChatRequestId::unchecked("Q0"),
+            project_ref: contract_project(project),
+            workstream_id: None,
+            kind: RequestKind::Approval,
+            text: fleetd_contracts::prim::Text::unchecked(clip(
+                &format!("{}: {}", prompt.tool_name, prompt.summary),
+                500,
+            )),
+            state: RequestState::Open,
+            secret: None,
+            gated: None,
+            permission: Some(ToolPermission {
+                thread_id: fleetd_contracts::ids::ThreadId::unchecked(thread_id),
+                request_id: prompt.request_id.clone(),
+                tool_name: prompt.tool_name.clone(),
+                summary: prompt.summary.clone(),
+                preview: action.preview.clone().map(Box::new),
+                input: prompt.input.clone(),
+                site: action.site.clone(),
+                checker: None,
+                screenshot: None,
+            }),
+            preview_config: None,
+            purchase: None,
+            evidence: None,
+            exit_code: None,
+            output_tail: None,
+            created_at: fleetd_contracts::ids::Timestamp(self.now()),
+            answered_at: None,
+            answered_by: None,
+            answered_by_person: None,
+            finished_at: None,
+        }
     }
 
     /// Answers a prompt by a hub rule, without asking anyone.
