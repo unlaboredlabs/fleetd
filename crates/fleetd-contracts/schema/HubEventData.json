@@ -772,7 +772,7 @@
         },
         "nudge": {
           "$ref": "#/$defs/ChatNudge",
-          "description": "The lead flagged it for the person's look (`nudge`), or it is an agent's Try it suggestion."
+          "description": "The lead flagged it for the person's look (`nudge`)."
         },
         "parts": {
           "description": "A final lead message of more than one bubble, or with a block: its bubbles in order. Absent: `text` is one\nbubble (and while a message streams).",
@@ -786,10 +786,6 @@
         "person": {
           "$ref": "#/$defs/PersonRef",
           "description": "A human message: the person who wrote it. Absent from a hub before people."
-        },
-        "previewSuggestion": {
-          "$ref": "#/$defs/PreviewSuggestion",
-          "description": "An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app\nshows it as one line with Try it. Nothing runs from it."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -1122,7 +1118,7 @@
         },
         "person": {
           "$ref": "#/$defs/PersonRef",
-          "description": "The person who changed it (`checklist_edit`), removals included; absent when the lead did."
+          "description": "The person who changed it (`checklist_remove`); absent when the lead did."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -1379,7 +1375,7 @@
       "type": "object"
     },
     "CommandApprovalItem": {
-      "description": "A risky command (prod write, spend, delete, credential use), a session's permission prompt or an agent's proposed\npreview setting waits for the human: exactly what it would do, then Approve or Deny. Answered with\n`approval_answer`, naming `requestId`. Exactly one of `gated`, `permission`, `previewConfig` and `purchase`.",
+      "description": "A risky command (prod write, spend, delete, credential use), a session's permission prompt, a purchase or a secure\ninput waits for the human: exactly what it would do, then Approve or Deny. Answered with `approval_answer`, naming\n`requestId`. Exactly one of `gated`, `permission`, `purchase` and `secureInput`.",
       "properties": {
         "answeredAt": {
           "$ref": "#/$defs/Timestamp"
@@ -1421,15 +1417,11 @@
         },
         "permission": {
           "$ref": "#/$defs/ToolPermission",
-          "description": "A session's permission prompt: the tool and what it would do. Boxed, as `previewConfig` is: with its input it\nis large beside the item's other fields."
-        },
-        "previewConfig": {
-          "$ref": "#/$defs/PreviewConfigProposeCall",
-          "description": "An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.\nOlder apps show it as an approval with neither command nor permission.\nBoxed: the setting is large beside the item's other fields, and every chat item would carry its size."
+          "description": "A session's permission prompt: the tool and what it would do. Boxed: with its input it is large beside the\nitem's other fields, and every chat item would carry its size."
         },
         "purchase": {
           "$ref": "#/$defs/Purchase",
-          "description": "A Navi's purchase (purchase_request): the shop, the total, what it buys and the card. Approved, the Navi's node\nfills the card into that checkout once. Boxed, as `previewConfig` is."
+          "description": "A Navi's purchase (purchase_request): the shop, the total, what it buys and the card. Approved, the Navi's node\nfills the card into that checkout once. Boxed, as `permission` is."
         },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
@@ -1715,9 +1707,6 @@
         "pr.merged_outside": {
           "$ref": "#/$defs/TrainEventData"
         },
-        "preview.state": {
-          "$ref": "#/$defs/PreviewEventData"
-        },
         "project.add_failed": {
           "$ref": "#/$defs/ProjectAddFailedData"
         },
@@ -1858,7 +1847,6 @@
         "people.changed",
         "pr.merged",
         "pr.merged_outside",
-        "preview.state",
         "project.add_failed",
         "project.added",
         "project.clone_progress",
@@ -2248,173 +2236,6 @@
       ],
       "type": "object"
     },
-    "PreviewConfig": {
-      "description": "A project's preview setting (Settings › Projects › Try it, or `project_settings_set {preview}`). Nothing runs\nbecause of it: it says how to run a preview someone asks for.",
-      "properties": {
-        "idleMinutes": {
-          "default": 30,
-          "description": "A preview no one used for this many minutes ends.",
-          "maximum": 240,
-          "minimum": 5,
-          "type": "integer"
-        },
-        "web": {
-          "$ref": "#/$defs/WebPreview"
-        }
-      },
-      "type": "object"
-    },
-    "PreviewConfigProposeCall": {
-      "description": "`preview_config_propose`: how to run the project's preview, for the person to approve as a card in the chat.\nNothing is saved until they do. Answered with the request, as `gated_run` is.",
-      "properties": {
-        "config": {
-          "$ref": "#/$defs/PreviewConfig"
-        },
-        "why": {
-          "maxLength": 300,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "config",
-        "why"
-      ],
-      "type": "object"
-    },
-    "PreviewEventData": {
-      "description": "`preview.state`: a preview started, moved a step, became ready, ended or failed. previews_list reads the rest.",
-      "properties": {
-        "of": {
-          "$ref": "#/$defs/PreviewOf"
-        },
-        "previewId": {
-          "$ref": "#/$defs/PreviewId"
-        },
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "state": {
-          "$ref": "#/$defs/PreviewState"
-        }
-      },
-      "required": [
-        "projectRef",
-        "previewId",
-        "of",
-        "state"
-      ],
-      "type": "object"
-    },
-    "PreviewId": {
-      "pattern": "^P[0-9a-f]{32}$",
-      "type": "string"
-    },
-    "PreviewOf": {
-      "description": "What a preview is of: one PR, or an order's PRs merged together onto their base on a scratch branch (D162).",
-      "oneOf": [
-        {
-          "properties": {
-            "kind": {
-              "const": "pr",
-              "type": "string"
-            },
-            "number": {
-              "maximum": 9007199254740991,
-              "minimum": 1,
-              "type": "integer"
-            },
-            "repo": {
-              "$ref": "#/$defs/GitHubRepo"
-            }
-          },
-          "required": [
-            "kind",
-            "repo",
-            "number"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "kind": {
-              "const": "order",
-              "type": "string"
-            },
-            "workstreamId": {
-              "$ref": "#/$defs/WorkstreamId"
-            }
-          },
-          "required": [
-            "kind",
-            "workstreamId"
-          ],
-          "type": "object"
-        }
-      ]
-    },
-    "PreviewState": {
-      "oneOf": [
-        {
-          "const": "starting",
-          "description": "Checking out, setting up, building or starting: `steps` says which.",
-          "type": "string"
-        },
-        {
-          "const": "ready",
-          "description": "It answers: the person can use it.",
-          "type": "string"
-        },
-        {
-          "const": "ended",
-          "description": "Thrown away: its processes, port and worktree are gone. `endReason` says why.",
-          "type": "string"
-        },
-        {
-          "const": "failed",
-          "description": "A step failed: `steps` names it with the end of its output. Nothing of it runs.",
-          "type": "string"
-        }
-      ],
-      "x-open": true
-    },
-    "PreviewSuggestion": {
-      "description": "An agent's suggestion to try a PR: one line with a Try it button, once per PR. Nothing runs from it.",
-      "properties": {
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "by": {
-          "description": "Who suggests it: \"#14's writer\".",
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "of": {
-          "$ref": "#/$defs/PreviewOf"
-        },
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "why": {
-          "description": "Why a person should try it, in a line.",
-          "maxLength": 300,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "projectRef",
-        "of",
-        "by",
-        "why",
-        "at"
-      ],
-      "type": "object"
-    },
     "ProjectAddFailedData": {
       "description": "`HubEvent.data` on `project.add_failed`: a clone that was accepted, then failed.",
       "properties": {
@@ -2504,7 +2325,7 @@
           "items": {
             "$ref": "#/$defs/ChatOpenNudge"
           },
-          "maxItems": 6,
+          "maxItems": 3,
           "minItems": 1,
           "type": "array"
         },
@@ -2781,9 +2602,6 @@
         "currency"
       ],
       "type": "object"
-    },
-    "ReadyPath": {
-      "type": "string"
     },
     "RecoveryPausedData": {
       "description": "`machine.recovery_paused`.",
@@ -3208,9 +3026,6 @@
         "name"
       ],
       "type": "object"
-    },
-    "SetupInput": {
-      "type": "string"
     },
     "ShopDomain": {
       "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){1,20}$",
@@ -3854,56 +3669,6 @@
       "required": [
         "threadId",
         "kind"
-      ],
-      "type": "object"
-    },
-    "WebPreview": {
-      "description": "How a project's web app is built and run for a preview, each command with `sh -c` in the preview's worktree and\nthe project's variables, as setup commands run (#501).",
-      "properties": {
-        "build": {
-          "description": "Builds the app; none for an app the start command builds itself.",
-          "maxLength": 2000,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "inputs": {
-          "default": [],
-          "description": "Files whose contents decide what setup makes, such as lockfiles.",
-          "items": {
-            "$ref": "#/$defs/SetupInput"
-          },
-          "maxItems": 20,
-          "type": "array",
-          "uniqueItems": true
-        },
-        "ready": {
-          "$ref": "#/$defs/ReadyPath",
-          "default": "/",
-          "description": "Asked until it answers, for at most 2 minutes after the start."
-        },
-        "setup": {
-          "default": [],
-          "description": "Run first, in order: install dependencies, generate code. Skipped when `inputs` haven't changed since a\npreview of this project last ran them on this machine.",
-          "items": {
-            "maxLength": 2000,
-            "minLength": 1,
-            "pattern": "^[^\\r\\n]*$",
-            "type": "string"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "start": {
-          "description": "Serves the app on `127.0.0.1:$PORT`; it runs until the preview ends.",
-          "maxLength": 2000,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "start"
       ],
       "type": "object"
     },

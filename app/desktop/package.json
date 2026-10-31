@@ -18,7 +18,6 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
-    "web:preview": "vite --config web/vite.config.ts",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
     "lint": "eslint --max-warnings 0 .",
     "test": "vitest run",
@@ -30,9 +29,6 @@
     "fixtures": "node fixtures/build.ts",
     "perf": "node fixtures/build.ts && node perf/run.ts",
     "perf:record": "node fixtures/build.ts && node perf/record-smoke.ts",
-    "perf:busy": "node fixtures/build.ts && node perf/busy.ts",
-    "perf:toggles": "node fixtures/build.ts && node perf/toggles.ts",
-    "perf:drops": "node fixtures/build.ts && node perf/drops.ts",
     "debug-guard-check": "node scripts/debug-guard-check.ts",
     "build:test": "MAIN_VITE_FLEETD_TEST_BUILD=1 electron-vite build"
   },

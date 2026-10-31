@@ -260,7 +260,7 @@ impl LeadRecords {
     }
 }
 
-/// The ledger's `WorkstreamLookup` (which project a workstream belongs to, a project's open ones), used by `wiring`.
+/// What the ledger reads of the workstreams (which project one belongs to, a project's open ones).
 impl LeadRecords {
     pub fn project_of(&self, workstream_id: &WorkstreamId) -> Option<ProjectRef> {
         self.workstream_get(workstream_id)

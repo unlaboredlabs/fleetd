@@ -1,6 +1,6 @@
-//! A repo's own train checks. A repo that commits `.fleetd/train.json` on its base adds to its project's train settings
-//! there: `fastChecks`, more checks the train waits for on each PR and batch, and `afterMerge`, checks that never stop
-//! a merge. Beside the workflows, a renamed job and its name here change in one PR.
+//! A repo's own train checks. A repo that commits `.fleetd/train.json` on its base sets them there: `fastChecks`, more
+//! checks the train waits for on each PR and batch, and `afterMerge`, checks that never stop a merge. Beside the
+//! workflows, a renamed job and its name here change in one PR.
 use fleetd_contracts::project_settings::{CheckName, TRAIN_CHECKS_MAX, TrainSettings};
 use serde::Deserialize;
 
@@ -16,7 +16,7 @@ pub(super) type Cached = (i64, Option<TrainSettings>);
 
 type Checks = fleetd_contracts::prim::UniqueList<CheckName, 0, TRAIN_CHECKS_MAX>;
 
-/// The file's shape: the two lists of the project's train settings, nothing else, so a misspelt key isn't a list that
+/// The file's shape: the two lists, nothing else, so a misspelt key isn't a list that
 /// silently does nothing.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -37,7 +37,7 @@ pub(super) fn parse(text: &str) -> Result<TrainSettings, String> {
 
 impl Train {
     /// The base's `.fleetd/train.json`, read at most every `TTL_MS`: empty settings without one. None when it can't be
-    /// read, or used until it is read again (logged): then, as with unreadable project settings, every check counts.
+    /// read, or used until it is read again (logged): then every check counts.
     pub(super) async fn repo_checks(&self, repo: &str, base: &str) -> Option<TrainSettings> {
         let key = (repo.to_string(), base.to_string());
         let now = self.now_ms();
@@ -87,18 +87,6 @@ mod tests {
         ] {
             assert!(parse(bad).is_err(), "{bad}");
         }
-    }
-
-    /// The repo's lists add to the project's, each name once; one in both lists is left for after the merge.
-    #[test]
-    fn the_repos_checks_add_to_the_projects() {
-        let project =
-            parse(r#"{ "fastChecks": ["integration", "site"], "afterMerge": ["bench"] }"#).unwrap();
-        let repo =
-            parse(r#"{ "fastChecks": ["site", "lint"], "afterMerge": ["integration"] }"#).unwrap();
-        let both = project.with(&repo);
-        assert_eq!(both.fast_set(&["build".into()]), ["build", "site", "lint"]);
-        assert!(both.after_merge_only("bench") && both.after_merge_only("integration"));
     }
 
     /// fleetd's own `.fleetd/train.json`: its fast checks are jobs of its CI that run on each PR's push on Linux; its

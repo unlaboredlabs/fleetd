@@ -14,7 +14,7 @@ use crate::node::runner::claude::version::{self, VersionVerdict};
 pub use crate::node::runner::claude::version::INSTALL as CLAUDE_INSTALL;
 
 /// The node.json fields `machine add` sets; the rest (cmdRoots, …) are the user's or the node's and are kept.
-const NODE_CONFIG_OWNED: [&str; 5] = ["hub", "machineId", "name", "tags", "claudeConfigDir"];
+const NODE_CONFIG_OWNED: [&str; 4] = ["hub", "machineId", "name", "claudeConfigDir"];
 
 /// Where fleetd puts things on a machine, under the SSH user's home.
 #[derive(Clone, Debug)]
@@ -96,15 +96,15 @@ impl Facts {
 
 /// The probe: POSIX sh only, so a machine needs nothing but a shell to be read. One fact per line. `fleetd`: this
 /// machine's relocated fleetd dir (`FLEETD_HOME`), for `--local` only; a machine over SSH keeps `~/.fleetd`.
-pub fn probe_command(suffix: &str, fleetd: Option<&str>) -> String {
+pub fn probe_command(fleetd: Option<&str>) -> String {
     let l = machine_layout_at("$H", "$F");
     let dirs = Dirs {
         home: "$H",
         config_home: "$C",
     };
     let mut reads = vec![l.node_config.clone()];
-    reads.push(unit_path(Platform::Linux, &dirs, Role::Node, suffix));
-    reads.push(unit_path(Platform::Darwin, &dirs, Role::Node, suffix));
+    reads.push(unit_path(Platform::Linux, &dirs, Role::Node));
+    reads.push(unit_path(Platform::Darwin, &dirs, Role::Node));
     let quoted = |paths: &[String]| {
         paths
             .iter()
@@ -203,9 +203,7 @@ pub fn local_target() -> (String, String) {
 #[derive(Clone)]
 pub struct MachineAddInput {
     pub machine_id: String,
-    pub tags: Vec<String>,
     pub hub_url: String,
-    pub unit_suffix: String,
     pub git_identity: Option<GitIdentity>,
     /// sha256 of the fleetd binary this hub copies to the machine: the one running now.
     pub binary_digest: String,
@@ -348,8 +346,8 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         home: &facts.home,
         config_home: &facts.config_home,
     };
-    let unit_file = |role: Role| unit_path(platform, &dirs, role, &input.unit_suffix);
-    let services = ServiceManager::new(platform, facts.uid, &input.unit_suffix, unit_file);
+    let unit_file = |role: Role| unit_path(platform, &dirs, role);
+    let services = ServiceManager::new(platform, facts.uid, unit_file);
     let claude_bin_dir = dirname(claude).to_owned();
     let mut path_dirs = vec![l.bin_dir.clone(), claude_bin_dir.clone()];
     for dir in facts.path.split(':') {
@@ -365,7 +363,6 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
     env.extend(git_identity_env(input.git_identity.as_ref()));
     let node_spec = ServiceSpec {
         role: Role::Node,
-        suffix: input.unit_suffix.clone(),
         description: "fleetd node".into(),
         program: vec![
             l.bin.clone(),
@@ -418,7 +415,7 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         && existing_unit.is_some_and(|unit| !unit.contains(&l.node_home))
     {
         return Err(format!(
-            "the {} service on this machine runs another fleet's node. Fix: give this fleet its own --unit-suffix, or pass --no-service",
+            "the {} service on this machine runs another fleet's node. Fix: pass --no-service",
             unit_file(Role::Node).rsplit('/').next().unwrap_or_default()
         ));
     }
@@ -448,7 +445,6 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         "hub": input.hub_url,
         "machineId": input.machine_id,
         "name": input.machine_id,
-        "tags": input.tags,
         "claudeConfigDir": config_dir,
     });
     let enrolled = get("enrolled") == Some(Value::Bool(true))
@@ -471,9 +467,6 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             "--machine".into(),
             input.machine_id.clone(),
         ];
-        if !input.tags.is_empty() {
-            argv.extend(["--tags".to_owned(), input.tags.join(",")]);
-        }
         if let Some(dir) = desired["claudeConfigDir"].as_str() {
             argv.extend(["--claude-config-dir".to_owned(), dir.to_owned()]);
         }
@@ -616,19 +609,11 @@ pub fn fresh_facts(user: &str, arch: &str) -> Facts {
 
 /// What an older fleetd installed for T3 Code on a machine: its service and its files. Only `--purge` removes them,
 /// and prints the line only where there is something to remove.
-pub fn old_t3_removal(
-    platform: Platform,
-    home: &str,
-    config_home: &str,
-    uid: u32,
-    suffix: &str,
-) -> Step {
+pub fn old_t3_removal(platform: Platform, home: &str, config_home: &str, uid: u32) -> Step {
     let home = home.trim_end_matches('/');
     let dirs = Dirs { home, config_home };
-    let unit = unit_path(platform, &dirs, Role::T3, suffix);
-    let services = ServiceManager::new(platform, uid, suffix, |role| {
-        unit_path(platform, &dirs, role, suffix)
-    });
+    let unit = unit_path(platform, &dirs, Role::T3);
+    let services = ServiceManager::new(platform, uid, |role| unit_path(platform, &dirs, role));
     let files = [
         format!("{home}/.fleetd/t3"),
         format!("{home}/.fleetd/t3.env"),
@@ -657,14 +642,13 @@ pub fn plan_machine_remove(
     fleetd: Option<&str>,
     config_home: &str,
     uid: u32,
-    suffix: &str,
     own_service: bool,
     purge: bool,
 ) -> Vec<Step> {
     let l = fleetd.map_or_else(|| machine_layout(home), |f| machine_layout_at(home, f));
     let dirs = Dirs { home, config_home };
-    let unit_file = |role: Role| unit_path(platform, &dirs, role, suffix);
-    let services = ServiceManager::new(platform, uid, suffix, unit_file);
+    let unit_file = |role: Role| unit_path(platform, &dirs, role);
+    let services = ServiceManager::new(platform, uid, unit_file);
     let mut steps = Vec::new();
     if own_service {
         steps.push(step(
@@ -697,7 +681,7 @@ pub fn plan_machine_remove(
             ),
         ));
         if fleetd.is_none() {
-            steps.push(old_t3_removal(platform, home, config_home, uid, suffix));
+            steps.push(old_t3_removal(platform, home, config_home, uid));
         }
     }
     if platform == Platform::Linux {
@@ -716,9 +700,7 @@ mod tests {
     fn input() -> MachineAddInput {
         MachineAddInput {
             machine_id: "mac-mini".into(),
-            tags: vec!["macos".into(), "xcode".into()],
             hub_url: "https://devbox.example.ts.net".into(),
-            unit_suffix: String::new(),
             git_identity: Some(GitIdentity {
                 name: "ada-lovelace".into(),
                 email: "1+ada-lovelace@users.noreply.github.com".into(),
@@ -777,16 +759,16 @@ mod tests {
             ["create fleetd's directories", "make sure the node runs"]
         );
 
-        // Tags changed: only the owned keys are rewritten, cmdRoots and the rest stay.
-        let retagged = plan_machine_add(
+        // Its claude config dir changed: only the owned keys are rewritten, cmdRoots and the rest stay.
+        let moved = plan_machine_add(
             &facts,
             &MachineAddInput {
-                tags: vec!["gpu".into()],
+                claude_config_dir: Some("/srv/claude".into()),
                 ..set_up
             },
         )
         .unwrap();
-        let update = retagged
+        let update = moved
             .steps
             .iter()
             .find(|s| s.title == "update the node's settings")
@@ -795,7 +777,7 @@ mod tests {
             panic!()
         };
         let written: Value = serde_json::from_str(text).unwrap();
-        assert_eq!(written["tags"], json!(["gpu"]));
+        assert_eq!(written["claudeConfigDir"], "/srv/claude");
         assert_eq!(written["cmdRoots"], json!(["/srv"]));
     }
 
@@ -957,7 +939,7 @@ mod tests {
             panic!("took over the first fleet's node service");
         };
         assert!(refused.contains("another fleet's node"), "{refused}");
-        assert!(refused.contains("--unit-suffix"), "{refused}");
+        assert!(refused.contains("--no-service"), "{refused}");
         let no_service = MachineAddInput {
             service: false,
             ..input()
@@ -983,7 +965,7 @@ mod tests {
         std::fs::create_dir_all(format!("{h}/.fleetd/node")).unwrap();
         std::fs::write(format!("{h}/.fleetd/node/node.json"), "{\"real\":1}\n").unwrap();
         let out = std::process::Command::new("/bin/sh")
-            .args(["-c", &probe_command("", Some(f))])
+            .args(["-c", &probe_command(Some(f))])
             .env("HOME", h)
             .output()
             .unwrap();
@@ -1006,7 +988,7 @@ mod tests {
         std::fs::write(format!("{h}/.fleetd/node/node.json"), "{\"hub\":\"x\"}\n").unwrap();
         std::fs::write(format!("{h}/.fleetd/claude.env"), "").unwrap();
         let out = std::process::Command::new("/bin/sh")
-            .args(["-c", &probe_command("", None)])
+            .args(["-c", &probe_command(None)])
             .env("HOME", h)
             .env_remove("XDG_CONFIG_HOME")
             .output()
@@ -1035,7 +1017,6 @@ mod tests {
             None,
             "/home/ada/.config",
             1000,
-            "",
             true,
             true,
         );
@@ -1059,7 +1040,6 @@ mod tests {
             None,
             "/home/ada/.config",
             1000,
-            "",
             false,
             false,
         );

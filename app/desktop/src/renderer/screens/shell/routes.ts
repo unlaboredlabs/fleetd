@@ -113,10 +113,8 @@ type ScreenOf =
   | { readonly id: "navi" }
   /** Merges and what they cost the person (D33), for one project (`?project=<machine>/<project>`) or (null) all. */
   | { readonly id: "factory"; readonly project: ProjectKey | null }
-  | { readonly id: "machines" }
   /**
    * Factory's Agent time tab, the time inspector, for one order or (null) the fleet: `#/factory/time[/order/<id>]`.
-   * The old `#/time` links land on it.
    */
   | { readonly id: "time"; readonly orderId: string | null }
   | { readonly id: "projects.add" }
@@ -134,38 +132,12 @@ type ScreenOf =
     }
   /** A fleetd://pair link prefills the hub and code; the screen still asks before it pairs. */
   | { readonly id: "onboarding"; readonly hub: string | null; readonly code: string | null }
-  /** The hub admin's setup (a design prototype, docs/design/setup.md): the welcome, one step open, or the end. */
+  /** The hub admin's setup: the welcome, one step open, or the end. */
   | { readonly id: "setup"; readonly view: string | null }
   /** One session in a window of its own (the pop-out, for taking over); the main window shows it in the panel. */
   | { readonly id: "session"; readonly project: ProjectKey; readonly session: string };
 
 export const HOME: Screen = { id: "home" };
-
-/** Where Settings' pages before D211 went: an older link lands on the page that has it now, for the same project. */
-const SETTINGS_MOVED: Readonly<Record<string, SettingsTab>> = {
-  connections: "accounts",
-  claude: "accounts",
-  github: "accounts",
-  notifications: "general",
-  memory: "instructions",
-  skills: "agents",
-  mcp: "agents",
-  // Machine roles went to Hub › Machines.
-  machines: "hub.machines",
-};
-
-/** Where Administration's pages went (D211): it is Settings' Hub group now, and an older link lands on its page. */
-const ADMIN_MOVED: Readonly<Record<string, HubTab>> = {
-  people: "hub.people",
-  invites: "hub.people",
-  machines: "hub.machines",
-  connections: "hub.accounts",
-  claude: "hub.accounts",
-  github: "hub.accounts",
-  hub: "hub.tools",
-  skills: "hub.tools",
-  setup: "hub.setup",
-};
 
 const isSettingsTab = (tab: string): tab is SettingsTab => SETTINGS_TABS.some((t) => t === tab);
 
@@ -179,16 +151,6 @@ const hubScreen = (page: string | undefined, machine: string | undefined, query:
   const prompt = query.get("prompt");
   if (hubTab !== "hub.prompts" || !prompt) return { id: "settings", tab: hubTab };
   return { id: "settings", tab: hubTab, prompt, ...viewOf(query.get("view")) };
-};
-
-/** `#/admin/<section>[/<machine>]`, Administration's before D211: the Hub page that has it now. */
-const adminScreen = (section: string | undefined, machine: string | undefined, query: URLSearchParams): ScreenOf => {
-  const tab = (section === undefined ? undefined : ADMIN_MOVED[section]) ?? "hub.people";
-  if (tab === "hub.machines" && machine !== undefined) return { id: "settings", tab, machine };
-  // Hub settings' prompts are Every project's now.
-  const prompt = query.get("prompt");
-  if (section === "hub" && prompt) return { id: "settings", tab: "hub.prompts", prompt, ...viewOf(query.get("view")) };
-  return { id: "settings", tab };
 };
 
 const decode = (segment: string): string | null => {
@@ -256,18 +218,12 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
     case "factory":
       if (a === "time") return timeOf(parts.slice(2));
       return { id: "factory", project: projectParam(query.get("project")) };
-    case "time":
-      // Time became Factory's Agent time tab; an older link still lands on it.
-      return timeOf(parts.slice(1));
-    case "machines":
-      return { id: head };
     case "projects":
       return a === "add" ? { id: "projects.add" } : HOME;
     case "settings": {
       if (a === "hub") return hubScreen(b, parts[3], query);
       const [prompt, project, view] = [query.get("prompt"), query.get("for"), query.get("view")];
-      const tab = a !== undefined && isSettingsTab(a) && !isHubTab(a) ? a : ((a === undefined ? undefined : SETTINGS_MOVED[a]) ?? "general");
-      if (isHubTab(tab)) return { id: "settings", tab };
+      const tab = a !== undefined && isSettingsTab(a) && !isHubTab(a) ? a : "general";
       return {
         id: "settings",
         tab,
@@ -276,8 +232,6 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
         ...viewOf(view),
       };
     }
-    case "admin":
-      return adminScreen(a, b, query);
     case "onboarding":
       return { id: "onboarding", hub: query.get("hub") || null, code: query.get("code") || null };
     case "setup":
@@ -334,7 +288,6 @@ const path = (screen: Screen): Array<string> => {
     case "status":
     case "navi":
     case "factory":
-    case "machines":
     case "onboarding":
       return [screen.id];
   }

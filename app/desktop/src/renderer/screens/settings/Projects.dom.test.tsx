@@ -28,7 +28,6 @@ const settings: Settings = {
   projectId: "p1",
   title: "storefront",
   workspaceRoot: "/home/w/src/storefront",
-  keepWorktrees: false,
   setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] },
   env: [
     { name: "API_URL", kind: "plain", value: "https://staging.example", bytes: 23, updatedAt: AT },
@@ -276,23 +275,14 @@ describe("Settings → Projects", () => {
     expect(JSON.stringify(calls)).not.toContain(SECRET);
   });
 
-  it("turns keep finished worktrees on", async () => {
-    await render();
-    const toggle = document.querySelector<HTMLElement>('section[aria-label="Worktrees"] [role="switch"]');
-    if (toggle === null) throw new Error("no switch");
-    await click(toggle);
-    await settle();
-    expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", keepWorktrees: true });
-  });
-
   it("keeps the page on screen through the resync a saved setting brings, never Loading… or a remount", async () => {
     await render();
     const page = document.querySelector('[data-screen="settings.projects"]');
     const name = document.querySelector<HTMLInputElement>('input[aria-label="Project name"]');
-    const toggle = document.querySelector<HTMLElement>('section[aria-label="Worktrees"] [role="switch"]');
-    if (page === null || name === null || toggle === null) throw new Error("no page");
-    answers = [{ ...settings, keepWorktrees: true }];
-    await click(toggle);
+    if (page === null || name === null) throw new Error("no page");
+    answers = [{ ...settings, title: "shop" }];
+    await type(name, "shop");
+    await click(button("Rename"));
     await settle();
     // The hub's project.settings event for the save makes the app resync (a snapshot on the same link), and the
     // reads that follow take the hub a moment.
@@ -306,10 +296,9 @@ describe("Settings → Projects", () => {
     expect(page.textContent).not.toContain("Loading…");
     expect(document.querySelector('[data-screen="settings.projects"]')).toBe(page);
     expect(document.querySelector('input[aria-label="Project name"]')).toBe(name);
-    expect(toggle.isConnected).toBe(true);
     await act(async () => new Promise((r) => setTimeout(r, 100)));
     expect(document.querySelector('input[aria-label="Project name"]')).toBe(name);
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(name.value).toBe("shop");
   });
 
   it("turns the nightly memory refresh off, on by default, beside the project's memory", async () => {
@@ -505,16 +494,15 @@ describe("Settings → Projects → Repos", () => {
     expect(text).toContain("main");
     expect(text).toContain("/home/w/src/storefront on devbox");
     expect(text).toContain("Uses the default: pnpm install");
-    expect(text).toContain("Uses the project's: none");
     expect(calls).toContainEqual({ tool: "project_settings_get", input: { machineId: "devbox", projectId: "p1", repo: "web" } });
   });
 
-  it("shows two repos, each with the setup and preview that apply to it", async () => {
+  it("shows two repos, each with the setup that applies to it", async () => {
     repos = [web, api];
     answers = [{ ...settings, setup: { ...settings.setup, commands: ["pnpm install"] } }];
     repoAnswers = {
       web: answers[0] as Settings,
-      api: { ...settings, repo: "api", setup: { ...settings.setup, commands: ["go mod download", "make gen"] }, preview: { web: { start: "make serve" } } },
+      api: { ...settings, repo: "api", setup: { ...settings.setup, commands: ["go mod download", "make gen"] } },
     };
     await renderRepos();
     expect([...section().querySelectorAll('[role="listitem"]')].map((x) => x.getAttribute("aria-label"))).toEqual(["web", "api"]);
@@ -525,9 +513,7 @@ describe("Settings → Projects → Repos", () => {
     // Its checkout isn't a listed project: shown by its id, on its machine.
     expect(text).toContain("p9 on devbox");
     expect(text).toContain("go mod download; make gen");
-    expect(text).toContain("make serve");
     expect(text).not.toContain("Uses the default");
-    expect(text).not.toContain("Uses the project's");
   });
 
   it("adds a repo by its path on the machine, or clones one from GitHub", async () => {

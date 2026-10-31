@@ -13,12 +13,12 @@ use crate::hub::pair::{self as hub_pair, PairCodes};
 use crate::hub::store::HubDb;
 use fleetd_contracts::auth::Role;
 
-pub const PAIR_USAGE: &str = r#"  pair [--name <device>] [--role <read|operate|admin>] [--no-qr] [--home <dir>]
+pub const PAIR_USAGE: &str = r#"  pair [--name <device>] [--role <read|operate|admin>] [--no-qr]
              print a one-time code (15 min) that pairs the fleetd app with this hub, and a QR
              of its link for the phone app to scan (--no-qr leaves it out); the desktop app
              on this machine pairs by itself. The device gets --role (default admin, which
              changes the hub's settings) on every machine
-  pair --worker <machine-id> [--home <dir>]
+  pair --worker <machine-id>
              print the one command that makes another machine a worker of this hub, with
              a one-time code (15 min): for a machine the hub can't reach over SSH
 "#;
@@ -300,7 +300,6 @@ pub fn pair_command(argv: &[String]) -> CliResult {
         argv,
         &Spec {
             options: &[
-                ("home", Kind::Str),
                 ("name", Kind::Str),
                 ("no-qr", Kind::Bool),
                 ("role", Kind::Str),
@@ -316,7 +315,7 @@ pub fn pair_command(argv: &[String]) -> CliResult {
         if v.has("role") || v.flag("no-qr") {
             return usage("--worker joins a machine and takes no --role or --no-qr");
         }
-        return match worker_command(v.str("home"), machine) {
+        return match worker_command(None, machine) {
             Ok(text) => CliResult {
                 code: 0,
                 stdout: text,
@@ -332,7 +331,7 @@ pub fn pair_command(argv: &[String]) -> CliResult {
             None => return usage("--role must be read, operate or admin"),
         },
     };
-    match mint(v.str("home"), v.str("name"), role) {
+    match mint(None, v.str("name"), role) {
         Ok(minted) => CliResult {
             code: 0,
             stdout: describe(&minted, !v.flag("no-qr")),
@@ -479,8 +478,7 @@ mod tests {
 
     #[test]
     fn reads_the_listen_address_of_a_running_hub() {
-        let line =
-            "/home/u/.fleetd/bin/fleetd hub start --home /h --listen 127.0.0.1:4796 --queue-ttl 60";
+        let line = "/home/u/.fleetd/bin/fleetd hub start --home /h --listen 127.0.0.1:4796";
         assert_eq!(listen_from_args(line).as_deref(), Some("127.0.0.1:4796"));
         assert_eq!(
             listen_from_args("fleetd hub start --listen=[::1]:4790").as_deref(),

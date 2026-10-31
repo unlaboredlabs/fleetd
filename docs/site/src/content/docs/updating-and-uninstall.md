@@ -23,8 +23,7 @@ it in and restarts, in order:
 2. **Every connected machine's node** does the same, all at once, as soon as the hub runs the new build, each once its
    agents finish the step they're on. The node holds every tool call that hasn't started yet and waits for the ones
    running (a build, a test run) to end, so its agents pick up between steps after the restart instead of redoing one.
-   It waits the same way for what else can't carry on through a restart (a live browser, device or desktop session,
-   or a preview). Either way it updates within 10 minutes, whatever still runs: what the restart cuts off carries on
+   It waits the same way for what else can't carry on through a restart (a live browser, device or desktop session). Either way it updates within 10 minutes, whatever still runs: what the restart cuts off carries on
    by itself. Its line says how many agents it waits for and when it updates at the latest, and the sheet's top says
    **Updating when agents finish their step (*n*), by *time***, with **Update now** beside it, which ends the wait. A
    screen whose task has ended doesn't count. Nothing is installed on a machine before the hub runs the new build. A

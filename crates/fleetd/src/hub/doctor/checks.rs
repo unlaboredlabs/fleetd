@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
 use crate::hub::tasks::base;
-use crate::node::runner::{RunnerGuide, guide};
+use crate::node::runner::guide;
 use fleetd_contracts::claude_accounts::{
     ClaudeHubApi, ClaudeSealedOn, ClaudeSubscription, ClaudeTest,
 };
@@ -220,7 +220,7 @@ pub fn repo_ci(without_ci: &[String]) -> Entry {
     )
 }
 
-/// What the hub keeps of its optional setup (docs/design/setup.md): each check below is there only once its step is
+/// What the hub keeps of its optional setup: each check below is there only once its step is
 /// set up, since "not set up" is no problem for a step nothing needs yet.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SetupFacts {
@@ -641,7 +641,7 @@ fn self_update_entry(machine_id: &str, name: &str, info: &RunnerInfo) -> Option<
 
 /// The version verdict as a check: a warning outside the tested versions, which still run.
 fn version_entry(
-    g: &dyn RunnerGuide,
+    g: &crate::node::runner::claude::guide::Guide,
     found: &str,
     entry: impl Fn(DoctorStatus, &str, Option<DoctorFix>) -> Entry,
 ) -> Entry {

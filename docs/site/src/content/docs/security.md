@@ -211,7 +211,7 @@ Nothing comes back after the node or the machine restarts, and there is no root,
 
 - **No sandbox, no Navi.** When bubblewrap is missing or can't start, the Navi doesn't run, and its chat says how to
   fix it ([Navi](/docs/navi)). fleetd never runs a Navi unsandboxed.
-- **Each machine says which it gets.** Machines › Setup checks shows a **Navi sandbox** line per machine: bubblewrap
+- **Each machine says which it gets.** `fleetd doctor` shows a **Navi sandbox** line per machine: bubblewrap
   with abstract sockets scoped; bubblewrap on a kernel too old to scope them (a warning, with the fix); or none, so
   Navis can't run there (with how to install bubblewrap).
 - **What it doesn't cover.** The network is shared, as the site gate needs. On Linux before 6.12, abstract Unix

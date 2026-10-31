@@ -10,7 +10,6 @@ import { FactoryTabs } from "../factory/FactoryTabs";
 const OnboardingScreen = lazy(() => import("../onboarding/OnboardingScreen").then((m) => ({ default: m.OnboardingScreen })));
 const SettingsScreen = lazy(() => import("../settings/SettingsScreen").then((m) => ({ default: m.SettingsScreen })));
 const AddProjectScreen = lazy(() => import("../projects/AddProjectScreen").then((m) => ({ default: m.AddProjectScreen })));
-const MachinesScreen = lazy(() => import("../projects/MachinesScreen").then((m) => ({ default: m.MachinesScreen })));
 const StatusScreen = lazy(() => import("../status/StatusScreen").then((m) => ({ default: m.StatusScreen })));
 const FactoryScreen = lazy(() => import("../factory/FactoryScreen").then((m) => ({ default: m.FactoryScreen })));
 const NaviScreen = lazy(() => import("../navi/NaviScreen").then((m) => ({ default: m.NaviScreen })));
@@ -35,8 +34,6 @@ export const screenPart = (screen: Screen): { key: string; words: string } => {
       return { key: "time", words: "Agent time" };
     case "settings":
       return { key: "settings", words: "Settings" };
-    case "machines":
-      return { key: "machines", words: "Machines" };
     case "projects.add":
       return { key: "projects.add", words: "Add project" };
     case "onboarding":
@@ -76,8 +73,6 @@ function screenFor(screen: Screen): ReactNode {
       return <NaviScreen />;
     case "factory":
       return <FactoryScreen project={screen.project} tabs={<FactoryTabs tab="output" />} />;
-    case "machines":
-      return <MachinesScreen />;
     case "time":
       return <TimeScreen order={screen.orderId ?? undefined} tabs={<FactoryTabs tab="time" />} />;
     case "projects.add":

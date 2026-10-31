@@ -238,9 +238,6 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
     add("Why", input.why, { prose: true });
     add("From", input.ref, { mono: true });
     add("Field", input.target, { mono: true, more: true });
-  } else if (r.previewConfig !== undefined) {
-    wants = "proposes how Try it runs this project";
-    add("Setting", JSON.stringify(r.previewConfig, null, 2), { mono: true, lines: true });
   } else {
     wants = "asks for approval";
   }

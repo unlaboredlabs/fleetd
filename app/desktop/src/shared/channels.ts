@@ -1,5 +1,5 @@
 /** Every IPC channel. The preload exposes only these, and main validates each request against shared/ipc.ts. */
-// Every hub channel takes the hub's id (shared/hubs.ts) first: the app may be paired with several (docs/design/hubs.md).
+// Every hub channel takes the hub's id (shared/hubs.ts) first: the app may be paired with several.
 export const IPC = {
   /** invoke() → HubEntry[]. The hubs this app is paired with, in sidebar order. */
   hubsList: "hubs:list",

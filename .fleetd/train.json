@@ -12,7 +12,6 @@
     "qa (ubuntu-latest, 4/4)"
   ],
   "afterMerge": [
-    "site-external-links",
     "desktop-budgets",
     "rust (macos)",
     "ios sessions",

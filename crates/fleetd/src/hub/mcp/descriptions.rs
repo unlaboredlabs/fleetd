@@ -126,11 +126,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_settings_get",
-        "One project's settings: its title and checkout, keepWorktrees, memoryRefresh, its environment variables (a plain one's value, a secret's fingerprint only), its setup commands, its merge train's checks (train), and from its node, while online, where its worktrees live, the branch new ones start from and the worktrees there now, each marked when it has uncommitted changes.",
+        "One project's settings: its title and checkout, memoryRefresh, its environment variables (a plain one's value, a secret's fingerprint only), its setup commands, and from its node, while online, where its worktrees live, the branch new ones start from and the worktrees there now, each marked when it has uncommitted changes.",
     ),
     (
         "project_settings_set",
-        "Rename a project (title; its folder keeps its name), turn keepWorktrees or memoryRefresh on or off, replace its setup commands, or set which of its repo's checks the merge train waits for (train). keepWorktrees off (the default): a reader's worktree goes when its task finishes and a writer's once its PR merges; on: finished tasks' worktrees stay on the machine. memoryRefresh on (the default): each night with chat or order activity, the lead tidies the project's memory in a session of its own and posts one line of its changes with Undo; off: it doesn't. setup: commands run in order with sh -c in each new worktree, with the project's variables, before its agent starts (install dependencies, generate code), each within timeoutSec; a failure fails the start unless runAnyway; a worktree set up before is not set up again while the commands and the inputs files are unchanged. No commands turns setup off. train: the train waits only for the checks the base branch requires plus fastChecks and the repo's own .fleetd/train.json lists, never for any other; a check outside them that has already failed stops the merge unless it is in afterMerge. Each list is replaced whole; none empties it.",
+        "Rename a project (title; its folder keeps its name), turn memoryRefresh on or off, or replace its setup commands. memoryRefresh on (the default): each night with chat or order activity, the lead tidies the project's memory in a session of its own and posts one line of its changes with Undo; off: it doesn't. setup: commands run in order with sh -c in each new worktree, with the project's variables, before its agent starts (install dependencies, generate code), each within timeoutSec; a failure fails the start unless runAnyway; a worktree set up before is not set up again while the commands and the inputs files are unchanged. No commands turns setup off.",
     ),
     (
         "project_env_set",
@@ -398,15 +398,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "setup_list",
-        "Admin on every machine. The hub admin's setup, the steps fleetd init and the app's Settings › Hub › Setup show: where the hub listens, machines, Claude (required), GitHub (before the first PR) and people (optional). Each step has its why, numbered parts with the values to paste computed for this hub and the provider's pages, the fields for what comes back and where they are saved (place), and its status read from the doctor's checks (ways: one way done is enough): done, todo, look (set up but failing; said and fix say why) or skipped. failing: with look, its check fails rather than warns. requiredLeft: required steps not set up, or failing; agents can't run until none is left.",
+        "Admin on every machine. The hub admin's setup, the steps fleetd init and the app's Settings › Hub › Setup show: where the hub listens, machines, Claude (required), GitHub (before the first PR) and people (optional). Each step has its why, numbered parts with the values to paste computed for this hub and the provider's pages, the fields for what comes back and where they are saved (place), and its status read from the doctor's checks (ways: one way done is enough): done, todo or look (set up but failing; said and fix say why). failing: with look, its check fails rather than warns. requiredLeft: required steps not set up, or failing; agents can't run until none is left.",
     ),
     (
         "setup_test",
         "Admin on every machine. Run one step's checks now and return the step: the hub's checks, and every machine's for machines and claude.",
-    ),
-    (
-        "setup_skip",
-        "Admin on every machine. Put a step that isn't required off for later (skipped: true), or back on the list. A skipped step keeps its place and reads skipped until it is set up.",
     ),
     (
         "orders_board",
@@ -467,10 +463,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "time_retention_set",
         "How many days the hub keeps time spans (1 to 365, default 30). Pruned hourly; daily roll-ups and critical paths stay 400 days. Admin.",
-    ),
-    (
-        "memory_caps_set",
-        "The caps every memory write is held to, in characters: user (user.md), index (each MEMORY.md), topic (each topic file), 1,000 to 100,000 each, and project (a project's files together), 1,000 to 400,000. Defaults 16,000, 16,000, 32,000 and 128,000. A write past a cap is refused; a file already over a lowered one stays as it is. memory_get returns them as caps. Admin on every machine.",
     ),
     (
         "metrics_get",

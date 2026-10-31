@@ -30,7 +30,7 @@ describe("setup steps", () => {
     expect(needWords(step("address").need)).toBe("Required");
     expect(needWords(step("github").need)).toBe("Before the first PR");
     expect(needWords(step("people").need)).toBe("Optional");
-    expect([statusWords("done"), statusWords("look"), statusWords("skipped"), statusWords("todo")]).toEqual(["Done", "Needs a look", "Later", undefined]);
+    expect([statusWords("done"), statusWords("look"), statusWords("todo")]).toEqual(["Done", "Needs a look", undefined]);
   });
 
   it("opens where each step's result is saved: a Hub page, and for Claude and GitHub your own accounts too", () => {

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Settings' Hub group (D211): People, Machines, Every project (Profiles, Tools & skills, Instructions & memory,
 // Prompts), Hub accounts, and Setup while required steps are left; machine roles and caps on Machines; Claude and
-// GitHub on Hub accounts with the way back into the guided setup; and the hub-wide instructions, memory caps, MCP
+// GitHub on Hub accounts with the way back into the guided setup; and the hub-wide instructions, MCP
 // servers, skills and prompts on Every project's pages, its prompts nested under its Prompts in the sidebar and saved
 // hub-wide. A project's pages keep its own: its Prompts never offer a hub-wide save, and its Instructions are a
 // project's.
@@ -192,23 +192,13 @@ it("gathers what reaches every project on Every project's pages, and saves its i
   expect(parts()).toEqual(["hub.mcp", "hub.skills"]);
   window.location.hash = "#/settings/hub/instructions";
   await settle();
-  expect(parts()).toEqual(["hub.instructions", "hub.memory-caps", "hub.shared-memory"]);
+  expect(parts()).toEqual(["hub.instructions", "hub.shared-memory"]);
   expect(host.querySelector("#machine-roles")).toBeNull();
   const text = host.querySelector<HTMLTextAreaElement>("textarea[aria-label='Instructions for every project']");
   if (text === null) throw new Error("no instructions");
   await type(text, "Write tests first.");
   await click(button("Save", host.querySelector("[data-part='hub.instructions']") ?? document));
   expect(sent("prompt_set")).toEqual([expect.objectContaining({ id: "instructions", scope: "global", text: "Write tests first." })]);
-});
-
-it("opens an old Hub settings link on Every project's Tools & skills, and an old hub-wide prompt link on its Prompts", async () => {
-  window.location.hash = "#/admin/hub";
-  await render(admin);
-  expect(host.querySelector("[data-screen='settings.hub.tools']")).not.toBeNull();
-  window.location.hash = "#/admin/hub?prompt=lead.start";
-  await settle();
-  await settle();
-  expect(host.querySelector("[data-screen='settings.hub.prompts']")).not.toBeNull();
 });
 
 it("opens a hub-wide prompt from under Every project's Prompts and saves it hub-wide, with no project to pick", async () => {

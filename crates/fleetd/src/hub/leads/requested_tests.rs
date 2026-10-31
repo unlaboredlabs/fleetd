@@ -45,7 +45,6 @@ impl Lab {
             home: home.path().to_path_buf(),
             listen: Listen::default(),
             url: None,
-            queue_ttl_sec: None,
         };
         let hub = crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock.clone())
             .unwrap();

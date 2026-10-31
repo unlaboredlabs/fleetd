@@ -190,13 +190,13 @@ pub const TRAIN_CHECKS_MAX: usize = 50;
 /// A check as GitHub names it on a commit: a check run's name, such as `test (ubuntu-latest)`, or a status's context.
 pub type CheckName = crate::prim::Text<1, 200>;
 
-/// How the merge train treats the checks of the project's repo. It waits only for its fast set: the checks the base
-/// branch requires, read from its ruleset or branch protection, plus `fastChecks`, each until it reports, however late
-/// it starts. It never waits for any other check; one of those that has already failed when the fast set is green
-/// still stops the merge, unless it is in `afterMerge`. A check the base requires is always in the fast set: GitHub
-/// won't merge without it. With no required check and none added, it waits for every check. After a merge it watches
-/// every check outside the fast set on the merged commit; one that fails there opens a fix order for the project,
-/// once per failure.
+/// How the merge train treats a repo's checks, from its base's `.fleetd/train.json`. It waits only for its fast set:
+/// the checks the base branch requires, read from its ruleset or branch protection, plus `fastChecks`, each until it
+/// reports, however late it starts. It never waits for any other check; one of those that has already failed when the
+/// fast set is green still stops the merge, unless it is in `afterMerge`. A check the base requires is always in the
+/// fast set: GitHub won't merge without it. With no required check and none added, it waits for every check. After a
+/// merge it watches every check outside the fast set on the merged commit; one that fails there opens a fix order for
+/// the project, once per failure.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TrainSettings {
@@ -226,25 +226,6 @@ impl TrainSettings {
     /// Whether a failure of `name`, a check outside the fast set, is left for after the merge.
     pub fn after_merge_only(&self, name: &str) -> bool {
         self.after_merge.iter().any(|a| a.as_str() == name)
-    }
-
-    /// These settings with `other`'s checks added to each list: a repo's `.fleetd/train.json` to its project's.
-    pub fn with(self, other: &TrainSettings) -> TrainSettings {
-        let join =
-            |mine: crate::prim::UniqueList<CheckName, 0, TRAIN_CHECKS_MAX>,
-             theirs: &crate::prim::UniqueList<CheckName, 0, TRAIN_CHECKS_MAX>| {
-                let mut out = mine.into_inner();
-                for c in theirs.iter() {
-                    if !out.contains(c) {
-                        out.push(c.clone());
-                    }
-                }
-                crate::prim::UniqueList::unchecked(out)
-            };
-        TrainSettings {
-            fast_checks: join(self.fast_checks, &other.fast_checks),
-            after_merge: join(self.after_merge, &other.after_merge),
-        }
     }
 }
 

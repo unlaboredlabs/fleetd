@@ -1,5 +1,4 @@
 //! usage_status and usage_resume.
-use super::source::UsageSource;
 use crate::hub::api::{Caller, Hub, Registry, ToolError, readable, require, unknown_machine};
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::mcp::{UsageResumeInput, UsageStatusInput};

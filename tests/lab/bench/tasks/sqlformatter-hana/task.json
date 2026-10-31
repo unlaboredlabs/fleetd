@@ -1,8 +1,0 @@
-{
-  "title": "A new SAP HANA dialect for sql-formatter",
-  "kind": "big real-world feature (open upstream issue)",
-  "codebase": "sql-formatter (MIT), snapshot of 223a6ce; sql-formatter-org/sql-formatter#886",
-  "base": "bench/sqlformatter-hana/base",
-  "baseSha": "1b9c25492d2ae64b77d7587e11e682bdab2087bd",
-  "timeoutMin": 300
-}

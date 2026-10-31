@@ -283,7 +283,6 @@ async fn lab_in(home: tempfile::TempDir, db: Arc<HubDb>, clock: Arc<ManualClock>
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: Some("http://devbox.example.ts.net:4790".into()),
-        queue_ttl_sec: None,
     };
     let hub = crate::hub::serve::build_on(db, config, clock.clone()).unwrap();
     let (ep, fake) = fake_github(clock.clone()).await;

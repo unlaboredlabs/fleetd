@@ -1,4 +1,4 @@
-// This phone's notification key and libsodium's sealed box (docs/design/push.md, D218), in plain JavaScript: tweetnacl
+// This phone's notification key and libsodium's sealed box (D218), in plain JavaScript: tweetnacl
 // for X25519 and XSalsa20-Poly1305, noble's BLAKE2b for the nonce. The hub seals with crypto_box_seal; this is
 // crypto_box_seal_open. The iOS extension does the same in Swift (plugins/notification-service/Sealed.swift).
 import { blake2b } from "@noble/hashes/blake2.js";

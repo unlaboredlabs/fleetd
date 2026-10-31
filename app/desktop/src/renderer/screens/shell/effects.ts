@@ -31,7 +31,7 @@ const screenFor = (target: OpenTarget): Screen => {
     case "chat":
       return { id: "project", project: { machineId: target.machineId, projectId: target.projectId }, message: target.messageId ?? null, ...on };
     case "machines":
-      return { id: "machines", ...on };
+      return { id: "settings", tab: "hub.machines", ...on };
     case "status":
       return { id: "status", ...on };
     case "notifications":

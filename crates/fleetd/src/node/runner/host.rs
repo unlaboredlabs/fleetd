@@ -333,7 +333,7 @@ fn at_socket<T>(dir: &Path, f: impl FnOnce(&Path) -> std::io::Result<T>) -> std:
     f(&short)
 }
 
-/// `fleetd session-host <dir> <session id> [--transcript <file>] -- <program> <args…>`: starts the session's claude
+/// `fleetd session-host <dir> <session id> -- <program> <args…>`: starts the session's claude
 /// with this process's environment and working directory, registers in `<dir>`, and serves it until it's done.
 pub fn main(argv: &[String]) -> ExitCode {
     if let [stop_all, hosts] = argv
@@ -342,9 +342,7 @@ pub fn main(argv: &[String]) -> ExitCode {
         return stop_all_main(Path::new(hosts));
     }
     let Some(split) = argv.iter().position(|a| a == "--") else {
-        eprintln!(
-            "usage: fleetd {COMMAND} <dir> <session id> [--transcript <file>] -- <program> <args…>"
-        );
+        eprintln!("usage: fleetd {COMMAND} <dir> <session id> -- <program> <args…>");
         return ExitCode::from(2);
     };
     let (own, command) = (&argv[..split], &argv[split + 1..]);
@@ -353,11 +351,6 @@ pub fn main(argv: &[String]) -> ExitCode {
         eprintln!("fleetd {COMMAND}: a dir, a session id and a program are needed");
         return ExitCode::from(2);
     };
-    let transcript = own
-        .iter()
-        .position(|a| a == "--transcript")
-        .and_then(|i| own.get(i + 1))
-        .map(PathBuf::from);
     let _ = tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_ansi(false)
@@ -406,7 +399,6 @@ pub fn main(argv: &[String]) -> ExitCode {
             command[1..].to_vec(),
             session,
             marker.clone(),
-            transcript,
         ) {
             Ok(handle) => handle,
             Err(e) => return refuse(e),
@@ -444,7 +436,6 @@ pub struct Launch<'a> {
     pub exe: &'a Path,
     pub dir: &'a Path,
     pub session_id: &'a str,
-    pub transcript: Option<&'a Path>,
     pub program: &'a Path,
     pub args: Vec<String>,
     pub cwd: &'a Path,
@@ -476,9 +467,6 @@ pub fn launch(launch: Launch<'_>) -> Result<SessionHandle, LaunchError> {
         launch.dir.display().to_string(),
         launch.session_id.to_owned(),
     ];
-    if let Some(transcript) = launch.transcript {
-        args.extend(["--transcript".into(), transcript.display().to_string()]);
-    }
     args.push("--".into());
     args.push(launch.program.display().to_string());
     args.extend(launch.args);

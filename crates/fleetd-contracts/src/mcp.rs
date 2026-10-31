@@ -7,7 +7,7 @@ use serde_with::skip_serializing_none;
 
 use crate::auth::{AgentKeyInfo, Role};
 use crate::chat::{ChatMessageId, ChatRequestId};
-use crate::checklist::{CHECKLIST_MAX, TodoEdit, TodoItem};
+use crate::checklist::{CHECKLIST_MAX, TodoItem};
 use crate::doctor::{DoctorCheck, DoctorCheckId};
 use crate::effort::{
     Effort, ModelName, ModelSource, PROFILES_MAX, Profile, ProfileId, ProfileModel, ProfileName,
@@ -933,9 +933,8 @@ output!(DoctorFixOutput {
     check: DoctorCheck,
 });
 
-// setup_list: the hub admin's setup steps (docs/design/setup.md), each with its status read from the doctor's latest
-// checks, and how many required ones are left. setup_test runs one step's checks now; setup_skip puts a step that
-// isn't required off for later, or back.
+// setup_list: the hub admin's setup steps, each with its status read from the doctor's latest
+// checks, and how many required ones are left. setup_test runs one step's checks now.
 input!(SetupListInput {});
 output!(SetupListOutput {
     steps: Vec<crate::setup::HubSetupStep>,
@@ -947,14 +946,6 @@ input!(SetupTestInput {
 });
 output!(SetupTestOutput {
     /// The step, read from its checks as they are now.
-    step: crate::setup::HubSetupStep,
-});
-input!(SetupSkipInput {
-    step: crate::setup::SetupStepId,
-    /// False: back on the list as to do.
-    skipped: bool,
-});
-output!(SetupSkipOutput {
     step: crate::setup::HubSetupStep,
 });
 
@@ -1336,7 +1327,7 @@ output!(NaviSigninsForgetOutput { ok: True });
 input!(ProjectSettingsGetInput {
     machine_id: MachineId,
     project_id: ProjectId,
-    /// The repo whose setup and preview to read (its own, else the project's); absent: the project's.
+    /// The repo whose setup to read (its own, else the project's); absent: the project's.
     repo: Option<crate::repos::RepoName>,
 });
 #[skip_serializing_none]
@@ -1347,11 +1338,8 @@ pub struct ProjectSettings {
     pub project_id: ProjectId,
     pub title: String,
     pub workspace_root: String,
-    /// The repo `setup` and `preview` are for; absent when they are the project's, and from older hubs.
+    /// The repo `setup` is for; absent when it is the project's, and from older hubs.
     pub repo: Option<crate::repos::RepoName>,
-    /// True: a finished task's worktree stays on the machine. False (the default): a reader's goes when it finishes
-    /// and a writer's once its PR merges.
-    pub keep_worktrees: bool,
     /// True (the default): each night the lead tidies the project's memory, with a line in the chat to undo it.
     /// Absent from older hubs.
     #[serde(default = "default_true")]
@@ -1360,11 +1348,6 @@ pub struct ProjectSettings {
     pub env: Vec<crate::project_settings::ProjectEnvVar>,
     /// What runs in each new worktree before its agent starts; no commands when none are set.
     pub setup: crate::project_settings::WorktreeSetup,
-    /// How the merge train treats the checks of the project's repo; none set by default.
-    #[serde(default)]
-    pub train: crate::project_settings::TrainSettings,
-    /// How to run a preview someone asks for (Try it); absent when none is set, and from older hubs.
-    pub preview: Option<crate::preview::PreviewConfig>,
     /// From the node, now: absent while it is offline or too old to say.
     pub worktrees: Option<crate::project_settings::ProjectWorktrees>,
     /// Why `worktrees` is absent.
@@ -1378,34 +1361,20 @@ input!(
     ProjectSettingsSetInput {
         machine_id: MachineId,
         project_id: ProjectId,
-        /// The repo whose own setup and preview to set, an empty one giving it the project's; absent: the
-        /// project's. Title, keepWorktrees and train are the project's either way.
+        /// The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title is the
+        /// project's either way.
         repo: Option<crate::repos::RepoName>,
         /// The project's name in fleetd; its folder keeps its own.
         title: Option<Line<1, 200>>,
-        keep_worktrees: Option<bool>,
         /// Turns the nightly memory refresh on or off for the project.
         memory_refresh: Option<bool>,
         /// Replaces the project's setup commands and their settings; no commands turns setup off.
         setup: Option<crate::project_settings::WorktreeSetup>,
-        /// Replaces how the merge train treats the repo's checks: the checks it also waits for, and those left for
-        /// after the merge.
-        train: Option<crate::project_settings::TrainSettings>,
-        /// Replaces how a preview runs; one with no target turns Try it off for the project.
-        preview: Option<crate::preview::PreviewConfig>,
     }
 );
 checked!(ProjectSettingsSetInput, |input| {
-    if input.title.is_none()
-        && input.keep_worktrees.is_none()
-        && input.memory_refresh.is_none()
-        && input.setup.is_none()
-        && input.train.is_none()
-        && input.preview.is_none()
-    {
-        return Err(
-            "expected title, keepWorktrees, memoryRefresh, setup, train, preview or more".into(),
-        );
+    if input.title.is_none() && input.memory_refresh.is_none() && input.setup.is_none() {
+        return Err("expected title, memoryRefresh, setup or more".into());
     }
     Ok(())
 });
@@ -1690,16 +1659,6 @@ input!(MemorySharedSetInput {
 });
 output!(MemorySharedSetOutput { file: MemoryFile });
 
-// memory_caps_set: the caps every memory write is held to, hub-wide. Admin on every machine.
-input!(MemoryCapsSetInput {
-    #[serde(flatten)]
-    caps: MemoryCaps,
-});
-output!(MemoryCapsSetOutput {
-    #[serde(flatten)]
-    caps: MemoryCaps,
-});
-
 // automation_list, automation_create, automation_update, automation_pause, automation_rotate, automation_delete,
 // automation_run, automation_runs: a project's automations (Settings > Automations). A webhook URL holds its secret and
 // is in the output only when it is made (create or update with webhook true) or rotated; the hub keeps a hash of it.
@@ -1807,18 +1766,6 @@ input!(ChecklistRemoveInput {
 output!(ChecklistRemoveOutput {
     project_ref: ProjectRef,
     /// The list after it, in the lead's order.
-    items: List<TodoItem, 0, CHECKLIST_MAX>,
-    updated_at: Option<Timestamp>,
-});
-
-// checklist_edit: a person ticks, reopens, edits, adds or removes items on a project's checklist. Human keys only (the
-// handler checks); the change records who made it.
-input!(ChecklistEditInput {
-    project_ref: ProjectRef,
-    items: List<TodoEdit, 1, CHECKLIST_MAX>,
-});
-output!(ChecklistEditOutput {
-    project_ref: ProjectRef,
     items: List<TodoItem, 0, CHECKLIST_MAX>,
     updated_at: Option<Timestamp>,
 });
@@ -2071,51 +2018,6 @@ fn one_target(host: bool, local: Option<bool>) -> Result<(), String> {
         _ => Err("expected host, or local: true for the hub's own machine".into()),
     }
 }
-
-// preview_start, preview_end, previews_list, preview_feedback: Try it (preview.rs, docs/design/try-it.md). Nothing
-// runs unless a person asks: preview_start takes a person's key (admin or operate; a read key only opens a running
-// one), and a lead starts one only with its own lead call, in a turn answering the person.
-input!(PreviewStartInput {
-    project_ref: ProjectRef,
-    of: crate::preview::PreviewOf,
-    target: Option<crate::preview::PreviewTarget>,
-});
-output!(PreviewStartOutput {
-    preview: crate::preview::Preview,
-});
-input!(PreviewEndInput {
-    preview_id: crate::preview::PreviewId,
-});
-output!(PreviewEndOutput {
-    preview: crate::preview::Preview,
-});
-input!(PreviewsListInput {
-    project_ref: ProjectRef,
-    /// Only those of this PR or order.
-    of: Option<crate::preview::PreviewOf>,
-});
-output!(PreviewsListOutput {
-    /// Running ones first, then the newest that ended.
-    previews: List<crate::preview::Preview, 0, 200>,
-    /// Agents' suggestions to try a PR, for those with no preview yet.
-    suggestions: List<crate::preview::PreviewSuggestion, 0, 200>,
-    /// The caller's key may start previews on this project: a human key with admin or operate on its machine (D162).
-    /// False: it only opens running ones. Absent from older hubs: the app offers Try it and shows a refusal.
-    can_start: Option<bool>,
-});
-input!(PreviewFeedbackInput {
-    preview_id: crate::preview::PreviewId,
-    pins: List<crate::preview::PreviewPin, 1, 20>,
-    /// The screenshot with its pins drawn, and any other file, from attachment_put.
-    #[serde(default)]
-    files: List<AttachmentId, 0, 4>,
-    /// Add the last this-many seconds of the preview's session recording; absent or 0: none.
-    clip_seconds: Option<Int<0, 60>>,
-});
-output!(PreviewFeedbackOutput {
-    /// Where it went, in words: "#14's writer, at its next step", "the lead, who decides how it's fixed".
-    delivered_to: Line<1, 300>,
-});
 
 // skills_list: Settings > Skills and the composer's `$`. The hub's global skills; with projectRef also the project's
 // and its repo's (.agents/skills, .claude/skills), each marked when a skill of the same name outranks it.
@@ -2471,7 +2373,7 @@ output!(DeviceRevokeOutput {
     device: AgentKeyInfo,
 });
 
-// push_device_register: a phone gets its person's notifications, sealed to `publicKey` (docs/design/push.md). The
+// push_device_register: a phone gets its person's notifications, sealed to `publicKey`. The
 // same token again updates that device and moves it to the caller's person: a token is one phone's.
 input!(PushDeviceRegisterInput {
     platform: crate::push::PushPlatform,
@@ -3432,7 +3334,6 @@ tools! {
     // Admin on every machine (the handlers check): the hub's own setup.
     setup_list => SetupList, Admin, SetupListInput, SetupListOutput;
     setup_test => SetupTest, Admin, SetupTestInput, SetupTestOutput;
-    setup_skip => SetupSkip, Admin, SetupSkipInput, SetupSkipOutput;
     attachment_part => AttachmentPart, Operate, AttachmentPartInput, AttachmentPartOutput;
     attachment_put => AttachmentPut, Operate, AttachmentPutInput, AttachmentPutOutput;
     attachment_get => AttachmentGet, Read, AttachmentGetInput, AttachmentGetOutput;
@@ -3449,7 +3350,6 @@ tools! {
     memory_set => MemorySet, Operate, MemorySetInput, MemorySetOutput;
     memory_undo => MemoryUndo, Operate, MemoryUndoInput, MemoryUndoOutput;
     memory_import => MemoryImport, Operate, MemoryImportInput, MemoryImportOutput;
-    memory_caps_set => MemoryCapsSet, Admin, MemoryCapsSetInput, MemoryCapsSetOutput;
     // An owner's or admin's device (the handlers check).
     memory_shared_get => MemorySharedGet, Admin, MemorySharedGetInput, MemorySharedGetOutput;
     memory_shared_set => MemorySharedSet, Admin, MemorySharedSetInput, MemorySharedSetOutput;
@@ -3466,8 +3366,6 @@ tools! {
     navi_asks => NaviAsks, Read, NaviAsksInput, NaviAsksOutput;
     // Human keys only (the handler checks).
     checklist_remove => ChecklistRemove, Operate, ChecklistRemoveInput, ChecklistRemoveOutput;
-    // Human keys only (the handler checks).
-    checklist_edit => ChecklistEdit, Operate, ChecklistEditInput, ChecklistEditOutput;
     browser_sessions => BrowserSessions, Read, BrowserSessionsInput, BrowserSessionsOutput;
     browser_recording_get => BrowserRecordingGet, Read, BrowserRecordingGetInput, BrowserRecordingGetOutput;
     // Human keys only (the handler checks).
@@ -3486,11 +3384,6 @@ tools! {
     machine_remove => MachineRemove, Admin, MachineRemoveInput, MachineRemoveOutput;
     machine_join => MachineJoin, Admin, MachineJoinInput, MachineJoinOutput;
     machine_claude_login => MachineClaudeLogin, Admin, MachineClaudeLoginInput, MachineClaudeLoginOutput;
-    // Human keys only (the handlers check), except previews_list.
-    preview_start => PreviewStart, Operate, PreviewStartInput, PreviewStartOutput;
-    preview_end => PreviewEnd, Operate, PreviewEndInput, PreviewEndOutput;
-    previews_list => PreviewsList, Read, PreviewsListInput, PreviewsListOutput;
-    preview_feedback => PreviewFeedback, Operate, PreviewFeedbackInput, PreviewFeedbackOutput;
     skills_list => SkillsList, Read, SkillsListInput, SkillsListOutput;
     skill_get => SkillGet, Read, SkillGetInput, SkillGetOutput;
     // Human keys only (the handlers check): a lead installs with its own skill_install.
@@ -3639,7 +3532,8 @@ mod tests {
         assert_eq!(get.repo.as_ref().map(|r| r.as_str()), Some("api"));
         in_repo["repo"] = json!("Api");
         assert!(decode::<ProjectSettingsGetInput>(in_repo).is_err());
-        let set = json!({ "machineId": "devbox", "projectId": "p1", "repo": "api", "keepWorktrees": true });
+        let set =
+            json!({ "machineId": "devbox", "projectId": "p1", "repo": "api", "title": "API" });
         let set: ProjectSettingsSetInput = decode(set).unwrap();
         assert_eq!(set.repo.as_ref().map(|r| r.as_str()), Some("api"));
         // A repo alone sets nothing.

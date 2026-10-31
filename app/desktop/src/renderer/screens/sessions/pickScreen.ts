@@ -80,12 +80,6 @@ export const prChoices = (rows: readonly PrRow[]): PrChoice[] =>
     .filter((r) => r.state === "open" || r.state === "draft")
     .map((r) => ({ value: `${r.repo}#${String(r.number)}`, label: `#${String(r.number)} ${r.title}`, repo: r.repo, number: r.number }));
 
-/**
- * Whether the picker offers a PR for `kind`: a phone screen takes its build; a project's browser opens its Try it
- * preview (a Navi's browser is for its sign-ins, and a Navi has no PRs).
- */
-export const takesPr = (kind: ScreenKind, navi: boolean): boolean => takesBuild(kind) || (kind === "browser" && !navi);
-
 /** Where an open with a PR's build is, in words, while the picker follows it. */
 export const openingLine = (stage: string | undefined, pr: number, machine: string): string => {
   switch (stage) {

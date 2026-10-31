@@ -2,7 +2,6 @@
 // starters that fill the box (never send) so the first message is yours to edit.
 import { Button, Text } from "../../ui";
 import { projectKey } from "../../src/data/store";
-import { SetupChecklist } from "../onboarding";
 import { runCommand } from "../palette";
 import { useDraft } from "./drafts";
 import type { ProjectRef } from "./slots";
@@ -27,7 +26,6 @@ export function EmptyChat({ project, title, navi = false }: { project: ProjectRe
   return (
     <div className={s.empty} data-entry="empty">
       <div className={s.emptyBody}>
-        {navi ? null : <SetupChecklist />}
         <Text as="h2" size="lg" strong>
           {navi ? (title === "" ? "What can I do for you?" : `What can ${title} do for you?`) : title === "" ? "What should the lead do?" : `What should the lead do in ${title}?`}
         </Text>

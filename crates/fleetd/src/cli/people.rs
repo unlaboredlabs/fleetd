@@ -15,18 +15,18 @@ use crate::hub::people::People;
 use crate::hub::people::tools::{announce, change};
 use crate::hub::store::{EventLog, HubDb};
 
-pub const PEOPLE_USAGE: &str = r#"  invite --name <name> [--role <member|admin|owner>] [--home <dir>]
-  invite --person <personId> [--home <dir>]
+pub const PEOPLE_USAGE: &str = r#"  invite --name <name> [--role <member|admin|owner>]
+  invite --person <personId>
              invite someone to this hub: prints a link and a code (single use, 7 days) that pair
              their app as a device of a new person, a member unless --role; with --person, one
              more device of someone already here
-  invite list [--home <dir>]
-  invite revoke <inviteId> [--home <dir>]
+  invite list
+  invite revoke <inviteId>
              takes back an open invite; someone it invited who never joined goes with it
-  people [--home <dir>]
+  people
              the hub's people, with their role and devices
-  people role <personId> <owner|admin|member> [--home <dir>]
-  people remove <personId> [--home <dir>]
+  people role <personId> <owner|admin|member>
+  people remove <personId>
              signs out all their devices; one device: fleetd hub key revoke <keyId>. The hub
              always keeps an owner
 "#;
@@ -95,10 +95,14 @@ fn parsed(argv: &[String], options: &[(&str, Kind)]) -> Result<args::Parsed, Cli
 
 /// `fleetd invite …`.
 pub fn invite_command(argv: &[String]) -> CliResult {
+    invite_at(argv, None)
+}
+
+/// [`invite_command`] on the hub at `home`, else this machine's (`fleetd init`'s, and tests').
+pub(crate) fn invite_at(argv: &[String], home: Option<&str>) -> CliResult {
     let v = match parsed(
         argv,
         &[
-            ("home", Kind::Str),
             ("name", Kind::Str),
             ("role", Kind::Str),
             ("person", Kind::Str),
@@ -108,16 +112,16 @@ pub fn invite_command(argv: &[String]) -> CliResult {
         Err(out) => return out,
     };
     let result = match v.positionals.iter().map(String::as_str).collect::<Vec<_>>()[..] {
-        [] => invite(&v),
-        ["list"] => open(v.str("home")).and_then(|o| list_invites(&o)),
-        ["revoke", id] => open(v.str("home")).and_then(|o| revoke_invite(&o, id)),
+        [] => invite(&v, home),
+        ["list"] => open(home).and_then(|o| list_invites(&o)),
+        ["revoke", id] => open(home).and_then(|o| revoke_invite(&o, id)),
         _ => return usage("expected invite, invite list or invite revoke <inviteId>"),
     };
     result.map_or_else(|e| fail(&e), ok)
 }
 
-fn invite(v: &args::Parsed) -> Result<String, String> {
-    let o = open(v.str("home"))?;
+fn invite(v: &args::Parsed, home: Option<&str>) -> Result<String, String> {
+    let o = open(home)?;
     let people = o.people();
     let person = match v.str("person") {
         Some(id) => {
@@ -239,11 +243,16 @@ fn revoke_invite(o: &Open, id: &str) -> Result<String, String> {
 
 /// `fleetd people …`.
 pub fn people_command(argv: &[String]) -> CliResult {
-    let v = match parsed(argv, &[("home", Kind::Str)]) {
+    people_at(argv, None)
+}
+
+/// [`people_command`] on the hub at `home`, else this machine's.
+fn people_at(argv: &[String], home: Option<&str>) -> CliResult {
+    let v = match parsed(argv, &[]) {
         Ok(v) => v,
         Err(out) => return out,
     };
-    let o = match open(v.str("home")) {
+    let o = match open(home) {
         Ok(o) => o,
         Err(e) => return fail(&e),
     };
@@ -369,7 +378,7 @@ mod tests {
     fn invite_makes_a_named_person_with_a_link_and_people_lists_them() {
         let home = tempfile::tempdir().unwrap();
         let h = home.path().to_str().unwrap();
-        let nameless = invite_command(&argv(&["--home", h]));
+        let nameless = invite_at(&argv(&[]), Some(h));
         assert_eq!(nameless.code, 1);
         assert!(
             nameless.stderr.contains("needs a name"),
@@ -377,11 +386,11 @@ mod tests {
             nameless.stderr
         );
         assert_eq!(
-            invite_command(&argv(&["--home", h, "--name", "Alice", "--role", "boss"])).code,
+            invite_at(&argv(&["--name", "Alice", "--role", "boss"]), Some(h)).code,
             1
         );
 
-        let out = invite_command(&argv(&["--home", h, "--name", "Alice"]));
+        let out = invite_at(&argv(&["--name", "Alice"]), Some(h));
         assert_eq!(out.code, 0, "{}", out.stderr);
         assert!(
             out.stdout.starts_with("Invited Alice (p_"),
@@ -395,10 +404,10 @@ mod tests {
             out.stdout
         );
 
-        let open = invite_command(&argv(&["list", "--home", h]));
+        let open = invite_at(&argv(&["list"]), Some(h));
         assert!(open.stdout.contains("Alice"), "{}", open.stdout);
 
-        let people = people_command(&argv(&["--home", h]));
+        let people = people_at(&argv(&[]), Some(h));
         assert_eq!(people.code, 0, "{}", people.stderr);
         let lines: Vec<&str> = people
             .stdout
@@ -414,7 +423,7 @@ mod tests {
 
         // The hub's only owner stays.
         let owner = lines[0].split_whitespace().next().unwrap();
-        let out = people_command(&argv(&["remove", owner, "--home", h]));
+        let out = people_at(&argv(&["remove", owner]), Some(h));
         assert_eq!(out.code, 1);
         assert!(out.stderr.contains("only owner"), "{}", out.stderr);
     }

@@ -24,9 +24,8 @@ const machinesSource = (layer: DataLayer): Source => ({
       title: m.name,
       detail: machineParts(m, live, now).map((p) => p.text).join(" · ") || m.status,
       group: "machines",
-      keywords: m.tags,
       run: () => {
-        window.location.hash = "#/machines";
+        window.location.hash = `#/settings/hub/machines/${m.machineId}`;
       },
     }));
   },

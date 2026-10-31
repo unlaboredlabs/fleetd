@@ -10,8 +10,8 @@
 // A run goes on in the hub when the page closes; opening it again shows the run still going or the last one that
 // failed. Every step is a machine_add.step event, which reads machine_add_status again.
 //
-// One component with no page around it, so Settings › Hub › Machines and the hub's first-run setup (docs/design,
-// its Machines step) show the same flow. Mount it only where the person is an owner or admin.
+// One component with no page around it, so Settings › Hub › Machines and the hub's first-run setup
+// show the same flow. Mount it only where the person is an owner or admin.
 import { useEffect, useState, type ReactNode } from "react";
 import type { MachineAddRun, MachineHost, MachineJoinOutput, SetupStep } from "../../../shared/contracts";
 import type { JoinHere, ThisComputer } from "../../../shared/joinHere";

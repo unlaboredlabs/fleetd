@@ -53,7 +53,7 @@ use fleetd_contracts::sessions::{
     SessionOutput, SessionResult, SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent,
     ThreadEventFrame, ThreadItem, WorktreeBase, WorktreeSource,
 };
-use fleetd_contracts::steer::{SteerReceipt, SteerTag};
+use fleetd_contracts::steer::SteerTag;
 use futures_util::StreamExt;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -85,8 +85,8 @@ const CLAUDE_TEST_TIMEOUT: Duration = Duration::from_secs(100);
 const ONEPASSWORD_TEST_TIMEOUT: Duration = Duration::from_secs(230);
 /// Forgetting a Navi's sign-ins: the node waits up to 20 s for the browser on its profile to close, then deletes it.
 const SIGNINS_TIMEOUT: Duration = Duration::from_secs(30);
-/// The node first stops the project's claude processes and waits up to 12 s for them to exit, then up to 10 s for its
-/// previews to end, removes its worktrees, and forgets a Navi's sign-ins ([`SIGNINS_TIMEOUT`]).
+/// The node first stops the project's claude processes and waits up to 12 s for them to exit, then removes its
+/// worktrees, and forgets a Navi's sign-ins ([`SIGNINS_TIMEOUT`]).
 const REMOVE_TIMEOUT: Duration = Duration::from_secs(70);
 /// The node's stop waits up to 25 s for claude to exit (its kill ladder, then a SIGKILL).
 const STOP_TIMEOUT: Duration = Duration::from_secs(40);
@@ -280,8 +280,6 @@ pub struct ThreadChanges {
     pub worktree_path: Option<String>,
     /// Repo-relative paths the session changed against its base (committed and not), sorted and unique.
     pub paths: Vec<String>,
-    /// Always empty with the native runner; the tasks area finds a PR in the thread's command output instead.
-    pub pull_request_urls: Vec<String>,
 }
 
 /// A followed thread's live lane values (see `activity`).
@@ -371,11 +369,6 @@ pub type PrSink = Arc<dyn Fn(&ThreadRef) + Send + Sync>;
 /// Told of each skill a session ran with the Skill tool, by the name it ran (the skills area).
 pub type SkillSink = Arc<dyn Fn(&ThreadRef, &str) + Send + Sync>;
 
-/// Takes a node's steer receipts, in stream order (replayed after a link drop, so a receipt may come twice).
-pub trait SteerSink: Send + Sync {
-    fn receipt(&self, machine_id: &MachineId, receipt: &SteerReceipt);
-}
-
 pub struct Executors {
     store: Arc<HubStore>,
     events: Arc<EventLog>,
@@ -406,8 +399,9 @@ pub struct Executors {
     skills_sent: Mutex<HashMap<String, (ProjectId, [u8; 32])>>,
     /// Running clones by add id: where their `clone_progress` frames go.
     clones: repos::CloneWatchers,
-    /// Where a node's steer receipts go (the steer area).
-    steer_sink: Mutex<Option<Arc<dyn SteerSink>>>,
+    /// The hub whose steers take a node's receipts, in stream order (replayed after a link drop, so a receipt may
+    /// come twice). Set once the hub exists.
+    steer_hub: std::sync::OnceLock<std::sync::Weak<crate::hub::api::Hub>>,
     /// Told of each finished command whose output names a GitHub PR (the train).
     pr_sink: std::sync::OnceLock<PrSink>,
     /// Told of each skill a session ran (the skills area's last use).
@@ -590,7 +584,7 @@ impl Executors {
             clock,
             machines: Mutex::default(),
             live: Mutex::default(),
-            steer_sink: Mutex::default(),
+            steer_hub: std::sync::OnceLock::new(),
             pr_sink: std::sync::OnceLock::new(),
             skill_sink: std::sync::OnceLock::new(),
             runners: Mutex::default(),
@@ -609,8 +603,8 @@ impl Executors {
         })
     }
 
-    pub fn set_steer_sink(&self, sink: Arc<dyn SteerSink>) {
-        *self.steer_sink.lock().unwrap() = Some(sink);
+    pub fn set_steer_hub(&self, hub: std::sync::Weak<crate::hub::api::Hub>) {
+        let _ = self.steer_hub.set(hub);
     }
 
     pub fn set_pr_sink(&self, sink: PrSink) {
@@ -1203,11 +1197,10 @@ impl Executors {
     ) {
         self.follow_active(machine_id, event);
         self.flag_refused(machine_id, event);
-        if let MachineEvent::Steer(receipt) = event {
-            let sink = self.steer_sink.lock().unwrap().clone();
-            if let Some(sink) = sink {
-                sink.receipt(machine_id, receipt);
-            }
+        if let MachineEvent::Steer(receipt) = event
+            && let Some(hub) = self.steer_hub.get().and_then(std::sync::Weak::upgrade)
+        {
+            crate::hub::steer::on_receipt(&hub, machine_id, receipt);
         }
         let ids: Vec<String> = match event {
             MachineEvent::Snapshot { sessions, .. } => {
@@ -2893,7 +2886,6 @@ impl Executors {
                 branch: c.branch,
                 worktree_path: c.worktree_path,
                 paths: c.paths,
-                pull_request_urls: vec![],
             }),
             _ => Err(failed(&r.machine_id, op, "the node sent no changes")),
         }

@@ -72,7 +72,6 @@ pub struct LinkSettings {
     pub hub: String,
     pub machine_id: String,
     pub name: String,
-    pub tags: Vec<String>,
     pub node_version: String,
 }
 
@@ -97,8 +96,6 @@ pub struct RunNodeOptions {
     /// Directories `cmd_check` and approved commands may run in (and below), and secret sinks may be written in.
     pub cmd_roots: Vec<String>,
     pub secrets: Option<NodeSecrets>,
-    /// Previews, when this machine runs them.
-    pub previews: Option<Arc<crate::node::preview::Previews>>,
     /// The node's sessions (browser, android, desktop), when this machine runs any: its agents' own, and those the
     /// hub places here for agents elsewhere. Live view and takeover reach them over the link.
     pub sessions: Option<Arc<crate::node::device::Router>>,
@@ -115,7 +112,6 @@ struct Shared {
     lead_calls: LeadRelay,
     cmd_roots: Vec<String>,
     secrets: Option<NodeSecrets>,
-    previews: Option<Arc<crate::node::preview::Previews>>,
     sessions: Option<Arc<crate::node::device::Router>>,
     hosted: crate::node::session_route::Hosted,
 }
@@ -144,7 +140,6 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
         lead_calls: options.lead_calls,
         cmd_roots: options.cmd_roots,
         secrets: options.secrets,
-        previews: options.previews,
         sessions: options.sessions,
         hosted: options.hosted,
     });
@@ -200,8 +195,6 @@ fn tag(frame: &HubToNode) -> &'static str {
         HubToNode::BrowserInput(_) => "browser_input",
         HubToNode::BrowserControl(_) => "browser_control",
         HubToNode::SessionHost(_) => "session_host",
-        HubToNode::PreviewRun(_) => "preview_run",
-        HubToNode::PreviewStop(_) => "preview_stop",
         HubToNode::RelayDial(_) => "relay_dial",
         HubToNode::SessionStep(_) => "session_step",
         HubToNode::SessionEnd(_) => "session_end",
@@ -356,7 +349,8 @@ async fn run_link_once(
     send(NodeToHub::Hello(NodeHello {
         machine_id: MachineId::unchecked(shared.settings.machine_id.clone()),
         name: shared.settings.name.clone(),
-        tags: shared.settings.tags.clone(),
+        // Tags are gone; an older hub still reads the list.
+        tags: Vec::new(),
         node_version: shared.settings.node_version.clone(),
         protocol: ProtocolVersion::CURRENT,
         pub_key: Text::unchecked(shared.identity.pub_key()),
@@ -410,12 +404,6 @@ async fn run_link_once(
                 .sessions
                 .as_ref()
                 .map(|_| fleetd_contracts::node_link::CAP_SESSION_HOST.to_owned()),
-        )
-        .chain(
-            shared
-                .previews
-                .as_ref()
-                .map(|_| fleetd_contracts::node_link::CAP_PREVIEWS.to_owned()),
         )
         .chain(super::device::capabilities(&shared.node_sessions.home()))
         .chain(super::device::ios::capabilities(
@@ -484,9 +472,6 @@ async fn run_link_once(
     }
     let _attached = shared.lead_calls.attach(tx.clone());
     let _sessions_attached = shared.node_sessions.attach(tx.clone());
-    if let Some(previews) = &shared.previews {
-        previews.attach(tx.clone());
-    }
 
     loop {
         while tasks.try_join_next().is_some() {}
@@ -611,36 +596,6 @@ async fn run_link_once(
             HubToNode::SpansAck(ack) => shared
                 .node_sessions
                 .spans_acked(ack.upto, ack.rewind == Some(true)),
-            // Only to nodes listing CAP_PREVIEWS: a run is taken at once and reports as it goes.
-            // Off the link's loop: taking a run checks the hub's names with git.
-            HubToNode::PreviewRun(run) => {
-                let tx = tx.clone();
-                match &shared.previews {
-                    // Known here, on the loop, so a stop right behind it finds it; the rest runs spawned.
-                    Some(previews) => {
-                        let taking = previews.run(run);
-                        tokio::spawn(async move {
-                            let result = taking.await;
-                            let _ = tx.send(to_json(&NodeToHub::PreviewRunResult(result)));
-                        });
-                    }
-                    None => {
-                        let result = fleetd_contracts::preview::PreviewRunResult {
-                            id: run.id,
-                            error: Some(fleetd_contracts::mcp::McpToolError::new(
-                                fleetd_contracts::mcp::ErrorCode::Invalid,
-                                "this machine runs no previews",
-                            )),
-                        };
-                        let _ = tx.send(to_json(&NodeToHub::PreviewRunResult(result)));
-                    }
-                }
-            }
-            HubToNode::PreviewStop(stop) => {
-                if let Some(previews) = &shared.previews {
-                    previews.stop(stop);
-                }
-            }
             // Only to nodes listing CAP_SESSION_END: the session's task ended, and that screen goes with it.
             HubToNode::SessionEnd(end) => {
                 tracing::info!(session = %end.session_id, thread = %end.thread_id, "the hub ended a screen whose task ended");

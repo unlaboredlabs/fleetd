@@ -39,7 +39,7 @@ export const appUpdate = (): UpdatesState | null => state;
 
 export const useUpdatesOpen = (): boolean => useSyncExternalStore(subscribe, () => open);
 
-/** Which hub's sheet opens: each hub's updates are its own (docs/design/hubs.md); null, the screen's hub. */
+/** Which hub's sheet opens: each hub's updates are its own; null, the screen's hub. */
 let hub: string | null = null;
 
 export const useUpdatesHub = (): string | null => useSyncExternalStore(subscribe, () => hub);

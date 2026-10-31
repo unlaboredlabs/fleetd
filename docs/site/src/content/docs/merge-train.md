@@ -39,12 +39,11 @@ To keep a PR off the train, [hold it](#hold).
 The train waits only for the repo's fast set, the same way in every repo:
 
 - the checks the base branch requires, read from its ruleset or branch protection;
-- the checks you add in the project's settings;
 - the checks the repo lists in `.fleetd/train.json` on the base branch.
 
 Each check of the fast set is waited for until it reports, however late its workflow starts; a required one that never
-reports times out by name. One you or the repo added that still hasn't run 5 minutes after every other check finished
-is named then: its job was most likely renamed or removed, so fix the name in the list.
+reports times out by name. One the repo added that still hasn't run 5 minutes after every other check finished
+is named then: its job was most likely renamed or removed, so fix the name in the file.
 
 The train expects only the jobs the tree under test defines. When a PR removes or renames a job that the base's
 workflows still have, the train doesn't wait for that check, on the PR or on a batch with it. If the base requires
@@ -52,25 +51,13 @@ that check, GitHub won't merge without it. In that case the train stops as soon 
 ruleset needs changing first, and doesn't try the PR again until it changes. It never waits out the CI timeout or loops
 back into the queue. The train never waits for any
 other check. A check outside the fast set that has already failed when the fast set is green still stops the merge,
-unless you mark it **after merge only**. A required check is always in the fast set, since GitHub won't merge without
+unless the file lists it in `afterMerge`. A required check is always in the fast set, since GitHub won't merge without
 it. A cancelled run of a check that isn't required doesn't count. With no required check and none added, the train
-waits for every check, so such a repo still merges only on green CI. When the train can't read the base's rules, the
-project's settings or the repo's `.fleetd/train.json`, it also waits for every check.
+waits for every check, so such a repo still merges only on green CI. When the train can't read the base's rules or the
+repo's `.fleetd/train.json`, it also waits for every check.
 
-Set the checks in the desktop app under **Settings › Projects › Merge train**, with the `project_settings_set` tool
-(`train`), or from a terminal:
-
-```sh
-fleetd project set lab-a/storefront --fast-check "test (ubuntu-latest)" --after-merge "e2e (macos-latest)"
-```
-
-Each option may repeat, and replaces its list; `none` empties it. The train uses new settings from its next pass.
-
-The checks are the repo's, not the project's: in a project with [several repos](#repos), name the repo
-(`project_settings_set` with `repo`) to set its own.
-
-A repo can also keep the list next to its workflows, so a renamed job and its name change in one pull request. The
-train reads `.fleetd/train.json` from the base branch every 10 minutes at most, and adds its lists to the project's:
+The repo keeps the list next to its workflows, so a renamed job and its name change in one pull request. The train
+reads `.fleetd/train.json` from the base branch every 10 minutes at most:
 
 ```json
 {

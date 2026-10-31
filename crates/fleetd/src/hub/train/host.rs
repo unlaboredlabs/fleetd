@@ -129,14 +129,6 @@ pub trait TrainHost: Send + Sync + 'static {
     fn branch_prefix<'a>(&'a self, _project_ref: &'a ProjectRef) -> BoxFut<'a, Option<String>> {
         Box::pin(async { Some(fleetd_contracts::tasks::DEFAULT_BRANCH_PREFIX.to_string()) })
     }
-    /// How the project's train treats its repo's checks (Settings › Projects); None when they can't be read now, and
-    /// then the train waits for every check, as with no settings it can trust.
-    fn train_settings(
-        &self,
-        _project_ref: &ProjectRef,
-    ) -> Option<fleetd_contracts::project_settings::TrainSettings> {
-        Some(Default::default())
-    }
     /// Opens an order for the project's lead (the ledger's intake, channel `train`) with `text`; the same `request_id`
     /// finds the order the first call opened. The order's id, or why it couldn't be opened.
     fn open_order<'a>(

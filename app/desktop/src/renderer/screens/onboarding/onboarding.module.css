@@ -48,40 +48,6 @@
   border-top: 1px solid var(--hairline);
 }
 
-/* The getting-started steps: done ones ticked, the current one in the accent. */
-.checklist {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  list-style: none;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-md);
-}
-
-.step {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.stepIcon {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  color: var(--faint);
-}
-
-.step[data-state="current"] .stepIcon {
-  color: var(--accent);
-}
-
-.step[data-state="done"] .stepIcon {
-  color: var(--success);
-}
-
 .fields {
   display: flex;
   flex-direction: column;

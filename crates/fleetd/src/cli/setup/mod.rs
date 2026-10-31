@@ -21,15 +21,13 @@ use super::args::{self, Kind, Spec};
 use super::hub_key::resolve_home;
 use ssh::run_local;
 use state::{GitIdentity, is_noreply, parse_git_identity, read_setup, write_setup};
-use units::{
-    Dirs, Platform, Role, ServiceManager, ServiceSpec, render_unit, unit_path, unit_suffix,
-};
+use units::{Dirs, Platform, Role, ServiceManager, ServiceSpec, render_unit, unit_path};
 
 /// Where `hub start` listens unless told otherwise (the hub's own default).
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:4790";
 
-pub const SETUP_USAGE: &str = r#"  init [--yes] [--home <dir>] [--listen <host:port>] [--url <url>]
-       [--git-identity "Name <email>"] [--no-service] [--unit-suffix <s>]
+pub const SETUP_USAGE: &str = r#"  init [--yes] [--listen <host:port>] [--url <url>]
+       [--git-identity "Name <email>"] [--no-service]
              set up fleetd step by step in a terminal: the hub on this machine (home default
              ~/.fleetd/hub, kept running by a systemd or launchd user service), where it listens
              (your tailnet when there is one), the claude and gh logins, the machines that run
@@ -44,14 +42,14 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--home <dir>] [--listen <host:p
              make this machine a worker of that hub, without SSH from the hub: the command
              fleetd pair --worker prints on the hub. Run again, it keeps the node's enrolment
              and repairs the rest; --rejoin enrols again with a new code
-  init --step <address|machines|claude|github|people> [--home <dir>]
+  init --step <address|machines|claude|github|people>
              open one of the hub's setup steps: why, the values to paste and the pages to open,
              then Test it, or put it off for later. The app's Settings › Hub › Setup has the same
              steps
-  doctor [--home <dir>]
+  doctor
              run every setup check on the hub now: the setup steps first, then each other
              problem with its fix
-  uninstall [--home <dir>] [--purge]
+  uninstall [--purge]
              stop and remove the hub's service; its data stays unless --purge, which also removes
              what an older fleetd installed for T3 Code
 "#;
@@ -291,14 +289,12 @@ async fn sh(command: &str, log: &dyn Fn(&str)) -> Result<(), String> {
 pub fn hub_service_spec(
     home: &str,
     listen: &str,
-    suffix: &str,
     exe: &str,
     path: &str,
     user_home: &str,
 ) -> ServiceSpec {
     ServiceSpec {
         role: Role::Hub,
-        suffix: suffix.into(),
         description: "fleetd hub".into(),
         program: [exe, "hub", "start", "--home", home, "--listen", listen]
             .map(String::from)
@@ -318,24 +314,15 @@ pub fn hub_service_spec(
 /// The fix for a hub home without `setup.json`. A hub started there by hand (`fleetd hub start`) keeps running:
 /// `init --no-service` only writes what the CLI needs beside it.
 pub fn no_setup_fix(home: &Path) -> String {
-    no_setup_fix_for(
-        home,
-        resolve_home(None).ok().as_deref(),
-        super::pair::running_listen(home).as_deref(),
-    )
+    no_setup_fix_for(super::pair::running_listen(home).as_deref())
 }
 
-fn no_setup_fix_for(home: &Path, default_home: Option<&Path>, running: Option<&str>) -> String {
-    let home_flag = if default_home == Some(home) {
-        String::new()
-    } else {
-        format!(" --home {}", units::q(&home.to_string_lossy()))
-    };
+fn no_setup_fix_for(running: Option<&str>) -> String {
     match running {
         Some(listen) => format!(
-            "a hub you started yourself answers there: fleetd init --no-service{home_flag} --listen {listen}"
+            "a hub you started yourself answers there: fleetd init --no-service --listen {listen}"
         ),
-        None => format!("fleetd init{home_flag} (it starts the hub and repairs its setup)"),
+        None => "fleetd init (it starts the hub and repairs its setup)".to_owned(),
     }
 }
 
@@ -353,7 +340,6 @@ pub struct InitOptions {
     pub listen: Option<String>,
     pub url: Option<String>,
     pub identity: Option<GitIdentity>,
-    pub suffix: String,
     pub with_service: bool,
     pub yes: bool,
     /// `--join <hub url> --code <code>`: this machine becomes a worker of that hub (`fleetd pair --worker`).
@@ -407,7 +393,6 @@ pub struct HubPlan<'a> {
     pub home: &'a Path,
     pub listen: String,
     pub url: String,
-    pub suffix: String,
     pub identity: Option<GitIdentity>,
     pub with_service: bool,
     /// claude.env changed: a kept service restarts to read it.
@@ -517,7 +502,6 @@ pub async fn install_hub(plan: &HubPlan<'_>, log: &dyn Fn(&str)) -> Result<Strin
                 config_home: &dirs.config_home,
             },
             Role::Hub,
-            &plan.suffix,
         )
     });
     let exe = current_exe().map_err(fail)?;
@@ -529,7 +513,6 @@ pub async fn install_hub(plan: &HubPlan<'_>, log: &dyn Fn(&str)) -> Result<Strin
     let spec = hub_service_spec(
         &home_text,
         &plan.listen,
-        &plan.suffix,
         &exe.to_string_lossy(),
         &path,
         &dirs.home,
@@ -550,8 +533,7 @@ pub async fn install_hub(plan: &HubPlan<'_>, log: &dyn Fn(&str)) -> Result<Strin
     {
         return Err(Failure {
             message: format!("{file} runs another fleet's hub"),
-            fix: "give this fleet its own service: fleetd init --unit-suffix <name>, or --no-service to run the hub yourself"
-                .into(),
+            fix: "pass --no-service to run the hub yourself".into(),
         });
     }
     let holders = processes_holding(&plan.home.join("hub.sqlite"));
@@ -574,7 +556,6 @@ pub async fn install_hub(plan: &HubPlan<'_>, log: &dyn Fn(&str)) -> Result<Strin
     let state = state::SetupState {
         listen: plan.listen.clone(),
         url: plan.url.clone(),
-        unit_suffix: plan.suffix.clone(),
         git_identity: plan.identity.clone(),
         machines: read_setup(plan.home)
             .ok()
@@ -610,7 +591,7 @@ pub async fn install_hub(plan: &HubPlan<'_>, log: &dyn Fn(&str)) -> Result<Strin
         "{} {file}",
         if unit == Unit::Same { "kept" } else { "wrote" }
     ));
-    let services = ServiceManager::new(platform, local_uid(), &plan.suffix, |_| file.clone());
+    let services = ServiceManager::new(platform, local_uid(), |_| file.clone());
     sh(&services.restart(Role::Hub, unit == Unit::Changed), log)
         .await
         .map_err(|message| Failure {
@@ -618,7 +599,7 @@ pub async fn install_hub(plan: &HubPlan<'_>, log: &dyn Fn(&str)) -> Result<Strin
             fix: if platform == Platform::Linux {
                 format!(
                     "systemctl --user status {} shows why",
-                    units::systemd_name(Role::Hub, &plan.suffix)
+                    units::systemd_name(Role::Hub)
                 )
             } else {
                 format!("see {}", spec.log_path)
@@ -641,12 +622,10 @@ pub async fn install_hub(plan: &HubPlan<'_>, log: &dyn Fn(&str)) -> Result<Strin
 }
 
 const INIT_OPTIONS: &[(&str, Kind)] = &[
-    ("home", Kind::Str),
     ("listen", Kind::Str),
     ("url", Kind::Str),
     ("git-identity", Kind::Str),
     ("no-service", Kind::Bool),
-    ("unit-suffix", Kind::Str),
     ("yes", Kind::Bool),
     ("join", Kind::Str),
     ("code", Kind::Str),
@@ -665,7 +644,7 @@ fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
         },
     )
     .map_err(|message| usage(&message))?;
-    let home = resolve_home(v.str("home")).map_err(|message| fail(&message))?;
+    let home = resolve_home(None).map_err(|message| fail(&message))?;
     let previous = read_setup(&home).map_err(|message| fail(&message))?;
     if let Some(listen) = v.str("listen")
         && parse_listen(listen).is_none()
@@ -688,17 +667,6 @@ fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
                 "--git-identity must look like \"Name <email>\", got '{text}'"
             ))
         })?),
-    };
-    let suffix = match v.str("unit-suffix") {
-        None => previous
-            .as_ref()
-            .map(|p| p.unit_suffix.clone())
-            .unwrap_or_default(),
-        Some(text) => unit_suffix(Some(text)).ok_or_else(|| {
-            usage(&format!(
-                "--unit-suffix takes letters, digits and dashes, got '{text}'"
-            ))
-        })?,
     };
     let join = match (v.string("join"), v.string("code")) {
         (Some(hub), Some(code)) => Some((hub, code)),
@@ -735,7 +703,6 @@ fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
         listen: v.string("listen"),
         url: v.string("url"),
         identity,
-        suffix,
         with_service: !v.flag("no-service"),
         yes: v.flag("yes"),
     })
@@ -777,7 +744,6 @@ async fn init_plain(opts: InitOptions) -> u8 {
         home: &opts.home,
         listen,
         url,
-        suffix: opts.suffix.clone(),
         identity,
         with_service: opts.with_service,
         restart: false,
@@ -816,14 +782,14 @@ async fn uninstall_command(argv: &[String]) -> u8 {
     let v = match args::parse(
         argv,
         &Spec {
-            options: &[("home", Kind::Str), ("purge", Kind::Bool)],
+            options: &[("purge", Kind::Bool)],
             positionals: false,
         },
     ) {
         Ok(v) => v,
         Err(message) => return usage(&message),
     };
-    let home = match resolve_home(v.str("home")) {
+    let home = match resolve_home(None) {
         Ok(home) => home,
         Err(message) => return fail(&message),
     };
@@ -832,10 +798,6 @@ async fn uninstall_command(argv: &[String]) -> u8 {
         Err(message) => return fail(&message),
     };
     if let Some(platform) = local_platform() {
-        let suffix = state
-            .as_ref()
-            .map(|s| s.unit_suffix.clone())
-            .unwrap_or_default();
         let dirs = local_dirs();
         let file = unit_path(
             platform,
@@ -844,7 +806,6 @@ async fn uninstall_command(argv: &[String]) -> u8 {
                 config_home: &dirs.config_home,
             },
             Role::Hub,
-            &suffix,
         );
         let existing = std::fs::read_to_string(&file).ok();
         if units::foreign_unit(existing.as_deref(), &home.to_string_lossy()) {
@@ -855,7 +816,7 @@ async fn uninstall_command(argv: &[String]) -> u8 {
         } else if existing.is_some() {
             let uid = local_uid();
             if let Err(message) = sh(
-                &ServiceManager::new(platform, uid, &suffix, |_| file.clone()).remove(Role::Hub),
+                &ServiceManager::new(platform, uid, |_| file.clone()).remove(Role::Hub),
                 &say,
             )
             .await
@@ -919,14 +880,8 @@ async fn uninstall_command(argv: &[String]) -> u8 {
     // What an older fleetd installed for T3 Code belongs to the user's own fleet, never a second one.
     if let Some(platform) = local_platform().filter(|_| crate::home::relocated().is_none()) {
         let dirs = local_dirs();
-        let suffix = state.map(|s| s.unit_suffix).unwrap_or_default();
-        let step = machine_plan::old_t3_removal(
-            platform,
-            &dirs.home,
-            &dirs.config_home,
-            local_uid(),
-            &suffix,
-        );
+        let step =
+            machine_plan::old_t3_removal(platform, &dirs.home, &dirs.config_home, local_uid());
         let out = run_local("/bin/sh", &["-c".to_owned(), step.command], None).await;
         if !out.stdout.trim().is_empty() {
             say(out.stdout.trim());
@@ -950,22 +905,13 @@ mod tests {
 
     #[test]
     fn a_home_without_setup_points_at_init_and_keeps_a_hub_run_by_hand() {
-        let default = Path::new("/home/ada/.fleetd/hub");
         assert_eq!(
-            no_setup_fix_for(default, Some(default), None),
+            no_setup_fix_for(None),
             "fleetd init (it starts the hub and repairs its setup)"
         );
         assert_eq!(
-            no_setup_fix_for(
-                Path::new("/tmp/f/hub"),
-                Some(default),
-                Some("127.0.0.1:4797")
-            ),
-            "a hub you started yourself answers there: fleetd init --no-service --home /tmp/f/hub --listen 127.0.0.1:4797"
-        );
-        assert_eq!(
-            no_setup_fix_for(Path::new("/tmp/my hub"), Some(default), None),
-            "fleetd init --home '/tmp/my hub' (it starts the hub and repairs its setup)"
+            no_setup_fix_for(Some("127.0.0.1:4797")),
+            "a hub you started yourself answers there: fleetd init --no-service --listen 127.0.0.1:4797"
         );
     }
 

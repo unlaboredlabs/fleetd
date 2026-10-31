@@ -12,8 +12,7 @@ use Ctrl.
 
 ## Pair it with the hub {#pair}
 
-The first time it opens, the app says what fleetd is and shows three steps that tick themselves as you go: connect to
-your hub, add a project, say hi to its lead.
+The first time it opens, the app says what fleetd is and how to connect to your hub.
 
 With no hub on this computer yet, click "Set up fleetd on this Mac": it opens `fleetd init` in Terminal (on Linux, your
 terminal). When setup finishes, come back to the app and it pairs by itself. If no terminal opens, the app shows the
@@ -179,20 +178,6 @@ Open Factory › Agent time from the sidebar, the agents strip in a chat, or the
 
 Times are in your own time zone. How to read it: [Where time went](/docs/time-inspector).
 
-## Machines {#machines}
-
-Open Machines from the hub's row at the bottom of the sidebar (its Machines line, or "1 down" while a machine is down) or the command palette. The title shows how many agents run across the fleet
-("agents 2 / 12"), beside Add project.
-
-Each machine is one row: its name, its state (online, degraded, or offline and when it was last seen), how many agents
-run there and how many projects it has. On the right, anything that wants a look: a recent sleep, Claude usage near
-its limit, a setup check that failed. A degraded machine says why under its name. Click a row to open it: load, memory,
-Claude usage, its fleetd version and tags, its projects (each with Open, Settings and Remove) and, for an owner or
-admin, Roles and screens, which goes to [Settings › Hub › Machines](#hub).
-
-Under the machines, the [setup checks](/docs/machines#health) the hub ran: the ones that failed or warned, each with
-its fix (a command to copy, or Fix), then the rest a click away. Re-run runs them again.
-
 ## Settings {#settings}
 
 Open Settings with ⌘, or the sidebar's Settings row. It takes the sidebar's place; Back returns to where you were. Type
@@ -206,7 +191,7 @@ changes a teammate's work outside your project is in Hub.
 | You › Your accounts | **Claude**: which Claude account the orders you start and your Navi run on, your own subscription (paste the token `claude setup-token` prints, then Connect and test) or the hub's API key when the hub's admins allow it (see [Claude accounts](/docs/people#claude)). **GitHub**: the GitHub account your PRs open as. |
 | You › Your memory | How you work, as the leads remember it: read by the agents of work you start and by your Navi, and edited only by you. See [Memory](/docs/what-agents-are-told#memory). |
 | You › Hubs | Each hub this app is paired with, with its address, its connection, its name and colour, Pair again and Remove; Add a hub pairs one more (see [Several hubs](/docs/several-hubs)). Then **Hub links**, both halves in one place: the link keys made as you on each hub, and the other hubs your Navi reaches (see [Hub links](/docs/navi#hub-links)). |
-| Projects | One project, picked at the top of the group. **Project**: its name, its repos with the default setup for those without their own, worktrees, its agents' environment variables (plain and secret), the merge train's checks, and deleting it; for a Navi, its integrations (see [Project settings](/docs/projects#settings)). **Agents**: its [max agents](/docs/projects#max-agents) (the slider applies when you let go, with Undo, and "Use the default" goes back), the [task profiles](/docs/projects#models) its lead may use (the default is always checked), its own MCP servers and its [skills](/docs/skills). **Instructions & memory**: its own instructions, added to its agents' system prompt after the hub-wide ones, then what its leads remember about the project, and **Refresh memory every night**. **Automations**: its [automations](/docs/automations). **Prompts**: the prompts fleetd sends its agents, listed under Prompts in the sidebar, to read and edit for this project, and any of its edits that no longer apply. A prompt with one text for the whole hub shows read only. See [What agents are told](/docs/what-agents-are-told). |
+| Projects | One project, picked at the top of the group. **Project**: its name, its repos with the default setup for those without their own, worktrees, its agents' environment variables (plain and secret), and deleting it; for a Navi, its integrations (see [Project settings](/docs/projects#settings)). **Agents**: its [max agents](/docs/projects#max-agents) (the slider applies when you let go, with Undo, and "Use the default" goes back), the [task profiles](/docs/projects#models) its lead may use (the default is always checked), its own MCP servers and its [skills](/docs/skills). **Instructions & memory**: its own instructions, added to its agents' system prompt after the hub-wide ones, then what its leads remember about the project, and **Refresh memory every night**. **Automations**: its [automations](/docs/automations). **Prompts**: the prompts fleetd sends its agents, listed under Prompts in the sidebar, to read and edit for this project, and any of its edits that no longer apply. A prompt with one text for the whole hub shows read only. See [What agents are told](/docs/what-agents-are-told). |
 
 ### Hub {#hub}
 
@@ -221,16 +206,13 @@ hubs](/docs/several-hubs#admin), the group manages one at a time.
 | Machines | Add machine, the hub's machines with Repair and Remove, each one's page with its checklist, [machine roles](/docs/machines#roles), [max agents](/docs/projects#max-agents) for each machine and for all of them together, and **Updates**: the hub's and each machine's fleetd and whether each is up to date, with the updates sheet, which updates the hub, then every machine, then this app, and **Update automatically** (off by default; at most once an hour). |
 | Every project › Profiles | The hub's [task profiles](/docs/projects#models): each one's model, reasoning level, fast mode and note. New profile, Edit (rename, change, mark as the default) and Delete. |
 | Every project › Tools & skills | The global [MCP servers](/docs/mcp-servers) and whether agents also get their own, and the hub-wide [skills](/docs/skills). |
-| Every project › Instructions & memory | The instructions for every project, the [memory caps](/docs/what-agents-are-told#memory), and **Shared memory**: the one memory every lead read before each person had their own, read by no agent now, to read and retire. |
+| Every project › Instructions & memory | The instructions for every project, and **Shared memory**: the one memory every lead read before each person had their own, read by no agent now, to read and retire. |
 | Every project › Prompts | The hub-wide prompts, listed under it in the sidebar. A project's own edits come after them. |
 | Hub accounts | What the hub itself connects to. **Claude**: the hub's API key and optional endpoint, sealed to every machine, with Test; the switch "Members may use the hub's API key"; what projects' leads and unrequested work run on, with the hub owner's subscription they fall back to (see [Claude accounts](/docs/people#claude)). **GitHub**: the hub's own [GitHub App](/docs/github). **Run guided setup again** opens Setup. |
-| Setup | Listed only while a required step is left. The hub's [setup steps](/docs/quick-start#setup-steps), the same as `fleetd init`'s: each with its status, why it matters, the values to paste and the pages to open, Test, and Skip for now. A step's result is saved where it lives: its button opens Hub accounts, People or Machines, and for Claude and GitHub also your own Your accounts. |
+| Setup | Listed only while a required step is left. The hub's [setup steps](/docs/quick-start#setup-steps), the same as `fleetd init`'s: each with its status, why it matters, the values to paste and the pages to open, and Test. A step's result is saved where it lives: its button opens Hub accounts, People or Machines, and for Claude and GitHub also your own Your accounts. |
 
 On a hub from before people, a key with admin on every machine counts as an admin, and so does any key on a hub too
 old to say; People there says the hub needs updating, with Update the hub, and the other Hub pages work as before.
-
-Older links still work: `#/settings/<page>` and the former Administration's `#/admin/<page>` open the page that has
-their options now.
 
 ## Shortcuts {#shortcuts}
 

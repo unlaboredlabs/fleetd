@@ -21,7 +21,6 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     // A file-backed hub: prompt edits are files.
     let db = HubDb::open(home.path()).unwrap();

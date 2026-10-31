@@ -31,7 +31,6 @@ fn open(home: &tempfile::TempDir) -> Arc<Hub> {
         home: home.path().to_path_buf(),
         listen: Default::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let db = HubDb::open(home.path()).unwrap();
     let hub = crate::hub::serve::build_on(db, config, ManualClock::at(1_792_000_000_000)).unwrap();

@@ -1,4 +1,4 @@
-//! Phone notifications, end-to-end encrypted (D218, docs/design/push.md). A phone registers its push token and an
+//! Phone notifications, end-to-end encrypted (D218). A phone registers its push token and an
 //! X25519 public key with the hub for its person (`push_device_register`). When something needs that person, the hub
 //! seals a [`PushPayload`] to each of their devices (a libsodium sealed box) and hands the ciphertext to its push
 //! relay (`fleetd push-relay`), which forwards it to APNs or FCM without ever reading it.

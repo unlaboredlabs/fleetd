@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { MemoryFile } from "../../../shared/contracts";
 import { parseHash } from "../shell/routes";
 import { capState, charCount, entryText, fileName, lineMatches, LineGone, memoryLines, noteHref, projectCapState, restoreLine, withLine } from "./memoryModel";
-import { parseRoute } from "./route";
 import { searchSettings } from "./search";
 
 const file = (over: Partial<MemoryFile>): MemoryFile => ({ scope: "project", text: "", chars: 0, cap: 4000, notes: [], ...over });
@@ -109,7 +108,6 @@ describe("Settings → Projects → Instructions & memory", () => {
   });
 
   it("is yours on You › Your memory and a project's on its Instructions & memory, which search finds by what people call it", () => {
-    expect(parseRoute("#/settings/memory?for=devbox/fleetd")).toMatchObject({ tab: "instructions", for: "devbox/fleetd" });
     expect(searchSettings("remember").map((o) => o.label)).toEqual(["Your memory", "Project memory"]);
   });
 });

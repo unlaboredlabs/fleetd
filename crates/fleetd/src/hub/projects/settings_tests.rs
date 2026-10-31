@@ -39,7 +39,6 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let hub = crate::hub::serve::build_on(
         HubDb::open_memory().unwrap(),
@@ -362,7 +361,7 @@ async fn a_rename_shows_at_once_in_the_apps_snapshot_and_tells_them_to_read_it()
 }
 
 #[tokio::test]
-async fn the_name_and_keep_worktrees_save_and_a_delete_removes_the_worktrees_and_the_settings() {
+async fn the_name_saves_and_a_delete_removes_the_worktrees_and_the_settings() {
     let (hub, _home) = hub();
     let mut calls = node(&hub, true).await;
     let get = json!({ "machineId": "lab", "projectId": "p1" });
@@ -371,7 +370,6 @@ async fn the_name_and_keep_worktrees_save_and_a_delete_removes_the_worktrees_and
         .unwrap();
     let s = &settings["settings"];
     assert_eq!(s["title"], "app");
-    assert_eq!(s["keepWorktrees"], false);
     assert_eq!(s["worktrees"]["baseBranch"], "main");
     assert_eq!(s["worktrees"]["worktrees"][0]["uncommitted"], true);
     assert!(matches!(
@@ -379,12 +377,15 @@ async fn the_name_and_keep_worktrees_save_and_a_delete_removes_the_worktrees_and
         Some(SessionCall::ProjectWorktrees { .. })
     ));
 
-    let set = call(&hub, &person(), "project_settings_set",
-        json!({ "machineId": "lab", "projectId": "p1", "title": "Storefront", "keepWorktrees": true }))
+    let set = call(
+        &hub,
+        &person(),
+        "project_settings_set",
+        json!({ "machineId": "lab", "projectId": "p1", "title": "Storefront" }),
+    )
     .await
     .unwrap();
     assert_eq!(set["settings"]["title"], "Storefront");
-    assert_eq!(set["settings"]["keepWorktrees"], true);
     let Some(SessionCall::ProjectUpsert {
         title,
         workspace_root,
@@ -397,13 +398,7 @@ async fn the_name_and_keep_worktrees_save_and_a_delete_removes_the_worktrees_and
         (title.as_str(), workspace_root.as_str()),
         ("Storefront", "/work/app")
     );
-    assert!(
-        hub.db
-            .project_settings()
-            .keep_worktrees(&project())
-            .unwrap()
-    );
-    // A row keepWorktrees made allows no profile but the default.
+    // A saved project allows no profile but the default.
     assert_eq!(hub.db.profiles().allowed(&project()).unwrap(), ["high"]);
 
     call(
@@ -434,12 +429,6 @@ async fn the_name_and_keep_worktrees_save_and_a_delete_removes_the_worktrees_and
     assert!(removed);
     // The node's project_removed: the hub forgets the project and its settings with it.
     hub.store.project_remove(&project()).unwrap();
-    assert!(
-        !hub.db
-            .project_settings()
-            .keep_worktrees(&project())
-            .unwrap()
-    );
     assert!(
         hub.db
             .project_settings()
@@ -504,71 +493,6 @@ async fn a_change_past_the_projects_total_is_refused_before_the_node_sees_it() {
     );
 }
 
-/// The merge train's settings: none by default (the fast set is the base's required checks alone), saved and read
-/// back as set, kept beside the other settings, and cleared by setting none.
-#[tokio::test]
-async fn the_train_settings_save_and_read_back_and_none_clears_them() {
-    let (hub, _home) = hub();
-    let _calls = node(&hub, true).await;
-    let get = json!({ "machineId": "lab", "projectId": "p1" });
-    let s = call(&hub, &person(), "project_settings_get", get.clone())
-        .await
-        .unwrap();
-    assert_eq!(
-        s["settings"]["train"],
-        json!({ "fastChecks": [], "afterMerge": [] })
-    );
-
-    let train = json!({ "fastChecks": ["integration"], "afterMerge": ["e2e (macos-latest)"] });
-    let set = call(
-        &hub,
-        &person(),
-        "project_settings_set",
-        json!({ "machineId": "lab", "projectId": "p1", "train": train }),
-    )
-    .await
-    .unwrap();
-    assert_eq!(set["settings"]["train"], train);
-    assert_eq!(
-        set["next"],
-        "The merge train uses these settings from its next pass."
-    );
-    let saved = hub.db.project_settings().train(&project()).unwrap();
-    assert_eq!(saved.fast_set(&["build".into()]), ["build", "integration"]);
-    assert!(saved.after_merge_only("e2e (macos-latest)"));
-    assert!(
-        !hub.db
-            .project_settings()
-            .keep_worktrees(&project())
-            .unwrap()
-    );
-
-    let dupes = call(
-        &hub,
-        &person(),
-        "project_settings_set",
-        json!({ "machineId": "lab", "projectId": "p1", "train": { "fastChecks": ["a", "a"] } }),
-    )
-    .await;
-    assert!(dupes.is_err(), "a check named twice is refused");
-    call(
-        &hub,
-        &person(),
-        "project_settings_set",
-        json!({ "machineId": "lab", "projectId": "p1", "train": {} }),
-    )
-    .await
-    .unwrap();
-    let s = call(&hub, &person(), "project_settings_get", get)
-        .await
-        .unwrap();
-    assert_eq!(
-        s["settings"]["train"],
-        json!({ "fastChecks": [], "afterMerge": [] })
-    );
-}
-
-/// A repo the project doesn't have is refused and changes nothing, rather than acting on the project's own settings.
 #[tokio::test]
 async fn an_unknown_repo_is_refused_and_changes_nothing() {
     let (hub, _home) = hub();
@@ -580,7 +504,7 @@ async fn an_unknown_repo_is_refused_and_changes_nothing() {
         ),
         (
             "project_settings_set",
-            json!({ "machineId": "lab", "projectId": "p1", "repo": "api", "keepWorktrees": true }),
+            json!({ "machineId": "lab", "projectId": "p1", "repo": "api", "title": "API" }),
         ),
     ] {
         let refused = call(&hub, &person(), tool, input).await;
@@ -589,12 +513,6 @@ async fn an_unknown_repo_is_refused_and_changes_nothing() {
             "{tool}: {refused:?}"
         );
     }
-    assert!(
-        !hub.db
-            .project_settings()
-            .keep_worktrees(&project())
-            .unwrap()
-    );
     let s = call(
         &hub,
         &person(),
@@ -606,10 +524,10 @@ async fn an_unknown_repo_is_refused_and_changes_nothing() {
     assert!(s["settings"].get("repo").is_none());
 }
 
-/// Naming a repo reads and writes its own setup and preview, the project's when it has none; leaving it out keeps the
-/// project's, and the rest are the project's either way. A launch in the own repo and a preview read the own repo's.
+/// Naming a repo reads and writes its own setup, the project's when it has none; leaving it out keeps the project's,
+/// and the rest are the project's either way. A launch in the own repo reads the own repo's.
 #[tokio::test]
-async fn a_repos_setup_and_preview_are_its_own_and_fall_back_to_the_projects() {
+async fn a_repos_setup_is_its_own_and_falls_back_to_the_projects() {
     let (hub, _home) = hub();
     let _calls = node(&hub, true).await;
     let r = json!({ "machineId": "lab", "projectId": "p1" });
@@ -625,7 +543,6 @@ async fn a_repos_setup_and_preview_are_its_own_and_fall_back_to_the_projects() {
     let set = |input| call(&hub, &human, "project_settings_set", input);
     set(with(json!({
         "setup": { "commands": ["make deps"] },
-        "preview": { "web": { "start": "make serve" } },
     })))
     .await
     .unwrap();
@@ -637,27 +554,20 @@ async fn a_repos_setup_and_preview_are_its_own_and_fall_back_to_the_projects() {
         .unwrap();
     assert_eq!(s["settings"]["repo"], "app");
     assert_eq!(s["settings"]["setup"]["commands"], json!(["make deps"]));
-    assert_eq!(s["settings"]["preview"]["web"]["start"], "make serve");
 
     let s = set(with(json!({
         "repo": "app",
         "setup": { "commands": ["pnpm install"] },
-        "preview": { "web": { "start": "pnpm dev" } },
-        "keepWorktrees": true,
     })))
     .await
     .unwrap();
     assert_eq!(s["settings"]["repo"], "app");
     assert_eq!(s["settings"]["setup"]["commands"], json!(["pnpm install"]));
-    assert_eq!(s["settings"]["preview"]["web"]["start"], "pnpm dev");
-    assert_eq!(s["settings"]["keepWorktrees"], true);
     let own = call(&hub, &human, "project_settings_get", r.clone())
         .await
         .unwrap();
     assert!(own["settings"].get("repo").is_none());
     assert_eq!(own["settings"]["setup"]["commands"], json!(["make deps"]));
-    assert_eq!(own["settings"]["preview"]["web"]["start"], "make serve");
-    assert_eq!(own["settings"]["keepWorktrees"], true);
     let own_repo = hub.repos.own(&project()).unwrap().map(|repo| repo.repo_id);
     let task_setup =
         crate::hub::projects::settings::task_setup(&hub, &project(), own_repo.as_ref()).unwrap();
@@ -665,23 +575,15 @@ async fn a_repos_setup_and_preview_are_its_own_and_fall_back_to_the_projects() {
         serde_json::to_value(task_setup).unwrap()["commands"],
         json!(["pnpm install"])
     );
-    let preview = crate::hub::projects::settings::preview_config(&hub, &project()).unwrap();
-    assert_eq!(
-        serde_json::to_value(preview).unwrap()["web"]["start"],
-        "pnpm dev"
-    );
 
     // Emptied, the repo's are the project's again.
-    set(with(
-        json!({ "repo": "app", "setup": { "commands": [] }, "preview": {} }),
-    ))
-    .await
-    .unwrap();
+    set(with(json!({ "repo": "app", "setup": { "commands": [] } })))
+        .await
+        .unwrap();
     let s = call(&hub, &human, "project_settings_get", app)
         .await
         .unwrap();
     assert_eq!(s["settings"]["setup"]["commands"], json!(["make deps"]));
-    assert_eq!(s["settings"]["preview"]["web"]["start"], "make serve");
 
     let refused = call(
         &hub,
@@ -727,51 +629,4 @@ async fn a_repos_setup_and_preview_are_its_own_and_fall_back_to_the_projects() {
     .await
     .unwrap();
     assert_eq!(web_setup(), json!(["npm ci"]));
-}
-
-/// The train's rules are the repo's: naming a repo whose files are in another checkout reads and writes that
-/// checkout's, which its train reads; the project's own stay as they were.
-#[tokio::test]
-async fn a_repos_train_rules_are_its_checkouts() {
-    let (hub, _home) = hub();
-    let _calls = node(&hub, true).await;
-    hub.db
-        .with(|c| {
-            c.execute(
-                "INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id, repo_key, base)
-                 VALUES ('lab', 'p1', 'web', 'lab', 'p2', 'github.com/acme/web', 'main')",
-                [],
-            )?;
-            Ok(())
-        })
-        .unwrap();
-    let human = person();
-    let train = json!({ "fastChecks": ["e2e"], "afterMerge": [] });
-    let s = call(
-        &hub,
-        &human,
-        "project_settings_set",
-        json!({ "machineId": "lab", "projectId": "p1", "repo": "web", "train": train }),
-    )
-    .await
-    .unwrap();
-    assert_eq!(s["settings"]["train"], train);
-    let web = ProjectRef {
-        machine_id: MachineId::unchecked("lab"),
-        project_id: ProjectId::unchecked("p2"),
-    };
-    let saved = hub.db.project_settings().train(&web).unwrap();
-    assert_eq!(serde_json::to_value(saved).unwrap(), train);
-    let own = call(
-        &hub,
-        &human,
-        "project_settings_get",
-        json!({ "machineId": "lab", "projectId": "p1" }),
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        own["settings"]["train"],
-        json!({ "fastChecks": [], "afterMerge": [] })
-    );
 }

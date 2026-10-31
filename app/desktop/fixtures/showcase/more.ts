@@ -1,7 +1,6 @@
 // The showcase's scenes past the storefront's request (qa/showcase.spec.ts moves through them as the batch merges),
-// each made of another group's fixture rather than data of its own: Try it on #230 (fixtures/tryit), Navi with Ada and
-// Home above the projects, Ada's lease renewal waiting on your approval and the order it asked storefront for
-// (fixtures/navi), and a second hub, Personal, beside this one in the sidebar (fixtures/sidebar).
+// each made of another group's fixture rather than data of its own: Navi with Ada and Home above the projects, Ada's
+// lease renewal waiting on your approval and the order it asked storefront for (fixtures/navi), and a second hub, Personal, beside this one in the sidebar (fixtures/sidebar).
 // Hub › People's people and invites are admin-owner's (fixtures/admin), and so are the people in checkout's chat, which
 // the team shares: Sam writes from this app, Alice and Bob from theirs, and the lead answers them together. The nightly
 // memory refresh's line is in storefront's chat (index.ts), and its built-in row on the Automations page comes with
@@ -14,7 +13,6 @@ import { PEOPLE } from "../admin/index.ts";
 import { navi, toolApproval, type ToolCall } from "../navi/index.ts";
 import { ADA, HOME } from "../navi/ids.ts";
 import { retitle } from "../sidebar/index.ts";
-import { answerPreviews, frame as previewFrame, ready } from "../tryit/index.ts";
 
 /** Ada's renewal: the request the card answers. */
 export const ADA_REQUEST = "Q71";
@@ -112,12 +110,6 @@ export const naviScene = (f: Fixture, storefront: Ref): void => {
   const state = { projectRef: { ...ADA }, needsYou: false, leadWorking: false, lastSeq: seq, lastMessageAt: f.now };
   f.answer("chat_history", { projectRef: { ...ADA }, after: seq - 1 }, { messages: [sent], moreBefore: true, moreAfter: false, state });
   f.answer("chat_history", { projectRef: { ...ADA }, after: seq }, { messages: [], moreBefore: true, moreAfter: false, state });
-};
-
-/** #230 ready to try on the web, started a few minutes ago: its page in Dutch, which the person flips to German. */
-export const tryItScene = (f: Fixture, repo: string, n: number): { first: JsonObject; flipped: JsonObject } => {
-  answerPreviews(f, [{ ...ready(f, 6 * 60_000), of: { kind: "pr", repo, number: n }, head: "e41c7a2" }], { canStart: true });
-  return { first: previewFrame(1, "nl"), flipped: previewFrame(2, "de") };
 };
 
 /** A second hub beside this one, as sidebar-hubs has it: Personal's projects, this one Acme's. */

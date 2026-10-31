@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings' Hub group with several hubs (docs/design/hubs.md): it says which hub it manages above every page, the
+// Settings' Hub group with several hubs: it says which hub it manages above every page, the
 // group switches between the hubs this person administers (keeping the page), and an invite is made on the hub it
 // names, never on whichever hub some other screen had open. An old Administration link still lands on its hub. With
 // one hub, none of it shows.
@@ -198,9 +198,9 @@ it("names the hub it manages, and lists to switch only the hubs this person admi
 
 it("creates the invite on the hub it names, saying which, never on another", async () => {
   await mount(THREE);
-  // Another hub's screen was open last: an old Administration link to Acme still acts on Acme.
+  // Another hub's screen was open last: a link to Acme's People still acts on Acme.
   await go("#/project/devbox/hub?at=hub");
-  await go("#/admin/people?at=a1b2");
+  await go("#/settings/hub/people?at=a1b2");
   await openInvite();
   const create = button("Create invite link to Acme");
   expect(create).toBeDefined();

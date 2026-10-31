@@ -3,7 +3,6 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use fleetd_contracts::auth::{AgentKeyInfo, Role};
 use fleetd_contracts::ids::{MachineId, ThreadId, ThreadRef};
 use fleetd_contracts::sessions::SendMode;
 use fleetd_contracts::steer::SteerId;
@@ -16,13 +15,9 @@ pub use crate::hub::store::now_ms;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// `HubDb::with` for these areas' own queries. A failed query is a defect here.
-pub trait DbRun {
-    fn run<R>(&self, f: impl FnOnce(&Connection) -> R) -> R;
-}
-
-impl DbRun for HubDb {
-    fn run<R>(&self, f: impl FnOnce(&Connection) -> R) -> R {
+impl HubDb {
+    /// `HubDb::with` for the queue's and wakes' own queries. A failed query is a defect here.
+    pub fn run<R>(&self, f: impl FnOnce(&Connection) -> R) -> R {
         let mut out = None;
         self.with(|conn| {
             out = Some(f(conn));
@@ -252,8 +247,4 @@ impl UsageHold for NoHold {
     fn when_clear(&self, _: &ThreadRef) -> BoxFuture<'_, ()> {
         Box::pin(async {})
     }
-}
-
-pub fn is_admin(info: &AgentKeyInfo) -> bool {
-    info.grants.iter().any(|g| g.role == Role::Admin)
 }

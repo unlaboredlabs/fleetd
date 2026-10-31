@@ -21,16 +21,16 @@ use crate::clock::SystemClock;
 use crate::hub::github_app::{GithubApps, manifest, new_app_page};
 use crate::hub::store::HubDb;
 
-pub const GITHUB_APP_USAGE: &str = r#"  github-app [--home <dir>]
+pub const GITHUB_APP_USAGE: &str = r#"  github-app
              the hub's own GitHub App: where it is installed and its last test
-  github-app create [--org <org>] [--name <name>] [--port <port>] [--home <dir>]
+  github-app create [--org <org>] [--name <name>] [--port <port>]
              make it on GitHub with nothing to paste: opens a page on this machine
              (127.0.0.1) that sends GitHub the App's manifest; press Create on GitHub and
              the hub keeps its keys, sealed. From another computer, forward the port first:
              ssh -L <port>:127.0.0.1:<port> <this machine>
-  github-app test [--home <dir>]
+  github-app test
              mint a token for each installation and say where the App reaches
-  github-app remove [--home <dir>]
+  github-app remove
              forget it; the hub's gh goes back to this machine's own login
 "#;
 
@@ -53,19 +53,14 @@ fn open(home: Option<&str>) -> Result<(Arc<GithubApps>, std::path::PathBuf), Str
 
 pub async fn github_app_command(argv: &[String]) -> u8 {
     let spec = Spec {
-        options: &[
-            ("home", Kind::Str),
-            ("org", Kind::Str),
-            ("name", Kind::Str),
-            ("port", Kind::Str),
-        ],
+        options: &[("org", Kind::Str), ("name", Kind::Str), ("port", Kind::Str)],
         positionals: true,
     };
     let v = match args::parse(argv, &spec) {
         Ok(v) => v,
         Err(message) => return usage(&message),
     };
-    let (apps, home) = match open(v.str("home")) {
+    let (apps, home) = match open(None) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("fleetd: {e}");

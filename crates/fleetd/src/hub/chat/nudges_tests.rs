@@ -39,7 +39,6 @@ fn hub() -> (Arc<Hub>, Arc<ManualClock>, tempfile::TempDir) {
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let hub =
         crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock.clone()).unwrap();
@@ -313,61 +312,6 @@ async fn a_nudge_clears_once_seen_or_dismissed_and_fades_after_a_day() {
         flag(id);
     }
     assert_eq!(listed(&hub).len(), 3);
-}
-
-/// An agent's Try it suggestion, flagged as the hub posts it.
-fn suggested(hub: &Hub, n: u64) -> ChatMessage {
-    let suggestion = serde_json::from_value(json!({
-        "projectRef": project(), "of": { "kind": "pr", "repo": "acme/shop", "number": n },
-        "by": "#14's writer", "why": "the German copy", "at": AT,
-    }))
-    .unwrap();
-    hub.chat
-        .add(
-            &project(),
-            NewMessage {
-                author: Some(ChatAuthor::Agent),
-                text: format!("#{n}'s writer suggests trying #{n}"),
-                source: Some(format!("preview_suggest:acme/shop#{n}")),
-                preview_suggestion: Some(suggestion),
-                nudge: super::reason_of(&format!("Try #{n}")),
-                ..Default::default()
-            },
-        )
-        .unwrap()
-        .0
-}
-
-#[test]
-fn try_it_suggestions_have_their_own_cap_and_never_push_out_the_leads_flags() {
-    let (hub, clock, _home) = hub();
-    for i in 1..=3 {
-        let id = format!("a{i}");
-        reply(&hub, &id, &format!("Showcase {i}"));
-        nudge(&hub, &lead(), reason(&format!("showcase {i}")), |_| {
-            Some(parts(None, &[id.as_str()]))
-        })
-        .unwrap();
-        clock.advance(Duration::from_secs(60));
-    }
-    let first = suggested(&hub, 10);
-    for n in 11..=13 {
-        clock.advance(Duration::from_secs(60));
-        suggested(&hub, n);
-    }
-    let reasons: Vec<String> = listed(&hub).into_iter().map(|(_, r)| r).collect();
-    assert_eq!(
-        reasons,
-        [
-            "showcase 1",
-            "showcase 2",
-            "showcase 3",
-            "Try #11",
-            "Try #12",
-            "Try #13"
-        ]
-    );
-    assert_eq!(cleared(&hub, &first), Some(ChatNudgeCleared::Replaced));
 }
 
 #[test]

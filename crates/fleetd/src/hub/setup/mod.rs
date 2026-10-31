@@ -1,4 +1,4 @@
-//! The hub admin's setup (docs/design/setup.md): one list of steps that `fleetd init`, the app's first run and
+//! The hub admin's setup: one list of steps that `fleetd init`, the app's first run and
 //! Settings › Hub › Setup all render. Each step's guide (why, the values to paste computed for this hub, the
 //! provider's pages) is here; its status is read from the doctor's checks, never from how far a wizard got. The only
 //! state kept is which steps the admin put off for later, so setup resumes anywhere.
@@ -9,17 +9,13 @@ mod fixtures;
 #[cfg(test)]
 mod tests;
 
-use std::collections::BTreeSet;
-
 use fleetd_contracts::doctor::DoctorFix;
 use fleetd_contracts::setup::{
     HubSetupStep, SetupGroup, SetupLink, SetupNeed, SetupPart, SetupStatus, SetupStepId,
     SetupValue, SetupWay, matches_check,
 };
-use rusqlite::params;
 
 use crate::hub::doctor::checks::{DoctorCheck, DoctorStatus};
-use crate::hub::store::{HubDb, StoreError};
 
 fn link(label: &str, url: impl Into<String>) -> SetupLink {
     SetupLink {
@@ -336,12 +332,8 @@ fn read_way<'a>(
 }
 
 /// Each step's status is its best way's: one way done is enough, else one set up but failing wants a look, else it is
-/// to do, or later when the admin skipped it.
-pub fn read(
-    guides: Vec<HubSetupStep>,
-    checks: &[DoctorCheck],
-    skipped: &BTreeSet<SetupStepId>,
-) -> Vec<HubSetupStep> {
+/// to do.
+pub fn read(guides: Vec<HubSetupStep>, checks: &[DoctorCheck]) -> Vec<HubSetupStep> {
     guides
         .into_iter()
         .map(|mut step| {
@@ -353,10 +345,7 @@ pub fn read(
                 .and_then(|(_, (_, c))| *c)
                 .or_else(|| reads.iter().find_map(|(_, (_, c))| *c));
             let status = best.map_or(SetupStatus::Todo, |(_, (s, _))| *s);
-            step.status = match status {
-                SetupStatus::Todo if skipped.contains(&step.id) => SetupStatus::Skipped,
-                s => s,
-            };
+            step.status = status;
             if step.ways.len() > 1
                 && let Some((w, (s, _))) = best
                 && *s != SetupStatus::Todo
@@ -387,37 +376,4 @@ pub fn before_first_use(mut checks: Vec<DoctorCheck>, code_projects: usize) -> V
         }
     }
     checks
-}
-
-/// The steps the admin put off for later.
-pub fn skipped(db: &HubDb) -> Result<BTreeSet<SetupStepId>, StoreError> {
-    db.with(|c| {
-        let mut stmt = c.prepare("SELECT step FROM setup_skips")?;
-        let ids = stmt
-            .query_map([], |row| row.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(ids.iter().filter_map(|s| SetupStepId::parse(s)).collect())
-    })
-}
-
-pub fn set_skipped(
-    db: &HubDb,
-    step: SetupStepId,
-    skipped: bool,
-    now_ms: i64,
-) -> Result<(), StoreError> {
-    db.with(|c| {
-        if skipped {
-            c.execute(
-                "INSERT INTO setup_skips (step, at_ms) VALUES (?, ?) ON CONFLICT (step) DO NOTHING",
-                params![step.as_str(), now_ms],
-            )?;
-        } else {
-            c.execute(
-                "DELETE FROM setup_skips WHERE step = ?",
-                params![step.as_str()],
-            )?;
-        }
-        Ok(())
-    })
 }

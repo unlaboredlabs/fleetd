@@ -4,12 +4,12 @@
 //! The boundary, which is all the hub, the train and the app may rely on:
 //! - a [`Runner`] spawns one process per live session from a [`SessionSpec`] and hands back a [`SessionHandle`]:
 //!   commands in, normalized [`RunnerEvent`]s out; it maps a profile ([`ProfileName`]) onto its own model and effort;
-//! - a [`RunnerGuide`] ([`guide`]) says, from a [`RunnerInfo`], what a person reads and runs about that runner;
+//! - a runner's guide ([`guide`]) says, from a [`RunnerInfo`], what a person reads and runs about that runner;
 //! - tool calls arrive classified ([`fleetd_contracts::sessions::ToolClass`]) and usage provider-neutral
 //!   ([`RunUsage`]), so no tool name, CLI flag, config path, error text or usage field crosses it.
 //!
 //! The node session service owns everything durable (session rows, item log, worktrees, retries, the link); a runner
-//! owns only the process and its protocol. docs/FOLLOWUPS.md lists what a second runner still needs.
+//! owns only the process and its protocol.
 //!
 //! `fixtures/` holds stream-json transcripts recorded from real `claude` runs, one JSON object per line:
 //! `{"dir":"in"|"out"|"stderr"|"meta","ms":<since start>,"msg":{…}}` (`raw` instead of `msg` for non-JSON lines).
@@ -83,8 +83,6 @@ pub struct SessionSpec {
     pub plugin_dirs: Vec<PathBuf>,
     /// The whole child environment. Nothing is inherited: no CLAUDE* variable of the node's own parent leaks in.
     pub env: Vec<(String, String)>,
-    /// Raw stdout and stderr lines are appended here for debugging and conformance.
-    pub transcript: Option<PathBuf>,
     /// The OS sandbox the process and everything it starts run in: a Navi's ([`sandbox::navi_fence`]). None for every
     /// other session.
     pub sandbox: Option<sandbox::Fence>,
@@ -289,36 +287,9 @@ pub trait Runner: Send + Sync + 'static {
     fn profile_of(&self, model: &str, effort: Effort) -> ProfileName;
 }
 
-/// What a person reads and runs about one kind of runner, from what its probe reported ([`RunnerInfo`]). The hub's
-/// routing, doctor and prompt pages use this and never a runner's own modules.
-pub trait RunnerGuide: Sync {
-    /// The runner's command as messages name it, e.g. "claude"; also the prefix of its doctor checks.
-    fn name(&self) -> &'static str;
-    /// What a person installs, e.g. "Claude Code".
-    fn product(&self) -> &'static str;
-    /// The command that installs it on a machine without it.
-    fn install(&self) -> String;
-    /// The command that installs exactly the tested version, from nothing.
-    fn install_tested(&self) -> String;
-    /// The command that puts the tested version over an installed one.
-    fn pin_tested(&self) -> String;
-    /// How to log it in; behind a proxy, the proxy holds the login.
-    fn login_fix(&self, proxy: bool) -> &'static str;
-    /// A version fleetd wasn't tested with: what to say about `found` and the command that fixes it. None when
-    /// tested.
-    fn version_problem(&self, found: &str) -> Option<(String, Option<String>)>;
-    /// The setup sessions use, in a person's words: version, login, proxy, config dir.
-    fn setup(&self, info: &RunnerInfo) -> String;
-    /// The protocol the probe checks it speaks, e.g. "the stream-json protocol".
-    fn protocol(&self) -> &'static str;
-    /// The tools no session of this runner ever gets.
-    fn denied_tools(&self) -> &'static [&'static str];
-    /// The model and effort a profile runs on when no setting chose them ([`Runner::profile`]).
-    fn profile(&self, profile: &ProfileName) -> ProfileModel;
-}
-
-/// The guide for a runner `kind`: the one place the hub turns a runner kind into its words.
-pub fn guide(kind: RunnerKind) -> &'static dyn RunnerGuide {
+/// The guide for a runner `kind`: the one place the hub turns a runner kind into its words. The hub's routing, doctor
+/// and prompt pages use it and never a runner's own modules.
+pub fn guide(kind: RunnerKind) -> &'static claude::guide::Guide {
     match kind {
         RunnerKind::Claude => &claude::guide::GUIDE,
     }

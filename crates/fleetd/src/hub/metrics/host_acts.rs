@@ -1,5 +1,5 @@
 //! Reviews and comments the person left on a repo's git host, as touches. The host sweep reads them through
-//! [`HostActs`] (GitHub first) and calls [`read`] per repo; until it does, [`NoHostActs`] reads nothing. A review's
+//! [`HostActs`] (GitHub first) and calls [`read`] per repo. A review's
 //! credit is estimated and marked so. A touch on a PR fleetd wrote (a Change's, or a `fleetd/` head) counts toward
 //! minutes through fleetd; one on any other PR toward the outside figure.
 use fleetd_contracts::metrics::TouchKind;
@@ -49,19 +49,6 @@ pub trait HostActs: Send + Sync {
         repo: &'a str,
         since_ms: i64,
     ) -> BoxFut<'a, Result<Vec<HostAct>, String>>;
-}
-
-/// No host read yet: no reviews or comments.
-pub struct NoHostActs;
-
-impl HostActs for NoHostActs {
-    fn acts_since<'a>(
-        &'a self,
-        _repo: &'a str,
-        _since_ms: i64,
-    ) -> BoxFut<'a, Result<Vec<HostAct>, String>> {
-        Box::pin(async { Ok(Vec::new()) })
-    }
 }
 
 #[derive(Debug, thiserror::Error)]

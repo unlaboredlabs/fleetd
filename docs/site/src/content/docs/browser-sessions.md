@@ -78,9 +78,8 @@ or Navi's ⓘ page ([Phone app](/docs/mobile#screens)).
    yet can't be picked.
 2. **Pick the machine.** The list has only the machines that can host that kind (the sessions role, the kind set up,
    and a current fleetd), each with its screens in use: `1 of 2 screens in use`.
-3. **Pick a PR** (optional): one of the project's open PRs. An iOS or Android screen gets its CI build installed before
-   you get it ([below](#yours-pr)). A browser opens the PR's Try it preview instead, and has no machine
-   to pick ([below](#yours-web)). If the PRs can't be read, the picker says why, with Retry.
+3. **Pick a PR** (optional, iOS and Android): one of the project's open PRs, whose CI build is installed before you get
+   it ([below](#yours-pr)). If the PRs can't be read, the picker says why, with Retry.
 4. **Open screen.** It opens in the panel's live view with you in control from the start, and lists under Screens as
    yours. **End screen** closes it. It also ends after 30 minutes without your input.
 
@@ -120,14 +119,6 @@ the screen still opens: it shows at the top of Screens until then, and then list
 - On a Mac with `"remoteInstall": false` the install is refused, as an agent's is: a simulator app runs as the Mac's
   user ([why](#ios-elsewhere)).
 - A wait with a PR gets its build when its slot frees.
-
-### A PR in a browser {#yours-web}
-
-A browser with a PR opens the PR's Try it preview: the project's app at the PR's head, built and run as the project's
-Try it settings say, on the project's own machine. The picker starts the preview (or reuses the one already running)
-and takes you to the PR's Try it tab, where you see its steps and then drive it in a browser of your own. It's the
-preview's own screen: it ends as a preview does. A project without Try it settings gets the picker's plain refusal,
-with where to set them.
 
 MCP clients use `screen_open` and `screen_end`. `browser_sessions` lists your screens on their way beside the screens,
 each with its `stage` (`waiting`, `starting`, `installing`, `failed` with an `error`) and, once it starts, the

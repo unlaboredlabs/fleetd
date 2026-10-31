@@ -182,7 +182,7 @@ impl Workstreams {
             None => None,
         };
         // Who started it: the writer of the message the lead was answering. Their GitHub account opens its PRs once
-        // people connect their own (docs/design/teams.md, step 8).
+        // people connect their own.
         if let Some((_, Some(person))) = &human {
             let started = Workstream {
                 started_by: Some(person.clone()),
@@ -276,13 +276,7 @@ impl Workstreams {
                 "Open a new workstream if there is more to do.",
             ));
         }
-        let unlanded = self
-            .ctx
-            .hooks
-            .train
-            .get()
-            .map(|t| t.unlanded(caller, id))
-            .unwrap_or_default();
+        let unlanded = self.ctx.hooks.unlanded(caller, id);
         if !unlanded.is_empty() {
             return Err(LeadError::invalid(
                 format!("{id} still has PRs in the train: {}.", unlanded.join(", ")),

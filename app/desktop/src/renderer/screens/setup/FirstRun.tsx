@@ -1,5 +1,5 @@
 // `#/` on a hub with no projects yet. For its owners and admins, while a required setup step is left, it is setup's
-// welcome; once none is, and for everyone else, Get started (add a project, say hi). Its own chunk, with setup's.
+// welcome; once none is, and for everyone else, Get started (add a project). Its own chunk, with setup's.
 import { useToolQuery } from "../../src/data/react";
 import { useHubRole } from "../admin/role";
 import { GetStarted } from "../onboarding";

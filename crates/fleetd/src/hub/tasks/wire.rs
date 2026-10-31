@@ -3,7 +3,6 @@
 //! hooks tasks fill in on leads.
 use std::sync::{Arc, OnceLock, Weak};
 
-use fleetd_contracts::events::HubEvent;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef, Timestamp};
 use fleetd_contracts::lead_calls::{AskLeadResult, LeadCall, LeadCallResult};
 use fleetd_contracts::ledger::{Brief, Decision, Workstream, WorkstreamId};
@@ -14,10 +13,8 @@ use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::projects::github_repo;
 use fleetd_contracts::sessions::{SessionWorkspace, WorktreeBase};
 use fleetd_contracts::tasks::TaskId;
-use fleetd_contracts::usage::UsageParked;
 use fleetd_contracts::work::{WorkMatch, WorkScope};
 
-use super::hooks::UsageGate;
 use super::ports::{
     BoxFut, BranchPrError, CmdOutput, LaunchRequest, PortError, TaskPorts, ThreadChanges, WakeKind,
 };
@@ -27,7 +24,7 @@ use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions}
 use crate::hub::leads::hooks::{BoxFuture, TasksHook};
 use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::link::commands::CommandInput;
-use crate::hub::link::lead_calls::{AgentDirectory, CallerAgent, LeadCallFuture};
+use crate::hub::link::lead_calls::{CallerAgent, LeadCallFuture};
 use crate::hub::link::{LeadCallHandler, LeadCaller, NodeCommands};
 use crate::hub::store::StoreError;
 use crate::hub::work::{Observed, matcher};
@@ -352,7 +349,6 @@ impl TaskPorts for HubTaskPorts {
                 branch: c.branch,
                 worktree_path: c.worktree_path,
                 paths: c.paths,
-                pull_request_urls: c.pull_request_urls,
             })
         })
     }
@@ -587,13 +583,15 @@ pub const LEAD_CALL_OPS: [&str; 7] = [
 ];
 
 /// Tells the hub's lead-call handling which sessions are tasks' agents and which are leads.
-struct Directory {
+pub struct Directory {
     tasks: Arc<Tasks>,
     hub: Weak<Hub>,
 }
 
-impl AgentDirectory for Directory {
-    fn agent_of(&self, thread: &ThreadRef) -> Result<(CallerAgent, ProjectRef), McpToolError> {
+impl Directory {
+    /// The agent running in `thread` and the project it works for. A session that is neither a project's lead nor a
+    /// task, and a lookup that failed, are refusals.
+    pub fn agent_of(&self, thread: &ThreadRef) -> Result<(CallerAgent, ProjectRef), McpToolError> {
         let failed = |error: String| {
             tracing::error!(%error, "lead call: agent lookup failed");
             McpToolError::new(
@@ -613,35 +611,6 @@ impl AgentDirectory for Directory {
             .hub
             .upgrade()
             .ok_or_else(|| failed("the hub is shutting down".into()))?;
-        // A preview's session, held by the person: its node names it by the preview's id.
-        if let Ok(id) = fleetd_contracts::preview::PreviewId::new(thread.thread_id.as_str()) {
-            let preview = crate::hub::preview::get(&hub, &id)
-                .map_err(|e| failed(e.to_string()))?
-                .filter(|p| p.machine_id == thread.machine_id);
-            return match preview {
-                Some(p) if !p.state.is_over() => Ok((CallerAgent::Preview(id), p.project_ref)),
-                // Its recording uploads once the session closes, after the preview ended: only that, and its
-                // closing report (policy::check_call).
-                Some(p)
-                    if crate::hub::preview::uploads_after_end(
-                        &p,
-                        crate::hub::store::now_ms(hub.clock.as_ref()),
-                    ) =>
-                {
-                    Ok((CallerAgent::EndedPreview(id), p.project_ref))
-                }
-                Some(_) => Err(McpToolError::new(
-                    ErrorCode::Forbidden,
-                    format!(
-                        "preview {id} ended over a week ago, so its session makes no more calls"
-                    ),
-                )),
-                None => Err(McpToolError::new(
-                    ErrorCode::Forbidden,
-                    format!("the hub holds no preview {id} on {}", thread.machine_id),
-                )),
-            };
-        }
         // A nightly memory refresh, whose calls the policy holds to memory.
         if let Some(project_ref) = crate::hub::memory::refresh::project_of_thread(&hub.db, thread)
             .map_err(|e| failed(e.to_string()))?
@@ -678,34 +647,6 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
     let calls: Arc<dyn LeadCallHandler> = Arc::new(Calls(Arc::clone(&hub.tasks)));
     for op in LEAD_CALL_OPS {
         hub.lead_calls.register(op, Arc::clone(&calls));
-    }
-}
-
-struct UsageFromArea(Arc<crate::hub::usage::Usage>);
-
-impl UsageGate for UsageFromArea {
-    fn gate(&self, machine_id: &MachineId, account: Option<&str>) -> Option<String> {
-        self.0.gate_for(machine_id.as_str(), account)
-    }
-    fn parked_of(&self, event: &HubEvent) -> Option<UsageParked> {
-        // Usage keeps its own copy of the event's wire shape.
-        let event: HubEvent = serde_json::from_value(serde_json::to_value(event).ok()?).ok()?;
-        let mut parked = crate::hub::usage::classify::parked_of(&event)?;
-        // The usage layer's own park of it, once applied, also knows when it tries a limit with no reset again.
-        let thread = crate::hub::usage::ports::ThreadRef {
-            machine_id: event.machine_id.as_ref()?.to_string(),
-            thread_id: event.thread_id.as_ref()?.to_string(),
-        };
-        if let Some(own) = self
-            .0
-            .parked_of(&thread)
-            .filter(|p| p.since == parked.since)
-        {
-            parked.check_at = own.check_at;
-        }
-        serde_json::to_value(parked)
-            .ok()
-            .and_then(|v| serde_json::from_value(v).ok())
     }
 }
 
@@ -762,9 +703,7 @@ pub fn wire(hub: &Arc<Hub>, ports: &HubTaskPorts) {
     ports.bind(hub);
     register_lead_calls(hub);
     let hooks = &hub.tasks.hooks;
-    let _ = hooks
-        .usage
-        .set(Arc::new(UsageFromArea(Arc::clone(&hub.usage))));
+    let _ = hooks.usage.set(Arc::clone(&hub.usage));
     let lead_hooks = &hub.leads.ctx.hooks;
     let _ = lead_hooks.tasks.set(Arc::new(TasksForLeads(
         Arc::clone(&hub.tasks),

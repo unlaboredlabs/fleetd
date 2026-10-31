@@ -3,7 +3,7 @@
 //   node fixtures/kit/record.ts --handoff <file> --out <raw.jsonl>          (in app/desktop; stop it with SIGTERM)
 //
 // The lab writes the handoff ({hubUrl, key}, a human key) when run with FLEETD_LAB_APP_HANDOFF=<file>
-// (tests/lab/testLab.ts). The recorder waits for it, then holds one /app session for the whole run: the snapshot, every
+// (tests/lab/testLab.ts, the demo). The recorder waits for it, then holds one /app session for the whole run: the snapshot, every
 // event from cursor 0, the live feed (board, focused on the newest order), and repeated sweeps of every read call the
 // app's screens make over every machine, project, order and thread it has seen (Time's answers are fixtures/time's, so
 // it records none). It reconnects when the lab restarts the hub. A call's result is written only when it differs from

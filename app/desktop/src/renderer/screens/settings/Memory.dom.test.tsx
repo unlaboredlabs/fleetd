@@ -134,7 +134,7 @@ it("lists your memory as one card per entry, with the lead's source and time onl
   expect(document.querySelector('[role="meter"]')?.getAttribute("aria-valuetext")).toBe(`${String(FILE.length)} of 4,000 characters`);
 });
 
-it("has no hub-wide caps: those are Every project's", async () => {
+it("has no caps to set", async () => {
   await mount(FILE);
   expect(document.body.textContent).not.toContain("Memory caps");
   expect([...document.querySelectorAll("button")].some((b) => b.textContent === "Save caps")).toBe(false);

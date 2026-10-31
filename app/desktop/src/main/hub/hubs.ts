@@ -1,4 +1,4 @@
-// The hubs this app is paired with (docs/design/hubs.md): their list in <fleetd dir>/desktop-hubs.json, in sidebar
+// The hubs this app is paired with: their list in <fleetd dir>/desktop-hubs.json, in sidebar
 // order and with no keys in it, and one HubService per hub, each with its own key, connection and offline cache. The
 // first hub keeps the files the app had before it paired with several, so an upgraded app already is that hub. The
 // list is never empty: a fresh app has one hub, not paired yet, which onboarding pairs, and removing the last hub only

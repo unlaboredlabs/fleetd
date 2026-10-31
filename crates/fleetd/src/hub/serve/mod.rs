@@ -1,4 +1,4 @@
-//! `fleetd hub start` (alias `hub serve`): parses its flags, builds the [`Hub`] over the database in `--home`, starts
+//! `fleetd hub start`: parses its flags, builds the [`Hub`] over the database in `--home`, starts
 //! every area's background loop and serves HTTP until SIGTERM/SIGINT.
 use crate::clock::{Clock, SystemClock};
 use crate::hub::api::{self, Hub, HubConfig, Listen, Registry, Shutdown};
@@ -14,8 +14,7 @@ use tokio::task::JoinHandle;
 
 mod wire;
 
-pub const HUB_START_USAGE: &str =
-    "  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>]
+pub const HUB_START_USAGE: &str = "  hub start [--home <dir>] [--listen <host:port>]
              run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
              writes to an offline machine wait 24 h)
 ";
@@ -25,8 +24,6 @@ pub struct HubOptions {
     /// Absent means the default, `~/.fleetd/hub`.
     pub home: Option<String>,
     pub listen: Listen,
-    /// How long a write to an offline machine waits in the queue; absent means 24 h.
-    pub queue_ttl_sec: Option<u64>,
 }
 
 /// `host:port`, `:port` or `port`; IPv6 hosts in brackets, as in `[::1]:4790`.
@@ -59,8 +56,8 @@ pub fn parse_listen(value: &str) -> Option<Listen> {
 /// The flags of `hub start`, with node:util `parseArgs`'s strict rules and messages: `--flag value` or
 /// `--flag=value`, the last one wins, no positionals.
 pub fn parse_hub_args(argv: &[String]) -> Result<HubOptions, String> {
-    const FLAGS: [&str; 3] = ["home", "listen", "queue-ttl"];
-    let mut values: [Option<String>; 3] = Default::default();
+    const FLAGS: [&str; 2] = ["home", "listen"];
+    let mut values: [Option<String>; 2] = Default::default();
     let mut args = argv.iter();
     while let Some(arg) = args.next() {
         if arg == "--" {
@@ -97,31 +94,14 @@ pub fn parse_hub_args(argv: &[String]) -> Result<HubOptions, String> {
         };
         values[index] = Some(value);
     }
-    let [home, listen, ttl] = values;
+    let [home, listen] = values;
     let listen = match listen {
         None => Listen::default(),
         Some(raw) => {
             parse_listen(&raw).ok_or_else(|| format!("--listen must be host:port, got '{raw}'"))?
         }
     };
-    let queue_ttl_sec = match ttl {
-        None => None,
-        Some(raw) => Some(
-            raw.parse::<u64>()
-                .ok()
-                .filter(|n| {
-                    *n > 0 && !raw.starts_with('0') && raw.bytes().all(|b| b.is_ascii_digit())
-                })
-                .ok_or_else(|| {
-                    format!("--queue-ttl must be a whole number of seconds, got '{raw}'")
-                })?,
-        ),
-    };
-    Ok(HubOptions {
-        home,
-        listen,
-        queue_ttl_sec,
-    })
+    Ok(HubOptions { home, listen })
 }
 
 /// The CLI entry for `fleetd hub start <args>`: exit 2 on bad flags, 0 after SIGTERM/SIGINT, 1 on a failure.
@@ -163,7 +143,6 @@ pub async fn run(options: HubOptions) -> anyhow::Result<()> {
         url: configured_url(&home),
         home,
         listen: options.listen.clone(),
-        queue_ttl_sec: options.queue_ttl_sec,
     };
     let hub = build(config, Arc::new(SystemClock))?;
     let tools = Arc::new(api::registry());
@@ -228,13 +207,12 @@ pub fn build(config: HubConfig, clock: Arc<dyn Clock>) -> anyhow::Result<Arc<Hub
     for gone in ["github-webhook.secret", "webhook.key"] {
         let _ = std::fs::remove_file(config.home.join(gone));
     }
-    // A lab hub sets FLEETD_HOST_SWEEP=off, so the metrics read no git host and the run needs no network.
-    let hosts = if std::env::var("FLEETD_HOST_SWEEP").is_ok_and(|v| v == "off") {
-        crate::hub::metrics::source::HostSources::none()
-    } else {
-        crate::hub::metrics::source::HostSources::real()
-    };
-    build_on_with(db, config, clock, hosts)
+    build_on_with(
+        db,
+        config,
+        clock,
+        crate::hub::metrics::source::HostSources::real(),
+    )
 }
 
 /// [`build`] over an opened database (tests use `HubDb::open_memory`), reading no git host for the metrics.
@@ -294,7 +272,7 @@ pub fn build_on_with(
         linked.upgrade().is_none_or(|l| !l.node_lacks(m, cap))
     }));
     let watchdog = crate::hub::watchdog::Watchdog::new(
-        crate::hub::watchdog::stall_ms_from_env(),
+        crate::hub::watchdog::STALL_MS,
         executors.clone(),
         store.clone(),
         events.clone(),
@@ -306,8 +284,7 @@ pub fn build_on_with(
         watchdog.clone(),
         clock.clone(),
     );
-    let queue =
-        crate::hub::queue::WriteQueue::from_config(&config, &db, &events, &clock, &executors);
+    let queue = crate::hub::queue::WriteQueue::over(&db, &events, &clock, &executors);
     let ops = crate::hub::usage::wire::build(&config, clock.clone(), requests.clone());
     let wakes = crate::hub::wakes::Wakes::new(
         db.clone(),
@@ -440,7 +417,6 @@ pub fn build_on_with(
         metrics: crate::hub::metrics::Metrics::new(hosts),
         updates,
         relays: Arc::default(),
-        previews: Arc::default(),
         machine_setup: Arc::default(),
         github_app,
         builds,
@@ -464,7 +440,6 @@ pub fn build_on_with(
     crate::hub::browser::calls::register_lead_calls(&hub);
     crate::hub::navi::purchases::register_lead_calls(&hub);
     crate::hub::machine_roles::wire(&hub);
-    crate::hub::preview::wire(&hub);
     crate::hub::skills::calls::register_lead_calls(&hub);
     crate::hub::skills::saves::register_lead_calls(&hub);
     crate::hub::skills::versions::watch_uses(&hub);
@@ -505,12 +480,8 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(tokio::spawn(crate::hub::machine_roles::screens::run(
         hub.clone(),
     )));
-    loops.push(tokio::spawn(crate::hub::preview::run_sweep(hub.clone())));
     loops.push(tokio::spawn(crate::hub::tasks::ci_wait::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::memory::refresh::run(hub.clone())));
-    loops.push(tokio::spawn(crate::hub::preview::run_untracked(
-        hub.clone(),
-    )));
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
     loops.push(crate::hub::queue::start_loops(hub));
     loops.extend(crate::hub::usage::wire::start(hub));

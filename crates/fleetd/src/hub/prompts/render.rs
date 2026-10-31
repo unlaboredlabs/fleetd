@@ -4,17 +4,20 @@ use std::fmt::Display;
 
 use fleetd_contracts::prompts::{Enforcement, PromptWarning, PromptWarningCode};
 use regex::RegexBuilder;
-use sha1::{Digest, Sha1};
 
 use super::registry::Entry;
 
 /// What `git hash-object <file>` prints for these bytes. Prompt refs and the `base` an override file records are
 /// built from it, so changing the hash would mark every edited prompt as changed by a release.
 pub fn git_blob_sha(content: &[u8]) -> String {
-    let mut sha = Sha1::new();
+    let mut sha = ring::digest::Context::new(&ring::digest::SHA1_FOR_LEGACY_USE_ONLY);
     sha.update(format!("blob {}\0", content.len()).as_bytes());
     sha.update(content);
-    sha.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    sha.finish()
+        .as_ref()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// `<id>@<first 10 hex of the text's git blob SHA>`.

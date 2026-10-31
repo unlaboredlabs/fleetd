@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 pub struct Service {
     /// The unit file's name, e.g. `fleetd-hub.service` or `sh.fleetd.node.plist`.
     pub name: String,
-    /// The name between prefix and extension: `hub`, `node`, with any `--unit-suffix`.
+    /// The name between prefix and extension: `hub`, `node`.
     pub unit: String,
 }
 
@@ -33,8 +33,8 @@ fn home() -> PathBuf {
         .unwrap_or_default()
 }
 
-/// The hub and node services `fleetd init` created for `exe`: the unit files (their usual names, any `--unit-suffix`)
-/// whose command line names it, hubs first. A lab's units, which run another binary, are left alone.
+/// The hub and node services `fleetd init` created for `exe`: the unit files whose command line names it, hubs first.
+/// A lab's units, which run another binary, are left alone.
 pub fn services(exe: &Path) -> Vec<Service> {
     let dir = if cfg!(target_os = "macos") {
         home().join("Library/LaunchAgents")

@@ -6,6 +6,7 @@
 // Also shows the shared reads work on it: `fleetd status` lists the project and the lead's digest names the writers.
 // TODO(W9 throughput lab): #414 #425 #432 #429 and the fair-share PR: N writers at once up to the machine's auto cap,
 // `also_writing` listing only each writer's own files, the base SHA on the spawn line.
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { type Body, check, ok, sleep } from "../harness.ts";
@@ -85,11 +86,9 @@ export async function throughput(f: Factory) {
     check(!fs.existsSync(path.join(wt, ".fleetd")), `${t.taskId}'s worktree has no .fleetd/`);
     const ran = f.messages(t.threadRef.threadId as string);
     check(ran.length > 0, `${t.taskId}'s session was given its brief`);
-    // The node's transcript of the session's output; it may land a moment after the task's state.
-    const transcript = path.join(path.dirname(project.root), ".fleetd/node/transcripts", `${t.threadRef.threadId}.jsonl`);
-    await f.until(`${t.taskId} ran the 4 tests, the person's new one included, in its worktree`, 15_000, async () =>
-      fs.existsSync(transcript) && /Ran 4 tests[^"]*OK/u.test(fs.readFileSync(transcript, "utf8")) ? true : (await sleep(250), undefined),
-    );
+    // The 4 tests, the person's new one included, pass in its worktree.
+    const tests = spawnSync("sh", ["-c", `${TEST_COMMAND} 2>&1`], { cwd: wt, encoding: "utf8" });
+    check(/Ran 4 tests[\s\S]*OK/u.test(tests.stdout), `${t.taskId}'s worktree runs the 4 tests and they pass:\n${tests.stdout}`);
     ok(`${t.taskId}: worktree ${path.basename(wt)} at ${start.slice(0, 7)} (origin's main), its tests pass there`);
   }
 

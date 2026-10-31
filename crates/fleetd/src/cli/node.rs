@@ -6,7 +6,7 @@ use super::args::{self, Kind, Spec};
 
 pub use crate::node::NODE_USAGE;
 
-pub const HUB_START_USAGE: &str = r#"  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>]
+pub const HUB_START_USAGE: &str = r#"  hub start [--home <dir>] [--listen <host:port>]
              run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
              writes to an offline machine wait 24 h)
 "#;
@@ -18,8 +18,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("token-file", Kind::Str),
     ("enroll-only", Kind::Bool),
     ("machine", Kind::Str),
-    ("tags", Kind::Str),
-    ("name", Kind::Str),
     ("claude-config-dir", Kind::Str),
 ];
 
@@ -82,8 +80,6 @@ pub async fn node_command(argv: &[String]) -> u8 {
                 hub,
                 token,
                 machine,
-                tags: v.str("tags").map(crate::node::parse_tags),
-                name: v.string("name"),
                 home,
                 enroll_only: v.flag("enroll-only"),
                 claude_config_dir: v.string("claude-config-dir").filter(|d| !d.is_empty()),
@@ -94,7 +90,7 @@ pub async fn node_command(argv: &[String]) -> u8 {
                     .map_err(|error| error.to_string()),
             )
         }
-        Some("run" | "serve") => exit(
+        Some("run") => exit(
             crate::node::run(crate::node::RunArgs { home })
                 .await
                 .map_err(|error| error.to_string()),
@@ -103,7 +99,7 @@ pub async fn node_command(argv: &[String]) -> u8 {
             let [dir] = v.positionals.as_slice() else {
                 return usage("node trust takes the checkout's folder");
             };
-            let home = home.unwrap_or_else(crate::node::config::default_node_home);
+            let home = crate::node::config::default_node_home();
             let dir = std::path::absolute(dir).unwrap_or_else(|_| PathBuf::from(dir));
             match crate::node::checkouts::trust(&home, &dir) {
                 Ok(true) => {

@@ -539,16 +539,6 @@ pub fn for_lead(
     })
 }
 
-/// [`launch_account`] for work nobody started (the nightly memory refresh) on `machine`.
-pub fn for_hub(
-    db: &HubDb,
-    link: &crate::hub::link::NodeLinkServer,
-    machine: &MachineId,
-) -> Result<Option<ClaudeAccount>, Refusal> {
-    let setup = db.claude_accounts().setup().map_err(Refusal::unread)?;
-    launch_account(&setup, &Whose::Hub, machine, || node_can(link, machine))
-}
-
 /// The refusal an order of `order` would meet anywhere, before any agent is spawned for it: `Some` when its person
 /// has nothing to run on ("Connect your Claude to start this order").
 pub fn order_refusal(db: &HubDb, r: &ProjectRef, order: &WorkstreamId) -> Option<Refusal> {

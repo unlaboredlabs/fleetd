@@ -346,7 +346,6 @@ async fn steps(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u8, 
         home: &opts.home,
         listen: listen.clone(),
         url: url.clone(),
-        suffix: opts.suffix.clone(),
         identity,
         with_service: opts.with_service,
         restart: false,
@@ -510,7 +509,7 @@ async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u
         machine::AddArgs {
             git_identity: opts.identity.clone(),
             claude_config_dir: opts.claude_config_dir.clone(),
-            ..machine::AddArgs::local(machine_id.clone(), &opts.suffix, opts.with_service)
+            ..machine::AddArgs::local(machine_id.clone(), opts.with_service)
         },
     )
     .await;
@@ -554,10 +553,9 @@ async fn repair_worker(
         &joined.hub,
         machine::Enroll::Keep,
         machine::AddArgs {
-            tags: joined.tags.clone(),
             git_identity: opts.identity.clone().or(joined.identity.clone()),
             claude_config_dir: opts.claude_config_dir.clone(),
-            ..machine::AddArgs::local(joined.machine_id.clone(), &joined.suffix, opts.with_service)
+            ..machine::AddArgs::local(joined.machine_id.clone(), opts.with_service)
         },
     )
     .await;
@@ -1002,12 +1000,10 @@ async fn workers(
         let added = machine::add(machine::AddArgs {
             host: host.clone(),
             machine_id: Some(id.clone()),
-            tags: Vec::new(),
             dry_run: false,
             hub_url: None,
             ssh_config: ssh_config.clone(),
             home: Some(home.clone()),
-            unit_suffix: None,
             enroll: machine::Enroll::Hub,
             git_identity: None,
             no_service: !opts.with_service,
@@ -1475,13 +1471,6 @@ async fn walk(
                 "run its checks now".to_owned(),
             ));
         }
-        if step.need != SetupNeed::Required {
-            actions.push((
-                "later",
-                "Later".to_owned(),
-                "it keeps its place; fleetd init asks again".to_owned(),
-            ));
-        }
         actions.push(("next", "Go on".to_owned(), String::new()));
         match ui.select(list, &format!("{}:", step.title), &actions, actions[0].0)? {
             // An invite counts once they join; test it now anyway, as the hub may already know them.
@@ -1495,18 +1484,6 @@ async fn walk(
                 if tested(list, client, step.id).await == SetupStatus::Done {
                     return Ok(SetupStatus::Done);
                 }
-            }
-            "later" => {
-                return Ok(match steps::skip(client, step.id).await {
-                    Ok(s) => {
-                        list.skipped(&s.title, "later");
-                        s.status
-                    }
-                    Err(failure) => {
-                        list.warn(&step.title, &failure.message, Some(&failure.fix));
-                        step.status
-                    }
-                });
             }
             _ => return Ok(step.status),
         }
@@ -1537,8 +1514,7 @@ async fn tested(
 fn invite(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<(), Stopped> {
     let name = ui.input(list, "Their name", "", "alice", needed)?;
     let home = opts.home.to_string_lossy().into_owned();
-    let out =
-        crate::cli::people::invite_command(&["--name".into(), name.clone(), "--home".into(), home]);
+    let out = crate::cli::people::invite_at(&["--name".into(), name.clone()], Some(&home));
     if out.code == 0 {
         list.done(&format!("invite {name}"), "send them this:");
         list.note(out.stdout.trim_end());

@@ -213,39 +213,6 @@ pub fn retire_decision(
     Ok(decision)
 }
 
-pub fn resolve(db: &Connection, key: &str, chain: &Chain) -> Result<Option<Decision>, Fail> {
-    let data: Option<String> = db
-        .query_row(
-            "SELECT data FROM decisions
-             WHERE key = :key AND state = 'active' AND (
-               (scope_kind = 'workstream' AND scope_id = :ws) OR (scope_kind = 'project' AND scope_id = :project)
-               OR scope_kind = 'global')
-             ORDER BY CASE scope_kind WHEN 'workstream' THEN 0 WHEN 'project' THEN 1 ELSE 2 END LIMIT 1",
-            named_params! {
-                ":key": key,
-                ":ws": chain.workstream_id.as_ref().map(|w| w.as_str()),
-                ":project": project_key(&chain.project_ref),
-            },
-            |r| r.get(0),
-        )
-        .optional()?;
-    data.map(decode).transpose()
-}
-
-/// Active decisions on `key` recorded in the project, at project or workstream scope, oldest first.
-pub fn active_on_key(
-    db: &Connection,
-    key: &str,
-    project_ref: &ProjectRef,
-) -> Result<Vec<Decision>, Fail> {
-    let mut stmt =
-        db.prepare_cached("SELECT data FROM decisions WHERE key = ? AND project_key = ? AND state = 'active' ORDER BY n")?;
-    let rows = stmt.query_map(params![key, project_key(project_ref)], |r| {
-        r.get::<_, String>(0)
-    })?;
-    rows.map(|row| decode(row?)).collect()
-}
-
 /// Every decision recorded in the project at project or workstream scope, in any state, newest first.
 /// The decision `id` when it is global or recorded in `project_ref` (project or workstream scope), in any state.
 pub fn get_decision_in(

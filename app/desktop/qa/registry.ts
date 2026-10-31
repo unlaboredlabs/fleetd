@@ -115,7 +115,6 @@ export const fixtures = [
   "onboarding-app-too-old",
   "onboarding-hub-too-old",
   "projects-errors",
-  "projects-machines",
   // F6: the Status view's own states (fixtures/status), and E3b's eight-project mix (all four words, stale, a
   // ~120-character name).
   "status-rows",
@@ -179,7 +178,7 @@ export const fixtures = [
   "prs-heavy",
   // UX-1: the sidebar's reasons and a new reply (fixtures/sidebar); one agent's live work (fixtures/agents).
   "sidebar-reasons",
-  // Several hubs (docs/design/hubs.md): Personal and Acme in one sidebar, and Acme unreachable beside Personal.
+  // Several hubs: Personal and Acme in one sidebar, and Acme unreachable beside Personal.
   "sidebar-hubs",
   "sidebar-hubs-offline",
   "agents-work",
@@ -207,16 +206,7 @@ export const fixtures = [
   // W46's design preview: storefront's browser sessions, one agent driving and one asking you to take over
   // (fixtures/sessions).
   "sessions-preview",
-  // W58's Try it: storefront's #14 suggested, started, ready, starting, failed, ended, and from a read key
-  // (fixtures/tryit).
-  "tryit-fresh",
-  "tryit-ready",
-  "tryit-starting",
-  "tryit-failed",
-  "tryit-ended",
-  "tryit-read",
-  "tryit-read-ready",
-  // W96: what there is to look at, a lead's nudge and a Try it suggestion, with nothing waiting (fixtures/look).
+  // W96: what there is to look at, two of the lead's nudges, with nothing waiting (fixtures/look).
   "look-two",
   "stream-reply",
   // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
@@ -328,18 +318,6 @@ const openUpdates = async (page: Page) => {
   await page.keyboard.press("ControlOrMeta+K");
   await page.getByRole("combobox", { name: "Search" }).fill("Check for updates");
   await page.keyboard.press("Enter");
-};
-
-/** #14's Try it, ready: Mark up, a pin on the Dutch pay button, and what's wrong there in words. */
-const markUp = async (page: Page) => {
-  await page.getByRole("tab", { name: "Try it" }).click();
-  await page.getByRole("button", { name: "Mark up" }).click();
-  const layer = page.locator("[data-pin-layer]");
-  const box = await layer.boundingBox();
-  if (box === null) throw new Error("no page to mark up");
-  // The pay button, as the Dutch checkout draws it (fixtures/tryit/pages.ts): 42% across, 64% down.
-  await layer.click({ position: { x: box.width * 0.42, y: box.height * 0.64 } });
-  await page.getByRole("textbox", { name: "What’s wrong at pin 1" }).fill("In Dutch the button wraps onto two lines. Keep it on one, as in German.");
 };
 
 // storefront's PRs in the panel beside its chat (fixtures/prs): the list, and #11 (in review, its reviewers at work),
@@ -1359,79 +1337,6 @@ export const screens: readonly Screen[] = [
   },
   { id: "prs.detail", route: `${PRS}/11`, fixtures: ["typical"], variant: "by-number", sizes: ["small"] },
   { id: "prs.detail", route: PR(11), fixtures: ["prs-error"], expect: "error" },
-  // W58's Try it on #14: its writer's suggestion in the overview with Try it beside it, and the lead's proposed Try it
-  // setting in the chat; a start played through to the page; the preview starting, ready, marked up and its feedback
-  // sent; failed and ended; the merge line's Try it; and a read key, which gets no Try it to press (D162).
-  { id: "prs.detail", route: PR(14), fixtures: ["tryit-fresh"], variant: "try-suggested" },
-  {
-    id: "chat",
-    route: CHAT,
-    fixtures: ["tryit-fresh"],
-    variant: "try-suggested",
-    open: async (page) => {
-      await expect(page.getByRole("note").filter({ hasText: "suggests trying it" })).toBeVisible();
-      await expect(page.getByText("Try it setting", { exact: true })).toBeVisible();
-    },
-  },
-  {
-    id: "tryit",
-    route: PR(14),
-    fixtures: ["tryit-fresh"],
-    variant: "started",
-    open: async (page) => {
-      await page.getByRole("button", { name: "Try #14" }).first().click();
-      await expect(page.locator('[data-screen="tryit.ready"]')).toBeVisible({ timeout: 15_000 });
-      await expect(page.getByRole("application", { name: "The preview: your clicks and keys go to it" }).locator("img")).toBeVisible();
-    },
-  },
-  ...(["tryit-starting", "tryit-ready", "tryit-failed", "tryit-ended"] as const).map(
-    (fixture): Screen => ({ id: "tryit", route: PR(14), fixtures: [fixture], open: (page) => page.getByRole("tab", { name: "Try it" }).click() }),
-  ),
-  { id: "tryit", route: PR(14), fixtures: ["tryit-ready"], variant: "marked", open: markUp },
-  {
-    id: "tryit",
-    route: PR(14),
-    fixtures: ["tryit-ready"],
-    variant: "sent",
-    open: async (page) => {
-      await markUp(page);
-      await page.getByRole("button", { name: "Send to #14’s agents" }).click();
-      await expect(page.getByText("Sent to #14’s writer, at its next step.", { exact: true })).toBeVisible();
-    },
-  },
-  // The merge line only reopens (phase 1 starts none there): #9's preview is ready, the others have none.
-  {
-    id: "train",
-    route: `${CHAT}/train`,
-    fixtures: ["tryit-ready"],
-    variant: "try",
-    open: async (page) => {
-      await expect(page.getByRole("button", { name: "Open #9’s preview, ready" })).toBeVisible();
-      await expect(page.getByRole("button", { name: /^Try #/u })).toHaveCount(0);
-    },
-  },
-  // ...and a read key with #14's preview running: it uses the page, with no Mark up, Send or End.
-  {
-    id: "tryit",
-    route: PR(14),
-    fixtures: ["tryit-read-ready"],
-    open: async (page) => {
-      await page.getByRole("tab", { name: "Try it" }).click();
-      await expect(page.getByRole("application", { name: "The preview: your clicks and keys go to it" })).toBeVisible();
-      // The chat's composer has a Send of its own: only the preview's are counted.
-      await expect(page.getByRole("button", { name: /^(Mark up|End|Send to #14)/u })).toHaveCount(0);
-    },
-  },
-  {
-    id: "prs.detail",
-    route: PR(14),
-    fixtures: ["tryit-read"],
-    variant: "read",
-    open: async (page) => {
-      await expect(page.getByRole("note").filter({ hasText: "suggests trying it" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Try #14" })).toHaveCount(0);
-    },
-  },
 
   // Its changes: the files beside a diff drawn a screen at a time, one column or side by side, and a PR too big to
   // load at once.
@@ -1529,23 +1434,14 @@ export const screens: readonly Screen[] = [
   { id: "onboarding.connecting", route: "#/onboarding", fixtures: ["hub-unreachable", "onboarding-not-found"] },
   // A hub on another protocol, either way round.
   { id: "onboarding.mismatch", route: "#/onboarding", fixtures: ["onboarding-app-too-old", "onboarding-hub-too-old"] },
-  // W100: the hub admin's setup (a design prototype, docs/design/setup.md): the welcome, a step open beside the list
+  // W100: the hub admin's setup: the welcome, a step open beside the list
   // (Claude to do, the GitHub App), and the end.
   { id: "setup.welcome", route: "#/setup/welcome", fixtures: ["setup-fresh"] },
   { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"], variant: "claude" },
   { id: "setup", route: "#/setup/github", fixtures: ["setup-github"], variant: "github" },
   { id: "setup.done", route: "#/setup/done", fixtures: ["setup-done"] },
-  // F8: Add project (the pick list, its empty and loading states, gh and machine problems) and Machines.
+  // F8: Add project (the pick list, its empty and loading states, gh and machine problems).
   { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },
-  // Opened from Machines, which subscribed first: the sheet must still find the live connection and list repos.
-  {
-    id: "projects.add.pick",
-    route: "#/machines",
-    fixtures: ["typical"],
-    open: async (page) => {
-      await page.getByRole("button", { name: "Add project…" }).click();
-    },
-  },
   // The sheet's later states, reached by adding from the pick list (fixtures/projects answers project_add).
   {
     id: "projects.add.cloning",
@@ -1771,19 +1667,6 @@ export const screens: readonly Screen[] = [
       await page.getByRole("option", { name: "#14 Checkout keeps the cart after sign-in" }).click();
       await page.getByRole("button", { name: "Open screen" }).click();
       await expect(page.getByText("Installing #14’s build on devbox…")).toBeVisible();
-    },
-  },
-  // A browser with a PR is its Try it preview: no machine to pick.
-  {
-    id: "sessions",
-    route: `${CHAT}/sessions`,
-    fixtures: ["sessions-preview"],
-    variant: "new-screen-pr-web",
-    open: async (page) => {
-      await page.getByRole("button", { name: "New screen", exact: true }).click();
-      await page.getByRole("combobox", { name: "PR preview" }).click();
-      await page.getByRole("option", { name: "#14 Checkout keeps the cart after sign-in" }).click();
-      await expect(page.getByRole("button", { name: "Open preview" })).toBeVisible();
     },
   },
   // ...and a browser of your own on devbox: its live view, yours from the start, with End screen and no Hand back.
@@ -2012,20 +1895,6 @@ export const screens: readonly Screen[] = [
   },
   { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"], variant: "narrow", sizes: ["narrow"] },
   { id: "agents.work", route: `${CHAT}/agents/T99`, fixtures: ["typical"], variant: "finished" },
-  { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
-  // A machine's row opened (its facts, its projects with their menus, the way to its roles) and the checks that pass.
-  {
-    id: "machines",
-    route: "#/machines",
-    fixtures: ["projects-machines", "long-text"],
-    variant: "open",
-    open: async (page) => {
-      await page.getByRole("button", { name: "devbox details" }).click();
-      await page.getByRole("list", { name: "Projects on devbox" }).waitFor();
-      await page.getByRole("button", { name: /^\d+ (passing|more)$/u }).click();
-      await page.getByRole("region", { name: "Setup checks" }).getByText("Hub reachable").waitFor();
-    },
-  },
   // F11: the command palette (opening on the project on screen, then go-tos), a typed search, and the shortcuts
   // sheet. status-rows has eight projects, one with a ~120-character name.
   {

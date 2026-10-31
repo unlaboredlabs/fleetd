@@ -1,4 +1,4 @@
-// Push notifications (D218, docs/design/push.md), the parts that don't touch the OS: registering this phone with the
+// Push notifications (D218), the parts that don't touch the OS: registering this phone with the
 // hub, opening a sealed notification, what to show for it and where tapping it goes. The phone's X25519 key pair is
 // made at pairing and kept in secure storage (vault.ts); the hub seals each notification to its public key and the
 // relay forwards the ciphertext as `c`. On iOS the Notification Service Extension opens it before it shows

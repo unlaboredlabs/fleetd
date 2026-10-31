@@ -301,20 +301,6 @@ async fn a_night_that_keeps_several_worktrees_lists_them_in_one_line() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn the_sweep_leaves_a_project_that_keeps_its_worktrees_alone() {
-    let (hub, _home) = hub_on(ManualClock::at(NOW as u64));
-    let node = Node::link(&hub).await;
-    let mut removals = serve(&hub, node, HashMap::new());
-    hub.db
-        .project_settings()
-        .set_keep_worktrees(&project(), true)
-        .unwrap();
-    ended(&hub, 1, 30);
-    assert_eq!(hub.tasks.sweep_worktrees().await, Default::default());
-    assert!(drain(&mut removals).is_empty());
-}
-
-#[tokio::test(flavor = "current_thread")]
 async fn closing_an_order_stops_its_leftover_agents_but_not_the_trains_reviewers() {
     let (hub, _home) = hub_on(ManualClock::at(NOW as u64));
     let node = Node::link(&hub).await;

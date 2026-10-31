@@ -223,7 +223,7 @@ const oldHub = (base: Fixture): Fixture => {
 /** Ada's settings page, as Settings › Projects reads it for a Navi. */
 const adaSettings = (f: Fixture): void => {
   f.answer("project_settings_get", { ...ADA }, {
-    settings: { ...ADA, title: "Ada", workspaceRoot: "/home/dev/.fleetd/navi/ada", keepWorktrees: false, env: [], setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] } },
+    settings: { ...ADA, title: "Ada", workspaceRoot: "/home/dev/.fleetd/navi/ada", env: [], setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] } },
   });
   f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
 };

@@ -1,6 +1,6 @@
 // Navi in the app, as plain view data: which projects are Navis (a project the hub marks `kind: "assistant"`), the
 // sidebar's order (the Navis pinned above the projects, an archived one in neither), a name the hub would take, and
-// the work a Navi asked other projects for (navi_asks, docs/design/navi.md). Pure, so it is unit-tested.
+// the work a Navi asked other projects for (navi_asks). Pure, so it is unit-tested.
 import type { MachineRolesEntry, NaviAsk, NaviAskOrder, ProjectSummary } from "../../../shared/contracts";
 
 /** A Navi: a plain-folder project with an assistant for its lead. */

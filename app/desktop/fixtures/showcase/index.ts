@@ -4,7 +4,7 @@
 // three parts and starts a writer on each, the first PR opens and its review passes, the web writer tests the change in
 // a live browser screen and the iPhone writer boots a simulator and taps through the app, until its sign-in texts a
 // code and the lead asks you to take over (QA takes over, types the code and hands back), the browser's recording lands
-// as the second PR's proof, #230 is tried on the web (Try it), and the train merges four PRs as one batch. Then QA
+// as the second PR's proof, and the train merges four PRs as one batch. Then QA
 // shows what else the app does (more.ts): the night's memory refresh in this chat and the Automations page, Ada (a
 // Navi) with a reply to approve, and Hub › People, with a second hub beside this one in the sidebar.
 //
@@ -22,7 +22,7 @@ import { changesAnswers } from "../../src/renderer/screens/train/fixture.ts";
 import { MEMORY_REFRESHED } from "../lead/index.ts";
 import { answerHub } from "../admin/index.ts";
 import { CODE, PHONE_FRAME } from "./pages.ts";
-import { hubsScene, naviScene, teamScene, tryItScene } from "./more.ts";
+import { hubsScene, naviScene, teamScene } from "./more.ts";
 
 export const REQUEST = "Let shoppers save their cart and pick it up on the web or the iPhone app.";
 
@@ -48,9 +48,6 @@ export const STEPS = {
   merged: 25_000,
   end: 36_900,
 } as const;
-
-/** #230's Try it page: there before QA opens it, then flipped to German while it is on view. */
-export const TRY_IT = { page: 19_800, flip: 22_200 } as const;
 
 /** The web screen's pages, by when each shows. */
 const WEB_PAGES: ReadonlyArray<readonly [number, string, string]> = [
@@ -329,7 +326,7 @@ const build = (base: Fixture, other: Fixture): Fixture => {
     history: [],
     links: { pr: url(229), checks: `${url(229)}/checks`, files: `${url(229)}/files` },
   });
-  // #230, ready, as Try it opens it.
+  // #230, ready.
   f.answer("pr_get", { repo: REPO, number: 230 }, {
     pr: prRow(PRS[1] as Pr, "approve229") ?? {},
     body: "The checkout’s pay and back buttons read naturally in German, and checkout gets its Dutch copy.",
@@ -550,10 +547,7 @@ const build = (base: Fixture, other: Fixture): Fixture => {
   // The screens' pages.
   WEB_PAGES.forEach(([ms, image, address], i) => at(ms, "browser_frame", frame(SCREEN.web, i + 1, image, "agent", address)));
   PHONE_PAGES.forEach(([ms, image], i) => at(ms, "browser_frame", frame(SCREEN.phone, i + 1, image, "agent")));
-  // Try it on #230, Ada, Hub › People and the second hub (more.ts).
-  const tryIt = tryItScene(f, REPO, 230);
-  at(TRY_IT.page, "browser_frame", tryIt.first);
-  at(TRY_IT.flip, "browser_frame", tryIt.flipped);
+  // Ada, Hub › People and the second hub (more.ts).
   naviScene(f, ref);
   answerHub(f);
   teamScene(f);

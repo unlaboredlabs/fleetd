@@ -185,12 +185,6 @@ pub const ENTRIES: &[Entry] = &[
                 Code
             ),
             (
-                "try-it-on-demand",
-                "starts a preview only in a turn answering the human's ask; agents only suggest one (D161)",
-                r"preview_start",
-                Code
-            ),
-            (
                 "parallel-by-default",
                 "splits approved work into parts whose files don't overlap and runs them in parallel while slots are free",
                 r"Parallel by default",

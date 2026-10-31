@@ -63,8 +63,6 @@ pub struct NewMessage {
     pub held: bool,
     /// Defaults to now.
     pub created_ms: Option<i64>,
-    /// An agent's suggestion to try a PR (hub/preview).
-    pub preview_suggestion: Option<fleetd_contracts::preview::PreviewSuggestion>,
     /// Flagged for the person's look as it is added (`nudges`).
     pub nudge: Option<Line<1, 200>>,
 }
@@ -326,7 +324,6 @@ impl Chat {
                 worktrees_kept: new.worktrees_kept,
                 skill_saved: new.skill_saved,
                 skills: (!new.skills.is_empty()).then(|| List::unchecked(new.skills)),
-                preview_suggestion: new.preview_suggestion,
                 nudge: None,
                 parts: attachments::show(
                     c,

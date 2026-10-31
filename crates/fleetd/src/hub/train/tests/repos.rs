@@ -28,7 +28,7 @@ fn after(mut call: ChangeEnqueueCall, upstream: &str) -> ChangeEnqueueCall {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn two_repos_merge_on_separate_lanes_each_by_its_checkouts_rules() {
+async fn two_repos_merge_on_separate_lanes() {
     let kit = two_repos();
     let web = kit.open_pr(7, "fleetd/T1-web", &[add("web.txt", "web\n")]);
     let api = kit.open_pr_in(API, 8, "fleetd/T2-api", &[add("api.txt", "api\n")]);
@@ -45,18 +45,9 @@ async fn two_repos_merge_on_separate_lanes_each_by_its_checkouts_rules() {
     assert!(kit.train.step(API).await);
     assert_eq!(merged_prs(&kit), [8]);
     assert_eq!(state_of(&kit, &web), ChangeState::Ready);
-    assert!(
-        kit.host
-            .train_read
-            .lock()
-            .unwrap()
-            .contains(&api_checkout())
-    );
-    assert!(!kit.host.train_read.lock().unwrap().contains(&project()));
 
     assert!(kit.train.step(REPO).await);
     assert_eq!(merged_prs(&kit), [8, 7]);
-    assert!(kit.host.train_read.lock().unwrap().contains(&project()));
 }
 
 #[tokio::test(flavor = "multi_thread")]

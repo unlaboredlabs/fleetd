@@ -109,7 +109,7 @@ pub(crate) fn session_env(var: impl Fn(&str) -> Option<String>) -> Vec<(String, 
 /// Where sessions live and what their processes get.
 #[derive(Clone, Debug)]
 pub struct SessionConfig {
-    /// The node home: `worktrees/`, `sessions/<id>/` (the MCP config) and `transcripts/` live here.
+    /// The node home: `worktrees/` and `sessions/<id>/` (the MCP config) live here.
     pub home: PathBuf,
     /// A dedicated `CLAUDE_CONFIG_DIR` for every session (`node join --claude-config-dir`). None: the user's own
     /// claude setup (`~/.claude`), so their login, proxy settings and MCP servers work as in their own shell.
@@ -128,28 +128,14 @@ impl SessionConfig {
     /// The user's own claude setup and the optional `<fleetd dir>/claude.env`, from `$HOME`, so a lab node with its own
     /// HOME needs no flag. A dedicated config dir comes from the node config (`claudeConfigDir`), else from a
     /// `CLAUDE_CONFIG_DIR` the node itself was started with.
-    /// `FLEETD_NODE_IDLE_REAP_SEC` and `FLEETD_NODE_RETRY_SCHEDULE_MS` (e.g. `500,1000,2000`) exist for tests and
-    /// the lab only.
     pub fn for_node(home: &Path) -> Self {
         let fleetd = crate::home::fleetd_dir();
         let base_env = session_env(|key| std::env::var(key).ok());
-        let idle_reap = std::env::var("FLEETD_NODE_IDLE_REAP_SEC")
-            .ok()
-            .and_then(|s| s.trim().parse().ok())
-            .map_or(Duration::from_secs(600), Duration::from_secs);
-        let retry_schedule_ms = std::env::var("FLEETD_NODE_RETRY_SCHEDULE_MS")
-            .ok()
-            .and_then(|s| {
-                s.split(',')
-                    .map(|n| n.trim().parse().ok())
-                    .collect::<Option<Vec<u64>>>()
-            })
-            // Drawn once per node, so machines hit by one outage don't all come back at the same second.
-            .unwrap_or_else(|| {
-                (1..=failure::MAX_RUN_RETRIES)
-                    .filter_map(failure::retry_delay_ms)
-                    .collect()
-            });
+        let idle_reap = Duration::from_secs(600);
+        // Drawn once per node, so machines hit by one outage don't all come back at the same second.
+        let retry_schedule_ms = (1..=failure::MAX_RUN_RETRIES)
+            .filter_map(failure::retry_delay_ms)
+            .collect();
         // fleetd's old default, which a node unit written by an older `machine add` still sets in the environment:
         // sessions are back on the user's own setup.
         let from_env = std::env::var("CLAUDE_CONFIG_DIR")
@@ -435,7 +421,7 @@ fn runner_error(e: RunnerError) -> SessionError {
     }
 }
 
-/// Ids become path components (worktrees, transcripts), so they are kept to a safe alphabet.
+/// Ids become path components (worktrees), so they are kept to a safe alphabet.
 pub(crate) fn path_safe(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
@@ -643,8 +629,6 @@ struct Inner {
     /// The node's browser broker, once it runs: a lead's and a task's claude get agent-browser pointed at their
     /// session, and their browser commands are logged.
     browser: std::sync::OnceLock<Arc<dyn crate::node::browser::SessionHooks>>,
-    /// The node's previews: a removed project's end, and its preview worktrees go.
-    previews: std::sync::OnceLock<Arc<crate::node::preview::Previews>>,
     /// Navis' Telegram bridges: a removed project's is forgotten.
     telegram: std::sync::OnceLock<Arc<crate::node::telegram::Telegram>>,
 }
@@ -785,10 +769,6 @@ impl SessionService {
         }
     }
 
-    pub fn set_previews(&self, previews: Arc<crate::node::preview::Previews>) {
-        let _ = self.inner.previews.set(previews);
-    }
-
     pub fn set_telegram(&self, telegram: Arc<crate::node::telegram::Telegram>) {
         let _ = self.inner.telegram.set(telegram);
     }
@@ -817,7 +797,6 @@ impl SessionService {
                 running: watch::Sender::new(0),
                 span_wake: Arc::new(tokio::sync::Notify::new()),
                 browser: std::sync::OnceLock::new(),
-                previews: std::sync::OnceLock::new(),
                 telegram: std::sync::OnceLock::new(),
             }),
         };
@@ -1649,11 +1628,6 @@ impl SessionService {
         self.store()
             .session(id)?
             .ok_or_else(|| not_found(format!("no session {id} on this machine")))
-    }
-
-    /// A project's checkout on this machine, for its previews.
-    pub fn project_workspace(&self, project_id: &str) -> Option<PathBuf> {
-        self.project_root(project_id).ok()
     }
 
     /// A Navi's folder on this machine, by its project: one whose sessions are a Navi's (assistant). None for any other
@@ -2631,9 +2605,6 @@ impl SessionService {
             id,
         );
         super::secrets::write_atomic(&mcp, session_mcp.json.as_bytes())?;
-        let transcripts = config.home.join("transcripts");
-        super::config::mkdir_private(&transcripts)?;
-        let transcript = transcripts.join(format!("{id}.jsonl"));
 
         let mut env = config.runner_env();
         // The session's Claude account in place of the machine's own login and gateway, read at each start. One the
@@ -2826,7 +2797,6 @@ impl SessionService {
             settings: Some(settings),
             plugin_dirs,
             env,
-            transcript: Some(transcript),
             host_dir: sandbox.is_none().then(|| hosts_dir(&config.home).join(id)),
             sandbox,
             isolated,
@@ -4073,12 +4043,6 @@ impl SessionService {
         }
         if let Some(telegram) = self.inner.telegram.get() {
             telegram.forget(project_id);
-        }
-        // Its previews end and their worktrees go whatever `remove_worktrees` says: they hold no work.
-        if let (Some(previews), Ok(root)) =
-            (self.inner.previews.get(), self.project_root(project_id))
-        {
-            previews.forget_project(project_id.as_str(), &root).await;
         }
         // Only once every process of the project has exited: none still works in a worktree that goes.
         if remove_worktrees {

@@ -1,8 +1,7 @@
 // @vitest-environment happy-dom
-// What there is to look at, in the top bar after the chat's title: a message the lead nudged you about, or an
-// agent's Try it suggestion. "1 to look at" with its reason, below what the lead waits on you for; Show goes to it,
-// marks it and clears it as seen; Dismiss clears it; kept in view for a moment while the window has focus, it is
-// seen too.
+// What there is to look at, in the top bar after the chat's title: a message the lead nudged you about. "1 to look
+// at" with its reason, below what the lead waits on you for; Show goes to it, marks it and clears it as seen; Dismiss
+// clears it; kept in view for a moment while the window has focus, it is seen too.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
@@ -238,25 +237,4 @@ it("clears one once half of it stays in view for a moment while the window has f
   }
   await settle();
   expect(host.querySelector("[data-attention]")).toBeNull();
-});
-
-it("shows an agent's Try it suggestion as one to look at, and Show goes to its line", async () => {
-  const suggestion = {
-    projectRef: project,
-    of: { kind: "pr" as const, repo: "acme/storefront", number: 14 },
-    by: "#14's writer",
-    why: "the checkout's buttons read differently in German",
-    at: AT,
-  };
-  await mount(
-    [
-      msg(1, { text: "Checkout copy is in review." }),
-      msg(2, { author: "agent", text: "#14's writer suggests trying #14: the checkout's buttons read differently in German", previewSuggestion: suggestion }),
-    ],
-    { nudges: [nudge(2, "Try #14: the checkout's buttons read differently in German")] },
-  );
-  expect(line()).toContain("1 to look at: Try #14: the checkout's buttons read differently in German");
-  await press("Show");
-  expect(marked().join("")).toContain("suggests trying it");
-  expect(cleared()).toEqual([["m2", "seen"]]);
 });

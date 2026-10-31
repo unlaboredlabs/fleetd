@@ -403,19 +403,6 @@ impl ApprovalHub for OpsPorts {
             crate::hub::projects::order_env::saved(&hub, &saved, &at).await
         })
     }
-
-    fn preview_config_save(
-        &self,
-        project: &ports::ProjectRef,
-        config: &fleetd_contracts::preview::PreviewConfig,
-    ) -> BoxFut<'_, Result<(), String>> {
-        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
-        let config = config.clone();
-        Box::pin(async move {
-            let r = r.ok_or("the hub has no record of the project")?;
-            crate::hub::preview::save_config(&self.hub(), &r, &config).map_err(|e| e.to_string())
-        })
-    }
 }
 
 /// What a request was and what became of it, in the lead's words for its wake.
@@ -433,7 +420,6 @@ pub fn request_outcome(r: &HumanRequest) -> (String, String) {
             )
         ),
         (_, _, Some(p)) => format!("tool prompt {} {}", p.tool_name, clip(&p.summary, 120)),
-        _ if r.preview_config.is_some() => "your proposed preview setting".into(),
         _ => match (&r.purchase, &r.secure_input) {
             (Some(p), _) => format!(
                 "your purchase at {} ({} {})",

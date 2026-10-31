@@ -1,27 +1,20 @@
-// `npm run lab -- [scenario…]` (in tests/lab): the M1-M8 "done when" scenarios, end to end, against the disposable lab
-// (never in CI); M7 also uses the GitHub lab repo unlaboredlabs/fleetd-lab, in the slot's branch namespace. One hub and two nodes (lab-a,
-// lab-b), each node running the real `claude` itself under its own HOME, driven only through a real MCP client.
-// Each scenario is a file exporting one function over the shared `Lab`; name some to run only those (setup always
-// runs). Costs a handful of tiny claude-opus-5-5 turns. Every process this starts is stopped by its spawn PID.
+// `npm run lab -- demo` (in tests/lab; scripts/demo-mac.sh runs it): the app demo, end to end, against the
+// disposable lab (never in CI), on the GitHub lab repo unlaboredlabs/fleetd-lab in the slot's branch namespace. One hub
+// and two nodes (lab-a, lab-b), each node running the real `claude` itself under its own HOME, driven only through a
+// real MCP client. Every process this starts is stopped by its spawn PID.
 import fs from "node:fs";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { chatCli } from "./chatCli.ts";
-import { chatLead } from "./chatLead.ts";
-import { degradedMachine } from "./degradedMachine.ts";
 import { demoFanout } from "./demoFanout.ts";
-import { desktopOffline } from "./desktopOffline.ts";
-import { desktopShell } from "./desktopShell.ts";
-import { efficiency } from "./efficiency.ts";
-import { FAILURE_SCENARIOS } from "./failure/index.ts";
 import {
   type Body,
   callToolWith,
   check,
   cleanupMachineHomes,
   cli,
+  hubCli,
   HUB_PORT,
   HUB_URL,
   enrollNode,
@@ -38,7 +31,6 @@ import {
   type NodeOptions,
   ok,
   pidOf,
-  QUEUE_TTL_SEC,
   RUN,
   runCleanups,
   seedRepo,
@@ -51,70 +43,15 @@ import {
   waitEventWith,
   writeFleetdWrapper,
 } from "./harness.ts";
-import { m1Fleet } from "./m1Fleet.ts";
-import { m5Tasks } from "./m5Tasks.ts";
-import { m7Train } from "./m7Train.ts";
-import { m8Desktop } from "./m8Desktop.ts";
-import { screensBench } from "./screensBench.ts";
-import { noSubagents } from "./noSubagents.ts";
-import { trainBatch } from "./trainBatch.ts";
-import { offlineQueue } from "./offlineQueue.ts";
-import { statusFresh } from "./statusFresh.ts";
-import { steerMidTurn } from "./steerMidTurn.ts";
-import { timeInspector } from "./timeInspector.ts";
-import { wakeOnTime } from "./wakeOnTime.ts";
-import { missedCompletion, stallFails } from "./watchdogScenarios.ts";
 
-/** In run order. Later ones may stop or restart nodes, so they come after the ones that need both machines up. */
 const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab) => Promise<void>; readonly only?: boolean }> = [
-  { name: "m1", run: m1Fleet },
-  { name: "wake", run: wakeOnTime },
-  { name: "stall", run: (lab) => stallFails(lab) },
-  { name: "missed", run: (lab) => missedCompletion(lab) },
-  { name: "degraded", run: degradedMachine },
-  { name: "queue", run: offlineQueue },
-  // Last: its lead thread on lab-a would otherwise be picked as an idle thread by the scenarios above. It starts a lead
-  // and adds its own order; m5 spawns under either.
-  { name: "steer", run: steerMidTurn },
-  // After steer: it reuses its lead and workstream when they exist.
-  { name: "m5", run: m5Tasks },
-  // After m5: it reuses the lead when there is one.
-  // It adds the lab repo as a second project on lab-a for its run, and removes it.
-  { name: "m7", run: m7Train },
-  // After m7, whose train row it reads: kills lab-b's node and cuts GitHub, then restarts the hub as it was.
-  { name: "status", run: statusFresh },
-  // It reuses the lead when there is one, and waits for the wake it causes to end.
-  { name: "m8", run: m8Desktop },
-  // One order on the lab repo through the train, with a human-approved gated run: its timeline must add up.
-  { name: "time", run: timeInspector },
-  // Claude's own subagents are refused and an MCP spawn is a fleetd task with its lane. Restarts lab-a's lead, so only
-  // when named.
-  { name: "nosub", run: noSubagents, only: true },
-  // A freed slot offers the next approved item; a slice gets its reviewer before the next slice. Restarts lab-a's lead
-  // and adds the lab repo project for its run, so only when named.
-  { name: "eff", run: efficiency, only: true },
-  // Batches on the lab repo: a batch of three in one CI run, a red batch's members alone. Only when named.
-  { name: "batch", run: trainBatch, only: true },
   // The app demo: one order fanned out to writers and reviewers on the lab repo. Only when named.
   { name: "demo", run: demoFanout, only: true },
-  { name: "desktop", run: desktopShell, only: true },
-  // The app offline: a chat kept through a hub stop, a quit and a restart; a message queued offline sent once. One
-  // medium turn. Only when named.
-  { name: "desktop-offline", run: desktopOffline, only: true },
-  // A person's screens on lab-a, timed from screen_open to the first live frame, stage by stage. Only when named.
-  { name: "screens", run: screensBench, only: true },
-  // The per-project lead chat end to end (and the max agents cap): on the lab repo in this slot's namespace and a
-  // local repo on lab-b. Only when named, so it gets a hub of its own; FLEETD_LAB_CHAT_PARTS picks parts.
-  { name: "chat", run: chatLead, only: true },
-  // `fleetd chat` from a person's and an agent's key: labels, needs-you, --wait and --follow. Only when named.
-  { name: "chatcli", run: chatCli, only: true },
-  // The native runner's failure scenarios (tests/lab/failure): they restart lab-b and add a machine, so they go last.
-  ...FAILURE_SCENARIOS,
 ];
 
 const hubHome = path.join(RUN, "hub");
 const startHubProcess = async (env: Readonly<Record<string, string>> = {}) => {
-  startCli("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`, "--queue-ttl", String(QUEUE_TTL_SEC)], env);
+  startCli("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`], env);
   await until("hub /healthz", 30_000, async () => {
     try {
       return (await fetch(`${HUB_URL}/healthz`)).ok ? true : undefined;
@@ -149,12 +86,12 @@ async function main() {
     writeFleetdWrapper();
     for (const m of MACHINES) seedRepo(m.repo, m.id);
     await startHubProcess();
-    ok(`hub up on ${HUB_URL} (queue TTL ${QUEUE_TTL_SEC} s)`);
+    ok(`hub up on ${HUB_URL}`);
 
-    const key = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--name", "lab", "--role", "operate", "--machines", "*"))?.[0];
+    const key = /fld_[a-z2-7]{20,}/u.exec(hubCli(hubHome, "hub", "key", "create", "--name", "lab", "--role", "operate", "--machines", "*"))?.[0];
     if (key === undefined) throw new Error("hub key create printed no key");
     for (const m of MACHINES) joinNode(HUB_URL, hubHome, m.id);
-    const humanKey = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--human", "--name", "lab-person"))?.[0];
+    const humanKey = /fld_[a-z2-7]{20,}/u.exec(hubCli(hubHome, "hub", "key", "create", "--human", "--name", "lab-person"))?.[0];
     if (humanKey === undefined) throw new Error("hub key create --human printed no key");
 
     client = await connectClient(key);
@@ -163,7 +100,7 @@ async function main() {
     // (app/desktop/fixtures/kit/record.ts records the run's frames and call results into fixtures).
     const handoff = process.env.FLEETD_LAB_APP_HANDOFF;
     if (handoff !== undefined) {
-      const recorder = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--human", "--name", "recorder"))?.[0];
+      const recorder = /fld_[a-z2-7]{20,}/u.exec(hubCli(hubHome, "hub", "key", "create", "--human", "--name", "recorder"))?.[0];
       if (recorder === undefined) throw new Error("hub key create --human printed no key");
       fs.writeFileSync(handoff, `${JSON.stringify({ hubUrl: HUB_URL, key: recorder })}\n`, { mode: 0o600 });
       ok(`app handoff written to ${handoff}`);

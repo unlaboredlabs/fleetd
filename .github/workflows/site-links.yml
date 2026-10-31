@@ -1,7 +1,8 @@
 name: Site links
 
-# ci.yml's site-external-links, nightly on main's newest commit: an external link on fleetd.sh or its docs can break
-# without a commit here.
+# Every external link on fleetd.sh and its docs answers (10 s a try, two tries), nightly on main's newest commit: an
+# external link can break without a commit here. Links into this repo on GitHub are checked against the checkout by
+# ci.yml's site job instead.
 
 on:
   schedule:
@@ -20,4 +21,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      # The links of the built docs: site/docs isn't committed.
+      - run: |
+          npm ci --prefix docs/site --no-audit --no-fund
+          npm run build --prefix docs/site
       - run: node .github/docs-links.mjs --external

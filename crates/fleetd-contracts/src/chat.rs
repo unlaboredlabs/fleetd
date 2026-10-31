@@ -164,9 +164,9 @@ pub enum CommandApprovalState {
     Failed,
 }
 
-/// A risky command (prod write, spend, delete, credential use), a session's permission prompt or an agent's proposed
-/// preview setting waits for the human: exactly what it would do, then Approve or Deny. Answered with
-/// `approval_answer`, naming `requestId`. Exactly one of `gated`, `permission`, `previewConfig` and `purchase`.
+/// A risky command (prod write, spend, delete, credential use), a session's permission prompt, a purchase or a secure
+/// input waits for the human: exactly what it would do, then Approve or Deny. Answered with `approval_answer`, naming
+/// `requestId`. Exactly one of `gated`, `permission`, `purchase` and `secureInput`.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -176,15 +176,11 @@ pub struct CommandApprovalItem {
     pub machine_id: MachineId,
     /// A gated command: exactly what runs once approved.
     pub gated: Option<GatedRunSpec>,
-    /// A session's permission prompt: the tool and what it would do. Boxed, as `previewConfig` is: with its input it
-    /// is large beside the item's other fields.
+    /// A session's permission prompt: the tool and what it would do. Boxed: with its input it is large beside the
+    /// item's other fields, and every chat item would carry its size.
     pub permission: Option<Box<ToolPermission>>,
-    /// An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.
-    /// Older apps show it as an approval with neither command nor permission.
-    /// Boxed: the setting is large beside the item's other fields, and every chat item would carry its size.
-    pub preview_config: Option<Box<crate::preview::PreviewConfigProposeCall>>,
     /// A Navi's purchase (purchase_request): the shop, the total, what it buys and the card. Approved, the Navi's node
-    /// fills the card into that checkout once. Boxed, as `previewConfig` is.
+    /// fills the card into that checkout once. Boxed, as `permission` is.
     pub purchase: Option<Box<crate::purchase::Purchase>>,
     /// A Navi's secure input from a 1Password field: approved, its node fills that field once.
     pub secure_input: Option<Box<crate::secure_input::SecureInput>>,
@@ -282,10 +278,7 @@ pub struct ChatMessage {
     /// A system line "Saved a skill: …": a Navi saved or changed one of its skills (`skill_save`); the app links it
     /// to the skill.
     pub skill_saved: Option<crate::skills::SkillSaved>,
-    /// An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app
-    /// shows it as one line with Try it. Nothing runs from it.
-    pub preview_suggestion: Option<crate::preview::PreviewSuggestion>,
-    /// The lead flagged it for the person's look (`nudge`), or it is an agent's Try it suggestion.
+    /// The lead flagged it for the person's look (`nudge`).
     pub nudge: Option<ChatNudge>,
 }
 
@@ -313,11 +306,10 @@ pub struct KeptWorktree {
     pub path: Line<1, 4096>,
 }
 
-/// The most nudges a project keeps open of each kind, the lead's and agents' Try it suggestions: a newer one past it
-/// clears the oldest of its kind, so suggestions never push out what the lead flagged.
+/// The most nudges a project keeps open: a newer one past it clears the oldest.
 pub const CHAT_NUDGES_MAX: usize = 3;
-/// The most a chat state lists: both kinds at their cap.
-pub const CHAT_OPEN_NUDGES_MAX: usize = 2 * CHAT_NUDGES_MAX;
+/// The most a chat state lists.
+pub const CHAT_OPEN_NUDGES_MAX: usize = CHAT_NUDGES_MAX;
 /// How long a nudge waits to be seen; past it, it fades on its own.
 pub const CHAT_NUDGE_MS: i64 = 24 * 60 * 60_000;
 

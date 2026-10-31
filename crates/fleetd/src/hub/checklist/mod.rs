@@ -1,7 +1,6 @@
 //! Each project's checklist (table `checklists`): the lead's to-do list for the human, one row per project with its
 //! items as JSON in order. The lead changes it with `checklist` (calls.rs), the app reads it with `checklist_get`, a
-//! person takes items off with `checklist_remove` or ticks, edits or removes them with `checklist_edit` (tools.rs), and
-//! the lead's digest shows what is still open.
+//! person takes items off with `checklist_remove` (tools.rs), and the lead's digest shows what is still open.
 pub mod calls;
 pub mod tools;
 
@@ -11,7 +10,6 @@ mod tests;
 use fleetd_contracts::checklist::{CHECKLIST_MAX, ChecklistCall, TodoItem, TodoLink, TodoState};
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
-use fleetd_contracts::people::PersonRef;
 use fleetd_contracts::prim::Positive;
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -62,13 +60,11 @@ pub fn read(db: &HubDb, r: &ProjectRef) -> Result<Checklist, StoreError> {
 }
 
 /// The call's edits, in order, on `list`; a refusal leaves it as it was. Ids are never reused, so an id the lead
-/// still holds from a removed item can't name a new one. Each item added or changed records `person`, who made the
-/// change (None: the lead).
+/// still holds from a removed item can't name a new one.
 pub fn edited(
     list: &Checklist,
     call: &ChecklistCall,
     at: &Timestamp,
-    person: Option<&PersonRef>,
 ) -> Result<Checklist, McpToolError> {
     let mut next = list.clone();
     if call.replace == Some(true) {
@@ -86,7 +82,7 @@ pub fn edited(
                 state: edit.state.unwrap_or_default(),
                 link: edit.link.clone().filter(|l| !l.is_empty()),
                 updated_at: at.clone(),
-                person: person.cloned(),
+                person: None,
             });
             next.next_id += 1;
             continue;
@@ -115,7 +111,7 @@ pub fn edited(
         }
         if *item != before {
             item.updated_at = at.clone();
-            item.person = person.cloned();
+            item.person = None;
         }
     }
     if next.items.len() > CHECKLIST_MAX {
@@ -146,11 +142,10 @@ pub fn apply(
     r: &ProjectRef,
     call: &ChecklistCall,
     now_ms: i64,
-    person: Option<&PersonRef>,
 ) -> Result<Result<(Checklist, bool), McpToolError>, StoreError> {
     db.transaction(|c| {
         let list = read_on(c, r)?;
-        let next = match edited(&list, call, &Timestamp::from(iso_ms(now_ms)), person) {
+        let next = match edited(&list, call, &Timestamp::from(iso_ms(now_ms))) {
             Ok(next) => next,
             Err(refused) => return Ok(Err(refused)),
         };

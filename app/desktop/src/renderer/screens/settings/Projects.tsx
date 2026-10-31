@@ -2,10 +2,10 @@
 // picture (Picture.tsx), its name, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx), its
 // worktrees, its agents' environment variables, a Navi's Telegram (Telegram.tsx), approvals (NaviApprovals.tsx) and
 // integrations (its MCP servers; its linked hubs are in You › Hubs), its browser's sign-ins and a way to its skills
-// (NaviSignins.tsx), its card and purchases (NaviPayments.tsx), the merge train's checks (TrainSetting.tsx), and deleting
-// it. Its memory refresh is on its Instructions & memory. Reads project_settings_get; writes project_settings_set,
-// project_env_set (through main, which seals each secret to the project machine's key) and project_remove. A secret's
-// value is write-only: typed here once, sealed in main, and only its fingerprint ever comes back.
+// (NaviSignins.tsx), its card and purchases (NaviPayments.tsx), and deleting it. Its memory refresh is on its
+// Instructions & memory. Reads project_settings_get; writes project_settings_set, project_env_set (through main, which
+// seals each secret to the project machine's key) and project_remove. A secret's value is write-only: typed here once,
+// sealed in main, and only its fingerprint ever comes back.
 import { useEffect, useState } from "react";
 import { Button, Dialog, Field, Input, Radio, RadioGroup, Separator, Switch, Text, Textarea, Truncate } from "../../ui";
 import type { ProjectEnvVar, ProjectSettings as Settings, ToolInput } from "../../../shared/contracts";
@@ -41,7 +41,6 @@ import {
 import { RepoSetting } from "./RepoSetting";
 import { isOwn } from "./repoModel";
 import { replaceRoute, type SettingsRoute } from "./route";
-import { TrainSetting } from "./TrainSetting";
 import s from "./settings.module.css";
 
 type Echo = { ok: boolean; text: string };
@@ -161,7 +160,6 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
           <Separator />
         </>
       ) : null}
-      <TrainSetting settings={settings} />
       <Separator />
       <Setting reveal="projects.delete" label="Delete project" help="Stops its agents and removes it from fleetd, with its fleetd worktrees.">
         <Text size="sm" tone="quiet">
@@ -252,7 +250,6 @@ function NameSetting({ settings }: { settings: Settings }) {
 }
 
 function WorktreeSetting({ settings }: { settings: Settings }) {
-  const { busy, echo, save } = useSave();
   const w = settings.worktrees;
   const unsaved = unsavedWorktrees(settings).length;
   return (
@@ -279,19 +276,6 @@ function WorktreeSetting({ settings }: { settings: Settings }) {
           {settings.worktreesUnknown ?? "Its machine hasn't said where they are."}
         </Text>
       )}
-      <Switch
-        label="Keep finished worktrees"
-        description="Off: a reader's worktree goes when its task finishes, and a writer's once its pull request merges. On: they stay on the machine until you delete the project."
-        checked={settings.keepWorktrees}
-        disabled={busy}
-        onCheckedChange={(keep) =>
-          save(
-            { machineId: settings.machineId, projectId: settings.projectId, keepWorktrees: keep },
-            keep ? "Finished worktrees stay." : "Finished worktrees go again.",
-          )
-        }
-      />
-      <EchoLine echo={echo} />
     </Setting>
   );
 }

@@ -1,23 +1,20 @@
-//! setup_list, setup_test and setup_skip: the hub's setup steps for an admin, read from the doctor's checks.
+//! setup_list and setup_test: the hub's setup steps for an admin, read from the doctor's checks.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::mcp::{
-    ErrorCode, SetupListInput, SetupListOutput, SetupSkipInput, SetupSkipOutput, SetupTestInput,
-    SetupTestOutput,
+    ErrorCode, SetupListInput, SetupListOutput, SetupTestInput, SetupTestOutput,
 };
 use fleetd_contracts::model::ProjectKind;
 use fleetd_contracts::prim::Count;
-use fleetd_contracts::setup::{HubSetupStep, SetupNeed, SetupStepId};
+use fleetd_contracts::setup::{HubSetupStep, SetupStepId};
 
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows_everywhere, error};
 use crate::hub::doctor::checks::DoctorCheck;
-use crate::hub::store::now_ms;
 
 pub fn register(tools: &mut Registry) {
     tools.add("setup_list", setup_list);
     tools.add("setup_test", setup_test);
-    tools.add("setup_skip", setup_skip);
 }
 
 /// The hub's own setup is an admin's: Admin on every machine.
@@ -54,7 +51,6 @@ async fn with_fresh(hub: &Hub, mut checks: Vec<DoctorCheck>) -> Vec<DoctorCheck>
 }
 
 fn read(hub: &Hub, checks: &[DoctorCheck]) -> Result<Vec<HubSetupStep>, ToolError> {
-    let skipped = super::skipped(&hub.db)?;
     let code = hub
         .store
         .projects_shown(None, None)?
@@ -62,7 +58,7 @@ fn read(hub: &Hub, checks: &[DoctorCheck]) -> Result<Vec<HubSetupStep>, ToolErro
         .filter(|p| p.kind != Some(ProjectKind::Assistant))
         .count();
     let checks = super::before_first_use(checks.to_vec(), code);
-    Ok(super::read(super::guides(&hub_url(hub)), &checks, &skipped))
+    Ok(super::read(super::guides(&hub_url(hub)), &checks))
 }
 
 fn one(steps: Vec<HubSetupStep>, id: SetupStepId) -> HubSetupStep {
@@ -116,37 +112,6 @@ async fn setup_test(
     };
     let checks = with_fresh(&hub, results.checks).await;
     Ok(SetupTestOutput {
-        step: one(read(&hub, &checks)?, input.step),
-        next: None,
-        truncated: None,
-    })
-}
-
-async fn setup_skip(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: SetupSkipInput,
-) -> Result<SetupSkipOutput, ToolError> {
-    require_admin(&caller)?;
-    let checks = with_fresh(&hub, hub.doctor.list(false).await.checks).await;
-    let step = one(read(&hub, &checks)?, input.step);
-    if input.skipped && step.need == SetupNeed::Required {
-        return Err(error(
-            ErrorCode::Invalid,
-            format!(
-                "{} is required: agents can't run without it, so it can't wait.",
-                step.title
-            ),
-            format!("setup_test step: {} once it is set up.", step.id.as_str()),
-        ));
-    }
-    super::set_skipped(
-        &hub.db,
-        input.step,
-        input.skipped,
-        now_ms(hub.clock.as_ref()),
-    )?;
-    Ok(SetupSkipOutput {
         step: one(read(&hub, &checks)?, input.step),
         next: None,
         truncated: None,

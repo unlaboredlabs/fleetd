@@ -14,7 +14,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::clock::Clock;
-use crate::hub::api::{Hub, HubConfig};
+use crate::hub::api::Hub;
 use crate::hub::store::iso_ms;
 use crate::hub::store::{EventLog, HubDb, NewEvent};
 use crate::hub::sweep::{SweepCheck, WAKE_OVERDUE_MS};
@@ -22,9 +22,9 @@ use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ThreadId, ThreadRef};
 use fleetd_contracts::sessions::SendMode;
 use fleetd_contracts::steer::SteerId;
-use ports::{DbRun, ExecutorError, SendOpts, ThreadWriter, emit, now_ms};
+use ports::{ExecutorError, SendOpts, ThreadWriter, emit, now_ms};
 
-/// Default `--queue-ttl`.
+/// How long a write to an offline machine waits in the queue.
 pub const DEFAULT_TTL: Duration = Duration::from_secs(24 * 3600);
 /// A send that takes longer is retried from the queue; the command id makes the retry harmless.
 const SEND_TIMEOUT: Duration = Duration::from_secs(15);
@@ -147,23 +147,19 @@ impl WriteQueue {
         })
     }
 
-    /// The hub's queue over the executor: `--queue-ttl` sets the TTL.
-    pub fn from_config(
-        config: &HubConfig,
+    /// The hub's queue over the executor.
+    pub fn over(
         db: &Arc<HubDb>,
         events: &Arc<EventLog>,
         clock: &Arc<dyn Clock>,
         executors: &Arc<crate::hub::executor::Executors>,
     ) -> Arc<Self> {
-        let ttl = config
-            .queue_ttl_sec
-            .map_or(DEFAULT_TTL, Duration::from_secs);
         Self::new(
             db.clone(),
             executors.clone(),
             events.clone(),
             clock.clone(),
-            ttl,
+            DEFAULT_TTL,
         )
     }
 

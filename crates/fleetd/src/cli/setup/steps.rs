@@ -1,4 +1,4 @@
-//! The hub's setup steps in the terminal (docs/design/setup.md): `fleetd init` and `fleetd doctor` list the hub's steps
+//! The hub's setup steps in the terminal: `fleetd init` and `fleetd doctor` list the hub's steps
 //! (setup_list), one line each, and `fleetd init --step <id>` opens one as a guide: why, numbered parts with the values
 //! to paste and the provider's pages, and where the result is saved.
 //! Secrets are never typed here: a step that takes one says where in the app it is sealed.
@@ -66,12 +66,6 @@ pub async fn test(client: &mut McpClient, id: SetupStepId) -> Result<HubSetupSte
     serde_json::from_value(body["step"].clone()).map_err(shape)
 }
 
-/// Puts a step off for later.
-pub async fn skip(client: &mut McpClient, id: SetupStepId) -> Result<HubSetupStep, Failure> {
-    let body = call(client, "setup_skip", json!({ "step": id, "skipped": true })).await?;
-    serde_json::from_value(body["step"].clone()).map_err(shape)
-}
-
 pub fn need_words(need: &SetupNeed) -> String {
     match need {
         SetupNeed::Required => "required".into(),
@@ -133,11 +127,6 @@ pub fn line(step: &HubSetupStep) -> (State, String, Option<String>) {
                 need_words(&step.need),
                 step.id.as_str()
             ),
-            None,
-        ),
-        SetupStatus::Skipped => (
-            State::Skipped,
-            format!("later · fleetd init --step {}", step.id.as_str()),
             None,
         ),
     }
@@ -248,11 +237,7 @@ mod tests {
     }
 
     fn steps(checks: &[DoctorCheck]) -> Vec<HubSetupStep> {
-        read(
-            guides(HUB),
-            checks,
-            &[SetupStepId::People].into_iter().collect(),
-        )
+        read(guides(HUB), checks)
     }
 
     #[test]
@@ -292,7 +277,7 @@ mod tests {
                 ),
                 (
                     State::Skipped,
-                    "later · fleetd init --step people".into(),
+                    "optional · fleetd init --step people".into(),
                     None
                 ),
             ]

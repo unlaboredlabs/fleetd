@@ -732,16 +732,6 @@ pub async fn run_sweep(hub: Arc<Hub>) {
     }
 }
 
-struct Sink(Weak<Hub>);
-
-impl crate::hub::executor::SteerSink for Sink {
-    fn receipt(&self, machine_id: &MachineId, receipt: &SteerReceipt) {
-        if let Some(hub) = self.0.upgrade() {
-            on_receipt(&hub, machine_id, receipt);
-        }
-    }
-}
-
 /// `fleetd task message T88 "<text>" [--now]`: the lead steers its own task, with the same modes and receipts.
 struct TaskMessage(Weak<Hub>);
 
@@ -803,8 +793,7 @@ impl crate::hub::link::lead_calls::LeadCallHandler for TaskMessage {
 pub fn wire(hub: &Arc<Hub>) {
     hub.lead_calls
         .register("task_message", Arc::new(TaskMessage(Arc::downgrade(hub))));
-    hub.executors
-        .set_steer_sink(Arc::new(Sink(Arc::downgrade(hub))));
+    hub.executors.set_steer_hub(Arc::downgrade(hub));
     let weak = Arc::downgrade(hub);
     hub.queue.on_steer_expired(Arc::new(move |id, reason| {
         let Some(hub) = weak.upgrade() else {

@@ -49,8 +49,6 @@ export const MECHANICS = "medium" as const;
 
 // Texts the binary emits that scenarios match on; each mirrors a constant in crates/fleetd.
 
-/** The hub's offline-queue TTL in lab runs, short enough for the expiry check to wait it out. */
-export const QUEUE_TTL_SEC = 40;
 /** The two standing lab machines, each with its own test repo (seeded on first use) as its project. */
 export const MACHINES = [
   { id: "lab-a", repo: path.join(LAB, "repo-a") },
@@ -186,7 +184,7 @@ export const seedRepo = (dir: string, title: string) => {
 
 /** Options for one node process. */
 export interface NodeOptions {
-  /** Added to the node's environment (e.g. FLEETD_NODE_IDLE_REAP_SEC, FLEETD_NODE_RETRY_SCHEDULE_MS). */
+  /** Added to the node's environment. */
   readonly env?: Readonly<Record<string, string>>;
   /** Directories put first on the node's PATH, which its claude children inherit (e.g. a lab-only claude shim). */
   readonly pathPrefix?: ReadonlyArray<string>;
@@ -339,6 +337,10 @@ export async function until<A>(what: string, ms: number, probe: () => Promise<A 
 export const cli = (...args: Array<string>) =>
   execFileSync(...fleetdCommand(args), { env: scrubbedEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
+/** `cli` on the hub at `hubHome`: its fleetd dir is the one `hub start --home` keeps beside it. */
+export const hubCli = (hubHome: string, ...args: Array<string>) =>
+  execFileSync(...fleetdCommand(args), { env: { ...scrubbedEnv(), FLEETD_HOME: path.dirname(hubHome) }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
 const LOCK = path.join(LAB, "test-lab.lock");
 
 /** Whether a process exists (signal 0); no /proc, so it works on macOS too. */
@@ -462,7 +464,7 @@ export const stopAll = async () => {
 /** `node join` for a machine on `hubHome`'s hub: an enrollment code from `pair --worker`, the machine's HOME, then the node itself. */
 const joinArgs = (hubUrl: string, hubHome: string, id: string, opts: MachineHomeOptions) => {
   prepareMachineHome(id, opts);
-  const token = /--code (\S+)/u.exec(cli("pair", "--worker", id, "--home", hubHome))?.[1];
+  const token = /--code (\S+)/u.exec(hubCli(hubHome, "pair", "--worker", id))?.[1];
   if (token === undefined) throw new Error(`no enrollment token for ${id}`);
   return ["node", "join", "--hub", hubUrl, "--token", token, "--machine", id, "--home", nodeHome(id)];
 };

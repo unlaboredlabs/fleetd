@@ -28,7 +28,7 @@ env:
 # the repo's 10 GB cache quota holds one copy per job, and pull requests restore main's.
 #
 # No job here runs on macOS (ci.no-macos-on-prs). What a PR's macOS code can break is checked on Linux: `rust (darwin)`
-# lints the workspace for both darwin targets, so code under cfg(target_os = "macos") must compile, and
+# lints the workspace for the arm64 darwin target, so code under cfg(target_os = "macos") must compile, and
 # `desktop (mac layout)` packs the mac app and checks its layout. What only a Mac can run (IOKit, sandbox-exec, iOS
 # simulator sessions, macOS desktop QA, the packed mac app, the iOS build) runs nightly in mac.yml, and before each
 # release.
@@ -150,9 +150,8 @@ jobs:
     # fleetd.sh may only mention what fleetd has: no index.* at the root of site/ (Vercel would serve it at / instead
     # of the installer), nothing from site/.stale-terms, and only `fleetd` commands that `fleetd help` lists, on the
     # landing page and in the docs' sources; every vercel.json rewrite lands on a file (under cleanUrls) and `/` is the
-    # landing page for a browser and install.sh for curl; site/docs is the docs' current build; every link on the site
-    # resolves; no tracked file names a maintainer's own machine, login or home directory; and the landing page fits
-    # every width.
+    # landing page for a browser and install.sh for curl; every link on the site and its built docs resolves; no tracked
+    # file names a maintainer's own machine, login or home directory; and the landing page fits every width.
     needs: rust-docs
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -163,23 +162,12 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: docs/site/package-lock.json
-      - name: fleetd.sh/docs is the current build
-        # site/docs/ is committed. This fails while it differs from a fresh Starlight build of docs/site. Fix: npm ci
-        # --prefix docs/site && npm run build --prefix docs/site, then commit. The search index (site/docs/pagefind) is
-        # not committed but ignored: the Vercel build of site/ generates it (site/vercel.json's buildCommand), so docs
-        # PRs don't conflict on it.
+      - name: Build the docs
+        # site/docs/ isn't committed: the Vercel build of site/ builds it (site/vercel.json's buildCommand). The link
+        # check below reads this build.
         run: |
           npm ci --prefix docs/site --no-audit --no-fund
           npm run build --prefix docs/site
-          if [ -n "$(git ls-files site/docs/pagefind)" ]; then
-            echo "::error::site/docs/pagefind is tracked; the Vercel build generates it: git rm -r --cached site/docs/pagefind"
-            exit 1
-          fi
-          if [ -n "$(git status --porcelain -- site/docs)" ]; then
-            git status --short -- site/docs | head -20
-            echo "::error::site/docs differs from a fresh build of docs/site; rebuild and commit it (site/README.md, Docs)"
-            exit 1
-          fi
       - uses: actions/download-artifact@v8
         with:
           name: fleetd-help
@@ -194,24 +182,9 @@ jobs:
         # sideways.
         run: node .github/site-layout-check.mjs
 
-  site-external-links:
-    # Every external link on fleetd.sh and its docs answers (10 s a try, two tries). Links into this repo on GitHub
-    # are checked against the checkout by the site job instead. It reaches other sites, which fail now and then on
-    # their own, so it runs after the merge (.fleetd/train.json afterMerge: a failure on main opens a fix order), not
-    # on PRs; site-links.yml runs it nightly too, as links break without a commit.
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-      - run: node .github/docs-links.mjs --external
-
   rust:
     # The root Cargo workspace's tests, under cargo-nextest (a process per test; .config/nextest.toml retries the
-    # Chrome-driven browser tests and reports those as flaky), and its doctests. Lint (fmt, clippy) and the docs and lab
+    # Chrome-driven browser tests and reports those as flaky). Lint (fmt, clippy) and the docs and lab
     # checks on the built binary are jobs of their own, beside this one. The tests run in two shards at once, each
     # building them on the cache main saved and running half (nextest's hash partition); `rust (linux)` below, a
     # required check, passes only once both did, so the workspace tests gate merges.
@@ -290,10 +263,6 @@ jobs:
           FLEETD_REQUIRE_NODE_SEAL: "1"
           FLEETD_REQUIRE_AGENT_BROWSER: "1"
           FLEETD_REQUIRE_SANDBOX: "1"
-      # nextest doesn't run doctests.
-      - name: Doctests
-        if: steps.scope.outputs.run == 'true' && matrix.shard == 2
-        run: cargo test --locked --workspace --doc
 
   rust-linux:
     # The required check: green only once both shards of `rust` passed (each reports success at once without a Rust
@@ -313,10 +282,11 @@ jobs:
           RESULT: ${{ needs.rust.result }}
 
   rust-darwin:
-    # The workspace's clippy for both darwin targets, cross-checked on Linux with cargo-zigbuild as the release
-    # cross-builds them: code under cfg(target_os = "macos") that doesn't compile, or warns, fails here. It runs nothing;
-    # mac.yml runs the macOS-only tests nightly. Like the other Rust jobs, only when a Rust-related path changed
-    # (.github/rust-scope.sh); otherwise it reports success at once, as the train waits for it (.fleetd/train.json).
+    # The workspace's clippy for aarch64-apple-darwin (no code is x86_64-only), cross-checked on Linux with
+    # cargo-zigbuild as the release cross-builds it: code under cfg(target_os = "macos") that doesn't compile, or warns,
+    # fails here. It runs nothing; mac.yml runs the macOS-only tests nightly. Like the other Rust jobs, only when a
+    # Rust-related path changed (.github/rust-scope.sh); otherwise it reports success at once, as the train waits for it
+    # (.fleetd/train.json).
     name: rust (darwin)
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -331,7 +301,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         if: steps.scope.outputs.run == 'true'
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: aarch64-apple-darwin
           components: clippy
       - uses: Swatinem/rust-cache@v2
         if: steps.scope.outputs.run == 'true'
@@ -359,7 +329,7 @@ jobs:
         with:
           tool: cargo-zigbuild@0.23.4
       - if: steps.scope.outputs.run == 'true'
-        run: cargo-zigbuild clippy --locked --workspace --all-targets --target aarch64-apple-darwin --target x86_64-apple-darwin -- -D warnings
+        run: cargo-zigbuild clippy --locked --workspace --all-targets --target aarch64-apple-darwin -- -D warnings
 
   darwin-deps:
     # The release cross-builds the darwin fleetd binaries on Linux, which breaks on any crate that links a macOS

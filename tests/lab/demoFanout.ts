@@ -24,7 +24,7 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, cli, detached, HUB_PORT, LAB, type Lab, onCleanup, recordPid, requireGhLogin, scrubbedEnv, sleep } from "./harness.ts";
+import { type Body, cli, detached, HUB_PORT, hubCli, LAB, type Lab, onCleanup, recordPid, requireGhLogin, scrubbedEnv, sleep } from "./harness.ts";
 import { BASE, BRANCH_PREFIX, checkClone, CLONE, git, prepareCheckout, REPO, removeLabRepoProject } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -226,7 +226,7 @@ export async function demoFanout(lab: Lab) {
     mark("lead ready", { thread: leadThread });
 
     // The person's key, as the desktop app pairs one.
-    const key = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", lab.hubHome, "--human", "--name", "demo-app"))?.[0];
+    const key = /fld_[a-z2-7]{20,}/u.exec(hubCli(lab.hubHome, "hub", "key", "create", "--human", "--name", "demo-app"))?.[0];
     check(key, "hub key create --human printed a key");
     app = await appSession(key!);
     app.live(true);

@@ -1,6 +1,6 @@
 //! The per-machine node: hub link, the session service that runs claude itself, the lead socket, cmd checks, sealed secrets, gated runs and node actions.
 //!
-//! The CLI calls [`join`] for `fleetd node join` and [`run`] for `fleetd node run` / `node serve`. Both run until
+//! The CLI calls [`join`] for `fleetd node join` and [`run`] for `fleetd node run`. Both run until
 //! SIGINT or SIGTERM (`Ok`) or a failure the node cannot retry past (`Err`, exit 1 with `fleetd: <message>`).
 pub mod actions;
 pub mod browser;
@@ -24,7 +24,6 @@ pub mod mcp_servers;
 pub mod onepassword_tokens;
 pub mod order_env;
 pub mod power;
-pub mod preview;
 pub mod project_env;
 pub mod relay;
 #[cfg(test)]
@@ -54,15 +53,15 @@ use zeroize::Zeroizing;
 use config::{NodeConfig, default_node_home, read_config, write_config};
 
 /// `fleetd node …` usage.
-pub const NODE_USAGE: &str = "  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id> [--tags a,b]
-            [--name <name>] [--home <dir>] [--enroll-only] [--claude-config-dir <dir>]
+pub const NODE_USAGE: &str = "  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id>
+            [--home <dir>] [--enroll-only] [--claude-config-dir <dir>]
              enroll this machine with the hub, then keep its link up (node home default ~/.fleetd/node);
              --token-file - reads the token from stdin; --enroll-only exits once the hub has accepted this
              node; sessions use your own claude setup (~/.claude) unless --claude-config-dir names a
              dedicated one
   node run [--home <dir>]
              keep the link up for a machine that has joined
-  node trust <dir> [--home <dir>]
+  node trust <dir>
              start work again in a project's checkout fleetd refused as replaced, once you checked it
 ";
 
@@ -72,9 +71,6 @@ pub struct JoinArgs {
     pub hub: String,
     pub token: String,
     pub machine: String,
-    /// `--tags a,b`, already split; see [`parse_tags`].
-    pub tags: Option<Vec<String>>,
-    pub name: Option<String>,
     pub home: Option<PathBuf>,
     /// `--enroll-only`: stop once the hub has accepted the node's key instead of keeping the link up.
     pub enroll_only: bool,
@@ -82,7 +78,7 @@ pub struct JoinArgs {
     pub claude_config_dir: Option<String>,
 }
 
-/// `fleetd node run` / `node serve`.
+/// `fleetd node run`.
 #[derive(Clone, Debug, Default)]
 pub struct RunArgs {
     pub home: Option<PathBuf>,
@@ -112,15 +108,6 @@ pub fn read_token_file(path: &str) -> std::io::Result<String> {
     Ok(text.trim().to_owned())
 }
 
-/// `--tags a, b,,c` → `["a", "b", "c"]`.
-pub fn parse_tags(tags: &str) -> Vec<String> {
-    tags.split(',')
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
 /// Creates the node key and config, enrolls with the one-time token, then keeps the link up.
 pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
     if !config::is_machine_id(&args.machine) {
@@ -133,8 +120,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
     let config = NodeConfig {
         hub: args.hub,
         machine_id: args.machine.clone(),
-        name: args.name.unwrap_or(args.machine),
-        tags: args.tags.unwrap_or_default(),
+        name: args.machine,
         cmd_roots: None,
         claude_config_dir: args.claude_config_dir,
         min_free_gb: None,
@@ -143,7 +129,6 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         warm_builds: None,
         enrolled: false,
         browser: None,
-        preview: None,
         device: None,
         ios: None,
         desktop: None,
@@ -366,19 +351,6 @@ async fn run_node(
     if sessions_router.is_some() {
         node_sessions.set_browser(router.clone());
     }
-    let preview_config = config.preview.clone().unwrap_or_default();
-    let previews = preview_config.enabled().then(|| {
-        let sessions = node_sessions.clone();
-        preview::Previews::for_node(
-            home,
-            &preview_config,
-            Arc::new(move |id| sessions.project_workspace(id)),
-            broker.clone(),
-        )
-    });
-    if let Some(previews) = &previews {
-        node_sessions.set_previews(previews.clone());
-    }
     let telegram = telegram::Telegram::start(home, telegram::TELEGRAM, telegram::Timing::default());
     node_sessions.set_telegram(telegram.clone());
     // The hold the node before this one kept for its update ends with it: what it held goes on now.
@@ -417,7 +389,6 @@ async fn run_node(
             hub: config.hub.clone(),
             machine_id: config.machine_id.clone(),
             name: config.name.clone(),
-            tags: config.tags.clone(),
             node_version: crate::version().to_owned(),
         },
         identity,
@@ -434,7 +405,6 @@ async fn run_node(
             box_key,
             home: home.to_path_buf(),
         }),
-        previews: previews.clone(),
         sessions: sessions_router.clone(),
         hosted,
     };
@@ -449,9 +419,6 @@ async fn run_node(
         () = shutdown_signal() => {
             telegram.shutdown();
             node_sessions.shutdown().await;
-            if let Some(previews) = &previews {
-                previews.stop_all().await;
-            }
             if let Some(router) = &sessions_router {
                 router.shutdown().await;
             }

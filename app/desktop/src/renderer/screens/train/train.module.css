@@ -203,21 +203,6 @@
 .queued .rowTitle {
   font-weight: 500;
 }
-/* Try it beside a row, on its title's line; a row with no Try it (no previews, or a key that may only open running
-   ones) is the link alone. */
-.tryRow {
-  display: flex;
-  align-items: flex-start;
-  min-width: 0;
-}
-.rowTry {
-  flex: none;
-  display: flex;
-  padding-top: 5px;
-}
-.rowTry:empty {
-  display: none;
-}
 .place {
   flex: none;
   width: var(--space-6);

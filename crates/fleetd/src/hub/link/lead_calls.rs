@@ -22,13 +22,6 @@ pub struct LeadCaller {
     pub agent: CallerAgent,
 }
 
-/// Tells which of fleetd's agents a session is; the tasks area provides it.
-pub trait AgentDirectory: Send + Sync + 'static {
-    /// The agent running in `thread` and the project it works for. A session that is neither a project's lead nor a
-    /// task, and a lookup that failed, are refusals.
-    fn agent_of(&self, thread: &ThreadRef) -> Result<(CallerAgent, ProjectRef), McpToolError>;
-}
-
 /// The agent a runner's node hosts a session for, on another machine (hub/machine_roles).
 #[derive(Debug, Clone)]
 pub struct HostedCaller {
@@ -36,12 +29,6 @@ pub struct HostedCaller {
     pub agent: CallerAgent,
     /// The agent's session, on its own machine.
     pub thread_id: ThreadId,
-}
-
-/// Tells whose session a runner hosts under a key; the machine roles area provides it.
-pub trait HostedCallers: Send + Sync + 'static {
-    /// The agent behind `thread` when it is a key the hub gave `runner` for a session it hosts.
-    fn caller_of(&self, runner: &MachineId, thread: &ThreadId) -> Option<HostedCaller>;
 }
 
 /// The hub said no; `fix` tells the lead what to do instead. Sent to the CLI as the result frame's error.
@@ -68,16 +55,18 @@ where
 #[derive(Default)]
 pub struct LeadCalls {
     handlers: RwLock<HashMap<String, Arc<dyn LeadCallHandler>>>,
-    directory: OnceLock<Arc<dyn AgentDirectory>>,
-    hosts: OnceLock<Arc<dyn HostedCallers>>,
+    /// Which of fleetd's agents a session is; the tasks area sets it.
+    directory: OnceLock<Arc<crate::hub::tasks::wire::Directory>>,
+    /// Whose session a runner hosts under a key; the machine roles area sets it.
+    hosts: OnceLock<Arc<crate::hub::machine_roles::Callers>>,
 }
 
 impl LeadCalls {
-    pub fn set_directory(&self, directory: Arc<dyn AgentDirectory>) {
+    pub fn set_directory(&self, directory: Arc<crate::hub::tasks::wire::Directory>) {
         let _ = self.directory.set(directory);
     }
 
-    pub fn set_hosts(&self, hosts: Arc<dyn HostedCallers>) {
+    pub fn set_hosts(&self, hosts: Arc<crate::hub::machine_roles::Callers>) {
         let _ = self.hosts.set(hosts);
     }
 

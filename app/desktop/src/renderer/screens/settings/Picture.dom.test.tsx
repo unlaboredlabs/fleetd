@@ -26,7 +26,6 @@ const settings: Settings = {
   projectId: "p1",
   title: "storefront",
   workspaceRoot: "/home/w/src/storefront",
-  keepWorktrees: false,
   setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] },
   env: [],
 };

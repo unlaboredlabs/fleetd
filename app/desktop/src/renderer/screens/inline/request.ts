@@ -107,7 +107,6 @@ const took = (item: CommandApprovalItem): string | undefined => {
 
 /** The one line an answered approval folds to, or undefined while it waits for Approve / Deny. */
 export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined => {
-  if (item.previewConfig !== undefined) return configOutcome(item);
   if (item.purchase !== undefined) return purchaseOutcome(item);
   if (item.secureInput !== undefined) return secureInputOutcome(item);
   if (item.permission?.preview !== undefined) return previewOutcome(item.permission.preview, item);
@@ -128,23 +127,6 @@ export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined 
       return { tone: "danger", text: "Approved, didn't run" };
     case "denied":
       return { tone: "quiet", text: "Denied, nothing ran" };
-    default:
-      return NEWER;
-  }
-};
-
-/** A proposed Try it setting runs nothing: approved, the hub saves it as the project's. */
-const configOutcome = (item: CommandApprovalItem): Outcome | undefined => {
-  switch (item.state) {
-    case "open":
-      return undefined;
-    case "approved":
-    case "ran":
-      return { tone: "success", text: "Approved, saved as the project’s Try it setting" };
-    case "failed":
-      return { tone: "danger", text: "Approved, not saved" };
-    case "denied":
-      return { tone: "quiet", text: "Denied, nothing saved" };
     default:
       return NEWER;
   }
@@ -189,9 +171,7 @@ const plain = (text: string): string => text.replace(/`/gu, "");
 /** What an answered approval was about, as one plain line for its folded row. */
 export const approvalTitle = (item: CommandApprovalItem): string =>
   plain(
-    item.previewConfig !== undefined
-      ? `How to run Try it: ${item.previewConfig.why}`
-      : item.purchase !== undefined
+    item.purchase !== undefined
         ? purchaseTitle(item.purchase)
         : item.secureInput !== undefined
           ? `${item.secureInput.label} for ${item.secureInput.site.name}, from 1Password`

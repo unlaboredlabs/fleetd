@@ -29,9 +29,6 @@ pub const REVIEW_MAX_MS: i64 = 20 * MINUTE_MS;
 /// A review comment or PR comment on the git host.
 pub const COMMENT_MS: i64 = 30_000;
 pub const MERGE_BY_HAND_MS: i64 = MINUTE_MS;
-pub const COMMIT_MS: i64 = 2 * MINUTE_MS;
-/// A fleetd call from the person's own Claude Code session.
-pub const SESSION_CALL_MS: i64 = MINUTE_MS;
 
 /// The floor of a typed message or order of `chars` characters.
 pub fn typed_ms(chars: usize) -> i64 {
@@ -41,20 +38,6 @@ pub fn typed_ms(chars: usize) -> i64 {
 /// The estimated credit of a review of a PR with `lines` changed (3 minutes when the host didn't say).
 pub fn review_ms(lines: Option<i64>) -> i64 {
     (REVIEW_BASE_MS + lines.unwrap_or(0).max(0) / 100 * REVIEW_PER_100_LINES_MS).min(REVIEW_MAX_MS)
-}
-
-/// The credit of a kind whose credit doesn't depend on the act; `None` for typed acts, reviews and app use.
-pub fn fixed_ms(kind: TouchKind) -> Option<i64> {
-    Some(match kind {
-        TouchKind::ItemAnswered => ITEM_MS,
-        TouchKind::Steer => STEER_MS,
-        TouchKind::Decision => DECISION_MS,
-        TouchKind::Comment => COMMENT_MS,
-        TouchKind::MergeByHand => MERGE_BY_HAND_MS,
-        TouchKind::Commit => COMMIT_MS,
-        TouchKind::SessionCall => SESSION_CALL_MS,
-        _ => return None,
-    })
 }
 
 /// The person's own logins and emails on the git host, lowercased. A repo can be shared, so a review, comment or

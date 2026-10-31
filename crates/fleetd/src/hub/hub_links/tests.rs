@@ -36,7 +36,6 @@ fn hub(
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let clock = ManualClock::at(1_792_000_000_000);
     let hub =

@@ -71,7 +71,6 @@ use crate::hub::store::{
 use crate::hub::work::Observed;
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::work::WorkScope;
-use hooks::UsageGate;
 use ports::{BranchPrError, LaunchRequest, PortError, TaskError, TaskPorts, WakeKind, Worktree};
 use render::{branch_for, render_task_prompt, tail_of};
 use resolve::resolve_profile;
@@ -333,7 +332,7 @@ pub struct Tasks {
 
 #[derive(Default)]
 pub struct TaskHooks {
-    pub usage: OnceLock<Arc<dyn UsageGate>>,
+    pub usage: OnceLock<Arc<crate::hub::usage::Usage>>,
 }
 
 impl Tasks {
@@ -793,7 +792,7 @@ impl Tasks {
             .hooks
             .usage
             .get()
-            .and_then(|u| u.gate(machine, account.as_deref()))
+            .and_then(|u| u.gate_for(machine.as_str(), account.as_deref()))
         {
             return self.queue(stored, "usage", &paused);
         }
@@ -1365,7 +1364,7 @@ impl Tasks {
             !ran || self.stopped(task, merged_after)?,
             now_ms(self.d.clock.as_ref()),
             rand::random(),
-            recovery::max(),
+            recovery::RECOVERY_MAX,
         );
         // The watchdog's stall, which the thread row does not hold yet.
         let stalled = event
@@ -1514,7 +1513,7 @@ impl Tasks {
             self.stopped(task, self.cut_off_at(task)?)?,
             now_ms(self.d.clock.as_ref()),
             rand::random(),
-            recovery::max(),
+            recovery::RECOVERY_MAX,
         );
         match action {
             recovery::Action::Resume(recovery) => self.recover(stored, recovery),
@@ -2137,7 +2136,7 @@ impl Tasks {
                     .hooks
                     .usage
                     .get()
-                    .and_then(|u| u.parked_of(event))
+                    .and_then(|u| hooks::parked_of(u, event))
                     .filter(|_| live)
                 {
                     let mut next = task.clone();
@@ -2877,25 +2876,11 @@ impl Tasks {
     }
 
     /// Has the node stop a task's agent and delete its worktree, and the build output in it, off the lock. A node that
-    /// can't (offline, a git error, or a writer's work that exists only there) leaves it, logged, for the nightly sweep. A project that keeps
-    /// its finished worktrees (`keep_worktrees`) keeps this one; its idle agent ends on the node's idle reap.
+    /// can't (offline, a git error, or a writer's work that exists only there) leaves it, logged, for the nightly sweep.
     fn remove_worktree(self: &Arc<Self>, task: &Task) {
         let Some(thread) = task.thread_ref.clone() else {
             return;
         };
-        match self
-            .d
-            .db
-            .project_settings()
-            .keep_worktrees(&task.project_ref)
-        {
-            Ok(false) => {}
-            Ok(true) => return,
-            Err(error) => {
-                tracing::warn!(task_id = task.task_id.as_str(), %error, "worktree kept: its project's settings can't be read");
-                return;
-            }
-        }
         let (tasks, task_id) = (self.clone(), task.task_id.clone());
         tokio::spawn(async move {
             match tasks.d.ports.remove_worktree(&thread).await {

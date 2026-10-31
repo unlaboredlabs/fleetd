@@ -108,7 +108,6 @@ impl Fake {
                 ("FIFO".into(), path("fifo")),
                 ("NODE_PID".into(), std::process::id().to_string()),
             ],
-            transcript: Some(dir.path().join("transcript.jsonl")),
             sandbox: None,
             host_dir: None,
             isolated: false,
@@ -354,14 +353,6 @@ async fn a_crashed_claude_leaves_no_orphan_behind() {
     assert_eq!(exit.signal, Some(9));
     assert!(events.is_empty(), "{events:?}");
     assert!(gone(tool), "the orphaned tool child {tool} survived");
-    // The raw stream is kept in the fixtures' format.
-    let transcript = std::fs::read_to_string(fake.dir.path().join("transcript.jsonl")).unwrap();
-    let first: serde_json::Value =
-        serde_json::from_str(transcript.lines().next().unwrap()).unwrap();
-    assert_eq!(
-        (first["dir"].as_str(), first["msg"]["subtype"].as_str()),
-        (Some("out"), Some("init"))
-    );
 }
 
 /// Paused time: the re-sweep's delay can only elapse once the test awaits again, by when the tool has its marker.
@@ -397,16 +388,4 @@ async fn a_tool_still_in_exec_when_claude_dies_is_killed_by_the_resweep() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     panic!("the tool {tool} outlived the re-sweep");
-}
-
-#[test]
-fn a_transcript_over_its_cap_keeps_its_newer_half_on_a_line_boundary() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("t.jsonl");
-    let lines: String = (0..10).map(|n| format!("line-{n}\n")).collect();
-    std::fs::write(&path, &lines).unwrap();
-    let (_, kept) = super::keep_newer_half(&path).unwrap();
-    let left = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(left, "line-6\nline-7\nline-8\nline-9\n");
-    assert_eq!(kept, left.len() as u64);
 }

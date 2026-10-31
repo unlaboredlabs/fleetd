@@ -1,6 +1,5 @@
 // Removing a project: project_remove stops its claude processes and forgets it; its files, branches and worktrees
-// stay. Opened from a project's menu on the Machines screen. Settings → Projects opens it to delete: the name typed to
-// confirm, and its fleetd worktrees removed too (`removeWorktrees`), never its checkout, branches or PRs. A Navi or any
+// stay. Settings → Projects opens it to delete: the name typed to confirm, and its fleetd worktrees removed too (`removeWorktrees`), never its checkout, branches or PRs. A Navi or any
 // plain folder has none of those: its delete says only that its agents stop, fleetd forgets it, and its folder stays.
 
 import { useState } from "react";
@@ -9,7 +8,7 @@ import { useData, useDataLayer } from "../../src/data/react";
 import { HubText } from "./HubText";
 import { openAddProject } from "./store";
 
-/** The hub gives the node 70 s: it stops the project's processes, ends its previews and browser, then removes it. */
+/** The hub gives the node 70 s: it stops the project's processes and browser, then removes it. */
 const REMOVE_MS = 80_000;
 
 export interface RemoveTarget {

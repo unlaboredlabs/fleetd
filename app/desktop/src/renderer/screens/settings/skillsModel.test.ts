@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { SkillSummary } from "../../../shared/contracts";
-import { parseRoute } from "./route";
 import { searchSettings } from "./search";
 import { editable, groups, installLine, isSkillName, nameProblem, rowKey, shadowLine, slug, template } from "./skillsModel";
 
@@ -44,8 +43,7 @@ describe("Settings → Projects → Agents", () => {
     expect(rowKey(list[0] ?? skill({}))).toBe("global/release");
   });
 
-  it("is on a project's Agents, found by search, and an older link lands there per project", () => {
+  it("is on a project's Agents, found by search", () => {
     expect(searchSettings("skills.sh")[0]?.tab).toBe("agents");
-    expect(parseRoute("#/settings/skills?for=devbox/shop")).toMatchObject({ tab: "agents", for: "devbox/shop" });
   });
 });

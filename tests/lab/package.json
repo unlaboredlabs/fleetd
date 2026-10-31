@@ -2,7 +2,7 @@
   "name": "fleetd-lab",
   "private": true,
   "type": "module",
-  "description": "End-to-end lab suite for the fleetd binary: a hub and nodes that run the real claude CLI, never in CI; and the factory lab (factory/), offline, which runs in CI.",
+  "description": "The factory lab (factory/), offline, which runs in CI; and the tools that record the claude fixtures, the site's captures and the demo.",
   "engines": {
     "node": ">=24"
   },

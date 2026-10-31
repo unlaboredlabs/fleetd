@@ -268,17 +268,19 @@ impl NodeLinkServer {
     }
 }
 
-/// What the hub does with a node's word on one of its previews.
-pub type PreviewReports =
-    dyn Fn(&MachineId, fleetd_contracts::preview::PreviewReport) + Send + Sync;
+/// A frame only an older node sends: `preview_run_result` and `preview_report`, from before Try it was removed.
+fn retired_frame(text: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|v| v.get("t")?.as_str().map(|t| t.starts_with("preview_")))
+        .unwrap_or(false)
+}
 
 pub struct NodeLinkServer {
     deps: LinkDeps,
     state: Mutex<State>,
     /// Browser sessions' live view: who watches which, and their frames.
     pub browser_live: Arc<crate::hub::browser::live::Live>,
-    /// Takes each node's `preview_report` (hub/preview), once the area is wired.
-    pub preview_reports: std::sync::OnceLock<Arc<PreviewReports>>,
     heartbeat_every: Duration,
     silence_timeout: Duration,
     hello_timeout: Duration,
@@ -369,7 +371,6 @@ impl NodeLinkServer {
             deps,
             state: Mutex::default(),
             browser_live: Arc::default(),
-            preview_reports: std::sync::OnceLock::new(),
             heartbeat_every,
             silence_timeout,
             hello_timeout,
@@ -828,7 +829,6 @@ impl NodeLinkServer {
         let machine: Machine = serde_json::from_value(json!({
             "machineId": machine_id,
             "name": hello.name,
-            "tags": hello.tags,
             // Until the runner check answers.
             "status": "degraded",
             "lastSeenAt": at,
@@ -914,6 +914,8 @@ impl NodeLinkServer {
             };
             let frame = match serde_json::from_str::<NodeToHub>(&text) {
                 Ok(f) => f,
+                // An older node's word on a preview it still runs: previews are gone from the hub.
+                Err(_) if retired_frame(&text) => continue,
                 Err(_) => return refuse(close::BAD_FRAME, "frame does not decode"),
             };
             // A replaced or timed-out link must not keep the machine alive.
@@ -965,20 +967,15 @@ impl NodeLinkServer {
                 | NodeToHub::SecretResult(_)
                 | NodeToHub::GatedResult(_)
                 | NodeToHub::NodeActionResult(_)
-                | NodeToHub::SessionHostResult(_)
-                | NodeToHub::PreviewRunResult(_)) => self.deps.commands.resolve(&machine_id, reply),
+                | NodeToHub::SessionHostResult(_)) => {
+                    self.deps.commands.resolve(&machine_id, reply)
+                }
                 frame @ (NodeToHub::SessionReply(_)
                 | NodeToHub::MachineEvent(_)
                 | NodeToHub::ThreadEvent(_)
                 | NodeToHub::CloneProgress(_)) => {
                     self.deps.executors.handle_frame(&machine_id, frame)
                 }
-                NodeToHub::PreviewReport(report) => match self.preview_reports.get() {
-                    Some(reports) => reports(&machine_id, report),
-                    None => {
-                        tracing::debug!(machine = %machine_id, "node link: a preview report before previews are wired")
-                    }
-                },
                 NodeToHub::Slept(span) => self.slept(&machine_id, span),
                 NodeToHub::Spans(frame) => {
                     let tx = tx.clone();

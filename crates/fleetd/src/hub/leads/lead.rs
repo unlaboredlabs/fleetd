@@ -346,12 +346,7 @@ impl Leads {
         };
         let thread = self.ctx.store.thread_get(&thread_ref)?.map(|t| t.thread);
         // M4 usage: a lead whose thread hit a limit shows it is parked and until when.
-        let parked = self
-            .ctx
-            .hooks
-            .usage
-            .get()
-            .and_then(|u| u.parked_of(&thread_ref));
+        let parked = self.ctx.hooks.parked_of(&thread_ref);
         let gone = self.ctx.store.project_get(&lead.project_ref)?.is_none();
         Ok(Lead {
             state: lead_state(thread.as_ref(), gone),
@@ -411,7 +406,7 @@ impl Leads {
             return Err(archived);
         }
         // M4 usage: no lead turn goes into a login fleetd knows is exhausted.
-        if let Some(paused) = self.ctx.hooks.usage.get().and_then(|u| u.gate(r)) {
+        if let Some(paused) = self.ctx.hooks.usage_gate(r) {
             return Err(LeadError::new(
                 ErrorCode::Invalid,
                 format!("The lead was not started: {paused}."),

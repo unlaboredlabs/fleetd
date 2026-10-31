@@ -5,9 +5,8 @@
 //! holding work that exists only there (uncommitted changes, unpushed commits) is kept and the person is told once in
 //! the project's chat, in one line a sweep listing all it kept there; one the node couldn't remove (offline, a git
 //! error) is tried again the next night, up to [`MAX_TRIES`] times, then given up on with one line to the person. A
-//! session its node doesn't know counts as removed, as does a removal done at the task's end or merge. A project that
-//! keeps its finished worktrees (`keep_worktrees`) is left alone. Each sweep also cancels tasks still queued under an
-//! order that has closed: they would never start.
+//! session its node doesn't know counts as removed, as does a removal done at the task's end or merge. Each sweep also
+//! cancels tasks still queued under an order that has closed: they would never start.
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -71,15 +70,6 @@ impl Tasks {
             let Some(thread) = &task.thread_ref else {
                 continue;
             };
-            if !matches!(
-                self.d
-                    .db
-                    .project_settings()
-                    .keep_worktrees(&task.project_ref),
-                Ok(false)
-            ) {
-                continue;
-            }
             let id = task.task_id.as_str();
             let seen = match self.d.ports.remove_worktree(thread).await {
                 Ok(()) => {

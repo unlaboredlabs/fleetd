@@ -108,18 +108,15 @@ The same actions are in Settings → Projects → Repos, and agents have `projec
 
 ## Project settings {#settings}
 
-Open a project's settings in the desktop app: Settings → Projects, then pick the project. Machines → a project's
-**…** menu → **Settings…** opens the same page.
+Open a project's settings in the desktop app: Settings → Projects, then pick the project.
 
 | Setting | Does |
 |---|---|
 | Icon | The circle its chat shows in the sidebar, the chat and on the phone. Pick one of nine glass faces and one of twelve colors: the large icon shows what the pointer is over, and a pick takes effect at once everywhere. One nobody picked is made from its id. Or **Upload image…** (or drop a png, jpeg or webp on the icon); **Move and scale** lets you drag and zoom it before **Save**. The hub keeps only the circle's square, at most 512 px, without the file's metadata. **Remove image** brings the icon back. |
 | Name | How fleetd shows the project. Its folder keeps its own name. |
-| Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and the setup and preview it runs with: its own, or the default. A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, **Default setup**: what runs in each new worktree of a repo without setup of its own. See [Setup commands](#setup). |
-| Keep finished worktrees | Off (the default): a reader's worktree goes when its task finishes, and a writer's once its pull request merges; any left behind go in the [nightly cleanup](#cleanup). On: they stay on the machine. |
+| Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and the setup it runs with: its own, or the default. A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, **Default setup**: what runs in each new worktree of a repo without setup of its own. See [Setup commands](#setup). |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
 | MCP servers | The project's own MCP servers for its agents, and the global ones it gets. See [MCP servers](/docs/mcp-servers). |
-| Merge train | The checks the train also waits for before a merge, and those left for after it. See [Which checks it waits for](/docs/merge-train#fast-set). |
 | Delete project | See [Delete a project](#delete). |
 
 Its **Instructions & memory** page has **Refresh memory every night**: on (the default), around 04:00 on a day with
@@ -182,9 +179,9 @@ order's agents, until the order closes: see [A variable an agent asks for](/docs
 Each agent's brief lists the variables it gets by name.
 
 From an MCP client: `project_settings_get` reads a project's settings, `project_settings_set` renames it or sets
-`keepWorktrees` and `setup`, and `project_env_set` sets and removes variables, a secret sealed to the machine's
+`setup` and `memoryRefresh`, and `project_env_set` sets and removes variables, a secret sealed to the machine's
 `boxPubKey`. `project_env_set` takes only a human key. Give either settings call a `repo` (a repo's name, such as
-`api`) to read or set that repo's own `setup` and `preview`; a repo with none of its own uses the project's.
+`api`) to read or set that repo's own `setup`; a repo with none of its own uses the project's.
 
 ### Setup commands {#setup}
 
@@ -235,7 +232,6 @@ those of agents that finished more than 3 days ago. No model runs for it.
   Push or delete that work, and the next night's cleanup removes it.
 - One its machine couldn't remove (offline, a git error) is tried again the next night. After a week of failed tries
   the cleanup gives it up and says so once in the chat: delete it by hand if that machine is still in use.
-- A project with **Keep finished worktrees** on is left alone.
 
 The hour is 04:00 in the zone of the global decision `policy.tz`, else the hub machine's. To keep worktrees longer or
 shorter than 3 days, record a global decision `policy.worktree_days` with the number of days (`decisions_record`).

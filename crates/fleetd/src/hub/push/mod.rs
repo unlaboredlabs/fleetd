@@ -1,4 +1,4 @@
-//! Phone notifications, end-to-end encrypted (D218, docs/design/push.md). Each person registers their phones (table
+//! Phone notifications, end-to-end encrypted (D218). Each person registers their phones (table
 //! `push_devices`: a push token and an X25519 public key, tools.rs). [`run`] follows the event log and, for what the
 //! hub already marks as needing a person (an event with `attention`), a Navi's or a lead's final chat message, and an
 //! order that landed or stopped, seals a [`PushPayload`] to each of that person's devices and posts it to the hub's
@@ -391,7 +391,7 @@ pub fn plain(text: &str) -> bool {
 /// tool prompt that is a one-line Bash command, its whole input. Either must be [`shown_whole`], and the reason before
 /// it [`plain`]. Anything else is reviewed in the app: a prompt's
 /// summary is often only part of what runs (a Write's path, a script's first line, an MCP tool's description), and an
-/// integration's send or change and a preview setting show exactly who and what on their card. A secret is entered
+/// integration's send or change shows exactly who and what on its card. A secret is entered
 /// in the app, so it gets no action.
 fn approval_notice(r: &HumanRequest) -> (String, Option<PushCategory>) {
     let why = r.text.as_str().trim().trim_end_matches(['.', ':']);

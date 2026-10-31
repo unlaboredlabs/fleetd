@@ -149,7 +149,6 @@ mod tests {
                 home: home.path().to_path_buf(),
                 listen: Listen::default(),
                 url: None,
-                queue_ttl_sec: None,
             },
             clock.clone(),
         )

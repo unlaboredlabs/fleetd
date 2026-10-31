@@ -2,7 +2,7 @@
 // machine it starts on, and each machine's slots in words, a full one offering to wait.
 import { describe, expect, it } from "vitest";
 import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
-import { canOpen, hostsFor, newScreenOf, openingLine, openWord, pickHost, prChoices, slotLine, startingLine, takesBuild, takesPr } from "./pickScreen";
+import { canOpen, hostsFor, newScreenOf, openingLine, openWord, pickHost, prChoices, slotLine, startingLine, takesBuild } from "./pickScreen";
 
 const machine = (machineId: string, ready: readonly string[], more: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({
   machineId,
@@ -67,11 +67,7 @@ describe("prChoices", () => {
   });
 });
 
-describe("takesPr and openingLine", () => {
-  it("offers a PR for phone screens and a project's browser, never a Navi's or a desktop", () => {
-    expect(takesPr("ios", false) && takesPr("android", true) && takesPr("browser", false)).toBe(true);
-    expect(takesPr("browser", true) || takesPr("linux_desktop", false)).toBe(false);
-  });
+describe("openingLine", () => {
   it("says where an open with a build is", () => {
     expect(openingLine("starting", 12, "mac")).toBe("Reading #12’s build and starting the screen on mac…");
     expect(openingLine("installing", 12, "mac")).toBe("Installing #12’s build on mac…");

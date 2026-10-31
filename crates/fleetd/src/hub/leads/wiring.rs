@@ -1,5 +1,5 @@
 //! The leads area's links into areas already on main: its ports over the executor, the write queue, the
-//! ledger and the requests; the ledger's WorkstreamLookup; and its lead calls.
+//! ledger and the requests; the ledger's view of the workstreams; and its lead calls.
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef};
@@ -14,10 +14,10 @@ use super::Area;
 use super::error::LeadError;
 use super::hooks::BoxFuture;
 use super::ports::LeadPorts;
-use super::records::{LeadRecords, WorkstreamFilter};
+use super::records::WorkstreamFilter;
 use crate::hub::approvals::store::{RequestFilter, Requests};
 use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions};
-use crate::hub::ledger::{self, Chain, DecisionFilter, Decisions, LedgerCode, LedgerError};
+use crate::hub::ledger::{Chain, DecisionFilter, Decisions, LedgerCode, LedgerError};
 use crate::hub::link::lead_calls::LeadCallFuture;
 use crate::hub::link::{LeadCallHandler, LeadCaller, LeadCalls};
 use crate::hub::queue::WriteQueue;
@@ -190,17 +190,6 @@ impl LeadPorts for HubPorts {
     }
 }
 
-struct Lookup(Arc<LeadRecords>);
-
-impl ledger::WorkstreamLookup for Lookup {
-    fn project_of(&self, workstream_id: &WorkstreamId) -> Option<ProjectRef> {
-        self.0.project_of(workstream_id)
-    }
-    fn open_in(&self, project_ref: &ProjectRef, limit: usize) -> Vec<WorkstreamId> {
-        self.0.open_in(project_ref, limit)
-    }
-}
-
 /// Holds the area weakly: the area's ports hold the link, which holds the registry this sits in.
 struct Calls(Weak<Area>);
 
@@ -287,9 +276,7 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
         requests: Arc::clone(links.requests),
         decisions: Arc::clone(links.decisions),
     }));
-    links
-        .decisions
-        .set_workstreams(Arc::new(Lookup(Arc::clone(&area.records))));
+    links.decisions.set_workstreams(Arc::clone(&area.records));
     let calls: Arc<dyn LeadCallHandler> = Arc::new(Calls(Arc::downgrade(area)));
     for op in super::calls::OPS {
         links.lead_calls.register(op, Arc::clone(&calls));

@@ -127,8 +127,10 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
   const nodeEnv = { ...env(machineHome), ANTHROPIC_API_KEY: "lab-offline" };
 
   const hubHome = path.join(dir, "hub");
-  const hubEnv = env(path.join(dir, "hub-user"));
-  fs.mkdirSync(hubEnv.HOME!, { recursive: true });
+  // The hub's fleetd dir, beside its home: `hub key` and `pair` find the hub there.
+  const hubUser = path.join(dir, "hub-user");
+  const hubEnv = { ...env(hubUser), FLEETD_HOME: dir };
+  fs.mkdirSync(hubUser, { recursive: true });
   const port = await freePort();
   const hubUrl = `http://127.0.0.1:${port}`;
   const cli = (...args: Array<string>) => execFileSync(...fleetdCommand(args), { env: hubEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -140,10 +142,10 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
       const up = await fetch(`${hubUrl}/healthz`).then((r) => r.ok, () => false);
       return up ? true : (await sleep(250), undefined);
     });
-    const key = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--name", "factory", "--role", "operate", "--machines", "*"))?.[0];
+    const key = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--name", "factory", "--role", "operate", "--machines", "*"))?.[0];
     check(key, "hub key create printed a key");
     const keyFile = path.join(dir, "read.key");
-    cli("hub", "key", "create", "--home", hubHome, "--name", "factory-status", "--role", "read", "--machines", "*", "--out", keyFile);
+    cli("hub", "key", "create", "--name", "factory-status", "--role", "read", "--machines", "*", "--out", keyFile);
     client = new Client({ name: "fleetd-factory-lab", version: "0" });
     await client.connect(new StreamableHTTPClientTransport(new URL(`${hubUrl}/mcp`), { requestInit: { headers: { authorization: `Bearer ${key}` } } }) as Transport);
     const callTool = callToolWith(() => client!);
@@ -151,7 +153,7 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
     const cursor = async () => (await callTool("fleetd_status")).body.cursor as number;
     ok(`hub up on ${hubUrl}`);
 
-    const token = /--code (\S+)/u.exec(cli("pair", "--worker", MACHINE, "--home", hubHome))?.[1];
+    const token = /--code (\S+)/u.exec(cli("pair", "--worker", MACHINE))?.[1];
     check(token, "pair --worker printed an enrollment code");
     start(`node-${MACHINE}`, ["node", "join", "--hub", hubUrl, "--token", token!, "--machine", MACHINE, "--home", nodeHome], nodeEnv);
 

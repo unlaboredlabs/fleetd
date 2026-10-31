@@ -7,7 +7,7 @@
 //!
 //! A session the agent's machine can't take goes to the online machine that can with the most free slots ([`remote_on`]
 //! turns that off), and the agent drives it through the hub's relay (relay.rs). That machine's node hosts it under a key the hub mints, the agent's later session calls go to
-//! it through the hub, and the runner reports the session in the agent's name ([`HostedCallers`]).
+//! it through the hub, and the runner reports the session in the agent's name ([`Callers`]).
 //!
 //! Session slots are separate from agent slots: a machine's live sessions are its own agents' (`browser_sessions`)
 //! and those it hosts for others, and each machine's cap is a person's setting or what it fits ([`auto_sessions`]).
@@ -36,7 +36,7 @@ use fleetd_contracts::tasks::TaskId;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::hub::api::Hub;
-use crate::hub::link::lead_calls::{CallerAgent, HostedCaller, HostedCallers};
+use crate::hub::link::lead_calls::{CallerAgent, HostedCaller};
 use crate::hub::store::{StoreError, now_ms};
 
 /// Memory to allow per session when sizing a machine's session cap: a browser or an emulator.
@@ -665,10 +665,11 @@ pub async fn run_prune(hub: Arc<Hub>) {
 }
 
 /// The runner's calls for a session it hosts, in the name of the agent it hosts it for.
-struct Callers(Weak<Hub>);
+pub struct Callers(Weak<Hub>);
 
-impl HostedCallers for Callers {
-    fn caller_of(&self, runner: &MachineId, thread: &ThreadId) -> Option<HostedCaller> {
+impl Callers {
+    /// The agent behind `thread` when it is a key the hub gave `runner` for a session it hosts.
+    pub fn caller_of(&self, runner: &MachineId, thread: &ThreadId) -> Option<HostedCaller> {
         let hub = self.0.upgrade()?;
         if !thread.as_str().starts_with('H') {
             return None;
