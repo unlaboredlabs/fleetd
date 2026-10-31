@@ -150,9 +150,8 @@ jobs:
     # fleetd.sh may only mention what fleetd has: no index.* at the root of site/ (Vercel would serve it at / instead
     # of the installer), nothing from site/.stale-terms, and only `fleetd` commands that `fleetd help` lists, on the
     # landing page and in the docs' sources; every vercel.json rewrite lands on a file (under cleanUrls) and `/` is the
-    # landing page for a browser and install.sh for curl; site/docs is the docs' current build; every link on the site
-    # resolves; no tracked file names a maintainer's own machine, login or home directory; and the landing page fits
-    # every width.
+    # landing page for a browser and install.sh for curl; every link on the site and its built docs resolves; no tracked
+    # file names a maintainer's own machine, login or home directory; and the landing page fits every width.
     needs: rust-docs
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -163,23 +162,12 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: docs/site/package-lock.json
-      - name: fleetd.sh/docs is the current build
-        # site/docs/ is committed. This fails while it differs from a fresh Starlight build of docs/site. Fix: npm ci
-        # --prefix docs/site && npm run build --prefix docs/site, then commit. The search index (site/docs/pagefind) is
-        # not committed but ignored: the Vercel build of site/ generates it (site/vercel.json's buildCommand), so docs
-        # PRs don't conflict on it.
+      - name: Build the docs
+        # site/docs/ isn't committed: the Vercel build of site/ builds it (site/vercel.json's buildCommand). The link
+        # check below reads this build.
         run: |
           npm ci --prefix docs/site --no-audit --no-fund
           npm run build --prefix docs/site
-          if [ -n "$(git ls-files site/docs/pagefind)" ]; then
-            echo "::error::site/docs/pagefind is tracked; the Vercel build generates it: git rm -r --cached site/docs/pagefind"
-            exit 1
-          fi
-          if [ -n "$(git status --porcelain -- site/docs)" ]; then
-            git status --short -- site/docs | head -20
-            echo "::error::site/docs differs from a fresh build of docs/site; rebuild and commit it (site/README.md, Docs)"
-            exit 1
-          fi
       - uses: actions/download-artifact@v8
         with:
           name: fleetd-help

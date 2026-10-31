@@ -70,14 +70,14 @@ node tests/lab/site-capture.ts
 It runs the `fleetd init --yes --no-service` wizard and `fleetd machine add builder-1 --dry-run` in a throwaway HOME
 with your claude and gh logins copied in. This machine's tailnet name and addresses become `hub.your-tailnet.ts.net` and `<tailnet-ip>`, the gh login
 `demo`, and it refuses to write text that still names this machine, its home or lab paths, a non-loopback address or
-a key. It rebuilds `site/docs`; review the result with `git diff docs/site site/docs`.
+a key. Review the result with `git diff docs/site`.
 
 ## Docs (fleetd.sh/docs)
 
-The docs are an [Astro Starlight](https://starlight.astro.build) site in `docs/site/`. Its build, `site/docs/`, is
-committed, so the Vercel project needs no Node install. Its search index, `site/docs/pagefind`, is not: git ignores it,
-and the Vercel build regenerates it from the committed HTML (`buildCommand` in `vercel.json`, a pinned Pagefind), so
-docs PRs don't conflict on it. After editing a page, rebuild and commit both:
+The docs are an [Astro Starlight](https://starlight.astro.build) site in `docs/site/`. Its build, `site/docs/`, and
+its search index, `site/docs/pagefind`, are not committed: git ignores them, and the Vercel build of `site/` makes both
+(`buildCommand` in `vercel.json`, a pinned Pagefind). After editing a page, commit only the sources; to build them
+locally:
 
 ```sh
 cargo run -q -p docsgen                  # only when the CLI or the prompt registry changed
@@ -95,8 +95,7 @@ node .github/personal-check.mjs                          # no maintainer's host,
 node .github/docs-links.mjs                              # every internal link and anchor resolves
 ```
 
-CI fails while the generated pages or `site/docs/` are out of date, or while `site/docs/pagefind` is tracked. To read
-the docs locally with clean URLs, run `node .github/docs-serve.mjs` and open http://127.0.0.1:4791/docs (search
+CI fails while the generated pages are out of date. To read the docs locally with clean URLs, run `node .github/docs-serve.mjs` and open http://127.0.0.1:4791/docs (search
 works once a build has written the ignored index), or `npm run dev --prefix docs/site` while writing.
 
 ### Where
@@ -165,7 +164,7 @@ $ fleetd doctor
   each marked block's `$ ` lines in order, in a fresh throwaway HOME (user `demo`, shown as `~`) where `fleetd init
   --listen 127.0.0.1:4778 --git-identity "Demo <demo@users.noreply.github.com>" --no-service` has already run (unless
   the block's first command is `fleetd init` itself), writes each command's output under it, keeps a nonzero exit as
-  a final `[exit N]` line, and rebuilds `site/docs`. It refuses to write a hostname, a real `/home` path, a
+  a final `[exit N]` line. It refuses to write a hostname, a real `/home` path, a
   non-loopback IP or a key.
 - Output that needs a live hub, a node or claude can't be captured that way. Paste real output from a lab run into a
   ` ```text ` block instead.

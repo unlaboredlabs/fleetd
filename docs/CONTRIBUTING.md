@@ -21,7 +21,7 @@ fleetd is one Cargo workspace and the desktop app. The shipped `fleetd` is one s
 - `app/desktop`: the desktop app, Electron + React (see below). Its own pnpm workspace, outside Cargo.
 - `tests/lab`: the end-to-end lab suite.
 - `site/` and `.github/release/`: the `fleetd.sh` installer and site, and the release pipeline. `docs/site/` is
-  the docs' Starlight site, built into `site/docs/`; `crates/docsgen` writes its generated pages.
+  the docs' Starlight site, built into `site/docs/` by the Vercel build; `crates/docsgen` writes its generated pages.
 
 ## The desktop app
 
@@ -60,7 +60,7 @@ DevTools-driven tests; never ship one. `pnpm debug-guard-check` checks both.
 Before every push, run `scripts/check.sh`. It runs CI's quick Linux checks for what changed since `origin/main`,
 committed or not, scoped as CI scopes them: `rust-lint` (fmt, clippy, the migrations check), `rust-docs` (the
 generated docs pages, the lab scenarios), `rust-tests` (the tests of the modules the changed files are in, two levels
-deep, e.g. `hub::train::`), `site` (site/docs is the current build, the site and link checks, no personal identifiers)
+deep, e.g. `hub::train::`), `site` (a docs build, the site and link checks, no personal identifiers)
 and `desktop` (typecheck, lint, unit tests). It ends with each check that failed and its command. Name checks to run
 only those, changed or not: `scripts/check.sh rust-lint site`. `scripts/check.sh qa` runs the desktop QA screens,
 which take long and only run when named. CI still runs the full Rust suite, the doctests and the rest.
@@ -123,8 +123,8 @@ started, so it is safe to run next to a fleetd you use day to day.
 ## The site
 
 `site/` is fleetd.sh: the landing page and the docs at `/docs`, built from `docs/site/` with Starlight
-(`npm run build --prefix docs/site`, then commit `site/docs`; CI fails while it is out of date). Its search index,
-`site/docs/pagefind`, is ignored, not committed: the Vercel build generates it. The site shows real app
+(`npm run build --prefix docs/site`). The build and its search index are ignored, not committed: the Vercel build
+makes them. The site shows real app
 screenshots and real setup output. A change that alters what the app shows re-records the clips or shots it changes, and one that alters what `fleetd
 init` or `fleetd machine add` prints reruns `tests/lab/site-capture.ts`, committing the updated `site/` in the same
 PR (see `site/README.md`); `node tests/lab/site-capture.ts --docs` recaptures the docs' output blocks without its

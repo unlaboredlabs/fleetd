@@ -151,7 +151,7 @@ export function docsBlocks(given: Record<string, string>) {
   return blocks;
 }
 
-/** Writes the blocks back into the docs' sources and rebuilds site/docs. */
+/** Writes the blocks back into the docs' sources. */
 function fillDocs(blocks: ReturnType<typeof docsBlocks>) {
   for (const [name, { body }] of blocks) assertPublishable(`docs capture=${name}`, body);
   const files = new Set([...blocks.values()].map((b) => b.file));
@@ -163,9 +163,7 @@ function fillDocs(blocks: ReturnType<typeof docsBlocks>) {
     fs.writeFileSync(file, text);
   }
   execFileSync("cargo", ["run", "-q", "--locked", "-p", "docsgen"], { cwd: REPO, stdio: "inherit" });
-  execFileSync("npm", ["ci", "--prefix", "docs/site"], { cwd: REPO, stdio: "inherit" });
-  execFileSync("npm", ["run", "build", "--prefix", "docs/site"], { cwd: REPO, stdio: "inherit" });
-  log(`docs: recaptured ${blocks.size} block(s) in ${files.size} file(s) and rebuilt site/docs`);
+  log(`docs: recaptured ${blocks.size} block(s) in ${files.size} file(s)`);
 }
 
 /** Nothing on a public page may name this machine, its paths or its network, or carry a key. */

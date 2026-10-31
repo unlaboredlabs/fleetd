@@ -7,7 +7,7 @@
 // Capture blocks (home.html's markers, the docs' ```console capture=NAME) are fleetd's own output
 // (tests/lab/site-capture.ts), so the command check skips them; the stale terms still apply there, since a block nobody
 // re-captured goes stale too. Also runs site/media.mjs's check: every clip and poster home.html names is in the R2
-// upload set. site/docs/ is built from the sources (CI checks it's up to date), so it isn't checked here.
+// upload set. site/docs/ is built from the sources, so it isn't checked here.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 

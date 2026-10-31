@@ -14,7 +14,7 @@ GEMINI.md
 .clinerules
 .github/copilot-instructions.md
 /.local/
-# The docs' search index: Starlight's build writes it locally and the Vercel build of site/ regenerates it (site/README.md).
-/site/docs/pagefind/
+# The docs: the Vercel build of site/ builds them from docs/site, with their search index (site/README.md).
+/site/docs/
 # The phone app's over-the-air updates: the Vercel build of site/ unpacks them from the releases (site/mobile-updates.sh).
 /site/updates/

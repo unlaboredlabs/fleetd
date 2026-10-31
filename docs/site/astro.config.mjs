@@ -1,5 +1,5 @@
-// fleetd.sh/docs. Built into site/docs/, which is committed: the Vercel project serves site/ as is, and its build
-// only generates the search index, site/docs/pagefind (ignored). Source format and commands: site/README.md ("Docs").
+// fleetd.sh/docs. Built into site/docs/ (ignored) by the Vercel build of site/, which then generates the search index,
+// site/docs/pagefind. Source format and commands: site/README.md ("Docs").
 import { satteri } from "@astrojs/markdown-satteri";
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";

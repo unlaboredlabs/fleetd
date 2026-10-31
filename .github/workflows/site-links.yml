@@ -20,4 +20,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      # The links of the built docs: site/docs isn't committed.
+      - run: |
+          npm ci --prefix docs/site --no-audit --no-fund
+          npm run build --prefix docs/site
       - run: node .github/docs-links.mjs --external
