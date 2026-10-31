@@ -2685,6 +2685,28 @@ export type HumanWait = {
   totalMs: number;
 };
 
+/** The colors an icon's field comes in. */
+export type KnownIconColor =
+  | "fleet"
+  | "sky"
+  | "teal"
+  | "mint"
+  | "lime"
+  | "sun"
+  | "ember"
+  | "rose"
+  | "plum"
+  | "lilac"
+  | "sand"
+  | "graphite";
+/** KnownIconColor, or a value from a newer hub. */
+export type IconColor = KnownIconColor | (string & {});
+
+/** The beings' faces, each named for its mood's look. */
+export type KnownIconFace = "mo" | "wee" | "peep" | "nap" | "cy" | "wink" | "joy" | "huh" | "wow";
+/** KnownIconFace, or a value from a newer hub. */
+export type IconFace = KnownIconFace | (string & {});
+
 export type Insight = {
   /**
    * The same numbers for the compare period. Present on every insight when a compare period was asked for,
@@ -5089,6 +5111,27 @@ export type ProjectGetOutput = {
   workstreams?: Workstream[];
 };
 
+/**
+ * A built-in icon: a glass being with a face of its own, on a round field of a color. The apps ship each one as
+ * images (app/shared/bot-icons builds them).
+ */
+export type ProjectIcon = {
+  color: IconColor;
+  face: IconFace;
+};
+
+export type ProjectIconSetInput = {
+  icon: ProjectIcon;
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type ProjectIconSetOutput = {
+  next?: string;
+  project: ProjectSummary;
+  truncated?: boolean;
+};
+
 export type ProjectId = string;
 
 /** What a project's checkout or repository says: the default branch, CI and merge rules, and one line on what the lead will need. */
@@ -5411,6 +5454,12 @@ export type ProjectSummary = {
    * recorded.
    */
   createdBy?: ProjectCreator;
+  /**
+   * Its built-in icon, from the hub, which its chat shows when it has no picture: the one a person picked
+   * (`project_icon_set`), else one the hub derives from its id, the same on every app and every launch. Absent from
+   * a node and an older hub: its letters show.
+   */
+  icon?: ProjectIcon;
   /**
    * What the project is, from the hub: `assistant` for a Navi. Absent for a project of code, from a node, and
    * from an older hub.
@@ -8075,6 +8124,7 @@ export interface ToolMap {
   project_env_set: { input: ProjectEnvSetInput; output: ProjectEnvSetOutput };
   project_files: { input: ProjectFilesInput; output: ProjectFilesOutput };
   project_get: { input: ProjectGetInput; output: ProjectGetOutput };
+  project_icon_set: { input: ProjectIconSetInput; output: ProjectIconSetOutput };
   project_remove: { input: ProjectRemoveInput; output: ProjectRemoveOutput };
   project_repo_add: { input: ProjectRepoAddInput; output: ProjectRepoAddOutput };
   project_repo_list: { input: ProjectRepoListInput; output: ProjectRepoListOutput };

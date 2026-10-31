@@ -1,5 +1,40 @@
 {
   "$defs": {
+    "IconColor": {
+      "description": "The colors an icon's field comes in.",
+      "enum": [
+        "fleet",
+        "sky",
+        "teal",
+        "mint",
+        "lime",
+        "sun",
+        "ember",
+        "rose",
+        "plum",
+        "lilac",
+        "sand",
+        "graphite"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "IconFace": {
+      "description": "The beings' faces, each named for its mood's look.",
+      "enum": [
+        "mo",
+        "wee",
+        "peep",
+        "nap",
+        "cy",
+        "wink",
+        "joy",
+        "huh",
+        "wow"
+      ],
+      "type": "string",
+      "x-open": true
+    },
     "MachineId": {
       "description": "Machine slug, [a-z0-9-]{1,32}",
       "pattern": "^[a-z0-9-]{1,32}$",
@@ -22,6 +57,22 @@
       "required": [
         "keyId",
         "name"
+      ],
+      "type": "object"
+    },
+    "ProjectIcon": {
+      "description": "A built-in icon: a glass being with a face of its own, on a round field of a color. The apps ship each one as\nimages (app/shared/bot-icons builds them).",
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/IconColor"
+        },
+        "face": {
+          "$ref": "#/$defs/IconFace"
+        }
+      },
+      "required": [
+        "face",
+        "color"
       ],
       "type": "object"
     },
@@ -103,6 +154,10 @@
         "createdBy": {
           "$ref": "#/$defs/ProjectCreator",
           "description": "A Navi's: the key that created it, from the hub. Absent for other projects, and for a Navi made before it was\nrecorded."
+        },
+        "icon": {
+          "$ref": "#/$defs/ProjectIcon",
+          "description": "Its built-in icon, from the hub, which its chat shows when it has no picture: the one a person picked\n(`project_icon_set`), else one the hub derives from its id, the same on every app and every launch. Absent from\na node and an older hub: its letters show."
         },
         "kind": {
           "$ref": "#/$defs/ProjectKind",

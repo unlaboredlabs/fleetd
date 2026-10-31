@@ -1,9 +1,10 @@
 // The hub calls behind a project's and a Navi's screens, each as the desktop makes it: New Navi (machine_roles,
 // navi_create), New Project (project_discover, then the desktop's add flow over project_add), its screen's reads
 // (agents_list, orders_board, checklist_get, pr_list, profiles_list), Rename (navi_rename, or project_settings_set's
-// title), its picture (attachment_put, then project_avatar_set), Agent Profiles (project_set), Forget Sign-ins
-// (navi_signins_forget) and Delete (project_settings_get for its worktrees, then project_remove with them).
-import { allowedAfter, discovery, isNavi, type AddCall, type AttachmentMime, type AvatarCrop, type AgentRow, type Discovery, type HubError, type MachineRolesEntry, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
+// title), its icon (project_icon_set) or picture (attachment_put, then project_avatar_set), Agent Profiles
+// (project_set), Forget Sign-ins (navi_signins_forget) and Delete (project_settings_get for its worktrees, then
+// project_remove with them).
+import { allowedAfter, discovery, isNavi, type AddCall, type AttachmentMime, type AvatarCrop, type ProjectIcon, type AgentRow, type Discovery, type HubError, type MachineRolesEntry, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
 import type { Session } from "../../session";
 import { upload, UPLOAD_TIMEOUT_MS } from "../../upload";
 import { MERGES_DAYS } from "./model";
@@ -59,7 +60,13 @@ export const setPicture = async (hub: Hub, p: ProjectRef, bytes: Uint8Array, mim
   return r.ok ? { ok: true, value: r.output.project } : r;
 };
 
-/** Its picture taken away: its letters show again. */
+/** A built-in icon picked: it takes the place of its picture. */
+export const setIcon = async (hub: Hub, p: ProjectRef, icon: ProjectIcon): Promise<Result<ProjectSummary>> => {
+  const r = await hub.call("project_icon_set", { ...ref(p), icon });
+  return r.ok ? { ok: true, value: r.output.project } : r;
+};
+
+/** Its picture taken away: its icon shows again. */
 export const removePicture = async (hub: Hub, p: ProjectRef): Promise<Result<ProjectSummary>> => {
   const r = await hub.call("project_avatar_set", ref(p));
   return r.ok ? { ok: true, value: r.output.project } : r;

@@ -228,6 +228,7 @@ pub async fn create(
         owner: None,
         archived_at: None,
         avatar: None,
+        icon: None,
     };
     if hub.store.project_get(&r)?.is_none() {
         hub.store.projects_upsert_many(&m, &[summary])?;

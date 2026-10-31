@@ -1,0 +1,17 @@
+{
+  "about": "The colors a bot icon comes in: each the field its glass being sits on (glass/scene.py derives the disc, the glass's tint and the ink from it). Fleet is the app's own accent fill (desktop tokens.css --accent-fill, phone theme.ts accentFill).",
+  "colors": [
+    { "id": "fleet", "name": "Fleet", "field": "#2E69CC" },
+    { "id": "sky", "name": "Sky", "field": "#8CC2F5" },
+    { "id": "teal", "name": "Teal", "field": "#17796E" },
+    { "id": "mint", "name": "Mint", "field": "#9ADDBD" },
+    { "id": "lime", "name": "Lime", "field": "#CBE65A" },
+    { "id": "sun", "name": "Sun", "field": "#F4B63F" },
+    { "id": "ember", "name": "Ember", "field": "#E0602E" },
+    { "id": "rose", "name": "Rose", "field": "#EE8DB0" },
+    { "id": "plum", "name": "Plum", "field": "#6A4BC4" },
+    { "id": "lilac", "name": "Lilac", "field": "#C4B4F7" },
+    { "id": "sand", "name": "Sand", "field": "#D9C7A3" },
+    { "id": "graphite", "name": "Graphite", "field": "#3E3E3B" }
+  ]
+}

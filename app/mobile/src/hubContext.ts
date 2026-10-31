@@ -52,6 +52,8 @@ export type ManageParams = {
   NewProject: undefined;
   /** A project's or Navi's screen and what it opens, a stack of their own over its chat (manage/index.tsx ChatInfo). */
   ChatInfo: NavigatorScreenParams<ChatInfoParams>;
+  /** Its icon: a built-in face and color, or a photo (IconPicker.tsx). */
+  Icon: { key: Key };
   /** A photo as picked, moved and scaled in a circle to become the chat's picture. */
   Photo: { key: Key; uri: string; width: number; height: number; mime: "image/jpeg" | "image/png" | "image/webp" };
 };
