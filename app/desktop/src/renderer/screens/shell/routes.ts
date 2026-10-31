@@ -113,7 +113,6 @@ type ScreenOf =
   | { readonly id: "navi" }
   /** Merges and what they cost the person (D33), for one project (`?project=<machine>/<project>`) or (null) all. */
   | { readonly id: "factory"; readonly project: ProjectKey | null }
-  | { readonly id: "machines" }
   /**
    * Factory's Agent time tab, the time inspector, for one order or (null) the fleet: `#/factory/time[/order/<id>]`.
    * The old `#/time` links land on it.
@@ -259,8 +258,6 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
     case "time":
       // Time became Factory's Agent time tab; an older link still lands on it.
       return timeOf(parts.slice(1));
-    case "machines":
-      return { id: head };
     case "projects":
       return a === "add" ? { id: "projects.add" } : HOME;
     case "settings": {
@@ -334,7 +331,6 @@ const path = (screen: Screen): Array<string> => {
     case "status":
     case "navi":
     case "factory":
-    case "machines":
     case "onboarding":
       return [screen.id];
   }

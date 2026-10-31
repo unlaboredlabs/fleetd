@@ -14,13 +14,13 @@ const GROUP_WORDS: Readonly<Record<string, string>> = { hub: "This hub", account
 
 export const groupWords = (group: SetupGroup): string => GROUP_WORDS[group] ?? group;
 
-/** A step's status in words: none while it is simply to do (its need says it), "Later" once put off. */
+/** A step's status in words: none while it is simply to do (its need says it). */
 export const statusWords = (status: SetupStatus): string | undefined =>
-  status === "done" ? "Done" : status === "look" ? "Needs a look" : status === "skipped" ? "Later" : undefined;
+  status === "done" ? "Done" : status === "look" ? "Needs a look" : undefined;
 
 /** Required and not set up, or failing, as the hub counts `requiredLeft`: agents can't run until none is left. */
 export const isRequiredLeft = (step: SetupStep): boolean =>
-  step.need.kind === "required" && (step.status === "todo" || step.status === "skipped" || (step.status === "look" && step.failing === true));
+  step.need.kind === "required" && (step.status === "todo" || (step.status === "look" && step.failing === true));
 
 export const requiredLeft = (steps: ReadonlyArray<SetupStep>): number => steps.filter(isRequiredLeft).length;
 

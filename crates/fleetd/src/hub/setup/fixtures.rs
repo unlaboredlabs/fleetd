@@ -1,12 +1,10 @@
 //! The app's setup fixtures (`app/desktop/fixtures/setup/steps.json`) are this catalog's own answers: `setup_list`,
-//! `setup_test` and `setup_skip` for a hub `fleetd init` just made on devbox, read from the checks the doctor would
+//! and `setup_test` for a hub `fleetd init` just made on devbox, read from the checks the doctor would
 //! report at each point. The app keeps no catalog of its own, so its screenshots and tests show exactly what a hub
 //! says. `FLEETD_WRITE_FIXTURES=1 cargo test -p fleetd --lib hub::setup::fixtures` writes the file; without it, this
 //! test fails while the file differs.
-use std::collections::BTreeSet;
-
 use fleetd_contracts::claude_accounts::ClaudeHubApi;
-use fleetd_contracts::setup::{HubSetupStep, SetupNeed, SetupStepId};
+use fleetd_contracts::setup::HubSetupStep;
 use serde_json::{Map, Value, json};
 
 use super::{guides, read};
@@ -145,26 +143,15 @@ fn reads(steps: Vec<HubSetupStep>) -> Map<String, Value> {
         .collect()
 }
 
-/// One fixture: `setup_list` now, `setup_test` of each step as `after` finds it, and `setup_skip` of each step that
-/// may wait, both ways.
-fn scenario(now: &Point, after: &Point, skipped: &[SetupStepId]) -> Value {
-    let skipped: BTreeSet<_> = skipped.iter().copied().collect();
+/// One fixture: `setup_list` now, and `setup_test` of each step as `after` finds it.
+fn scenario(now: &Point, after: &Point) -> Value {
     let checks = checks_at(now);
-    let steps = read(guides(HUB), &checks, &skipped);
+    let steps = read(guides(HUB), &checks);
     let left = steps.iter().filter(|s| s.required_left()).count();
-    let all: BTreeSet<_> = SetupStepId::ALL.into_iter().collect();
-    let may_wait = |steps: Vec<HubSetupStep>| -> Vec<HubSetupStep> {
-        steps
-            .into_iter()
-            .filter(|s| s.need != SetupNeed::Required)
-            .collect()
-    };
     json!({
         "requiredLeft": left,
         "list": reads(steps),
-        "tests": reads(read(guides(HUB), &checks_at(after), &skipped)),
-        "skips": reads(may_wait(read(guides(HUB), &checks, &all))),
-        "unskips": reads(may_wait(read(guides(HUB), &checks, &BTreeSet::new()))),
+        "tests": reads(read(guides(HUB), &checks_at(after))),
     })
 }
 
@@ -187,10 +174,10 @@ fn fixtures() -> Value {
       "hub": HUB,
       "guides": guides(HUB),
       "scenarios": {
-        "setup-fresh": scenario(&fresh, &fresh, &[]),
-        "setup-claude-logins": scenario(&logins, &logins, &[]),
-        "setup-github": scenario(&key, &github, &[]),
-        "setup-done": scenario(&github, &github, &[SetupStepId::People]),
+        "setup-fresh": scenario(&fresh, &fresh),
+        "setup-claude-logins": scenario(&logins, &logins),
+        "setup-github": scenario(&key, &github),
+        "setup-done": scenario(&github, &github),
       },
     })
 }

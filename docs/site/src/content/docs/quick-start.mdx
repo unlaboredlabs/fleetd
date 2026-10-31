@@ -104,7 +104,7 @@ You'll install fleetd, open a project in the desktop app, and tell its lead what
 
 Everything a hub admin sets up is one list of steps, the same in the terminal and the app. `fleetd init` lists them at
 its end, `fleetd doctor` lists them first, and `fleetd init --step <id>` opens one: why it matters, the values to paste
-(computed for your hub), the pages to open, then **Test** or **Later**. In the app, an admin's first run opens on
+(computed for your hub), the pages to open, then **Test** or **Go on**. In the app, an admin's first run opens on
 them, and [Settings › Hub › Setup](/docs/desktop-app#hub) has them at any time. Each step's status comes from the hub's checks, so you can stop at any
 point and pick up again later, from any of them.
 
@@ -116,7 +116,7 @@ point and pick up again later, from any of them.
 | GitHub | `github` | Before the first PR: the hub's GitHub App, made with one button on Settings › Hub accounts › GitHub, then each person connects theirs in Settings › Your accounts › GitHub; or `gh auth login` on the hub. |
 | Invite people | `people` | Optional. Done once someone you invited has joined. |
 
-Optional steps never block anything; **Later** keeps a step in the list. Secrets are never typed in the terminal: a
+Optional steps never block anything, and stay in the list until they are done. Secrets are never typed in the terminal: a
 step that takes one names the page in the app that seals it on your device.
 
 ## Without the app {#headless}

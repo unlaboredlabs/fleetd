@@ -1,6 +1,5 @@
 //! The setup steps: their values computed for the hub, their status read from the checks (one way done is enough),
-//! and the tools over a real hub: an admin's only, a required step never put off, a skip kept and taken back.
-use std::collections::BTreeSet;
+//! and the tools over a real hub: an admin's only.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::KeyKind;
@@ -36,9 +35,8 @@ fn check(id: &str, status: DoctorStatus, message: &str) -> DoctorCheck {
     }
 }
 
-fn status_of(checks: &[DoctorCheck], skipped: &[SetupStepId]) -> Vec<(SetupStepId, SetupStatus)> {
-    let skipped: BTreeSet<_> = skipped.iter().copied().collect();
-    read(guides(HUB), checks, &skipped)
+fn status_of(checks: &[DoctorCheck]) -> Vec<(SetupStepId, SetupStatus)> {
+    read(guides(HUB), checks)
         .into_iter()
         .map(|s| (s.id, s.status))
         .collect()
@@ -83,13 +81,13 @@ fn a_step_is_todo_until_a_check_says_otherwise_and_skipping_is_only_kept_for_tod
     use SetupStatus::*;
     use SetupStepId::*;
     assert_eq!(
-        status_of(&[], &[People]),
+        status_of(&[]),
         [
             (Address, Todo),
             (Machines, Todo),
             (Claude, Todo),
             (Github, Todo),
-            (People, Skipped),
+            (People, Todo),
         ]
     );
     let checks = [
@@ -103,13 +101,12 @@ fn a_step_is_todo_until_a_check_says_otherwise_and_skipping_is_only_kept_for_tod
             "gh's token on the hub expires tomorrow.",
         ),
     ];
-    let steps = read(guides(HUB), &checks, &[Github].into_iter().collect());
+    let steps = read(guides(HUB), &checks);
     let get = |id| steps.iter().find(|s| s.id == id).unwrap();
     assert_eq!(get(Address).status, Done);
     // The worst of a way's checks decides: one machine offline wants a look, and says which.
     assert_eq!(get(Machines).status, Look);
     assert_eq!(get(Machines).said.as_deref(), Some("lab is offline."));
-    // Set up but failing is never hidden as "later".
     assert_eq!(get(Github).status, Look);
 }
 
@@ -121,14 +118,10 @@ fn github_is_to_do_not_failing_before_any_project_can_open_a_pr() {
         "gh is not logged in on the hub.",
     )];
     let github = |projects| {
-        read(
-            guides(HUB),
-            &super::before_first_use(gh.to_vec(), projects),
-            &BTreeSet::new(),
-        )
-        .into_iter()
-        .find(|s| s.id == SetupStepId::Github)
-        .unwrap()
+        read(guides(HUB), &super::before_first_use(gh.to_vec(), projects))
+            .into_iter()
+            .find(|s| s.id == SetupStepId::Github)
+            .unwrap()
     };
     let fresh = github(0);
     assert_eq!((fresh.status, fresh.failing), (SetupStatus::Todo, None));
@@ -156,7 +149,7 @@ fn claude_is_done_by_any_one_of_its_ways_and_says_which() {
         ),
     ];
     let claude = |checks: &[DoctorCheck]| {
-        read(guides(HUB), checks, &BTreeSet::new())
+        read(guides(HUB), checks)
             .into_iter()
             .find(|s| s.id == SetupStepId::Claude)
             .unwrap()
@@ -227,7 +220,7 @@ async fn call(
 }
 
 #[tokio::test]
-async fn the_tools_are_an_admins_and_keep_only_what_was_put_off() {
+async fn the_tools_are_an_admins() {
     let (hub, _home) = hub();
     let admin = caller("admin");
     let why = format!(
@@ -238,59 +231,14 @@ async fn the_tools_are_an_admins_and_keep_only_what_was_put_off() {
     );
     assert!(why.contains("admin role"), "{why}");
 
-    // A step an older hub had, put off there, is no error: it is no step now.
-    hub.db
-        .with(|c| {
-            c.execute(
-                "INSERT INTO setup_skips (step, at_ms) VALUES ('google', 1)",
-                [],
-            )?;
-            Ok(())
-        })
-        .unwrap();
     let list = call(&hub, &admin, "setup_list", json!({})).await.unwrap();
     let steps = list["steps"].as_array().unwrap();
     assert_eq!(steps.len(), 5);
-    assert!(steps.iter().all(|s| s["status"] != "skipped"), "{list}");
     assert_eq!(steps[0]["parts"][0]["values"][0]["value"], HUB);
     // No machines yet, so machines and Claude are left at least.
     assert!(list["requiredLeft"].as_i64().unwrap() >= 2, "{list}");
     assert_eq!(steps[4]["id"], "people");
     assert_eq!(steps[4]["status"], "todo");
-
-    let why = format!(
-        "{:?}",
-        call(
-            &hub,
-            &admin,
-            "setup_skip",
-            json!({ "step": "machines", "skipped": true })
-        )
-        .await
-        .unwrap_err()
-    );
-    assert!(why.contains("is required"), "{why}");
-
-    let skipped = call(
-        &hub,
-        &admin,
-        "setup_skip",
-        json!({ "step": "people", "skipped": true }),
-    )
-    .await
-    .unwrap();
-    assert_eq!(skipped["step"]["status"], "skipped");
-    let list = call(&hub, &admin, "setup_list", json!({})).await.unwrap();
-    assert_eq!(list["steps"][4]["status"], "skipped");
-    let back = call(
-        &hub,
-        &admin,
-        "setup_skip",
-        json!({ "step": "people", "skipped": false }),
-    )
-    .await
-    .unwrap();
-    assert_eq!(back["step"]["status"], "todo");
 
     // The hub's API key, saved and tested (Settings › Hub accounts › Claude), is enough for Claude though no machine is
     // logged in: read fresh, without a doctor run.

@@ -303,48 +303,5 @@ export default defineGroup({
       f.settleAt(0);
       return f;
     })(),
-    (() => {
-      // Machines in every state: one asleep a while ago and back, one degraded, one offline for a while.
-      const f = Fixture.from(base("typical"), "projects-machines", "Machines: slept, degraded, offline, usage near its limits");
-      const now = Date.parse(f.now);
-      const machines = machinesOf(f);
-      machines.push({ machineId: "spare", name: "spare", tags: ["mac"], status: "offline", lastSeenAt: at(f.now, -47 * 60_000), nodeVersion: "0.0.0" });
-      for (const m of machines) {
-        if (m["machineId"] === "devbox") m["lastSlept"] = { fromMs: now - 25 * 60_000, toMs: now - 14 * 60_000 };
-        if (m["machineId"] === "buildbox") {
-          m["status"] = "degraded";
-          m["degradedReason"] = "claude is logged out on buildbox: run claude /login there";
-        }
-      }
-      if (f.snapshot) f.snapshot["machines"] = machines;
-      for (const frame of f.live) {
-        for (const m of objects(frame["machines"])) {
-          // The live feed's status wins over the snapshot's, so it says degraded too.
-          if (m["machineId"] === "buildbox") m["status"] = "degraded";
-          if (m["machineId"] === "devbox") {
-            m["slept"] = { fromMs: now - 25 * 60_000, toMs: now - 14 * 60_000 };
-            m["load"] = {
-              cpus: 32,
-              load1: 7.4,
-              memUsedPct: 63,
-              limits: [
-                { limitType: "five_hour", utilization: 0.92, status: "allowed_warning", observedAt: f.now },
-                { limitType: "seven_day", utilization: 0.47, status: "allowed", observedAt: f.now },
-              ],
-            };
-          }
-        }
-      }
-      // Setup checks: the hub's own, then each machine's, with a manual fix (a command) and an auto one (Fix).
-      const machineChecks: Array<JsonObject> = [
-        { id: "devbox/online", scope: "machine", machineId: "devbox", status: "ok", message: "devbox is online." },
-        { id: "devbox/disk", scope: "machine", machineId: "devbox", status: "warn", message: "devbox has 6.1 GB free; worktrees need room to grow.", fix: { kind: "manual", label: "Free some space on devbox, for example old build output:", command: "git -C /home/dev/src/storefront worktree prune" } },
-        { id: "buildbox/claude_login", scope: "machine", machineId: "buildbox", status: "fail", message: "claude is logged out on buildbox: run `claude /login` there.", fix: { kind: "manual", label: "On buildbox, log claude in:", command: "claude /login" } },
-        { id: "spare/online", scope: "machine", machineId: "spare", status: "unknown", message: "spare is offline, so its checks can't run." },
-      ];
-      f.update("doctor_list", (out) => (isObject(out) ? { ...out, checks: [...objects(out["checks"]), ...machineChecks] } : out));
-      f.events.push({ seq: 9_001, at: at(f.now, -14 * 60_000), type: "machine.slept", machineId: "devbox", summary: "devbox slept 11m00s", data: { fromMs: now - 25 * 60_000, toMs: now - 14 * 60_000 } });
-      return f;
-    })(),
   ],
 });

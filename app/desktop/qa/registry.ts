@@ -115,7 +115,6 @@ export const fixtures = [
   "onboarding-app-too-old",
   "onboarding-hub-too-old",
   "projects-errors",
-  "projects-machines",
   // F6: the Status view's own states (fixtures/status), and E3b's eight-project mix (all four words, stale, a
   // ~120-character name).
   "status-rows",
@@ -1441,17 +1440,8 @@ export const screens: readonly Screen[] = [
   { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"], variant: "claude" },
   { id: "setup", route: "#/setup/github", fixtures: ["setup-github"], variant: "github" },
   { id: "setup.done", route: "#/setup/done", fixtures: ["setup-done"] },
-  // F8: Add project (the pick list, its empty and loading states, gh and machine problems) and Machines.
+  // F8: Add project (the pick list, its empty and loading states, gh and machine problems).
   { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },
-  // Opened from Machines, which subscribed first: the sheet must still find the live connection and list repos.
-  {
-    id: "projects.add.pick",
-    route: "#/machines",
-    fixtures: ["typical"],
-    open: async (page) => {
-      await page.getByRole("button", { name: "Add project…" }).click();
-    },
-  },
   // The sheet's later states, reached by adding from the pick list (fixtures/projects answers project_add).
   {
     id: "projects.add.cloning",
@@ -1905,20 +1895,6 @@ export const screens: readonly Screen[] = [
   },
   { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"], variant: "narrow", sizes: ["narrow"] },
   { id: "agents.work", route: `${CHAT}/agents/T99`, fixtures: ["typical"], variant: "finished" },
-  { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
-  // A machine's row opened (its facts, its projects with their menus, the way to its roles) and the checks that pass.
-  {
-    id: "machines",
-    route: "#/machines",
-    fixtures: ["projects-machines", "long-text"],
-    variant: "open",
-    open: async (page) => {
-      await page.getByRole("button", { name: "devbox details" }).click();
-      await page.getByRole("list", { name: "Projects on devbox" }).waitFor();
-      await page.getByRole("button", { name: /^\d+ (passing|more)$/u }).click();
-      await page.getByRole("region", { name: "Setup checks" }).getByText("Hub reachable").waitFor();
-    },
-  },
   // F11: the command palette (opening on the project on screen, then go-tos), a typed search, and the shortcuts
   // sheet. status-rows has eight projects, one with a ~120-character name.
   {

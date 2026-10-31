@@ -272,20 +272,6 @@
         }
       },
       "requiredLeft": 0,
-      "skips": {
-        "github": {
-          "fix": {
-            "command": "gh auth login",
-            "kind": "manual",
-            "label": "Log gh in on the hub machine"
-          },
-          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "skipped"
-        },
-        "people": {
-          "status": "skipped"
-        }
-      },
       "tests": {
         "address": {
           "said": "The hub answers at http://127.0.0.1:4790/healthz.",
@@ -308,20 +294,6 @@
         "machines": {
           "said": "devbox is online.",
           "status": "done"
-        },
-        "people": {
-          "status": "todo"
-        }
-      },
-      "unskips": {
-        "github": {
-          "fix": {
-            "command": "gh auth login",
-            "kind": "manual",
-            "label": "Log gh in on the hub machine"
-          },
-          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "todo"
         },
         "people": {
           "status": "todo"
@@ -349,20 +321,10 @@
           "status": "done"
         },
         "people": {
-          "status": "skipped"
+          "status": "todo"
         }
       },
       "requiredLeft": 0,
-      "skips": {
-        "github": {
-          "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
-          "status": "done",
-          "way": "the hub's GitHub App"
-        },
-        "people": {
-          "status": "skipped"
-        }
-      },
       "tests": {
         "address": {
           "said": "The hub answers at http://127.0.0.1:4790/healthz.",
@@ -381,16 +343,6 @@
         "machines": {
           "said": "devbox is online.",
           "status": "done"
-        },
-        "people": {
-          "status": "skipped"
-        }
-      },
-      "unskips": {
-        "github": {
-          "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
-          "status": "done",
-          "way": "the hub's GitHub App"
         },
         "people": {
           "status": "todo"
@@ -427,20 +379,6 @@
         }
       },
       "requiredLeft": 1,
-      "skips": {
-        "github": {
-          "fix": {
-            "command": "gh auth login",
-            "kind": "manual",
-            "label": "Log gh in on the hub machine"
-          },
-          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "skipped"
-        },
-        "people": {
-          "status": "skipped"
-        }
-      },
       "tests": {
         "address": {
           "said": "The hub answers at http://127.0.0.1:4790/healthz.",
@@ -464,20 +402,6 @@
         "machines": {
           "said": "devbox is online.",
           "status": "done"
-        },
-        "people": {
-          "status": "todo"
-        }
-      },
-      "unskips": {
-        "github": {
-          "fix": {
-            "command": "gh auth login",
-            "kind": "manual",
-            "label": "Log gh in on the hub machine"
-          },
-          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "todo"
         },
         "people": {
           "status": "todo"
@@ -513,20 +437,6 @@
         }
       },
       "requiredLeft": 0,
-      "skips": {
-        "github": {
-          "fix": {
-            "command": "gh auth login",
-            "kind": "manual",
-            "label": "Log gh in on the hub machine"
-          },
-          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "skipped"
-        },
-        "people": {
-          "status": "skipped"
-        }
-      },
       "tests": {
         "address": {
           "said": "The hub answers at http://127.0.0.1:4790/healthz.",
@@ -545,20 +455,6 @@
         "machines": {
           "said": "devbox is online.",
           "status": "done"
-        },
-        "people": {
-          "status": "todo"
-        }
-      },
-      "unskips": {
-        "github": {
-          "fix": {
-            "command": "gh auth login",
-            "kind": "manual",
-            "label": "Log gh in on the hub machine"
-          },
-          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "todo"
         },
         "people": {
           "status": "todo"

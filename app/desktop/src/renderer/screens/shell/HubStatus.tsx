@@ -102,7 +102,7 @@ export function HubStatus({ hub }: { hub: HubState }) {
                       data-opens="machines"
                       onClick={() => {
                         setOpen(false);
-                        navigate({ id: "machines", at: self.id });
+                        navigate({ id: "settings", tab: "hub.machines", at: self.id });
                       }}
                     >
                       {`${String(machines.length - down)} of ${String(machines.length)} online`}
@@ -166,7 +166,7 @@ export function HubStatus({ hub }: { hub: HubState }) {
           className={h.down}
           data-opens="machines"
           aria-label={`${String(down)} ${down === 1 ? "machine" : "machines"} down: open Machines`}
-          onClick={() => navigate({ id: "machines", at: self.id })}
+          onClick={() => navigate({ id: "settings", tab: "hub.machines", at: self.id })}
         >
           {`${String(down)} down`}
         </button>

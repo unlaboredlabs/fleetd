@@ -24,7 +24,6 @@ describe("routes", () => {
       { id: "factory", project: null },
       { id: "factory", project: storefront },
       { id: "factory", project: { machineId: "dev box", projectId: "a/b" } },
-      { id: "machines" },
       { id: "time", orderId: null },
       { id: "time", orderId: "W14" },
       { id: "projects.add" },

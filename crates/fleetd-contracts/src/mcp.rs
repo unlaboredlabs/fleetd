@@ -934,8 +934,7 @@ output!(DoctorFixOutput {
 });
 
 // setup_list: the hub admin's setup steps, each with its status read from the doctor's latest
-// checks, and how many required ones are left. setup_test runs one step's checks now; setup_skip puts a step that
-// isn't required off for later, or back.
+// checks, and how many required ones are left. setup_test runs one step's checks now.
 input!(SetupListInput {});
 output!(SetupListOutput {
     steps: Vec<crate::setup::HubSetupStep>,
@@ -947,14 +946,6 @@ input!(SetupTestInput {
 });
 output!(SetupTestOutput {
     /// The step, read from its checks as they are now.
-    step: crate::setup::HubSetupStep,
-});
-input!(SetupSkipInput {
-    step: crate::setup::SetupStepId,
-    /// False: back on the list as to do.
-    skipped: bool,
-});
-output!(SetupSkipOutput {
     step: crate::setup::HubSetupStep,
 });
 
@@ -3367,7 +3358,6 @@ tools! {
     // Admin on every machine (the handlers check): the hub's own setup.
     setup_list => SetupList, Admin, SetupListInput, SetupListOutput;
     setup_test => SetupTest, Admin, SetupTestInput, SetupTestOutput;
-    setup_skip => SetupSkip, Admin, SetupSkipInput, SetupSkipOutput;
     attachment_part => AttachmentPart, Operate, AttachmentPartInput, AttachmentPartOutput;
     attachment_put => AttachmentPut, Operate, AttachmentPutInput, AttachmentPutOutput;
     attachment_get => AttachmentGet, Read, AttachmentGetInput, AttachmentGetOutput;

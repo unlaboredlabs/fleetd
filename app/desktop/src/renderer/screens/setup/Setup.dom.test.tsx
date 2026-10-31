@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // The setup screens on the hub's own answers (fixtures/setup/steps.json, written from hub/setup's catalog): only an
-// admin sees them, Test and Skip go to the hub and the step updates in place, each step opens where its result is
+// admin sees them, Test goes to the hub and the step updates in place, each step opens where its result is
 // saved, the empty home is the welcome while a required step is left, and Settings' entry counts them.
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -20,7 +20,7 @@ vi.hoisted(() => {
 });
 
 type Reads = Readonly<Record<string, Partial<SetupStep>>>;
-type Scenario = { requiredLeft: number; list: Reads; tests: Reads; skips: Reads; unskips: Reads };
+type Scenario = { requiredLeft: number; list: Reads; tests: Reads };
 const scenarios = fixtures.scenarios as unknown as Readonly<Record<string, Scenario>>;
 const guides = fixtures.guides as unknown as ReadonlyArray<SetupStep>;
 const step = (id: string, read: Partial<SetupStep> | undefined): SetupStep => ({ ...(guides.find((g) => g.id === id) as SetupStep), ...read });
@@ -51,7 +51,7 @@ afterEach(() => {
 });
 
 const answer = (tool: string, input: unknown): CallOutcome => {
-  const asked = input as { step?: string; skipped?: boolean };
+  const asked = input as { step?: string };
   switch (tool) {
     case "hub_info":
       return { ok: true, output: { version: "0.9.0", protocol: 1, busy: [], admin } };
@@ -59,10 +59,6 @@ const answer = (tool: string, input: unknown): CallOutcome => {
       return { ok: true, output: { steps: guides.map((g) => step(g.id, scenario.list[g.id])), requiredLeft: scenario.requiredLeft } };
     case "setup_test":
       return { ok: true, output: { step: step(asked.step ?? "", scenario.tests[asked.step ?? ""]) } };
-    case "setup_skip": {
-      const reads = asked.skipped === true ? scenario.skips : scenario.unskips;
-      return { ok: true, output: { step: step(asked.step ?? "", reads[asked.step ?? ""]) } };
-    }
     default:
       return { ok: true, output: {} };
   }
@@ -149,21 +145,6 @@ describe("setup", () => {
     const before = lists();
     await render(<FirstRun onAddProject={() => undefined} />);
     expect(lists()).toBeGreaterThan(before);
-  });
-
-  it("puts an optional step off for later on the hub, and back", async () => {
-    await render(<SetupScreen view="github" />);
-    await click(button("Skip for now"));
-    expect(calls.find((c) => c.tool === "setup_skip")?.input).toEqual({ step: "github", skipped: true });
-    expect(rail("github")).toContain("Later");
-    // Skip went on to the next step; the screen here stays on GitHub, now later.
-    expect(window.location.hash).toBe("#/setup/people");
-    await click(button("Back on the list"));
-    expect(calls.filter((c) => c.tool === "setup_skip").at(-1)?.input).toEqual({ step: "github", skipped: false });
-    expect(rail("github")).toContain("Before the first PR");
-    // A required step can't wait.
-    await render(<SetupScreen view="machines" />);
-    expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Skip for now")).toBe(false);
   });
 
   it("opens where a step's result is saved: Claude's key on Hub accounts, a subscription in Your accounts", async () => {

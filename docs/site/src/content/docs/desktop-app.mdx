@@ -12,8 +12,7 @@ use Ctrl.
 
 ## Pair it with the hub {#pair}
 
-The first time it opens, the app says what fleetd is and shows three steps that tick themselves as you go: connect to
-your hub, add a project, say hi to its lead.
+The first time it opens, the app says what fleetd is and how to connect to your hub.
 
 With no hub on this computer yet, click "Set up fleetd on this Mac": it opens `fleetd init` in Terminal (on Linux, your
 terminal). When setup finishes, come back to the app and it pairs by itself. If no terminal opens, the app shows the
@@ -179,20 +178,6 @@ Open Factory › Agent time from the sidebar, the agents strip in a chat, or the
 
 Times are in your own time zone. How to read it: [Where time went](/docs/time-inspector).
 
-## Machines {#machines}
-
-Open Machines from the hub's row at the bottom of the sidebar (its Machines line, or "1 down" while a machine is down) or the command palette. The title shows how many agents run across the fleet
-("agents 2 / 12"), beside Add project.
-
-Each machine is one row: its name, its state (online, degraded, or offline and when it was last seen), how many agents
-run there and how many projects it has. On the right, anything that wants a look: a recent sleep, Claude usage near
-its limit, a setup check that failed. A degraded machine says why under its name. Click a row to open it: load, memory,
-Claude usage, its fleetd version and tags, its projects (each with Open, Settings and Remove) and, for an owner or
-admin, Roles and screens, which goes to [Settings › Hub › Machines](#hub).
-
-Under the machines, the [setup checks](/docs/machines#health) the hub ran: the ones that failed or warned, each with
-its fix (a command to copy, or Fix), then the rest a click away. Re-run runs them again.
-
 ## Settings {#settings}
 
 Open Settings with ⌘, or the sidebar's Settings row. It takes the sidebar's place; Back returns to where you were. Type
@@ -224,7 +209,7 @@ hubs](/docs/several-hubs#admin), the group manages one at a time.
 | Every project › Instructions & memory | The instructions for every project, the [memory caps](/docs/what-agents-are-told#memory), and **Shared memory**: the one memory every lead read before each person had their own, read by no agent now, to read and retire. |
 | Every project › Prompts | The hub-wide prompts, listed under it in the sidebar. A project's own edits come after them. |
 | Hub accounts | What the hub itself connects to. **Claude**: the hub's API key and optional endpoint, sealed to every machine, with Test; the switch "Members may use the hub's API key"; what projects' leads and unrequested work run on, with the hub owner's subscription they fall back to (see [Claude accounts](/docs/people#claude)). **GitHub**: the hub's own [GitHub App](/docs/github). **Run guided setup again** opens Setup. |
-| Setup | Listed only while a required step is left. The hub's [setup steps](/docs/quick-start#setup-steps), the same as `fleetd init`'s: each with its status, why it matters, the values to paste and the pages to open, Test, and Skip for now. A step's result is saved where it lives: its button opens Hub accounts, People or Machines, and for Claude and GitHub also your own Your accounts. |
+| Setup | Listed only while a required step is left. The hub's [setup steps](/docs/quick-start#setup-steps), the same as `fleetd init`'s: each with its status, why it matters, the values to paste and the pages to open, and Test. A step's result is saved where it lives: its button opens Hub accounts, People or Machines, and for Claude and GitHub also your own Your accounts. |
 
 On a hub from before people, a key with admin on every machine counts as an admin, and so does any key on a hub too
 old to say; People there says the hub needs updating, with Update the hub, and the other Hub pages work as before.

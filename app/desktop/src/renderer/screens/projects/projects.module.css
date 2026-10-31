@@ -231,16 +231,6 @@
   min-width: 0;
   max-width: 1100px;
 }
-.pageHead {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-.pageTitle {
-  flex: 1;
-  min-width: 0;
-}
 /* One row a machine, apart by a hairline; its details open under its name. No card. Its classes stay apart from Add
    project's `.machine` chips and `.facts` list: one module is one namespace, and a reused name restyles both. */
 .machineList {
@@ -257,15 +247,6 @@
 .machineRow + .machineRow {
   border-top: 1px solid var(--hairline);
 }
-.machineHead {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 8rem) minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: var(--space-2);
-  min-height: var(--row);
-  min-width: 0;
-  cursor: pointer;
-}
 .toggle {
   display: flex;
   align-items: center;
@@ -279,9 +260,6 @@
   background: none;
   color: var(--quiet);
   cursor: pointer;
-}
-.machineHead:hover .toggle {
-  color: var(--text);
 }
 .toggle:focus-visible,
 .fold:focus-visible,
@@ -298,9 +276,7 @@
 .chevronOpen {
   transform: rotate(90deg);
 }
-.glance,
-.notes,
-.machineFacts {
+.notes {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -366,34 +342,10 @@
   gap: var(--space-2);
   min-width: 0;
 }
-.checkGroup {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.checkRow {
-  display: grid;
-  grid-template-columns: minmax(120px, 10rem) minmax(0, 1fr);
-  align-items: baseline;
-  column-gap: var(--space-3);
-  padding: var(--space-1-5) 0;
-}
-.checkRow + .checkRow {
-  border-top: 1px solid var(--hairline);
-}
-.checkBody {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
 .command {
   display: flex;
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
   overflow-wrap: anywhere;
-}
-.checkGroup .checkGroup {
-  margin-top: var(--space-2);
 }

@@ -9,7 +9,6 @@ import { formatCodeAt, initialForm, KEY_CREATE, mismatchFailure, needsOnboarding
 import { useHubState, useKeyStore, useReaching, useSecondsUntil } from "./hooks";
 import { CommandLine, Failure, Prose } from "./Prose";
 import { TAGLINE } from "./setup";
-import { SetupChecklist } from "./SetupChecklist";
 import s from "./onboarding.module.css";
 
 export interface OnboardingProps {
@@ -97,7 +96,6 @@ function Welcome({ id, children }: { id: string; children: ReactNode }) {
             {TAGLINE}
           </Text>
         </div>
-        <SetupChecklist />
         {children}
       </div>
     </div>
