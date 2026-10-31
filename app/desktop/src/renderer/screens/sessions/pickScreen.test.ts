@@ -1,8 +1,8 @@
 // The New screen picker's model: which machines can host each kind, a Navi's browser only on its own machine, the
 // machine it starts on, and each machine's slots in words, a full one offering to wait.
 import { describe, expect, it } from "vitest";
-import type { MachineRolesEntry, PrRow } from "../../../shared/contracts";
-import { canOpen, hostsFor, openingLine, openWord, pickHost, prChoices, slotLine, takesBuild, takesPr } from "./pickScreen";
+import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
+import { canOpen, hostsFor, newScreenOf, openingLine, openWord, pickHost, prChoices, slotLine, startingLine, takesBuild, takesPr } from "./pickScreen";
 
 const machine = (machineId: string, ready: readonly string[], more: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({
   machineId,
@@ -76,5 +76,40 @@ describe("takesPr and openingLine", () => {
     expect(openingLine("starting", 12, "mac")).toBe("Reading #12’s build and starting the screen on mac…");
     expect(openingLine("installing", 12, "mac")).toBe("Installing #12’s build on mac…");
     expect(openingLine(undefined, 12, "mac")).toBe("Handing it to you…");
+  });
+});
+
+describe("startingLine", () => {
+  it("names what is starting", () => {
+    expect(startingLine("browser")).toBe("Starting the browser…");
+    expect(startingLine("ios")).toBe("Starting the simulator…");
+    expect(startingLine("android")).toBe("Starting the emulator…");
+    expect(startingLine("linux_desktop")).toBe("Starting the desktop…");
+  });
+});
+
+describe("newScreenOf", () => {
+  const row = (sessionId: string, more: Partial<BrowserSession> = {}): BrowserSession => ({
+    sessionId,
+    control: "human",
+    projectRef: { machineId: "devbox", projectId: "p" },
+    purpose: "Your screen",
+    startedAt: "2026-10-31T11:00:10.000Z",
+    state: "live",
+    threadId: "t",
+    openedBy: { personId: "u1", name: "Sam" },
+    ...more,
+  });
+
+  it("finds the person's new live screen of the kind, one the list didn't have", () => {
+    const rows = [row("B3"), row("B2", { kind: "android" }), row("B1")];
+    expect(newScreenOf(rows, "browser", new Set(["B1"]))?.sessionId).toBe("B3");
+    expect(newScreenOf(rows, "android", new Set(["B1"]))?.sessionId).toBe("B2");
+    expect(newScreenOf(rows, "browser", new Set(["B1", "B3"]))).toBeUndefined();
+  });
+
+  it("skips an agent's screen and one that has ended", () => {
+    const { openedBy: _person, ...agents } = row("B3");
+    expect(newScreenOf([agents, row("B2", { state: "uploading" })], "browser", new Set())).toBeUndefined();
   });
 });

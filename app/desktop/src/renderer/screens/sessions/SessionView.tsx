@@ -41,7 +41,28 @@ import { structureOf } from "./dom";
 import { useRecording, useSessions } from "./hub";
 import { setControl, useFrameInput, useLiveFrame } from "./live";
 import { showWindow, useInItsWindow } from "./windows";
+import { screenMark } from "./timing";
 import s from "./sessions.module.css";
+
+/** How long an empty page stays without words before it says what it waits for. */
+const SLOW_MS = 1_000;
+
+/** True once `on` has held for `ms`; false again as soon as it doesn't. */
+function useAfter(on: boolean, ms: number): boolean {
+  const [after, setAfter] = useState(false);
+  useEffect(() => {
+    if (!on) return undefined;
+    const timer = window.setTimeout(() => setAfter(true), ms);
+    return () => {
+      window.clearTimeout(timer);
+      setAfter(false);
+    };
+  }, [on, ms]);
+  return after;
+}
+
+/** A phone's screen standing up, before its first frame says its own shape (an iPhone's, near enough an Android's). */
+const PHONE = 9 / 19.5;
 
 const clock = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" });
 
@@ -127,6 +148,8 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
   const away = useInItsWindow(x.id) && !windowed;
   // This window watches the page, unless the session's own window has it (that one watches it).
   const frame = useLiveFrame(x.id, !away);
+  // Until its first frame: the empty page, quiet; words only once it is slow to come.
+  const slow = useAfter(frame === undefined && !away, SLOW_MS);
   const takes = yours && !away;
   const input = useFrameInput(x.id, frame, takes);
   const page = useRef<HTMLDivElement>(null);
@@ -204,12 +227,13 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
       ) : null}
       <div className={s.player}>
         <Frame
-          {...(frame === undefined ? {} : { image: { src: `data:image/jpeg;base64,${frame.jpegB64}`, url: frame.url, width: frame.width, height: frame.height } })}
+          {...(frame === undefined ? {} : { image: { src: `data:image/jpeg;base64,${frame.jpegB64}`, seq: frame.seq, url: frame.url, width: frame.width, height: frame.height } })}
           yours={yours}
           away={away}
           pageRef={page}
           input={input}
-          caption={away ? "It shows in its own window." : waitingFor(x)}
+          {...(x.kind === "ios" || x.kind === "android" ? { phone: true } : {})}
+          caption={away ? "It shows in its own window." : slow ? waitingFor(x) : undefined}
         />
         <div className={s.control}>
           <span className={s.nowLine}>
@@ -273,9 +297,10 @@ function Frame({
   mark,
   input,
   pageRef,
+  phone = false,
 }: {
   /** The page now: a live frame, in its own pixels. */
-  image?: { readonly src: string; readonly url?: string | undefined; readonly width: number; readonly height: number };
+  image?: { readonly src: string; readonly seq?: number; readonly url?: string | undefined; readonly width: number; readonly height: number };
   yours?: boolean;
   /** Yours, but in the session's own window: this one only shows that. */
   away?: boolean;
@@ -290,11 +315,19 @@ function Frame({
   mark?: FrameBox | undefined;
   input?: ReturnType<typeof useFrameInput>;
   pageRef?: RefObject<HTMLDivElement | null>;
+  /** A phone's screen: standing up from the start, so its first frame lands without the frame changing shape. */
+  phone?: boolean;
 }) {
   const takes = input !== undefined;
   const url = image?.url ?? given;
+  const once = useRef(false);
+  const painted = () => {
+    if (once.current) return;
+    once.current = true;
+    requestAnimationFrame(() => screenMark("painted"));
+  };
   // A phone's screen, standing up: as tall as fits the view, not as wide as the panel.
-  const tall = image !== undefined && image.height > image.width ? image.width / image.height : undefined;
+  const tall = image === undefined ? (phone ? PHONE : undefined) : image.height > image.width ? image.width / image.height : undefined;
   return (
     <div
       className={cx(s.frame, yours && s.yours)}
@@ -311,7 +344,7 @@ function Frame({
       <div
         ref={pageRef}
         className={s.screen}
-        style={image === undefined ? undefined : { aspectRatio: `${String(image.width)} / ${String(image.height)}` }}
+        style={image === undefined ? (phone ? { aspectRatio: String(PHONE) } : undefined) : { aspectRatio: `${String(image.width)} / ${String(image.height)}` }}
         role={takes ? "application" : "img"}
         aria-label={takes ? "The page: your clicks and keys go to it" : `The page${url === undefined ? "" : `: ${url}`}`}
         tabIndex={takes ? 0 : undefined}
@@ -321,7 +354,7 @@ function Frame({
           (image === undefined ? (
             <span className={s.blank}>{caption === undefined ? null : <Text size="xs" tone="quiet">{caption}</Text>}</span>
           ) : (
-            <img src={image.src} alt="" draggable={false} />
+            <img src={image.src} alt="" draggable={false} onLoad={painted} data-seq={image.seq} />
           ))}
         {mark === undefined ? null : (
           <span

@@ -3,7 +3,7 @@
 // places), and each machine's slots in words, full ones offering to wait. A Navi's browser runs only on the Navi's own
 // machine, where it keeps its sign-ins. An iOS or Android screen can take an open PR's CI build, installed before the
 // person gets it. Pure, so it is unit-tested.
-import type { MachineRolesEntry, PrRow } from "../../../shared/contracts";
+import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
 
 export type ScreenKind = "browser" | "ios" | "android" | "linux_desktop";
 
@@ -99,3 +99,24 @@ export const openingLine = (stage: string | undefined, pr: number, machine: stri
       return `Reading #${String(pr)}’s build and starting the screen on ${machine}…`;
   }
 };
+
+/** What the picker says while an open is slow (past its first second or so): what is starting. */
+export const startingLine = (kind: ScreenKind): string => {
+  switch (kind) {
+    case "ios":
+      return "Starting the simulator…";
+    case "android":
+      return "Starting the emulator…";
+    case "linux_desktop":
+      return "Starting the desktop…";
+    default:
+      return "Starting the browser…";
+  }
+};
+
+/**
+ * The screen an open made, when the hub answered without it: the newest live one a person opened, of `kind`, that the
+ * list didn't have when they pressed Open (`known`).
+ */
+export const newScreenOf = (sessions: readonly BrowserSession[], kind: ScreenKind, known: ReadonlySet<string>): BrowserSession | undefined =>
+  sessions.find((x) => x.state === "live" && x.openedBy !== undefined && (x.kind ?? "browser") === kind && !known.has(x.sessionId));

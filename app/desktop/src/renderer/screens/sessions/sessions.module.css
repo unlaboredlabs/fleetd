@@ -775,3 +775,9 @@ section + section .group {
   justify-content: space-between;
   gap: var(--space-2);
 }
+/* New screen's footer, while an open is slow: what is starting, at the footer's start, in its row's height. */
+.starting {
+  display: flex;
+  align-items: center;
+  margin-inline-end: auto;
+}
