@@ -1,11 +1,11 @@
-// What this phone keeps about its chats, as Telegram does per device: which are pinned (in the order pinned), which
-// are muted, how far each was read, and which were marked unread by hand. The hub knows none of it. Pure, so it is
-// unit-tested; prefsStore.ts keeps it on disk.
+// What this phone keeps about its chats, as Telegram does per device: which are muted, how far each was read, and
+// which were marked unread by hand, which the hub knows none of; and its copy of the person's pinned chats, which the
+// hub keeps (pins.ts). Pure, so it is unit-tested; prefsStore.ts keeps it on disk.
 import type { ChatMessage } from "./desktop";
 import type { Key } from "./store";
 
 export interface Prefs {
-  /** Pinned chats, the first pinned first. */
+  /** Pinned chats in the person's order: this phone's copy of the hub's (pins.ts). */
   readonly pinned: readonly Key[];
   readonly muted: readonly Key[];
   /** The newest seq read, by chat. A chat with none yet counts as read up to what it held when first seen. */
@@ -16,12 +16,18 @@ export interface Prefs {
 
 export const noPrefs: Prefs = { pinned: [], muted: [], read: {}, unread: [] };
 
-export const MAX_PINNED = 5;
+/** The most chats pinned, as Messages allows: the hub's CHAT_PINS_MAX. */
+export const MAX_PINNED = 9;
+
+/** The pins with `key` pinned (last) or unpinned; null when it can't be pinned, as the most are. */
+export const togglePin = (pinned: readonly Key[], key: Key, on: boolean): readonly Key[] | null =>
+  on && !pinned.includes(key) && pinned.length >= MAX_PINNED ? null : toggle(pinned, key, on);
 
 const toggle = (keys: readonly Key[], key: Key, on: boolean): readonly Key[] => (keys.includes(key) === on ? keys : on ? [...keys, key] : keys.filter((k) => k !== key));
 
 export type PrefsAction =
-  | { readonly t: "pin"; readonly key: Key; readonly on: boolean }
+  /** The pins as they are now: pinned or moved here, or read from the hub. */
+  | { readonly t: "pins"; readonly keys: readonly Key[] }
   | { readonly t: "mute"; readonly key: Key; readonly on: boolean }
   /** Read up to `seq`: the chat was open with it on screen. */
   | { readonly t: "read"; readonly key: Key; readonly seq: number }
@@ -31,9 +37,10 @@ export type PrefsAction =
 
 export const reducePrefs = (p: Prefs, a: PrefsAction): Prefs => {
   switch (a.t) {
-    case "pin":
-      if (a.on && !p.pinned.includes(a.key) && p.pinned.length >= MAX_PINNED) return p;
-      return { ...p, pinned: toggle(p.pinned, a.key, a.on) };
+    case "pins": {
+      const keys = [...new Set(a.keys)].slice(0, MAX_PINNED);
+      return keys.length === p.pinned.length && keys.every((k, i) => p.pinned[i] === k) ? p : { ...p, pinned: keys };
+    }
     case "mute":
       return { ...p, muted: toggle(p.muted, a.key, a.on) };
     case "read": {

@@ -148,6 +148,13 @@ pub struct SidebarOrderData {
     pub person_id: PersonId,
 }
 
+/// `chat.pins`: whose pinned chats changed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatPinsData {
+    pub person_id: PersonId,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

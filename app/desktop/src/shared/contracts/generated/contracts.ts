@@ -1197,6 +1197,33 @@ export type ChatPart = {
   start: number;
 };
 
+/** `chat.pins`: whose pinned chats changed. */
+export type ChatPinsData = {
+  personId: PersonId;
+};
+
+export type ChatPinsGetInput = { [key: string]: unknown };
+
+export type ChatPinsGetOutput = {
+  next?: string;
+  /** The caller's pinned chats by ref, in their order; empty until they pin one, and for a key with no person. */
+  pins: ProjectRef[];
+  /** Whether they ever set them: until then a phone sends up the pins it kept on its own. */
+  set: boolean;
+  truncated?: boolean;
+};
+
+export type ChatPinsSetInput = {
+  /** The caller's pinned chats in their new order; it replaces the one before. */
+  pins: ProjectRef[];
+};
+
+export type ChatPinsSetOutput = {
+  next?: string;
+  pins: ProjectRef[];
+  truncated?: boolean;
+};
+
 /**
  * The bubble a human message answers: a lead message and the bubble's place in it, as `parts` counts (0 for a
  * message of one bubble). The lead reads that bubble whole over the reply, and when it was written.
@@ -2410,6 +2437,7 @@ export type KnownHubEventType =
   | "screen.wait"
   | "people.changed"
   | "sidebar.order"
+  | "chat.pins"
   | "machine_add.step";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
@@ -8097,6 +8125,8 @@ export interface ToolMap {
   changes_list: { input: ChangesListInput; output: ChangesListOutput };
   chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };
   chat_nudge_clear: { input: ChatNudgeClearInput; output: ChatNudgeClearOutput };
+  chat_pins_get: { input: ChatPinsGetInput; output: ChatPinsGetOutput };
+  chat_pins_set: { input: ChatPinsSetInput; output: ChatPinsSetOutput };
   chat_send: { input: ChatSendInput; output: ChatSendOutput };
   chat_stop: { input: ChatStopInput; output: ChatStopOutput };
   checklist_edit: { input: ChecklistEditInput; output: ChecklistEditOutput };
@@ -8266,6 +8296,7 @@ export interface HubEventDataMap {
   "change.refused": TrainEventData;
   "change.state": ChangeStateData;
   "chat.message": ChatMessageEventData;
+  "chat.pins": ChatPinsData;
   "chat.waiting": ProjectChatState;
   "checklist.changed": ChecklistChangedData;
   "ci.main": CiMainData;

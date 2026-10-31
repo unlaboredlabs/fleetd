@@ -53,7 +53,7 @@ fn put_order(db: &HubDb, person: &PersonId, order: &[ProjectRef]) -> Result<(), 
 }
 
 /// The live person behind a human key; none for an agent's key or a removed person's.
-fn me(hub: &Hub, caller: &Caller) -> Result<Option<PersonId>, ToolError> {
+pub(crate) fn me(hub: &Hub, caller: &Caller) -> Result<Option<PersonId>, ToolError> {
     let Some(p) = caller.person.as_ref().filter(|_| is_human(caller)) else {
         return Ok(None);
     };
@@ -63,9 +63,13 @@ fn me(hub: &Hub, caller: &Caller) -> Result<Option<PersonId>, ToolError> {
     Ok(person.map(|p| p.person_id))
 }
 
-/// A `sidebar.order` event about another person than the caller's: theirs alone, never streamed to the caller.
+/// A `sidebar.order` or `chat.pins` event (W232) about another person than the caller's: theirs alone, never streamed
+/// to the caller. Both say whose it is the same way.
 pub fn someone_elses(caller: &Caller, event: &HubEvent) -> bool {
-    if event.r#type != HubEventType::SidebarOrder {
+    if !matches!(
+        event.r#type,
+        HubEventType::SidebarOrder | HubEventType::ChatPins
+    ) {
         return false;
     }
     let whose = event

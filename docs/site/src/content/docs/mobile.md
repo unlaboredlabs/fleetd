@@ -44,6 +44,18 @@ Hubs on a tailnet often answer plain HTTP. The app allows that on both platforms
 and use the hub's tailnet name or address: `devbox`, `devbox.<tailnet>.ts.net` or its `100.x` address. A hub at any
 other address works over plain HTTP too.
 
+## Pinned chats {#pins}
+
+Swipe a chat right and tap the orange pin, or hold it and pick **Pin**. Pinned chats sit above the list as large round
+avatars, three to a row, up to nine. An unread chat's newest message shows in a bubble over its avatar, with a dot by
+its name. While its lead works, a typing bubble shows instead. An approval waiting shows as an orange count. Tap an
+avatar to open the chat, or hold it to mark it read or unread, unpin it or mute it. A filter or a search shows pinned
+chats as plain rows.
+
+Your pins are yours: the hub keeps them, in order, for each person, so they're the same on each of your phones. A
+teammate's pins never change your list. The first time the app connects to a hub that keeps pins, it sends up the pins
+it already had.
+
 ## Navis and projects {#manage}
 
 Tap **+** at the top of Chats for **New Navi** or **New Project**.

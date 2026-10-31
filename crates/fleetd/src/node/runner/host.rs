@@ -63,6 +63,8 @@ const START_TIMEOUT: Duration = Duration::from_secs(10);
 const ACK_EVERY: Duration = Duration::from_millis(200);
 /// A node letting go: how long the session service gets to apply the events already handed to it.
 const DRAIN: Duration = Duration::from_secs(5);
+/// A node letting go: how long the host gets to read its last acknowledgement and close the connection.
+const CLOSE: Duration = Duration::from_secs(1);
 /// A stop: how long the host gets to end its session (interrupt, SIGTERM, then SIGKILL after 5 s) before it is killed.
 const STOP_WAIT: Duration = Duration::from_secs(8);
 
@@ -580,7 +582,11 @@ impl Link {
     pub async fn detach(&self) {
         let _ = self.detach.send(true);
         let mut done = self.done.clone();
-        let _ = tokio::time::timeout(DRAIN + Duration::from_secs(1), done.wait_for(|d| *d)).await;
+        let _ = tokio::time::timeout(
+            DRAIN + CLOSE + Duration::from_secs(1),
+            done.wait_for(|d| *d),
+        )
+        .await;
     }
 }
 
@@ -713,6 +719,13 @@ async fn relay(
         }
         let _ = ack(&mut write, &link, &mut handed, &mut acked).await;
         let _ = write.shutdown().await;
+        // Let go once the host closed its end too, which it does only after reading the acknowledgement. A host slow to
+        // run (a busy machine) could otherwise take the next node's connection first and drop this one with the
+        // acknowledgement unread: the next node got every event this one applied again.
+        let _ = tokio::time::timeout(CLOSE, async {
+            while let Ok(Some(_)) = lines.next_line().await {}
+        })
+        .await;
     }
     let _ = done.send(true);
 }

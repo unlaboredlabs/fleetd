@@ -23,6 +23,7 @@ import type { Paired } from "./src/hub/pair";
 import { pairLinkStep } from "./src/hub/pairLink";
 import { HubContext, SessionContext, type HubContextValue, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
 import { pushDeps, useTappedRoute } from "./src/notifications";
+import { pinStore } from "./src/prefsStore";
 import { chatAt, type Route } from "./src/push";
 import { Chat, chatOptions } from "./src/screens/Chat";
 import { Chats, searchBar } from "./src/screens/Chats";
@@ -166,7 +167,7 @@ const go = (route: Route, requests: Parameters<typeof chatAt>[1]): boolean => {
 };
 
 function Hub({ paired, onForget }: { paired: Paired; onForget: (why?: string) => void }) {
-  const session = useMemo(() => new Session({ hub: paired.hub, key: paired.key, transport: webSocketTransport, push: pushDeps }), [paired]);
+  const session = useMemo(() => new Session({ hub: paired.hub, key: paired.key, transport: webSocketTransport, push: pushDeps, pins: pinStore }), [paired]);
   const state = useSyncExternalStore(session.subscribe, session.getState);
   // A tapped notification before the navigator is ready, or before an approval's chat is known, waits for them.
   const pending = useRef<Route | null>(null);

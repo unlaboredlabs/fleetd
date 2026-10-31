@@ -31,7 +31,7 @@ async fn events_list(
         input.hub_wide == Some(true),
         input.limit.get() as usize,
     )?;
-    // Another person's sidebar order is theirs alone (W214).
+    // Another person's sidebar order and pins are theirs alone (W214, W232).
     events.retain(|e| !crate::hub::sidebar_order::someone_elses(&caller, e));
     Ok(EventsListOutput {
         events: List::unchecked(events),
@@ -74,7 +74,7 @@ async fn events_wait(
             .filter(|e| {
                 can_read(&caller, e)
                     && !crate::hub::navi::owner::about(&navis, e)
-                    // Another person's sidebar order is theirs alone (W214).
+                    // Another person's sidebar order and pins are theirs alone (W214, W232).
                     && !crate::hub::sidebar_order::someone_elses(&caller, e)
             })
             .collect();

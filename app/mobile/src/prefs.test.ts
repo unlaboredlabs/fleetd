@@ -1,15 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { MAX_PINNED, noPrefs, parsePrefs, reducePrefs, unreadCount, type Prefs } from "./prefs";
+import { MAX_PINNED, noPrefs, parsePrefs, reducePrefs, togglePin, unreadCount, type Prefs } from "./prefs";
 
 const msg = (seq: number, author: "human" | "lead" = "lead") => ({ seq, author });
 
 describe("reducePrefs", () => {
   it("pins in the order pinned, and no more than the most", () => {
-    let p: Prefs = noPrefs;
-    for (const k of ["a", "b", "c", "d", "e", "f"]) p = reducePrefs(p, { t: "pin", key: k, on: true });
-    expect(p.pinned).toEqual(["a", "b", "c", "d", "e"].slice(0, MAX_PINNED));
-    p = reducePrefs(p, { t: "pin", key: "b", on: false });
-    expect(p.pinned).toEqual(["a", "c", "d", "e"]);
+    const keys = Array.from({ length: MAX_PINNED + 1 }, (_, i) => `k${String(i)}`);
+    let pinned: readonly string[] = [];
+    for (const k of keys.slice(0, MAX_PINNED)) pinned = togglePin(pinned, k, true) ?? pinned;
+    expect(pinned).toEqual(keys.slice(0, MAX_PINNED));
+    // The tenth doesn't take; unpinning one makes room, and the next pin goes last.
+    expect(togglePin(pinned, keys[MAX_PINNED] ?? "", true)).toBeNull();
+    expect(togglePin(pinned, "k1", false)).toEqual(keys.slice(0, MAX_PINNED).filter((k) => k !== "k1"));
+    // Pinning one already pinned changes nothing.
+    expect(togglePin(pinned, "k0", true)).toBe(pinned);
+  });
+
+  it("keeps the pins as they are now, each once and no more than the most", () => {
+    const p = reducePrefs(noPrefs, { t: "pins", keys: ["b", "a", "b"] });
+    expect(p.pinned).toEqual(["b", "a"]);
+    // The same again is no change: nothing is written.
+    expect(reducePrefs(p, { t: "pins", keys: ["b", "a"] })).toBe(p);
+    expect(reducePrefs(p, { t: "pins", keys: Array.from({ length: 12 }, (_, i) => String(i)) }).pinned).toHaveLength(MAX_PINNED);
   });
 
   it("mutes and unmutes", () => {

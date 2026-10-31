@@ -1,4 +1,5 @@
-/* The `$` list, fixed over the chat like a menu; the anchor, a zero-height row at the box's top edge, places it. */
+/* The `$` list, fixed over the chat like a menu; the anchor, a zero-height row over the box's words (under the live
+   strip), places it. */
 .anchor {
   height: 0;
 }

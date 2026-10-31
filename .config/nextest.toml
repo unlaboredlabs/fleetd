@@ -17,13 +17,3 @@ failure-output = "immediate-final"
 [[profile.ci.overrides]]
 filter = 'package(fleetd) & (test(/^node::browser::/) | test(/^node::relay_tests::/))'
 retries = 2
-
-# Temporary, until the session host's race is fixed: run alongside `stop_all_ends_the_sessions_a_node_left_running`,
-# `a_hosted_session_outlives_its_node_and_each_event_arrives_once` now and then gets m1..m3 again instead of m4..m6
-# (7 of 75 runs together, 0 of 40 alone, on main at 8221b057b). The fix of that race removes this group.
-[test-groups]
-session-host = { max-threads = 1 }
-
-[[profile.default.overrides]]
-filter = 'package(fleetd) & binary(session_host)'
-test-group = 'session-host'

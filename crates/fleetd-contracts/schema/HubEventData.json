@@ -1003,6 +1003,18 @@
       ],
       "type": "object"
     },
+    "ChatPinsData": {
+      "description": "`chat.pins`: whose pinned chats changed.",
+      "properties": {
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        }
+      },
+      "required": [
+        "personId"
+      ],
+      "type": "object"
+    },
     "ChatReplyTo": {
       "description": "The bubble a human message answers: a lead message and the bubble's place in it, as `parts` counts (0 for a\nmessage of one bubble). The lead reads that bubble whole over the reply, and when it was written.",
       "properties": {
@@ -1609,6 +1621,9 @@
         "chat.message": {
           "$ref": "#/$defs/ChatMessageEventData"
         },
+        "chat.pins": {
+          "$ref": "#/$defs/ChatPinsData"
+        },
         "chat.waiting": {
           "$ref": "#/$defs/ProjectChatState"
         },
@@ -1771,6 +1786,7 @@
         "change.refused",
         "change.state",
         "chat.message",
+        "chat.pins",
         "chat.waiting",
         "checklist.changed",
         "ci.main",

@@ -213,6 +213,14 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "A person's own device only. List the vaults the caller's 1Password token reads, with the 1Password SDK on a machine holding it (machineId, default the first online; its first Test there installs the SDK). test.vaults, else test.error in plain words with the token masked; recorded as the token's lastTest.",
     ),
     (
+        "chat_pins_get",
+        "The caller's own pinned chats, by ref, in their order (at most 9); set says whether they ever set them. Empty, set false, for a key with no person.",
+    ),
+    (
+        "chat_pins_set",
+        "A person's own device only. pins: the caller's pinned chats in their new order (at most 9), replacing the ones before. Their other devices follow (chat.pins, which only they see); nobody else's pins change.",
+    ),
+    (
         "sidebar_order_get",
         "The caller's own order of the projects and Navis in their sidebar, by ref; empty until they move one, and for a key with no person. A project or Navi it doesn't name goes after the ones it does.",
     ),

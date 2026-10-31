@@ -4,6 +4,7 @@
 // notification-actions change lands; until then Mute only affects the count in the app.
 import { File, Paths } from "expo-file-system";
 import { useSyncExternalStore } from "react";
+import type { PinStore } from "./pins";
 import { noPrefs, parsePrefs, reducePrefs, type Prefs, type PrefsAction } from "./prefs";
 import { saveMuted } from "./vault";
 
@@ -39,3 +40,9 @@ const subscribe = (l: () => void) => {
 };
 
 export const usePrefs = (): Prefs => useSyncExternalStore(subscribe, () => prefs);
+
+/** The session's copy of the pinned chats (pins.ts): the prefs' own, so the list follows it. */
+export const pinStore: PinStore = {
+  saved: () => prefs.pinned,
+  save: (keys) => dispatchPrefs({ t: "pins", keys }),
+};
