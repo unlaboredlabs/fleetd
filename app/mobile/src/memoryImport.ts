@@ -19,8 +19,20 @@ export interface ImportClient {
   readonly add: (text: string) => Promise<Result<Imported>>;
 }
 
-/** Distilling is a model turn on the person's own Claude, about 30 to 90 seconds. */
-export const IMPORT_MS = 180_000;
+/**
+ * Distilling is a model turn on the person's own Claude, about 30 to 90 seconds: the hub lets it run 240 s plus its
+ * start, so the phone waits as long as the desktop app does, and never calls an import that finished a failure.
+ */
+export const IMPORT_MS = 300_000;
+
+/** The most the hub takes in one paste. */
+export const IMPORT_MAX = 100_000;
+
+/** A hub from before memory_import, in the person's words rather than the hub's own ("No tool memory_import."). */
+export const OLD_HUB: HubError = { code: "unsupported", message: "This hub can't import memory yet.", fix: "Update fleetd on the hub, then try again." };
+
+/** The link dropped or timed out before the answer: the hub may have finished the import all the same. */
+export const lostAnswer = (e: HubError): boolean => e.code === "disconnected" || e.code === "timeout";
 
 /** memory_import's answer (fleetd-contracts memory.rs), the part the phone reads. */
 interface ImportOutput {
@@ -44,7 +56,11 @@ export const importedOf = (o: Pick<ImportOutput, "added" | "skipped">): Imported
  */
 export const importClient = (hub: { readonly call: unknown }): ImportClient => {
   // The call's types come with fleetd-contracts' memory_import; read through its shape until the app's are generated.
-  const call = (hub.call as Call).bind(hub);
+  const raw = (hub.call as Call).bind(hub);
+  const call: Call = async (tool, input, timeoutMs) => {
+    const r = await raw(tool, input, timeoutMs);
+    return !r.ok && r.error.code === "not_found" && r.error.message.includes("memory_import") ? { ok: false, error: OLD_HUB } : r;
+  };
   return {
     prompt: async () => {
       const r = await call("memory_import", {});
@@ -103,8 +119,17 @@ export const importStep = (s: ImportState, m: ImportMsg): ImportState => {
   }
 };
 
+/** The hub's fix when the person has no Navi of their own, where an import runs. */
+export const NO_NAVI_FIX = "Create a Navi first, then import again.";
+
+/** Refused for want of a Navi: the screen offers New Navi, and the paste stays for after. */
+export const needsNavi = (e: HubError): boolean => e.code === "invalid" && e.fix === NO_NAVI_FIX;
+
 /** Add to Memory: something pasted, and not already on its way. */
-export const canAdd = (s: ImportState): boolean => s.text.trim() !== "" && s.phase.t !== "working";
+export const canAdd = (s: ImportState): boolean => s.text.trim() !== "" && s.phase.t !== "working" && !oldHub(s);
+
+/** A hub without memory_import: nothing on the screen can work until it's updated. */
+export const oldHub = (s: ImportState): boolean => s.prompt.t === "failed" && s.prompt.error.code === OLD_HUB.code;
 
 const count = (n: number, one: string, many: string): string => (n === 1 ? `1 ${one}` : `${String(n)} ${many}`);
 

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeHub } from "./hub/fake";
-import { addedWords, canAdd, importClient, importedOf, importStep, initialImport, type ImportMsg, type ImportState } from "./memoryImport";
+import { addedWords, canAdd, IMPORT_MS, importClient, importedOf, importStep, initialImport, lostAnswer, needsNavi, NO_NAVI_FIX, oldHub, OLD_HUB, type ImportMsg, type ImportState } from "./memoryImport";
 import { Session } from "./session";
 
 const run = (...msgs: ImportMsg[]): ImportState => msgs.reduce(importStep, initialImport);
@@ -75,6 +75,38 @@ describe("Add to Memory", () => {
   });
 });
 
+describe("when the hub can't import", () => {
+  const NO_NAVI = { code: "invalid", message: "Import memory runs in your own Navi, so nobody else can read what you paste, and you have no Navi yet.", fix: NO_NAVI_FIX };
+
+  it("offers New Navi without one, and keeps the paste for after", () => {
+    const s = run({ t: "typed", text: "Ada, Berlin" }, { t: "add" }, { t: "added", result: { ok: false, error: NO_NAVI } });
+    expect(s.phase.t === "failed" && needsNavi(s.phase.error)).toBe(true);
+    expect(s.text).toBe("Ada, Berlin");
+    expect(canAdd(s)).toBe(true);
+    // Another refusal, or a Navi's machine offline, is said as it is.
+    expect(needsNavi({ code: "invalid", message: "Too long." })).toBe(false);
+    expect(needsNavi({ code: "machine_offline", message: "devbox is offline." })).toBe(false);
+  });
+
+  it("says a hub from before memory_import needs an update, and adds nothing until it is", () => {
+    const s = run({ t: "prompt", result: { ok: false, error: OLD_HUB } }, { t: "typed", text: "Ada" });
+    expect(oldHub(s)).toBe(true);
+    expect(canAdd(s)).toBe(false);
+    expect(oldHub(run({ t: "prompt", result: { ok: false, error: { code: "timeout", message: "slow" } } }))).toBe(false);
+  });
+
+  it("doesn't call an answer that never came a failure: the hub may have added it", () => {
+    expect(lostAnswer({ code: "disconnected", message: "The connection to the hub dropped before it answered." })).toBe(true);
+    expect(lostAnswer({ code: "timeout", message: "The hub didn't answer memory_import within 300 s." })).toBe(true);
+    // Never sent: nothing happened.
+    expect(lostAnswer({ code: "offline", message: "Not connected to the hub." })).toBe(false);
+  });
+
+  it("waits at least as long as the hub lets the model turn run (240 s), as the desktop does", () => {
+    expect(IMPORT_MS).toBeGreaterThanOrEqual(300_000);
+  });
+});
+
 describe("memory_import", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -111,6 +143,13 @@ describe("memory_import", () => {
       ],
     });
     await expect(added).resolves.toEqual({ ok: true, value: { added: 2, secrets: 1, full: 1 } });
+  });
+
+  it("words a hub without memory_import in the person's terms", async () => {
+    const { hub, client } = setup();
+    const prompt = client.prompt();
+    hub.fail("memory_import", "not_found", "No tool memory_import.");
+    await expect(prompt).resolves.toEqual({ ok: false, error: OLD_HUB });
   });
 
   it("says the hub's refusal, its fix with it", async () => {

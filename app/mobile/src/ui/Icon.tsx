@@ -40,6 +40,7 @@ const SYMBOLS = {
   camera: ["camera.fill", "photo_camera"],
   status: ["antenna.radiowaves.left.and.right", "sensors"],
   info: ["info", "info"],
+  infoFill: ["info.circle.fill", "info"],
   reply: ["arrowshape.turn.up.left", "reply"],
   copy: ["doc.on.doc", "content_copy"],
   select: ["selection.pin.in.out", "select_all"],
