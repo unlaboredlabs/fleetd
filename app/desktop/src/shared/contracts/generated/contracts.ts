@@ -6313,20 +6313,8 @@ export type SetupPart = {
   values?: SetupValue[];
 };
 
-export type SetupSkipInput = {
-  /** False: back on the list as to do. */
-  skipped: boolean;
-  step: SetupStepId;
-};
-
-export type SetupSkipOutput = {
-  next?: string;
-  step: HubSetupStep;
-  truncated?: boolean;
-};
-
 /** Read from the step's checks, never from how far a wizard got. */
-export type KnownSetupStatus = "done" | "todo" | "look" | "skipped";
+export type KnownSetupStatus = "done" | "todo" | "look";
 /** KnownSetupStatus, or a value from a newer hub. */
 export type SetupStatus = KnownSetupStatus | (string & {});
 
@@ -8451,7 +8439,6 @@ export interface ToolMap {
   secret_submit: { input: SecretSubmitInput; output: SecretSubmitOutput };
   session_prompt_get: { input: SessionPromptGetInput; output: SessionPromptGetOutput };
   setup_list: { input: SetupListInput; output: SetupListOutput };
-  setup_skip: { input: SetupSkipInput; output: SetupSkipOutput };
   setup_test: { input: SetupTestInput; output: SetupTestOutput };
   sidebar_order_get: { input: SidebarOrderGetInput; output: SidebarOrderGetOutput };
   sidebar_order_set: { input: SidebarOrderSetInput; output: SidebarOrderSetOutput };

@@ -10197,12 +10197,6 @@
         "setup_list.output": {
           "$ref": "#/$defs/SetupListOutput"
         },
-        "setup_skip.input": {
-          "$ref": "#/$defs/SetupSkipInput"
-        },
-        "setup_skip.output": {
-          "$ref": "#/$defs/SetupSkipOutput"
-        },
         "setup_test.input": {
           "$ref": "#/$defs/SetupTestInput"
         },
@@ -10733,8 +10727,6 @@
         "session_prompt_get.output",
         "setup_list.input",
         "setup_list.output",
-        "setup_skip.input",
-        "setup_skip.output",
         "setup_test.input",
         "setup_test.output",
         "sidebar_order_get.input",
@@ -18233,39 +18225,6 @@
       ],
       "type": "object"
     },
-    "SetupSkipInput": {
-      "properties": {
-        "skipped": {
-          "description": "False: back on the list as to do.",
-          "type": "boolean"
-        },
-        "step": {
-          "$ref": "#/$defs/SetupStepId"
-        }
-      },
-      "required": [
-        "step",
-        "skipped"
-      ],
-      "type": "object"
-    },
-    "SetupSkipOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "step": {
-          "$ref": "#/$defs/HubSetupStep"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "step"
-      ],
-      "type": "object"
-    },
     "SetupStatus": {
       "description": "Read from the step's checks, never from how far a wizard got.",
       "oneOf": [
@@ -18282,11 +18241,6 @@
         {
           "const": "look",
           "description": "Set up, but a check fails or warns.",
-          "type": "string"
-        },
-        {
-          "const": "skipped",
-          "description": "Not set up, and the admin said later.",
           "type": "string"
         }
       ],

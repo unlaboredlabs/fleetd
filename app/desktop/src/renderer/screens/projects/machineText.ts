@@ -1,8 +1,8 @@
-// How a machine reads on the Machines screen, as the GPUI strip said it (live/strips.rs, model.rs SleptSpan):
+// How a machine reads, as the GPUI strip said it (live/strips.rs, model.rs SleptSpan):
 // only what it reports, a sleep for an hour after it woke, an offline machine with how long.
 
 import { SLEPT_SHOWN_MS } from "../../../shared/contracts";
-import type { LoginLimit, Machine, MachineLive, SleptSpan, SlotState } from "./contracts";
+import type { LoginLimit, Machine, MachineLive, SleptSpan } from "./contracts";
 
 export type Tone = "quiet" | "warning" | "danger";
 export interface Part {
@@ -72,34 +72,6 @@ export const machineParts = (m: Machine, live: MachineLive | undefined, nowMs: n
   if (slept) out.push({ text: slept, tone: "warning" });
   return [...out, ...usageParts(live)];
 };
-
-export interface Glance {
-  /** "online", "degraded", "offline, last seen 12 min ago". */
-  readonly state: Part;
-  /** "3 running", while it reports. */
-  readonly running: string | null;
-  /** What wants a look, shown on its row: a recent sleep, claude usage near or at its limit. */
-  readonly notes: ReadonlyArray<Part>;
-  /** The rest, behind its disclosure: load, memory, usage within limits, the node's version, its tags. */
-  readonly facts: ReadonlyArray<Part>;
-}
-
-/** A machine on the Machines screen: its row says the state, what it runs and what wants a look; the rest opens. */
-export const machineGlance = (m: Machine, live: MachineLive | undefined, nowMs: number): Glance => {
-  const version: Part = { text: `fleetd ${m.nodeVersion}${m.tags.length > 0 ? ` · ${m.tags.join(", ")}` : ""}`, tone: "quiet" };
-  if (m.status === "offline") return { state: offlinePart(m, nowMs), running: null, notes: [], facts: [version] };
-  const slept = sleptText(live?.slept ?? m.lastSlept, nowMs);
-  const usage = usageParts(live);
-  return {
-    state: m.status === "degraded" ? { text: "degraded", tone: "warning" } : { text: "online", tone: "quiet" },
-    running: live ? `${live.running} running` : null,
-    notes: [...(slept ? [{ text: slept, tone: "warning" as const }] : []), ...usage.filter((p) => p.tone !== "quiet")],
-    facts: [...usage.filter((p) => p.tone === "quiet"), version],
-  };
-};
-
-/** "agents 8 / 40 · 1 queued": how many agents run across the fleet, of how many at once. */
-export const slotsText = (s: SlotState): string => `agents ${s.used} / ${s.cap}${s.queued > 0 ? ` · ${s.queued} queued` : ""}`;
 
 /** Offline last, then by name. */
 export const machineOrder = (a: Machine, b: Machine): number =>

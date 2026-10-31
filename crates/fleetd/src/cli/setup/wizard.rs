@@ -1475,13 +1475,6 @@ async fn walk(
                 "run its checks now".to_owned(),
             ));
         }
-        if step.need != SetupNeed::Required {
-            actions.push((
-                "later",
-                "Later".to_owned(),
-                "it keeps its place; fleetd init asks again".to_owned(),
-            ));
-        }
         actions.push(("next", "Go on".to_owned(), String::new()));
         match ui.select(list, &format!("{}:", step.title), &actions, actions[0].0)? {
             // An invite counts once they join; test it now anyway, as the hub may already know them.
@@ -1495,18 +1488,6 @@ async fn walk(
                 if tested(list, client, step.id).await == SetupStatus::Done {
                     return Ok(SetupStatus::Done);
                 }
-            }
-            "later" => {
-                return Ok(match steps::skip(client, step.id).await {
-                    Ok(s) => {
-                        list.skipped(&s.title, "later");
-                        s.status
-                    }
-                    Err(failure) => {
-                        list.warn(&step.title, &failure.message, Some(&failure.fix));
-                        step.status
-                    }
-                });
             }
             _ => return Ok(step.status),
         }

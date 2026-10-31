@@ -1,7 +1,7 @@
 // The hub admin's setup: the steps the hub serves (setup_list), the same ones `fleetd init`
 // walks. #/setup is the first run: the welcome, the steps with one open beside them, and the end. Settings › Hub ›
 // Setup shows the same steps (SetupSteps) on its page. Each step's status is the hub's, read from its checks; Test runs
-// that step's checks now (setup_test), Skip for now keeps it for later (setup_skip), and a step's result is saved
+// that step's checks now (setup_test), and a step's result is saved
 // where it lives already (Settings › Hub accounts › Claude, › GitHub, …), which its place opens. Only owners and admins
 // see any of it.
 
@@ -48,7 +48,7 @@ export function useSetupSteps(): Steps {
   return { problem: errorText(query.error), old: query.error instanceof CallError && lacksTool(query.error.error) };
 }
 
-/** Keeps a step the hub just answered with (Test, Skip) in the list, so every view of it agrees at once. */
+/** Keeps a step the hub just answered with (Test) in the list, so every view of it agrees at once. */
 function useKeep(): (step: SetupStep) => void {
   const data = useDataLayer();
   return (step) =>
@@ -195,7 +195,7 @@ function StepPane({
   const data = useDataLayer();
   const hub = useHub();
   const keep = useKeep();
-  const [busy, setBusy] = useState<"test" | "skip" | null>(null);
+  const [busy, setBusy] = useState<"test" | null>(null);
   const [tested, setTested] = useState<{ ok: boolean; text: string } | null>(null);
   const index = steps.indexOf(step);
   const next = steps.slice(index + 1).find((st) => st.status !== "done");
@@ -210,17 +210,6 @@ function StepPane({
     }
     keep(out.output.step);
     setTested({ ok: out.output.step.status === "done", text: out.output.step.said ?? "Nothing answered for this step yet." });
-  };
-  const skip = async (skipped: boolean) => {
-    setBusy("skip");
-    const out = await data.call("setup_skip", { step: step.id, skipped });
-    setBusy(null);
-    if (!out.ok) {
-      setTested({ ok: false, text: out.error.message });
-      return;
-    }
-    keep(out.output.step);
-    if (skipped) onward();
   };
   const places = placesOf(step);
   const left = isRequiredLeft(step);
@@ -281,17 +270,7 @@ function StepPane({
       )}
 
       <footer className={s.foot}>
-        {step.need.kind === "required" || step.status === "done" ? (
-          <span />
-        ) : step.status === "skipped" ? (
-          <Button variant="ghost" onClick={() => void skip(false)} disabled={busy !== null}>
-            Back on the list
-          </Button>
-        ) : (
-          <Button variant="ghost" onClick={() => void skip(true)} disabled={busy !== null}>
-            Skip for now
-          </Button>
-        )}
+        <span />
         {next === undefined && onEnd === undefined ? null : (
           <Button variant="primary" onClick={onward} disabled={busy !== null}>
             {next === undefined ? "Finish" : left ? "Continue anyway" : "Continue"}

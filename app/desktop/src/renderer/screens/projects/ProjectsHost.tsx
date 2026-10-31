@@ -26,7 +26,7 @@ const machinesSource = (layer: DataLayer): Source => ({
       group: "machines",
       keywords: m.tags,
       run: () => {
-        window.location.hash = "#/machines";
+        window.location.hash = `#/settings/hub/machines/${m.machineId}`;
       },
     }));
   },

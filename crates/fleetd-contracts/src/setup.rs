@@ -82,8 +82,6 @@ pub enum SetupStatus {
     Todo,
     /// Set up, but a check fails or warns.
     Look,
-    /// Not set up, and the admin said later.
-    Skipped,
 }
 
 /// A provider's page, opened in the browser.
@@ -191,7 +189,7 @@ impl HubSetupStep {
             && match self.status {
                 SetupStatus::Done => false,
                 SetupStatus::Look => self.failing == Some(true),
-                SetupStatus::Todo | SetupStatus::Skipped => true,
+                SetupStatus::Todo => true,
             }
     }
 }

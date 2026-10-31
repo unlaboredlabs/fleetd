@@ -41,7 +41,7 @@ export const defaultCommands = (): Command[] => [
     run: () => go(timeRouteFor(window.location.hash)),
   },
   // Not in the sidebar: the hub's footer row opens it, saying how many are down.
-  { id: "go:machines", title: "Machines", detail: "Machines and setup checks", group: "go-to", run: () => go("#/machines") },
+  { id: "go:machines", title: "Machines", detail: "Settings › Hub › Machines", group: "go-to", run: () => go("#/settings/hub/machines") },
   { id: "go:onboarding", title: "Connect to a hub…", detail: "Pair this app with a fleetd hub", group: "actions", keywords: ["pair"], run: () => go("#/onboarding") },
 ];
 

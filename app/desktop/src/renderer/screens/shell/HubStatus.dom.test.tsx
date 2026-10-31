@@ -141,7 +141,7 @@ it("opens Machines from the popover always, and from \"N down\" while machines a
   const line = document.querySelector<HTMLButtonElement>("[aria-label='Hub'][role='dialog'] [data-opens='machines']");
   expect(line?.textContent).toBe("1 of 1 online");
   act(() => line?.click());
-  expect(parseHash(window.location.hash)).toEqual({ id: "machines" });
+  expect(parseHash(window.location.hash)).toEqual({ id: "settings", tab: "hub.machines" });
   expect(document.querySelector("[aria-label='Hub'][role='dialog']")).toBeNull();
   window.location.hash = "#/status";
 
@@ -149,5 +149,5 @@ it("opens Machines from the popover always, and from \"N down\" while machines a
   expect(down()?.textContent).toBe("2 down");
   expect(down()?.getAttribute("aria-label")).toBe("2 machines down: open Machines");
   act(() => down()?.click());
-  expect(parseHash(window.location.hash)).toEqual({ id: "machines" });
+  expect(parseHash(window.location.hash)).toEqual({ id: "settings", tab: "hub.machines" });
 });
