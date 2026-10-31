@@ -1,4 +1,4 @@
-//! The hub's setup steps in the terminal (docs/design/setup.md): `fleetd init` and `fleetd doctor` list the hub's steps
+//! The hub's setup steps in the terminal: `fleetd init` and `fleetd doctor` list the hub's steps
 //! (setup_list), one line each, and `fleetd init --step <id>` opens one as a guide: why, numbered parts with the values
 //! to paste and the provider's pages, and where the result is saved.
 //! Secrets are never typed here: a step that takes one says where in the app it is sealed.

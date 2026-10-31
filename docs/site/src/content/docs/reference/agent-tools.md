@@ -959,7 +959,7 @@ Start a preview of a PR (or an order's PRs merged together) for the person to tr
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `of` | object | yes | What a preview is of: one PR, or an order's PRs merged together onto their base on a scratch branch (D162). One of these shapes: {kind, number, repo}; {kind, workstreamId}. |
-| `target` | string | no | What a preview runs: phase 1 is the web; Android, iOS and the desktop follow (docs/design/try-it.md, Phases). One of `web`. Default `"web"`. |
+| `target` | string | no | What a preview runs: phase 1 is the web; Android, iOS and the desktop follow. One of `web`. Default `"web"`. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
 

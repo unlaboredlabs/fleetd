@@ -179,7 +179,7 @@ export const fixtures = [
   "prs-heavy",
   // UX-1: the sidebar's reasons and a new reply (fixtures/sidebar); one agent's live work (fixtures/agents).
   "sidebar-reasons",
-  // Several hubs (docs/design/hubs.md): Personal and Acme in one sidebar, and Acme unreachable beside Personal.
+  // Several hubs: Personal and Acme in one sidebar, and Acme unreachable beside Personal.
   "sidebar-hubs",
   "sidebar-hubs-offline",
   "agents-work",
@@ -1529,7 +1529,7 @@ export const screens: readonly Screen[] = [
   { id: "onboarding.connecting", route: "#/onboarding", fixtures: ["hub-unreachable", "onboarding-not-found"] },
   // A hub on another protocol, either way round.
   { id: "onboarding.mismatch", route: "#/onboarding", fixtures: ["onboarding-app-too-old", "onboarding-hub-too-old"] },
-  // W100: the hub admin's setup (a design prototype, docs/design/setup.md): the welcome, a step open beside the list
+  // W100: the hub admin's setup: the welcome, a step open beside the list
   // (Claude to do, the GitHub App), and the end.
   { id: "setup.welcome", route: "#/setup/welcome", fixtures: ["setup-fresh"] },
   { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"], variant: "claude" },

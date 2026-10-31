@@ -23,7 +23,7 @@ if (storedMode() !== "system") mirrorTheme(storedMode());
 window.addEventListener("error", (e) => reportError("Uncaught error", e.error ?? e.message));
 window.addEventListener("unhandledrejection", (e) => reportError("Unhandled rejection", e.reason));
 
-// One data layer per hub the app is paired with (docs/design/hubs.md); main always has at least one.
+// One data layer per hub the app is paired with; main always has at least one.
 // Main says which hubs as it opens the window, so the first render waits on no round trip (and the entry has no
 // top-level await, which would split its modules into many chunks to load before the first paint). Should it ever say
 // none, the first hub stands in until the set's own list() answers.

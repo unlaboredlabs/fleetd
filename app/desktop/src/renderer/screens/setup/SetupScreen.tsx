@@ -1,4 +1,4 @@
-// The hub admin's setup (docs/design/setup.md): the steps the hub serves (setup_list), the same ones `fleetd init`
+// The hub admin's setup: the steps the hub serves (setup_list), the same ones `fleetd init`
 // walks. #/setup is the first run: the welcome, the steps with one open beside them, and the end. Settings › Hub ›
 // Setup shows the same steps (SetupSteps) on its page. Each step's status is the hub's, read from its checks; Test runs
 // that step's checks now (setup_test), Skip for now keeps it for later (setup_skip), and a step's result is saved

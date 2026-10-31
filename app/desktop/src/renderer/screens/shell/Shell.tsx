@@ -2,7 +2,7 @@
 // translucent material), the top row beside it (the window's drag region, where a chat puts its title), and the
 // screen the route names: a project's lead chat, with its agents, PRs and checklist in the panel on the right (panel.tsx), or
 // Status, Time or Settings. Navigation is the hash (routes.ts); `#/` opens the project you last had open. With several
-// hubs (docs/design/hubs.md) the screen is on its route's hub, inside that hub's scope, and each hub has a watcher
+// hubs the screen is on its route's hub, inside that hub's scope, and each hub has a watcher
 // (HubWatch) always mounted: its sidebar rows, its notifications and its share of the Dock badge.
 import { PanelLeft, Search } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef } from "react";

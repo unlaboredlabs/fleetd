@@ -182,7 +182,7 @@ impl Workstreams {
             None => None,
         };
         // Who started it: the writer of the message the lead was answering. Their GitHub account opens its PRs once
-        // people connect their own (docs/design/teams.md, step 8).
+        // people connect their own.
         if let Some((_, Some(person))) = &human {
             let started = Workstream {
                 started_by: Some(person.clone()),

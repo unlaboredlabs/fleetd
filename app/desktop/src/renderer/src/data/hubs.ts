@@ -1,4 +1,4 @@
-// The hubs this app is paired with (docs/design/hubs.md), each with a data layer of its own: its own store, query
+// The hubs this app is paired with, each with a data layer of its own: its own store, query
 // cache and offline cache, so no hub's data or calls ever mix with another's. Main keeps the list; this follows it,
 // making a layer for a hub that comes and stopping the layer of one that goes.
 import { createStore, type StoreApi } from "zustand/vanilla";

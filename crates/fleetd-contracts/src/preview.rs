@@ -1,4 +1,4 @@
-//! Try it yourself (W58, docs/design/try-it.md, D162): a preview is a PR's or an order's branch running on a machine
+//! Try it yourself (W58, D162): a preview is a PR's or an order's branch running on a machine
 //! for the person to use, from the app (a browser session they hold) or from their own devices on the tailnet. It runs
 //! only because someone asked: the person with Try it, or the lead in a turn answering the person. An agent may only
 //! suggest one. It ends on End, after the project's idle time, at the 4 hour cap, or when the PR merges or closes.
@@ -45,7 +45,7 @@ brand!(
     expected = "a path starting with /, at most 300 characters, no spaces"
 );
 
-/// What a preview runs: phase 1 is the web; Android, iOS and the desktop follow (docs/design/try-it.md, Phases).
+/// What a preview runs: phase 1 is the web; Android, iOS and the desktop follow.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(extend("x-open" = true))]

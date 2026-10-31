@@ -1,4 +1,4 @@
-// The hub admin's setup steps (docs/design/setup.md) as the hub serves them (setup_list, hub/setup): `fleetd init`,
+// The hub admin's setup steps as the hub serves them (setup_list, hub/setup): `fleetd init`,
 // the first run and Settings › Hub › Setup render the same ones, and the app keeps no catalog of its own. These are
 // the words around them, and where in the app each step's result is saved.
 

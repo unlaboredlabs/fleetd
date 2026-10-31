@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The app paired with two hubs (docs/design/hubs.md): one sidebar with each hub's projects under its name, each hub's
+// The app paired with two hubs: one sidebar with each hub's projects under its name, each hub's
 // connection on its own row (one offline never blocks the other), the Dock badge over both, and a project opening on
 // its own hub, whose calls go to that hub only.
 import { act } from "react";

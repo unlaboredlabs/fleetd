@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Routes and several hubs (docs/design/hubs.md): a route names its hub as `?at=<id>`, one that doesn't stays on the
+// Routes and several hubs: a route names its hub as `?at=<id>`, one that doesn't stays on the
 // hub of the screen before it, and a single-hub app's hashes never name one.
 import { afterEach, describe, expect, it } from "vitest";
 import { currentRoute, hashFor, navigate, setRouteHubs } from "./navigation";

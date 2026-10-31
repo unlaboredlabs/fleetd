@@ -1,4 +1,4 @@
-//! The hub admin's setup (docs/design/setup.md): one list of steps that `fleetd init`, the app's first run and
+//! The hub admin's setup: one list of steps that `fleetd init`, the app's first run and
 //! Settings › Hub › Setup all render. A step is a guide (why, numbered parts with the values to paste and the
 //! provider's pages, the fields for what comes back) around a few doctor checks, which decide its status. The only
 //! state the hub keeps is which steps the admin put off for later.

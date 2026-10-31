@@ -1,4 +1,4 @@
-// Hub links (D194, docs/design/hubs.md) as plain view data. A link key minted on one hub acts as its person there; a
+// Hub links (D194) as plain view data. A link key minted on one hub acts as its person there; a
 // Navi on another hub keeps it sealed and reaches that hub's projects through it. Here: what a pasted key text holds,
 // the words for a kept link's state, and the lines for a minted link. Pure, so it is unit-tested.
 import type { HubLink, IssuedLink, ProjectRef } from "../../../shared/contracts";

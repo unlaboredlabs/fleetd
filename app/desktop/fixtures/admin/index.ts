@@ -291,7 +291,7 @@ function oldHub(from: Fixture): Fixture {
 // Each is built on chat-empty (three projects, two machines, their slots and roles; a few hundred KB), not on typical:
 // every fixture stays in memory until the build writes them all, and typical's chats are megabytes a copy.
 /**
- * Two hubs Sam administers, Personal and Acme, and a third, Club, where Sam is a member (docs/design/hubs.md):
+ * Two hubs Sam administers, Personal and Acme, and a third, Club, where Sam is a member:
  * the Hub group names the hub it manages and switches between the first two only.
  */
 function hubs(base: (name: "chat-empty") => Fixture): Fixture {

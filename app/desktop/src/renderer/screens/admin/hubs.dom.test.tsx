@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings' Hub group with several hubs (docs/design/hubs.md): it says which hub it manages above every page, the
+// Settings' Hub group with several hubs: it says which hub it manages above every page, the
 // group switches between the hubs this person administers (keeping the page), and an invite is made on the hub it
 // names, never on whichever hub some other screen had open. An old Administration link still lands on its hub. With
 // one hub, none of it shows.

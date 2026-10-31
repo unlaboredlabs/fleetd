@@ -26,7 +26,7 @@
 // the app, which pairs with it.
 //
 // Notifications use the platforms' own push, APNs and FCM, through `fleetd push-relay`, never Expo's push service
-// (docs/design/push.md). The iOS Notification Service Extension that opens them comes from plugins/notification-service.
+//. The iOS Notification Service Extension that opens them comes from plugins/notification-service.
 //
 // "fleetd" in iOS's share sheet, which sends text, links and images from other apps into a chat, is the Share
 // Extension from plugins/share-extension.
