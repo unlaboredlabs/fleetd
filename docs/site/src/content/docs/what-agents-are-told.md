@@ -220,8 +220,9 @@ Your memory › Import memory:
    added.
 
 The hub reads the answer in one model turn on your own Claude (the account your work runs on, see
-[Claude accounts](/docs/people#claude)), in your Navi when you have one, else in any project on a machine that's online. That turn has
-no tools at all, not even fleetd's, and its prompt (`memory.import`) treats the pasted text as data only: a line in it
+[Claude accounts](/docs/people#claude)), in your own [Navi](/docs/navi) and nowhere else, so nobody else can read
+what you pasted. Without a Navi, import asks you to create one first; while your Navi's machine is offline, it says so,
+and you try again once it's back. That turn has no tools at all, not even fleetd's, and its prompt (`memory.import`) treats the pasted text as data only: a line in it
 that tries to give orders is at most an entry, never followed. It turns the answer into short entries of your own
 memory, which the hub writes the way the lead's `remember` does:
 

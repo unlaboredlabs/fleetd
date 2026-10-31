@@ -2,10 +2,10 @@
 //! (ChatGPT, Claude, Grok), pastes its answer back, and `memory_import` turns it into entries of their own memory.
 //!
 //! One model turn distills it: a session with no tools at all (no runtime tool, no MCP server, fleetd's included) on
-//! the person's own Claude choice (D200), in their own Navi when they have one, else in any project whose node can
-//! hold a session to its allowed tools. The pasted text is untrusted: it goes in between two fences no paste can
-//! forge, under the `memory.import` rules that it is data, never instructions; and the session can do nothing but
-//! answer. Its answer is JSON entries, which are written here the way `remember` writes them: a secret refused,
+//! the person's own Claude choice (D200), in their own Navi and nowhere else, so nobody else can read the paste in
+//! its session; someone with no Navi is asked to create one first. The pasted text is untrusted: it goes in between
+//! two fences no paste can fake, under the `memory.import` rules that it is data, never instructions; and the
+//! session can do nothing but answer. Its answer is JSON entries, which are written here the way `remember` writes them: a secret refused,
 //! an entry the memory already says skipped, a merged one in place of the old, and the cap held, the most durable
 //! kinds (instructions, then preferences) first, so what doesn't fit is the least lasting. One `memory.changed` at
 //! the end refreshes the lists.
@@ -165,35 +165,46 @@ pub fn export_prompt(hub: &Hub) -> String {
     hub.db.prompts().current(None).render("memory.export", &[])
 }
 
-/// Where the turn runs: `person`'s own Navi when one's node can hold it to no tools, else the first project whose
-/// node can (never another person's Navi).
-fn place(hub: &Hub, person: Option<&PersonId>) -> Result<Option<ProjectRef>, StoreError> {
+/// The fix of the refusal for someone with no Navi: the apps show it as it is, with a way to make one.
+pub const NO_NAVI_FIX: &str = "Create a Navi first, then import again.";
+
+/// Where the turn runs: `person`'s own Navi, and nowhere else, so nobody but them can read what they pasted. Refused
+/// for someone with none, and while none of theirs is on a node that can hold the turn to no tools.
+fn place(hub: &Hub, person: Option<&PersonId>) -> Result<ProjectRef, ToolError> {
     let (navis, others) = hub.db.with(|c| {
         Ok((
             crate::hub::navi::store::all(c)?,
             crate::hub::navi::store::others(c, person)?,
         ))
     })?;
-    let can = |r: &ProjectRef| hub.link.node_can(&r.machine_id, CAP_ALLOWED_ONLY);
-    let mine = navis.into_iter().filter(|r| !others.contains(r));
     let mut own = Vec::new();
-    for r in mine {
-        if crate::hub::navi::of(&hub.db, &r)?.is_some_and(|n| n.archived_at.is_none()) && can(&r) {
+    for r in navis.into_iter().filter(|r| !others.contains(r)) {
+        if crate::hub::navi::of(&hub.db, &r)?.is_some_and(|n| n.archived_at.is_none()) {
             own.push(r);
         }
     }
-    if let Some(r) = own.into_iter().next() {
-        return Ok(Some(r));
-    }
-    Ok(hub
-        .store
-        .projects_shown(None, None)?
-        .into_iter()
-        .map(|p| ProjectRef {
-            machine_id: p.machine_id,
-            project_id: p.project_id,
+    let Some(first) = own.first().cloned() else {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            "Import memory runs in your own Navi, so nobody else can read what you paste, and you have no Navi yet.",
+        )
+        .with_fix(NO_NAVI_FIX));
+    };
+    own.into_iter()
+        .find(|r| hub.link.node_can(&r.machine_id, CAP_ALLOWED_ONLY))
+        .ok_or_else(|| {
+            ToolError::new(
+                ErrorCode::MachineOffline,
+                format!(
+                    "Your Navi's machine, {}, is offline or runs a fleetd too old for this.",
+                    first.machine_id
+                ),
+            )
+            .with_fix(format!(
+                "Bring {} online with an up-to-date fleetd, then try again.",
+                first.machine_id
+            ))
         })
-        .find(|r| !others.contains(r) && can(r)))
 }
 
 /// One entry of the turn's answer.
@@ -274,13 +285,7 @@ pub async fn import(
         .with_fix("Import from your own device (a human key from an invite or `fleetd pair`)."));
     };
     let person = t.person.cloned();
-    let Some(r) = place(hub, person.as_ref())? else {
-        return Err(ToolError::new(
-            ErrorCode::MachineOffline,
-            "No machine is online to read the import on.",
-        )
-        .with_fix("Bring a machine with an up-to-date fleetd node online, then try again."));
-    };
+    let r = place(hub, person.as_ref())?;
     let setup = hub.db.claude_accounts().setup()?;
     let whose = person.clone().map_or(Whose::Hub, Whose::Person);
     let claude_account = launch_account(&setup, &whose, &r.machine_id, || {
@@ -372,7 +377,7 @@ fn fence_nonce() -> String {
         .collect()
 }
 
-/// The turn's rules, and its message: the person's memory now and the export between two fences no paste can forge.
+/// The turn's rules, and its message: the person's memory now and the export between two fences no paste can fake.
 pub fn prompts(hub: &Hub, memory: &str, text: &str) -> (String, String) {
     let fence = format!("===== export {} =====", fence_nonce());
     let set = hub.db.prompts().current(None);

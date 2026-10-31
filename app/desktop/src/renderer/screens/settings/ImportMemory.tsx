@@ -1,7 +1,8 @@
 // You › Your memory › Import memory (W229): bring what another assistant knows about you. Two steps, as plain as the
 // phone's: copy the hub's export prompt (memory_import without text) into ChatGPT, Claude or Grok, paste its answer
-// back, and Add to Memory sends it (memory_import with text). The hub reads it in a model turn on your own Claude and
-// writes the entries to your memory itself; this says how many went in, and names any that didn't fit.
+// back, and Add to Memory sends it (memory_import with text). The hub reads it in a model turn on your own Claude, in
+// your own Navi only (someone with none is sent to create one), and writes the entries to your memory itself; this
+// says how many went in, and names any that didn't fit.
 import { useState } from "react";
 import type { MemoryImportOutput } from "../../../shared/contracts";
 import { Button, copyText, Text, Textarea } from "../../ui";
@@ -12,6 +13,9 @@ import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { PagePart } from "./parts";
 import m from "./Memory.module.css";
 import s from "./settings.module.css";
+
+/** The hub's fix for someone with no Navi, where every import runs so nobody else reads the paste (import.rs). */
+export const NO_NAVI_FIX = "Create a Navi first, then import again.";
 
 /** The model turn can take a minute or two; the hub stops it at four. */
 const IMPORT_TIMEOUT_MS = 300_000;
@@ -48,7 +52,7 @@ export function ImportMemory() {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<MemoryImportOutput | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ text: string; noNavi: boolean } | null>(null);
 
   // A hub from before Import memory has no such call: the section isn't there.
   if (!live || (read.error instanceof CallError && lacksTool(read.error.error))) return null;
@@ -75,7 +79,8 @@ export function ImportMemory() {
       },
       (e: unknown) => {
         setBusy(false);
-        setError(errorText(e));
+        const noNavi = e instanceof CallError && e.error.fix === NO_NAVI_FIX;
+        setError({ text: noNavi && e instanceof CallError ? e.error.message : errorText(e), noNavi });
       },
     );
   };
@@ -129,7 +134,13 @@ export function ImportMemory() {
         <div role="status">
           {error ? (
             <Text size="sm" tone="danger">
-              {error}
+              {error.text}
+              {error.noNavi ? (
+                <>
+                  {" "}
+                  <a href="#/navi">Create a Navi</a>, then import again.
+                </>
+              ) : null}
             </Text>
           ) : done ? (
             <div className={s.stack}>

@@ -11,7 +11,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { live, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
-import { ImportMemory } from "./ImportMemory";
+import { ImportMemory, NO_NAVI_FIX } from "./ImportMemory";
 import { YourMemory } from "./Memory";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -46,7 +46,7 @@ const ADDED: MemoryImportOutput = {
 };
 
 /** Your memory above it, as on the page, and a hub whose memory_import answers the prompt at once and an import when `finish` is called; every call kept. */
-async function mount(missing?: HubError) {
+async function mount(missing?: HubError, refuse?: HubError) {
   const hub = {
     imports: [] as { input: MemoryImportInput; timeoutMs: number | undefined }[],
     gets: 0,
@@ -60,6 +60,7 @@ async function mount(missing?: HubError) {
         const i = input as MemoryImportInput;
         if (!i.text) return Promise.resolve({ ok: true, output: { prompt: PROMPT, added: [], skipped: [], chars: 0, cap: 4000 } });
         hub.imports.push({ input: i, timeoutMs: options?.timeoutMs });
+        if (refuse) return Promise.resolve({ ok: false, error: refuse });
         return new Promise((done) => {
           hub.finish = (output) => done({ ok: true, output });
         });
@@ -208,4 +209,24 @@ it("never says your memory already has it when nothing fit, or only secrets were
   expect(status()).not.toContain("already says it");
   await run({ prompt: PROMPT, added: [], skipped: [{ text: "Deploy notes: the staging key is [secret]", why: "secret" }], chars: 20, cap: 4000 });
   expect(status()).toBe("Nothing was added. Skipped 1 holding a secret.");
+});
+
+it("sends someone with no Navi to create one, since imports run only there", async () => {
+  await mount(undefined, {
+    code: "invalid",
+    message: "Import memory runs in your own Navi, so nobody else can read what you paste, and you have no Navi yet.",
+    fix: NO_NAVI_FIX,
+  });
+  const box = paste("[2024-03-02] - Keep answers short.");
+  await act(async () => {
+    button("Add to Memory").click();
+    await Promise.resolve();
+  });
+  await settle();
+  expect(status()).toBe("Import memory runs in your own Navi, so nobody else can read what you paste, and you have no Navi yet. Create a Navi, then import again.");
+  const link = document.querySelector<HTMLAnchorElement>('section[aria-label="Import memory"] [role="status"] a');
+  expect(link?.getAttribute("href")).toBe("#/navi");
+  expect(link?.textContent).toBe("Create a Navi");
+  // What was pasted stays for after.
+  expect(box.value).toBe("[2024-03-02] - Keep answers short.");
 });

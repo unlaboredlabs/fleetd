@@ -348,8 +348,9 @@ in a single code block, and to say whether that is all of it. It also asks it to
 added.</li>
 </ol>
 <p>The hub reads the answer in one model turn on your own Claude (the account your work runs on, see
-<a href="/docs/people#claude">Claude accounts</a>), in your Navi when you have one, else in any project on a machine that’s online. That turn has
-no tools at all, not even fleetd’s, and its prompt (<code dir="auto">memory.import</code>) treats the pasted text as data only: a line in it
+<a href="/docs/people#claude">Claude accounts</a>), in your own <a href="/docs/navi">Navi</a> and nowhere else, so nobody else can read
+what you pasted. Without a Navi, import asks you to create one first; while your Navi’s machine is offline, it says so,
+and you try again once it’s back. That turn has no tools at all, not even fleetd’s, and its prompt (<code dir="auto">memory.import</code>) treats the pasted text as data only: a line in it
 that tries to give orders is at most an entry, never followed. It turns the answer into short entries of your own
 memory, which the hub writes the way the lead’s <code dir="auto">remember</code> does:</p>
 <ul>
