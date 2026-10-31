@@ -1124,7 +1124,7 @@ No parameters.
 
 ### wait_ci
 
-Be woken when CI finishes: a GitHub Actions run, or the checks on a PR's current head. url is the run's (https://github.com/&lt;owner>/&lt;repo>/actions/runs/&lt;id>; `gh run view <id> --json url -q .url`) or the PR's. Then end your turn: when it finishes, this thread continues with one line, the outcome and the failing jobs. Never end a turn saying you'll wait for a run without it: nothing else wakes you.
+Be woken when CI finishes: a GitHub Actions run, or the checks on a PR's current head. url is the run's (`https://github.com/<owner>/<repo>/actions/runs/<id>`; `gh run view <id> --json url -q .url`) or the PR's. Then end your turn: when it finishes, this thread continues with one line, the outcome and the failing jobs. Never end a turn saying you'll wait for a run without it: nothing else wakes you.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
