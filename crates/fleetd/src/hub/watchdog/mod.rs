@@ -22,15 +22,6 @@ use crate::hub::store::{EventLog, HubStore, iso_ms, now_ms};
 /// none) plus this again.
 pub const STALL_MS: u64 = 10 * 60_000;
 
-/// `FLEETD_STALL_SEC` shortens the stall threshold for the lab, which drives a real hub; unset keeps [`STALL_MS`].
-pub fn stall_ms_from_env() -> u64 {
-    std::env::var("FLEETD_STALL_SEC")
-        .ok()
-        .and_then(|raw| raw.trim().parse::<u64>().ok())
-        .filter(|&s| s > 0)
-        .map_or(STALL_MS, |s| s * 1000)
-}
-
 /// The threshold for a run in its current state.
 fn threshold_ms(stall_ms: u64, tool: Option<OpenTool>) -> u64 {
     match tool {
