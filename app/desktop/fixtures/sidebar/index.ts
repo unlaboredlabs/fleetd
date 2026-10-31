@@ -65,7 +65,7 @@ export const retitle = (f: Fixture, titles: Readonly<Record<string, string>>): v
 };
 
 /**
- * Two hubs under the names the person gave them (docs/design/hubs.md): Personal's few projects, then Acme's, with
+ * Two hubs under the names the person gave them: Personal's few projects, then Acme's, with
  * its leads waiting on you; `offline`, Acme can't be reached and Personal works on beside it.
  */
 const hubs = (base: (name: "typical" | "status-rows") => Fixture, offline: boolean): Fixture => {

@@ -6,7 +6,7 @@ mod slots;
 #[cfg(test)]
 mod tests;
 
-// The node's side (docs/design/try-it.md): the hub sends `preview_run` for a preview someone asked for, and the node
+// The node's side: the hub sends `preview_run` for a preview someone asked for, and the node
 // checks the PR out into one of the project's preview worktrees, runs the project's setup, build and start commands,
 // asks the app until it answers, and opens it on the tailnet (proxy.rs) to the hub owner's devices. It reports every
 // step with `preview_report`, and ends the preview on `preview_stop`, after the project's idle time without a

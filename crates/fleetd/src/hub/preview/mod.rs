@@ -1,4 +1,4 @@
-//! Try it yourself (W58, docs/design/try-it.md): previews a person asked for, kept in table `previews` (one row per
+//! Try it yourself (W58): previews a person asked for, kept in table `previews` (one row per
 //! preview with it as JSON) so a restarted hub still knows what runs where, and the agents' suggestions to try a PR
 //! (`preview_suggestions`, one per PR).
 //!

@@ -286,7 +286,7 @@ function HubAccounts({ me }: { me: Person | undefined }) {
 }
 
 /**
- * The hub's guided setup (docs/design/setup.md): the steps the hub serves, the same as `fleetd init` and the first
+ * The hub's guided setup: the steps the hub serves, the same as `fleetd init` and the first
  * run, with one open beside them. The open step is this page's own: the route names only the page.
  */
 function Setup() {

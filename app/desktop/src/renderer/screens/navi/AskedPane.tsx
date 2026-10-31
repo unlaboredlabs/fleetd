@@ -1,6 +1,6 @@
 // A Navi's panel, Asked work: each message it sent another project's lead (project_message), newest first, with the
 // orders that lead opened for it and how each is going; the project's name opens its chat. Read from the hub's
-// navi_asks for this Navi (#649, docs/design/navi.md), again whenever the order board changes, since the same events
+// navi_asks for this Navi (#649), again whenever the order board changes, since the same events
 // move both. The tab shows only on a hub that serves it (the `navi_asks` feature); a link to it on another hub gets
 // a plain sentence, never a guess.
 import { useQueryClient } from "@tanstack/react-query";

@@ -1,4 +1,4 @@
-// Settings › You › Hubs: the hubs this app is paired with (docs/design/hubs.md), each under a name the person picks and an
+// Settings › You › Hubs: the hubs this app is paired with, each under a name the person picks and an
 // optional colour. Each can be renamed, recoloured, paired again or removed; Add a hub pairs one more beside them.
 // A hub's name shows in the sidebar, notifications, Status and Commands once there are two. Then Hub links: the keys
 // made as you on each hub (hubLinks/LinksToThisHub.tsx) and the hubs your Navi reaches (hubLinks/LinkedHubs.tsx).

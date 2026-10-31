@@ -5,7 +5,7 @@
 // says so under it, with Resume; a red main is a warning beside its title, not a block. Nothing is scored or estimated.
 // It cannot be stale: the rows come from the data layer (status_get, refetched on events), which drops every
 // answer on a reconnect, so the view is a skeleton until this connection has answered; a row whose source went
-// quiet says so. With several hubs (docs/design/hubs.md) each hub is a section under its name, with its own rows and
+// quiet says so. With several hubs each hub is a section under its name, with its own rows and
 // its own connection, and each row opens on its hub.
 
 import { useMemo } from "react";

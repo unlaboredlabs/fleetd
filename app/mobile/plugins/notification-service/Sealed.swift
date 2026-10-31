@@ -1,4 +1,4 @@
-// libsodium's crypto_box_seal_open, for the Notification Service Extension (docs/design/push.md, D218): the hub seals
+// libsodium's crypto_box_seal_open, for the Notification Service Extension (D218): the hub seals
 // each notification with crypto_box_seal to this phone's X25519 key. X25519 is CryptoKit's; XSalsa20-Poly1305 and
 // BLAKE2b, which CryptoKit lacks, are written out here (NaCl's crypto_box, RFC 7693), so the extension needs no pod.
 // The app opens the same boxes in JavaScript (src/seal.ts); test.swift checks this against the hub's own fixture.

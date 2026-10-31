@@ -1,4 +1,4 @@
-//! `fleetd push-relay`: the push relay (D218, docs/design/push.md). A hub posts each sealed notification here; the
+//! `fleetd push-relay`: the push relay (D218). A hub posts each sealed notification here; the
 //! relay forwards it to APNs (apns.rs) or FCM (fcm.rs) with the publisher's credentials, which only it holds, from
 //! files and the environment. It reads no notification: it sees a token, ciphertext and an opaque collapse key, keeps
 //! none of them and logs none of them. Limits: a body of at most [`CIPHERTEXT_MAX`], [`PER_TOKEN_PER_MIN`] pushes a

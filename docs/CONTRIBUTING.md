@@ -57,30 +57,8 @@ DevTools-driven tests; never ship one. `pnpm debug-guard-check` checks both.
 
 ## Checks
 
-Before every push, run `scripts/check.sh`. It runs CI's quick Linux checks for what changed since `origin/main`,
-committed or not, scoped as CI scopes them: `rust-lint` (fmt, clippy, the migrations check), `rust-docs` (the
-generated docs pages, the lab scenarios), `rust-tests` (the tests of the modules the changed files are in, two levels
-deep, e.g. `hub::train::`), `site` (a docs build, the site and link checks, no personal identifiers)
-and `desktop` (typecheck, lint, unit tests). It ends with each check that failed and its command. Name checks to run
-only those, changed or not: `scripts/check.sh rust-lint site`. `scripts/check.sh qa` runs the desktop QA screens,
-which take long and only run when named. CI still runs the full Rust suite, the doctests and the rest.
-
-```sh
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-```
-
-The node's seal test opens what Rust seals with libsodium from `tests/lab`; without `npm ci --prefix tests/lab` it
-skips that half. CI runs all of these, and the desktop app's checks above, on every PR that touches what they read:
-the Rust jobs (`rust-lint`, `rust-docs`, `rust (linux)`) only when a path in `.github/rust-scope.sh` changed, and
-otherwise report success at once (main always runs them). A Rust test that starts reading a file outside those paths
-adds it there. The workspace tests run with [cargo-nextest](https://nexte.st), a process per test, in two shards at
-once, `rust (linux, 1/2)` and `rust (linux, 2/2)` (`cargo nextest run --workspace --profile ci --partition hash:1/2`;
-the second also runs `cargo test --workspace --doc`); the required `rust (linux)` passes once both did. One `cargo
-test` process runs them slower, as background work earlier tests leave behind piles up. The `ci` profile in
-`.config/nextest.toml` retries the tests that drive a real Chrome (`node::browser`, `node::relay_tests`) twice and lists
-the ones that passed only on a retry as flaky.
+Before every push, run `scripts/check.sh`; its header says what each check runs, and `ci.yml`'s comments say what
+CI runs.
 
 `crates/fleetd` must not link macOS frameworks, because the darwin binaries are cross-built on Linux. The
 `darwin-deps` CI job checks this: rusqlite takes only named features such as `bundled`, chrono has no `clock`, and
@@ -122,38 +100,12 @@ started, so it is safe to run next to a fleetd you use day to day.
 
 ## The site
 
-`site/` is fleetd.sh: the landing page and the docs at `/docs`, built from `docs/site/` with Starlight
-(`npm run build --prefix docs/site`). The build and its search index are ignored, not committed: the Vercel build
-makes them. The site shows real app
-screenshots and real setup output. A change that alters what the app shows re-records the clips or shots it changes, and one that alters what `fleetd
-init` or `fleetd machine add` prints reruns `tests/lab/site-capture.ts`, committing the updated `site/` in the same
-PR (see `site/README.md`); `node tests/lab/site-capture.ts --docs` recaptures the docs' output blocks without its
-publishing check. A change
-that removes something the site mentions adds it to `site/.stale-terms`, which CI checks the page and the docs'
-sources against. A new or renamed command shows up in the docs' CLI reference by itself. Before opening a PR that
-touches `docs/site/` or `site/`, run `.github/site-check.mjs` and the `site` job's other checks (`site/README.md`,
-Docs): the merge train waits for that job.
+`site/` is fleetd.sh and its docs: `site/README.md` says how to build, capture and check them.
 
 ## The merge train's checks
 
-The train waits for the checks `main` requires (`rust (linux)`, `darwin-deps`; `rust (darwin)` can be made required once
-ci.no-macos-on-prs is on main) and for the jobs `.fleetd/train.json` lists (`fastChecks`). List only Linux jobs of
-`ci.yml` that finish within `rust (linux)`'s time, so merges don't get slower, and that pass or fail the same way every
-run: never one that reaches the network. A test (`hub::train::repo_checks`) fails when the file names a job `ci.yml`
-doesn't have or one that doesn't run on Linux. The train reads the list from `main`, so a PR whose head has no run of a
-listed job is refused once its other checks finish: to rename a listed job, first take it off the list in a PR of its
-own, then rename it and list the new name. `afterMerge` lists the jobs that reach other sites or measure on a shared
-runner (`site-external-links`, `desktop-budgets`): they run on main after each merge, not on PRs, and a failure there
-opens a fix order.
-
-No pull request runs a macOS job (ci.no-macos-on-prs). `rust (darwin)` lints the workspace for both darwin targets on
-Linux, so code under `cfg(target_os = "macos")` must compile without warnings (`cargo-zigbuild clippy --workspace
---all-targets --target aarch64-apple-darwin --target x86_64-apple-darwin`, with zig installed), and `desktop (mac
-layout)` packs the mac app on Linux and checks its layout. What needs a Mac (IOKit power, sandbox-exec, iOS simulator
-sessions, macOS desktop QA, the packed mac app's launch, the iOS build) runs in `mac.yml`: nightly on main, before each
-release, and on demand. For a PR that changes macOS code, run it on the branch before it merges: `gh workflow run
-mac.yml --ref <branch>`. Its checks are listed `afterMerge`, so a red one never holds a merge; a red nightly opens a
-`macos-nightly-failed` issue. Besides `mac.yml`'s, the test allows only Linux jobs of `ci.yml` there.
+The train waits for the checks `main` requires and the jobs `.fleetd/train.json` lists; `ci.yml`'s and `mac.yml`'s
+comments say which run where.
 
 ## Hub migrations
 

@@ -134,7 +134,7 @@ type ScreenOf =
     }
   /** A fleetd://pair link prefills the hub and code; the screen still asks before it pairs. */
   | { readonly id: "onboarding"; readonly hub: string | null; readonly code: string | null }
-  /** The hub admin's setup (a design prototype, docs/design/setup.md): the welcome, one step open, or the end. */
+  /** The hub admin's setup: the welcome, one step open, or the end. */
   | { readonly id: "setup"; readonly view: string | null }
   /** One session in a window of its own (the pop-out, for taking over); the main window shows it in the panel. */
   | { readonly id: "session"; readonly project: ProjectKey; readonly session: string };

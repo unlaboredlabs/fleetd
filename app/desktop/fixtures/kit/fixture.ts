@@ -126,7 +126,7 @@ export class Fixture {
   /** The hub's name and colour in the app (src/shared/hubs.ts), shown once there are several hubs. */
   label: string | undefined;
   color: FixtureFile["color"];
-  /** More hubs the app is paired with beside this one (docs/design/hubs.md), each a fixture of its own. */
+  /** More hubs the app is paired with beside this one, each a fixture of its own. */
   hubs: Array<{ label: string; color?: FixtureFile["color"]; fixture: Fixture }> = [];
 
   constructor(name: string, note: string) {

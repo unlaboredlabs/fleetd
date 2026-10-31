@@ -1,4 +1,4 @@
-// The hubs this app is paired with (docs/design/hubs.md): each under a label the person picks, in free text, and an
+// The hubs this app is paired with: each under a label the person picks, in free text, and an
 // optional colour that only tells the groups apart. Shared by main (which keeps the list) and the renderer.
 
 /** A hub's id in this app: `hub` for the first (today's files), a short random one for each added later. */

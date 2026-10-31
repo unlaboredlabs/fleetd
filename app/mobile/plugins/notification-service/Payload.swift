@@ -1,4 +1,4 @@
-// What the Notification Service Extension shows (NotificationService.swift, docs/design/push.md): the hub's payload
+// What the Notification Service Extension shows (NotificationService.swift): the hub's payload
 // once `c` opens with this phone's secret key, else only the generic text. Anyone with the phone's token can reach
 // the public relay, so nothing a push that doesn't open carries is ever shown. Foundation only: test/main.swift checks
 // it on macOS.

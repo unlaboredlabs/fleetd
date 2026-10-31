@@ -147,6 +147,3 @@ address. It keeps nothing and logs no token or ciphertext. When Apple or Google 
 tells the hub, and the hub forgets that phone. If one notification would drop more than half of a
 person's phones, or their only one, the hub keeps them and logs that the relay's setup is the likelier cause. The hub logs
 each relay failure once an hour at most.
-
-The wire format and the encryption are in
-[docs/design/push.md](https://github.com/unlaboredlabs/fleetd/blob/main/docs/design/push.md).

@@ -220,7 +220,7 @@ pub fn repo_ci(without_ci: &[String]) -> Entry {
     )
 }
 
-/// What the hub keeps of its optional setup (docs/design/setup.md): each check below is there only once its step is
+/// What the hub keeps of its optional setup: each check below is there only once its step is
 /// set up, since "not set up" is no problem for a step nothing needs yet.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SetupFacts {

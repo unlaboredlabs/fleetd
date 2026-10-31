@@ -76,7 +76,7 @@ const complete = (f: Fixture) => {
 };
 const finish = (f: Fixture) => {
   complete(f);
-  // The hubs a fixture lists beside its own (docs/design/hubs.md) are completed and checked the same way; they are
+  // The hubs a fixture lists beside its own are completed and checked the same way; they are
   // written inside its file, never as files of their own.
   for (const { fixture } of f.hubs) {
     complete(fixture);

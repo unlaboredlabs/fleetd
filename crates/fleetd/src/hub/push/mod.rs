@@ -1,4 +1,4 @@
-//! Phone notifications, end-to-end encrypted (D218, docs/design/push.md). Each person registers their phones (table
+//! Phone notifications, end-to-end encrypted (D218). Each person registers their phones (table
 //! `push_devices`: a push token and an X25519 public key, tools.rs). [`run`] follows the event log and, for what the
 //! hub already marks as needing a person (an event with `attention`), a Navi's or a lead's final chat message, and an
 //! order that landed or stopped, seals a [`PushPayload`] to each of that person's devices and posts it to the hub's

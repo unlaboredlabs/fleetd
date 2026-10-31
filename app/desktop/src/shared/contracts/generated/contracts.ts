@@ -5028,7 +5028,7 @@ export type PreviewSuggestion = {
   why: string;
 };
 
-/** What a preview runs: phase 1 is the web; Android, iOS and the desktop follow (docs/design/try-it.md, Phases). */
+/** What a preview runs: phase 1 is the web; Android, iOS and the desktop follow. */
 export type KnownPreviewTarget = "web";
 /** KnownPreviewTarget, or a value from a newer hub. */
 export type PreviewTarget = KnownPreviewTarget | (string & {});

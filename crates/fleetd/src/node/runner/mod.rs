@@ -9,7 +9,7 @@
 //!   ([`RunUsage`]), so no tool name, CLI flag, config path, error text or usage field crosses it.
 //!
 //! The node session service owns everything durable (session rows, item log, worktrees, retries, the link); a runner
-//! owns only the process and its protocol. docs/FOLLOWUPS.md lists what a second runner still needs.
+//! owns only the process and its protocol.
 //!
 //! `fixtures/` holds stream-json transcripts recorded from real `claude` runs, one JSON object per line:
 //! `{"dir":"in"|"out"|"stderr"|"meta","ms":<since start>,"msg":{…}}` (`raw` instead of `msg` for non-JSON lines).

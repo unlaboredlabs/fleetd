@@ -15072,7 +15072,7 @@
       "type": "object"
     },
     "PreviewTarget": {
-      "description": "What a preview runs: phase 1 is the web; Android, iOS and the desktop follow (docs/design/try-it.md, Phases).",
+      "description": "What a preview runs: phase 1 is the web; Android, iOS and the desktop follow.",
       "enum": [
         "web"
       ],

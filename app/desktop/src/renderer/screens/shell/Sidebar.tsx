@@ -10,7 +10,7 @@
 // project's right-click menu opens it or its settings, copies its path, or removes it (RemoveProjectDialog asks
 // first); a Navi's renames or archives it instead (Undo in the toast).
 //
-// With several hubs (docs/design/hubs.md) the Navis of every hub stay on top, each saying its hub, and each hub's
+// With several hubs the Navis of every hub stay on top, each saying its hub, and each hub's
 // projects are a group under its name, which collapses; the footer has a row per hub. With one, there is no name and
 // no group, as before.
 import { Activity, ChevronDown, ChevronRight, Factory, Plus, Settings, Sparkle } from "lucide-react";

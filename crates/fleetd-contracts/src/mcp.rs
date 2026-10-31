@@ -933,7 +933,7 @@ output!(DoctorFixOutput {
     check: DoctorCheck,
 });
 
-// setup_list: the hub admin's setup steps (docs/design/setup.md), each with its status read from the doctor's latest
+// setup_list: the hub admin's setup steps, each with its status read from the doctor's latest
 // checks, and how many required ones are left. setup_test runs one step's checks now; setup_skip puts a step that
 // isn't required off for later, or back.
 input!(SetupListInput {});
@@ -2072,7 +2072,7 @@ fn one_target(host: bool, local: Option<bool>) -> Result<(), String> {
     }
 }
 
-// preview_start, preview_end, previews_list, preview_feedback: Try it (preview.rs, docs/design/try-it.md). Nothing
+// preview_start, preview_end, previews_list, preview_feedback: Try it (preview.rs). Nothing
 // runs unless a person asks: preview_start takes a person's key (admin or operate; a read key only opens a running
 // one), and a lead starts one only with its own lead call, in a turn answering the person.
 input!(PreviewStartInput {
@@ -2471,7 +2471,7 @@ output!(DeviceRevokeOutput {
     device: AgentKeyInfo,
 });
 
-// push_device_register: a phone gets its person's notifications, sealed to `publicKey` (docs/design/push.md). The
+// push_device_register: a phone gets its person's notifications, sealed to `publicKey`. The
 // same token again updates that device and moves it to the caller's person: a token is one phone's.
 input!(PushDeviceRegisterInput {
     platform: crate::push::PushPlatform,

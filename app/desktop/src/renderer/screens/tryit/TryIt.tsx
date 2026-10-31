@@ -1,4 +1,4 @@
-// A PR's Try it (W58, docs/design/try-it.md): the PR's branch running on a machine for the person to use. While it
+// A PR's Try it (W58): the PR's branch running on a machine for the person to use. While it
 // starts, its steps as the machine reports them; once ready, the page in a frame the person drives (a browser session
 // they hold from the start: its frames and their input, as a taken-over session's), its address for their own devices
 // on the tailnet, and feedback: pins on the page, their words, a screenshot with the pins and the session's last 30 s,

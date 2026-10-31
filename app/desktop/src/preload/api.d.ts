@@ -72,7 +72,7 @@ export interface FleetdApi {
    * as `{ ok: false, message }` saying why; it never rejects.
    */
   openExternal(url: string): Promise<OpenOutcome>;
-  /** The hubs this app is paired with (docs/design/hubs.md), in sidebar order; never empty. */
+  /** The hubs this app is paired with, in sidebar order; never empty. */
   readonly hubs: {
     /** The hubs as main had them when it made this window, so the page renders without waiting; `list()` is current. */
     readonly initial: readonly HubEntry[];

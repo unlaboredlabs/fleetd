@@ -1,4 +1,4 @@
-// Try it yourself (W58, docs/design/try-it.md) as the views say it: which preview a PR's Try it shows, what its button
+// Try it yourself (W58) as the views say it: which preview a PR's Try it shows, what its button
 // does, its state, steps and end in words, the person's pins as the hub takes them, and a proposed preview setting as
 // the lines of its card. Nothing runs unless a person asks (D161), and only keys that may start one see Start (D162).
 import type { GlyphState } from "../../ui";

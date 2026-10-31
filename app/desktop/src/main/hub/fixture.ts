@@ -89,7 +89,7 @@ const OneHub = z.object({
   color: z.enum(FIXTURE_HUB_COLORS).optional(),
 });
 
-/** One hub, and any more the app is paired with beside it (docs/design/hubs.md), each a fixture of its own. */
+/** One hub, and any more the app is paired with beside it, each a fixture of its own. */
 const FixtureFile = OneHub.extend({
   hubs: z.array(z.object({ label: z.string().min(1).max(LABEL_MAX), color: z.enum(FIXTURE_HUB_COLORS).optional(), fixture: OneHub })).optional(),
 });

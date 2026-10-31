@@ -1,4 +1,4 @@
-// The Notification Service Extension (docs/design/push.md, D218). The relay's APNs alert says only "fleetd: New
+// The Notification Service Extension (D218). The relay's APNs alert says only "fleetd: New
 // activity", with the sealed payload in `c` and mutable-content, so iOS hands it here before it shows: this opens
 // `c` with the phone's secret key, from the keychain group it shares with the app (src/vault.ts), and sets the title,
 // the body and the thread (one per chat, so a chat's notifications stack), the buttons (a category the app registers)
