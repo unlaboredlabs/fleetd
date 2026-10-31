@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # Prints the commit a push run on main scopes its job against: the head of the newest other push run on main of
 # <workflow> whose jobs named <prefix>... all finished, passed or failed. A newer push to main cancels the older runs
-# of desktop-qa.yml and ci.yml's ios-sessions, so comparing with HEAD^1 would leave out what a cancelled run never
-# ran; comparing with the last run that did keeps every change covered. Pages back through all of main's push runs.
-# Prints nothing when there is none or the API fails: the caller then runs the job in full. A third argument names one
-# more conclusion that counts as finished: `skipped` for ci.yml's ios sessions, which macos-scope skips on a push that
-# didn't touch it, after comparing with this same script's answer, so the run is covered all the same.
+# of desktop-qa.yml, so comparing with HEAD^1 would leave out what a cancelled run never ran; comparing with the last
+# run that did keeps every change covered. Pages back through all of main's push runs. Prints nothing when there is
+# none or the API fails: the caller then runs the job in full. A third argument names one more conclusion that counts
+# as finished, for a job that skips a push after comparing with this same script's answer.
 #
 # Usage: main-base.sh <workflow file> <job name prefix> [conclusion], with GH_TOKEN, GH_REPO and GITHUB_RUN_ID set.
 set -uo pipefail
