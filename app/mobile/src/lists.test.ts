@@ -181,7 +181,7 @@ describe("chatList", () => {
   const s = { projects, chatStates, requests: [] };
 
   it("puts the pinned on top in the order pinned, then whatever spoke last", () => {
-    const rows = chatList(s, { ...noPrefs, pinned: ["m1/shop", "m1/a"] });
+    const rows = chatList(s, noPrefs, "all", ["m1/shop", "m1/a"]);
     expect(rows?.map((r) => r.key)).toEqual(["m1/shop", "m1/a", "m1/b"]);
     expect(rows?.[0]?.pinned).toBe(true);
   });
@@ -195,7 +195,7 @@ describe("chatList", () => {
     expect(chatList(s, prefs, "navis")?.map((r) => r.key)).toEqual(["m1/b", "m1/a"]);
     expect(chatList(s, prefs, "projects")?.map((r) => r.key)).toEqual(["m1/shop"]);
     expect(chatList(s, prefs, "pinned")).toEqual([]);
-    expect(chatList(s, { ...prefs, pinned: ["m1/a", "m1/shop"] }, "pinned")?.map((r) => r.key)).toEqual(["m1/a", "m1/shop"]);
+    expect(chatList(s, prefs, "pinned", ["m1/a", "m1/shop"])?.map((r) => r.key)).toEqual(["m1/a", "m1/shop"]);
   });
 
   it("floats a chat with an approval waiting above the pinned, and Needs you shows only those", () => {

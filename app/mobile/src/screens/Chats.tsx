@@ -20,7 +20,7 @@ import { listTime } from "../chatView";
 import { useHub, type RootParams } from "../hubContext";
 import { chatList, type ChatRow, type Filter } from "../lists";
 import { pinnedSplit } from "../pinnedGrid";
-import { MAX_PINNED, togglePin } from "../prefs";
+import { MAX_PINNED, pinsOf, togglePin } from "../prefs";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
 import { matchesName, queryOf, searchMessages, type MessageHit } from "../search";
 import { phaseOf, type ChatMessage } from "../desktop";
@@ -113,9 +113,11 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
   const lastSeqs = useMemo(() => Object.fromEntries(Object.entries(state.chatStates).map(([k, c]) => [k, c.lastSeq])), [state.chatStates]);
   useLayoutEffect(() => dispatchPrefs({ t: "seen", lastSeqs }), [lastSeqs]);
 
-  const all = chatList(state, prefs);
-  const shown = chatList(state, prefs, filter);
-  const split = useMemo(() => pinnedSplit(shown ?? [], prefs.pinned, filter, query), [shown, prefs.pinned, filter, query]);
+  // This hub's pins, only of chats it has: a pin of another hub's never counts or goes up.
+  const pins = pinsOf(prefs, paired.hub).filter((k) => state.projects?.[k] !== undefined);
+  const all = chatList(state, prefs, "all", pins);
+  const shown = chatList(state, prefs, filter, pins);
+  const split = useMemo(() => pinnedSplit(shown ?? [], pins, filter, query), [shown, pins, filter, query]);
   const lines = useMemo((): readonly Line[] => {
     if (shown === undefined || all === undefined) return [];
     if (query === "") return split.rows.map((row) => ({ t: "chat", key: row.key, row }));
@@ -131,8 +133,6 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
   const arrived = useArrived(lines.map((l) => l.key));
 
   const open = (key: Key, messageId?: string) => root.navigate("Chat", messageId === undefined ? { key } : { key, messageId });
-  // Pins of chats this hub no longer has don't count toward the most.
-  const pins = prefs.pinned.filter((k) => state.projects?.[k] !== undefined);
   const pin = (row: ChatRow) => {
     const next = togglePin(pins, row.key, !row.pinned);
     if (next !== null) return void session.setPins(next);

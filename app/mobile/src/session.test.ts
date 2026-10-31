@@ -224,18 +224,25 @@ describe("Session", () => {
 describe("Pinned chats", () => {
   const pinCalls = (hub: ReturnType<typeof fakeHub>, tool: string) => hub.sentOf("call").filter((c) => c.tool === tool);
 
-  it("read on each live link: this phone's own go up to a hub that never had them, then follow another device's", async () => {
+  it("read on each snapshot: this hub's own chats among an older build's pins go up to a hub that never had them, then follow another device's", async () => {
     const hub = fakeHub();
-    const store = memoryPins(["m1/shop"]);
+    // Pinned before the hubs kept them: one of this hub's chats, and one of another hub's.
+    const store = memoryPins(["m1/shop", "lab/elsewhere"]);
     const session = new Session({ hub: "http://devbox:4790", key: "key_abc", transport: hub.transport, pins: store });
     session.start();
     hub.ready();
+    // Not before its chats are known.
+    expect(pinCalls(hub, "chat_pins_get")).toHaveLength(0);
+    hub.link.frame(snapshot);
     expect(pinCalls(hub, "chat_pins_get")).toHaveLength(1);
     hub.answer("chat_pins_get", { pins: [], set: false });
     await flush();
+    // Only this hub's: another hub's chat never goes to it.
     expect(pinCalls(hub, "chat_pins_set").at(-1)?.input).toEqual({ pins: [{ machineId: "m1", projectId: "shop" }] });
+    expect(store.saved()).toEqual(["m1/shop"]);
     hub.answer("chat_pins_set", { pins: [{ machineId: "m1", projectId: "shop" }] });
     await flush();
+    expect(store.pending()).toBe(false);
 
     // Pinned on the person's other phone: this one reads them again.
     hub.link.frame({ t: "event", seq: 2, type: "chat.pins", at: AT, data: { personId: "p_abcd2345" } });
@@ -251,6 +258,7 @@ describe("Pinned chats", () => {
     const session = new Session({ hub: "http://devbox:4790", key: "key_abc", transport: hub.transport, pins: store });
     session.start();
     hub.ready();
+    hub.link.frame(snapshot);
     hub.answer("chat_pins_get", { pins: [], set: true });
     await flush();
     void session.setPins([KEY]);
