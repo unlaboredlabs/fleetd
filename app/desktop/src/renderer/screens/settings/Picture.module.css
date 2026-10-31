@@ -1,6 +1,84 @@
-/* Settings › Projects › Picture (Picture.tsx): the avatar to click or drop on, and Move and Scale. */
+/* Settings › Projects › Icon (Picture.tsx): the large icon to click or drop an image on, the faces and colors to pick
+   from, and Move and Scale. */
+.picker {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-6);
+}
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.faces {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 44px);
+  gap: var(--space-1);
+  max-width: calc(9 * 44px + 8 * var(--space-1));
+}
+.face,
+.swatch {
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.face {
+  width: 44px;
+  height: 44px;
+}
+.face > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.face:hover,
+.swatch:hover {
+  transform: scale(1.08);
+}
+.face:active,
+.swatch:active {
+  transform: scale(0.94);
+}
+.face[data-state="checked"] {
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--accent);
+}
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 2px;
+}
+.swatch {
+  --edge: #0000001f;
+  width: 22px;
+  height: 22px;
+  background: var(--field);
+  box-shadow: inset 0 0 0 1px var(--edge);
+}
+/* On dark grounds a dark color (Graphite) keeps a light edge. */
+:global([data-theme="dark"]) .swatch {
+  --edge: #ffffff2e;
+}
+.swatch[data-state="checked"] {
+  box-shadow:
+    inset 0 0 0 1px var(--edge),
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--field);
+}
+.face:focus-visible,
+.swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
 .target {
   position: relative;
+  flex: none;
   display: inline-flex;
   padding: 0;
   border: none;

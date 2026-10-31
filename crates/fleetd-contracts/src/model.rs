@@ -137,6 +137,85 @@ pub struct ProjectSummary {
     /// picture, whose bytes come from `project_avatar_get`. Absent: its letters show.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatar: Option<String>,
+    /// Its built-in icon, from the hub, which its chat shows when it has no picture: the one a person picked
+    /// (`project_icon_set`), else one the hub derives from its id, the same on every app and every launch. Absent from
+    /// a node and an older hub: its letters show.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<ProjectIcon>,
+}
+
+/// A built-in icon: a glass being with a face of its own, on a round field of a color. The apps ship each one as
+/// images (app/shared/bot-icons builds them).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub struct ProjectIcon {
+    pub face: IconFace,
+    pub color: IconColor,
+}
+
+/// The beings' faces, each named for its mood's look.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[schemars(extend("x-open" = true))]
+pub enum IconFace {
+    Mo,
+    Wee,
+    Peep,
+    Nap,
+    Cy,
+    Wink,
+    Joy,
+    Huh,
+    Wow,
+}
+
+impl IconFace {
+    pub const ALL: [Self; 9] = [
+        Self::Mo,
+        Self::Wee,
+        Self::Peep,
+        Self::Nap,
+        Self::Cy,
+        Self::Wink,
+        Self::Joy,
+        Self::Huh,
+        Self::Wow,
+    ];
+}
+
+/// The colors an icon's field comes in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[schemars(extend("x-open" = true))]
+pub enum IconColor {
+    Fleet,
+    Sky,
+    Teal,
+    Mint,
+    Lime,
+    Sun,
+    Ember,
+    Rose,
+    Plum,
+    Lilac,
+    Sand,
+    Graphite,
+}
+
+impl IconColor {
+    pub const ALL: [Self; 12] = [
+        Self::Fleet,
+        Self::Sky,
+        Self::Teal,
+        Self::Mint,
+        Self::Lime,
+        Self::Sun,
+        Self::Ember,
+        Self::Rose,
+        Self::Plum,
+        Self::Lilac,
+        Self::Sand,
+        Self::Graphite,
+    ];
 }
 
 /// What a project is. Absent on a project: one of code, a lead with its repos and folders.

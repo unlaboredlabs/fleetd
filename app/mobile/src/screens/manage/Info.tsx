@@ -1,5 +1,5 @@
 // A project's or a Navi's own screen, opened from its chat's header, as a contact's in Telegram: its avatar and name
-// (tapping the avatar, or Add Photo / Edit under it, opens its picture's action sheet: pick.ts, then Move and Scale),
+// (tapping the avatar, or Edit under it, opens its icon's sheet: a built-in face and color, or a photo: IconPicker.tsx),
 // then what runs there now (agents_list), its open orders (orders_board), its checklist and its recent merges with
 // their PRs, read-only; then its name, the profiles its agents may run on and where it lives, and for a Navi Forget
 // Sign-ins. Delete last, red, asking first: in an action sheet, or, when uncommitted changes would be lost, in a sheet
@@ -17,10 +17,9 @@ import { Icon } from "../../ui/Icon";
 import { ListRow, ListSection } from "../../ui/List";
 import { EmptyState } from "../../ui/States";
 import { useNow } from "../time";
-import { deleteProject, forgetSignins, readForDelete, readInfo, removePicture } from "./api";
+import { deleteProject, forgetSignins, readForDelete, readInfo } from "./api";
 import { agentLines, allowed, checklist, deleteBlocked, deleteWords, machineName, merges, orderLines, profilesValue, subtitle, type DeleteWords, type Tone } from "./model";
 import { confirmDestructive, errorWords, Problem, useRead } from "./parts";
-import { pictureSheet } from "./pick";
 import { TypedDelete } from "./TypedDelete";
 
 const toneColor = (t: Palette, tone: Tone): string => (tone === "accent" ? t.accent : tone === "warning" ? t.warning : tone === "danger" ? t.danger : t.secondary);
@@ -57,7 +56,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
       shown.current = true;
     }, [reload]),
   );
-  const [busy, setBusy] = useState<"delete" | "forget" | "photo" | null>(null);
+  const [busy, setBusy] = useState<"delete" | "forget" | null>(null);
   const [forgot, setForgot] = useState(false);
   const [typing, setTyping] = useState<DeleteWords | null>(null);
   const key = `${p.machineId}/${p.projectId}`;
@@ -108,21 +107,11 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
       },
     });
 
-  const editPhoto = () =>
-    pictureSheet({
-      title: p.title,
-      has: p.avatar !== undefined,
-      onPicked: (photo) => navigation.navigate("Photo", { key, ...photo }),
-      onRemove: () => {
-        setBusy("photo");
-        void removePicture(session, p).then((r) => {
-          setBusy(null);
-          if (!r.ok) return Alert.alert("Couldn't remove the picture", errorWords(r.error));
-          haptics.success();
-        });
-      },
-    });
-  const photo = can.rename && live && busy === null;
+  const editIcon = () => {
+    haptics.tap();
+    navigation.navigate("Icon", { key });
+  };
+  const editable = can.rename && live && busy === null;
 
   const spinner = <ActivityIndicator color={t.secondary} />;
   const profiles = v?.profiles;
@@ -135,22 +124,17 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
     >
       <View style={styles.hero}>
         <Pressable
-          disabled={!photo}
-          onPress={editPhoto}
-          accessibilityRole={photo ? "button" : "image"}
-          accessibilityLabel={photo ? (p.avatar === undefined ? "Add photo" : "Edit photo") : p.title}
+          disabled={!editable}
+          onPress={editIcon}
+          accessibilityRole={editable ? "button" : "image"}
+          accessibilityLabel={editable ? "Edit icon" : p.title}
           style={({ pressed }) => pressed && styles.pressed}
         >
           <Avatar name={p.title} navi={navi} size={96} picture={p} />
-          {busy === "photo" ? (
-            <View style={styles.photoBusy}>
-              <ActivityIndicator color="#FFFFFF" />
-            </View>
-          ) : null}
         </Pressable>
         {can.rename ? (
-          <Pressable disabled={!photo} onPress={editPhoto} hitSlop={8} accessible={false} importantForAccessibility="no" style={({ pressed }) => pressed && styles.pressed}>
-            <Text style={[type.subhead, { color: photo ? t.accent : t.tertiary }]}>{p.avatar === undefined ? "Add Photo" : "Edit"}</Text>
+          <Pressable disabled={!editable} onPress={editIcon} hitSlop={8} accessible={false} importantForAccessibility="no" style={({ pressed }) => pressed && styles.pressed}>
+            <Text style={[type.subhead, { color: editable ? t.accent : t.tertiary }]}>Edit</Text>
           </Pressable>
         ) : null}
         <Text style={[type.title2, styles.center, { color: t.label }]} selectable>
@@ -248,6 +232,5 @@ const styles = StyleSheet.create({
   hero: { alignItems: "center", gap: 6, paddingTop: space.lg, paddingHorizontal: space.xl },
   center: { textAlign: "center" },
   pressed: { opacity: 0.6 },
-  photoBusy: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", borderRadius: 48, backgroundColor: "rgba(0,0,0,0.35)" },
   item: { flexDirection: "row", alignItems: "center", gap: space.md, paddingHorizontal: space.lg, paddingVertical: 11, minHeight: 44 },
 });

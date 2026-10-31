@@ -6285,7 +6285,7 @@
         },
         {
           "const": "project.settings",
-          "description": "A project's settings changed (`project_set`): `data.profiles`, the profiles it allows; or a repo was removed from it\n(`project_repo_remove`): `data.repoRemoved`, its name; or its picture (`project_avatar_set`): `data.avatar`, the\nnew one's id, null once removed.",
+          "description": "A project's settings changed (`project_set`): `data.profiles`, the profiles it allows; or a repo was removed from it\n(`project_repo_remove`): `data.repoRemoved`, its name; or its picture (`project_avatar_set`): `data.avatar`, the\nnew one's id, null once removed; or its icon (`project_icon_set`): `data.icon`.",
           "type": "string"
         },
         {
@@ -7253,6 +7253,41 @@
         "n"
       ],
       "type": "object"
+    },
+    "IconColor": {
+      "description": "The colors an icon's field comes in.",
+      "enum": [
+        "fleet",
+        "sky",
+        "teal",
+        "mint",
+        "lime",
+        "sun",
+        "ember",
+        "rose",
+        "plum",
+        "lilac",
+        "sand",
+        "graphite"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "IconFace": {
+      "description": "The beings' faces, each named for its mood's look.",
+      "enum": [
+        "mo",
+        "wee",
+        "peep",
+        "nap",
+        "cy",
+        "wink",
+        "joy",
+        "huh",
+        "wow"
+      ],
+      "type": "string",
+      "x-open": true
     },
     "Insight": {
       "properties": {
@@ -9840,6 +9875,12 @@
         "project_get.output": {
           "$ref": "#/$defs/ProjectGetOutput"
         },
+        "project_icon_set.input": {
+          "$ref": "#/$defs/ProjectIconSetInput"
+        },
+        "project_icon_set.output": {
+          "$ref": "#/$defs/ProjectIconSetOutput"
+        },
         "project_remove.input": {
           "$ref": "#/$defs/ProjectRemoveInput"
         },
@@ -10396,6 +10437,8 @@
         "project_files.output",
         "project_get.input",
         "project_get.output",
+        "project_icon_set.input",
+        "project_icon_set.output",
         "project_remove.input",
         "project_remove.output",
         "project_repo_add.input",
@@ -15128,6 +15171,58 @@
       },
       "type": "object"
     },
+    "ProjectIcon": {
+      "description": "A built-in icon: a glass being with a face of its own, on a round field of a color. The apps ship each one as\nimages (app/shared/bot-icons builds them).",
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/IconColor"
+        },
+        "face": {
+          "$ref": "#/$defs/IconFace"
+        }
+      },
+      "required": [
+        "face",
+        "color"
+      ],
+      "type": "object"
+    },
+    "ProjectIconSetInput": {
+      "properties": {
+        "icon": {
+          "$ref": "#/$defs/ProjectIcon"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "icon"
+      ],
+      "type": "object"
+    },
+    "ProjectIconSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectSummary"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
     "ProjectId": {
       "type": "string"
     },
@@ -15887,6 +15982,10 @@
         "createdBy": {
           "$ref": "#/$defs/ProjectCreator",
           "description": "A Navi's: the key that created it, from the hub. Absent for other projects, and for a Navi made before it was\nrecorded."
+        },
+        "icon": {
+          "$ref": "#/$defs/ProjectIcon",
+          "description": "Its built-in icon, from the hub, which its chat shows when it has no picture: the one a person picked\n(`project_icon_set`), else one the hub derives from its id, the same on every app and every launch. Absent from\na node and an older hub: its letters show."
         },
         "kind": {
           "$ref": "#/$defs/ProjectKind",

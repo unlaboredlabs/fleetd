@@ -6,6 +6,9 @@ pub mod avatar;
 mod avatar_tests;
 #[cfg(test)]
 mod create_tests;
+pub mod icon;
+#[cfg(test)]
+mod icon_tests;
 pub mod inspect;
 pub mod order_env;
 pub mod profiles;

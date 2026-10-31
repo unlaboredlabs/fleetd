@@ -1,6 +1,8 @@
 // Chats' pictures (project_avatar_set). avatars-set: Ada and Home, Navis, with a portrait and a landscape, and
-// storefront with its logo, in the sidebar, the chat's title and Settings › Projects › Picture; the other projects keep
-// their letters. The pictures are the JPEGs beside this file, as the hub keeps one: 512 px square.
+// storefront with its logo, in the sidebar, the chat's title and Settings › Projects › Icon; the other projects keep
+// their letters. The pictures are the JPEGs beside this file, as the hub keeps one: 512 px square. avatars-icons: every
+// project and Navi wears a built-in icon, as a hub sends them (project_icon_set, or one derived from its id), and
+// storefront's settings page has the picker.
 import fs from "node:fs";
 import path from "node:path";
 import { writeChat, type Ref } from "../kit/chat.ts";
@@ -48,6 +50,44 @@ const avatars = (base: Fixture): Fixture => {
   return f;
 };
 
+/** The icons avatars-icons's projects wear, in the snapshot's order. */
+const ICONS: readonly (readonly [string, string])[] = [
+  ["wink", "fleet"],
+  ["mo", "mint"],
+  ["wow", "sun"],
+  ["peep", "plum"],
+  ["nap", "sky"],
+  ["joy", "ember"],
+  ["cy", "teal"],
+  ["huh", "rose"],
+  ["wee", "lilac"],
+  ["mo", "graphite"],
+  ["wink", "lime"],
+  ["peep", "sand"],
+];
+
+const icons = (base: Fixture): Fixture => {
+  const f = Fixture.from(base, "avatars-icons", "Chats' icons: every project and Navi wears a built-in one.");
+  if (f.snapshot === undefined) throw new Error("icons needs a snapshot");
+  f.snapshot["projects"] = [...arr(f.snapshot["projects"]), navi(f, ADA, "Ada", "ada"), navi(f, HOME, "Home", "home")];
+  arr(f.snapshot["projects"])
+    .filter(isObject)
+    .forEach((p, i) => {
+      const [face, color] = ICONS[i % ICONS.length] ?? ["mo", "fleet"];
+      p["icon"] = { face, color };
+    });
+  const storefront = arr(f.snapshot["projects"]).filter(isObject).find((p) => p["title"] === "storefront");
+  if (storefront === undefined) throw new Error("icons needs storefront");
+  const shop = { machineId: asText(storefront["machineId"]), projectId: asText(storefront["projectId"]) };
+  f.answer("project_settings_get", { ...shop }, {
+    settings: { ...shop, title: "storefront", workspaceRoot: "/home/dev/src/storefront", keepWorktrees: false, setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] }, env: [] },
+  });
+  // Its picker's pick of Wow in Sun.
+  const icon = { face: "wow", color: "sun" };
+  f.answer("project_icon_set", { ...shop, icon }, { project: { ...storefront, icon } });
+  return f;
+};
+
 export default defineGroup({
-  fixtures: (base) => [avatars(base("chat-waiting"))],
+  fixtures: (base) => [avatars(base("chat-waiting")), icons(base("chat-waiting"))],
 });

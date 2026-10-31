@@ -20,6 +20,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("project_remove", remove);
     super::settings::register(tools);
     super::avatar::register(tools);
+    super::icon::register(tools);
     super::profiles::register(tools);
     super::repos::register(tools);
 }
