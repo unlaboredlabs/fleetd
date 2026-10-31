@@ -25,14 +25,6 @@ use crate::hub::orders::notes::require_human;
 
 const SEARCH_LIMIT: i64 = 20;
 
-/// The project a workstream belongs to, and a project's open workstreams. The leads area provides it; until then
-/// every workstream is unknown.
-pub trait WorkstreamLookup: Send + Sync {
-    fn project_of(&self, workstream_id: &WorkstreamId) -> Option<ProjectRef>;
-    /// Open workstreams in the project, up to `limit`.
-    fn open_in(&self, project_ref: &ProjectRef, limit: usize) -> Vec<WorkstreamId>;
-}
-
 fn code(code: LedgerCode) -> ErrorCode {
     match code {
         LedgerCode::NotFound => ErrorCode::NotFound,

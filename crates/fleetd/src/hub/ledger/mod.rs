@@ -15,7 +15,7 @@ mod tests;
 
 pub use decisions::Decisions;
 pub use repo::{DecisionFilter, RecordInput};
-pub use tools::{WorkstreamLookup, lead_call, register};
+pub use tools::{lead_call, register};
 
 use std::sync::Arc;
 

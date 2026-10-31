@@ -7,14 +7,15 @@ use fleetd_contracts::ledger::{Decision, DecisionRetired, DecisionScope, Decisio
 use serde_json::json;
 
 use super::repo::{self, DecisionFilter, RecordInput};
-use super::tools::WorkstreamLookup;
 use super::{Actor, Chain, Ctx, LedgerError, project_fields};
 use crate::clock::Clock;
 use crate::hub::store::{EventLog, HubDb, NewEvent, iso_ms};
 
 pub struct Decisions {
     ctx: Ctx,
-    workstreams: RwLock<Option<Arc<dyn WorkstreamLookup>>>,
+    /// The leads' records: the project a workstream belongs to, and a project's open workstreams. Until the leads
+    /// area sets them, every workstream is unknown.
+    workstreams: RwLock<Option<Arc<crate::hub::leads::records::LeadRecords>>>,
 }
 
 /// The `decision.recorded` event; `project` names the project of a workstream-scoped decision.
@@ -242,12 +243,12 @@ impl Decisions {
             .map(|d| d.value.trim().to_string()))
     }
 
-    /// The leads area's workstream lookup, for workstream-scoped decisions in tools and lead calls.
-    pub fn set_workstreams(&self, lookup: Arc<dyn WorkstreamLookup>) {
+    /// The leads area's records, for workstream-scoped decisions in tools and lead calls.
+    pub fn set_workstreams(&self, lookup: Arc<crate::hub::leads::records::LeadRecords>) {
         *self.workstreams.write().unwrap_or_else(|p| p.into_inner()) = Some(lookup);
     }
 
-    pub fn workstreams(&self) -> Option<Arc<dyn WorkstreamLookup>> {
+    pub fn workstreams(&self) -> Option<Arc<crate::hub::leads::records::LeadRecords>> {
         self.workstreams
             .read()
             .unwrap_or_else(|p| p.into_inner())
