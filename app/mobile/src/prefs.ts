@@ -1,12 +1,23 @@
 // What this phone keeps about its chats, as Telegram does per device: which are muted, how far each was read, and
-// which were marked unread by hand, which the hub knows none of; and its copy of the person's pinned chats, which the
-// hub keeps (pins.ts). Pure, so it is unit-tested; prefsStore.ts keeps it on disk.
+// which were marked unread by hand, which the hub knows none of; and its copy of the person's pinned chats on each hub,
+// which the hub keeps (pins.ts). Pure, so it is unit-tested; prefsStore.ts keeps it on disk.
 import type { ChatMessage } from "./desktop";
+import type { PinStore } from "./pins";
 import type { Key } from "./store";
 
+/** A hub, by the origin the phone connects to (Paired.hub). */
+export type HubOrigin = string;
+
 export interface Prefs {
-  /** Pinned chats in the person's order: this phone's copy of the hub's (pins.ts). */
-  readonly pinned: readonly Key[];
+  /** Pinned chats by hub, in the person's order: this phone's copy of each hub's (pins.ts). */
+  readonly pins: Readonly<Record<HubOrigin, readonly Key[]>>;
+  /** Hubs whose pins changed here and haven't been taken by the hub yet: sent on its next live link. */
+  readonly pinsPending: readonly HubOrigin[];
+  /**
+   * Pinned before the hubs kept them, by an older build, for whichever hub it was paired with: a hub without pins of
+   * its own shows these, and claims those of its own chats once (pins.ts).
+   */
+  readonly legacyPinned: readonly Key[];
   readonly muted: readonly Key[];
   /** The newest seq read, by chat. A chat with none yet counts as read up to what it held when first seen. */
   readonly read: Readonly<Record<Key, number>>;
@@ -14,7 +25,18 @@ export interface Prefs {
   readonly unread: readonly Key[];
 }
 
-export const noPrefs: Prefs = { pinned: [], muted: [], read: {}, unread: [] };
+export const noPrefs: Prefs = { pins: {}, pinsPending: [], legacyPinned: [], muted: [], read: {}, unread: [] };
+
+/** The pins this phone shows for `hub`: its own, else the ones from before the hubs kept them. */
+export const pinsOf = (p: Prefs, hub: HubOrigin): readonly Key[] => p.pins[hub] ?? p.legacyPinned;
+
+/** One hub's pins in the phone's prefs, as its session keeps them (pins.ts PinStore): nothing of another hub's. */
+export const hubPinStore = (get: () => Prefs, dispatch: (a: PrefsAction) => void, hub: HubOrigin): PinStore => ({
+  saved: () => pinsOf(get(), hub),
+  save: (keys) => dispatch({ t: "pins", hub, keys }),
+  pending: () => get().pinsPending.includes(hub),
+  setPending: (on) => dispatch({ t: "pinsPending", hub, on }),
+});
 
 /** The most chats pinned, as Messages allows: the hub's CHAT_PINS_MAX. */
 export const MAX_PINNED = 9;
@@ -26,8 +48,10 @@ export const togglePin = (pinned: readonly Key[], key: Key, on: boolean): readon
 const toggle = (keys: readonly Key[], key: Key, on: boolean): readonly Key[] => (keys.includes(key) === on ? keys : on ? [...keys, key] : keys.filter((k) => k !== key));
 
 export type PrefsAction =
-  /** The pins as they are now: pinned or moved here, or read from the hub. */
-  | { readonly t: "pins"; readonly keys: readonly Key[] }
+  /** A hub's pins as they are now: pinned or moved here, or read from the hub. */
+  | { readonly t: "pins"; readonly hub: HubOrigin; readonly keys: readonly Key[] }
+  /** A hub's pins changed here and wait to be sent (on), or the hub took them (off). */
+  | { readonly t: "pinsPending"; readonly hub: HubOrigin; readonly on: boolean }
   | { readonly t: "mute"; readonly key: Key; readonly on: boolean }
   /** Read up to `seq`: the chat was open with it on screen. */
   | { readonly t: "read"; readonly key: Key; readonly seq: number }
@@ -39,7 +63,12 @@ export const reducePrefs = (p: Prefs, a: PrefsAction): Prefs => {
   switch (a.t) {
     case "pins": {
       const keys = [...new Set(a.keys)].slice(0, MAX_PINNED);
-      return keys.length === p.pinned.length && keys.every((k, i) => p.pinned[i] === k) ? p : { ...p, pinned: keys };
+      const was = p.pins[a.hub];
+      return was !== undefined && keys.length === was.length && keys.every((k, i) => was[i] === k) ? p : { ...p, pins: { ...p.pins, [a.hub]: keys } };
+    }
+    case "pinsPending": {
+      const pending = toggle(p.pinsPending, a.hub, a.on);
+      return pending === p.pinsPending ? p : { ...p, pinsPending: pending };
     }
     case "mute":
       return { ...p, muted: toggle(p.muted, a.key, a.on) };
@@ -62,7 +91,16 @@ export const parsePrefs = (raw: unknown): Prefs => {
   const o = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
   const keys = (v: unknown): Key[] => (Array.isArray(v) ? v.filter((k): k is string => typeof k === "string") : []);
   const read = typeof o.read === "object" && o.read !== null ? Object.entries(o.read).filter((e): e is [string, number] => typeof e[1] === "number") : [];
-  return { pinned: keys(o.pinned).slice(0, MAX_PINNED), muted: keys(o.muted), read: Object.fromEntries(read), unread: keys(o.unread) };
+  const pins = typeof o.pins === "object" && o.pins !== null && !Array.isArray(o.pins) ? Object.entries(o.pins).map(([hub, k]) => [hub, keys(k).slice(0, MAX_PINNED)] as const) : [];
+  return {
+    pins: Object.fromEntries(pins),
+    pinsPending: keys(o.pinsPending),
+    // An older build's `pinned`: one list, for the hub it was paired with.
+    legacyPinned: keys(o.legacyPinned ?? o.pinned).slice(0, MAX_PINNED),
+    muted: keys(o.muted),
+    read: Object.fromEntries(read),
+    unread: keys(o.unread),
+  };
 };
 
 /**

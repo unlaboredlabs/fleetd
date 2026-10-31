@@ -111,9 +111,9 @@ const waitingFirst = (a: Row, b: Row): number => Number(b.approvals > 0) - Numbe
  * The chats list, Telegram's way: one list, the chats with an approval waiting on top, then the pinned ones in the
  * order pinned, then every other chat with what spoke last first. Each says how many messages came since you read it,
  * and whether it's muted (its count goes grey). Archived Navis are in none of it, except while an approval of theirs
- * waits.
+ * waits. `pinned`: this hub's pins, in the person's order (prefs.ts pinsOf).
  */
-export const chatList = (s: Parameters<typeof lists>[0], prefs: Prefs, filter: Filter = "all"): readonly ChatRow[] | undefined => {
+export const chatList = (s: Parameters<typeof lists>[0], prefs: Prefs, filter: Filter = "all", pinned: readonly Key[] = []): readonly ChatRow[] | undefined => {
   const all = lists(s);
   if (all === undefined) return undefined;
   const rows = [...all.needsYou, ...all.navis, ...all.projects]
@@ -121,14 +121,14 @@ export const chatList = (s: Parameters<typeof lists>[0], prefs: Prefs, filter: F
       const held = s.chats?.[r.key]?.messages ?? s.latest?.[r.key] ?? [];
       return {
         ...r,
-        pinned: prefs.pinned.includes(r.key),
+        pinned: pinned.includes(r.key),
         muted: prefs.muted.includes(r.key),
         unread: unreadCount(prefs, r.key, s.chatStates[r.key]?.lastSeq, held),
         markedUnread: prefs.unread.includes(r.key),
         lastSeq: s.chatStates[r.key]?.lastSeq ?? 0,
       };
     })
-    .sort((a, b) => waitingFirst(a, b) || (a.pinned && b.pinned ? prefs.pinned.indexOf(a.key) - prefs.pinned.indexOf(b.key) : a.pinned ? -1 : b.pinned ? 1 : byRecent(a, b)));
+    .sort((a, b) => waitingFirst(a, b) || (a.pinned && b.pinned ? pinned.indexOf(a.key) - pinned.indexOf(b.key) : a.pinned ? -1 : b.pinned ? 1 : byRecent(a, b)));
   switch (filter) {
     case "all":
       return rows;
