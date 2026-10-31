@@ -18,6 +18,7 @@ import { useLooked } from "./looked";
 import { markOf, useShown } from "./shown";
 import { RefreshedChanges, RememberedUndo } from "./Remembered";
 import { KeptWorktrees } from "./KeptWorktrees";
+import { SkillSavedLine } from "./SkillSaved";
 import { ChatSuggestion } from "../tryit/Suggestion";
 import { useNow, useOnScreen } from "../live";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
@@ -238,6 +239,15 @@ const RowView = memo(function RowView(props: {
         return (
           <div className={s.quietRow} data-entry="event">
             <RefreshedChanges project={project} message={r.item.message} refreshed={r.item.message.memoryRefreshed} at={shortClock(r.item.at)} />
+          </div>
+        );
+      }
+      // A Navi saved or changed one of its skills: the line names it, linked to it in the panel's Skills.
+      if (r.item.message?.skillSaved !== undefined) {
+        return (
+          <div className={cx(s.quietRow, s.event)} data-entry="event">
+            <SkillSavedLine project={project} saved={r.item.message.skillSaved} />
+            <span className={s.eventTime}>{shortClock(r.item.at)}</span>
           </div>
         );
       }

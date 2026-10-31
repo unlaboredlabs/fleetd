@@ -25,7 +25,9 @@ export type PanelView =
   | { readonly tab: "agents"; readonly agent: string | null }
   | { readonly tab: "prs"; readonly pr: PrKey | null }
   | { readonly tab: "sessions"; readonly session: string | null }
-  | { readonly tab: Exclude<PanelTab, "agents" | "prs" | "sessions"> };
+  /** A Navi's skills, or one of them by name. */
+  | { readonly tab: "skills"; readonly skill: string | null }
+  | { readonly tab: Exclude<PanelTab, "agents" | "prs" | "sessions" | "skills"> };
 
 /** A tab's own view: its list, no item. */
 export const listView = (tab: PanelTab): PanelView => {
@@ -36,14 +38,28 @@ export const listView = (tab: PanelTab): PanelView => {
       return { tab, pr: null };
     case "sessions":
       return { tab, session: null };
+    case "skills":
+      return { tab, skill: null };
     default:
       return { tab };
   }
 };
 
-/** Whether the view is one item of its tab (an agent, a PR, a session), with its list a Back away. */
-export const hasItem = (view: PanelView): boolean =>
-  view.tab === "agents" ? view.agent !== null : view.tab === "prs" ? view.pr !== null : view.tab === "sessions" ? view.session !== null : false;
+/** Whether the view is one item of its tab (an agent, a PR, a session, a skill), with its list a Back away. */
+export const hasItem = (view: PanelView): boolean => {
+  switch (view.tab) {
+    case "agents":
+      return view.agent !== null;
+    case "prs":
+      return view.pr !== null;
+    case "sessions":
+      return view.session !== null;
+    case "skills":
+      return view.skill !== null;
+    default:
+      return false;
+  }
+};
 
 /**
  * Settings' pages, in one window (D211): You (General, Your accounts, Your memory, Your devices, Hubs); a project's (Project, Agents, Instructions
@@ -198,12 +214,13 @@ const prKey = (rest: ReadonlyArray<string>): PrKey | null => {
   return rest.length === 3 && number !== null ? { repo: `${a ?? ""}/${b ?? ""}`, number } : null;
 };
 
-/** `prs[/<pr>]`, `agents[/<lane>]`, `sessions[/<id>]` or another tab's name after the project; else, no view. */
+/** `prs[/<pr>]`, `agents[/<lane>]`, `sessions[/<id>]`, `skills[/<name>]` or another tab's name after the project; else, no view. */
 const panelView = (rest: ReadonlyArray<string>): PanelView | null => {
   const [tab, ...item] = rest;
   if (tab === "prs") return { tab, pr: prKey(item) };
   if (tab === "agents") return { tab, agent: item.length === 1 ? (item[0] ?? null) : null };
   if (tab === "sessions") return { tab, session: item.length === 1 ? (item[0] ?? null) : null };
+  if (tab === "skills") return { tab, skill: item.length === 1 ? (item[0] ?? null) : null };
   return isPanelTab(tab) ? listView(tab) : null;
 };
 
@@ -292,6 +309,7 @@ export const parseHash = (hash: string): Screen => {
 const panelPath = (view: PanelView): Array<string> => {
   if (view.tab === "agents") return view.agent === null ? ["agents"] : ["agents", view.agent];
   if (view.tab === "sessions") return view.session === null ? ["sessions"] : ["sessions", view.session];
+  if (view.tab === "skills") return view.skill === null ? ["skills"] : ["skills", view.skill];
   if (view.tab !== "prs") return [view.tab];
   const pr = view.pr;
   return pr === null ? ["prs"] : ["prs", ...(pr.repo === null ? [] : pr.repo.split("/", 2)), String(pr.number)];

@@ -1,0 +1,199 @@
+/* A Navi's Skills: groups under a quiet heading, a skill a row apart by space; one skill's head, its toolbar, then its
+   SKILL.md or its history, each version a row apart by a hairline. No cards, no coloured edges (ui/DESIGN.md). */
+.screen {
+  --pad: var(--space-4);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--space-4);
+}
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8) var(--pad);
+}
+.note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--pad);
+}
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--pad);
+}
+.skeleton > span {
+  height: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--selected);
+}
+.skeleton > span:nth-child(2) {
+  width: 70%;
+}
+
+.group + .group {
+  margin-top: var(--space-3);
+}
+.groupHead {
+  margin: 0;
+  padding: var(--space-3) var(--pad) var(--space-1);
+  font-weight: 500;
+}
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-2);
+}
+.row {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.row:hover {
+  background: var(--hover);
+}
+.row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.off .name {
+  color: var(--quiet);
+}
+.name {
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.foot {
+  display: flex;
+  padding: var(--space-2) var(--pad);
+  border-top: 1px solid var(--hairline);
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--pad) var(--space-2);
+}
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.titleName {
+  margin: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--pad);
+  border-bottom: 1px solid var(--hairline);
+}
+.spacer {
+  flex: 1;
+}
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.aside {
+  margin: 0;
+  padding: var(--space-2) var(--pad) 0;
+}
+.doc {
+  padding: var(--space-3) var(--pad);
+  max-width: 72ch;
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--pad);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.versions {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) 0 0;
+}
+.version {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--pad);
+}
+.version + .version {
+  border-top: 1px solid var(--hairline);
+}
+.versionHead {
+  all: unset;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.versionHead:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.versionName {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.versionHead:hover .versionName {
+  text-decoration: underline;
+  text-decoration-color: var(--faint);
+  text-underline-offset: 2px;
+}
+.why {
+  margin: 0;
+}
+.picked .versionName {
+  color: var(--text);
+}
+.change {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
