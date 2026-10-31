@@ -1,4 +1,4 @@
-//! A second fleet on one machine (`--home`, `FLEETD_HOME`) never reads or writes the first one's files: the real
+//! A second fleet on one machine (`FLEETD_HOME`) never reads or writes the first one's files: the real
 //! binary, run with a throwaway HOME and XDG_CONFIG_HOME that hold a "real" enrolled node.
 use std::path::Path;
 use std::process::{Command, Output};
@@ -64,22 +64,12 @@ fn free_port() -> u16 {
 }
 
 #[test]
-fn home_keeps_init_and_pair_beside_it() {
+fn fleetd_home_keeps_init_and_pair_in_it() {
     let m = Machine::new();
-    let hub = m.root.join("second/hub");
-    let hub_arg = hub.to_str().unwrap();
+    let fleet = m.root.join("second");
+    let hub = fleet.join("hub");
     let listen = format!("127.0.0.1:{}", free_port());
-    let init = m.fleetd(
-        &[
-            "init",
-            "--home",
-            hub_arg,
-            "--no-service",
-            "--listen",
-            &listen,
-        ],
-        None,
-    );
+    let init = m.fleetd(&["init", "--no-service", "--listen", &listen], Some(&fleet));
     let said = String::from_utf8_lossy(&init.stderr);
     assert!(init.status.success(), "{said}");
     assert!(
@@ -88,7 +78,7 @@ fn home_keeps_init_and_pair_beside_it() {
     );
     assert!(hub.join("setup.json").exists());
 
-    let pair = m.fleetd(&["pair", "--home", hub_arg], None);
+    let pair = m.fleetd(&["pair"], Some(&fleet));
     assert!(
         pair.status.success(),
         "{}",
@@ -124,19 +114,19 @@ fn fleetd_home_moves_every_default() {
 }
 
 #[test]
-fn client_commands_take_home() {
+fn client_commands_follow_fleetd_home() {
     let m = Machine::new();
-    let hub = m.root.join("fourth/hub");
-    let hub_arg = hub.to_str().unwrap();
+    let fleet = m.root.join("fourth");
+    let hub = fleet.join("hub");
     let key = m.root.join("human.key");
     std::fs::write(&key, "fld_x\n").unwrap();
     let key_arg = key.to_str().unwrap();
     for args in [
-        vec!["status", "--home", hub_arg],
-        vec!["time", "--home", hub_arg],
-        vec!["steers", "W1", "--key-file", key_arg, "--home", hub_arg],
+        vec!["status"],
+        vec!["time"],
+        vec!["steers", "W1", "--key-file", key_arg],
     ] {
-        let out = m.fleetd(&args, None);
+        let out = m.fleetd(&args, Some(&fleet));
         let said = String::from_utf8_lossy(&out.stderr);
         assert!(
             said.contains(&format!("{} has no hub set up", hub.display()))
@@ -201,44 +191,37 @@ fn a_second_fleet_never_touches_the_first_fleets_services() {
         stubs.display(),
         std::env::var("PATH").unwrap_or_default()
     );
+    let fleet = m.root.join("second");
     let run = |args: &[&str]| {
         let out = Command::new(env!("CARGO_BIN_EXE_fleetd"))
             .args(args)
             .env("HOME", &user)
             .env("XDG_CONFIG_HOME", m.root.join("xdg"))
             .env("PATH", &path)
-            .env_remove("FLEETD_HOME")
+            .env("FLEETD_HOME", &fleet)
             .stdin(std::process::Stdio::null())
             .output()
             .unwrap();
         String::from_utf8_lossy(&out.stderr).into_owned()
     };
 
-    let hub = m.root.join("second/hub");
-    let hub_arg = hub.to_str().unwrap();
+    let hub = fleet.join("hub");
     let listen = format!("127.0.0.1:{}", free_port());
-    run(&[
-        "init",
-        "--home",
-        hub_arg,
-        "--no-service",
-        "--listen",
-        &listen,
-    ]);
-    // A local machine on the second fleet, with the default (empty) unit suffix.
+    run(&["init", "--no-service", "--listen", &listen]);
+    // A local machine on the second fleet.
     let setup = hub.join("setup.json");
     let mut state: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&setup).unwrap()).unwrap();
     state["machines"]["here"] = serde_json::json!({
         "sshHost": "localhost", "local": true,
         "platform": if cfg!(target_os = "macos") { "darwin" } else { "linux" },
-        "home": user, "configHome": m.root.join("xdg"), "uid": 1000, "unitSuffix": "",
+        "home": user, "configHome": m.root.join("xdg"), "uid": 1000,
     });
     std::fs::write(&setup, state.to_string()).unwrap();
 
-    let removed = run(&["machine", "remove", "here", "--purge", "--home", hub_arg]);
+    let removed = run(&["machine", "remove", "here", "--purge"]);
     assert!(removed.contains("another fleet's node"), "{removed}");
-    let uninstalled = run(&["uninstall", "--purge", "--home", hub_arg]);
+    let uninstalled = run(&["uninstall", "--purge"]);
     assert!(uninstalled.contains("another fleet's hub"), "{uninstalled}");
 
     assert_eq!(std::fs::read_to_string(&hub_unit).unwrap(), real_hub);

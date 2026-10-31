@@ -15,13 +15,13 @@ use tokio_tungstenite::tungstenite::Message;
 use super::args::{self, Kind, Spec};
 use super::steer::{Failure, hub_url};
 
-pub const CHAT_USAGE: &str = r#"  chat <machine>/<project> "<text>" [--now] [--wait | --follow] --key-file <key> [--hub <url> | --home <dir>]
+pub const CHAT_USAGE: &str = r#"  chat <machine>/<project> "<text>" [--now] [--wait | --follow] --key-file <key> [--hub <url>]
              write to a project's lead, as the app does: it starts the lead's next turn, or lands at
              its next step while it works; --now (a human key) stops that step and delivers at once.
              --wait prints the lead's reply when its turn ends; --follow streams it as it is written.
              Exit 0 it replied, 1 its turn ended without a reply. A human key writes as you; an agent
              key as that agent, by its name
-  chat history <project> [--page <n>] --key-file <key> [--hub <url> | --home <dir>]
+  chat history <project> [--page <n>] --key-file <key> [--hub <url>]
              the project's chat: who wrote each message, when, and what; the newest page, older
              ones with --page
 "#;
@@ -57,7 +57,6 @@ pub fn parse_chat_args(argv: &[String]) -> Result<ChatArgs, String> {
     const OPTIONS: &[(&str, Kind)] = &[
         ("hub", Kind::Str),
         ("key-file", Kind::Str),
-        ("home", Kind::Str),
         ("wait", Kind::Bool),
         ("follow", Kind::Bool),
         ("now", Kind::Bool),
@@ -117,7 +116,7 @@ pub fn parse_chat_args(argv: &[String]) -> Result<ChatArgs, String> {
     Ok(ChatArgs {
         command,
         hub: v.string("hub").filter(|s| !s.is_empty()),
-        home: v.string("home").filter(|s| !s.is_empty()),
+        home: None,
         key_file,
     })
 }

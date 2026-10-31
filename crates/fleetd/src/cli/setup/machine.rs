@@ -25,7 +25,7 @@ pub fn machine_usage() -> String {
     use crate::node::runner::claude::version::SUPPORTED;
     format!(
         "  machine add <ssh-host> | --local [--machine-id <id>] [--dry-run] [--no-service]
-            [--hub-url <url>] [--ssh-config <file>] [--home <hub home>]
+            [--hub-url <url>] [--ssh-config <file>]
             [--claude-config-dir <dir>]
              set up a machine that runs agents, over SSH (--local: this machine): copies this fleetd
              there (for another OS or CPU, this version's release build for it, checked against
@@ -33,7 +33,7 @@ pub fn machine_usage() -> String {
              runs it as a user service, then waits until the machine is online; prints every command
              first, --dry-run only prints (for a fresh machine, without connecting); --no-service
              enrolls the node but writes no service and prints how to run it; safe to run again
-  machine remove <id> [--purge] [--home <hub home>]
+  machine remove <id> [--purge]
              stop and remove the node's service on the machine and revoke its key on the hub; --purge
              also deletes ~/.fleetd/node and ~/.fleetd/claude.env there, and
              what an older fleetd installed for T3 Code
@@ -617,7 +617,6 @@ fn parse_add(argv: &[String]) -> Result<AddArgs, u8> {
         ("dry-run", Kind::Bool),
         ("hub-url", Kind::Str),
         ("ssh-config", Kind::Str),
-        ("home", Kind::Str),
         ("no-service", Kind::Bool),
         ("claude-config-dir", Kind::Str),
     ];
@@ -644,7 +643,7 @@ fn parse_add(argv: &[String]) -> Result<AddArgs, u8> {
         dry_run: v.flag("dry-run"),
         hub_url: v.string("hub-url"),
         ssh_config: v.string("ssh-config"),
-        home: v.string("home"),
+        home: None,
         enroll: Enroll::Hub,
         git_identity: None,
         no_service: v.flag("no-service"),
@@ -1184,7 +1183,7 @@ async fn remove_command(argv: &[String]) -> u8 {
     let v = match args::parse(
         argv,
         &Spec {
-            options: &[("purge", Kind::Bool), ("home", Kind::Str)],
+            options: &[("purge", Kind::Bool)],
             positionals: true,
         },
     ) {
@@ -1198,7 +1197,7 @@ async fn remove_command(argv: &[String]) -> u8 {
     else {
         return usage("machine remove takes a machine id");
     };
-    let home = match resolve_home(v.str("home")) {
+    let home = match resolve_home(None) {
         Ok(home) => home,
         Err(message) => return fail(&message),
     };

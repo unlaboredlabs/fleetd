@@ -14,12 +14,12 @@ use serde_json::{Value, json};
 use super::args::{self, Kind, Spec};
 use super::mcp_client::{McpClient, McpError};
 
-pub const TIME_USAGE: &str = r#"  time [<order>|<project>] [--since 7d] [--json] [--hub <url> --key-file <path> | --home <dir>]
+pub const TIME_USAGE: &str = r#"  time [<order>|<project>] [--since 7d] [--json] [--hub <url> --key-file <path>]
              where agents' time went: an order's critical path, agent time by category, the
              slowest commands and the findings; a project by id or title (<machine>/<project>
              when two machines have one), the whole fleet with neither. --since takes 1h to
              400d, a date or an ISO time. On the hub machine it needs no --hub or --key-file
-  time --retention <days> [--hub <url> --key-file <path> | --home <dir>]
+  time --retention <days> [--hub <url> --key-file <path>]
              keep 1-365 days of timelines (admin key); daily totals are kept 400 days
 "#;
 
@@ -81,7 +81,6 @@ pub fn parse_time_args(argv: &[String], now: DateTime<Utc>, zone: Tz) -> Result<
     const OPTIONS: &[(&str, Kind)] = &[
         ("hub", Kind::Str),
         ("key-file", Kind::Str),
-        ("home", Kind::Str),
         ("since", Kind::Str),
         ("json", Kind::Bool),
         ("retention", Kind::Str),
@@ -119,7 +118,7 @@ pub fn parse_time_args(argv: &[String], now: DateTime<Utc>, zone: Tz) -> Result<
     };
     Ok(TimeArgs {
         hub,
-        home: v.string("home").filter(|s| !s.is_empty()),
+        home: None,
         target: v.positionals.first().cloned().unwrap_or_default(),
         since: parse_since(v.str("since").unwrap_or("7d"), now, zone)?,
         json: v.flag("json"),

@@ -7,7 +7,7 @@ use std::time::Duration;
 use fleetd_contracts::auth::{Grant, GrantMachines, KeyKind, Role, Star};
 use serde_json::json;
 
-use super::super::args::{self, Kind, Spec};
+use super::super::args::{self, Spec};
 use super::super::hub_key::{open_hub, resolve_home};
 use super::super::mcp_client::McpClient;
 use super::checklist::{Checklist, State};
@@ -246,23 +246,20 @@ pub fn show(list: &mut Checklist, checks: &[DoctorCheck], idle: &[String]) -> us
 }
 
 pub async fn doctor_command(argv: &[String]) -> u8 {
-    let v = match args::parse(
+    if let Err(message) = args::parse(
         argv,
         &Spec {
-            options: &[("home", Kind::Str)],
+            options: &[],
             positionals: false,
         },
     ) {
-        Ok(v) => v,
-        Err(message) => {
-            super::say(&format!(
-                "fleetd: {message}\n\nusage:\n{}",
-                super::SETUP_USAGE
-            ));
-            return 2;
-        }
-    };
-    let home = match resolve_home(v.str("home")) {
+        super::say(&format!(
+            "fleetd: {message}\n\nusage:\n{}",
+            super::SETUP_USAGE
+        ));
+        return 2;
+    }
+    let home = match resolve_home(None) {
         Ok(home) => home,
         Err(message) => {
             super::say(&format!("fleetd: {message}"));

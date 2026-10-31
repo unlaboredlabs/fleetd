@@ -14,13 +14,13 @@ use serde_json::json;
 use super::args::{self, Kind, Spec};
 use super::time::{Hub, dur, local, one_line, resolve_project, table};
 
-pub const METRICS_USAGE: &str = r#"  metrics [--project <p>] [--days 30] [--json] [--hub <url> --key-file <path> | --home <dir>]
+pub const METRICS_USAGE: &str = r#"  metrics [--project <p>] [--days 30] [--json] [--hub <url> --key-file <path>]
              what the factory turned out: PRs merged per day by route, time from order to
              merged, your minutes per merged PR and the share through fleetd, over the last
              --days calendar days (1-400, today included) in this machine's zone; one project by
              id or title (<machine>/<project> when two machines have one), the whole fleet
              without one. On the hub machine it needs no --hub or --key-file
-  metrics --retention <days> [--hub <url> --key-file <path> | --home <dir>]
+  metrics --retention <days> [--hub <url> --key-file <path>]
              keep 30-400 days of landed changes (admin key on every machine)
 "#;
 
@@ -62,7 +62,6 @@ pub fn parse_metrics_args(
     const OPTIONS: &[(&str, Kind)] = &[
         ("hub", Kind::Str),
         ("key-file", Kind::Str),
-        ("home", Kind::Str),
         ("project", Kind::Str),
         ("days", Kind::Str),
         ("json", Kind::Bool),
@@ -103,7 +102,7 @@ pub fn parse_metrics_args(
     };
     Ok(MetricsArgs {
         hub,
-        home: v.string("home").filter(|s| !s.is_empty()),
+        home: None,
         project: v.string("project").unwrap_or_default(),
         days,
         since: since_of(days, now, zone),

@@ -10,12 +10,12 @@ use super::mcp_client::McpClient;
 use super::project::{Out, Stop, call, s, tilde};
 use super::setup::doctor::connect_to;
 
-pub const NAVI_USAGE: &str = "  navi create <name> [--machine <id>] [--home <dir>] [--hub <url>]
+pub const NAVI_USAGE: &str = "  navi create <name> [--machine <id>] [--hub <url>]
              make a Navi: a personal assistant with its own chat, memory and folder
              (navi/<name> under the machine's fleetd home; the least busy worker by default)
-  navi list [--archived] [--machine <id>] [--home <dir>] [--hub <url>]
-  navi rename <machine>/<navi> <name> [--home <dir>] [--hub <url>]
-  navi archive|unarchive <machine>/<navi> [--home <dir>] [--hub <url>]
+  navi list [--archived] [--machine <id>] [--hub <url>]
+  navi rename <machine>/<navi> <name> [--hub <url>]
+  navi archive|unarchive <machine>/<navi> [--hub <url>]
              archived, its lead stops and its chat, memory and folder stay; <navi> is
              its id or its name
 ";
@@ -24,7 +24,6 @@ const SPEC: Spec = Spec {
     options: &[
         ("machine", Kind::Str),
         ("archived", Kind::Bool),
-        ("home", Kind::Str),
         ("hub", Kind::Str),
     ],
     positionals: true,
@@ -43,7 +42,7 @@ pub async fn navi_command(argv: &[String]) -> u8 {
         Ok(v) => v,
         Err(message) => return usage(&message),
     };
-    let home = match resolve_home(v.str("home")) {
+    let home = match resolve_home(None) {
         Ok(h) => h,
         Err(message) => return usage(&message),
     };

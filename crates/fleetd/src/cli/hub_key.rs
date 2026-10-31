@@ -14,19 +14,19 @@ use crate::hub::auth::{Auth, AuthError};
 use crate::hub::store::{EventLog, HubDb, HubStore, StoreError};
 use crate::hub::work::{NoPorts, Work};
 
-pub const HUB_KEY_USAGE: &str = r#"  hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>] [--home <dir>]
+pub const HUB_KEY_USAGE: &str = r#"  hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>]
              create an agent key for the MCP endpoint; prints the key once, or with --out writes it
              to a new file (0600) and prints the file's path
-  hub key create --agent <name> [--machines <'*'|id,id>] [--out <file>] [--home <dir>]
+  hub key create --agent <name> [--machines <'*'|id,id>] [--out <file>]
              a named agent's key, to write in a project's chat (fleetd chat --key-file): its
              messages show as that agent's, never yours. Operate on every machine unless
              --machines. Written to a new file (0600), <hub home>/keys/<name>.key unless --out;
              prints only the file's path
-  hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--out <file>] [--home <dir>]
+  hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--out <file>]
              a key for a person's device (the desktop app): what it answers is recorded as the
              human's; role defaults to operate on every machine
-  hub key list [--home <dir>]
-  hub key revoke <keyId> [--home <dir>]
+  hub key list
+  hub key revoke <keyId>
              takes effect at once, also on a running hub
 "#;
 
@@ -37,7 +37,7 @@ pub struct HubAccess {
     db: Arc<HubDb>,
 }
 
-/// `--home` resolved (default `~/.fleetd/hub`).
+/// The hub home: `--home` where given (hub start), else `<fleetd dir>/hub`.
 pub fn resolve_home(home: Option<&str>) -> Result<PathBuf, String> {
     Ok(crate::hub::store::resolve_hub_home(
         home,
@@ -190,11 +190,15 @@ fn with_hub(home: Option<&str>, use_: impl FnOnce(&HubAccess) -> CliResult) -> C
 
 /// `fleetd hub key …`.
 pub fn hub_key(argv: &[String]) -> CliResult {
+    hub_key_at(argv, None)
+}
+
+/// [`hub_key`] on the hub at `home`, else this machine's (tests give a directory of their own).
+fn hub_key_at(argv: &[String], home: Option<&str>) -> CliResult {
     let (command, rest) = argv
         .split_first()
         .map_or((None, &[][..]), |(c, r)| (Some(c.as_str()), r));
     const OPTIONS: &[(&str, Kind)] = &[
-        ("home", Kind::Str),
         ("name", Kind::Str),
         ("role", Kind::Str),
         ("machines", Kind::Str),
@@ -241,7 +245,7 @@ pub fn hub_key(argv: &[String]) -> CliResult {
             };
             let out = match (v.str("out").filter(|o| !o.is_empty()), agent) {
                 (Some(file), _) => Some(PathBuf::from(file)),
-                (None, Some(name)) => match resolve_home(v.str("home")) {
+                (None, Some(name)) => match resolve_home(home) {
                     Ok(home) => Some(home.join("keys").join(format!("{name}.key"))),
                     Err(message) => return fail(1, &message),
                 },
@@ -252,7 +256,7 @@ pub fn hub_key(argv: &[String]) -> CliResult {
                 Ok(file) => file,
                 Err(message) => return fail(1, &message),
             };
-            let created = with_hub(v.str("home"), |hub| {
+            let created = with_hub(home, |hub| {
                 match hub.auth.create_key(
                     name,
                     &[grant],
@@ -298,7 +302,7 @@ pub fn hub_key(argv: &[String]) -> CliResult {
             }
             created
         }
-        Some("list") => with_hub(v.str("home"), |hub| match hub.auth.list() {
+        Some("list") => with_hub(home, |hub| match hub.auth.list() {
             Ok(keys) => {
                 let mut lines =
                     vec!["key\tprefix\tname\tgrants\tcreated\tlast used\tstatus".to_owned()];
@@ -315,7 +319,7 @@ pub fn hub_key(argv: &[String]) -> CliResult {
             let Some(key_id) = v.positionals.first().filter(|k| !k.is_empty()) else {
                 return key_usage("revoke needs a key id (see `fleetd hub key list`)");
             };
-            with_hub(v.str("home"), |hub| match hub.auth.revoke(key_id) {
+            with_hub(home, |hub| match hub.auth.revoke(key_id) {
                 Ok(()) => match hub.release_claims(key_id) {
                     Ok(released) if released.is_empty() => CliResult {
                         code: 0,
@@ -347,13 +351,14 @@ mod tests {
 
     use super::*;
 
-    fn create(args: &[&str]) -> CliResult {
+    /// `hub key create <args>` on the hub at `home`.
+    fn create(home: &str, args: &[&str]) -> CliResult {
         let argv: Vec<String> = ["create"]
             .iter()
             .chain(args)
             .map(|s| s.to_string())
             .collect();
-        hub_key(&argv)
+        hub_key_at(&argv, Some(home))
     }
 
     /// `--agent scout` mints an operate key named scout into a new 0600 file and prints only that file's path: the key
@@ -362,7 +367,7 @@ mod tests {
     fn an_agent_key_goes_to_a_private_file_and_only_its_path_is_printed() {
         let home = tempfile::tempdir().unwrap();
         let h = home.path().to_str().unwrap();
-        let made = create(&["--agent", "scout", "--home", h]);
+        let made = create(h, &["--agent", "scout"]);
         let file = home.path().join("keys/scout.key");
         assert_eq!(
             (made.code, made.stdout.as_str(), made.stderr.as_str()),
@@ -381,7 +386,7 @@ mod tests {
         assert_eq!((info.name.as_str(), info.kind), ("scout", None));
         assert_eq!(describe_grants(&info.grants), "operate:*");
 
-        let again = create(&["--agent", "scout", "--home", h]);
+        let again = create(h, &["--agent", "scout"]);
         assert!(
             again.code == 1 && again.stderr.contains("exists"),
             "{}",
@@ -396,25 +401,26 @@ mod tests {
         assert_eq!(keys(), 1, "nothing minted for a file it can't write");
 
         let out = home.path().join("elsewhere/ci.key");
-        let to = create(&[
-            "--agent",
-            "ci-bot",
-            "--machines",
-            "devbox",
-            "--out",
-            out.to_str().unwrap(),
-            "--home",
+        let to = create(
             h,
-        ]);
+            &[
+                "--agent",
+                "ci-bot",
+                "--machines",
+                "devbox",
+                "--out",
+                out.to_str().unwrap(),
+            ],
+        );
         assert_eq!(to.stdout, format!("{}\n", out.display()));
         assert_eq!(keys(), 2);
 
         for bad in [
-            &["--agent", "scout", "--human", "--home", h][..],
-            &["--agent", "scout", "--role", "admin", "--home", h],
-            &["--agent", "../scout", "--home", h],
+            &["--agent", "scout", "--human"][..],
+            &["--agent", "scout", "--role", "admin"],
+            &["--agent", "../scout"],
         ] {
-            assert_eq!(create(bad).code, 2, "{bad:?}");
+            assert_eq!(create(h, bad).code, 2, "{bad:?}");
         }
         assert_eq!(keys(), 2);
     }
@@ -427,7 +433,7 @@ mod tests {
         let h = home.path().to_str().unwrap();
         let file = home.path().join("mine/human.key");
         let f = file.to_str().unwrap();
-        let made = create(&["--human", "--name", "laptop", "--out", f, "--home", h]);
+        let made = create(h, &["--human", "--name", "laptop", "--out", f]);
         assert_eq!(
             (made.code, made.stdout.as_str(), made.stderr.as_str()),
             (0, format!("{f}\n").as_str(), "")
@@ -448,7 +454,7 @@ mod tests {
             ("laptop", Some(KeyKind::Human))
         );
 
-        let again = create(&["--human", "--name", "laptop", "--out", f, "--home", h]);
+        let again = create(h, &["--human", "--name", "laptop", "--out", f]);
         assert!(
             again.code == 1 && again.stderr.contains("exists"),
             "{}",
@@ -470,10 +476,7 @@ mod tests {
 
         let home = tempfile::tempdir().unwrap();
         let h = home.path().to_str().unwrap();
-        assert_eq!(
-            create(&["--human", "--name", "laptop", "--home", h]).code,
-            0
-        );
+        assert_eq!(create(h, &["--human", "--name", "laptop"]).code, 0);
         let hub = open_hub(home.path()).unwrap();
         let key_id = hub.auth.list().unwrap()[0].key_id.to_string();
         let clock: Arc<dyn crate::clock::Clock> = Arc::new(SystemClock);
@@ -499,12 +502,7 @@ mod tests {
             })
             .unwrap();
 
-        let revoked = hub_key(&[
-            "revoke".to_owned(),
-            key_id.clone(),
-            "--home".to_owned(),
-            h.to_owned(),
-        ]);
+        let revoked = hub_key_at(&["revoke".to_owned(), key_id.clone()], Some(h));
         assert_eq!(
             (revoked.code, revoked.stdout.as_str()),
             (0, format!("revoked {key_id}; released C1\n").as_str())

@@ -14,20 +14,20 @@ use super::args::{self, Kind, Spec};
 use super::mcp_client::McpClient;
 use super::steer::{Failure, call, hub_url};
 
-pub const WORK_USAGE: &str = r#"  work [list] --key-file <key> [--hub <url> | --home <dir>]
+pub const WORK_USAGE: &str = r#"  work [list] --key-file <key> [--hub <url>]
              what is in flight on this checkout's repo and base: fleetd's agents, PRs on the merge
              train, and people's claims
   work claim "<intent>" [--issue <key>]... [--paths <a,b>] [--anyway]
-        [--not-duplicate-of <ids> --why "<reason>"] --key-file <key> [--hub <url> | --home <dir>]
+        [--not-duplicate-of <ids> --why "<reason>"] --key-file <key> [--hub <url>]
              check the intent against the work in flight and claim it, with the repo, branch,
              user.email and changed paths read from this checkout. Exit 0 claimed (or yours: a
              fleetd agent on its own task's branch), 1 taken or a likely duplicate (it says by
              what). Again on the same branch: renews it. --anyway (a human key only) claims taken
              work regardless
-  work done [C<n>] [--landing <sha>] --key-file <key> [--hub <url> | --home <dir>]
+  work done [C<n>] [--landing <sha>] --key-file <key> [--hub <url>]
              end your claim as landed (by default the one on this branch); --landing: the commit
              on the base. --key-file defaults to $FLEETD_KEY_FILE
-  work drop [C<n>] --key-file <key> [--hub <url> | --home <dir>]
+  work drop [C<n>] --key-file <key> [--hub <url>]
              end your claim as dropped (by default the one on this branch): you stop, or leave it
              to someone else
 "#;
@@ -76,7 +76,6 @@ pub fn parse_work_args(argv: &[String], env_key_file: Option<String>) -> Result<
     const OPTIONS: &[(&str, Kind)] = &[
         ("hub", Kind::Str),
         ("key-file", Kind::Str),
-        ("home", Kind::Str),
         ("issue", Kind::Multi),
         ("paths", Kind::Str),
         ("anyway", Kind::Bool),
@@ -155,7 +154,7 @@ pub fn parse_work_args(argv: &[String], env_key_file: Option<String>) -> Result<
     Ok(WorkArgs {
         command,
         hub: v.string("hub").filter(|s| !s.is_empty()),
-        home: v.string("home").filter(|s| !s.is_empty()),
+        home: None,
         key_file,
     })
 }

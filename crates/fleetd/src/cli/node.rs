@@ -99,7 +99,7 @@ pub async fn node_command(argv: &[String]) -> u8 {
             let [dir] = v.positionals.as_slice() else {
                 return usage("node trust takes the checkout's folder");
             };
-            let home = home.unwrap_or_else(crate::node::config::default_node_home);
+            let home = crate::node::config::default_node_home();
             let dir = std::path::absolute(dir).unwrap_or_else(|_| PathBuf::from(dir));
             match crate::node::checkouts::trust(&home, &dir) {
                 Ok(true) => {
