@@ -57,7 +57,7 @@ describe("the updates sheet", () => {
     act(() =>
       root.render(
         <UiProvider>
-          <UpdatesSheet view={view} onUpdate={vi.fn()} onStartOver={vi.fn()} onRetry={onRetry} onApp={vi.fn()} />
+          <UpdatesSheet view={view} onUpdate={vi.fn()} onStartOver={vi.fn()} onUpdateNow={vi.fn()} onRetry={onRetry} onApp={vi.fn()} />
         </UiProvider>,
       ),
     );
@@ -107,11 +107,11 @@ const following = (flow: Partial<Extract<Flow, { phase: "following" }>>, r: Upda
   });
 
 const startOverButton = () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Start over");
-const sheet = (v: ReturnType<typeof updatesView>, onStartOver = vi.fn()) =>
+const sheet = (v: ReturnType<typeof updatesView>, onStartOver = vi.fn(), onUpdateNow = vi.fn()) =>
   act(() =>
     root.render(
       <UiProvider>
-        <UpdatesSheet view={v} onUpdate={vi.fn()} onStartOver={onStartOver} onRetry={vi.fn()} onApp={vi.fn()} />
+        <UpdatesSheet view={v} onUpdate={vi.fn()} onStartOver={onStartOver} onUpdateNow={onUpdateNow} onRetry={vi.fn()} onApp={vi.fn()} />
       </UiProvider>,
     ),
   );
@@ -146,5 +146,28 @@ describe("Start over", () => {
     sheet(following({ leftOver: true }, run));
     expect(startOverButton()).toBeUndefined();
     expect(host.querySelector("[data-updates-start-over]")).toBeNull();
+  });
+});
+
+describe("Update now", () => {
+  it("shows beside machines waiting for their agents' step, and ends the wait", () => {
+    const draining: UpdateRun = {
+      ...stuck,
+      parts: [
+        p({ part: "hub", name: "the hub" }),
+        p({ machineId: "devbox", name: "devbox", state: "waiting", agents: 2, installsBy: "2026-10-26T12:10:00.000Z", message: "waits for 2 agents to finish their step" }),
+        p({ machineId: "mac", name: "mac" }),
+      ],
+    };
+    const onUpdateNow = vi.fn();
+    sheet(following({ since: AT + STALE_MS }, draining), vi.fn(), onUpdateNow);
+    expect(text(host.querySelector('[role="status"]'))).toMatch(/^Updating when agents finish their step \(2\), by \d\d:\d\d$/u);
+    const now = host.querySelector<HTMLButtonElement>("[data-updates-now]");
+    expect(now?.textContent).toBe("Update now");
+    act(() => now?.click());
+    expect(onUpdateNow).toHaveBeenCalledOnce();
+
+    sheet(following({ since: AT + STALE_MS }, { ...draining, now: true }));
+    expect(host.querySelector("[data-updates-now]")).toBeNull();
   });
 });

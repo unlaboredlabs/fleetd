@@ -340,13 +340,15 @@ fn agent_exe(exe: std::io::Result<PathBuf>, pid: u32) -> String {
 /// profile has it (`fast`; left to the user's own settings otherwise), and `extra_env`
 /// (the session's prompt cache TTL and role defaults such as a task agent's command timeout). `skills` turns off
 /// claude's own skills of the names fleetd's plugin gives the session (`node::skills`). `ask` are the role's ask rules
-/// (`claude::role_ask`), which outrank every allow rule.
+/// (`claude::role_ask`), which outrank every allow rule. `hold_hook` holds a tool call while the node holds its agents
+/// for an update (node/hold.rs).
 pub fn settings_overlay(
     extra_env: &[(String, String)],
     skills: serde_json::Map<String, serde_json::Value>,
     helper_model: &str,
     ask: &[&str],
     fast: bool,
+    hold_hook: &str,
 ) -> String {
     let mut env = subagents_off_settings_env();
     env.extend(
@@ -362,6 +364,11 @@ pub fn settings_overlay(
         "env": env,
         "permissions": { "deny": ALWAYS_DISALLOWED },
         "autoMemoryEnabled": false,
+        "hooks": { "PreToolUse": [{ "matcher": "*", "hooks": [{
+            "type": "command",
+            "command": hold_hook,
+            "timeout": super::hold::HOOK_TIMEOUT_SECS,
+        }] }] },
     });
     if !skills.is_empty() {
         overlay["skillOverrides"] = skills.into();
@@ -425,7 +432,7 @@ fn runner_error(e: RunnerError) -> SessionError {
 }
 
 /// Ids become path components (worktrees, transcripts), so they are kept to a safe alphabet.
-fn path_safe(id: &str) -> bool {
+pub(crate) fn path_safe(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
         && id
@@ -514,6 +521,8 @@ struct Live {
     fence: Option<sandbox::Fence>,
     /// The process runs under a host of its own, which the node lets go of at its shutdown ([`super::runner::host`]).
     link: Option<host::Link>,
+    /// Its tool calls running now, by tool_use id: while there is one, it is mid-step ([`SessionService::hold`]).
+    tools: HashSet<String>,
 }
 
 #[derive(Default)]
@@ -919,6 +928,7 @@ impl SessionService {
                     spawned: secrets.clone(),
                     fence: None,
                     link: handle.link.clone(),
+                    tools: HashSet::new(),
                 },
             );
             generation
@@ -2352,6 +2362,7 @@ impl SessionService {
                     spawned: secrets.clone(),
                     fence,
                     link: link.clone(),
+                    tools: HashSet::new(),
                 },
             );
             generation
@@ -2590,6 +2601,7 @@ impl SessionService {
                 &helper_model,
                 claude::role_ask(row.local.role),
                 row.local.fast,
+                &super::hold::hook_command(&self_command(), &config.home),
             ),
         )?;
         env.extend([
@@ -2994,6 +3006,7 @@ impl SessionService {
                     ..
                 }) => self.log(self.update(&id, |c| c.withdraw_prompt(&request_id))),
                 RunnerEvent::Item(item) => {
+                    self.step(&id, &item);
                     if let Some(browser) = self.inner.browser.get() {
                         browser.item(&id, &item);
                     }
@@ -3017,6 +3030,10 @@ impl SessionService {
                     usage: usage_of_run,
                 } => {
                     let ended = self.resolve(&id, &ended);
+                    // A call cut off with its run never reports its end.
+                    if let Some(live) = self.st().live.get_mut(&id) {
+                        live.tools.clear();
+                    }
                     // The run's own usage follows on its `run` event.
                     if usage.as_ref().is_some_and(|(r, _)| *r == ended) {
                         usage = None;
@@ -3053,6 +3070,40 @@ impl SessionService {
             }
         }
         let _ = exited.send(true);
+    }
+
+    /// Keeps [`Live::tools`] as the session's tool calls start and end.
+    fn step(&self, id: &str, item: &ThreadItem) {
+        if !matches!(
+            item.kind,
+            ItemKind::Command { .. } | ItemKind::FileChange { .. } | ItemKind::Tool { .. }
+        ) {
+            return;
+        }
+        if let Some(live) = self.st().live.get_mut(id) {
+            if item.status == ItemStatus::Running {
+                live.tools.insert(item.id.to_string());
+            } else {
+                live.tools.remove(item.id.as_str());
+            }
+        }
+    }
+
+    /// Holds this node's agents between steps for the hold's lease (node/hold.rs), and answers how many sessions are
+    /// still mid-step: a tool call of theirs runs that the hold didn't stop from starting.
+    pub fn hold(&self) -> u32 {
+        let home = &self.inner.config.home;
+        if let Err(e) = super::hold::hold(home) {
+            tracing::warn!("update: couldn't hold the agents' tool calls: {e}");
+        }
+        let held = super::hold::held(home);
+        let st = self.st();
+        let mid_step = st
+            .live
+            .values()
+            .filter(|l| l.tools.iter().any(|t| !held.contains(t)))
+            .count();
+        u32::try_from(mid_step).unwrap_or(u32::MAX)
     }
 
     fn log<T>(&self, result: Result<T, SessionError>) {

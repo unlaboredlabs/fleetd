@@ -788,13 +788,15 @@ pub fn send_to_node(socket: &Path, frame: &Value, timeout: Duration) -> Result<V
 }
 
 /// The node's answer, checked against the contract (a `lead_result` or `browser_result` with exactly one of result
-/// and error).
+/// and error, or `held`).
 fn decode_result_frame(line: &str) -> Option<Value> {
     match serde_json::from_str::<LeadSocketFrame>(line).ok()? {
-        LeadSocketFrame::LeadResult(_) | LeadSocketFrame::BrowserResult(_) => {
-            serde_json::from_str(line).ok()
+        LeadSocketFrame::LeadResult(_)
+        | LeadSocketFrame::BrowserResult(_)
+        | LeadSocketFrame::Held { .. } => serde_json::from_str(line).ok(),
+        LeadSocketFrame::LeadCall(_) | LeadSocketFrame::BrowserCall(_) | LeadSocketFrame::Hold => {
+            None
         }
-        LeadSocketFrame::LeadCall(_) | LeadSocketFrame::BrowserCall(_) => None,
     }
 }
 

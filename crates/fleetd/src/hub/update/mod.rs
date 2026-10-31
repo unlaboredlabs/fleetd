@@ -1,6 +1,10 @@
 //! `hub_update`: the hub updates itself to the newest build of its channel, then tells every connected node to do the
-//! same, with the CLI's own pieces (`crate::update`). It never waits for work to finish: a restart cuts off what runs,
-//! and that carries on by itself afterwards (`crate::update`'s doc says how).
+//! same, with the CLI's own pieces (`crate::update`). The hub restarts at once: agents don't need it mid-step (a fleetd
+//! tool call they make while it restarts fails, and they try again). A node waits for its agents first, for a while
+//! at most ([`Updates::drain`]): it holds their tool calls that haven't started (`node_action` `hold`, node/hold.rs)
+//! until none runs, then restarts, so they resume between steps rather than redo one; past the deadline it restarts
+//! whatever runs, which carries on by itself afterwards (`crate::update`'s doc says how). Update now (`now`) doesn't
+//! wait.
 //!
 //! Ahead of any update, every 10 minutes, the hub downloads the channel's newest build and checks it ([`Updates::
 //! prefetch`]), and asks its nodes to do the same, so that pressing Update only swaps and restarts; the app says
@@ -56,6 +60,8 @@ pub struct NodeFacts {
     pub can_update: bool,
     /// Its node lists `update_fetch`.
     pub can_fetch: bool,
+    /// Its node lists `update_hold`.
+    pub can_hold: bool,
     /// Its Claude Code, as `claude --version` printed it at the node's last probe.
     pub claude: Option<String>,
     /// Its node lists `claude_install`.
@@ -85,6 +91,8 @@ pub trait UpdatePorts: Send + Sync {
     fn nodes(&self) -> Vec<NodeFacts>;
     /// Asks the node to download `update` ahead of its update, without waiting for its answer.
     fn fetch_on_node(&self, machine_id: &MachineId, update: &NodeUpdate);
+    /// Holds the node's agents between steps for a while (`node_action` `hold`): how many are still mid-step.
+    fn hold_node<'a>(&'a self, machine_id: &'a MachineId) -> BoxFuture<'a, Result<u32, String>>;
     /// Resolves once the machine's link goes live or drops after this call. Made before the facts it follows are
     /// read, so a change between the two isn't missed.
     fn node_changed(&self, machine_id: &MachineId) -> BoxFuture<'static, ()>;
@@ -127,9 +135,10 @@ pub struct Timing {
     pub restart: Duration,
     /// How often the channel's newest build is downloaded ahead of an update.
     pub prefetch_every: Duration,
-    /// How often a busy machine is looked at again, and for how long it is waited for before it is skipped.
-    pub idle_poll: Duration,
-    pub idle: Duration,
+    /// How often a node waiting for its agents is looked at again (and its hold renewed).
+    pub drain_poll: Duration,
+    /// How long a node waits for its agents at most, unless the hub's update settings say otherwise.
+    pub drain: Duration,
 }
 
 impl Default for Timing {
@@ -142,8 +151,8 @@ impl Default for Timing {
             // The new build's 90 s and the previous build's 90 s once put back, with room to spare.
             restart: Duration::from_secs(HEALTH_WAIT_SECS * 3),
             prefetch_every: Duration::from_secs(600),
-            idle_poll: Duration::from_secs(5),
-            idle: Duration::from_secs(4 * 3600),
+            drain_poll: Duration::from_secs(5),
+            drain: Duration::from_secs(DRAIN_MINUTES * 60),
         }
     }
 }
@@ -161,6 +170,19 @@ pub struct Updates {
     drivers: AtomicUsize,
     /// Those tasks, for [`Self::start_over`] to stop.
     tasks: Mutex<Vec<tokio::task::AbortHandle>>,
+    /// Wakes the nodes waiting for their agents when Update now is pressed.
+    hurry: tokio::sync::Notify,
+}
+
+/// How long a node waits for its agents to finish their step by default.
+pub const DRAIN_MINUTES: u64 = 10;
+
+/// `<hub home>/update/settings.json`, written by a person; every field optional.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Settings {
+    /// How long a node waits for its agents at most, in minutes; 0 doesn't wait.
+    drain_minutes: Option<u64>,
 }
 
 tokio::task_local! {
@@ -205,7 +227,25 @@ impl Updates {
             ready: Mutex::default(),
             drivers: AtomicUsize::new(0),
             tasks: Mutex::default(),
+            hurry: tokio::sync::Notify::new(),
         })
+    }
+
+    /// How long a node waits for its agents at most: `drainMinutes` in `<hub home>/update/settings.json`, read at
+    /// each wait, else [`Timing::drain`].
+    pub fn drain(&self) -> Duration {
+        let settings: Settings = fs::read(self.dir.join("settings.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+        settings.drain_minutes.map_or(self.timing.drain, |m| {
+            Duration::from_secs(m.min(24 * 60) * 60)
+        })
+    }
+
+    /// Update now was pressed for the run going on: its nodes stop waiting for their agents.
+    fn hurried(&self) -> bool {
+        self.status().is_some_and(|r| r.now == Some(true))
     }
 
     /// Called once the hub is built; tests put fakes in.
@@ -322,7 +362,11 @@ impl Updates {
 
     /// Updates one machine of the last run again (a node that failed, was put back or skipped), when the hub still runs
     /// that run's build; refused once it runs another. A run going on is returned as it is.
-    pub fn retry(self: &Arc<Self>, machine_id: &MachineId) -> Result<UpdateRun, Refused> {
+    pub fn retry(
+        self: &Arc<Self>,
+        machine_id: &MachineId,
+        now: bool,
+    ) -> Result<UpdateRun, Refused> {
         let ports = self.ports().ok_or(Refused::NotWired)?;
         let mut held = self.run.lock().unwrap();
         let run = held.as_mut().ok_or(Refused::NothingToRetry)?;
@@ -351,6 +395,7 @@ impl Updates {
         }
         run.parts = List::new(parts).expect("same parts");
         run.finished_at = None;
+        run.now = now.then_some(true);
         let run = run.clone();
         self.save(&run);
         let this = Arc::clone(self);
@@ -374,12 +419,22 @@ impl Updates {
         iso_ms(now_ms(self.clock.as_ref()))
     }
 
-    /// Starts an update, or returns the one already going. Never waits for work to finish. An unfinished run nothing
-    /// drives any more doesn't hold it up: a new one takes its place.
-    pub fn start(self: &Arc<Self>, channel: Option<HubChannel>) -> Result<UpdateRun, Refused> {
+    /// Starts an update, or returns the one already going; with `now` (Update now), its nodes don't wait for their
+    /// agents, also when it is going already. An unfinished run nothing drives any more doesn't hold it up: a new one
+    /// takes its place.
+    pub fn start(
+        self: &Arc<Self>,
+        channel: Option<HubChannel>,
+        now: bool,
+    ) -> Result<UpdateRun, Refused> {
         let ports = self.ports().ok_or(Refused::NotWired)?;
         let mut held = self.run.lock().unwrap();
-        if let Some(run) = held.as_ref().filter(|r| self.going(r)) {
+        if let Some(run) = held.as_mut().filter(|r| self.going(r)) {
+            if now && run.now.is_none() {
+                run.now = Some(true);
+                self.save(run);
+                self.hurry.notify_waiters();
+            }
             return Ok(run.clone());
         }
         let running = ports.running();
@@ -435,6 +490,7 @@ impl Updates {
             started_at: Timestamp::from(iso_ms(at)),
             finished_at: None,
             parts: List::new(parts).expect("at most UPDATE_PARTS_MAX parts"),
+            now: now.then_some(true),
         };
         self.save(&run);
         *held = Some(run.clone());
@@ -445,7 +501,11 @@ impl Updates {
 
     /// Start over: ends the run going on, with every part left skipped, and starts a new one. Only once the hub's part
     /// has its result: while the hub restarts, the run is returned as it is.
-    pub fn start_over(self: &Arc<Self>, channel: Option<HubChannel>) -> Result<UpdateRun, Refused> {
+    pub fn start_over(
+        self: &Arc<Self>,
+        channel: Option<HubChannel>,
+        now: bool,
+    ) -> Result<UpdateRun, Refused> {
         self.ports().ok_or(Refused::NotWired)?;
         {
             let mut held = self.run.lock().unwrap();
@@ -471,7 +531,7 @@ impl Updates {
                 self.save(run);
             }
         }
-        self.start(channel)
+        self.start(channel, now)
     }
 
     /// Changes the run and writes it down, under the lock: nodes update at once, and two writes of `run.json` at the
@@ -511,6 +571,41 @@ impl Updates {
                 p.state = state;
                 p.stage = stage;
                 p.message = Some(text(&message));
+                p.agents = None;
+                p.installs_by = None;
+            }
+            run.parts = List::new(parts).expect("same parts");
+        });
+    }
+
+    /// A machine's node part waiting for its agents (`agents` of them mid-step) and what else runs on it (`busy`),
+    /// until `by` (ms) at most.
+    fn set_waiting(&self, machine_id: &MachineId, agents: u32, busy: Option<&str>, by: i64) {
+        let what = match agents {
+            0 => None,
+            1 => Some("1 agent to finish its step".to_owned()),
+            n => Some(format!("{n} agents to finish their step")),
+        };
+        let what = match (what, busy) {
+            (Some(agents), Some(busy)) => format!("{agents}, and for {busy}"),
+            (Some(agents), None) => agents,
+            (None, Some(busy)) => busy.to_owned(),
+            (None, None) => "its agents".to_owned(),
+        };
+        let at = chrono::DateTime::from_timestamp_millis(by)
+            .map(|t| t.format("%H:%M UTC").to_string())
+            .unwrap_or_default();
+        let message = format!("waits for {what}; installs by {at} whatever runs");
+        self.change(|run| {
+            let mut parts = run.parts.to_vec();
+            if let Some(p) = parts.iter_mut().find(|p| {
+                p.machine_id.as_ref() == Some(machine_id) && p.part == UpdatePartKind::Node
+            }) {
+                p.state = UpdateState::Waiting;
+                p.stage = None;
+                p.message = Some(text(&message));
+                p.agents = Some(agents);
+                p.installs_by = Some(Timestamp::from(iso_ms(by)));
             }
             run.parts = List::new(parts).expect("same parts");
         });
@@ -1006,36 +1101,33 @@ impl Updates {
                 ),
             );
         }
-        // What can't carry on through a restart (a live session, a preview) is waited out: the machine updates once
-        // it's idle, and says so meanwhile, unless it was updated past `to` another way by then.
-        let idle_by = now_ms(self.clock.as_ref()) + ms(self.timing.idle);
+        // The node holds its agents' tool calls that haven't started, and waits for those running to finish (and for
+        // what else can't carry on through a restart: a live session, a preview), so the restart finds its agents
+        // between steps. At the deadline it updates whatever runs; Update now doesn't wait.
+        let by = now_ms(self.clock.as_ref()) + ms(self.drain());
         let mut said = None;
         while let Some(now) = facts(ports) {
             if current(&now) {
                 return;
             }
-            let Some(busy) = now.busy else { break };
-            if now_ms(self.clock.as_ref()) >= idle_by {
-                return self.set_part(
-                    Some(machine_id),
-                    UpdateState::Skipped,
-                    None,
-                    format!(
-                        "still busy after {} h ({busy}): press Update again once it's idle",
-                        self.timing.idle.as_secs() / 3600
-                    ),
-                );
+            if self.hurried() || now_ms(self.clock.as_ref()) >= by {
+                break;
             }
-            if said.as_ref() != Some(&busy) {
-                self.set_part(
-                    Some(machine_id),
-                    UpdateState::Waiting,
-                    None,
-                    format!("waits until it's idle: {busy} can't carry on through a restart"),
-                );
-                said = Some(busy);
+            let agents = match now.can_hold {
+                true => ports.hold_node(machine_id).await.unwrap_or(0),
+                false => 0,
+            };
+            if agents == 0 && now.busy.is_none() {
+                break;
             }
-            self.clock.sleep(self.timing.idle_poll).await;
+            if said.as_ref() != Some(&(agents, now.busy.clone())) {
+                self.set_waiting(machine_id, agents, now.busy.as_deref(), by);
+                said = Some((agents, now.busy));
+            }
+            tokio::select! {
+                () = self.clock.sleep(self.timing.drain_poll) => {}
+                () = self.hurry.notified() => {}
+            }
         }
         self.set_part(
             Some(machine_id),
@@ -1247,6 +1339,8 @@ fn part(
         state,
         stage: None,
         message: None,
+        agents: None,
+        installs_by: None,
     }
 }
 

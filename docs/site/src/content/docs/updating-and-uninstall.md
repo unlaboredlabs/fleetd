@@ -20,24 +20,33 @@ it in and restarts, in order:
 1. **The hub** checks the kept build against `SHA256SUMS` again, keeps the binary it runs, and restarts on the new one.
    If the new build doesn't come up healthy within 90 seconds, the previous one is put back and restarted. If the
    hub had nothing ready yet, it downloads the build first.
-2. **Every connected machine's node** does the same, all at once, as soon as the hub runs the new build. Nothing is
-   installed on a machine before the hub runs the new build. A machine running something that can't carry on through a
-   restart (a live browser, device or desktop session, or a preview) waits until it's idle, says so on its line, and
-   updates then. A screen whose task has ended doesn't count. The other machines don't wait for it. A machine still
-   busy after 4 hours is skipped, with **Retry** on its line. A machine already on the new build, or a newer one
-   (updated with `fleetd update` on it, say), is never moved back: its line says which build it runs.
+2. **Every connected machine's node** does the same, all at once, as soon as the hub runs the new build, each once its
+   agents finish the step they're on. The node holds every tool call that hasn't started yet and waits for the ones
+   running (a build, a test run) to end, so its agents pick up between steps after the restart instead of redoing one.
+   It waits the same way for what else can't carry on through a restart (a live browser, device or desktop session,
+   or a preview). Either way it updates within 10 minutes, whatever still runs: what the restart cuts off carries on
+   by itself. Its line says how many agents it waits for and when it updates at the latest, and the sheet's top says
+   **Updating when agents finish their step (*n*), by *time***, with **Update now** beside it, which ends the wait. A
+   screen whose task has ended doesn't count. Nothing is installed on a machine before the hub runs the new build. A
+   machine already on the new build, or a newer one (updated with `fleetd update` on it, say), is never moved back:
+   its line says which build it runs.
 3. **Each machine's Claude Code** goes to the version the new fleetd was tested with (`claude install <version>`).
    Sessions already running finish on the version they started with; new ones start on the new one. If the install
    fails, the machine keeps the version it had and the rest of the update goes on. See
    [Claude Code's version](/docs/machines#claude-version).
 4. **The app** installs its own update and restarts, once every machine is done. It downloads that update in the
    background, so it is usually ready by then. A message you were typing is still there after the restart. Only the
-   window where you pressed **Update** restarts this way, and it waits for a busy machine too, up to those 4 hours:
-   its line says **Waiting** until then. Any other app window never restarts by itself: it waits for your click on
+   window where you pressed **Update** restarts this way, and it waits for the machines' wait too: its line says
+   **Waiting** until then. Any other app window never restarts by itself: it waits for your click on
    **Update** or **Restart to update**.
 
-Nothing waits on a timer: each restart starts as soon as the build is in place, and each part shows as updated as soon
-as its machine is back on the new build.
+The hub itself never waits: agents don't need it mid-step. A fleetd tool call an agent makes during the hub's few
+seconds of restart fails, and the agent tries it again. Each part shows as updated as soon as its machine is back on
+the new build.
+
+The 10 minutes are `drainMinutes` in `~/.fleetd/hub/update/settings.json` (`{"drainMinutes": 20}`; `0` doesn't wait),
+read at each update. `fleetd update` on a machine waits the same way for its own node's agents, 10 minutes at most;
+`fleetd update --now` doesn't wait.
 
 The update sheet has one overall state at the top and one line per part: the hub, each machine, Claude Code and the app.
 Each line says **Waiting**, **Updating…**, **Done** or **Failed**, with the reason in one line. Each step, with the
@@ -53,7 +62,7 @@ When a part fails, the others still finish:
 - If the hub moves to another build before every machine is done (with `fleetd update` on its machine, say), the update
   ends there: each machine still to go says the hub moved on, and **Update** brings them to the newest build.
 
-An update that stops moving once the hub is done (a machine waits on a session that won't end, say) gets a quiet **Start
+An update that stops moving once the hub is done (a machine that never came back, say) gets a quiet **Start
 over** beside it. It shows when nothing has changed for 10 minutes, or at once when nothing in the hub drives the update
 any more. Start over ends that update, with each part still to go skipped, and starts a new one. It never shows while the
 hub itself restarts.

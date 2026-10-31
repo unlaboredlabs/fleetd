@@ -96,8 +96,9 @@ running by hand:
     )
 }
 
-const UPDATE_USAGE: &str = "  update [--check] [--channel <c>]
-             replace this fleetd with the latest release, then restart its hub and node at once:
+const UPDATE_USAGE: &str = "  update [--check] [--channel <c>] [--now]
+             replace this fleetd with the latest release, then restart its hub at once and its
+             node once its agents finish the step they're on (10 min at most; --now doesn't wait):
              what they were running carries on by itself. The app's Update button does this for
              the hub and every node; this is for a machine without the app. --channel edge (the
              newest build of main) or stable; default: the channel this build came from
@@ -244,13 +245,14 @@ async fn run_long_running(argv: &[String]) -> u8 {
     }
 }
 
-/// `fleetd update [--check] [--channel <c>]`; `--restart-now`, from before restarts stopped waiting, is still taken.
+/// `fleetd update [--check] [--channel <c>] [--now]`; `--restart-now`, from before restarts stopped waiting, is still taken.
 async fn update_command(argv: &[String]) -> u8 {
     let spec = args::Spec {
         options: &[
             ("check", args::Kind::Bool),
             ("channel", args::Kind::Str),
             ("restart-now", args::Kind::Bool),
+            ("now", args::Kind::Bool),
         ],
         positionals: false,
     };
@@ -265,6 +267,7 @@ async fn update_command(argv: &[String]) -> u8 {
         check: v.flag("check"),
         channel: v.string("channel"),
         restart_now: v.flag("restart-now"),
+        now: v.flag("now"),
     })
     .await
     {
@@ -305,6 +308,12 @@ pub fn main() -> ExitCode {
         && let Some(plan) = argv.get(1)
     {
         return crate::update::finish::run(std::path::Path::new(plan));
+    }
+    // A session's PreToolUse hook while its node holds its agents for an update (node/hold.rs); not for people.
+    if argv.first().map(String::as_str) == Some("update-hold")
+        && let Some(hold) = argv.get(1)
+    {
+        return crate::node::hold::run_hook(std::path::Path::new(hold));
     }
     // `fleetd update` runs it from the binary it just installed, which knows the Claude Code it was tested with.
     if argv.first().map(String::as_str) == Some("update-claude") {

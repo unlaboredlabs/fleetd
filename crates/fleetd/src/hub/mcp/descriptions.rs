@@ -22,7 +22,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "hub_update",
-        "Updates fleetd to the newest build of a channel (the hub's own unless one is given): the hub first, checked against the release's SHA256SUMS, then every connected node. It doesn't wait for work: a restart cuts off what runs, and that carries on by itself afterwards. A new build that doesn't come up healthy is put back. Answers at once with the run; follow it with hub_update_status. startOver ends a run going on (once the hub has its result) and starts a new one. A person's key with Admin on every machine only.",
+        "Updates fleetd to the newest build of a channel (the hub's own unless one is given): the hub first, checked against the release's SHA256SUMS, then every connected node. The hub restarts at once; each node first holds its agents' tool calls that haven't started and waits for those running to finish, at most 10 minutes (the hub's update settings), then restarts whatever runs (that carries on by itself afterwards). now: true skips the wait, also for a run going on. A new build that doesn't come up healthy is put back. Answers at once with the run; follow it with hub_update_status. startOver ends a run going on (once the hub has its result) and starts a new one. A person's key with Admin on every machine only.",
     ),
     (
         "hub_update_status",

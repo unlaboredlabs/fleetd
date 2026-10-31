@@ -85,7 +85,7 @@ describe("the hub and its machines", () => {
     expect(newer.hub?.status).toBe("Edge · Oct 23, 10:30 UTC · def5678 is available");
     expect(newer.nodes.map((n) => n.status)).toEqual(["Edge · Oct 23, 10:30 UTC · def5678 is available", "Offline"]);
     expect(newer.update?.note).toBe(
-      "Updates the hub, then its 2 machines, then this app, which restarts. Nothing waits for work to finish: what's running carries on by itself.",
+      "Updates the hub, then its 2 machines once their agents finish their step (10 minutes at most), then this app, which restarts.",
     );
 
     const appOnly = view({ kind: "available", version: NEXT, percent: null, restart: false });
@@ -390,6 +390,50 @@ describe("the sheet's lines, the notice and the note", () => {
       ["Claude Code", "Waiting", "", ""],
       ["This app", "Waiting", "", ""],
     ]);
+  });
+
+  it("says machines wait for their agents to finish their step, how many and until when, with Update now", () => {
+    const by = "2026-10-26T10:12:00.000Z";
+    const run = runOf([
+      p({ part: "hub", name: "the hub", state: "done" }),
+      p({ machineId: "builder", name: "builder", state: "waiting", agents: 2, installsBy: by, message: "waits for 2 agents to finish their step; installs by 10:12 UTC whatever runs" }),
+      p({ machineId: "mac", name: "mac", state: "waiting", agents: 1, installsBy: "2026-10-26T10:11:00.000Z", message: "waits for 1 agent to finish its step; installs by 10:11 UTC whatever runs" }),
+    ]);
+    const following: Flow = { phase: "following", reconnecting: false };
+    const v = updatesView({
+      app: { current: MINE, app: { kind: "current" }, release: { ...release, cli: NEXT } },
+      hub: hubOf({ version: OLDER }),
+      machines,
+      run,
+      flow: following,
+      now: at,
+      timeZone: "Europe/Berlin",
+    });
+    // The latest machine's deadline, in the person's own time.
+    expect(v.progress).toEqual({ tone: "quiet", text: "Updating when agents finish their step (3), by 11:12" });
+    expect(v.updateNow).toBe(true);
+    expect(says(v).slice(1, 3)).toEqual([
+      ["builder", "Waiting", "2 agents finishing their step, installs by 11:12", ""],
+      ["mac", "Waiting", "1 agent finishing its step, installs by 11:11", ""],
+    ]);
+    expect(v.nodes[0]?.status).toBe("Waiting: 2 agents finishing their step, installs by 11:12");
+
+    // Only a preview holds it: no agent count.
+    const preview = runOf([
+      p({ part: "hub", name: "the hub", state: "done" }),
+      p({ machineId: "builder", name: "builder", state: "waiting", agents: 0, installsBy: by, message: "waits for 1 preview; installs by 10:12 UTC whatever runs" }),
+    ]);
+    const w = updatesView({ app: null, hub: hubOf({ version: OLDER }), machines, run: preview, flow: following, now: at, timeZone: "UTC" });
+    expect(w.progress?.text).toBe("Updating once what runs on the machines ends, by 10:12");
+    expect(w.lines[1]?.reason).toBe("Waits for 1 preview, installs by 10:12");
+
+    // Update now pressed: nothing waits any more, so no button and the plain progress.
+    const now = updatesView({ app: null, hub: hubOf({ version: OLDER }), machines, run: { ...run, now: true }, flow: following, now: at, timeZone: "UTC" });
+    expect(now.updateNow).toBe(false);
+    expect(now.progress?.text).toBe("Updating the machines: 0 of 2 done");
+    // Not while the hub restarts, nor once nothing waits.
+    expect(updatesView({ app: null, hub: hubOf({ version: OLDER }), machines, run, flow: { phase: "following", reconnecting: true }, now: at }).updateNow).toBe(false);
+    expect(of({ run: runOf([p({ part: "hub", name: "the hub", state: "done" })]), flow: following }).updateNow).toBe(false);
   });
 
   it("says why a machine failed in one line, with Retry for it, while the others finish", () => {

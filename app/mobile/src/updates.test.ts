@@ -36,7 +36,7 @@ const part = (p: "hub" | "node", name: string, state: string, extra: Partial<Upd
 
 describe("updateSection", () => {
   it("offers the hub's ready build to an admin, and to no one else", () => {
-    expect(updateSection(input({ ready: "0.9.1" }))).toEqual({ offer: { title: "Update fleetd", detail: "0.9.1 is ready", note: UPDATE_NOTE }, progress: null, parts: [], going: false, startOver: null });
+    expect(updateSection(input({ ready: "0.9.1" }))).toEqual({ offer: { title: "Update fleetd", detail: "0.9.1 is ready", note: UPDATE_NOTE }, progress: null, parts: [], going: false, startOver: null, updateNow: false });
     expect(updateSection(input({ ready: "0.9.1", admin: false }))).toBeNull();
     // Not read yet: nothing, rather than a row that comes and goes.
     expect(updateSection(input({ ready: "0.9.1", admin: undefined }))).toBeNull();

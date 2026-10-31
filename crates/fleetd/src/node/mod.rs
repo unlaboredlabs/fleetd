@@ -11,6 +11,7 @@ pub mod cmd;
 pub mod config;
 pub mod desktop;
 pub mod device;
+pub mod hold;
 pub mod hosts;
 pub mod identity;
 pub mod landed;
@@ -375,6 +376,12 @@ async fn run_node(
     });
     if let Some(previews) = &previews {
         node_sessions.set_previews(previews.clone());
+    }
+    // The hold the node before this one kept for its update ends with it: what it held goes on now.
+    hold::clear(home);
+    {
+        let sessions = node_sessions.clone();
+        relay.set_hold(Arc::new(move || sessions.hold()));
     }
     let _socket = lead::serve_lead_socket(
         lead::lead_socket_path(home),

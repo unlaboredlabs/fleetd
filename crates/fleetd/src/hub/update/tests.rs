@@ -63,6 +63,10 @@ struct Fake {
     /// How a node's Claude Code install goes, by machine: its answer's words, or its failure's. Absent: installed.
     claude: HashMap<String, Result<&'static str, &'static str>>,
     claude_asked: Mutex<Vec<String>>,
+    /// Its agents mid-step, by machine, as its hold answers. Absent: none.
+    steps: Mutex<HashMap<String, u32>>,
+    /// The machines asked to hold their agents, once per ask.
+    held: Mutex<Vec<String>>,
 }
 
 impl Fake {
@@ -89,6 +93,8 @@ impl Fake {
             links: tokio::sync::watch::channel(0).0,
             claude: HashMap::new(),
             claude_asked: Mutex::default(),
+            steps: Mutex::default(),
+            held: Mutex::default(),
         }
     }
 
@@ -107,6 +113,7 @@ impl Fake {
             live_since: online.then_some(1),
             can_update,
             can_fetch: can_update,
+            can_hold: can_update,
             claude: Some("2.1.310 (Claude Code)".into()),
             can_install_claude: can_update,
             busy: None,
@@ -153,6 +160,17 @@ impl UpdatePorts for Fake {
     fn fetch_on_node(&self, machine_id: &MachineId, update: &NodeUpdate) {
         assert_eq!(update.version.as_str(), NEW);
         self.fetched.lock().unwrap().push(machine_id.to_string());
+    }
+    fn hold_node<'a>(&'a self, machine_id: &'a MachineId) -> BoxFuture<'a, Result<u32, String>> {
+        self.held.lock().unwrap().push(machine_id.to_string());
+        let steps = self
+            .steps
+            .lock()
+            .unwrap()
+            .get(machine_id.as_str())
+            .copied()
+            .unwrap_or(0);
+        Box::pin(async move { Ok(steps) })
     }
     fn claude_target(&self) -> String {
         "2.1.314".into()
@@ -224,6 +242,7 @@ fn result(ok: bool, stage: Option<UpdateStage>, message: &str) -> NodeActionResu
         probe: None,
         stage,
         login_url: None,
+        steps: None,
     }
 }
 
@@ -236,8 +255,8 @@ fn fast() -> Timing {
         // Longer than any test: the old process's own deadline never cuts in, but where a test says.
         restart: Duration::from_secs(60),
         prefetch_every: Duration::from_secs(600),
-        idle_poll: Duration::from_millis(5),
-        idle: Duration::from_secs(60),
+        drain_poll: Duration::from_millis(5),
+        drain: Duration::from_secs(60),
     }
 }
 
@@ -289,7 +308,7 @@ async fn a_checksum_mismatch_or_a_failed_download_leaves_everything_as_it_was() 
         .unwrap()
         .insert(ASSET.into(), b"tampered".to_vec());
     let updates = area(home.path(), &fake);
-    updates.start(None).unwrap();
+    updates.start(None, false).unwrap();
     let run = until(&updates, |r| r.finished_at.is_some()).await;
     assert_eq!(
         state(&run, None),
@@ -305,7 +324,7 @@ async fn a_checksum_mismatch_or_a_failed_download_leaves_everything_as_it_was() 
     assert!(fake.asked.lock().unwrap().is_empty());
 
     fake.feed.files.lock().unwrap().remove(ASSET);
-    updates.start(None).unwrap();
+    updates.start(None, false).unwrap();
     let run = until(&updates, |r| {
         r.finished_at.is_some() && state(r, None).1 == Some(UpdateStage::Download)
     })
@@ -325,7 +344,7 @@ async fn a_hub_that_doesnt_come_up_healthy_is_put_back_and_its_nodes_are_not_ask
         Some(Answer::BackOn(NEW)),
     ));
     let updates = area(home.path(), &fake);
-    updates.start(Some(HubChannel::Edge)).unwrap();
+    updates.start(Some(HubChannel::Edge), false).unwrap();
     let run = until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
     assert_eq!(run.to.as_ref().map(|t| t.as_str()), Some(NEW));
     assert_eq!(fs::read(&fake.exe).unwrap(), b"new");
@@ -382,7 +401,7 @@ async fn after_the_hub_each_node_updates_and_says_how_it_went() {
         .node("gone", OLD, true, true, Some(Answer::BackOn(NEW)));
     let fake = Arc::new(fake);
     let updates = area(home.path(), &fake);
-    updates.start(None).unwrap();
+    updates.start(None, false).unwrap();
     until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
 
     // The hub's restart drops every link; the nodes that were online come back a moment after the new hub is up,
@@ -480,7 +499,7 @@ async fn while_the_hub_downloads_the_nodes_it_will_update_fetch_the_build() {
             .node("pi", NEW, true, true, None),
     );
     let updates = area(home.path(), &fake);
-    updates.start(None).unwrap();
+    updates.start(None, false).unwrap();
     until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
     let mut fetched = fake.fetched.lock().unwrap().clone();
     fetched.sort();
@@ -498,7 +517,7 @@ async fn while_the_hub_downloads_the_nodes_it_will_update_fetch_the_build() {
         .insert(ASSET.into(), b"evil".to_vec());
     let tampered = Arc::new(tampered);
     let updates = area(home.path(), &tampered);
-    updates.start(None).unwrap();
+    updates.start(None, false).unwrap();
     let run = until(&updates, |r| r.finished_at.is_some()).await;
     assert_eq!(state(&run, Some("builder")).0, UpdateState::Skipped);
     assert!(tampered.asked.lock().unwrap().is_empty());
@@ -517,7 +536,7 @@ async fn a_node_is_followed_by_its_link_not_a_timer() {
         Some(Answer::BackOn(NEW)),
     ));
     let updates = area(home.path(), &fake);
-    updates.start(None).unwrap();
+    updates.start(None, false).unwrap();
     until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
     // The hub's restart drops the node's link; the new hub comes up and its watcher says so.
     fake.nodes.lock().unwrap()[0].live_since = None;
@@ -577,7 +596,7 @@ async fn each_machines_claude_follows_its_node_and_a_failed_install_stops_nothin
         .insert("pi".into(), Ok("already runs Claude Code 2.1.314"));
     let fake = Arc::new(fake);
     let updates = area(home.path(), &fake);
-    let started = updates.start(None).unwrap();
+    let started = updates.start(None, false).unwrap();
     assert_eq!(
         started.parts.len(),
         1 + 2 * 6,
@@ -672,7 +691,7 @@ async fn the_newest_build_is_downloaded_ahead_and_update_only_swaps_it_in() {
 
     // The feed goes away: Update installs the build it kept, checked against the sums again.
     fake.feed.files.lock().unwrap().remove(ASSET);
-    updates.start(None).unwrap();
+    updates.start(None, false).unwrap();
     until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
     assert_eq!(fs::read(&fake.exe).unwrap(), b"new");
     assert_eq!(updates.ready(), None);
@@ -693,10 +712,10 @@ async fn the_newest_build_is_downloaded_ahead_and_update_only_swaps_it_in() {
     assert!(tampered.fetched.lock().unwrap().is_empty());
 }
 
-/// A machine running what a restart would end (a live session, a preview) is updated once it is idle, and says so
-/// meanwhile; agents' runs don't hold it.
+/// A machine running what a restart would end (a live session, a preview) is updated once that ends, and says so
+/// meanwhile.
 #[tokio::test]
-async fn a_busy_machine_waits_until_its_idle_and_says_so() {
+async fn a_busy_machine_waits_for_what_runs_on_it_and_says_so() {
     let home = tempfile::tempdir().unwrap();
     let fake = Arc::new(Fake::new(home.path(), b"new").node(
         "builder",
@@ -707,7 +726,7 @@ async fn a_busy_machine_waits_until_its_idle_and_says_so() {
     ));
     fake.nodes.lock().unwrap()[0].busy = Some("1 live session".into());
     let updates = area(home.path(), &fake);
-    updates.start(None).unwrap();
+    updates.start(None, false).unwrap();
     until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
     *fake.running.lock().unwrap() = NEW.into();
     let verdict = fake.plans.lock().unwrap()[0].verdict.clone();
@@ -726,16 +745,237 @@ async fn a_busy_machine_waits_until_its_idle_and_says_so() {
     .await;
     let part = &by_machine(&run)[&Some(MachineId::unchecked("builder"))];
     assert_eq!(part.state, UpdateState::Waiting);
-    assert_eq!(
-        part.message.as_ref().unwrap().as_str(),
-        "waits until it's idle: 1 live session can't carry on through a restart"
+    let message = part.message.as_ref().unwrap().as_str();
+    assert!(
+        message.starts_with("waits for 1 live session; installs by ")
+            && message.ends_with(" UTC whatever runs"),
+        "{message}"
     );
+    assert_eq!(part.agents, Some(0));
+    assert!(part.installs_by.is_some());
     tokio::time::sleep(Duration::from_millis(30)).await;
     assert!(fake.asked.lock().unwrap().is_empty(), "not while it's busy");
 
     fake.nodes.lock().unwrap()[0].busy = None;
     let run = until(&after, |r| r.finished_at.is_some()).await;
     assert_eq!(state(&run, Some("builder")).0, UpdateState::Done);
+}
+
+/// The hub of a run restarted onto `NEW`: its verdict written, a new hub process taking the run on from there.
+async fn hub_restarted(home: &Path, updates: &Updates, fake: &Arc<Fake>) -> Arc<Updates> {
+    until(updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    *fake.running.lock().unwrap() = NEW.into();
+    let verdict = fake.plans.lock().unwrap()[0].verdict.clone();
+    fs::write(
+        &verdict,
+        json!({ "state": "done", "message": "runs it" }).to_string(),
+    )
+    .unwrap();
+    let after = area(home, fake);
+    tokio::spawn(after.clone().resume());
+    after
+}
+
+fn node_part(run: &UpdateRun, machine: &str) -> UpdatePart {
+    by_machine(run)[&Some(MachineId::unchecked(machine))].clone()
+}
+
+/// A node with agents mid-step holds the rest and waits for those, saying how many and by when it installs; once none
+/// is mid-step, it installs, well before the deadline.
+#[tokio::test]
+async fn a_node_waits_for_its_agents_to_finish_their_step_then_installs() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new").node(
+        "builder",
+        OLD,
+        true,
+        true,
+        Some(Answer::BackOn(NEW)),
+    ));
+    fake.steps.lock().unwrap().insert("builder".into(), 2);
+    let updates = area(home.path(), &fake);
+    updates.start(None, false).unwrap();
+    let after = hub_restarted(home.path(), &updates, &fake).await;
+    let run = until(&after, |r| node_part(r, "builder").agents == Some(2)).await;
+    let part = node_part(&run, "builder");
+    assert_eq!(part.state, UpdateState::Waiting);
+    let message = part.message.unwrap().to_string();
+    assert!(
+        message.starts_with("waits for 2 agents to finish their step; installs by "),
+        "{message}"
+    );
+    let by = part.installs_by.unwrap();
+    let started = chrono::DateTime::parse_from_rfc3339(run.started_at.as_str()).unwrap();
+    let by = chrono::DateTime::parse_from_rfc3339(by.as_str()).unwrap();
+    assert!(
+        by > started && by <= started + chrono::Duration::seconds(65),
+        "{by}"
+    );
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert!(
+        fake.asked.lock().unwrap().is_empty(),
+        "not while agents are mid-step"
+    );
+    assert!(
+        fake.held.lock().unwrap().len() > 1,
+        "the hold is renewed while it waits"
+    );
+
+    fake.steps.lock().unwrap().insert("builder".into(), 0);
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    let part = node_part(&run, "builder");
+    assert_eq!(part.state, UpdateState::Done);
+    assert_eq!((part.agents, part.installs_by), (None, None));
+}
+
+/// Agents that never reach a step's end (24/7 work) don't hold an update off: at the deadline the node installs
+/// whatever runs.
+#[tokio::test]
+async fn a_node_with_busy_agents_installs_by_the_deadline() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new").node(
+        "builder",
+        OLD,
+        true,
+        true,
+        Some(Answer::BackOn(NEW)),
+    ));
+    fake.steps.lock().unwrap().insert("builder".into(), 5);
+    fake.nodes.lock().unwrap()[0].busy = Some("1 preview".into());
+    let updates = area(home.path(), &fake);
+    updates.start(None, false).unwrap();
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    *fake.running.lock().unwrap() = NEW.into();
+    let verdict = fake.plans.lock().unwrap()[0].verdict.clone();
+    fs::write(
+        &verdict,
+        json!({ "state": "done", "message": "runs it" }).to_string(),
+    )
+    .unwrap();
+    let after = Updates::new(
+        home.path(),
+        Arc::new(SystemClock),
+        Timing {
+            drain: Duration::from_millis(200),
+            ..fast()
+        },
+    );
+    after.set_ports(fake.clone());
+    let waited = std::time::Instant::now();
+    tokio::spawn(after.clone().resume());
+    let run = until(&after, |r| node_part(r, "builder").agents == Some(5)).await;
+    assert!(
+        node_part(&run, "builder").message.unwrap().starts_with(
+            "waits for 5 agents to finish their step, and for 1 preview; installs by "
+        )
+    );
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    assert!(waited.elapsed() >= Duration::from_millis(200), "it waited");
+    assert_eq!(node_part(&run, "builder").state, UpdateState::Done);
+    assert_eq!(fake.asked.lock().unwrap().as_slice(), ["builder"]);
+}
+
+/// The deadline is the hub's update setting when it has one: 0 doesn't wait.
+#[tokio::test]
+async fn the_deadline_comes_from_the_hubs_update_settings() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new"));
+    let updates = area(home.path(), &fake);
+    assert_eq!(updates.drain(), Duration::from_secs(60));
+    fs::create_dir_all(home.path().join("update")).unwrap();
+    fs::write(
+        home.path().join("update/settings.json"),
+        r#"{"drainMinutes":25}"#,
+    )
+    .unwrap();
+    assert_eq!(updates.drain(), Duration::from_secs(25 * 60));
+    fs::write(
+        home.path().join("update/settings.json"),
+        r#"{"drainMinutes":0}"#,
+    )
+    .unwrap();
+    assert_eq!(updates.drain(), Duration::ZERO);
+    assert_eq!(super::Timing::default().drain, Duration::from_secs(600));
+}
+
+/// Update now doesn't wait for agents: not when it starts the run, and not for a run already waiting, whose nodes
+/// install at once.
+#[tokio::test]
+async fn update_now_skips_the_wait_and_cuts_one_short() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new").node(
+        "builder",
+        OLD,
+        true,
+        true,
+        Some(Answer::BackOn(NEW)),
+    ));
+    fake.steps.lock().unwrap().insert("builder".into(), 3);
+    let updates = area(home.path(), &fake);
+    assert_eq!(updates.start(None, true).unwrap().now, Some(true));
+    let after = hub_restarted(home.path(), &updates, &fake).await;
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    assert_eq!(node_part(&run, "builder").state, UpdateState::Done);
+    assert!(fake.held.lock().unwrap().is_empty(), "nothing held");
+
+    // Pressed while a run waits.
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new").node(
+        "builder",
+        OLD,
+        true,
+        true,
+        Some(Answer::BackOn(NEW)),
+    ));
+    fake.steps.lock().unwrap().insert("builder".into(), 3);
+    let updates = area(home.path(), &fake);
+    updates.start(None, false).unwrap();
+    let after = hub_restarted(home.path(), &updates, &fake).await;
+    let waiting = until(&after, |r| node_part(r, "builder").agents == Some(3)).await;
+    let now = after.start(None, true).unwrap();
+    assert_eq!(
+        (now.id, now.now),
+        (waiting.id, Some(true)),
+        "the same run, now"
+    );
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    assert_eq!(node_part(&run, "builder").state, UpdateState::Done);
+}
+
+/// The hub's own part never waits for agents: they don't need it mid-step. With agents mid-step on every node, the hub
+/// restarts at once, nothing held first.
+#[tokio::test]
+async fn a_hub_update_doesnt_wait_for_agents() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new").node(
+        "builder",
+        OLD,
+        true,
+        true,
+        Some(Answer::BackOn(NEW)),
+    ));
+    fake.steps.lock().unwrap().insert("builder".into(), 4);
+    let updates = area(home.path(), &fake);
+    updates.start(None, false).unwrap();
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    assert_eq!(
+        fake.plans.lock().unwrap().len(),
+        1,
+        "the hub's restart is handed over"
+    );
+    assert!(
+        fake.held.lock().unwrap().is_empty(),
+        "no node was asked to hold first"
+    );
+
+    // A hub on its own (no node behind) updates and finishes without waiting on anything.
+    let home = tempfile::tempdir().unwrap();
+    let alone = Arc::new(Fake::new(home.path(), b"new"));
+    let updates = area(home.path(), &alone);
+    updates.start(None, false).unwrap();
+    let after = hub_restarted(home.path(), &updates, &alone).await;
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    assert_eq!(hub_state(&run), UpdateState::Done);
 }
 
 /// Retry updates one machine of the last run again (here one that didn't come back in time); the rest stays as it was.
@@ -749,7 +989,7 @@ async fn retry_updates_one_machine_again() {
             .node("mac", OLD, true, true, Some(Answer::BackOn(NEW))),
     );
     let updates = area(home.path(), &fake);
-    updates.start(None).unwrap();
+    updates.start(None, false).unwrap();
     until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
     // mac stays away after the hub's restart.
     fake.nodes.lock().unwrap()[1].live_since = None;
@@ -766,12 +1006,12 @@ async fn retry_updates_one_machine_again() {
     assert_eq!(state(&run, Some("builder")).0, UpdateState::Done);
     assert_eq!(state(&run, Some("mac")).0, UpdateState::Skipped);
     assert_eq!(
-        after.retry(&MachineId::unchecked("nowhere")),
+        after.retry(&MachineId::unchecked("nowhere"), false),
         Err(super::Refused::NothingToRetry)
     );
 
     fake.nodes.lock().unwrap()[1].live_since = Some(1);
-    let again = after.retry(&MachineId::unchecked("mac")).unwrap();
+    let again = after.retry(&MachineId::unchecked("mac"), false).unwrap();
     assert!(again.finished_at.is_none());
     assert_eq!(state(&again, Some("mac")).0, UpdateState::Waiting);
     assert_eq!(
@@ -788,7 +1028,7 @@ async fn retry_updates_one_machine_again() {
     *fake.running.lock().unwrap() = "0.9.0".into();
     let before = after.status();
     assert_eq!(
-        after.retry(&MachineId::unchecked("mac")),
+        after.retry(&MachineId::unchecked("mac"), false),
         Err(super::Refused::HubMovedOn("0.9.0".into()))
     );
     assert_eq!(after.status(), before);
@@ -815,7 +1055,7 @@ async fn a_restart_that_never_happens_ends_the_run_and_says_so() {
         },
     );
     updates.set_ports(fake.clone());
-    updates.start(None).unwrap();
+    updates.start(None, false).unwrap();
     let run = until(&updates, |r| r.finished_at.is_some()).await;
     assert_eq!(
         state(&run, None),
@@ -846,7 +1086,7 @@ async fn a_refused_restart_of_the_hubs_service_says_so() {
         Some(Answer::BackOn(NEW)),
     ));
     let updates = area(home.path(), &fake);
-    updates.start(None).unwrap();
+    updates.start(None, false).unwrap();
     until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
     let plan = fake.plans.lock().unwrap()[0].clone();
     let verdict = crate::update::finish::finish(&plan, &FakeRunner::refusing()).await;
@@ -891,7 +1131,7 @@ async fn a_refused_restart_of_a_nodes_service_says_so() {
     *fake.running.lock().unwrap() = NEW.into();
     let fake = Arc::new(fake);
     let updates = area(home.path(), &fake);
-    updates.start(None).unwrap();
+    updates.start(None, false).unwrap();
     let run = until(&updates, |r| r.finished_at.is_some()).await;
     assert_eq!(
         state(&run, Some("builder")),
@@ -910,8 +1150,8 @@ async fn a_second_update_while_one_runs_is_the_same_one() {
     let home = tempfile::tempdir().unwrap();
     let fake = Arc::new(Fake::new(home.path(), b"new"));
     let updates = area(home.path(), &fake);
-    let first = updates.start(None).unwrap();
-    let again = updates.start(None).unwrap();
+    let first = updates.start(None, false).unwrap();
+    let again = updates.start(None, false).unwrap();
     assert_eq!(first.id, again.id);
 }
 
@@ -942,6 +1182,7 @@ fn left_run(home: &Path, to: &str, machines: &[(&str, UpdateState, Option<&str>)
         started_at: "2026-10-27T16:07:02.609Z".into(),
         finished_at: None,
         parts: fleetd_contracts::prim::List::new(parts).unwrap(),
+        now: None,
     };
     fs::create_dir_all(home.join("update")).unwrap();
     fs::write(
@@ -971,7 +1212,7 @@ async fn a_run_the_hub_moved_past_ends_at_its_start_and_moves_no_machine_back() 
             (
                 "devbox",
                 UpdateState::Waiting,
-                Some("waits until it's idle: 1 live session can't carry on through a restart"),
+                Some("waits for 1 live session; installs by 10:30 UTC whatever runs"),
             ),
             ("mac", UpdateState::Done, None),
         ],
@@ -1006,7 +1247,7 @@ async fn a_run_the_hub_moved_past_ends_at_its_start_and_moves_no_machine_back() 
     assert!(fake.claude_asked.lock().unwrap().is_empty());
 
     // And the next Update starts at once, a new run, rather than showing that one.
-    let next = after.start(None).unwrap();
+    let next = after.start(None, false).unwrap();
     assert_ne!(next.id, run.id);
 }
 
@@ -1031,7 +1272,7 @@ async fn a_node_already_past_the_target_is_never_moved_back() {
             ),
     );
     let updates = area(home.path(), &fake);
-    updates.start(None).unwrap();
+    updates.start(None, false).unwrap();
     until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
     assert_eq!(
         *fake.fetched.lock().unwrap(),
@@ -1067,7 +1308,7 @@ async fn a_node_already_past_the_target_is_never_moved_back() {
 
     // Retry of mac, updated another way since: it is settled as it is, not moved back.
     fake.nodes.lock().unwrap()[1].version = NEWER.into();
-    after.retry(&MachineId::unchecked("mac")).unwrap();
+    after.retry(&MachineId::unchecked("mac"), false).unwrap();
     let run = until(&after, |r| r.finished_at.is_some()).await;
     assert_eq!(state(&run, Some("mac")).0, UpdateState::Current);
     assert_eq!(*fake.asked.lock().unwrap(), ["mac"], "not asked again");
@@ -1084,7 +1325,7 @@ async fn a_node_already_past_the_target_is_never_moved_back() {
     let after = area(home.path(), &fake);
     tokio::spawn(after.clone().resume());
     until(&after, |r| {
-        said(r, "devbox").starts_with("waits until it's idle")
+        said(r, "devbox").starts_with("waits for 1 live session")
     })
     .await;
     // `fleetd update` on the devbox, with the session still there.
@@ -1111,10 +1352,10 @@ async fn update_always_starts_and_a_run_left_over_ends() {
     let left = updates.status().unwrap();
     assert!(left.finished_at.is_none());
     assert!(updates.left_over());
-    let started = updates.start(None).unwrap();
+    let started = updates.start(None, false).unwrap();
     assert_ne!(started.id, left.id, "a new run, not the one left over");
     assert_eq!(
-        updates.start(None).unwrap().id,
+        updates.start(None, false).unwrap().id,
         started.id,
         "which is then the one going"
     );
@@ -1155,10 +1396,10 @@ async fn start_over_ends_the_run_going_on_and_starts_a_new_one() {
     ));
     fake.nodes.lock().unwrap()[0].busy = Some("1 live session".into());
     let updates = area(home.path(), &fake);
-    let first = updates.start(None).unwrap();
+    let first = updates.start(None, false).unwrap();
     until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
     assert_eq!(
-        updates.start_over(None).unwrap().id,
+        updates.start_over(None, false).unwrap().id,
         first.id,
         "not while the hub restarts"
     );
@@ -1177,16 +1418,16 @@ async fn start_over_ends_the_run_going_on_and_starts_a_new_one() {
     );
     tokio::spawn(after.clone().resume());
     until(&after, |r| {
-        said(r, "devbox").starts_with("waits until it's idle")
+        said(r, "devbox").starts_with("waits for 1 live session")
     })
     .await;
     assert!(!after.left_over());
 
-    let again = after.start_over(None).unwrap();
+    let again = after.start_over(None, false).unwrap();
     assert_ne!(again.id, first.id);
     assert!(again.finished_at.is_none());
     until(&after, |r| {
-        r.id == again.id && said(r, "devbox").starts_with("waits until it's idle")
+        r.id == again.id && said(r, "devbox").starts_with("waits for 1 live session")
     })
     .await;
     fake.nodes.lock().unwrap()[0].busy = None;

@@ -164,8 +164,8 @@ export function HubSection({ part, nodes }: { part: HubPart; nodes: UpdatesView[
   );
 }
 
-function Overall({ view, onUpdate, onStartOver }: { view: UpdatesView; onUpdate: () => void; onStartOver: () => void }) {
-  const { update, progress, startOver } = view;
+function Overall({ view, onUpdate, onStartOver, onUpdateNow }: { view: UpdatesView; onUpdate: () => void; onStartOver: () => void; onUpdateNow: () => void }) {
+  const { update, progress, startOver, updateNow } = view;
   if (update === null && progress === null) return null;
   return (
     <section className={s.overall} aria-label="Update" data-updates-part="all">
@@ -208,6 +208,13 @@ function Overall({ view, onUpdate, onStartOver }: { view: UpdatesView; onUpdate:
             </Button>
           </div>
         )}
+        {!updateNow ? null : (
+          <div className={s.actions}>
+            <Button variant="ghost" onClick={onUpdateNow} data-updates-now>
+              Update now
+            </Button>
+          </div>
+        )}
       </div>
       {update === null || progress !== null ? null : <Notes notes={update.notes} />}
     </section>
@@ -246,17 +253,19 @@ export interface SheetProps {
   readonly onUpdate: () => void;
   /** Start over: ends a run that stopped moving and starts a new one. */
   readonly onStartOver: () => void;
+  /** Update now: the machines waiting for their agents restart without waiting. */
+  readonly onUpdateNow: () => void;
   readonly onRetry: (retry: Retry) => void;
   readonly onApp: (action: AppAction) => void;
   /** Details shown at first; a test opens them. */
   readonly details?: boolean;
 }
 
-export function UpdatesSheet({ view, onUpdate, onStartOver, onRetry, onApp, details = false }: SheetProps) {
+export function UpdatesSheet({ view, onUpdate, onStartOver, onUpdateNow, onRetry, onApp, details = false }: SheetProps) {
   const [open, setOpen] = useState(details);
   return (
     <div className={s.parts} data-screen="updates">
-      <Overall view={view} onUpdate={onUpdate} onStartOver={onStartOver} />
+      <Overall view={view} onUpdate={onUpdate} onStartOver={onStartOver} onUpdateNow={onUpdateNow} />
       {view.lines.length === 0 ? null : (
         <ul className={s.lines} aria-label="Each part">
           {view.lines.map((line) => (

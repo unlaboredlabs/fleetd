@@ -1,8 +1,9 @@
 // Settings' Update section, for admins (updates.ts): "Update fleetd" when the hub has a newer build, which asks
-// first, then the run as it goes, the hub and each machine on a row of its own, to its outcome: Retry on a machine
-// that failed or was put back, Start over on a run that stopped moving.
+// first, then the run as it goes, the hub and each machine on a row of its own, to its outcome: Update now while
+// machines wait for their agents, Retry on a machine that failed or was put back, Start over on a run that stopped
+// moving.
 import { ActionSheetIOS, ActivityIndicator, Alert, Platform, StyleSheet, Text, View } from "react-native";
-import { retryMachine, startOver, startUpdate, useFlow, useReady, useRun, type Line } from "../desktop";
+import { retryMachine, startOver, startUpdate, updateNow, useFlow, useReady, useRun, type Line } from "../desktop";
 import { useHub } from "../hubContext";
 import { space, type, useTheme, type Palette } from "../theme";
 import { Button } from "../ui/Button";
@@ -74,6 +75,16 @@ export function UpdateFleetd() {
           />
         );
       })}
+      {!section.updateNow ? null : (
+        <ListRow
+          title="Update Now"
+          detail="Restarts the machines without waiting for their agents' step"
+          onPress={() => {
+            haptics.firm();
+            void updateNow(session.updates);
+          }}
+        />
+      )}
       {section.startOver === null ? null : <ListRow title="Start Over" detail={section.startOver.note} onPress={() => void startOver(session.updates)} />}
     </ListSection>
   );

@@ -498,6 +498,84 @@ async fn a_prompt_waits_for_the_hub_unless_policy_answers_it() {
     assert_eq!(answers, 2);
 }
 
+/// Ahead of an update the node holds its agents between steps (node/hold.rs): a session with a tool call running is
+/// mid-step until the call ends, or until its hook holds it before it starts.
+#[tokio::test]
+async fn a_session_is_mid_step_while_a_tool_call_of_its_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("permission-allow"),
+    )
+    .await;
+    hub.project(dir.path()).await;
+    assert_eq!(hub.service.hold(), 0, "nothing runs");
+    let home = hub.service.inner.config.home.clone();
+    assert!(
+        crate::node::hold::hold_path(&home).exists(),
+        "the hold is on"
+    );
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::ApprovalRequired,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    // Its Bash call is out, waiting for its answer.
+    let waiting = hub.summary(|s| s.status == SessionStatus::Waiting).await;
+    assert_eq!(hub.service.hold(), 1);
+    let tool = hub.service.st().live["s1"]
+        .tools
+        .iter()
+        .next()
+        .cloned()
+        .unwrap();
+    // Its hook holds a call that hasn't started: the session is between steps.
+    std::fs::write(home.join("update/held").join(&tool), b"").unwrap();
+    assert_eq!(hub.service.hold(), 0);
+    std::fs::remove_file(home.join("update/held").join(&tool)).unwrap();
+    assert_eq!(hub.service.hold(), 1);
+
+    let pending = waiting.pending_permission.unwrap();
+    hub.ok(SessionCall::Answer {
+        session_id: ThreadId::unchecked("s1"),
+        request_id: NonEmpty::unchecked(pending.request_id.as_str()),
+        by: None,
+        decision: PermissionDecision::Allow {
+            updated_input: None,
+        },
+    })
+    .await;
+    hub.settled("r1").await;
+    assert_eq!(hub.service.hold(), 0, "its call ended");
+    crate::node::hold::clear(&home);
+}
+
+/// Every session gets the PreToolUse hook that holds its tool calls while the node holds its agents.
+#[test]
+fn the_settings_overlay_holds_tool_calls_with_the_hook() {
+    let overlay: serde_json::Value = serde_json::from_str(&super::settings_overlay(
+        &[],
+        serde_json::Map::new(),
+        "haiku",
+        &[],
+        false,
+        "test -e /n/update/hold || exit 0",
+    ))
+    .unwrap();
+    let hook = &overlay["hooks"]["PreToolUse"][0];
+    assert_eq!(hook["matcher"], "*");
+    assert_eq!(
+        hook["hooks"][0]["command"],
+        "test -e /n/update/hold || exit 0"
+    );
+    assert_eq!(
+        hook["hooks"][0]["timeout"],
+        crate::node::hold::HOOK_TIMEOUT_SECS
+    );
+}
+
 #[tokio::test]
 async fn a_session_held_to_its_allowed_tools_has_any_other_refused_by_the_node() {
     let dir = tempfile::tempdir().unwrap();

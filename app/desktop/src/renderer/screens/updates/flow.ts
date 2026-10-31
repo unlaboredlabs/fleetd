@@ -1,5 +1,6 @@
 // The Update button's run: the hub updates itself and then its nodes (hub_update, followed with hub_update_status
-// through the hub's own restart), then, when every part came through, this app installs its update and relaunches.
+// through the hub's own restart), each node once its agents finish their step (Update now doesn't wait), then, when
+// every part came through, this app installs its update and relaunches.
 // Retry updates one machine of the last run again (hub_update with its machine); Start over ends a run that stopped
 // moving and starts a new one (hub_update with startOver). The hub downloads the channel's
 // newest build ahead and says so (`ready`), read on connect and every few minutes. A tiny external store, so the
@@ -78,6 +79,7 @@ export const useRun = (): UpdateRun | null => useSyncExternalStore(subscribe, ()
 export const useReady = (): string | null => useSyncExternalStore(subscribe, () => ready);
 export const currentFlow = (): Flow => flow;
 export const currentReady = (): string | null => ready;
+export const currentRun = (): UpdateRun | null => run;
 
 /** For tests: back to a window where nothing was pressed. */
 export const resetFlow = (): void => set({ flow: { phase: "idle" }, run: null, ready: null });
@@ -107,7 +109,7 @@ export const loadRun = async (deps: FlowDeps): Promise<void> => {
   if (out.output.run !== undefined && out.output.run.finishedAt === undefined) await follow(deps, false);
 };
 
-/** The Update button. Never waits for work: the hub restarts at once, and what runs carries on by itself. */
+/** The Update button: the hub restarts at once, each machine once its agents finish their step (10 minutes at most). */
 export const startUpdate = async (deps: FlowDeps): Promise<void> => {
   if (going(flow)) return;
   set({ flow: { phase: "starting" } });
@@ -123,6 +125,13 @@ export const startUpdate = async (deps: FlowDeps): Promise<void> => {
   }
   set({ run: out.output.run ?? null, ready: null });
   await follow(deps);
+};
+
+/** Update now, beside a run whose machines wait for their agents: the hub tells them to stop waiting. The run this
+ * window follows goes on. */
+export const updateNow = async (deps: FlowDeps): Promise<void> => {
+  const out = await deps.call("hub_update", { now: true });
+  if (out.ok && out.output.run !== undefined) set({ run: out.output.run });
 };
 
 /** Retry: the hub updates this machine of the last run again, its fleetd then its Claude Code; the rest stays. */

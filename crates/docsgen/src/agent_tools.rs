@@ -925,6 +925,7 @@ fn switches() -> Result<String, String> {
         HELPER_MODEL_ENV.1,
         &[],
         false,
+        "",
     ))
     .map_err(|e| format!("agent tools: the settings overlay: {e}"))?;
     let mut md = String::from(

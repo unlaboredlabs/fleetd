@@ -2589,6 +2589,8 @@ export type HubUpdateInput = {
   channel?: HubChannel;
   /** Retry this machine of the last run, whose hub updated: its node, then its Claude Code. */
   machine?: MachineId;
+  /** Update now: nodes restart without waiting for their agents to finish their step. */
+  now?: boolean;
   /**
    * Start over: ends the run going on, once the hub has its result (never while the hub restarts), with every part
    * left skipped, and starts a new one.
@@ -7428,8 +7430,12 @@ export type TrainState = {
 
 /** The hub, or one machine's node or Claude Code, in an update. */
 export type UpdatePart = {
+  /** A node waiting for its agents: how many are still mid-step (none started since it began waiting). */
+  agents?: number;
   /** The version it ran when the update started. */
   from: string;
+  /** A node waiting for its agents or what else runs on it: when it installs regardless. */
+  installsBy?: Timestamp;
   /** A node's machine. */
   machineId?: MachineId;
   /** One plain sentence: what happened, or why not, with what to do. */
@@ -7454,6 +7460,8 @@ export type UpdateRun = {
   /** Set once every part has its result. */
   finishedAt?: Timestamp;
   id: string;
+  /** Update now: its nodes don't wait for their agents to finish their step. Absent otherwise. */
+  now?: boolean;
   /** The hub first, then per machine, by name, its node and its Claude Code. */
   parts: UpdatePart[];
   startedAt: Timestamp;
