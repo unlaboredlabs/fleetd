@@ -55,8 +55,8 @@ import { saveOrder, withMoved } from "./yourOrder";
 import s from "./shell.module.css";
 
 const platform = window.fleetd.platform;
-/** A project's or Navi's icon in its row, a pixel into the row's padding above and below so the row stays --row tall (shell.module.css). */
-const SIDEBAR_AVATAR = 22;
+/** A project's or Navi's icon in its tall row (SidebarItem `tall`): big enough to enjoy its glass face, the row 48 px around it. */
+const SIDEBAR_AVATAR = 36;
 
 const kbd = (id: ShortcutId): ReactNode => <Kbd>{display(id, platform)}</Kbd>;
 
@@ -325,7 +325,8 @@ function NaviRow({ p, named, current, jump, go }: { p: Placed; named: boolean; c
       <ContextMenu menu={menu}>
         <SidebarItem
           label={p.project.title}
-          icon={<ProjectAvatar project={p.project} size={SIDEBAR_AVATAR} className={s.avatar} />}
+          tall
+          icon={<ProjectAvatar project={p.project} size={SIDEBAR_AVATAR} />}
           current={current}
           emphasis={p.unread}
           trailing={
@@ -443,7 +444,8 @@ function ProjectGroup(props: {
                 <ContextMenu menu={menu(p)}>
                   <SidebarItem
                     label={p.project.title}
-                    icon={<ProjectAvatar project={p.project} size={SIDEBAR_AVATAR} className={s.avatar} />}
+                    tall
+                    icon={<ProjectAvatar project={p.project} size={SIDEBAR_AVATAR} />}
                     current={sameProject(open, p.project)}
                     emphasis={p.unread}
                     trailing={trailing(p, props.jumpOf(p), asOf)}

@@ -314,6 +314,12 @@
 .indent {
   padding-left: var(--space-6);
 }
+/* A chat's row: as tall as its avatar (36 px, Sidebar.tsx) and its padding make it, the label further off it. */
+.tall {
+  gap: var(--space-3);
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-lg);
+}
 
 .empty {
   display: flex;
