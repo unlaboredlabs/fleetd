@@ -415,7 +415,7 @@ async fn app_socket_closes_on_a_refused_key_and_calls_through_the_same_checks() 
     frames.sort_by_key(|f| f["id"].as_str().unwrap_or("").to_owned());
     assert_eq!(
         frames[0],
-        json!({ "t": "ready", "protocol": 1, "version": crate::version(), "features": ["presence", "browser_sessions", "navi_asks", "screen_open", "navi_skills"] })
+        json!({ "t": "ready", "protocol": 1, "version": crate::version(), "features": ["presence", "browser_sessions", "navi_asks", "screen_open", "navi_skills", "browser_navigate"] })
     );
     assert_eq!(
         frames[1],
