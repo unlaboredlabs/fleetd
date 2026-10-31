@@ -2,6 +2,7 @@
 import type { CompositeScreenProps, NavigatorScreenParams } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { createContext, useContext } from "react";
+import type { SkillOrigin } from "./desktop";
 import type { Paired } from "./hub/pair";
 import type { Session } from "./session";
 import type { Key, State } from "./store";
@@ -59,6 +60,12 @@ export type ChatInfoParams = {
   Info: { key: Key };
   Rename: { key: Key };
   Profiles: { key: Key };
+  /** A Navi's skills (Skills.tsx), a skill's view, its editor, its history and one version's change. */
+  Skills: { key: Key };
+  Skill: { key: Key; origin: SkillOrigin; name: string };
+  SkillEdit: { key: Key; name: string };
+  SkillHistory: { key: Key; origin: SkillOrigin; name: string };
+  SkillVersion: { key: Key; origin: SkillOrigin; name: string; version: number };
 };
 /** A ChatInfo screen's props: its own stack's, and the root stack's above it (Photo, back to the chats list). */
 export type ChatInfoProps<T extends keyof ChatInfoParams> = CompositeScreenProps<NativeStackScreenProps<ChatInfoParams, T>, NativeStackScreenProps<RootParams>>;

@@ -2,7 +2,7 @@
 // floating glass composer, with soft edges where it meets them. Newest at the bottom, older pages as you scroll up;
 // the person's bubbles on the right and the lead's on the left, grouped by burst with time chips between; pictures
 // and files inline; the lead's text as it streams and the desktop's turn line while it works; blocks and approvals as
-// cards.
+// cards; a skill the Navi saved as one quiet line that opens it.
 //
 // Opening it lands on the first message you haven't read, under an "Unread Messages" bar; reading to the bottom marks
 // it read. Scrolled up, a glass button takes you back down and counts what came meanwhile. Pressing and holding a
@@ -44,10 +44,11 @@ import { Grid, Markdown } from "../ui/Markdown";
 import { FileBubble, ImageBubble, ImageViewer, shareFile } from "../ui/Media";
 import { RevealArea, Revealed } from "../ui/Reveal";
 import type { MenuItem } from "../ui/Menu";
-import { bubbleIn, dur, ease, useReduceMotion } from "../ui/motion";
+import { bubbleIn, dur, ease, PRESSED_OPACITY, useReduceMotion } from "../ui/motion";
 import { SkeletonThread } from "../ui/Skeleton";
 import { ApprovalCard } from "./ApprovalCard";
 import { Symbol } from "./manage/parts";
+import type { SkillSaved } from "./manage/skillsModel";
 import { TurnLine } from "./TurnLine";
 import { useNow } from "./time";
 
@@ -79,6 +80,8 @@ interface ThreadActions {
   /** Whose the message is, as a reply's quote names them: "You", or the chat's lead. */
   readonly whoWrote: (messageId: string) => string;
   readonly answer: (text: string) => void;
+  /** A skill the Navi saved, opened over its Info screen. */
+  readonly openSkill: (name: string) => void;
 }
 
 export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "Chat">) {
@@ -234,8 +237,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   };
 
   // What the actions read, as of the last draw.
-  const now = useRef({ items, title, send, scrollToRow });
-  now.current = { items, title, send, scrollToRow };
+  const now = useRef({ items, title, send, scrollToRow, chatKey });
+  now.current = { items, title, send, scrollToRow, chatKey };
   const actions = useMemo(
     (): ThreadActions => ({
       reply: (r) => {
@@ -249,8 +252,12 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       },
       whoWrote: (messageId) => (now.current.items.find((i) => i.id === messageId)?.author === "human" ? "You" : now.current.title),
       answer: (text) => now.current.send(text),
+      openSkill: (name) => {
+        haptics.tap();
+        navigation.navigate("ChatInfo", { screen: "Skill", params: { key: now.current.chatKey, origin: "project", name }, initial: false });
+      },
     }),
-    [],
+    [navigation],
   );
   const renderRow = useCallback(
     ({ item: row }: { item: ThreadRow }) => (
@@ -547,6 +554,8 @@ function ItemView({
   const inline = item.message?.item;
   if (inline?.kind === "command_approval") return <InlineApproval chatKey={chatKey} requestId={inline.requestId} state={inline.state} />;
   if (inline?.kind === "secret_request") return <Event text="Asks for a secret: enter it in the desktop app." icon="lock" />;
+  const saved = (item.message as { skillSaved?: SkillSaved } | undefined)?.skillSaved;
+  if (saved !== undefined) return <SkillLine saved={saved} onPress={() => actions.openSkill(saved.name)} />;
   if (side === "center") return <Event text={item.text} />;
 
   const messageId = item.message?.messageId;
@@ -887,6 +896,20 @@ function Event({ text, icon }: { text: string; icon?: "approvals" | "lock" }) {
   );
 }
 
+/** A Navi saved or changed one of its skills: one quiet line, the skill's name in the accent, that opens it. */
+function SkillLine({ saved, onPress }: { saved: SkillSaved; onPress: () => void }) {
+  const t = useTheme();
+  const what = saved.created ? "Saved a skill" : "Updated a skill";
+  return (
+    <Pressable accessibilityRole="link" accessibilityLabel={`${what}: ${saved.name}. ${saved.why}`} accessibilityHint="Opens the skill" onPress={onPress} hitSlop={6} style={({ pressed }) => [styles.event, pressed && { opacity: PRESSED_OPACITY }]}>
+      <Icon name="sparkles" size={13} color={t.secondary} />
+      <Text style={[type.footnote, styles.eventText, styles.shrink, { color: t.secondary }]} numberOfLines={1}>
+        {what}: <Text style={[styles.skillName, { color: t.accent }]}>{saved.name}</Text>
+      </Text>
+    </Pressable>
+  );
+}
+
 /** A bubble's words to select a part of, in a sheet, as Telegram's Select Text. */
 function SelectText({ text, onClose }: { text: string | null; onClose: () => void }) {
   const t = useTheme();
@@ -960,6 +983,8 @@ const styles = StyleSheet.create({
   check: { flexDirection: "row", alignItems: "center", gap: space.sm },
   event: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, marginVertical: space.sm, paddingHorizontal: space.xl },
   eventText: { textAlign: "center" },
+  shrink: { flexShrink: 1 },
+  skillName: { fontWeight: "600" },
   topFade: { position: "absolute", top: 0, left: 0, right: 0 },
   bottomFade: { position: "absolute", bottom: 0, left: 0, right: 0 },
   dock: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "flex-end" },

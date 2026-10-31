@@ -1,7 +1,7 @@
 // Making and managing projects and Navis from the phone: their screens in the root stack (New Navi and New Project as
-// sheets; a project's or Navi's screen, Rename and Agent Profiles pushed over its chat, in a stack of their own, its
-// icon as a sheet, and Move and Scale for its picture over everything), and the two ways in: the Chats list's + menu and a chat's bar. App.tsx
-// adds these to its navigators.
+// sheets; a project's or Navi's screen, Rename, Agent Profiles and a Navi's skills pushed over its chat, in a stack of
+// their own, its icon as a sheet, and Move and Scale for its picture over everything), and the two ways in: the Chats
+// list's + menu and a chat's bar. App.tsx adds these to its navigators.
 import { useNavigation } from "@react-navigation/native";
 import { createNativeStackNavigator, type NativeStackHeaderItemMenu, type NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { Alert, Platform, Pressable } from "react-native";
@@ -15,6 +15,11 @@ import { NewProject } from "./NewProject";
 import { Photo } from "./Photo";
 import { Profiles } from "./Profiles";
 import { Rename } from "./Rename";
+import { Skill } from "./Skill";
+import { SkillEdit } from "./SkillEdit";
+import { SkillHistory } from "./SkillHistory";
+import { Skills } from "./Skills";
+import { SkillVersion } from "./SkillVersion";
 import { Symbol } from "./parts";
 
 type RootStack = ReturnType<typeof createNativeStackNavigator<RootParams>>;
@@ -92,10 +97,11 @@ export const newChatOptions = (t: Palette, navigate: (name: "NewNavi" | "NewProj
 const InfoStack = createNativeStackNavigator<ChatInfoParams>();
 
 /**
- * A project's or Navi's screen, Rename and Agent Profiles, pushed over its chat as one screen of the root stack, with
- * a bar of their own that slides in and out with them. The root stack's bar stays hidden over the chat and these, as
- * over the chats list: one it shows and hides again on the way back stood over the screen sliding in, then slid off
- * late (Chat's chatOptions). Info, first in this stack, has a back button of its own to the chat.
+ * A project's or Navi's screen, Rename, Agent Profiles and a Navi's skills (their editor a sheet), pushed over its chat
+ * as one screen of the root stack, with a bar of their own that slides in and out with them. The root stack's bar stays
+ * hidden over the chat and these, as over the chats list: one it shows and hides again on the way back stood over the
+ * screen sliding in, then slid off late (Chat's chatOptions). Info, first in this stack, has a back button of its own
+ * to the chat.
  */
 function ChatInfo() {
   const t = useTheme();
@@ -105,6 +111,11 @@ function ChatInfo() {
       <InfoStack.Screen name="Info" component={Info} options={{ ...pushed(t, "Info"), ...backTo(t, () => root.goBack()) }} />
       <InfoStack.Screen name="Rename" component={Rename} options={pushed(t, "Name")} />
       <InfoStack.Screen name="Profiles" component={Profiles} options={pushed(t, "Agent Profiles")} />
+      <InfoStack.Screen name="Skills" component={Skills} options={pushed(t, "Skills")} />
+      <InfoStack.Screen name="Skill" component={Skill} options={pushed(t, "")} />
+      <InfoStack.Screen name="SkillEdit" component={SkillEdit} options={({ route }) => sheet(t, route.params.name)} />
+      <InfoStack.Screen name="SkillHistory" component={SkillHistory} options={pushed(t, "History")} />
+      <InfoStack.Screen name="SkillVersion" component={SkillVersion} options={({ route }) => pushed(t, `Version ${String(route.params.version)}`)} />
     </InfoStack.Navigator>
   );
 }
