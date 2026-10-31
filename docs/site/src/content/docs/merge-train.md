@@ -160,6 +160,12 @@ straight to the branch.
 Every PR gets one fresh reviewer, which reports blocking findings only. Its verdict is bound to the PR's current
 patch. Blocking findings go to the agent that wrote the PR, and the PR waits for its next commit.
 
+Before a reviewer starts, the train checks the PR doesn't undo work already on its base, as a commit made on a fresh
+main while its files were an older tree's does: a file the PR puts back, byte for byte, to a version main had before
+a later commit, where the PR puts back at least half that commit's files. Such a PR goes back to its agent as
+`needs_rebase`, with the files and the commits it would undo, to rebuild on the current base. A PR whose title or body
+says it reverts named commits or PRs passes. `scripts/check.sh` runs the same check before a push.
+
 ### Re-reviews {#re-reviews}
 
 When an approved PR gets a new head, the train compares the PR's own changes with the approved head's: each run of

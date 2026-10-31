@@ -415,6 +415,14 @@ impl FakeGh {
         if args[..2] == ["pr", "update-branch"] {
             return self.update_branch(args[2].parse().unwrap());
         }
+        if args.iter().any(|a| a == "graphql") {
+            let vars: HashMap<&str, &str> = args
+                .windows(2)
+                .filter(|w| w[0] == "-f")
+                .filter_map(|w| w[1].split_once('='))
+                .collect();
+            return ok(super::reverts::answer(&self.origin, &vars));
+        }
         let method = args
             .iter()
             .position(|a| a == "-X")
@@ -591,8 +599,19 @@ impl FakeGh {
                     })
                     .collect();
                 let total = commits.len() + usize::from(*self.partial_ranges.lock().unwrap());
+                let committed = |sha: &str| json!({ "sha": git(&self.origin, &["rev-parse", sha]), "commit": { "committer": { "date": git(&self.origin, &["log", "-1", "--format=%cI", sha]) } } });
+                let files: Vec<Value> = git(&self.origin, &["diff", "--name-status", "--no-renames", &base, head])
+                    .lines()
+                    .filter_map(|l| l.split_once('\t'))
+                    .map(|(status, file)| match status {
+                        "D" => json!({ "filename": file, "status": "removed" }),
+                        _ => json!({ "filename": file, "status": "modified", "sha": git(&self.origin, &["rev-parse", &format!("{head}:{file}")]) }),
+                    })
+                    .collect();
+                let mut merge_base = committed(&base);
+                merge_base["sha"] = json!(base);
                 ok(
-                    json!({ "merge_base_commit": { "sha": base }, "total_commits": total, "commits": commits }),
+                    json!({ "base_commit": committed(from), "merge_base_commit": merge_base, "total_commits": total, "commits": commits, "files": files }),
                 )
             }
             (["compare", range], "GET") => {
@@ -694,6 +713,9 @@ impl FakeGh {
                     Some(p) => self.merge(n, p, &fields),
                     None => http_error(404, "Not Found"),
                 }
+            }
+            (["commits", sha], "GET") if !args.iter().any(|a| a.contains("github.diff")) => {
+                ok(super::reverts::git_commit_files(&self.origin, sha))
             }
             (["commits", sha], "GET") => GhOut {
                 exit_code: 0,
@@ -2022,6 +2044,94 @@ async fn sends_a_conflicting_pr_back_to_its_author_moves_on_and_merges_it_after_
         .map(|d| d["changeId"].clone())
         .collect();
     assert_eq!(merged, [json!(other.change_id), json!(first)]);
+}
+
+/// #914's first head in small: its writer committed its older files on a fresh main, plus its own. No reviewer starts:
+/// it goes back to its writer with the files and the commits it would undo. Rebuilt on main, it's reviewed and merges;
+/// the same files in a PR that says it reverts them pass.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_that_puts_back_mains_older_files_goes_back_to_its_writer_before_review() {
+    let kit = Kit::new();
+    kit.commit(
+        "main",
+        &[add("x.txt", "one\n"), add("y.txt", "one\n")],
+        None,
+    );
+    let undone = kit.commit(
+        "main",
+        &[add("x.txt", "two\n"), add("y.txt", "two\n")],
+        None,
+    );
+    let stale = [
+        add("x.txt", "one\n"),
+        add("y.txt", "one\n"),
+        add("own.txt", "mine\n"),
+    ];
+    let pr = kit.open_pr(7, "stale", &stale);
+    kit.host.tasks.lock().unwrap().insert(
+        "T1".into(),
+        TaskView {
+            task_id: TaskId::unchecked("T1"),
+            project_ref: project(),
+            workstream_id: ws(),
+            kind: "write".into(),
+            state: "done".into(),
+            pr_url: Some(pr.clone()),
+            result_tail: None,
+        },
+    );
+    let cursor = kit.host.events_head();
+    kit.host
+        .push_event("task.completed", json!({ "taskId": "T1" }));
+    let parked = kit.host.next_event(cursor, "change.needs_rebase").await;
+    let change_id = ChangeId::unchecked(parked["changeId"].as_str().unwrap());
+
+    assert!(kit.gate.reviewed.lock().unwrap().is_empty(), "no reviewer");
+    let change = kit.get(&change_id);
+    assert_eq!(
+        (change.state, change.last_error.as_deref()),
+        (
+            ChangeState::NeedsRebase,
+            Some("would undo 1 commit of main: rebuild it on origin/main")
+        )
+    );
+    let (to, message) = kit.host.nth_send(0).await;
+    assert_eq!(to, "T1");
+    assert!(
+        message.contains("it would undo 1 commit of main: rebuild it on origin/main"),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!("- x.txt (undoes {})", &undone[..9])),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!("- y.txt (undoes {})", &undone[..9])),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!("- {} change main", &undone[..9])),
+        "{message}"
+    );
+    assert!(!message.contains("own.txt"), "{message}");
+    assert!(
+        message.contains("re-apply only your own changes"),
+        "{message}"
+    );
+
+    // Rebuilt on main with only its own change: reviewed, and it merges.
+    kit.commit("stale", &[add("own.txt", "mine\n")], Some("origin/main"));
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert_eq!(kit.main_file("x.txt").as_deref(), Some("two"));
+
+    // Saying it reverts them, the same files pass.
+    let pr = kit.open_pr(8, "undo", &stale[..2]);
+    kit.gh.pulls.lock().unwrap().get_mut(&8).unwrap().title = format!("Revert {}", &undone[..9]);
+    let reverting = kit.enqueue(pr).await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&reverting.change_id).state, ChangeState::Merged);
+    assert_eq!(kit.main_file("x.txt").as_deref(), Some("one"));
 }
 
 fn set_mergeable(kit: &Kit, number: i64, mergeable: Option<bool>) {

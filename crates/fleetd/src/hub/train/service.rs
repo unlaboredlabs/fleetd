@@ -25,6 +25,7 @@ use super::main_ci::{GithubSync, MainCi, ci_state};
 use super::next::{Reruns, gated_name, proven_runs, upstreams};
 use super::records::{ChangeRecords, DRAFT, Db, HEAD_STATES, ListFilter, is_draft};
 use super::regen::Conflict;
+use super::reverts;
 use super::rules::Refusal;
 use crate::clock::Clock;
 use crate::hub::leads::events::Event;
@@ -853,12 +854,17 @@ impl Train {
     /// The author task gets it as a task message; without one, or if that fails, the lead gets it.
     /// The `pr.fix` prompt with `problem` to the task that wrote the PR, else to the lead as an event line.
     pub(super) async fn tell_author(&self, change: &Change, problem: &str) {
+        self.tell_author_with(change, problem, "").await
+    }
+
+    /// `tell_author` with details below the problem.
+    async fn tell_author_with(&self, change: &Change, problem: &str, details: &str) {
         let prompts = self.records.db().prompts();
         let set = match &change.task_id {
             Some(task_id) => prompts.for_task(&change.project_ref, task_id.as_str()),
             None => prompts.current(Some(&change.project_ref)),
         };
-        let text = fix_your_pr(&set, change, problem, "");
+        let text = fix_your_pr(&set, change, problem, details);
         if let Some(task_id) = &change.task_id {
             match self
                 .host
@@ -911,9 +917,66 @@ impl Train {
     }
 
     /// Hands a Change in `reviewing` to the gate; a clean review already bound to its patch makes it ready at once.
+    /// A head that would undo work already on its base goes back to its writer instead (`reverts`).
     pub(super) async fn to_gate(&self, change: Change) {
+        if let Some((why, details)) = self.undoes_base(&change).await {
+            self.send_back(&change, &why, &format!("it {why}"), &details)
+                .await;
+            return;
+        }
         if let Verdict::Ready(reviews) = self.gate.review(change.clone()).await {
             self.set_ready(&change, reviews);
+        }
+    }
+
+    /// Whether the Change's head puts files back to older versions of its base's (`reverts`): a short why and the
+    /// files, commits and fix for its writer. None when it doesn't, says it reverts them on purpose, or GitHub can't
+    /// tell: the review goes ahead then.
+    async fn undoes_base(&self, change: &Change) -> Option<(String, String)> {
+        let found = async {
+            let pull = self
+                .github
+                .pull(&change.repo, change.pr_number.get())
+                .await?;
+            let said = format!(
+                "{}\n{}",
+                pull.title,
+                pull.body.as_deref().unwrap_or_default()
+            );
+            if reverts::deliberate(&said) {
+                return Ok((pull.base.ref_, Vec::new()));
+            }
+            let restores = reverts::restores(
+                &self.github,
+                &change.repo,
+                &pull.base.ref_,
+                change.head_sha.as_str(),
+            )
+            .await?;
+            Ok::<_, GhError>((pull.base.ref_, restores))
+        };
+        match found.await {
+            Ok((_, restores)) if restores.is_empty() => None,
+            Ok((base, restores)) => {
+                let commits: HashSet<&str> = restores
+                    .iter()
+                    .flat_map(|r| r.undone.iter().map(|v| v.commit.as_str()))
+                    .collect();
+                let why = format!(
+                    "would undo {} {} of {base}: rebuild it on origin/{base}",
+                    commits.len(),
+                    if commits.len() == 1 {
+                        "commit"
+                    } else {
+                        "commits"
+                    }
+                );
+                Some((why, reverts::details(&restores, &base)))
+            }
+            Err(e) => {
+                tracing::warn!(change_id = %change.change_id, error = %e.message, "train: undone work not checked");
+                None
+            }
         }
     }
 
@@ -1061,6 +1124,12 @@ impl Train {
 
     /// `why` completes "it ...". From the train's own rebase, or from the queue when GitHub finds it conflicts.
     pub(super) async fn needs_rebase(&self, change: &Change, why: &str) {
+        let problem = format!("the merge train could not rebase it: it {why}");
+        self.send_back(change, why, &problem, "").await;
+    }
+
+    /// Parks the Change as needing a rebase with `why` (as `needs_rebase`), and tells its author `problem`.
+    async fn send_back(&self, change: &Change, why: &str, problem: &str, details: &str) {
         let from = [
             ChangeState::Rebasing,
             ChangeState::Queued,
@@ -1084,11 +1153,7 @@ impl Train {
             format!("{} needs a rebase: {why}", change.change_id),
             json!({ "changeId": change.change_id, "workstreamId": change.workstream_id }),
         );
-        self.tell_author(
-            &parked,
-            &format!("the merge train could not rebase it: it {why}"),
-        )
-        .await;
+        self.tell_author_with(&parked, problem, details).await;
     }
 
     /// `stall` when CI ran out of time rather than went red: the Change's `last_error` then starts `CI_TIMED_OUT`, and
