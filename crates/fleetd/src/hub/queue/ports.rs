@@ -3,7 +3,6 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use fleetd_contracts::auth::{AgentKeyInfo, Role};
 use fleetd_contracts::ids::{MachineId, ThreadId, ThreadRef};
 use fleetd_contracts::sessions::SendMode;
 use fleetd_contracts::steer::SteerId;
@@ -252,8 +251,4 @@ impl UsageHold for NoHold {
     fn when_clear(&self, _: &ThreadRef) -> BoxFuture<'_, ()> {
         Box::pin(async {})
     }
-}
-
-pub fn is_admin(info: &AgentKeyInfo) -> bool {
-    info.grants.iter().any(|g| g.role == Role::Admin)
 }

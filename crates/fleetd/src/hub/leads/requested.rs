@@ -50,19 +50,9 @@ fn number(w: &Workstream) -> i64 {
     w.workstream_id.as_str()[1..].parse().unwrap_or(0)
 }
 
-/// The `created_at` of the earliest human chat message the lead's running turn took in: one written since the
-/// project's lead last ended a run, or the one sent with `now` that interrupted it. A message written during an
-/// earlier run went to that run.
-pub fn run_human_ms(
-    db: &HubDb,
-    r: &ProjectRef,
-    thread: &ThreadId,
-    now_ms: i64,
-) -> Result<Option<i64>, StoreError> {
-    Ok(run_human(db, r, thread, now_ms)?.map(|(at, _)| at))
-}
-
-/// [`run_human_ms`], with that message's person: who started what the lead does in this turn.
+/// The `created_at` and person of the earliest human chat message the lead's running turn took in (who started what
+/// the lead does in this turn): one written since the project's lead last ended a run, or the one sent with `now` that
+/// interrupted it. A message written during an earlier run went to that run.
 pub fn run_human(
     db: &HubDb,
     r: &ProjectRef,

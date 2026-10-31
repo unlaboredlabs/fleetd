@@ -52,15 +52,6 @@ pub enum HubMsg {
 }
 
 impl TimeSink {
-    /// A sink that keeps nothing, for areas built without a time area (tests).
-    pub fn disabled() -> Self {
-        let (tx, _) = mpsc::channel(1);
-        Self {
-            tx,
-            dropped: Arc::new(AtomicU64::new(0)),
-        }
-    }
-
     pub fn span(&self, mut span: NewSpan) {
         span.src = "h".into();
         self.send(HubMsg::Span(Box::new(span)));
@@ -218,11 +209,4 @@ impl Time {
     fn take_dropped(&self) -> u64 {
         self.sink.dropped.swap(0, Ordering::Relaxed)
     }
-}
-
-/// The system clock in ms, for spans timed where no hub clock is at hand (train git, node commands).
-pub fn wall_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as i64)
 }

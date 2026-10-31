@@ -2,9 +2,7 @@
 use std::sync::Arc;
 
 use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::ledger::{
-    DecisionKey, DecisionScope, DecisionSource, DecisionState, WorkstreamId,
-};
+use fleetd_contracts::ledger::{DecisionKey, DecisionScope, DecisionSource, DecisionState};
 
 use super::*;
 use crate::clock::{Clock, SystemClock};
@@ -123,85 +121,5 @@ async fn supersedes_the_active_decision_on_the_same_key_and_scope_only() {
             "D2 db.engine = postgres",
             "D3 db.engine = duckdb"
         ]
-    );
-}
-
-#[tokio::test]
-async fn resolves_workstream_then_project_then_global_skipping_other_projects_and_retired() {
-    let k = kit();
-    let (p1, p2) = (p("p1"), p("p2"));
-    let w1 = WorkstreamId::new("W1").unwrap();
-    let hk = "api.health.path";
-    let chain = Chain {
-        project_ref: p1.clone(),
-        workstream_id: Some(w1.clone()),
-    };
-    let value = |chain: &Chain| {
-        k.decisions
-            .resolve(hk, chain)
-            .unwrap()
-            .map(|d| d.value.to_string())
-    };
-    assert_eq!(value(&chain), None);
-    k.decisions
-        .record(
-            RecordInput::new(key(hk), DecisionScope::Global, "/health"),
-            &human(),
-        )
-        .unwrap();
-    assert_eq!(value(&chain).as_deref(), Some("/health"));
-    k.decisions
-        .record(RecordInput::new(key(hk), project(&p2), "/p2"), &human())
-        .unwrap();
-    assert_eq!(value(&chain).as_deref(), Some("/health"));
-    let proj = k
-        .decisions
-        .record(
-            RecordInput::new(key(hk), project(&p1), "/healthz"),
-            &human(),
-        )
-        .unwrap();
-    assert_eq!(value(&chain).as_deref(), Some("/healthz"));
-    let ws = k
-        .decisions
-        .record(
-            RecordInput {
-                project_ref: Some(p1.clone()),
-                ..RecordInput::new(
-                    key(hk),
-                    DecisionScope::Workstream { workstream_id: w1 },
-                    "/ws",
-                )
-            },
-            &lead(),
-        )
-        .unwrap();
-    assert_eq!(value(&chain).as_deref(), Some("/ws"));
-    assert_eq!(
-        value(&Chain {
-            project_ref: p1.clone(),
-            workstream_id: None
-        })
-        .as_deref(),
-        Some("/healthz")
-    );
-    k.decisions.retire(&ws.decision_id).unwrap();
-    assert_eq!(
-        k.decisions
-            .resolve(hk, &chain)
-            .unwrap()
-            .unwrap()
-            .decision_id,
-        proj.decision_id
-    );
-    let again = k.decisions.retire(&ws.decision_id).unwrap_err();
-    assert!(
-        again.message.contains("already retired"),
-        "{}",
-        again.message
-    );
-    assert_eq!(
-        k.decisions.retire("D99").unwrap_err().code,
-        LedgerCode::NotFound
     );
 }

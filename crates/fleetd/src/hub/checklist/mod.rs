@@ -61,7 +61,11 @@ pub fn read(db: &HubDb, r: &ProjectRef) -> Result<Checklist, StoreError> {
 
 /// The call's edits, in order, on `list`; a refusal leaves it as it was. Ids are never reused, so an id the lead
 /// still holds from a removed item can't name a new one.
-pub fn edited(list: &Checklist, call: &ChecklistCall, at: &Timestamp) -> Result<Checklist, McpToolError> {
+pub fn edited(
+    list: &Checklist,
+    call: &ChecklistCall,
+    at: &Timestamp,
+) -> Result<Checklist, McpToolError> {
     let mut next = list.clone();
     if call.replace == Some(true) {
         next.items.clear();

@@ -280,8 +280,6 @@ pub struct ThreadChanges {
     pub worktree_path: Option<String>,
     /// Repo-relative paths the session changed against its base (committed and not), sorted and unique.
     pub paths: Vec<String>,
-    /// Always empty with the native runner; the tasks area finds a PR in the thread's command output instead.
-    pub pull_request_urls: Vec<String>,
 }
 
 /// A followed thread's live lane values (see `activity`).
@@ -2883,7 +2881,6 @@ impl Executors {
                 branch: c.branch,
                 worktree_path: c.worktree_path,
                 paths: c.paths,
-                pull_request_urls: vec![],
             }),
             _ => Err(failed(&r.machine_id, op, "the node sent no changes")),
         }

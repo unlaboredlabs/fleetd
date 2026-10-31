@@ -88,12 +88,6 @@ impl Breakers {
         m.last_death = Some(until_ms - QUIET_MS);
     }
 
-    pub fn is_open(&self, machine: &MachineId) -> bool {
-        self.machines
-            .get(machine)
-            .is_some_and(|m| m.open_since.is_some())
-    }
-
     /// The machine's breaker while it is open.
     pub fn paused(&self, machine: &MachineId) -> Option<Paused> {
         let m = self.machines.get(machine)?;
@@ -181,7 +175,7 @@ mod tests {
         assert_eq!(b.death(&m("lab-b"), &t("T2"), NOW), None);
         // T1's first deaths are out of the window by now.
         assert_eq!(b.death(&m("lab-a"), &t("T3"), NOW + 10 * MIN), None);
-        assert!(!b.is_open(&m("lab-a")));
+        assert!(!b.paused(&m("lab-a")).is_some());
         let opened = b.death(&m("lab-a"), &t("T4"), NOW + 11 * MIN).unwrap();
         assert_eq!(
             opened,
@@ -190,7 +184,7 @@ mod tests {
                 until_ms: NOW + 41 * MIN,
             }
         );
-        assert!(b.is_open(&m("lab-a")) && !b.is_open(&m("lab-b")));
+        assert!(b.paused(&m("lab-a")).is_some() && !b.paused(&m("lab-b")).is_some());
         // Once: a later death keeps it open longer, and opens nothing.
         assert_eq!(b.death(&m("lab-a"), &t("T5"), NOW + 20 * MIN), None);
         assert_eq!(
@@ -231,7 +225,7 @@ mod tests {
             until_ms: NOW + 30 * MIN,
         };
         b.restore(&m("lab-a"), opened, NOW);
-        assert!(b.is_open(&m("lab-a")));
+        assert!(b.paused(&m("lab-a")).is_some());
         assert_eq!(
             b.paused(&m("lab-a"))
                 .map(|p| (p.opened_by.len(), p.until_ms)),

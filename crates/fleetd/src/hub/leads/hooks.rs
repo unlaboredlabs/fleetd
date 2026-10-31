@@ -67,11 +67,6 @@ pub trait WorkHook: Send + Sync {
     fn elsewhere(&self, project_ref: &ProjectRef) -> BoxFuture<Option<Vec<String>>>;
 }
 
-/// GitHub through `gh api`.
-pub trait GitHubHook: Send + Sync {
-    fn api(&self, path: &str) -> BoxFuture<Result<serde_json::Value, String>>;
-}
-
 #[derive(Default)]
 pub struct LeadHooks {
     /// The chat, for fleetd's own lines about the lead.

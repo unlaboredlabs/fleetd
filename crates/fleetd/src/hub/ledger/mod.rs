@@ -13,7 +13,7 @@ mod overturn_tests;
 #[cfg(test)]
 mod tests;
 
-pub use decisions::{Decisions, Overturned};
+pub use decisions::Decisions;
 pub use repo::{DecisionFilter, RecordInput};
 pub use tools::{WorkstreamLookup, lead_call, register};
 
