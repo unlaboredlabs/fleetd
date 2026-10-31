@@ -233,3 +233,110 @@ async fn a_late_blocking_verdict_blocks_the_heads_its_approval_carried_to() {
     .await
     .expect("the carried approval blocked");
 }
+
+/// #884: a review's blocking finding held the PR, and the lead resolved it by narrowing the brief, with no new patch;
+/// it then waited 2 h for a push. Enqueued again, the findings on its patch count no more and a fresh full review of it
+/// runs: only that review's clean verdict lands it. Enqueued again with nothing blocking it, nothing starts.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_blocked_pr_enqueued_again_gets_a_fresh_full_review_of_the_same_patch() {
+    let kit = Kit::with_reviews();
+    let pr = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]);
+    let head = kit.head_of("slice-1");
+    let change = kit.enqueue(pr.clone()).await;
+    assert_eq!(kit.spawned(), 1);
+    kit.verdict("T50", &head, 1);
+    eventually("blocked", || {
+        kit.get(&change.change_id)
+            .last_error
+            .is_some_and(|e| e.starts_with(crate::hub::reviews::service::BLOCKED))
+    })
+    .await;
+    kit.train.step(REPO).await;
+    assert_eq!(state_of(&kit, &change), ChangeState::Reviewing);
+    assert_eq!(kit.spawned(), 1, "no new head, no new review");
+
+    let again = kit.enqueue(pr.clone()).await;
+    assert_eq!(again.change_id, change.change_id);
+    assert_eq!(kit.spawned(), 2, "a fresh review of the same patch");
+    assert_eq!(
+        again.last_error.as_deref(),
+        Some(super::super::service::RESOLVED)
+    );
+    // The fresh review is still at work: no merge, and enqueuing again starts no other.
+    kit.train.step(REPO).await;
+    assert_eq!(state_of(&kit, &change), ChangeState::Reviewing);
+    kit.enqueue(pr).await;
+    assert_eq!(kit.spawned(), 2);
+    assert!(merged_prs(&kit).is_empty());
+
+    let cursor = kit.host.events_head();
+    kit.verdict("T51", &head, 0);
+    kit.host.next_event(cursor, "change.ready").await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &change), ChangeState::Merged);
+    assert_eq!(*kit.gh.merges.lock().unwrap(), [(7, head)]);
+}
+
+/// A fresh review that finds blocking findings again holds the PR as any review does.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_fresh_review_with_blocking_findings_still_holds_the_pr() {
+    let kit = Kit::with_reviews();
+    let pr = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]);
+    let head = kit.head_of("slice-1");
+    let change = kit.enqueue(pr.clone()).await;
+    kit.verdict("T50", &head, 1);
+    eventually("blocked", || {
+        kit.get(&change.change_id)
+            .last_error
+            .is_some_and(|e| e.starts_with(crate::hub::reviews::service::BLOCKED))
+    })
+    .await;
+    kit.enqueue(pr).await;
+    assert_eq!(kit.spawned(), 2);
+
+    kit.verdict("T51", &head, 2);
+    eventually("blocked by T51", || {
+        kit.get(&change.change_id)
+            .last_error
+            .is_some_and(|e| e.contains("T51 found 2 blocking"))
+    })
+    .await;
+    kit.train.step(REPO).await;
+    assert_eq!(state_of(&kit, &change), ChangeState::Reviewing);
+    assert!(merged_prs(&kit).is_empty());
+}
+
+/// A PR its review's findings hold at one head, with no push for `BLOCKED_WAKE`: the lead hears once, with how to
+/// start a fresh review if they resolved the findings without a patch.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_lead_hears_once_when_a_blocked_pr_sits_with_nothing_moving() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::build(FakeCi::Actions, |_| {}, true, clock.clone());
+    let pr = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]);
+    let head = kit.head_of("slice-1");
+    let change = kit.enqueue(pr).await;
+    kit.verdict("T50", &head, 1);
+    eventually("blocked", || {
+        kit.get(&change.change_id)
+            .last_error
+            .is_some_and(|e| e.starts_with(crate::hub::reviews::service::BLOCKED))
+    })
+    .await;
+    let told = || {
+        kit.host
+            .wakes
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|w| w.contains("call `change_enqueue` for it again"))
+            .count()
+    };
+
+    kit.train.step(REPO).await;
+    assert_eq!(told(), 0);
+    clock.sleep(super::super::service::BLOCKED_WAKE).await;
+    kit.train.step(REPO).await;
+    assert_eq!(told(), 1);
+    kit.train.step(REPO).await;
+    assert_eq!(told(), 1, "once per head");
+}

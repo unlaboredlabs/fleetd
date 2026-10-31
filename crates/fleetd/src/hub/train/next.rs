@@ -78,12 +78,13 @@ pub(super) fn upstreams(after: &[GitHubPrUrl]) -> Vec<GitHubPrUrl> {
     out
 }
 
-/// What the train reads from a repo's workflows on one base: the checks the label runs (`label_gated`) and those the
-/// batch PR skips (`batch_skipped`).
+/// What the train reads from a repo's workflows on one base: the checks the label runs (`label_gated`), those the
+/// batch PR skips (`batch_skipped`) and every job's (`job_checks`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct Workflows {
     pub label: Vec<String>,
     pub batch: Vec<BatchSkip>,
+    pub jobs: Vec<String>,
 }
 
 impl Workflows {
@@ -119,11 +120,13 @@ pub(super) struct NextLabels {
     pub(super) heads: Mutex<HashMap<(String, String), HeadSkips>>,
 }
 
-/// What the train knows of one head's checks the batch skips.
+/// What the train knows of one head's checks the batch skips, and of the jobs its tree defines.
 #[derive(Default)]
 pub(super) struct HeadSkips {
     /// What the train re-ran on it for being cancelled (`rerun_cancelled_skips`): once each.
     reruns: Reruns,
+    /// The checks its workflows define (`job_checks`), once read.
+    jobs: Option<Vec<String>>,
 }
 
 /// Per job the train re-ran for being cancelled, by workflow run and check name (a re-run keeps both), what it did.
@@ -227,15 +230,31 @@ pub(super) fn unproven_skips<'a>(runs: &'a [CheckRun], lone: &Lone) -> Vec<&'a C
         .collect()
 }
 
-/// Whether the check `name` is the job `pattern` names; an expression in it (`qa (${{ matrix.os }})`) matches any text.
+/// Whether the check `name` is the job `pattern` names; each expression in it (`qa (${{ matrix.os }})`) matches any
+/// text.
 pub(super) fn gated_name(pattern: &str, name: &str) -> bool {
-    match pattern.split_once("${{") {
-        None => pattern == name,
-        Some((head, rest)) => {
-            let tail = rest.split_once("}}").map_or("", |(_, t)| t);
-            name.len() >= head.len() + tail.len() && name.starts_with(head) && name.ends_with(tail)
+    // The literal text around the expressions, in order.
+    let mut parts = vec![];
+    let mut rest = pattern;
+    while let Some((literal, after)) = rest.split_once("${{") {
+        parts.push(literal);
+        rest = after.split_once("}}").map_or("", |(_, t)| t);
+    }
+    parts.push(rest);
+    let [head, middle @ .., tail] = parts.as_slice() else {
+        return pattern == name;
+    };
+    if name.len() < head.len() + tail.len() || !name.starts_with(head) || !name.ends_with(tail) {
+        return false;
+    }
+    let mut inner = &name[head.len()..name.len() - tail.len()];
+    for literal in middle {
+        match inner.find(literal) {
+            Some(at) => inner = &inner[at + literal.len()..],
+            None => return false,
         }
     }
+    true
 }
 
 /// The names of the checks the label runs, from the repo's workflow files (path, text): in a workflow the label
@@ -305,6 +324,43 @@ pub(super) fn label_gated(files: &[(String, String)]) -> Vec<String> {
                 && !names.iter().any(|n| n == name)
             {
                 names.push(name.to_string());
+            }
+        }
+    }
+    names
+}
+
+/// The checks each job of the workflow files (path, text) reports, as patterns `gated_name` reads: its `name:` or id,
+/// with ` (…)` after it for a matrix job whose name has no expression (GitHub adds the matrix values), and ` / …` for
+/// one that calls a reusable workflow.
+pub(super) fn job_checks(files: &[(String, String)]) -> Vec<String> {
+    use serde_yaml_ng::Value;
+    let mut names: Vec<String> = Vec::new();
+    for (_, text) in files {
+        let Ok(doc) = serde_yaml_ng::from_str::<Value>(text) else {
+            continue;
+        };
+        let Some(jobs) = doc.get("jobs").and_then(Value::as_mapping) else {
+            continue;
+        };
+        for (id, job) in jobs {
+            let Some(name) = job
+                .get("name")
+                .and_then(Value::as_str)
+                .or_else(|| id.as_str())
+            else {
+                continue;
+            };
+            let matrix = job.get("strategy").and_then(|s| s.get("matrix")).is_some();
+            let name = if job.get("uses").is_some() {
+                format!("{name} / ${{{{ job }}}}")
+            } else if matrix && !name.contains("${{") {
+                format!("{name} (${{{{ matrix }}}})")
+            } else {
+                name.to_string()
+            };
+            if !names.contains(&name) {
+                names.push(name);
             }
         }
     }
@@ -517,6 +573,7 @@ impl Train {
                 let workflows = Workflows {
                     label: label_gated(&files),
                     batch: batch_skipped(&files),
+                    jobs: job_checks(&files),
                 };
                 lock(&self.next_labels.gated).insert(key, (now, workflows.clone()));
                 Some(workflows)
@@ -533,6 +590,49 @@ impl Train {
                 last.map(|(_, workflows)| workflows)
             }
         }
+    }
+
+    /// The checks of `names` that a job of `base`'s workflows reports and none of the tree at `sha` does: its tree
+    /// removed or renamed the job, or the base added it since. No CI on that tree will run them. A check from outside
+    /// the workflows (a commit status, another app) is never one. Empty while either can't be read.
+    pub(super) async fn undefined_at(
+        &self,
+        repo: &str,
+        base: &str,
+        sha: &str,
+        names: &[String],
+    ) -> Vec<String> {
+        let Some(on_base) = self.workflows(repo, base).await else {
+            return Vec::new();
+        };
+        let defined = |jobs: &[String], name: &str| jobs.iter().any(|j| gated_name(j, name));
+        let names: Vec<&String> = names.iter().filter(|n| defined(&on_base.jobs, n)).collect();
+        if names.is_empty() {
+            return Vec::new();
+        }
+        let key = (repo.to_string(), sha.to_string());
+        let known = lock(&self.next_labels.heads)
+            .get(&key)
+            .and_then(|h| h.jobs.clone());
+        let jobs = match known {
+            Some(jobs) => jobs,
+            None => match self.github.workflow_files(repo, sha).await {
+                Ok(files) => {
+                    let jobs = job_checks(&files);
+                    lock(&self.next_labels.heads).entry(key).or_default().jobs = Some(jobs.clone());
+                    jobs
+                }
+                Err(e) => {
+                    tracing::warn!(repo, sha, error = %e.message, "train: the tree's workflows not read");
+                    return Vec::new();
+                }
+            },
+        };
+        names
+            .into_iter()
+            .filter(|n| !defined(&jobs, n))
+            .cloned()
+            .collect()
     }
 
     /// How the label is on PR `n`, which `has` it or not, as far as the train knows, putting nothing on.
@@ -1138,6 +1238,38 @@ mod tests {
         files.sort();
         assert!(label_gated(&files).is_empty());
         assert_eq!(batch_skipped(&files), []);
+        // Each check its train file waits for is one a job of these workflows reports, as the train reads them to
+        // tell a check the tree under test removed (`undefined_at`).
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+        let text =
+            std::fs::read_to_string(format!("{root}/{}", super::super::repo_checks::PATH)).unwrap();
+        let listed = super::super::repo_checks::parse(&text).unwrap();
+        let jobs = job_checks(&files);
+        for name in listed.fast_checks.iter() {
+            let name = name.as_str();
+            assert!(jobs.iter().any(|j| gated_name(j, name)), "{name}: {jobs:?}");
+        }
+    }
+
+    /// A job reports its name, or its id without one; a matrix job without an expression in its name gets its values
+    /// after it, and a call of a reusable workflow its jobs' names after a slash.
+    #[test]
+    fn a_jobs_checks_are_its_name_with_matrix_values_or_called_jobs() {
+        let files = vec![(
+            "ci.yml".to_string(),
+            "name: CI\non: pull_request\njobs:\n  lint:\n    runs-on: x\n  rust:\n    name: rust (linux)\n    \
+             runs-on: x\n  qa:\n    strategy:\n      matrix:\n        os: [a, b]\n    runs-on: x\n  \
+             mobile:\n    uses: ./.github/workflows/mobile.yml\n"
+                .to_string(),
+        )];
+        let jobs = job_checks(&files);
+        let defined = |name: &str| jobs.iter().any(|j| gated_name(j, name));
+        for name in ["lint", "rust (linux)", "qa (a)", "mobile / mobile (ios)"] {
+            assert!(defined(name), "{name}: {jobs:?}");
+        }
+        for name in ["rust", "rust (macos)", "qa", "ios sessions"] {
+            assert!(!defined(name), "{name}: {jobs:?}");
+        }
     }
 
     /// Only a job that skips the batch's branch, in a workflow that runs on each push to a PR: not one a label or a
@@ -1252,6 +1384,9 @@ mod tests {
         assert!(!gated_name("qa (${{ matrix.os }})", "lint (macos-latest)"));
         assert!(gated_name("rust (macos)", "rust (macos)"));
         assert!(!gated_name("rust (macos)", "rust (linux)"));
+        let shard = "qa (${{ matrix.os }}, ${{ matrix.shard }}/${{ matrix.of }})";
+        assert!(gated_name(shard, "qa (ubuntu-latest, 1/4)"));
+        assert!(!gated_name(shard, "qa (ubuntu-latest)"));
     }
 
     #[test]

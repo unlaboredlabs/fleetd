@@ -199,6 +199,8 @@ struct FakeGh {
     /// The finished runs a schedule started on main, newest first, and the jobs of each by run id.
     scheduled: Mutex<Vec<Value>>,
     run_jobs: Mutex<HashMap<u64, Value>>,
+    /// The workflow files of a branch's tree, by branch: read at its head in place of main's.
+    tree_workflows: Mutex<HashMap<String, Vec<(&'static str, &'static str)>>>,
 }
 
 fn ok(body: Value) -> GhOut {
@@ -782,6 +784,25 @@ impl FakeGh {
             {
                 http_error(500, "Server Error")
             }
+            (["contents", ".github", "workflows", ..], "GET") if self.tree_at(query).is_some() => {
+                let files = self.tree_at(query).unwrap_or_default();
+                match parts.get(3) {
+                    None => ok(Value::Array(
+                        files
+                            .iter()
+                            .map(|(file, _)| json!({ "path": format!(".github/workflows/{file}"), "type": "file" }))
+                            .collect(),
+                    )),
+                    Some(file) => match files.into_iter().find(|(f, _)| f == file) {
+                        Some((_, text)) => GhOut {
+                            exit_code: 0,
+                            stdout: text.into(),
+                            stderr: String::new(),
+                        },
+                        None => http_error(404, "Not Found"),
+                    },
+                }
+            }
             (["contents", ".github", "workflows"], "GET") => {
                 let files = match self.ci {
                     FakeCi::Macos { .. } => self.workflows(),
@@ -958,6 +979,16 @@ impl FakeGh {
             }
             _ => http_error(404, "Not Found"),
         }
+    }
+
+    /// The workflow files `tree_workflows` gives the branch whose head (or name) the query's `ref=` names.
+    fn tree_at(&self, query: &str) -> Option<Vec<(&'static str, &'static str)>> {
+        let at = query.split('&').find_map(|kv| kv.strip_prefix("ref="))?;
+        let trees = self.tree_workflows.lock().unwrap();
+        trees
+            .iter()
+            .find(|(branch, _)| *branch == at || self.head_of(branch).as_deref() == Some(at))
+            .map(|(_, files)| files.clone())
     }
 
     /// `FakeCi::Macos`'s workflow files: CI, whose `rust (macos)` runs on the label where the repo `uses` it, with the
@@ -1517,6 +1548,7 @@ impl Kit {
             job_logs: Mutex::default(),
             head_runs: Mutex::default(),
             workflow_files: Mutex::default(),
+            tree_workflows: Mutex::default(),
             required: Mutex::default(),
             scheduled: Mutex::default(),
             run_jobs: Mutex::default(),
@@ -3962,11 +3994,16 @@ async fn the_train_never_merges_while_a_required_check_reads_cancelled() {
 
 /// #860: its author pushed a fix to a parked PR while the train waited 25 min on another PR's CI, and the train only
 /// read the push once that CI ended. Now the PRs waiting in line are read during the wait: the parked PR takes its new
-/// head and goes back in line before the other PR merges.
+/// head and goes back in line before the other PR merges (with no batch stacked on that PR, which would take it).
 #[tokio::test(flavor = "multi_thread")]
 async fn a_push_to_a_parked_pr_is_taken_while_another_prs_ci_runs() {
     let clock = Arc::new(Sleeps::default());
-    let kit = Kit::on_clock(FakeCi::Workflow { green_from: 40 }, clock);
+    let kit = Kit::build(
+        FakeCi::Workflow { green_from: 40 },
+        |o| o.pipeline_depth = 1,
+        false,
+        clock,
+    );
     let parked = kit
         .enqueue(kit.open_pr(8, "b", &[add("b.txt", "b\n")]))
         .await;
@@ -6088,6 +6125,139 @@ async fn a_listed_check_that_never_runs_is_named_once_the_others_finish() {
         "{why:?}"
     );
     assert!(kit.gh.merges.lock().unwrap().is_empty());
+}
+
+/// Main's CI: `build`, `lint`, `site` and `rust (darwin)` jobs.
+const MAIN_JOBS: &str = "name: CI\non:\n  pull_request:\njobs:\n  build:\n    runs-on: ubuntu-latest\n  lint:\n    \
+     runs-on: ubuntu-latest\n  site:\n    runs-on: ubuntu-latest\n  darwin:\n    name: rust (darwin)\n    \
+     runs-on: ubuntu-latest\n";
+
+/// #875: a PR whose own tree removes a job main's train file still lists is neither held to the CI timeout nor told the
+/// check never ran: no CI on its tree can run it, so the train doesn't wait for it, and it merges on the rest.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_listed_check_whose_job_the_prs_tree_removed_is_not_waited_for() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock.clone());
+    kit.gh
+        .workflow_files
+        .lock()
+        .unwrap()
+        .push(("ci.yml", MAIN_JOBS));
+    let file = json!({ "fastChecks": ["site"] }).to_string();
+    kit.commit("main", &[(".fleetd/train.json", Some(&file))], None);
+    answer_checks(&kit, || {
+        vec![job(1, 1, "build", "success"), job(2, 1, "lint", "success")]
+    });
+    const PR_JOBS: &str = "name: CI\non:\n  pull_request:\njobs:\n  build:\n    runs-on: ubuntu-latest\n  lint:\n    \
+         runs-on: ubuntu-latest\n";
+    kit.gh
+        .tree_workflows
+        .lock()
+        .unwrap()
+        .insert("docs".into(), vec![("ci.yml", PR_JOBS)]);
+    let change = kit
+        .enqueue(kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]))
+        .await;
+
+    assert!(kit.train.step(REPO).await);
+
+    let merged = kit.get(&change.change_id);
+    assert_eq!(merged.state, ChangeState::Merged, "{:?}", merged.last_error);
+    assert!(
+        slept(&clock) < super::service::NEVER_RAN_WAIT,
+        "held {:?}",
+        slept(&clock)
+    );
+}
+
+/// A check the base requires that the PR's tree has no job for still counts: the train never merges without it, but
+/// it says why at once, once every other check finished, rather than at the CI timeout or in a loop.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_required_check_whose_job_the_prs_tree_removed_stops_it_with_the_reason() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock.clone());
+    kit.gh
+        .workflow_files
+        .lock()
+        .unwrap()
+        .push(("ci.yml", MAIN_JOBS));
+    answer_checks(&kit, || vec![job(2, 1, "lint", "success")]);
+    const PR_JOBS: &str =
+        "name: CI\non:\n  pull_request:\njobs:\n  lint:\n    runs-on: ubuntu-latest\n";
+    kit.gh
+        .tree_workflows
+        .lock()
+        .unwrap()
+        .insert("drop-build".into(), vec![("ci.yml", PR_JOBS)]);
+    let change = kit
+        .enqueue(kit.open_pr(7, "drop-build", &[add("ci.md", "no build\n")]))
+        .await;
+
+    assert!(kit.train.step(REPO).await);
+
+    let stopped = kit.get(&change.change_id);
+    assert_eq!(stopped.state, ChangeState::CiFailed);
+    let why = stopped.last_error.unwrap_or_default();
+    assert!(
+        why.starts_with(super::service::CI_TIMED_OUT)
+            && why.contains("its tree has no job for the check build, which the base requires"),
+        "{why}"
+    );
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+    assert!(
+        slept(&clock) < Duration::from_secs(10 * 60),
+        "held {:?}",
+        slept(&clock)
+    );
+}
+
+/// A PR branched before main added `rust (darwin)` to its jobs and its fast set: its own head can't run it, so it
+/// isn't kept out of a batch for it. The batch's CI, on the combined tree, runs it and must pass it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_fast_check_the_prs_own_tree_doesnt_define_is_left_to_the_batch() {
+    let kit = Kit::on_clock(FakeCi::Required, Arc::new(Sleeps::default()));
+    kit.gh
+        .workflow_files
+        .lock()
+        .unwrap()
+        .push(("ci.yml", MAIN_JOBS));
+    let file = json!({ "fastChecks": ["rust (darwin)"] }).to_string();
+    kit.commit("main", &[(".fleetd/train.json", Some(&file))], None);
+    answer_checks(&kit, || {
+        vec![
+            job(1, 1, "build", "success"),
+            job(2, 1, "lint", "success"),
+            job(3, 1, "rust (darwin)", "success"),
+        ]
+    });
+    const OLD_JOBS: &str = "name: CI\non:\n  pull_request:\njobs:\n  build:\n    runs-on: ubuntu-latest\n  lint:\n    \
+         runs-on: ubuntu-latest\n";
+    let mut changes = Vec::new();
+    for (n, branch, file) in [(7, "a", "a.txt"), (8, "b", "b.txt")] {
+        let pr = kit.open_pr(n, branch, &[add(file, "x\n")]);
+        kit.gh
+            .tree_workflows
+            .lock()
+            .unwrap()
+            .insert(branch.into(), vec![("ci.yml", OLD_JOBS)]);
+        kit.gh.head_runs.lock().unwrap().insert(
+            kit.head_of(branch),
+            json!([job(1, 1, "build", "success"), job(2, 1, "lint", "success")]),
+        );
+        changes.push(kit.enqueue(pr).await);
+    }
+
+    assert!(kit.train.step(REPO).await);
+
+    let merges = kit.gh.merges.lock().unwrap().clone();
+    assert_eq!(merges.len(), 1, "one batch for both: {merges:?}");
+    assert_eq!(
+        kit.gh.pulls.lock().unwrap()[&merges[0].0].branch,
+        "fleetd/train/batch"
+    );
+    for change in &changes {
+        assert_eq!(kit.get(&change.change_id).state, ChangeState::Merged);
+    }
 }
 
 /// A train file the train can't use is no license to skip checks: it waits for every check, as with unreadable
