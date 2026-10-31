@@ -69,8 +69,6 @@ pub struct HubConfig {
     pub listen: Listen,
     /// The hub's public URL when one is configured (`fleetd init --url`); absent means `http://<listen>`.
     pub url: Option<String>,
-    /// How long a write to an offline machine waits in the queue; absent means 24 h.
-    pub queue_ttl_sec: Option<u64>,
 }
 
 impl HubConfig {

@@ -30,7 +30,6 @@ import {
   type NodeOptions,
   ok,
   pidOf,
-  QUEUE_TTL_SEC,
   RUN,
   runCleanups,
   seedRepo,
@@ -51,7 +50,7 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
 
 const hubHome = path.join(RUN, "hub");
 const startHubProcess = async (env: Readonly<Record<string, string>> = {}) => {
-  startCli("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`, "--queue-ttl", String(QUEUE_TTL_SEC)], env);
+  startCli("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`], env);
   await until("hub /healthz", 30_000, async () => {
     try {
       return (await fetch(`${HUB_URL}/healthz`)).ok ? true : undefined;
@@ -86,7 +85,7 @@ async function main() {
     writeFleetdWrapper();
     for (const m of MACHINES) seedRepo(m.repo, m.id);
     await startHubProcess();
-    ok(`hub up on ${HUB_URL} (queue TTL ${QUEUE_TTL_SEC} s)`);
+    ok(`hub up on ${HUB_URL}`);
 
     const key = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--name", "lab", "--role", "operate", "--machines", "*"))?.[0];
     if (key === undefined) throw new Error("hub key create printed no key");

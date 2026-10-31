@@ -52,7 +52,7 @@ On the hub machine.
 
 ```text
 fleetd init [--yes] [--home <dir>] [--listen <host:port>] [--url <url>]
-    [--git-identity "Name <email>"] [--no-service] [--unit-suffix <s>]
+    [--git-identity "Name <email>"] [--no-service]
 ```
 
 set up fleetd step by step in a terminal: the hub on this machine (home default `~/.fleetd/hub`, kept running by a systemd or launchd user service), where it listens (your tailnet when there is one), the claude and gh logins, the machines that run agents, a first project and the desktop app, then the hub's setup steps. Run it again to check and repair; it keeps what works. `--yes` takes every default. Without a terminal and without `--yes` it only sets up the hub. `--url` is how devices reach the hub (default http://\<listen\>); `--git-identity` is the commit author for every machine (the GitHub noreply address for public repos); `--no-service` prepares everything but leaves starting the hub to you
@@ -94,7 +94,7 @@ stop and remove the hub's service; its data stays unless `--purge`, which also r
 
 ```text
 fleetd machine add <ssh-host> | --local [--machine-id <id>] [--tags a,b] [--dry-run] [--no-service]
-    [--hub-url <url>] [--ssh-config <file>] [--home <hub home>] [--unit-suffix <s>]
+    [--hub-url <url>] [--ssh-config <file>] [--home <hub home>]
     [--claude-config-dir <dir>]
 ```
 
@@ -365,7 +365,7 @@ Run `fleetd init --no-service` before `fleetd hub start`: it writes the setup th
 ### fleetd hub start {#hub-start}
 
 ```text
-fleetd hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>]
+fleetd hub start [--home <dir>] [--listen <host:port>]
 ```
 
 run the hub (default home `~/.fleetd/hub`, listen 127.0.0.1:4790, writes to an offline machine wait 24 h)

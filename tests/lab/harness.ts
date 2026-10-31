@@ -49,8 +49,6 @@ export const MECHANICS = "medium" as const;
 
 // Texts the binary emits that scenarios match on; each mirrors a constant in crates/fleetd.
 
-/** The hub's offline-queue TTL in lab runs, short enough for the expiry check to wait it out. */
-export const QUEUE_TTL_SEC = 40;
 /** The two standing lab machines, each with its own test repo (seeded on first use) as its project. */
 export const MACHINES = [
   { id: "lab-a", repo: path.join(LAB, "repo-a") },

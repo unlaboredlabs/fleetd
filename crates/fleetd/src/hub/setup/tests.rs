@@ -190,7 +190,6 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
             port: 9,
         },
         url: Some(HUB.into()),
-        queue_ttl_sec: None,
     };
     let hub = crate::hub::serve::build_on(
         HubDb::open_memory().unwrap(),

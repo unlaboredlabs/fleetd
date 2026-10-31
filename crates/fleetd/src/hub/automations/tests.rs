@@ -426,7 +426,6 @@ fn full_hub(home: &std::path::Path) -> (Arc<crate::hub::api::Hub>, ProjectRef) {
             home: home.to_path_buf(),
             listen: Listen::default(),
             url: None,
-            queue_ttl_sec: None,
         },
         ManualClock::at(1_792_231_200_000),
     )
@@ -760,7 +759,6 @@ fn a_webhook_url_starts_with_the_url_init_kept_else_the_listen_address() {
         home: home.path().to_path_buf(),
         listen: crate::hub::api::Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     assert_eq!(
         webhook_url(&fallback.url(), &id, "s"),

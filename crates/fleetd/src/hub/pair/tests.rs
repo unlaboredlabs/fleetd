@@ -113,7 +113,6 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
         home: home.path().to_path_buf(),
         listen: Default::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let hub = crate::hub::serve::build_on(
         HubDb::open_memory().unwrap(),
@@ -214,7 +213,6 @@ fn hub_at(url: Option<&str>) -> (Arc<Hub>, Arc<ManualClock>, tempfile::TempDir) 
         home: home.path().to_path_buf(),
         listen: Default::default(),
         url: url.map(str::to_owned),
-        queue_ttl_sec: None,
     };
     let clock = ManualClock::at(1_792_000_000_000);
     let hub =

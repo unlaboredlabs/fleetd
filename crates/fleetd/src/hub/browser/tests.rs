@@ -33,7 +33,6 @@ fn hub() -> (Arc<Hub>, Arc<ManualClock>, tempfile::TempDir) {
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let clock = ManualClock::at(NOW_MS);
     let hub =

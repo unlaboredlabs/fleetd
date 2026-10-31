@@ -32,7 +32,6 @@ fn hub_on(db: Arc<HubDb>, home: &tempfile::TempDir) -> Arc<Hub> {
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: Some("http://devbox:4790".into()),
-        queue_ttl_sec: None,
     };
     let hub = crate::hub::serve::build_on(db, config, ManualClock::at(1_792_000_000_000)).unwrap();
     let project = |id: &str, title: &str| -> fleetd_contracts::model::ProjectSummary {
