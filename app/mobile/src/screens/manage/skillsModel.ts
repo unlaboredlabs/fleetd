@@ -2,7 +2,7 @@
 // saved itself) come first, then the installed ones, then any its folder has; each row says who changed it last and
 // when, or when it was last used. A skill's view reads its SKILL.md without the frontmatter, its history each version
 // with who, when and why, and a version's change from the one before as the desktop's prose diff, folded around it.
-import { diffLines, type DiffLine, type SkillOrigin, type SkillSummary } from "../../desktop";
+import { diffLines, type DiffLine, type HubState, type SkillOrigin, type SkillSummary } from "../../desktop";
 
 // The hub's skill versions (D261), as fleetd-contracts has them: copied until the generated contracts carry them.
 /** One version of a hub-kept skill's SKILL.md: a Navi's save, a person's edit or restore, an install. */
@@ -30,6 +30,9 @@ export interface SkillRead {
   readonly text: string;
   readonly versions: readonly SkillVersion[];
 }
+
+/** The hub keeps skills' versions and lets a person restore and turn them off (`navi_skills`), as the desktop checks. */
+export const skillsShown = (hub: HubState): boolean => hub.phase === "live" && hub.features?.includes("navi_skills") === true;
 
 export type Kind = "own" | "installed" | "folder";
 

@@ -20,6 +20,7 @@ import { useNow } from "../time";
 import { deleteProject, forgetSignins, readForDelete, readInfo } from "./api";
 import { agentLines, allowed, checklist, deleteBlocked, deleteWords, machineName, merges, orderLines, profilesValue, subtitle, type DeleteWords, type Tone } from "./model";
 import { confirmDestructive, errorWords, Problem, useRead } from "./parts";
+import { skillsShown } from "./skillsModel";
 import { TypedDelete } from "./TypedDelete";
 
 const toneColor = (t: Palette, tone: Tone): string => (tone === "accent" ? t.accent : tone === "warning" ? t.warning : tone === "danger" ? t.danger : t.secondary);
@@ -184,7 +185,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
         </ListSection>
       )}
 
-      {navi ? (
+      {navi && skillsShown(state.hub) ? (
         <ListSection footer={`What ${p.title} worked out and saved, and what it was given. Read, change or turn off any of them.`}>
           <ListRow title="Skills" {...(v?.skills === undefined ? {} : { value: String(v.skills.length) })} onPress={() => navigation.navigate("Skills", { key })} />
         </ListSection>
