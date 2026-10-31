@@ -2600,6 +2600,16 @@ export type HubUpdateInput = {
 
 export type HubUpdateOutput = {
   /**
+   * With `settings.auto`: when the build that is ready installs by itself, an hour after the last update started at
+   * the earliest. Absent when nothing is ready, or automatic updates are off.
+   */
+  autoAt?: Timestamp;
+  /**
+   * With `settings.auto`: the build ready that automatic updates skip, as the hub didn't come up healthy on it and
+   * it was put back; a newer build installs as usual, and Update still installs this one.
+   */
+  autoSkips?: string;
+  /**
    * True when the run isn't finished but nothing in the hub drives it any more: it won't change again, and Update
    * starts a new one. Absent otherwise.
    */
@@ -2612,7 +2622,19 @@ export type HubUpdateOutput = {
   ready?: string;
   /** The update going now or the last one; absent when the hub never updated itself. */
   run?: UpdateRun;
+  /** The hub's update settings. */
+  settings?: UpdateSettings;
   truncated?: boolean;
+};
+
+export type HubUpdateSettingsInput = {
+  /**
+   * Updates install by themselves, at most once an hour: the channel's newest build an hour after the last update
+   * started, whichever builds came out in between. Off by default.
+   */
+  auto?: boolean;
+  /** How long a node waits for its agents to finish their step, in minutes, 0 to 240; 0 doesn't wait. */
+  drainMinutes?: number;
 };
 
 export type HubUpdateStatusInput = { [key: string]: unknown };
@@ -7456,6 +7478,8 @@ export type UpdatePartKind = KnownUpdatePartKind | (string & {});
 
 /** One hub update, from its start to the last node's result. */
 export type UpdateRun = {
+  /** Started by itself (automatic updates), not by a person. Absent otherwise. */
+  auto?: boolean;
   channel: HubChannel;
   /** Set once every part has its result. */
   finishedAt?: Timestamp;
@@ -7467,6 +7491,14 @@ export type UpdateRun = {
   startedAt: Timestamp;
   /** The build it updates to: the channel's newest fleetd. Absent until the hub read the channel. */
   to?: string;
+};
+
+/** How the hub updates: `<hub home>/update/settings.json`. */
+export type UpdateSettings = {
+  /** Updates install by themselves, at most once an hour. */
+  auto: boolean;
+  /** How long a node waits for its agents to finish their step, in minutes. */
+  drainMinutes: number;
 };
 
 export type KnownUpdateStage = "download" | "checksum" | "install" | "restart" | "health";
@@ -8068,6 +8100,7 @@ export interface ToolMap {
   hub_link_revoke: { input: HubLinkRevokeInput; output: HubLinkRevokeOutput };
   hub_links_get: { input: HubLinksGetInput; output: HubLinksGetOutput };
   hub_update: { input: HubUpdateInput; output: HubUpdateOutput };
+  hub_update_settings: { input: HubUpdateSettingsInput; output: HubUpdateOutput };
   hub_update_status: { input: HubUpdateStatusInput; output: HubUpdateOutput };
   invite_create: { input: InviteCreateInput; output: InviteCreateOutput };
   invite_revoke: { input: InviteRevokeInput; output: InviteRevokeOutput };

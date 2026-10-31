@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AppUpdate, Release } from "../../../shared/updates";
 import type { UpdatePart, UpdateRun } from "../../../shared/contracts";
 import type { Flow } from "./flow";
-import { hubStanding, updatesView, type HubInput, type MachineInput, type PartRow } from "./model";
+import { autoWords, hubStanding, updatesView, type HubInput, type MachineInput, type PartRow } from "./model";
 
 const MINE = "0.0.0-edge.202610221030+abc1234";
 const NEXT = "0.0.0-edge.202610231030+def5678";
@@ -412,6 +412,16 @@ describe("the sheet's lines, the notice and the note", () => {
     // The latest machine's deadline, in the person's own time.
     expect(v.progress).toEqual({ tone: "quiet", text: "Updating when agents finish their step (3), by 11:12" });
     expect(v.updateNow).toBe(true);
+    // A wait longer than Start over's 10 minutes is still a wait, not a run that stopped moving.
+    const long = updatesView({
+      app: null,
+      hub: hubOf({ version: OLDER }),
+      machines,
+      run,
+      flow: { phase: "following", reconnecting: false, since: at - 20 * 60_000 },
+      now: at,
+    });
+    expect(long.startOver).toBeNull();
     expect(says(v).slice(1, 3)).toEqual([
       ["builder", "Waiting", "2 agents finishing their step, installs by 11:12", ""],
       ["mac", "Waiting", "1 agent finishing its step, installs by 11:11", ""],
@@ -561,5 +571,17 @@ describe("the hub's standing in one line, for General", () => {
     // Unknown or offline: never "up to date".
     expect(view({ nodes: [row("quiet", "Its version is unknown")] })?.text).toBe("Not every machine has said which fleetd it runs.");
     expect(view({ nodes: [row("quiet", "Offline")] })?.text).toBe("Not every machine has said which fleetd it runs.");
+  });
+});
+
+describe("automatic updates' words", () => {
+  it("say how often, how long machines wait, and when the ready build goes in", () => {
+    expect(autoWords(10, null)).toBe("New builds install by themselves, at most once an hour, each machine once agents finish their step (10 minutes at most).");
+    expect(autoWords(10, null, NEXT)).toBe(
+      "New builds install by themselves, at most once an hour, each machine once agents finish their step (10 minutes at most). It skips Edge · Oct 23, 10:30 UTC · def5678: the hub didn't come up healthy on it and put it back. A newer build installs as usual; Update installs this one.",
+    );
+    expect(autoWords(0, "2026-10-26T11:05:00.000Z", null, "UTC")).toBe(
+      "New builds install by themselves, at most once an hour, each machine without waiting for agents. The build that's ready goes in at 11:05.",
+    );
   });
 });

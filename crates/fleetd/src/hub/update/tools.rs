@@ -1,9 +1,10 @@
-//! hub_update and hub_update_status.
+//! hub_update, hub_update_status and hub_update_settings.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::mcp::{
-    ErrorCode, HubUpdateInput, HubUpdateOutput, HubUpdateStatusInput, UpdateRun,
+    DRAIN_MINUTES_MAX, ErrorCode, HubUpdateInput, HubUpdateOutput, HubUpdateSettingsInput,
+    HubUpdateStatusInput, UpdateRun,
 };
 
 use super::Refused;
@@ -14,6 +15,43 @@ use crate::hub::api::{
 pub fn register(tools: &mut Registry) {
     tools.add("hub_update", hub_update);
     tools.add("hub_update_status", hub_update_status);
+    tools.add("hub_update_settings", hub_update_settings);
+}
+
+/// Every answer's shape: the run, what's ready, and the settings with when an automatic update is due.
+fn output(hub: &Hub, run: Option<UpdateRun>) -> HubUpdateOutput {
+    let left_over = hub.updates.left_over();
+    HubUpdateOutput {
+        next: Some(next(run.as_ref(), left_over)),
+        run,
+        ready: ready(hub),
+        left_over: left_over.then_some(true),
+        settings: Some(hub.updates.settings()),
+        auto_at: hub
+            .updates
+            .auto_at()
+            .map(|at| crate::hub::store::iso_ms(at).into()),
+        auto_skips: hub
+            .updates
+            .settings()
+            .auto
+            .then(|| hub.updates.auto_skips())
+            .flatten()
+            .map(|v| crate::node::wire::head_text(&v)),
+        truncated: None,
+    }
+}
+
+/// Only a person with Admin on every machine changes how the hub updates: an update restarts every machine.
+fn refuse_unless_admin_everywhere(caller: &Caller) -> Result<(), ToolError> {
+    if !allows_everywhere(caller, Role::Admin) || !is_human(caller) {
+        return Err(ToolError::new(
+            ErrorCode::Forbidden,
+            "Updating fleetd restarts the hub and every node: it needs a person's key with Admin on every machine.",
+        )
+        .with_fix(admin_everywhere_fix(caller)));
+    }
+    Ok(())
 }
 
 fn next(run: Option<&UpdateRun>, left_over: bool) -> String {
@@ -45,13 +83,7 @@ async fn hub_update(
     input: HubUpdateInput,
 ) -> Result<HubUpdateOutput, ToolError> {
     // It restarts the hub and every node, so Admin on one machine is not enough; and a person decides it.
-    if !allows_everywhere(&caller, Role::Admin) || !is_human(&caller) {
-        return Err(ToolError::new(
-            ErrorCode::Forbidden,
-            "Updating fleetd restarts the hub and every node: it needs a person's key with Admin on every machine.",
-        )
-        .with_fix(admin_everywhere_fix(&caller)));
-    }
+    refuse_unless_admin_everywhere(&caller)?;
     let now = input.now == Some(true);
     let started = match &input.machine {
         Some(machine) => hub.updates.retry(machine, now),
@@ -77,14 +109,7 @@ async fn hub_update(
         )
         .with_fix("Press Update to bring every machine to the hub's build."),
     })?;
-    let left_over = hub.updates.left_over();
-    Ok(HubUpdateOutput {
-        next: Some(next(Some(&run), left_over)),
-        run: Some(run),
-        ready: ready(&hub),
-        left_over: left_over.then_some(true),
-        truncated: None,
-    })
+    Ok(output(&hub, Some(run)))
 }
 
 async fn hub_update_status(
@@ -92,13 +117,28 @@ async fn hub_update_status(
     _caller: Caller,
     _input: HubUpdateStatusInput,
 ) -> Result<HubUpdateOutput, ToolError> {
-    let run = hub.updates.status();
-    let left_over = hub.updates.left_over();
-    Ok(HubUpdateOutput {
-        next: Some(next(run.as_ref(), left_over)),
-        run,
-        ready: ready(&hub),
-        left_over: left_over.then_some(true),
-        truncated: None,
-    })
+    Ok(output(&hub, hub.updates.status()))
+}
+
+async fn hub_update_settings(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: HubUpdateSettingsInput,
+) -> Result<HubUpdateOutput, ToolError> {
+    refuse_unless_admin_everywhere(&caller)?;
+    if input.drain_minutes.is_some_and(|m| m > DRAIN_MINUTES_MAX) {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            format!("drainMinutes must be 0-{DRAIN_MINUTES_MAX}"),
+        ));
+    }
+    hub.updates
+        .set_settings(input.auto, input.drain_minutes)
+        .map_err(|e| {
+            ToolError::new(
+                ErrorCode::Failed,
+                format!("The hub couldn't write its update settings: {e}"),
+            )
+        })?;
+    Ok(output(&hub, hub.updates.status()))
 }
