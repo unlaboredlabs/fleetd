@@ -3796,6 +3796,89 @@ async fn a_failed_job_passing_on_its_re_run_merges_and_is_called_flaky() {
     );
 }
 
+/// The required check is a job that needs a shard (ci.yml's `rust (linux)`), so it fails when the shard does. GitHub
+/// lists it first, as the newer, but the train re-runs the shard, which GitHub re-runs it with: re-run alone, it would
+/// fail again on the shard's old result.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_shard_is_re_run_before_the_job_that_needs_it() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock);
+    kit.gh.job_logs.lock().unwrap().insert(
+        10,
+        "2026-10-30T21:00:00.1Z         FAIL [   1.204s] fleetd hub::lab::page\n".into(),
+    );
+    let reruns = kit.gh.reruns.clone();
+    answer_checks(&kit, move || {
+        let mut runs = vec![
+            job(12, 1, "build", "failure"),
+            job(11, 1, "build (2/2)", "success"),
+            job(10, 1, "build (1/2)", "failure"),
+        ];
+        if *reruns.lock().unwrap() == [10] {
+            runs.splice(
+                0..0,
+                [
+                    job(14, 1, "build", "success"),
+                    job(13, 1, "build (1/2)", "success"),
+                ],
+            );
+        }
+        runs
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [10], "the shard, once");
+    let sends = kit.host.sends.lock().unwrap().clone();
+    assert!(
+        sends.iter().any(
+            |(_, m)| m.contains("build (1/2) (test fleetd hub::lab::page) failed, then passed")
+        ),
+        "{sends:?}"
+    );
+}
+
+/// A cancelled shard fails the job that needs it (`rust (linux)` runs even then, so it is never a skip that counts as
+/// passing). Cancelled is no failure (D191): the train re-runs the cancelled shard, which re-runs the failed job with
+/// it, rather than that job alone on the old result, and nothing was flaky.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_shard_is_re_run_for_the_job_that_needs_it() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock);
+    let reruns = kit.gh.reruns.clone();
+    answer_checks(&kit, move || {
+        let mut runs = vec![
+            job(12, 1, "build", "failure"),
+            job(11, 1, "build (2/2)", "success"),
+            job(10, 1, "build (1/2)", "cancelled"),
+        ];
+        if *reruns.lock().unwrap() == [10] {
+            runs.splice(
+                0..0,
+                [
+                    job(14, 1, "build", "success"),
+                    job(13, 1, "build (1/2)", "success"),
+                ],
+            );
+        }
+        runs
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert_eq!(
+        *kit.gh.reruns.lock().unwrap(),
+        [10],
+        "the cancelled shard, once"
+    );
+    let sends = kit.host.sends.lock().unwrap().clone();
+    assert!(!sends.iter().any(|(_, m)| m.contains("flaky")), "{sends:?}");
+}
+
 /// A failed job that fails again on its one re-run is red: the PR goes back to its author as before, and no third run
 /// is asked for.
 #[tokio::test(flavor = "multi_thread")]

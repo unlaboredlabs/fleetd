@@ -103,7 +103,9 @@ spend queued for runners doesn't count. While every check is still queued, there
 provider gives no start times, the 45 minutes count from when the train starts waiting.
 
 A check that fails on a PR's own commit gets one more try: the train re-runs that job alone, with the jobs that need
-it, once its workflow run is done. If the re-run passes, the PR carries on, and its agent and the lead hear in one line
+it, once its workflow run is done. Of several failed jobs in one run it re-runs the oldest first, and a cancelled job of
+that run with them, so a job that failed because one it needs failed or was cancelled (a check that gathers test
+shards) re-runs with that one. If the re-run passes, the PR carries on, and its agent and the lead hear in one line
 that the check was flaky, naming the failing test when the job's log shows one. If it fails again, the PR fails,
 however long the other checks have left. A red check on a batch fails the batch at once, and its PRs go alone. A
 cancelled check is never a failure: if a push to the PR cancelled its run, the train takes the new commit instead;
