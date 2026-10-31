@@ -625,6 +625,85 @@ async fn approvals_are_answered_from_either_side_and_both_update() {
     ));
 }
 
+/// A card the Navi's approval checker sent to the person says why, as the desktop card does: why it asks, or that it
+/// refused it and approving runs it once anyway.
+#[tokio::test]
+async fn a_card_the_checker_judged_says_why() {
+    use fleetd_contracts::chat::{ChatItem, CommandApprovalItem, CommandApprovalState};
+    use fleetd_contracts::ledger::{CheckerNote, CheckerVerdict, ToolPermission};
+    let (hub, _home, bob, node) = setup().await;
+    paired(&hub, &bob, &node).await;
+    let checked = |id: &str, verdict: CheckerVerdict, reason: &str| {
+        ChatItem::CommandApproval(CommandApprovalItem {
+            request_id: fleetd_contracts::chat::ChatRequestId::unchecked(id),
+            machine_id: lab(),
+            gated: None,
+            permission: Some(Box::new(ToolPermission {
+                thread_id: fleetd_contracts::ids::ThreadId::unchecked("s1"),
+                request_id: fleetd_contracts::prim::NonEmpty::unchecked(id),
+                tool_name: fleetd_contracts::prim::NonEmpty::unchecked("mcp__mail__send_message"),
+                summary: fleetd_contracts::prim::Text::unchecked("Send a mail"),
+                preview: None,
+                input: Some(json!({ "to": ["dana@northwlnd.example"], "body": "The deck." })),
+                site: None,
+                checker: Some(CheckerNote {
+                    verdict,
+                    reason: Line::unchecked(reason),
+                }),
+                screenshot: None,
+            })),
+            preview_config: None,
+            purchase: None,
+            state: CommandApprovalState::Open,
+            exit_code: None,
+            output_tail: None,
+            note: None,
+            answered_at: None,
+            by: None,
+            finished_at: None,
+        })
+    };
+    hub.chat
+        .item(
+            &navi(),
+            checked(
+                "Q901",
+                CheckerVerdict::Ask,
+                "northwlnd.example looks like one of your contacts' domains, but isn't",
+            ),
+        )
+        .unwrap();
+    hub.chat
+        .item(
+            &navi(),
+            checked("Q902", CheckerVerdict::Block, "it sends <your> password"),
+        )
+        .unwrap();
+    send_once(&hub, &navi()).await.unwrap();
+    let html: Vec<String> = sent(&node)
+        .into_iter()
+        .filter_map(|s| match s {
+            TelegramSend::Text { html, .. } => Some(html),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(html.len(), 2, "{html:?}");
+    assert!(
+        html[0].contains(
+            "\nThe checker asks you: northwlnd.example looks like one of your contacts' domains, but isn't\n<pre>"
+        ),
+        "{}",
+        html[0]
+    );
+    assert!(
+        html[1].contains(
+            "The checker refused it: it sends &lt;your&gt; password. Approve it anyway and Ada runs exactly this, once."
+        ),
+        "{}",
+        html[1]
+    );
+}
+
 #[tokio::test]
 async fn a_bridge_nobody_paired_sends_nothing() {
     let (hub, _home, bob, node) = setup().await;

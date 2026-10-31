@@ -33,9 +33,19 @@ export function ApprovalsSetting({ projectRef }: { projectRef: Ref }) {
         label="Approvals"
         help="What Navi does without asking you: its sends, replies, shares and invites, a site it opens on its own for the first time, and the final Confirm on a site. Its own commands never ask."
       >
-        {data === undefined ? (
+        {data === undefined && read.isError ? (
+          // Plain words: the lookup's own error names the tool and the project, which mean nothing to the person.
+          <div className={s.inline}>
+            <Text size="sm" tone="danger">
+              Navi&apos;s approval settings couldn&apos;t be loaded.
+            </Text>
+            <Button disabled={!live || read.isFetching} onClick={() => void read.refetch()}>
+              Try again
+            </Button>
+          </div>
+        ) : data === undefined ? (
           <Text size="sm" tone="quiet">
-            {read.error ? `Not read: ${errorText(read.error)}` : "Loading…"}
+            Loading…
           </Text>
         ) : (
           <ModeEditor key={`${data.approvals.mode}:${data.approvals.model}:${data.approvals.effort}`} projectRef={projectRef} saved={data.approvals} models={models} />

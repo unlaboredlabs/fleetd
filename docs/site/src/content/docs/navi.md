@@ -132,12 +132,14 @@ same setting. It reads only:
 
 - the action exactly as it runs: the tool, the recipients or the link, the full text;
 - where each part came from: your messages (`person`), text you pasted (`person (pasted text)`), your contacts,
-  the thread being replied to, your sent mail, an event's attendees, your files, a site you allowed, or
-  `untrusted: an email from …` / `a web page on …` for anything only content the Navi read says, else `navi`;
+  the thread being replied to (every mail's headers in a list of several), your sent mail (only each mail's own
+  sender is you, never one quoted in it), an event's attendees, your files, a site you allowed, or `untrusted: an
+  email from …` / `a web page on …` for anything only content the Navi read says, else `navi`;
 - your recent messages to the Navi, and its last question to you, marked as the Navi's.
 
-It never sees the mail, pages or files the Navi read, nor the Navi's own explanation of the action. Its prompt is
-`navi.checker` ([What agents are told](/docs/what-agents-are-told)).
+It never sees the mail, pages or files the Navi read, nor the Navi's own explanation of the action. When the node
+can't send the whole of one thing the Navi read, fleetd matches against the end of it that it already has, and keeps
+the rest whole. Its prompt is `navi.checker` ([What agents are told](/docs/what-agents-are-told)).
 
 fleetd's own rules hold whatever the checker says:
 
@@ -302,7 +304,8 @@ forget it. To delete the bot itself, send `/deletebot` to @BotFather.
   photos, its files as documents. A table shows as monospace; a chart or diff says to open the app. A question with
   choices comes with buttons, and pressing one is your reply.
 - **Approvals** come as a card with exactly what approving runs (the command, or the tool and its full input; in a
-  file just before the card when it's too long for one message) and **Approve** and **Deny** buttons. Answer in either
+  file just before the card when it's too long for one message), the checker's reason when it sent the card to you
+  (as in the app), and **Approve** and **Deny** buttons. Answer in either
   place: the other updates, and the card says who answered and how. A secret is never entered in Telegram: the Navi
   points you to the app.
 - **Anyone else** who finds the bot gets nothing back, not even an error. Group chats are ignored.

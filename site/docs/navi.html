@@ -233,12 +233,13 @@ same setting. It reads only:</p>
 <ul>
 <li>the action exactly as it runs: the tool, the recipients or the link, the full text;</li>
 <li>where each part came from: your messages (<code dir="auto">person</code>), text you pasted (<code dir="auto">person (pasted text)</code>), your contacts,
-the thread being replied to, your sent mail, an event’s attendees, your files, a site you allowed, or
-<code dir="auto">untrusted: an email from …</code> / <code dir="auto">a web page on …</code> for anything only content the Navi read says, else <code dir="auto">navi</code>;</li>
+the thread being replied to (every mail’s headers in a list of several), your sent mail (only each mail’s own
+sender is you, never one quoted in it), an event’s attendees, your files, a site you allowed, or <code dir="auto">untrusted: an email from …</code> / <code dir="auto">a web page on …</code> for anything only content the Navi read says, else <code dir="auto">navi</code>;</li>
 <li>your recent messages to the Navi, and its last question to you, marked as the Navi’s.</li>
 </ul>
-<p>It never sees the mail, pages or files the Navi read, nor the Navi’s own explanation of the action. Its prompt is
-<code dir="auto">navi.checker</code> (<a href="/docs/what-agents-are-told">What agents are told</a>).</p>
+<p>It never sees the mail, pages or files the Navi read, nor the Navi’s own explanation of the action. When the node
+can’t send the whole of one thing the Navi read, fleetd matches against the end of it that it already has, and keeps
+the rest whole. Its prompt is <code dir="auto">navi.checker</code> (<a href="/docs/what-agents-are-told">What agents are told</a>).</p>
 <p>fleetd’s own rules hold whatever the checker says:</p>
 <ul>
 <li><strong>Floors</strong>, in every mode, YOLO too: moving money, trading and placing orders are refused, by the tool’s name or
@@ -405,7 +406,8 @@ never as your request or approval, and asks you before acting on anything it ask
 photos, its files as documents. A table shows as monospace; a chart or diff says to open the app. A question with
 choices comes with buttons, and pressing one is your reply.</li>
 <li><strong>Approvals</strong> come as a card with exactly what approving runs (the command, or the tool and its full input; in a
-file just before the card when it’s too long for one message) and <strong>Approve</strong> and <strong>Deny</strong> buttons. Answer in either
+file just before the card when it’s too long for one message), the checker’s reason when it sent the card to you
+(as in the app), and <strong>Approve</strong> and <strong>Deny</strong> buttons. Answer in either
 place: the other updates, and the card says who answered and how. A secret is never entered in Telegram: the Navi
 points you to the app.</li>
 <li><strong>Anyone else</strong> who finds the bot gets nothing back, not even an error. Group chats are ignored.</li>

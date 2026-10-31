@@ -5,6 +5,7 @@
 use std::sync::LazyLock;
 
 use fleetd_contracts::chat::CommandApprovalItem;
+use fleetd_contracts::ledger::CheckerVerdict;
 use fleetd_contracts::prim::js_len;
 use regex::Regex;
 
@@ -393,12 +394,29 @@ pub fn secret(navi: &str, item: &fleetd_contracts::chat::SecretRequestItem) -> S
 
 pub fn card(navi: &str, item: &CommandApprovalItem) -> Card {
     let (what, exact) = content(item);
-    let head = format!(
+    let mut head = format!(
         "<b>{} asks to {}</b> ({})",
         escape(navi),
         escape(&what),
         escape(item.request_id.as_str())
     );
+    // The Navi's approval checker judged it first: why it asks, or why it refused it, as the desktop card says.
+    if let Some(c) = item.permission.as_ref().and_then(|p| p.checker.as_ref()) {
+        let reason = c.reason.as_str().trim();
+        let line = if c.verdict == CheckerVerdict::Block {
+            let reason = if reason.ends_with(['.', '!', '?']) {
+                reason.to_owned()
+            } else {
+                format!("{reason}.")
+            };
+            format!(
+                "The checker refused it: {reason} Approve it anyway and {navi} runs exactly this, once."
+            )
+        } else {
+            format!("The checker asks you: {reason}")
+        };
+        head.push_str(&format!("\n{}", escape(&line)));
+    }
     let full = format!("{head}\n<pre>{}</pre>", escape(&exact));
     if js_len(&full) <= LIMIT - 200 {
         return Card {
