@@ -132,9 +132,10 @@ same setting. It reads only:
 
 - the action exactly as it runs: the tool, the recipients or the link, the full text;
 - where each part came from: your messages (`person`), text you pasted (`person (pasted text)`), your contacts,
-  the thread being replied to (every mail's headers in a list of several), your sent mail (only each mail's own
-  sender is you, never one quoted in it), an event's attendees, your files, a site you allowed, or `untrusted: an
-  email from …` / `a web page on …` for anything only content the Navi read says, else `navi`;
+  the thread being replied to, your sent mail, an event's attendees, your files, a site you allowed, or `untrusted:
+  an email from …` / `a web page on …` for anything only content the Navi read says, else `navi`. In a list of
+  several mails each one's headers count, up to the first quoted or forwarded mail: nothing in or after a quote does,
+  so in your sent mail only each mail's own sender is you;
 - your recent messages to the Navi, and its last question to you, marked as the Navi's.
 
 It never sees the mail, pages or files the Navi read, nor the Navi's own explanation of the action. When the node

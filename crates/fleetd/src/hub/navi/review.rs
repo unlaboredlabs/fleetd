@@ -359,13 +359,14 @@ impl Sources {
 /// The header blocks of a plain-text read, one per mail. A mail starts at the top and after each separator line
 /// (`---`), and its first paragraph is its headers; in a list with only blank lines between mails, a later paragraph
 /// made only of header lines, one of them a `From:`, starts another. Nothing past the start of a quote
-/// (`-----Original Message-----`, `On … wrote:`) counts until the next separator: that is someone else's mail,
-/// headers and all. A line quoted with `>` is no header line.
+/// (`-----Original Message-----`, `On … wrote:`) counts, to the end of the read: a quote is someone else's mail,
+/// headers, separators and all, and no line of it can say where it ends. A later mail's headers lost to it cost an ask.
+/// A line quoted with `>` is no header line.
 fn heads(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut block: Vec<&str> = Vec::new();
-    let (mut first, mut quoted) = (true, false);
-    let mut flush = |block: &mut Vec<&str>, first: &mut bool, quoted: bool| {
+    let mut first = true;
+    let mut flush = |block: &mut Vec<&str>, first: &mut bool| {
         if block.is_empty() {
             return;
         }
@@ -373,7 +374,7 @@ fn heads(text: &str) -> Vec<String> {
         let all_headers = block
             .iter()
             .all(|l| HEADER_LINE.is_match(l) || l.starts_with([' ', '\t']));
-        if !quoted && (*first || (all_headers && FROM_LINE.is_match(&head))) {
+        if *first || (all_headers && FROM_LINE.is_match(&head)) {
             out.push(head);
         }
         *first = false;
@@ -381,18 +382,17 @@ fn heads(text: &str) -> Vec<String> {
     };
     for line in text.lines() {
         if SEPARATOR.is_match(line) {
-            flush(&mut block, &mut first, quoted);
-            (first, quoted) = (true, false);
+            flush(&mut block, &mut first);
+            first = true;
         } else if line.trim().is_empty() {
-            flush(&mut block, &mut first, quoted);
+            flush(&mut block, &mut first);
         } else if !HEADER_LINE.is_match(line) && QUOTE_START.is_match(line) {
-            block.clear();
-            (first, quoted) = (false, true);
+            return out;
         } else {
             block.push(line);
         }
     }
-    flush(&mut block, &mut first, quoted);
+    flush(&mut block, &mut first);
     out
 }
 
