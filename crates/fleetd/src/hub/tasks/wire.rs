@@ -3,7 +3,6 @@
 //! hooks tasks fill in on leads.
 use std::sync::{Arc, OnceLock, Weak};
 
-use fleetd_contracts::events::HubEvent;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef, Timestamp};
 use fleetd_contracts::lead_calls::{AskLeadResult, LeadCall, LeadCallResult};
 use fleetd_contracts::ledger::{Brief, Decision, Workstream, WorkstreamId};
@@ -14,10 +13,8 @@ use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::projects::github_repo;
 use fleetd_contracts::sessions::{SessionWorkspace, WorktreeBase};
 use fleetd_contracts::tasks::TaskId;
-use fleetd_contracts::usage::UsageParked;
 use fleetd_contracts::work::{WorkMatch, WorkScope};
 
-use super::hooks::UsageGate;
 use super::ports::{
     BoxFut, BranchPrError, CmdOutput, LaunchRequest, PortError, TaskPorts, ThreadChanges, WakeKind,
 };
@@ -651,34 +648,6 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
     }
 }
 
-struct UsageFromArea(Arc<crate::hub::usage::Usage>);
-
-impl UsageGate for UsageFromArea {
-    fn gate(&self, machine_id: &MachineId, account: Option<&str>) -> Option<String> {
-        self.0.gate_for(machine_id.as_str(), account)
-    }
-    fn parked_of(&self, event: &HubEvent) -> Option<UsageParked> {
-        // Usage keeps its own copy of the event's wire shape.
-        let event: HubEvent = serde_json::from_value(serde_json::to_value(event).ok()?).ok()?;
-        let mut parked = crate::hub::usage::classify::parked_of(&event)?;
-        // The usage layer's own park of it, once applied, also knows when it tries a limit with no reset again.
-        let thread = crate::hub::usage::ports::ThreadRef {
-            machine_id: event.machine_id.as_ref()?.to_string(),
-            thread_id: event.thread_id.as_ref()?.to_string(),
-        };
-        if let Some(own) = self
-            .0
-            .parked_of(&thread)
-            .filter(|p| p.since == parked.since)
-        {
-            parked.check_at = own.check_at;
-        }
-        serde_json::to_value(parked)
-            .ok()
-            .and_then(|v| serde_json::from_value(v).ok())
-    }
-}
-
 /// Digest lines, and listing and cancelling the tasks of removed projects and closed orders. The reviews area tells
 /// the train's reviewers apart.
 struct TasksForLeads(Arc<Tasks>, Arc<crate::hub::reviews::Reviews>);
@@ -732,9 +701,7 @@ pub fn wire(hub: &Arc<Hub>, ports: &HubTaskPorts) {
     ports.bind(hub);
     register_lead_calls(hub);
     let hooks = &hub.tasks.hooks;
-    let _ = hooks
-        .usage
-        .set(Arc::new(UsageFromArea(Arc::clone(&hub.usage))));
+    let _ = hooks.usage.set(Arc::clone(&hub.usage));
     let lead_hooks = &hub.leads.ctx.hooks;
     let _ = lead_hooks.tasks.set(Arc::new(TasksForLeads(
         Arc::clone(&hub.tasks),
