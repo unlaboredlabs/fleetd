@@ -12,7 +12,7 @@
 set -uo pipefail
 base=${1:-origin/main} head=${2:-HEAD}
 mb=$(git merge-base "$base" "$head") || exit 2
-git log --format=%B "$mb..$head" | grep -qiE 'revert.*(#[0-9]+|\b[0-9a-f]{7,40}\b)' && exit 0
+grep -qiE 'revert.*(#[0-9]+|\b[0-9a-f]{7,40}\b)' <<<"$(git log --format=%B "$mb..$head")" && exit 0
 mb_at=$(git log -1 --format=%ct "$mb")
 # "<commit> <path>" for each file put back and each commit it undoes.
 back=$(git diff --name-only --no-renames --diff-filter=d -z "$mb" "$head" | while IFS= read -r -d '' f; do
@@ -45,5 +45,6 @@ done
 [ $found = 0 ] && exit 0
 echo "Your commit carries files from an older $base. Rebuild your branch on $base and re-apply only your own changes"
 echo "(git checkout -B <branch> $base, redo your edits, check git diff $base shows only them). If you mean to revert"
-echo "those commits, say so in your commit message, naming them or their PRs."
+echo "those commits, say so in your commit message, naming them or their PRs, and in the PR's title or body too: the"
+echo "merge train reads those."
 exit 1

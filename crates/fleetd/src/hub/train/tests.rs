@@ -2095,7 +2095,7 @@ async fn a_pr_that_puts_back_mains_older_files_goes_back_to_its_writer_before_re
             Some("would undo 1 commit of main: rebuild it on origin/main")
         )
     );
-    let (to, message) = kit.host.sends.lock().unwrap().last().cloned().unwrap();
+    let (to, message) = kit.host.nth_send(0).await;
     assert_eq!(to, "T1");
     assert!(
         message.contains("it would undo 1 commit of main: rebuild it on origin/main"),
