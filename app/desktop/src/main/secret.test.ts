@@ -4,7 +4,7 @@ import rust from "./secret.rust-seal.json";
 import { SECRET_MAX_BYTES } from "../shared/contracts";
 import { IPC } from "../shared/channels";
 import { parseRequest } from "../shared/ipc";
-import { seal, submitClaudeAccount, submitHubLink, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret } from "./secret";
+import { seal, submitClaudeAccount, submitHubLink, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret, submitTelegram } from "./secret";
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, "base64"));
 
@@ -295,6 +295,38 @@ describe("a person's 1Password token", () => {
     }
     const none = await submitOnePassword({ token: TOKEN, boxes: [] }, call);
     expect(none.ok).toBe(false);
+    expect(sent).toEqual([]);
+  });
+});
+
+describe("a Navi's Telegram bot token", () => {
+  it("seals it to the Navi's machine for telegram_set, trimmed, and refuses anything but a bot token before sending", async () => {
+    await sodium.ready;
+    const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
+    const TOKEN = "123456789:AAHdevboxBotTokenFromBotFather0123456";
+    const navi = { machineId: "devbox", projectId: "ada" };
+    const box = { machineId: "devbox", boxPubKey: rust.publicKey };
+    const sent: Array<{ tool: string; input: unknown }> = [];
+    const call = (tool: "telegram_set", input: unknown) => {
+      sent.push({ tool, input });
+      return Promise.resolve({ ok: true as const, output: { bridge: {} } });
+    };
+    const parsed = parseRequest(IPC.telegramSubmit, ["hub", { navi, token: ` '${TOKEN}'\n`, box }]);
+    if (!parsed.ok) throw new Error(`refused at the IPC boundary: ${parsed.reason}`);
+    expect((await submitTelegram(parsed.args[1], call)).ok).toBe(true);
+    expect(JSON.stringify(sent[0]?.input)).not.toContain(TOKEN);
+    const input = sent[0]?.input as { navi: unknown; sealed: string };
+    expect(input.navi).toEqual(navi);
+    expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.sealed), pk, sk))).toBe(TOKEN);
+
+    sent.length = 0;
+    for (const wrong of ["hunter2", "123:short", "123456789 AAHdevboxBotTokenFromBotFather0123456", "ops_devbox-service-account_CCCC"]) {
+      const out = await submitTelegram({ navi, token: wrong, box }, call);
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.error.message).toContain("bot token");
+    }
+    const elsewhere = await submitTelegram({ navi, token: TOKEN, box: { ...box, machineId: "buildbox" } }, call);
+    expect(elsewhere.ok).toBe(false);
     expect(sent).toEqual([]);
   });
 });

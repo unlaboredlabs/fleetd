@@ -313,7 +313,7 @@ pub async fn put(
 
 /// Stores a file's bytes under their sha256 and gives it a row `by` its uploader (a key, or `lead:<project>` for an
 /// agent's image), deleting the unused uploads past their 24 h on the way. Its id, size and sha256.
-pub(super) async fn store(
+pub(crate) async fn store(
     hub: &Hub,
     bytes: Vec<u8>,
     name: &str,
@@ -435,6 +435,40 @@ pub async fn get(
         next: None,
         truncated: None,
     })
+}
+
+/// A file of `project`'s chat, for the hub's own use (a Navi's Telegram bridge sends it on): its name, type and bytes.
+/// None when it isn't the project's, or is gone.
+pub(crate) async fn read(
+    hub: &Hub,
+    id: &AttachmentId,
+    project: &ProjectRef,
+) -> Option<(String, AttachmentMime, Vec<u8>)> {
+    let n: i64 = id.as_str().get(1..)?.parse().ok()?;
+    let r = row(hub, id).ok()??;
+    let key = format!("{}/{}", project.machine_id, project.project_id);
+    let ours = hub
+        .db
+        .with(|c| {
+            Ok(c.query_row(
+                "SELECT 1 FROM attachments WHERE n = ?1 AND project = ?2",
+                params![n, key],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+        })
+        .ok()?;
+    if !ours && !in_project(hub, n, project).ok()? {
+        return None;
+    }
+    let path = dir(hub).join(&r.sha256);
+    let bytes = tokio::task::spawn_blocking(move || std::fs::read(path))
+        .await
+        .ok()?
+        .ok()?;
+    let mime = serde_json::from_value::<AttachmentMime>(serde_json::Value::String(r.mime)).ok()?;
+    Some((r.name, mime, bytes))
 }
 
 /// What a chat message shows of each attachment, from its row.

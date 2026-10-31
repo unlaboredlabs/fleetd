@@ -271,6 +271,8 @@ impl HubStore {
                 "project_icons",
                 "skill_versions",
                 "skill_uses",
+                "telegram_bridges",
+                "telegram_cards",
             ] {
                 conn.prepare_cached(&format!(
                     "DELETE FROM {table} WHERE machine_id = ? AND project_id = ?"

@@ -575,3 +575,38 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* A Navi's Telegram: its setup steps (the first without the hairline a step draws above it), a done step's line, its
+   bot as Telegram shows it, and the bridge's status at the row's end. */
+.telegramSteps {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.telegramSteps > [data-step]:first-child > section {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+.telegramDone {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  color: var(--success);
+}
+.telegramBot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.telegramBotName {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.telegramStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}

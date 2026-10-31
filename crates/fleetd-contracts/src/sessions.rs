@@ -287,6 +287,13 @@ pub enum SessionCall {
     OnePasswordTest {
         person_id: crate::people::PersonId,
     },
+    /// One Navi's Telegram bridge (`telegram.rs`): its token, pairing, journal and sends. Only nodes listing
+    /// [`crate::node_link::CAP_TELEGRAM`] get it.
+    #[serde(rename_all = "camelCase")]
+    Telegram {
+        project_id: ProjectId,
+        call: crate::telegram::TelegramCall,
+    },
     /// The models the hub's API key offers, from the Models API at its endpoint. Only nodes listing
     /// [`crate::node_link::CAP_CLAUDE_MODELS`] get it.
     ClaudeModels,
@@ -792,6 +799,10 @@ pub enum SessionOutput {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         vaults: Vec<String>,
         error: Option<String>,
+    },
+    /// Answer to `telegram`.
+    Telegram {
+        answer: crate::telegram::TelegramAnswer,
     },
     /// Answer to `claude_models`: each model's id and display name, else why they weren't read, the key masked.
     ClaudeModels {

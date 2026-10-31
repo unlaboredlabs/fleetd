@@ -619,6 +619,8 @@ struct Inner {
     browser: std::sync::OnceLock<Arc<dyn crate::node::browser::SessionHooks>>,
     /// The node's previews: a removed project's end, and its preview worktrees go.
     previews: std::sync::OnceLock<Arc<crate::node::preview::Previews>>,
+    /// Navis' Telegram bridges: a removed project's is forgotten.
+    telegram: std::sync::OnceLock<Arc<crate::node::telegram::Telegram>>,
 }
 
 /// A project's file list and when it was read.
@@ -761,6 +763,10 @@ impl SessionService {
         let _ = self.inner.previews.set(previews);
     }
 
+    pub fn set_telegram(&self, telegram: Arc<crate::node::telegram::Telegram>) {
+        let _ = self.inner.telegram.set(telegram);
+    }
+
     /// Opens the service over `store`, settling what a previous node process left: recorded claude processes are
     /// killed (only when pid and start time still match) and their active runs closed as interrupted.
     pub async fn start(
@@ -786,6 +792,7 @@ impl SessionService {
                 span_wake: Arc::new(tokio::sync::Notify::new()),
                 browser: std::sync::OnceLock::new(),
                 previews: std::sync::OnceLock::new(),
+                telegram: std::sync::OnceLock::new(),
             }),
         };
         let rows = service.inner.store.sessions()?;
@@ -1177,6 +1184,14 @@ impl SessionService {
                     }
                 };
                 Ok(SessionOutput::OnePasswordTested { vaults, error })
+            }
+            SessionCall::Telegram { project_id, call } => {
+                self.project_root(project_id.as_str())?;
+                let Some(telegram) = self.inner.telegram.get() else {
+                    return Err(invalid("this node runs no Telegram bridges"));
+                };
+                let answer = telegram.call(&project_id, call).await.map_err(invalid)?;
+                Ok(SessionOutput::Telegram { answer })
             }
             SessionCall::ClaudeModels => {
                 let (models, error) =
@@ -3968,6 +3983,9 @@ impl SessionService {
                 live.join(", "),
                 REMOVE_WAIT.as_secs()
             )));
+        }
+        if let Some(telegram) = self.inner.telegram.get() {
+            telegram.forget(project_id);
         }
         // Its previews end and their worktrees go whatever `remove_worktrees` says: they hold no work.
         if let (Some(previews), Ok(root)) =

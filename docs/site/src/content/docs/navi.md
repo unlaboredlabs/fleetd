@@ -10,7 +10,7 @@ project. Each is separate, with its own chat, memory and folder.
 Under the hood a Navi is a [project](/docs/projects) with no repo, whose lead runs as an assistant. So it gets what
 every project has, unchanged: [chat](/docs/chat), memory and its nightly refresh,
 [automations](/docs/automations), [screens](/docs/browser-sessions), the checklist and
-[approvals](/docs/approvals-and-secrets).
+[approvals](/docs/approvals-and-secrets). You can also talk to it from [Telegram](#telegram).
 
 ## Yours alone {#yours}
 
@@ -163,6 +163,59 @@ session is still signed in there. No login page, captcha or approve-on-your-phon
 chat, memory, folder and allowed sites stay. Deleting the Navi deletes its sign-ins too. To sign out of one site only,
 ask the Navi to sign out there.
 
+## Telegram {#telegram}
+
+Talk to a Navi from Telegram, on your phone or anywhere else you use it. It's the same chat as in the app: what you
+send there lands in the Navi's chat, and its replies, photos, files and approvals come back to both places. The bot
+is yours and answers only you; nothing runs in a fleetd cloud, and your hub needs no public address.
+
+### Set it up
+
+Open the Navi's settings (**Open settings** in its right-click menu) and find **Telegram**. It takes a few minutes, with
+no terminal:
+
+1. **Make a bot with @BotFather.** Click **Open @BotFather**, then send it `/newbot`. When it asks, send the bot's
+   name (the Navi's, say `Ada`) and a username ending in `bot` (the page suggests one, like `ada_fleetd_bot`; add a
+   number if it's taken). BotFather answers with the bot's token, a line like `123456789:AAH…`.
+2. **Paste the token** and click **Save and test**. The app seals it to the Navi's machine before it leaves your
+   computer: the hub keeps only its fingerprint, and it never appears in a chat, a log or the page again.
+3. **Test** asks Telegram which bot the token is, and shows its name, username and photo.
+4. **Pair your Telegram.** Click **Pair with Telegram**. Your bot opens in Telegram with a one-time link; press
+   **Start**. Your account is now the only one the Navi answers, and its chat in the app says so. The link works for 15
+   minutes.
+
+Once paired, the setting shows the bot, the account it answers and its status: *Connected*, *Paused*, *Retrying* (with
+what went wrong and when it tries again) or *Stopped* (a revoked token: paste a new one). **Pause** stops reading and
+sending until you resume, and what the Navi says meanwhile stays in the app. **Unpair** disconnects your account;
+**Pair with Telegram** connects one again. **Replace token** takes a new bot's token, and **Remove** makes the machine
+forget it. To delete the bot itself, send `/deletebot` to @BotFather.
+
+### What goes through
+
+- **Your messages** land in the Navi's chat as yours, marked *From Telegram*. While the Navi works on one, Telegram
+  shows *typing…*.
+- **Photos and documents** arrive as attachments of the message: images, PDFs and text files, up to Telegram's 20 MB
+  for bots. Anything else gets a short reply saying it wasn't passed on.
+- **Voice notes** aren't supported yet: you get a reply saying so.
+- **A forwarded message** is marked *Forwarded from …*. The Navi reads it as someone else's words, untrusted content,
+  never as your request or approval, and asks you before acting on anything it asks for.
+- **The Navi's replies** go to the app and to Telegram, formatted for Telegram and split when long. Its images go as
+  photos, its files as documents. A table shows as monospace; a chart or diff says to open the app. A question with
+  choices comes with buttons, and pressing one is your reply.
+- **Approvals** come as a card with exactly what approving runs (the command, or the tool and its full input; in a
+  file just before the card when it's too long for one message) and **Approve** and **Deny** buttons. Answer in either
+  place: the other updates, and the card says who answered and how. A secret is never entered in Telegram: the Navi
+  points you to the app.
+- **Anyone else** who finds the bot gets nothing back, not even an error. Group chats are ignored.
+
+### How it works
+
+The Navi's machine long-polls Telegram's Bot API (`getUpdates`): no webhook, no open port. The token stays on that
+machine, readable only by fleetd's node there, never the Navi's own commands. The node keeps where it read up to, so a
+restart neither loses nor repeats a message; when Telegram is down or asks it to slow down, it backs off and tries
+again. Messages that come while the machine is off wait on Telegram's side for up to a day. Replies the Navi wrote more
+than an hour before the machine could send them stay in the app.
+
 ## Hub links {#hub-links}
 
 A Navi can open and follow work in projects on another hub, such as a team hub when the Navi lives on your personal
@@ -255,7 +308,10 @@ archived, `archivedAt`. Every other project has no `kind`. Talk to a Navi with `
 frame names the `navi_asks` feature. `navi_signins_forget {machineId, projectId}` forgets a Navi's
 [sign-ins](#sign-ins); it needs the Navi's machine online and on a fleetd that keeps them. Hub links are `hub_links_get {navi?}`, `hub_link_mint {label, projects?}`,
 `hub_link_revoke {linkId}`, `hub_link_add {navi, label, url, sealed}` (the key sealed to `boxPubKey` from
-`hub_links_get`) and `hub_link_remove {linkId}`.
+`hub_links_get`) and `hub_link_remove {linkId}`. A Navi's [Telegram](#telegram) is `telegram_get {navi}`, `telegram_set {navi, sealed}`
+(the bot token sealed to the Navi's machine's `boxPubKey`), `telegram_test {navi}`, `telegram_pair {navi}` (the
+one-time `t.me` link), `telegram_unpair {navi}`, `telegram_pause {navi, paused}` and `telegram_remove {navi}`, each
+its owner's only.
 
 A Navi's [skills](#skills) are its project's skills (`scope: "project"`, its `projectRef`), on a hub whose ready frame
 names the `navi_skills` feature. `skills_list {projectRef}` gives each with `changed` (its newest version: `version`,

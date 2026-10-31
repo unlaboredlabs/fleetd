@@ -37,6 +37,7 @@ pub mod session_route;
 pub mod sessions;
 pub mod skills;
 pub mod store;
+pub mod telegram;
 pub mod update;
 pub mod util;
 pub mod warm;
@@ -378,6 +379,8 @@ async fn run_node(
     if let Some(previews) = &previews {
         node_sessions.set_previews(previews.clone());
     }
+    let telegram = telegram::Telegram::start(home, telegram::TELEGRAM, telegram::Timing::default());
+    node_sessions.set_telegram(telegram.clone());
     // The hold the node before this one kept for its update ends with it: what it held goes on now.
     hold::clear(home);
     {
@@ -444,6 +447,7 @@ async fn run_node(
         fatal = link::run_node(options) => Err(NodeError::Refused(fatal)),
         () = enrolled => Ok(()),
         () = shutdown_signal() => {
+            telegram.shutdown();
             node_sessions.shutdown().await;
             if let Some(previews) = &previews {
                 previews.stop_all().await;
