@@ -777,7 +777,7 @@ Lift the usage pause on your project's machine now and send every agent parked t
 
 ### change_enqueue
 
-Put a PR no task's result put there on its repo's merge train; only the train merges. `after` names PRs, in this repo or any other, that must merge first: the train holds this one until they have, and tells you when one of them fails.
+Put a PR no task's result put there on its repo's merge train; only the train merges. `after` names PRs, in this repo or any other, that must merge first: the train holds this one until they have, and tells you when one of them fails. A PR on the train that its review's findings block, enqueued again, gets a fresh full review of the same patch: for findings you resolved without a new push (by narrowing the brief).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

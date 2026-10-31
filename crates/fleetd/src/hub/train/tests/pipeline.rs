@@ -312,3 +312,134 @@ async fn a_red_batch_behind_lets_the_one_ahead_land_and_its_own_prs_go_alone() {
         assert_eq!(kit.get(&change.change_id).state, ChangeState::Merged);
     }
 }
+
+/// PR 7 ready alone; PR 8 in review until 7 is in CI, then ready. 7's CI runs until a batch is stacked on it.
+async fn lone_then_one(kit: &Kit) -> [Change; 2] {
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    let b = kit
+        .enqueue_held(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
+        .await;
+    let (train, gh, ahead, later) = (
+        Arc::downgrade(&kit.train),
+        Arc::downgrade(&kit.gh),
+        a.change_id.clone(),
+        b.change_id.clone(),
+    );
+    *kit.gh.on_checks.lock().unwrap() = Some(Box::new(move || {
+        let (Some(train), Some(gh)) = (train.upgrade(), gh.upgrade()) else {
+            return;
+        };
+        let Some(lone) = train.get(&ahead).filter(|c| c.state == ChangeState::Ci) else {
+            return;
+        };
+        let mut runs = gh.head_runs.lock().unwrap();
+        if gh.head_of(BEHIND).is_none() {
+            runs.insert(
+                lone.head_sha.to_string(),
+                json!([check("ci", "in_progress", None, Some(AFTER))]),
+            );
+        } else {
+            runs.remove(lone.head_sha.as_str());
+        }
+        drop(runs);
+        if let Some(c) = train
+            .get(&later)
+            .filter(|c| c.state == ChangeState::Reviewing)
+        {
+            let _ = train.mark_ready(&later, vec![clean_review(&c)]);
+        }
+    }));
+    [a, b]
+}
+
+/// The lane isn't held by a PR merging alone: the PR that becomes ready during its CI goes in a batch stacked on its
+/// rebased head, in CI on the combined tree, and both land as one squash once both passed, on exactly that tree.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_ready_pr_stacks_on_a_pr_merging_alone_and_lands_with_it() {
+    let kit = Kit::on_clock(FakeCi::Queued { polls: 3 }, Arc::new(Sleeps::default()));
+    let changes = lone_then_one(&kit).await;
+    // Behind main: 7 is rebased, and its CI runs on the new head.
+    kit.commit("main", &[add("other.txt", "other\n")], None);
+
+    assert!(kit.train.step(REPO).await);
+
+    assert!(gh_log(&kit).iter().any(|l| l == "rebase #7"));
+    let merges = kit.gh.merges.lock().unwrap().clone();
+    assert_eq!(merges.len(), 1, "one squash for both: {merges:?}");
+    let (pr, head) = merges[0].clone();
+    assert_eq!(branch_of(&kit, pr), BEHIND);
+    let tree = |rev: &str| git(&kit.gh.origin, &["rev-parse", &format!("{rev}^{{tree}}")]);
+    assert_eq!(tree("main"), tree(&head));
+    let body = kit.gh.pulls.lock().unwrap()[&pr].body.clone();
+    let heads = batch_heads(&body);
+    assert_eq!(heads.iter().map(|(n, _)| *n).collect::<Vec<_>>(), [7, 8]);
+    // Built on 7's rebased head, the one its own CI passed on.
+    assert_eq!(heads[0].1.as_deref(), Some(kit.head_of("a").as_str()));
+    for (change, file) in changes.iter().zip(["a1.txt", "b1.txt"]) {
+        assert_eq!(kit.get(&change.change_id).state, ChangeState::Merged);
+        assert!(kit.main_file(file).is_some(), "{file}");
+    }
+}
+
+/// The PR alone fails its CI: the batch stacked on it never lands, and its PR goes back in line, to go on main.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_stacked_on_a_lone_pr_that_fails_starts_again_on_main() {
+    let kit = Kit::on_clock(FakeCi::Queued { polls: 3 }, Arc::new(Sleeps::default()));
+    let [a, b] = lone_then_one(&kit).await;
+    let gh = Arc::downgrade(&kit.gh);
+    let earlier = kit.gh.on_checks.lock().unwrap().take();
+    *kit.gh.on_checks.lock().unwrap() = Some(Box::new(move || {
+        if let Some(earlier) = &earlier {
+            earlier();
+        }
+        let Some(gh) = gh.upgrade() else { return };
+        if gh.head_of(BEHIND).is_some()
+            && let Some(lone) = gh.head_of("a")
+        {
+            gh.head_runs.lock().unwrap().insert(
+                lone,
+                json!([check("ci", "completed", Some("failure"), None)]),
+            );
+        }
+    }));
+
+    assert!(kit.train.step(REPO).await);
+
+    assert!(kit.gh.head_of(BEHIND).is_some(), "8 was stacked on 7");
+    assert!(merged_prs(&kit).is_empty());
+    assert_eq!(kit.get(&a.change_id).state, ChangeState::CiFailed);
+    let back = kit.get(&b.change_id);
+    assert_eq!(back.state, ChangeState::Ready);
+    let why = back.last_error.unwrap_or_default();
+    assert!(
+        why.contains("#7 ahead of it didn't pass: its CI red; it forms again on main"),
+        "{why}"
+    );
+
+    *kit.gh.on_checks.lock().unwrap() = None;
+    kit.gh.head_runs.lock().unwrap().clear();
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&b.change_id).state, ChangeState::Merged);
+    assert_eq!(merged_prs(&kit), [8]);
+}
+
+/// The batch stacked on a lone PR goes red: the lone PR merges by itself, as it would with nothing behind it, and the
+/// stacked PR goes alone after it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_red_batch_stacked_on_a_lone_pr_lets_it_merge_alone() {
+    let kit = Kit::on_clock(FakeCi::Queued { polls: 3 }, Arc::new(Sleeps::default()));
+    let [a, b] = lone_then_one(&kit).await;
+    behind_reads(
+        &kit,
+        json!([{ "id": 1, "name": "ci", "status": "completed", "conclusion": "failure" }]),
+    );
+
+    assert!(kit.train.step(REPO).await);
+
+    assert_eq!(merged_prs(&kit), [7, 8]);
+    for change in [&a, &b] {
+        assert_eq!(kit.get(&change.change_id).state, ChangeState::Merged);
+    }
+}

@@ -23,6 +23,10 @@
 //! `TOOLS_RETRY_FIRST`, the wait doubling up to `TOOLS_RETRY_MAX`, or at once after any review records a verdict, which
 //! shows the tools work again. After `TOOLS_RETRIES` of them it waits for such a verdict.
 //!
+//! The lead resolving blocking findings without a new patch (a narrowed brief) enqueues the Change again: those
+//! findings and the patch's earlier rounds count no more (`resolved`), and a fresh full review of the same patch starts,
+//! with no approval carried to it. It must pass as any review does.
+//!
 //! A re-review (a patch after an approved one) can run while the train has the Change in CI: the train asks `again`
 //! for its outcome, `Blocked` included, and each verdict bound tells it at once (`Train::review_recorded`).
 use std::collections::{HashMap, HashSet};
@@ -91,11 +95,12 @@ struct Rebased {
     outcome: Rebase,
 }
 
-/// A review task the gate spawned: the Change, the patch its round was for, and whether a newer patch superseded it.
+/// A review task the gate spawned: the Change, the patch its round was for, and whether what it says counts no more: a
+/// newer patch superseded it, or the lead resolved its findings (`resolved`).
 struct Round {
     change_id: ChangeId,
     patch_id: String,
-    superseded: bool,
+    ignored: bool,
 }
 
 fn ended(state: &str) -> bool {
@@ -170,7 +175,10 @@ impl Reviews {
                     Ok(Round {
                         change_id: ChangeId::unchecked(r.get::<_, String>(0)?),
                         patch_id: r.get(1)?,
-                        superseded: r.get::<_, String>(2)? == "superseded",
+                        ignored: matches!(
+                            r.get::<_, String>(2)?.as_str(),
+                            "superseded" | "resolved"
+                        ),
                     })
                 },
             )
@@ -259,13 +267,52 @@ impl Reviews {
         Ok(patch_id)
     }
 
+    /// Whether the lead resolved findings on this patch of the Change (`resolved`): its reviews are full ones, with no
+    /// approval carried to it.
+    fn resolved_on(&self, change_id: &ChangeId, patch_id: &str) -> bool {
+        sql(&self.db, |conn| {
+            conn.query_row(
+                "SELECT 1 FROM review_tasks WHERE change_id = ?1 AND patch_id = ?2 AND role = 'resolved' LIMIT 1",
+                params![change_id.as_str(), patch_id],
+                |_| Ok(()),
+            )
+            .optional()
+            .expect("resolved")
+            .is_some()
+        })
+    }
+
+    /// `ReviewGate::resolved`: the reviewers whose blocking findings hold the Change's patch, and its other rounds,
+    /// count no more (`resolved`), and a new reviewer starts a full review of it.
+    async fn resolved_inner(&self, change: Change) -> bool {
+        let _held = self.lock.lock().await;
+        let Some(patch_id) = change.patch_id.as_ref().map(|p| p.to_string()) else {
+            return false;
+        };
+        if !self.gate_for(&change, &patch_id).0.waiting_for_head {
+            return false;
+        }
+        sql(&self.db, |conn| {
+            conn.execute(
+                "UPDATE review_tasks SET role = 'resolved' WHERE change_id = ?1 AND (
+                   (patch_id = ?2 AND role IN ('reviewer', 'tools_failed'))
+                   OR task_id IN (SELECT task_id FROM review_bindings WHERE patch_id = ?2 AND blocking > 0))",
+                params![change.change_id.as_str(), patch_id],
+            )
+            .expect("resolve review tasks")
+        });
+        self.spawn_reviewer(&change, &patch_id).await;
+        true
+    }
+
     /// The verdicts bound to `patch_id`, as the gate and `mark_ready` take them.
     fn gate_for(&self, change: &Change, patch_id: &str) -> (Gate, Vec<ChangeReview>) {
         let rows: Vec<(String, String, i64, i64)> = sql(&self.db, |conn| {
             let mut stmt = conn
                 .prepare_cached(
                     "SELECT b.task_id, b.pr_head_sha, b.blocking, b.non_blocking
-                     FROM review_bindings b JOIN review_tasks t ON t.task_id = b.task_id WHERE t.change_id = ?1 AND b.patch_id = ?2",
+                     FROM review_bindings b JOIN review_tasks t ON t.task_id = b.task_id
+                     WHERE t.change_id = ?1 AND b.patch_id = ?2 AND t.role != 'resolved'",
                 )
                 .expect("prepare");
             stmt.query_map(params![change.change_id.as_str(), patch_id], |r| {
@@ -321,8 +368,14 @@ impl Reviews {
             None => None,
         };
         let set = self.db.prompts().current(Some(&change.project_ref));
-        // A conflict resolution gets the short review of just its files.
-        let prompt = match self.rebased(&change.change_id, patch_id) {
+        // A conflict resolution gets the short review of just its files; a patch whose findings the lead resolved, a full
+        // review.
+        let resolved = self.resolved_on(&change.change_id, patch_id);
+        let reviewed = reviewed.filter(|_| !resolved);
+        let prompt = match self
+            .rebased(&change.change_id, patch_id)
+            .filter(|_| !resolved)
+        {
             Some(Rebased {
                 outcome: Rebase::Conflicts(files),
                 from_head,
@@ -635,7 +688,9 @@ impl Reviews {
             return Verdict::Pending;
         }
         let Some((last, broken)) = rounds.last() else {
-            if self.carried(change, patch_id).await {
+            if !self.resolved_on(&change.change_id, patch_id)
+                && self.carried(change, patch_id).await
+            {
                 return Verdict::Ready(self.gate_for(change, patch_id).1);
             }
             self.spawn_reviewer(change, patch_id).await;
@@ -812,7 +867,7 @@ impl Reviews {
         // A reviewer of a patch the Change has moved past was stopped; what it says counts for nothing.
         let Some(change_id) = self
             .round_of(&task_id)
-            .filter(|r| !r.superseded)
+            .filter(|r| !r.ignored)
             .map(|r| r.change_id)
         else {
             return Ok(());
@@ -955,7 +1010,7 @@ impl Reviews {
             .expect("bound")
         });
         self.evaluate(&change_id);
-        if bound.is_some() || round.superseded {
+        if bound.is_some() || round.ignored {
             return;
         }
         let how = event
@@ -1043,6 +1098,10 @@ impl ReviewGate for Reviews {
 
     fn again(&self, change: Change) -> BoxFut<'_, Verdict> {
         Box::pin(self.again_inner(change))
+    }
+
+    fn resolved(&self, change: Change) -> BoxFut<'_, bool> {
+        Box::pin(self.resolved_inner(change))
     }
 
     fn rereview(&self, change: &Change) -> bool {

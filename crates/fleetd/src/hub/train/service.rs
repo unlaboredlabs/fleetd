@@ -85,6 +85,12 @@ pub trait ReviewGate: Send + Sync + 'static {
     fn rereview(&self, _change: &Change) -> bool {
         false
     }
+    /// The lead enqueued the Change again while blocking findings hold its current patch: they resolved them without
+    /// a new patch (a narrowed brief, say). Those findings stop counting and a fresh full review of the patch starts,
+    /// which must pass as any review. False when no finding blocks it.
+    fn resolved(&self, _change: Change) -> BoxFut<'_, bool> {
+        Box::pin(async { false })
+    }
 }
 
 #[derive(Clone)]
@@ -150,6 +156,8 @@ pub const CHECKS_START_WAIT: Duration = Duration::from_secs(15 * 60);
 pub const CI_RUNNING_TIMEOUT: Duration = Duration::from_secs(45 * 60);
 /// How long a head's checks may all wait for runners: queued time is not running time, but it ends (D128).
 pub const CI_QUEUE_CEILING: Duration = Duration::from_secs(2 * 60 * 60);
+/// How long a Change's review findings may block it at one head, with no push, before the lead hears (`still_blocked`).
+pub const BLOCKED_WAKE: Duration = Duration::from_secs(30 * 60);
 /// How long every check on a head may have finished without a check its project or repo added to the fast set before
 /// the train says that check never ran (`Stall::NeverRan`): a workflow that starts late starts within it.
 pub const NEVER_RAN_WAIT: Duration = Duration::from_secs(5 * 60);
@@ -164,6 +172,9 @@ pub(super) const CI_SUPERSEDED: &str =
 /// Why a timed-out Change whose checks read cancelled, however often re-run, goes back to its author.
 pub(super) const CI_CANCELLED: &str =
     "its CI timed out, then was cancelled, and re-running it didn't finish it";
+/// A Change's note once the lead enqueued it again while its review's findings blocked it.
+pub(super) const RESOLVED: &str = "enqueued again while its review's findings blocked it: they count no more, and a \
+     fresh full review of its patch runs";
 /// The lead's line when a timed-out Change's CI finished green after all.
 pub(super) const CI_FINISHED_LATE: &str = "CI finished after the timeout; back in the queue";
 
@@ -433,6 +444,9 @@ pub(super) enum Stall {
     /// Every check on it finished and passed `NEVER_RAN_WAIT` ago, but these checks the project or the repo added to its
     /// fast set never ran: their jobs were renamed or removed.
     NeverRan(Vec<String>),
+    /// Every check on it finished, but these checks the base requires have no job in its tree: it removed or renamed
+    /// them, and GitHub won't merge it while the base's rules require them.
+    Removed(Vec<String>),
 }
 
 /// Whether checks that never reported are all ones the base requires, or include ones the repo added to its fast set.
@@ -505,6 +519,9 @@ pub struct Train {
     /// Per waiting Change, the head the train first saw, when, and whether its checks started or it was flagged
     /// (`unstarted_checks`). Kept in memory: after a restart the wait starts again.
     unstarted: Mutex<HashMap<ChangeId, (String, i64, bool)>>,
+    /// Per Change its review's findings block, the head, since when the train saw it blocked there, and whether the
+    /// lead heard (`still_blocked`). Kept in memory: after a restart the wait starts again.
+    blocked: Mutex<HashMap<ChangeId, (String, i64, bool)>>,
     /// Per timed-out Change, the cancelled runs the train re-ran after the timeout (`late_cancelled`).
     late_reruns: Mutex<HashMap<ChangeId, Reruns>>,
     /// Each repo and base branch's CI config and when it was read.
@@ -577,6 +594,7 @@ impl Train {
             upstream_reads: Mutex::default(),
             pushed: Mutex::default(),
             unstarted: Mutex::default(),
+            blocked: Mutex::default(),
             late_reruns: Mutex::default(),
             ci_configs: Mutex::default(),
             next_labels: Default::default(),
@@ -1128,6 +1146,18 @@ impl Train {
                     super::repo_checks::PATH,
                     if names.len() == 1 { "it" } else { "them" },
                 ),
+                Stall::Removed(names) => {
+                    let one = names.len() == 1;
+                    format!(
+                        "its tree has no job for the check{} {}, which the base requires: {} can't run on it, and \
+                         GitHub won't merge it until the base's rules stop requiring {} (a repo admin's change: ask \
+                         for it first, or keep the job)",
+                        if one { "" } else { "s" },
+                        names.join(", "),
+                        if one { "it" } else { "they" },
+                        if one { "it" } else { "them" },
+                    )
+                }
             };
             format!("{CI_TIMED_OUT} on {}: {what}", short(&change.head_sha))
         } else {
@@ -1267,6 +1297,8 @@ impl Train {
             // what the base requires.
             let mut unreported = Vec::new();
             let mut base_requires: Vec<String> = Vec::new();
+            // The checks the base requires that no job of the tree under test defines (`undefined_at`).
+            let mut removed_required: Vec<String> = Vec::new();
             let runs = match self.github.all_check_runs(repo, sha).await {
                 Ok(runs) => {
                     all = runs.clone();
@@ -1409,6 +1441,31 @@ impl Train {
                         }
                     }
                     base_requires = required.clone().unwrap_or_default();
+                    // A check whose job the tree under test no longer defines (its PR removed or renamed it) never
+                    // comes: it isn't waited for, unless the base requires it, which GitHub always waits for.
+                    if let Some(waits) = waits.as_mut() {
+                        let unrun: Vec<String> = waits
+                            .iter()
+                            .filter(|n| !runs.iter().any(|r| gated_name(n, &r.name)))
+                            .cloned()
+                            .collect();
+                        if !unrun.is_empty() {
+                            let gone = self.undefined_at(repo, base, sha, &unrun).await;
+                            if !gone.is_empty() {
+                                tracing::info!(
+                                    repo,
+                                    sha,
+                                    ?gone,
+                                    "train: checks its tree doesn't define"
+                                );
+                            }
+                            waits.retain(|n| base_requires.contains(n) || !gone.contains(n));
+                            removed_required = gone
+                                .into_iter()
+                                .filter(|n| base_requires.contains(n))
+                                .collect();
+                        }
+                    }
                     let (reported, missing) = self
                         .required_reported(repo, sha, &runs, waits.as_deref())
                         .await;
@@ -1456,6 +1513,12 @@ impl Train {
                 .cloned()
                 .collect();
             let finished = !all.is_empty() && all.iter().all(|r| r.status == "completed");
+            // A required check the tree doesn't define can't come, and GitHub won't merge without it: no wait to the
+            // CI timeout, and no loop back into the queue.
+            if finished && !removed_required.is_empty() {
+                self.check_spans(change, sha, &last);
+                return Some(CiOutcome::Timeout(Stall::Removed(removed_required)));
+            }
             let now = self.now_ms();
             finished_without =
                 (finished && !never_ran.is_empty()).then(|| finished_without.unwrap_or(now));
@@ -2066,7 +2129,10 @@ impl Train {
 
     /// From CI on the Change's head, in `ci`, to merged: waits for its fast set, posts `fleetd/train` and merges
     /// pinned to that head. `rebased` is its PR at that head, `base` what it merges into, `label` how `fleetd:next`
-    /// went on. Taking a Change and finding one in CI after a restart both end here.
+    /// went on. Taking a Change and finding one in CI after a restart both end here. While its CI runs, the ready PRs
+    /// green on their own heads go in a batch stacked on its head (`stacker`), in CI on the combined tree: once it
+    /// passes, the batch lands it with them as one squash, or it merges alone as with nothing behind it
+    /// (`land_chain`). One that fails sends the batch's PRs back in line, for a batch on the base.
     async fn ci_and_merge(
         &self,
         in_ci: &Change,
@@ -2074,16 +2140,51 @@ impl Train {
         base: &str,
         label: super::next::Labelled,
     ) -> Result<(), GhError> {
+        use super::batch::{Candidate, Stage};
         let (change, repo, head_sha) = (in_ci, in_ci.repo.as_str(), in_ci.head_sha.clone());
         let lone = match self.label_gate(repo, base).await {
             super::next::Gate::Checks(names) if names.is_empty() => None,
             gate => Some(super::next::Lone { label, gate }),
         };
         let noted = std::slice::from_ref(&in_ci.change_id);
-        match self
-            .wait_ci(in_ci, repo, &head_sha, base, lone, noted)
+        let started = self.now_ms();
+        let chain = Mutex::new(vec![Stage {
+            pr: change.pr_number.get(),
+            sha: head_sha.to_string(),
+            title: rebased.title.clone(),
+            members: vec![Candidate {
+                change: in_ci.clone(),
+                pull: rebased.clone(),
+            }],
+            added: 1,
+            lone: true,
+        }]);
+        let stack = self.stacker(repo, base, &chain);
+        let outcome = self
+            .watch_ci(
+                in_ci,
+                repo,
+                &head_sha,
+                base,
+                lone,
+                noted,
+                None,
+                Some(&stack),
+            )
             .await
-        {
+            .unwrap_or(CiOutcome::Timeout(Stall::Running));
+        drop(stack);
+        let chain = chain.into_inner().unwrap_or_else(|e| e.into_inner());
+        let failed = match &outcome {
+            CiOutcome::Green => None,
+            CiOutcome::Red(_) => Some("didn't pass: its CI red"),
+            CiOutcome::Timeout(_) => Some("didn't pass: its CI timed out"),
+            CiOutcome::Moved => Some("was pushed to during its CI"),
+        };
+        if let Some(what) = failed {
+            self.drop_behind(&chain, what, base);
+        }
+        match outcome {
             CiOutcome::Green => {}
             CiOutcome::Red(failing) => {
                 self.ci_failed(in_ci, &failing, None).await;
@@ -2101,11 +2202,14 @@ impl Train {
         // CI passed: the merge also waits for a re-review still at work.
         let current = self.records.get(&change.change_id);
         if let Some(current) = current.filter(|c| !super::batch::reviewed(c)) {
-            match self
+            let wait = self
                 .await_reviews(std::slice::from_ref(&current))
                 .await
-                .remove(0)
-            {
+                .remove(0);
+            if !matches!(wait, ReviewWait::Clean(_)) {
+                self.drop_behind(&chain, "was sent back to review", base);
+            }
+            match wait {
                 ReviewWait::Clean(reviews) => {
                     self.add_reviews(&current, reviews);
                 }
@@ -2120,7 +2224,28 @@ impl Train {
                 }
             }
         }
+        if chain.len() > 1 {
+            self.land_chain(repo, base, chain, started).await;
+            return Ok(());
+        }
+        let current = self
+            .records
+            .get(&change.change_id)
+            .unwrap_or_else(|| change.clone());
+        self.merge_alone(&current, rebased, base).await
+    }
 
+    /// A Change in `ci` whose CI passed on its head, reviewed clean, to merged alone: posts `fleetd/train` and merges
+    /// pinned to its head, `rebased` its PR there. A merge GitHub refuses while it still expects checks waits for them
+    /// and tries again; one refused otherwise goes back to ready, and after `merge_attempts` the lead hears.
+    pub(super) async fn merge_alone(
+        &self,
+        in_ci: &Change,
+        rebased: &Pull,
+        base: &str,
+    ) -> Result<(), GhError> {
+        let (change, repo, head_sha) = (in_ci, in_ci.repo.as_str(), in_ci.head_sha.clone());
+        let noted = std::slice::from_ref(&in_ci.change_id);
         let Some(merging) = self.update(&change.change_id, Some(&[ChangeState::Ci]), |mut c| {
             c.state = ChangeState::Merging;
             c
@@ -2257,6 +2382,7 @@ impl Train {
         ];
         let changes = self.records.in_train(repo, &waiting);
         lock(&self.unstarted).retain(|id, _| changes.iter().any(|c| &c.change_id == id));
+        lock(&self.blocked).retain(|id, _| changes.iter().any(|c| &c.change_id == id));
         lock(&self.late_reruns).retain(|id, _| changes.iter().any(|c| &c.change_id == id));
         let live: Vec<ChangeId> = self
             .records
@@ -2312,16 +2438,66 @@ impl Train {
                         c
                     });
                 }
-            } else if change.state == ChangeState::Reviewing
-                && let Verdict::Ready(reviews) = self.gate.again(change.clone()).await
-            {
-                self.set_ready(&change, reviews);
+            } else if change.state == ChangeState::Reviewing {
+                match self.gate.again(change.clone()).await {
+                    Verdict::Ready(reviews) => {
+                        self.set_ready(&change, reviews);
+                    }
+                    verdict => {
+                        self.still_blocked(&change, verdict == Verdict::Blocked)
+                            .await;
+                        if in_line {
+                            self.unstarted_checks(&change, &pull.base.ref_).await;
+                        }
+                    }
+                }
             } else if timed_out(&change) {
                 self.after_timeout(&change).await;
             } else if in_line {
                 self.unstarted_checks(&change, &pull.base.ref_).await;
             }
         }
+    }
+
+    /// A Change in review that its review's findings have `blocked` at the same head for `BLOCKED_WAKE`, with no push
+    /// since: its writer may be stuck, or the lead resolved the findings without a new patch and the train waits for a
+    /// push that won't come. The lead hears once per head, with how to start a fresh full review.
+    async fn still_blocked(&self, change: &Change, blocked: bool) {
+        let head = change.head_sha.as_str();
+        let now = self.now_ms();
+        let tell = {
+            let mut seen = lock(&self.blocked);
+            if !blocked {
+                seen.remove(&change.change_id);
+                return;
+            }
+            let entry = seen
+                .entry(change.change_id.clone())
+                .or_insert_with(|| (head.to_string(), now, false));
+            if entry.0 != head {
+                *entry = (head.to_string(), now, false);
+            }
+            let tell = !entry.2 && now - entry.1 >= BLOCKED_WAKE.as_millis() as i64;
+            entry.2 |= tell;
+            tell
+        };
+        if !tell {
+            return;
+        }
+        let text = format!(
+            "its review's blocking findings have held it at {} for {} min with no new push. If you resolved them \
+             without a patch (by narrowing the brief, say), call `change_enqueue` for it again: a fresh full review of \
+             it starts. Otherwise check on its writer.",
+            short(head),
+            BLOCKED_WAKE.as_secs() / 60
+        );
+        let line = Event::PrNote {
+            change: change.change_id.as_str(),
+            pr_url: change.pr_url.as_str(),
+            text: &text,
+        }
+        .render();
+        self.wake_lead(&change.project_ref, line).await;
     }
 
     /// A Change in line whose head has no check `checks_start_wait` after the train first saw it: GitHub skipped its
@@ -3061,7 +3237,15 @@ impl Train {
                 return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
             }
             let existing = self.add_after(existing, &after);
+            // Enqueued again while its review's findings block it: the lead resolved them without a new patch.
+            if existing.state == ChangeState::Reviewing
+                && self.gate.resolved(existing.clone()).await
+            {
+                self.note(&existing.change_id, RESOLVED);
+                lock(&self.blocked).remove(&existing.change_id);
+            }
             self.kick(&repo);
+            let existing = self.records.get(&existing.change_id).unwrap_or(existing);
             return Ok(self.one(existing));
         }
 

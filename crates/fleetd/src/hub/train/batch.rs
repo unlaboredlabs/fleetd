@@ -141,7 +141,8 @@ pub(super) struct Candidate {
     pub pull: Pull,
 }
 
-/// A batch PR in CI: its members are those of the batches it was built on, then its own `added`.
+/// A batch PR in CI: its members are those of the batches it was built on, then its own `added`. Or, `lone`, a PR in
+/// CI alone at its rebased head, which batches stack on as they do on a batch PR.
 #[derive(Clone)]
 pub(super) struct Stage {
     pub pr: i64,
@@ -149,12 +150,22 @@ pub(super) struct Stage {
     pub title: String,
     pub members: Vec<Candidate>,
     pub added: usize,
+    pub lone: bool,
 }
 
 impl Stage {
     /// The members it added to the batch it was built on.
     fn own(&self) -> &[Candidate] {
         &self.members[self.members.len() - self.added..]
+    }
+
+    /// How the PRs behind it read it: `batch #12`, or `#7` for a PR alone.
+    fn name(&self) -> String {
+        if self.lone {
+            format!("#{}", self.pr)
+        } else {
+            format!("batch #{}", self.pr)
+        }
     }
 }
 
@@ -557,6 +568,22 @@ impl Train {
         }
         let runs = proven_runs(runs, &workflows.batch);
         let batch = workflows.batch_names();
+        let mut fast = fast;
+        // A check of the fast set whose job its tree doesn't define (a branch from before the base added it, or one
+        // that removes it) can't run on its head: the batch's CI, on the combined tree, decides it. Not a check the
+        // batch skips, which only the PR's own head ever runs.
+        if let Some(fast) = fast.as_mut() {
+            let unrun: Vec<String> = fast
+                .set
+                .iter()
+                .filter(|n| !batch.contains(n) && !runs.iter().any(|r| gated_name(n, &r.name)))
+                .cloned()
+                .collect();
+            if !unrun.is_empty() {
+                let gone = self.undefined_at(repo, base, sha, &unrun).await;
+                fast.set.retain(|n| !gone.contains(n));
+            }
+        }
         let unrun = fast
             .as_ref()
             .map(|f| f.set.as_slice())
@@ -666,25 +693,28 @@ impl Train {
     }
 
     /// Each member alone, in order, released to ready first with `why`. One handed back to ready stops the rest: it is
-    /// still first in line, and the next pass takes it before them.
-    async fn alone(&self, members: &[Candidate], why: &str) {
-        self.release(members, why);
-        for m in members {
-            let ready = self
-                .records
-                .get(&m.change.change_id)
-                .filter(|c| c.state == ChangeState::Ready || self.rereviewing(c));
-            if let Some(ready) = ready {
-                self.take(&ready).await;
-                if self
+    /// still first in line, and the next pass takes it before them. Boxed: a PR taken alone may land a batch stacked on
+    /// it, whose PRs go alone in turn when it fails.
+    fn alone<'a>(&'a self, members: &'a [Candidate], why: &'a str) -> BoxFut<'a, ()> {
+        Box::pin(async move {
+            self.release(members, why);
+            for m in members {
+                let ready = self
                     .records
                     .get(&m.change.change_id)
-                    .is_some_and(|c| c.state == ChangeState::Ready || self.rereviewing(&c))
-                {
-                    return;
+                    .filter(|c| c.state == ChangeState::Ready || self.rereviewing(c));
+                if let Some(ready) = ready {
+                    self.take(&ready).await;
+                    if self
+                        .records
+                        .get(&m.change.change_id)
+                        .is_some_and(|c| c.state == ChangeState::Ready || self.rereviewing(&c))
+                    {
+                        return;
+                    }
                 }
             }
-        }
+        })
     }
 
     /// Makes `branch` the base with each member's head merged in, in order, on GitHub. A member that conflicts goes
@@ -801,6 +831,7 @@ impl Train {
             title,
             members: in_ci,
             added,
+            lone: false,
         };
         self.ride(repo, base, lead).await
     }
@@ -868,8 +899,8 @@ impl Train {
                     BranchMerge::Conflict => self.release(
                         std::slice::from_ref(m),
                         &format!(
-                            "conflicts with the PRs in batch #{} ahead of it; it goes again once they land",
-                            ahead.pr
+                            "conflicts with the PRs in {} ahead of it; it goes again once they land",
+                            ahead.name()
                         ),
                     ),
                     BranchMerge::Nothing => self.release(
@@ -936,53 +967,78 @@ impl Train {
             title,
             members: ahead.members.iter().cloned().chain(in_ci).collect(),
             added,
+            lone: false,
         })
     }
 
-    /// From `lead` in CI to merged, with up to `pipeline_depth - 1` batches behind it in CI meanwhile, each built on
-    /// the one ahead as ready PRs come. The furthest batch that passed, with every batch ahead of it passed, lands as
-    /// one squash of all their members, on exactly the tree its CI tested. A batch that fails sends its own PRs alone
-    /// and those of the batches behind it back in line, for a batch on the base. Once `lead` passed, the batches
-    /// behind it get `follower_wait` (by default as long as `lead`'s CI took): one still in CI then goes back in line,
-    /// and the batches ahead of it land without it.
-    async fn ride(&self, repo: &str, base: &str, lead: Stage) {
-        let started = self.now_ms();
+    /// What runs between reads of the CI of `chain`'s first stage, at most once per `poll_interval`: a batch of the
+    /// ready PRs built on its last stage, up to `pipeline_depth` stages in all.
+    pub(super) fn stacker<'a>(
+        &'a self,
+        repo: &'a str,
+        base: &'a str,
+        chain: &'a std::sync::Mutex<Vec<Stage>>,
+    ) -> impl Fn() -> BoxFut<'a, ()> + Send + Sync + 'a {
         let depth = self.options.pipeline_depth.max(1);
         let every = self.options.poll_interval.as_millis() as i64;
-        let chain = std::sync::Mutex::new(vec![lead.clone()]);
         let tried = std::sync::Mutex::new(None::<i64>);
-        // Between reads of `lead`'s checks, at most once per `poll_interval`: a batch behind it, from the ready PRs.
-        let extend = || -> BoxFut<'_, ()> {
-            Box::pin(async {
-                let now = self.now_ms();
-                let ahead = {
-                    let chain = lock(&chain);
-                    let mut tried = lock(&tried);
-                    if chain.len() >= depth || tried.is_some_and(|at| now - at < every) {
-                        return;
-                    }
+        move || {
+            let now = self.now_ms();
+            let ahead = {
+                let chain = lock(chain);
+                let mut tried = lock(&tried);
+                if chain.len() >= depth || tried.is_some_and(|at| now - at < every) {
+                    None
+                } else {
                     *tried = Some(now);
                     chain.last().cloned().map(|ahead| (ahead, chain.len()))
-                };
+                }
+            };
+            Box::pin(async move {
                 let Some((ahead, k)) = ahead else { return };
                 if let Some(next) = self.follower(repo, base, &ahead, k).await {
-                    lock(&chain).push(next);
+                    lock(chain).push(next);
                 }
             })
-        };
+        }
+    }
+
+    /// From `lead` in CI to merged, with up to `pipeline_depth - 1` batches behind it in CI meanwhile, each built on
+    /// the one ahead as ready PRs come (`stacker`), then landed by `land_chain`. A lead that fails sends its own PRs
+    /// alone and those of the batches behind it back in line, for a batch on the base.
+    async fn ride(&self, repo: &str, base: &str, lead: Stage) {
+        let started = self.now_ms();
+        let chain = std::sync::Mutex::new(vec![lead.clone()]);
+        let extend = self.stacker(repo, base, &chain);
         let lead_failed = self.stage_ci(repo, base, &lead, None, Some(&extend)).await;
+        drop(extend);
         let chain = chain.into_inner().unwrap_or_else(|e| e.into_inner());
         if let Some(failed) = lead_failed {
-            let why = format!(
-                "batch #{} ahead of it {}; it forms again on {base}",
-                lead.pr,
-                failed.what()
-            );
-            for stage in &chain[1..] {
-                self.release(stage.own(), &why);
-            }
+            self.drop_behind(&chain, &failed.what(), base);
             return self.fail_alone(&lead, &failed).await;
         }
+        self.land_chain(repo, base, chain, started).await
+    }
+
+    /// The batches stacked on `chain`'s first stage, which `what`: their own PRs back in line, for a batch on the base.
+    pub(super) fn drop_behind(&self, chain: &[Stage], what: &str, base: &str) {
+        let Some(lead) = chain.first() else { return };
+        let why = format!(
+            "{} ahead of it {what}; it forms again on {base}",
+            lead.name()
+        );
+        for stage in &chain[1..] {
+            self.release(stage.own(), &why);
+        }
+    }
+
+    /// `chain`, whose first stage passed CI (from `started`), to merged. The furthest batch that passed, with every
+    /// stage ahead of it passed, lands as one squash of all their members, on exactly the tree its CI tested. Once the
+    /// first stage passed, the batches behind it get `follower_wait` (by default as long as its CI took): one still in
+    /// CI then goes back in line, and the stages ahead of it land without it. A batch that fails sends its own PRs alone
+    /// and those of the batches behind it back in line. A first stage that is a PR alone (`lone`) lands as it would
+    /// with nothing behind it (`merge_alone`) when no batch behind it can.
+    pub(super) async fn land_chain(&self, repo: &str, base: &str, chain: Vec<Stage>, started: i64) {
         let wait = self
             .options
             .follower_wait
@@ -1013,11 +1069,11 @@ impl Train {
                     "train: the batch behind is still in CI; the one ahead lands without it"
                 );
                 let why = format!(
-                    "batch #{} was still in CI {} s after batch #{} ahead of it passed, which landed without it; it \
-                     forms again on {base}",
+                    "batch #{} was still in CI {} s after {} ahead of it passed, which landed without it; it forms \
+                     again on {base}",
                     stage.pr,
                     wait.as_secs(),
-                    lands.pr
+                    lands.name()
                 );
                 self.release(stage.own(), &why);
             }
@@ -1031,10 +1087,14 @@ impl Train {
             }
         }
         // The furthest passed batch lands; one that can't (a member re-reviewed with findings, pushed to, or a merge
-        // refused) gives way to the nearest passed batch ahead of it whose members are all still clean, so a green
-        // batch is never lost to the one built on it.
+        // refused) gives way to the nearest passed stage ahead of it whose members are all still clean, so a green
+        // stage is never lost to the one built on it.
         let mut at = landing;
         let landed = loop {
+            if at == 0 && chain[0].lone {
+                self.merge_alone_stage(&chain[0], base).await;
+                break Ok(0);
+            }
             let unlanded = match self.land(repo, base, &chain[at]).await {
                 Ok(()) => break Ok(at),
                 Err(unlanded) => unlanded,
@@ -1057,11 +1117,11 @@ impl Train {
                         "train: the batch behind can't land; the one ahead lands"
                     );
                     let why = format!(
-                        "batch #{} passed CI but couldn't land ({}); batch #{} ahead of it landed without it, and it \
-                         forms again on {base}",
+                        "batch #{} passed CI but couldn't land ({}); {} ahead of it landed without it, and it forms \
+                         again on {base}",
                         chain[at].pr,
                         unlanded.why(),
-                        chain[ahead].pr
+                        chain[ahead].name()
                     );
                     for stage in &chain[ahead + 1..=at] {
                         self.release(stage.own(), &why);
@@ -1089,6 +1149,21 @@ impl Train {
                     other => self.release(&chain[at].members, other.why()),
                 }
             }
+        }
+    }
+
+    /// The PR alone at the front of a chain, whose CI passed and whose batches behind didn't land: merged as it would
+    /// be with nothing behind it.
+    async fn merge_alone_stage(&self, stage: &Stage, base: &str) {
+        let Some(m) = stage.members.first() else {
+            return;
+        };
+        let change = self
+            .records
+            .get(&m.change.change_id)
+            .unwrap_or_else(|| m.change.clone());
+        if let Err(e) = self.merge_alone(&change, &m.pull, base).await {
+            self.put_back(&change, &format!("GitHub: {}", e.message));
         }
     }
 
@@ -1461,6 +1536,7 @@ impl Train {
             title: batch.title.clone(),
             members,
             added,
+            lone: false,
         };
         self.ride(repo, &batch.base.ref_, lead).await;
         true

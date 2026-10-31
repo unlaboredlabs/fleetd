@@ -44,7 +44,13 @@ The train waits only for the repo's fast set, the same way in every repo:
 
 Each check of the fast set is waited for until it reports, however late its workflow starts; a required one that never
 reports times out by name. One you or the repo added that still hasn't run 5 minutes after every other check finished
-is named then: its job was most likely renamed or removed, so fix the name in the list. The train never waits for any
+is named then: its job was most likely renamed or removed, so fix the name in the list.
+
+The train expects only the jobs the tree under test defines. When a PR removes or renames a job that the base's
+workflows still have, the train doesn't wait for that check, on the PR or on a batch with it. If the base requires
+that check, GitHub won't merge without it. In that case the train stops as soon as the other checks finish, says the
+ruleset needs changing first, and doesn't try the PR again until it changes. It never waits out the CI timeout or loops
+back into the queue. The train never waits for any
 other check. A check outside the fast set that has already failed when the fast set is green still stops the merge,
 unless you mark it **after merge only**. A required check is always in the fast set, since GitHub won't merge without
 it. A cancelled run of a check that isn't required doesn't count. With no required check and none added, the train
@@ -183,13 +189,25 @@ a minute later, then after longer waits up to 15 minutes. It starts at once when
 since that shows the tools work again. These don't count toward the one retry a reviewer that ended without a verdict
 for other reasons gets.
 
+### Findings resolved without a new patch {#resolved}
+
+Blocking findings hold a PR until its next commit. Sometimes the lead resolves a finding another way, for example by
+narrowing the brief the reviewer judged against. In that case, enqueue the PR again with `change_enqueue`. The
+findings on its current patch stop counting, and a fresh, full review of the same patch starts. No approval carries
+over to it. The PR lands only on that review's clean verdict. If the review finds blockers again, they hold the PR as
+before. Enqueuing a PR that nothing blocks starts nothing.
+
+When blocking findings have held a PR at the same commit for 30 minutes with no push, the lead hears once. The message
+says how to start a fresh review, and to check on the writer otherwise.
+
 ## Batches {#batches}
 
 When several PRs are ready at once, the train merges them together in one CI run. It takes up to 8 ready PRs in
 line that go into the same base branch and whose fast set passed on their own commit, every check of it reported. A
 PR whose commit has no checks yet stays out. A cancelled or superseded run, and any check outside the fast set, doesn't
 keep a PR out: the batch's own CI decides. A check the batch PR [skips](#scarce-runners) must have passed on the PR's
-own commit too. Then:
+own commit too. A fast-set check whose job the PR's own tree doesn't define, because its branch predates the job,
+doesn't keep it out. The batch's CI runs that job on the combined tree and must pass it. Then:
 
 1. It makes its own branch from the base on GitHub, `train/batch` under the project's branch prefix
    (`fleetd/train/batch` by default), and merges each PR into it in order.
@@ -224,6 +242,18 @@ starts right away.
 | The second is still in CI when the first passes | Waits at most as long as the first batch's CI took, then lands the first batch without it. The second batch's PRs go back in line. |
 
 The train keeps at most two batches in CI at once.
+
+A PR merging alone doesn't hold the lane either. While its CI runs on its rebased commit, the PRs that become ready go
+in a batch built on that commit, the same way, and that batch's CI starts right away on the combined tree.
+
+| If | The train |
+|---|---|
+| Both pass | Lands the batch's PR, as one squash of the lone PR and the batch's PRs, on exactly the tree its CI passed. The lone PR closes with a link to it. |
+| The lone PR fails, is pushed to, or its review finds a blocker | Drops the batch. Its PRs go back in line and start again on the base. |
+| The lone PR passes and the batch fails | Merges the lone PR by itself, as it would with nothing behind it. The batch's PRs each go alone. |
+| The batch is still in CI when the lone PR passes | Waits at most as long as the lone PR's CI took, then merges the lone PR by itself. The batch's PRs go back in line. |
+
+A PR in the batch never lands before or without the PR ahead of it, and only on its own green CI.
 
 ## Generated files {#regenerate}
 
