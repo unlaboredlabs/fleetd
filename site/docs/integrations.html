@@ -98,13 +98,13 @@ refuses an integration on any other project.</p>
 </tr>
 <tr>
 <td><strong>Spending</strong></td>
-<td>A <code dir="auto">pay</code>, <code dir="auto">purchase</code> or <code dir="auto">checkout</code> tool</td>
-<td>Asks you, marked <strong>Costs money</strong>, and asks once more before it runs.</td>
+<td>A <code dir="auto">pay</code>, <code dir="auto">purchase</code>, <code dir="auto">checkout</code>, <code dir="auto">book</code>, <code dir="auto">reserve</code> or <code dir="auto">subscribe</code> tool, and one that makes an order, a booking or a reservation (<code dir="auto">create_order</code>, <code dir="auto">confirm_booking</code>; reading one, such as <code dir="auto">list_orders</code>, doesn’t count)</td>
+<td>Asks you, marked <strong>Costs money</strong>, and asks once more before it runs. Only you answer it, whatever approval mode the Navi runs in.</td>
 </tr>
 <tr>
 <td><strong>Never</strong></td>
-<td>Moving money between accounts (<code dir="auto">transfer</code>, <code dir="auto">send_money</code>, <code dir="auto">send_transaction</code>), trading (<code dir="auto">buy_stock</code>, <code dir="auto">sell</code>, and any <code dir="auto">place_order</code> or <code dir="auto">submit_order</code>, a shop’s or a restaurant’s too), creating accounts in your name; sending or storing what looks like a password, key or token; a call too large to show on the card in full</td>
-<td>Refused, even if you would approve it. The Navi is told to leave it to you. Place orders yourself, or through a screen you take over.</td>
+<td>Moving money between accounts (<code dir="auto">transfer</code>, <code dir="auto">send_money</code>, <code dir="auto">send_transaction</code>), trading and crypto (<code dir="auto">buy_stock</code>, <code dir="auto">sell</code>, <code dir="auto">buy_crypto</code>, and any <code dir="auto">place_order</code> or <code dir="auto">submit_order</code>, which could be a broker’s), creating accounts in your name; sending or storing what looks like a password, key or token; a call too large to show on the card in full</td>
+<td>Refused, even if you would approve it. The Navi is told to leave it to you. A shop’s checkout goes through a <a href="/docs/navi#purchases">purchase</a> instead.</td>
 </tr>
 </tbody>
 </table>
