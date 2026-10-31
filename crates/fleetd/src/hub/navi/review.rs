@@ -142,6 +142,18 @@ static HEADER: LazyLock<Regex> = LazyLock::new(|| {
 });
 static FROM_LINE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?im)^\s*(from|sender|organizer)\s*:\s*(.+)$").unwrap());
+/// Any header line: `Subject: Saturday`, `Message-ID: <…>`.
+static HEADER_LINE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*[A-Za-z][\w-]{0,30}:(\s|$)").unwrap());
+/// A line between two mails of a plain-text list: `---`, `===`, `***`.
+static SEPARATOR: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*([-=*#~─━]\s*){3,}$").unwrap());
+/// A line that starts quoted mail inside a message: `-----Original Message-----`, Outlook's `_____` rule,
+/// `Begin forwarded message:`, `On Monday, Sam <sam@example.org> wrote:`.
+static QUOTE_START: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^\s*(-+\s*(original|forwarded) message\s*-*|begin forwarded message:?|_{5,}|.*\bwrote:)\s*$")
+        .unwrap()
+});
 /// A long base64 or hex blob in a URL: data, not an address.
 static BLOB: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[A-Za-z0-9+/_=]{32,}|[0-9a-fA-F]{32,}").unwrap());
@@ -344,14 +356,54 @@ impl Sources {
     }
 }
 
-/// The addresses in a mail's or an event's headers: its header lines (before its first blank line: a "From:" line
-/// in a body is anyone's text), and the address keys of its JSON.
+/// The header blocks of a plain-text read, one per mail. A mail starts at the top and after each separator line
+/// (`---`), and its first paragraph is its headers; in a list with only blank lines between mails, a later paragraph
+/// made only of header lines, one of them a `From:`, starts another. Nothing past the start of a quote
+/// (`-----Original Message-----`, `On … wrote:`) counts, to the end of the read: a quote is someone else's mail,
+/// headers, separators and all, and no line of it can say where it ends. A later mail's headers lost to it cost an ask.
+/// A line quoted with `>` is no header line.
+fn heads(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut block: Vec<&str> = Vec::new();
+    let mut first = true;
+    let mut flush = |block: &mut Vec<&str>, first: &mut bool| {
+        if block.is_empty() {
+            return;
+        }
+        let head = block.join("\n");
+        let all_headers = block
+            .iter()
+            .all(|l| HEADER_LINE.is_match(l) || l.starts_with([' ', '\t']));
+        if *first || (all_headers && FROM_LINE.is_match(&head)) {
+            out.push(head);
+        }
+        *first = false;
+        block.clear();
+    };
+    for line in text.lines() {
+        if SEPARATOR.is_match(line) {
+            flush(&mut block, &mut first);
+            first = true;
+        } else if line.trim().is_empty() {
+            flush(&mut block, &mut first);
+        } else if !HEADER_LINE.is_match(line) && QUOTE_START.is_match(line) {
+            return out;
+        } else {
+            block.push(line);
+        }
+    }
+    flush(&mut block, &mut first);
+    out
+}
+
+/// The addresses in a mail's or an event's headers: the header lines of each of its mails ([`heads`]: a "From:" line
+/// in a body or a quote is anyone's text), and the address keys of its JSON.
 fn header_addresses(text: &str) -> Vec<String> {
     let mut out = Vec::new();
-    let head = text.trim_start().split("\n\n").next().unwrap_or_default();
-    let head = head.split("\r\n\r\n").next().unwrap_or_default();
-    for c in HEADER.captures_iter(head) {
-        out.extend(emails(&c[2]));
+    for head in heads(text) {
+        for c in HEADER.captures_iter(&head) {
+            out.extend(emails(&c[2]));
+        }
     }
     if let Ok(v) = serde_json::from_str::<Value>(text) {
         for (at, value) in leaves(&v) {
@@ -413,14 +465,15 @@ fn label(k: Kind, r: &Read) -> String {
     }
 }
 
-/// The person's own addresses (the sender of their sent mail, from a tool whose name says it reads the sent folder)
-/// and the addresses of their contacts (a contact list, their sent mail) in what the Navi read. Nothing the action
-/// itself says counts, nor a thread's or an invite's addresses: the Navi writes the one, anyone the others.
+/// The person's own addresses (the sender of each of their sent mails, from a tool whose name says it reads the sent
+/// folder) and the addresses of their contacts (a contact list, their sent mail) in what the Navi read. Nothing the
+/// action itself says counts, nor a thread's or an invite's addresses: the Navi writes the one, anyone the others.
 pub fn known(person: &[String], reads: &[Read]) -> (Vec<String>, Vec<String>) {
     let mut mine: Vec<String> = Vec::new();
     for r in reads.iter().filter(|r| kind(&r.source) == Kind::Sent) {
-        for head in r.text.split("\n\n").filter(|h| FROM_LINE.is_match(h)) {
-            if let Some(c) = FROM_LINE.captures(head) {
+        // Each sent mail's own sender, never one in a quote of the mail it answered.
+        for head in heads(&r.text) {
+            if let Some(c) = FROM_LINE.captures(&head) {
                 mine.extend(emails(&c[2]));
             }
         }

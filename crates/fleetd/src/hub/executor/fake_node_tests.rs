@@ -814,3 +814,75 @@ async fn reads_give_each_calls_whole_output_and_fetch_a_cut_one() {
         "From: alex@rivera.example\nTo: dana@northwind.example"
     );
 }
+
+/// One cut output the node fails to send keeps its stored tail; the reads fetched whole are kept, not lost with it.
+#[tokio::test]
+async fn reads_keep_the_fetches_that_worked_when_one_fails() {
+    let mut node = Node::start(Some(5)).await;
+    node.subscribe(json!([session(
+        "s1",
+        json!({ "latestRun": { "id": "r1", "status": "completed", "ordinal": 1 } })
+    )]))
+    .await;
+    let _ = node.logged("thread.completed").await;
+    let r = node.thread("s1");
+    let executors = node.executors.clone();
+    let target = r.clone();
+    let reads = tokio::spawn(async move { executors.reads(&target, 10).await });
+    let (id, _) = node.call().await;
+    node.reply(&id, json!({ "ok": { "kind": "done" } }));
+    let item = |id: &str, command: &str, output: &str, omitted: bool| {
+        json!({ "id": id, "runId": "r1", "status": "completed", "title": "Ran a command",
+            "startedAt": "2026-10-17T10:01:00.000Z", "completedAt": "2026-10-17T10:01:30.000Z",
+            "updatedAt": "2026-10-17T10:01:30.000Z",
+            "kind": { "type": "command", "command": command, "output": output, "outputOmitted": omitted, "exitCode": 0 } })
+    };
+    let snapshot: ThreadEventFrame = serde_json::from_value(json!({
+        "sessionId": "s1", "at": "2026-10-17T10:03:00.000Z",
+        "event": { "type": "snapshot", "summary": session("s1", json!({})), "truncated": false,
+            "runs": [{ "id": "r1", "status": "completed", "ordinal": 1 }],
+            "messages": [],
+            "items": [
+                item("i1", "gog gmail search in:sent", "…sent tail", true),
+                item("i2", "gog gmail search in:inbox", "…inbox tail", true),
+            ],
+        },
+    }))
+    .unwrap();
+    node.executors
+        .handle_frame(&node.machine, NodeToHub::ThreadEvent(snapshot));
+    for _ in 0..2 {
+        let (id, call) = node.call().await;
+        let SessionCall::ReadItem { item_id, .. } = call else {
+            panic!("not a read: {call:?}")
+        };
+        if item_id.as_str() == "i1" {
+            node.reply(
+                &id,
+                json!({ "ok": { "kind": "item", "item": item("i1", "gog gmail search in:sent",
+                "From: alex@rivera.example\nTo: dana@northwind.example", false) } }),
+            );
+        } else {
+            node.reply(
+                &id,
+                json!({ "err": { "code": "internal", "message": "the transcript is gone" } }),
+            );
+        }
+    }
+    let reads = reads
+        .await
+        .unwrap()
+        .expect("one failed fetch fails no read");
+    let of = |prefix: &str| {
+        reads
+            .iter()
+            .find(|(call, _)| call.ends_with(prefix))
+            .map(|(_, text)| text.as_str())
+    };
+    assert_eq!(
+        of("in:sent"),
+        Some("From: alex@rivera.example\nTo: dana@northwind.example"),
+        "fetched whole"
+    );
+    assert_eq!(of("in:inbox"), Some("…inbox tail"), "its stored tail");
+}

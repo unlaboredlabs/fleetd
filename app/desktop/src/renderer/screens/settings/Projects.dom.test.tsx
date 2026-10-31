@@ -94,6 +94,8 @@ let repos: ProjectRepo[];
 let repoAnswers: Record<string, Settings>;
 /** The project is a Navi. */
 let navi: boolean;
+/** navi_approvals fails this many more times. */
+let approvalsFail: number;
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -106,6 +108,7 @@ beforeEach(() => {
   repos = [];
   repoAnswers = {};
   navi = false;
+  approvalsFail = 0;
   window.location.hash = "#/settings/projects?for=devbox/p1";
   vi.stubGlobal("fleetd", {
     platform: "linux",
@@ -139,6 +142,10 @@ const render = async (page: "project" | "instructions" = "project") => {
       }
       const now = (tool === "project_settings_get" && answers.length > 1 ? answers.shift() : answers[0]) ?? settings;
       if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
+      if (tool === "navi_approvals" && approvalsFail > 0) {
+        approvalsFail -= 1;
+        return Promise.resolve({ ok: false, error: { code: "not_found", message: "navi_approvals: no navi_approvals row for project p1 on devbox" } });
+      }
       if (tool === "navi_approvals") return Promise.resolve({ ok: true, output: { approvals, log: approvedLog } });
       if (tool === "navi_approvals_set") {
         const set = input as { mode: string; model?: string; effort?: string };
@@ -388,6 +395,22 @@ describe("Settings → Projects", () => {
     await click(yolo);
     await settle();
     expect(calls.find((c) => c.tool === "navi_approvals_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", mode: "yolo" });
+  });
+
+  it("says plainly when a Navi's approvals can't be read, never the lookup's error, and tries again", async () => {
+    navi = true;
+    approvalsFail = 1;
+    answers = [{ ...settings, title: "Adri", workspaceRoot: "/home/w/.fleetd/node/navi/adri", worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
+    await render();
+    await settle();
+    const part = () => document.querySelector('section[aria-label="Approvals"]');
+    expect(part()?.textContent).toContain("Navi's approval settings couldn't be loaded.");
+    expect(part()?.textContent).not.toContain("navi_approvals");
+    expect(part()?.textContent).not.toContain("p1");
+    await click(button("Try again"));
+    await settle();
+    expect(part()?.textContent).toContain("Checker decides");
+    expect(part()?.textContent).not.toContain("couldn't be loaded");
   });
 
   it("keeps Delete off while the machine can't list the worktrees, and refuses when a fresh listing fails", async () => {

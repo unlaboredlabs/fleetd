@@ -1543,17 +1543,23 @@ impl Executors {
             .buffer_unordered(4)
             .collect()
             .await;
+        // Every fetch that worked is kept, even when another failed: that one keeps its stored tail.
+        let mut failed = None;
         for result in results {
-            if let SessionOutput::Item { item } = result? {
-                w.state
-                    .lock()
-                    .unwrap()
-                    .view
-                    .items
-                    .insert(item.id.to_string(), item);
+            match result {
+                Ok(SessionOutput::Item { item }) => {
+                    w.state
+                        .lock()
+                        .unwrap()
+                        .view
+                        .items
+                        .insert(item.id.to_string(), item);
+                }
+                Ok(_) => {}
+                Err(e) => failed = failed.or(Some(e)),
             }
         }
-        Ok(())
+        failed.map_or(Ok(()), Err)
     }
 
     /// The thread's summary from the shell, else the store.
@@ -2092,7 +2098,8 @@ impl Executors {
     }
 
     /// What the session read lately: its newest tool calls and commands, each with its call and its whole output (a cut
-    /// one fetched from the node), newest first. For a Navi's approval checker to search, never to send on.
+    /// one fetched from the node, or its stored tail when that fetch fails), newest first. For a Navi's approval checker
+    /// to search, never to send on.
     pub async fn reads(
         self: &Arc<Self>,
         r: &ThreadRef,
@@ -2104,7 +2111,10 @@ impl Executors {
             .into_iter()
             .map(|(id, _)| id)
             .collect();
-        self.fill_outputs(r, &w, &ids).await?;
+        // A whole output that couldn't be fetched leaves its tail: better than no reads, which makes every action ask.
+        if let Err(e) = self.fill_outputs(r, &w, &ids).await {
+            tracing::warn!(thread = %r.thread_id, "a read's whole output not fetched, its tail kept: {e}");
+        }
         let state = w.state.lock().unwrap();
         Ok(ids
             .iter()
