@@ -32,7 +32,7 @@ A command server starts in the agent's working directory with the agent's enviro
 
 An agent started after you save gets the change. An agent already running keeps the servers its claude started with;
 fleetd hands it the change with its next message, and it takes effect the next time that agent's process starts (after
-it was idle, stopped or the node restarted). Removing a server works the same way.
+it was idle or stopped; it runs on through a node restart). Removing a server works the same way.
 
 ## Secrets {#secrets}
 

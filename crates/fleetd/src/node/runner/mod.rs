@@ -15,6 +15,7 @@
 //! `{"dir":"in"|"out"|"stderr"|"meta","ms":<since start>,"msg":{…}}` (`raw` instead of `msg` for non-JSON lines).
 //! Files ending `.documented.jsonl` are built from the Agent SDK's types, not recorded.
 pub mod claude;
+pub mod host;
 pub mod navi_box;
 pub mod process;
 pub mod sandbox;
@@ -87,10 +88,15 @@ pub struct SessionSpec {
     /// The OS sandbox the process and everything it starts run in: a Navi's ([`sandbox::navi_fence`]). None for every
     /// other session.
     pub sandbox: Option<sandbox::Fence>,
+    /// Where the session's [`host`] keeps its registration and socket, so the process outlives the node and a
+    /// restarted node re-adopts it. None: the node owns the process, which ends with it. A sandboxed session never
+    /// gets one: its sandbox joins a box that ends with the node.
+    pub host_dir: Option<PathBuf>,
 }
 
-/// Commands to a live session's process.
-#[derive(Clone, Debug)]
+/// Commands to a live session's process. A session's host reads them off its socket, and a node sends them to hosts an
+/// older or newer fleetd started: bump [`host::PROTOCOL`] with a change an older one couldn't read.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum SessionCommand {
     /// A user message that starts a run. `run_id` becomes the stream-json user-message uuid, which claude echoes on
     /// `command_lifecycle` and on the run's `result`.
@@ -116,7 +122,7 @@ pub enum SessionCommand {
 }
 
 /// How a run ended, from claude's `result` message (or its absence).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum RunOutcome {
     Completed {
         text: String,
@@ -131,7 +137,7 @@ pub enum RunOutcome {
 }
 
 /// The process's exit.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ExitInfo {
     pub code: Option<i32>,
     pub signal: Option<i32>,
@@ -140,7 +146,7 @@ pub struct ExitInfo {
 }
 
 /// `rate_limit_event`: claude.ai subscription limits (absent behind API keys and gateways).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RateLimit {
     /// allowed, allowed_warning or rejected.
     pub status: String,
@@ -150,8 +156,9 @@ pub struct RateLimit {
     pub utilization: Option<f64>,
 }
 
-/// Normalized events from one session's process, in stream order.
-#[derive(Clone, Debug, PartialEq)]
+/// Normalized events from one session's process, in stream order. Sent over a host's socket too, as
+/// [`SessionCommand`]s are: bump [`host::PROTOCOL`] with a change an older node couldn't read.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum RunnerEvent {
     /// `system/init` (claude sends one per run): the version, model and cwd claude actually uses.
     Init {
@@ -237,6 +244,8 @@ pub struct SessionHandle {
     pub pid: u32,
     pub commands: mpsc::Sender<SessionCommand>,
     pub events: mpsc::Receiver<RunnerEvent>,
+    /// The node's link to a hosted session's host ([`host`]); None for a process the node owns.
+    pub link: Option<host::Link>,
 }
 
 #[derive(Debug, thiserror::Error)]

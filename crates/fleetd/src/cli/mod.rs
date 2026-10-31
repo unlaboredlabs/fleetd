@@ -283,6 +283,10 @@ pub fn main() -> ExitCode {
     if argv.first().map(String::as_str) == Some("agent-device") {
         return ExitCode::from(agent_device::run(&argv[1..]));
     }
+    // A session's host, which the node starts for each session (node/runner/host.rs); not for people, so not in help.
+    if argv.first().map(String::as_str) == Some(crate::node::runner::host::COMMAND) {
+        return crate::node::runner::host::main(&argv[1..]);
+    }
     crate::home::init_from_argv(&argv);
     if let Some(text) = help_for(&argv) {
         print!("{text}");

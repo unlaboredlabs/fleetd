@@ -309,7 +309,8 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
     const nodePid = live(`node-${MACHINE}`)?.child.pid;
     if (nodePid !== undefined) sessions.push(...descendants(nodePid));
     for (const p of procs.toReversed()) await stop(p.name);
-    // What the node started and left behind (a killed node's sessions, until a restart reaps them).
+    // What the node started and left behind: its sessions' hosts, which outlive a stopped or killed node until the next
+    // node re-adopts or stops them, and what they run.
     for (const p of sessions.filter(stillRuns)) {
       try {
         process.kill(p.pid, "SIGKILL");

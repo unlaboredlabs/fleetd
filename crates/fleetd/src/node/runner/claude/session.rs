@@ -108,6 +108,7 @@ pub(super) fn start(
         pid,
         commands: cmd_tx,
         events: ev_rx,
+        link: None,
     }
 }
 

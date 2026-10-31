@@ -138,6 +138,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         min_free_gb: None,
         mem_per_agent_gb: None,
         disk_per_agent_gb: None,
+        warm_builds: None,
         enrolled: false,
         browser: None,
         preview: None,
@@ -225,7 +226,10 @@ async fn run_node(
     let pin_home = home.to_owned();
     let _ = tokio::task::spawn_blocking(move || self_exe::pin(&pin_home)).await;
     let session_config = sessions::SessionConfig::for_node(home);
-    let runner = Arc::new(runner::claude::ClaudeRunner::new(claude_binary()));
+    let mut runner = runner::claude::ClaudeRunner::new(claude_binary());
+    // Sessions run under hosts of this binary, so they outlive the node: its pinned copy, which an update leaves alone.
+    runner.host = Some(PathBuf::from(sessions::self_command()));
+    let runner = Arc::new(runner);
     // Probed off the async threads now rather than by the first spawn.
     tokio::task::spawn_blocking(runner::scope::current);
     let node_sessions = sessions::SessionService::start(store, runner, session_config)
