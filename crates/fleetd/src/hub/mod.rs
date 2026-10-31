@@ -54,6 +54,7 @@ pub mod steer;
 pub mod store;
 pub mod sweep;
 pub mod tasks;
+pub mod telegram;
 pub mod time;
 pub mod train;
 pub mod update;

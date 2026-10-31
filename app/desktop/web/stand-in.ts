@@ -79,6 +79,7 @@ const fleetdApi = (file: File): FleetdApi => {
       hubLink: () => Promise.resolve({ ok: false, error: notHere }),
       claudeAccount: () => Promise.resolve({ ok: false, error: notHere }),
       onePassword: () => Promise.resolve({ ok: false, error: notHere }),
+      telegram: () => Promise.resolve({ ok: false, error: notHere }),
     },
     github: {
       createApp: () => Promise.resolve({ ok: false, error: notHere }),

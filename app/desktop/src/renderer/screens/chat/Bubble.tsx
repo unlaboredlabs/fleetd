@@ -3,7 +3,7 @@
 // cards. While the lead writes, a typing bubble stands in for the text. Hovering a bubble shows its time and, on the
 // lead's, a tapback and Reply; right-clicking one copies it, and on the lead's replies or reacts too. A reply of yours
 // shows the bubble it answers above it.
-import { Check, Paperclip, Reply, SmilePlus } from "lucide-react";
+import { Check, Forward, Paperclip, Reply, Send, SmilePlus } from "lucide-react";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
@@ -32,7 +32,7 @@ import { Block } from "./blocks/Block";
 import { bubblesOf, isWide, quoteOf, TAPBACK_WORD, TAPBACKS, tapbackSend, unshownOnly, type Bubble, type Tapback } from "./bubbles";
 import { MessageReceipt, ReceiptMarkView } from "./Composer";
 import { shortClock } from "./format";
-import { authorLabel, ENTER_MS, isMineRow, type Arrival, type Row } from "./model";
+import { authorLabel, ENTER_MS, isMineRow, viaOf, type Arrival, type Row } from "./model";
 import { plainText } from "./plain";
 import { useLooked } from "./looked";
 import { shotsOf } from "./shots";
@@ -310,6 +310,7 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
   const box = useRef<HTMLDivElement>(null);
   useLooked(box, i.id);
   const shots = useMemo(() => shotsOf(i, bubbles), [i, bubbles]);
+  const via = viaOf(i);
   const [viewing, setViewing] = useState<string | undefined>(undefined);
   return (
     <ImageViewerContext.Provider value={shots.length > 0 ? setViewing : undefined}>
@@ -324,6 +325,14 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
           <div className={s.head} data-head>
             <Text size="xs" tone="quiet">
               {r.by ?? authorLabel(i)}
+            </Text>
+          </div>
+        ) : null}
+        {via !== undefined ? (
+          <div className={cx(s.via, quote.className)} style={quote.style} data-via={via.forwarded ? "forward" : "telegram"}>
+            {via.forwarded ? <Forward size={12} aria-hidden /> : <Send size={12} aria-hidden />}
+            <Text size="xs" tone="quiet">
+              {via.text}
             </Text>
           </div>
         ) : null}

@@ -175,6 +175,9 @@ pub const CAP_CLAUDE_ACCOUNTS: &str = "claude_accounts";
 /// `onepassword` person's token to its fill_credential when its project and order have none.
 pub const CAP_ONEPASSWORD: &str = "onepassword";
 
+/// `telegram`: the node keeps Navis' Telegram bot tokens and long-polls the Bot API for them (`telegram.rs`).
+pub const CAP_TELEGRAM: &str = "telegram";
+
 /// `claude_models`: the node lists the models the hub's API key offers, for the profiles' model picker.
 pub const CAP_CLAUDE_MODELS: &str = "claude_models";
 

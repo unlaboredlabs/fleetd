@@ -1008,7 +1008,7 @@ export type ChatBlock = (ChartBlock & {
 };
 
 /** Where a human message was written. */
-export type KnownChatClient = "app" | "cli";
+export type KnownChatClient = "app" | "cli" | "telegram";
 /** KnownChatClient, or a value from a newer hub. */
 export type ChatClient = KnownChatClient | (string & {});
 
@@ -1076,6 +1076,11 @@ export type ChatMessage = {
   createdAt: Timestamp;
   /** A human message: how it reached the lead. */
   delivery?: ChatDelivery;
+  /**
+   * A human message forwarded on Telegram: who it came from. The words are theirs, not the person's, and the lead
+   * reads them as untrusted content.
+   */
+  forwardedFrom?: string;
   /** From before the chat: where this history message came from. */
   history?: ChatHistorySource;
   item?: ChatItem;
@@ -7210,6 +7215,135 @@ export type TasksListOutput = {
   truncated?: boolean;
 };
 
+/** The bot, as Telegram's getMe and its profile photo describe it. */
+export type TelegramBot = {
+  id: number;
+  name: string;
+  /** Its profile photo, small, as a `data:image/jpeg;base64,` URL; absent when it has none. */
+  photo?: string;
+  /** Without the @. */
+  username: string;
+};
+
+/** A Navi's bridge as the tools show it: never the token. */
+export type TelegramBridge = {
+  bot?: TelegramBot;
+  /** The token the Navi's node holds, by fingerprint. */
+  fingerprint: SecretFingerprint;
+  /** The node is offline: what the bridge shows is what it last said, and nothing goes through it now. */
+  offline?: boolean;
+  /** Absent until the person pairs their account. */
+  paired?: TelegramPerson;
+  pairing?: boolean;
+  paused?: boolean;
+  savedAt: Timestamp;
+  /** Absent until the node has said how it stands. */
+  status?: TelegramStatus;
+};
+
+export type TelegramGetInput = {
+  navi: ProjectRef;
+};
+
+export type TelegramGetOutput = {
+  /** Absent until a bot token is saved. */
+  bridge?: TelegramBridge;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type TelegramPairInput = {
+  navi: ProjectRef;
+};
+
+export type TelegramPairOutput = {
+  expiresAt: Timestamp;
+  /** `https://t.me/<bot>?start=<code>`: Start there pairs the account that presses it. */
+  link: string;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type TelegramPauseInput = {
+  navi: ProjectRef;
+  paused: boolean;
+};
+
+export type TelegramPauseOutput = {
+  bridge: TelegramBridge;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** The Telegram account the Navi answers. */
+export type TelegramPerson = {
+  /** Their first and last name on Telegram. */
+  name: string;
+  pairedAt: Timestamp;
+  userId: number;
+  /** Without the @; absent when they have none. */
+  username?: string;
+};
+
+export type TelegramRemoveInput = {
+  navi: ProjectRef;
+};
+
+export type TelegramRemoveOutput = {
+  next?: string;
+  ok: true;
+  truncated?: boolean;
+};
+
+export type TelegramSetInput = {
+  navi: ProjectRef;
+  /** The bot token, sealed on the client with crypto_box_seal to the Navi's machine's boxPubKey. */
+  sealed: SealedSecret;
+};
+
+export type TelegramSetOutput = {
+  bridge: TelegramBridge;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type KnownTelegramState = "connecting" | "connected" | "paused" | "retrying" | "stopped";
+/** KnownTelegramState, or a value from a newer hub. */
+export type TelegramState = KnownTelegramState | (string & {});
+
+/** How the node's bridge stands now. */
+export type TelegramStatus = {
+  /** The last thing that went wrong, in plain words with the token masked. */
+  error?: string;
+  errorAt?: Timestamp;
+  retryAt?: Timestamp;
+  since: Timestamp;
+  state: TelegramState;
+};
+
+export type TelegramTestInput = {
+  navi: ProjectRef;
+};
+
+export type TelegramTestOutput = {
+  /** The bot Telegram answered for, when the token works. */
+  bot?: TelegramBot;
+  /** Telegram's words when it doesn't, the token masked. */
+  error?: string;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type TelegramUnpairInput = {
+  navi: ProjectRef;
+};
+
+export type TelegramUnpairOutput = {
+  bridge: TelegramBridge;
+  next?: string;
+  truncated?: boolean;
+};
+
 export type ThreadCounts = {
   failed: number;
   idle: number;
@@ -8342,6 +8476,13 @@ export interface ToolMap {
   steer_withdraw: { input: SteerWithdrawInput; output: SteerWithdrawOutput };
   task_get: { input: TaskGetInput; output: TaskGetOutput };
   tasks_list: { input: TasksListInput; output: TasksListOutput };
+  telegram_get: { input: TelegramGetInput; output: TelegramGetOutput };
+  telegram_pair: { input: TelegramPairInput; output: TelegramPairOutput };
+  telegram_pause: { input: TelegramPauseInput; output: TelegramPauseOutput };
+  telegram_remove: { input: TelegramRemoveInput; output: TelegramRemoveOutput };
+  telegram_set: { input: TelegramSetInput; output: TelegramSetOutput };
+  telegram_test: { input: TelegramTestInput; output: TelegramTestOutput };
+  telegram_unpair: { input: TelegramUnpairInput; output: TelegramUnpairOutput };
   thread_tail: { input: ThreadTailInput; output: ThreadTailOutput };
   thread_window: { input: ThreadWindowInput; output: ThreadWindowOutput };
   time_breakdown: { input: TimeBreakdownInput; output: TimeBreakdownOutput };

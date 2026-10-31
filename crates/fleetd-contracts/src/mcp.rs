@@ -3118,6 +3118,49 @@ output!(OnePasswordTestOutput {
     test: crate::onepassword::OnePasswordTest
 });
 
+// telegram_get, telegram_set, telegram_test, telegram_pair, telegram_unpair, telegram_pause, telegram_remove: a Navi's
+// Telegram bridge (W237, `telegram.rs`), its owner's own, from their devices. The bot token is sealed in the app to the
+// Navi's machine's boxPubKey; the hub relays the box to the node and keeps the fingerprint, never the token.
+input!(TelegramGetInput { navi: ProjectRef });
+output!(TelegramGetOutput {
+    /// Absent until a bot token is saved.
+    bridge: Option<crate::telegram::TelegramBridge>,
+});
+input!(TelegramSetInput {
+    navi: ProjectRef,
+    /// The bot token, sealed on the client with crypto_box_seal to the Navi's machine's boxPubKey.
+    sealed: crate::secrets::SealedSecret,
+});
+output!(TelegramSetOutput {
+    bridge: crate::telegram::TelegramBridge,
+});
+input!(TelegramTestInput { navi: ProjectRef });
+output!(TelegramTestOutput {
+    /// The bot Telegram answered for, when the token works.
+    bot: Option<crate::telegram::TelegramBot>,
+    /// Telegram's words when it doesn't, the token masked.
+    error: Option<Text<0, 500>>,
+});
+input!(TelegramPairInput { navi: ProjectRef });
+output!(TelegramPairOutput {
+    /// `https://t.me/<bot>?start=<code>`: Start there pairs the account that presses it.
+    link: Line<1, 300>,
+    expires_at: Timestamp,
+});
+input!(TelegramUnpairInput { navi: ProjectRef });
+output!(TelegramUnpairOutput {
+    bridge: crate::telegram::TelegramBridge,
+});
+input!(TelegramPauseInput {
+    navi: ProjectRef,
+    paused: bool,
+});
+output!(TelegramPauseOutput {
+    bridge: crate::telegram::TelegramBridge,
+});
+input!(TelegramRemoveInput { navi: ProjectRef });
+output!(TelegramRemoveOutput { ok: True });
+
 // sidebar_order_get, sidebar_order_set: a person's own order of the projects and Navis in their sidebar (W214,
 // `hub/sidebar_order`), the same on each of their desktops; nobody else's sidebar follows it.
 /// The most projects and Navis an order names.
@@ -3236,6 +3279,13 @@ tools! {
     navi_sites => NaviSites, Read, NaviSitesInput, NaviSitesOutput;
     navi_site_revoke => NaviSiteRevoke, Operate, NaviSiteRevokeInput, NaviSiteRevokeOutput;
     navi_signins_forget => NaviSigninsForget, Operate, NaviSigninsForgetInput, NaviSigninsForgetOutput;
+    telegram_get => TelegramGet, Read, TelegramGetInput, TelegramGetOutput;
+    telegram_set => TelegramSet, Operate, TelegramSetInput, TelegramSetOutput;
+    telegram_test => TelegramTest, Operate, TelegramTestInput, TelegramTestOutput;
+    telegram_pair => TelegramPair, Operate, TelegramPairInput, TelegramPairOutput;
+    telegram_unpair => TelegramUnpair, Operate, TelegramUnpairInput, TelegramUnpairOutput;
+    telegram_pause => TelegramPause, Operate, TelegramPauseInput, TelegramPauseOutput;
+    telegram_remove => TelegramRemove, Operate, TelegramRemoveInput, TelegramRemoveOutput;
     project_settings_get => ProjectSettingsGet, Read, ProjectSettingsGetInput, ProjectSettingsGetOutput;
     project_settings_set => ProjectSettingsSet, Operate, ProjectSettingsSetInput, ProjectSettingsSetOutput;
     // Human keys only (the handler checks): a person sets a project's environment.

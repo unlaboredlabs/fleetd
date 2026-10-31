@@ -327,3 +327,15 @@ export function arrivalsOf(prev: Arrivals | undefined, items: readonly ChatItem[
   }
   return { items, live, known, newest, entering };
 }
+
+/**
+ * Where a person's message was written, when not here: "From Telegram", or for a message they forwarded there, who
+ * it came from ("Forwarded from Mallory on Telegram"), whose words the Navi reads as someone else's.
+ */
+export const viaOf = (item: ChatItem): { text: string; forwarded: boolean } | undefined => {
+  const m = item.message;
+  if (m === undefined || item.author !== "human") return undefined;
+  const telegram = m.client === "telegram";
+  if (m.forwardedFrom !== undefined) return { text: `Forwarded from ${m.forwardedFrom}${telegram ? " on Telegram" : ""}`, forwarded: true };
+  return telegram ? { text: "From Telegram", forwarded: false } : undefined;
+};

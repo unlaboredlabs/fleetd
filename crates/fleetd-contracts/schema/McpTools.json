@@ -2545,6 +2545,11 @@
           "const": "cli",
           "description": "`fleetd chat`.",
           "type": "string"
+        },
+        {
+          "const": "telegram",
+          "description": "Telegram, through the Navi's own bot (`telegram.rs`).",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -2739,6 +2744,13 @@
         "delivery": {
           "$ref": "#/$defs/ChatDelivery",
           "description": "A human message: how it reached the lead."
+        },
+        "forwardedFrom": {
+          "description": "A human message forwarded on Telegram: who it came from. The words are theirs, not the person's, and the lead\nreads them as untrusted content.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
         },
         "history": {
           "$ref": "#/$defs/ChatHistorySource",
@@ -10241,6 +10253,48 @@
         "tasks_list.output": {
           "$ref": "#/$defs/TasksListOutput"
         },
+        "telegram_get.input": {
+          "$ref": "#/$defs/TelegramGetInput"
+        },
+        "telegram_get.output": {
+          "$ref": "#/$defs/TelegramGetOutput"
+        },
+        "telegram_pair.input": {
+          "$ref": "#/$defs/TelegramPairInput"
+        },
+        "telegram_pair.output": {
+          "$ref": "#/$defs/TelegramPairOutput"
+        },
+        "telegram_pause.input": {
+          "$ref": "#/$defs/TelegramPauseInput"
+        },
+        "telegram_pause.output": {
+          "$ref": "#/$defs/TelegramPauseOutput"
+        },
+        "telegram_remove.input": {
+          "$ref": "#/$defs/TelegramRemoveInput"
+        },
+        "telegram_remove.output": {
+          "$ref": "#/$defs/TelegramRemoveOutput"
+        },
+        "telegram_set.input": {
+          "$ref": "#/$defs/TelegramSetInput"
+        },
+        "telegram_set.output": {
+          "$ref": "#/$defs/TelegramSetOutput"
+        },
+        "telegram_test.input": {
+          "$ref": "#/$defs/TelegramTestInput"
+        },
+        "telegram_test.output": {
+          "$ref": "#/$defs/TelegramTestOutput"
+        },
+        "telegram_unpair.input": {
+          "$ref": "#/$defs/TelegramUnpairInput"
+        },
+        "telegram_unpair.output": {
+          "$ref": "#/$defs/TelegramUnpairOutput"
+        },
         "thread_tail.input": {
           "$ref": "#/$defs/ThreadTailInput"
         },
@@ -10667,6 +10721,20 @@
         "task_get.output",
         "tasks_list.input",
         "tasks_list.output",
+        "telegram_get.input",
+        "telegram_get.output",
+        "telegram_pair.input",
+        "telegram_pair.output",
+        "telegram_pause.input",
+        "telegram_pause.output",
+        "telegram_remove.input",
+        "telegram_remove.output",
+        "telegram_set.input",
+        "telegram_set.output",
+        "telegram_test.input",
+        "telegram_test.output",
+        "telegram_unpair.input",
+        "telegram_unpair.output",
         "thread_tail.input",
         "thread_tail.output",
         "thread_window.input",
@@ -20808,6 +20876,387 @@
       },
       "required": [
         "tasks"
+      ],
+      "type": "object"
+    },
+    "TelegramBot": {
+      "description": "The bot, as Telegram's getMe and its profile photo describe it.",
+      "properties": {
+        "id": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "photo": {
+          "description": "Its profile photo, small, as a `data:image/jpeg;base64,` URL; absent when it has none.",
+          "maxLength": 65536,
+          "type": "string"
+        },
+        "username": {
+          "description": "Without the @.",
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "username",
+        "name"
+      ],
+      "type": "object"
+    },
+    "TelegramBridge": {
+      "description": "A Navi's bridge as the tools show it: never the token.",
+      "properties": {
+        "bot": {
+          "$ref": "#/$defs/TelegramBot"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/SecretFingerprint",
+          "description": "The token the Navi's node holds, by fingerprint."
+        },
+        "offline": {
+          "description": "The node is offline: what the bridge shows is what it last said, and nothing goes through it now.",
+          "type": "boolean"
+        },
+        "paired": {
+          "$ref": "#/$defs/TelegramPerson",
+          "description": "Absent until the person pairs their account."
+        },
+        "pairing": {
+          "default": false,
+          "type": "boolean"
+        },
+        "paused": {
+          "default": false,
+          "type": "boolean"
+        },
+        "savedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "status": {
+          "$ref": "#/$defs/TelegramStatus",
+          "description": "Absent until the node has said how it stands."
+        }
+      },
+      "required": [
+        "fingerprint",
+        "savedAt"
+      ],
+      "type": "object"
+    },
+    "TelegramGetInput": {
+      "properties": {
+        "navi": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "navi"
+      ],
+      "type": "object"
+    },
+    "TelegramGetOutput": {
+      "properties": {
+        "bridge": {
+          "$ref": "#/$defs/TelegramBridge",
+          "description": "Absent until a bot token is saved."
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "TelegramPairInput": {
+      "properties": {
+        "navi": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "navi"
+      ],
+      "type": "object"
+    },
+    "TelegramPairOutput": {
+      "properties": {
+        "expiresAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "link": {
+          "description": "`https://t.me/<bot>?start=<code>`: Start there pairs the account that presses it.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "link",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "TelegramPauseInput": {
+      "properties": {
+        "navi": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "paused": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "navi",
+        "paused"
+      ],
+      "type": "object"
+    },
+    "TelegramPauseOutput": {
+      "properties": {
+        "bridge": {
+          "$ref": "#/$defs/TelegramBridge"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "bridge"
+      ],
+      "type": "object"
+    },
+    "TelegramPerson": {
+      "description": "The Telegram account the Navi answers.",
+      "properties": {
+        "name": {
+          "description": "Their first and last name on Telegram.",
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "pairedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "userId": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "username": {
+          "description": "Without the @; absent when they have none.",
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "userId",
+        "name",
+        "pairedAt"
+      ],
+      "type": "object"
+    },
+    "TelegramRemoveInput": {
+      "properties": {
+        "navi": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "navi"
+      ],
+      "type": "object"
+    },
+    "TelegramRemoveOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "TelegramSetInput": {
+      "properties": {
+        "navi": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "sealed": {
+          "$ref": "#/$defs/SealedSecret",
+          "description": "The bot token, sealed on the client with crypto_box_seal to the Navi's machine's boxPubKey."
+        }
+      },
+      "required": [
+        "navi",
+        "sealed"
+      ],
+      "type": "object"
+    },
+    "TelegramSetOutput": {
+      "properties": {
+        "bridge": {
+          "$ref": "#/$defs/TelegramBridge"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "bridge"
+      ],
+      "type": "object"
+    },
+    "TelegramState": {
+      "oneOf": [
+        {
+          "const": "connecting",
+          "description": "Asking Telegram for the first time since the node started or the token changed.",
+          "type": "string"
+        },
+        {
+          "const": "connected",
+          "description": "Reading Telegram: messages come in as they are sent.",
+          "type": "string"
+        },
+        {
+          "const": "paused",
+          "description": "The person paused it: nothing is read or sent until they resume.",
+          "type": "string"
+        },
+        {
+          "const": "retrying",
+          "description": "Telegram failed or asked it to slow down: it tries again at `retryAt`.",
+          "type": "string"
+        },
+        {
+          "const": "stopped",
+          "description": "It can't go on until a person acts: the token was revoked, or another program reads this bot.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "TelegramStatus": {
+      "description": "How the node's bridge stands now.",
+      "properties": {
+        "error": {
+          "description": "The last thing that went wrong, in plain words with the token masked.",
+          "maxLength": 500,
+          "type": "string"
+        },
+        "errorAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "retryAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "state": {
+          "$ref": "#/$defs/TelegramState"
+        }
+      },
+      "required": [
+        "state",
+        "since"
+      ],
+      "type": "object"
+    },
+    "TelegramTestInput": {
+      "properties": {
+        "navi": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "navi"
+      ],
+      "type": "object"
+    },
+    "TelegramTestOutput": {
+      "properties": {
+        "bot": {
+          "$ref": "#/$defs/TelegramBot",
+          "description": "The bot Telegram answered for, when the token works."
+        },
+        "error": {
+          "description": "Telegram's words when it doesn't, the token masked.",
+          "maxLength": 500,
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "TelegramUnpairInput": {
+      "properties": {
+        "navi": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "navi"
+      ],
+      "type": "object"
+    },
+    "TelegramUnpairOutput": {
+      "properties": {
+        "bridge": {
+          "$ref": "#/$defs/TelegramBridge"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "bridge"
       ],
       "type": "object"
     },

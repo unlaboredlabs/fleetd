@@ -197,6 +197,34 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "A person's own device only. choice: subscription (their own, always) or hub_api (the hub's API configuration, if they may use it); absent: their subscription once connected, else the hub's API. Agents started from then on run this way; a running one keeps its account.",
     ),
     (
+        "telegram_get",
+        "A Navi's owner only, from their own device. The Navi's Telegram bridge (navi: its ref): the token's fingerprint (never the token), the bot from the last Test, the paired account, whether a pairing link waits, paused, and the node's status (connected, paused, retrying, stopped, with its last error); offline when the node can't say now. Absent until a token is saved.",
+    ),
+    (
+        "telegram_set",
+        "A Navi's owner only, from their own device. Save the Navi's Telegram bot token from @BotFather: sealed, the token sealed on the client with crypto_box_seal to the Navi's machine's boxPubKey. The hub relays the box to its node and keeps the fingerprint, never the token. A new token starts afresh: no paired account. Then telegram_test, then telegram_pair.",
+    ),
+    (
+        "telegram_test",
+        "A Navi's owner only. Ask Telegram who the saved token is (getMe): bot (its name, @username and photo), else error in Telegram's words with the token masked.",
+    ),
+    (
+        "telegram_pair",
+        "A Navi's owner only. A one-time link, https://t.me/<bot>?start=<code>, good for 15 minutes: the account that presses Start there becomes the only one the Navi answers on Telegram, replacing any before.",
+    ),
+    (
+        "telegram_unpair",
+        "A Navi's owner only. The paired Telegram account no longer reaches the Navi; telegram_pair connects one again.",
+    ),
+    (
+        "telegram_pause",
+        "A Navi's owner only. paused true: the node stops reading and sending Telegram until paused false. What the Navi says meanwhile stays in the app.",
+    ),
+    (
+        "telegram_remove",
+        "A Navi's owner only. The Navi's node forgets the bot token and the bridge ends. Needs the node online.",
+    ),
+    (
         "onepassword_get",
         "A person's own device only. The caller's 1Password service account token as the hub keeps it: the machines holding it (by fingerprint, never the token) and its last Test; absent until they save one.",
     ),
