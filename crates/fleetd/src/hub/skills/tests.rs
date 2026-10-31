@@ -545,6 +545,7 @@ fn a_launch_carries_the_projects_skills_then_the_global_ones_of_other_names() {
             &name("release"),
             &md("release", "global"),
             true,
+            &crate::hub::skills::Who::person("test", None, 0),
         )
         .unwrap();
     skills
@@ -554,6 +555,7 @@ fn a_launch_carries_the_projects_skills_then_the_global_ones_of_other_names() {
             &name("standup"),
             &md("standup", "global"),
             true,
+            &crate::hub::skills::Who::person("test", None, 0),
         )
         .unwrap();
     skills
@@ -563,6 +565,7 @@ fn a_launch_carries_the_projects_skills_then_the_global_ones_of_other_names() {
             &name("release"),
             &md("release", "project"),
             true,
+            &crate::hub::skills::Who::person("test", None, 0),
         )
         .unwrap();
     std::fs::write(
@@ -604,6 +607,7 @@ async fn the_leads_copy_of_a_message_names_the_skills_the_person_picked() {
             &SkillName::unchecked("standup"),
             &md("standup", "Write the standup."),
             true,
+            &crate::hub::skills::Who::person("test", None, 0),
         )
         .unwrap();
     let (message, _) = hub

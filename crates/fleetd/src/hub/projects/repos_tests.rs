@@ -704,6 +704,7 @@ async fn the_projects_env_mcp_servers_and_skills_reach_every_checkout() {
                 &release,
                 &skill(says),
                 true,
+                &crate::hub::skills::Who::person("test", None, 0),
             )
             .unwrap();
     }

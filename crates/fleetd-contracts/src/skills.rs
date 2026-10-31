@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 use crate::ids::Timestamp;
-use crate::prim::{Line, List, Text};
+use crate::prim::{Line, List, Positive, Text};
 
 /// The file that makes a folder a skill.
 pub const SKILL_FILE: &str = "SKILL.md";
@@ -26,6 +26,10 @@ pub const SKILL_FILES_CAP: usize = 64;
 pub const SKILL_BYTES_CAP: usize = 512 * 1024;
 /// Skills the hub keeps in one scope.
 pub const SCOPE_CAP: usize = 200;
+/// The versions the hub keeps of one skill, newest first; an older one is dropped as a new one is kept.
+pub const SKILL_VERSIONS_KEPT: usize = 100;
+/// A version's `why`, in characters.
+pub const WHY_CAP: usize = 300;
 
 static NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z0-9]+(-[a-z0-9]+)*$").unwrap());
 
@@ -125,6 +129,32 @@ pub struct SkillBundle {
     pub files: List<SkillFile, 1, SKILL_FILES_CAP>,
 }
 
+/// Who wrote a version of a hub-kept skill.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillAuthor {
+    /// A Navi's `skill_save`, or a lead's `skill_install`.
+    Agent,
+    /// A person in the app: an edit, a revert, an install.
+    Person,
+}
+
+/// One version of a hub-kept skill's `SKILL.md`: every write keeps one (a Navi's save, a person's edit or revert, an
+/// install), the newest [`SKILL_VERSIONS_KEPT`] of them.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillVersion {
+    /// 1 for its first, one more for each after; a revert is a new version too.
+    pub version: Positive,
+    pub author: SkillAuthor,
+    /// The Navi's (or the lead's project's) title, or the person's name.
+    pub by: Line<1, 200>,
+    pub at: Timestamp,
+    /// The one line its author gave: a Navi always gives one; a person may.
+    pub why: Option<Line<1, WHY_CAP>>,
+}
+
 /// One skill as Settings → Skills and the composer list it.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -144,6 +174,13 @@ pub struct SkillSummary {
     #[serde(default)]
     pub files: List<Line<1, 300>, 0, SKILL_FILES_CAP>,
     pub updated_at: Option<Timestamp>,
+    /// A hub-kept skill's newest version: who changed it last, when and why. Absent for a repo skill, and for one
+    /// written before versions were kept and not since.
+    pub changed: Option<SkillVersion>,
+    /// Listed for a project: the person turned it off there (`skill_off`), so its sessions don't get it.
+    pub off: Option<bool>,
+    /// Listed for a project: when one of its sessions last ran it with the Skill tool (its lead's, a Navi's).
+    pub last_used_at: Option<Timestamp>,
 }
 
 /// A repo skill as the node finds it in the project's checkout.
@@ -174,6 +211,41 @@ pub struct SkillInstallResult {
     pub installed: List<SkillName, 1, SCOPE_CAP>,
     pub commit: Line<40, 40>,
     pub next: Option<String>,
+}
+
+/// `skill_save`: a Navi writes one of its own skills, new or changed, as a whole `SKILL.md`. No one approves it: the
+/// hub keeps it as a new version with `why`, posts one line in the chat, and the Navi's sessions get it from their next
+/// start. It is the Navi's only, never another Navi's or a project's.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SkillSaveCall {
+    /// The skill's folder name, also its frontmatter `name`: `weekly-invoices`.
+    pub name: SkillName,
+    /// The whole `SKILL.md`: frontmatter (`name`, a `description` of what it does and when to use it), then the
+    /// steps.
+    pub text: Text<1, SKILL_TEXT_CAP>,
+    /// One line on why: what it learned, or what the person corrected.
+    pub why: Line<1, WHY_CAP>,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SkillSaveResult {
+    pub name: SkillName,
+    pub version: Positive,
+    /// It is new: this is its first version.
+    pub created: bool,
+    pub next: Option<String>,
+}
+
+/// A chat line's skill: a Navi saved or changed one (`skill_save`). The app links it to the skill's view.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillSaved {
+    pub name: SkillName,
+    pub version: Positive,
+    /// Its first version.
+    pub created: bool,
+    pub why: Line<1, WHY_CAP>,
 }
 
 /// A `SKILL.md`'s frontmatter: the `name` and `description` it gives.

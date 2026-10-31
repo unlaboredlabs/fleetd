@@ -360,6 +360,8 @@ struct Slot {
 
 /// Called with a followed thread that just printed a GitHub PR URL.
 pub type PrSink = Arc<dyn Fn(&ThreadRef) + Send + Sync>;
+/// Told of each skill a session ran with the Skill tool, by the name it ran (the skills area).
+pub type SkillSink = Arc<dyn Fn(&ThreadRef, &str) + Send + Sync>;
 
 /// Takes a node's steer receipts, in stream order (replayed after a link drop, so a receipt may come twice).
 pub trait SteerSink: Send + Sync {
@@ -400,6 +402,8 @@ pub struct Executors {
     steer_sink: Mutex<Option<Arc<dyn SteerSink>>>,
     /// Told of each finished command whose output names a GitHub PR (the train).
     pr_sink: std::sync::OnceLock<PrSink>,
+    /// Told of each skill a session ran (the skills area's last use).
+    skill_sink: std::sync::OnceLock<SkillSink>,
     /// Where later areas plug into the M1 tools.
     pub hooks: tools::ToolHooks,
     time: std::sync::OnceLock<Arc<crate::hub::time::Time>>,
@@ -443,6 +447,22 @@ fn names_a_pr(item: &ThreadItem) -> bool {
     item.status == ItemStatus::Completed
         && output.contains("github.com/")
         && output.contains("/pull/")
+}
+
+/// The skill a finished Skill call ran, as the session lists it (`fleetd:<name>` for the hub's).
+fn skill_ran(item: &ThreadItem) -> Option<&str> {
+    let ItemKind::Tool {
+        tool_name, input, ..
+    } = &item.kind
+    else {
+        return None;
+    };
+    if tool_name != "Skill" || item.status != ItemStatus::Completed {
+        return None;
+    }
+    ["skill", "command"]
+        .iter()
+        .find_map(|k| input.get(*k)?.as_str())
 }
 
 fn thread_ref(machine_id: &MachineId, thread_id: &str) -> ThreadRef {
@@ -564,6 +584,7 @@ impl Executors {
             live: Mutex::default(),
             steer_sink: Mutex::default(),
             pr_sink: std::sync::OnceLock::new(),
+            skill_sink: std::sync::OnceLock::new(),
             runners: Mutex::default(),
             ready: Mutex::default(),
             tool_policy: Mutex::default(),
@@ -586,6 +607,10 @@ impl Executors {
 
     pub fn set_pr_sink(&self, sink: PrSink) {
         let _ = self.pr_sink.set(sink);
+    }
+
+    pub fn set_skill_sink(&self, sink: SkillSink) {
+        let _ = self.skill_sink.set(sink);
     }
 
     /// `hub/serve` sets this once the link server exists: a node that lists no `CAP_PROFILE_NAMES` gets what it can
@@ -1018,6 +1043,12 @@ impl Executors {
             && let Some(sink) = self.pr_sink.get()
         {
             sink(&thread_ref(machine_id, frame.session_id.as_str()));
+        }
+        if let ThreadEvent::Item(item) = &frame.event
+            && let Some(skill) = skill_ran(item)
+            && let Some(sink) = self.skill_sink.get()
+        {
+            sink(&thread_ref(machine_id, frame.session_id.as_str()), skill);
         }
     }
 

@@ -34,7 +34,7 @@ use crate::navi::{
 };
 use crate::prim::{Count, Line, List, NonEmpty, Text, UniqueList};
 use crate::secrets::SecretSink;
-use crate::skills::{SkillInstallCall, SkillInstallResult};
+use crate::skills::{SkillInstallCall, SkillInstallResult, SkillSaveCall, SkillSaveResult};
 use crate::steer::SteerId;
 use crate::tasks::{
     AbsolutePath, PrUrl, SPAWN_PATHS_MAX, Task, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle,
@@ -348,6 +348,8 @@ pub enum LeadCall {
     /// A Navi's read back through its own chat (hub/navi/recall.rs): only a Navi's lead makes them.
     ChatSearch(ChatSearchCall),
     ChatRead(ChatReadCall),
+    /// A Navi writes one of its own skills (hub/skills/saves.rs): only a Navi's lead makes it.
+    SkillSave(SkillSaveCall),
 }
 
 /// The call's `op` tag, as on the wire.
@@ -553,6 +555,7 @@ pub enum LeadCallResult {
     FactoryStatus(FactoryStatusResult),
     ChatSearch(ChatSearchResult),
     ChatRead(ChatReadResult),
+    SkillSave(SkillSaveResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

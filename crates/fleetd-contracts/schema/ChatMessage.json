@@ -529,6 +529,10 @@
           "minimum": 0,
           "type": "integer"
         },
+        "skillSaved": {
+          "$ref": "#/$defs/SkillSaved",
+          "description": "A system line \"Saved a skill: …\": a Navi saved or changed one of its skills (`skill_save`); the app links it\nto the skill."
+        },
         "skills": {
           "description": "A human message: the skills it named with `$name`, which the lead's copy lists.",
           "items": {
@@ -1353,6 +1357,36 @@
       "description": "Lowercase letters, digits and single hyphens, at most 64 characters",
       "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
       "type": "string"
+    },
+    "SkillSaved": {
+      "description": "A chat line's skill: a Navi saved or changed one (`skill_save`). The app links it to the skill's view.",
+      "properties": {
+        "created": {
+          "description": "Its first version.",
+          "type": "boolean"
+        },
+        "name": {
+          "$ref": "#/$defs/SkillName"
+        },
+        "version": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "why": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "created",
+        "why"
+      ],
+      "type": "object"
     },
     "TableBlock": {
       "description": "Rows of plain-text cells, one per column.",

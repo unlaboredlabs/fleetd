@@ -269,6 +269,8 @@ impl HubStore {
                 "navi_sites",
                 "project_avatars",
                 "project_icons",
+                "skill_versions",
+                "skill_uses",
             ] {
                 conn.prepare_cached(&format!(
                     "DELETE FROM {table} WHERE machine_id = ? AND project_id = ?"

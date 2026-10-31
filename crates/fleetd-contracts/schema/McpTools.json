@@ -2791,6 +2791,10 @@
           "minimum": 0,
           "type": "integer"
         },
+        "skillSaved": {
+          "$ref": "#/$defs/SkillSaved",
+          "description": "A system line \"Saved a skill: …\": a Navi saved or changed one of its skills (`skill_save`); the app links it\nto the skill."
+        },
         "skills": {
           "description": "A human message: the skills it named with `$name`, which the lead's copy lists.",
           "items": {
@@ -10177,6 +10181,18 @@
         "skill_install.output": {
           "$ref": "#/$defs/SkillInstallOutput"
         },
+        "skill_off.input": {
+          "$ref": "#/$defs/SkillOffInput"
+        },
+        "skill_off.output": {
+          "$ref": "#/$defs/SkillOffOutput"
+        },
+        "skill_revert.input": {
+          "$ref": "#/$defs/SkillRevertInput"
+        },
+        "skill_revert.output": {
+          "$ref": "#/$defs/SkillRevertOutput"
+        },
         "skill_set.input": {
           "$ref": "#/$defs/SkillSetInput"
         },
@@ -10631,6 +10647,10 @@
         "skill_get.output",
         "skill_install.input",
         "skill_install.output",
+        "skill_off.input",
+        "skill_off.output",
+        "skill_revert.input",
+        "skill_revert.output",
         "skill_set.input",
         "skill_set.output",
         "skill_update.input",
@@ -18430,6 +18450,21 @@
       ],
       "type": "object"
     },
+    "SkillAuthor": {
+      "description": "Who wrote a version of a hub-kept skill.",
+      "oneOf": [
+        {
+          "const": "agent",
+          "description": "A Navi's `skill_save`, or a lead's `skill_install`.",
+          "type": "string"
+        },
+        {
+          "const": "person",
+          "description": "A person in the app: an edit, a revert, an install.",
+          "type": "string"
+        }
+      ]
+    },
     "SkillDeleteInput": {
       "properties": {
         "name": {
@@ -18480,6 +18515,12 @@
         "projectRef": {
           "$ref": "#/$defs/ProjectRef",
           "description": "Required for every origin but global."
+        },
+        "version": {
+          "description": "A hub-kept skill's older version, from `versions`: its text instead of the current one.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
         }
       },
       "required": [
@@ -18502,6 +18543,15 @@
         },
         "truncated": {
           "type": "boolean"
+        },
+        "versions": {
+          "default": [],
+          "description": "A hub-kept skill's versions, newest first, without their texts (`version` reads one).",
+          "items": {
+            "$ref": "#/$defs/SkillVersion"
+          },
+          "maxItems": 100,
+          "type": "array"
         }
       },
       "required": [
@@ -18614,6 +18664,45 @@
       "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
       "type": "string"
     },
+    "SkillOffInput": {
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/SkillName"
+        },
+        "off": {
+          "type": "boolean"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "name",
+        "off"
+      ],
+      "type": "object"
+    },
+    "SkillOffOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
     "SkillOrigin": {
       "description": "Where a skill comes from, in precedence order: on a name clash the first wins.",
       "oneOf": [
@@ -18638,6 +18727,78 @@
           "type": "string"
         }
       ]
+    },
+    "SkillRevertInput": {
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/SkillName"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Required with scope project."
+        },
+        "scope": {
+          "$ref": "#/$defs/SkillScope"
+        },
+        "version": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "scope",
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "SkillRevertOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "skill": {
+          "$ref": "#/$defs/SkillSummary"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "skill"
+      ],
+      "type": "object"
+    },
+    "SkillSaved": {
+      "description": "A chat line's skill: a Navi saved or changed one (`skill_save`). The app links it to the skill's view.",
+      "properties": {
+        "created": {
+          "description": "Its first version.",
+          "type": "boolean"
+        },
+        "name": {
+          "$ref": "#/$defs/SkillName"
+        },
+        "version": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "why": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "created",
+        "why"
+      ],
+      "type": "object"
     },
     "SkillScope": {
       "description": "The hub's two scopes, which a person (and a lead's `skill_install`) writes.",
@@ -18666,6 +18827,13 @@
         "text": {
           "maxLength": 64000,
           "minLength": 1,
+          "type": "string"
+        },
+        "why": {
+          "description": "The person's one line on the change, kept with its version.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
           "type": "string"
         }
       },
@@ -18696,6 +18864,10 @@
     "SkillSummary": {
       "description": "One skill as Settings → Skills and the composer list it.",
       "properties": {
+        "changed": {
+          "$ref": "#/$defs/SkillVersion",
+          "description": "A hub-kept skill's newest version: who changed it last, when and why. Absent for a repo skill, and for one\nwritten before versions were kept and not since."
+        },
         "description": {
           "description": "From the frontmatter; empty when it has none.",
           "maxLength": 1024,
@@ -18717,8 +18889,16 @@
           "$ref": "#/$defs/SkillInstall",
           "description": "Installed from a source."
         },
+        "lastUsedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Listed for a project: when one of its sessions last ran it with the Skill tool (its lead's, a Navi's)."
+        },
         "name": {
           "$ref": "#/$defs/SkillName"
+        },
+        "off": {
+          "description": "Listed for a project: the person turned it off there (`skill_off`), so its sessions don't get it.",
+          "type": "boolean"
         },
         "origin": {
           "$ref": "#/$defs/SkillOrigin"
@@ -18783,6 +18963,44 @@
       "required": [
         "skill",
         "updated"
+      ],
+      "type": "object"
+    },
+    "SkillVersion": {
+      "description": "One version of a hub-kept skill's `SKILL.md`: every write keeps one (a Navi's save, a person's edit or revert, an\ninstall), the newest [`SKILL_VERSIONS_KEPT`] of them.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "author": {
+          "$ref": "#/$defs/SkillAuthor"
+        },
+        "by": {
+          "description": "The Navi's (or the lead's project's) title, or the person's name.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "version": {
+          "description": "1 for its first, one more for each after; a revert is a new version too.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "why": {
+          "description": "The one line its author gave: a Navi always gives one; a person may.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "author",
+        "by",
+        "at"
       ],
       "type": "object"
     },

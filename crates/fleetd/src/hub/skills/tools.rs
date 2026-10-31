@@ -1,6 +1,7 @@
-//! skills_list, skill_get, skill_set, skill_delete, skill_install and skill_update: Settings → Projects → Agents and the
-//! composer's `$`. Writes are a person's (human keys); a lead installs with its own `skill_install` (`calls`). The
-//! repo's skills are read from the project's node and never written here: they change in the repo.
+//! skills_list, skill_get, skill_set, skill_delete, skill_install, skill_update, skill_revert and skill_off: Settings →
+//! Projects → Agents, a Navi's Skills and the composer's `$`. Writes are a person's (human keys), each a new version of
+//! theirs (`versions`); a lead installs with its own `skill_install` (`calls`), a Navi saves with `skill_save`
+//! (`saves`). The repo's skills are read from the project's node and never written here: they change in the repo.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
@@ -8,8 +9,9 @@ use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::mcp::{
     ErrorCode, SkillDeleteInput, SkillDeleteOutput, SkillGetInput, SkillGetOutput,
-    SkillInstallInput, SkillInstallOutput, SkillSetInput, SkillSetOutput, SkillUpdateInput,
-    SkillUpdateOutput, SkillsListInput, SkillsListOutput,
+    SkillInstallInput, SkillInstallOutput, SkillOffInput, SkillOffOutput, SkillRevertInput,
+    SkillRevertOutput, SkillSetInput, SkillSetOutput, SkillUpdateInput, SkillUpdateOutput,
+    SkillsListInput, SkillsListOutput,
 };
 use fleetd_contracts::node_link::CAP_SKILLS;
 use fleetd_contracts::prim::{Line, List, Text, True};
@@ -18,7 +20,7 @@ use fleetd_contracts::skills::{
 };
 use serde_json::json;
 
-use super::{Kept, SkillError, install, mark_shadowed};
+use super::{Kept, SkillError, Who, install, mark_shadowed, versions};
 use crate::hub::api::{
     Caller, Hub, Registry, ToolError, allows_everywhere, require, unknown_project,
 };
@@ -33,6 +35,17 @@ pub fn register(tools: &mut Registry) {
     tools.add("skill_delete", skill_delete);
     tools.add("skill_install", skill_install);
     tools.add("skill_update", skill_update);
+    tools.add("skill_revert", skill_revert);
+    tools.add("skill_off", skill_off);
+}
+
+/// A person's write, as its version names them: their name, else their key's.
+fn person(hub: &Hub, caller: &Caller, why: Option<&str>) -> Who {
+    let by = caller
+        .person
+        .as_ref()
+        .map_or(caller.name.as_str(), |p| p.name.as_str());
+    Who::person(by, why, now_ms(hub.clock.as_ref()))
 }
 
 fn known_project(hub: &Hub, caller: &Caller, r: &ProjectRef, role: Role) -> Result<(), ToolError> {
@@ -140,6 +153,9 @@ fn repo_summary(s: RepoSkill) -> SkillSummary {
         path: Some(Line::unchecked(s.path)),
         files: List::unchecked(Vec::new()),
         updated_at: None,
+        changed: None,
+        off: None,
+        last_used_at: None,
     }
 }
 
@@ -167,6 +183,13 @@ async fn skills_list(
             Ok(repo) => list.extend(repo.into_iter().map(repo_summary)),
             Err(why) => repo_unavailable = Some(why),
         }
+        let uses = versions::uses(&hub.db, r)?;
+        for s in &mut list {
+            if let Some(u) = uses.get(s.name.as_str()) {
+                s.off = u.off.then_some(true);
+                s.last_used_at = u.last_used_ms.map(|ms| iso_ms(ms).into());
+            }
+        }
     }
     mark_shadowed(&mut list);
     Ok(SkillsListOutput {
@@ -188,23 +211,32 @@ async fn skill_get(
     if let Some(r) = r {
         known_project(&hub, &caller, r, Role::Read)?;
     }
-    let (skill, text) = match (input.origin, r) {
-        (SkillOrigin::Global, _) => {
-            let kept = hub
-                .db
-                .skills()
-                .get(SkillScope::Global, None, &input.name)
-                .ok_or_else(|| not_found(&input.name))?;
-            (kept.summary(), kept.text)
-        }
-        (SkillOrigin::Project, Some(r)) => {
-            let kept = hub
-                .db
-                .skills()
-                .get(SkillScope::Project, Some(r), &input.name)
-                .ok_or_else(|| not_found(&input.name))?;
-            (kept.summary(), kept.text)
-        }
+    let kept_in = |scope: SkillScope, r: Option<&ProjectRef>| -> Result<_, ToolError> {
+        let kept = hub
+            .db
+            .skills()
+            .get(scope, r, &input.name)
+            .ok_or_else(|| not_found(&input.name))?;
+        let history = versions::list(&hub.db, scope, r, &input.name)?;
+        let text = match input.version {
+            None => kept.text.clone(),
+            Some(v) => {
+                versions::get(&hub.db, scope, r, &input.name, v.get())?
+                    .ok_or_else(|| {
+                        ToolError::new(
+                            ErrorCode::NotFound,
+                            format!("{} has no version {}.", input.name, v.get()),
+                        )
+                        .with_fix("skill_get without version lists the ones kept.")
+                    })?
+                    .1
+            }
+        };
+        Ok((kept.summary(), text, history))
+    };
+    let (skill, text, history) = match (input.origin, r) {
+        (SkillOrigin::Global, _) => kept_in(SkillScope::Global, None)?,
+        (SkillOrigin::Project, Some(r)) => kept_in(SkillScope::Project, Some(r))?,
         (origin, Some(r)) => {
             let dir = origin.repo_dir().unwrap_or_default();
             let path = format!("{dir}/{}/SKILL.md", input.name);
@@ -220,7 +252,7 @@ async fn skill_get(
                 description: description_of(&text),
                 path,
             });
-            (summary, text)
+            (summary, text, Vec::new())
         }
         (_, None) => {
             return Err(ToolError::new(
@@ -232,6 +264,7 @@ async fn skill_get(
     Ok(SkillGetOutput {
         skill,
         text: Text::unchecked(text),
+        versions: List::unchecked(history),
         next: None,
         truncated: None,
     })
@@ -244,12 +277,14 @@ async fn skill_set(
 ) -> Result<SkillSetOutput, ToolError> {
     require_human(&caller, "skill_set")?;
     let r = scope_project(&hub, &caller, input.scope, input.project_ref.as_ref())?;
+    let who = person(&hub, &caller, input.why.as_ref().map(Line::as_str));
     let kept = hub.db.skills().set(
         input.scope,
         r,
         &input.name,
         input.text.as_str(),
         input.create == Some(true),
+        &who,
     )?;
     changed(
         &hub,
@@ -296,6 +331,7 @@ pub async fn install_from(
     given: &str,
     want: Option<&SkillName>,
     local: bool,
+    who: Who,
 ) -> Result<(Vec<Kept>, String), SkillError> {
     let source = install::parse(given)?;
     if install::is_local(&source) && !local {
@@ -318,7 +354,14 @@ pub async fn install_from(
             (f.name, f.files, record)
         })
         .collect();
-    let kept = hub.db.skills().put_folders(scope, r, &folders)?;
+    let who = Who {
+        why: Some(format!(
+            "Installed from {given} at {}",
+            &fetched.commit[..12.min(fetched.commit.len())]
+        )),
+        ..who
+    };
+    let kept = hub.db.skills().put_folders(scope, r, &folders, &who)?;
     Ok((kept, fetched.commit))
 }
 
@@ -336,6 +379,7 @@ async fn skill_install(
         input.source.as_str(),
         input.skill.as_ref(),
         true,
+        person(&hub, &caller, None),
     )
     .await?;
     let names: Vec<SkillName> = kept.iter().map(|k| k.name.clone()).collect();
@@ -396,7 +440,16 @@ async fn skill_update(
             (f.name, f.files, record)
         })
         .collect();
-    let kept = hub.db.skills().put_folders(input.scope, r, &folders)?;
+    let why = format!(
+        "Updated from {} to {}",
+        pin.source.as_str(),
+        &fetched.commit[..12.min(fetched.commit.len())]
+    );
+    let who = person(&hub, &caller, Some(&why));
+    let kept = hub
+        .db
+        .skills()
+        .put_folders(input.scope, r, &folders, &who)?;
     changed(
         &hub,
         r,
@@ -407,6 +460,67 @@ async fn skill_update(
         skill: kept[0].summary(),
         updated: true,
         next: Some("Updated. Sessions get it from their next start.".into()),
+        truncated: None,
+    })
+}
+
+async fn skill_revert(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: SkillRevertInput,
+) -> Result<SkillRevertOutput, ToolError> {
+    require_human(&caller, "skill_revert")?;
+    let r = scope_project(&hub, &caller, input.scope, input.project_ref.as_ref())?;
+    let skills = hub.db.skills();
+    if skills.get(input.scope, r, &input.name).is_none() {
+        return Err(not_found(&input.name));
+    }
+    let version = input.version.get();
+    let (_, text) =
+        versions::get(&hub.db, input.scope, r, &input.name, version)?.ok_or_else(|| {
+            ToolError::new(
+                ErrorCode::NotFound,
+                format!("{} has no version {version}.", input.name),
+            )
+            .with_fix("skill_get lists the versions kept.")
+        })?;
+    let why = format!("Back to version {version}");
+    let who = person(&hub, &caller, Some(&why));
+    let kept = skills.set(input.scope, r, &input.name, &text, false, &who)?;
+    changed(
+        &hub,
+        r,
+        std::slice::from_ref(&input.name),
+        caller.name.as_str(),
+    )?;
+    Ok(SkillRevertOutput {
+        skill: kept.summary(),
+        next: Some("Reverted, as a new version. Sessions get it from their next start.".into()),
+        truncated: None,
+    })
+}
+
+async fn skill_off(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: SkillOffInput,
+) -> Result<SkillOffOutput, ToolError> {
+    require_human(&caller, "skill_off")?;
+    known_project(&hub, &caller, &input.project_ref, Role::Operate)?;
+    versions::set_off(&hub.db, &input.project_ref, &input.name, input.off)?;
+    changed(
+        &hub,
+        Some(&input.project_ref),
+        std::slice::from_ref(&input.name),
+        caller.name.as_str(),
+    )?;
+    Ok(SkillOffOutput {
+        ok: True,
+        next: Some(if input.off {
+            "Off: the project's sessions don't get it from their next start.".into()
+        } else {
+            "On: the project's sessions get it from their next start.".into()
+        }),
         truncated: None,
     })
 }

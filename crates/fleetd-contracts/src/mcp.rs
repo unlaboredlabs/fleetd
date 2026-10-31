@@ -2089,17 +2089,30 @@ input!(
         /// Required for every origin but global.
         project_ref: Option<ProjectRef>,
         name: crate::skills::SkillName,
+        /// A hub-kept skill's older version, from `versions`: its text instead of the current one.
+        version: Option<crate::prim::Positive>,
     }
 );
 checked!(SkillGetInput, |input| {
     if input.origin != crate::skills::SkillOrigin::Global && input.project_ref.is_none() {
         return Err("only a global skill is read without projectRef".into());
     }
+    if input.version.is_some()
+        && !matches!(
+            input.origin,
+            crate::skills::SkillOrigin::Global | crate::skills::SkillOrigin::Project
+        )
+    {
+        return Err("only a hub-kept skill has versions".into());
+    }
     Ok(())
 });
 output!(SkillGetOutput {
     skill: crate::skills::SkillSummary,
     text: Text<0, { crate::skills::SKILL_TEXT_CAP }>,
+    /// A hub-kept skill's versions, newest first, without their texts (`version` reads one).
+    #[serde(default)]
+    versions: List<crate::skills::SkillVersion, 0, { crate::skills::SKILL_VERSIONS_KEPT }>,
 });
 // skill_set: creates or replaces a hub-kept skill's SKILL.md (a human key's write). Its other files stay.
 input!(
@@ -2112,6 +2125,8 @@ input!(
         text: Text<1, { crate::skills::SKILL_TEXT_CAP }>,
         /// Refuse when a skill of that name is already in the scope (New).
         create: Option<bool>,
+        /// The person's one line on the change, kept with its version.
+        why: Option<Line<1, { crate::skills::WHY_CAP }>>,
     }
 );
 checked!(SkillSetInput, |input| {
@@ -2140,6 +2155,34 @@ checked!(SkillDeleteInput, |input| {
     Ok(())
 });
 output!(SkillDeleteOutput { ok: True });
+// skill_revert: puts an older version's SKILL.md back as a new version, the person's (a human key's write).
+input!(
+    #[serde(remote = "Self")]
+    SkillRevertInput {
+        scope: crate::skills::SkillScope,
+        /// Required with scope project.
+        project_ref: Option<ProjectRef>,
+        name: crate::skills::SkillName,
+        version: crate::prim::Positive,
+    }
+);
+checked!(SkillRevertInput, |input| {
+    if input.scope == crate::skills::SkillScope::Project && input.project_ref.is_none() {
+        return Err("scope project needs projectRef".into());
+    }
+    Ok(())
+});
+output!(SkillRevertOutput {
+    skill: crate::skills::SkillSummary
+});
+// skill_off: turns a skill off in one project, or back on (a human key's write): while off, its sessions don't get
+// it. Any skill the project's sessions get: its own, a global one, its repo's.
+input!(SkillOffInput {
+    project_ref: ProjectRef,
+    name: crate::skills::SkillName,
+    off: bool,
+});
+output!(SkillOffOutput { ok: True });
 // skill_install: fetches a source (skills.sh's: owner/repo, owner/repo@skill, a GitHub URL, any git URL) on the hub
 // and keeps its skills in the scope, pinned to the commit fetched (a human key's write). A skill of the same name in
 // the scope is replaced.
@@ -3334,6 +3377,8 @@ tools! {
     // Human keys only (the handlers check): a lead installs with its own skill_install.
     skill_set => SkillSet, Operate, SkillSetInput, SkillSetOutput;
     skill_delete => SkillDelete, Operate, SkillDeleteInput, SkillDeleteOutput;
+    skill_revert => SkillRevert, Operate, SkillRevertInput, SkillRevertOutput;
+    skill_off => SkillOff, Operate, SkillOffInput, SkillOffOutput;
     skill_install => SkillInstall, Operate, SkillInstallInput, SkillInstallOutput;
     skill_update => SkillUpdate, Operate, SkillUpdateInput, SkillUpdateOutput;
     time_spans => TimeSpans, Read, TimeSpansInput, TimeSpansOutput;
