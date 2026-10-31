@@ -3,6 +3,15 @@ import { IPC } from "./channels";
 import { MAX_CALL_INPUT_BYTES, MAX_CALL_INPUT_DEPTH, MAX_CALL_INPUT_NODES, parseRequest } from "./ipc";
 
 describe("parseRequest", () => {
+  it("takes the address bar's inputs to a page, and nothing more on them", () => {
+    const input = (i: unknown) => parseRequest(IPC.hubInput, ["hub", "B00000000000000000000000000000001", i]).ok;
+    expect(input({ kind: "navigate", url: "https://example.com/" })).toBe(true);
+    for (const kind of ["back", "forward", "reload"]) expect(input({ kind })).toBe(true);
+    expect(input({ kind: "navigate", url: "" })).toBe(false);
+    expect(input({ kind: "navigate", url: `https://example.com/${"x".repeat(2048)}` })).toBe(false);
+    expect(input({ kind: "back", url: "https://example.com/" })).toBe(false);
+  });
+
   it("accepts a well-formed call and keeps its input", () => {
     const parsed = parseRequest(IPC.hubCall, ["hub", { tool: "fleetd_status", input: { scope: { project: "p1" } }, timeoutMs: 60_000 }]);
     expect(parsed).toEqual({ ok: true, args: ["hub", { tool: "fleetd_status", input: { scope: { project: "p1" } }, timeoutMs: 60_000 }] });

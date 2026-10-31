@@ -88,6 +88,8 @@ async fn shoot(
     seq: Arc<AtomicU64>,
 ) {
     let mut failing = false;
+    let looping = Instant::now();
+    let mut first = true;
     while frames.receiver_count() > 0 {
         let began = Instant::now();
         let taken = match simctl.screenshot(&udid, &shot).await {
@@ -100,6 +102,16 @@ async fn shoot(
         }) {
             Ok((jpeg, width, height)) => {
                 failing = false;
+                if first {
+                    first = false;
+                    tracing::debug!(
+                        kind = "ios",
+                        udid,
+                        first_frame_ms = looping.elapsed().as_millis() as u64,
+                        shot_ms = began.elapsed().as_millis() as u64,
+                        "screen timing: the live view's first screenshot"
+                    );
+                }
                 frames.send_replace(Some(Frame {
                     seq: seq.fetch_add(1, Ordering::Relaxed) + 1,
                     jpeg: Arc::new(jpeg),

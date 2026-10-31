@@ -2,6 +2,7 @@
 // (browser_watch, kept by main across reconnects) and shows its newest frame (browser_frame); a person takes it over
 // and hands it back with browser_control; while it is theirs, their mouse, keys and pastes in the frame go to the page
 // as browser_input, in the frame's own pixels. ⌘⇧↩ never does: the app's keymap catches it before the page's handlers.
+// A browser that is theirs takes their address bar too: an address to go to, back, forward and reload.
 import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent, type PointerEvent, type WheelEvent } from "react";
 import type { BrowserFrame, BrowserInput, BrowserSessionsOutput } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
@@ -52,6 +53,36 @@ export async function setControl(layer: DataLayer, sessionId: string, control: "
   );
   return true;
 }
+
+/** The hub feature that says it relays the address bar's inputs (navigate, back, forward, reload). */
+export const NAVIGATE = "browser_navigate";
+
+/** The address bar's controls for a page that is yours: go to an address, back, forward, reload. */
+export interface PageNav {
+  readonly go: (url: string) => void;
+  readonly back: () => void;
+  readonly forward: () => void;
+  readonly reload: () => void;
+}
+
+/** What `typed` in the address bar goes to: as typed with its scheme, else https (http for this machine's own). */
+export const addressOf = (typed: string): string | undefined => {
+  const t = typed.trim();
+  if (t === "" || /\s/u.test(t)) return undefined;
+  if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(t)) return t;
+  return /^(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/iu.test(t) ? `http://${t}` : `https://${t}`;
+};
+
+/** The address bar's controls for `sessionId`, each sent as the person's input. */
+export const pageNav = (hub: string, sessionId: string): PageNav => {
+  const send = (input: BrowserInput) => void window.fleetd.hub.input(hub, sessionId, input);
+  return {
+    go: (url) => send({ kind: "navigate", url }),
+    back: () => send({ kind: "back" }),
+    forward: () => send({ kind: "forward" }),
+    reload: () => send({ kind: "reload" }),
+  };
+};
 
 /** CDP's modifier bits: Alt 1, Ctrl 2, Meta 4, Shift 8. */
 export const modifiersOf = (e: { altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }): number =>
