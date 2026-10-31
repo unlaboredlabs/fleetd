@@ -106,12 +106,23 @@ describe("A project's screen", () => {
     expect(got.error).toMatchObject({ message: "GitHub didn't answer." });
   });
 
-  it("reads a Navi's agents and checklist only", async () => {
-    const { session, calls } = setup();
-    void readInfo(session, NAVI, NOW);
+  it("reads a Navi's agents, checklist and skills only", async () => {
+    const { hub, session, calls } = setup();
+    const info = readInfo(session, NAVI, NOW);
     expect(calls("agents_list")).toHaveLength(1);
     expect(calls("checklist_get")).toHaveLength(1);
+    expect(calls("skills_list").at(-1)?.input).toEqual({ projectRef: { machineId: "devbox", projectId: "ada" } });
     expect([...calls("orders_board"), ...calls("pr_list"), ...calls("profiles_list")]).toEqual([]);
+    hub.answer("agents_list", { agents: [], at: AT });
+    hub.answer("checklist_get", { items: [], projectRef: { machineId: "devbox", projectId: "ada" } });
+    hub.answer("skills_list", { skills: [{ name: "weekly-invoices", description: "", origin: "project" }] });
+    await expect(info).resolves.toMatchObject({ skills: [{ name: "weekly-invoices" }] });
+  });
+
+  it("leaves a project's skills to the desktop", () => {
+    const { session, calls } = setup();
+    void readInfo(session, SHOP, NOW);
+    expect(calls("skills_list")).toEqual([]);
   });
 
   it("checks a profile for its agents, keeping the others and leaving the default out", async () => {

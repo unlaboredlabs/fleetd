@@ -1,8 +1,8 @@
 // A project's or a Navi's own screen, opened from its chat's header, as a contact's in Telegram: its avatar and name
 // (tapping the avatar, or Edit under it, opens its icon's sheet: a built-in face and color, or a photo: IconPicker.tsx),
 // then what runs there now (agents_list), its open orders (orders_board), its checklist and its recent merges with
-// their PRs, read-only; then its name, the profiles its agents may run on and where it lives, and for a Navi Forget
-// Sign-ins. Delete last, red, asking first: in an action sheet, or, when uncommitted changes would be lost, in a sheet
+// their PRs, read-only; a Navi's Skills (Skills.tsx); then its name, the profiles its agents may run on and where it
+// lives, and for a Navi Forget Sign-ins. Delete last, red, asking first: in an action sheet, or, when uncommitted changes would be lost, in a sheet
 // that names them and wants its name typed (TypedDelete). What the person's role doesn't allow isn't offered.
 import { StackActions, useFocusEffect } from "@react-navigation/native";
 import { useCallback, useRef, useState } from "react";
@@ -20,6 +20,7 @@ import { useNow } from "../time";
 import { deleteProject, forgetSignins, readForDelete, readInfo } from "./api";
 import { agentLines, allowed, checklist, deleteBlocked, deleteWords, machineName, merges, orderLines, profilesValue, subtitle, type DeleteWords, type Tone } from "./model";
 import { confirmDestructive, errorWords, Problem, useRead } from "./parts";
+import { skillsShown } from "./skillsModel";
 import { TypedDelete } from "./TypedDelete";
 
 const toneColor = (t: Palette, tone: Tone): string => (tone === "accent" ? t.accent : tone === "warning" ? t.warning : tone === "danger" ? t.danger : t.secondary);
@@ -183,6 +184,12 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
           ))}
         </ListSection>
       )}
+
+      {navi && skillsShown(state.hub) ? (
+        <ListSection footer={`What ${p.title} worked out and saved, and what it was given. Read, change or turn off any of them.`}>
+          <ListRow title="Skills" {...(v?.skills === undefined ? {} : { value: String(v.skills.length) })} onPress={() => navigation.navigate("Skills", { key })} />
+        </ListSection>
+      ) : null}
 
       <Problem text={v?.error === undefined ? undefined : `Not everything was read: ${errorWords(v.error)}`} />
 

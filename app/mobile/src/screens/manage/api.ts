@@ -1,10 +1,10 @@
 // The hub calls behind a project's and a Navi's screens, each as the desktop makes it: New Navi (machine_roles,
 // navi_create), New Project (project_discover, then the desktop's add flow over project_add), its screen's reads
-// (agents_list, orders_board, checklist_get, pr_list, profiles_list), Rename (navi_rename, or project_settings_set's
+// (agents_list, orders_board, checklist_get, pr_list, profiles_list, and a Navi's skills_list), Rename (navi_rename, or project_settings_set's
 // title), its icon (project_icon_set) or picture (attachment_put, then project_avatar_set), Agent Profiles
 // (project_set), Forget Sign-ins (navi_signins_forget) and Delete (project_settings_get for its worktrees, then
 // project_remove with them).
-import { allowedAfter, discovery, isNavi, type AddCall, type AttachmentMime, type AvatarCrop, type ProjectIcon, type AgentRow, type Discovery, type HubError, type MachineRolesEntry, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
+import { allowedAfter, discovery, isNavi, type AddCall, type AttachmentMime, type AvatarCrop, type ProjectIcon, type AgentRow, type Discovery, type HubError, type MachineRolesEntry, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TodoItem } from "../../desktop";
 import type { Session } from "../../session";
 import { upload, UPLOAD_TIMEOUT_MS } from "../../upload";
 import { MERGES_DAYS } from "./model";
@@ -78,29 +78,34 @@ export interface Info {
   readonly checklist?: readonly TodoItem[];
   readonly prs?: readonly PrRow[];
   readonly profiles?: ProfilesListOutput;
+  /** A Navi's skills, for its Skills row's count. */
+  readonly skills?: readonly SkillSummary[];
   /** The first read that failed, said under the sections; what did come is shown. */
   readonly error?: HubError;
 }
 
-/** Its screen's reads, side by side: a Navi has no orders, merges or profiles of its own. */
+/** Its screen's reads, side by side: a Navi has no orders, merges or profiles of its own, and a project's skills are
+ * the desktop's. */
 export const readInfo = async (hub: Hub, p: ProjectSummary, nowMs: number): Promise<Info> => {
   const projectRef = ref(p);
   const navi = isNavi(p);
   const since = new Date(nowMs - MERGES_DAYS * 86_400_000).toISOString();
-  const [agents, checklist, orders, prs, profiles] = await Promise.all([
+  const [agents, checklist, orders, prs, profiles, skills] = await Promise.all([
     hub.call("agents_list", { projectRef }),
     hub.call("checklist_get", { projectRef }),
     navi ? null : hub.call("orders_board", { projectRef }),
     navi ? null : hub.call("pr_list", { projectRef, closedSince: since }),
     navi ? null : hub.call("profiles_list", { projectRef }),
+    navi ? hub.call("skills_list", { projectRef }) : null,
   ]);
-  const error = [agents, checklist, orders, prs, profiles].find((r) => r !== null && !r.ok);
+  const error = [agents, checklist, orders, prs, profiles, skills].find((r) => r !== null && !r.ok);
   return {
     ...(agents.ok ? { agents: agents.output.agents } : {}),
     ...(checklist.ok ? { checklist: checklist.output.items } : {}),
     ...(orders?.ok === true ? { orders: orders.output.orders } : {}),
     ...(prs?.ok === true ? { prs: prs.output.prs } : {}),
     ...(profiles?.ok === true ? { profiles: profiles.output } : {}),
+    ...(skills?.ok === true ? { skills: skills.output.skills } : {}),
     ...(error === undefined || error === null || error.ok ? {} : { error: error.error }),
   };
 };
