@@ -41,6 +41,8 @@ struct Fake {
     /// getUpdates answers 502 this many more times.
     down: u32,
     next_message: i64,
+    /// A getUpdates with nothing new waits this long, as Telegram's long poll does; none: a moment.
+    hold: Option<Duration>,
 }
 
 type Shared = Arc<Mutex<Fake>>;
@@ -75,7 +77,8 @@ async fn method(
                 .any(|u| u["update_id"].as_i64().unwrap() >= offset)
     };
     if idle {
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        let hold = fake.lock().unwrap().hold;
+        tokio::time::sleep(hold.unwrap_or(Duration::from_millis(20))).await;
     }
     let mut f = fake.lock().unwrap();
     f.calls.push((method.clone(), params.clone()));
@@ -790,4 +793,97 @@ fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
         }
     }
     out
+}
+
+/// How many getUpdates the fake has answered or begun.
+fn polls(fake: &Shared) -> usize {
+    fake.lock()
+        .unwrap()
+        .calls
+        .iter()
+        .filter(|(m, _)| m == "getUpdates")
+        .count()
+}
+
+#[tokio::test]
+async fn a_replacement_token_that_fails_leaves_the_bridge_running() {
+    let home = tempfile::tempdir().unwrap();
+    let (url, fake) = serve().await;
+    let tg = bridge(home.path(), &url).await;
+    pair(&tg, &fake, 1).await;
+    // Sealed to another machine's key: this node can't open it.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let wrong = tg
+        .call(
+            &navi(),
+            TelegramCall::Token {
+                sealed: Some(sealed(elsewhere.path(), TOKEN)),
+            },
+        )
+        .await;
+    assert!(wrong.unwrap_err().contains("not sealed to this machine"));
+    let shapeless = tg
+        .call(
+            &navi(),
+            TelegramCall::Token {
+                sealed: Some(sealed(home.path(), "not a token")),
+            },
+        )
+        .await;
+    assert!(shapeless.is_err());
+    // The bot before goes on: still paired, still reading.
+    push(&fake, message(2, ME, "still here?"));
+    settle(&fake).await;
+    let (events, state) = take(&tg, 0).await;
+    assert_eq!(state.paired.unwrap().user_id.get(), ME);
+    assert!(
+        events.iter().any(
+            |e| matches!(&e.event, TelegramEventKind::Message { text, .. } if text == "still here?")
+        ),
+        "{events:?}"
+    );
+    tg.shutdown();
+}
+
+#[tokio::test]
+async fn pause_cuts_a_poll_short_and_resume_is_never_missed() {
+    let home = tempfile::tempdir().unwrap();
+    let (url, fake) = serve().await;
+    let tg = bridge(home.path(), &url).await;
+    pair(&tg, &fake, 1).await;
+    // A long poll in flight, as Telegram holds one open for up to 50 s.
+    fake.lock().unwrap().hold = Some(Duration::from_millis(1500));
+    let before = polls(&fake);
+    for _ in 0..200 {
+        if polls(&fake) > before {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    tg.call(&navi(), TelegramCall::Pause { paused: true })
+        .await
+        .unwrap();
+    // What comes while paused isn't read, though the poll begun before Pause would have answered with it.
+    push(&fake, message(2, ME, "while paused"));
+    tokio::time::sleep(Duration::from_millis(2000)).await;
+    let (events, state) = take(&tg, 0).await;
+    assert_eq!(state.status.state, TelegramState::Paused);
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(&e.event, TelegramEventKind::Message { .. })),
+        "{events:?}"
+    );
+    // Pause and Resume back to back: the resume holds.
+    fake.lock().unwrap().hold = None;
+    for paused in [false, true, false] {
+        tg.call(&navi(), TelegramCall::Pause { paused })
+            .await
+            .unwrap();
+    }
+    settle(&fake).await;
+    let (events, state) = take(&tg, 0).await;
+    assert_ne!(state.status.state, TelegramState::Paused);
+    assert!(events.iter().any(|e| matches!(&e.event, TelegramEventKind::Message { text, .. } if text == "while paused")), "{events:?}");
+    tg.shutdown();
 }

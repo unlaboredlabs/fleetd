@@ -30,7 +30,7 @@ use fleetd_contracts::telegram::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use tokio::sync::{Notify, watch};
+use tokio::sync::watch;
 
 pub use api::TELEGRAM;
 use api::{Api, ApiError};
@@ -86,8 +86,9 @@ struct Bot {
     status: Mutex<TelegramStatus>,
     /// The journal's newest seq, for a take waiting on it.
     seq: watch::Sender<i64>,
-    /// Pause, resume and a new pairing wake the poller.
-    wake: Notify,
+    /// Paused or not: the poller follows it at once, a getUpdates in flight cut short, and a value is never missed as a
+    /// wake could be.
+    paused: watch::Sender<bool>,
     stop: watch::Sender<bool>,
 }
 
@@ -148,6 +149,7 @@ impl Telegram {
             return Ok(());
         };
         let state = store::read_state(&self.home, project);
+        let paused = state.paused;
         let (stop, _) = watch::channel(false);
         let bot = Arc::new(Bot {
             project: project.clone(),
@@ -165,7 +167,7 @@ impl Telegram {
                 retry_at: None,
             }),
             state: tokio::sync::Mutex::new(state),
-            wake: Notify::new(),
+            paused: watch::channel(paused).0,
             stop,
         });
         if let Some(old) = self
@@ -225,7 +227,18 @@ impl Telegram {
                 store::save_token(&home, &p, &sealed, box_key.as_ref())
             })
             .await
-            .map_err(|e| e.to_string())??;
+            .map_err(|e| e.to_string())
+            .and_then(|saved| saved);
+            // A token the node couldn't take leaves the one before it saved: its poller goes on as it was.
+            let fingerprint = match fingerprint {
+                Ok(fingerprint) => fingerprint,
+                Err(why) => {
+                    if let Err(e) = self.run(project) {
+                        tracing::warn!(%project, "telegram: the bridge before didn't start again: {e}");
+                    }
+                    return Err(why);
+                }
+            };
             self.run(project)?;
             return Ok(TelegramAnswer::Saved {
                 fingerprint: Some(fingerprint),
@@ -247,7 +260,6 @@ impl Telegram {
                 });
                 bot.save(&self.home, &state).await;
                 drop(state);
-                bot.wake.notify_waiters();
                 Ok(self.state_answer(&bot).await)
             }
             TelegramCall::Unpair => {
@@ -266,7 +278,7 @@ impl Telegram {
                 if paused {
                     bot.set_status(TelegramState::Paused, None, None);
                 }
-                bot.wake.notify_waiters();
+                bot.paused.send_replace(paused);
                 Ok(self.state_answer(&bot).await)
             }
             TelegramCall::State => Ok(self.state_answer(&bot).await),
@@ -577,6 +589,7 @@ impl Telegram {
     /// The poller: getUpdates from the saved offset until stopped, each update handled and the offset saved after it.
     async fn poll(self: Arc<Self>, bot: Arc<Bot>) {
         let mut stop = bot.stop.subscribe();
+        let mut paused = bot.paused.subscribe();
         // A webhook makes getUpdates fail; the bridge never uses one.
         let _ = bot
             .api
@@ -591,27 +604,26 @@ impl Telegram {
             if *stop.borrow() {
                 return;
             }
-            let (paused, offset) = {
-                let state = bot.state.lock().await;
-                (state.paused, state.offset)
-            };
-            if paused {
+            if *paused.borrow_and_update() {
                 bot.set_status(TelegramState::Paused, None, None);
                 tokio::select! {
-                    _ = bot.wake.notified() => {}
+                    _ = paused.wait_for(|p| !*p) => {}
                     _ = stop.changed() => {}
                 }
                 continue;
             }
+            let offset = bot.state.lock().await.offset;
             let params = json!({
                 "offset": offset,
                 "timeout": self.timing.poll_secs,
                 "allowed_updates": ["message", "callback_query"],
             });
             let wait = Duration::from_secs(self.timing.poll_secs + 15);
+            // Pause cuts a poll in flight short: what it would have read waits on Telegram until the next one.
             let got = tokio::select! {
                 got = bot.api.call("getUpdates", params, wait) => got,
                 _ = stop.changed() => return,
+                _ = paused.wait_for(|p| *p) => continue,
             };
             let retry_in = match got {
                 Ok(updates) => {
@@ -654,7 +666,7 @@ impl Telegram {
             tokio::select! {
                 _ = tokio::time::sleep(retry_in) => {}
                 _ = stop.changed() => return,
-                _ = bot.wake.notified() => {}
+                _ = paused.changed() => {}
             }
         }
     }
