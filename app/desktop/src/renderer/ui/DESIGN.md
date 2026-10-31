@@ -78,7 +78,7 @@ breaks a rule changes this page in the same PR and says why.
   own width: in over `--dur-base` (180 ms), out over `--dur-fast` (120 ms), both `--ease-out`, as a transition, so a
   toggle mid-way turns back from where it is. The frame lays out once, at the toggle: the chat takes its new width in
   that frame, and a side going out is drawn over its edge until it has gone (`AppFrame`). Another screen bringing or
-  taking one swaps it at once. Check a change to them with `pnpm perf:toggles`.
+  taking one swaps it at once.
 - **A row you drag** (`lib/reorder`) lifts after 4 px: raised a step with a small soft shadow, never scaled, it rides
   the pointer. The rows it passes slide aside over `--dur-base` to open its gap; let go, the list takes the order in
   that frame and the row glides from where it was let go into its slot over the same, `--ease-out`, its shadow fading as
@@ -86,10 +86,10 @@ breaks a rule changes this page in the same PR and says why.
   else; another desktop's move mid-glide turns them toward their newer places). Near a scrolling list's top or bottom
   (48 px) the list scrolls, easing in (squared) to 14 px a frame at the edge, and the lifted row stays under the
   pointer. As on iOS and macOS it waits for the pointer to head 6 px for that edge, or rest near it 500 ms. Esc glides
-  it back. ⌥↑ / ⌥↓ move a focused row, gliding the same way. Check a change with `pnpm perf:drops`. With reduced motion
-  nothing glides: the rows step aside and the drop lands at once.
+  it back. ⌥↑ / ⌥↓ move a focused row, gliding the same way. With reduced motion nothing glides: the rows step aside
+  and the drop lands at once.
 - **Reduced motion:** no beat, so no loops, and entrances are a plain fade. Each state keeps a still shape of its own
   (working is a diamond on a dim field, thinking the ring's top row).
 - **Cost:** no beat while the window is hidden or with reduced motion. Check a change that adds a loop with `pnpm perf`
-  and `pnpm perf:busy` (20 agents at work), against main.
+  against main.
 - **Never:** gradient blobs, rainbow or soft shimmer, confetti, sparkles, bouncing or overshooting easings.
