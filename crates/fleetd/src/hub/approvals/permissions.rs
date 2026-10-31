@@ -343,6 +343,7 @@ impl Approvals {
             }),
             preview_config: None,
             purchase: None,
+            secure_input: None,
             evidence: None,
             exit_code: None,
             output_tail: None,
