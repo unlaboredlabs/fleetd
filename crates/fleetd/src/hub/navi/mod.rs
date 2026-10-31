@@ -20,6 +20,8 @@
 //! status, wakes when that work lands) is `bridge`; the app reads a Navi's asks with `navi_asks` (`tools`). A Navi
 //! searches and reads back through its own chat with `recall`.
 pub mod bridge;
+#[cfg(test)]
+mod mcp_fresh_tests;
 pub mod owner;
 #[cfg(test)]
 mod owner_tests;
