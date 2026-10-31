@@ -1,7 +1,8 @@
 // A Navi's Integrations (Settings → Projects → the Navi). integrations-none: the typical hub's first project
 // marked as a Navi (kind assistant), nothing connected yet. integrations-connected: two MCP servers connected, each
 // key sealed on devbox, and Test connection answering with each tool by the hub's policy. The approval cards an
-// integration raises are in inline-items (a message to send, a page to delete).
+// integration raises are in inline-items (a message to send, a page to delete). integrations-adding: nothing connected
+// yet, and a test of xaq (a URL server with a key) answering with four tools to pick from.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { arr } from "../kit/stress.ts";
@@ -77,6 +78,21 @@ const connected = (base: Fixture): Fixture => {
   return f;
 };
 
+const XAQ_TOOLS = [
+  { name: "search_notes", readOnly: true, policy: "ask" },
+  { name: "read_note", readOnly: true, policy: "ask" },
+  { name: "create_note", policy: "ask" },
+  { name: "delete_note", policy: "ask" },
+];
+
+const adding = (base: Fixture): Fixture => {
+  const f = Fixture.from(base, "integrations-adding", "A Navi adding a URL MCP server with a key (xaq): its test lists four tools to pick from.");
+  const ref = navi(f);
+  f.answer("mcp_servers_get", { project: ref }, { global: [], project: [], userServers: true });
+  f.answer("mcp_server_test", { scope: { kind: "project", ...ref }, name: "xaq" }, { machineId: ref.machineId, result: { server: "xaq 0.3.0", tools: XAQ_TOOLS } });
+  return f;
+};
+
 export default defineGroup({
-  fixtures: (base) => [empty(base("typical")), connected(base("typical"))],
+  fixtures: (base) => [empty(base("typical")), connected(base("typical")), adding(base("typical"))],
 });

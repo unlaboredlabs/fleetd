@@ -44,6 +44,13 @@ fn may_change(caller: &Caller, scope: &McpScope) -> Result<(), ToolError> {
     if is_human(caller) && allowed {
         return Ok(());
     }
+    if let (true, McpScope::Project { machine_id, .. }) = (is_human(caller), scope) {
+        return Err(ToolError::new(
+            ErrorCode::Forbidden,
+            format!("You can't change this project's MCP servers: that takes Operate access to {machine_id}."),
+        )
+        .with_fix("Ask the hub's owner or an admin to give it to you."));
+    }
     if is_human(caller) && matches!(scope, McpScope::Global) {
         return Err(ToolError::new(
             ErrorCode::Forbidden,
@@ -84,9 +91,9 @@ fn node_ready(hub: &Hub, m: &MachineId) -> Result<(), ToolError> {
     if !hub.link.node_can(m, CAP_MCP_SERVERS) {
         return Err(ToolError::new(
             ErrorCode::Invalid,
-            format!("{m}'s node is too old to take MCP servers."),
+            format!("fleetd on {m} is too old to run MCP servers."),
         )
-        .with_fix(format!("Update fleetd on {m} and restart its node.")));
+        .with_fix(format!("Update fleetd on {m}, then try again.")));
     }
     Ok(())
 }
@@ -146,20 +153,26 @@ async fn set(
             None => false,
         };
         if !navi {
+            // Only a Navi asks before a tool runs: a server saved like this on a coding project would run unasked.
             return Err(ToolError::new(
                 ErrorCode::Invalid,
-                "Integrations connect to a Navi only: its lead asks you before anything but a read, and a coding \
-                 project's lead doesn't.",
+                "Only a Navi asks you before using a server's tools, and this project isn't a Navi.",
             )
-            .with_fix("Connect it from your Navi's settings, or add it as a plain MCP server without an integration."));
+            .with_fix("Add the server under MCP servers in this project's settings: its agents can use all its tools."));
         }
     }
     let store = hub.db.mcp_servers();
     let before = store.get(&input.scope, &input.name)?;
     if before.is_none() && store.list(&input.scope)?.len() >= MCP_SERVERS_MAX {
+        let place = match &input.scope {
+            McpScope::Global => "for every project",
+            McpScope::Project { .. } => "in this project",
+        };
         return Err(ToolError::new(
             ErrorCode::Invalid,
-            format!("A scope takes at most {MCP_SERVERS_MAX} MCP servers."),
+            format!(
+                "There are already {MCP_SERVERS_MAX} MCP servers {place}, the most fleetd takes."
+            ),
         )
         .with_fix("Remove one first."));
     }

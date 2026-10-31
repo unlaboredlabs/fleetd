@@ -106,7 +106,7 @@ export const submitMcpServer = async (
       }
       if (v.value.includes("\0")) return refused(`${v.name}'s value holds a NUL character.`, "Remove it, then save.");
       if (request.boxes.length === 0) {
-        return refused("No machine takes secrets yet: no node has a box key.", "Update fleetd on your machines, then save.");
+        return refused("No machine can keep the key yet: fleetd there is too old.", "Update fleetd on the machine, then save.");
       }
       const sealed: Array<{ machineId: string; sealed: string }> = [];
       for (const box of request.boxes) {
