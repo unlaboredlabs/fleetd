@@ -45,7 +45,7 @@ const avatars = (base: Fixture): Fixture => {
   give(f, shop, "5a7e0c1d2b3f4a69", "storefront");
   // Its settings page, where its Picture is.
   f.answer("project_settings_get", { ...shop }, {
-    settings: { ...shop, title: "storefront", workspaceRoot: "/home/dev/src/storefront", keepWorktrees: false, setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] }, env: [] },
+    settings: { ...shop, title: "storefront", workspaceRoot: "/home/dev/src/storefront", setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] }, env: [] },
   });
   return f;
 };
@@ -80,7 +80,7 @@ const icons = (base: Fixture): Fixture => {
   if (storefront === undefined) throw new Error("icons needs storefront");
   const shop = { machineId: asText(storefront["machineId"]), projectId: asText(storefront["projectId"]) };
   f.answer("project_settings_get", { ...shop }, {
-    settings: { ...shop, title: "storefront", workspaceRoot: "/home/dev/src/storefront", keepWorktrees: false, setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] }, env: [] },
+    settings: { ...shop, title: "storefront", workspaceRoot: "/home/dev/src/storefront", setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] }, env: [] },
   });
   // Its picker's pick of Wow in Sun.
   const icon = { face: "wow", color: "sun" };

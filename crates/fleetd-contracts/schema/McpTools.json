@@ -15788,10 +15788,6 @@
           },
           "type": "array"
         },
-        "keepWorktrees": {
-          "description": "True: a finished task's worktree stays on the machine. False (the default): a reader's goes when it finishes\nand a writer's once its PR merges.",
-          "type": "boolean"
-        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
@@ -15831,7 +15827,6 @@
         "projectId",
         "title",
         "workspaceRoot",
-        "keepWorktrees",
         "env",
         "setup"
       ],
@@ -15875,9 +15870,6 @@
     },
     "ProjectSettingsSetInput": {
       "properties": {
-        "keepWorktrees": {
-          "type": "boolean"
-        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
@@ -15890,7 +15882,7 @@
         },
         "repo": {
           "$ref": "#/$defs/RepoName",
-          "description": "The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title and keepWorktrees are the project's either way."
+          "description": "The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title is the\nproject's either way."
         },
         "setup": {
           "$ref": "#/$defs/WorktreeSetup",

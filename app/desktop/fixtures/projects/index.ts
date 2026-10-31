@@ -291,7 +291,6 @@ export default defineGroup({
           projectId: "field-notes",
           title: "Field notes",
           workspaceRoot: `${PROJECTS_ROOT}/field-notes`,
-          keepWorktrees: false,
           env: [],
           setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] },
           worktrees: { dir: "/home/dev/.fleetd/node/worktrees/field-notes", worktrees: [] },

@@ -23,7 +23,6 @@ const navi = (f: Fixture): { machineId: string; projectId: string } => {
       ...ref,
       title: "Ada",
       workspaceRoot: "/home/dev/navi/ada",
-      keepWorktrees: false,
       setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] },
       env: [],
       worktrees: { dir: `/home/dev/.fleetd/node/worktrees/${ref.projectId}`, baseBranch: "main", worktrees: [] },

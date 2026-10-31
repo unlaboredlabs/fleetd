@@ -311,11 +311,11 @@ function machines(from: Fixture): Fixture {
 }
 
 /**
- * Settings → Projects → Repos: storefront holds two repos. Its own runs with the project's setup and preview; billing,
- * checked out on another machine, has a setup and a preview of its own.
+ * Settings → Projects → Repos: storefront holds two repos. Its own runs with the project's setup; billing, checked out
+ * on another machine, has a setup of its own.
  */
 function repos(from: Fixture): Fixture {
-  const f = Fixture.from(from, "settings-repos", "storefront holds two repos: its own on the project's setup, and billing with its own setup and preview");
+  const f = Fixture.from(from, "settings-repos", "storefront holds two repos: its own on the project's setup, and billing with its own setup");
   const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
   const [storefront, billing] = projects;
   if (storefront === undefined || billing === undefined) return f;
@@ -328,10 +328,8 @@ function repos(from: Fixture): Fixture {
     ...ref(storefront),
     title: asText(storefront["title"]),
     workspaceRoot: asText(storefront["workspaceRoot"]),
-    keepWorktrees: false,
     env: [],
     setup: { commands: ["pnpm install --frozen-lockfile"], timeoutSec: 600, runAnyway: false, inputs: ["pnpm-lock.yaml"] },
-    preview: { web: { start: "pnpm dev --port $PORT", ready: "/" } },
     worktrees: { dir: `/home/dev/.fleetd/node/worktrees/${asText(storefront["projectId"])}`, baseBranch: "main", worktrees: [] },
   };
   // Main matches an answer's input as a subset, so the repo's own answer goes first; storefront's repo gets the project's.
@@ -343,7 +341,6 @@ function repos(from: Fixture): Fixture {
         ...settings,
         repo: "billing",
         setup: { commands: ["pnpm install --frozen-lockfile", "pnpm db:migrate"], timeoutSec: 600, runAnyway: false, inputs: [] },
-        preview: { web: { start: "pnpm --filter billing dev --port $PORT", ready: "/health" } },
       },
     },
   );

@@ -1,7 +1,7 @@
 //! A project's own settings (Settings › Projects in the app): `project_settings_get`, `project_settings_set` and
-//! `project_env_set`, and what the hub keeps of them: `project_settings.keep_worktrees`,
-//! `project_settings.memory_refresh` (the nightly memory refresh, on by default), `project_settings.setup` (the
-//! commands each new worktree runs before its agent starts, sent with each task's launch) and the `project_env` rows.
+//! `project_env_set`, and what the hub keeps of them: `project_settings.memory_refresh` (the nightly memory refresh, on
+//! by default), `project_settings.setup` (the commands each new worktree runs before its agent starts, sent with each
+//! task's launch) and the `project_env` rows.
 //!
 //! A repo of the project (W79) can have its own `setup` (`repos.setup`): a call that names the repo reads and writes
 //! it, and an empty one is the project's. A task's launch reads its repo's, for now always the project's own repo (none
@@ -75,30 +75,6 @@ impl HubDb {
 }
 
 impl ProjectSettingsStore<'_> {
-    /// Whether a finished task's worktree stays: off until a person turns it on.
-    pub fn keep_worktrees(&self, r: &ProjectRef) -> Result<bool, StoreError> {
-        let saved: Option<bool> = self.db.with(|c| {
-            Ok(c.query_row(
-                "SELECT keep_worktrees FROM project_settings WHERE machine_id = ? AND project_id = ?",
-                params![r.machine_id.as_str(), r.project_id.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?)
-        })?;
-        Ok(saved.unwrap_or(false))
-    }
-
-    pub fn set_keep_worktrees(&self, r: &ProjectRef, keep: bool) -> Result<(), StoreError> {
-        self.db.with(|c| {
-            c.execute(
-                "INSERT INTO project_settings (machine_id, project_id, keep_worktrees) VALUES (?, ?, ?)
-                 ON CONFLICT (machine_id, project_id) DO UPDATE SET keep_worktrees = excluded.keep_worktrees",
-                params![r.machine_id.as_str(), r.project_id.as_str(), keep],
-            )?;
-            Ok(())
-        })
-    }
-
     /// Whether the project's memory is refreshed each night: on until a person turns it off.
     pub fn memory_refresh(&self, r: &ProjectRef) -> Result<bool, StoreError> {
         let saved: Option<bool> = self.db.with(|c| {
@@ -408,7 +384,6 @@ async fn settings_of(
         title: project.title,
         workspace_root: project.workspace_root,
         repo: repo.map(|repo| repo.name.clone()),
-        keep_worktrees: store.keep_worktrees(r)?,
         memory_refresh: store.memory_refresh(r)?,
         env: store.env(r)?,
         setup: store.setup_in(r, repo_id)?.unwrap_or_default(),
@@ -479,9 +454,6 @@ async fn set(
             attention: None,
         })?;
     }
-    if let Some(keep) = input.keep_worktrees {
-        hub.db.project_settings().set_keep_worktrees(&r, keep)?;
-    }
     if let Some(on) = input.memory_refresh {
         hub.db.project_settings().set_memory_refresh(&r, on)?;
     }
@@ -489,10 +461,7 @@ async fn set(
         hub.db.project_settings().set_setup_in(&r, repo_id, setup)?;
     }
     let settings = settings_of(&hub, &r, repo.as_ref()).await?;
-    let next = if input.memory_refresh.is_some()
-        && input.setup.is_none()
-        && input.keep_worktrees.is_none()
-    {
+    let next = if input.memory_refresh.is_some() && input.setup.is_none() {
         if input.memory_refresh == Some(true) {
             "The lead refreshes this project's memory from tonight.".to_owned()
         } else {
