@@ -61,7 +61,7 @@ pub const NODE_USAGE: &str = "  node join --hub <url> (--token <token> | --token
              dedicated one
   node run [--home <dir>]
              keep the link up for a machine that has joined
-  node trust <dir> [--home <dir>]
+  node trust <dir>
              start work again in a project's checkout fleetd refused as replaced, once you checked it
 ";
 

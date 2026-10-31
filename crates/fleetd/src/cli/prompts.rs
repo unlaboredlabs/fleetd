@@ -18,18 +18,18 @@ use crate::hub::prompts::render::warnings;
 use crate::hub::prompts::store::entry;
 use crate::hub::store::{EventLog, HubDb, iso_ms, now_ms};
 
-pub const PROMPTS_USAGE: &str = r#"  prompts list [--project <machine>/<project>] [--home <dir>]
+pub const PROMPTS_USAGE: &str = r#"  prompts list [--project <machine>/<project>]
              every prompt fleetd sends a model, which text is in effect, and
              "update" where a release changed the default you edited
-  prompts show <id> [--project <machine>/<project>] [--default] [--home <dir>]
-  prompts show --session <machine>/<thread> [--home <dir>]
+  prompts show <id> [--project <machine>/<project>] [--default]
+  prompts show --session <machine>/<thread>
              the text in effect (or the shipped one), or exactly what a session was told
-  prompts edit <id> [--project <machine>/<project>] [--home <dir>]
+  prompts edit <id> [--project <machine>/<project>]
              edit it in $VISUAL or $EDITOR; warns when a placeholder or a safety rule is gone
-  prompts reset <id> [--project <machine>/<project>] [--home <dir>]
-  prompts diff <id> [--project <machine>/<project>] [--home <dir>]
+  prompts reset <id> [--project <machine>/<project>]
+  prompts diff <id> [--project <machine>/<project>]
              shipped vs yours; after a release changed it, what changed in each
-  instructions show|edit [--project <machine>/<project>] [--home <dir>]
+  instructions show|edit [--project <machine>/<project>]
              your custom instructions, appended to every lead and task
 "#;
 
@@ -75,7 +75,6 @@ pub fn prompts_command(argv: &[String]) -> CliResult {
     };
     const OPTIONS: &[(&str, Kind)] = &[
         ("project", Kind::Str),
-        ("home", Kind::Str),
         ("default", Kind::Bool),
         ("session", Kind::Str),
     ];
@@ -97,7 +96,7 @@ pub fn prompts_command(argv: &[String]) -> CliResult {
         }),
         Some(Err(message)) => return usage(&message),
     };
-    let db = match resolve_home(v.str("home")).and_then(|home| open(&home)) {
+    let db = match resolve_home(None).and_then(|home| open(&home)) {
         Ok(db) => db,
         Err(message) => return CliResult::err(1, format!("fleetd: {message}\n")),
     };
@@ -181,7 +180,7 @@ pub fn prompts_command(argv: &[String]) -> CliResult {
 fn open(home: &Path) -> Result<Arc<HubDb>, String> {
     if !home.join("hub.sqlite").exists() {
         return Err(format!(
-            "no hub in {}; run this on the hub machine, or pass --home",
+            "no hub in {}; run this on the hub machine",
             home.display()
         ));
     }

@@ -12,7 +12,7 @@ pub const PUSH_RELAY_USAGE: &str = "  push-relay [--listen 127.0.0.1:4795]
              FLEETD_PUSH_RELAY_KEY_FILE (a file holding a key): take only hubs that send it; set one
              when the relay is reachable beyond this machine. It never reads, keeps or logs a
              notification. Run your own only for an app you build yourself
-  push-relay set <url|off> [--relay-key-file <path>] [--hub <url> --key-file <path> | --home <dir>]
+  push-relay set <url|off> [--relay-key-file <path>] [--hub <url> --key-file <path>]
              hubs send phone notifications through https://push.fleetd.sh, the relay for the
              published app, without a key. <url> sends them through your own relay instead, with
              the key in --relay-key-file when it takes one, sealed to the hub;
@@ -27,7 +27,6 @@ pub async fn push_relay_command(argv: &[String]) -> u8 {
             ("relay-key-file", Kind::Str),
             ("hub", Kind::Str),
             ("key-file", Kind::Str),
-            ("home", Kind::Str),
         ],
         positionals: true,
     };
@@ -77,7 +76,7 @@ async fn set(v: &args::Parsed, url: &str) -> u8 {
             return 2;
         }
     };
-    let mut hub = match Hub::connect(&hub, v.str("home"), "push-relay").await {
+    let mut hub = match Hub::connect(&hub, None, "push-relay").await {
         Ok(hub) => hub,
         Err(code) => return code,
     };

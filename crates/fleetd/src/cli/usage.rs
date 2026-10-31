@@ -9,9 +9,9 @@ use serde_json::{Value, json};
 use super::args::{self, Kind, Spec};
 use super::time::{Hub, local};
 
-pub const USAGE_USAGE: &str = r#"  usage [<machine>] [--json] [--hub <url> --key-file <path> | --home <dir>]
+pub const USAGE_USAGE: &str = r#"  usage [<machine>] [--json] [--hub <url> --key-file <path>]
              each machine's Claude usage pause: open or not, why, until when, and how much is parked
-  usage resume <machine> [--json] [--hub <url> --key-file <path> | --home <dir>]
+  usage resume <machine> [--json] [--hub <url> --key-file <path>]
              lift the machine's usage pause now and send every parked agent "continue", like
              Resume in the app; one whose login is still limited parks again with the real reset.
              --json adds pauseLifted (null when the pause couldn't be read first). On the hub
@@ -33,7 +33,6 @@ pub fn parse_usage_args(argv: &[String]) -> Result<UsageArgs, String> {
     const OPTIONS: &[(&str, Kind)] = &[
         ("hub", Kind::Str),
         ("key-file", Kind::Str),
-        ("home", Kind::Str),
         ("json", Kind::Bool),
     ];
     let v = args::parse(
@@ -64,7 +63,7 @@ pub fn parse_usage_args(argv: &[String]) -> Result<UsageArgs, String> {
     }
     Ok(UsageArgs {
         hub,
-        home: v.string("home"),
+        home: None,
         resume,
         machine,
         json: v.flag("json"),

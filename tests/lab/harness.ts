@@ -337,6 +337,10 @@ export async function until<A>(what: string, ms: number, probe: () => Promise<A 
 export const cli = (...args: Array<string>) =>
   execFileSync(...fleetdCommand(args), { env: scrubbedEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
+/** `cli` on the hub at `hubHome`: its fleetd dir is the one `hub start --home` keeps beside it. */
+export const hubCli = (hubHome: string, ...args: Array<string>) =>
+  execFileSync(...fleetdCommand(args), { env: { ...scrubbedEnv(), FLEETD_HOME: path.dirname(hubHome) }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
 const LOCK = path.join(LAB, "test-lab.lock");
 
 /** Whether a process exists (signal 0); no /proc, so it works on macOS too. */
@@ -460,7 +464,7 @@ export const stopAll = async () => {
 /** `node join` for a machine on `hubHome`'s hub: an enrollment code from `pair --worker`, the machine's HOME, then the node itself. */
 const joinArgs = (hubUrl: string, hubHome: string, id: string, opts: MachineHomeOptions) => {
   prepareMachineHome(id, opts);
-  const token = /--code (\S+)/u.exec(cli("pair", "--worker", id, "--home", hubHome))?.[1];
+  const token = /--code (\S+)/u.exec(hubCli(hubHome, "pair", "--worker", id))?.[1];
   if (token === undefined) throw new Error(`no enrollment token for ${id}`);
   return ["node", "join", "--hub", hubUrl, "--token", token, "--machine", id, "--home", nodeHome(id)];
 };

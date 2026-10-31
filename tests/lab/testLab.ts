@@ -14,6 +14,7 @@ import {
   check,
   cleanupMachineHomes,
   cli,
+  hubCli,
   HUB_PORT,
   HUB_URL,
   enrollNode,
@@ -87,10 +88,10 @@ async function main() {
     await startHubProcess();
     ok(`hub up on ${HUB_URL}`);
 
-    const key = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--name", "lab", "--role", "operate", "--machines", "*"))?.[0];
+    const key = /fld_[a-z2-7]{20,}/u.exec(hubCli(hubHome, "hub", "key", "create", "--name", "lab", "--role", "operate", "--machines", "*"))?.[0];
     if (key === undefined) throw new Error("hub key create printed no key");
     for (const m of MACHINES) joinNode(HUB_URL, hubHome, m.id);
-    const humanKey = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--human", "--name", "lab-person"))?.[0];
+    const humanKey = /fld_[a-z2-7]{20,}/u.exec(hubCli(hubHome, "hub", "key", "create", "--human", "--name", "lab-person"))?.[0];
     if (humanKey === undefined) throw new Error("hub key create --human printed no key");
 
     client = await connectClient(key);
@@ -99,7 +100,7 @@ async function main() {
     // (app/desktop/fixtures/kit/record.ts records the run's frames and call results into fixtures).
     const handoff = process.env.FLEETD_LAB_APP_HANDOFF;
     if (handoff !== undefined) {
-      const recorder = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--human", "--name", "recorder"))?.[0];
+      const recorder = /fld_[a-z2-7]{20,}/u.exec(hubCli(hubHome, "hub", "key", "create", "--human", "--name", "recorder"))?.[0];
       if (recorder === undefined) throw new Error("hub key create --human printed no key");
       fs.writeFileSync(handoff, `${JSON.stringify({ hubUrl: HUB_URL, key: recorder })}\n`, { mode: 0o600 });
       ok(`app handoff written to ${handoff}`);

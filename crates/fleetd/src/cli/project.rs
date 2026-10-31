@@ -18,44 +18,44 @@ use super::setup::state::read_setup;
 
 pub const PROJECT_USAGE: &str =
     "  project add [<path|github-url>] [--machine <id>] [--title <t>] [--dest <dir>]
-         [--use-existing] [--yes] [--home <dir>] [--hub <url>]
+         [--use-existing] [--yes] [--hub <url>]
              add a project: a checkout or a plain folder on a machine (this one by default),
              or a GitHub repo cloned onto one (the least busy worker by default), with progress;
              then its CI, merge rules and what the lead will need. No argument: pick one
-  project add --new <name> [--machine <id>] [--dest <dir>] [--git-init] [--home <dir>] [--hub <url>]
+  project add --new <name> [--machine <id>] [--dest <dir>] [--git-init] [--hub <url>]
              start a new, empty project: the machine makes its folder (~/fleetd/projects/<name>
              by default, or --dest; one that holds files is refused). A plain folder with no
              repo, unless --git-init; add a repo later with project repo add
-  project list [--machine <id>] [--home <dir>] [--hub <url>]
-  project stop <machine>/<project> --key-file <human key> [--yes] [--home <dir>] [--hub <url>]
+  project list [--machine <id>] [--hub <url>]
+  project stop <machine>/<project> --key-file <human key> [--yes] [--hub <url>]
              stop its lead's turn and its agents, as you; the lead and its chat stay,
              and the chat says what stopped
-  project remove <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
+  project remove <machine>/<project> [--yes] [--hub <url>]
              stop its agents and forget it; its files, branches and worktrees stay
-  project repo list <machine>/<project> [--home <dir>] [--hub <url>]
+  project repo list <machine>/<project> [--hub <url>]
   project repo add <machine>/<project> <path|github-url> [--name <n>] [--dest <dir>]
-         [--use-existing] [--home <dir>] [--hub <url>]
+         [--use-existing] [--hub <url>]
              add a repo to the project: a checkout on its machine, or a GitHub repo
              cloned there, with progress. A checkout that is a project of its own is
              archived: its chat stays, its lead stops running
-  project repo remove <machine>/<project> <name> [--yes] [--home <dir>] [--hub <url>]
+  project repo remove <machine>/<project> <name> [--yes] [--hub <url>]
              take the repo out of the project and end its agents; its files stay
-  project set <machine>/<project> --max-agents <n>|default [--pause-extras] [--home <dir>] [--hub <url>]
-  project set --fleet-cap <n> [--home <dir>] [--hub <url>]
+  project set <machine>/<project> --max-agents <n>|default [--pause-extras] [--hub <url>]
+  project set --fleet-cap <n> [--hub <url>]
              the most agents the project runs at once (its lead not counted), or the
              fleet's cap on running agents (admin key); more wait queued and start as
              slots free. default: its machine's cap within the fleet cap, following
              both. Lowering stops nothing; --pause-extras has the newest agents above
              the new max push their work and wait
-  project set <machine>/<project> --profiles <name>,...|none [--home <dir>] [--hub <url>]
+  project set <machine>/<project> --profiles <name>,...|none [--hub <url>]
              the task profiles its lead may run agents on besides the hub's default,
              which every project allows; none: the default alone
-  project profiles [<machine>/<project>] [--home <dir>] [--hub <url>]
+  project profiles [<machine>/<project>] [--hub <url>]
              the hub's task profiles: model, effort, fast mode and note, and which
              the project allows
   project profile <name> [--model <model>] [--effort low|medium|high|xhigh|max]
          [--fast on|off] [--note <text>] [--rename <new>] [--default] [--delete]
-         [--home <dir>] [--hub <url>]
+         [--hub <url>]
              create or change a task profile (owner or admin), or delete one. A new
              one needs --model and --effort. --default makes it the one the lead,
              every review and helper calls run on
@@ -68,7 +68,6 @@ const SPEC: Spec = Spec {
         ("dest", Kind::Str),
         ("use-existing", Kind::Bool),
         ("yes", Kind::Bool),
-        ("home", Kind::Str),
         ("hub", Kind::Str),
         ("max-agents", Kind::Str),
         ("pause-extras", Kind::Bool),
@@ -277,7 +276,7 @@ pub async fn project_command(argv: &[String]) -> u8 {
         Ok(v) => v,
         Err(message) => return usage(&message),
     };
-    let home = match resolve_home(v.str("home")) {
+    let home = match resolve_home(None) {
         Ok(h) => h,
         Err(message) => return usage(&message),
     };
@@ -805,12 +804,11 @@ async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), 
     Ok(())
 }
 
-pub const MACHINE_SET_USAGE: &str =
-    "  machine set <id> --max-agents <n>|auto [--home <dir>] [--hub <url>]
+pub const MACHINE_SET_USAGE: &str = "  machine set <id> --max-agents <n>|auto [--hub <url>]
              the most agents the machine runs at once (admin key), up to the fleet cap,
              in place of what it is measured to fit; auto: what it fits again. Raising
              starts queued agents at once; lowering stops nothing
-  machine set <id> --roles agents,sessions [--max-sessions <n>|auto] [--home <dir>] [--hub <url>]
+  machine set <id> --roles agents,sessions [--max-sessions <n>|auto] [--hub <url>]
              what the machine is for (admin key): agents, sessions (screens: browsers and
              devices) or both, and the most screens it hosts at once (1 to 64; auto: what it
              fits). A screen an agent starts runs on its own machine when it can, else on
@@ -823,7 +821,6 @@ const MACHINE_SET_SPEC: Spec = Spec {
         ("max-agents", Kind::Str),
         ("roles", Kind::Str),
         ("max-sessions", Kind::Str),
-        ("home", Kind::Str),
         ("hub", Kind::Str),
     ],
     positionals: true,
@@ -920,7 +917,7 @@ pub async fn machine_set_command(argv: &[String]) -> u8 {
             Err(_) => return machine_usage("--max-agents takes a number from 1 to 1000 or auto"),
         },
     }
-    let home = match resolve_home(v.str("home")) {
+    let home = match resolve_home(None) {
         Ok(h) => h,
         Err(message) => return machine_usage(&message),
     };

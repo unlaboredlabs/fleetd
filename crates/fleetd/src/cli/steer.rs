@@ -10,14 +10,14 @@ use serde_json::{Value, json};
 use super::args::{self, Kind, Spec};
 use super::mcp_client::{McpClient, McpError};
 
-pub const STEER_USAGE: &str = r#"  steer <W|T> "<text>" [--now] [--wait] --key-file <human key> [--hub <url> | --home <dir>]
+pub const STEER_USAGE: &str = r#"  steer <W|T> "<text>" [--now] [--wait] --key-file <human key> [--hub <url>]
              steer an order's lead (W41) or one agent (T88) mid-run. Plain: it lands at the
              agent's next step, after the tool it is running returns. --now stops that step and
              delivers at once. --wait follows the receipt: exit 0 acknowledged, 1 not
              acknowledged, withdrawn or failed. Without --hub it uses the hub on this machine
-  steer withdraw S<n> --key-file <human key> [--hub <url> | --home <dir>]
+  steer withdraw S<n> --key-file <human key> [--hub <url>]
              take back a steer the agent has not taken in yet
-  steers <W|T> --key-file <human key> [--hub <url> | --home <dir>]
+  steers <W|T> --key-file <human key> [--hub <url>]
              an order's (or one agent's) recent steers and their receipts
 "#;
 
@@ -83,7 +83,6 @@ pub fn parse_steer_args(argv: &[String], list: bool) -> Result<SteerArgs, String
     const OPTIONS: &[(&str, Kind)] = &[
         ("hub", Kind::Str),
         ("key-file", Kind::Str),
-        ("home", Kind::Str),
         ("now", Kind::Bool),
         ("wait", Kind::Bool),
     ];
@@ -142,7 +141,7 @@ pub fn parse_steer_args(argv: &[String], list: bool) -> Result<SteerArgs, String
     Ok(SteerArgs {
         command,
         hub,
-        home: v.string("home").filter(|s| !s.is_empty()),
+        home: None,
         key_file,
     })
 }
@@ -249,7 +248,7 @@ pub(super) fn client_request_id() -> String {
         .collect()
 }
 
-/// `--hub`, else the hub this machine runs (`fleetd init`), at `--home` when given.
+/// `--hub`, else the hub this machine runs (`fleetd init`).
 pub(super) fn hub_url(hub: Option<String>, home: Option<&str>) -> Result<String, String> {
     if let Some(hub) = hub {
         return Ok(hub);

@@ -26,7 +26,7 @@ use units::{Dirs, Platform, Role, ServiceManager, ServiceSpec, render_unit, unit
 /// Where `hub start` listens unless told otherwise (the hub's own default).
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:4790";
 
-pub const SETUP_USAGE: &str = r#"  init [--yes] [--home <dir>] [--listen <host:port>] [--url <url>]
+pub const SETUP_USAGE: &str = r#"  init [--yes] [--listen <host:port>] [--url <url>]
        [--git-identity "Name <email>"] [--no-service]
              set up fleetd step by step in a terminal: the hub on this machine (home default
              ~/.fleetd/hub, kept running by a systemd or launchd user service), where it listens
@@ -42,14 +42,14 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--home <dir>] [--listen <host:p
              make this machine a worker of that hub, without SSH from the hub: the command
              fleetd pair --worker prints on the hub. Run again, it keeps the node's enrolment
              and repairs the rest; --rejoin enrols again with a new code
-  init --step <address|machines|claude|github|people> [--home <dir>]
+  init --step <address|machines|claude|github|people>
              open one of the hub's setup steps: why, the values to paste and the pages to open,
              then Test it, or put it off for later. The app's Settings › Hub › Setup has the same
              steps
-  doctor [--home <dir>]
+  doctor
              run every setup check on the hub now: the setup steps first, then each other
              problem with its fix
-  uninstall [--home <dir>] [--purge]
+  uninstall [--purge]
              stop and remove the hub's service; its data stays unless --purge, which also removes
              what an older fleetd installed for T3 Code
 "#;
@@ -314,24 +314,15 @@ pub fn hub_service_spec(
 /// The fix for a hub home without `setup.json`. A hub started there by hand (`fleetd hub start`) keeps running:
 /// `init --no-service` only writes what the CLI needs beside it.
 pub fn no_setup_fix(home: &Path) -> String {
-    no_setup_fix_for(
-        home,
-        resolve_home(None).ok().as_deref(),
-        super::pair::running_listen(home).as_deref(),
-    )
+    no_setup_fix_for(super::pair::running_listen(home).as_deref())
 }
 
-fn no_setup_fix_for(home: &Path, default_home: Option<&Path>, running: Option<&str>) -> String {
-    let home_flag = if default_home == Some(home) {
-        String::new()
-    } else {
-        format!(" --home {}", units::q(&home.to_string_lossy()))
-    };
+fn no_setup_fix_for(running: Option<&str>) -> String {
     match running {
         Some(listen) => format!(
-            "a hub you started yourself answers there: fleetd init --no-service{home_flag} --listen {listen}"
+            "a hub you started yourself answers there: fleetd init --no-service --listen {listen}"
         ),
-        None => format!("fleetd init{home_flag} (it starts the hub and repairs its setup)"),
+        None => "fleetd init (it starts the hub and repairs its setup)".to_owned(),
     }
 }
 
@@ -631,7 +622,6 @@ pub async fn install_hub(plan: &HubPlan<'_>, log: &dyn Fn(&str)) -> Result<Strin
 }
 
 const INIT_OPTIONS: &[(&str, Kind)] = &[
-    ("home", Kind::Str),
     ("listen", Kind::Str),
     ("url", Kind::Str),
     ("git-identity", Kind::Str),
@@ -654,7 +644,7 @@ fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
         },
     )
     .map_err(|message| usage(&message))?;
-    let home = resolve_home(v.str("home")).map_err(|message| fail(&message))?;
+    let home = resolve_home(None).map_err(|message| fail(&message))?;
     let previous = read_setup(&home).map_err(|message| fail(&message))?;
     if let Some(listen) = v.str("listen")
         && parse_listen(listen).is_none()
@@ -792,14 +782,14 @@ async fn uninstall_command(argv: &[String]) -> u8 {
     let v = match args::parse(
         argv,
         &Spec {
-            options: &[("home", Kind::Str), ("purge", Kind::Bool)],
+            options: &[("purge", Kind::Bool)],
             positionals: false,
         },
     ) {
         Ok(v) => v,
         Err(message) => return usage(&message),
     };
-    let home = match resolve_home(v.str("home")) {
+    let home = match resolve_home(None) {
         Ok(home) => home,
         Err(message) => return fail(&message),
     };
@@ -915,22 +905,13 @@ mod tests {
 
     #[test]
     fn a_home_without_setup_points_at_init_and_keeps_a_hub_run_by_hand() {
-        let default = Path::new("/home/ada/.fleetd/hub");
         assert_eq!(
-            no_setup_fix_for(default, Some(default), None),
+            no_setup_fix_for(None),
             "fleetd init (it starts the hub and repairs its setup)"
         );
         assert_eq!(
-            no_setup_fix_for(
-                Path::new("/tmp/f/hub"),
-                Some(default),
-                Some("127.0.0.1:4797")
-            ),
-            "a hub you started yourself answers there: fleetd init --no-service --home /tmp/f/hub --listen 127.0.0.1:4797"
-        );
-        assert_eq!(
-            no_setup_fix_for(Path::new("/tmp/my hub"), Some(default), None),
-            "fleetd init --home '/tmp/my hub' (it starts the hub and repairs its setup)"
+            no_setup_fix_for(Some("127.0.0.1:4797")),
+            "a hub you started yourself answers there: fleetd init --no-service --listen 127.0.0.1:4797"
         );
     }
 

@@ -18,7 +18,7 @@ use super::args::{self, Kind, Spec};
 use super::mcp_client::{McpClient, McpError};
 use super::time::resolve_project;
 
-pub const STATUS_USAGE: &str = r#"  status [<project>] [--watch] [--json] [--hub <url> --key-file <path> | --home <dir>]
+pub const STATUS_USAGE: &str = r#"  status [<project>] [--watch] [--json] [--hub <url> --key-file <path>]
              one row per project, as the app's Status screen shows it: what it is doing
              (working, waiting on you, blocked and why, idle), its work in groups (waiting on
              you, in review, working, landing, idle, done), agents running and the last merge;
@@ -60,7 +60,6 @@ pub fn parse_status_args(argv: &[String]) -> Result<StatusArgs, String> {
     const OPTIONS: &[(&str, Kind)] = &[
         ("hub", Kind::Str),
         ("key-file", Kind::Str),
-        ("home", Kind::Str),
         ("watch", Kind::Bool),
         ("json", Kind::Bool),
     ];
@@ -79,7 +78,7 @@ pub fn parse_status_args(argv: &[String]) -> Result<StatusArgs, String> {
     }
     Ok(StatusArgs {
         hub: hub_flags(&v)?,
-        home: v.string("home").filter(|s| !s.is_empty()),
+        home: None,
         target: v.positionals.first().cloned().unwrap_or_default(),
         watch: v.flag("watch"),
         json: v.flag("json"),

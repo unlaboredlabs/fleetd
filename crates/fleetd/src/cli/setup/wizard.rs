@@ -1514,8 +1514,7 @@ async fn tested(
 fn invite(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<(), Stopped> {
     let name = ui.input(list, "Their name", "", "alice", needed)?;
     let home = opts.home.to_string_lossy().into_owned();
-    let out =
-        crate::cli::people::invite_command(&["--name".into(), name.clone(), "--home".into(), home]);
+    let out = crate::cli::people::invite_at(&["--name".into(), name.clone()], Some(&home));
     if out.code == 0 {
         list.done(&format!("invite {name}"), "send them this:");
         list.note(out.stdout.trim_end());
