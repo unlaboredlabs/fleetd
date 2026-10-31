@@ -446,16 +446,9 @@ impl LeadWakes {
             .get()
             .map(|t| t.digest_lines(r, since.as_ref(), 50));
         let agents = ctx.hooks.tasks.get().map(|t| t.agents(r));
-        let usage = ctx.hooks.usage.get().and_then(|u| u.gate(r));
-        let train = ctx
-            .hooks
-            .train
-            .get()
-            .and_then(|t| t.lead_lines(r, since.as_ref()));
-        let elsewhere = match ctx.hooks.work.get() {
-            Some(work) => work.elsewhere(r).await,
-            None => None,
-        };
+        let usage = ctx.hooks.usage_gate(r);
+        let train = ctx.hooks.train_lines(r, since.as_ref());
+        let elsewhere = ctx.hooks.elsewhere(r);
         let idle = agents.as_ref().and_then(|a| {
             let line = idle_line(a, &workstreams, &open_requests, usage.is_some())?;
             let shown = self.idle_shown.lock().unwrap().get(r) == Some(&a.idle_since_ms);
@@ -562,10 +555,8 @@ impl LeadWakes {
             thread_id: lead.thread_id.clone(),
         };
         // M4 usage: a wake is a turn, so it waits while the login is paused or the lead is parked, then goes again.
-        if let Some(usage) = self.ctx.hooks.usage.get()
-            && usage.hold(&thread).is_some()
-        {
-            let clear = usage.when_clear(&thread);
+        if self.ctx.hooks.usage_hold(&thread).is_some() {
+            let clear = self.ctx.hooks.when_clear(&thread);
             let this = Arc::clone(self);
             let r = r.clone();
             tokio::spawn(async move {
