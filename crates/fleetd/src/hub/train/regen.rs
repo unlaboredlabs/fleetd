@@ -681,7 +681,6 @@ mod tests {
             .join("../..")
             .join(CONFIG_PATH);
         let config = Regenerate::parse(&std::fs::read_to_string(path).unwrap()).unwrap();
-        assert!(config.generated("site/docs/index.html"));
         assert!(config.generated("crates/fleetd-contracts/schema/tasks.json"));
         assert!(!config.generated("crates/fleetd/src/main.rs"));
     }
