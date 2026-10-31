@@ -27,7 +27,6 @@ pub(super) fn hub_on(clock: Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
         home: home.path().to_path_buf(),
         listen: Default::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let hub = crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock).unwrap();
     // A 32-CPU, 128 GB machine: it fits 28.

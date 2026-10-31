@@ -30,7 +30,6 @@ async fn start() -> TestHub {
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let hub = build_on(HubDb::open_memory().unwrap(), config, Arc::new(SystemClock)).unwrap();
     let mut tools: Registry = api::registry();
@@ -636,7 +635,6 @@ async fn a_starting_hub_revokes_the_owner_key_and_deletes_its_file() {
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let hub = super::build(config, Arc::new(SystemClock)).unwrap();
     assert!(!file.exists());
@@ -652,7 +650,6 @@ async fn a_dropped_hub_frees_its_parts() {
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let db = HubDb::open(home.path()).unwrap();
     let parts = Arc::downgrade(&db);

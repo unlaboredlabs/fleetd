@@ -23,7 +23,6 @@ fn hub_on(db: Arc<HubDb>, home: &std::path::Path) -> Arc<Hub> {
         home: home.to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     crate::hub::serve::build_on(db, config, ManualClock::at(1_792_922_400_000)).unwrap()
 }

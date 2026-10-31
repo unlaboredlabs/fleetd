@@ -2991,7 +2991,6 @@ async fn a_printed_secret_never_leaves_the_node() {
             home: hub_home.path().to_path_buf(),
             listen: Default::default(),
             url: None,
-            queue_ttl_sec: None,
         },
         crate::hub::store::test_clock::ManualClock::at(1_792_000_000_000),
     )
@@ -3706,7 +3705,6 @@ async fn configured_mcp_servers_reach_each_role_with_secrets_resolved_on_the_nod
             home: hub_home.path().to_path_buf(),
             listen: Default::default(),
             url: None,
-            queue_ttl_sec: None,
         },
         crate::hub::store::test_clock::ManualClock::at(1_792_000_000_000),
     )

@@ -51,7 +51,6 @@ pub(super) fn hub_at(
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let hub = crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock).unwrap();
     for m in ["devbox", "mac1"] {

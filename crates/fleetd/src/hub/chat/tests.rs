@@ -40,7 +40,6 @@ fn hub_with(db: Arc<HubDb>, clock: Arc<ManualClock>) -> (Arc<Hub>, tempfile::Tem
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let hub = crate::hub::serve::build_on(db, config, clock).unwrap();
     (hub, home)
@@ -1063,7 +1062,6 @@ async fn a_stopped_order_tells_its_lead_to_do_no_more_work_on_it() {
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let hub =
         crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock.clone()).unwrap();

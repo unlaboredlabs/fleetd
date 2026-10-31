@@ -14,8 +14,7 @@ use tokio::task::JoinHandle;
 
 mod wire;
 
-pub const HUB_START_USAGE: &str =
-    "  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>]
+pub const HUB_START_USAGE: &str = "  hub start [--home <dir>] [--listen <host:port>]
              run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
              writes to an offline machine wait 24 h)
 ";
@@ -25,8 +24,6 @@ pub struct HubOptions {
     /// Absent means the default, `~/.fleetd/hub`.
     pub home: Option<String>,
     pub listen: Listen,
-    /// How long a write to an offline machine waits in the queue; absent means 24 h.
-    pub queue_ttl_sec: Option<u64>,
 }
 
 /// `host:port`, `:port` or `port`; IPv6 hosts in brackets, as in `[::1]:4790`.
@@ -59,8 +56,8 @@ pub fn parse_listen(value: &str) -> Option<Listen> {
 /// The flags of `hub start`, with node:util `parseArgs`'s strict rules and messages: `--flag value` or
 /// `--flag=value`, the last one wins, no positionals.
 pub fn parse_hub_args(argv: &[String]) -> Result<HubOptions, String> {
-    const FLAGS: [&str; 3] = ["home", "listen", "queue-ttl"];
-    let mut values: [Option<String>; 3] = Default::default();
+    const FLAGS: [&str; 2] = ["home", "listen"];
+    let mut values: [Option<String>; 2] = Default::default();
     let mut args = argv.iter();
     while let Some(arg) = args.next() {
         if arg == "--" {
@@ -97,31 +94,14 @@ pub fn parse_hub_args(argv: &[String]) -> Result<HubOptions, String> {
         };
         values[index] = Some(value);
     }
-    let [home, listen, ttl] = values;
+    let [home, listen] = values;
     let listen = match listen {
         None => Listen::default(),
         Some(raw) => {
             parse_listen(&raw).ok_or_else(|| format!("--listen must be host:port, got '{raw}'"))?
         }
     };
-    let queue_ttl_sec = match ttl {
-        None => None,
-        Some(raw) => Some(
-            raw.parse::<u64>()
-                .ok()
-                .filter(|n| {
-                    *n > 0 && !raw.starts_with('0') && raw.bytes().all(|b| b.is_ascii_digit())
-                })
-                .ok_or_else(|| {
-                    format!("--queue-ttl must be a whole number of seconds, got '{raw}'")
-                })?,
-        ),
-    };
-    Ok(HubOptions {
-        home,
-        listen,
-        queue_ttl_sec,
-    })
+    Ok(HubOptions { home, listen })
 }
 
 /// The CLI entry for `fleetd hub start <args>`: exit 2 on bad flags, 0 after SIGTERM/SIGINT, 1 on a failure.
@@ -163,7 +143,6 @@ pub async fn run(options: HubOptions) -> anyhow::Result<()> {
         url: configured_url(&home),
         home,
         listen: options.listen.clone(),
-        queue_ttl_sec: options.queue_ttl_sec,
     };
     let hub = build(config, Arc::new(SystemClock))?;
     let tools = Arc::new(api::registry());
@@ -306,8 +285,7 @@ pub fn build_on_with(
         watchdog.clone(),
         clock.clone(),
     );
-    let queue =
-        crate::hub::queue::WriteQueue::from_config(&config, &db, &events, &clock, &executors);
+    let queue = crate::hub::queue::WriteQueue::over(&db, &events, &clock, &executors);
     let ops = crate::hub::usage::wire::build(&config, clock.clone(), requests.clone());
     let wakes = crate::hub::wakes::Wakes::new(
         db.clone(),

@@ -33,7 +33,6 @@ fn hub_on(db: Arc<HubDb>, clock: Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempD
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let hub = build_on(db, config, clock).unwrap();
     hub.store

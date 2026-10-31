@@ -1687,7 +1687,6 @@ mod on_a_real_hub {
                 home: home.path().to_path_buf(),
                 listen: Default::default(),
                 url: None,
-                queue_ttl_sec: None,
             },
             ManualClock::at(1_792_000_000_000),
         )

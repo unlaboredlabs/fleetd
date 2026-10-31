@@ -128,7 +128,6 @@ fn hub(home: &Path) -> Arc<TestHub> {
         home: home.to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let hub = crate::hub::serve::build_on(
         HubDb::open_memory().unwrap(),

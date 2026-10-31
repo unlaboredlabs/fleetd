@@ -35,7 +35,6 @@ pub(super) fn hub() -> (Arc<Hub>, Arc<ManualClock>, tempfile::TempDir) {
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     let hub = build_on(HubDb::open_memory().unwrap(), config, clock.clone()).unwrap();
     (hub, clock, home)

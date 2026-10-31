@@ -112,7 +112,6 @@ async fn hub(home: &std::path::Path, mac1_key: &str) -> (Arc<Hub>, String) {
         home: home.to_path_buf(),
         listen: Listen::default(),
         url: None,
-        queue_ttl_sec: None,
     };
     // On disk, so the test can read every byte the hub stored.
     let hub = crate::hub::serve::build_on(
