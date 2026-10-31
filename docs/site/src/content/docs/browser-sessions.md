@@ -38,7 +38,8 @@ hosts screens and has a free screen slot, else another that can, driven through 
 
 In the app, **Agents › Screens** lists them: those waiting on you, the live ones, then the recent ones. A live screen
 takes the panel's whole width. It streams its page, with its address, to the app as you watch it: the node sends its frames only while
-someone watches, and a slow connection skips frames rather than falling behind.
+someone watches, and a slow connection skips frames rather than falling behind. Each new watcher, a phone beside the
+desktop say, gets the screen's newest frame at once, even on a page that isn't changing.
 **Take over** gives you the mouse and keyboard on the page once the screen's machine confirms it. While you have
 control, the agent's `agent-browser` commands answer that a person has control, and the agent carries on with other
 work. **Hand back** returns control: the
@@ -268,6 +269,23 @@ Settings go under `browser` in [node.json](/docs/config-and-files#node-json):
 | `pool` | Chromes kept launched for the next screens. Absent: 1. Each waiting Chrome takes about 0.5 GB of memory. |
 | `sandbox` | `true` requires Chrome's own sandbox: a machine that refuses it starts no browser. `false` turns it off. Absent: on wherever the machine allows it, else off. |
 | `idleMinutes` | End a screen after this many minutes without an `agent-browser` command. Absent: 30. |
+
+### How long a screen takes to start {#start-time}
+
+Set `FLEETD_LOG=info,fleetd::stages=debug` in the hub's or node's environment to see where a screen's start spends
+its time. Each stage goes to the log as it ends, with its own time (`ms`) and the start's so far (`total_ms`):
+
+- **hub screen_open**: `checks`, `seal` and `place`, the hub placing a person's screen and taking its slot;
+- **hub screen launch**: `node start` (the node's answer), `recorded` (the node's report of it live) and `control`
+  (the person's control, confirmed by the node);
+- **node browser**: `install`, `warm browser`, `cold browser` or `navi browser` (from the pool, launched now, or
+  launched on a Navi's profile), `secrets`, `fence` (a Navi's) and `session open`, which **node browser open** splits
+  into `recorder`, `discover` and `page`;
+- **node desktop**: `prepare`, `warm display` or `cold display` (with **node display**'s `xvfb` or `container`),
+  `connect`, `secrets` and `session open`.
+
+The log also has each screen's first frame on its machine, when the hub asked for its frames, and how long the hub
+waited for the first. `FLEETD_LOG` takes the filter `RUST_LOG` does; without it, the log has info and above.
 
 ## Android screens {#android}
 

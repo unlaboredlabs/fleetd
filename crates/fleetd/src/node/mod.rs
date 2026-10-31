@@ -210,6 +210,7 @@ async fn run_node(
 ) -> Result<(), NodeError> {
     // The node logs to stdout; a subscriber the CLI installed first wins.
     let _ = tracing_subscriber::fmt()
+        .with_env_filter(crate::stages::log_filter())
         .with_writer(std::io::stdout)
         .with_ansi(false)
         .try_init();

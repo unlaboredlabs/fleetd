@@ -55,6 +55,7 @@ import { m1Fleet } from "./m1Fleet.ts";
 import { m5Tasks } from "./m5Tasks.ts";
 import { m7Train } from "./m7Train.ts";
 import { m8Desktop } from "./m8Desktop.ts";
+import { screensBench } from "./screensBench.ts";
 import { noSubagents } from "./noSubagents.ts";
 import { trainBatch } from "./trainBatch.ts";
 import { offlineQueue } from "./offlineQueue.ts";
@@ -100,6 +101,8 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   // The app offline: a chat kept through a hub stop, a quit and a restart; a message queued offline sent once. One
   // medium turn. Only when named.
   { name: "desktop-offline", run: desktopOffline, only: true },
+  // A person's screens on lab-a, timed from screen_open to the first live frame, stage by stage. Only when named.
+  { name: "screens", run: screensBench, only: true },
   // The per-project lead chat end to end (and the max agents cap): on the lab repo in this slot's namespace and a
   // local repo on lab-b. Only when named, so it gets a hub of its own; FLEETD_LAB_CHAT_PARTS picks parts.
   { name: "chat", run: chatLead, only: true },

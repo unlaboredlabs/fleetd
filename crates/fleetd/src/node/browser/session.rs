@@ -132,6 +132,8 @@ pub struct Opened {
 impl Session {
     /// Connects to a launched browser, follows its page and starts recording.
     pub async fn open(browser: Browser, opened: Opened) -> Result<Arc<Self>, String> {
+        let mut stages = crate::stages::Stages::new("node browser open");
+        stages.id(opened.id.as_str());
         let cdp = browser.cdp.clone();
         std::fs::create_dir_all(&opened.dir)
             .map_err(|e| format!("cannot make {}: {e}", opened.dir.display()))?;
@@ -143,6 +145,7 @@ impl Session {
             Ok(video) => (Some(video), None),
             Err(why) => (None, Some(why)),
         };
+        stages.done("recorder");
         let started_at = Timestamp(crate::node::util::now_iso());
         let scrub = Arc::new(Scrub::new(&opened.secrets.0));
         let (inputs, mut queued) = tokio::sync::mpsc::unbounded_channel::<BrowserInput>();
@@ -223,11 +226,13 @@ impl Session {
             json!({ "discover": true }),
         )
         .await?;
+        stages.done("discover");
         // The page is followed once attached; wait for it so the agent's first call is recorded.
         let deadline = Instant::now() + Duration::from_secs(5);
         while lock(&session.pages).current().is_none() && Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
+        stages.done("page");
         if let Some(video) = session.video.clone() {
             let start = session.start;
             *lock(&session._ticker) = Some(AbortOnDrop(tokio::spawn(async move {
@@ -281,6 +286,9 @@ impl Session {
     pub fn set_watcher(&self, watcher: Option<Arc<super::FrameSlot>>) {
         let mut live = lock(&self.live);
         live.watcher = watcher;
+        if live.watcher.is_some() {
+            tracing::debug!(target: "fleetd::stages", screen = %self.id, ms = self.offset_ms(), frame = live.last.is_some(), "browser watched");
+        }
         if let (Some(watcher), Some(last)) = (&live.watcher, &live.last) {
             let mut last = last.clone();
             // As things are now: a still page sends no new frame, so the newest says who drives and where it is.
@@ -297,6 +305,9 @@ impl Session {
         };
         let mut live = lock(&self.live);
         live.seq += 1;
+        if live.seq == 1 {
+            tracing::debug!(target: "fleetd::stages", screen = %self.id, ms = self.offset_ms(), watched = live.watcher.is_some(), "browser's first frame");
+        }
         let css = |key: &str, or: u32| {
             metadata[key]
                 .as_f64()

@@ -485,7 +485,7 @@ impl Desktops {
         cwd: String,
         purpose: String,
     ) -> Result<BrowserCallResult, McpToolError> {
-        let started = Instant::now();
+        let mut stages = crate::stages::Stages::new("node desktop");
         let _starting = Starting::claim(&self.starting, &thread).ok_or_else(|| {
             refuse(
                 ErrorCode::Invalid,
@@ -501,8 +501,10 @@ impl Desktops {
             ));
         }
         let pool = self.pool().await?;
+        stages.done("prepare");
         let mount = worktree_mount(pool.backend(), &thread, (self.worktree_for)(&thread));
         let id = new_id();
+        stages.id(id.as_str());
         let dir = recordings_dir(&self.home).join(id.as_str());
         // Made before a display is taken, so nothing after it fails with a display to throw away here.
         std::fs::create_dir_all(&dir).map_err(|e| {
@@ -522,10 +524,16 @@ impl Desktops {
                 "try session_start again",
             )
         };
+        let warm = pool.warm();
         let display = pool.take(mount.as_deref()).await.map_err(|why| {
             let _ = std::fs::remove_dir_all(&dir);
             didnt_start(why)
         })?;
+        stages.done(if warm > 0 {
+            "warm display"
+        } else {
+            "cold display"
+        });
         // Connecting, and throwing away a display that can't be used, wait on its X server and runtime.
         let (display, x) = tokio::task::spawn_blocking(move || {
             let x = display.connect();
@@ -538,6 +546,7 @@ impl Desktops {
             let _ = std::fs::remove_dir_all(&dir);
             didnt_start(why)
         })?;
+        stages.done("connect");
         let secrets = match secrets.await.map_err(|e| e.to_string()).and_then(|m| m) {
             Ok(secrets) => secrets,
             Err(why) => {
@@ -552,6 +561,7 @@ impl Desktops {
                 ));
             }
         };
+        stages.done("secrets");
         let backend = display.backend;
         let session = Session::open(
             display,
@@ -585,7 +595,10 @@ impl Desktops {
             udid: None,
             desktop: Some(backend),
             worktree: mount.map(|m| Text::unchecked(m.to_string_lossy().into_owned())),
-            start_ms: started.elapsed().as_millis() as u64,
+            start_ms: {
+                stages.done("session open");
+                stages.total_ms()
+            },
         }))
     }
 
