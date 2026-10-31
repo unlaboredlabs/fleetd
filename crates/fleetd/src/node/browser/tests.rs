@@ -1307,6 +1307,153 @@ fn a_slow_link_gets_each_watched_sessions_newest_screen_and_no_backlog() {
     assert!(slot.take().is_empty());
 }
 
+#[test]
+fn a_persons_address_bar_goes_only_to_web_pages() {
+    use super::session::navigable;
+    assert_eq!(
+        navigable(" https://example.com/a?b=1 ").unwrap(),
+        "https://example.com/a?b=1"
+    );
+    assert_eq!(
+        navigable("http://localhost:5173").unwrap(),
+        "http://localhost:5173/"
+    );
+    for refused in [
+        "file:///etc/passwd",
+        "view-source:file:///etc/passwd",
+        "javascript:alert(1)",
+        "data:text/html,hi",
+        "chrome://settings",
+        "about:blank",
+        "https://",
+        "example.com",
+    ] {
+        assert!(navigable(refused).is_err(), "{refused}");
+    }
+}
+
+#[test]
+fn back_and_forward_take_the_history_entry_beside_the_current_one() {
+    use super::session::history_entry;
+    let history = json!({ "currentIndex": 1, "entries": [{ "id": 4 }, { "id": 7 }, { "id": 9 }] });
+    assert_eq!(history_entry(&history, -1), Some(4));
+    assert_eq!(history_entry(&history, 1), Some(9));
+    let first = json!({ "currentIndex": 0, "entries": [{ "id": 4 }] });
+    assert_eq!(history_entry(&first, -1), None);
+    assert_eq!(history_entry(&first, 1), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_person_in_control_goes_to_an_address_back_forward_and_reloads_but_never_to_a_file() {
+    use fleetd_contracts::browser::{BrowserControlTo, BrowserInput, BrowserSessionId};
+    let Some(rig) = rig().await else { return };
+    let (site, _site) = site().await;
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Look around" }),
+    )
+    .await;
+    let id = BrowserSessionId::unchecked(started["result"]["sessionId"].as_str().unwrap());
+    let url = started["result"]["cdp"].as_str().unwrap().to_owned();
+    let mut driver = Driver::connect(&url).await.unwrap();
+    let page = driver.page().await;
+    driver
+        .ok(Some(&page), "Page.navigate", json!({ "url": site }))
+        .await;
+    driver
+        .wait_for(&page, "document.readyState === 'complete'")
+        .await;
+    let live = rig.broker.live(THREAD).unwrap();
+    let (_, own) = live.page().unwrap();
+    let input = |v: Value| -> BrowserInput { serde_json::from_value(v).unwrap() };
+    // Where the page is, once it gets to `want` (or says where it stayed).
+    let at = |want: String| {
+        let (live, own) = (live.clone(), own.clone());
+        async move {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                let href = live
+                    .cdp
+                    .call(
+                        Some(&own),
+                        "Runtime.evaluate",
+                        json!({ "expression": "document.readyState === 'complete' ? location.href : ''", "returnByValue": true }),
+                    )
+                    .await
+                    // Between documents the page has none to ask: not there yet.
+                    .unwrap_or_default()["result"]["value"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned();
+                if href == want || Instant::now() > deadline {
+                    return href;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }
+    };
+    let home = format!("{site}/");
+    let other = format!("{site}/whoami");
+
+    // While the agent drives, a person's address goes nowhere.
+    rig.broker.input(
+        &id,
+        input(json!({ "kind": "navigate", "url": other.clone() })),
+    );
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(at(home.clone()).await, home);
+
+    rig.broker
+        .control(&id, BrowserControlTo::Human, "human:desk");
+    rig.broker.input(
+        &id,
+        input(json!({ "kind": "navigate", "url": other.clone() })),
+    );
+    assert_eq!(at(other.clone()).await, other);
+    rig.broker.input(&id, input(json!({ "kind": "back" })));
+    assert_eq!(at(home.clone()).await, home);
+    rig.broker.input(&id, input(json!({ "kind": "forward" })));
+    assert_eq!(at(other.clone()).await, other);
+    // Reloaded: the same address, a fresh document.
+    live.cdp
+        .call(
+            Some(&own),
+            "Runtime.evaluate",
+            json!({ "expression": "window.__before = 1" }),
+        )
+        .await
+        .unwrap();
+    rig.broker.input(&id, input(json!({ "kind": "reload" })));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let gone = live
+            .cdp
+            .call(
+                Some(&own),
+                "Runtime.evaluate",
+                json!({ "expression": "document.readyState === 'complete' && window.__before === undefined", "returnByValue": true }),
+            )
+            .await
+            .unwrap_or_default()["result"]["value"]
+            == true;
+        if gone {
+            break;
+        }
+        assert!(Instant::now() < deadline, "never reloaded");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    // Never the node's own files: refused before it goes, and the page stays where it is.
+    rig.broker.input(
+        &id,
+        input(json!({ "kind": "navigate", "url": "file:///etc/passwd" })),
+    );
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(at(other.clone()).await, other);
+    rig.broker
+        .control(&id, BrowserControlTo::Agent, "human:desk");
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_handback() {
     use fleetd_contracts::browser::{BrowserControlTo, BrowserInput, BrowserSessionId};

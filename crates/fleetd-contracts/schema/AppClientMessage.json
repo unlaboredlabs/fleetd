@@ -297,6 +297,64 @@
             "text"
           ],
           "type": "object"
+        },
+        {
+          "description": "Goes to `url` in the page, as an address bar does: an `http` or `https` URL; the node refuses any other.\nA browser's only: a device's screen ignores it, as it does the three below.",
+          "properties": {
+            "kind": {
+              "const": "navigate",
+              "type": "string"
+            },
+            "url": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Back a page in the page's history.",
+          "properties": {
+            "kind": {
+              "const": "back",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Forward a page in the page's history.",
+          "properties": {
+            "kind": {
+              "const": "forward",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Loads the page again.",
+          "properties": {
+            "kind": {
+              "const": "reload",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
         }
       ]
     },

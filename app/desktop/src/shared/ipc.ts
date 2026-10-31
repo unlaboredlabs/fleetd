@@ -293,6 +293,11 @@ export const BrowserInput = z.discriminatedUnion("kind", [
     modifiers: modifiers.optional(),
   }),
   z.strictObject({ kind: z.literal("text"), text: z.string().min(1).max(10_000) }),
+  // The address bar's: the node goes only to an http or https URL.
+  z.strictObject({ kind: z.literal("navigate"), url: z.string().min(1).max(2048) }),
+  z.strictObject({ kind: z.literal("back") }),
+  z.strictObject({ kind: z.literal("forward") }),
+  z.strictObject({ kind: z.literal("reload") }),
 ]);
 
 /** A session to open in a window of its own; main builds the route from these, never from a URL the page sends. */

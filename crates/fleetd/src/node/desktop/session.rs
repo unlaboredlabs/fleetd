@@ -623,5 +623,10 @@ fn person_input(x: &X, input: BrowserInput) -> Result<(), String> {
             x.sync()
         }
         BrowserInput::Text { text } => x.type_text(text.as_str()),
+        // A browser's address bar: a desktop has none.
+        BrowserInput::Navigate { .. }
+        | BrowserInput::Back
+        | BrowserInput::Forward
+        | BrowserInput::Reload => Ok(()),
     }
 }

@@ -269,6 +269,63 @@ section + section .group {
 .yours .url {
   color: var(--bg);
 }
+/* A browser that is yours: its address bar in the frame's bar, in the bar's own colours. */
+.address {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-inline-start: calc(-1 * var(--space-1));
+}
+.navButton {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: default;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.navButton svg {
+  width: 14px;
+  height: 14px;
+}
+.navButton:hover {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+.navButton:focus-visible {
+  outline: 1px solid currentColor;
+  outline-offset: -1px;
+}
+.addressInput {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  margin-inline-start: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  outline: none;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.addressInput::placeholder {
+  color: inherit;
+  opacity: 0.6;
+}
+.addressInput:focus {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
 .yours .screen {
   cursor: default;
 }

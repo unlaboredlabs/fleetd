@@ -709,6 +709,15 @@ export type BrowserInput = {
 } | {
   kind: "text";
   text: string;
+} | {
+  kind: "navigate";
+  url: string;
+} | {
+  kind: "back";
+} | {
+  kind: "forward";
+} | {
+  kind: "reload";
 };
 
 /** A stored file of a recording. */

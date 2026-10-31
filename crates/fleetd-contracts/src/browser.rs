@@ -837,6 +837,15 @@ pub enum BrowserInput {
     },
     /// Text typed or pasted at once.
     Text { text: Text<1, 10_000> },
+    /// Goes to `url` in the page, as an address bar does: an `http` or `https` URL; the node refuses any other.
+    /// A browser's only: a device's screen ignores it, as it does the three below.
+    Navigate { url: Text<1, 2048> },
+    /// Back a page in the page's history.
+    Back,
+    /// Forward a page in the page's history.
+    Forward,
+    /// Loads the page again.
+    Reload,
 }
 
 /// Who should drive a live session: `human` takes it over from the agent; `agent` hands it back, and the session is

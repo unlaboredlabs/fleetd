@@ -189,6 +189,11 @@ pub fn device_input(input: &BrowserInput, pressed: &mut bool) -> Option<Input> {
             }
         }
         BrowserInput::Text { text } => Some(Input::Text(text.to_string())),
+        // A browser's address bar: a device's screen has none.
+        BrowserInput::Navigate { .. }
+        | BrowserInput::Back
+        | BrowserInput::Forward
+        | BrowserInput::Reload => None,
     }
 }
 
