@@ -96,6 +96,10 @@ let repoAnswers: Record<string, Settings>;
 let navi: boolean;
 /** navi_approvals fails this many more times. */
 let approvalsFail: number;
+/** A frame from the hub, once rendered. */
+let send: (frame: HubFrame) => void;
+/** How long the hub takes over a call that ends the list above. */
+let readMs: number;
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -109,6 +113,7 @@ beforeEach(() => {
   repoAnswers = {};
   navi = false;
   approvalsFail = 0;
+  readMs = 0;
   window.location.hash = "#/settings/projects?for=devbox/p1";
   vi.stubGlobal("fleetd", {
     platform: "linux",
@@ -175,13 +180,19 @@ const render = async (page: "project" | "instructions" = "project") => {
       if (tool === "project_repo_remove") {
         return Promise.resolve({ ok: true, output: { removed: api, cancelled: [], next: "Its checkout stays at /home/w/src/api on devbox, files and all." } });
       }
-      return Promise.resolve({ ok: true, output: tool === "project_settings_get" || tool === "project_settings_set" ? { settings: now } : { ok: true } });
+      const outcome: CallOutcome = { ok: true, output: tool === "project_settings_get" || tool === "project_settings_set" ? { settings: now } : { ok: true } };
+      return readMs === 0 ? Promise.resolve(outcome) : new Promise((r) => setTimeout(() => r(outcome), readMs));
     },
     subscribe: (l) => ((listener = l), () => undefined),
-    resync: () => Promise.resolve(),
+    // As main's hub client: a resync asks for a snapshot, which comes on the same link.
+    resync: () => {
+      setTimeout(() => listener(snapshotWith(repos, navi)), 0);
+      return Promise.resolve();
+    },
     focus: () => Promise.resolve(),
     chat: () => Promise.resolve(),
   };
+  send = (frame) => listener(frame);
   const layer = createDataLayer(hub);
   await act(async () => {
     root.render(
@@ -272,6 +283,33 @@ describe("Settings → Projects", () => {
     await click(toggle);
     await settle();
     expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", keepWorktrees: true });
+  });
+
+  it("keeps the page on screen through the resync a saved setting brings, never Loading… or a remount", async () => {
+    await render();
+    const page = document.querySelector('[data-screen="settings.projects"]');
+    const name = document.querySelector<HTMLInputElement>('input[aria-label="Project name"]');
+    const toggle = document.querySelector<HTMLElement>('section[aria-label="Worktrees"] [role="switch"]');
+    if (page === null || name === null || toggle === null) throw new Error("no page");
+    answers = [{ ...settings, keepWorktrees: true }];
+    await click(toggle);
+    await settle();
+    // The hub's project.settings event for the save makes the app resync (a snapshot on the same link), and the
+    // reads that follow take the hub a moment.
+    readMs = 50;
+    const reads = calls.filter((c) => c.tool === "project_settings_get").length;
+    await act(async () => {
+      send({ t: "event", event: { seq: 2, at: AT, type: "project.settings", summary: "storefront's settings changed", machineId: "devbox", projectId: "p1" } });
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(calls.filter((c) => c.tool === "project_settings_get").length).toBeGreaterThan(reads);
+    expect(page.textContent).not.toContain("Loading…");
+    expect(document.querySelector('[data-screen="settings.projects"]')).toBe(page);
+    expect(document.querySelector('input[aria-label="Project name"]')).toBe(name);
+    expect(toggle.isConnected).toBe(true);
+    await act(async () => new Promise((r) => setTimeout(r, 100)));
+    expect(document.querySelector('input[aria-label="Project name"]')).toBe(name);
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
   });
 
   it("turns the nightly memory refresh off, on by default, beside the project's memory", async () => {
