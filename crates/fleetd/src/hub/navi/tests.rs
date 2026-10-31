@@ -103,6 +103,8 @@ pub(super) async fn node(
                 SessionCall::RepoInspect { .. } => {
                     json!({ "ok": { "kind": "repo_facts", "exists": true, "isGit": false } })
                 }
+                // No policy file in the project.
+                SessionCall::ReadFile { .. } => json!({ "ok": { "kind": "file" } }),
                 _ => json!({ "ok": { "kind": "done" } }),
             };
             let reply = json!({ "t": "session_reply", "id": f.id, "result": result });
