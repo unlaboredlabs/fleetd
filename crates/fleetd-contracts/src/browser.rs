@@ -452,6 +452,8 @@ pub enum BrowserCall {
     Device(DeviceCall),
     PurchaseRequest(crate::purchase::PurchaseRequestCall),
     PurchaseFill(crate::purchase::PurchaseFillCall),
+    RequestSecureInput(crate::secure_input::SecureInputCall),
+    SecureInputFill(crate::secure_input::SecureInputFillCall),
 }
 
 impl BrowserCall {
@@ -465,6 +467,8 @@ impl BrowserCall {
             Self::Device(_) => "device",
             Self::PurchaseRequest(_) => "purchase_request",
             Self::PurchaseFill(_) => "purchase_fill",
+            Self::RequestSecureInput(_) => "request_secure_input",
+            Self::SecureInputFill(_) => "secure_input_fill",
         }
     }
 }
@@ -696,6 +700,8 @@ pub enum BrowserCallResult {
     Device(DeviceDone),
     PurchaseRequest(PurchaseAsked),
     PurchaseFill(Filled),
+    RequestSecureInput(crate::secure_input::SecureInputAsked),
+    SecureInputFill(Filled),
 }
 
 /// A purchase the person was asked to approve: its request, and what to do next.

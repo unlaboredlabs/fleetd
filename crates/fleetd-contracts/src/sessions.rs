@@ -300,11 +300,14 @@ pub enum SessionCall {
         project_id: ProjectId,
         call: crate::telegram::TelegramCall,
     },
-    /// The Credit Card items the person's token reads, for a Navi's card picker: their references and names, never a
-    /// card's details. Only nodes listing [`crate::node_link::CAP_ONEPASSWORD_CARDS`] get it.
+    /// The Credit Card items a token reads, for a Navi's card picker: their references and names, never a card's
+    /// details. The token is the one the Navi's fills use: its project's own `OP_SERVICE_ACCOUNT_TOKEN` (`projectId`),
+    /// else the person's. Only nodes listing [`crate::node_link::CAP_ONEPASSWORD_CARDS`] get it.
     #[serde(rename = "onepassword_cards", rename_all = "camelCase")]
     OnePasswordCards {
         person_id: crate::people::PersonId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project_id: Option<ProjectId>,
     },
     /// The models the hub's API key offers, from the Models API at its endpoint. Only nodes listing
     /// [`crate::node_link::CAP_CLAUDE_MODELS`] get it.

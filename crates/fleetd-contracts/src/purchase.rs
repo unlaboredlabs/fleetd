@@ -32,9 +32,10 @@ brand!(
 );
 
 brand!(
-    /// A website's host, lowercase, with no scheme, port or path: `shop.example.com`.
+    /// A website's host, lowercase, with no scheme, port or path, of two labels at least: `shop.example.com`, never a
+    /// bare suffix such as `com`, which every shop is on.
     ShopDomain, name = "ShopDomain",
-    pattern = r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){0,20}$"
+    pattern = r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){1,20}$"
 );
 
 brand!(
@@ -221,6 +222,7 @@ mod tests {
             json!({ "domain": "https://hotel.example.com", "name": "x" }),
             json!({ "domain": "Hotel.example.com", "name": "x" }),
             json!({ "domain": "hotel.example.com/pay", "name": "x" }),
+            json!({ "domain": "com", "name": "x" }),
         ] {
             assert!(
                 serde_json::from_value::<PurchaseShop>(bad.clone()).is_err(),

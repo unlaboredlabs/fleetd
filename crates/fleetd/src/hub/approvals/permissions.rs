@@ -558,6 +558,7 @@ impl Approvals {
                 }),
                 preview_config: None,
                 purchase: None,
+                secure_input: None,
                 at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
                 at_ms: now,
             })

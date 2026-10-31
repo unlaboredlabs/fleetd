@@ -3213,6 +3213,9 @@ output!(TelegramRemoveOutput { ok: True });
 input!(OnePasswordCardsInput {
     /// Where to list them; default: the first machine online that holds the token.
     machine_id: Option<MachineId>,
+    /// The Navi the card is for: listed on its machine with the token its fills use (its own
+    /// OP_SERVICE_ACCOUNT_TOKEN variable, else the caller's).
+    navi: Option<ProjectRef>,
 });
 output!(OnePasswordCardsOutput {
     machine_id: MachineId,

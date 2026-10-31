@@ -434,13 +434,19 @@ pub fn request_outcome(r: &HumanRequest) -> (String, String) {
         ),
         (_, _, Some(p)) => format!("tool prompt {} {}", p.tool_name, clip(&p.summary, 120)),
         _ if r.preview_config.is_some() => "your proposed preview setting".into(),
-        _ => match &r.purchase {
-            Some(p) => format!(
+        _ => match (&r.purchase, &r.secure_input) {
+            (Some(p), _) => format!(
                 "your purchase at {} ({} {})",
                 p.shop.domain, p.total.amount, p.total.currency
             ),
-            None => "request".into(),
+            (_, Some(i)) => format!("your secure input {} on {}", i.label, i.site.domain),
+            _ => "request".into(),
         },
+    };
+    // A secure input's secret is its own: it fills a field, never a sink to read.
+    let what = match &r.secure_input {
+        Some(i) => format!("your secure input {} on {}", i.label, i.site.domain),
+        None => what,
     };
     let evidence = r.evidence.as_ref().map_or("", |e| e.as_str());
     let order = r
@@ -449,6 +455,18 @@ pub fn request_outcome(r: &HumanRequest) -> (String, String) {
         .and_then(|s| parse_secret_sink(s.sink.as_str()))
         .and_then(|s| s.order);
     let outcome = match r.state {
+        RequestState::Stored if r.secure_input.is_some() => {
+            "the person entered it and fleetd filled it into that field; you never see it. Carry on with the page"
+                .to_owned()
+        }
+        RequestState::Approved if r.secure_input.is_some() => format!(
+            "approved: call secure_input_fill with requestId {} within {} minutes, on that page",
+            r.request_id,
+            fleetd_contracts::secure_input::FILL_WINDOW_MINUTES
+        ),
+        RequestState::Denied | RequestState::Withdrawn if r.secure_input.is_some() => {
+            "not given; don't get it another way: say in the chat that you didn't".to_owned()
+        }
         RequestState::Approved if r.purchase.is_some() => format!(
             "approved{}: call purchase_fill with requestId {} within {} minutes, on that checkout with its card \
              fields showing, then click Pay yourself",
@@ -459,7 +477,8 @@ pub fn request_outcome(r: &HumanRequest) -> (String, String) {
             fleetd_contracts::purchase::FILL_WINDOW_MINUTES
         ),
         RequestState::Denied if r.purchase.is_some() => format!(
-            "denied{}{}; don't buy it, nor another way: say in the chat that you didn't",
+            "denied{}{}; don't buy it, nor another way: say in the chat that you didn't, and end the browser session \
+             (session_end) once you're done with it",
             r.answered_by
                 .as_deref()
                 .map_or(String::new(), |b| format!(" by {b}")),

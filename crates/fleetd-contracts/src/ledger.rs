@@ -460,6 +460,9 @@ pub struct HumanRequest {
     /// approval of a Navi's purchase (purchase_request), instead of a gated run: approving it lets the Navi's node fill
     /// its card into that checkout once. Only a person answers it, in every approval mode.
     pub purchase: Option<crate::purchase::Purchase>,
+    /// A Navi's secure input (request_secure_input): on a secret, what the person types and where it fills (its sink
+    /// is `fill:`); on an approval, a 1Password field the Navi's node fills once approved.
+    pub secure_input: Option<crate::secure_input::SecureInput>,
     /// What happened, in one line: "fingerprint ab12cd34", "exit 0 on devbox, approved by human:desk", or why it did
     /// not run (and so is open again).
     pub evidence: Option<Text<0, 2000>>,
@@ -491,6 +494,15 @@ pub fn request_kind_rule(r: &HumanRequest) -> Result<(), String> {
             {
                 return Err("a secret request has a secret and nothing else".into());
             }
+            let fills = r
+                .secret
+                .as_ref()
+                .is_some_and(|s| s.sink.starts_with("fill:"));
+            if fills != r.secure_input.is_some() {
+                return Err(
+                    "a secret request has a secure input exactly when its sink is fill:".into(),
+                );
+            }
             if let Some(secret) = &r.secret
                 && secret.env_name.is_some()
                 && !secret.sink.starts_with("env:")
@@ -505,10 +517,11 @@ pub fn request_kind_rule(r: &HumanRequest) -> Result<(), String> {
                 r.permission.is_some(),
                 r.preview_config.is_some(),
                 r.purchase.is_some(),
+                r.secure_input.is_some(),
             ];
             if r.secret.is_some() || held.iter().filter(|h| **h).count() != 1 {
                 return Err(
-                    "an approval has exactly one of a gated run, a tool prompt, a preview setting and a purchase"
+                    "an approval has exactly one of a gated run, a tool prompt, a preview setting, a purchase and a secure input"
                         .into(),
                 );
             }

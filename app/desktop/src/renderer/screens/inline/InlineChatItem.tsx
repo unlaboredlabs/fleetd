@@ -128,7 +128,7 @@ export function InlineChatItem({ item: posted, asker }: { item: ChatItem; asker?
   const item = withRequest(posted, listed);
   // A read says something about this request only if it lists it (it holds the hub's newest 100).
   const read = useReadOf("requests_list", REQUESTS);
-  return item.kind === "secret_request" ? <SecretItem item={item} read={listed === undefined ? undefined : read} /> : <ApprovalItem item={item} read={listed === undefined ? undefined : read} asker={asker} />;
+  return item.kind === "secret_request" ? <SecretItem item={item} read={listed === undefined ? undefined : read} asker={asker} /> : <ApprovalItem item={item} read={listed === undefined ? undefined : read} asker={asker} />;
 }
 
 /** An open item while there is no fresh connection: what is shown may be stale, and nothing can be answered. */
@@ -143,7 +143,8 @@ function OfflineLine({ text }: { text: string }) {
 }
 
 /** An answered item's one line: what happened, then what it was about; a click opens the whole card. */
-function Folded({ outcome, about, open, onToggle, focus, onFocused }: { outcome: Outcome; about: string; open: boolean; onToggle: () => void; focus: boolean; onFocused: () => void }) {
+/** `site`: the real domain a purchase or a secure input fills on, shown as written beside the name the Navi gave it. */
+function Folded({ outcome, about, site, open, onToggle, focus, onFocused }: { outcome: Outcome; about: string; site?: string | undefined; open: boolean; onToggle: () => void; focus: boolean; onFocused: () => void }) {
   const button = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
     if (!focus) return;
@@ -160,6 +161,13 @@ function Folded({ outcome, about, open, onToggle, focus, onFocused }: { outcome:
       <Truncate size="sm" tone="quiet" expand="none" className={cx(s.foldAbout)}>
         {marked(about)}
       </Truncate>
+      {site === undefined ? null : (
+        <span className={s.foldSite}>
+          <InlineCode>
+            <Exact text={site} ltr />
+          </InlineCode>
+        </span>
+      )}
     </button>
   );
 }
@@ -192,6 +200,7 @@ function Shell({
   requestId,
   outcome,
   about,
+  site,
   refocus,
   onFocused,
   open,
@@ -204,6 +213,7 @@ function Shell({
   requestId: string;
   outcome: Outcome | undefined;
   about: string;
+  site?: string | undefined;
   refocus: boolean;
   onFocused: () => void;
   open: boolean;
@@ -221,13 +231,14 @@ function Shell({
   }
   return (
     <section ref={ref} className={s.answered} data-request={requestId} aria-label={label}>
-      <Folded outcome={outcome} about={about} open={open} onToggle={onToggle} focus={refocus} onFocused={onFocused} />
+      <Folded outcome={outcome} about={about} site={site} open={open} onToggle={onToggle} focus={refocus} onFocused={onFocused} />
       {open ? <div className={s.item}>{children}</div> : null}
     </section>
   );
 }
 
-function SecretItem({ item, read }: { item: SecretRequestItem; read: number | undefined }) {
+function SecretItem({ item, read, asker }: { item: SecretRequestItem; read: number | undefined; asker: string | undefined }) {
+  const input = item.secureInput;
   const layer = useDataLayer();
   const machines = useMachines();
   const live = useLive();
@@ -255,19 +266,24 @@ function SecretItem({ item, read }: { item: SecretRequestItem; read: number | un
   };
 
   return (
-    <Shell ref={section} label="Secret for the lead" requestId={item.requestId} outcome={outcome} about={secretTitle(item)} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })}>
+    <Shell ref={section} label={input === undefined ? "Secret for the lead" : "Secure input"} requestId={item.requestId} outcome={outcome} about={secretTitle(item)} site={input?.site.domain} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })}>
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
-          Secret
+          {input === undefined ? "Secret" : "Secure input"}
         </Text>
         <InlineCode>
-          <Exact text={item.name} ltr />
+          <Exact text={input === undefined ? item.name : input.site.domain} ltr />
         </InlineCode>
       </div>
       <Text as="p" strong className={cx(s.title)}>
-        {prose(item.text)}
+        {input === undefined ? prose(item.text) : marks(`${asker ?? "Navi"} needs ${input.label} for ${input.site.name}`)}
       </Text>
-      <HiddenWarning fields={[item.name, target.ok ? target.where : undefined]} lines={[item.text, item.note]} />
+      {input === undefined ? null : (
+        <Text as="p" size="sm" className={cx(s.line)}>
+          {marks(input.why)}
+        </Text>
+      )}
+      <HiddenWarning fields={[item.name, target.ok ? target.where : undefined, input?.site.name, input?.site.domain, input?.label]} lines={[item.text, item.note, input?.why]} />
       {item.note === undefined || item.note.trim() === "" ? null : (
         <Text as="p" size="sm" tone="quiet" className={cx(s.line)}>
           {prose(item.note)}
@@ -282,13 +298,13 @@ function SecretItem({ item, read }: { item: SecretRequestItem; read: number | un
       ) : (
         <>
           <Text as="p" size="sm" className={cx(s.line)}>
-            {marks(`It is saved ${target.where}.`)}
+            {marks(`It is ${input === undefined ? "saved" : "typed"} ${target.where}.`)}
           </Text>
           <div className={s.row}>
             <Input
               type="password"
-              aria-label="Secret value"
-              placeholder="Paste or type the value"
+              aria-label={input === undefined ? "Secret value" : input.label}
+              placeholder={input === undefined ? "Paste or type the value" : `Type the ${input.label.toLowerCase()}`}
               autoComplete="off"
               className={cx(s.field)}
               disabled={!live || busy}
@@ -303,12 +319,14 @@ function SecretItem({ item, read }: { item: SecretRequestItem; read: number | un
               }}
             />
             <Button variant="primary" disabled={draft === "" || !live || busy} onClick={save}>
-              {busy ? "Saving…" : "Save secret"}
+              {busy ? (input === undefined ? "Saving…" : "Filling…") : input === undefined ? "Save secret" : "Fill it in"}
             </Button>
           </div>
           <FailureLine failed={failed} disabled={!live || busy} focus={refocus} onFocused={focused} onRetry={save} />
           <Text as="p" size="xs" tone="quiet" className={cx(s.line)}>
-            {`Sealed on this computer to ${target.machine}'s key, so only ${target.machine} can open it. fleetd never shows it again. To skip it, say so in the chat.`}
+            {input === undefined
+              ? `Sealed on this computer to ${target.machine}'s key, so only ${target.machine} can open it. fleetd never shows it again. To skip it, say so in the chat.`
+              : `Sealed on this computer to ${target.machine}'s key. fleetd types it into the field once; ${asker ?? "Navi"} never sees it. To skip it, say so in the chat.`}
           </Text>
         </>
       )}
@@ -351,7 +369,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
   const { local, shown, busy, failed, confirming, setConfirming, run, refocus, focused } = useSent(key, item, read, machine, section);
   const outcome = approvalOutcome(shown);
   const offline = approvalOffline(shown.state, live);
-  const { gated, permission, previewConfig, purchase } = item;
+  const { gated, permission, previewConfig, purchase, secureInput } = item;
   const preview = permission?.preview;
   // The Navi's approval checker judged it first: why it asks, or why it refused it (the person may approve it anyway).
   const checker = permission?.checker;
@@ -413,11 +431,13 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
   const destructive = blocked || gated?.class === "irreversible" || preview?.action === "delete" || preview?.action === "spend" || purchase !== undefined;
   const navi = asker ?? "Navi";
   return (
-    <Shell ref={section} label={purchase !== undefined ? "Purchase to approve" : previewConfig === undefined ? "Command to approve" : "Try it setting to approve"} requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
+    <Shell ref={section} label={purchase !== undefined ? "Purchase to approve" : previewConfig === undefined ? "Command to approve" : "Try it setting to approve"} requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} site={(purchase?.shop ?? secureInput?.site)?.domain} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
           {purchase !== undefined
             ? "Purchase"
+            : secureInput !== undefined
+            ? "Secure input · 1Password"
             : previewConfig !== undefined
             ? "Try it setting"
             : preview !== undefined
@@ -445,6 +465,8 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
       <Text as="p" strong className={cx(s.title)}>
         {purchase !== undefined
           ? marks(`${navi} wants to pay ${totalWords(purchase.total)} at ${purchase.shop.name}`)
+          : secureInput !== undefined
+          ? marks(`${navi} wants to fill ${secureInput.label} for ${secureInput.site.name} from 1Password`)
           : previewConfig !== undefined
           ? prose(previewConfig.why)
           : gated !== undefined
@@ -489,6 +511,10 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
           purchase?.shop.name,
           purchase?.shop.domain,
           ...(purchase?.items ?? []).map((i) => i.name),
+          secureInput?.site.name,
+          secureInput?.site.domain,
+          secureInput?.label,
+          secureInput?.ref,
         ]}
         lines={[previewConfig?.why, gated?.reason, previewConfig === undefined ? undefined : configLines(previewConfig.config).join("\n"), permission?.summary, preview?.input]}
       />
@@ -534,6 +560,21 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
             </Text>
           </>
         ) : null}
+        {secureInput !== undefined ? (
+          <>
+            <Text size="sm">{marks(secureInput.why)}</Text>
+            <Text size="xs" tone="quiet">
+              <InlineCode>
+                <Exact text={secureInput.ref ?? ""} ltr />
+              </InlineCode>
+              {" into "}
+              <InlineCode>
+                <Exact text={secureInput.site.domain} ltr />
+              </InlineCode>
+              {`. fleetd fills it once; ${navi} never sees it.`}
+            </Text>
+          </>
+        ) : null}
         {/* A proposed Try it setting: its commands as they would run, in order. */}
         {previewConfig !== undefined ? (
           <Code code={configLines(previewConfig.config).join("\n")} bare>
@@ -561,7 +602,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
           <Text size="xs" tone="quiet">
             {`${configWords(previewConfig.config)} Approved, it is how this project runs Try it on ${machine}; nothing runs until someone asks.`}
           </Text>
-        ) : purchase !== undefined ? null : (
+        ) : purchase !== undefined || secureInput !== undefined ? null : (
           <Text size="xs" tone="quiet">
             on {machine}
             {gated?.cwd === undefined ? null : (
@@ -615,10 +656,10 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
       ) : (
         <div className={s.actions}>
           <Button ref={approveButton} variant={destructive ? "danger" : "primary"} disabled={!canAnswer} onClick={approve}>
-            {purchase !== undefined ? `Pay ${totalWords(purchase.total)}` : words !== undefined ? words.yes : item.note === undefined ? "Approve" : "Approve again"}
+            {purchase !== undefined ? `Pay ${totalWords(purchase.total)}` : secureInput !== undefined ? "Fill it" : words !== undefined ? words.yes : item.note === undefined ? "Approve" : "Approve again"}
           </Button>
           <Button variant="secondary" disabled={!canAnswer} onClick={() => answer("deny")}>
-            {purchase !== undefined ? "Don't buy" : words !== undefined ? words.no : "Deny"}
+            {purchase !== undefined ? "Don't buy" : secureInput !== undefined ? "Don't fill" : words !== undefined ? words.no : "Deny"}
           </Button>
           <Text size="xs" tone="quiet" className={cx(s.whenFocused)}>
             {purchase !== undefined ? "Enter: Pay · Esc: Don't buy" : words === undefined ? "Enter approves · Esc denies" : `Enter: ${words.yes} · Esc: ${words.no}`}

@@ -46,6 +46,7 @@ pub mod push;
 pub mod repos;
 pub mod schema;
 pub mod secrets;
+pub mod secure_input;
 pub mod sessions;
 pub mod setup;
 pub mod skills;

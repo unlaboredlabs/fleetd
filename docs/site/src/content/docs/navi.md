@@ -194,8 +194,8 @@ until you approve a [purchase](#purchases).
 A Navi can book a hotel or a flight, or buy something online, with a card you keep in 1Password. You approve each
 purchase; fleetd fills the card into the checkout, and the Navi never sees it.
 
-1. **Pick a card.** In the Navi's settings, **Payments** lists the Credit Card items your 1Password token reads
-   (Settings › You › 1Password). Pick one. fleetd keeps only its `op://vault/item` reference.
+1. **Pick a card.** In the Navi's settings, **Payments** lists the Credit Card items the Navi's 1Password token reads:
+   its own `OP_SERVICE_ACCOUNT_TOKEN` variable if it has one, else yours (Settings › You › 1Password). Pick one. fleetd keeps only its `op://vault/item` reference.
 2. **The Navi asks.** At the checkout's payment step it calls `purchase_request` with the shop's domain and name, the
    total and currency, and what is in the basket. The page must be on that domain. Your chat shows a purchase card:
    the shop, the total, each item, and the card. It always asks you, whatever approval mode the Navi runs in: no
@@ -213,10 +213,27 @@ purchase; fleetd fills the card into the checkout, and the Navi never sees it.
 | What the Navi sees | Never the card's number, expiry or code. From the fill on, its browser session refuses to read values back (scripts of its own, `get value`, page snapshots). Every answer it gets, its transcript and the recording are scrubbed of the card. Filled fields show as blurred dots in the video, the live view and screenshots. |
 | Wrong shop | A request whose domain isn't the page's is refused. A fill on any other site gets nothing; the approval stays good for the shop until its 15 minutes run out. |
 | Never | Paying an exchange or a broker (trading, crypto) or a money-transfer service is refused, even approved. That's decided by who is paid, not by what the basket says: an airport transfer is a purchase like any other. A command of a payment CLI (`stripe`, `shopify`, `paypal` and the like) through `gated_run` only you can approve. |
-| While you decide | The browser session doesn't close for being idle, so a held room or fare stays held, for up to 2 hours. |
+| While you decide | The browser session doesn't close for being idle, so a held room or fare stays held, until the Navi drives it again after your answer, for up to 2 hours. An approval whose card isn't filled within 15 minutes ends as expired. |
 
 **Payments** in the Navi's settings also lists every purchase it asked for: the shop, the amount, when, and what you
 said.
+
+## Secure input {#secure-input}
+
+Some pages need something only you may give, which the Navi must never see: a passport or ID number, a code texted to
+you. The Navi doesn't ask for it in the chat. On that page it calls `request_secure_input` with the site, the field and
+why, and fleetd checks the page is on that site and the field is there.
+
+- **You type it.** The chat shows a sealed field: the site, what it is and why. What you type is sealed on your device
+  to the Navi's machine, whose node types it straight into that field on that site (in its frames too), once. The
+  phone app shows what is asked and sends you to the desktop app to enter it, and a Telegram chat never asks for the
+  value, since a chat there isn't sealed.
+- **From 1Password.** If it's in an Identity, Passport, Driver License or Social Security item, the Navi names that
+  field (`op://vault/item/field`). You approve; within 15 minutes its node fills it from 1Password, once.
+
+The value never reaches the Navi, the chat, a transcript, a recording or a log. From the fill on, the Navi's browser
+session refuses to read values back, and the field shows as blurred dots. A page that moved to another site gets
+nothing.
 
 ## Sign-ins {#sign-ins}
 

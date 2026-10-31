@@ -15,6 +15,7 @@
 //! ([`chat_item`]).
 pub mod permissions;
 pub mod purchases;
+pub mod secure_input;
 pub mod store;
 pub mod tools;
 
@@ -81,17 +82,28 @@ pub struct Caller<'a> {
     pub allows_operate: &'a (dyn Fn(&str) -> bool + Sync),
 }
 
-/// The sink's machine, and an `order:` sink's order.
+/// The sink's machine, an `order:` sink's order, and a `fill:` sink's browser session.
 pub struct ParsedSink {
     pub machine_id: String,
     pub order: Option<String>,
+    pub fill: Option<String>,
 }
 
 pub fn parse_secret_sink(sink: &str) -> Option<ParsedSink> {
+    if let Some(p) = fleetd_contracts::secrets::parse_secret_sink(sink)
+        .filter(|p| p.kind == fleetd_contracts::secrets::SecretSinkKind::Fill)
+    {
+        return Some(ParsedSink {
+            machine_id: p.machine_id.to_string(),
+            order: None,
+            fill: Some(p.path),
+        });
+    }
     if let Some(c) = ORDER_SINK.captures(sink) {
         return Some(ParsedSink {
             machine_id: c[1].to_string(),
             order: Some(c[2].to_string()),
+            fill: None,
         });
     }
     let c = SINK.captures(sink)?;
@@ -111,6 +123,7 @@ pub fn parse_secret_sink(sink: &str) -> Option<ParsedSink> {
     Some(ParsedSink {
         machine_id: c[2].to_string(),
         order: None,
+        fill: None,
     })
 }
 
@@ -360,6 +373,7 @@ pub fn chat_item(r: &HumanRequest) -> ChatItem {
                 .unwrap_or_else(|| fleetd_contracts::prim::Line::unchecked("a secret")),
             sink: secret.sink.clone(),
             env_name: secret.env_name.clone(),
+            secure_input: r.secure_input.clone().map(Box::new),
             state: match r.state {
                 RequestState::Stored => SecretRequestState::Stored,
                 RequestState::Withdrawn => SecretRequestState::Withdrawn,
@@ -377,6 +391,7 @@ pub fn chat_item(r: &HumanRequest) -> ChatItem {
             permission: r.permission.clone().map(Box::new),
             preview_config: r.preview_config.clone().map(Box::new),
             purchase: r.purchase.clone().map(Box::new),
+            secure_input: r.secure_input.clone().map(Box::new),
             state: match r.state {
                 RequestState::Approved => CommandApprovalState::Approved,
                 RequestState::Denied => CommandApprovalState::Denied,
@@ -415,7 +430,11 @@ impl Approvals {
     /// the threads' follower (tool prompts) and the removed-projects follower.
     pub async fn serve(self: Arc<Self>) {
         self.reopen_unfinished().await;
-        tokio::join!(self.clone().follow_threads(), self.follow_removals());
+        tokio::join!(
+            self.clone().follow_threads(),
+            self.clone().follow_removals(),
+            self.expire_loop()
+        );
     }
 
     /// Approved commands the hub never saw finish go back to the person: never run late, never silently lost.
@@ -567,6 +586,13 @@ impl Approvals {
                 Some("Use env:<machine>:<absolute path> or file:<machine>:<absolute path>."),
             ));
         };
+        if sink.fill.is_some() {
+            return Err(refuse(
+                "invalid",
+                "A fill: sink is a Navi's secure input, which its browser session asks for.",
+                Some("A Navi calls request_secure_input on the page with the field instead."),
+            ));
+        }
         if self.deps.hub.box_key(&sink.machine_id).await.is_none() {
             return Err(refuse(
                 "not_found",
@@ -596,6 +622,7 @@ impl Approvals {
             permission: None,
             preview_config: None,
             purchase: None,
+            secure_input: None,
             at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
         })
@@ -815,12 +842,22 @@ impl Approvals {
                 r.evidence = Some(fleetd_contracts::prim::Text::unchecked(format!(
                     "fingerprint {print}"
                 )));
+                if let Some(input) = r.secure_input.as_mut() {
+                    input.filled_at = Some(fleetd_contracts::ids::Timestamp(at.clone()));
+                }
                 r.answered_at = Some(fleetd_contracts::ids::Timestamp(at));
                 r.answered_by = Some(by);
                 r.answered_by_person = person;
             })
             .await?;
         self.deps.hub.wake_request(&saved).await;
+        if let Some(input) = &saved.secure_input {
+            return Ok(json!({
+                "requestId": id,
+                "fingerprint": fingerprint,
+                "next": format!("Filled into {} on {}; the Navi never sees it.", input.label, input.site.domain),
+            }));
+        }
         Ok(json!({
             "requestId": id,
             "fingerprint": fingerprint,
@@ -879,6 +916,7 @@ impl Approvals {
             permission: None,
             preview_config: None,
             purchase: None,
+            secure_input: None,
             at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
         })
@@ -907,6 +945,7 @@ impl Approvals {
             permission: None,
             preview_config: Some(call),
             purchase: None,
+            secure_input: None,
             at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
         })
@@ -1015,8 +1054,8 @@ impl Approvals {
         if approve && let Some(proposed) = &answered.preview_config {
             return self.save_preview(&answered, &proposed.config).await;
         }
-        // A purchase runs nothing here: the Navi hears the answer, and its node fills the card if it was approved.
-        if answered.purchase.is_some() {
+        // A purchase or a secure input runs nothing here: the Navi hears the answer, and its node fills it if approved.
+        if answered.purchase.is_some() || answered.secure_input.is_some() {
             self.deps.hub.wake_request(&answered).await;
             return Ok(answered);
         }

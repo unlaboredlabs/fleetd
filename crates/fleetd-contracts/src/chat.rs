@@ -139,6 +139,8 @@ pub struct SecretRequestItem {
     pub sink: SecretSink,
     /// An `env:` sink: the variable it writes, when not the one `name` gives (`secrets::secret_env_name`).
     pub env_name: Option<EnvName>,
+    /// A Navi's secure input (`fill:` sink): the site, the field and why; what is typed fills that field, once.
+    pub secure_input: Option<Box<crate::secure_input::SecureInput>>,
     pub state: SecretRequestState,
     /// Once stored.
     pub fingerprint: Option<SecretFingerprint>,
@@ -184,6 +186,8 @@ pub struct CommandApprovalItem {
     /// A Navi's purchase (purchase_request): the shop, the total, what it buys and the card. Approved, the Navi's node
     /// fills the card into that checkout once. Boxed, as `previewConfig` is.
     pub purchase: Option<Box<crate::purchase::Purchase>>,
+    /// A Navi's secure input from a 1Password field: approved, its node fills that field once.
+    pub secure_input: Option<Box<crate::secure_input::SecureInput>>,
     pub state: CommandApprovalState,
     pub exit_code: Option<i64>,
     /// The end of the output, once it ran.

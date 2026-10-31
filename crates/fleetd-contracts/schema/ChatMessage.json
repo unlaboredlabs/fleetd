@@ -831,6 +831,10 @@
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
         },
+        "secureInput": {
+          "$ref": "#/$defs/SecureInput",
+          "description": "A Navi's secure input from a 1Password field: approved, its node fills that field once."
+        },
         "state": {
           "$ref": "#/$defs/CommandApprovalState"
         }
@@ -1096,6 +1100,10 @@
     },
     "OpItemReference": {
       "pattern": "^op://[^/?\\r\\n]+/[^/?\\r\\n]+$",
+      "type": "string"
+    },
+    "OpReference": {
+      "pattern": "^op://[^/?\\r\\n]+/[^/?\\r\\n]+(/[^/?\\r\\n]+){1,2}(\\?attribute=[a-z]+)?$",
       "type": "string"
     },
     "PersonId": {
@@ -1490,6 +1498,10 @@
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
         },
+        "secureInput": {
+          "$ref": "#/$defs/SecureInput",
+          "description": "A Navi's secure input (`fill:` sink): the site, the field and why; what is typed fills that field, once."
+        },
         "sink": {
           "$ref": "#/$defs/SecretSink"
         },
@@ -1525,11 +1537,76 @@
     "SecretSink": {
       "type": "string"
     },
+    "SecureInput": {
+      "description": "A secure input as its request keeps it.",
+      "properties": {
+        "filledAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it was filled; absent until then. A secure input fills once."
+        },
+        "label": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "ref": {
+          "$ref": "#/$defs/OpReference"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId",
+          "description": "The browser session that asked, the one it fills in."
+        },
+        "site": {
+          "$ref": "#/$defs/SecureInputSite"
+        },
+        "target": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "why": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "site",
+        "target",
+        "label",
+        "why",
+        "sessionId"
+      ],
+      "type": "object"
+    },
+    "SecureInputSite": {
+      "description": "The site the field is on.",
+      "properties": {
+        "domain": {
+          "$ref": "#/$defs/ShopDomain",
+          "description": "The page's host: `passport.gov.example`. The value fills only on it (and its subdomains)."
+        },
+        "name": {
+          "description": "Its name, as it calls itself.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain",
+        "name"
+      ],
+      "type": "object"
+    },
     "SetupInput": {
       "type": "string"
     },
     "ShopDomain": {
-      "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){0,20}$",
+      "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){1,20}$",
       "type": "string"
     },
     "SkillName": {

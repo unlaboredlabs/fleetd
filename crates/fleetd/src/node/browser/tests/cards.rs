@@ -15,6 +15,10 @@ const CARD: &str = "op://Personal/Visa";
 const NUMBER: &str = "4242424242424242";
 const CVC: &str = "737";
 const HOLDER: &str = "Ada Devbox";
+/// A secure input the person types, and one from a Passport item.
+const TYPED: &str = "C01X00T47";
+const PASSPORT: &str = "P5551234X";
+const PASSPORT_REF: &str = "op://Personal/Passport/number";
 
 /// A fake 1Password holding one Credit Card item, Visa in Personal, for the session's token.
 struct FakeCards;
@@ -26,6 +30,22 @@ impl Vault for FakeCards {
             Err(CredError {
                 message: format!("no login {reference}"),
                 rate_limited: false,
+            })
+        })
+    }
+
+    fn identity(&self, reference: &str) -> CredFuture {
+        let known = reference == PASSPORT_REF;
+        Box::pin(async move {
+            if !known {
+                return Err(CredError {
+                    message: "no such item".into(),
+                    rate_limited: false,
+                });
+            }
+            Ok(super::super::onepassword::Credential {
+                value: Zeroizing::new(PASSPORT.into()),
+                urls: Vec::new(),
             })
         })
     }
@@ -117,6 +137,33 @@ async fn checkout() -> (String, Arc<std::sync::Mutex<Vec<String>>>, AbortOnDrop)
                            parent.postMessage(await r.json(), '*'); });\
                          </script></body></html>"
                         .to_owned(),
+                    )
+                } else if head.starts_with("POST /typed") {
+                    kept.lock().unwrap().push(body);
+                    ("application/json", "{}".to_owned())
+                } else if head.starts_with("GET /passport") {
+                    // A field in the site's own frame, which says what it holds once typed in, and whether it shows.
+                    (
+                        "text/html",
+                        "<html><body><label>Passport number <input id=passport name=passport></label><script>\
+                         parent.postMessage({ ready: true }, '*');\
+                         passport.addEventListener('input', () => fetch('/typed', { method: 'POST', body: \
+                           JSON.stringify({ value: passport.value, \
+                             masked: getComputedStyle(passport).filter.includes('blur') }) }));\
+                         </script></body></html>"
+                            .to_owned(),
+                    )
+                } else if head.starts_with("GET /form") {
+                    // The visa form: a decoy frame on another site with a field of the same id first, then the site's own.
+                    (
+                        "text/html",
+                        format!(
+                            "<html><head><title>Visa form</title></head><body><h1>Visa application</h1>\
+                             <iframe id=decoy src='http://localhost:{port}/passport'></iframe>\
+                             <iframe id=own src='/passport'></iframe><script>let ready = 0;\
+                             addEventListener('message', (e) => {{ if (e.data && e.data.ready && ++ready === 2) \
+                               document.title = 'Form ready'; }});</script></body></html>"
+                        ),
                     )
                 } else if head.starts_with("GET /3ds") {
                     (
@@ -654,6 +701,15 @@ async fn a_card_fills_only_on_the_approved_shop() {
         .answer(&person, &id, true, None)
         .await
         .unwrap();
+    // Held while the person decided; the Navi's next browser command, once woken with the answer, ends the hold.
+    let session = rig.broker.live(THREAD).unwrap();
+    assert_eq!(session.idle_for(), Duration::ZERO);
+    rig.broker.item(
+        THREAD,
+        &command_item("agent-browser get title", "Checkout ready"),
+    );
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    assert!(session.idle_for() > Duration::ZERO, "no longer held");
 
     // The same checkout, on another site (localhost): refused, nothing typed, and the approval kept.
     let away = shop.replace("127.0.0.1", "localhost");
@@ -703,4 +759,254 @@ async fn a_card_fills_only_on_the_approved_shop() {
 
 fn convert(r: &ProjectRef) -> crate::hub::usage::ports::ProjectRef {
     crate::hub::usage::wire::convert(r).unwrap()
+}
+
+/// A Navi rig with the hub in process: its project a Navi with a card, the test hub's calls its lead's.
+async fn navi_rig() -> Option<(Rig, String, Arc<std::sync::Mutex<Vec<String>>>, AbortOnDrop)> {
+    let rig = rig_with(vec![(TOKEN_ENV.into(), TOKEN.into())]).await?;
+    let (site, kept, serving) = checkout().await;
+    rig.broker.set_vaults(vaults());
+    rig.navi(THREAD, "ada");
+    let hub = rig.hub.hub.clone();
+    hub.ops.bind(&hub);
+    let project = rig.hub.project.clone();
+    hub.db
+        .with(|c| {
+            crate::hub::navi::store::put(
+                c,
+                &project,
+                &fleetd_contracts::model::ProjectCreator {
+                    key_id: "k1".into(),
+                    name: "desk".into(),
+                },
+                None,
+                0,
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    *rig.hub.agent.lock().unwrap() = CallerAgent::Lead;
+    Some((rig, site, kept, serving))
+}
+
+fn secure(domain: &str, target: &str, reference: Option<&str>) -> Value {
+    let mut call = json!({
+        "op": "request_secure_input",
+        "site": { "domain": domain, "name": "Visa application" },
+        "target": target,
+        "label": "Passport number",
+        "why": "The visa form needs it to continue",
+    });
+    if let Some(reference) = reference {
+        call["ref"] = reference.into();
+    }
+    call
+}
+
+/// What the site's own frame got, once it got it.
+async fn typed(kept: &std::sync::Mutex<Vec<String>>) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let last = kept.lock().unwrap().last().cloned();
+        if let Some(body) = last {
+            return serde_json::from_str(&body).unwrap();
+        }
+        assert!(Instant::now() < deadline, "the site's frame got nothing");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn what_the_person_types_fills_the_sites_own_frame_once_and_the_navi_never_sees_it() {
+    let Some((rig, site, kept, _site)) = navi_rig().await else {
+        return;
+    };
+    let hub = &rig.hub.hub;
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Apply for the visa" }),
+    )
+    .await;
+    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap())
+        .await
+        .unwrap();
+    let page = driver.page().await;
+    driver
+        .ok(
+            Some(&page),
+            "Page.navigate",
+            json!({ "url": format!("{site}/form") }),
+        )
+        .await;
+    driver
+        .wait_for(&page, "document.title === 'Form ready'")
+        .await;
+    let mut heard = String::new();
+
+    // Another site, or a field that isn't there, is refused before anyone is asked.
+    let elsewhere = call(&rig.broker, secure("visas.devbox.test", "#passport", None)).await;
+    assert_eq!(elsewhere["error"]["code"], "forbidden", "{elsewhere}");
+    let missing = call(&rig.broker, secure("127.0.0.1", "#visa-number", None)).await;
+    assert!(
+        missing["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("No field"),
+        "{missing}"
+    );
+
+    let asked = call(&rig.broker, secure("127.0.0.1", "#passport", None)).await;
+    let id = asked["result"]["requestId"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{asked}"))
+        .to_owned();
+    heard.push_str(&asked.to_string());
+    let request = hub.approvals.get(&id).unwrap();
+    let sink = request
+        .secret
+        .as_ref()
+        .expect("a sealed field for the person")
+        .sink
+        .to_string();
+    assert!(sink.starts_with("fill:devbox:B"), "{sink}");
+    assert!(crate::hub::approvals::purchases::person_only(&request));
+    assert!(matches!(
+        crate::hub::approvals::chat_item(&request),
+        fleetd_contracts::chat::ChatItem::SecretRequest(item) if item.secure_input.is_some()
+    ));
+    let session = rig.broker.live(THREAD).unwrap();
+    assert_eq!(
+        session.idle_for(),
+        Duration::ZERO,
+        "held while the person types"
+    );
+
+    // The person's app seals it to the node; the node fills the site's own frame, not the decoy on another site.
+    let key_home = tempfile::tempdir().unwrap();
+    let key = crate::node::identity::load_or_create_box_key(key_home.path()).unwrap();
+    let frame: fleetd_contracts::node_link::SecretDeliver = serde_json::from_value(json!({
+        "id": "s1", "sink": sink, "secretKey": "navi.secure_input",
+        "sealed": B64.encode(key.seal(TYPED.as_bytes()).unwrap()),
+    }))
+    .unwrap();
+    let delivered =
+        super::super::secure_input::deliver(&rig.broker, &frame, Some(&key), "devbox").await;
+    assert!(delivered.fingerprint.is_some(), "{delivered:?}");
+    let got = typed(&kept).await;
+    assert_eq!(got["value"], TYPED);
+    assert_eq!(got["masked"], true, "the filled field shows dots, blurred");
+    assert_eq!(
+        kept.lock().unwrap().len(),
+        1,
+        "the decoy on another site got nothing"
+    );
+    let again =
+        super::super::secure_input::deliver(&rig.broker, &frame, Some(&key), "devbox").await;
+    assert!(again.error.unwrap().as_str().contains("filled already"));
+
+    // Nothing reads it back.
+    let answer = driver
+        .send(
+            Some(&page),
+            "Runtime.evaluate",
+            json!({ "expression": "document.getElementById('own').contentDocument.getElementById('passport').value", "returnByValue": true }),
+        )
+        .await;
+    assert!(
+        answer["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("This script is refused")),
+        "{answer}"
+    );
+    heard.push_str(&answer.to_string());
+    heard.push_str(&serde_json::to_string(&driver.events).unwrap());
+    assert!(!heard.contains(TYPED), "{heard}");
+    drop(driver);
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+    for (path, text) in texts(&rig.node_home.path().join("browser")) {
+        if !path
+            .extension()
+            .is_some_and(|e| e == "webm" || e == "jpg" || e == "png")
+        {
+            assert!(!text.contains(TYPED), "{} holds it", path.display());
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_approved_passport_from_1password_fills_once() {
+    let Some((rig, site, kept, _site)) = navi_rig().await else {
+        return;
+    };
+    let hub = &rig.hub.hub;
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Apply for the visa" }),
+    )
+    .await;
+    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap())
+        .await
+        .unwrap();
+    let page = driver.page().await;
+    driver
+        .ok(
+            Some(&page),
+            "Page.navigate",
+            json!({ "url": format!("{site}/form") }),
+        )
+        .await;
+    driver
+        .wait_for(&page, "document.title === 'Form ready'")
+        .await;
+    let asked = call(
+        &rig.broker,
+        secure("127.0.0.1", "#passport", Some(PASSPORT_REF)),
+    )
+    .await;
+    let id = asked["result"]["requestId"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{asked}"))
+        .to_owned();
+    let request = hub.approvals.get(&id).unwrap();
+    assert_eq!(
+        request.kind,
+        fleetd_contracts::ledger::RequestKind::Approval
+    );
+    let fill = json!({ "op": "secure_input_fill", "requestId": id });
+    let early = call(&rig.broker, fill.clone()).await;
+    assert!(
+        early["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("hasn't answered"),
+        "{early}"
+    );
+    let person = crate::hub::approvals::Caller {
+        human: true,
+        name: "desk",
+        person: None,
+        allows_operate: &|_: &str| true,
+    };
+    hub.approvals
+        .answer(&person, &id, true, None)
+        .await
+        .unwrap();
+    let filled = call(&rig.broker, fill.clone()).await;
+    assert!(
+        filled["result"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("Filled #passport from 1Password"),
+        "{filled}"
+    );
+    assert_eq!(typed(&kept).await["value"], PASSPORT);
+    let twice = call(&rig.broker, fill).await;
+    assert!(
+        twice["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("fills once"),
+        "{twice}"
+    );
+    assert!(!format!("{asked}{filled}{twice}").contains(PASSPORT));
 }

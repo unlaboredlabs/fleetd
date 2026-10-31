@@ -4,7 +4,7 @@
 // person in the Navi's chat; approved, its card is filled into that checkout once, and the Navi never sees it.
 import { useState } from "react";
 import type { OnePasswordCardsOutput } from "../../../shared/contracts";
-import { Button, Select, Text } from "../../ui";
+import { Button, InlineCode, Select, Text } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { cardLabel } from "../inline/purchase";
@@ -36,7 +36,8 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
   const open = (): void => {
     setPicking(true);
     setCards(null);
-    hubCall("onepassword_cards", {}, { timeoutMs: CARDS_MS }).then(
+    // On the Navi's machine, with the token its fills read the card with.
+    hubCall("onepassword_cards", { navi: projectRef }, { timeoutMs: CARDS_MS }).then(
       (data) => setCards({ data }),
       (e: unknown) => setCards({ error: errorText(e) }),
     );
@@ -75,16 +76,22 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
       ) : (
         <>
           {picking ? (
-            cards?.error !== undefined ? (
-              <Text size="sm" tone="danger">
-                {cards.error}
-              </Text>
+            cards?.error !== undefined || cards?.data?.error !== undefined ? (
+              <div role="alert" className={s.inline}>
+                <Text size="sm" tone="danger">
+                  {cards.error ?? `1Password: ${cards.data?.error ?? ""}`}
+                </Text>
+                <Button variant="secondary" disabled={!live} onClick={open}>
+                  Try again
+                </Button>
+                <Button variant="secondary" onClick={() => setPicking(false)}>
+                  Cancel
+                </Button>
+              </div>
             ) : cards?.data === undefined ? (
               <Text size="sm" tone="quiet">
                 Reading the cards in your 1Password…
               </Text>
-            ) : cards.data.error !== undefined ? (
-              <Text size="sm" tone="danger">{`1Password: ${cards.data.error}`}</Text>
             ) : (
               <div className={s.inline}>
                 <Select
@@ -130,7 +137,11 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
                 const line = purchaseLine(p);
                 return (
                   <li key={p.requestId} className={s.purchase}>
-                    <Text size="sm">{line.shop}</Text>
+                    {/* The name is the Navi's words; the domain is where the card was filled, so the log can't be spoofed. */}
+                    <Text size="sm">
+                      {`${line.shop} · `}
+                      <InlineCode>{p.purchase.shop.domain}</InlineCode>
+                    </Text>
                     <Text size="sm" strong className={s.purchaseAmount}>
                       {line.amount}
                     </Text>

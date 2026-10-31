@@ -932,6 +932,8 @@ impl Router {
             | BrowserCall::RequestTakeover(_)
             | BrowserCall::PurchaseRequest(_)
             | BrowserCall::PurchaseFill(_)
+            | BrowserCall::RequestSecureInput(_)
+            | BrowserCall::SecureInputFill(_)
             | BrowserCall::Desktop(_) => Err(refuse(
                 ErrorCode::Invalid,
                 format!(
@@ -970,7 +972,9 @@ impl Router {
             }
             BrowserCall::FillCredential(_)
             | BrowserCall::PurchaseRequest(_)
-            | BrowserCall::PurchaseFill(_) => Err(refuse(
+            | BrowserCall::PurchaseFill(_)
+            | BrowserCall::RequestSecureInput(_)
+            | BrowserCall::SecureInputFill(_) => Err(refuse(
                 ErrorCode::Invalid,
                 format!("{} is for browser sessions.", frame.call.op()),
                 "do without it and say so in your result",
@@ -1007,6 +1011,8 @@ impl Router {
             | BrowserCall::RequestTakeover(_)
             | BrowserCall::PurchaseRequest(_)
             | BrowserCall::PurchaseFill(_)
+            | BrowserCall::RequestSecureInput(_)
+            | BrowserCall::SecureInputFill(_)
             | BrowserCall::Desktop(_) => Err(refuse(
                 ErrorCode::Invalid,
                 format!("{} is not available in iOS sessions yet.", frame.call.op()),

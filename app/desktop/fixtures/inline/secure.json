@@ -1,0 +1,34 @@
+{
+  "note": "A Navi's secure inputs: a passport number for the person to type in a sealed field, filled straight into the visa form; and a driver license number from 1Password waiting for approval. devbox; no personal data.",
+  "items": [
+    {
+      "kind": "secret_request",
+      "requestId": "Q31",
+      "name": "navi.secure_input",
+      "text": "Enter Passport number for Visa application (visas.devbox.example): The visa form needs it to continue",
+      "sink": "fill:devbox:B00000000000000000000000000000031",
+      "state": "open",
+      "secureInput": {
+        "site": { "domain": "visas.devbox.example", "name": "Visa application" },
+        "target": "input[name=passportNumber]",
+        "label": "Passport number",
+        "why": "The visa form needs it to continue.",
+        "sessionId": "B00000000000000000000000000000031"
+      }
+    },
+    {
+      "kind": "command_approval",
+      "requestId": "Q32",
+      "machineId": "devbox",
+      "state": "open",
+      "secureInput": {
+        "site": { "domain": "cars.devbox.example", "name": "Car rental" },
+        "target": "#license",
+        "label": "Driver license number",
+        "why": "The rental needs it to confirm the booking.",
+        "ref": "op://Personal/Driver License/number",
+        "sessionId": "B00000000000000000000000000000031"
+      }
+    }
+  ]
+}

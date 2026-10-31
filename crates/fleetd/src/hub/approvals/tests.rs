@@ -120,6 +120,7 @@ impl Fake {
                 permission: None,
                 preview_config: None,
                 purchase: None,
+                secure_input: None,
                 at: fleetd_contracts::ids::Timestamp("2026-10-18T10:00:00.000Z".into()),
                 at_ms: 0,
             })
@@ -1608,6 +1609,28 @@ async fn a_purchase_always_asks_a_person_and_its_card_fills_once_within_its_wind
         RequestState::Failed
     );
 
+    // Approved and never filled: once its window ran out it ends as failed, not "approved" for ever.
+    let idle = a
+        .open_purchase(&p1(), purchase_call(B1), visa())
+        .await
+        .unwrap();
+    a.answer(&person(), idle.request_id.as_str(), true, None)
+        .await
+        .unwrap();
+    a.expire_unfilled().await;
+    assert_eq!(
+        fake.request(idle.request_id.as_str()).state,
+        RequestState::Approved,
+        "still in its window"
+    );
+    clock.advance(std::time::Duration::from_secs(
+        60 * fleetd_contracts::purchase::FILL_WINDOW_MINUTES as u64 + 1,
+    ));
+    a.expire_unfilled().await;
+    let ended = fake.request(idle.request_id.as_str());
+    assert_eq!(ended.state, RequestState::Failed);
+    assert!(ended.evidence.unwrap().as_str().starts_with("expired"));
+
     // Denied: the Navi hears it, and nothing fills it.
     let no = a
         .open_purchase(&p1(), purchase_call(B1), visa())
@@ -2279,4 +2302,110 @@ async fn an_allowed_site_never_takes_a_password_in_its_link() {
         );
         assert!(requests(&fake).is_empty() && fake.checked.lock().unwrap().is_empty());
     }
+}
+
+fn secure_call(reference: Option<&str>) -> fleetd_contracts::secure_input::SecureInputOpenCall {
+    let mut input = json!({
+        "site": { "domain": "visas.devbox.test", "name": "Visa application" },
+        "target": "#passport",
+        "label": "Passport number",
+        "why": "The visa form needs it",
+    });
+    if let Some(reference) = reference {
+        input["ref"] = reference.into();
+    }
+    serde_json::from_value(json!({ "sessionId": B1, "input": input })).unwrap()
+}
+
+/// A secure input the person types is a sealed field whose sink is the Navi's browser session; one from 1Password is
+/// an approval filled once, by the session that asked, within its window. Only a person answers either, and a lead
+/// can't aim a secret at a browser session itself.
+#[tokio::test]
+async fn a_secure_input_is_a_sealed_field_or_an_approval_only_a_person_answers() {
+    use fleetd_contracts::browser::BrowserSessionId;
+    let fake = Arc::new(Fake::default());
+    let clock = crate::hub::store::test_clock::ManualClock::at(1_790_000_000_000);
+    let a = approvals_at(&fake, clock.clone());
+
+    let typed = a.open_secure_input(&p1(), secure_call(None)).await.unwrap();
+    assert_eq!(typed.kind, RequestKind::Secret);
+    assert_eq!(
+        typed.secret.as_ref().unwrap().sink.as_str(),
+        format!("fill:lab-a:{B1}")
+    );
+    assert!(purchases::person_only(&typed));
+    let ChatItem::SecretRequest(item) = chat_item(&typed) else {
+        panic!("a sealed field");
+    };
+    assert_eq!(item.secure_input.unwrap().label.as_str(), "Passport number");
+    let aimed: fleetd_contracts::lead_calls::RequestSecretCall = serde_json::from_value(json!({
+        "key": "navi.secure_input", "sink": format!("fill:lab-a:{B1}"), "text": "Passport",
+    }))
+    .unwrap();
+    let refused = a.request_secret(&p1(), aimed).await.unwrap_err();
+    assert!(refused.message.contains("secure input"), "{refused:?}");
+    let session = BrowserSessionId::unchecked(B1);
+    let not_claimable = a
+        .claim_secure_input(&p1(), &typed.request_id, &session)
+        .await
+        .unwrap_err();
+    assert!(
+        not_claimable.message.contains("for the person to type"),
+        "{not_claimable:?}"
+    );
+
+    let from_1password = a
+        .open_secure_input(&p1(), secure_call(Some("op://Personal/Passport/number")))
+        .await
+        .unwrap();
+    assert_eq!(from_1password.kind, RequestKind::Approval);
+    assert!(purchases::person_only(&from_1password));
+    let id = from_1password.request_id.clone();
+    let early = a
+        .claim_secure_input(&p1(), &id, &session)
+        .await
+        .unwrap_err();
+    assert!(early.message.contains("hasn't answered"), "{early:?}");
+    assert_eq!(
+        a.answer(&agent(), id.as_str(), true, None)
+            .await
+            .unwrap_err()
+            .code,
+        "forbidden"
+    );
+    a.answer(&person(), id.as_str(), true, None).await.unwrap();
+    let other = BrowserSessionId::unchecked("Bffffffffffffffffffffffffffffffff");
+    assert_eq!(
+        a.claim_secure_input(&p1(), &id, &other)
+            .await
+            .unwrap_err()
+            .code,
+        "forbidden"
+    );
+    let claimed = a.claim_secure_input(&p1(), &id, &session).await.unwrap();
+    assert_eq!(claimed.reference.as_str(), "op://Personal/Passport/number");
+    assert!(
+        a.claim_secure_input(&p1(), &id, &session)
+            .await
+            .unwrap_err()
+            .message
+            .contains("fills once")
+    );
+
+    // Approved and never filled: it expires.
+    let late = a
+        .open_secure_input(&p1(), secure_call(Some("op://Personal/Passport/number")))
+        .await
+        .unwrap();
+    a.answer(&person(), late.request_id.as_str(), true, None)
+        .await
+        .unwrap();
+    clock.advance(std::time::Duration::from_secs(
+        60 * fleetd_contracts::secure_input::FILL_WINDOW_MINUTES as u64 + 1,
+    ));
+    a.expire_unfilled().await;
+    assert_eq!(
+        fake.request(late.request_id.as_str()).state,
+        RequestState::Failed
+    );
 }

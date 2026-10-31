@@ -2686,10 +2686,14 @@ impl Executors {
         &self,
         machine_id: &MachineId,
         person_id: fleetd_contracts::people::PersonId,
+        project_id: Option<ProjectId>,
     ) -> Result<Result<Vec<fleetd_contracts::purchase::OnePasswordCard>, String>, ExecutorError>
     {
         let op = NodeOperation::Read;
-        let call = SessionCall::OnePasswordCards { person_id };
+        let call = SessionCall::OnePasswordCards {
+            person_id,
+            project_id,
+        };
         match self
             .call(machine_id, op, call, ONEPASSWORD_TEST_TIMEOUT)
             .await?

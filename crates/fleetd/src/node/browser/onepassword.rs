@@ -60,6 +60,18 @@ pub type CardFuture = Pin<Box<dyn Future<Output = Result<Card, CredError>> + Sen
 /// Where values come from: 1Password, or a test's fake vault.
 pub trait Vault: Send + Sync + 'static {
     fn resolve(&self, reference: &str) -> CredFuture;
+    /// A field of an Identity, Passport, Driver License or Social Security item, which has no website to check: for an
+    /// approved secure input only.
+    fn identity(&self, reference: &str) -> CredFuture {
+        let reference = reference.to_owned();
+        Box::pin(async move {
+            Err(CredError {
+                message: format!("{reference} can't be read as an identity here"),
+                rate_limited: false,
+            })
+        })
+    }
+
     /// A Credit Card item's details, by its `op://vault/item` reference.
     fn card(&self, reference: &str) -> CardFuture {
         let reference = reference.to_owned();
@@ -199,7 +211,8 @@ pub fn origin_allowed(page: &str, urls: &[String]) -> bool {
 
 /// The helper the node runs under Node.js: the token as its first line in, then one JSON line in per reference (or
 /// `{"vaults":true}` for the names of the vaults the token reads, `{"cards":true}` for its Credit Card items,
-/// `{"card":"op://vault/item"}` for one's details), one out, over a client made once.
+/// `{"card":"op://vault/item"}` for one's details, `{"identity": ref}` for an Identity item's field), one out, over a
+/// client made once.
 pub const HELPER: &str = r#"// fleetd's 1Password helper: resolves op:// references with the SDK and a service account token. The token is the
 // first line on stdin, not in the environment, where the user's other processes could read it.
 import { createClient, RateLimitExceededError } from "@1password/sdk";
@@ -258,6 +271,20 @@ async function card(reference) {
   };
 }
 
+// A field of an Identity, Passport, Driver License or Social Security item, for an approved secure input only.
+const IDENTITIES = ["Identity", "Passport", "DriverLicense", "SocialSecurityNumber"];
+async function identity(reference) {
+  const [vaultName, itemName] = reference.slice("op://".length).split("?")[0].split("/");
+  vaults ??= await client.vaults.list();
+  const vault = named(vaults, vaultName, "vault");
+  if (!items.has(vault.id)) items.set(vault.id, await client.items.list(vault.id));
+  const overview = named(items.get(vault.id), itemName, "item");
+  if (!IDENTITIES.includes(overview.category)) {
+    throw new Error(`${itemName} is not an Identity, Passport, Driver License or Social Security item`);
+  }
+  return await client.secrets.resolve(reference);
+}
+
 // Every Credit Card item the token reads: names and references only.
 async function cards() {
   vaults ??= await client.vaults.list();
@@ -283,7 +310,7 @@ for await (const line of createInterface({ input: process.stdin })) {
   let answer;
   try {
     client ??= await createClient({ auth: token, integrationName: "fleetd", integrationVersion: "1" });
-    const { ref, vaults: list, card: cardRef, cards: listCards } = JSON.parse(line);
+    const { ref, vaults: list, card: cardRef, cards: listCards, identity: identityRef } = JSON.parse(line);
     if (list) {
       vaults ??= await client.vaults.list();
       answer = { vaults: vaults.map((v) => v.title) };
@@ -291,6 +318,8 @@ for await (const line of createInterface({ input: process.stdin })) {
       answer = { cards: await cards() };
     } else if (cardRef) {
       answer = { card: await card(cardRef) };
+    } else if (identityRef) {
+      answer = { value: await identity(identityRef), urls: [] };
     } else {
       const urls = await websites(ref);
       // An item without a website fills nowhere, so its value isn't read.
@@ -488,6 +517,20 @@ impl OnePassword {
             .collect())
     }
 
+    async fn identity(&self, reference: &str) -> Result<Credential, CredError> {
+        let mut parsed = self.exchange(json!({ "identity": reference })).await?;
+        match parsed.get_mut("value").map(Value::take) {
+            Some(Value::String(value)) if !value.is_empty() => Ok(Credential {
+                value: Zeroizing::new(value),
+                urls: Vec::new(),
+            }),
+            _ => Err(CredError {
+                message: "1Password returned no value".into(),
+                rate_limited: false,
+            }),
+        }
+    }
+
     async fn card(&self, reference: &str) -> Result<Card, CredError> {
         let fail = |message: &str| CredError {
             message: message.to_owned(),
@@ -555,6 +598,11 @@ impl Vault for OnePasswordVault {
         let (helper, reference) = (self.0.clone(), reference.to_owned());
         Box::pin(async move { helper.card(&reference).await })
     }
+
+    fn identity(&self, reference: &str) -> CredFuture {
+        let (helper, reference) = (self.0.clone(), reference.to_owned());
+        Box::pin(async move { helper.identity(&reference).await })
+    }
 }
 
 /// The node's vaults: the SDK helper with the session's token.
@@ -571,7 +619,8 @@ pub const FAKE_TOKEN: &str = "ops_devbox-fake-service-account";
 
 /// A fake `@1password/sdk` at the pinned version in `home`'s install, so the node runs its real helper against it
 /// with no npm and no 1Password: it takes [`FAKE_TOKEN`] only, refuses any other in an error that echoes it, reads
-/// vaults Agents and Shared, in Agents an item Shop on https://shop.devbox.test and in Shared a Credit Card item Visa.
+/// vaults Agents and Shared, in Agents an item Shop on https://shop.devbox.test and in Shared a Credit Card item Visa
+/// and a Passport.
 /// None without Node.js.
 #[cfg(test)]
 pub fn fake_sdk(home: &Path) -> Option<()> {
@@ -598,7 +647,10 @@ export async function createClient({ auth }) {
       list: async (vault) =>
         vault === "v1"
           ? [{ id: "i1", title: "Shop", category: "Login", websites: [{ url: "https://shop.devbox.test/login" }] }]
-          : [{ id: "i2", title: "Visa", category: "CreditCard", websites: [] }],
+          : [
+              { id: "i2", title: "Visa", category: "CreditCard", websites: [] },
+              { id: "i3", title: "Passport", category: "Passport", websites: [] },
+            ],
       get: async (vault, item) => ({
         id: item,
         fields: [
@@ -646,6 +698,20 @@ mod tests {
         assert_eq!(
             (card.cvc.as_str(), card.name.as_str()),
             ("737", "Ada Devbox")
+        );
+        let passport = helper
+            .identity("op://Shared/Passport/number")
+            .await
+            .unwrap();
+        assert_eq!(passport.value.as_str(), "pw-number");
+        let not_identity = helper
+            .identity("op://Shared/Visa/number")
+            .await
+            .err()
+            .unwrap();
+        assert!(
+            not_identity.message.contains("is not an Identity"),
+            "{not_identity:?}"
         );
         let login = helper.card("op://Agents/Shop").await.err().unwrap();
         assert_eq!(login.message, "1Password: Shop is not a Credit Card item");

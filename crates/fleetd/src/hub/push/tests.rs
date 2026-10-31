@@ -883,6 +883,7 @@ fn request(
             permission: r.permission,
             preview_config: None,
             purchase: None,
+            secure_input: None,
             at: AT.to_owned().into(),
             at_ms: 1,
         })

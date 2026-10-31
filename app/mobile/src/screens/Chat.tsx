@@ -563,7 +563,12 @@ function ItemView({
   const when = fullTime(item.at, now);
   const inline = item.message?.item;
   if (inline?.kind === "command_approval") return <InlineApproval chatKey={chatKey} requestId={inline.requestId} state={inline.state} />;
-  if (inline?.kind === "secret_request") return <Event text="Asks for a secret: enter it in the desktop app." icon="lock" />;
+  if (inline?.kind === "secret_request") {
+    // A Navi's secure input says what it is and where it goes; either way the value is typed only where it is sealed.
+    const input = inline.secureInput;
+    const text = input === undefined ? "Asks for a secret: enter it in the desktop app." : `Asks for ${input.label} for ${input.site.name}: enter it in the desktop app.`;
+    return <Event text={text} icon="lock" />;
+  }
   const saved = (item.message as { skillSaved?: SkillSaved } | undefined)?.skillSaved;
   if (saved !== undefined) return <SkillLine saved={saved} onPress={() => actions.openSkill(saved.name)} />;
   if (side === "center") return <Event text={item.text} />;

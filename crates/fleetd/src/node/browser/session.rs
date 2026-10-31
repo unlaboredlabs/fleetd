@@ -82,6 +82,9 @@ pub struct Session {
     /// Until when the session waits on a person (a purchase's approval, a takeover such as a bank's confirmation): it
     /// isn't idle meanwhile, so a held fare or room isn't lost.
     held_until: Mutex<Option<Instant>>,
+    /// The hold waits for an answer the Navi is woken with (a purchase, a secure input): its next browser command,
+    /// after the answer, ends it, whatever the answer was.
+    held_for_answer: std::sync::atomic::AtomicBool,
     /// The hash of the last DOM snapshot written: an unchanged page isn't written again.
     last_dom: Mutex<Option<[u8; 32]>>,
     /// One DOM capture at a time, in order.
@@ -184,6 +187,7 @@ impl Session {
             driver_targets: Mutex::default(),
             last_active: Mutex::new(Instant::now()),
             held_until: Mutex::new(None),
+            held_for_answer: std::sync::atomic::AtomicBool::new(false),
             last_dom: Mutex::default(),
             dom_turn: tokio::sync::Mutex::new(()),
             _screencast: Mutex::default(),
@@ -285,7 +289,15 @@ impl Session {
     /// The session waits on a person for at most `for_at_most` (`None`: no more): it doesn't idle out meanwhile.
     pub fn hold(&self, for_at_most: Option<Duration>) {
         *lock(&self.held_until) = for_at_most.map(|d| Instant::now() + d);
+        self.held_for_answer.store(false, Ordering::Relaxed);
         self.touch();
+    }
+
+    /// As [`Session::hold`], until the Navi's next browser command, which comes once it is woken with the person's
+    /// answer (a purchase, a secure input), or `for_at_most` at the latest.
+    pub fn hold_for_answer(&self, for_at_most: std::time::Duration) {
+        self.hold(Some(for_at_most));
+        self.held_for_answer.store(true, Ordering::Relaxed);
     }
 
     pub fn control(&self) -> BrowserControl {
@@ -605,6 +617,10 @@ impl Session {
         output: Option<&str>,
         duration_ms: u64,
     ) -> (u64, Option<StepTarget>) {
+        // The Navi drives again: a hold for an answer it is woken with has done its work, approved or denied.
+        if self.held_for_answer.swap(false, Ordering::Relaxed) {
+            *lock(&self.held_until) = None;
+        }
         let target = lock(&self.target).take().map(|mut t| {
             t.reference = element_ref(command);
             t

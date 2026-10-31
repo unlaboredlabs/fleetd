@@ -86,6 +86,16 @@ describe("what the lead waits on", () => {
       message: { item: { kind: "command_approval", state: "open", purchase: { shop: { domain: "a.example", name: "A" } } } } as unknown as ChatMessage,
     });
     expect(waitingOn([purchase], LOADED, NOW, "UTC")).toEqual({ what: "1 purchase to approve", targets: [{ id: "q1" }] });
+    // And a Navi's secure input, to enter or to fill from 1Password.
+    const typed = item("s2", "lead", "", at(19, 9, 8), {
+      kind: "secret",
+      message: { item: { kind: "secret_request", state: "open", secureInput: { label: "Passport number" } } } as unknown as ChatMessage,
+    });
+    const fill = item("q2", "lead", "", at(19, 9, 9), {
+      kind: "gated",
+      message: { item: { kind: "command_approval", state: "open", secureInput: { label: "License" } } } as unknown as ChatMessage,
+    });
+    expect(waitingOn([typed, fill], LOADED, NOW, "UTC")?.what).toBe("1 secure input to approve, 1 secure input to enter");
   });
 
   it("counts an open approval or secret on a page not loaded, from the hub's list, and goes there too", () => {

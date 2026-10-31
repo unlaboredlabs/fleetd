@@ -43,6 +43,9 @@ pub const NODE_OPS: &[&str] = &[
     "purchase_open",
     "purchase_claim",
     "purchase_filled",
+    "secure_input_open",
+    "secure_input_claim",
+    "secure_input_filled",
     "session_route",
     "session_step",
 ];
