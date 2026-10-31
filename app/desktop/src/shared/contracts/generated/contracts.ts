@@ -1739,6 +1739,8 @@ export type CommandApprovalItem = {
    */
   purchase?: Purchase;
   requestId: ChatRequestId;
+  /** A Navi's secure input from a 1Password field: approved, its node fills that field once. */
+  secureInput?: SecureInput;
   state: CommandApprovalState;
 };
 
@@ -2762,6 +2764,11 @@ export type HumanRequest = {
   requestId: ChatRequestId;
   /** secret only. */
   secret?: SecretRequest;
+  /**
+   * A Navi's secure input (request_secure_input): on a secret, what the person types and where it fills (its sink
+   * is `fill:`); on an approval, a 1Password field the Navi's node fills once approved.
+   */
+  secureInput?: SecureInput;
   state: RequestState;
   /** One line on why the lead needs it. */
   text: string;
@@ -4309,6 +4316,11 @@ export type OnePasswordCard = {
 export type OnePasswordCardsInput = {
   /** Where to list them; default: the first machine online that holds the token. */
   machineId?: MachineId;
+  /**
+   * The Navi the card is for: listed on its machine with the token its fills use (its own
+   * OP_SERVICE_ACCOUNT_TOKEN variable, else the caller's).
+   */
+  navi?: ProjectRef;
 };
 
 export type OnePasswordCardsOutput = {
@@ -4381,6 +4393,8 @@ export type OnePasswordToken = {
 };
 
 export type OpItemReference = string;
+
+export type OpReference = string;
 
 /** One order (workstream) as the board shows it. */
 export type OrderCard = {
@@ -6366,6 +6380,8 @@ export type SecretRequestItem = {
   /** Why it is open again, or why it could not be stored. */
   note?: string;
   requestId: ChatRequestId;
+  /** A Navi's secure input (`fill:` sink): the site, the field and why; what is typed fills that field, once. */
+  secureInput?: SecureInput;
   sink: SecretSink;
   state: SecretRequestState;
   /** One line: why the lead needs it. */
@@ -6389,6 +6405,27 @@ export type SecretSubmitOutput = {
   next?: string;
   requestId: ChatRequestId;
   truncated?: boolean;
+};
+
+/** A secure input as its request keeps it. */
+export type SecureInput = {
+  /** When it was filled; absent until then. A secure input fills once. */
+  filledAt?: Timestamp;
+  label: string;
+  ref?: OpReference;
+  /** The browser session that asked, the one it fills in. */
+  sessionId: BrowserSessionId;
+  site: SecureInputSite;
+  target: string;
+  why: string;
+};
+
+/** The site the field is on. */
+export type SecureInputSite = {
+  /** The page's host: `passport.gov.example`. The value fills only on it (and its subdomains). */
+  domain: ShopDomain;
+  /** Its name, as it calls itself. */
+  name: string;
 };
 
 /** A kind of session a machine can host. */

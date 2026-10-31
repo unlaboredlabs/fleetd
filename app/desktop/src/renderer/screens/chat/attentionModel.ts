@@ -52,18 +52,22 @@ export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }
   const unloaded = away.filter((o) => !loaded.has(o.messageId) && (o.kind === "command_approval" || o.kind === "secret_request"));
   // A proposed Try it setting and a Navi's purchase are approvals too, said as what they are once their page is loaded.
   const kindOf = (i: ChatItem) => {
-    if (i.kind !== "gated") return "secret";
     const item = i.message?.item;
+    if (i.kind !== "gated") return item?.kind === "secret_request" && item.secureInput !== undefined ? "input" : "secret";
     if (item?.kind !== "command_approval") return "command";
+    if (item.secureInput !== undefined) return "fill";
     return item.previewConfig !== undefined ? "setting" : item.purchase !== undefined ? "purchase" : "command";
   };
   const open = [...unloaded.map((o) => ({ id: o.messageId, kind: o.kind === "command_approval" ? "command" : "secret" })), ...items.filter(openItem).map((i) => ({ id: i.id, kind: kindOf(i) }))];
   if (open.length > 0) {
     const count = (kind: string) => open.filter((i) => i.kind === kind).length;
     const [approvals, settings, purchases, secrets] = [count("command"), count("setting"), count("purchase"), count("secret")];
+    const [inputs, fills] = [count("input"), count("fill")];
     const parts = [
       approvals > 0 ? `${plural(approvals, "command")} to approve` : "",
       purchases > 0 ? `${plural(purchases, "purchase")} to approve` : "",
+      fills > 0 ? `${plural(fills, "secure input")} to approve` : "",
+      inputs > 0 ? `${plural(inputs, "secure input")} to enter` : "",
       settings > 0 ? `${plural(settings, "Try it setting")} to approve` : "",
       secrets > 0 ? `${plural(secrets, "secret")} to enter` : "",
     ];

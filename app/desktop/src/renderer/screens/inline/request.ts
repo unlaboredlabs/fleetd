@@ -50,10 +50,11 @@ export const approvalOffline = (state: string, live: boolean): string | undefine
 /** secrets.rs parse_secret_sink, as far as the item needs it: the machine and the path, or an order sink's order. */
 const SINK = /^(env|file):([a-z0-9-]{1,32}):(\/[^\n\r]*)$/u;
 const ORDER_SINK = /^(order):([a-z0-9-]{1,32}):(W[1-9][0-9]{0,9})$/u;
+const FILL_SINK = /^(fill):([a-z0-9-]{1,32}):(B[0-9a-f]{32})$/u;
 
 /** Where a secret goes and the key to seal it to, or why it can't be sent now and what to do. */
 export const secretTarget = (machines: Readonly<Record<string, Machine>>, item: SecretRequestItem, live = true): SecretTarget => {
-  const [, kind, machineId, path] = SINK.exec(item.sink) ?? ORDER_SINK.exec(item.sink) ?? [];
+  const [, kind, machineId, path] = SINK.exec(item.sink) ?? ORDER_SINK.exec(item.sink) ?? FILL_SINK.exec(item.sink) ?? [];
   if (kind === undefined || machineId === undefined || path === undefined) {
     return { ok: false, message: "The lead didn't say where this secret goes.", fix: "Tell the lead in the chat; it can ask again with a destination." };
   }
@@ -68,8 +69,11 @@ export const secretTarget = (machines: Readonly<Record<string, Machine>>, item: 
   if (machine.status === "offline") {
     return { ok: false, message: `${machine.name} is offline.`, fix: `Save it once ${machine.name} is back online.` };
   }
+  const input = item.secureInput;
   const where =
-    kind === "order"
+    kind === "fill" && input !== undefined
+      ? `into the ${input.label} field for ${input.site.name}, in the Navi's browser on ${machine.name}`
+      : kind === "order"
       ? `${item.envName === undefined ? "" : `as ${item.envName} `}for ${path}'s agents on ${machine.name}, until the order closes`
       : kind === "env"
         ? `${item.envName === undefined ? "" : `as ${item.envName} `}in ${path} on ${machine.name}`
@@ -105,6 +109,7 @@ const took = (item: CommandApprovalItem): string | undefined => {
 export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined => {
   if (item.previewConfig !== undefined) return configOutcome(item);
   if (item.purchase !== undefined) return purchaseOutcome(item);
+  if (item.secureInput !== undefined) return secureInputOutcome(item);
   if (item.permission?.preview !== undefined) return previewOutcome(item.permission.preview, item);
   const time = took(item);
   switch (item.state) {
@@ -145,10 +150,28 @@ const configOutcome = (item: CommandApprovalItem): Outcome | undefined => {
   }
 };
 
+/** A secure input from 1Password: approved, the Navi's node fills the field once. */
+const secureInputOutcome = (item: CommandApprovalItem): Outcome | undefined => {
+  switch (item.state) {
+    case "open":
+      return undefined;
+    case "approved":
+      return { tone: "success", text: "Approved, not filled yet" };
+    case "ran":
+      return { tone: "success", text: "Approved and filled" };
+    case "failed":
+      return { tone: "danger", text: "Approved, never filled" };
+    case "denied":
+      return { tone: "quiet", text: "Not filled" };
+    default:
+      return NEWER;
+  }
+};
+
 /** The one line an answered secret folds to, or undefined while it waits. */
 export const secretOutcome = (item: SecretRequestItem): Outcome | undefined => {
   // The fingerprint stays in the data: a raw hash is never UI text.
-  if (item.state === "stored") return { tone: "success", text: "Secret saved" };
+  if (item.state === "stored") return { tone: "success", text: item.secureInput === undefined ? "Secret saved" : "Entered and filled in" };
   if (item.state === "withdrawn") return { tone: "quiet", text: "Not needed any more" };
   if (item.state === "open") return undefined;
   return NEWER;
@@ -170,6 +193,8 @@ export const approvalTitle = (item: CommandApprovalItem): string =>
       ? `How to run Try it: ${item.previewConfig.why}`
       : item.purchase !== undefined
         ? purchaseTitle(item.purchase)
+        : item.secureInput !== undefined
+          ? `${item.secureInput.label} for ${item.secureInput.site.name}, from 1Password`
         : (item.gated?.reason ??
           (item.permission === undefined
             ? "An agent's request"
@@ -179,7 +204,8 @@ export const approvalTitle = (item: CommandApprovalItem): string =>
   );
 
 /** What an answered secret was for, in the lead's words: its key is a slug, never row text. */
-export const secretTitle = (item: SecretRequestItem): string => plain(item.text);
+export const secretTitle = (item: SecretRequestItem): string =>
+  item.secureInput === undefined ? plain(item.text) : `${item.secureInput.label} for ${item.secureInput.site.name}`;
 
 export type Action = "approve" | "deny" | "save";
 export type Failure = { readonly text: string; readonly retry: boolean };

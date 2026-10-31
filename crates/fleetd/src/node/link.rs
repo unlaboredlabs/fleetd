@@ -517,6 +517,26 @@ async fn run_link_once(
                     let _ = tx.send(to_json(&NodeToHub::CmdResult(result)));
                 });
             }
+            // A Navi's secure input: opened here and typed into its browser session's field by the broker.
+            HubToNode::SecretDeliver(deliver)
+                if deliver.sink.starts_with("fill:")
+                    && let Some(broker) =
+                        shared.sessions.as_ref().and_then(|r| r.browser.clone()) =>
+            {
+                let shared = shared.clone();
+                let tx = tx.clone();
+                tasks.spawn(async move {
+                    let box_key = shared.secrets.as_ref().map(|s| &s.box_key);
+                    let result = crate::node::browser::secure_input::deliver(
+                        &broker,
+                        &deliver,
+                        box_key,
+                        &shared.settings.machine_id,
+                    )
+                    .await;
+                    let _ = tx.send(to_json(&NodeToHub::SecretResult(result)));
+                });
+            }
             // Synchronous and short: written and wiped before the next frame is read.
             HubToNode::SecretDeliver(deliver) => send(NodeToHub::SecretResult(deliver_secret(
                 &deliver,

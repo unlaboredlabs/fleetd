@@ -21,6 +21,7 @@ pub struct NewRequest {
     pub permission: Option<fleetd_contracts::ledger::ToolPermission>,
     pub preview_config: Option<fleetd_contracts::preview::PreviewConfigProposeCall>,
     pub purchase: Option<fleetd_contracts::purchase::Purchase>,
+    pub secure_input: Option<fleetd_contracts::secure_input::SecureInput>,
     pub at: Timestamp,
     pub at_ms: i64,
 }
@@ -82,6 +83,7 @@ impl Requests {
                 "permission": new.permission,
                 "previewConfig": new.preview_config,
                 "purchase": new.purchase,
+                "secureInput": new.secure_input,
                 "createdAt": new.at,
             }))
         };

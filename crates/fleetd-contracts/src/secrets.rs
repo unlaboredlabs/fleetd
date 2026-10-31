@@ -85,13 +85,16 @@ pub enum SecretSinkKind {
     /// One variable for one order's agents (`order:<machine>:<order id>`): the node adds it to the environment of
     /// that order's sessions on the machine, masks it in what they report, and drops it when the order closes.
     Order,
+    /// A Navi's secure input (`fill:<machine>:<browser session>`, secure_input.rs): the node types the value straight
+    /// into the field the Navi asked about, on its site, in that browser session, and keeps it nowhere.
+    Fill,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParsedSecretSink {
     pub kind: SecretSinkKind,
     pub machine_id: MachineId,
-    /// The file, or an `order:` sink's order id.
+    /// The file, an `order:` sink's order id, or a `fill:` sink's browser session id.
     pub path: String,
 }
 
@@ -101,6 +104,16 @@ pub fn parse_secret_sink(sink: &str) -> Option<ParsedSecretSink> {
     static ORDER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         regex::Regex::new(r"^order:([a-z0-9-]{1,32}):(W[1-9][0-9]{0,9})$").unwrap()
     });
+    static FILL: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^fill:([a-z0-9-]{1,32}):(B[0-9a-f]{32})$").unwrap()
+    });
+    if let Some(captures) = FILL.captures(sink) {
+        return Some(ParsedSecretSink {
+            kind: SecretSinkKind::Fill,
+            machine_id: MachineId::unchecked(&captures[1]),
+            path: captures[2].to_owned(),
+        });
+    }
     if let Some(captures) = ORDER.captures(sink) {
         return Some(ParsedSecretSink {
             kind: SecretSinkKind::Order,
@@ -143,11 +156,12 @@ pub fn parse_secret_sink(sink: &str) -> Option<ParsedSecretSink> {
 brand!(
     /// Where the node writes a secret, mode 0600, under its command roots. `env:<machine>:<path>` adds or replaces
     /// one KEY=VALUE line in an env file; `file:<machine>:<path>` writes the raw value; `order:<machine>:<order id>`
-    /// makes it one variable of that order's agents on the machine, until the order closes.
+    /// makes it one variable of that order's agents on the machine, until the order closes; `fill:<machine>:<browser
+    /// session>` types it into the field a Navi's secure input names, once.
     SecretSink,
     name = "SecretSink",
     check = |s| parse_secret_sink(s).is_some(),
-    expected = "env:<machine>:<absolute path>, file:<machine>:<absolute path> (with no empty, . or .. path segment) or order:<machine>:<order id>"
+    expected = "env:<machine>:<absolute path>, file:<machine>:<absolute path> (with no empty, . or .. path segment) order:<machine>:<order id> or fill:<machine>:<browser session id>"
 );
 
 /// The variable an `env:` sink writes for a secret ask without `--env-name`: its key uppercased, with `.` and `-` as

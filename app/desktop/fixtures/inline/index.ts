@@ -7,7 +7,8 @@
 // with no hub. inline-integrations is a chat of a Navi's integration cards (fixtures/inline/integrations.json): a
 // message to send, a page to delete, and a send already approved. inline-purchases is a Navi's purchases
 // (fixtures/inline/purchases.json): a hotel waiting for Pay, a train ticket approved and filled. inline-checker is a
-// Navi's chat with its approval checker at work (fixtures/inline/checker.json). inline-hidden holds
+// Navi's chat with its approval checker at work (fixtures/inline/checker.json). inline-secure is a Navi's secure
+// inputs (fixtures/inline/secure.json): one to type in a sealed field, one from 1Password. inline-hidden holds
 // approvals whose fields hide or reorder text (fixtures/inline/hidden.json), each character shown as its mark, and an
 // email in several languages shown as written.
 import fs from "node:fs";
@@ -21,6 +22,7 @@ import hidden from "./hidden.json" with { type: "json" };
 import integrations from "./integrations.json" with { type: "json" };
 import purchases from "./purchases.json" with { type: "json" };
 import checker from "./checker.json" with { type: "json" };
+import secure from "./secure.json" with { type: "json" };
 
 /** A real X25519 public key (the Rust seal sample's), so sealing works in a fixture run. */
 const BOX_PUB_KEY = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
@@ -79,14 +81,17 @@ const inlineItems = (
       projectRef,
       state: item["state"] ?? "open",
       text: text(
-        item["text"] ?? (item["purchase"] === undefined ? undefined : "Pay at the checkout"),
+        item["text"] ?? (item["purchase"] === undefined ? (item["secureInput"] === undefined ? undefined : "Fill it from 1Password") : "Pay at the checkout"),
         text((item["gated"] as JsonObject | undefined)?.["reason"], text((item["permission"] as JsonObject | undefined)?.["summary"], "A tool prompt")),
       ),
       createdAt: at(i + 2),
       ...opt("evidence", item["note"]),
       ...(secret
-        ? { secret: { key: item["name"] ?? "", sink: item["sink"] ?? "", ...opt("envName", item["envName"]), ...opt("fingerprint", item["fingerprint"]) } }
-        : { ...opt("gated", item["gated"]), ...opt("permission", item["permission"]), ...opt("purchase", item["purchase"]), ...opt("exitCode", item["exitCode"]), ...opt("outputTail", item["outputTail"]) }),
+        ? {
+            secret: { key: item["name"] ?? "", sink: item["sink"] ?? "", ...opt("envName", item["envName"]), ...opt("fingerprint", item["fingerprint"]) },
+            ...opt("secureInput", item["secureInput"]),
+          }
+        : { ...opt("gated", item["gated"]), ...opt("permission", item["permission"]), ...opt("purchase", item["purchase"]), ...opt("secureInput", item["secureInput"]), ...opt("exitCode", item["exitCode"]), ...opt("outputTail", item["outputTail"]) }),
       ...opt("answeredAt", item["answeredAt"]),
       ...opt("finishedAt", item["finishedAt"]),
     };
@@ -189,7 +194,8 @@ export default defineGroup({
     const shotRef = { machineId: id(first?.["machineId"], "devbox"), projectId: id(first?.["projectId"], "storefront") };
     const png = fs.readFileSync(new URL("./booking.png", import.meta.url));
     checked.answer("attachment_get", { projectRef: shotRef, attachmentId: "F7" }, { attachmentId: "F7", name: "lupa-confirm.png", mime: "image/png", bytes: png.length, dataB64: png.toString("base64") });
+    const sealed = inlineItems(base("typical"), "inline-secure", "A chat with a Navi's secure inputs: a passport number to type in a sealed field, and a license number from 1Password to approve.", secure.items);
     const marked = inlineItems(base("typical"), "inline-hidden", "A chat with approvals whose fields hide or reorder text, each shown as its mark, and an email in several languages shown as written.", hidden.items);
-    return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards, bought, checked, marked];
+    return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards, bought, checked, sealed, marked];
   },
 });

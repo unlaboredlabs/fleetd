@@ -338,6 +338,10 @@ pub enum LeadCall {
     PurchaseOpen(crate::purchase::PurchaseOpenCall),
     PurchaseClaim(crate::purchase::PurchaseClaimCall),
     PurchaseFilled(crate::purchase::PurchaseFilledCall),
+    /// Made by the node for a Navi's request_secure_input and secure_input_fill (secure_input.rs).
+    SecureInputOpen(crate::secure_input::SecureInputOpenCall),
+    SecureInputClaim(crate::secure_input::SecureInputClaimCall),
+    SecureInputFilled(crate::secure_input::SecureInputFilledCall),
     /// Made by the node for its agent's session tools (machine_roles.rs): placed by the hub, relayed when elsewhere.
     SessionRoute(crate::machine_roles::SessionRouteCall),
     /// Try it (preview.rs): a writer's or lead's suggestion, a proposed preview setting, and the lead's start in a
@@ -555,6 +559,9 @@ pub enum LeadCallResult {
     PurchaseOpen(RequestResult),
     PurchaseClaim(crate::purchase::PurchaseClaimed),
     PurchaseFilled(RequestResult),
+    SecureInputOpen(RequestResult),
+    SecureInputClaim(crate::secure_input::SecureInputClaimed),
+    SecureInputFilled(RequestResult),
     SessionRoute(crate::machine_roles::SessionRouteResult),
     PreviewSuggest(crate::preview::PreviewSuggestResult),
     PreviewConfigPropose(RequestResult),

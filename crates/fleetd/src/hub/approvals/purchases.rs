@@ -25,10 +25,11 @@ pub const PAYMENT_CLIS: &[&str] = &[
     "square",
 ];
 
-/// Whether only a person may answer this request, whatever the approval mode: a purchase, a spending tool of an
-/// MCP server, and a command that spends (classed `money`, or a payment CLI's). A checker or a YOLO mode must leave these to the person.
+/// Whether only a person may answer this request, whatever the approval mode: a purchase, a secure input, a spending
+/// tool of an MCP server, and a command that spends (classed `money`, or a payment CLI's). A checker or a YOLO mode
+/// must leave these to the person.
 pub fn person_only(r: &HumanRequest) -> bool {
-    if r.purchase.is_some() {
+    if r.purchase.is_some() || r.secure_input.is_some() {
         return true;
     }
     if let Some(p) = &r.permission
@@ -89,6 +90,7 @@ impl Approvals {
                 session_id,
                 filled_at: None,
             }),
+            secure_input: None,
             at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
         })
@@ -232,6 +234,55 @@ impl Approvals {
             }
         })
         .await
+    }
+
+    /// Every minute: approved purchases and secure inputs whose fill window ran out unfilled end as failed, so the log
+    /// and the chat say so instead of "approved" for ever.
+    pub(super) async fn expire_loop(&self) {
+        loop {
+            self.expire_unfilled().await;
+            self.deps
+                .clock
+                .sleep(std::time::Duration::from_secs(60))
+                .await;
+        }
+    }
+
+    /// Approved purchases and secure inputs past their fill window: failed, saying why.
+    pub async fn expire_unfilled(&self) {
+        let now = system_ms(self.deps.clock.now());
+        let approved = self
+            .deps
+            .requests
+            .list(&super::store::RequestFilter {
+                states: Some(vec![RequestState::Approved]),
+                kind: Some(RequestKind::Approval),
+                limit: i64::MAX,
+                ..Default::default()
+            })
+            .unwrap_or_default();
+        for r in approved
+            .into_iter()
+            .filter(|r| r.purchase.is_some() || r.secure_input.is_some())
+        {
+            let at = r
+                .answered_at
+                .as_ref()
+                .and_then(|a| parse_ms(a.as_str()))
+                .unwrap_or_default();
+            if now - at <= FILL_WINDOW_MINUTES * 60_000 {
+                continue;
+            }
+            let why =
+                format!("expired: not filled within {FILL_WINDOW_MINUTES} minutes of the approval");
+            let _ = self
+                .change_from(&r.request_id, RequestState::Approved, |r| {
+                    r.state = RequestState::Failed;
+                    r.evidence = Some(fleetd_contracts::prim::Text::unchecked(why));
+                    r.finished_at = Some(fleetd_contracts::ids::Timestamp(iso_ms(now)));
+                })
+                .await;
+        }
     }
 
     /// Every purchase of the project, newest first.

@@ -501,18 +501,11 @@ pub async fn send_once(hub: &Arc<Hub>, r: &ProjectRef) -> Result<(), ToolError> 
             Some(ChatItem::CommandApproval(c)) if c.state == CommandApprovalState::Open => {
                 card(hub, r, &navi, c).await
             }
-            Some(ChatItem::SecretRequest(s)) if s.state == SecretRequestState::Open => text(
-                hub,
-                r,
-                &format!(
-                    "<b>{} needs a secret: {}</b>\nSecrets are entered only in the fleetd app, never here. Open the Navi there to enter it.",
-                    format::escape(&navi),
-                    format::escape(s.text.as_str())
-                ),
-                Vec::new(),
-            )
-            .await
-            .map(|_| ()),
+            Some(ChatItem::SecretRequest(s)) if s.state == SecretRequestState::Open => {
+                text(hub, r, &format::secret(&navi, s), Vec::new())
+                    .await
+                    .map(|_| ())
+            }
             Some(_) => Ok(()),
         };
         match went {

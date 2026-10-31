@@ -1203,9 +1203,23 @@ impl SessionService {
                 let answer = telegram.call(&project_id, call).await.map_err(invalid)?;
                 Ok(SessionOutput::Telegram { answer })
             }
-            SessionCall::OnePasswordCards { person_id } => {
+            SessionCall::OnePasswordCards {
+                person_id,
+                project_id,
+            } => {
                 let home = &self.inner.config.home;
-                let token = match super::onepassword_tokens::read(home, &person_id) {
+                // The Navi's own variable wins, as it does for its fills (onepassword_tokens::fallback).
+                let own = project_id.as_ref().and_then(|p| {
+                    super::project_env::secrets(home, p.as_str())
+                        .into_iter()
+                        .find(|(name, _)| name == super::browser::onepassword::TOKEN_ENV)
+                        .map(|(_, value)| zeroize::Zeroizing::new(value))
+                });
+                let token = match own
+                    .map(Some)
+                    .map(Ok)
+                    .unwrap_or_else(|| super::onepassword_tokens::read(home, &person_id))
+                {
                     Ok(Some(token)) => token,
                     Ok(None) => {
                         return Ok(SessionOutput::OnePasswordCards {

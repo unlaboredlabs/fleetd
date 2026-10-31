@@ -193,6 +193,10 @@ pub fn deliver_secret(frame: &SecretDeliver, ctx: &SecretsContext) -> SecretResu
     if sink.kind == SecretSinkKind::Order {
         return deliver_order(frame, &sink.path, box_key, ctx);
     }
+    // A Navi's secure input goes to its browser session (link.rs hands it to the broker), never to a file.
+    if sink.kind == SecretSinkKind::Fill {
+        return fail("this node has no browser session for that secure input".into());
+    }
     let target = match confine_sink(&sink.path, ctx.roots) {
         Ok(target) => target,
         Err(why) => return fail(why),
@@ -212,7 +216,7 @@ pub fn deliver_secret(frame: &SecretDeliver, ctx: &SecretsContext) -> SecretResu
                 ));
             }
         },
-        SecretSinkKind::File | SecretSinkKind::Order => None,
+        SecretSinkKind::File | SecretSinkKind::Order | SecretSinkKind::Fill => None,
     };
 
     let sealed = Zeroizing::new(B64.decode(frame.sealed.as_str()).unwrap_or_default());

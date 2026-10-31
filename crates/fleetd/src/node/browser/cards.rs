@@ -51,6 +51,9 @@ pub const PAYMENT_FRAMES: &[&str] = &[
 #[derive(Default)]
 pub struct Cards {
     extra_frames: std::sync::Mutex<Vec<String>>,
+    /// By browser session id and request id: the typed secure inputs it waits for (secure_input.rs).
+    pub(super) waiting:
+        std::sync::Mutex<std::collections::HashMap<String, super::secure_input::Waiting>>,
 }
 
 impl Broker {
@@ -68,7 +71,7 @@ impl Broker {
 }
 
 /// The Navi's live browser session, or why a purchase call can't use it.
-fn navi_session(broker: &Broker, thread: &str) -> Result<Arc<Session>, McpToolError> {
+pub(super) fn navi_session(broker: &Broker, thread: &str) -> Result<Arc<Session>, McpToolError> {
     if !broker.is_navi(thread) {
         return Err(refuse(
             ErrorCode::Forbidden,
@@ -142,7 +145,7 @@ pub async fn purchase_request(
         ));
     };
     // The person may take a while: the checkout, and what it holds, waits for them.
-    session.hold(Some(WAIT_ON_PERSON));
+    session.hold_for_answer(WAIT_ON_PERSON);
     session.step("purchase_request", args, true, None, 0);
     let id = opened.request_id;
     Ok(BrowserCallResult::PurchaseRequest(PurchaseAsked {
@@ -256,7 +259,7 @@ pub async fn purchase_fill(
 }
 
 /// `text`'s first line, at most 500 characters, for a report's line.
-fn one_line(text: &str) -> String {
+pub(super) fn one_line(text: &str) -> String {
     let line: String = text
         .lines()
         .next()
@@ -278,7 +281,7 @@ pub struct CardError {
     pub typed: bool,
 }
 
-fn not_typed(message: impl Into<String>) -> CardError {
+pub(super) fn not_typed(message: impl Into<String>) -> CardError {
     CardError {
         message: message.into(),
         typed: false,
@@ -447,11 +450,11 @@ const FIELD: &str = "function() { return { tag: this.tagName.toLowerCase(), max:
      placeholder: (this.placeholder || '').toLowerCase(), url: this.ownerDocument.location.href }; }";
 
 /// Hides what is typed: dots, as a password field shows, and blurred, in the video, the live view and screenshots.
-const HIDE: &str = "function() { \
+pub(super) const HIDE: &str = "function() { \
      this.style.setProperty('-webkit-text-security', 'disc', 'important'); \
      this.style.setProperty('filter', 'blur(6px)', 'important'); }";
 
-const FOCUS: &str = "function() { this.focus(); try { this.select(); } catch (e) {} }";
+pub(super) const FOCUS: &str = "function() { this.focus(); try { this.select(); } catch (e) {} }";
 
 /// Picks the option of a select that is one of `values`, by its value or its text, as a person's pick would.
 const PICK: &str = "function(values) { const options = [...this.options]; \
@@ -462,17 +465,17 @@ const PICK: &str = "function(values) { const options = [...this.options]; \
      this.dispatchEvent(new Event('change', { bubbles: true })); return true; }";
 
 /// One document the card may fill in: the CDP session it is reached through, and its frame.
-struct Doc {
-    session: String,
+pub(super) struct Doc {
+    pub(super) session: String,
     /// The target the document is in: the page's, or a frame's in another process.
-    target: String,
-    frame: String,
+    pub(super) target: String,
+    pub(super) frame: String,
 }
 
 /// Every frame of the followed page the card may fill in, the page's own first: frames in its process through the
 /// page's session, frames in other processes (a payment provider's, cross-origin) through a session of the node's own,
 /// hidden from the driver.
-async fn docs(
+pub(super) async fn docs(
     session: &Session,
     page_target: &str,
     page_session: &str,

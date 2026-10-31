@@ -31,6 +31,7 @@ use fleetd_contracts::navi::{
 use fleetd_contracts::preview::{PreviewConfigProposeCall, PreviewStartCall, PreviewSuggestCall};
 use fleetd_contracts::purchase::{PurchaseFillCall, PurchaseRequestCall};
 use fleetd_contracts::schema::inline_schema;
+use fleetd_contracts::secure_input::{SecureInputCall, SecureInputFillCall};
 use fleetd_contracts::skills::{SkillInstallCall, SkillSaveCall};
 use fleetd_contracts::verification::ReviewVerdict;
 use serde_json::{Value, json};
@@ -546,6 +547,31 @@ static TOOLS: &[Tool] = &[
              confirmation (3-D Secure, a code, its app) goes to the person with request_takeover. From the fill on \
              the session refuses reading values back.",
             inline_schema::<PurchaseFillCall>,
+        )
+    },
+    Tool {
+        worker: false,
+        ..browser(
+            "request_secure_input",
+            "A Navi's call: when a page needs something only the person may give and you must never see (a passport \
+             or ID number, a code texted to them), ask for it here, on that page: site is its domain and name, target \
+             the field's CSS selector (in the page or one of its frames), label what it is in their words (\"Passport \
+             number\"), why one line. The person types it in a sealed field in the app, and fleetd types it into that \
+             field; you are woken once it is in. With ref (an Identity, Passport, Driver License or Social Security \
+             item's field in their 1Password) the person approves instead, then call secure_input_fill. Never ask for \
+             such a value in the chat.",
+            inline_schema::<SecureInputCall>,
+        )
+    }
+    .needs("The person enters the value in a sealed field, or approves filling it from 1Password."),
+    Tool {
+        worker: false,
+        ..browser(
+            "secure_input_fill",
+            "A Navi's call: once the person approved a secure input from 1Password, fill it into its field: requestId \
+             is what request_secure_input returned. Call it on that page within 15 minutes of the approval; it fills \
+             once, and from then on the session refuses reading values back.",
+            inline_schema::<SecureInputFillCall>,
         )
     },
 ];

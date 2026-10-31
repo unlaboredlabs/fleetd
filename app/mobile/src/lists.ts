@@ -229,6 +229,15 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
     );
     add("Total", `${total.amount} ${total.currency}`);
     add("Card", card.ref.replace(/^op:\/\/([^/]+)\/(.+)$/u, "$2 ($1)"));
+  } else if (r.secureInput !== undefined) {
+    // A Navi's secure input from 1Password: what fills where, from which item's field.
+    const input = r.secureInput;
+    wants = `wants to fill ${input.label} on ${input.site.name} from 1Password`;
+    risk = "credential";
+    add("Site", input.site.domain, { mono: true });
+    add("Why", input.why, { prose: true });
+    add("From", input.ref, { mono: true });
+    add("Field", input.target, { mono: true, more: true });
   } else if (r.previewConfig !== undefined) {
     wants = "proposes how Try it runs this project";
     add("Setting", JSON.stringify(r.previewConfig, null, 2), { mono: true, lines: true });

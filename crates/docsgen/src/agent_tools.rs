@@ -767,6 +767,13 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "items": [{ "name": "Double room, 12-14 Nov, 2 nights", "quantity": 1, "amount": "129.90" }],
         }),
         (_, "purchase_fill") => json!({ "requestId": "Q12" }),
+        (_, "request_secure_input") => json!({
+            "site": { "domain": "visas.example.gov", "name": "Visa application" },
+            "target": "input[name=passportNumber]",
+            "label": "Passport number",
+            "why": "The visa form needs it to continue",
+        }),
+        (_, "secure_input_fill") => json!({ "requestId": "Q14" }),
         (_, "desktop") => json!({
             "action": "left_click",
             "coordinate": [640, 412],

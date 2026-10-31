@@ -87,6 +87,8 @@ Every lead gets these.
 | [`fill_credential`](#fill_credential) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
 | [`purchase_request`](#purchase_request) | A Navi's call: ask the person to approve paying at the checkout open in your browser session, with the card they picked for you. | The person approves this exact purchase in the chat. |
 | [`purchase_fill`](#purchase_fill) | A Navi's call: once the person approved a purchase, fill its card into the checkout's card fields (the shop's page and its payment provider's frames, such as Stripe's) without seeing it: requestId is what purchase_request returned. | No |
+| [`request_secure_input`](#request_secure_input) | A Navi's call: when a page needs something only the person may give and you must never see (a passport or ID number, a code texted to them), ask for it here, on that page: site is its domain and name, target the field's CSS selector (in the page or one of its frames), label what it is in their words ("Passport number"), why one line. | The person enters the value in a sealed field, or approves filling it from 1Password. |
+| [`secure_input_fill`](#secure_input_fill) | A Navi's call: once the person approved a secure input from 1Password, fill it into its field: requestId is what request_secure_input returned. | No |
 
 ### spawn_agent
 
@@ -1136,6 +1138,56 @@ A Navi's call: once the person approved a purchase, fill its card into the check
   "name": "purchase_fill",
   "arguments": {
     "requestId": "Q12"
+  }
+}
+```
+
+### request_secure_input
+
+A Navi's call: when a page needs something only the person may give and you must never see (a passport or ID number, a code texted to them), ask for it here, on that page: site is its domain and name, target the field's CSS selector (in the page or one of its frames), label what it is in their words ("Passport number"), why one line. The person types it in a sealed field in the app, and fleetd types it into that field; you are woken once it is in. With ref (an Identity, Passport, Driver License or Social Security item's field in their 1Password) the person approves instead, then call secure_input_fill. Never ask for such a value in the chat.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `label` | string | yes | What it is, in the person's words: `Passport number`, `The code texted to you`. At most 120 characters. |
+| `ref` | string | no | Fill it from this 1Password field instead (an Identity, Passport, Driver License or Social Security item's): the person approves, then call secure_input_fill. Absent: the person types it. |
+| `site` | object | yes | The site the field is on. |
+| `site.domain` | string | yes | The page's host: `passport.gov.example`. The value fills only on it (and its subdomains). |
+| `site.name` | string | yes | Its name, as it calls itself. At most 120 characters. |
+| `target` | string | yes | The field: a CSS selector on the page or one of its frames (`input[name=passport]`, `#otp`). At most 500 characters. |
+| `why` | string | yes | Why the page needs it, in one line. At most 300 characters. |
+
+**Who may call:** a lead, answered by its node, which runs the browser. **Needs a human:** The person enters the value in a sealed field, or approves filling it from 1Password.
+
+```json
+{
+  "name": "request_secure_input",
+  "arguments": {
+    "label": "Passport number",
+    "site": {
+      "domain": "visas.example.gov",
+      "name": "Visa application"
+    },
+    "target": "input[name=passportNumber]",
+    "why": "The visa form needs it to continue"
+  }
+}
+```
+
+### secure_input_fill
+
+A Navi's call: once the person approved a secure input from 1Password, fill it into its field: requestId is what request_secure_input returned. Call it on that page within 15 minutes of the approval; it fills once, and from then on the session refuses reading values back.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `requestId` | string | yes | `Q<n>`, e.g. `Q1`. |
+
+**Who may call:** a lead, answered by its node, which runs the browser. **Needs a human:** no.
+
+```json
+{
+  "name": "secure_input_fill",
+  "arguments": {
+    "requestId": "Q14"
   }
 }
 ```

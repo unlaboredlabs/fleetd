@@ -160,6 +160,8 @@ export const fixtures = [
   // (fixtures/integrations).
   "inline-checker",
   "integrations-approvals",
+  // A Navi's secure inputs: a passport number to type, a license number from 1Password (fixtures/inline/secure.json).
+  "inline-secure",
   // Approvals whose fields hide or reorder text (fixtures/inline/hidden.json).
   "inline-hidden",
   // W237: a Navi's Telegram, a setup step a fixture (fixtures/telegram).
@@ -1119,7 +1121,7 @@ export const screens: readonly Screen[] = [
   // not run, denied, running).
   // ...and a Navi's integration cards: a send, a delete, an answered send; and approvals whose hidden characters show
   // as marks.
-  { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-purchases", "inline-checker", "inline-hidden"], variant: "inline" },
+  { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-purchases", "inline-checker", "inline-secure", "inline-hidden"], variant: "inline" },
   // The same chat offline from the disk cache: an open item says it can't be answered now, and a secret never claims
   // the hub doesn't know its machine.
   {

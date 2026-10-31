@@ -127,6 +127,10 @@
 .fold:focus-visible {
   border-radius: var(--radius-sm);
 }
+/* Where a purchase or a secure input filled: the real domain, beside the name the Navi gave, never cut. */
+.foldSite {
+  flex: none;
+}
 .chevron {
   flex: none;
   width: 12px;

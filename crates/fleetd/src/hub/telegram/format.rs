@@ -329,7 +329,66 @@ fn content(item: &CommandApprovalItem) -> (String, String) {
             serde_json::to_string_pretty(&p.config).unwrap_or_default(),
         );
     }
+    if let Some(p) = &item.purchase {
+        let mut text = format!("{} ({})\n", p.shop.name, p.shop.domain);
+        for i in p.items.iter() {
+            let many = i
+                .quantity
+                .map(|q| q.get())
+                .filter(|q| *q > 1)
+                .map(|q| format!("{q} × "))
+                .unwrap_or_default();
+            let price = i
+                .amount
+                .as_ref()
+                .map(|a| format!("  {a} {}", p.total.currency))
+                .unwrap_or_default();
+            text.push_str(&format!("\n{many}{}{price}", i.name));
+        }
+        text.push_str(&format!(
+            "\n\nTotal {} {}\nwith {} from 1Password, filled into this checkout once",
+            p.total.amount,
+            p.total.currency,
+            p.card.label()
+        ));
+        return (
+            format!(
+                "pay {} {} at {}",
+                p.total.amount, p.total.currency, p.shop.name
+            ),
+            text,
+        );
+    }
+    if let Some(i) = &item.secure_input {
+        let text = format!(
+            "{} on {} ({})\nfrom {}\n\nwhy: {}",
+            i.label,
+            i.site.name,
+            i.site.domain,
+            i.reference.as_ref().map_or("1Password", |r| r.as_str()),
+            i.why
+        );
+        return (format!("fill {} from 1Password", i.label), text);
+    }
     ("do something".to_owned(), String::new())
+}
+
+/// A secret request: never asked for here, where a chat isn't sealed. A Navi's secure input says what and where.
+pub fn secret(navi: &str, item: &fleetd_contracts::chat::SecretRequestItem) -> String {
+    match &item.secure_input {
+        Some(i) => format!(
+            "<b>{} needs {} for {}</b>\n{}\nOpen fleetd to enter it: it is typed only there, sealed, never in this chat.",
+            escape(navi),
+            escape(i.label.as_str()),
+            escape(i.site.name.as_str()),
+            escape(i.why.as_str())
+        ),
+        None => format!(
+            "<b>{} needs a secret: {}</b>\nSecrets are entered only in the fleetd app, never here. Open the Navi there to enter it.",
+            escape(navi),
+            escape(item.text.as_str())
+        ),
+    }
 }
 
 pub fn card(navi: &str, item: &CommandApprovalItem) -> Card {
@@ -386,6 +445,51 @@ pub fn answered(navi: &str, item: &CommandApprovalItem) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_purchase_and_a_secure_input_show_whole_and_a_typed_one_is_never_asked_for_here() {
+        let purchase: CommandApprovalItem = serde_json::from_value(serde_json::json!({
+            "requestId": "Q4", "machineId": "devbox", "state": "open",
+            "purchase": {
+                "shop": { "domain": "hotel.example", "name": "Hotel <Example>" },
+                "total": { "amount": "264.40", "currency": "EUR" },
+                "items": [{ "name": "City tax", "quantity": 2, "amount": "3.20" }],
+                "card": { "ref": "op://Personal/Visa" },
+                "sessionId": "B00000000000000000000000000000022",
+            },
+        }))
+        .unwrap();
+        let shown = card("Ada", &purchase).html;
+        assert!(
+            shown.starts_with("<b>Ada asks to pay 264.40 EUR at Hotel &lt;Example&gt;</b>"),
+            "{shown}"
+        );
+        for part in [
+            "hotel.example",
+            "2 × City tax  3.20 EUR",
+            "Total 264.40 EUR",
+            "Visa (Personal)",
+        ] {
+            assert!(shown.contains(part), "{part}: {shown}");
+        }
+        let typed: fleetd_contracts::chat::SecretRequestItem =
+            serde_json::from_value(serde_json::json!({
+                "requestId": "Q5", "name": "navi.secure_input", "text": "Enter Passport number",
+                "sink": "fill:devbox:B00000000000000000000000000000022", "state": "open",
+                "secureInput": {
+                    "site": { "domain": "visas.example", "name": "Visa application" },
+                    "target": "#passport", "label": "Passport number", "why": "The form needs it",
+                    "sessionId": "B00000000000000000000000000000022",
+                },
+            }))
+            .unwrap();
+        let line = secret("Ada", &typed);
+        assert!(
+            line.contains("needs Passport number for Visa application"),
+            "{line}"
+        );
+        assert!(line.contains("Open fleetd to enter it"), "{line}");
+    }
 
     #[test]
     fn markdown_becomes_telegram_html_with_everything_escaped() {

@@ -4,6 +4,8 @@
 //! - `navi_purchases`: the card and every purchase the Navi asked for, newest first, with what the person said.
 //! - `purchase_open`, `purchase_claim`, `purchase_filled`: its node's calls for its lead's `purchase_request` and
 //!   `purchase_fill` (node/browser/cards.rs). Only a Navi's lead buys; the approval itself is approvals/purchases.rs.
+//! - `secure_input_open`, `secure_input_claim`, `secure_input_filled`: its node's calls for `request_secure_input` and
+//!   `secure_input_fill` (node/browser/secure_input.rs, approvals/secure_input.rs).
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::auth::Role;
@@ -21,7 +23,14 @@ use crate::hub::link::lead_calls::{CallerAgent, LeadCallFuture, op_of};
 use crate::hub::link::{LeadCaller, LeadCalls};
 use crate::hub::usage::wire::convert;
 
-pub const OPS: [&str; 3] = ["purchase_open", "purchase_claim", "purchase_filled"];
+pub const OPS: [&str; 6] = [
+    "purchase_open",
+    "purchase_claim",
+    "purchase_filled",
+    "secure_input_open",
+    "secure_input_claim",
+    "secure_input_filled",
+];
 
 /// The most purchases `navi_purchases` lists.
 const LOG_MAX: i64 = 200;
@@ -136,7 +145,7 @@ async fn answer(
     if caller.agent != CallerAgent::Lead || !navi {
         return Err(McpToolError::new(
             ErrorCode::Forbidden,
-            "Only a Navi pays at a checkout, and this session is none.",
+            "Only a Navi pays at a checkout or asks for a secure input, and this session is none.",
         )
         .with_fix("leave the payment to the person and say so"));
     }
@@ -188,9 +197,39 @@ async fn answer(
                 next: None,
             }))
         }
+        LeadCall::SecureInputOpen(call) => {
+            let opened = hub
+                .approvals
+                .open_secure_input(&project, call)
+                .await
+                .map_err(refused)?;
+            Ok(LeadCallResult::SecureInputOpen(RequestResult {
+                request_id: opened.request_id,
+                state: opened.state,
+                next: None,
+            }))
+        }
+        LeadCall::SecureInputClaim(call) => hub
+            .approvals
+            .claim_secure_input(&project, &call.request_id, &call.session_id)
+            .await
+            .map(LeadCallResult::SecureInputClaim)
+            .map_err(refused),
+        LeadCall::SecureInputFilled(call) => {
+            let r = hub
+                .approvals
+                .secure_input_filled(&project, call)
+                .await
+                .map_err(refused)?;
+            Ok(LeadCallResult::SecureInputFilled(RequestResult {
+                request_id: r.request_id,
+                state: r.state,
+                next: None,
+            }))
+        }
         other => Err(McpToolError::new(
             ErrorCode::Invalid,
-            format!("{} is not a purchase call.", op_of(&other)),
+            format!("{} is not a purchase or secure input call.", op_of(&other)),
         )),
     }
 }

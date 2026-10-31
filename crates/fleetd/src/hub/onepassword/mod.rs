@@ -320,16 +320,34 @@ async fn cards(
 ) -> Result<OnePasswordCardsOutput, ToolError> {
     let person = me(&hub, &caller)?;
     let id = &person.person_id;
-    let held = token(&hub.db, id)?
-        .ok_or_else(|| {
-            error(
-                ErrorCode::NotFound,
-                "You have no 1Password token saved.",
-                "Paste a service account token in Settings › You › 1Password first.",
-            )
-        })?
-        .sealed_on;
-    let machine_id = holding(&hub, &held, input.machine_id.as_ref())?;
+    // For a Navi: on its machine, where its fills read the card, with the token they use there.
+    let machine_id = match &input.navi {
+        Some(navi) => {
+            // Its own token is its project's secret: listed only for a Navi, with operate on its machine.
+            require(&caller, Role::Operate, Some(&navi.machine_id))?;
+            if !matches!(crate::hub::navi::of(&hub.db, navi)?, Some(n) if n.archived_at.is_none()) {
+                return Err(error(
+                    ErrorCode::NotFound,
+                    format!("{} on {} is not a Navi.", navi.project_id, navi.machine_id),
+                    "List cards for one of your Navis.",
+                ));
+            }
+            node_ready(&hub, &navi.machine_id)?;
+            navi.machine_id.clone()
+        }
+        None => {
+            let held = token(&hub.db, id)?
+                .ok_or_else(|| {
+                    error(
+                        ErrorCode::NotFound,
+                        "You have no 1Password token saved.",
+                        "Paste a service account token in Settings › You › 1Password first.",
+                    )
+                })?
+                .sealed_on;
+            holding(&hub, &held, input.machine_id.as_ref())?
+        }
+    };
     if !hub.link.node_can(&machine_id, CAP_ONEPASSWORD_CARDS) {
         return Err(error(
             ErrorCode::Invalid,
@@ -339,7 +357,11 @@ async fn cards(
     }
     let listed = hub
         .executors
-        .onepassword_cards(&machine_id, id.clone())
+        .onepassword_cards(
+            &machine_id,
+            id.clone(),
+            input.navi.as_ref().map(|n| n.project_id.clone()),
+        )
         .await
         .map_err(from_executor)?;
     let (cards, error) = match listed {

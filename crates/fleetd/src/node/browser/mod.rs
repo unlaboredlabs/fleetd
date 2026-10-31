@@ -19,6 +19,7 @@ pub mod local;
 pub mod onepassword;
 pub mod proxy;
 pub mod record;
+pub mod secure_input;
 pub mod session;
 pub mod shapes;
 pub mod upload;
@@ -648,6 +649,12 @@ impl Broker {
                 cards::purchase_request(self, &thread, call).await
             }
             BrowserCall::PurchaseFill(call) => cards::purchase_fill(self, &thread, call).await,
+            BrowserCall::RequestSecureInput(call) => {
+                secure_input::request(self, &thread, call).await
+            }
+            BrowserCall::SecureInputFill(call) => {
+                secure_input::fill_approved(self, &thread, call).await
+            }
         }
     }
 
