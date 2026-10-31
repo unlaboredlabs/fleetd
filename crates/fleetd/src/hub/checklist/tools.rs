@@ -1,18 +1,15 @@
 //! checklist_get: the panel's Checklist tab. checklist_remove: a person takes items off it (Delete, Clear done); the
 //! lead keeps the rest with its `checklist`, and hears of a removal at its next wake so it leaves those items off.
-//! checklist_edit: a person ticks, edits or removes items, and each change records who made it.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::checklist::ChecklistCall;
 use fleetd_contracts::mcp::{
-    ChecklistEditInput, ChecklistEditOutput, ChecklistGetInput, ChecklistGetOutput,
-    ChecklistRemoveInput, ChecklistRemoveOutput, ErrorCode,
+    ChecklistGetInput, ChecklistGetOutput, ChecklistRemoveInput, ChecklistRemoveOutput,
 };
 use fleetd_contracts::prim::List;
 
 use crate::hub::api::{
-    Caller, Hub, Registry, ToolError, error, is_human, require, unknown_project,
+    Caller, Hub, Registry, ToolError, require, unknown_project,
 };
 use crate::hub::leads::events::Event;
 use crate::hub::leads::wakes::{LineKind, Trigger};
@@ -22,43 +19,6 @@ use crate::hub::store::{iso_ms, now_ms};
 pub fn register(tools: &mut Registry) {
     tools.add("checklist_get", checklist_get);
     tools.add("checklist_remove", checklist_remove);
-    tools.add("checklist_edit", checklist_edit);
-}
-
-async fn checklist_edit(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: ChecklistEditInput,
-) -> Result<ChecklistEditOutput, ToolError> {
-    let r = input.project_ref;
-    require(&caller, Role::Operate, Some(&r.machine_id))?;
-    if !is_human(&caller) {
-        return Err(error(
-            ErrorCode::Forbidden,
-            "Only a person edits the checklist here; a lead keeps it with its own checklist tool.",
-            "Tick it in the fleetd app, or with a --human key.",
-        ));
-    }
-    if hub.store.project_get(&r)?.is_none() {
-        return Err(unknown_project(&r));
-    }
-    let call: ChecklistCall =
-        serde_json::from_value(serde_json::json!({ "items": input.items }))
-            .map_err(|e| error(ErrorCode::Invalid, e.to_string(), "Give items to change."))?;
-    let now = now_ms(hub.clock.as_ref());
-    let person = caller.person.as_ref();
-    let (list, changed_now) = super::apply(&hub.db, &r, &call, now, person)??;
-    if changed_now {
-        let by = format!("human:{}", caller.name);
-        super::calls::changed(&hub, &r, &list, &by, person, now)?;
-    }
-    Ok(ChecklistEditOutput {
-        project_ref: r,
-        items: List::unchecked(list.items),
-        updated_at: list.updated_ms.map(|ms| iso_ms(ms).into()),
-        next: None,
-        truncated: None,
-    })
 }
 
 async fn checklist_get(

@@ -1,7 +1,6 @@
 //! A project's checklist: the lead's to-do list, which the human sees in the panel beside the chat. The lead keeps it
 //! with `checklist`; the app reads it with `checklist_get` and reads it again on `checklist.changed`. A person takes
-//! items off (`checklist_remove`), or ticks, edits or removes them (`checklist_edit`), which records who did; the lead
-//! hears of it. Nothing is derived from it: no figure, no estimate, only what the lead says each item is at.
+//! items off (`checklist_remove`), which records who did; the lead hears of it. Nothing is derived from it: no figure, no estimate, only what the lead says each item is at.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -56,7 +55,7 @@ pub struct TodoItem {
     pub state: TodoState,
     pub link: Option<TodoLink>,
     pub updated_at: Timestamp,
-    /// The person who last ticked or changed it (`checklist_edit`); absent when the lead did.
+    /// The person who last ticked or changed it, on an older hub; absent when the lead did.
     pub person: Option<crate::people::PersonRef>,
 }
 
@@ -131,7 +130,7 @@ pub struct ChecklistChangedData {
     pub total: Count,
     /// The lead (`lead:<machine>/<project>`) or a person (`human:<key name>`).
     pub by: String,
-    /// The person who changed it (`checklist_edit`), removals included; absent when the lead did.
+    /// The person who changed it (`checklist_remove`); absent when the lead did.
     pub person: Option<crate::people::PersonRef>,
 }
 
