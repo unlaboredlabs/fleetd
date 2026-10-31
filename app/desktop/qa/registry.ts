@@ -2353,6 +2353,20 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
     },
   },
+  // Import memory under it: a ChatGPT export pasted, then what Add to Memory added.
+  {
+    id: "settings.your-memory",
+    route: "#/settings/your-memory",
+    fixtures: ["typical"],
+    variant: "import-memory",
+    open: async (page) => {
+      const part = page.getByRole("region", { name: "Import memory" });
+      await part.getByRole("textbox", { name: "The other assistant's answer" }).fill("## Instructions\n[2024-03-02] - Keep answers short and skip the pleasantries.");
+      await part.getByRole("button", { name: "Add to Memory" }).click();
+      await expect(part.getByText("Added 5 entries to your memory.", { exact: false })).toBeVisible();
+      await part.scrollIntoViewIfNeeded();
+    },
+  },
   // Automations: one project's schedule, webhook and paused automations, the nightly memory refresh's built-in row, a
   // run history with its orders, and the editor.
   { id: "settings.automations", route: "#/settings/automations", fixtures: ["empty", "hub-unreachable"] },

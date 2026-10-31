@@ -2,7 +2,8 @@
 //! person's (human keys): an agent changes memory only through its lead's `remember` and `forget`. Each person's own
 //! memory is theirs alone: nobody else reads or edits it, admins included, except to delete a removed person's. The
 //! caps, and memory_shared_get and memory_shared_set (the shared user.md of before people), are an admin's.
-//! memory_refresh_run: Run now on the nightly refresh's row in Settings > Automations.
+//! memory_refresh_run: Run now on the nightly refresh's row in Settings > Automations. memory_import: Import memory, a
+//! person's own (`import`).
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
@@ -10,16 +11,16 @@ use fleetd_contracts::chat::ChatMessage;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::mcp::{
     ErrorCode, MemoryCapsSetInput, MemoryCapsSetOutput, MemoryGetInput, MemoryGetOutput,
-    MemoryRefreshRunInput, MemoryRefreshRunOutput, MemorySetInput, MemorySetOutput,
-    MemorySharedGetInput, MemorySharedGetOutput, MemorySharedSetInput, MemorySharedSetOutput,
-    MemoryUndoInput, MemoryUndoOutput,
+    MemoryImportInput, MemoryImportOutput, MemoryRefreshRunInput, MemoryRefreshRunOutput,
+    MemorySetInput, MemorySetOutput, MemorySharedGetInput, MemorySharedGetOutput,
+    MemorySharedSetInput, MemorySharedSetOutput, MemoryUndoInput, MemoryUndoOutput,
 };
 use fleetd_contracts::memory::{MemoryFile, MemoryRefreshed, MemoryScope, RememberedItem};
 use fleetd_contracts::people::PersonId;
 use fleetd_contracts::prim::{Count, List, Text, True};
 
 use super::calls::changed;
-use super::{Target, You, refresh};
+use super::{Target, You, import, refresh};
 use crate::hub::api::{
     Caller, Hub, Registry, ToolError, admin_everywhere_fix, allows_everywhere, require,
     unknown_project,
@@ -31,6 +32,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("memory_get", memory_get);
     tools.add("memory_set", memory_set);
     tools.add("memory_undo", memory_undo);
+    tools.add("memory_import", memory_import);
     tools.add("memory_caps_set", memory_caps_set);
     tools.add("memory_shared_get", memory_shared_get);
     tools.add("memory_shared_set", memory_shared_set);
@@ -368,6 +370,44 @@ async fn memory_shared_set(
         next: None,
         truncated: None,
     })
+}
+
+/// Without text the export prompt; with it, the import into the caller's own memory.
+async fn memory_import(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: MemoryImportInput,
+) -> Result<MemoryImportOutput, ToolError> {
+    require_human(&caller, "memory_import")?;
+    let text = input.text.as_ref().map_or("", |t| t.as_str());
+    if text.trim().is_empty() {
+        let memory = hub.db.memory();
+        let you = mine(&hub, &caller)?;
+        let (chars, cap) = match you.target() {
+            Some(t) => (memory.read(&t).chars().count(), memory.cap(&t)),
+            None => (0, memory.caps().user.get() as usize),
+        };
+        return Ok(MemoryImportOutput {
+            prompt: Text::unchecked(import::export_prompt(&hub)),
+            added: List::unchecked(Vec::new()),
+            skipped: List::unchecked(Vec::new()),
+            chars: Count::unchecked(chars as i64),
+            cap: Count::unchecked(cap as i64),
+            next: Some(
+                "Copy the prompt into your other assistant, then call again with its answer as text.".into(),
+            ),
+            truncated: None,
+        });
+    }
+    let you = mine(&hub, &caller)?;
+    import::import(
+        &hub,
+        &import::executors(&hub),
+        &you,
+        caller.name.as_str(),
+        text,
+    )
+    .await
 }
 
 async fn memory_refresh_run(

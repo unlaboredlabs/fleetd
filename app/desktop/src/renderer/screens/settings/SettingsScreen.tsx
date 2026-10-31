@@ -1,5 +1,6 @@
 // Settings (⌘, or the app menu), one window in three groups (D211). You: General (appearance, time in the app,
-// notifications, version), Your accounts (the Claude, GitHub and 1Password your work runs on), Your memory, Your devices (and Pair
+// notifications, version), Your accounts (the Claude, GitHub and 1Password your work runs on), Your memory (and Import
+// memory), Your devices (and Pair
 // a phone) and Hubs (this app's hubs and their links). Projects: a project picked in the sidebar, with its Project,
 // Agents, Instructions & memory, Automations and Prompts pages. Hub, for the hub's owners and admins only (admin/HubPages.tsx): what reaches every teammate's work.
 // The route picks the page (#/settings/<tab>, #/settings/hub/<page>); see route.ts for the links into one prompt. The
@@ -12,6 +13,7 @@ import { DevicesSettings } from "./Devices";
 import { General } from "./General";
 import { GithubSettings } from "./Github";
 import { HubLinksSettings, HubsSettings } from "./Hubs";
+import { ImportMemory } from "./ImportMemory";
 import { Instructions } from "./Instructions";
 import { YourMemory } from "./Memory";
 import { OnePasswordSettings } from "./OnePassword";
@@ -74,13 +76,14 @@ function YourAccounts() {
   );
 }
 
-/** What the leads remember about you: yours alone (D212). */
+/** What the leads remember about you: yours alone (D212), and Import memory from another assistant. */
 function YourMemoryPage() {
   return (
     <div className={s.scroll} data-screen="settings.your-memory">
       <div className={s.column}>
         <PageHead title="Your memory">How you work, as the leads remember it when you correct them or set a rule. Edit or delete anything that is wrong.</PageHead>
         <YourMemory />
+        <ImportMemory />
       </div>
     </div>
   );

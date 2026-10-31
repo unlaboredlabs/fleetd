@@ -207,6 +207,32 @@ under Memory caps in Settings › [Hub](/docs/desktop-app#hub) › Every project
 admin key for every machine): 1,000 to 100,000
 per file, up to 400,000 per project. Memory never holds a secret.
 
+### Import memory {#memory-import}
+
+Bring what another assistant (ChatGPT, Claude, Grok) knows about you, instead of teaching it all again. Under Settings ›
+Your memory › Import memory:
+
+1. **Copy prompt**, and paste it into a chat with the other assistant. It asks for everything that assistant has
+   stored about you, in five parts (instructions, identity, career, projects, preferences), one dated line per entry,
+   in a single code block, and to say whether that is all of it. It also asks it to leave secrets out. The prompt is
+   `memory.export`; an admin can change it on the Prompts page, and the phone shows the same text.
+2. **Paste its answer** into the box and press **Add to Memory**. A minute or so later it says how many entries it
+   added.
+
+The hub reads the answer in one model turn on your own Claude (the account your work runs on, see
+[Claude accounts](/docs/people#claude)), in your Navi when you have one, else in any project on a machine that's online. That turn has
+no tools at all, not even fleetd's, and its prompt (`memory.import`) treats the pasted text as data only: a line in it
+that tries to give orders is at most an entry, never followed. It turns the answer into short entries of your own
+memory, which the hub writes the way the lead's `remember` does:
+
+- An entry your memory already says is skipped. One that updates an entry (a new job title) replaces it.
+- An entry that holds a key, token or password is refused, whatever the model let through.
+- Your memory's cap holds. When the import doesn't fit, instructions go in first, then preferences, identity, career
+  and projects; the ones left out are listed, so you can trim your memory and import again.
+
+Nothing else changes: no project's memory, nobody else's. The list above the import shows the new entries at once,
+on every device.
+
 ### The nightly refresh {#memory-refresh}
 
 Each night the lead tidies each project's memory, so what was said in chat but never remembered isn't lost, and what

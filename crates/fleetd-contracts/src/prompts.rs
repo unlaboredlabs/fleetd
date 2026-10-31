@@ -32,7 +32,8 @@ pub enum PromptKind {
     Start,
     /// A later message into a running session.
     Msg,
-    /// The input of a tool-less one-shot `claude -p`. None ships now; kept while the app names its group.
+    /// The input of a tool-less one-shot session (the memory import), or a text a person takes to another assistant
+    /// (the memory export).
     Oneshot,
     /// The human's custom instructions, appended to every lead and task first message.
     Instructions,

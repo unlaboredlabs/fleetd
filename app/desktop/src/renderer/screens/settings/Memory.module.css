@@ -96,3 +96,44 @@
   display: flex;
   gap: var(--space-1);
 }
+
+/* Import memory: two numbered steps, the export prompt in a card (the one thing apart from the page) with Copy prompt
+ * under a hairline, then the paste box. */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.promptCard {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+}
+.promptBody {
+  padding: var(--space-3) var(--space-3) var(--space-2);
+}
+.promptText {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+}
+.promptFoot {
+  padding: var(--space-1) var(--space-3);
+  border-top: 1px solid var(--hairline);
+}
+.leftOut {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-4);
+}

@@ -16402,7 +16402,7 @@
         },
         {
           "const": "oneshot",
-          "description": "The input of a tool-less one-shot `claude -p`. None ships now; kept while the app names its group.",
+          "description": "The input of a tool-less one-shot session (the memory import), or a text a person takes to another assistant\n(the memory export).",
           "type": "string"
         },
         {
