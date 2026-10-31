@@ -92,7 +92,6 @@ fn resolve(
         hub_url: None,
         ssh_config: host.and_then(|h| recorded_ssh_config(hub, h.as_str(), machine_id)),
         home: Some(hub.config.home.to_string_lossy().into_owned()),
-        unit_suffix: None,
         enroll: Enroll::Hub,
         git_identity: None,
         no_service: false,

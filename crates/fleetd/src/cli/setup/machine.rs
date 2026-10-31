@@ -16,7 +16,6 @@ use super::machine_plan::{
 };
 use super::ssh::{RunResult, SshTarget, run_ssh, show_ssh};
 use super::state::{GitIdentity, MachineRecord, SetupState, read_setup, write_setup};
-use super::units::unit_suffix;
 use super::{Probe, current_exe, parse_listen, probe_listen, say};
 use crate::hub::auth::Auth;
 use crate::hub::store::HubStore;
@@ -26,7 +25,7 @@ pub fn machine_usage() -> String {
     use crate::node::runner::claude::version::SUPPORTED;
     format!(
         "  machine add <ssh-host> | --local [--machine-id <id>] [--tags a,b] [--dry-run] [--no-service]
-            [--hub-url <url>] [--ssh-config <file>] [--home <hub home>] [--unit-suffix <s>]
+            [--hub-url <url>] [--ssh-config <file>] [--home <hub home>]
             [--claude-config-dir <dir>]
              set up a machine that runs agents, over SSH (--local: this machine): copies this fleetd
              there (for another OS or CPU, this version's release build for it, checked against
@@ -521,20 +520,14 @@ pub struct Joined {
     pub hub: String,
     pub machine_id: String,
     pub tags: Vec<String>,
-    pub suffix: String,
     pub identity: Option<GitIdentity>,
 }
 
-/// The unit suffix and commit identity in a node unit `machine add` wrote (systemd or launchd).
-pub fn node_unit_facts(file_name: &str, text: &str) -> Option<(String, Option<GitIdentity>)> {
-    let suffix = file_name
-        .strip_prefix("fleetd-node")
-        .and_then(|rest| rest.strip_suffix(".service"))
-        .or_else(|| {
-            file_name
-                .strip_prefix("sh.fleetd.node")
-                .and_then(|rest| rest.strip_suffix(".plist"))
-        })?;
+/// The commit identity in a node unit `machine add` wrote (systemd or launchd); None for any other file.
+pub fn node_unit_facts(file_name: &str, text: &str) -> Option<Option<GitIdentity>> {
+    if file_name != "fleetd-node.service" && file_name != "sh.fleetd.node.plist" {
+        return None;
+    }
     let value = |key: &str| {
         let systemd = text.lines().find_map(|line| {
             let line = line.strip_prefix("Environment=")?.trim_matches('"');
@@ -558,7 +551,7 @@ pub fn node_unit_facts(file_name: &str, text: &str) -> Option<(String, Option<Gi
         (Some(name), Some(email)) => Some(GitIdentity { name, email }),
         _ => None,
     };
-    Some((suffix.to_owned(), identity))
+    Some(identity)
 }
 
 /// The node `fleetd init --join` set up here, if it is enrolled: from its node.json and its unit.
@@ -582,7 +575,7 @@ pub fn joined_here() -> Option<Joined> {
         format!("{}/systemd/user", dirs.config_home.trim_end_matches('/')),
         format!("{}/Library/LaunchAgents", dirs.home.trim_end_matches('/')),
     ];
-    let (suffix, identity) = units
+    let identity = units
         .iter()
         .filter_map(|dir| std::fs::read_dir(dir).ok())
         .flatten()
@@ -607,7 +600,6 @@ pub fn joined_here() -> Option<Joined> {
                     .collect()
             })
             .unwrap_or_default(),
-        suffix,
         identity,
     })
 }
@@ -620,7 +612,6 @@ pub struct AddArgs {
     pub hub_url: Option<String>,
     pub ssh_config: Option<String>,
     pub home: Option<String>,
-    pub unit_suffix: Option<String>,
     pub enroll: Enroll,
     /// Only for a joining worker, which has no hub setup to read it from.
     pub git_identity: Option<GitIdentity>,
@@ -639,7 +630,6 @@ fn parse_add(argv: &[String]) -> Result<AddArgs, u8> {
         ("hub-url", Kind::Str),
         ("ssh-config", Kind::Str),
         ("home", Kind::Str),
-        ("unit-suffix", Kind::Str),
         ("no-service", Kind::Bool),
         ("claude-config-dir", Kind::Str),
     ];
@@ -675,7 +665,6 @@ fn parse_add(argv: &[String]) -> Result<AddArgs, u8> {
         hub_url: v.string("hub-url"),
         ssh_config: v.string("ssh-config"),
         home: v.string("home"),
-        unit_suffix: v.string("unit-suffix"),
         enroll: Enroll::Hub,
         git_identity: None,
         no_service: v.flag("no-service"),
@@ -815,17 +804,6 @@ pub fn resolve(a: &AddArgs, exe: &Path) -> Result<Resolved, Stop> {
             Err(message) => return Err(Stop::fail(message)),
         }
     };
-    let suffix = match a.unit_suffix.as_deref() {
-        None => state
-            .as_ref()
-            .map(|s| s.unit_suffix.clone())
-            .unwrap_or_default(),
-        Some(text) => unit_suffix(Some(text)).ok_or_else(|| {
-            Stop::usage(format!(
-                "--unit-suffix takes letters, digits and dashes, got '{text}'"
-            ))
-        })?,
-    };
     let Some(hub_url) = a
         .hub_url
         .clone()
@@ -853,7 +831,6 @@ pub fn resolve(a: &AddArgs, exe: &Path) -> Result<Resolved, Stop> {
         machine_id: machine_id.clone(),
         tags: a.tags.clone(),
         hub_url,
-        unit_suffix: suffix,
         git_identity: a
             .git_identity
             .clone()
@@ -951,10 +928,7 @@ pub async fn prepare(
         stdin: None,
     });
     let relocated = crate::home::relocated().map(|d| d.to_string_lossy().into_owned());
-    let probe = probe_command(
-        &r.input.unit_suffix,
-        relocated.as_deref().filter(|_| r.local),
-    );
+    let probe = probe_command(relocated.as_deref().filter(|_| r.local));
     let probed = runner.run(&r.target, &probe, None).await;
     let facts = match (probed.code, parse_facts(&probed.stdout)) {
         (0, Ok(facts)) => facts,
@@ -1114,7 +1088,6 @@ pub async fn execute(
                 home: facts.home.clone(),
                 config_home: facts.config_home.clone(),
                 uid: facts.uid,
-                unit_suffix: input.unit_suffix.clone(),
             },
         );
         write_setup(&r.home, &recorded).map_err(Stop::fail)?;
@@ -1312,7 +1285,6 @@ pub async fn remove(
                             config_home: &record.config_home,
                         },
                         super::units::Role::Node,
-                        &record.unit_suffix,
                     );
                     let node_home =
                         super::machine_plan::machine_layout_at(&record.home, fleetd).node_home;
@@ -1334,7 +1306,6 @@ pub async fn remove(
                 relocated.as_deref(),
                 &record.config_home,
                 record.uid,
-                &record.unit_suffix,
                 own_service,
                 purge,
             );
@@ -1418,7 +1389,7 @@ pub async fn join(hub_url: &str, enroll: Enroll, args: AddArgs) -> Result<Added,
 
 impl AddArgs {
     /// This machine, nothing else set.
-    pub fn local(machine_id: String, unit_suffix: &str, service: bool) -> Self {
+    pub fn local(machine_id: String, service: bool) -> Self {
         AddArgs {
             host: None,
             machine_id: Some(machine_id),
@@ -1427,7 +1398,6 @@ impl AddArgs {
             hub_url: None,
             ssh_config: None,
             home: None,
-            unit_suffix: Some(unit_suffix.to_owned()),
             enroll: Enroll::Hub,
             git_identity: None,
             no_service: !service,
@@ -1558,21 +1528,19 @@ mod tests {
     fn reads_a_joined_nodes_unit() {
         let systemd = "[Service]\nEnvironment=\"HOME=/home/a\"\nEnvironment=\"GIT_AUTHOR_NAME=Ada Lovelace\"\nEnvironment=GIT_AUTHOR_EMAIL=1+ada@users.noreply.github.com\n";
         assert_eq!(
-            node_unit_facts("fleetd-node-lab.service", systemd),
-            Some((
-                "-lab".into(),
-                Some(GitIdentity {
-                    name: "Ada Lovelace".into(),
-                    email: "1+ada@users.noreply.github.com".into()
-                })
-            ))
+            node_unit_facts("fleetd-node.service", systemd),
+            Some(Some(GitIdentity {
+                name: "Ada Lovelace".into(),
+                email: "1+ada@users.noreply.github.com".into()
+            }))
         );
         let plist = "    <key>GIT_AUTHOR_NAME</key>\n    <string>Ada &amp; Co</string>\n    <key>GIT_AUTHOR_EMAIL</key>\n    <string>a@b</string>\n";
         assert_eq!(
-            node_unit_facts("sh.fleetd.node.plist", plist).map(|(s, i)| (s, i.map(|i| i.name))),
-            Some((String::new(), Some("Ada & Co".into())))
+            node_unit_facts("sh.fleetd.node.plist", plist).map(|i| i.map(|i| i.name)),
+            Some(Some("Ada & Co".into()))
         );
         assert_eq!(node_unit_facts("fleetd-hub.service", systemd), None);
-        assert_eq!(node_unit_facts("fleetd-node.service", "").unwrap().1, None);
+        assert_eq!(node_unit_facts("fleetd-node.service", ""), Some(None));
+        assert_eq!(node_unit_facts("fleetd-node-lab.service", systemd), None);
     }
 }
