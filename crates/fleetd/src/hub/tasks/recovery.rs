@@ -19,7 +19,7 @@ use crate::hub::store::{iso_ms, parse_ms};
 
 use super::render::one_line;
 
-/// Automatic recoveries per task; the death after the last one fails it. `FLEETD_RECOVERY_MAX` sets it for the lab.
+/// Automatic recoveries per task; the death after the last one fails it.
 pub const RECOVERY_MAX: i64 = 3;
 /// Resumes after the node went away, which never count toward `RECOVERY_MAX`: a planned stop or an upgrade is
 /// "resume when it's back". This ceiling only stops a node that dies over and over from looping a task forever.
@@ -32,14 +32,6 @@ const MINUTE_MS: i64 = 60_000;
 pub const UNREACHABLE_MS: i64 = 30 * MINUTE_MS;
 /// A resumed run that dies sooner did nothing, and its death counts twice.
 const PRODUCTIVE_MS: i64 = 5 * MINUTE_MS;
-
-pub fn max() -> i64 {
-    std::env::var("FLEETD_RECOVERY_MAX")
-        .ok()
-        .and_then(|v| v.trim().parse().ok())
-        .filter(|n| *n >= 0)
-        .unwrap_or(RECOVERY_MAX)
-}
 
 /// What kind of death a run's end is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

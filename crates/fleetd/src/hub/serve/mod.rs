@@ -207,13 +207,12 @@ pub fn build(config: HubConfig, clock: Arc<dyn Clock>) -> anyhow::Result<Arc<Hub
     for gone in ["github-webhook.secret", "webhook.key"] {
         let _ = std::fs::remove_file(config.home.join(gone));
     }
-    // A lab hub sets FLEETD_HOST_SWEEP=off, so the metrics read no git host and the run needs no network.
-    let hosts = if std::env::var("FLEETD_HOST_SWEEP").is_ok_and(|v| v == "off") {
-        crate::hub::metrics::source::HostSources::none()
-    } else {
-        crate::hub::metrics::source::HostSources::real()
-    };
-    build_on_with(db, config, clock, hosts)
+    build_on_with(
+        db,
+        config,
+        clock,
+        crate::hub::metrics::source::HostSources::real(),
+    )
 }
 
 /// [`build`] over an opened database (tests use `HubDb::open_memory`), reading no git host for the metrics.
