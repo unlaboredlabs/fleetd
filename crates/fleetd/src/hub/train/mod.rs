@@ -5,6 +5,7 @@ pub mod batch;
 pub mod calls;
 pub mod contract;
 pub mod digest;
+pub mod flaky;
 pub mod github;
 pub mod host;
 pub mod hub_host;

@@ -699,6 +699,14 @@ impl TrainGitHub {
         .map(|_| ())
     }
 
+    /// The log of Actions job `job`, as text.
+    pub async fn job_log(&self, repo: &str, job: u64) -> Result<String, GhError> {
+        let path = format!("repos/{repo}/actions/jobs/{job}/logs");
+        self.exchange("GET", &path, "Accept: application/vnd.github+json", &[])
+            .await?
+            .map_err(|(_, message)| GhError::failed(format!("the log of job {job}: {message}")))
+    }
+
     /// Posts `fleetd/train=success` on `sha`.
     pub async fn post_train_status(
         &self,

@@ -95,9 +95,16 @@ The train gives a commit's CI 45 minutes of running time, counted from when its 
 spend queued for runners doesn't count. While every check is still queued, there is a ceiling of 2 hours. If the CI
 provider gives no start times, the 45 minutes count from when the train starts waiting.
 
-A red check fails the PR at once, however long the other checks have left. A cancelled check is never a failure: if
-a push to the PR cancelled its run, the train takes the new commit instead; otherwise it re-runs the cancelled jobs alone, never a job that failed beside
-them, or waits. CI that runs out of time is different: the
+A check that fails on a PR's own commit gets one more try: the train re-runs that job alone, with the jobs that need
+it, once its workflow run is done. If the re-run passes, the PR carries on, and its agent and the lead hear in one line
+that the check was flaky, naming the failing test when the job's log shows one. If it fails again, the PR fails,
+however long the other checks have left. A red check on a batch fails the batch at once, and its PRs go alone. A
+cancelled check is never a failure: if a push to the PR cancelled its run, the train takes the new commit instead;
+otherwise it re-runs the cancelled jobs alone, never a job that failed beside them, or waits.
+
+A push to a PR never needs it enqueued again. While the train waits on CI, it reads the PRs in line about every 15
+seconds: one that was pushed to takes its new commit (and a new review if its changes changed) without waiting for
+that CI to end, and a push to the PR in CI ends the wait on its old commit, even when the push didn't cancel that run. CI that runs out of time is different: the
 PR shows `ci_failed` with "CI timed out", the lead is told, and the agent that wrote it isn't asked to push. The train
 keeps reading that commit's checks. If they finish green, the PR goes back in the queue ("CI finished after the
 timeout; back in the queue") and merges on that run, after the usual rebase if its base moved. If one goes red, the
@@ -394,6 +401,12 @@ When one PR needs another merged first, such as a client that needs a new API, t
 The PRs can be in the same repo or any other. Enqueuing a PR that is already in line adds the new `after` PRs to the
 ones it has. Once the train is merging it (rebasing, in CI or merging), that is refused: add the `hold` label to keep it
 from landing first. The train also refuses an order that loops back, where the upstream PR already waits on this one.
+
+A PR stacked on an agent's open PR waits for it without an `after`: one whose commits hold that PR's latest commit, as
+when it is based on that PR's branch or built on top of it. Only a PR of the same repo from an agent's branch (under the
+project's branch prefix) counts, never a fork's PR or a standing branch such as `develop`. Once the branch a PR is based
+on has landed, however it merged, the train first points the PR at that branch's base, so it lands there and not in
+the branch that already merged.
 
 The downstream PR is reviewed and checked as usual. Once it is ready, it stays in line, held with
 "waiting on acme/api#40" and the reason. When the upstream PR merges, the downstream PR's train takes it on its next

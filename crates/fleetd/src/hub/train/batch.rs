@@ -504,6 +504,18 @@ impl Train {
             if hold.is_some() {
                 continue;
             }
+            // Stacked on a PR's branch: once that PR merged, it goes into its base, never into the landed branch.
+            match self.restack(&change, &pull).await {
+                Ok(false) => {}
+                Ok(true) => {
+                    settled = true;
+                    continue;
+                }
+                Err(e) => {
+                    self.ready_error(&change, &e.message);
+                    continue;
+                }
+            }
             // Regenerated first, or still being regenerated: its new head comes through as a push.
             if self.early_migration(&change, &pull).await {
                 continue;
