@@ -4521,6 +4521,77 @@ impl crate::node::browser::SessionHooks for NaviHooks {
     }
 }
 
+/// The browser's hooks for an agent session holding a screen while `held`, keeping which agent sessions ended.
+#[derive(Default)]
+struct ScreenHooks {
+    held: std::sync::atomic::AtomicBool,
+    ended: std::sync::Mutex<Vec<String>>,
+}
+
+impl crate::node::browser::SessionHooks for ScreenHooks {
+    fn env(&self, _thread: &str, _path: Option<&str>) -> Vec<(String, String)> {
+        Vec::new()
+    }
+    fn plugin_dirs(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+    fn item(&self, _thread: &str, _item: &fleetd_contracts::sessions::ThreadItem) {}
+    fn ended(&self, thread: &str) {
+        self.ended.lock().unwrap().push(thread.to_owned());
+    }
+    fn screen_ended(&self, _thread: &str, _session: &str) {}
+    fn filled_since(&self, _thread: &str, _known: usize) -> Option<crate::node::mask::Secrets> {
+        None
+    }
+    fn holds_screen(&self, _thread: &str) -> bool {
+        self.held.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+/// T1485's iOS screen went as its claude was reaped while its task waited on CI: an idle agent session that holds a
+/// screen keeps its claude, and so its screen, for its next turn; once the screen is gone, it is reaped as before.
+#[tokio::test]
+async fn an_idle_session_holding_a_screen_is_not_reaped() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    let mut hub = hub_with(
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+        SessionConfig {
+            idle_reap: Duration::ZERO,
+            ..config(dir.path())
+        },
+    )
+    .await;
+    let hooks = Arc::new(ScreenHooks::default());
+    hooks.held.store(true, std::sync::atomic::Ordering::SeqCst);
+    hub.service.set_browser(hooks.clone());
+    hub.project(&root).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.settled("r1").await;
+    // Reaping marks the process closing as it sends the shutdown.
+    let reaped = |hub: &Hub| hub.service.st().live.get("s1").is_none_or(|l| l.closing);
+
+    // Waiting between turns, past the reap: its claude and its screen stay, and the next turn runs in them.
+    hub.service.reap().await;
+    assert!(!reaped(&hub), "reaped");
+    assert!(hooks.ended.lock().unwrap().is_empty());
+    hub.ok(send("s1", "r2")).await;
+    hub.settled("r2").await;
+    assert_eq!(hub.runner.spawned().len(), 1, "the same claude ran it");
+
+    // Its screen ended (its idle limit, say): the idle claude goes.
+    hooks.held.store(false, std::sync::atomic::Ordering::SeqCst);
+    hub.service.reap().await;
+    assert!(reaped(&hub), "not reaped");
+}
+
 #[test]
 fn a_session_whose_sandbox_cant_start_says_how_to_fix_it() {
     let e = super::runner_error(crate::node::runner::RunnerError::Sandbox {

@@ -220,10 +220,10 @@ pub fn waiting(db: &HubDb, r: &ProjectRef) -> Result<Vec<BrowserSession>, StoreE
 }
 
 /// Live sessions whose task ended: their agent never called `session_end`, or their node's word of the end never came.
-fn outlived(c: &Connection) -> Result<Vec<BrowserSession>, StoreError> {
+fn outlived(c: &Connection, now: i64) -> Result<Vec<BrowserSession>, StoreError> {
     let mut stmt = c.prepare(&format!(
         "SELECT data FROM browser_sessions b WHERE b.state = 'live' AND {}",
-        crate::hub::machine_roles::task_ended("json_extract(b.data, '$.taskId')")
+        crate::hub::machine_roles::task_ended("json_extract(b.data, '$.taskId')", now)
     ))?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
     let mut out = Vec::new();
@@ -236,12 +236,12 @@ fn outlived(c: &Connection) -> Result<Vec<BrowserSession>, StoreError> {
 /// What a session the hub ended with its task says.
 pub const OUTLIVED_NOTE: &str = "its task ended with it still open, so the hub ended it";
 
-/// Ends every live session whose task ended (done, failed or cancelled; never one between turns): lost on the hub,
-/// for [`tell_nodes`] to have its node close it. A recording its node still uploads records it after all. Returns how
-/// many it ended.
+/// Ends every live session whose task ended (cancelled, or done or failed past a screen's idle limit; never one
+/// waiting between turns): lost on the hub, for [`tell_nodes`] to have its node close it. A recording its node still
+/// uploads records it after all. Returns how many it ended.
 pub fn end_outlived(hub: &Hub) -> Result<usize, StoreError> {
-    let sessions = hub.db.with(outlived)?;
     let now = now_ms(hub.clock.as_ref());
+    let sessions = hub.db.with(|c| outlived(c, now))?;
     for mut s in sessions.iter().cloned() {
         s.state = BrowserSessionState::Lost;
         s.ended_at = Some(fleetd_contracts::ids::Timestamp(iso_ms(now)));
@@ -306,8 +306,8 @@ pub fn tell_nodes(hub: &Hub, told: &mut Told) -> Result<usize, StoreError> {
     Ok(sent)
 }
 
-/// [`end_outlived`] and [`tell_nodes`] as the hub starts and after each event (a task's end is one, a node's link
-/// another), until the hub stops.
+/// [`end_outlived`] and [`tell_nodes`] as the hub starts, after each event (a task's cancel is one, a node's link
+/// another) and every minute, as a finished turn's wait runs out, until the hub stops.
 pub async fn run_end_outlived(hub: Arc<Hub>) {
     let mut head = hub.events.subscribe();
     let mut told = Told::new();
@@ -319,6 +319,7 @@ pub async fn run_end_outlived(hub: Arc<Hub>) {
         tokio::select! {
             () = hub.shutdown.wait() => return,
             changed = head.changed() => if changed.is_err() { return },
+            () = hub.clock.sleep(std::time::Duration::from_secs(60)) => {}
         }
     }
 }

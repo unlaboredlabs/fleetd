@@ -1855,8 +1855,8 @@ async fn a_session_with_no_session_file_still_ends_on_the_hub() {
     }
 }
 
-/// T1 ended with its browser still open: the hub ends the session and tells the node, which closes the browser as
-/// when the agent's claude exits, and its recording still reaches the hub.
+/// T1 was cancelled with its browser still open: the hub ends the session and tells the node, which closes the browser
+/// as when the agent's claude exits, and its recording still reaches the hub.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_hub_ends_a_browser_whose_task_ended() {
     let Some(rig) = rig().await else { return };
@@ -1875,7 +1875,7 @@ async fn the_hub_ends_a_browser_whose_task_ended() {
         .with(|c| {
             c.execute(
                 "INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, data)
-                 VALUES (1, 'devbox', 'storefront', 'W1', 'done', '{}')",
+                 VALUES (1, 'devbox', 'storefront', 'W1', 'cancelled', '{}')",
                 [],
             )?;
             Ok(())
