@@ -59,7 +59,7 @@ describe("the filters menu", () => {
 
 describe("the avatar that opens Settings", () => {
   it("shows the person's initial, the hub's before the hub says who they are", () => {
-    expect(meAvatar("wynn dev", "devbox", "live").initial).toBe("W");
+    expect(meAvatar("sam rivera", "devbox", "live").initial).toBe("S");
     expect(meAvatar(undefined, "devbox", "live").initial).toBe("D");
     expect(meAvatar("  ", "devbox", "live").initial).toBe("D");
     expect(meAvatar("Émile", "devbox", "live").initial).toBe("É");
@@ -67,8 +67,8 @@ describe("the avatar that opens Settings", () => {
 
   it("carries the link as a dot: live, dialling, or down, and says so to VoiceOver", () => {
     expect([linkTone("live"), linkTone("connecting"), linkTone("retrying"), linkTone("refused"), linkTone("unpaired")]).toEqual(["live", "busy", "busy", "down", "down"]);
-    expect(meAvatar("Wynn", "devbox", "live").label).toBe("Settings, Connected");
-    expect(meAvatar("Wynn", "devbox", "retrying").label).toBe("Settings, Reconnecting…");
+    expect(meAvatar("Sam", "devbox", "live").label).toBe("Settings, Connected");
+    expect(meAvatar("Sam", "devbox", "retrying").label).toBe("Settings, Reconnecting…");
   });
 
   it("sits at the top left and pushes Settings, which has a way back and no tab bar under it", () => {
