@@ -180,3 +180,32 @@ it("shows nothing on a hub from before Import memory", async () => {
   await mount({ code: "not_found", message: "Unknown tool memory_import." });
   expect(document.querySelector('section[aria-label="Import memory"]')).toBeNull();
 });
+
+it("never says your memory already has it when nothing fit, or only secrets were skipped", async () => {
+  const hub = await mount();
+  const run = async (out: MemoryImportOutput) => {
+    paste("[2024-03-02] - Keep answers short.");
+    await act(async () => {
+      button("Add to Memory").click();
+      await Promise.resolve();
+    });
+    act(() => hub.finish(out));
+    await settle();
+  };
+  await run({
+    prompt: PROMPT,
+    added: [],
+    skipped: [
+      { text: "Speaks English.", why: "duplicate" },
+      { text: "Ledgerline: a bookkeeping API in Rust.", why: "full" },
+      { text: "Harbor: a docs site builder.", why: "full" },
+    ],
+    chars: 15990,
+    cap: 16000,
+  });
+  expect(status()).toContain("Nothing was added: none of it fit under your memory's cap. Skipped 1 already there.");
+  expect(status()).toContain("2 entries didn't fit under your memory's cap of 16,000 characters");
+  expect(status()).not.toContain("already says it");
+  await run({ prompt: PROMPT, added: [], skipped: [{ text: "Deploy notes: the staging key is [secret]", why: "secret" }], chars: 20, cap: 4000 });
+  expect(status()).toBe("Nothing was added. Skipped 1 holding a secret.");
+});

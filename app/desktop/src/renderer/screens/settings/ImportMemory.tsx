@@ -21,7 +21,17 @@ const entries = (n: number) => (n === 1 ? "1 entry" : `${String(n)} entries`);
 /** What an import did, in a line: how many went in, then what was skipped and why. */
 export function importSummary(out: MemoryImportOutput): string {
   const count = (why: string) => out.skipped.filter((x) => x.why === why).length;
-  const head = out.added.length === 0 ? "Nothing new to add: your memory already says it." : `Added ${entries(out.added.length)} to your memory.`;
+  // "Already says it" only when what it skipped was all already there; a full memory or a secret says otherwise.
+  const head =
+    out.added.length > 0
+      ? `Added ${entries(out.added.length)} to your memory.`
+      : count("full") > 0
+        ? "Nothing was added: none of it fit under your memory's cap."
+        : out.skipped.length === 0
+          ? "Nothing to add: the answer held nothing about you."
+          : count("duplicate") === out.skipped.length
+            ? "Nothing new to add: your memory already says it."
+            : "Nothing was added.";
   const skipped = [
     count("duplicate") > 0 ? `${String(count("duplicate"))} already there` : null,
     count("secret") > 0 ? `${String(count("secret"))} holding a secret` : null,
