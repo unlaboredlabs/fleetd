@@ -6,9 +6,9 @@
 #   fetch      unpacks each channel's into updates/<channel>/, where vercel.json's /updates rewrite finds the
 #              manifests, and its sha256 into updates/<channel>.sha256. A channel without one is left out, and the app
 #              keeps the bundle it has. Never fails the build.
-#   unchanged  the Ignored Build Step: exits 0 (skip) when site/ didn't change and production already serves each
-#              channel's current tarball. So a release's updates deploy with the next build of main, or at once when
-#              the release calls the project's deploy hook (the SITE_DEPLOY_HOOK secret).
+#   unchanged  the Ignored Build Step: exits 0 (skip) when site/ and the docs' sources (docs/site) didn't change and
+#              production already serves each channel's current tarball. So a release's updates deploy with the next
+#              build of main, or at once when the release calls the project's deploy hook (the SITE_DEPLOY_HOOK secret).
 set -u
 repo="${VERCEL_GIT_REPO_OWNER:-unlaboredlabs}/${VERCEL_GIT_REPO_SLUG:-fleetd}"
 tmp="$(mktemp)"
@@ -40,8 +40,8 @@ case "${1:-}" in
     exit 0
     ;;
   unchanged)
-    git diff --quiet HEAD^ HEAD -- . || exit 1
-    # Previews deploy for site/ changes only.
+    git diff --quiet HEAD^ HEAD -- . ../docs/site || exit 1
+    # Previews deploy for site/ and docs/site changes only.
     [ "${VERCEL_ENV:-}" = production ] || exit 0
     for channel in edge stable; do
       new=

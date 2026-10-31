@@ -10,8 +10,8 @@
 # - rust-tests: the workspace tests of the modules the changed files are in, two levels deep (a change to
 #   crates/fleetd/src/hub/train/batch.rs runs hub::train::), and the other crates' tests whole. CI's `rust (linux)`
 #   runs every test and the doctests.
-# - site: site/docs is the current build of docs/site, the site's pages and links, no personal identifiers, and the
-#   landing page fits every width. The identifier check runs on every call; it reads every tracked file.
+# - site: a build of docs/site, the site's pages and links, no personal identifiers, and the landing page fits every
+#   width. The identifier check runs on every call; it reads every tracked file.
 # - desktop: app/desktop's case clashes, typecheck, lint and unit tests.
 # - reverts: on every call, whether HEAD would undo work already on origin/main (scripts/reverts.sh, the merge train's
 #   own check before review): a commit made on a fresh main while its files were an older tree's.
@@ -84,7 +84,7 @@ wanted site docs/site site .github/site-check.mjs .github/site-layout-check.mjs 
   .github/docs-serve.mjs "${rust_paths[@]}" && site_wanted=true
 if wanted rust-docs "${rust_paths[@]}"; then
   step rust-docs cargo build --locked -p fleetd -p docsgen
-  # Fix: cargo run -q -p docsgen, then rebuild site/docs (the site check does) and commit both.
+  # Fix: cargo run -q -p docsgen, and commit the pages it wrote.
   step rust-docs cargo run --locked -q -p docsgen -- --check
   step rust-docs npm_ci tests/lab
   # A short directory: the node's socket path in it must fit in SUN_LEN (108 bytes).
@@ -140,22 +140,9 @@ if wanted rust-tests "${rust_paths[@]}"; then
   for c in "${crates[@]}"; do step rust-tests run_tests -p "$c"; done
 fi
 
-# As CI: the rebuilt site/docs is what's committed, and the search index isn't committed.
-site_docs_current() {
-  if [ -n "$(git ls-files site/docs/pagefind)" ]; then
-    echo "site/docs/pagefind is tracked; the Vercel build generates it: git rm -r --cached site/docs/pagefind"
-    return 1
-  fi
-  if ! git diff --quiet HEAD -- site/docs || [ -n "$(git ls-files --others --exclude-standard -- site/docs)" ]; then
-    git status --short -- site/docs | head -20
-    echo "site/docs differs from what's committed: the build above rewrote it; commit it"
-    return 1
-  fi
-}
 if $site_wanted; then
   step site npm_ci docs/site
   step site npm run build --prefix docs/site
-  step site site_docs_current
   if [ -x "$target/debug/fleetd" ]; then
     "$target/debug/fleetd" help >"$help"
     step site node .github/site-check.mjs "$help"
