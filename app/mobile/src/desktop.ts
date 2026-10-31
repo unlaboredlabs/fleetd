@@ -1,9 +1,9 @@
 // What the phone app takes from the desktop app, all in one place: the /app protocol's generated types, the pairing
 // rules, the chat reducers, what makes a project a Navi and who it belongs to, the Add project flow, a project's allowed
 // profiles and worktrees, the prose diff a skill's history shows, the Update button's run and its wording, the
-// characters an approval card marks, and the state glyph's frames and the words of the lead's turn line. Pure modules
-// that import no packages, so Metro and vitest read them as they are (metro.config.js); mobile.yml runs this app's
-// checks when they change.
+// characters an approval card marks, the state glyph's frames, the words of the lead's turn line, and the New screen
+// picker's machines. Pure modules that import no packages, so Metro and vitest read them as they are
+// (metro.config.js); mobile.yml runs this app's checks when they change.
 export type {
   ApprovalDecision,
   AttachmentGetOutput,
@@ -43,6 +43,10 @@ export type {
   SkillSummary,
   Activity,
   LiveFrame,
+  BrowserFrame,
+  BrowserInput,
+  BrowserSession,
+  BrowserSessionEventData,
 } from "../../desktop/src/shared/contracts";
 export { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, PROTOCOL_VERSION } from "../../desktop/src/shared/contracts";
 export type { CallOutcome, HubError, HubState } from "../../desktop/src/shared/hub";
@@ -75,3 +79,4 @@ export { updatesView, type Line, type PartLine, type UpdatesView } from "../../d
 export { loadRun, resetFlow, retryMachine, startOver, startUpdate, updateNow, useFlow, useReady, useRun, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
 export { cellFrames, CELLS, GRAIN, GRAIN_BEATS, LEVELS, litOn, phaseOf, RING, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";
 export { doingWords, leadLaneId, sentenceCase, workedFor } from "../../desktop/src/shared/turnWords";
+export { canOpen, hostsFor, KINDS as SCREEN_KINDS, openWord, pickHost, slotLine, type HostChoice, type ScreenKind } from "../../desktop/src/renderer/screens/sessions/pickScreen";

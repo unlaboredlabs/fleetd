@@ -135,8 +135,8 @@ fn owner_removed(db: &HubDb, r: &ProjectRef) -> Result<bool, StoreError> {
 }
 
 /// The projects a call's input names, at any of its objects down to `depth`: a `machineId` with a `projectId`, or
-/// with a `threadId` (the thread's project), a `requestId` (the project that asked) and an `automationId` (the
-/// project it runs in).
+/// with a `threadId` (the thread's project), a `requestId` (the project that asked), an `automationId` (the
+/// project it runs in) and a `sessionId` (the screen's project).
 fn refs(
     c: &Connection,
     input: &Value,
@@ -165,6 +165,11 @@ fn refs(
             }
             if let Some(id) = text("automationId")
                 && let Some(p) = automation_project(c, id)?
+            {
+                out.push(p);
+            }
+            if let Some(id) = text("sessionId")
+                && let Some(p) = screen_project(c, id)?
             {
                 out.push(p);
             }
@@ -199,6 +204,18 @@ fn thread_project(c: &Connection, m: &str, t: &str) -> Result<Option<ProjectRef>
 fn automation_project(c: &Connection, id: &str) -> Result<Option<ProjectRef>, StoreError> {
     let row: Option<(String, String)> = c
         .prepare_cached("SELECT machine_id, project_id FROM automations WHERE automation_id = ?")?
+        .query_row([id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .optional()?;
+    Ok(row.map(|(m, p)| ProjectRef {
+        machine_id: MachineId::unchecked(m),
+        project_id: ProjectId::unchecked(p),
+    }))
+}
+
+/// A screen's project: a Navi's screen is its owner's to watch, take over and replay.
+pub fn screen_project(c: &Connection, id: &str) -> Result<Option<ProjectRef>, StoreError> {
+    let row: Option<(String, String)> = c
+        .prepare_cached("SELECT machine_id, project_id FROM browser_sessions WHERE session_id = ?")?
         .query_row([id], |row| Ok((row.get(0)?, row.get(1)?)))
         .optional()?;
     Ok(row.map(|(m, p)| ProjectRef {

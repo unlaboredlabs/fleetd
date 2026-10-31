@@ -2,7 +2,8 @@
 // floating glass composer, with soft edges where it meets them. Newest at the bottom, older pages as you scroll up;
 // the person's bubbles on the right and the lead's on the left, grouped by burst with time chips between; pictures
 // and files inline; the lead's text as it streams and the desktop's turn line while it works; blocks and approvals as
-// cards; a skill the Navi saved as one quiet line that opens it.
+// cards; a skill the Navi saved as one quiet line that opens it; a live screen as a card at the newest end
+// (ScreenCards.tsx), which opens its live view.
 //
 // Opening it lands on the first message you haven't read, under an "Unread Messages" bar; reading to the bottom marks
 // it read. Scrolled up, a glass button takes you back down and counts what came meanwhile. Pressing and holding a
@@ -47,6 +48,7 @@ import type { MenuItem } from "../ui/Menu";
 import { bubbleIn, dur, ease, PRESSED_OPACITY, useReduceMotion } from "../ui/motion";
 import { SkeletonThread } from "../ui/Skeleton";
 import { ApprovalCard } from "./ApprovalCard";
+import { ScreenCards } from "./ScreenCards";
 import { Symbol } from "./manage/parts";
 import type { SkillSaved } from "./manage/skillsModel";
 import { TurnLine } from "./TurnLine";
@@ -302,7 +304,13 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
               setTimeout(() => list.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0.5 }), 80);
             }}
             onEndReached={() => void session.loadOlder(chatKey)}
-            ListHeaderComponent={<View style={{ height: composerHeight + space.xs }} />}
+            // Upside down too: the newest end, where its live screens sit over the composer.
+            ListHeaderComponent={
+              <View>
+                <ScreenCards chatKey={chatKey} />
+                <View style={{ height: composerHeight + space.xs }} />
+              </View>
+            }
             {...(loading ? {} : { ListEmptyComponent: <EmptyThread picture={project} title={title} navi={navi} onPick={(s) => send(s)} /> })}
             // The list is upside down: its footer is the top, under the clear header.
             ListFooterComponent={

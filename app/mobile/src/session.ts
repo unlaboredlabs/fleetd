@@ -1,14 +1,18 @@
 // One paired hub at work: the client, the state the screens read, and the calls behind them. A snapshot (on every
 // connection) reads the open requests again, reloads the open chat's latest page and sends again what the link cut
 // off; events re-read what they changed (store.ts effectsOf). Screens subscribe and dispatch nothing themselves. The
-// person's pinned chats sync with the hub on each snapshot (pins.ts).
-import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type ChatReplyTo, type ChatSend, type FlowDeps, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
+// person's pinned chats sync with the hub on each snapshot (pins.ts). A Navi's or agent's live screen is watched one
+// at a time: its frames go to the live view's listener alone (onFrame), never through the state, which would draw the
+// whole app again with each.
+import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { memoryPins, Pins, type PinStore } from "./pins";
 import { registerDevice, signOut, type PushDeps } from "./push";
 import { initial, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
 
 export const CHAT_PAGE = 50;
+/** A chat's screens read at once: its live ones are among its newest. */
+export const SCREENS_PAGE = 20;
 const OPEN_REQUESTS = { state: "open", limit: 100 } as const;
 
 export interface SessionOptions {
@@ -30,6 +34,7 @@ export class Session {
   readonly #client: HubClient;
   readonly #listeners = new Set<() => void>();
   readonly #eventListeners = new Set<(event: HubEvent) => void>();
+  readonly #frameListeners = new Set<(frame: BrowserFrame) => void>();
   readonly #now: () => number;
   readonly #newId: () => string;
   /** The chat on screen, which gets streamed text and is reloaded on each connection. */
@@ -125,6 +130,7 @@ export class Session {
     if (key === null) return;
     this.#dispatch({ t: "chat_open", key });
     void this.#loadLatest(key);
+    void this.readScreens(key);
   }
 
   async loadOlder(key: Key): Promise<void> {
@@ -199,6 +205,38 @@ export class Session {
   resend(key: Key, clientRequestId: string): void {
     const row = this.#state.sends[key]?.find((r) => r.clientRequestId === clientRequestId);
     if (row !== undefined) void this.#send(key, { ...row, state: { t: "sending" } });
+  }
+
+  /** A chat's screens, read again: as it opens, its live view opens, and one of them changes. */
+  async readScreens(key: Key): Promise<void> {
+    const r = await this.#client.call("browser_sessions", { projectRef: refOf(key), limit: SCREENS_PAGE });
+    if (r.ok) this.#dispatch({ t: "screens", key, sessions: r.output.sessions });
+  }
+
+  /** Watch one screen's frames (null stops), which go to each onFrame listener. */
+  watch(sessionId: string | null): void {
+    this.#client.watch(sessionId);
+  }
+
+  /** The watched screen's frames as they come, for its live view alone. */
+  onFrame(listener: (frame: BrowserFrame) => void): () => void {
+    this.#frameListeners.add(listener);
+    return () => this.#frameListeners.delete(listener);
+  }
+
+  /** A touch or typing on a screen this phone's person took over. */
+  input(sessionId: string, input: BrowserInput): void {
+    this.#client.input(sessionId, input);
+  }
+
+  /**
+   * Takes a screen over (`human`) or hands it back to its agent (`agent`), once its machine says it acted; the screen
+   * as the hub then has it replaces the listed one.
+   */
+  async control(sessionId: string, to: "human" | "agent"): Promise<Typed<"browser_control">> {
+    const r = await this.#client.call("browser_control", { sessionId, control: to });
+    if (r.ok) this.#dispatch({ t: "screen", session: r.output.session });
+    return r;
   }
 
   async answer(requestId: string, decision: ApprovalDecision): Promise<void> {
@@ -277,6 +315,10 @@ export class Session {
   }
 
   #onFrame(frame: HubFrame): void {
+    if (frame.t === "browser_frame") {
+      for (const listener of this.#frameListeners) listener(frame.frame);
+      return;
+    }
     const before = this.#state.chats[this.#open ?? ""];
     this.#dispatch({ t: "frame", frame, nowMs: this.#now() });
     if (frame.t === "state") this.#onState(frame.state);
@@ -288,6 +330,8 @@ export class Session {
       // An admin's: the build the hub has ready, and a run going on, followed.
       if (this.#state.admin === true) void loadRun(this.updates);
       if (this.#open !== null) void this.#loadLatest(this.#open);
+      // The screens of the chats looked at may have changed while the link was down.
+      for (const key of Object.keys(this.#state.screens)) void this.readScreens(key);
       for (const [key, rows] of Object.entries(this.#state.sends)) {
         for (const row of toResend(rows)) void this.#send(key, { ...row, state: { t: "sending" } });
       }
@@ -298,6 +342,7 @@ export class Session {
       if (effects.requests) void this.#readRequests();
       if (effects.snapshot) this.#client.resync();
       if (effects.pins) void this.#pins.read();
+      if (effects.screens !== undefined && (effects.screens === this.#open || this.#state.screens[effects.screens] !== undefined)) void this.readScreens(effects.screens);
     }
     const open = this.#open === null ? undefined : this.#state.chats[this.#open];
     if (this.#open !== null && open !== undefined && open !== before) {

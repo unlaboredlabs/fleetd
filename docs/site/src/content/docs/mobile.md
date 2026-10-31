@@ -7,7 +7,9 @@ The phone app connects to your [hub](/docs/glossary#hub) as the desktop app does
 [Navis](/docs/navi) and projects, with what needs you on top, and their chats, live as the lead writes. A chat with an
 [approval](/docs/approvals-and-secrets) waiting on you sits at the top of the list with its count, and **Needs you**
 shows only those; you answer each from its card in the chat, with everything it would do. Its notifications show the
-full text, end-to-end encrypted. You can make, rename and delete Navis and projects from it, and on an iPhone
+full text, end-to-end encrypted. You can [watch and take over](#screens) a Navi's or agent's screen when it needs
+you (a captcha, a bank's check, a sign-in only you can do), open a screen of your own, make, rename and delete Navis
+and projects, and on an iPhone
 [share](#share) text, links and images into a chat from any app. An admin can update fleetd. Secrets, machines, people
 and the hub's other admin pages stay in the desktop app.
 
@@ -90,6 +92,34 @@ The **ⓘ** at the top of a chat opens its Navi's or project's page:
 A member does everything here on the machines they operate. A Navi is its owner's alone: only they can rename it,
 forget its sign-ins or delete it. The hub checks each change too.
 
+## Screens {#screens}
+
+A Navi or agent that needs you on its [screen](/docs/browser-sessions) (a captcha, a bank's 3-D Secure check, a passkey,
+a sign-in only you can do) asks for you with `request_takeover`. The phone gets a notification, "Needs you on its
+screen: Solve the captcha on booking.com", and the chat shows a card, **Nova needs you**, with its reason and **Open**.
+Any other screen running in the chat has a card too, with **Watch**.
+
+Either opens the screen's live view, full screen: the page as its agent sees it, with who has control under its
+site's name.
+
+- **Pinch** to zoom, and move the zoomed page with two fingers.
+- **Take Over** gives you the page once its machine confirms it. Then a **tap** clicks, a **drag** scrolls the page,
+  and a touch **held** a moment presses and drags (a slider, a press-and-hold check). The keyboard button types into
+  the page, Return included.
+- **Hand Back** gives it back to its agent, which sees the page as you left it. Closing the view while you have
+  control asks whether to hand it back first; **Keep Control** leaves it yours, and its card opens it again.
+
+It's the desktop's live view and takeover, over the same hub connection: the phone draws at most 12 frames a second,
+and a slow connection skips frames rather than falling behind. Only a person's device takes a screen over, with
+operate on its machine, and a Navi's screen is its owner's alone: nobody else can watch it, take it over or read its
+recording. What you type goes to the page; the action log says that you took over, never what you typed.
+
+**New Screen**, on a project's or Navi's ⓘ page, opens a screen of your own: a browser unless you pick another kind
+that one of your machines can host, and the machine when more than one can. It opens in the live view with you in
+control, and **End Screen** closes it. A Navi's browser runs on the Navi's own profile, so a site you sign in to there
+stays signed in for it. On a full machine, **Wait** keeps your place for its next slot, and the screen opens once it
+has one. A PR's build or Try it preview opens from the desktop app. See [Open one yourself](/docs/browser-sessions#yours).
+
 ## Update fleetd {#update}
 
 An admin sees **Update** in Settings when the hub has a newer fleetd ready, or a machine runs an older one than the
@@ -152,7 +182,7 @@ Nothing readable: not the title, the text or which chat it is about. Apple and G
   time-sensitive and shows during a Focus.
 - Android sorts them into channels, each of which you can mute in the system's settings: Chats, Approvals, Orders and
   alerts, Quiet hours. One notification per chat, replaced by the next.
-- Tapping one opens its chat; an approval's opens at its card.
+- Tapping one opens its chat; an approval's opens at its card, and a screen's that needs you opens its live view.
 - Press and hold one to act on it without opening the app: Approve or Deny an approval, Reply to a message. The app
   icon's badge counts what needs you. See [Act from a notification](/docs/phone-notifications#actions).
 
@@ -303,4 +333,4 @@ when the app is built: a build you already installed keeps asking where it was b
 
 ## Not yet {#not-yet}
 
-- Secrets, settings and taking over a browser session: use the desktop app.
+- Secrets, settings, a screen's recording, and a PR's build or Try it preview in a screen: use the desktop app.

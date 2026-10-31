@@ -141,6 +141,19 @@ describe("tapping a notification", () => {
     expect(chatAt({ t: "approval", requestId: "Q7" }, [])).toBeNull();
   });
 
+  it("opens the live view of a screen whose agent asks for you, over its chat", () => {
+    const sessionId = "B0123456789abcdef0123456789abcdef";
+    const p = { v: 1, kind: "alert", title: "Nova", body: "Needs you on its screen: Solve the captcha on booking.com", hub: "", machineId: "devbox", projectId: "navi-ada", sessionId, at: "" };
+    const shown = shownOf(openPayload(sealedJson(p), keys)!);
+    expect(shown).toMatchObject({ title: "Nova", channel: "other", id: `screen:${sessionId}`, route: { t: "screen", key: "devbox/navi-ada", sessionId } });
+    expect(chatAt(shown.route!, undefined)).toEqual({ key: "devbox/navi-ada", sessionId });
+    // Android's posted notification carries the route; iOS's opens the payload again.
+    expect(tapRoute({ route: shown.route }, undefined, null)).toEqual(shown.route);
+    expect(tapRoute({}, { c: sealedJson(p) }, keys)).toEqual(shown.route);
+    // Not a screen's id: just its chat.
+    expect(shownOf(openPayload(sealedJson({ ...p, sessionId: "../x" }), keys)!).route).toEqual({ t: "chat", key: "devbox/navi-ada" });
+  });
+
   it("just opens the app for one it can't read", () => {
     expect(tapRoute({}, { c: message!.ciphertext }, null)).toBeUndefined();
     expect(tapRoute({ route: { t: "chat", key: "nokey" } }, {}, keys)).toBeUndefined();

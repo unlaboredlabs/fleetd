@@ -44,12 +44,16 @@ export type RootParams = {
    * `tap`: one notification tap from the next, so a second tap on the same one while the chat is open lands again.
    */
   Chat: { key: Key; messageId?: string; requestId?: string; tap?: number };
+  /** A Navi's or agent's live screen, full screen over its chat (screens/Screen.tsx). */
+  Screen: { key: Key; sessionId: string };
 } & ManageParams;
 /** A project's and a Navi's own screens (screens/manage): made from the Chats list's +, opened from a chat's header. */
 export type ManageParams = {
   /** `back`: once made, back to where it was opened (Import Memory) rather than to its chat. */
   NewNavi: { back?: boolean } | undefined;
   NewProject: undefined;
+  /** A screen of the person's own for a project or Navi: its kind and machine, then its live view (NewScreen.tsx). */
+  NewScreen: { key: Key };
   /** A project's or Navi's screen and what it opens, a stack of their own over its chat (manage/index.tsx ChatInfo). */
   ChatInfo: NavigatorScreenParams<ChatInfoParams>;
   /** Its icon: a built-in face and color, or a photo (IconPicker.tsx). */

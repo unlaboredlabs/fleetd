@@ -30,6 +30,7 @@ import { Chats, searchBar } from "./src/screens/Chats";
 import { Pair, Scan, Welcome } from "./src/screens/Connect";
 import { backTo, infoOptions, manageScreens, newChatOptions, pushed } from "./src/screens/manage";
 import { ImportMemory } from "./src/screens/ImportMemory";
+import { Screen } from "./src/screens/Screen";
 import { Settings } from "./src/screens/Settings";
 import { Session } from "./src/session";
 import { navigationTheme, useTheme, type Palette } from "./src/theme";
@@ -158,11 +159,15 @@ function Pairing({ note, onPaired }: { note: string | undefined; onPaired: (p: P
 
 let taps = 0;
 
-/** Opens where a tapped notification goes, an approval's chat at its card (push.ts chatAt): false while not known yet. */
+/**
+ * Opens where a tapped notification goes, an approval's chat at its card, a screen's live view over its chat (push.ts
+ * chatAt): false while not known yet.
+ */
 const go = (route: Route, requests: Parameters<typeof chatAt>[1]): boolean => {
   const at = chatAt(route, requests);
   if (at === undefined) return false;
   if (at !== null) nav.navigate("Chat", at.requestId === undefined ? { key: at.key } : { key: at.key, requestId: at.requestId, tap: ++taps });
+  if (at?.sessionId !== undefined) nav.navigate("Screen", { key: at.key, sessionId: at.sessionId });
   return true;
 };
 
@@ -254,6 +259,7 @@ function Root() {
       <RootStack.Screen name="Home" component={ChatsHome} options={{ headerShown: false, title: "Chats" }} />
       <RootStack.Screen name="Settings" component={SettingsScreens} options={{ headerShown: false }} />
       <RootStack.Screen name="Chat" component={Chat} options={({ route }) => ({ ...chatOptions(t), ...infoOptions(t, () => nav.navigate("ChatInfo", { screen: "Info", params: { key: route.params.key } })) })} />
+      <RootStack.Screen name="Screen" component={Screen} options={{ headerShown: false, presentation: "fullScreenModal", gestureEnabled: false, contentStyle: { backgroundColor: t.dark ? "#000000" : t.grouped } }} />
       {manageScreens(RootStack, t)}
     </RootStack.Navigator>
   );

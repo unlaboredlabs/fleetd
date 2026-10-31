@@ -2,7 +2,8 @@
 // (tapping the avatar, or Edit under it, opens its icon's sheet: a built-in face and color, or a photo: IconPicker.tsx),
 // then what runs there now (agents_list), its open orders (orders_board), its checklist and its recent merges with
 // their PRs, read-only; a Navi's Skills (Skills.tsx); then its name, the profiles its agents may run on and where it
-// lives, and for a Navi Forget Sign-ins. Delete last, red, asking first: in an action sheet, or, when uncommitted changes would be lost, in a sheet
+// lives, and for a Navi Forget Sign-ins; New Screen, a screen of your own for it, where the hub opens them. Delete
+// last, red, asking first: in an action sheet, or, when uncommitted changes would be lost, in a sheet
 // that names them and wants its name typed (TypedDelete). What the person's role doesn't allow isn't offered.
 import { StackActions, useFocusEffect } from "@react-navigation/native";
 import { useCallback, useRef, useState } from "react";
@@ -10,6 +11,7 @@ import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollVie
 import { listTime } from "../../chatView";
 import { isNavi, tilde, type ProjectSummary, type TodoItem } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
+import { NEW_SCREEN } from "../../screen";
 import { space, type, useTheme, type Palette } from "../../theme";
 import { Avatar } from "../../ui/Avatar";
 import { haptics } from "../../ui/haptics";
@@ -201,6 +203,12 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
         <ListRow title={navi ? "Lives on" : "Machine"} value={machine} />
         <ListRow title="Folder" value={tilde(p.workspaceRoot)} selectable />
       </ListSection>
+
+      {live && state.hub.phase === "live" && state.hub.features?.includes(NEW_SCREEN) === true ? (
+        <ListSection footer={navi ? `A browser of your own on ${p.title}'s profile, to sign in to a site for it, or another kind of screen.` : "A browser, simulator, emulator or desktop of your own, live here."}>
+          <ListRow title="New Screen" icon="browser" onPress={() => navigation.navigate("NewScreen", { key })} />
+        </ListSection>
+      ) : null}
 
       {navi && can.forgetSignins ? (
         <ListSection

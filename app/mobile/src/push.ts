@@ -81,6 +81,8 @@ export interface PushPayload {
   readonly threadId?: string;
   readonly messageId?: string;
   readonly requestId?: string;
+  /** A screen whose agent asks the person to take it over: tapping opens its live view. */
+  readonly sessionId?: string;
   readonly urgent?: boolean;
   readonly quiet?: boolean;
   /** What can be done from the notification: Approve and Deny, Review in the app, Reply. */
@@ -128,6 +130,7 @@ export const readPayload = (value: unknown): PushPayload | null => {
     ...optional("threadId"),
     ...optional("messageId"),
     ...optional("requestId"),
+    ...optional("sessionId"),
     ...(json.urgent === true ? { urgent: true } : {}),
     ...(json.quiet === true ? { quiet: true } : {}),
     ...(PAYLOAD_CATEGORIES.has(json.category as string) ? { category: json.category as NonNullable<PushPayload["category"]> } : {}),
@@ -192,7 +195,11 @@ export const CHANNELS = {
 export type Channel = keyof typeof CHANNELS;
 
 /** Where tapping a notification goes; kept on it as its data. */
-export type Route = { readonly t: "chat"; readonly key: Key } | { readonly t: "approval"; readonly requestId: string; readonly key?: Key };
+export type Route =
+  | { readonly t: "chat"; readonly key: Key }
+  | { readonly t: "approval"; readonly requestId: string; readonly key?: Key }
+  /** A screen asking for the person: its live view, over its chat. */
+  | { readonly t: "screen"; readonly key: Key; readonly sessionId: string };
 
 export interface Shown {
   readonly title: string;
@@ -211,13 +218,15 @@ export interface Shown {
 export const routeOf = (p: PushPayload): Route | undefined => {
   const key = p.machineId !== undefined && p.projectId !== undefined ? keyOf({ machineId: p.machineId, projectId: p.projectId }) : undefined;
   if (p.kind === "approval" && p.requestId !== undefined) return key === undefined ? { t: "approval", requestId: p.requestId } : { t: "approval", requestId: p.requestId, key };
+  if (key !== undefined && p.sessionId !== undefined && /^B[0-9a-f]{32}$/u.test(p.sessionId)) return { t: "screen", key, sessionId: p.sessionId };
   return key === undefined ? undefined : { t: "chat", key };
 };
 
-/** Where a route opens: a chat, an approval's at its card. */
+/** Where a route opens: a chat, an approval's at its card, a screen's with its live view over it. */
 export interface ChatAt {
   readonly key: Key;
   readonly requestId?: string;
+  readonly sessionId?: string;
 }
 
 /**
@@ -227,6 +236,7 @@ export interface ChatAt {
  */
 export const chatAt = (route: Route, requests: readonly HumanRequest[] | undefined): ChatAt | null | undefined => {
   if (route.t === "chat") return { key: route.key };
+  if (route.t === "screen") return { key: route.key, sessionId: route.sessionId };
   const key = route.key ?? requests?.find((r) => r.requestId === route.requestId)?.projectRef;
   if (key === undefined) return requests === undefined ? undefined : null;
   return { key: typeof key === "string" ? key : keyOf(key), requestId: route.requestId };
@@ -236,7 +246,7 @@ export const chatAt = (route: Route, requests: readonly HumanRequest[] | undefin
 export const shownOf = (p: PushPayload): Shown => {
   const route = routeOf(p);
   const channel: Channel = p.quiet === true ? "quiet" : p.kind === "message" ? "chats" : p.kind === "approval" ? "approvals" : "other";
-  const id = route?.t === "approval" ? `approval:${route.requestId}` : p.kind === "message" && route !== undefined ? `chat:${route.key}` : undefined;
+  const id = route?.t === "approval" ? `approval:${route.requestId}` : route?.t === "screen" ? `screen:${route.sessionId}` : p.kind === "message" && route !== undefined ? `chat:${route.key}` : undefined;
   const category = categoryOf(p);
   return {
     title: p.title || "fleetd",
@@ -268,6 +278,8 @@ const routeFrom = (v: unknown): Route | undefined => {
   if (r.t === "chat" && key !== undefined && key.includes("/")) return { t: "chat", key };
   const requestId = str(r.requestId);
   if (r.t === "approval" && requestId !== undefined) return key === undefined ? { t: "approval", requestId } : { t: "approval", requestId, key };
+  const sessionId = str(r.sessionId);
+  if (r.t === "screen" && key !== undefined && key.includes("/") && sessionId !== undefined) return { t: "screen", key, sessionId };
   return undefined;
 };
 

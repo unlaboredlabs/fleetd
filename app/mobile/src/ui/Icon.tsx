@@ -69,6 +69,12 @@ const SYMBOLS = {
   bubble: ["bubble.left.fill", "chat_bubble"],
   pdf: ["doc.richtext", "picture_as_pdf"],
   import: ["square.and.arrow.down", "download"],
+  browser: ["safari", "public"],
+  device: ["iphone", "smartphone"],
+  desktop: ["display", "desktop_windows"],
+  hand: ["hand.raised.fill", "back_hand"],
+  handBack: ["arrow.uturn.backward", "undo"],
+  keyboardHide: ["keyboard.chevron.compact.down", "keyboard_hide"],
 } as const satisfies Record<string, readonly [Extract<SymbolViewProps["name"], string>, AndroidSymbol]>;
 
 export type IconName = keyof typeof SYMBOLS;
