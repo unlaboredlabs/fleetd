@@ -116,5 +116,5 @@ export const addedWords = (r: Imported): { readonly title: string; readonly deta
   ].filter((n) => n !== null);
   if (r.added === 0 && r.full > 0) return { title: "Memory Full", detail: ["None of it fit. Make room under Settings › Memory in the desktop app, then try again.", ...notes].join(" ") };
   if (r.added === 0) return { title: "Nothing New", detail: ["Your memory already has all of it.", ...notes].join(" ") };
-  return { title: `Added ${String(r.added)} to Memory`, detail: ["Your Navis and every lead read it from now on.", ...notes].join(" ") };
+  return { title: `Added ${String(r.added)} to Memory`, detail: [`Your Navis and every lead read ${r.added === 1 ? "it" : "them"} from now on.`, ...notes].join(" ") };
 };

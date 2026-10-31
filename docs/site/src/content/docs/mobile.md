@@ -85,6 +85,18 @@ hub. It does what the desktop app's Update does: the hub updates itself, then ev
 live, machine by machine, to the outcome. A machine that failed or was put back gets **Retry**. Members don't see it,
 and the hub refuses them anyway.
 
+## Import memory {#import-memory}
+
+**Settings › Import Memory** brings what another assistant knows about you into your own memory, as the desktop app's
+Settings › Memory does.
+
+1. Tap **Copy Prompt** and paste it into a chat with ChatGPT, Claude, Grok or another assistant.
+2. Paste its answer into the box and tap **Add to Memory**.
+
+The hub picks out what's worth remembering, on your own Claude account, which takes about a minute. Then the screen says
+how many entries it added, and whether it left out lines that looked like keys or passwords, or entries that didn't fit
+because your memory is full.
+
 ## Share to fleetd {#share}
 
 On an iPhone, **fleetd** is in the share sheet of Safari, Photos and any other app. It sends text, a link or up to 20

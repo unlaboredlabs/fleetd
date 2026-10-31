@@ -27,7 +27,7 @@ import { chatAt, type Route } from "./src/push";
 import { Chat, chatOptions } from "./src/screens/Chat";
 import { Chats, searchBar } from "./src/screens/Chats";
 import { Pair, Scan, Welcome } from "./src/screens/Connect";
-import { backTo, infoOptions, manageScreens, newChatOptions } from "./src/screens/manage";
+import { backTo, infoOptions, manageScreens, newChatOptions, pushed } from "./src/screens/manage";
 import { ImportMemory } from "./src/screens/ImportMemory";
 import { Settings } from "./src/screens/Settings";
 import { Session } from "./src/session";
@@ -288,7 +288,7 @@ function SettingsScreens() {
   return (
     <SettingsStack.Navigator screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.grouped } }}>
       <SettingsStack.Screen name="Settings" component={Settings} options={backTo(t, () => root.goBack())} />
-      <SettingsStack.Screen name="ImportMemory" component={ImportMemory} options={{ title: "Import Memory", headerLargeTitleEnabled: false, headerBackButtonDisplayMode: "minimal" }} />
+      <SettingsStack.Screen name="ImportMemory" component={ImportMemory} options={{ ...pushed(t, "Import Memory"), headerLargeTitleEnabled: false }} />
     </SettingsStack.Navigator>
   );
 }

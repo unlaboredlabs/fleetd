@@ -6,7 +6,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useMemo, useReducer, useState } from "react";
-import { Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,6 +24,9 @@ import { errorWords, Problem } from "./manage/parts";
 const COPIED_MS = 1600;
 /** The paste box's height while empty: room for a few lines, as Grok's. */
 const BOX_MIN = 168;
+/** A step's number badge, and how far it grows with the text. */
+const BADGE = 20;
+const BADGE_SCALE = 1.4;
 
 export function ImportMemory({ navigation }: NativeStackScreenProps<SettingsParams, "ImportMemory">) {
   const t = useTheme();
@@ -135,17 +138,17 @@ export function ImportMemory({ navigation }: NativeStackScreenProps<SettingsPara
             <Text style={[type.subhead, styles.center, { color: t.secondary }]}>{done.detail}</Text>
           </Animated.View>
         )}
-        {working ? (
-          <Animated.Text entering={FadeIn.duration(reduce ? 0 : dur.quick).easing(ease.snap)} style={[type.footnote, styles.note, { color: t.secondary }]} accessibilityLiveRegion="polite">
-            Picking out what to remember. This takes about a minute.
-          </Animated.Text>
-        ) : null}
         <Problem text={s.phase.t === "failed" ? `Not added: ${errorWords(s.phase.error)}` : undefined} />
       </KeyboardAwareScrollView>
       {/* The button rides on the keyboard, over a fade of the page's ground, as a chat's composer. */}
       <KeyboardStickyView offset={{ closed: 0, opened: lift }} style={styles.dock} pointerEvents="box-none">
         {Platform.OS === "ios" ? <LinearGradient pointerEvents="none" colors={[t.dark ? "rgba(0,0,0,0)" : "rgba(242,242,247,0)", t.grouped]} locations={[0, 0.45]} style={StyleSheet.absoluteFill} /> : null}
         <View style={[styles.dockRow, { paddingBottom: Math.max(insets.bottom, space.lg) }]} onLayout={(e) => setDock(e.nativeEvent.layout.height)}>
+          {working ? (
+            <Animated.Text entering={FadeIn.duration(reduce ? 0 : dur.quick).easing(ease.snap)} style={[type.footnote, styles.center, styles.note, { color: t.secondary }]} accessibilityLiveRegion="polite">
+              Picking out what to remember. This takes about a minute.
+            </Animated.Text>
+          ) : null}
           <Button size="large" label={button.label} onPress={button.onPress} disabled={button.disabled} busy={working} />
         </View>
       </KeyboardStickyView>
@@ -156,10 +159,12 @@ export function ImportMemory({ navigation }: NativeStackScreenProps<SettingsPara
 /** A step's number in a small round badge, and what to do, above its card. */
 function Step({ n, text }: { n: number; text: string }) {
   const t = useTheme();
+  // As big as its number, which grows with Dynamic Type up to its cap.
+  const size = Math.round(BADGE * Math.min(Math.max(useWindowDimensions().fontScale, 1), BADGE_SCALE));
   return (
     <View style={styles.step} accessible accessibilityRole="header" accessibilityLabel={`Step ${String(n)}: ${text}`}>
-      <View style={[styles.badge, { backgroundColor: t.accentSoft }]}>
-        <Text style={[type.footnote, styles.badgeText, { color: t.accent }]} maxFontSizeMultiplier={1.4}>
+      <View style={[styles.badge, { width: size, height: size, borderRadius: size / 2, backgroundColor: t.accentSoft }]}>
+        <Text style={[type.footnote, styles.badgeText, { color: t.accent }]} maxFontSizeMultiplier={BADGE_SCALE}>
           {n}
         </Text>
       </View>
@@ -191,7 +196,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   grow: { flex: 1 },
   step: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginHorizontal: space.lg * 2, marginTop: space.xl, marginBottom: space.sm + 2 },
-  badge: { width: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center", marginTop: 0 },
+  badge: { alignItems: "center", justifyContent: "center" },
   badgeText: { fontWeight: "600", fontVariant: ["tabular-nums"] },
   card: { marginHorizontal: space.lg, borderRadius: shape.group, borderCurve: "continuous", overflow: "hidden" },
   prompt: { paddingHorizontal: space.lg, paddingTop: 14, paddingBottom: 14 },
@@ -203,7 +208,7 @@ const styles = StyleSheet.create({
   box: { minHeight: BOX_MIN, paddingHorizontal: space.lg, paddingTop: 14, paddingBottom: 14 },
   result: { alignItems: "center", gap: space.xs, paddingHorizontal: space.xl, paddingVertical: space.xl },
   center: { textAlign: "center" },
-  note: { marginHorizontal: space.lg * 2, paddingTop: 7 },
+  note: { paddingBottom: space.sm + 2 },
   dock: { position: "absolute", left: 0, right: 0, bottom: 0 },
   dockRow: { paddingHorizontal: space.xl, paddingTop: space.lg },
 });

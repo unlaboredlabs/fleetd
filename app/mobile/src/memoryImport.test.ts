@@ -66,7 +66,7 @@ describe("Add to Memory", () => {
   });
 
   it("says how many it added, and what it left out: secrets and a full memory", () => {
-    expect(addedWords({ added: 12, secrets: 0, full: 0 })).toEqual({ title: "Added 12 to Memory", detail: "Your Navis and every lead read it from now on." });
+    expect(addedWords({ added: 12, secrets: 0, full: 0 })).toEqual({ title: "Added 12 to Memory", detail: "Your Navis and every lead read them from now on." });
     expect(addedWords({ added: 1, secrets: 2, full: 3 }).detail).toBe(
       "Your Navis and every lead read it from now on. Left out 2 lines that looked like keys or passwords. 3 more didn't fit: your memory is full.",
     );
@@ -131,7 +131,7 @@ describe("the screen", () => {
 
   it("is pushed from Settings, with a small title over the Settings stack", () => {
     expect(src("screens/Settings.tsx")).toMatch(/<ListRow icon="import"[^\n]*title="Import Memory" onPress=\{\(\) => navigation\.navigate\("ImportMemory"\)\}/u);
-    expect(src("../App.tsx")).toMatch(/<SettingsStack\.Screen name="ImportMemory" component=\{ImportMemory\} options=\{\{ title: "Import Memory", headerLargeTitleEnabled: false/u);
+    expect(src("../App.tsx")).toMatch(/<SettingsStack\.Screen name="ImportMemory" component=\{ImportMemory\} options=\{\{ \.\.\.pushed\(t, "Import Memory"\), headerLargeTitleEnabled: false \}\}/u);
   });
 
   it("keeps the paste box and Add to Memory clear of the keyboard", () => {

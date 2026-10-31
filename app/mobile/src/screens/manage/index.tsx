@@ -29,7 +29,8 @@ const sheet = (t: Palette, title: string): NativeStackNavigationOptions => ({
   contentStyle: { backgroundColor: t.grouped },
 });
 
-const pushed = (t: Palette, title: string): NativeStackNavigationOptions => ({
+/** A page pushed in a stack of grouped pages: a small title on the page's own ground. */
+export const pushed = (t: Palette, title: string): NativeStackNavigationOptions => ({
   title,
   headerBackButtonDisplayMode: "minimal",
   headerTintColor: t.accent,
