@@ -281,7 +281,7 @@ describe("the rows around a row dragged in the sidebar", () => {
    * looked at: where `watch` (a row the drag never passes) and `passed` (the one it does) are drawn, and whether the
    * list took a new order while its rows were still making way for the drag. These guard the render ordering only:
    * here act() makes the renders one commit and nothing is painted between them, so the jump a split render painted
-   * on #868's parent (the row above jumping up, W219) doesn't show; perf:drops, in the built app, guards the frames.
+   * on #868's parent (the row above jumping up, W219) doesn't show.
    */
   const drag = async (name: string, dy: number, watch: string, passed: string) => {
     // Where each row was drawn at the last read of the layout: a transition set after it starts there.
