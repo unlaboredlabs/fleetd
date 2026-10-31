@@ -42,8 +42,12 @@ import { useRefreshing } from "./refresh";
 import { useNow } from "./time";
 
 const AVATAR = 56;
-/** The person's avatar in the bar, inside its glass circle. */
-const ME = 34;
+/**
+ * The person's avatar in the bar: drawn at 38 pt over a 34 pt view, as iOS sizes the bar's glass circle to the view
+ * (45 pt round, the same as +'s) and a wider one would stretch it into a capsule. It fills the glass, as in Messages.
+ */
+const ME_BOX = 34;
+const ME = 38;
 
 /**
  * The search field: in iOS 26's bottom toolbar, beside the filters (ui/Toolbar.tsx), as in Messages; without that bar,
@@ -248,8 +252,10 @@ function MeButton({ initial, tone, label, onPress }: { initial: string; tone: Li
   const t = useTheme();
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} hitSlop={6} style={styles.me}>
-      <Avatar name={initial} navi size={ME} />
-      <View style={[styles.meDot, { backgroundColor: t[DOT[tone]], borderColor: t.bg }]} />
+      <View style={styles.meFace}>
+        <Avatar name={initial} navi size={ME} />
+        <View style={[styles.meDot, { backgroundColor: t[DOT[tone]], borderColor: t.bg }]} />
+      </View>
     </Pressable>
   );
 }
@@ -476,6 +482,7 @@ const styles = StyleSheet.create({
   marks: { flexDirection: "row", alignItems: "center", gap: 4, paddingTop: 2 },
   match: { fontWeight: "600" },
   separator: { position: "absolute", left: 0, right: 0, bottom: 0, height: StyleSheet.hairlineWidth },
-  me: { width: ME, height: ME },
-  meDot: { position: "absolute", right: -2, bottom: -2, width: 12, height: 12, borderRadius: 6, borderWidth: 2 },
+  me: { width: ME_BOX, height: ME_BOX },
+  meFace: { position: "absolute", left: (ME_BOX - ME) / 2, top: (ME_BOX - ME) / 2, width: ME, height: ME },
+  meDot: { position: "absolute", right: -1, bottom: -1, width: 12, height: 12, borderRadius: 6, borderWidth: 2 },
 });
