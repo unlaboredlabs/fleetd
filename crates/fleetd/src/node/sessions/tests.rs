@@ -1322,6 +1322,71 @@ async fn a_session_whose_init_offers_an_agent_tool_stops_and_later_ones_deny_it(
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_session_started_with_no_tools_runs_though_its_init_lists_none() {
+    // As the hub's approval check starts (`--tools ""`): claude's init lists no tools, and none is an agent tool.
+    let lines = r#"
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u1"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u1","state":"started"}}
+{"dir":"out","ms":0,"msg":{"type":"system","subtype":"init","tools":[]}}
+{"dir":"out","ms":5,"msg":{"type":"result","subtype":"success","is_error":false,"result":"{\"verdict\":\"go\"}"}}
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let mut runner = FakeRunner::from_lines(lines);
+    runner.timed = true;
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    let SessionCall::Launch(held) =
+        launch("s1", RuntimeMode::ApprovalRequired, SessionWorkspace::Root)
+    else {
+        unreachable!()
+    };
+    hub.ok(SessionCall::Launch(SessionLaunch {
+        allowed_tools: Vec::new(),
+        allowed_only: true,
+        role: fleetd_contracts::sessions::SessionRole::Plain,
+        ..held
+    }))
+    .await;
+    let done = hub.settled("r1").await;
+    assert_eq!(done.latest_run.unwrap().status, RunStatus::Completed);
+    assert_eq!(
+        hub.service.store().item("s1", "agent-tools-r1").unwrap(),
+        None
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_session_with_tools_whose_init_lists_none_stops() {
+    // A claude that stopped listing its tools: whether it offers an agent tool can't be checked.
+    let lines = r#"
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u1"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u1","state":"started"}}
+{"dir":"out","ms":0,"msg":{"type":"system","subtype":"init","tools":[]}}
+{"dir":"out","ms":60000,"msg":{"type":"result","subtype":"success","is_error":false,"result":"too late"}}
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let mut runner = FakeRunner::from_lines(lines);
+    runner.timed = true;
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    let stopped = hub.settled("r1").await;
+    assert_eq!(stopped.latest_run.unwrap().status, RunStatus::Interrupted);
+    assert!(
+        hub.service
+            .store()
+            .item("s1", "agent-tools-r1")
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_run_silent_since_the_machine_woke_is_resumed_as_a_network_retry() {
     // The first turn's stream never comes back (its result is hours away); the retry's turn completes.
     let lines = r#"

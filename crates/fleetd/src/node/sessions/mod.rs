@@ -501,6 +501,22 @@ fn isolated_dir(home: &Path) -> PathBuf {
     home.join("isolated")
 }
 
+/// The tools a session may use without asking: its launch's rules and its role's.
+fn allowed_tools(local: &SessionLocal) -> Vec<String> {
+    local
+        .allowed_tools
+        .iter()
+        .cloned()
+        .chain(claude::role_allowed(local.role))
+        .collect()
+}
+
+/// A session held to allowed tools that name none of claude's own, such as a hub's approval check: claude starts it
+/// with no tools at all (`--tools ""`), and its init lists none.
+fn toolless(local: &SessionLocal) -> bool {
+    local.allowed_only && claude::runtime_tools(&allowed_tools(local)).is_empty()
+}
+
 fn permission_item_id(request_id: &str) -> String {
     format!("permission-{request_id}")
 }
@@ -2795,13 +2811,7 @@ impl SessionService {
             effort: row.summary.effort,
             helper_model,
             runtime_mode: row.summary.runtime_mode,
-            allowed_tools: row
-                .local
-                .allowed_tools
-                .iter()
-                .cloned()
-                .chain(claude::role_allowed(row.local.role))
-                .collect(),
+            allowed_tools: allowed_tools(&row.local),
             allowed_only: row.local.allowed_only,
             system_prompt,
             disallowed_tools: ALWAYS_DISALLOWED
@@ -3149,6 +3159,11 @@ impl SessionService {
                 }
                 RunnerEvent::RateLimit(limit) => self.remember_limit(limit),
                 RunnerEvent::Init { agent_tools, .. } => {
+                    // A session started with no tools (`--tools ""`) lists none, so it offers none.
+                    let agent_tools = agent_tools.or_else(|| {
+                        let row = self.store().session(&id).ok().flatten();
+                        row.is_some_and(|row| toolless(&row.local)).then(Vec::new)
+                    });
                     if agent_tools.as_ref().is_none_or(|t| !t.is_empty()) {
                         self.agent_tools_offered(&id, run_id.as_deref(), agent_tools)
                             .await;
