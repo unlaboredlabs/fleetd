@@ -108,6 +108,9 @@ control, the agent’s <code dir="auto">agent-browser</code> commands answer tha
 work. <strong>Hand back</strong> returns control: the
 agent’s next command sees the page as you left it, what you typed included. The recording’s action log says who took
 over and when, but not what you typed.</p>
+<p>While a browser is yours, the frame’s bar is its address bar. Type an address and press Enter to go there (a bare
+<code dir="auto">example.com</code> goes over https, <code dir="auto">localhost:5173</code> over http), or use back, forward and reload. It goes only to <code dir="auto">http</code>
+and <code dir="auto">https</code> pages, never to <code dir="auto">file:</code> or the browser’s own pages.</p>
 <p>A screen whose agent asked for you shows under <strong>waiting on you</strong> with its reason, until you take it over or it ends.
 The ask is a notification too, on the desktop and on your phone, where tapping it opens the screen’s live view.</p>
 <p>On the <a href="/docs/mobile#screens">phone</a>, a live screen shows as a card in its chat, and opens full screen: pinch to zoom,

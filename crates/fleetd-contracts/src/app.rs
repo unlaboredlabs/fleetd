@@ -27,14 +27,17 @@ pub type AppCallId = Text<1, 64>;
 ///   shows New screen.
 /// - `navi_skills`: a hub-kept skill's versions (`skill_get`'s `versions` and `version`), `skill_revert`, `skill_off`,
 ///   and a skill list's `changed`, `off` and `lastUsedAt`: a Navi's Skills.
+/// - `browser_navigate`: `browser_input`'s `navigate`, `back`, `forward` and `reload`, so the apps show a browser's
+///   address bar. A machine whose node is older drops them.
 ///
 /// The desktop app's `features.test.ts` checks that every feature it gates on is named here.
-pub const APP_FEATURES: [&str; 5] = [
+pub const APP_FEATURES: [&str; 6] = [
     "presence",
     "browser_sessions",
     "navi_asks",
     "screen_open",
     "navi_skills",
+    "browser_navigate",
 ];
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

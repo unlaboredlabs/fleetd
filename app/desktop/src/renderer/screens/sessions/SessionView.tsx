@@ -1,15 +1,15 @@
 // One screen (a browser session, or a device's), in the panel's wide width. While it runs: the page as the agent sees
 // it, the full width, what the agent is doing now, and Take over. Taken over, the page is yours: the frame's bar turns
-// to say so, your clicks and keys go to the page, and Hand back gives it to the agent, which looks at the page again
+// to say so and, on a browser, becomes its address bar (where it is, back, forward, reload), your clicks and keys go to the page, and Hand back gives it to the agent, which looks at the page again
 // and goes on; meanwhile it waits, and its line says so. A screen a person opened themselves (New screen) is theirs from
 // its start, with no agent: End screen closes it, and its recording goes to the hub as any screen's. An agent that asks you to take over says why above the page.
 // Once it has ended: its replay, the recording the full width; Steps opens its steps beside it, each step a jump to its
 // moment and a way into the page's snapshot at that step. A login filled from 1Password is a step in words; its value
 // is never on the hub to show, nor in a snapshot.
-import { AppWindow, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListOrdered, ListTree, Pause, Play, Square } from "lucide-react";
+import { AppWindow, ArrowLeft, ArrowRight, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListOrdered, ListTree, Pause, Play, RotateCw, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, toast } from "../../ui";
-import { useDataLayer } from "../../src/data/react";
+import { useData, useDataLayer } from "../../src/data/react";
 import { display } from "../../../shared/shortcuts";
 import { RolePill } from "../agents/parts";
 import { useCommands } from "../palette";
@@ -39,7 +39,7 @@ import {
 } from "./model";
 import { structureOf } from "./dom";
 import { useRecording, useSessions } from "./hub";
-import { setControl, useFrameInput, useLiveFrame } from "./live";
+import { addressOf, NAVIGATE, pageNav, setControl, useFrameInput, useLiveFrame, type PageNav } from "./live";
 import { showWindow, useInItsWindow } from "./windows";
 import { screenMark } from "./timing";
 import s from "./sessions.module.css";
@@ -153,6 +153,9 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
   const takes = yours && !away;
   const input = useFrameInput(x.id, frame, takes);
   const page = useRef<HTMLDivElement>(null);
+  // A browser's address bar, while the page is yours here, from a hub that relays it; a device's screen has none.
+  const navigates = useData((d) => d.features.includes(NAVIGATE));
+  const nav = useMemo(() => (takes && navigates && x.kind === undefined ? pageNav(layer.hub, x.id) : undefined), [takes, navigates, x.kind, layer.hub, x.id]);
   const [asking, setAsking] = useState<"human" | "agent" | null>(null);
   // Taken over, the keys go to the page at once (in the window that has it).
   useEffect(() => {
@@ -234,6 +237,7 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
           input={input}
           {...(x.kind === "ios" || x.kind === "android" ? { phone: true } : {})}
           caption={away ? "It shows in its own window." : slow ? waitingFor(x) : undefined}
+          {...(nav === undefined ? {} : { nav })}
         />
         <div className={s.control}>
           <span className={s.nowLine}>
@@ -298,6 +302,7 @@ function Frame({
   input,
   pageRef,
   phone = false,
+  nav,
 }: {
   /** The page now: a live frame, in its own pixels. */
   image?: { readonly src: string; readonly seq?: number; readonly url?: string | undefined; readonly width: number; readonly height: number };
@@ -317,6 +322,8 @@ function Frame({
   pageRef?: RefObject<HTMLDivElement | null>;
   /** A phone's screen: standing up from the start, so its first frame lands without the frame changing shape. */
   phone?: boolean;
+  /** The page is yours, a browser's: the bar is its address bar. */
+  nav?: PageNav;
 }) {
   const takes = input !== undefined;
   const url = image?.url ?? given;
@@ -336,9 +343,10 @@ function Frame({
       style={tall === undefined ? undefined : ({ "--aspect": String(tall) } as CSSProperties)}
     >
       <div className={s.bar}>
-        <span className={s.url}>{url === undefined ? <span /> : <MiddleCut text={url} />}</span>
+        {nav === undefined ? <span className={s.url}>{url === undefined ? <span /> : <MiddleCut text={url} />}</span> : <Address url={url} nav={nav} onDone={() => pageRef?.current?.focus()} />}
         <Text size="xs" tone="inherit" strong={yours} tabular>
-          {right ?? (away ? "You’re in control, in its own window" : yours ? "You’re in control: mouse and keys go to the page" : "The agent is driving")}
+          {right ??
+            (away ? "You’re in control, in its own window" : nav !== undefined ? "You’re in control" : yours ? "You’re in control: mouse and keys go to the page" : "The agent is driving")}
         </Text>
       </div>
       <div
@@ -370,6 +378,68 @@ function Frame({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * A browser's address bar, in the frame's bar while the page is yours: back, forward and reload, then where the page
+ * is, which you edit to go elsewhere (Enter goes, Escape puts the page's address back). A blank page's is empty.
+ */
+function Address({ url, nav, onDone }: { url: string | undefined; nav: PageNav; onDone: () => void }) {
+  // What you are typing; null while the bar shows where the page is.
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? (url === undefined || url === "about:blank" ? "" : url);
+  // Each sends, then the page takes the keys again.
+  const button = (label: string, icon: ReactNode, run: () => void) => (
+    <Tooltip content={label}>
+      <button
+        type="button"
+        className={s.navButton}
+        aria-label={label}
+        onClick={() => {
+          run();
+          onDone();
+        }}
+      >
+        {icon}
+      </button>
+    </Tooltip>
+  );
+  return (
+    <span className={s.address}>
+      {button("Back", <ArrowLeft aria-hidden />, nav.back)}
+      {button("Forward", <ArrowRight aria-hidden />, nav.forward)}
+      {button("Reload", <RotateCw aria-hidden />, nav.reload)}
+      <input
+        className={s.addressInput}
+        aria-label="Address"
+        placeholder="Type an address"
+        spellCheck={false}
+        autoComplete="off"
+        value={shown}
+        onFocus={(e) => e.currentTarget.select()}
+        onChange={(e) => setDraft(e.currentTarget.value)}
+        onBlur={() => setDraft(null)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            const to = addressOf(shown);
+            setDraft(null);
+            if (to === undefined) {
+              e.currentTarget.blur();
+              return;
+            }
+            nav.go(to);
+            onDone();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            setDraft(null);
+            e.currentTarget.blur();
+          }
+        }}
+      />
+    </span>
   );
 }
 

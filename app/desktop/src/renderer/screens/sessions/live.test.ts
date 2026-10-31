@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { framePoint, isPaste, keyInput, modifiersOf } from "./live";
+import { addressOf, framePoint, isPaste, keyInput, modifiersOf } from "./live";
 
 const keys = { altKey: false, ctrlKey: false, metaKey: false, shiftKey: false };
 
@@ -31,5 +31,25 @@ describe("a person's input to a page they took over", () => {
     expect(keyInput({ ...keys, key: "v", code: "KeyV", metaKey: true }, "down")).toEqual({ kind: "key", action: "down", key: "v", code: "KeyV", modifiers: 4 });
     expect(keyInput({ ...keys, key: "Enter", code: "Enter" }, "down")).not.toHaveProperty("text");
     expect(keyInput({ ...keys, key: "a", code: "KeyA" }, "up")).not.toHaveProperty("text");
+  });
+});
+
+describe("the address bar", () => {
+  it("goes to an address as typed with its scheme, else over https", () => {
+    expect(addressOf("https://example.com/a?b=1")).toBe("https://example.com/a?b=1");
+    expect(addressOf("http://example.com")).toBe("http://example.com");
+    expect(addressOf("  example.com/docs ")).toBe("https://example.com/docs");
+  });
+
+  it("goes to this machine's own over http", () => {
+    expect(addressOf("localhost:5173")).toBe("http://localhost:5173");
+    expect(addressOf("127.0.0.1/app")).toBe("http://127.0.0.1/app");
+    expect(addressOf("localhost.example.com")).toBe("https://localhost.example.com");
+  });
+
+  it("goes nowhere for nothing, or words with spaces", () => {
+    expect(addressOf("")).toBeUndefined();
+    expect(addressOf("   ")).toBeUndefined();
+    expect(addressOf("what is fleetd")).toBeUndefined();
   });
 });

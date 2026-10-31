@@ -365,8 +365,49 @@ impl Session {
             }
         };
         self.touch();
-        let (method, params) = cdp_input(&input, scale_x, scale_y);
-        self.cdp.call(Some(&page), method, params).await.map(drop)
+        let page = Some(page.as_str());
+        match &input {
+            BrowserInput::Navigate { url } => {
+                let url = navigable(url.as_str())?;
+                return self
+                    .cdp
+                    .call(page, "Page.navigate", json!({ "url": url }))
+                    .await
+                    .map(drop);
+            }
+            BrowserInput::Reload => {
+                return self
+                    .cdp
+                    .call(page, "Page.reload", json!({}))
+                    .await
+                    .map(drop);
+            }
+            BrowserInput::Back | BrowserInput::Forward => {
+                let step = if input == BrowserInput::Back { -1 } else { 1 };
+                let history = self
+                    .cdp
+                    .call(page, "Page.getNavigationHistory", json!({}))
+                    .await?;
+                // At either end of its history: nothing to go to, as a browser's greyed button.
+                let Some(entry) = history_entry(&history, step) else {
+                    return Ok(());
+                };
+                return self
+                    .cdp
+                    .call(
+                        page,
+                        "Page.navigateToHistoryEntry",
+                        json!({ "entryId": entry }),
+                    )
+                    .await
+                    .map(drop);
+            }
+            _ => {}
+        }
+        let Some((method, params)) = cdp_input(&input, scale_x, scale_y) else {
+            return Ok(());
+        };
+        self.cdp.call(page, method, params).await.map(drop)
     }
 
     pub fn scrub(&self) -> Arc<Scrub> {
@@ -974,9 +1015,33 @@ fn key_code(key: &str) -> Option<u32> {
     })
 }
 
-/// The CDP command for a person's input, its coordinates scaled from frame to page pixels.
-pub fn cdp_input(input: &BrowserInput, scale_x: f64, scale_y: f64) -> (&'static str, Value) {
-    match input {
+/// Where a person's address bar may take the page: an `http` or `https` URL, as the URL parser writes it. Never
+/// `file:` (the node's own files), `javascript:`, `data:`, `chrome:` or any other scheme.
+pub fn navigable(url: &str) -> Result<String, String> {
+    let parsed = url::Url::parse(url.trim()).map_err(|e| format!("not a URL: {e}"))?;
+    match parsed.scheme() {
+        "http" | "https" if parsed.host_str().is_some() => Ok(parsed.into()),
+        scheme => Err(format!(
+            "a person's browser goes only to http and https pages, not {scheme}:"
+        )),
+    }
+}
+
+/// The id of the history entry `step` from the current one (-1 back, 1 forward) in `Page.getNavigationHistory`'s
+/// answer; None at either end.
+pub fn history_entry(history: &Value, step: i64) -> Option<i64> {
+    let at = history["currentIndex"].as_i64()?.checked_add(step)?;
+    history["entries"].get(usize::try_from(at).ok()?)?["id"].as_i64()
+}
+
+/// The CDP command for a person's pointer or key input, its coordinates scaled from frame to page pixels; None for
+/// the address bar's (navigate, back, forward, reload), which [`Session::input`] takes itself.
+pub fn cdp_input(
+    input: &BrowserInput,
+    scale_x: f64,
+    scale_y: f64,
+) -> Option<(&'static str, Value)> {
+    Some(match input {
         BrowserInput::Mouse {
             action,
             x,
@@ -1040,7 +1105,11 @@ pub fn cdp_input(input: &BrowserInput, scale_x: f64, scale_y: f64) -> (&'static 
             ("Input.dispatchKeyEvent", params)
         }
         BrowserInput::Text { text } => ("Input.insertText", json!({ "text": text.as_str() })),
-    }
+        BrowserInput::Navigate { .. }
+        | BrowserInput::Back
+        | BrowserInput::Forward
+        | BrowserInput::Reload => return None,
+    })
 }
 
 /// Run on an element over the node's own connection: a CSS selector for it (from its nearest ancestor with an id, by

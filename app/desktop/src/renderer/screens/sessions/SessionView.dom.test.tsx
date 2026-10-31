@@ -25,6 +25,8 @@ const row = (sessionId: string, more: Record<string, unknown>) => ({
 });
 const SESSIONS = [
   row("bs-live", {}),
+  row("bs-yours", { control: "human" }),
+  row("bs-ios-yours", { kind: "ios", control: "human" }),
   row("bs-ios", { kind: "ios" }),
   row("bs-ended", { state: "recorded", endedAt: "2026-10-19T10:00:09.000Z", files: [{ file: "actions", bytes: 1 }], note: "no video: this machine has no ffmpeg" }),
 ];
@@ -40,9 +42,21 @@ const ACTIONS = [
 let host: HTMLDivElement;
 let root: Root | undefined;
 let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
+let inputs: unknown[] = [];
 
 beforeEach(() => {
-  vi.stubGlobal("fleetd", { platform: "darwin", fixture: null, hub: { watch: () => Promise.resolve(), input: () => Promise.resolve() } });
+  inputs = [];
+  vi.stubGlobal("fleetd", {
+    platform: "darwin",
+    fixture: null,
+    hub: {
+      watch: () => Promise.resolve(),
+      input: (_hub: string, session: string, input: unknown) => {
+        inputs.push({ session, input });
+        return Promise.resolve();
+      },
+    },
+  });
   host = document.createElement("div");
   document.body.appendChild(host);
 });
@@ -57,7 +71,7 @@ const settle = async () => {
   for (let i = 0; i < 8; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
 };
 
-const mount = async (id: string) => {
+const mount = async (id: string, features: readonly string[] = ["browser_sessions", "browser_navigate"]) => {
   const hub: HubApi = {
     call: (tool) => {
       if (tool === "browser_sessions") return Promise.resolve({ ok: true, output: { sessions: SESSIONS, retention: { retentionDays: 30, maxGbPerProject: 20 } } });
@@ -81,7 +95,7 @@ const mount = async (id: string) => {
     );
   });
   act(() => {
-    send(live(["browser_sessions"]));
+    send(live([...features]));
     send(snapshot(1));
   });
   await settle();
@@ -164,4 +178,71 @@ it("keeps a phone's screen, standing up, to the view's height, and a browser's p
   frame(960, 600);
   await settle();
   expect(host.querySelector<HTMLElement>("[data-control='agent']")?.dataset["shape"]).toBeUndefined();
+});
+
+const address = () => host.querySelector<HTMLInputElement>("input[aria-label='Address']");
+const type = (el: HTMLInputElement, value: string) => {
+  act(() => {
+    // As typing sets it: past React's own value tracking, so its change handler hears it.
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(el, value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+};
+
+it("gives a browser that is yours an address bar: where it is, Enter goes elsewhere, back, forward and reload", async () => {
+  await mount("bs-yours");
+  act(() => send({ t: "browser_frame", frame: { sessionId: "bs-yours", seq: 1, jpegB64: "AAAA", width: 1280, height: 800, control: "human", url: "https://staging.shop.example.com/cart" } }));
+  await settle();
+  const bar = address();
+  expect(bar?.value).toBe("https://staging.shop.example.com/cart");
+  expect(host.textContent).toContain("You’re in control");
+  if (bar === null) throw new Error("no address bar");
+  act(() => bar.focus());
+  type(bar, "example.com/docs");
+  expect(bar.value).toBe("example.com/docs");
+  act(() => {
+    bar.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  expect(inputs).toEqual([{ session: "bs-yours", input: { kind: "navigate", url: "https://example.com/docs" } }]);
+  // The page takes the keys again, and the bar shows where the page is until its next frame says where it went.
+  expect(document.activeElement?.getAttribute("role")).toBe("application");
+  expect(bar.value).toBe("https://staging.shop.example.com/cart");
+  inputs = [];
+  for (const label of ["Back", "Forward", "Reload"]) act(() => host.querySelector<HTMLButtonElement>(`button[aria-label='${label}']`)?.click());
+  expect(inputs.map((i) => (i as { input: { kind: string } }).input.kind)).toEqual(["back", "forward", "reload"]);
+});
+
+it("puts the page's address back on Escape, and shows a blank page's as empty", async () => {
+  await mount("bs-yours");
+  act(() => send({ t: "browser_frame", frame: { sessionId: "bs-yours", seq: 1, jpegB64: "AAAA", width: 1280, height: 800, control: "human", url: "about:blank" } }));
+  await settle();
+  const bar = address();
+  if (bar === null) throw new Error("no address bar");
+  expect(bar.value).toBe("");
+  expect(bar.placeholder).toBe("Type an address");
+  act(() => bar.focus());
+  type(bar, "example.com");
+  act(() => {
+    bar.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(bar.value).toBe("");
+  expect(inputs).toEqual([]);
+});
+
+it("has no address bar from a hub that doesn't relay it", async () => {
+  await mount("bs-yours", ["browser_sessions"]);
+  expect(host.textContent).toContain("You’re in control: mouse and keys go to the page");
+  expect(address()).toBeNull();
+  expect(host.querySelector("button[aria-label='Back']")).toBeNull();
+});
+
+it("has no address bar while the agent drives, nor on a device's screen", async () => {
+  await mount("bs-live");
+  expect(address()).toBeNull();
+  expect(host.querySelector("button[aria-label='Back']")).toBeNull();
+  act(() => root?.unmount());
+  root = undefined;
+  await mount("bs-ios-yours");
+  expect(host.textContent).toContain("You’re in control: mouse and keys go to the page");
+  expect(address()).toBeNull();
 });

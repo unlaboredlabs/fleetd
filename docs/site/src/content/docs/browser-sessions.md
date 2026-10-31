@@ -46,6 +46,10 @@ work. **Hand back** returns control: the
 agent's next command sees the page as you left it, what you typed included. The recording's action log says who took
 over and when, but not what you typed.
 
+While a browser is yours, the frame's bar is its address bar. Type an address and press Enter to go there (a bare
+`example.com` goes over https, `localhost:5173` over http), or use back, forward and reload. It goes only to `http`
+and `https` pages, never to `file:` or the browser's own pages.
+
 A screen whose agent asked for you shows under **waiting on you** with its reason, until you take it over or it ends.
 The ask is a notification too, on the desktop and on your phone, where tapping it opens the screen's live view.
 
