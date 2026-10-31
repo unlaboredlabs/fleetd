@@ -199,14 +199,14 @@ fn split_procargs(buf: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
 /// Stops what sessions and screens of a node that went away left running, with everything they started: as the node
 /// starts, before any session of its own runs, no live session owns them (the Oct 26 headless Chrome, its profile
 /// under a session's scratch dir, ran on for days). SIGTERM first, SIGKILL to those still there after
-/// [`ORPHAN_GRACE`]. Returns how many it found.
-pub fn kill_orphans(home: &Path) -> usize {
+/// [`ORPHAN_GRACE`]. Never one of `keep`: the processes of sessions the node re-adopted. Returns how many it found.
+pub fn kill_orphans(home: &Path, keep: &std::collections::HashSet<i32>) -> usize {
     let own = nix::unistd::getpid().as_raw();
     let roots = orphan_roots(home);
     let table = process::table();
     let mut found: Vec<Proc> = table
         .iter()
-        .filter(|p| p.pid != own && !p.zombie)
+        .filter(|p| p.pid != own && !p.zombie && !keep.contains(&p.pid))
         .filter(|p| {
             let (cmdline, environ) = args_and_env(p.pid);
             orphaned(&cmdline, &environ, &roots)
@@ -218,7 +218,7 @@ pub fn kill_orphans(home: &Path) -> usize {
         found.extend(process::descendants(&table, p.pid));
     }
     process::dedupe(&mut found);
-    found.retain(|p| p.pid != own);
+    found.retain(|p| p.pid != own && !keep.contains(&p.pid));
     if found.is_empty() {
         return 0;
     }
@@ -486,7 +486,7 @@ mod tests {
 
         let found = {
             let home = home.path().to_owned();
-            tokio::task::spawn_blocking(move || kill_orphans(&home))
+            tokio::task::spawn_blocking(move || kill_orphans(&home, &Default::default()))
                 .await
                 .unwrap()
         };

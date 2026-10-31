@@ -2,9 +2,11 @@
 //! live session) and answers the hub's `session_call` frames, one `session_reply` each, plus the machine and thread
 //! streams.
 //!
-//! Everything durable is in [`NodeStore`], written before it is sent, so a node restart or crash loses no session:
-//! on start, runs that were active are closed as interrupted (its lead decides whether to continue one) and the next
-//! `send` resumes the claude session in the same cwd and config dir. Idle processes are reaped and respawned on
+//! Everything durable is in [`NodeStore`], written before it is sent, so a node restart or crash loses no session. A
+//! lead's or task's claude runs under a host of its own ([`host`]) and goes on through the restart: the starting node
+//! re-adopts it, with its runs as they were. For any other (a Navi's, or one whose claude died meanwhile), runs that
+//! were active are closed as interrupted on start (its lead decides whether to continue one) and the next `send`
+//! resumes the claude session in the same cwd and config dir. Idle processes are reaped and respawned on
 //! demand. Permission prompts are answered from policy or held as a pending approval for the hub.
 mod env;
 pub mod files;
@@ -47,6 +49,7 @@ use super::runner::claude::{
     ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, DEFAULT_ENV, HELPER_MODEL_ENV, ORDER_ENV_FILE_ENV,
     PROMPT_CACHE_TTL_VARS, SESSION_ENV, default_cache_ttl, subagents_off_settings_env,
 };
+use super::runner::host;
 use super::runner::sandbox;
 use super::runner::{
     ExitInfo, RunOutcome, Runner, RunnerError, RunnerEvent, SessionCommand, SessionSpec,
@@ -476,6 +479,11 @@ fn new_uuid() -> String {
     )
 }
 
+/// Where sessions' hosts register: the node's registry of the sessions that outlive it ([`host`]).
+fn hosts_dir(home: &Path) -> PathBuf {
+    home.join("hosts")
+}
+
 fn permission_item_id(request_id: &str) -> String {
     format!("permission-{request_id}")
 }
@@ -504,6 +512,8 @@ struct Live {
     spawned: Arc<super::mask::Secrets>,
     /// A Navi's sandbox, which its file tools' prompts are answered by too.
     fence: Option<sandbox::Fence>,
+    /// The process runs under a host of its own, which the node lets go of at its shutdown ([`super::runner::host`]).
+    link: Option<host::Link>,
 }
 
 #[derive(Default)]
@@ -604,6 +614,21 @@ struct Inner {
 
 /// A project's file list and when it was read.
 type Listed = (Instant, Arc<Vec<String>>);
+
+/// Where a pump starts: the run already going (a re-adopted session's), and the session's host link.
+struct Pumped {
+    run_id: Option<String>,
+    link: Option<host::Link>,
+}
+
+/// Counts one applied event when dropped.
+struct Applied<'a>(&'a std::sync::atomic::AtomicU64);
+
+impl Drop for Applied<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
 
 /// One session's pending change, applied by [`SessionService::update`].
 struct Change<'a> {
@@ -755,12 +780,17 @@ impl SessionService {
             }),
         };
         let rows = service.inner.store.sessions()?;
-        // Scratch dirs whose worktree is still there are kept; no other outlives a node restart.
-        let keep: Vec<String> = rows
+        let hosts = hosts_dir(&service.inner.config.home);
+        // Scratch dirs whose worktree is still there are kept, and those of the sessions re-adopted below; no other
+        // outlives a node restart.
+        let mut keep: Vec<String> = rows
             .iter()
             .filter(|r| r.local.base_ref.is_some() && r.summary.worktree_path.is_some())
             .map(|r| r.summary.session_id.to_string())
             .collect();
+        let mut adopted = HashSet::new();
+        // The re-adopted sessions' processes, which no sweep of orphans touches.
+        let mut protected = HashSet::new();
         for mut row in rows {
             // A session stored before profiles, on another model or effort, resumes on its profile's own. One
             // launched on a profile keeps what its settings chose.
@@ -775,6 +805,33 @@ impl SessionService {
                 row.summary.effort = runs_on.effort;
                 service.inner.store.commit(&row, &[], false)?;
             }
+            let id = row.summary.session_id.to_string();
+            // Its claude still runs under its host: the session goes on as if the node never left.
+            if let Some(pid) = row.local.pid {
+                let dir = hosts.join(&id);
+                match host::connect(&dir) {
+                    Ok((handle, registration)) if registration.pid == pid => {
+                        match service.adopt(&row, handle) {
+                            Ok(()) => {
+                                tracing::info!(session_id = %id, pid, "re-adopted a session that ran on through the restart");
+                                adopted.insert(id.clone());
+                                protected.extend(blocking(move || registration.tree()).await);
+                                continue;
+                            }
+                            Err(e) => {
+                                tracing::warn!(session_id = %id, error = %e.message, "a session's host is stopped, not re-adopted");
+                                host::stop(&dir).await;
+                            }
+                        }
+                    }
+                    Ok(_) => host::stop(&dir).await,
+                    Err(e) if dir.exists() => {
+                        tracing::info!(session_id = %id, "a session's host is gone ({e}): it resumes from its thread");
+                        host::stop(&dir).await;
+                    }
+                    Err(_) => {}
+                }
+            }
             if let (Some(pid), Some(started)) = (row.local.pid, &row.local.pid_start) {
                 proc::kill_recorded(pid, started, &row.summary.session_id, INTERRUPT_GRACE).await;
             }
@@ -782,20 +839,17 @@ impl SessionService {
                 || row.summary.active_run_id.is_some()
                 || row.summary.pending_permission.is_some();
             if leftover {
-                let id = row.summary.session_id.to_string();
-                let settled = service.update(&id, |c| {
-                    state::close_out(&mut c.runs, &EndCause::NodeRestarted, &c.at);
-                    c.cancel_pending();
-                    c.row.local.pid = None;
-                    c.row.local.pid_start = None;
-                });
-                if let Err(e) = settled {
-                    tracing::warn!(session_id = %id, error = %e.message, "cannot settle a session on start");
-                }
+                service.settle_restarted(&id);
             }
         }
+        // Hosts no session row names any more, or that weren't re-adopted, end with their sessions.
+        let stopped = host::sweep(&hosts, &adopted).await;
+        if stopped > 0 {
+            tracing::warn!(stopped, "stopped sessions' hosts no session runs on");
+        }
+        keep.extend(adopted.iter().cloned());
         let node_home = service.inner.config.home.clone();
-        let killed = blocking(move || proc::kill_orphans(&node_home)).await;
+        let killed = blocking(move || proc::kill_orphans(&node_home, &protected)).await;
         if killed > 0 {
             tracing::warn!(
                 killed,
@@ -817,6 +871,85 @@ impl SessionService {
         service.spawn_prober();
         service.spawn_span_flusher(service.inner.span_wake.clone());
         Ok(service)
+    }
+
+    /// Runs on a session whose claude outlived the last node, through its host's `handle`: its runs stay as they are
+    /// and its events go on from the first the last node didn't apply. Refused, like a start, once its checkout was
+    /// replaced: a restart never widens what a session reaches. Refused too once its workspace is gone: claude would
+    /// work on in a deleted directory, and the next send rebuilds the worktree for a resumed one.
+    fn adopt(
+        &self,
+        row: &SessionRow,
+        handle: super::runner::SessionHandle,
+    ) -> Result<(), SessionError> {
+        let id = row.summary.session_id.to_string();
+        if !row.local.cwd.is_dir() {
+            return Err(invalid(format!(
+                "the session's workspace {} is missing",
+                row.local.cwd.display()
+            )));
+        }
+        self.checkout_unchanged(row.local.role, &row.local.workspace_root)?;
+        // What the process holds, for masking what it reports: its files are written again as they were.
+        let (_, secrets, order_digest) = self.spec(row, true, false).map_err(|e| {
+            error(
+                SessionErrorCode::Internal,
+                format!("cannot prepare the session's files: {e}"),
+            )
+        })?;
+        let secrets = Arc::new(secrets);
+        let (exited_tx, exited_rx) = watch::channel(false);
+        let generation = {
+            let mut st = self.st();
+            st.next_generation += 1;
+            let generation = st.next_generation;
+            st.live.insert(
+                id.clone(),
+                Live {
+                    generation,
+                    pid: handle.pid,
+                    commands: handle.commands.clone(),
+                    last_active: Instant::now(),
+                    ending: None,
+                    closing: false,
+                    aliases: HashMap::new(),
+                    exited: exited_rx,
+                    slept: None,
+                    order_digest,
+                    spawned: secrets.clone(),
+                    fence: None,
+                    link: handle.link.clone(),
+                },
+            );
+            generation
+        };
+        tokio::spawn(self.clone().pump(
+            id.clone(),
+            generation,
+            handle.events,
+            exited_tx,
+            secrets,
+            Pumped {
+                run_id: row.summary.active_run_id.as_ref().map(|r| r.to_string()),
+                link: handle.link,
+            },
+        ));
+        // Its active run counts again (the sleep inhibitor, an update's wait).
+        self.update(&id, |_| ())
+    }
+
+    /// What a node restart left of a session whose claude is gone: its runs close as interrupted, and the next send
+    /// resumes it.
+    fn settle_restarted(&self, id: &str) {
+        let settled = self.update(id, |c| {
+            state::close_out(&mut c.runs, &EndCause::NodeRestarted, &c.at);
+            c.cancel_pending();
+            c.row.local.pid = None;
+            c.row.local.pid_start = None;
+        });
+        if let Err(e) = settled {
+            tracing::warn!(session_id = %id, error = %e.message, "cannot settle a session on start");
+        }
     }
 
     /// Which session a process calling the node's socket runs in (blocking: it reads the process table).
@@ -2190,6 +2323,7 @@ impl SessionService {
         self.inner.runner.fence(&spec).await.map_err(runner_error)?;
         let fence = spec.sandbox.clone();
         let handle = self.inner.runner.spawn(spec).map_err(runner_error)?;
+        let link = handle.link.clone();
         row.local.started = true;
         row.local.pid = Some(handle.pid);
         row.local.pid_start = proc::start_time(handle.pid);
@@ -2217,6 +2351,7 @@ impl SessionService {
                     order_digest,
                     spawned: secrets.clone(),
                     fence,
+                    link: link.clone(),
                 },
             );
             generation
@@ -2227,6 +2362,7 @@ impl SessionService {
             handle.events,
             exited_tx,
             secrets,
+            Pumped { run_id: None, link },
         ));
         Ok((handle.commands, note))
     }
@@ -2583,6 +2719,7 @@ impl SessionService {
             plugin_dirs,
             env,
             transcript: Some(transcript),
+            host_dir: sandbox.is_none().then(|| hosts_dir(&config.home).join(id)),
             sandbox,
         };
         Ok((spec, secrets, order_digest))
@@ -2653,12 +2790,13 @@ impl SessionService {
         mut events: mpsc::Receiver<RunnerEvent>,
         exited: watch::Sender<bool>,
         mut spawned: Arc<super::mask::Secrets>,
+        pumped: Pumped,
     ) {
         let mut delta: Option<(String, String)> = None;
         let mut flushed: Option<Instant> = None;
         let mut usage: Option<(String, RunUsage)> = None;
         let mut usage_sent: Option<Instant> = None;
-        let mut run_id: Option<String> = None;
+        let Pumped { mut run_id, link } = pumped;
         // What its browser sessions filled from 1Password, masked like its secrets from the fill on.
         let mut filled = super::mask::Secrets::default();
         // The secrets the process was started with, which it holds until it exits, and the project's as they are now,
@@ -2693,6 +2831,14 @@ impl SessionService {
                 None => events.recv().await,
             };
             let Some(event) = next else {
+                // The node let go of the session's host for its restart: the session goes on, and the next node
+                // takes it from here.
+                if link
+                    .as_ref()
+                    .is_some_and(|l| l.detached.load(std::sync::atomic::Ordering::SeqCst))
+                {
+                    break;
+                }
                 let exit = ExitInfo {
                     code: None,
                     signal: None,
@@ -2702,6 +2848,8 @@ impl SessionService {
                 self.exited(&id, generation, exit);
                 break;
             };
+            // Counted once the event is applied, whichever way this turn of the loop ends: what the host may forget.
+            let _applied = link.as_ref().map(|l| Applied(&l.applied));
             if let Some(live) = self.st().live.get_mut(&id) {
                 live.last_active = Instant::now();
             }
@@ -2788,7 +2936,7 @@ impl SessionService {
                         let stopping = st.stopping;
                         st.live
                             .get_mut(&id)
-                            .filter(|_| stopping)
+                            .filter(|l| stopping && l.link.is_none())
                             .map(|l| l.commands.clone())
                     };
                     if let Some(commands) = cut {
@@ -4129,22 +4277,31 @@ impl SessionService {
         }
     }
 
-    /// Node SIGTERM: withdraw every send claude still holds, interrupt every active run, give them
-    /// [`SHUTDOWN_DRAIN`] to end, then close every process. Without the withdraw a queued send starts the moment the
-    /// interrupt ends the turn before it, and is only cut at the end of the drain.
+    /// Node SIGTERM: a session under a host goes on through the restart, so the node only lets go of its host, and the
+    /// next node re-adopts it. For every other: withdraw every send claude still holds, interrupt every active run,
+    /// give them [`SHUTDOWN_DRAIN`] to end, then close every process. Without the withdraw a queued send starts the
+    /// moment the interrupt ends the turn before it, and is only cut at the end of the drain.
     pub async fn shutdown(&self) {
-        let targets: Vec<_> = {
+        let (hosted, targets): (Vec<_>, Vec<_>) = {
             let mut st = self.st();
             st.stopping = true;
-            st.live
+            let hosted = st.live.values().filter_map(|l| l.link.clone()).collect();
+            let targets = st
+                .live
                 .iter_mut()
+                .filter(|(_, live)| live.link.is_none())
                 .map(|(id, live)| {
                     live.ending.get_or_insert(EndCause::NodeStopping);
                     live.closing = true;
                     (id.clone(), live.commands.clone(), live.exited.clone())
                 })
-                .collect()
+                .collect();
+            (hosted, targets)
         };
+        let detached: Vec<_> = hosted
+            .into_iter()
+            .map(|link| tokio::spawn(async move { link.detach().await }))
+            .collect();
         let active = |id: &str| {
             self.store()
                 .session(id)
@@ -4176,6 +4333,9 @@ impl SessionService {
         }
         for (_, _, mut exited) in targets {
             let _ = tokio::time::timeout(EXIT_WAIT, exited.wait_for(|e| *e)).await;
+        }
+        for detach in detached {
+            let _ = detach.await;
         }
     }
 }
