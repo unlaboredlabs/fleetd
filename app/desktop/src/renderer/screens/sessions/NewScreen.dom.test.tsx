@@ -68,6 +68,8 @@ let waits: unknown[] = [];
 let sessions: unknown[] = [];
 /** pr_list fails this many more times. */
 let prsFail = 0;
+/** screen_open answers without its session, as a hub that answers before it has the session does. */
+let forgets = false;
 
 beforeEach(() => {
   vi.stubGlobal("fleetd", { platform: "darwin", fixture: null, hub: { watch: () => Promise.resolve(), input: () => Promise.resolve() } });
@@ -76,6 +78,7 @@ beforeEach(() => {
   calls = [];
   refuse = undefined;
   prsFail = 0;
+  forgets = false;
   waits = [];
   sessions = [];
   window.location.hash = "";
@@ -119,6 +122,7 @@ const mount = async () => {
       if (tool === "screen_open") {
         const full = (input as { machineId: string }).machineId === "mac" && (input as { kind: string }).kind === "ios";
         if (full) waits = [WAIT];
+        else if (forgets) return Promise.resolve({ ok: true, output: {} });
         else sessions = [OPENED];
         return Promise.resolve({ ok: true, output: full ? { waiting: WAIT } : { session: OPENED } });
       }
@@ -181,6 +185,41 @@ it("opens a screen on the machine picked, from the Screens tab, and goes to its 
   });
   expect(picker()).toBeNull();
   expect(window.location.hash).toContain(OPENED.sessionId);
+});
+
+it("opens a screen the hub's answer left out straight into its live view, once the list has it", async () => {
+  // A screen of the person's from before, still live: not the one this open made.
+  const before = { ...OPENED, sessionId: "B00000000000000000000000000000009", kind: "browser" };
+  sessions = [before];
+  forgets = true;
+  await mount();
+  act(() => button("New screen")?.click());
+  await settle();
+  act(() => button("Open screen")?.click());
+  await settle();
+  // Still opening: the screen isn't in the list yet.
+  expect(picker()).not.toBeNull();
+  expect(button("Opening…")).toBeDefined();
+  expect(window.location.hash).not.toContain("sessions");
+  // Its browser.session event reads the list again, which has it now.
+  const made = { ...OPENED, sessionId: "B00000000000000000000000000000003", kind: "browser" };
+  sessions = [made, before];
+  act(() => send(event(2, "browser.session", { projectRef: project, sessionId: made.sessionId })));
+  await eventSettle();
+  expect(picker()).toBeNull();
+  expect(window.location.hash).toContain(made.sessionId);
+});
+
+it("says what is starting once an open is slow, in the footer", async () => {
+  forgets = true;
+  await mount();
+  act(() => button("New screen")?.click());
+  await settle();
+  act(() => button("Open screen")?.click());
+  await settle();
+  expect(picker()?.closest("[role='dialog']")?.textContent).not.toContain("Starting the browser…");
+  await act(() => new Promise((done) => setTimeout(done, 1_250)));
+  expect(document.querySelector("[role='dialog'] [role='status']")?.textContent).toBe("Starting the browser…");
 });
 
 it("waits for a slot on a full machine, shows the wait in the list, and cancels it", async () => {

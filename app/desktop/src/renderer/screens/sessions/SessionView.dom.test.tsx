@@ -100,14 +100,37 @@ it("shows a live screen's page the full width, with no Steps beside it", async (
   expect(host.textContent).not.toContain("Its steps show here");
 });
 
-it("says what a live screen waits for until its first frame: a browser's page, an iOS screen's simulator", async () => {
+it("waits for a live screen's first frame quietly, then says what it waits for: a browser's page, an iOS screen's simulator", async () => {
   await mount("bs-live");
+  expect(host.querySelector("[data-screen='sessions.live']")).not.toBeNull();
+  expect(host.textContent).not.toContain("Waiting for");
+  await act(() => new Promise((done) => setTimeout(done, 1_050)));
   expect(host.textContent).toContain("Waiting for the page…");
+  // A page's frame is the same shape before its first frame as after: nothing moves when it comes.
+  expect(host.querySelector<HTMLElement>("[data-control='agent']")?.dataset["shape"]).toBeUndefined();
   act(() => root?.unmount());
   root = undefined;
   await mount("bs-ios");
+  // A phone's stands up from the start.
+  expect(host.querySelector<HTMLElement>("[data-control='agent']")?.dataset["shape"]).toBe("portrait");
+  await act(() => new Promise((done) => setTimeout(done, 1_050)));
   expect(host.textContent).toContain("Waiting for the simulator…");
   expect(host.textContent).not.toContain("Waiting for the page");
+});
+
+it("shows a screen it showed before at once, its last frame, until the live one comes", async () => {
+  await mount("bs-live");
+  act(() => send({ t: "browser_frame", frame: { sessionId: "bs-live", seq: 7, jpegB64: "AAAA", width: 1280, height: 800, control: "agent" } }));
+  await settle();
+  expect(host.querySelector("img")?.dataset["seq"]).toBe("7");
+  act(() => root?.unmount());
+  root = undefined;
+  // A fresh data layer, as after switching away: no frame in its store yet.
+  await mount("bs-live");
+  expect(host.querySelector("img")?.dataset["seq"]).toBe("7");
+  act(() => send({ t: "browser_frame", frame: { sessionId: "bs-live", seq: 8, jpegB64: "AAAB", width: 1280, height: 800, control: "agent" } }));
+  await settle();
+  expect(host.querySelector("img")?.dataset["seq"]).toBe("8");
 });
 
 it("plays an ended screen's recording the full width, its steps behind Steps, closed until opened and closed again", async () => {

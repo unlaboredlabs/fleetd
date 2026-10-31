@@ -8,6 +8,11 @@
 // in the live view once the screen is theirs; closed meanwhile, the row shows in Screens until then. A project's browser
 // with a PR opens the PR's Try it preview instead: it runs on the project's machine, in a browser of the person's own,
 // on the PR's Try it tab. Opened from the top of the Screens tab and from the palette's "New screen…".
+//
+// Opened, it lands in its live view at once: the hub's answer goes into the Screens list before the view mounts, so the
+// view watches its frames from its first render. An answer without the screen (a hub that answers before it has it)
+// is followed in the list, as browser.session events read it again, until the person's new screen shows; only past
+// FOLLOW_MS does the picker give up and land on the list. While an open is slow, the footer says what is starting.
 import { AppWindow, Globe, Monitor, Smartphone, TabletSmartphone } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Button, Dialog, Radio, RadioGroup, Select, Text, cx } from "../../ui";
@@ -20,11 +25,33 @@ import { currentRoute, navigate } from "../shell/navigation";
 import { panelRoute, type ProjectKey } from "../shell/routes";
 import { refusalWords } from "../tryit/hub";
 import { openTry } from "../tryit/open";
-import { canOpen, hostsFor, KINDS, NO_PR, openingLine, openWord, pickHost, prChoices, slotLine, takesBuild, takesPr, type ScreenKind } from "./pickScreen";
+import type { BrowserSession, BrowserSessionsOutput } from "../../../shared/contracts";
+import {
+  canOpen,
+  hostsFor,
+  KINDS,
+  newScreenOf,
+  NO_PR,
+  openingLine,
+  openWord,
+  pickHost,
+  prChoices,
+  slotLine,
+  startingLine,
+  takesBuild,
+  takesPr,
+  type ScreenKind,
+} from "./pickScreen";
+import { screenMark } from "./timing";
 import s from "./sessions.module.css";
 
 /** The hub feature that says it opens people's screens. */
 export const NEW_SCREEN = "screen_open";
+
+/** How long an open with no stage line stays quiet; then the footer says what is starting. */
+const SLOW_MS = 1_200;
+/** How long the picker follows the list for a screen the hub's answer left out. */
+const FOLLOW_MS = 15_000;
 
 const ICON: Readonly<Record<ScreenKind, ReactNode>> = {
   browser: <Globe aria-hidden />,
@@ -117,8 +144,39 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
   const web = kind === "browser" && pr !== undefined;
   // An open with a PR's build going in, followed until the screen is the person's.
   const [opening, setOpening] = useState<{ readonly waitId: string; readonly threadId?: string; readonly pr: number; readonly machine: string } | null>(null);
-  const listed = useToolQuery("browser_sessions", { projectRef }, { enabled: opening !== null });
+  // Read while the picker is open: the screens there at the press, then the one it opened, when the answer leaves it out.
+  const listed = useToolQuery("browser_sessions", { projectRef });
   const row = opening === null ? undefined : listed.data?.waits?.find((w) => w.waitId === opening.waitId);
+  const [following, setFollowing] = useState<{ readonly known: ReadonlySet<string>; readonly kind: ScreenKind } | null>(null);
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!busy) return undefined;
+    const timer = window.setTimeout(() => setSlow(true), SLOW_MS);
+    return () => {
+      window.clearTimeout(timer);
+      setSlow(false);
+    };
+  }, [busy]);
+  const live = (session: BrowserSession) => {
+    onClose();
+    screenMark("opened", session.sessionId);
+    navigate(panelRoute(project, { tab: "sessions", session: session.sessionId }));
+  };
+  const found = following === null ? undefined : newScreenOf(listed.data?.sessions ?? [], following.kind, following.known);
+  useEffect(() => {
+    if (found === undefined) return;
+    onClose();
+    screenMark("opened", found.sessionId);
+    navigate(panelRoute(project, { tab: "sessions", session: found.sessionId }));
+  }, [found, onClose, project]);
+  useEffect(() => {
+    if (following === null) return undefined;
+    const timer = window.setTimeout(() => {
+      onClose();
+      navigate(panelRoute(project, { tab: "sessions", session: null }));
+    }, FOLLOW_MS);
+    return () => window.clearTimeout(timer);
+  }, [following, onClose, project]);
   const ready =
     opening === null || row !== undefined
       ? undefined
@@ -154,8 +212,12 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
     if (busy) return;
     if (web) return openPreview(pr);
     if (host === undefined) return;
+    screenMark("click");
     setBusy(true);
     setError(null);
+    // The screens there at the press: the one this open makes is the one that wasn't (read now, if not read yet).
+    const before = listed.data ?? (await layer.queryClient.query(layer.toolQuery("browser_sessions", { projectRef })).catch(() => undefined));
+    const known = new Set((before?.sessions ?? []).map((x) => x.sessionId));
     const out = await layer
       .call(
         "screen_open",
@@ -163,21 +225,36 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
         { timeoutMs: 120_000 },
       )
       .catch((e: unknown) => ({ ok: false as const, error: { message: e instanceof Error ? e.message : String(e), fix: undefined } }));
-    setBusy(false);
     if (!out.ok) {
+      setBusy(false);
       setError({ message: out.error.message, fix: out.error.fix });
       return;
     }
+    const { session, waiting } = out.output;
+    // In the list before the view mounts, so the view has it, and watches it, from its first render.
+    if (session !== undefined) {
+      layer.queryClient.setQueryData<BrowserSessionsOutput>(layer.toolQuery("browser_sessions", { projectRef }).queryKey, (old) =>
+        old === undefined || old.sessions.some((x) => x.sessionId === session.sessionId) ? old : { ...old, sessions: [session, ...old.sessions] },
+      );
+    }
     void layer.queryClient.invalidateQueries({ queryKey: ["call", "browser_sessions"] });
-    const waiting = out.output.waiting;
+    if (session === undefined && waiting === undefined) {
+      // Opened, but the answer left it out: it shows in the list in a moment, and the picker opens it from there.
+      setFollowing({ known, kind });
+      return;
+    }
+    setBusy(false);
     // Past its wait already (a PR's build going in): followed here until it is yours.
     if (waiting !== undefined && waiting.stage !== undefined && waiting.stage !== "waiting" && pr !== undefined) {
       setOpening({ waitId: waiting.waitId, ...(waiting.threadId === undefined ? {} : { threadId: waiting.threadId }), pr: pr.number, machine: host.name });
       return;
     }
+    if (session !== undefined) {
+      live(session);
+      return;
+    }
     onClose();
-    const session = out.output.session;
-    navigate(panelRoute(project, session === undefined ? { tab: "sessions", session: null } : { tab: "sessions", session: session.sessionId }));
+    navigate(panelRoute(project, { tab: "sessions", session: null }));
   };
 
   const loading = roles.data === undefined;
@@ -227,6 +304,13 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
       }
       footer={
         <>
+          {busy && slow && !web ? (
+            <span className={s.starting} role="status">
+              <Text size="sm" tone="quiet">
+                {startingLine(kind)}
+              </Text>
+            </span>
+          ) : null}
           <Button variant="quiet" onClick={onClose}>
             Cancel
           </Button>

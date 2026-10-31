@@ -6,16 +6,37 @@ import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent, type Pointe
 import type { BrowserFrame, BrowserInput, BrowserSessionsOutput } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { useData, useDataLayer } from "../../src/data/react";
+import { screenMark } from "./timing";
 
-/** The session's newest frame while this view shows it: the window watches it from mount to unmount. */
+/** The newest frame of the last few sessions shown: a view that comes back shows its page at once, then live again. */
+const shown = new Map<string, BrowserFrame>();
+const KEEP = 8;
+
+/**
+ * The session's newest frame while this view shows it: the window watches it from mount to unmount. Until the first
+ * live one comes, the last one this window showed of it, if any.
+ */
 export function useLiveFrame(sessionId: string, on: boolean): BrowserFrame | undefined {
   const { hub } = useDataLayer();
   useEffect(() => {
     if (!on) return undefined;
+    screenMark("view", sessionId);
     void window.fleetd.hub.watch(hub, sessionId);
+    screenMark("watch", sessionId);
     return () => void window.fleetd.hub.watch(hub, null);
   }, [hub, sessionId, on]);
-  return useData((st) => (on && st.browserFrame?.sessionId === sessionId ? st.browserFrame : undefined));
+  const frame = useData((st) => (on && st.browserFrame?.sessionId === sessionId ? st.browserFrame : undefined));
+  const first = frame !== undefined;
+  useEffect(() => {
+    if (first) screenMark("frame", sessionId);
+  }, [first, sessionId]);
+  useEffect(() => {
+    if (frame === undefined) return;
+    shown.delete(sessionId);
+    shown.set(sessionId, frame);
+    for (const old of shown.keys()) if (shown.size > KEEP) shown.delete(old);
+  }, [frame, sessionId]);
+  return frame ?? (on ? shown.get(sessionId) : undefined);
 }
 
 /**
