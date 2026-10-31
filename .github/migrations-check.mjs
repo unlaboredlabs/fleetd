@@ -1,6 +1,6 @@
-// A hub's user_version counts the migrations it ran, in the order of their file names, so a PR only adds new ones,
-// each sorting after every one on its base, and never edits, renames or removes one there. build.rs fails the build
-// on a duplicate prefix.
+// A hub runs each migration it hasn't by name, and only warns about one that changed after it ran, so a PR only adds
+// new ones, never edits, renames or removes one on its base, and each sorts after every one there, so every hub runs
+// them in the order a fresh one does. build.rs fails the build on a duplicate prefix.
 // Run by CI's rust-lint job on a PR, from the repo root: node .github/migrations-check.mjs <base commit>
 import { execFileSync } from "node:child_process";
 

@@ -364,12 +364,12 @@ fn the_migration_gives_each_navi_its_makers_person_else_the_hubs_owner() {
     use crate::hub::store::migrations::MIGRATIONS;
     let owners_at = MIGRATIONS
         .iter()
-        .position(|m| m.contains("ADD COLUMN owner_person"))
+        .position(|m| m.sql.contains("ADD COLUMN owner_person"))
         .expect("the Navi owner migration");
     let before = || {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         for m in &MIGRATIONS[..owners_at] {
-            conn.execute_batch(m).unwrap();
+            conn.execute_batch(m.sql).unwrap();
         }
         conn.execute_batch(
             "INSERT INTO agent_keys (key_id, hash, prefix, name, grants, created_ms, kind, person_id) VALUES
@@ -383,7 +383,7 @@ fn the_migration_gives_each_navi_its_makers_person_else_the_hubs_owner() {
         conn
     };
     let owners = |conn: &rusqlite::Connection| -> Vec<(String, Option<String>)> {
-        conn.execute_batch(MIGRATIONS[owners_at]).unwrap();
+        conn.execute_batch(MIGRATIONS[owners_at].sql).unwrap();
         conn.prepare("SELECT project_id, owner_person FROM assistants ORDER BY created_ms")
             .unwrap()
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
