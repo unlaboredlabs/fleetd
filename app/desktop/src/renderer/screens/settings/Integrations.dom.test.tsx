@@ -173,7 +173,7 @@ describe("a Navi's integrations", () => {
     const text = row("crm").textContent;
     expect(text).toContain("Connected");
     expect(text).toContain("Key sealed on devbox. Navi never sees it.");
-    expect(text).toContain("Works on devbox (CRM 2.0.0): 2 tools read freely · 1 asks you each time.");
+    expect(text).toContain("Works on devbox (CRM 2.0.0): 2 tools run without asking · 1 asks you each time.");
     expect(text).toContain("list_contacts, get_contact");
     tested = { machineId: "devbox", result: { error: "HTTP 401 Unauthorized" } };
     await click(button("Test connection", row("crm")));
@@ -208,6 +208,56 @@ describe("a Navi's integrations", () => {
     await click(button("Save", dialog()));
     expect(saved[1]?.integration).toEqual({ readTools: ["list_issues"] });
     expect(document.body.textContent).not.toContain(CRM_KEY);
+  });
+
+  it("adds the person's URL server with its key, in plain words throughout", async () => {
+    await render();
+    await click(button("Add an MCP server"));
+    const words = () => dialog().textContent;
+    expect(words()).toContain("encrypted on this computer so only devbox can read it");
+    expect(words()).not.toMatch(/\blead\b|integration|only reads?\b/iu);
+    await type(field("Name"), "xaq");
+    await type(field("URL"), "https://macbook.example.ts.net/mcp");
+    await type(field("Key"), CRM_KEY);
+    await click(button("Connect and test", dialog()));
+    expect(saved[0]?.transport).toEqual({ type: "http", url: "https://macbook.example.ts.net/mcp" });
+    expect(saved[0]?.headers).toEqual([{ kind: "secret", name: "Authorization", value: CRM_KEY }]);
+    expect(dialog().querySelector('[role="alert"]')).toBeNull();
+    expect(words()).toContain("Which of xaq's tools may Navi use without asking?");
+    expect(words()).not.toMatch(/\blead\b|integration|only reads?\b|sealed/iu);
+  });
+
+  it("shows the hub's refusal as what happened and what to do, and keeps the dialog open", async () => {
+    vi.stubGlobal("fleetd", {
+      platform: "linux",
+      openExternal: () => Promise.resolve({ ok: true }),
+      secret: {
+        mcpServer: (): Promise<CallOutcome> =>
+          Promise.resolve({ ok: false, error: { code: "machine_offline", message: "Machine devbox is offline.", fix: "Start the node on devbox or check its network, then retry." } }),
+      },
+    });
+    await render();
+    await click(button("Add an MCP server"));
+    await type(field("Name"), "xaq");
+    await type(field("URL"), "https://macbook.example.ts.net/mcp");
+    await click(button("Connect and test", dialog()));
+    expect(dialog().querySelector('[role="alert"]')?.textContent).toBe("Machine devbox is offline. Start the node on devbox or check its network, then retry.");
+    expect(button("Connect and test", dialog()).disabled).toBe(false);
+  });
+
+  it("says a saved server whose test failed is added, and how to fix it", async () => {
+    tested = { machineId: "devbox", result: { error: "HTTP 401 Unauthorized" } };
+    await render();
+    await click(button("Add an MCP server"));
+    await type(field("Name"), "xaq");
+    await type(field("URL"), "https://macbook.example.ts.net/mcp");
+    await type(field("Key"), CRM_KEY);
+    await click(button("Connect and test", dialog()));
+    expect(dialog().textContent).toContain("xaq is added, but its test failed");
+    expect(dialog().querySelector('[role="alert"]')?.textContent).toBe("Failed on devbox: HTTP 401 Unauthorized. Check the key: the server refused it.");
+    expect(dialog().textContent).not.toContain("Which of");
+    await click(button("Done", dialog()));
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it("disconnects: the server goes, and the key is erased from Navi's machine", async () => {

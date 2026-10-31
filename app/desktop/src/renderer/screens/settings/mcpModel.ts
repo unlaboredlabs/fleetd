@@ -131,7 +131,7 @@ export const toRequest = (
     transport = { type: draft.kind, url };
   }
   const secrets = values.some((v) => v.kind === "secret");
-  if (secrets && boxes.length === 0) return { ok: false, problem: "No machine takes secrets yet: no node has a box key. Update fleetd there first." };
+  if (secrets && boxes.length === 0) return { ok: false, problem: "No machine can keep a key yet: update fleetd on it first." };
   return {
     ok: true,
     request: {

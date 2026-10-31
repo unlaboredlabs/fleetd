@@ -24,8 +24,9 @@ describe("a Navi's integrations model", () => {
   });
   it("says what a test found by policy, and where a failure happened", () => {
     const p = byPolicy([{ name: "a", policy: "read" }, { name: "b" }, { name: "c", policy: "blocked" }]);
-    expect(policyLine(p)).toBe("1 tool reads freely · 1 asks you each time · 1 is never allowed");
+    expect(policyLine(p)).toBe("1 tool runs without asking · 1 asks you each time · 1 is never allowed");
     expect(testProblem("boom", "devbox")).toBe("Failed on devbox: boom");
+    expect(testProblem("HTTP 403 Forbidden.", "devbox")).toBe("Failed on devbox: HTTP 403 Forbidden. Check the key: the server refused it.");
     expect(emptyNote({ tools: [] })).toBe("The server answered but lists no tools.");
     expect(emptyNote({ tools: [{ name: "a" }] })).toBeNull();
   });

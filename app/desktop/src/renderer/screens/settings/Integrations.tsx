@@ -1,7 +1,7 @@
 // A Navi's Integrations (its Projects page, only for a project of kind assistant): the MCP servers the person connects
 // to it. Connecting seals the key in main to Navi's machine and saves it (mcp_server_set), then tests it at once
-// (mcp_server_test), which lists each tool by the hub's policy: read freely, ask each time, never. Disconnect is
-// mcp_server_remove, which also erases the key on the machine.
+// (mcp_server_test), which lists each tool by the hub's policy: runs without asking, asks each time, never.
+// Disconnect is mcp_server_remove, which also erases the key on the machine.
 import { useState, type ReactNode } from "react";
 import { Button, Checkbox, Dialog, Field, Input, Radio, RadioGroup, Text, Textarea, Truncate } from "../../ui";
 import type { McpServer, McpTestResult } from "../../../shared/contracts";
@@ -158,8 +158,8 @@ function Row(props: {
   );
 }
 
-/** What a test found: the tools by policy, or the failure. */
-function Found(props: { tested: Tested; machine: string }) {
+/** What a test found: the tools by policy, or the failure. `brief`: only where it worked, above the tools to tick. */
+function Found(props: { tested: Tested; machine: string; brief?: boolean }) {
   const { tested } = props;
   if ("error" in tested || tested.result.error !== undefined) {
     const error = "error" in tested ? tested.error : (tested.result.error ?? "");
@@ -181,6 +181,14 @@ function Found(props: { tested: Tested; machine: string }) {
       </div>
     );
   }
+  const works = `Works on ${tested.machineId}${tested.result.server === undefined ? "" : ` (${tested.result.server})`}`;
+  if (props.brief === true) {
+    return (
+      <div role="status">
+        <Text size="sm">{`${works}.`}</Text>
+      </div>
+    );
+  }
   const p = byPolicy(tested.result.tools ?? []);
   const list = (label: string, names: ReadonlyArray<string>): ReactNode =>
     names.length === 0 ? null : (
@@ -195,9 +203,9 @@ function Found(props: { tested: Tested; machine: string }) {
     );
   return (
     <div role="status" className={s.stack}>
-      <Text size="sm">{`Works on ${tested.machineId}${tested.result.server === undefined ? "" : ` (${tested.result.server})`}: ${policyLine(p)}.`}</Text>
+      <Text size="sm">{`${works}: ${policyLine(p)}.`}</Text>
       <div className={s.policy}>
-        {list("Reads freely", p.read)}
+        {list("Without asking", p.read)}
         {list("Asks you", p.ask)}
         {list("Never", p.blocked)}
       </div>
@@ -221,7 +229,7 @@ function ConnectFooter(props: { busy: boolean; ok: boolean; label: string; onClo
 function SealedNote({ machine, what }: { machine: string; what: string }) {
   return (
     <Text size="xs" tone="quiet">
-      {`The ${what} is sealed on this computer to ${machine}'s key, so only ${machine} can open it. fleetd never shows it again, and Navi never sees it: it isn't in any chat or transcript.`}
+      {`The ${what} is encrypted on this computer so only ${machine} can read it. fleetd never shows it again, and Navi never sees it.`}
     </Text>
   );
 }
@@ -271,23 +279,31 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
     });
   };
   const tools = tested !== null && !("error" in tested) ? (tested.result.tools ?? []) : [];
+  const failed = tested !== null && ("error" in tested || tested.result.error !== undefined);
+  const name = draft.name.trim();
   return (
     <Dialog
       open
       wide
-      onOpenChange={(o) => !o && !busy && (tested === null ? props.onClose() : props.onDone(draft.name.trim(), tested))}
-      title={tested === null ? "Add an MCP server" : `Which of ${draft.name.trim()}'s tools only read?`}
+      onOpenChange={(o) => !o && !busy && (tested === null ? props.onClose() : props.onDone(name, tested))}
+      title={tested === null ? "Add an MCP server" : failed ? `${name} is added, but its test failed` : `Which of ${name}'s tools may Navi use without asking?`}
       description={
         tested === null
-          ? "Any MCP server, by URL or by a command on Navi's machine. Every one of its tools asks you first until you mark it as one that only reads."
-          : "A tool you tick runs without asking. Leave anything that changes, sends or deletes unticked: it asks you each time. Moving money, trading and creating accounts stay blocked."
+          ? `Any MCP server, by its URL or a command run on ${machine.name}. Navi asks you before it uses any of its tools, until you pick the ones it may use freely.`
+          : failed
+            ? `Navi can't use it until it works. Test it again from the list; to change its URL or key, disconnect it and add it again.`
+            : "Tick the ones that only look things up. Leave anything that changes, sends or deletes unticked, so Navi asks you each time. Moving money, trading and creating accounts are always blocked."
       }
       footer={
         tested === null ? (
           <ConnectFooter busy={busy} ok={built.ok && nameIssue === null} label="Connect and test" onClose={props.onClose} onConnect={first} />
+        ) : failed ? (
+          <Button variant="primary" onClick={() => props.onDone(name, tested)}>
+            Done
+          </Button>
         ) : (
           <>
-            <Button onClick={() => props.onDone(draft.name.trim(), tested)} disabled={busy}>
+            <Button onClick={() => props.onDone(name, tested)} disabled={busy}>
               Keep every tool asking
             </Button>
             <Button variant="primary" disabled={busy || !built.ok} onClick={second}>
@@ -299,7 +315,7 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
     >
       {tested === null ? (
         <div className={s.stack}>
-          <Field label="Name" error={nameIssue} description="Short, as Navi sees its tools: mcp__<name>__<tool>.">
+          <Field label="Name" error={nameIssue} description="Short: Navi sees its tools as mcp__<name>__<tool>.">
             <Input mono aria-label="Name" value={draft.name} disabled={busy} autoComplete="off" spellCheck={false} placeholder="linear" onChange={(e) => set({ name: e.target.value })} />
           </Field>
           <RadioGroup
@@ -334,7 +350,7 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
             </Field>
           </div>
           <SealedNote machine={machine.name} what="key" />
-          {!built.ok && draft.name.trim() !== "" ? (
+          {!built.ok && name !== "" && nameIssue === null ? (
             <Text size="sm" tone="quiet">
               {built.problem}
             </Text>
@@ -343,12 +359,12 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
         </div>
       ) : (
         <div className={s.stack}>
-          <Found tested={tested} machine={machine.name} />
+          <Found tested={tested} machine={machine.name} brief />
           {tools.map((t) => (
             <Checkbox
               key={t.name}
               label={t.name}
-              description={t.policy === "blocked" ? "Blocked: fleetd never runs this one." : (t.description ?? (t.readOnly === true ? "The server says it only reads." : undefined))}
+              description={t.policy === "blocked" ? "Blocked: fleetd never runs this one." : (t.description ?? (t.readOnly === true ? "The server says it only looks things up." : undefined))}
               checked={reads.has(t.name)}
               disabled={busy || t.policy === "blocked"}
               onCheckedChange={(on) => {

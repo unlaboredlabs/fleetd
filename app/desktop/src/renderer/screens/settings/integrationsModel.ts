@@ -42,10 +42,10 @@ export const byPolicy = (tools: ReadonlyArray<McpToolInfo>): ByPolicy => ({
 
 const count = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
 
-/** "26 read freely · 12 ask you each time", and the blocked ones when there are any. */
+/** "26 tools run without asking · 12 ask you each time", and the blocked ones when there are any. */
 export const policyLine = (p: ByPolicy): string =>
   [
-    `${count(p.read.length, "tool reads", "tools read")} freely`,
+    `${count(p.read.length, "tool runs", "tools run")} without asking`,
     `${count(p.ask.length, "asks", "ask")} you each time`,
     ...(p.blocked.length > 0 ? [`${count(p.blocked.length, "is", "are")} never allowed`] : []),
   ].join(" · ");
@@ -53,8 +53,12 @@ export const policyLine = (p: ByPolicy): string =>
 /** A custom server's tools offered as only reading: those its server marks so, never a blocked one. */
 export const suggestedReads = (tools: ReadonlyArray<McpToolInfo>): string[] => tools.filter((t) => t.readOnly === true && t.policy !== "blocked").map((t) => t.name);
 
-/** A failed test, said with where it ran. */
-export const testProblem = (error: string, machine: string): string => `Failed on ${machine}: ${error}`;
+/** A failed test, said with where it ran, and the key to check when the server turned it away. */
+export const testProblem = (error: string, machine: string): string => {
+  const refused = /\b40[13]\b|unauthori[sz]ed|forbidden/iu.test(error);
+  const stop = /[.!?]$/u.test(error) ? "" : ".";
+  return `Failed on ${machine}: ${error}${refused ? `${stop} Check the key: the server refused it.` : ""}`;
+};
 
 /** A test that reached the server but lists no tools. */
 export const emptyNote = (result: McpTestResult): string | null => ((result.tools ?? []).length > 0 ? null : "The server answered but lists no tools.");

@@ -634,13 +634,20 @@ fn integration(key: Value) -> Value {
         "integration": {} })
 }
 
-/// Marks p1 a Navi, as creating one from the app does.
+/// Marks p1 a Navi, as creating one from the app does: a row in `assistants`, while the node's report of the project
+/// keeps no kind.
 fn make_navi(hub: &Hub) {
     hub.db
         .with(|c| {
-            c.execute(
-                "UPDATE projects SET data = json_set(data, '$.kind', 'assistant') WHERE project_id = 'p1'",
-                [],
+            crate::hub::navi::store::put(
+                c,
+                &project(),
+                &fleetd_contracts::model::ProjectCreator {
+                    key_id: "k1".into(),
+                    name: "desk".into(),
+                },
+                None,
+                0,
             )?;
             Ok(())
         })
@@ -660,7 +667,12 @@ async fn an_integration_connects_to_a_navi_only() {
     )
     .await
     .unwrap_err();
-    assert!(format!("{error:?}").contains("Navi only"), "{error:?}");
+    let said = format!("{error:?}");
+    assert!(said.contains("isn't a Navi"), "{said}");
+    assert!(said.contains("under MCP servers"), "{said}");
+    for word in ["lead", "ntegration", "read-only"] {
+        assert!(!said.contains(word), "{word}: {said}");
+    }
     let mut global = integration(plain.clone());
     global["scope"] = json!({ "kind": "global" });
     assert!(
@@ -676,6 +688,37 @@ async fn an_integration_connects_to_a_navi_only() {
     call(&hub, &person(), "mcp_server_set", integration(plain))
         .await
         .unwrap();
+}
+
+/// The person's case: a Navi made in the app (so only `assistants` says it is one), and a URL server with its
+/// Authorization key, saved from the Navi's Integrations as the app sends it. It once failed as "not a Navi".
+#[tokio::test]
+async fn a_navi_made_in_the_app_takes_a_url_server_with_its_key() {
+    let (hub, _home) = hub();
+    let mut calls = node(&hub).await;
+    make_navi(&hub);
+    let mut server = integration(json!({ "kind": "secret", "name": "Authorization",
+        "sealed": [{ "machineId": "lab", "sealed": sealed("Bearer fake-key-for-a-test") }] }));
+    server["name"] = "xaq".into();
+    server["transport"]["url"] = "https://macbook.example.ts.net/mcp".into();
+    let saved = call(&hub, &person(), "mcp_server_set", server)
+        .await
+        .unwrap();
+    assert_eq!(saved["server"]["name"], "xaq");
+    assert!(matches!(
+        calls.recv().await.unwrap(),
+        SessionCall::McpSecrets { ref set, .. } if set.len() == 1
+    ));
+    let tested = call(
+        &hub,
+        &person(),
+        "mcp_server_test",
+        json!({ "scope": project_scope(), "name": "xaq" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(tested["machineId"], "lab");
+    assert_eq!(tested["result"].get("error"), None, "{tested}");
 }
 
 #[tokio::test]
