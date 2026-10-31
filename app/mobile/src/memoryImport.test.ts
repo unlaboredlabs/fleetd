@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { addedWords, canAdd, importStep, initialImport, unsupported, type ImportMsg, type ImportState } from "./memoryImport";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fakeHub } from "./hub/fake";
+import { addedWords, canAdd, importClient, importedOf, importStep, initialImport, type ImportMsg, type ImportState } from "./memoryImport";
+import { Session } from "./session";
 
 const run = (...msgs: ImportMsg[]): ImportState => msgs.reduce(importStep, initialImport);
 const PROMPT: ImportMsg = { t: "prompt", result: { ok: true, value: "Export all of my stored memories…" } };
@@ -24,10 +26,6 @@ describe("Import Memory's prompt", () => {
     expect(run(PROMPT, { t: "copied" }).copied).toBe(true);
     expect(run(PROMPT, { t: "copied" }, { t: "copiedShown" }).copied).toBe(false);
   });
-
-  it("says so on a hub without the import calls", async () => {
-    await expect(unsupported.prompt()).resolves.toMatchObject({ ok: false, error: { message: "This hub can't import memory yet." } });
-  });
 });
 
 describe("Add to Memory", () => {
@@ -48,8 +46,8 @@ describe("Add to Memory", () => {
   });
 
   it("says how many it added, and clears the paste", () => {
-    const done = run({ t: "typed", text: "Ada, Berlin" }, { t: "add" }, { t: "added", result: { ok: true, value: { added: 7 } } });
-    expect(done.phase).toEqual({ t: "done", added: 7 });
+    const done = run({ t: "typed", text: "Ada, Berlin" }, { t: "add" }, { t: "added", result: { ok: true, value: { added: 7, secrets: 0, full: 0 } } });
+    expect(done.phase).toEqual({ t: "done", imported: { added: 7, secrets: 0, full: 0 } });
     expect(done.text).toBe("");
   });
 
@@ -64,13 +62,66 @@ describe("Add to Memory", () => {
 
   it("ignores an answer it isn't waiting for", () => {
     const s = run({ t: "typed", text: "Ada" });
-    expect(importStep(s, { t: "added", result: { ok: true, value: { added: 3 } } })).toBe(s);
+    expect(importStep(s, { t: "added", result: { ok: true, value: { added: 3, secrets: 0, full: 0 } } })).toBe(s);
   });
 
-  it("words the count, none and one included", () => {
-    expect(addedWords(0)).toEqual({ title: "Nothing New", detail: "Your memory already has all of it." });
-    expect(addedWords(1).title).toBe("Added 1 Entry");
-    expect(addedWords(12).title).toBe("Added 12 Entries");
+  it("says how many it added, and what it left out: secrets and a full memory", () => {
+    expect(addedWords({ added: 12, secrets: 0, full: 0 })).toEqual({ title: "Added 12 to Memory", detail: "Your Navis and every lead read it from now on." });
+    expect(addedWords({ added: 1, secrets: 2, full: 3 }).detail).toBe(
+      "Your Navis and every lead read it from now on. Left out 2 lines that looked like keys or passwords. 3 more didn't fit: your memory is full.",
+    );
+    expect(addedWords({ added: 0, secrets: 1, full: 0 })).toEqual({ title: "Nothing New", detail: "Your memory already has all of it. Left out 1 line that looked like a key or password." });
+    expect(addedWords({ added: 0, secrets: 0, full: 4 }).title).toBe("Memory Full");
+  });
+});
+
+describe("memory_import", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const setup = () => {
+    const hub = fakeHub();
+    const session = new Session({ hub: "http://devbox:4791", key: "key_abc", transport: hub.transport });
+    session.start();
+    hub.ready();
+    const calls = () => hub.sentOf("call").filter((c) => c.tool === "memory_import");
+    return { hub, client: importClient(session), calls };
+  };
+  const OUT = { prompt: "Export all of my stored memories…", added: [], skipped: [], chars: 0, cap: 4000 };
+
+  it("asks for the prompt alone, without text", async () => {
+    const { hub, client, calls } = setup();
+    const prompt = client.prompt();
+    expect(calls().at(-1)?.input).toEqual({});
+    hub.answer("memory_import", OUT);
+    await expect(prompt).resolves.toEqual({ ok: true, value: "Export all of my stored memories…" });
+  });
+
+  it("sends the paste and counts what was added and left out", async () => {
+    const { hub, client, calls } = setup();
+    const added = client.add("[2026-01-02] - Prefers dark mode.");
+    expect(calls().at(-1)?.input).toEqual({ text: "[2026-01-02] - Prefers dark mode." });
+    hub.answer("memory_import", {
+      ...OUT,
+      added: [{ text: "Prefers dark mode." }, { text: "Lives in Berlin.", replaced: "Lives in Paris." }],
+      skipped: [
+        { text: "sk-…", why: "secret" },
+        { text: "Likes tea.", why: "duplicate" },
+        { text: "Plays chess.", why: "full" },
+      ],
+    });
+    await expect(added).resolves.toEqual({ ok: true, value: { added: 2, secrets: 1, full: 1 } });
+  });
+
+  it("says the hub's refusal, its fix with it", async () => {
+    const { hub, client } = setup();
+    const added = client.add("Ada");
+    hub.fail("memory_import", "failed_precondition", "Connect your Claude account first.");
+    await expect(added).resolves.toMatchObject({ ok: false, error: { message: "Connect your Claude account first." } });
+  });
+
+  it("counts an answer with nothing in it", () => {
+    expect(importedOf({ added: [], skipped: [] })).toEqual({ added: 0, secrets: 0, full: 0 });
   });
 });
 

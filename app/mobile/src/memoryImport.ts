@@ -6,9 +6,11 @@ import type { HubError } from "./desktop";
 
 export type Result<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: HubError };
 
-/** What an import added to the person's memory. */
+/** What an import wrote, and what it left out because it looked like a secret or the memory was full. */
 export interface Imported {
   readonly added: number;
+  readonly secrets: number;
+  readonly full: number;
 }
 
 /** The hub's side: its export prompt, and the pasted answer turned into memory entries. */
@@ -17,22 +19,48 @@ export interface ImportClient {
   readonly add: (text: string) => Promise<Result<Imported>>;
 }
 
-/** Distilling is a model turn on the person's own Claude: it can take a while. */
+/** Distilling is a model turn on the person's own Claude, about 30 to 90 seconds. */
 export const IMPORT_MS = 180_000;
 
-/** A hub without the import calls says so, rather than leave the screen loading. */
-export const unsupported: ImportClient = {
-  prompt: () => Promise.resolve({ ok: false, error: { code: "unsupported", message: "This hub can't import memory yet.", fix: "Update fleetd, then try again." } }),
-  add: () => Promise.resolve({ ok: false, error: { code: "unsupported", message: "This hub can't import memory yet.", fix: "Update fleetd, then try again." } }),
-};
+/** memory_import's answer (fleetd-contracts memory.rs), the part the phone reads. */
+interface ImportOutput {
+  readonly prompt: string;
+  readonly added: readonly { readonly text: string; readonly replaced?: string }[];
+  readonly skipped: readonly { readonly text: string; readonly why: "duplicate" | "secret" | "full" }[];
+}
 
-/** The hub's import calls, for this session. */
-export const importClient = (_hub: unknown): ImportClient => unsupported;
+type Call = (tool: "memory_import", input: { text?: string }, timeoutMs?: number) => Promise<{ readonly ok: true; readonly output: ImportOutput } | { readonly ok: false; readonly error: HubError }>;
+
+/** What an answer of memory_import came to. */
+export const importedOf = (o: Pick<ImportOutput, "added" | "skipped">): Imported => ({
+  added: o.added.length,
+  secrets: o.skipped.filter((x) => x.why === "secret").length,
+  full: o.skipped.filter((x) => x.why === "full").length,
+});
+
+/**
+ * memory_import, on the person's own key: without text it answers the prompt alone, which the screen asks for as it
+ * opens (never a copy of its own); with the paste it waits for the model turn and writes to their memory.
+ */
+export const importClient = (hub: { readonly call: unknown }): ImportClient => {
+  // The call's types come with fleetd-contracts' memory_import; read through its shape until the app's are generated.
+  const call = (hub.call as Call).bind(hub);
+  return {
+    prompt: async () => {
+      const r = await call("memory_import", {});
+      return r.ok ? { ok: true, value: r.output.prompt } : r;
+    },
+    add: async (text) => {
+      const r = await call("memory_import", { text }, IMPORT_MS);
+      return r.ok ? { ok: true, value: importedOf(r.output) } : r;
+    },
+  };
+};
 
 export type PromptState = { readonly t: "loading" } | { readonly t: "ready"; readonly text: string } | { readonly t: "failed"; readonly error: HubError };
 
 /** The paste and what became of it: being written, sent and distilling, added (how many), or refused. */
-export type Phase = { readonly t: "editing" } | { readonly t: "working" } | { readonly t: "done"; readonly added: number } | { readonly t: "failed"; readonly error: HubError };
+export type Phase = { readonly t: "editing" } | { readonly t: "working" } | { readonly t: "done"; readonly imported: Imported } | { readonly t: "failed"; readonly error: HubError };
 
 export interface ImportState {
   readonly prompt: PromptState;
@@ -71,15 +99,22 @@ export const importStep = (s: ImportState, m: ImportMsg): ImportState => {
     case "added":
       if (s.phase.t !== "working") return s;
       // Added: the paste is done with. Refused: it stays, to try again.
-      return m.result.ok ? { ...s, text: "", phase: { t: "done", added: m.result.value.added } } : { ...s, phase: { t: "failed", error: m.result.error } };
+      return m.result.ok ? { ...s, text: "", phase: { t: "done", imported: m.result.value } } : { ...s, phase: { t: "failed", error: m.result.error } };
   }
 };
 
 /** Add to Memory: something pasted, and not already on its way. */
 export const canAdd = (s: ImportState): boolean => s.text.trim() !== "" && s.phase.t !== "working";
 
-/** What an import came to: a title, and what it means. */
-export const addedWords = (added: number): { readonly title: string; readonly detail: string } =>
-  added === 0
-    ? { title: "Nothing New", detail: "Your memory already has all of it." }
-    : { title: added === 1 ? "Added 1 Entry" : `Added ${String(added)} Entries`, detail: "Your Navis and every lead read it from now on." };
+const count = (n: number, one: string, many: string): string => (n === 1 ? `1 ${one}` : `${String(n)} ${many}`);
+
+/** What an import came to: a title, and what it means, with what it left out (secrets, a full memory). */
+export const addedWords = (r: Imported): { readonly title: string; readonly detail: string } => {
+  const notes = [
+    r.secrets === 0 ? null : `Left out ${count(r.secrets, "line that looked like a key or password", "lines that looked like keys or passwords")}.`,
+    r.full === 0 || r.added === 0 ? null : `${count(r.full, "more didn't", "more didn't")} fit: your memory is full.`,
+  ].filter((n) => n !== null);
+  if (r.added === 0 && r.full > 0) return { title: "Memory Full", detail: ["None of it fit. Make room under Settings › Memory in the desktop app, then try again.", ...notes].join(" ") };
+  if (r.added === 0) return { title: "Nothing New", detail: ["Your memory already has all of it.", ...notes].join(" ") };
+  return { title: `Added ${String(r.added)} to Memory`, detail: ["Your Navis and every lead read it from now on.", ...notes].join(" ") };
+};

@@ -68,7 +68,7 @@ export function ImportMemory({ navigation }: NativeStackScreenProps<SettingsPara
     else haptics.warning();
   };
 
-  const done = s.phase.t === "done" ? addedWords(s.phase.added) : null;
+  const done = s.phase.t === "done" ? addedWords(s.phase.imported) : null;
   const working = s.phase.t === "working";
   // Pressed to go further: back to Settings once added.
   const button = done !== null ? { label: "Done", onPress: () => navigation.goBack(), disabled: false } : { label: "Add to Memory", onPress: () => void add(), disabled: !canAdd(s) };
@@ -137,7 +137,7 @@ export function ImportMemory({ navigation }: NativeStackScreenProps<SettingsPara
         )}
         {working ? (
           <Animated.Text entering={FadeIn.duration(reduce ? 0 : dur.quick).easing(ease.snap)} style={[type.footnote, styles.note, { color: t.secondary }]} accessibilityLiveRegion="polite">
-            Picking out what to remember. This can take a minute.
+            Picking out what to remember. This takes about a minute.
           </Animated.Text>
         ) : null}
         <Problem text={s.phase.t === "failed" ? `Not added: ${errorWords(s.phase.error)}` : undefined} />
