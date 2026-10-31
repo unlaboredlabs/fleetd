@@ -16,7 +16,7 @@
 //! a box that ended is never mistaken for another process's namespaces, whatever pid comes next.
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Seek};
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::path::{Path, PathBuf};
 use std::process::{ChildStdin, Command, Stdio};
@@ -27,6 +27,9 @@ const PROGRAMS: &[&str] = &["/usr", "/bin", "/lib", "/lib64", "/lib32", "/nix"];
 
 /// `ioctl` on a namespace's file: the user namespace that owns it.
 const NS_GET_USERNS: u64 = 0xb701;
+
+/// How long a box's user namespace may take to map its ids after bubblewrap says it is up.
+const MAPPED_WITHIN: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// A running box.
 struct NaviBox {
@@ -152,6 +155,12 @@ fn start(tool: &Path, tmp: &Path) -> Result<NaviBox, String> {
             pid: Arc::new(pid),
         }),
         (up, hold) => {
+            // A box that never came up (its ids never mapped) is ended: only `waiter` reaps its bubblewrap, so the pid
+            // is still its own.
+            let _ = nix::sys::signal::kill(
+                nix::unistd::Pid::from_raw(pid_of as i32),
+                nix::sys::signal::Signal::SIGKILL,
+            );
             drop(hold);
             let _ = waiter.join();
             let mut said = String::new();
@@ -168,7 +177,7 @@ fn start(tool: &Path, tmp: &Path) -> Result<NaviBox, String> {
 }
 
 /// Reads what bubblewrap says once the box is up (`--info-fd`) and opens its namespaces: the pid namespace, checked
-/// to be the one it named, and the user namespace that owns it.
+/// to be the one it named, and the user namespace that owns it, once that maps its ids ([`mapped`]).
 fn namespaces(mut out: impl BufRead) -> Result<(File, File), String> {
     let mut text = String::new();
     loop {
@@ -187,6 +196,9 @@ fn namespaces(mut out: impl BufRead) -> Result<(File, File), String> {
     else {
         return Err(format!("it said {text:?}"));
     };
+    // Opened before the pid namespace is checked, so they are the child's too.
+    let maps = ["uid_map", "gid_map"]
+        .map(|map| File::open(format!("/proc/{child}/{map}")).map_err(|e| e.to_string()));
     let pid = File::open(format!("/proc/{child}/ns/pid")).map_err(|e| e.to_string())?;
     let opened = std::os::unix::fs::MetadataExt::ino(&pid.metadata().map_err(|e| e.to_string())?);
     if opened != ns {
@@ -200,5 +212,34 @@ fn namespaces(mut out: impl BufRead) -> Result<(File, File), String> {
         }
         File::from_raw_fd(fd)
     };
+    let [uid, gid] = maps;
+    mapped([uid?, gid?], MAPPED_WITHIN)?;
     Ok((user, pid))
+}
+
+/// Waits, up to `within`, until the box's user namespace maps its ids: its uid and gid maps, open, are written.
+/// Unprivileged bubblewrap says the box is up before its child writes them, and a session's bubblewrap that joins
+/// the namespace before then can't hand its pid over (`Can't send pid: Invalid argument`).
+fn mapped(mut maps: [File; 2], within: std::time::Duration) -> Result<(), String> {
+    let until = std::time::Instant::now() + within;
+    loop {
+        let mut written = true;
+        for map in &mut maps {
+            let mut text = String::new();
+            map.rewind()
+                .and_then(|_| map.read_to_string(&mut text))
+                .map_err(|e| e.to_string())?;
+            written &= !text.trim().is_empty();
+        }
+        if written {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= until {
+            return Err(format!(
+                "its uid and gid maps were still empty {} s after it started",
+                within.as_secs()
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
 }

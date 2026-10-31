@@ -1520,3 +1520,93 @@ fn a_navi_cant_swap_a_hidden_link_for_a_folder_of_its_own() {
     );
     assert!(ok, "{out}");
 }
+
+/// `tool`, but with a Navi's box that says it is up and maps its ids only `late` (seconds) after, or never: as
+/// unprivileged bubblewrap's can on a busy machine, held open. Its box is `unshare`'s user and pid namespaces with
+/// `cat` on the box's hold (in the foreground: `sh` gives what runs in the background no stdin), and every other
+/// sandbox is `tool`'s.
+#[cfg(target_os = "linux")]
+fn late_box(m: &Machine, tool: &Path, late: Option<f64>) -> PathBuf {
+    let fake = m.home.with_file_name("late-bwrap");
+    let map = match late {
+        Some(late) => format!(
+            "  sleep {late}
+  echo \"$(id -u) $(id -u) 1\" > /proc/$c/uid_map
+  echo deny > /proc/$c/setgroups
+  echo \"$(id -g) $(id -g) 1\" > /proc/$c/gid_map
+"
+        ),
+        None => String::new(),
+    };
+    let script = format!(
+        r#"#!/bin/sh
+case " $* " in *' --info-fd '*) ;; *) exec '{tool}' "$@" ;; esac
+while [ "$1" != --info-fd ]; do shift; done
+info=$2
+(
+  me=$(readlink /proc/self/ns/user)
+  c=
+  while [ -z "$c" ]; do
+    sleep 0.01
+    for p in $(cat /proc/$$/task/$$/children 2>/dev/null); do
+      [ "$(readlink /proc/$p/ns/user)" != "$me" ] && c=$p
+    done
+  done
+  ns=$(stat -L -c %i /proc/$c/ns/pid)
+  printf '{{\n  "child-pid": %s,\n  "pid-namespace": %s\n}}\n' $c $ns > /proc/self/fd/$info
+{map}) &
+exec unshare --user --pid --fork cat
+"#,
+        tool = tool.display()
+    );
+    std::fs::write(&fake, script).unwrap();
+    std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    fake
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_session_joins_its_box_only_once_the_box_maps_its_ids() {
+    let Some(tool) = sandbox_or_skip() else {
+        return;
+    };
+    let m = Machine::new();
+    let fake = late_box(&m, &tool, Some(0.5));
+    // Joined before the maps are written, a session's bubblewrap fails: `Can't send pid: Invalid argument`.
+    let began = std::time::Instant::now();
+    let (ok, out) = m.run(&fake, "echo inside; id -u");
+    assert!(ok, "{out}");
+    assert!(out.contains("inside"), "{out}");
+    assert!(
+        began.elapsed() >= std::time::Duration::from_millis(500),
+        "it joined before the box was up"
+    );
+    let (ok, out) = m.run(&fake, "echo again");
+    assert!(ok && out.contains("again"), "{out}");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_box_that_never_maps_its_ids_is_refused_clearly() {
+    let Some(tool) = sandbox_or_skip() else {
+        return;
+    };
+    let m = Machine::new();
+    let fake = late_box(&m, &tool, None);
+    let Err(refused) = wrap_with(
+        Some(fake),
+        &m.fence(),
+        &m.folder,
+        Path::new("/bin/sh"),
+        vec![],
+    ) else {
+        panic!("a box without its ids mapped was joined");
+    };
+    assert!(
+        refused
+            .message
+            .contains("its uid and gid maps were still empty 2 s after it started"),
+        "{}",
+        refused.message
+    );
+}
