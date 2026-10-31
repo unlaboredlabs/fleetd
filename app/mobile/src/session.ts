@@ -1,7 +1,7 @@
 // One paired hub at work: the client, the state the screens read, and the calls behind them. A snapshot (on every
 // connection) reads the open requests again, reloads the open chat's latest page and sends again what the link cut
 // off; events re-read what they changed (store.ts effectsOf). Screens subscribe and dispatch nothing themselves. The
-// person's pinned chats sync with the hub on each live link (pins.ts).
+// person's pinned chats sync with the hub on each snapshot (pins.ts).
 import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type ChatReplyTo, type ChatSend, type FlowDeps, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { memoryPins, Pins, type PinStore } from "./pins";
@@ -19,7 +19,7 @@ export interface SessionOptions {
   readonly newId?: () => string;
   /** Registers this phone for push on each session's first live link, and again with each new token. */
   readonly push?: PushDeps;
-  /** Where this phone keeps its copy of the pinned chats (prefsStore.ts); in memory without one. */
+  /** Where this phone keeps its copy of this hub's pinned chats (prefsStore.ts pinStoreFor); in memory without one. */
   readonly pins?: PinStore;
 }
 
@@ -47,7 +47,7 @@ export class Session {
     this.#push = options.push;
     this.#state = initial({ phase: "connecting", hub: options.hub, attempt: 0 });
     this.#client = new HubClient({ hub: options.hub, key: options.key, transport: options.transport, emit: (f) => this.#onFrame(f) });
-    this.#pins = new Pins((tool, input) => this.#client.call(tool, input), options.pins ?? memoryPins());
+    this.#pins = new Pins((tool, input) => this.#client.call(tool, input), options.pins ?? memoryPins(), (key) => this.#state.projects?.[key] !== undefined);
   }
 
   get state(): State {
@@ -282,6 +282,8 @@ export class Session {
     if (frame.t === "state") this.#onState(frame.state);
     if (frame.t === "snapshot") {
       void this.#readRequests();
+      // After the snapshot: an older build's pins go up only for this hub's own chats.
+      void this.#pins.read();
       void this.#readLatest();
       // An admin's: the build the hub has ready, and a run going on, followed.
       if (this.#state.admin === true) void loadRun(this.updates);
@@ -306,10 +308,7 @@ export class Session {
   }
 
   #onState(state: HubState): void {
-    if (state.phase === "live") {
-      void this.#readInfo();
-      void this.#pins.read();
-    }
+    if (state.phase === "live") void this.#readInfo();
     if (state.phase !== "live" || this.#registered) return;
     this.#registered = true;
     void this.#register();

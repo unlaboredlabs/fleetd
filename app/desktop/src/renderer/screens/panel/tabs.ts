@@ -1,8 +1,9 @@
 // The panel's tabs, in the order its tab bar shows them: the one list the bar, the routes (`/<tab>` after a project),
 // the palette's Go to commands and the remembered tab all read. A new tab is one entry here: its words, its icon, its
-// pane and, if it has one, its count, each loaded the first time the panel shows it. Agents, Sessions and Pull requests
-// also name an item in their routes (one agent's work, one session, one PR); every other tab's view is `{ tab }`.
-import { Activity, AppWindow, Bot, GitPullRequest, ListChecks, Scale, Send, TrainFront, type LucideIcon } from "lucide-react";
+// pane and, if it has one, its count, each loaded the first time the panel shows it. Agents, Sessions, Pull requests
+// and Skills also name an item in their routes (one agent's work, one session, one PR, one skill); every other tab's
+// view is `{ tab }`.
+import { Activity, AppWindow, BookOpen, Bot, GitPullRequest, ListChecks, Scale, Send, TrainFront, type LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 import type { PanelView, ProjectKey } from "../shell/routes";
 
@@ -112,6 +113,17 @@ export const PANEL_TABS = [
     keywords: ["navi", "asked", "orders", "requests", "delegated", "factory"],
     pane: () => import("../navi/AskedPane").then((m) => m.AskedPane),
     feature: "navi_asks",
+  },
+  {
+    // A Navi's only (panel/Sections.tsx, NAVI_SECTIONS).
+    id: "skills",
+    label: "Skills",
+    icon: BookOpen,
+    detail: "What this Navi has learned to do, with every change: who, when and why",
+    keywords: ["navi", "skill", "skills", "learned", "how", "workflow", "history", "versions"],
+    back: "All skills",
+    pane: () => import("./panes").then((m) => m.SkillsTab),
+    feature: "navi_skills",
   },
 ] as const satisfies readonly PanelTabEntry[];
 

@@ -28,7 +28,7 @@ use fleetd_contracts::memory::{ForgetCall, MemoryReadCall, RememberCall};
 use fleetd_contracts::navi::{ChatReadCall, ChatSearchCall, FactoryStatusCall, ProjectMessageCall};
 use fleetd_contracts::preview::{PreviewConfigProposeCall, PreviewStartCall, PreviewSuggestCall};
 use fleetd_contracts::schema::inline_schema;
-use fleetd_contracts::skills::SkillInstallCall;
+use fleetd_contracts::skills::{SkillInstallCall, SkillSaveCall};
 use fleetd_contracts::verification::ReviewVerdict;
 use serde_json::{Value, json};
 
@@ -291,6 +291,15 @@ static TOOLS: &[Tool] = &[
          commit fetched, and the human updates it from Settings > Skills. Agents list it as fleetd:<name> and run it \
          with the Skill tool.",
         inline_schema::<SkillInstallCall>,
+    ),
+    lead(
+        "skill_save",
+        "skill_save",
+        "A Navi's call: save one of your own skills, new or changed, as its whole SKILL.md (frontmatter with name \
+         and description, then the steps), with why in one line. No one approves it: the person sees every version in \
+         your Skills, with who, when and why, and can edit, revert or turn it off. Your next session lists it as \
+         fleetd:<name>; it is yours only. To improve one, save it again whole.",
+        inline_schema::<SkillSaveCall>,
     ),
     lead(
         "project_message",
@@ -1024,6 +1033,7 @@ mod tests {
             "nudge",
             "checklist",
             "skill_install",
+            "skill_save",
             "project_message",
             "factory_status",
             "chat_search",

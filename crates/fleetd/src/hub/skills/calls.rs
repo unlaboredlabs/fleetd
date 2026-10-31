@@ -70,6 +70,12 @@ async fn answer(
         call.source.as_str(),
         call.skill.as_ref(),
         false,
+        super::Who {
+            author: fleetd_contracts::skills::SkillAuthor::Agent,
+            by: title_of(hub, &caller.project_ref),
+            why: None,
+            at_ms: crate::hub::store::now_ms(hub.clock.as_ref()),
+        },
     )
     .await?;
     let names: Vec<SkillName> = kept.iter().map(|k| k.name.clone()).collect();
@@ -88,4 +94,12 @@ async fn answer(
              from now get it (yours from its next start): name it in a brief and the agent uses it."
         )),
     }))
+}
+
+/// The project's title, as a version names its lead or Navi; its id when the hub has no title for it.
+pub fn title_of(hub: &Hub, r: &fleetd_contracts::ids::ProjectRef) -> String {
+    match hub.store.project_get(r) {
+        Ok(Some(p)) => p.title,
+        _ => r.project_id.as_str().to_owned(),
+    }
 }

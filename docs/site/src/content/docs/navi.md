@@ -212,6 +212,33 @@ within dates when you give them, and reads the messages around what it finds. It
 another project's or another person's Navi's. The tools are `chat_search` and `chat_read`, in
 [Agent tools](/docs/reference/agent-tools).
 
+## Skills {#skills}
+
+A Navi learns. When it has to work out a task it will do again (where a portal hides the invoices, the steps of a
+grocery order), or you correct how it does something, it saves a skill: a `SKILL.md` in the same format as an
+installed [skill](/docs/skills), with what the skill is for and the steps. Nothing asks you first. When it uses a
+skill and finds a step wrong or missing, it saves it again, improved. The chat gets one quiet line each time
+("Saved a new skill, weekly-invoices: …"), the name a link to the skill.
+
+A Navi's skills are its own: they reach its sessions only, never another Navi's or a project's. A saved skill is
+in its next session's list as `fleetd:<name>`; the running session can read it from its skills folder at once.
+
+Open them from the Navi's panel, **Skills**, or from its Settings › Projects page:
+
+- **The list**: what it learned, what was installed for it, the hub-wide skills every project gets, and any in its
+  folder. Each row says who changed it last, when, and when the Navi last used it.
+- **A skill**: its `SKILL.md`, rendered. **Edit** opens the whole file with a line for what you changed; saving
+  makes a version of yours, which the Navi's next session gets.
+- **History**: every version, newest first, with who wrote it (the Navi or you), when, and why. Open one to see what
+  it changed against the one before. **Restore** puts an older version back as a new version, so nothing is lost.
+  The hub keeps the newest 100 versions of each skill.
+- **On**: turn a skill off and the Navi's sessions stop getting it, without deleting it. A Navi that saves an off
+  skill again is told it stays off until you turn it back on.
+- **Delete**: removes the skill and its history.
+
+An installed skill stays yours: a Navi doesn't change it, and saves its own version under another name. The tool is
+`skill_save`, in [Agent tools](/docs/reference/agent-tools).
+
 ## For the app and other clients
 
 Navis are MCP tools on the hub: `navi_create {name, machineId?}`, `navi_list {archived?, machineId?}`,
@@ -229,3 +256,12 @@ frame names the `navi_asks` feature. `navi_signins_forget {machineId, projectId}
 [sign-ins](#sign-ins); it needs the Navi's machine online and on a fleetd that keeps them. Hub links are `hub_links_get {navi?}`, `hub_link_mint {label, projects?}`,
 `hub_link_revoke {linkId}`, `hub_link_add {navi, label, url, sealed}` (the key sealed to `boxPubKey` from
 `hub_links_get`) and `hub_link_remove {linkId}`.
+
+A Navi's [skills](#skills) are its project's skills (`scope: "project"`, its `projectRef`), on a hub whose ready frame
+names the `navi_skills` feature. `skills_list {projectRef}` gives each with `changed` (its newest version: `version`,
+`author` `agent` or `person`, `by`, `at`, `why`), `off` and `lastUsedAt`. `skill_get {origin, projectRef, name,
+version?}` adds `versions`, newest first, without their texts; with `version`, its text is that version's.
+`skill_set {scope, projectRef, name, text, why?}` is the person's edit, `skill_revert {scope, projectRef, name,
+version}` puts a version back as a new one, `skill_off {projectRef, name, off}` turns one off in that project, and
+`skill_delete` removes it with its history. A chat message with `skillSaved {name, version, created, why}` is the line
+a save posts.

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { HubError } from "./desktop";
 import { memoryPins, Pins, type PinCall } from "./pins";
+import { hubPinStore, parsePrefs, pinsOf, reducePrefs, type PrefsAction } from "./prefs";
 
 const ref = (key: string) => ({ machineId: "m1", projectId: key.slice(3) });
 
@@ -117,6 +118,44 @@ describe("Pins", () => {
     void pins.read();
     expect(await hub.next("chat_pins_set", { output: { pins: [ref("m1/a")] } })).toEqual({ pins: [ref("m1/a")] });
     expect(store.saved()).toEqual(["m1/a"]);
+  });
+
+  it("keeps each hub's pins and pending change apart, and never sends one hub's chats to another", async () => {
+    // One phone's prefs, as an older build left them: pinned on hub A, before the hubs kept pins.
+    let prefs = parsePrefs({ pinned: ["a/one", "a/two"] });
+    const get = () => prefs;
+    const dispatch = (action: PrefsAction) => {
+      prefs = reducePrefs(prefs, action);
+    };
+    const A = "http://a:4790";
+    const B = "http://b:4790";
+    const isA = (key: string) => key.startsWith("a/");
+    const isB = (key: string) => key.startsWith("b/");
+
+    // Hub B never had pins: none of A's chats go to it, and it has nothing to claim.
+    const b = fakeCalls();
+    void new Pins(b.call, hubPinStore(get, dispatch, B), isB).read();
+    await b.next("chat_pins_get", { output: { pins: [], set: false } });
+    expect(b.calls).toHaveLength(0);
+    // Pinned on B: B's own.
+    void new Pins(b.call, hubPinStore(get, dispatch, B), isB).set(["b/x"]);
+    await b.next("chat_pins_set", { error: { code: "offline" } });
+    expect(pinsOf(prefs, B)).toEqual(["b/x"]);
+    expect(prefs.pinsPending).toEqual([B]);
+
+    // Hub A claims its own from the older build's, and its pins stay apart from B's.
+    const a = fakeCalls();
+    void new Pins(a.call, hubPinStore(get, dispatch, A), isA).read();
+    await a.next("chat_pins_get", { output: { pins: [], set: false } });
+    expect(await a.next("chat_pins_set", { output: { pins: [] } })).toEqual({ pins: [{ machineId: "a", projectId: "one" }, { machineId: "a", projectId: "two" }] });
+    expect(pinsOf(prefs, A)).toEqual(["a/one", "a/two"]);
+    expect(prefs.pinsPending).toEqual([B]);
+
+    // Back on B (a new session, as after switching or a restart): its pending pin goes, not A's.
+    const back = fakeCalls();
+    void new Pins(back.call, hubPinStore(get, dispatch, B), isB).read();
+    expect(await back.next("chat_pins_set", { output: { pins: [] } })).toEqual({ pins: [{ machineId: "b", projectId: "x" }] });
+    expect(prefs.pinsPending).toEqual([]);
   });
 
   it("keeps them on this phone alone with a hub that doesn't keep them", async () => {

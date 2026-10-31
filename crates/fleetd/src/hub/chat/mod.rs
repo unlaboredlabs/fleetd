@@ -47,6 +47,8 @@ pub struct NewMessage {
     pub memory_refreshed: Option<fleetd_contracts::memory::MemoryRefreshed>,
     /// The worktrees a nightly cleanup kept (hub/tasks/worktrees).
     pub worktrees_kept: Option<fleetd_contracts::chat::WorktreesKept>,
+    /// A Navi's saved skill (hub/skills/saves).
+    pub skill_saved: Option<fleetd_contracts::skills::SkillSaved>,
     /// A human message's `$name` skills.
     pub skills: Vec<fleetd_contracts::skills::SkillName>,
     pub by: Option<String>,
@@ -319,6 +321,7 @@ impl Chat {
                 remembered: new.remembered,
                 memory_refreshed: new.memory_refreshed,
                 worktrees_kept: new.worktrees_kept,
+                skill_saved: new.skill_saved,
                 skills: (!new.skills.is_empty()).then(|| List::unchecked(new.skills)),
                 preview_suggestion: new.preview_suggestion,
                 nudge: None,

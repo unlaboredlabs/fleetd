@@ -1,7 +1,8 @@
 // Navi in the app (screens/navi). navi-none: a hub with projects and no Navi yet (the sidebar's Meet Navi, and
 // #/navi's first run). navi-two: two Navis, Ada and Home, pinned above the projects, and Taxes archived; Ada asks to
 // book a table through its MCP server (the approval card, with its preview) and has asked storefront and billing for
-// work (Asked work, navi_asks). navi-old-hub: the same on a hub that doesn't serve Asked work to the app yet.
+// work (Asked work, navi_asks), and keeps skills it learned (Skills, with weekly-invoices' history). navi-old-hub: the
+// same on a hub that doesn't serve Asked work or a Navi's skills to the app yet.
 // navi-links: Ada's Linked hubs and Sam's links to this hub (hubLinks/); navi-links-none: neither yet.
 import { writeChat, type Ref } from "../kit/chat.ts";
 import { Fixture } from "../kit/fixture.ts";
@@ -90,6 +91,11 @@ const two = (base: Fixture): Fixture => {
       { author: "lead", text: "", item: toolApproval(ADA, "ada") },
       { author: "human", text: "And ask the storefront lead to let people save their cart for later." },
       { author: "lead", text: "Asked storefront's lead (N3). Its lead opened order W12, *Saved carts*, and it's under way. I'll tell you when it lands." },
+      {
+        author: "system",
+        text: `Updated the skill weekly-invoices: ${INVOICES_WHY}`,
+        extra: { skillSaved: { name: "weekly-invoices", version: 3, created: false, why: INVOICES_WHY } },
+      },
     ],
     { needsYou: true },
   );
@@ -140,12 +146,75 @@ const two = (base: Fixture): Fixture => {
       },
     ],
   });
+  adaSkills(f);
   return f;
 };
 
+const INVOICES_WHY = "The supplier moved the PDF download under Billing › Documents.";
+
+const invoices = (step: string, folder: string) =>
+  `---\nname: weekly-invoices\ndescription: Download the week's supplier invoices as PDFs. Use on Mondays, or when Sam asks for invoices.\n---\n\n# Weekly invoices\n\n1. Open the supplier portal; the login is in 1Password as *Acme Supplies*.\n2. ${step}\n3. Filter to the last 7 days and download each invoice as a PDF.\n4. Save them in \`${folder}\`, named by date and number: \`2026-10-27 INV-4471.pdf\`.\n5. Tell Sam the count and the total; flag any over 500.\n`;
+
+/** Ada's skills (navi/SkillsPane): what it learned, one of them off, one installed, and weekly-invoices' history. */
+const adaSkills = (f: Fixture): void => {
+  if (f.state.phase === "live") f.state = { ...f.state, features: [...(f.state.features ?? []), "navi_skills"] };
+  const projectRef = { ...ADA };
+  const hour = 3_600_000;
+  const newest = { version: 3, author: "agent", by: "Ada", at: at(f.now, -2 * hour), why: INVOICES_WHY };
+  const versions = [
+    newest,
+    { version: 2, author: "person", by: "Sam", at: at(f.now, -26 * hour), why: "Keep them by year." },
+    { version: 1, author: "agent", by: "Ada", at: at(f.now, -6 * 24 * hour), why: "Worked out where the portal keeps the invoices." },
+  ];
+  const texts = [
+    invoices("Go to Invoices in the top menu.", "invoices/"),
+    invoices("Go to Invoices in the top menu.", "invoices/2026/"),
+    invoices("Go to Billing › Documents; Invoices in the top menu shows only the last one.", "invoices/2026/"),
+  ];
+  const summary = {
+    name: "weekly-invoices",
+    origin: "project",
+    description: "Download the week's supplier invoices as PDFs. Use on Mondays, or when Sam asks for invoices.",
+    changed: newest,
+    lastUsedAt: at(f.now, -2 * hour - 120_000),
+    updatedAt: at(f.now, -2 * hour),
+  };
+  f.answer("skills_list", { projectRef }, {
+    skills: [
+      summary,
+      {
+        name: "lunch-booking",
+        origin: "project",
+        description: "Book lunch at Sam's usual places: Casa Lina first, a table for two by the window.",
+        changed: { version: 1, author: "agent", by: "Ada", at: at(f.now, -3 * 24 * hour), why: "Sam books the same few places." },
+        lastUsedAt: at(f.now, -300_000),
+      },
+      {
+        name: "car-insurance",
+        origin: "project",
+        description: "Compare the renewal quote with two others before the policy ends.",
+        changed: { version: 2, author: "person", by: "Sam", at: at(f.now, -9 * 24 * hour), why: "Only the comprehensive cover." },
+        off: true,
+        lastUsedAt: at(f.now, -40 * 24 * hour),
+      },
+      {
+        name: "pdf",
+        origin: "project",
+        description: "Fill in, merge and split PDF forms.",
+        install: { source: "acme/agent-skills@pdf", url: "https://github.com/acme/agent-skills.git", ref: "HEAD", commit: "4f1c2a9e8b7d6c5f4e3a2b1c0d9e8f7a6b5c4d3e", path: "pdf", installedAt: at(f.now, -14 * 24 * hour) },
+        changed: { version: 1, author: "person", by: "Sam", at: at(f.now, -14 * 24 * hour), why: "Installed from acme/agent-skills@pdf at 4f1c2a9e8b7d" },
+      },
+      { name: "standup", origin: "global", description: "Write the morning standup from yesterday's merges and today's orders." },
+    ],
+  });
+  const base = { origin: "project", projectRef, name: "weekly-invoices" };
+  f.answer("skill_get", base, { skill: summary, text: texts[2] ?? "", versions });
+  texts.forEach((text, i) => f.answer("skill_get", { ...base, version: i + 1 }, { skill: summary, text, versions }));
+};
+
 const oldHub = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "navi-old-hub", "Navi: navi-two on a hub that doesn't share a Navi's asks with the app yet.");
-  if (f.state.phase === "live") f.state = { ...f.state, features: (f.state.features ?? []).filter((x) => x !== "navi_asks") };
+  const f = Fixture.from(base, "navi-old-hub", "Navi: navi-two on a hub that doesn't share a Navi's asks or skills with the app yet.");
+  if (f.state.phase === "live") f.state = { ...f.state, features: (f.state.features ?? []).filter((x) => x !== "navi_asks" && x !== "navi_skills") };
   f.drop("navi_asks", { navi: { ...ADA } });
   f.drop("navi_asks", { navi: { ...TAXES } });
   return f;

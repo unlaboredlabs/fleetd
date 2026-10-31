@@ -1105,6 +1105,11 @@ export type ChatMessage = {
   /** A human message: the bubble it answers. */
   replyTo?: ChatReplyTo;
   seq: number;
+  /**
+   * A system line "Saved a skill: …": a Navi saved or changed one of its skills (`skill_save`); the app links it
+   * to the skill.
+   */
+  skillSaved?: SkillSaved;
   /** A human message: the skills it named with `$name`, which the lead's copy lists. */
   skills?: SkillName[];
   state: ChatMessageState;
@@ -6388,6 +6393,9 @@ export type SidebarOrderSetOutput = {
   truncated?: boolean;
 };
 
+/** Who wrote a version of a hub-kept skill. */
+export type SkillAuthor = "agent" | "person";
+
 export type SkillDeleteInput = {
   name: SkillName;
   /** Required with scope project. */
@@ -6406,6 +6414,8 @@ export type SkillGetInput = {
   origin: SkillOrigin;
   /** Required for every origin but global. */
   projectRef?: ProjectRef;
+  /** A hub-kept skill's older version, from `versions`: its text instead of the current one. */
+  version?: number;
 };
 
 export type SkillGetOutput = {
@@ -6413,6 +6423,8 @@ export type SkillGetOutput = {
   skill: SkillSummary;
   text: string;
   truncated?: boolean;
+  /** A hub-kept skill's versions, newest first, without their texts (`version` reads one). */
+  versions?: SkillVersion[];
 };
 
 /**
@@ -6451,8 +6463,43 @@ export type SkillInstallOutput = {
 /** Lowercase letters, digits and single hyphens, at most 64 characters */
 export type SkillName = string;
 
+export type SkillOffInput = {
+  name: SkillName;
+  off: boolean;
+  projectRef: ProjectRef;
+};
+
+export type SkillOffOutput = {
+  next?: string;
+  ok: true;
+  truncated?: boolean;
+};
+
 /** Where a skill comes from, in precedence order: on a name clash the first wins. */
 export type SkillOrigin = "repo_agents" | "repo_claude" | "project" | "global";
+
+export type SkillRevertInput = {
+  name: SkillName;
+  /** Required with scope project. */
+  projectRef?: ProjectRef;
+  scope: SkillScope;
+  version: number;
+};
+
+export type SkillRevertOutput = {
+  next?: string;
+  skill: SkillSummary;
+  truncated?: boolean;
+};
+
+/** A chat line's skill: a Navi saved or changed one (`skill_save`). The app links it to the skill's view. */
+export type SkillSaved = {
+  /** Its first version. */
+  created: boolean;
+  name: SkillName;
+  version: number;
+  why: string;
+};
 
 /** The hub's two scopes, which a person (and a lead's `skill_install`) writes. */
 export type SkillScope = "project" | "global";
@@ -6465,6 +6512,8 @@ export type SkillSetInput = {
   projectRef?: ProjectRef;
   scope: SkillScope;
   text: string;
+  /** The person's one line on the change, kept with its version. */
+  why?: string;
 };
 
 export type SkillSetOutput = {
@@ -6475,13 +6524,22 @@ export type SkillSetOutput = {
 
 /** One skill as Settings → Skills and the composer list it. */
 export type SkillSummary = {
+  /**
+   * A hub-kept skill's newest version: who changed it last, when and why. Absent for a repo skill, and for one
+   * written before versions were kept and not since.
+   */
+  changed?: SkillVersion;
   /** From the frontmatter; empty when it has none. */
   description: string;
   /** The folder's other files, folder-relative. */
   files?: string[];
   /** Installed from a source. */
   install?: SkillInstall;
+  /** Listed for a project: when one of its sessions last ran it with the Skill tool (its lead's, a Navi's). */
+  lastUsedAt?: Timestamp;
   name: SkillName;
+  /** Listed for a project: the person turned it off there (`skill_off`), so its sessions don't get it. */
+  off?: boolean;
   origin: SkillOrigin;
   /** A repo skill: its `SKILL.md`, repo-relative. */
   path?: string;
@@ -6503,6 +6561,21 @@ export type SkillUpdateOutput = {
   truncated?: boolean;
   /** The pin moved: the source had a newer commit. */
   updated: boolean;
+};
+
+/**
+ * One version of a hub-kept skill's `SKILL.md`: every write keeps one (a Navi's save, a person's edit or revert, an
+ * install), the newest [`SKILL_VERSIONS_KEPT`] of them.
+ */
+export type SkillVersion = {
+  at: Timestamp;
+  author: SkillAuthor;
+  /** The Navi's (or the lead's project's) title, or the person's name. */
+  by: string;
+  /** 1 for its first, one more for each after; a revert is a new version too. */
+  version: number;
+  /** The one line its author gave: a Navi always gives one; a person may. */
+  why?: string;
 };
 
 export type SkillsListInput = {
@@ -8259,6 +8332,8 @@ export interface ToolMap {
   skill_delete: { input: SkillDeleteInput; output: SkillDeleteOutput };
   skill_get: { input: SkillGetInput; output: SkillGetOutput };
   skill_install: { input: SkillInstallInput; output: SkillInstallOutput };
+  skill_off: { input: SkillOffInput; output: SkillOffOutput };
+  skill_revert: { input: SkillRevertInput; output: SkillRevertOutput };
   skill_set: { input: SkillSetInput; output: SkillSetOutput };
   skill_update: { input: SkillUpdateInput; output: SkillUpdateOutput };
   skills_list: { input: SkillsListInput; output: SkillsListOutput };

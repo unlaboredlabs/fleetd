@@ -53,8 +53,8 @@ avatar to open the chat, or hold it to mark it read or unread, unpin it or mute 
 chats as plain rows.
 
 Your pins are yours: the hub keeps them, in order, for each person, so they're the same on each of your phones. A
-teammate's pins never change your list. The first time the app connects to a hub that keeps pins, it sends up the pins
-it already had.
+teammate's pins never change your list. Each hub keeps its own, and the app keeps them apart. The first time it connects
+to a hub that keeps pins, it sends up the pins it already had of that hub's chats, never another hub's.
 
 ## Navis and projects {#manage}
 

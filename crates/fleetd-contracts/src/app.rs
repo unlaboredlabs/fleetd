@@ -25,9 +25,17 @@ pub type AppCallId = Text<1, 64>;
 /// - `navi_asks`: the `navi_asks` tool, a Navi's asks of other projects and the orders opened for them.
 /// - `screen_open`: people open and end screens of their own (the `screen_open` and `screen_end` tools), so the app
 ///   shows New screen.
+/// - `navi_skills`: a hub-kept skill's versions (`skill_get`'s `versions` and `version`), `skill_revert`, `skill_off`,
+///   and a skill list's `changed`, `off` and `lastUsedAt`: a Navi's Skills.
 ///
 /// The desktop app's `features.test.ts` checks that every feature it gates on is named here.
-pub const APP_FEATURES: [&str; 4] = ["presence", "browser_sessions", "navi_asks", "screen_open"];
+pub const APP_FEATURES: [&str; 5] = [
+    "presence",
+    "browser_sessions",
+    "navi_asks",
+    "screen_open",
+    "navi_skills",
+];
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "t", rename_all = "snake_case", rename_all_fields = "camelCase")]

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_PINNED, noPrefs, parsePrefs, reducePrefs, togglePin, unreadCount, type Prefs } from "./prefs";
+import { MAX_PINNED, noPrefs, parsePrefs, pinsOf, reducePrefs, togglePin, unreadCount, type Prefs } from "./prefs";
 
 const msg = (seq: number, author: "human" | "lead" = "lead") => ({ seq, author });
 
@@ -16,12 +16,33 @@ describe("reducePrefs", () => {
     expect(togglePin(pinned, "k0", true)).toBe(pinned);
   });
 
-  it("keeps the pins as they are now, each once and no more than the most", () => {
-    const p = reducePrefs(noPrefs, { t: "pins", keys: ["b", "a", "b"] });
-    expect(p.pinned).toEqual(["b", "a"]);
+  it("keeps each hub's pins as they are now, each once and no more than the most", () => {
+    const p = reducePrefs(noPrefs, { t: "pins", hub: "http://devbox:4790", keys: ["b", "a", "b"] });
+    expect(pinsOf(p, "http://devbox:4790")).toEqual(["b", "a"]);
+    // Another hub's are its own.
+    expect(pinsOf(p, "http://lab:4790")).toEqual([]);
     // The same again is no change: nothing is written.
-    expect(reducePrefs(p, { t: "pins", keys: ["b", "a"] })).toBe(p);
-    expect(reducePrefs(p, { t: "pins", keys: Array.from({ length: 12 }, (_, i) => String(i)) }).pinned).toHaveLength(MAX_PINNED);
+    expect(reducePrefs(p, { t: "pins", hub: "http://devbox:4790", keys: ["b", "a"] })).toBe(p);
+    const many = Array.from({ length: 12 }, (_, i) => String(i));
+    expect(pinsOf(reducePrefs(p, { t: "pins", hub: "http://devbox:4790", keys: many }), "http://devbox:4790")).toHaveLength(MAX_PINNED);
+  });
+
+  it("keeps a change waiting to be sent per hub", () => {
+    const p = reducePrefs(noPrefs, { t: "pinsPending", hub: "http://devbox:4790", on: true });
+    expect(p.pinsPending).toEqual(["http://devbox:4790"]);
+    expect(reducePrefs(p, { t: "pinsPending", hub: "http://devbox:4790", on: true })).toBe(p);
+    expect(reducePrefs(p, { t: "pinsPending", hub: "http://devbox:4790", on: false }).pinsPending).toEqual([]);
+  });
+
+  it("shows an older build's pins for a hub without its own, until it has some", () => {
+    // Before the hubs kept them: one list on disk, for whichever hub the phone was paired with.
+    const old = parsePrefs({ pinned: ["m1/a", "m1/b"] });
+    expect(old.legacyPinned).toEqual(["m1/a", "m1/b"]);
+    expect(pinsOf(old, "http://devbox:4790")).toEqual(["m1/a", "m1/b"]);
+    const own = reducePrefs(old, { t: "pins", hub: "http://devbox:4790", keys: [] });
+    expect(pinsOf(own, "http://devbox:4790")).toEqual([]);
+    // Written and read back.
+    expect(parsePrefs(JSON.parse(JSON.stringify(own)))).toEqual(own);
   });
 
   it("mutes and unmutes", () => {
@@ -48,7 +69,14 @@ describe("reducePrefs", () => {
 
 describe("parsePrefs", () => {
   it("keeps what has the right shape and drops the rest", () => {
-    expect(parsePrefs({ pinned: ["a", 3], muted: "x", read: { a: 4, b: "5" }, unread: ["c"] })).toEqual({ pinned: ["a"], muted: [], read: { a: 4 }, unread: ["c"] });
+    expect(parsePrefs({ pins: { h: ["a", 3] }, pinsPending: "h", legacyPinned: [1], muted: "x", read: { a: 4, b: "5" }, unread: ["c"] })).toEqual({
+      pins: { h: ["a"] },
+      pinsPending: [],
+      legacyPinned: [],
+      muted: [],
+      read: { a: 4 },
+      unread: ["c"],
+    });
     expect(parsePrefs(null)).toEqual(noPrefs);
   });
 });

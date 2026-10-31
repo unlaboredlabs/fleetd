@@ -1,11 +1,13 @@
 // A Navi's sign-ins (its Projects page, only for a project of kind assistant): its browser keeps the sites it signed
 // into between sessions, in a browser profile of its own on its machine that Navi itself can't read (D221). Forget
 // sign-ins is navi_signins_forget, which ends its open browser session and deletes that profile; deleting the Navi
-// deletes it too.
+// deletes it too. Its skills (Skills) are in its panel; the page links there.
 import { useState } from "react";
 import { Button, Dialog, Text } from "../../ui";
 import { useData } from "../../src/data/react";
 import { errorText, useHubCall, useLive } from "./hub";
+import { navigate } from "../shell/navigation";
+import { panelRoute } from "../shell/routes";
 import { Setting } from "./parts";
 import s from "./settings.module.css";
 
@@ -99,5 +101,20 @@ function ForgetDialog(props: { projectRef: Ref; machine: string; onClose: (forgo
         </div>
       )}
     </Dialog>
+  );
+}
+
+/** What the Navi has learned to do: its skills live in its panel, each change with who, when and why. */
+export function NaviSkillsSetting({ projectRef }: { projectRef: Ref }) {
+  return (
+    <Setting
+      reveal="projects.navi-skills"
+      label="Skills"
+      help="What this Navi has learned to do. It saves and improves its own skills as it works; you see every change, edit, undo or turn one off."
+    >
+      <div className={s.inline}>
+        <Button onClick={() => navigate(panelRoute(projectRef, { tab: "skills", skill: null }))}>Open its skills</Button>
+      </div>
+    </Setting>
   );
 }

@@ -3,11 +3,17 @@
 //! from a source keeps where from and the commit it is pinned to in `.fleetd-install.json`, a dot-file sessions never
 //! get. The hub is the only writer: a person in the app (`tools`) or a lead's `skill_install` (`calls`), one write
 //! at a time. Every launch carries the project's skills and the global ones of other names to the node
-//! ([`Skills::bundles`]), which adds the checkout's own and gives the session the lot (`node::skills`).
+//! ([`Skills::bundles`]), but none the project turned off, and the node adds the checkout's own and gives the session
+//! the lot (`node::skills`). Every write of a `SKILL.md` keeps a version (`versions`); a Navi writes its own skills
+//! with `skill_save` (`saves`), which are its project's like any other, so they reach its sessions only.
 pub mod calls;
 pub mod install;
+pub mod saves;
 pub mod tools;
+pub mod versions;
 
+#[cfg(test)]
+mod saves_tests;
 #[cfg(test)]
 mod tests;
 
@@ -19,10 +25,11 @@ use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::prim::{Line, List, Text};
 use fleetd_contracts::skills::{
     SCOPE_CAP, SKILL_BYTES_CAP, SKILL_FILE, SKILL_FILES_CAP, SkillBundle, SkillFile, SkillInstall,
-    SkillName, SkillOrigin, SkillScope, SkillSummary, check_skill_md, description_of,
+    SkillName, SkillOrigin, SkillScope, SkillSummary, SkillVersion, check_skill_md, description_of,
 };
 
-use crate::hub::store::{HubDb, iso_ms, system_ms};
+use crate::hub::store::{HubDb, StoreError, iso_ms, system_ms};
+pub use versions::Who;
 
 /// Where an installed skill's source and pin are kept, in its folder.
 pub const INSTALL_FILE: &str = ".fleetd-install.json";
@@ -52,6 +59,17 @@ impl SkillError {
     }
 }
 
+impl From<StoreError> for SkillError {
+    fn from(e: StoreError) -> Self {
+        tracing::error!(error = %e, "skills store");
+        Self::new(
+            ErrorCode::Failed,
+            "The hub failed to keep the skill's history.",
+            None,
+        )
+    }
+}
+
 impl From<std::io::Error> for SkillError {
     fn from(e: std::io::Error) -> Self {
         Self::new(
@@ -73,6 +91,8 @@ pub struct Kept {
     /// The other files, folder-relative, sorted.
     pub files: Vec<String>,
     pub updated_at: Option<Timestamp>,
+    /// Its newest version.
+    pub changed: Option<SkillVersion>,
 }
 
 impl Kept {
@@ -86,6 +106,9 @@ impl Kept {
             path: None,
             files: List::unchecked(self.files.iter().map(Line::unchecked).collect()),
             updated_at: self.updated_at.clone(),
+            changed: self.changed.clone(),
+            off: None,
+            last_used_at: None,
         }
     }
 }
@@ -93,12 +116,14 @@ impl Kept {
 /// The skills of one hub, over `<home>/skills`; a hub without a home keeps none.
 pub struct Skills<'a> {
     dir: Option<&'a Path>,
+    db: &'a HubDb,
 }
 
 impl HubDb {
     pub fn skills(&self) -> Skills<'_> {
         Skills {
             dir: self.skills_dir(),
+            db: self,
         }
     }
 }
@@ -200,7 +225,7 @@ impl Skills<'_> {
         Some(self.scope_dir(scope, r)?.join(name.as_str()))
     }
 
-    fn read(&self, scope: SkillScope, dir: &Path) -> Option<Kept> {
+    fn read(&self, scope: SkillScope, r: Option<&ProjectRef>, dir: &Path) -> Option<Kept> {
         let name = SkillName::new(dir.file_name()?.to_str()?).ok()?;
         let md = dir.join(SKILL_FILE);
         let text = std::fs::read_to_string(&md).ok()?;
@@ -215,6 +240,10 @@ impl Skills<'_> {
             .into_iter()
             .filter(|f| f != SKILL_FILE)
             .collect();
+        let changed = versions::newest(self.db, scope, r, &name).unwrap_or_else(|error| {
+            tracing::warn!(%error, "skills: a skill's newest version not read");
+            None
+        });
         Some(Kept {
             name,
             scope,
@@ -222,6 +251,7 @@ impl Skills<'_> {
             install,
             files,
             updated_at,
+            changed,
         })
     }
 
@@ -234,14 +264,14 @@ impl Skills<'_> {
             .into_iter()
             .flatten()
             .flatten()
-            .filter_map(|e| self.read(scope, &e.path()))
+            .filter_map(|e| self.read(scope, r, &e.path()))
             .collect();
         out.sort_by(|a, b| a.name.cmp(&b.name));
         out
     }
 
     pub fn get(&self, scope: SkillScope, r: Option<&ProjectRef>, name: &SkillName) -> Option<Kept> {
-        self.read(scope, &self.skill_dir(scope, r, name)?)
+        self.read(scope, r, &self.skill_dir(scope, r, name)?)
     }
 
     fn room(
@@ -260,7 +290,8 @@ impl Skills<'_> {
         Ok(())
     }
 
-    /// Creates a skill or replaces its `SKILL.md`; its other files stay. `create` refuses a name already there.
+    /// Creates a skill or replaces its `SKILL.md`, kept as a new version of `who`'s; its other files stay. `create`
+    /// refuses a name already there.
     pub fn set(
         &self,
         scope: SkillScope,
@@ -268,6 +299,7 @@ impl Skills<'_> {
         name: &SkillName,
         text: &str,
         create: bool,
+        who: &Who,
     ) -> Result<Kept, SkillError> {
         let _write = WRITE.lock().unwrap_or_else(|p| p.into_inner());
         self.root()?;
@@ -293,10 +325,12 @@ impl Skills<'_> {
         let tmp = dir.join(".SKILL.md.tmp");
         write_private(&tmp, text.as_bytes())?;
         std::fs::rename(&tmp, &md)?;
-        Ok(self.read(scope, &dir).expect("just written"))
+        self.db
+            .with(|c| versions::keep(c, scope, r, name, text, who).map(drop))?;
+        Ok(self.read(scope, r, &dir).expect("just written"))
     }
 
-    /// Removes a skill's folder; false when there was none.
+    /// Removes a skill's folder, its versions and (in a project) its off switch; false when there was none.
     pub fn delete(
         &self,
         scope: SkillScope,
@@ -308,20 +342,23 @@ impl Skills<'_> {
         let dir = self
             .skill_dir(scope, r, name)
             .expect("a hub with a home has paths");
-        match std::fs::remove_dir_all(&dir) {
-            Ok(()) => Ok(true),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-            Err(e) => Err(e.into()),
-        }
+        let removed = match std::fs::remove_dir_all(&dir) {
+            Ok(()) => true,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            Err(e) => return Err(e.into()),
+        };
+        self.db.with(|c| versions::forget(c, scope, r, name))?;
+        Ok(removed)
     }
 
-    /// Puts whole skill folders in place of any of the same names, each with its install record: all of them, or
-    /// none (each is written aside first, then moved in).
+    /// Puts whole skill folders in place of any of the same names, each with its install record and a new version of
+    /// `who`'s: all of them, or none (each is written aside first, then moved in).
     pub fn put_folders(
         &self,
         scope: SkillScope,
         r: Option<&ProjectRef>,
         folders: &[Folder],
+        who: &Who,
     ) -> Result<Vec<Kept>, SkillError> {
         let _write = WRITE.lock().unwrap_or_else(|p| p.into_inner());
         self.root()?;
@@ -362,7 +399,10 @@ impl Skills<'_> {
                 _ => {}
             }
             std::fs::rename(staging.join(name.as_str()), &to)?;
-            out.push(self.read(scope, &to).expect("just written"));
+            let text = std::fs::read_to_string(to.join(SKILL_FILE))?;
+            self.db
+                .with(|c| versions::keep(c, scope, r, name, &text, who).map(drop))?;
+            out.push(self.read(scope, r, &to).expect("just written"));
         }
         let _ = std::fs::remove_dir_all(&staging);
         Ok(out)
@@ -379,13 +419,17 @@ impl Skills<'_> {
     pub fn bundles_in(&self, projects: &[&ProjectRef]) -> Vec<SkillBundle> {
         let mut out: Vec<SkillBundle> = Vec::new();
         let mut bytes = 0usize;
+        let off = versions::off_in(self.db, projects).unwrap_or_else(|error| {
+            tracing::warn!(%error, "skills: the skills turned off not read");
+            Default::default()
+        });
         let scopes = projects
             .iter()
             .map(|r| (SkillScope::Project, Some(*r)))
             .chain([(SkillScope::Global, None)]);
         for (scope, project) in scopes {
             for kept in self.list(scope, project) {
-                if out.iter().any(|b| b.name == kept.name) {
+                if out.iter().any(|b| b.name == kept.name) || off.contains(kept.name.as_str()) {
                     continue;
                 }
                 let dir = self.skill_dir(scope, project, &kept.name).expect("listed");

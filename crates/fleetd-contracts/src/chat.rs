@@ -267,6 +267,9 @@ pub struct ChatMessage {
     pub worktrees_kept: Option<WorktreesKept>,
     /// A human message: the skills it named with `$name`, which the lead's copy lists.
     pub skills: Option<List<crate::skills::SkillName, 1, 8, true>>,
+    /// A system line "Saved a skill: …": a Navi saved or changed one of its skills (`skill_save`); the app links it
+    /// to the skill.
+    pub skill_saved: Option<crate::skills::SkillSaved>,
     /// An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app
     /// shows it as one line with Try it. Nothing runs from it.
     pub preview_suggestion: Option<crate::preview::PreviewSuggestion>,

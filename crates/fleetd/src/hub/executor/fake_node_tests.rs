@@ -579,6 +579,7 @@ async fn a_launch_carries_the_hubs_skills_for_its_project_and_a_send_what_change
             &SkillName::unchecked("release"),
             &md("release", "p1's"),
             true,
+            &crate::hub::skills::Who::person("test", None, 0),
         )
         .unwrap();
     skills
@@ -588,6 +589,7 @@ async fn a_launch_carries_the_hubs_skills_for_its_project_and_a_send_what_change
             &SkillName::unchecked("release"),
             &md("release", "hub's"),
             true,
+            &crate::hub::skills::Who::person("test", None, 0),
         )
         .unwrap();
     skills
@@ -597,6 +599,7 @@ async fn a_launch_carries_the_hubs_skills_for_its_project_and_a_send_what_change
             &SkillName::unchecked("standup"),
             &md("standup", "hub's"),
             true,
+            &crate::hub::skills::Who::person("test", None, 0),
         )
         .unwrap();
     node.executors.set_skills(db.clone());
@@ -647,6 +650,7 @@ async fn a_launch_carries_the_hubs_skills_for_its_project_and_a_send_what_change
                     &SkillName::unchecked("triage"),
                     &md("triage", "new"),
                     true,
+                    &crate::hub::skills::Who::person("test", None, 0),
                 )
                 .unwrap();
         }

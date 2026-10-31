@@ -85,6 +85,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "projects.train", label: "Merge train", tab: "projects", keywords: ["merge", "train", "checks", "ci", "required", "fast", "after merge"] },
   { key: "projects.integrations", label: "Integrations", tab: "projects", keywords: ["navi", "mcp", "connect"] },
   { key: "projects.signins", label: "Sign-ins", tab: "projects", keywords: ["navi", "browser", "sign in", "login", "logged in", "cookies", "forget", "sign out"] },
+  { key: "projects.navi-skills", label: "Navi’s skills", tab: "projects", keywords: ["navi", "skill", "skills", "learned", "history", "versions", "revert"] },
   { key: "projects.delete", label: "Delete project", tab: "projects", keywords: ["remove", "delete", "forget"] },
   page("agents", ["limit", "at once", "parallel"]),
   { key: "agents.project", label: "Max agents", tab: "agents", keywords: ["limit", "at once", "parallel", "concurrency"] },

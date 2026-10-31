@@ -5,8 +5,8 @@
 // (ui/DESIGN.md). The views are tabs.ts's, each with its route; a section remembers the view you last had in it while
 // the app runs. A view the hub doesn't serve (tabs.ts `feature`) isn't there: Agents without Sessions is one view, with
 // its own line. A Navi's panel has its own sections (NAVI_SECTIONS): the work it asked other projects for, the screens
-// it uses, its to-do list and its history; no agents, pull requests or merge line, since it ships no code itself.
-import { AppWindow, Bot, History, ListChecks, Send, Ship, type LucideIcon } from "lucide-react";
+// it uses, its to-do list, its skills and its history; no agents, pull requests or merge line, since it ships no code itself.
+import { AppWindow, BookOpen, Bot, History, ListChecks, Send, Ship, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Tab, TabList, Tooltip } from "../../ui";
 import type { ProjectKey } from "../shell/routes";
@@ -60,11 +60,12 @@ export const SECTIONS: readonly Section[] = [
   },
 ];
 
-/** A Navi's panel. Asked and Screens only once the hub serves them (sectionsFor). */
+/** A Navi's panel. Asked, Screens and Skills only once the hub serves them (sectionsFor). */
 export const NAVI_SECTIONS: readonly Section[] = [
   { id: "asked", label: "Asked", icon: Send, line: "Work this Navi asked your projects for, and how each order is going.", views: [["asked", "Asked work"]] },
   { id: "screens", label: "Screens", icon: AppWindow, line: "The browsers and devices this Navi uses: watch live, take over, replay.", views: [["sessions", "Screens"]] },
   { id: "plan", label: "Plan", icon: ListChecks, line: "This Navi’s to-do list, ticked off as it goes.", views: [["checklist", "To-do"]] },
+  { id: "skills", label: "Skills", icon: BookOpen, line: "What this Navi has learned to do: see, edit and undo every change.", views: [["skills", "Skills"]] },
   {
     id: "history",
     label: "History",
@@ -77,7 +78,7 @@ export const NAVI_SECTIONS: readonly Section[] = [
   },
 ];
 
-/** The sections a project's panel shows: a Navi's, or a project of code's; a Navi's Asked and Screens only once served. */
+/** The sections a project’s panel shows: a Navi’s, or a project of code’s; a Navi’s Asked, Screens and Skills only once served. */
 export const sectionsFor = (navi: boolean, features: readonly string[] = []): readonly Section[] =>
   navi ? NAVI_SECTIONS.filter((g) => g.views.some(([tab]) => served(tab, features))) : SECTIONS;
 

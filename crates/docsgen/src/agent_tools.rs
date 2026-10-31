@@ -696,6 +696,11 @@ fn example(role: Role, tool: &str) -> Option<Value> {
         (Role::Lead, "skill_install") => {
             json!({ "source": "vercel-labs/agent-skills@web-design-guidelines", "scope": "project" })
         }
+        (Role::Lead, "skill_save") => json!({
+            "name": "weekly-invoices",
+            "text": "---\nname: weekly-invoices\ndescription: Download the week's invoices from the supplier portal as PDFs. Use every Monday, or when the person asks for invoices.\n---\n\n1. Open the portal's Billing page.\n2. Filter to the last 7 days.\n3. Download each as PDF into invoices/.\n",
+            "why": "Worked out where the portal hides the PDF download.",
+        }),
         (Role::Lead, "project_message") => json!({
             "project": "storefront",
             "text": "Please add gift cards at checkout; the person asked for it this morning.",
