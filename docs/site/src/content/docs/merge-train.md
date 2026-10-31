@@ -86,6 +86,13 @@ order is open, is that order's; once it is closed, a new failure opens a new one
 watch ends once every check on the commit has finished, and after 6 hours at most. With an empty fast set the train
 waited for every check, so only the checks its batches skip are watched.
 
+A workflow that runs on a schedule (a nightly build on runners your pull requests don't use, say) checks the base long
+after the merges it covers, so the train reads those runs too, every 10 minutes at most. When a workflow's newest
+finished scheduled run on the base failed, in the last day, fleetd opens a fix order naming the failed jobs, the run's
+link and the commits since that workflow's last green scheduled run. One failure opens one order, as above: a job
+failing again while its order is open is that order's, and the same commit failing again is the same failure. A
+cancelled run is no failure.
+
 A check red on the base holds no merge: each pull request merges on its own checks. Status shows it as a warning, with
 whether its fix order is open ([a check red on main](/docs/status#red-main)).
 

@@ -231,6 +231,31 @@ impl CheckRun {
     }
 }
 
+/// A workflow run, as the Actions API lists it.
+#[derive(Clone, Debug, Deserialize)]
+pub struct WorkflowRun {
+    pub id: u64,
+    pub workflow_id: u64,
+    /// The workflow's name.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The workflow's file, `.github/workflows/<file>`.
+    #[serde(default)]
+    pub path: Option<String>,
+    pub head_sha: String,
+    pub conclusion: Option<String>,
+    pub html_url: String,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+}
+
+/// A job of a workflow run: a job of a workflow it calls is named `<caller job> / <job>`, as its check is.
+#[derive(Clone, Debug, Deserialize)]
+pub struct RunJob {
+    pub name: String,
+    pub conclusion: Option<String>,
+}
+
 /// The latest run of each check in `runs`. A re-run adds a newer run with the same name; only the newest counts. Map
 /// order is first-seen.
 pub fn latest(runs: Vec<CheckRun>) -> Vec<CheckRun> {
@@ -674,6 +699,82 @@ impl TrainGitHub {
             )
             .await?;
         Ok(runs.check_runs)
+    }
+
+    /// The finished runs on `base` that a schedule started, newest first: one page of 50.
+    pub async fn scheduled_runs(
+        &self,
+        repo: &str,
+        base: &str,
+    ) -> Result<Vec<WorkflowRun>, GhError> {
+        #[derive(Deserialize)]
+        struct Runs {
+            workflow_runs: Vec<WorkflowRun>,
+        }
+        let runs: Runs = self
+            .json(
+                "GET",
+                &format!(
+                    "repos/{repo}/actions/runs?branch={base}&event=schedule&status=completed&per_page=50"
+                ),
+                &[],
+            )
+            .await?;
+        Ok(runs.workflow_runs)
+    }
+
+    /// The jobs of a workflow run, each at its latest attempt.
+    pub async fn run_jobs(&self, repo: &str, run: u64) -> Result<Vec<RunJob>, GhError> {
+        #[derive(Deserialize)]
+        struct Jobs {
+            jobs: Vec<RunJob>,
+        }
+        let jobs: Jobs = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/actions/runs/{run}/jobs?filter=latest&per_page=100"),
+                &[],
+            )
+            .await?;
+        Ok(jobs.jobs)
+    }
+
+    /// The commits on `sha` since `from`, oldest first, each its short sha and its title, and how many there are in
+    /// all: GitHub lists 250 at most.
+    pub async fn commits_since(
+        &self,
+        repo: &str,
+        from: &str,
+        sha: &str,
+    ) -> Result<(Vec<(String, String)>, usize), GhError> {
+        #[derive(Deserialize)]
+        struct Message {
+            message: String,
+        }
+        #[derive(Deserialize)]
+        struct Commit {
+            sha: String,
+            commit: Message,
+        }
+        #[derive(Deserialize)]
+        struct Compare {
+            commits: Vec<Commit>,
+            total_commits: usize,
+        }
+        let c: Compare = self
+            .json("GET", &format!("repos/{repo}/compare/{from}...{sha}"), &[])
+            .await?;
+        let commits = c.commits.into_iter().map(|c| {
+            let title = c
+                .commit
+                .message
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .to_string();
+            (super::service::short(&c.sha).to_string(), title)
+        });
+        Ok((commits.collect(), c.total_commits))
     }
 
     /// The newest commit status of each context on `sha`.

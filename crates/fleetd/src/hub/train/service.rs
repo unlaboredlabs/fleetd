@@ -512,6 +512,11 @@ pub struct Train {
     /// The PRs that carry `fleetd:next`.
     pub(super) next_labels: super::next::NextLabels,
     pub(super) sync: GithubSync,
+    /// Per repo, when its scheduled runs were last read (`scheduled`).
+    pub(super) scheduled_reads: Mutex<HashMap<String, i64>>,
+    /// The failed scheduled runs a fix order took, per repo. Kept in memory: after a restart the records keep the
+    /// order to one per failure.
+    pub(super) scheduled_seen: Mutex<HashSet<(String, u64)>>,
     /// The follower and every repo loop, aborted by `stop`.
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
     /// Each repo and base's `.fleetd/train.json` and when it was read (`repo_checks`).
@@ -576,6 +581,8 @@ impl Train {
             ci_configs: Mutex::default(),
             next_labels: Default::default(),
             sync: GithubSync::default(),
+            scheduled_reads: Mutex::default(),
+            scheduled_seen: Mutex::default(),
             tasks: Mutex::default(),
             repo_checks: Mutex::default(),
             regen_configs: Mutex::default(),
@@ -2762,6 +2769,7 @@ impl Train {
         self.ready_pass(&repo, &train.project_ref).await;
         self.main_ci_pass(&repo, &train.project_ref).await;
         self.watch_pass(&repo).await;
+        self.scheduled_pass(&repo, &train.project_ref).await;
         self.check_merged_outside(&repo, train.watch_since_ms, &train.project_ref)
             .await;
         self.sweep_scratch(&repo).await;
