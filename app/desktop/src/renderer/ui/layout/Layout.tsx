@@ -263,14 +263,16 @@ export interface SidebarItemProps extends Omit<ComponentProps<"button">, "childr
   indent?: boolean;
   /** Something new since you last looked: the label in full weight. */
   emphasis?: boolean;
+  /** A chat's row (a project, a Navi): taller, for its avatar (layout.module.css .tall). */
+  tall?: boolean;
 }
 
-/** One sidebar row, 28 px tall: icon, a label that truncates with a tooltip, and trailing detail. */
-export function SidebarItem({ label, icon, trailing, current, indent, emphasis, className, ...rest }: SidebarItemProps) {
+/** One sidebar row, 28 px tall (a chat's, `tall`, fits its avatar): icon, a label that truncates with a tooltip, and trailing detail. */
+export function SidebarItem({ label, icon, trailing, current, indent, emphasis, tall, className, ...rest }: SidebarItemProps) {
   return (
     <button
       type="button"
-      className={cx(s.sidebarItem, indent && s.indent, className)}
+      className={cx(s.sidebarItem, indent && s.indent, tall && s.tall, className)}
       {...(current ? { "aria-current": "page" as const } : {})}
       {...rest}
     >
