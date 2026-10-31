@@ -19,7 +19,10 @@ use fleetd::node::runner::claude::{
     LEAD_DISALLOWED_WHY, NESTING_VARS_WHY, PROMPT_CACHE_TTL_VARS, PROMPT_CACHE_TTL_WHY,
     SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY, WORKER_ENV, WORKER_ENV_WHY,
 };
-use fleetd::node::runner::claude::{conformance, version::TESTED};
+use fleetd::node::runner::claude::{
+    conformance,
+    version::{RECORDED, TESTED},
+};
 use fleetd_contracts::lead_calls::GatedRunCall;
 use fleetd_contracts::ledger::GatedClass;
 use fleetd_contracts::live::AgentRole;
@@ -797,11 +800,11 @@ fn unknown_keys(value: &Value, schema: &Value, at: &str) -> Result<(), String> {
     }
 }
 
-/// Claude Code's built-in tools as the version fleetd is tested with lists them, from the `system/init` lines in the
-/// runner's recorded fixtures.
+/// Claude Code's built-in tools as the recorded version lists them, from the `system/init` lines in the runner's
+/// recorded fixtures.
 fn recorded_tools(root: &Path) -> Result<BTreeSet<String>, String> {
     let dir = root.join("crates/fleetd/src/node/runner/fixtures");
-    let prefix = format!("claude-{TESTED}-");
+    let prefix = format!("claude-{RECORDED}-");
     let mut tools = BTreeSet::new();
     let entries = std::fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     for entry in entries.filter_map(Result::ok) {
@@ -830,7 +833,7 @@ fn recorded_tools(root: &Path) -> Result<BTreeSet<String>, String> {
     }
     if tools.is_empty() {
         return Err(format!(
-            "agent tools: no claude {TESTED} init in {}",
+            "agent tools: no claude {RECORDED} init in {}",
             dir.display()
         ));
     }
@@ -845,7 +848,7 @@ fn builtins(root: &Path) -> Result<String, String> {
         .collect();
     let mut md = format!(
         "## Claude Code tools\n\nListed for Claude Code \
-         {TESTED}, the version fleetd is tested with.\n\n**Allowed:** {}.\n\nA project's policy file can deny more \
+         {RECORDED}, as recorded. fleetd is tested with {TESTED}.\n\n**Allowed:** {}.\n\nA project's policy file can deny more \
          with `tools.deny`.\n\n**Blocked**, in `--disallowedTools` and in the \
          `permissions.deny` of fleetd's settings, so your own settings can't turn them back on:\n\n| Tool | Why \
          |\n|---|---|\n",

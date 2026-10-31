@@ -1326,7 +1326,7 @@ Fill a login field of your browser session from 1Password without seeing the val
 
 ## Claude Code tools
 
-Listed for Claude Code 2.1.314, the version fleetd is tested with.
+Listed for Claude Code 2.1.302, as recorded. fleetd is tested with 2.1.314.
 
 **Allowed:** `Bash`, `DesignSync`, `Edit`, `NotebookEdit`, `Read`, `ReportFindings`, `Skill`, `ToolSearch`, `WebFetch`, `WebSearch`, `Write`.
 
