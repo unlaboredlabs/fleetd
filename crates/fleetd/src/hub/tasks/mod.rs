@@ -1365,7 +1365,7 @@ impl Tasks {
             !ran || self.stopped(task, merged_after)?,
             now_ms(self.d.clock.as_ref()),
             rand::random(),
-            recovery::max(),
+            recovery::RECOVERY_MAX,
         );
         // The watchdog's stall, which the thread row does not hold yet.
         let stalled = event
@@ -1514,7 +1514,7 @@ impl Tasks {
             self.stopped(task, self.cut_off_at(task)?)?,
             now_ms(self.d.clock.as_ref()),
             rand::random(),
-            recovery::max(),
+            recovery::RECOVERY_MAX,
         );
         match action {
             recovery::Action::Resume(recovery) => self.recover(stored, recovery),
