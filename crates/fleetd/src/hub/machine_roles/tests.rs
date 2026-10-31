@@ -1116,15 +1116,19 @@ async fn a_sealed_start_goes_only_to_the_runner_it_was_sealed_for_while_it_can_t
     assert_eq!(late.fix.as_deref(), Some("call session_start again"));
 }
 
-/// Task T7's row in `state`, as the tasks area keeps it.
+/// Task T7's row in `state`, as the tasks area keeps it: done, failed or cancelled at `now`, the end of its turn.
 fn task_state(hub: &Hub, state: &str) {
+    let now = crate::hub::store::now_ms(hub.clock.as_ref());
+    let ended = ["done", "failed", "cancelled"]
+        .contains(&state)
+        .then(|| crate::hub::store::iso_ms(now));
     hub.db
         .with(|c| {
             c.execute(
-                "INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, data)
-                 VALUES (7, 'devbox', 'app', 'W1', ?1, '{}')
-                 ON CONFLICT (n) DO UPDATE SET state = excluded.state",
-                [state],
+                "INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, ended_at, data)
+                 VALUES (7, 'devbox', 'app', 'W1', ?1, ?2, '{}')
+                 ON CONFLICT (n) DO UPDATE SET state = excluded.state, ended_at = excluded.ended_at",
+                rusqlite::params![state, ended],
             )?;
             Ok(())
         })
@@ -1132,7 +1136,8 @@ fn task_state(hub: &Hub, state: &str) {
 }
 
 /// The devbox's update waited hours on a session its task left behind: once the task ended, its session counts on no
-/// machine, its own or the one hosting it, whatever its row says. Between turns it still counts.
+/// machine, its own or the one hosting it, whatever its row says. Between turns it still counts: a task is done or
+/// failed at the end of each turn, and counts as ended once a screen's idle limit has passed since.
 #[tokio::test]
 async fn a_session_whose_task_ended_fills_no_slot() {
     let (hub, _home) = hub();
@@ -1149,24 +1154,24 @@ async fn a_session_whose_task_ended_fills_no_slot() {
     hub.db
         .transaction(|c| super::insert_place(c, &place, NOW_MS as i64))
         .unwrap();
-    let live = |m: &str| {
-        hub.db
-            .with(|c| super::live_on(c, &mid(m), NOW_MS as i64))
-            .unwrap()
-    };
+    let live_at = |m: &str, now: i64| hub.db.with(|c| super::live_on(c, &mid(m), now)).unwrap();
+    let live = |m: &str| live_at(m, NOW_MS as i64);
+    let later = |m: &str| live_at(m, NOW_MS as i64 + super::TURN_WAIT_MS);
     assert_eq!((live("devbox"), live("mac1")), (1, 1), "no task row yet");
-    for state in ["running", "idle", "queued"] {
+    for state in ["running", "idle", "queued", "done", "failed"] {
         task_state(&hub, state);
         assert_eq!((live("devbox"), live("mac1")), (1, 1), "{state}");
     }
-    for state in ["done", "failed", "cancelled"] {
+    for state in ["done", "failed"] {
         task_state(&hub, state);
-        assert_eq!((live("devbox"), live("mac1")), (0, 0), "{state}");
+        assert_eq!((later("devbox"), later("mac1")), (0, 0), "{state} long ago");
     }
+    task_state(&hub, "cancelled");
+    assert_eq!((live("devbox"), live("mac1")), (0, 0), "cancelled");
 }
 
-/// Once T7's run ends, the hub ends its live session and tells its node to close it and kill its processes; while
-/// it waits between turns, the session stays as it is.
+/// Once T7 is cancelled, the hub ends its live session and tells its node to close it and kill its processes; while
+/// it runs, the session stays as it is.
 #[tokio::test]
 async fn the_hub_ends_a_session_whose_task_ended_and_tells_its_node() {
     let (hub, _home) = hub();
@@ -1192,7 +1197,7 @@ async fn the_hub_ends_a_session_whose_task_ended_and_tells_its_node() {
         );
         assert_eq!(state(&hub).0, BrowserSessionState::Live);
     }
-    task_state(&hub, "done");
+    task_state(&hub, "cancelled");
     let mut told = crate::hub::browser::Told::new();
     assert_eq!(crate::hub::browser::end_outlived(&hub).unwrap(), 1);
     assert_eq!(crate::hub::browser::tell_nodes(&hub, &mut told).unwrap(), 1);
@@ -1247,6 +1252,49 @@ async fn the_hub_ends_a_session_whose_task_ended_and_tells_its_node() {
     );
     assert_eq!(crate::hub::browser::tell_nodes(&hub, &mut told).unwrap(), 0);
     assert_eq!(state(&hub).0, BrowserSessionState::Uploading);
+}
+
+/// T1485's iOS screen was ended as its turn did, while it waited on wait_ci: a task is done at the end of each turn,
+/// and a wake continues it. Its screen stays through the wait and serves its next turn; only once the task stays done
+/// past a screen's idle limit does the hub end it.
+#[tokio::test]
+async fn a_task_waiting_between_turns_keeps_its_screen() {
+    let clock = ManualClock::at(NOW_MS);
+    let (hub, _home) = hub_at(clock.clone());
+    let id = "Bfedcba9876543210fedcba9876543210";
+    live_on_devbox(&hub, "th-1", id).await;
+    let state = |hub: &Hub| crate::hub::browser::list(&hub.db, &app(), 10).unwrap()[0].state;
+    let wait = std::time::Duration::from_millis(super::TURN_WAIT_MS as u64);
+
+    // Its turn ends, waiting on CI.
+    task_state(&hub, "running");
+    task_state(&hub, "done");
+    clock.advance(wait - std::time::Duration::from_secs(60));
+    assert_eq!(
+        crate::hub::browser::end_outlived(&hub).unwrap(),
+        0,
+        "waiting"
+    );
+    assert_eq!(state(&hub), BrowserSessionState::Live);
+
+    // The wake continues it, and it uses the screen again: its node's report of it still counts.
+    task_state(&hub, "running");
+    clock.advance(wait);
+    assert_eq!(crate::hub::browser::end_outlived(&hub).unwrap(), 0, "woken");
+    live_on_devbox(&hub, "th-1", id).await;
+    assert_eq!(state(&hub), BrowserSessionState::Live);
+
+    // Done for good: nothing woke it within a screen's idle limit, so the hub ends the screen.
+    task_state(&hub, "done");
+    clock.advance(wait - std::time::Duration::from_secs(60));
+    assert_eq!(crate::hub::browser::end_outlived(&hub).unwrap(), 0);
+    clock.advance(std::time::Duration::from_secs(60));
+    assert_eq!(
+        crate::hub::browser::end_outlived(&hub).unwrap(),
+        1,
+        "finished"
+    );
+    assert_eq!(state(&hub), BrowserSessionState::Lost);
 }
 
 /// The app's Navi dialog reads each machine's Navi sandbox as its node last reported it, whether the caller may make

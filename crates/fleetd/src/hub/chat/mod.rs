@@ -56,6 +56,8 @@ pub struct NewMessage {
     pub person: Option<fleetd_contracts::people::PersonRef>,
     pub client: Option<ChatClient>,
     pub reply_to: Option<fleetd_contracts::chat::ChatReplyTo>,
+    /// A message forwarded on Telegram: who it came from.
+    pub forwarded_from: Option<String>,
     pub delivery: Option<ChatDelivery>,
     /// A human message not yet in the lead's session.
     pub held: bool,
@@ -316,6 +318,7 @@ impl Chat {
                 person: new.person,
                 client: new.client,
                 reply_to: new.reply_to,
+                forwarded_from: new.forwarded_from.as_deref().and_then(line),
                 item: new.item,
                 history: new.history,
                 remembered: new.remembered,

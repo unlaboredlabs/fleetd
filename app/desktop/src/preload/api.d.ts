@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { ChatScope, ClaudeAccountRequest, ErrorReport, GithubAppRequest, HubLinkRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
+import type { ChatScope, ClaudeAccountRequest, ErrorReport, GithubAppRequest, HubLinkRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, TelegramRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
@@ -47,6 +47,11 @@ export interface FleetdApi {
      * onepassword_set. The output has where it is sealed, by fingerprint only; nothing returns the value.
      */
     onePassword(hub: HubId, request: OnePasswordRequest): Promise<CallOutcome>;
+    /**
+     * A Navi's Telegram bot token: main seals it to the Navi's machine and calls telegram_set. The output has its
+     * fingerprint only; nothing returns the value.
+     */
+    telegram(hub: HubId, request: TelegramRequest): Promise<CallOutcome>;
   };
   readonly github: {
     /**

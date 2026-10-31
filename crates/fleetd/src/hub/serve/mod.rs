@@ -444,6 +444,7 @@ pub fn build_on_with(
         machine_setup: Arc::default(),
         github_app,
         builds,
+        telegram: Arc::default(),
     });
     hub.updates
         .set_ports(Arc::new(crate::hub::update::ports::HubPorts(
@@ -537,6 +538,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.extend(crate::hub::metrics::start(hub));
     loops.push(tokio::spawn(hub.status.clone().run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::navi::bridge::run(hub.clone())));
+    loops.push(tokio::spawn(crate::hub::telegram::run::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::push::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::mcp_servers::tools::run_forget(
         hub.clone(),

@@ -6,7 +6,8 @@ person's answers (§6) and the core as built (§7). This records intent when wri
 **The person's answers (W97), which override the text below where they differ:**
 
 - Navi **sends email itself after the person approves it in the app**, with no "always allow" at first.
-- **No chat-app bridges in v1** (Telegram, Slack, iMessage): a mobile app comes later.
+- **No chat-app bridges in v1** (Telegram, Slack, iMessage): a mobile app comes later. Superseded for Telegram by
+  decision navi.telegram (W237, §10).
 - **Unlimited Navis per person**, each a named assistant, as Grok bots and OpenAI dots are. Not one per person.
 - **v1 includes custom MCP integrations** and no built-in ones (D236).
 
@@ -651,6 +652,33 @@ integrations in a migration; each node that held one of their tokens is queued t
 (`mcp_secret_forgets`, `mcp_servers::tools::run_forget`), and a node deletes the OAuth tokens it kept at start.
 
 ---
+
+## 10. Telegram (W237, decision navi.telegram)
+
+A Navi's owner connects a bot of their own in the Navi's settings (`app/desktop/src/renderer/screens/settings/
+Telegram.tsx`): @BotFather's `/newbot` with the exact name and username to send, the token pasted and sealed in main
+to the Navi's machine (`submitTelegram`), Test (getMe and the bot's photo), then Pair, which opens
+`t.me/<bot>?start=<code>`. The contracts are `crates/fleetd-contracts/src/telegram.rs`.
+
+**The node is the gate** (`node/telegram/`). It keeps the token (`<node home>/telegram/<project>/token.json`, 0600,
+under the home the Navi's sandbox hides), long-polls getUpdates (no webhook, no public URL) and saves its offset after
+each update. A Start whose code hashes to the live pairing makes that account the paired one; from then on only that
+account's private messages and button presses go into a short journal (200 events), with photos and documents fetched
+into its `files/`. Anyone else's update is dropped without a word; a voice note or another kind it can't carry gets one
+plain line back. 429 waits `retry_after`, other failures back off from 1 s to 60 s, a 401 stops it until a new token.
+Errors carry no URL (the token is in every one) and pass the masker.
+
+**The hub follows it** (`hub/telegram/`, tables `telegram_bridges` and `telegram_cards`). One long `take` after another
+reads the journal from the seq it last handled: a message becomes the owner's own message in the chat
+(`flow::send_from_telegram`, `client: telegram`, idempotent per journal entry), its files pulled in pieces into the
+chat's attachments; a forward keeps `forwardedFrom`, and the lead's copy wraps it in `<untrusted>`
+(`flow::for_lead`). Approve or Deny answers the request as the owner (`by` "<name> on Telegram"), only for a request of
+this Navi. Out, the hub sends what the chat says after the bridge's `sent` seq: lead replies as Telegram HTML
+(`format.rs`, escaped, split under 4096), image blocks as photos, ask blocks with buttons, approval cards with the exact
+content and Approve / Deny, and edits each card once its request is answered anywhere. Replies older than an hour
+when the node is back stay in the app; typing shows while the lead works on a Telegram message.
+
+Not built: voice notes, group chats, a second paired account, and Slack or iMessage.
 
 ## Sources
 - Grok Bot: [Flavio Copes, deep dive](https://flaviocopes.com/grok-bot/), [VentureBeat](https://venturebeat.com/orchestration/spacexais-grok-bot-turns-agents-into-persistent-digital-coworkers-that-can-operate-your-apps-for-120-per-month), [Grok Automations](https://aitoolhunt.co/blog/grok-automations-scheduled-email-tasks-2026)

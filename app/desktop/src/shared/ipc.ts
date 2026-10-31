@@ -228,6 +228,17 @@ export type ClaudeAccountRequest = z.infer<typeof ClaudeAccountRequest>;
 export const OnePasswordRequest = z.strictObject({ token: z.string().min(1).max(SECRET_MAX_BYTES), boxes: Boxes });
 export type OnePasswordRequest = z.infer<typeof OnePasswordRequest>;
 
+/**
+ * A Navi's Telegram bot token (its settings › Telegram): main seals it to the Navi's machine in `box` and calls
+ * telegram_set. The hub gets the box, never the value.
+ */
+export const TelegramRequest = z.strictObject({
+  navi: z.strictObject({ machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) }),
+  token: z.string().min(1).max(SECRET_MAX_BYTES),
+  box: z.strictObject({ machineId: z.string().min(1).max(64), boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u) }),
+});
+export type TelegramRequest = z.infer<typeof TelegramRequest>;
+
 /** An error the page caught, for the app log: what failed, the error's own text and the route. Main scrubs it. */
 export const ErrorReport = z.strictObject({
   /** The part whose card is up ("the conversation"), or "uncaught error" / "unhandled rejection". */
@@ -326,6 +337,7 @@ export const REQUESTS = {
   [IPC.githubConnect]: z.tuple([HubId]),
   [IPC.claudeAccountSubmit]: z.tuple([HubId, ClaudeAccountRequest]),
   [IPC.onePasswordSubmit]: z.tuple([HubId, OnePasswordRequest]),
+  [IPC.telegramSubmit]: z.tuple([HubId, TelegramRequest]),
   [IPC.systemHostName]: none,
   [IPC.machinesJoinHere]: z.tuple([HubId, z.string().regex(/^[a-z0-9-]{1,32}$/u)]),
   [IPC.machinesJoinHereState]: z.tuple([HubId]),

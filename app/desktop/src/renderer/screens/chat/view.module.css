@@ -545,6 +545,14 @@ span.changeUndo {
   text-align: left;
   cursor: pointer;
 }
+/* Where a person's message came from when not this app (Telegram, a forward there): a quiet line over its bubble. */
+.via {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 var(--space-2);
+  color: var(--quiet);
+}
 .mine > .quote {
   margin-right: var(--space-2);
   border-left: none;

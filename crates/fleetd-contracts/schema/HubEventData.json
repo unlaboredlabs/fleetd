@@ -607,6 +607,11 @@
           "const": "cli",
           "description": "`fleetd chat`.",
           "type": "string"
+        },
+        {
+          "const": "telegram",
+          "description": "Telegram, through the Navi's own bot (`telegram.rs`).",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -739,6 +744,13 @@
         "delivery": {
           "$ref": "#/$defs/ChatDelivery",
           "description": "A human message: how it reached the lead."
+        },
+        "forwardedFrom": {
+          "description": "A human message forwarded on Telegram: who it came from. The words are theirs, not the person's, and the lead\nreads them as untrusted content.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
         },
         "history": {
           "$ref": "#/$defs/ChatHistorySource",

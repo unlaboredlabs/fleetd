@@ -156,6 +156,11 @@ export const fixtures = [
   "inline-integrations",
   // Approvals whose fields hide or reorder text (fixtures/inline/hidden.json).
   "inline-hidden",
+  // W237: a Navi's Telegram, a setup step a fixture (fixtures/telegram).
+  "telegram-start",
+  "telegram-tested",
+  "telegram-paired",
+  "telegram-retrying",
   // UX-1 A3: the PR list and PR view (fixtures/prs): no PRs, the reads on their way, GitHub out of reach, GitHub's
   // rate limit reached, a PR that fails to load, and a PR of 240 files with a 3,000-line file.
   "prs-none",
@@ -1617,6 +1622,32 @@ export const screens: readonly Screen[] = [
       await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("Field notes");
       await page.keyboard.press("Enter");
       await page.getByText("Field notes is ready on devbox").first().waitFor();
+    },
+  },
+  // W237: a Navi's Telegram in its settings (fixtures/telegram): @BotFather's steps and the sealed token field, the
+  // token tested with Pair next, paired and connected, and retrying after Telegram asked it to slow down; then Pair
+  // pressed, waiting for the person's Start in Telegram.
+  {
+    id: "settings.projects",
+    variant: "telegram",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["telegram-start", "telegram-tested", "telegram-paired", "telegram-retrying"],
+    open: async (page) => {
+      const telegram = page.getByRole("region", { name: "Telegram" });
+      await telegram.scrollIntoViewIfNeeded();
+      await telegram.locator("[data-telegram-step]").first().waitFor();
+    },
+  },
+  {
+    id: "settings.projects",
+    variant: "telegram-pairing",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["telegram-tested"],
+    open: async (page) => {
+      const telegram = page.getByRole("region", { name: "Telegram" });
+      await telegram.scrollIntoViewIfNeeded();
+      await telegram.getByRole("button", { name: "Pair with Telegram" }).click();
+      await telegram.getByText("Waiting for your Start in Telegram").waitFor();
     },
   },
   {

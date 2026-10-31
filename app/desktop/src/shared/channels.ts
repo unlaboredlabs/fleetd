@@ -88,6 +88,8 @@ export const IPC = {
   claudeAccountSubmit: "claude-account:submit",
   /** invoke(OnePasswordRequest) → CallOutcome. Main seals a person's 1Password service account token to each machine's key, then calls onepassword_set. */
   onePasswordSubmit: "onepassword:submit",
+  /** invoke(TelegramRequest) → CallOutcome. Main seals a Navi's Telegram bot token to its machine's key, then calls telegram_set. */
+  telegramSubmit: "telegram:submit",
   /** invoke(url) → OpenOutcome. Opens an http(s) link in the user's browser; refuses other schemes. */
   openExternal: "app:openExternal",
   /** main → renderer: (HubId, HubFrame) */

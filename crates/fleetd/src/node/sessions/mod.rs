@@ -72,6 +72,10 @@ const USAGE_EVERY: Duration = Duration::from_secs(1);
 const INTERRUPT_GRACE: Duration = Duration::from_secs(5);
 /// `stop`: stdin closed, SIGTERM after this.
 const STOP_GRACE: Duration = Duration::from_secs(5);
+/// A screen's idle limit, 30 minutes without a command by default: by then the screen of an idle agent session has
+/// ended by itself, so holding its claude any longer keeps nothing.
+const SCREEN_IDLE: Duration = Duration::from_secs(30 * 60);
+
 /// An idle process gets stdin closed, and SIGTERM after this if it is still there.
 const REAP_GRACE: Duration = Duration::from_secs(10);
 const EXIT_WAIT: Duration = Duration::from_secs(20);
@@ -619,6 +623,8 @@ struct Inner {
     browser: std::sync::OnceLock<Arc<dyn crate::node::browser::SessionHooks>>,
     /// The node's previews: a removed project's end, and its preview worktrees go.
     previews: std::sync::OnceLock<Arc<crate::node::preview::Previews>>,
+    /// Navis' Telegram bridges: a removed project's is forgotten.
+    telegram: std::sync::OnceLock<Arc<crate::node::telegram::Telegram>>,
 }
 
 /// A project's file list and when it was read.
@@ -761,6 +767,10 @@ impl SessionService {
         let _ = self.inner.previews.set(previews);
     }
 
+    pub fn set_telegram(&self, telegram: Arc<crate::node::telegram::Telegram>) {
+        let _ = self.inner.telegram.set(telegram);
+    }
+
     /// Opens the service over `store`, settling what a previous node process left: recorded claude processes are
     /// killed (only when pid and start time still match) and their active runs closed as interrupted.
     pub async fn start(
@@ -786,6 +796,7 @@ impl SessionService {
                 span_wake: Arc::new(tokio::sync::Notify::new()),
                 browser: std::sync::OnceLock::new(),
                 previews: std::sync::OnceLock::new(),
+                telegram: std::sync::OnceLock::new(),
             }),
         };
         let rows = service.inner.store.sessions()?;
@@ -1177,6 +1188,14 @@ impl SessionService {
                     }
                 };
                 Ok(SessionOutput::OnePasswordTested { vaults, error })
+            }
+            SessionCall::Telegram { project_id, call } => {
+                self.project_root(project_id.as_str())?;
+                let Some(telegram) = self.inner.telegram.get() else {
+                    return Err(invalid("this node runs no Telegram bridges"));
+                };
+                let answer = telegram.call(&project_id, call).await.map_err(invalid)?;
+                Ok(SessionOutput::Telegram { answer })
             }
             SessionCall::ClaudeModels => {
                 let (models, error) =
@@ -3969,6 +3988,9 @@ impl SessionService {
                 REMOVE_WAIT.as_secs()
             )));
         }
+        if let Some(telegram) = self.inner.telegram.get() {
+            telegram.forget(project_id);
+        }
         // Its previews end and their worktrees go whatever `remove_worktrees` says: they hold no work.
         if let (Some(previews), Ok(root)) =
             (self.inner.previews.get(), self.project_root(project_id))
@@ -4297,9 +4319,12 @@ impl SessionService {
         });
     }
 
-    /// Idle processes cost RAM: close stdin on any without an active run for `idle_reap`. The next send resumes.
+    /// Idle processes cost RAM: close stdin on any without an active run for `idle_reap`. The next send resumes. One
+    /// that holds a screen waits for [`SCREEN_IDLE`] instead: its exit ends the screen, which its next turn (after a
+    /// wait_ci, say) picks up again.
     async fn reap(&self) {
         let idle_reap = self.inner.config.idle_reap;
+        let hooks = self.inner.browser.get();
         let candidates: Vec<String> = self
             .st()
             .live
@@ -4312,7 +4337,13 @@ impl SessionService {
                 .store()
                 .session(&id)
                 .is_ok_and(|r| r.is_some_and(|r| r.summary.active_run_id.is_none()));
-            if !idle {
+            let screen = hooks.is_some_and(|b| b.holds_screen(&id));
+            let waited = self
+                .st()
+                .live
+                .get(&id)
+                .is_some_and(|l| l.last_active.elapsed() >= SCREEN_IDLE.max(idle_reap));
+            if !idle || (screen && !waited) {
                 continue;
             }
             let commands = self.st().live.get_mut(&id).map(|l| {

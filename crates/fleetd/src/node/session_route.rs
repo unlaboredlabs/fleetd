@@ -949,6 +949,16 @@ impl SessionHooks for Router {
         self.end_hosted(thread);
     }
 
+    /// A screen here, an iOS screen on another machine, or a browser hosted there.
+    fn holds_screen(&self, thread: &str) -> bool {
+        self.here().live(thread)
+            || self.remotes.has(thread)
+            || self
+                .broker
+                .as_ref()
+                .is_some_and(|b| b.remote(thread).is_some())
+    }
+
     /// Its screen here if it is `session`; else its browser hosted elsewhere, if that is `session`.
     fn screen_ended(&self, thread: &str, session: &str) {
         if self.here().end_screen(thread, session) {
