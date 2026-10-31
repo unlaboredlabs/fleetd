@@ -17,7 +17,7 @@ const fn = (src: string, name: string): string => {
 
 describe("the chat's top bar", () => {
   it("is never the stack's on iOS, over a chat as over the chats list", () => {
-    expect(app).toMatch(/<RootStack\.Screen name="Home" component=\{Tabs\} options=\{\{ headerShown: false/u);
+    expect(app).toMatch(/<RootStack\.Screen name="Home" component=\{ChatsHome\} options=\{\{ headerShown: false/u);
     expect(app).toMatch(/<RootStack\.Screen name="Chat" component=\{Chat\} options=\{[^\n]*\.\.\.chatOptions\(t\)/u);
     expect(chat).toMatch(/export const chatOptions = \(t: Palette\): NativeStackNavigationOptions =>\s*Platform\.OS === "ios" \? \{ headerShown: false \} :/u);
   });

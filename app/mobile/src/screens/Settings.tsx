@@ -1,4 +1,4 @@
-// Settings, as iOS's own and Telegram's: the hub this phone is paired with at the top, on a card as iOS's Apple Account
+// Settings, as iOS's own and Telegram's, behind the person's avatar on Chats: the hub this phone is paired with at the top, on a card as iOS's Apple Account
 // (fleetd's mark, its name and how the link is), then its address and version, for an admin its update, its
 // notifications, this phone and its app, and Disconnect, which asks first.
 import { useFocusEffect } from "@react-navigation/native";
@@ -8,6 +8,7 @@ import * as Notifications from "expo-notifications";
 import * as Updates from "expo-updates";
 import { useCallback, useState } from "react";
 import { Image, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { linkWords as statusOf } from "../chatsBar";
 import { useHub } from "../hubContext";
 import { pushDeps } from "../notifications";
 import { shape, space, type, useTheme } from "../theme";
@@ -15,9 +16,6 @@ import { haptics } from "../ui/haptics";
 import { ListRow, ListSection } from "../ui/List";
 import { shortVersion } from "../updates";
 import { UpdateFleetd } from "./UpdateFleetd";
-
-const statusOf = (phase: string): string =>
-  phase === "live" ? "Connected" : phase === "connecting" ? "Connecting…" : phase === "retrying" ? "Reconnecting…" : phase === "refused" ? "Key refused" : "Not connected";
 
 /** What the running JavaScript is: the build's own, or an update over the air and when it was made. */
 const updateWords = (): string => {
@@ -30,7 +28,7 @@ export function Settings() {
   const t = useTheme();
   const { paired, state, disconnect } = useHub();
   const [notifications, setNotifications] = useState<string | undefined>(undefined);
-  // Read again each time the tab shows: the person may have changed it in iOS Settings meanwhile.
+  // Read again each time it shows: the person may have changed it in iOS Settings meanwhile.
   const read = useCallback(() => {
     void Notifications.getPermissionsAsync()
       .then((p) => setNotifications(p.granted ? "On" : p.canAskAgain ? "Not asked yet" : "Off"))
