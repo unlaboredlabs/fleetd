@@ -173,17 +173,17 @@ describe("an update of everything", () => {
       [
         p({ part: "hub", name: "the hub", state: "done" }),
         p({ machineId: "builder", name: "builder", state: "done" }),
-        p({ part: "claude", machineId: "builder", name: "builder", from: "2.1.310", to: "2.1.302", state: "done" }),
+        p({ part: "claude", machineId: "builder", name: "builder", from: "2.1.310", to: "2.1.314", state: "done" }),
         p({ machineId: "mac", name: "mac", state: "done" }),
         p({
           part: "claude",
           machineId: "mac",
           name: "mac",
           from: "2.1.310",
-          to: "2.1.302",
+          to: "2.1.314",
           state: "failed",
           stage: "install",
-          message: "`claude install 2.1.302` failed (404), so 2.1.310 stays",
+          message: "`claude install 2.1.314` failed (404), so 2.1.310 stays",
         }),
       ],
       true,
@@ -191,9 +191,9 @@ describe("an update of everything", () => {
     const v = during(run, { phase: "finished", updated: false });
     expect(v.nodes.map((n) => [n.name, n.status])).toEqual([
       ["builder", "Updated to Edge · Oct 23, 10:30 UTC · def5678"],
-      ["builder: Claude Code", "Claude Code 2.1.310 → 2.1.302: new sessions start on 2.1.302"],
+      ["builder: Claude Code", "Claude Code 2.1.310 → 2.1.314: new sessions start on 2.1.314"],
       ["mac", "Updated to Edge · Oct 23, 10:30 UTC · def5678"],
-      ["mac: Claude Code", "Claude Code 2.1.310 → 2.1.302 failed: `claude install 2.1.302` failed (404), so 2.1.310 stays"],
+      ["mac: Claude Code", "Claude Code 2.1.310 → 2.1.314 failed: `claude install 2.1.314` failed (404), so 2.1.310 stays"],
     ]);
     expect(v.progress?.text).toBe("Update failed: mac's Claude Code. The rest updated; Retry tries it again.");
   });
@@ -208,7 +208,7 @@ describe("an update of everything", () => {
           machineId: "builder",
           name: "builder",
           from: "2.1.310",
-          to: "2.1.302",
+          to: "2.1.314",
           state: "skipped",
           message: "Claude Code is managed by Homebrew: run `brew upgrade claude-code` to update it (it runs 2.1.310)",
         }),
@@ -398,7 +398,7 @@ describe("the sheet's lines, the notice and the note", () => {
         p({ part: "hub", name: "the hub", state: "done" }),
         p({ machineId: "builder", name: "builder", state: "rolled_back", stage: "health", message: "it didn't come up healthy within 90 s, so the old build was put back" }),
         p({ machineId: "mac", name: "mac", state: "done" }),
-        p({ part: "claude", machineId: "mac", name: "mac", from: "2.1.310", to: "2.1.302", state: "done" }),
+        p({ part: "claude", machineId: "mac", name: "mac", from: "2.1.310", to: "2.1.314", state: "done" }),
       ],
       true,
     );
@@ -407,7 +407,7 @@ describe("the sheet's lines, the notice and the note", () => {
       ["The hub", "Done", "", ""],
       ["builder", "Failed", "Didn't start, so it was put back", "Retry"],
       ["mac", "Done", "", ""],
-      ["Claude Code", "Done", "New sessions start on 2.1.302", ""],
+      ["Claude Code", "Done", "New sessions start on 2.1.314", ""],
       // Not restarted at the end of a run that didn't all come through: it updates here.
       ["This app", "Update ready", "Downloaded; it restarts when you update", "Update"],
     ]);
@@ -424,7 +424,7 @@ describe("the sheet's lines, the notice and the note", () => {
       [
         p({ part: "hub", name: "the hub", state: "done" }),
         p({ machineId: "builder", name: "builder", state: "done" }),
-        p({ part: "claude", machineId: "builder", name: "builder", from: "2.1.310", to: "2.1.302", state: "failed", stage: "install", message: "`claude install 2.1.302` failed (404), so 2.1.310 stays" }),
+        p({ part: "claude", machineId: "builder", name: "builder", from: "2.1.310", to: "2.1.314", state: "failed", stage: "install", message: "`claude install 2.1.314` failed (404), so 2.1.310 stays" }),
         p({ machineId: "mac", name: "mac", state: "skipped", message: "offline: press Update again once it's online" }),
       ],
       true,
@@ -433,7 +433,7 @@ describe("the sheet's lines, the notice and the note", () => {
     expect(says(v).slice(1, 4)).toEqual([
       ["builder", "Done", "", ""],
       ["mac", "Skipped", "Offline", "Retry"],
-      ["Claude Code", "Failed", "builder: `claude install 2.1.302` failed (404), so 2.1.310 stays", "Retry"],
+      ["Claude Code", "Failed", "builder: `claude install 2.1.314` failed (404), so 2.1.310 stays", "Retry"],
     ]);
     expect(of({ run, flow: { phase: "starting" } }).lines.some((l) => l.retry !== undefined)).toBe(false);
 

@@ -27,7 +27,7 @@ describe("Administration › Machines' model", () => {
   it("makes four items from the machine's own checks, the worst one deciding each", () => {
     const items = checklistOf(
       [
-        check("laptop/claude_version", "ok", "claude 2.1.302"),
+        check("laptop/claude_version", "ok", "claude 2.1.314"),
         check("laptop/claude_login", "fail", "not logged in"),
         check("laptop/commit_identity", "warn", "no identity"),
         check("devbox/git_fetch", "fail"),
@@ -44,7 +44,7 @@ describe("Administration › Machines' model", () => {
     expect(items[0]?.login).toBe(true);
     expect(items[0]?.lines).toEqual(["not logged in"]);
     expect(items[3]?.lines).toEqual(["iOS screens are ready"]);
-    const ready = checklistOf([check("laptop/claude_version", "ok", "claude 2.1.302"), check("laptop/claude_login", "ok")], "laptop");
-    expect(ready[0]).toEqual({ key: "claude", title: "Claude", state: "done", lines: ["claude 2.1.302"] });
+    const ready = checklistOf([check("laptop/claude_version", "ok", "claude 2.1.314"), check("laptop/claude_login", "ok")], "laptop");
+    expect(ready[0]).toEqual({ key: "claude", title: "Claude", state: "done", lines: ["claude 2.1.314"] });
   });
 });

@@ -90,9 +90,10 @@ static COOLDOWN_MODEL: LazyLock<Regex> = LazyLock::new(|| {
 static RESET_SECONDS: LazyLock<Regex> = LazyLock::new(|| re(r#""reset_seconds"\s*:\s*(\d+)"#));
 static RATE: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?i)rate[ _-]?limit|\[429\]|\b(?:api error|status|error)\W{0,3}429\b"));
+// claude 2.1.312 calls the 5-hour window the "5-hour limit" where it said "session limit".
 static USAGE: LazyLock<Regex> = LazyLock::new(|| {
     re(
-        r"(?i)usage limit|hit your (?:usage )?limit|(?:5-hour|weekly|session|opus) limit reached|out of extra usage",
+        r"(?i)usage limit|hit your (?:(?:usage|5-hour|weekly|session|opus) )?limit|(?:5-hour|weekly|session|opus) limit reached|out of extra usage",
     )
 });
 // The CLI's "Claude AI usage limit reached|<epoch seconds>".
@@ -993,6 +994,10 @@ mod tests {
             (
                 "Claude AI usage limit reached|1792483200",
                 limit(UsageLimit, Some(1_792_483_200_000), None),
+            ),
+            (
+                "You've hit your 5-hour limit",
+                limit(UsageLimit, None, None),
             ),
             (
                 "Claude API rate limit reached. Try again later.",

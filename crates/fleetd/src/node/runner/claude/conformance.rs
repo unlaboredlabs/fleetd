@@ -741,7 +741,7 @@ mod tests {
             "{problem}"
         );
         assert!(
-            problem.ends_with("Fix: claude install 2.1.302"),
+            problem.ends_with("Fix: claude install 2.1.314"),
             "{problem}"
         );
 

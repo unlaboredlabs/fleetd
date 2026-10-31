@@ -97,7 +97,7 @@ mod tests {
     fn info(login: LoginStatus) -> RunnerInfo {
         RunnerInfo {
             runner: RunnerKind::Claude,
-            version: Some("2.1.302 (Claude Code)".into()),
+            version: Some("2.1.314 (Claude Code)".into()),
             supported: ">=2.1.300, <2.2.0".into(),
             version_ok: true,
             login,

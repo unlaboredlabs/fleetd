@@ -64,7 +64,7 @@ const runOf = (f: Fixture, hub: PartSay, nodes: readonly PartSay[], rest: PartSa
     ...machinesOf(f).flatMap((m, i) => {
       const node = { part: "node", machineId: m.machineId, name: m.name, from: OLDER, ...(nodes[i] ?? rest) };
       const says = claude[i];
-      return says === undefined ? [node] : [node, { part: "claude", machineId: m.machineId, name: m.name, from: "2.1.310", to: "2.1.302", ...says }];
+      return says === undefined ? [node] : [node, { part: "claude", machineId: m.machineId, name: m.name, from: "2.1.310", to: "2.1.314", ...says }];
     }),
   ],
 });

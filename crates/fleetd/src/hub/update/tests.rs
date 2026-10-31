@@ -155,20 +155,20 @@ impl UpdatePorts for Fake {
         self.fetched.lock().unwrap().push(machine_id.to_string());
     }
     fn claude_target(&self) -> String {
-        "2.1.302".into()
+        "2.1.314".into()
     }
     fn install_claude<'a>(
         &'a self,
         machine_id: &'a MachineId,
         version: &'a str,
     ) -> BoxFuture<'a, Result<NodeActionResult, String>> {
-        assert_eq!(version, "2.1.302");
+        assert_eq!(version, "2.1.314");
         self.claude_asked
             .lock()
             .unwrap()
             .push(machine_id.to_string());
         let answer = match self.claude.get(machine_id.as_str()) {
-            None => result(true, None, "Claude Code 2.1.310 -> 2.1.302"),
+            None => result(true, None, "Claude Code 2.1.310 -> 2.1.314"),
             Some(Ok(said)) => result(true, None, said),
             Some(Err(why)) => result(false, Some(UpdateStage::Install), why),
         };
@@ -571,10 +571,10 @@ async fn each_machines_claude_follows_its_node_and_a_failed_install_stops_nothin
     );
     fake.claude.insert(
         "mac".into(),
-        Err("`claude install 2.1.302` failed (Could not download: 404), so 2.1.310 stays"),
+        Err("`claude install 2.1.314` failed (Could not download: 404), so 2.1.310 stays"),
     );
     fake.claude
-        .insert("pi".into(), Ok("already runs Claude Code 2.1.302"));
+        .insert("pi".into(), Ok("already runs Claude Code 2.1.314"));
     let fake = Arc::new(fake);
     let updates = area(home.path(), &fake);
     let started = updates.start(None).unwrap();
@@ -603,7 +603,7 @@ async fn each_machines_claude_follows_its_node_and_a_failed_install_stops_nothin
     let builder = claude(&run, "builder");
     assert_eq!(builder.state, UpdateState::Done);
     assert_eq!(builder.from.as_str(), "2.1.310");
-    assert_eq!(builder.to.as_ref().map(|t| t.as_str()), Some("2.1.302"));
+    assert_eq!(builder.to.as_ref().map(|t| t.as_str()), Some("2.1.314"));
     let mac = claude(&run, "mac");
     assert_eq!(
         (mac.state, mac.stage),
