@@ -209,6 +209,42 @@ pub fn refreshed_summary(items: &[RememberedItem]) -> String {
     format!("Memory refreshed: {}", parts.join(" "))
 }
 
+/// The most an import reads: another assistant's export, pasted.
+pub const IMPORT_TEXT_MAX: usize = 100_000;
+/// The most entries one import adds, and lists as skipped.
+pub const IMPORT_ENTRIES_MAX: usize = 200;
+/// Pasted text an import reads.
+pub type MemoryImportText = Text<0, IMPORT_TEXT_MAX>;
+
+/// An entry an import wrote to the person's own memory.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryImported {
+    pub text: MemoryEntry,
+    /// The whole entry already there that it merged with and replaced.
+    pub replaced: Option<MemoryEntry>,
+}
+
+/// Why an imported entry wasn't written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryImportSkip {
+    /// The memory already says it.
+    Duplicate,
+    /// It held a key, token or password; `text` shows it with the value cut out.
+    Secret,
+    /// No room left under the cap: the more durable entries (instructions and preferences first) went in instead.
+    Full,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MemorySkipped {
+    pub text: MemoryEntry,
+    pub why: MemoryImportSkip,
+}
+
 /// An entry `remember` wrote that is still in its file: when, and the chat line that said so.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

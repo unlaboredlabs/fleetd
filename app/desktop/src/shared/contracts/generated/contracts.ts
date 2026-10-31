@@ -3589,6 +3589,35 @@ export type MemoryGetOutput = {
   user: MemoryFile;
 };
 
+export type MemoryImportInput = {
+  /** The other assistant's answer. Absent or blank: only the prompt. */
+  text?: string;
+};
+
+export type MemoryImportOutput = {
+  /** Written to your memory, in the order they went in. Empty without text. */
+  added: MemoryImported[];
+  cap: number;
+  /** Your memory's length after the import, and its cap. */
+  chars: number;
+  next?: string;
+  /** The export prompt to copy, the same text every app shows. */
+  prompt: string;
+  /** Distilled but not written, and why. */
+  skipped: MemorySkipped[];
+  truncated?: boolean;
+};
+
+/** Why an imported entry wasn't written. */
+export type MemoryImportSkip = "duplicate" | "secret" | "full";
+
+/** An entry an import wrote to the person's own memory. */
+export type MemoryImported = {
+  /** The whole entry already there that it merged with and replaced. */
+  replaced?: string;
+  text: string;
+};
+
 /** An entry `remember` wrote that is still in its file: when, and the chat line that said so. */
 export type MemoryNote = {
   at: Timestamp;
@@ -3694,6 +3723,11 @@ export type MemorySharedSetOutput = {
   file: MemoryFile;
   next?: string;
   truncated?: boolean;
+};
+
+export type MemorySkipped = {
+  text: string;
+  why: MemoryImportSkip;
 };
 
 /** Lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory */
@@ -8121,6 +8155,7 @@ export interface ToolMap {
   mcp_settings_set: { input: McpSettingsSetInput; output: McpSettingsSetOutput };
   memory_caps_set: { input: MemoryCapsSetInput; output: MemoryCapsSetOutput };
   memory_get: { input: MemoryGetInput; output: MemoryGetOutput };
+  memory_import: { input: MemoryImportInput; output: MemoryImportOutput };
   memory_refresh_run: { input: MemoryRefreshRunInput; output: MemoryRefreshRunOutput };
   memory_set: { input: MemorySetInput; output: MemorySetOutput };
   memory_shared_get: { input: MemorySharedGetInput; output: MemorySharedGetOutput };

@@ -1609,6 +1609,26 @@ input!(MemoryUndoInput {
 });
 output!(MemoryUndoOutput { ok: True });
 
+// memory_import: Settings > Memory's Import memory. Without text: the export prompt, to copy into another assistant
+// (ChatGPT, Claude, Grok). With text: that assistant's answer, pasted; a model turn on the caller's own Claude reads it
+// as data only and distills it into entries of their own memory, written as remember writes them (secrets refused,
+// duplicates skipped, a merged entry in place of the old one, the cap held). Human keys only.
+input!(MemoryImportInput {
+    /// The other assistant's answer. Absent or blank: only the prompt.
+    text: Option<crate::memory::MemoryImportText>,
+});
+output!(MemoryImportOutput {
+    /// The export prompt to copy, the same text every app shows.
+    prompt: Text<1, 20_000>,
+    /// Written to your memory, in the order they went in. Empty without text.
+    added: List<crate::memory::MemoryImported, 0, { crate::memory::IMPORT_ENTRIES_MAX }>,
+    /// Distilled but not written, and why.
+    skipped: List<crate::memory::MemorySkipped, 0, { crate::memory::IMPORT_ENTRIES_MAX }>,
+    /// Your memory's length after the import, and its cap.
+    chars: Count,
+    cap: Count,
+});
+
 // memory_shared_get, memory_shared_set: the shared user.md every lead read before each person had their own memory
 // (D212). Each hub's owner got a copy; it stays, read by no session, until an owner or admin empties it. Admin on
 // every machine.
@@ -3245,6 +3265,7 @@ tools! {
     // Human keys only (the handlers check): agents write memory through the lead's remember.
     memory_set => MemorySet, Operate, MemorySetInput, MemorySetOutput;
     memory_undo => MemoryUndo, Operate, MemoryUndoInput, MemoryUndoOutput;
+    memory_import => MemoryImport, Operate, MemoryImportInput, MemoryImportOutput;
     memory_caps_set => MemoryCapsSet, Admin, MemoryCapsSetInput, MemoryCapsSetOutput;
     // An owner's or admin's device (the handlers check).
     memory_shared_get => MemorySharedGet, Admin, MemorySharedGetInput, MemorySharedGetOutput;
