@@ -1422,12 +1422,13 @@ fn a_navi_installs_a_program_in_its_home_and_it_runs_on_after_the_turn() {
         return;
     };
     let m = Machine::new();
-    // A release tarball, as a download leaves it: one program that keeps a heartbeat.
+    // A release tarball, as a download leaves it: one program that keeps a heartbeat. Each beat is moved into place
+    // whole, so a read never lands between `>` emptying the count and `echo` writing it.
     let release = m.folder.join("release");
     std::fs::create_dir_all(&release).unwrap();
     std::fs::write(
         release.join("beat"),
-        "#!/bin/sh\necho $$ > /tmp/beat.pid\nn=0\nwhile :; do n=$((n+1)); echo $n > /tmp/beat.count; sleep 0.1; done\n",
+        "#!/bin/sh\necho $$ > /tmp/beat.pid\nn=0\nwhile :; do n=$((n+1)); echo $n > /tmp/beat.count.new; mv /tmp/beat.count.new /tmp/beat.count; sleep 0.1; done\n",
     )
     .unwrap();
     std::fs::set_permissions(
