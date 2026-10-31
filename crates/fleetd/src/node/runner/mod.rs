@@ -83,8 +83,6 @@ pub struct SessionSpec {
     pub plugin_dirs: Vec<PathBuf>,
     /// The whole child environment. Nothing is inherited: no CLAUDE* variable of the node's own parent leaks in.
     pub env: Vec<(String, String)>,
-    /// Raw stdout and stderr lines are appended here for debugging and conformance.
-    pub transcript: Option<PathBuf>,
     /// The OS sandbox the process and everything it starts run in: a Navi's ([`sandbox::navi_fence`]). None for every
     /// other session.
     pub sandbox: Option<sandbox::Fence>,

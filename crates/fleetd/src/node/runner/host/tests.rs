@@ -61,13 +61,7 @@ impl Fake {
         // Another test's fork may briefly hold the script's write fd (ETXTBSY).
         let mut tries = 0;
         let handle = loop {
-            match super::super::claude::hosted(
-                &program,
-                vec![fifo.clone()],
-                name,
-                marker.clone(),
-                None,
-            ) {
+            match super::super::claude::hosted(&program, vec![fifo.clone()], name, marker.clone()) {
                 Err(e) if e.raw_os_error() == Some(libc::ETXTBSY) && tries < 100 => {
                     tries += 1;
                     std::thread::sleep(Duration::from_millis(10));

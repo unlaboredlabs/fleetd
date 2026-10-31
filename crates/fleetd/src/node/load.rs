@@ -207,7 +207,7 @@ pub fn min_free_bytes(total: u64, min_free_gb: Option<u64>) -> u64 {
     })
 }
 
-/// The volume holding `home` (the node home: worktrees and transcripts), with node.json's `minFreeGb`.
+/// The volume holding `home` (the node home: worktrees), with node.json's `minFreeGb`.
 // The statvfs field types differ by platform.
 #[allow(clippy::unnecessary_cast)]
 fn disk(home: &Path, min_free_gb: Option<u64>) -> Option<NodeDisk> {
