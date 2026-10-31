@@ -93,12 +93,12 @@ fn an_older_hubs_projects_get_their_own_repo_at_start() {
     let home = tempfile::tempdir().unwrap();
     let repos_at = MIGRATIONS
         .iter()
-        .position(|m| m.contains("CREATE TABLE repos"))
+        .position(|m| m.sql.contains("CREATE TABLE repos"))
         .expect("the repos migration");
     {
         let conn = rusqlite::Connection::open(home.path().join("hub.sqlite")).unwrap();
         for m in &MIGRATIONS[..repos_at] {
-            conn.execute_batch(m).unwrap();
+            conn.execute_batch(m.sql).unwrap();
         }
         conn.pragma_update(None, "user_version", repos_at as i64)
             .unwrap();

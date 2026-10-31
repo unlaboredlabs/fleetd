@@ -159,9 +159,12 @@ mac.yml --ref <branch>`. Its checks are listed `afterMerge`, so a red one never 
 
 Each change to the hub's database is one new SQL file in `crates/fleetd/src/hub/store/migrations/`, named for the
 current UTC time: `YYYYMMDDHHMM_snake_case_name.sql` (`date -u +%Y%m%d%H%M`), opening with `--` comment lines on
-what it does. The build runs them in prefix order and fails on two with one prefix; a hub's `user_version` counts how
-many it ran. Never edit, rename or remove a file that is on main: CI checks that a PR only adds files, each sorting
-after every one on main, so after a rebase onto a newer migration, rename yours to a later time.
+what it does. The build runs them in prefix order and fails on two with one prefix. A hub records each one it ran by
+name with its file's SHA-256 (`migrations_applied`) and runs every one it hasn't, so a file that sorts before one a hub
+already ran still runs there; one that changed after it ran never runs again, and the hub warns at its start. Never
+edit, rename or remove a file that is on main: CI checks that a PR only adds files, each sorting after every one on
+main, so every hub runs them in the order a fresh one does. After a rebase onto a newer migration, rename yours to a
+later time (the merge train does it for you).
 
 ## Conventions
 

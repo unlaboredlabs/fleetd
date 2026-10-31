@@ -694,10 +694,10 @@ mod tests {
         // Found by content, not as the last migration, so later migrations don't break this test.
         let at = MIGRATIONS
             .iter()
-            .position(|m| m.contains("DELETE FROM time_spans WHERE kind = 37"))
+            .position(|m| m.sql.contains("DELETE FROM time_spans WHERE kind = 37"))
             .unwrap();
         for m in &MIGRATIONS[..at] {
-            conn.execute_batch(m).unwrap();
+            conn.execute_batch(m.sql).unwrap();
         }
         conn.execute_batch(
             "INSERT INTO time_spans (src, src_key, kind, cat, start_ms, lane, status)
@@ -705,7 +705,7 @@ mod tests {
              INSERT INTO time_rollups VALUES (1, 'fleet', '', 3, 37, 5, 1), (1, 'fleet', '', 1, 10, 5, 1);",
         )
         .unwrap();
-        conn.execute_batch(MIGRATIONS[at]).unwrap();
+        conn.execute_batch(MIGRATIONS[at].sql).unwrap();
         let kinds = |table: &str| -> Vec<i64> {
             conn.prepare(&format!("SELECT kind FROM {table}"))
                 .unwrap()

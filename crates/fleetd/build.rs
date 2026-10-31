@@ -1,5 +1,6 @@
 //! Lists the hub's migrations, src/hub/store/migrations/<prefix>_<name>.sql, in the order of their prefixes, as
-//! `MIGRATIONS` in $OUT_DIR/migrations.rs. The build fails on a file not of that form or two with one prefix.
+//! `MIGRATIONS` in $OUT_DIR/migrations.rs, each named by its file name without `.sql`. The build fails on a file not
+//! of that form or two with one prefix.
 
 use std::{env, fs, path::Path};
 
@@ -41,10 +42,11 @@ fn main() {
             );
         }
     }
-    let mut out = String::from("pub(crate) const MIGRATIONS: &[&str] = &[\n");
+    let mut out = String::from("pub(crate) const MIGRATIONS: &[Migration] = &[\n");
     for (_, name) in &files {
+        let stem = name.strip_suffix(".sql").unwrap();
         out.push_str(&format!(
-            "    include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{DIR}/{name}\")),\n"
+            "    Migration {{ name: \"{stem}\", sql: include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{DIR}/{name}\")) }},\n"
         ));
     }
     out.push_str("];\n");

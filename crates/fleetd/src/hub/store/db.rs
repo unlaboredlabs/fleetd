@@ -1,4 +1,4 @@
-use super::migrations::MIGRATIONS;
+use super::migrations::{self, Drift, MIGRATIONS};
 use rusqlite::{Connection, TransactionBehavior};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
@@ -116,60 +116,26 @@ impl HubDb {
     }
 
     pub fn user_version(&self) -> Result<i64, StoreError> {
-        self.with(|conn| Ok(user_version(conn)?))
+        self.with(|conn| Ok(migrations::user_version(conn)?))
     }
 
     fn migrate(&self) -> Result<(), StoreError> {
-        while (self.user_version()? as usize) < MIGRATIONS.len() {
-            self.transaction(|conn| {
-                // Re-read inside the lock: another process may have migrated while we waited.
-                let current = user_version(conn)? as usize;
-                let Some(next) = MIGRATIONS.get(current) else {
-                    return Ok(());
-                };
-                if next.contains("DROP TABLE profile_settings") {
-                    log_dropped_overrides(conn)?;
-                }
-                conn.execute_batch(next)?;
-                conn.execute_batch(&format!("PRAGMA user_version = {}", current + 1))?;
-                Ok(())
-            })?;
+        // Never fatal: re-running a changed migration could break a hub's data, and refusing to start would take the
+        // whole hub down over SQL its operator can't change. The warning names the file.
+        for drift in migrations::migrate(&mut self.lock(), MIGRATIONS)? {
+            match drift {
+                Drift::Changed(name) => tracing::warn!(
+                    migration = name,
+                    "hub migrations: this migration changed after it ran here; it does not run again, so the database may lack what the new file adds"
+                ),
+                Drift::Unknown(name) => tracing::warn!(
+                    migration = name,
+                    "hub migrations: this database ran a migration this fleetd doesn't have (a newer fleetd's, or one removed)"
+                ),
+            }
         }
         Ok(())
     }
-}
-
-/// Profiles became rows (W146), which a project only allows: one line for each project's model or effort override
-/// the migration drops, so a person can make a profile of it.
-fn log_dropped_overrides(conn: &Connection) -> rusqlite::Result<()> {
-    let mut stmt = conn.prepare(
-        "SELECT machine_id, project_id, profile, model, effort FROM profile_settings WHERE project_id != ''
-         ORDER BY machine_id, project_id, profile",
-    )?;
-    let rows = stmt.query_map([], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, String>(2)?,
-            r.get::<_, Option<String>>(3)?,
-            r.get::<_, Option<String>>(4)?,
-        ))
-    })?;
-    for row in rows {
-        let (machine, project, profile, model, effort) = row?;
-        tracing::warn!(
-            project = format!("{machine}/{project}"),
-            profile,
-            model = model.as_deref().unwrap_or("-"),
-            effort = effort.as_deref().unwrap_or("-"),
-            "profiles: a project's override of a profile is dropped; make a profile of it and allow it in the project"
-        );
-    }
-    Ok(())
-}
-
-fn user_version(conn: &Connection) -> rusqlite::Result<i64> {
-    conn.query_row("PRAGMA user_version", [], |row| row.get(0))
 }
 
 /// `path.resolve`: absolute against the cwd, with `.` and `..` folded lexically.

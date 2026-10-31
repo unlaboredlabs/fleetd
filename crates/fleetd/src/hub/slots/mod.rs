@@ -499,17 +499,20 @@ mod tests {
         // Found by content, not as the last migration, so later migrations don't break this test.
         let at = MIGRATIONS
             .iter()
-            .position(|m| m.contains("DELETE FROM slot_claims WHERE priority = 'lead'"))
+            .position(|m| {
+                m.sql
+                    .contains("DELETE FROM slot_claims WHERE priority = 'lead'")
+            })
             .unwrap();
         for m in &MIGRATIONS[..at] {
-            conn.execute_batch(m).unwrap();
+            conn.execute_batch(m.sql).unwrap();
         }
         conn.execute_batch(
             "INSERT INTO slot_claims VALUES ('lead:lab-a/p1', 'lab-a', 'p1', 'lead', 'l1', 'held', 1),
                ('T1', 'lab-a', 'p1', 'work', 't1', 'held', 2);",
         )
         .unwrap();
-        conn.execute_batch(MIGRATIONS[at]).unwrap();
+        conn.execute_batch(MIGRATIONS[at].sql).unwrap();
         let holders: Vec<String> = conn
             .prepare("SELECT holder FROM slot_claims")
             .unwrap()
