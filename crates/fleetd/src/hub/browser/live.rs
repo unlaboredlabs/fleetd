@@ -264,12 +264,14 @@ pub fn runs_on(hub: &Hub, session: &BrowserSession) -> Result<MachineId, ToolErr
         .unwrap_or_else(|| session.project_ref.machine_id.clone()))
 }
 
-/// The app's `browser_watch` of a live session: any key that can read its project's machine.
+/// The app's `browser_watch` of a live session: any key that can read its project's machine, and a Navi's only its
+/// owner's.
 pub fn start_watch(hub: &Hub, caller: &Caller, id: &BrowserSessionId) -> Result<Watch, ToolError> {
     let session = super::get(&hub.db, id)?.ok_or_else(|| no_session(id))?;
     if require(caller, Role::Read, Some(&session.project_ref.machine_id)).is_err() {
         return Err(no_session(id));
     }
+    theirs(hub, caller, &session)?;
     if session.state != BrowserSessionState::Live {
         return Err(ToolError::new(
             ErrorCode::Invalid,
@@ -290,6 +292,15 @@ pub fn start_watch(hub: &Hub, caller: &Caller, id: &BrowserSessionId) -> Result<
     Ok(hub.link.browser_live.watch(&hub.link, machine, id))
 }
 
+/// Refuses another person's Navi's screen (D215): only its owner watches it, drives it or takes it over.
+fn theirs(hub: &Hub, caller: &Caller, session: &BrowserSession) -> Result<(), ToolError> {
+    if crate::hub::navi::owner::may_use(&hub.db, caller, &session.project_ref)? {
+        Ok(())
+    } else {
+        Err(crate::hub::navi::owner::refused(&session.project_ref))
+    }
+}
+
 /// The app's `browser_input`: a person's device with operate on the machine, on a session they took over.
 pub fn input(
     hub: &Hub,
@@ -302,12 +313,13 @@ pub fn input(
     if require(caller, Role::Read, Some(machine)).is_err() {
         return Err(no_session(id));
     }
+    theirs(hub, caller, &session)?;
     if !is_human(caller) {
         return Err(ToolError::new(
             ErrorCode::Forbidden,
             "Only a person's device drives a screen.",
         )
-        .with_fix("Use the desktop app."));
+        .with_fix("Use the fleetd app, on a computer or a phone."));
     }
     require(caller, Role::Operate, Some(machine))?;
     if session.state != BrowserSessionState::Live || session.control != BrowserControl::Human {

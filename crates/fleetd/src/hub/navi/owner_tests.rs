@@ -414,3 +414,62 @@ fn the_migration_gives_each_navi_its_makers_person_else_the_hubs_owner() {
         .unwrap();
     assert!(owners(&conn).iter().all(|(_, owner)| owner.is_none()));
 }
+
+#[tokio::test]
+async fn only_its_owner_watches_takes_over_or_replays_a_navis_screen() {
+    use fleetd_contracts::browser::{BrowserInput, BrowserSession, BrowserSessionId};
+    let (hub, _home) = hub();
+    let _calls = node(&hub, &[CAP_REPOS, CAP_ASSISTANT]).await;
+    let ann = people(&hub).ensure_owner().unwrap().person_id;
+    let bob = people(&hub)
+        .create(&PersonName::unchecked("Bob"), HubRole::Admin)
+        .unwrap()
+        .person_id;
+    let (ann_d, bob_d) = (
+        device(&hub, Some(&ann), "admin"),
+        device(&hub, Some(&bob), "admin"),
+    );
+    let ada = make(&hub, &ann_d, "Ada").await;
+    let id = "B0123456789abcdef0123456789abcdef";
+    let session: BrowserSession = serde_json::from_value(json!({
+        "sessionId": id, "projectRef": at(&ada), "threadId": "th-1", "purpose": "Book the hotel",
+        "state": "live", "control": "human", "startedAt": "2026-10-31T10:00:00.000Z",
+    }))
+    .unwrap();
+    crate::hub::browser::save(&hub, &session).unwrap();
+    // By its sessionId alone, the tools find it is Ada's.
+    for (tool, input) in [
+        (
+            "browser_control",
+            json!({ "sessionId": id, "control": "human" }),
+        ),
+        (
+            "browser_recording_get",
+            json!({ "sessionId": id, "file": "actions" }),
+        ),
+        ("screen_end", json!({ "sessionId": id })),
+    ] {
+        refused(&hub, &bob_d, tool, input).await;
+    }
+    // And the app socket's live view and input.
+    let sid = BrowserSessionId::unchecked(id);
+    let watch = crate::hub::browser::live::start_watch(&hub, &bob_d, &sid);
+    assert!(
+        watch.is_err_and(|e| e.message.contains("another person's Navi")),
+        "watch"
+    );
+    let click: BrowserInput =
+        serde_json::from_value(json!({ "kind": "mouse", "action": "pressed", "x": 1, "y": 1 }))
+            .unwrap();
+    let input = crate::hub::browser::live::input(&hub, &bob_d, &sid, click.clone());
+    assert!(
+        input.is_err_and(|e| e.message.contains("another person's Navi")),
+        "input"
+    );
+    // Its owner gets past the owner check (here, to the node, which has no browser).
+    let watch = crate::hub::browser::live::start_watch(&hub, &ann_d, &sid);
+    assert!(
+        watch.is_err_and(|e| !e.message.contains("another person's Navi")),
+        "owner's watch"
+    );
+}

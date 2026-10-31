@@ -107,16 +107,22 @@ control, the agent’s <code dir="auto">agent-browser</code> commands answer tha
 work. <strong>Hand back</strong> returns control: the
 agent’s next command sees the page as you left it, what you typed included. The recording’s action log says who took
 over and when, but not what you typed.</p>
-<p>A screen whose agent asked for you shows under <strong>waiting on you</strong> with its reason, until you take it over or it ends.</p>
+<p>A screen whose agent asked for you shows under <strong>waiting on you</strong> with its reason, until you take it over or it ends.
+The ask is a notification too, on the desktop and on your phone, where tapping it opens the screen’s live view.</p>
+<p>On the <a href="/docs/mobile#screens">phone</a>, a live screen shows as a card in its chat, and opens full screen: pinch to zoom,
+<strong>Take Over</strong>, then a tap clicks, a drag scrolls and a held touch presses and drags; the keyboard button types into the
+page, and <strong>Hand Back</strong> returns it. It’s the same live view and takeover, at most 12 frames a second.</p>
 <p>Once it has ended, the screen plays its recording, the panel’s whole width. <strong>Steps</strong>, at the end of the player’s
 controls, opens its steps beside the recording (under it in a narrow panel). Each step jumps the recording to its
 moment and opens the page as that step found it. Press <strong>Steps</strong> again to close them. They start closed each time you
 open a screen.</p>
 <p>Any key that can read the screen’s machine may watch. Taking over and typing take a person’s device with operate
-there. MCP clients use <code dir="auto">browser_control</code> to take over and hand back.</p>
+there. A Navi’s screen is its owner’s alone, as the Navi is: nobody else watches it, takes it over, ends it or reads
+its recording. MCP clients use <code dir="auto">browser_control</code> to take over and hand back.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="yours">Open one yourself</h2><a class="sl-anchor-link" href="#yours"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Open one yourself”</span></a></div>
 <p>You can open a screen of your own: <strong>New screen</strong> at the top of a project’s or a Navi’s <strong>Screens</strong> tab, or
-<strong>New screen…</strong> in the command palette (⌘K) for the project on screen.</p>
+<strong>New screen…</strong> in the command palette (⌘K) for the project on screen. On the phone, <strong>New Screen</strong> is on a project’s
+or Navi’s ⓘ page (<a href="/docs/mobile#screens">Phone app</a>).</p>
 <ol>
 <li><strong>Pick the kind</strong>: a browser, an iOS simulator, an Android emulator or a Linux desktop. A kind no machine can host
 yet can’t be picked.</li>

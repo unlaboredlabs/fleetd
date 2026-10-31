@@ -2,8 +2,10 @@
 // (re)connect, then a fresh snapshot and the event stream from its cursor, so the screens always resync and never show
 // a dead link as live. Reconnects with backoff until the key is refused (close 4401, or an error before `ready`) or
 // the client is stopped. React Native's WebSocket can't ping, so a quiet link is probed with a small call (hub_info)
-// and dropped when nothing comes back: a phone that changed networks must not keep showing as live.
-import { leadLaneId, type CallOutcome, type ChatDelta, type FleetStatus, type HubError, type HubEvent, type HubState, type LiveFrame, type ProjectRef, type ToolInput, type ToolName, type ToolOutput } from "../desktop";
+// and dropped when nothing comes back: a phone that changed networks must not keep showing as live. One screen at a
+// time can be watched (browser_watch, sent again on each ready, as the desktop's main does): its frames come as
+// `browser_frame`s, and a person's touches on a screen they took over go as `browser_input`.
+import { leadLaneId, type BrowserFrame, type BrowserInput, type CallOutcome, type ChatDelta, type FleetStatus, type HubError, type HubEvent, type HubState, type LiveFrame, type ProjectRef, type ToolInput, type ToolName, type ToolOutput } from "../desktop";
 
 export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 /** From dialling to `ready`. */
@@ -41,6 +43,8 @@ export type HubFrame =
   | { readonly t: "chat_delta"; readonly delta: ChatDelta }
   /** The open chat's lead lane: what it does this moment. */
   | { readonly t: "live"; readonly frame: LiveFrame }
+  /** The watched screen's newest frame. Ephemeral: the hub skips frames a slow link can't take. */
+  | { readonly t: "browser_frame"; readonly frame: BrowserFrame }
   | { readonly t: "error"; readonly error: HubError };
 
 export interface HubClientOptions {
@@ -75,11 +79,15 @@ type ServerFrame =
   | { t: "result"; id: string; output: unknown }
   | { t: "error"; id?: string; code: string; message: string; fix?: string }
   | ({ t: "chat_delta" } & ChatDelta)
-  | ({ t: "live" } & LiveFrame);
+  | ({ t: "live" } & LiveFrame)
+  | ({ t: "browser_frame" } & BrowserFrame);
 
-const KNOWN = new Set(["ready", "snapshot", "event", "result", "error", "chat_delta", "live"]);
+const KNOWN = new Set(["ready", "snapshot", "event", "result", "error", "chat_delta", "live", "browser_frame"]);
 
-/** A frame this client reads, or null: not JSON, or a `t` it has no use for (browser frames, a newer hub's). */
+/** The `ready` feature that says the hub reads browser_watch and browser_input (contracts app.rs APP_FEATURES). */
+export const SCREENS_FEATURE = "browser_sessions";
+
+/** A frame this client reads, or null: not JSON, or a `t` it has no use for (a newer hub's). */
 export const parseFrame = (text: string): ServerFrame | null => {
   try {
     const json: unknown = JSON.parse(text);
@@ -105,6 +113,9 @@ export class HubClient {
   #resumeAttempt = 0;
   #nextId = 0;
   #chat: ProjectRef | null = null;
+  /** The screen watched, which goes again on each ready; null: none. */
+  #watching: string | null = null;
+  #screens = false;
   readonly #pending = new Map<string, Pending>();
   #retryTimer: ReturnType<typeof setTimeout> | null = null;
   #readyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -169,6 +180,21 @@ export class HubClient {
   chat(project: ProjectRef | null): void {
     this.#chat = project;
     if (this.#ready) this.#sendChat();
+  }
+
+  /**
+   * Watch one screen's live frames (null stops): replaces any earlier watch, and goes again on each ready, as the hub
+   * forgets it with the socket. Sent only to a hub that reads it.
+   */
+  watch(sessionId: string | null): void {
+    if (this.#watching === sessionId) return;
+    this.#watching = sessionId;
+    if (this.#ready && this.#screens) this.#sendWatch();
+  }
+
+  /** A person's touch or typing on a screen they took over; dropped while there's no link, as a stale tap must not land later. */
+  input(sessionId: string, input: BrowserInput): void {
+    if (this.#ready && this.#screens) this.#send({ t: "browser_input", session: sessionId, input });
   }
 
   /** A fresh snapshot, from which the event stream restarts. */
@@ -237,8 +263,10 @@ export class HubClient {
           ...(frame.version === undefined ? {} : { version: frame.version }),
           ...(frame.features === undefined ? {} : { features: frame.features }),
         });
+        this.#screens = frame.features?.includes(SCREENS_FEATURE) === true;
         this.#send({ t: "snapshot" });
         if (this.#chat !== null) this.#sendChat();
+        if (this.#watching !== null && this.#screens) this.#sendWatch();
         return;
       }
       case "snapshot": {
@@ -266,6 +294,12 @@ export class HubClient {
       case "live": {
         const { t: _t, ...live } = frame;
         this.#options.emit({ t: "live", frame: live });
+        return;
+      }
+      case "browser_frame": {
+        const { t: _t, ...shown } = frame;
+        // Only the screen watched now: one from the watch it replaced may still be on its way.
+        if (shown.sessionId === this.#watching) this.#options.emit({ t: "browser_frame", frame: shown });
         return;
       }
       case "result": {
@@ -350,6 +384,10 @@ export class HubClient {
     this.#send(this.#chat === null ? { t: "chat" } : { t: "chat", project: this.#chat });
     // One agent's lane, the lead's: no board, which the phone doesn't show.
     this.#send(this.#chat === null ? { t: "live", board: false } : { t: "live", board: false, agent: leadLaneId(this.#chat) });
+  }
+
+  #sendWatch(): void {
+    this.#send(this.#watching === null ? { t: "browser_watch" } : { t: "browser_watch", session: this.#watching });
   }
 
   #send(message: Record<string, unknown>): void {

@@ -60,7 +60,7 @@ async fn browser_control(
             ErrorCode::Forbidden,
             "Only a person's device takes a browser over or hands it back.",
         )
-        .with_fix("Use the desktop app."));
+        .with_fix("Use the fleetd app, on a computer or a phone."));
     }
     require(&caller, Role::Operate, Some(&machine))?;
     if session.state != BrowserSessionState::Live {

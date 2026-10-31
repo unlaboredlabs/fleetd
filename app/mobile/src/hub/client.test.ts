@@ -147,3 +147,41 @@ describe("HubClient", () => {
     expect(hub.sentOf("events").at(-1)).toEqual({ t: "events", cursor: 9 });
   });
 });
+
+describe("watching a screen", () => {
+  const frame = (sessionId: string, seq: number) => ({ t: "browser_frame", sessionId, seq, jpegB64: "AA==", width: 4, height: 3, control: "agent" });
+
+  it("watches only on a hub that reads it, again after each reconnect, and hands on that screen's frames alone", () => {
+    const { hub, client, frames } = setup();
+    client.watch("Bsee");
+    client.start();
+    // An older hub, without the feature: it never sees a watch or an input.
+    hub.ready();
+    client.input("Bsee", { kind: "text", text: "hi" });
+    expect(hub.sentOf("browser_watch")).toEqual([]);
+    expect(hub.sentOf("browser_input")).toEqual([]);
+    client.reconnectNow();
+    hub.ready(["browser_sessions"]);
+    expect(hub.sentOf("browser_watch")).toEqual([{ t: "browser_watch", session: "Bsee" }]);
+    hub.link.frame(frame("Bsee", 1));
+    hub.link.frame(frame("Bother", 2));
+    const shown = frames.flatMap((f) => (f.t === "browser_frame" ? [f.frame] : []));
+    expect(shown).toEqual([{ sessionId: "Bsee", seq: 1, jpegB64: "AA==", width: 4, height: 3, control: "agent" }]);
+    client.input("Bsee", { kind: "mouse", action: "pressed", x: 1, y: 2, button: "left", clickCount: 1 });
+    expect(hub.sentOf("browser_input")).toEqual([{ t: "browser_input", session: "Bsee", input: { kind: "mouse", action: "pressed", x: 1, y: 2, button: "left", clickCount: 1 } }]);
+    // Stopped: the hub hears it, and a frame still on its way is dropped.
+    client.watch(null);
+    expect(hub.sentOf("browser_watch").at(-1)).toEqual({ t: "browser_watch" });
+    hub.link.frame(frame("Bsee", 3));
+    expect(frames.filter((f) => f.t === "browser_frame")).toHaveLength(1);
+  });
+
+  it("drops a touch while the link is down, rather than land it later", () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.ready(["browser_sessions"]);
+    hub.link.close(1006);
+    client.input("Bsee", { kind: "text", text: "late" });
+    expect(hub.links.flatMap((l) => l.sent).filter((m) => m.t === "browser_input")).toEqual([]);
+  });
+});

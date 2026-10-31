@@ -24,6 +24,7 @@ use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
+use fleetd_contracts::browser::BrowserSessionId;
 use fleetd_contracts::chat::{
     ChatAuthor, ChatMessage, ChatMessageId, ChatMessageState, ChatRequestId,
 };
@@ -479,6 +480,7 @@ pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError>
     let text = |k: &str| data.and_then(|d| d.get(k)).and_then(Value::as_str);
     let mut message_id = None;
     let mut request_id = None;
+    let mut session_id = None;
     let mut collapse = None;
     let mut category = None;
     let (kind, body) = match event.r#type {
@@ -518,6 +520,13 @@ pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError>
                     None => event.summary.to_string(),
                 };
                 (PushKind::Approval, body)
+            } else if event.r#type == HubEventType::BrowserSession
+                && let Some(id) = text("sessionId")
+            {
+                // A screen whose agent asks for the person (`request_takeover`): one notification per screen.
+                session_id = Some(BrowserSessionId::unchecked(id));
+                collapse = Some(collapse_key(&format!("screen/{id}")));
+                (PushKind::Alert, event.summary.to_string())
             } else {
                 (PushKind::Alert, event.summary.to_string())
             }
@@ -555,6 +564,7 @@ pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError>
             thread_id: event.thread_id.clone(),
             message_id,
             request_id,
+            session_id,
             urgent: urgent.then_some(true),
             quiet: quiet.then_some(true),
             category,

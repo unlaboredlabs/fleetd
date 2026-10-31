@@ -100,6 +100,8 @@ pub struct PushPayload {
     pub thread_id: Option<ThreadId>,
     pub message_id: Option<ChatMessageId>,
     pub request_id: Option<ChatRequestId>,
+    /// A screen whose agent asks the person to take it over (`request_takeover`): tapping opens its live view.
+    pub session_id: Option<crate::browser::BrowserSessionId>,
     /// Money or irreversible: show it even in a Focus.
     pub urgent: Option<bool>,
     /// Sent inside the hub's quiet hours: show it without a sound.

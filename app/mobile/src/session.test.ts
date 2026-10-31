@@ -286,3 +286,66 @@ describe("A chat's picture", () => {
     expect(reads()).toHaveLength(3);
   });
 });
+
+describe("a chat's screens", () => {
+  const live = (control: string, takeoverReason?: string) => ({
+    sessionId: "B0123456789abcdef0123456789abcdef",
+    projectRef: REF,
+    threadId: "th-1",
+    purpose: "Book the hotel",
+    state: "live",
+    control,
+    startedAt: AT,
+    ...(takeoverReason === undefined ? {} : { takeoverReason }),
+  });
+  const sessions = (list: unknown[]) => ({ sessions: list, retention: { days: 30, maxGb: 20 } });
+
+  it("are read as the chat opens and again when one of them changes", async () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    hub.answer("browser_sessions", sessions([live("agent")]));
+    await flush();
+    expect(session.state.screens[KEY]?.map((s) => s.control)).toEqual(["agent"]);
+    hub.link.frame({ t: "event", seq: 2, type: "browser.session", at: AT, data: { projectRef: REF, sessionId: live("agent").sessionId, state: "live", control: "agent" } });
+    expect(hub.sentOf("call").filter((c) => c.tool === "browser_sessions")).toHaveLength(2);
+    hub.answer("browser_sessions", sessions([live("agent", "Solve the captcha")]));
+    await flush();
+    expect(session.state.screens[KEY]?.[0]?.takeoverReason).toBe("Solve the captcha");
+    // Another chat's screen, never looked at, isn't read.
+    hub.link.frame({ t: "event", seq: 3, type: "browser.session", at: AT, data: { projectRef: { machineId: "m1", projectId: "shop" }, sessionId: "Bx", state: "live", control: "agent" } });
+    expect(hub.sentOf("call").filter((c) => c.tool === "browser_sessions")).toHaveLength(2);
+  });
+
+  it("send frames to the live view alone, never through the state", () => {
+    const { hub, session } = setup();
+    hub.ready(["browser_sessions"]);
+    hub.link.frame(snapshot);
+    const seen: number[] = [];
+    let draws = 0;
+    session.subscribe(() => draws++);
+    const off = session.onFrame((f) => seen.push(f.seq));
+    session.watch("Bsee");
+    expect(hub.sentOf("browser_watch")).toEqual([{ t: "browser_watch", session: "Bsee" }]);
+    for (const seq of [1, 2]) hub.link.frame({ t: "browser_frame", sessionId: "Bsee", seq, jpegB64: "AA==", width: 4, height: 3, control: "agent" });
+    expect(seen).toEqual([1, 2]);
+    expect(draws).toBe(0);
+    off();
+  });
+
+  it("change hands once the hub says so, and stay as they were when it refuses", async () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    hub.answer("browser_sessions", sessions([live("agent", "Solve the captcha")]));
+    await flush();
+    const taking = session.control(live("agent").sessionId, "human");
+    expect(hub.sentOf("call").at(-1)).toMatchObject({ tool: "browser_control", input: { sessionId: live("agent").sessionId, control: "human" } });
+    hub.answer("browser_control", { session: live("human") });
+    await expect(taking).resolves.toMatchObject({ ok: true });
+    expect(session.state.screens[KEY]?.[0]?.control).toBe("human");
+    // Another person's Navi's screen: refused, and nothing changes here.
+    const refused = session.control(live("human").sessionId, "agent");
+    hub.fail("browser_control", "forbidden", "navi on m1 is another person's Navi: only its owner uses and manages it.");
+    await expect(refused).resolves.toMatchObject({ ok: false, error: { code: "forbidden" } });
+    expect(session.state.screens[KEY]?.[0]?.control).toBe("human");
+  });
+});

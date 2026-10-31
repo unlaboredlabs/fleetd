@@ -1,7 +1,8 @@
 // Making and managing projects and Navis from the phone: their screens in the root stack (New Navi and New Project as
-// sheets; a project's or Navi's screen, Rename, Agent Profiles and a Navi's skills pushed over its chat, in a stack of
-// their own, its icon as a sheet, and Move and Scale for its picture over everything), and the two ways in: the Chats
-// list's + menu and a chat's bar. App.tsx adds these to its navigators.
+// sheets; New Screen, a screen of your own, as one too; a project's or Navi's screen, Rename, Agent Profiles and a
+// Navi's skills pushed over its chat, in a stack of their own, its icon as a sheet, and Move and Scale for its picture
+// over everything), and the two ways in: the Chats list's + menu and a chat's bar. App.tsx adds these to its
+// navigators.
 import { useNavigation } from "@react-navigation/native";
 import { createNativeStackNavigator, type NativeStackHeaderItemMenu, type NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { Alert, Platform, Pressable } from "react-native";
@@ -12,6 +13,7 @@ import { IconPicker } from "./IconPicker";
 import { Info } from "./Info";
 import { NewNavi } from "./NewNavi";
 import { NewProject } from "./NewProject";
+import { NewScreen } from "./NewScreen";
 import { Photo } from "./Photo";
 import { Profiles } from "./Profiles";
 import { Rename } from "./Rename";
@@ -50,6 +52,7 @@ export const manageScreens = (Stack: RootStack, t: Palette) => (
   <Stack.Group>
     <Stack.Screen name="NewNavi" component={NewNavi} options={sheet(t, "New Navi")} />
     <Stack.Screen name="NewProject" component={NewProject} options={sheet(t, "New Project")} />
+    <Stack.Screen name="NewScreen" component={NewScreen} options={sheet(t, "New Screen")} />
     <Stack.Screen name="ChatInfo" component={ChatInfo} options={{ headerShown: false }} />
     <Stack.Screen name="Icon" component={IconPicker} options={sheet(t, "Icon")} />
     <Stack.Screen name="Photo" component={Photo} options={{ presentation: "fullScreenModal", animation: "fade", headerShown: false, gestureEnabled: false, contentStyle: { backgroundColor: "#000000" } }} />

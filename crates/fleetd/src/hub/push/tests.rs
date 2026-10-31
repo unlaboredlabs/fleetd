@@ -222,6 +222,7 @@ fn a_sealed_payload_opens_with_the_devices_secret_key_only() {
         thread_id: None,
         message_id: Some(ChatMessageId::unchecked("m3")),
         request_id: None,
+        session_id: None,
         urgent: None,
         quiet: None,
         category: Some(PushCategory::Reply),
@@ -260,7 +261,53 @@ fn a_sealed_payload_opens_with_the_devices_secret_key_only() {
     // The new fields are optional under v 1: a payload without them (an older hub's) still reads.
     let old = json!({ "v": 1, "kind": "message", "title": "Ada", "body": "Hi", "hub": "http://devbox:4790", "at": AT });
     let old: PushPayload = serde_json::from_value(old).unwrap();
-    assert_eq!((old.category, old.badge), (None, None));
+    assert_eq!(
+        (old.category, old.badge, old.session_id),
+        (None, None, None)
+    );
+}
+
+#[tokio::test]
+async fn a_takeover_request_pushes_its_screen_to_the_navis_owner_once_per_screen() {
+    let (hub, _home) = hub();
+    let owner = owner_device(&hub);
+    let (key, _) = phone(&hub, &owner, "ios", "aa11").await;
+    let (relay, url) = fake_relay().await;
+    ok(&hub, &owner, "push_relay_set", json!({ "url": url })).await;
+    let http = reqwest::Client::new();
+    let mut follow = Follow::default();
+    let cursor = hub.events.head();
+    let mut session: fleetd_contracts::browser::BrowserSession = serde_json::from_value(json!({
+        "sessionId": "B0123456789abcdef0123456789abcdef",
+        "projectRef": { "machineId": "devbox", "projectId": "navi" }, "threadId": "th-1",
+        "purpose": "Book the hotel", "state": "live", "control": "agent", "startedAt": AT,
+    }))
+    .unwrap();
+    // A screen starting or changing hands is no notification.
+    crate::hub::browser::save(&hub, &session).unwrap();
+    session.takeover_reason = Some(fleetd_contracts::prim::Line::unchecked(
+        "Solve the captcha on booking.com",
+    ));
+    crate::hub::browser::save_asking(&hub, &session).unwrap();
+    step(&hub, &http, &mut follow, cursor).await.unwrap();
+    let got = relay.got.lock().unwrap().clone();
+    assert_eq!(got.len(), 1, "{got:?}");
+    let p = opened(&key, &got[0]);
+    assert_eq!(
+        (p.kind, p.title.as_str(), p.body.as_str()),
+        (
+            PushKind::Alert,
+            "Ada",
+            "Needs you on its screen: Solve the captcha on booking.com"
+        )
+    );
+    assert_eq!(
+        p.session_id.as_ref().map(|s| s.as_str()),
+        Some("B0123456789abcdef0123456789abcdef")
+    );
+    assert_eq!(p.project_id.as_ref().map(|s| s.as_str()), Some("navi"));
+    // Asked again, it replaces the first on the phone.
+    assert!(got[0].collapse_key.is_some());
 }
 
 #[tokio::test]

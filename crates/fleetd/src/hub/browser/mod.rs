@@ -18,7 +18,7 @@ use fleetd_contracts::browser::{
     BrowserRetention, BrowserSession, BrowserSessionEventData, BrowserSessionId,
     BrowserSessionState, DEFAULT_MAX_GB_PER_PROJECT, DEFAULT_RETENTION_DAYS, RecordingFile,
 };
-use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::events::{Attention, HubEventType};
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::node_link::{CAP_SESSION_END, HubToNode, SessionEndFrame};
 use fleetd_contracts::prim::{Count, Int, List, Text};
@@ -181,6 +181,24 @@ pub fn save(hub: &Hub, s: &BrowserSession) -> Result<(), StoreError> {
     Ok(())
 }
 
+/// Writes a session whose agent just asked for a person (`request_takeover`, its `takeover_reason` set), and tells
+/// the app with a loud event: the desktop's notification and the person's phone's push, which opens its live view.
+pub fn save_asking(hub: &Hub, s: &BrowserSession) -> Result<(), StoreError> {
+    let started_ms = crate::hub::store::parse_ms(s.started_at.as_str()).unwrap_or_default();
+    if hub.db.transaction(|c| put_on(c, s, started_ms))? {
+        let reason = s.takeover_reason.as_ref().map_or("", |r| r.as_str());
+        let summary = format!("Needs you on its screen: {reason}");
+        announce_as(
+            hub,
+            s,
+            now_ms(hub.clock.as_ref()),
+            summary,
+            Some(Attention::Loud),
+        )?;
+    }
+    Ok(())
+}
+
 /// A project's live sessions whose agent asked for a person (`request_takeover`) and has no one yet.
 pub fn waiting(db: &HubDb, r: &ProjectRef) -> Result<Vec<BrowserSession>, StoreError> {
     db.with(|c| {
@@ -326,6 +344,18 @@ pub fn list(db: &HubDb, r: &ProjectRef, limit: usize) -> Result<Vec<BrowserSessi
 
 /// `browser.session`, which tells the app to read the session again.
 pub fn announce(hub: &Hub, s: &BrowserSession, now: i64) -> Result<(), StoreError> {
+    let who = s.task_id.as_ref().map_or("the lead", |t| t.as_str());
+    let summary = format!("screen of {who}: {}", s.state.as_str());
+    announce_as(hub, s, now, summary, None)
+}
+
+fn announce_as(
+    hub: &Hub,
+    s: &BrowserSession,
+    now: i64,
+    summary: String,
+    attention: Option<Attention>,
+) -> Result<(), StoreError> {
     let data = BrowserSessionEventData {
         project_ref: s.project_ref.clone(),
         session_id: s.session_id.clone(),
@@ -333,16 +363,15 @@ pub fn announce(hub: &Hub, s: &BrowserSession, now: i64) -> Result<(), StoreErro
         control: s.control,
         task_id: s.task_id.clone(),
     };
-    let who = s.task_id.as_ref().map_or("the lead", |t| t.as_str());
     hub.events.append(NewEvent {
         at: iso_ms(now).into(),
         r#type: HubEventType::BrowserSession,
         machine_id: Some(s.project_ref.machine_id.clone()),
         project_id: Some(s.project_ref.project_id.clone()),
         thread_id: Some(s.thread_id.clone()),
-        summary: format!("screen of {who}: {}", s.state.as_str()),
+        summary,
         data: Some(serde_json::to_value(data)?),
-        attention: None,
+        attention,
     })?;
     Ok(())
 }

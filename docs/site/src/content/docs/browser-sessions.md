@@ -46,6 +46,11 @@ agent's next command sees the page as you left it, what you typed included. The 
 over and when, but not what you typed.
 
 A screen whose agent asked for you shows under **waiting on you** with its reason, until you take it over or it ends.
+The ask is a notification too, on the desktop and on your phone, where tapping it opens the screen's live view.
+
+On the [phone](/docs/mobile#screens), a live screen shows as a card in its chat, and opens full screen: pinch to zoom,
+**Take Over**, then a tap clicks, a drag scrolls and a held touch presses and drags; the keyboard button types into the
+page, and **Hand Back** returns it. It's the same live view and takeover, at most 12 frames a second.
 
 Once it has ended, the screen plays its recording, the panel's whole width. **Steps**, at the end of the player's
 controls, opens its steps beside the recording (under it in a narrow panel). Each step jumps the recording to its
@@ -53,12 +58,14 @@ moment and opens the page as that step found it. Press **Steps** again to close 
 open a screen.
 
 Any key that can read the screen's machine may watch. Taking over and typing take a person's device with operate
-there. MCP clients use `browser_control` to take over and hand back.
+there. A Navi's screen is its owner's alone, as the Navi is: nobody else watches it, takes it over, ends it or reads
+its recording. MCP clients use `browser_control` to take over and hand back.
 
 ## Open one yourself {#yours}
 
 You can open a screen of your own: **New screen** at the top of a project's or a Navi's **Screens** tab, or
-**New screen…** in the command palette (⌘K) for the project on screen.
+**New screen…** in the command palette (⌘K) for the project on screen. On the phone, **New Screen** is on a project's
+or Navi's ⓘ page ([Phone app](/docs/mobile#screens)).
 
 1. **Pick the kind**: a browser, an iOS simulator, an Android emulator or a Linux desktop. A kind no machine can host
    yet can't be picked.

@@ -1,6 +1,8 @@
 // What the phone shows, as one pure state: the connection, the projects and their chat states from the snapshot and
 // events, the chats opened so far (the desktop's chat reducers, desktop.ts), the person's sends on their way, the
-// open requests, and what the open chat's lead does this moment (its live lane) with when its turn began. The session (session.ts) does the calls and feeds their answers back here.
+// open requests, what the open chat's lead does this moment (its live lane) with when its turn began, and the screens
+// of the chats looked at (their cards, and the live view's). The session (session.ts) does the calls and feeds their
+// answers back here; a screen's frames go past it (session.ts onFrame), as they come many a second.
 import type { HubFrame } from "./hub/client";
 import {
   afterCall,
@@ -27,6 +29,8 @@ import {
   type ProjectRef,
   type ProjectSummary,
   type Activity,
+  type BrowserSession,
+  type BrowserSessionEventData,
 } from "./desktop";
 
 export type Machine = FleetStatus["machines"][number];
@@ -70,6 +74,8 @@ export interface State {
   readonly leadActivity: Readonly<Record<string, Activity>>;
   /** When each working lead's turn began (hub epoch ms), from the event that said so; unknown for one already working. */
   readonly turnSince: Readonly<Record<Key, number>>;
+  /** Each chat's screens, newest first (browser_sessions), read as it opens and again as one changes. */
+  readonly screens: Readonly<Record<Key, readonly BrowserSession[]>>;
 }
 
 export const initial = (hub: HubState): State => ({
@@ -89,6 +95,7 @@ export const initial = (hub: HubState): State => ({
   answerErrors: {},
   leadActivity: {},
   turnSince: {},
+  screens: {},
 });
 
 export type Action =
@@ -102,6 +109,9 @@ export type Action =
   | { readonly t: "send"; readonly key: Key; readonly row: ChatSend }
   | { readonly t: "sent"; readonly key: Key; readonly clientRequestId: string; readonly result: CallResult; readonly leadWaiting?: string | undefined }
   | { readonly t: "requests"; readonly requests: readonly HumanRequest[] }
+  | { readonly t: "screens"; readonly key: Key; readonly sessions: readonly BrowserSession[] }
+  /** One screen as the hub answered a change of control with it. */
+  | { readonly t: "screen"; readonly session: BrowserSession }
   | { readonly t: "answer"; readonly requestId: string }
   | { readonly t: "answered"; readonly requestId: string; readonly result: { ok: true; request: HumanRequest } | { ok: false; error: HubError } };
 
@@ -158,6 +168,14 @@ export const reduce = (s: State, a: Action): State => {
     }
     case "requests":
       return { ...s, requests: a.requests.filter((r) => r.state === "open") };
+    case "screens":
+      return { ...s, screens: { ...s.screens, [a.key]: a.sessions } };
+    case "screen": {
+      const key = keyOf(a.session.projectRef);
+      const known = s.screens[key] ?? [];
+      const sessions = known.some((x) => x.sessionId === a.session.sessionId) ? known.map((x) => (x.sessionId === a.session.sessionId ? a.session : x)) : [a.session, ...known];
+      return { ...s, screens: { ...s.screens, [key]: sessions } };
+    }
     case "answer":
       return { ...s, answering: { ...s.answering, [a.requestId]: true }, answerErrors: without(s.answerErrors, a.requestId) };
     case "answered": {
@@ -207,6 +225,7 @@ const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
       }
       return { ...s, leadActivity: next };
     }
+    case "browser_frame":
     case "error":
       return s;
   }
@@ -242,11 +261,16 @@ const applyEvent = (s: State, event: HubEvent): State => {
 };
 
 /**
- * What an event asks the session to read again: the open requests, a whole snapshot when the projects changed, or the
- * pinned chats when this person changed them on another device.
+ * What an event asks the session to read again: the open requests, a whole snapshot when the projects changed, the
+ * pinned chats when this person changed them on another device, or a chat's screens when one of them started, changed
+ * hands or ended.
  */
-export const effectsOf = (event: HubEvent): { readonly requests: boolean; readonly snapshot: boolean; readonly pins: boolean } => ({
-  requests: event.type.startsWith("request."),
-  snapshot: event.type === "project.added" || event.type === "project.removed" || event.type === "project.settings",
-  pins: event.type === "chat.pins",
-});
+export const effectsOf = (event: HubEvent): { readonly requests: boolean; readonly snapshot: boolean; readonly pins: boolean; readonly screens?: Key } => {
+  const screen = event.type === "browser.session" ? (event.data as BrowserSessionEventData | undefined)?.projectRef : undefined;
+  return {
+    requests: event.type.startsWith("request."),
+    snapshot: event.type === "project.added" || event.type === "project.removed" || event.type === "project.settings",
+    pins: event.type === "chat.pins",
+    ...(screen === undefined ? {} : { screens: keyOf(screen) }),
+  };
+};

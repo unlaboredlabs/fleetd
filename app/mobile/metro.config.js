@@ -11,6 +11,7 @@ config.watchFolders = [
   path.join(desktop, "renderer/src/data"),
   path.join(desktop, "renderer/screens/navi"),
   path.join(desktop, "renderer/screens/projects"),
+  path.join(desktop, "renderer/screens/sessions"),
   path.join(desktop, "renderer/screens/settings"),
   path.join(desktop, "renderer/screens/updates"),
 ];

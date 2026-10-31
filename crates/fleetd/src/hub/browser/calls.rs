@@ -319,7 +319,7 @@ fn takeover(
     }
     if session.control == BrowserControl::Agent {
         session.takeover_reason = Some(call.reason);
-        super::save(hub, &session).map_err(failed)?;
+        super::save_asking(hub, &session).map_err(failed)?;
     }
     Ok(LeadCallResult::BrowserTakeover(BrowserSessionResult {
         session_id: session.session_id,
