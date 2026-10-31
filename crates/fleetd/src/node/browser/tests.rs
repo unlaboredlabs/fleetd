@@ -1592,18 +1592,28 @@ async fn a_persons_tap_in_another_sites_frame_lands_and_the_page_keeps_streaming
     driver
         .wait_for(&page, "document.readyState === 'complete'")
         .await;
-    // The box's frame has loaded, from the other site. (This Chrome keeps another site's frame in the page's process,
-    // reCAPTCHA's too: the page's input reaches it.)
+    // The box's frame has loaded, from the other site: in the page's process (the headless shell), or in one of its
+    // own (Chrome, with site isolation, as reCAPTCHA's box is on a Chrome).
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let tree = driver.ok(Some(&page), "Page.getFrameTree", json!({})).await;
-        if tree["frameTree"]["childFrames"][0]["frame"]["securityOrigin"]
+        let targets = driver.ok(None, "Target.getTargets", json!({})).await;
+        let inside = tree["frameTree"]["childFrames"][0]["frame"]["url"]
             .as_str()
-            .is_some_and(|o| o.starts_with("http://localhost:"))
-        {
+            .is_some_and(|u| u.starts_with("http://localhost:"));
+        let own = targets["targetInfos"].as_array().unwrap().iter().any(|t| {
+            t["type"] == "iframe"
+                && t["url"]
+                    .as_str()
+                    .is_some_and(|u| u.starts_with("http://localhost:"))
+        });
+        if inside || own {
             break;
         }
-        assert!(Instant::now() < deadline, "the frame never loaded: {tree}");
+        assert!(
+            Instant::now() < deadline,
+            "the frame never loaded: {tree} {targets}"
+        );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
