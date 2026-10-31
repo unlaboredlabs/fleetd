@@ -29,7 +29,7 @@ const board = { at: "2026-10-19T10:00:00.000Z", orders: [card("W1")], trains: []
 afterEach(() => vi.useRealTimers());
 
 describe("data layer", () => {
-  it("drops a board answer meant for the connection before a resync", async () => {
+  it("drops a board answer meant for the store before a resync, and marks the board to read again", async () => {
     const fake = fakeHub();
     const layer = createDataLayer(fake.hub);
     layer.start();
@@ -38,8 +38,31 @@ describe("data layer", () => {
     const query = layer.queryClient.query(layer.toolQuery("orders_board", {}));
     fake.send(snapshot(2));
     fake.answers[0]?.(board);
-    await expect(query).rejects.toThrow();
+    await query;
     expect(layer.store.getState().orders).toBeUndefined();
+    expect(layer.queryClient.getQueryState(["call", "orders_board", {}])?.isInvalidated).toBe(true);
+  });
+
+  it("keeps every cached answer through a resync on a link that stayed up, and reads each again", async () => {
+    const fake = fakeHub();
+    const layer = createDataLayer(fake.hub);
+    layer.start();
+    fake.send(live());
+    fake.send(snapshot(1));
+    const key = ["call", "status_get", { projectRef: { machineId: "devbox", projectId: "p1" } }];
+    const stop = new QueryObserver(layer.queryClient, layer.toolQuery("status_get", { projectRef: { machineId: "devbox", projectId: "p1" } })).subscribe(() => undefined);
+    await vi.waitFor(() => expect(fake.answers).toHaveLength(1));
+    fake.answers[0]?.({ doc: { v: 1 } });
+    await vi.waitFor(() => expect(layer.queryClient.getQueryData(key)).toEqual({ doc: { v: 1 } }));
+    // A saved setting's project.settings event: the app asks for a snapshot, which comes on the same link.
+    fake.send(event(2, "project.settings"));
+    expect(fake.resyncs).toHaveBeenCalledTimes(1);
+    fake.send(snapshot(2));
+    await vi.waitFor(() => expect(fake.calls).toEqual(["status_get", "status_get"]));
+    expect(layer.queryClient.getQueryData(key)).toEqual({ doc: { v: 1 } });
+    fake.answers[1]?.({ doc: { v: 2 } });
+    await vi.waitFor(() => expect(layer.queryClient.getQueryData(key)).toEqual({ doc: { v: 2 } }));
+    stop();
   });
 
   it("never lets an answer older than an event overwrite what the event changed", async () => {
@@ -58,7 +81,7 @@ describe("data layer", () => {
     fake.answers[0]?.(board);
     await vi.advanceTimersByTimeAsync(0);
     expect(layer.store.getState().orders).toBeUndefined();
-    expect(fake.calls).toEqual(["orders_board", "orders_board"]);
+    expect(layer.queryClient.getQueryState(["call", "orders_board", {}])?.isInvalidated).toBe(true);
     fake.answers[1]?.({ ...board, orders: [card("W1", { state: "stopped" })] });
     await vi.advanceTimersByTimeAsync(0);
     expect(layer.store.getState().orders?.["W1"]?.state).toBe("stopped");

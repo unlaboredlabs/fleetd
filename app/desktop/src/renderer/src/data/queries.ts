@@ -175,12 +175,16 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now, id: H
   };
 
 
-  /** Refetch what `batch` names; a read already in flight is marked dirty, so its (older) answer never lands. */
+  /** Refetch what `batch` names. */
   function invalidateNow(batch: readonly Invalidation[]): void {
-    const stale = (q: Query): boolean => {
+    refetchWhere((q) => {
       const [scope, tool, input] = q.queryKey;
       return scope === "call" && batch.some((i) => i.tool === tool && matches(input, i.where));
-    };
+    });
+  }
+
+  /** Refetch the reads `stale` picks, keeping their answers meanwhile; one in flight is marked dirty, so its (older) answer never lands. */
+  function refetchWhere(stale: (q: Query) => boolean): void {
     const inFlight = (q: Query): boolean => q.state.fetchStatus === "fetching";
     for (const q of queryClient.getQueryCache().findAll({ predicate: (q) => stale(q) && inFlight(q) })) dirty.add(q.queryHash);
     void queryClient.invalidateQueries({ predicate: (q) => stale(q) && !inFlight(q) });
@@ -203,8 +207,16 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now, id: H
     // A repeated event (the stream resumed past it) changes nothing and refetches nothing.
     if (next === prev) return;
     store.setState(next, true);
-    // A new snapshot, or the link dropping: every cached answer describes a connection that is gone. Reset drops it
-    // (screens show skeletons, not old data as live); reads run again once the connection is fresh.
+    // A resync on a link that stayed up (an event changed the fleet's shape: a project's settings saved, a project
+    // added): what the reads hold is still this connection's, so they run again in place and screens keep showing
+    // it meanwhile, never a page dropping to Loading… and remounting on every saved setting.
+    if (effects.refetchAll === true && prev.fresh) {
+      pending.clear();
+      refetchWhere(() => true);
+      return;
+    }
+    // A snapshot after a (re)connect, or the link dropping: every cached answer describes a connection that is gone.
+    // Reset drops it (screens show skeletons, not old data as live); reads run again once the connection is fresh.
     if (effects.refetchAll === true || (prev.fresh && !next.fresh)) {
       reset();
       return;
