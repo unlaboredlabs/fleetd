@@ -17,7 +17,7 @@ import { closeThenOpen } from "./arrival";
 /** What a new Navi is called when the name is left empty, as on the desktop. */
 export const DEFAULT_NAME = "Navi";
 
-export function NewNavi({ navigation }: NativeStackScreenProps<RootParams, "NewNavi">) {
+export function NewNavi({ navigation, route }: NativeStackScreenProps<RootParams, "NewNavi">) {
   const t = useTheme();
   const { session } = useHub();
   const [name, setName] = useState("");
@@ -42,6 +42,7 @@ export function NewNavi({ navigation }: NativeStackScreenProps<RootParams, "NewN
       return;
     }
     haptics.success();
+    if (route.params?.back === true) return navigation.goBack();
     closeThenOpen(navigation, keyOf(r.value));
   };
 

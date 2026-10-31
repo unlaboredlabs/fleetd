@@ -21,13 +21,14 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { webSocketTransport } from "./src/hub/socket";
 import type { Paired } from "./src/hub/pair";
 import { pairLinkStep } from "./src/hub/pairLink";
-import { HubContext, SessionContext, type HubContextValue, type PairParams, type RootParams } from "./src/hubContext";
+import { HubContext, SessionContext, type HubContextValue, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
 import { pushDeps, useTappedRoute } from "./src/notifications";
 import { chatAt, type Route } from "./src/push";
 import { Chat, chatOptions } from "./src/screens/Chat";
 import { Chats, searchBar } from "./src/screens/Chats";
 import { Pair, Scan, Welcome } from "./src/screens/Connect";
-import { backTo, infoOptions, manageScreens, newChatOptions } from "./src/screens/manage";
+import { backTo, infoOptions, manageScreens, newChatOptions, pushed } from "./src/screens/manage";
+import { ImportMemory } from "./src/screens/ImportMemory";
 import { Settings } from "./src/screens/Settings";
 import { Session } from "./src/session";
 import { navigationTheme, useTheme, type Palette } from "./src/theme";
@@ -258,7 +259,7 @@ function Root() {
 }
 
 const ChatsStack = createNativeStackNavigator<{ Chats: undefined }>();
-const SettingsStack = createNativeStackNavigator<{ Settings: undefined }>();
+const SettingsStack = createNativeStackNavigator<SettingsParams>();
 
 /** The chats list in a stack of its own, whose bar and toolbar (ui/Toolbar.tsx) slide away under a chat. */
 function ChatsHome() {
@@ -277,13 +278,17 @@ function ChatsHome() {
   );
 }
 
-/** Settings, from the avatar on Chats: a stack of its own with its large title, as the chat's Info, and a way back. */
+/**
+ * Settings, from the avatar on Chats: a stack of its own with its large title, as the chat's Info, and a way back.
+ * Import Memory is pushed over it, with a small title and the system's back button.
+ */
 function SettingsScreens() {
   const t = useTheme();
   const root = useNavigation();
   return (
     <SettingsStack.Navigator screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.grouped } }}>
       <SettingsStack.Screen name="Settings" component={Settings} options={backTo(t, () => root.goBack())} />
+      <SettingsStack.Screen name="ImportMemory" component={ImportMemory} options={{ ...pushed(t, "Import Memory"), headerLargeTitleEnabled: false }} />
     </SettingsStack.Navigator>
   );
 }

@@ -1,7 +1,7 @@
 // Settings, as iOS's own and Telegram's, behind the person's avatar on Chats: the hub this phone is paired with at the top, on a card as iOS's Apple Account
-// (fleetd's mark, its name and how the link is), then its address and version, for an admin its update, its
-// notifications, this phone and its app, and Disconnect, which asks first.
-import { useFocusEffect } from "@react-navigation/native";
+// (fleetd's mark, its name and how the link is), then its address and version, for an admin its update, Import
+// Memory, its notifications, this phone and its app, and Disconnect, which asks first.
+import { useFocusEffect, useNavigation, type NavigationProp } from "@react-navigation/native";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
@@ -9,7 +9,7 @@ import * as Updates from "expo-updates";
 import { useCallback, useState } from "react";
 import { Image, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
 import { linkWords as statusOf } from "../chatsBar";
-import { useHub } from "../hubContext";
+import { useHub, type SettingsParams } from "../hubContext";
 import { pushDeps } from "../notifications";
 import { shape, space, type, useTheme } from "../theme";
 import { haptics } from "../ui/haptics";
@@ -27,6 +27,7 @@ const updateWords = (): string => {
 export function Settings() {
   const t = useTheme();
   const { paired, state, disconnect } = useHub();
+  const navigation = useNavigation<NavigationProp<SettingsParams>>();
   const [notifications, setNotifications] = useState<string | undefined>(undefined);
   // Read again each time it shows: the person may have changed it in iOS Settings meanwhile.
   const read = useCallback(() => {
@@ -81,6 +82,9 @@ export function Settings() {
         ) : null}
       </ListSection>
       <UpdateFleetd />
+      <ListSection header="Memory" footer="Bring what ChatGPT, Claude or another assistant knows about you into your own memory.">
+        <ListRow icon="import" tint={t.tints[3]} title="Import Memory" onPress={() => navigation.navigate("ImportMemory")} />
+      </ListSection>
       <ListSection header="Notifications" footer="The hub seals each notification to this phone's own key, so only this phone can read it.">
         <ListRow icon="bell" tint={t.danger} title="Notifications" value={notifications} onPress={onNotifications} />
       </ListSection>

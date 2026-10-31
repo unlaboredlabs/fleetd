@@ -46,7 +46,8 @@ export type RootParams = {
 } & ManageParams;
 /** A project's and a Navi's own screens (screens/manage): made from the Chats list's +, opened from a chat's header. */
 export type ManageParams = {
-  NewNavi: undefined;
+  /** `back`: once made, back to where it was opened (Import Memory) rather than to its chat. */
+  NewNavi: { back?: boolean } | undefined;
   NewProject: undefined;
   /** A project's or Navi's screen and what it opens, a stack of their own over its chat (manage/index.tsx ChatInfo). */
   ChatInfo: NavigatorScreenParams<ChatInfoParams>;
@@ -62,6 +63,13 @@ export type ChatInfoParams = {
 };
 /** A ChatInfo screen's props: its own stack's, and the root stack's above it (Photo, back to the chats list). */
 export type ChatInfoProps<T extends keyof ChatInfoParams> = CompositeScreenProps<NativeStackScreenProps<ChatInfoParams, T>, NativeStackScreenProps<RootParams>>;
+/** Settings, a stack of its own from the avatar on Chats (App.tsx SettingsScreens), and what it pushes. */
+export type SettingsParams = {
+  Settings: undefined;
+  ImportMemory: undefined;
+};
+/** A Settings screen's props: its own stack's, and the root stack's above it (New Navi). */
+export type SettingsProps<T extends keyof SettingsParams> = CompositeScreenProps<NativeStackScreenProps<SettingsParams, T>, NativeStackScreenProps<RootParams>>;
 export type PairParams = {
   Welcome: undefined;
   Scan: undefined;

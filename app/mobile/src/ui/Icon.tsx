@@ -40,6 +40,7 @@ const SYMBOLS = {
   camera: ["camera.fill", "photo_camera"],
   status: ["antenna.radiowaves.left.and.right", "sensors"],
   info: ["info", "info"],
+  infoFill: ["info.circle.fill", "info"],
   reply: ["arrowshape.turn.up.left", "reply"],
   copy: ["doc.on.doc", "content_copy"],
   select: ["selection.pin.in.out", "select_all"],
@@ -67,6 +68,7 @@ const SYMBOLS = {
   sealed: ["checkmark.seal.fill", "verified"],
   bubble: ["bubble.left.fill", "chat_bubble"],
   pdf: ["doc.richtext", "picture_as_pdf"],
+  import: ["square.and.arrow.down", "download"],
 } as const satisfies Record<string, readonly [Extract<SymbolViewProps["name"], string>, AndroidSymbol]>;
 
 export type IconName = keyof typeof SYMBOLS;
