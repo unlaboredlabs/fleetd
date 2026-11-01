@@ -446,7 +446,7 @@ export type Attention = "loud" | "urgent";
 export type AutoApproved = {
   at: Timestamp;
   by: AutoApprovedBy;
-  /** The quiet line in the Navi's chat that told the person. */
+  /** The quiet line in the Navi's chat that told the person; absent in YOLO, which posts none. */
   messageId?: ChatMessageId;
   /** The checker's reason; absent in YOLO. */
   reason?: string;

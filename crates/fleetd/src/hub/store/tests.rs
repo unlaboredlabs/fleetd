@@ -1005,6 +1005,71 @@ fn plans_go_and_a_claim_keeps_its_other_keys() {
     assert_eq!(left, 0);
 }
 
+/// YOLO lines went from Navi chats: the ones already posted are deleted, a checker's line stays, and the YOLO log
+/// entries stay without a link to a deleted line. A chat's trailing YOLO lines stay, so its newest seq never goes
+/// back and no seq is handed out twice.
+#[test]
+fn stored_yolo_lines_go_and_their_log_entries_stay() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let at = MIGRATIONS
+        .iter()
+        .position(|m| m.sql.contains("Ran without asking you (YOLO):"))
+        .expect("the YOLO lines migration");
+    for m in &MIGRATIONS[..at] {
+        conn.execute_batch(m.sql).unwrap();
+    }
+    conn.execute_batch(
+        r##"INSERT INTO chat_messages (machine_id, project_id, seq, created_ms, data) VALUES
+             ('devbox', 'navi-sam', 1, 0, '{"author":"system","text":"Ran without asking you (YOLO): `search_tools` on `xaq`."}'),
+             ('devbox', 'navi-sam', 2, 0, '{"author":"system","text":"Let through without asking you: `send_message` on `mail`."}'),
+             ('devbox', 'navi-sam', 3, 0, '{"author":"human","text":"Ran without asking you (YOLO): what is this?"}'),
+             ('devbox', 'navi-bo', 1, 0, '{"author":"lead","text":"Looking."}'),
+             ('devbox', 'navi-bo', 2, 0, '{"author":"system","text":"Ran without asking you (YOLO): `search_tools` on `xaq`."}'),
+             ('devbox', 'navi-bo', 3, 0, '{"author":"system","text":"Ran without asking you (YOLO): `call_read_tool` on `xaq`."}');
+           INSERT INTO navi_auto_approved (machine_id, project_id, at_ms, data) VALUES
+             ('devbox', 'navi-sam', 0, '{"by":"yolo","what":"`search_tools` on `xaq`","messageId":"m1"}'),
+             ('devbox', 'navi-sam', 0, '{"by":"checker","what":"`send_message` on `mail`","messageId":"m2"}'),
+             ('devbox', 'navi-bo', 0, '{"by":"yolo","what":"`call_read_tool` on `xaq`","messageId":"m6"}');"##,
+    )
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[at].sql).unwrap();
+    let left: Vec<(String, i64)> = conn
+        .prepare("SELECT project_id, seq FROM chat_messages ORDER BY n")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    let left: Vec<(&str, i64)> = left.iter().map(|(p, s)| (p.as_str(), *s)).collect();
+    assert_eq!(
+        left,
+        [
+            ("navi-sam", 2),
+            ("navi-sam", 3),
+            ("navi-bo", 1),
+            ("navi-bo", 2),
+            ("navi-bo", 3)
+        ],
+        "navi-bo's trailing YOLO lines stay"
+    );
+    let log: Vec<String> = conn
+        .prepare("SELECT data FROM navi_auto_approved ORDER BY n")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(
+        log,
+        [
+            r#"{"by":"yolo","what":"`search_tools` on `xaq`"}"#,
+            r#"{"by":"checker","what":"`send_message` on `mail`","messageId":"m2"}"#,
+            r#"{"by":"yolo","what":"`call_read_tool` on `xaq`","messageId":"m6"}"#
+        ]
+    );
+}
+
 /// The 86 migrations from before one file each are, in order, the very SQL that older hubs ran, so an older hub's
 /// `user_version` still counts the same steps.
 #[test]

@@ -385,8 +385,8 @@ impl Approvals {
         }
     }
 
-    /// Runs an action nobody was asked about: answered on its node, then one quiet line in the Navi's chat and an
-    /// entry in its auto-approved log. A first visit's site is allowed from then on, as a person's approval allows it.
+    /// Runs an action nobody was asked about: answered on its node, then an entry in its auto-approved log (and, for a
+    /// checker's go, one quiet line in the Navi's chat). A first visit's site is allowed from then on, as a person's approval allows it.
     async fn go(
         &self,
         project: &ProjectRef,
