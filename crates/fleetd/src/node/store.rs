@@ -6,8 +6,8 @@ use std::sync::{Mutex, MutexGuard};
 
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::sessions::{
-    MachineEvent, MachineEventFrame, ProjectInfo, RunInfo, RunnerInfo, SessionSummary, ThreadItem,
-    ThreadMessage, WindowEntry,
+    MachineEvent, MachineEventFrame, PendingPermission, ProjectInfo, RunInfo, RunnerInfo,
+    SessionSummary, ThreadItem, ThreadMessage, WindowEntry,
 };
 use fleetd_contracts::time::SpanWire;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -119,6 +119,11 @@ pub struct SessionLocal {
     /// of its claude so a resume keeps them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system_prompt: Option<String>,
+    /// Prompts claude asked while another one was pending (tool calls made at once), oldest first. The summary shows
+    /// one prompt at a time: each of these becomes the pending one in turn, once the one before it is answered or
+    /// withdrawn.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub queued_prompts: Vec<PendingPermission>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

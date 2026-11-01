@@ -172,7 +172,7 @@ impl Runner for FakeRunner {
             queue: VecDeque::new(),
             playing: false,
             cut: false,
-            asking: false,
+            asking: 0,
             exit: None,
             out: Vec::new(),
         };
@@ -227,8 +227,8 @@ struct Process {
     playing: bool,
     /// The playing turn ends now, aborted.
     cut: bool,
-    /// A permission prompt waits for its answer.
-    asking: bool,
+    /// Permission prompts waiting for their answers.
+    asking: usize,
     exit: Option<i32>,
     /// Mapped events not yet sent.
     out: Vec<RunnerEvent>,
@@ -353,7 +353,7 @@ impl Process {
                 }
                 _ => {}
             },
-            Input::ControlResponse { .. } => self.asking = false,
+            Input::ControlResponse { .. } => self.asking = self.asking.saturating_sub(1),
         }
     }
 
@@ -374,10 +374,11 @@ impl Process {
         }
         let line: Line = serde_json::from_value(msg).expect("a stream-json line");
         let mapped = self.mapper.feed(line, &Now::system());
-        self.asking |= mapped
+        self.asking += mapped
             .events
             .iter()
-            .any(|e| matches!(e, RunnerEvent::PermissionRequest { .. }));
+            .filter(|e| matches!(e, RunnerEvent::PermissionRequest { .. }))
+            .count();
         self.out.extend(mapped.events);
         for reply in mapped.replies {
             self.claude(reply);
@@ -389,7 +390,8 @@ impl Process {
         let turn = self.turns[n % self.turns.len()].clone();
         self.playing = true;
         let mut clock = 0;
-        for (ms, mut msg) in turn.lines {
+        let mut lines = turn.lines.into_iter().peekable();
+        while let Some((ms, mut msg)) = lines.next() {
             if self.timed && ms > clock {
                 let wait = tokio::time::sleep(Duration::from_millis(ms - clock));
                 tokio::pin!(wait);
@@ -414,7 +416,11 @@ impl Process {
             }
             self.feed(msg);
             self.flush().await;
-            while self.asking && !self.stopped() {
+            // Prompts in a row are tool calls made at once: claude asks them all, then waits for every answer.
+            let asks_next = lines
+                .peek()
+                .is_some_and(|(_, next)| next["type"] == "control_request");
+            while self.asking > 0 && !asks_next && !self.stopped() {
                 self.take_command().await;
             }
         }
@@ -426,7 +432,7 @@ impl Process {
                 "terminal_reason": "aborted_tools",
             }));
         }
-        (self.playing, self.cut, self.asking) = (false, false, false);
+        (self.playing, self.cut, self.asking) = (false, false, 0);
         self.flush().await;
     }
 }
