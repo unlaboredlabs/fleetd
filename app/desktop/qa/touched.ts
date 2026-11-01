@@ -1,5 +1,5 @@
-// `node qa/touched.ts <path>...`: the QA screens (registry.ts ids, comma-separated, for QA_SCREENS) that the changed
-// paths (relative to app/desktop) show, so scripts/check.sh runs CI's own screens for them before a push: a screen that
+// `node qa/touched.ts <path>...`: the QA screens' tests (a regex for `pnpm qa --grep`) that the changed paths (relative
+// to app/desktop) show, so scripts/check.sh runs CI's own screens for them before a push: a screen that
 // starts asking the hub something a fixture has no answer for fails only when it renders.
 //
 // - src/renderer/<file>: every screen whose id starts with the screens/<dir> of a file that imports it, directly or
@@ -7,20 +7,25 @@
 //   change runs chat*, not the whole app; a change in shell/ runs shell's own screens. Settings' pages are one level
 //   finer: SettingsScreen imports each, and Projects.tsx (or a file it imports) runs settings.projects*. A page no
 //   screen is named for (kebab-case, its directory's name for an index.ts, or PAGES) runs every settings screen.
-// - fixtures/<group>/: the screens shown with the group's own fixtures, "<group>" and "<group>-<what>" (kit/group.ts).
+// - fixtures/<group>/: each screen's tests with the group's own fixtures, "<group>" and "<group>-<what>" (kit/group.ts).
 //   What a group's extend adds to a shared fixture, and fixtures/kit, aren't followed: they'd pick nearly every screen.
+//
+// --near picks only what's closest to the change, for scripts/check.sh to run when the whole pick is too many: the
+// fixture groups' screens, and each changed file's own screens: its settings page (or, for a file that isn't one, the
+// settings pages that import it), or the screens/<dir> it's in (not settings or shell, whose files show on all theirs).
 //
 // Prints nothing when no screen is picked; with --count, the number of tests (screen × fixture) instead.
 import fs from "node:fs";
 import path from "node:path";
-import { screens } from "./registry.ts";
+import { label, screens } from "./registry.ts";
 
 const APP = path.resolve(import.meta.dirname, "..");
 const RENDERER = path.join(APP, "src/renderer");
 const SETTINGS = path.join(RENDERER, "screens/settings/SettingsScreen.tsx");
 const args = process.argv.slice(2);
 const count = args.includes("--count");
-const changed = args.filter((a) => a !== "--count").map((p) => path.resolve(APP, p));
+const near = args.includes("--near");
+const changed = args.filter((a) => !a.startsWith("--")).map((p) => path.resolve(APP, p));
 
 const sources = fs
   .readdirSync(RENDERER, { withFileTypes: true, recursive: true })
@@ -63,6 +68,15 @@ for (const file of changed) {
   if (group !== undefined && group !== "kit") groups.add(group);
   if (!rel.startsWith("src/renderer/") || /\.test\.tsx?$/u.test(rel)) continue;
   const inScreen = dirOf(file) !== undefined && dirOf(file) !== "shell";
+  if (near) {
+    const pageIn = (f: string) => (dirOf(f) === "settings" ? pageOf(f) : undefined);
+    const own = pageIn(file);
+    const pages = own !== undefined ? [own] : /\.tsx?$/u.test(file) ? [...(importers.get(file) ?? [])].map(pageIn) : [];
+    for (const page of pages) if (page !== undefined) prefixes.add(page);
+    const dir = dirOf(file);
+    if (dir !== undefined && dir !== "settings" && dir !== "shell") prefixes.add(dir);
+    continue;
+  }
   const seen = new Set<string>();
   for (const queue: Array<[string, string | undefined]> = [[file, undefined]]; queue.length > 0; ) {
     const [at, from] = queue.pop() as [string, string | undefined];
@@ -83,12 +97,11 @@ for (const file of changed) {
   }
 }
 
-const picked = screens.filter(
-  (s) =>
-    [...prefixes].some((p) => s.id === p || s.id.startsWith(`${p}.`)) ||
-    s.fixtures.some((f) => [...groups].some((g) => f === g || f.startsWith(`${g}-`))),
-);
-const pickedIds = new Set(picked.map((s) => s.id));
-// QA_SCREENS runs every screen with a picked id, whichever picked it.
-if (count) console.log(screens.filter((s) => pickedIds.has(s.id)).reduce((n, s) => n + s.fixtures.length, 0));
-else if (pickedIds.size > 0) console.log([...pickedIds].join(","));
+const byId = (id: string) => [...prefixes].some((p) => id === p || id.startsWith(`${p}.`));
+const byFixture = (f: string) => [...groups].some((g) => f === g || f.startsWith(`${g}-`));
+/** Each picked test's title: screens.spec.ts names it "<label> · <fixture>". */
+const tests = screens.flatMap((s) => s.fixtures.filter((f) => byId(s.id) || byFixture(f)).map((f) => `${label(s)} · ${f}`));
+const escape = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+if (count) console.log(tests.length);
+// A --grep for exactly those tests: Playwright matches it against the file and the title, space-separated.
+else if (tests.length > 0) console.log(` (?:${[...new Set(tests)].map(escape).join("|")})$`);

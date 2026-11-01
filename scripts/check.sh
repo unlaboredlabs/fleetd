@@ -18,8 +18,9 @@
 # - reverts: on every call, whether HEAD would undo work already on origin/main (scripts/reverts.sh, the merge train's
 #   own check before review): a commit made on a fresh main while its files were an older tree's.
 # - qa: desktop-qa.yml's screens, all shards in one run. It takes long, so it runs only when named. With no check named,
-#   a change to app/desktop's renderer or fixtures runs the screens it shows (app/desktop/qa/touched.ts picks them):
-#   a screen that asks the hub something new fails there when one of its fixtures has no answer for it.
+#   a change to app/desktop's renderer or fixtures runs the screens it shows (app/desktop/qa/touched.ts picks them; past
+#   150 tests, only its own: its fixtures' and its page's or directory's): a screen that asks the hub something new
+#   fails there when one of its fixtures has no answer for it.
 #
 # It runs them all, then names each one that failed, with its command, and exits 1. It fetches origin/main first, and
 # doesn't install toolchains: cargo, node 24 and pnpm, and cargo-nextest if it's there (else cargo test).
@@ -193,8 +194,20 @@ fixtures() {
   [ "$(cat "$stamp" 2>/dev/null)" = "$key" ] && [ -e app/desktop/fixtures/typical.json ] && return
   pnpm -C app/desktop fixtures && echo "$key" >"$stamp"
 }
-# The screens a run of every screen takes too long for: past this many tests, it says to run them all instead.
+# Past this many tests, the screens a change reaches through imports are too many to run: only its own ones run.
 qa_most=150
+# touched <var> <arg>...: app/desktop/qa/touched.ts on the changed files, into <var>; a failure of its own fails qa.
+touched() {
+  local -n into=$1
+  shift
+  # shellcheck disable=SC2034 # a nameref: it sets the caller's <var>.
+  into=$(cd app/desktop && node qa/touched.ts "$@" "${touched[@]}") && return
+  failed+=("qa: node app/desktop/qa/touched.ts $*")
+  echo "==> FAILED qa: node app/desktop/qa/touched.ts $*"
+  return 1
+}
+# The picked screens' tests: pnpm -C app/desktop qa --grep <touched.ts's regex>.
+qa_picked() { pnpm -C app/desktop qa --grep "$grep"; }
 if [[ " ${named[*]} " == *" qa "* ]]; then
   step qa pnpm -C app/desktop install --frozen-lockfile
   step qa pnpm -C app/desktop exec install-electron
@@ -204,17 +217,21 @@ if [[ " ${named[*]} " == *" qa "* ]]; then
   step qa pnpm -C app/desktop qa
 elif [ ${#named[@]} -eq 0 ] && changed app/desktop/src/renderer app/desktop/fixtures; then
   mapfile -t touched < <(changed_files | sed -n 's|^app/desktop/||p')
-  screens=$(cd app/desktop && node qa/touched.ts "${touched[@]}")
-  tests=$(cd app/desktop && node qa/touched.ts --count "${touched[@]}")
-  if [ -z "$screens" ]; then
-    echo "==> qa: no screen shows the change; if one shows something new, scripts/check.sh qa runs them all"
-  elif [ "$tests" -gt $qa_most ]; then
-    echo "==> qa: the change shows on $tests screens' tests; scripts/check.sh qa runs every screen CI runs"
-  else
-    step qa pnpm -C app/desktop exec install-electron
-    step qa fixtures
-    step qa pnpm -C app/desktop qa:build
-    step qa env QA_SCREENS="$screens" pnpm -C app/desktop qa
+  tests='' grep=''
+  if touched tests --count && touched grep; then
+    if [ "$tests" -gt $qa_most ]; then
+      echo "==> qa: the change reaches $tests screens' tests, too many to run here: only its own run (scripts/check.sh qa runs every screen)"
+      touched tests --near --count && touched grep --near || grep=''
+    fi
+    if [ -z "$grep" ]; then
+      echo "==> qa: no screen shows the change; if one shows something new, scripts/check.sh qa runs them all"
+    else
+      echo "==> qa: $tests screens' tests"
+      step qa pnpm -C app/desktop exec install-electron
+      step qa fixtures
+      step qa pnpm -C app/desktop qa:build
+      step qa qa_picked
+    fi
   fi
 elif [ ${#named[@]} -eq 0 ] && changed app/desktop .github/workflows/desktop-qa.yml; then
   echo "==> qa: app/desktop changed; if a screen shows something new, scripts/check.sh qa runs the screens CI runs"
