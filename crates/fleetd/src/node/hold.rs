@@ -37,10 +37,39 @@ fn now_ms() -> u128 {
 
 /// Holds the node's agents for [`HOLD_LEASE_SECS`] from now.
 pub fn hold(home: &Path) -> std::io::Result<()> {
+    hold_until(home).map(|_| ())
+}
+
+/// [`hold`], answering when it ends.
+fn hold_until(home: &Path) -> std::io::Result<u128> {
     let path = hold_path(home);
     fs::create_dir_all(held_dir(&path))?;
     let until = now_ms() + u128::from(HOLD_LEASE_SECS) * 1000;
-    crate::update::replace_file(&path, until.to_string().as_bytes())
+    crate::update::replace_file(&path, until.to_string().as_bytes())?;
+    Ok(until)
+}
+
+/// Where a screen-settings restart (node/screens.rs) notes the end of the hold it last wrote.
+fn screens_mark(home: &Path) -> PathBuf {
+    hold_path(home).with_file_name("hold.screens")
+}
+
+/// [`hold`] for a screen-settings restart, noting the end it wrote, so [`release_screens`] can tell whether anyone else
+/// renewed the hold since.
+pub fn hold_for_screens(home: &Path) -> std::io::Result<()> {
+    let until = hold_until(home)?;
+    crate::update::replace_file(&screens_mark(home), until.to_string().as_bytes())
+}
+
+/// Ends a screen-settings restart's hold, unless someone renewed it since (an update's drain, `fleetd update`): their
+/// hold then stays theirs, and lapses or clears as theirs does.
+pub fn release_screens(home: &Path) {
+    let mark = screens_mark(home);
+    let ours = until(&mark);
+    let _ = fs::remove_file(&mark);
+    if ours.is_some() && until(&hold_path(home)) == ours {
+        clear(home);
+    }
 }
 
 /// The tool calls waiting on the hold now.
@@ -58,6 +87,7 @@ pub fn held(home: &Path) -> HashSet<String> {
 pub fn clear(home: &Path) {
     let path = hold_path(home);
     let _ = fs::remove_file(&path);
+    let _ = fs::remove_file(screens_mark(home));
     let _ = fs::remove_dir_all(held_dir(&path));
 }
 
@@ -111,6 +141,33 @@ fn wait_out(hold: &Path, input: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_screen_settings_release_leaves_an_updates_hold_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        // Its own hold, renewed by nobody else: released.
+        hold_for_screens(home).unwrap();
+        release_screens(home);
+        assert_eq!(until(&hold_path(home)), None);
+
+        // An update renewed the hold meanwhile (a later end): the update's hold stays.
+        hold_for_screens(home).unwrap();
+        std::thread::sleep(Duration::from_millis(5));
+        hold(home).unwrap();
+        let updates = until(&hold_path(home));
+        release_screens(home);
+        assert_eq!(
+            until(&hold_path(home)),
+            updates,
+            "the update's hold isn't released"
+        );
+        assert_eq!(until(&screens_mark(home)), None);
+
+        // A release with no hold of its own does nothing.
+        release_screens(home);
+        assert_eq!(until(&hold_path(home)), updates);
+    }
 
     #[test]
     fn a_hold_lasts_its_lease_and_clears() {

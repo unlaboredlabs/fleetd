@@ -354,7 +354,15 @@ async fn run_node(
             Box::new(move || router.as_ref().map_or(0, |r| r.count())),
             {
                 let sessions = node_sessions.clone();
-                Box::new(move || sessions.hold())
+                let home = home.to_path_buf();
+                Box::new(move || {
+                    if let Err(e) = hold::hold_for_screens(&home) {
+                        tracing::warn!(
+                            "screen settings: couldn't hold the agents' tool calls: {e}"
+                        );
+                    }
+                    sessions.mid_step()
+                })
             },
         );
     }

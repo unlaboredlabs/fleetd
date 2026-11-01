@@ -3,6 +3,7 @@
 //! screen services read node.json once, as the node starts, so the node restarts itself to apply a change
 //! ([`restart_wanted`]) once no screen is live here, holding its agents' tool calls first, as an update's restart does
 //! (node/hold.rs), so it finds them between steps. Until then a kind turned on says it waits for that restart.
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -48,13 +49,15 @@ impl Sections {
 
 static STARTED: Mutex<Option<Sections>> = Mutex::new(None);
 static LIVE: OnceLock<Box<dyn Fn() -> usize + Send + Sync>> = OnceLock::new();
-/// Holds the agents' tool calls that haven't started, for the hold's lease; how many sessions are still mid-step.
+/// Holds the agents' tool calls that haven't started, for the hold's lease (`hold::hold_for_screens`, which
+/// `hold::release_screens` lets go without touching an update's); how many sessions are still mid-step.
 static HOLD: OnceLock<Box<dyn Fn() -> u32 + Send + Sync>> = OnceLock::new();
 static WATCHING: AtomicBool = AtomicBool::new(false);
 static RESTART: tokio::sync::Notify = tokio::sync::Notify::const_new();
-/// Changes asked for, and changes whose answer is on the link: a restart never cuts off the answer that asked for it.
-static ASKED: AtomicU64 = AtomicU64::new(0);
-static FLUSHED: AtomicU64 = AtomicU64::new(0);
+/// Changes asked for whose answer isn't on the link yet: a restart waits for none to be left, so it never cuts off an
+/// answer, a second change's included.
+static PENDING: Mutex<BTreeSet<u64>> = Mutex::new(BTreeSet::new());
+static NEXT: AtomicU64 = AtomicU64::new(0);
 static ANSWERED: tokio::sync::Notify = tokio::sync::Notify::const_new();
 /// How long a restart waits for its answer to reach the link, at most.
 const ANSWER_WAIT: Duration = Duration::from_secs(60);
@@ -168,18 +171,26 @@ fn gated(checks: &mut [HostCheck], started: &Sections, now: &Sections) {
     }
 }
 
-/// The answer to every change asked for so far is on the link (node/link.rs, once it is written).
-pub fn answered() {
-    FLUSHED.store(ASKED.load(Ordering::SeqCst), Ordering::SeqCst);
+/// A change of the screen settings is asked for (node/link.rs, before it runs): its answer is pending until
+/// [`answered`] says it is on the link.
+pub fn ask() -> u64 {
+    let ask = NEXT.fetch_add(1, Ordering::SeqCst) + 1;
+    lock(&PENDING).insert(ask);
+    ask
+}
+
+/// The answer to change `ask` is on the link (node/link.rs, once it is written).
+pub fn answered(ask: u64) {
+    lock(&PENDING).remove(&ask);
     ANSWERED.notify_waiters();
 }
 
-/// Waits until the answer to change `asked` is on the link, or `at_most` passed.
-async fn wait_answered(asked: u64, at_most: Duration) {
+/// Waits until no change's answer is pending, or `at_most` passed.
+async fn wait_answered(at_most: Duration) {
     let _ = tokio::time::timeout(at_most, async {
         loop {
             let next = ANSWERED.notified();
-            if FLUSHED.load(Ordering::SeqCst) >= asked {
+            if lock(&PENDING).is_empty() {
                 return;
             }
             next.await;
@@ -280,8 +291,7 @@ pub fn apply(home: &Path, settings: &ScreenSettings) -> Result<String, String> {
         std::fs::rename(&next, &file).map_err(|e| format!("couldn't write node.json: {e}"))?;
     }
     super::hosts::forget();
-    let asked = ASKED.fetch_add(1, Ordering::SeqCst) + 1;
-    Ok(schedule(home, asked))
+    Ok(schedule(home))
 }
 
 /// Whether the services run other settings than node.json has now.
@@ -302,8 +312,8 @@ fn live() -> usize {
 }
 
 /// Starts the wait for the restart that applies node.json, unless one waits already; what the answer says of it. The
-/// restart comes only once the answer to change `asked` is on the link.
-fn schedule(home: &Path, asked: u64) -> String {
+/// restart comes only once no change's answer is pending: this one's, and any asked for meanwhile.
+fn schedule(home: &Path) -> String {
     if !differs(home) {
         return "Saved.".to_owned();
     }
@@ -320,12 +330,12 @@ fn schedule(home: &Path, asked: u64) -> String {
     if !WATCHING.swap(true, Ordering::SeqCst) {
         let home = home.to_path_buf();
         tokio::spawn(async move {
-            wait_answered(asked, ANSWER_WAIT).await;
+            wait_answered(ANSWER_WAIT).await;
             let restart = when_idle(
                 || differs(&home),
                 live,
                 || HOLD.get().map_or(0, |f| f()),
-                || super::hold::clear(&home),
+                || super::hold::release_screens(&home),
                 Pace {
                     look: LOOK,
                     drain_look: DRAIN_LOOK,
@@ -334,6 +344,8 @@ fn schedule(home: &Path, asked: u64) -> String {
             )
             .await;
             if restart {
+                // A change asked for while this waited: its answer goes out before the node does.
+                wait_answered(ANSWER_WAIT).await;
                 tracing::info!("screen settings changed: restarting the node to apply them");
                 RESTART.notify_one();
             }
@@ -341,7 +353,8 @@ fn schedule(home: &Path, asked: u64) -> String {
         });
     }
     match n {
-        0 => "Saved. The node restarts now to apply it.".to_owned(),
+        0 => "Saved. The node restarts to apply it once its agents finish the step they're on."
+            .to_owned(),
         1 => "Saved. It applies once the screen live here ends, when the node restarts.".to_owned(),
         n => {
             format!("Saved. It applies once the {n} screens live here end, when the node restarts.")
@@ -443,22 +456,30 @@ mod tests {
         assert!(checks.iter().all(|c| c.ready == c.off.is_none()));
     }
 
-    /// The restart waits for the answer that asked for it to be on the link, so the hub hears it before the node goes.
+    /// The restart waits for every answer asked for to be on the link, a second change's too, so the hub hears each
+    /// before the node goes.
     #[tokio::test]
-    async fn a_restart_waits_for_its_answer_to_be_on_the_link() {
-        let asked = ASKED.fetch_add(1, Ordering::SeqCst) + 1;
-        let waiting = tokio::spawn(wait_answered(asked, Duration::from_secs(30)));
+    async fn a_restart_waits_for_every_answer_to_be_on_the_link() {
+        let first = ask();
+        let second = ask();
+        let waiting = tokio::spawn(wait_answered(Duration::from_secs(30)));
         tokio::time::sleep(Duration::from_millis(50)).await;
-        assert!(!waiting.is_finished(), "the answer isn't written yet");
-        answered();
+        assert!(!waiting.is_finished(), "neither answer is written yet");
+        answered(first);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(
+            !waiting.is_finished(),
+            "the second change's answer isn't written yet"
+        );
+        answered(second);
         tokio::time::timeout(Duration::from_secs(5), waiting)
             .await
-            .expect("released once it is")
+            .expect("released once both are")
             .unwrap();
-        // One already written doesn't wait.
+        // None pending: no wait.
         tokio::time::timeout(
             Duration::from_secs(5),
-            wait_answered(asked, Duration::from_secs(30)),
+            wait_answered(Duration::from_secs(30)),
         )
         .await
         .unwrap();
