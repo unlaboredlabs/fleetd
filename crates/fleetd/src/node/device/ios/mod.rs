@@ -185,6 +185,21 @@ fn xcode() -> Xcode {
     xcode
 }
 
+/// Installs the newest Xcode from a terminal on the Mac, an SSH one too: xcodes asks for the Apple ID it downloads
+/// with. The App Store's page ([`XCODE_PAGE`]) is the way at the Mac itself.
+pub const XCODE_FIX: &str =
+    "brew install xcodesorg/made/xcodes && xcodes install --latest --select";
+pub const XCODE_PAGE: &str = "https://apps.apple.com/app/xcode/id497799835";
+
+/// A Mac without Xcode, and the two ways to install it: the command, in any terminal on the Mac (over SSH too), or
+/// the App Store at the Mac.
+pub fn no_xcode() -> String {
+    format!(
+        "no Xcode: install it with the command (on this Mac, over SSH too; it asks for your Apple ID), or at the Mac \
+         from {XCODE_PAGE}"
+    )
+}
+
 /// [`xcode`] from its facts: simctl's runtimes (or what it said), the developer directory selected, and whether
 /// Xcode is in /Applications.
 pub fn xcode_from(
@@ -202,7 +217,7 @@ pub fn xcode_from(
                         .to_owned(),
                     Some("sudo xcode-select --switch /Applications/Xcode.app".to_owned()),
                 ),
-                (_, false) => ("no Xcode: install it from the App Store".to_owned(), None),
+                (_, false) => (no_xcode(), Some(XCODE_FIX.to_owned())),
                 (false, true) => (
                     format!(
                         "Xcode's simctl doesn't run: {}",

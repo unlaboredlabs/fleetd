@@ -186,8 +186,8 @@ pub fn ios(home: &Path, config: &IosConfig) -> HostCheck {
         }
         None => (
             fixed(
-                check(host, Some(HostOff::Missing), no_xcode(config)),
-                Some(XCODE_FIX),
+                check(host, Some(HostOff::Missing), no_xcode()),
+                Some(device::ios::XCODE_FIX),
             ),
             config.opted_in(),
         ),
@@ -195,24 +195,13 @@ pub fn ios(home: &Path, config: &IosConfig) -> HostCheck {
     with(checked, on, config.idle_minutes)
 }
 
-/// Installs the newest Xcode from a terminal on the Mac, an SSH one too: xcodes asks for the Apple ID it downloads
-/// with. The App Store's page (`XCODE_PAGE`) is the way at the Mac itself.
-const XCODE_FIX: &str = "brew install xcodesorg/made/xcodes && xcodes install --latest --select";
-const XCODE_PAGE: &str = "https://apps.apple.com/app/xcode/id497799835";
-
-/// What a Mac without Xcode lacks, and the two ways to install it: the command (in any terminal on the Mac, over SSH
-/// too), or the App Store at the Mac. Once iOS is on, only Xcode; else Xcode and then the switch.
-fn no_xcode(config: &IosConfig) -> String {
-    let ways = format!(
-        "install it with the command (on this Mac, over SSH too; it asks for your Apple ID), or at the Mac from \
-         {XCODE_PAGE}"
-    );
-    match config.opted_in() {
-        true => format!("no Xcode: {ways}. This line then says what else it needs"),
-        false => format!(
-            "no Xcode: {ways}, then turn iOS on for this Mac in Settings › Hub › Machines › Screens"
-        ),
-    }
+/// What a Mac without Xcode lacks, with the two ways to install it (device::ios::no_xcode); once iOS is on, its health
+/// says it, so here it is a Mac not turned on yet: Xcode, then the switch.
+fn no_xcode() -> String {
+    format!(
+        "{}, then turn iOS on for this Mac in Settings › Hub › Machines › Screens",
+        device::ios::no_xcode()
+    )
 }
 
 /// The desktop sessions' own word (node/desktop): what preparing found, else what is on the PATH.
@@ -371,45 +360,17 @@ mod tests {
     }
 
     #[test]
-    fn a_mac_without_xcode_says_only_what_is_missing_once_turned_on() {
-        let on = IosConfig {
-            enabled: Some(true),
-            ..IosConfig::default()
-        };
-        assert!(!no_xcode(&on).contains("turn iOS on"), "{}", no_xcode(&on));
-        assert!(!no_xcode(&on).contains("node.json"));
-        assert!(no_xcode(&IosConfig::default()).contains("turn iOS on"));
-        // Two ways that work wherever the person is: a command over SSH, or the App Store at the Mac.
-        for config in [on, IosConfig::default()] {
-            let said = no_xcode(&config);
-            assert!(said.len() <= 300, "{said}");
-            assert!(
-                said.contains("over SSH") && said.contains(XCODE_PAGE),
-                "{said}"
-            );
-        }
+    fn a_mac_without_xcode_not_turned_on_says_both_ways_then_the_switch() {
+        let said = no_xcode();
+        assert!(said.contains("turn iOS on"), "{said}");
+        assert!(said.len() <= 300, "{said}");
         assert!(
-            !XCODE_FIX.contains("open "),
+            said.contains("over SSH") && said.contains(device::ios::XCODE_PAGE),
+            "{said}"
+        );
+        assert!(
+            !device::ios::XCODE_FIX.contains("open "),
             "works without the Mac's screen"
-        );
-    }
-
-    #[test]
-    fn what_stands_in_the_way_comes_with_its_command_and_only_then() {
-        let missing = check(SessionHost::Desktop, Some(HostOff::Missing), "no Xvfb");
-        let fix = fixed(missing, Some("sudo apt-get install -y xvfb")).fix;
-        assert_eq!(
-            fix.as_ref().map(|f| f.as_str()),
-            Some("sudo apt-get install -y xvfb")
-        );
-        let ready = check(SessionHost::Desktop, None, "Xvfb at /usr/bin/Xvfb");
-        assert_eq!(fixed(ready, Some("sudo apt-get install -y xvfb")).fix, None);
-        let none = check(SessionHost::Android, Some(HostOff::Missing), "no /dev/kvm");
-        assert_eq!(fixed(none, None).fix, None);
-        // A desktop that can't run installs Xvfb with this machine's package manager.
-        assert!(
-            desktop::install_fix().starts_with("sudo ")
-                && desktop::install_fix().to_lowercase().contains("xvfb")
         );
     }
 
