@@ -195,18 +195,23 @@ pub fn ios(home: &Path, config: &IosConfig) -> HostCheck {
     with(checked, on, config.idle_minutes)
 }
 
-/// Opens Xcode's page in the App Store, on the Mac it runs on.
-const XCODE_FIX: &str = "open macappstore://apps.apple.com/app/id497799835";
+/// Installs the newest Xcode from a terminal on the Mac, an SSH one too: xcodes asks for the Apple ID it downloads
+/// with. The App Store's page (`XCODE_PAGE`) is the way at the Mac itself.
+const XCODE_FIX: &str = "brew install xcodesorg/made/xcodes && xcodes install --latest --select";
+const XCODE_PAGE: &str = "https://apps.apple.com/app/xcode/id497799835";
 
-/// What a Mac without Xcode lacks: only Xcode once iOS is turned on, else Xcode and then the switch.
-fn no_xcode(config: &IosConfig) -> &'static str {
+/// What a Mac without Xcode lacks, and the two ways to install it: the command (in any terminal on the Mac, over SSH
+/// too), or the App Store at the Mac. Once iOS is on, only Xcode; else Xcode and then the switch.
+fn no_xcode(config: &IosConfig) -> String {
+    let ways = format!(
+        "install it with the command (on this Mac, over SSH too; it asks for your Apple ID), or at the Mac from \
+         {XCODE_PAGE}"
+    );
     match config.opted_in() {
-        true => {
-            "no Xcode: install it, with an iOS simulator runtime (Xcode > Settings > Components)"
-        }
-        false => {
-            "no Xcode: install it, then turn iOS on for this Mac in Settings › Hub › Machines › Screens"
-        }
+        true => format!("no Xcode: {ways}. This line then says what else it needs"),
+        false => format!(
+            "no Xcode: {ways}, then turn iOS on for this Mac in Settings › Hub › Machines › Screens"
+        ),
     }
 }
 
@@ -374,6 +379,19 @@ mod tests {
         assert!(!no_xcode(&on).contains("turn iOS on"), "{}", no_xcode(&on));
         assert!(!no_xcode(&on).contains("node.json"));
         assert!(no_xcode(&IosConfig::default()).contains("turn iOS on"));
+        // Two ways that work wherever the person is: a command over SSH, or the App Store at the Mac.
+        for config in [on, IosConfig::default()] {
+            let said = no_xcode(&config);
+            assert!(said.len() <= 300, "{said}");
+            assert!(
+                said.contains("over SSH") && said.contains(XCODE_PAGE),
+                "{said}"
+            );
+        }
+        assert!(
+            !XCODE_FIX.contains("open "),
+            "works without the Mac's screen"
+        );
     }
 
     #[test]

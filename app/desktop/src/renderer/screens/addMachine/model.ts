@@ -111,11 +111,31 @@ export const joinSteps = (join: JoinHere, online: boolean): ReadonlyArray<SetupS
 };
 
 /**
- * The command that lets the hub reach a host it couldn't read over SSH, as the hub's fix names it: `ssh-copy-id <host>`,
- * run on the hub's machine. Undefined for any other failure.
+ * Why the hub couldn't read a host over SSH, from what ssh said (the hub's message ends with its stderr), with what to
+ * do on the hub's machine: `ssh-copy-id` where the host refused the hub's key, `ssh <host> true` to accept a host key
+ * the hub doesn't know yet, and where the host didn't answer at all, what to check before the same `ssh <host> true`.
+ * Undefined for any other failure: the hub's own words say it.
  */
-export const sshFix = (host: string, fix: string | undefined): string | undefined =>
-  fix?.includes(`ssh-copy-id ${host}`) === true ? `ssh-copy-id ${host}` : undefined;
+export type SshProblem = { readonly kind: "key" | "host-key" | "unreachable"; readonly command: string; readonly note: string };
+
+const UNREACHABLE = /could not resolve hostname|name or service not known|connection refused|connection timed out|operation timed out|no route to host|network is unreachable|connection closed by remote host|host is down/iu;
+
+export const sshProblem = (host: string, message: string): SshProblem | undefined => {
+  if (/permission denied|too many authentication failures/iu.test(message)) {
+    return { kind: "key", command: `ssh-copy-id ${host}`, note: `It asks for ${host}'s password once, then the hub logs in with its key. Then Try again.` };
+  }
+  if (/host key verification failed|remote host identification has changed/iu.test(message)) {
+    return { kind: "host-key", command: `ssh ${host} true`, note: `It shows ${host}'s host key: check it, answer yes, then Try again.` };
+  }
+  if (UNREACHABLE.test(message)) {
+    return {
+      kind: "unreachable",
+      command: `ssh ${host} true`,
+      note: `${host} didn't answer: check it is on and awake, on the hub's network or tailnet, and has SSH on (a Mac: System Settings › General › Sharing › Remote Login). This tries it again from the hub; then Try again.`,
+    };
+  }
+  return undefined;
+};
 
 /** Why a name can't be a machine id, or undefined when it can. */
 export const machineIdProblem = (name: string): string | undefined => {

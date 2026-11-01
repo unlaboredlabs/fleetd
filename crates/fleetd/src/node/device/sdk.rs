@@ -208,6 +208,10 @@ pub fn kvm() -> Result<(), (String, Option<String>)> {
     kvm_at(Path::new("/dev/kvm"), Path::new("/etc/group"))
 }
 
+/// Restarts the user's systemd manager, and with it fleetd's node: a process only takes a new group when it starts
+/// from a login that has it, and a restarted node is still the old manager's child.
+const RESTART_MANAGER: &str = "sudo systemctl restart user@$(id -u).service";
+
 fn kvm_at(dev: &Path, group_file: &Path) -> Result<(), (String, Option<String>)> {
     if !dev.exists() {
         return Err((
@@ -235,18 +239,20 @@ fn kvm_at(dev: &Path, group_file: &Path) -> Result<(), (String, Option<String>)>
     if joined {
         return Err((
             format!(
-                "{user} is in group kvm, but fleetd's node started before that: restart the node (or log in \
-                 again) so it can use /dev/kvm."
+                "{user} is in group kvm, but fleetd's node started before that, so it can't open /dev/kvm yet: it \
+                 gets the group once {user}'s systemd user manager, which it runs under, restarts (the command \
+                 does that, as a reboot does). Its agents resume by themselves."
             ),
-            None,
+            Some(RESTART_MANAGER.to_owned()),
         ));
     }
     Err((
         format!(
-            "{user} can't open /dev/kvm read-write: add them to group kvm, then restart fleetd's node (an ACL set \
-             with setfacl is lost whenever udev makes /dev/kvm again)."
+            "{user} can't open /dev/kvm read-write. The command adds them to group kvm, then restarts {user}'s \
+             systemd user manager, which fleetd's node runs under, so the node gets the group (a node restart alone \
+             doesn't). Its agents resume by themselves."
         ),
-        Some(format!("sudo usermod -aG kvm {user}")),
+        Some(format!("sudo usermod -aG kvm {user} && {RESTART_MANAGER}")),
     ))
 }
 
@@ -457,13 +463,22 @@ mod tests {
         let group = dir.path().join("group");
         std::fs::write(&group, "kvm:x:992:\n").unwrap();
         let (why, fix) = kvm_at(&dev, &group).unwrap_err();
-        assert!(why.contains("add them to group kvm"), "{why}");
-        assert_eq!(fix, Some(format!("sudo usermod -aG kvm {user}")));
+        assert!(why.contains("adds them to group kvm"), "{why}");
+        // The group takes only once the node starts again under a manager that has it: the command does both.
+        assert_eq!(
+            fix,
+            Some(format!(
+                "sudo usermod -aG kvm {user} && sudo systemctl restart user@$(id -u).service"
+            ))
+        );
 
         std::fs::write(&group, format!("kvm:x:992:other,{user}\n")).unwrap();
         let (why, fix) = kvm_at(&dev, &group).unwrap_err();
-        assert!(why.contains("restart the node"), "{why}");
-        assert_eq!(fix, None);
+        assert!(why.contains("started before that"), "{why}");
+        assert_eq!(
+            fix.as_deref(),
+            Some("sudo systemctl restart user@$(id -u).service")
+        );
     }
 
     #[test]

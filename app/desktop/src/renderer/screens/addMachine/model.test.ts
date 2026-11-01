@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MachineAddRun, MachineHost } from "../../../shared/contracts";
-import { hereLine, hereOf, hostLine, joinSteps, lineState, lineWords, machineIdProblem, pickable, resumable, shortOutput, sshFix } from "./model";
+import { hereLine, hereOf, hostLine, joinSteps, lineState, lineWords, machineIdProblem, pickable, resumable, shortOutput, sshProblem } from "./model";
 
 const hub: MachineHost = { machineId: "devbox", source: "hub", joined: true };
 const builder: MachineHost = { machineId: "builder-1", host: "builder-1", source: "ssh_config", joined: false };
@@ -94,10 +94,22 @@ describe("Add machine's model", () => {
     expect(lineWords("joined", "laptop")).toBe("laptop joined.");
   });
 
-  it("gives a host the hub can't log in to the command that lets it, and nothing for another failure", () => {
-    const fix = "make `ssh builder-1 true` work without a password (ssh-copy-id builder-1), then run Add again";
-    expect(sshFix("builder-1", fix)).toBe("ssh-copy-id builder-1");
-    expect(sshFix("builder-1", "install claude on it")).toBeUndefined();
-    expect(sshFix("builder-1", undefined)).toBeUndefined();
+  it("tells a host that refused the hub's key from one that didn't answer, each with what to run on the hub", () => {
+    const said = (stderr: string) => `cannot read builder-1 over SSH (exit 255): ${stderr}`;
+    expect(sshProblem("builder-1", said("builder-1: Permission denied (publickey,password)."))).toMatchObject({ kind: "key", command: "ssh-copy-id builder-1" });
+    expect(sshProblem("builder-1", said("Host key verification failed."))).toMatchObject({ kind: "host-key", command: "ssh builder-1 true" });
+    // Down, asleep or misnamed: no key to copy, but what to check.
+    for (const stderr of [
+      "ssh: Could not resolve hostname builder-1: Name or service not known",
+      "ssh: connect to host builder-1 port 22: Connection timed out",
+      "ssh: connect to host builder-1 port 22: Connection refused",
+      "ssh: connect to host 100.64.0.7 port 22: No route to host",
+    ]) {
+      const problem = sshProblem("builder-1", said(stderr));
+      expect(problem?.kind).toBe("unreachable");
+      expect(problem?.command).toBe("ssh builder-1 true");
+      expect(problem?.note).toContain("check it is on and awake");
+    }
+    expect(sshProblem("builder-1", "claude is not installed on builder-1")).toBeUndefined();
   });
 });

@@ -343,8 +343,10 @@ screen's emulator by its serial. Run agents that mustn't see each other's device
 ### On each machine {#android-setup}
 
 Android screens need Linux on x86_64 with KVM: the user running the node must be able to open `/dev/kvm` read-write.
-The doctor's `android` check says when it can't, and the fix (usually `sudo usermod -aG kvm $USER`, then a restart of
-the node; an ACL set with `setfacl` is lost whenever udev makes `/dev/kvm` again). A machine runs them only while that
+The doctor's `android` check says when it can't, and the fix (usually
+`sudo usermod -aG kvm $USER && sudo systemctl restart user@$(id -u).service`: the node only gets the group once the
+user's systemd manager it runs under restarts, and its agents resume by themselves; an ACL set with `setfacl` is lost
+whenever udev makes `/dev/kvm` again). A machine runs them only while that
 check passes, and lists `session_android` to the hub.
 
 Nothing is installed until a person opts a machine in: Android's switch in [Settings](#settings), or
@@ -432,7 +434,8 @@ from the emulator's own machine.
 
 ### On each Mac {#ios-setup}
 
-iOS screens need macOS with Xcode, an iOS simulator runtime (Xcode > Settings > Components, or
+iOS screens need macOS with Xcode (from the App Store at the Mac, or over SSH with
+`brew install xcodesorg/made/xcodes && xcodes install --latest --select`, which asks for an Apple ID), an iOS simulator runtime (Xcode > Settings > Components, or
 `xcodebuild -downloadPlatform iOS`), and Node.js 22.12 or later for agent-device. The doctor's `ios` check shows on
 every Mac with Xcode. It fails with the fix when something is missing (`sudo xcode-select --switch
 /Applications/Xcode.app` when only the command line tools are selected). A Mac lists `session_ios` to the hub only once
