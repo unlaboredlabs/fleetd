@@ -279,19 +279,18 @@ async fn a_login_filled_from_1password_never_reaches_the_agent_the_recording_or_
     open(&mut driver, &page, &site).await;
 
     let user = fill(&rig, USER_REF, "#user", Some(false)).await;
+    // A refused fill answers an error, not a result: the assert prints it rather than panicking on the missing message.
     assert!(
         user["result"]["message"]
             .as_str()
-            .unwrap()
-            .starts_with("Filled #user from op://Team/Shop/username."),
+            .is_some_and(|m| m.starts_with("Filled #user from op://Team/Shop/username.")),
         "{user}"
     );
     let password = fill(&rig, PASSWORD_REF, "#pw", None).await;
     assert!(
         password["result"]["message"]
             .as_str()
-            .unwrap()
-            .contains("and submitted its form"),
+            .is_some_and(|m| m.contains("and submitted its form")),
         "{password}"
     );
     heard.push_str(&format!("{user}{password}"));

@@ -55,11 +55,21 @@ export async function selfHealing(f: Factory) {
   const from = await f.cursor();
   const sent = f.lead("message_agent", { taskId, message: "Carry on.\nlab-run: git log -1 --format=%H && cat REPORT.md" });
   check(sent.code === 0, `message_agent: ${sent.text}`);
-  await f.waitEvent(`${taskId}'s resumed turn ends`, 120_000, {
-    cursor: from,
-    types: ["thread.completed", "thread.failed", "thread.interrupted"],
-    match: (e) => e.threadId === threadId,
-  });
+  await f
+    .waitEvent(`${taskId}'s resumed turn ends`, 120_000, {
+      cursor: from,
+      types: ["thread.completed", "thread.failed", "thread.interrupted"],
+      match: (e) => e.threadId === threadId,
+    })
+    .catch(async (error: unknown) => {
+      // The hub logs nothing on the way to a resume: what it holds for the task says where the resume stopped (W274;
+      // five runs on one runner image timed out here with no other trace).
+      const t = await f.task(taskId);
+      const events = (await f.eventsSince(from)).filter((e) => e.threadId === threadId || e.data?.taskId === taskId);
+      const held = JSON.stringify({ state: t.state, queuedReason: t.queuedReason, recovery: t.recovery, result: t.result });
+      const seen = events.map((e) => `${e.at} ${e.type}: ${e.summary}`).join("\n  ");
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${taskId} now: ${held}\nits events since the message:\n  ${seen}`);
+    });
   check(fs.existsSync(wt), `the worktree is back at the same path ${wt}`);
   check(git(wt, "rev-parse", "HEAD") === pushed, `it is at the pushed ${pushed.slice(0, 7)}`);
   check(fs.readFileSync(`${wt}/REPORT.md`, "utf8") === "apples: 3\n", "the pushed report is in it");
