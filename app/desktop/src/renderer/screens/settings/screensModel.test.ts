@@ -1,7 +1,7 @@
 // Hub › Machines › Screens' words: a kind's switch and its line from the machine's node, and the choices.
 import { describe, expect, it } from "vitest";
 import type { MachineRolesEntry } from "../../../shared/contracts";
-import { daysChoices, idleChoices, idleOf, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
+import { daysChoices, fixOf, idleChoices, idleOf, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
 
 const devbox: MachineRolesEntry = {
   machineId: "devbox",
@@ -46,6 +46,22 @@ describe("a kind's switch", () => {
     expect(nodeWait({ ...devbox, screenSettings: false })).toBe("old");
     expect(nodeWait({ ...restarting, online: false })).toBeNull();
     expect(nodeWait(devbox)).toBeNull();
+  });
+});
+
+describe("a kind that can't run", () => {
+  it("comes with the command that fixes it, only where something is missing or failed", () => {
+    const missing = { host: "desktop", ready: false, detail: "no docker, podman or Xvfb", off: "missing", on: true, fix: "sudo apt-get install -y xvfb" } as const;
+    expect(fixOf(devbox, missing)).toBe("sudo apt-get install -y xvfb");
+    expect(fixOf(devbox, { ...missing, off: "failed" })).toBe("sudo apt-get install -y xvfb");
+    // Off, installing, restarting or unsupported: the switch or the wait is the answer, not a command.
+    expect(fixOf(devbox, { ...missing, off: "off" })).toBeNull();
+    expect(fixOf(devbox, { ...missing, off: "installing" })).toBeNull();
+    expect(fixOf(devbox, { ...missing, off: "unsupported" })).toBeNull();
+    expect(fixOf(devbox, { ...missing, ready: true })).toBeNull();
+    expect(fixOf({ ...devbox, online: false }, missing)).toBeNull();
+    // A node before fixes says none.
+    expect(fixOf(devbox, { host: "desktop", ready: false, detail: "no Xvfb", off: "missing" })).toBeNull();
   });
 });
 

@@ -96,6 +96,7 @@ pub(super) fn report_hosts(hub: &Hub, m: &str, ready: &[SessionHost]) {
                 off: None,
                 on: None,
                 idle_minutes: None,
+                fix: None,
             })
             .collect(),
     ));
@@ -693,6 +694,7 @@ fn runner(m: &str, sessions: bool, ready: bool, live: i64, max: i64) -> Runner {
             off: None,
             on: None,
             idle_minutes: None,
+            fix: None,
         }])),
         hosts_others: true,
         others_note: None,

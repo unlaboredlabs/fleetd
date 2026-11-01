@@ -47,6 +47,10 @@ pub struct DoctorFix {
     pub label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// Where `command` runs: "hub" (the hub's machine) or "machine" (the check's machine). Set by the entry it is
+    /// in, unless a fix says otherwise ([`on_hub`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,7 +77,24 @@ fn manual(label: &str, command: Option<String>) -> DoctorFix {
         kind: "manual".into(),
         label: clip(label, 200),
         command,
+        on: None,
     }
+}
+
+/// A fix whose command runs on the hub's machine, though its check is a machine's.
+fn on_hub(mut fix: DoctorFix) -> DoctorFix {
+    fix.on = Some("hub".into());
+    fix
+}
+
+/// The fix with where its command runs: where the fix says, else where its check is.
+fn placed(fix: Option<DoctorFix>, scope: &str) -> Option<DoctorFix> {
+    fix.map(|mut f| {
+        if f.command.is_some() && f.on.is_none() {
+            f.on = Some(scope.into());
+        }
+        f
+    })
 }
 
 fn hub_entry(name: &str, status: DoctorStatus, message: &str, fix: Option<DoctorFix>) -> Entry {
@@ -84,7 +105,7 @@ fn hub_entry(name: &str, status: DoctorStatus, message: &str, fix: Option<Doctor
             machine_id: None,
             status,
             message: clip(message, 500),
-            fix,
+            fix: placed(fix, "hub"),
         },
     }
 }
@@ -103,7 +124,7 @@ fn machine_entry(
             machine_id: Some(machine_id.to_string()),
             status,
             message: clip(message, 500),
-            fix,
+            fix: placed(fix, "machine"),
         },
     }
 }
@@ -1002,21 +1023,20 @@ pub fn commit_identity(
             Some("git config --global user.email '<id>+<user>@users.noreply.github.com'".into()),
         ),
         Some(_) => match config.machines.get(machine_id) {
-            Some(m) => manual(
+            Some(m) => on_hub(manual(
                 &format!(
                     "Run machine setup again from the hub to write the hub's identity into {machine_id}'s service"
                 ),
                 Some(m.add_command()),
-            ),
+            )),
             // Joined by itself (fleetd pair --worker): the join command carries the identity.
-            None => manual(
+            None => on_hub(manual(
                 &format!(
-                    "Join {machine_id} again; the command the hub prints carries the identity"
+                    "Join {machine_id} again: run this on the hub, then the line it prints on {machine_id}; it carries \
+                     the identity"
                 ),
-                Some(format!(
-                    "fleetd pair --worker {machine_id}, then run what it prints on {machine_id}"
-                )),
-            ),
+                Some(format!("fleetd pair --worker {machine_id}")),
+            )),
         },
     };
     let Some(email) = &probe.git_email else {
@@ -1281,6 +1301,48 @@ pub fn fork_behind(machine_id: &str, bases: &[(String, WorktreeBase)]) -> Option
 mod tests {
     use super::*;
     use crate::cli::setup::machine_plan::CLAUDE_INSTALL;
+
+    #[test]
+    fn a_fix_says_where_its_command_runs_and_the_identitys_runs_on_the_hub() {
+        let config: HubConfig = serde_json::from_value(serde_json::json!({
+            "gitIdentity": { "name": "ada", "email": "1+ada@users.noreply.github.com" },
+            "machines": { "builder-1": { "sshHost": "builder-1", "platform": "linux", "uid": 1000 } },
+        }))
+        .unwrap();
+        let other = HostProbe {
+            git_email: Some("someone@else.example".into()),
+            git_email_from: None,
+        };
+        // Set up over SSH: machine setup runs again on the hub.
+        let fix = commit_identity("builder-1", Ok(&other), &config)
+            .check
+            .fix
+            .unwrap();
+        assert_eq!(fix.command.as_deref(), Some("fleetd machine add builder-1"));
+        assert_eq!(fix.on.as_deref(), Some("hub"));
+        // Joined with a code: the hub makes the line, one command.
+        let fix = commit_identity("laptop", Ok(&other), &config)
+            .check
+            .fix
+            .unwrap();
+        assert_eq!(fix.command.as_deref(), Some("fleetd pair --worker laptop"));
+        assert_eq!(fix.on.as_deref(), Some("hub"));
+        // Without the hub's identity, git's config on the machine itself.
+        let unset = HostProbe {
+            git_email: None,
+            git_email_from: None,
+        };
+        let fix = commit_identity("laptop", Ok(&unset), &HubConfig::default())
+            .check
+            .fix
+            .unwrap();
+        assert_eq!(fix.on.as_deref(), Some("machine"));
+        // A hub check's command runs on the hub; a fix with no command runs nowhere.
+        let hub = hub_entry("x", Fail, "x", Some(manual("Restart it", Some("x".into()))));
+        assert_eq!(hub.check.fix.unwrap().on.as_deref(), Some("hub"));
+        let words = machine_entry("laptop", "x", Fail, "x", Some(manual("Press Test", None)));
+        assert_eq!(words.check.fix.unwrap().on, None);
+    }
 
     fn base(error: Option<(BaseErrorKind, &str)>, fork_behind: Option<u32>) -> WorktreeBase {
         WorktreeBase {

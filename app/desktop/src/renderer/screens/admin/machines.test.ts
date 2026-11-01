@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DoctorCheck, MachineHost } from "../../../shared/contracts";
-import { checklistOf, removeLine, repairOf } from "./machines";
+import { checklistOf, fixPlace, removeLine, repairOf, statusLine } from "./machines";
 
 const hosts: MachineHost[] = [
   { machineId: "devbox", source: "hub", joined: true },
@@ -17,6 +17,22 @@ describe("Administration › Machines' model", () => {
     expect(repairOf("mac-mini", hosts)).toEqual({ kind: "plan", host: { ...hosts[2], joined: true } });
     expect(repairOf("laptop", hosts)).toEqual({ kind: "line", machineId: "laptop", rejoin: true });
     expect(repairOf("laptop", undefined)).toEqual({ kind: "line", machineId: "laptop", rejoin: true });
+  });
+
+  it("says under a machine that isn't online what it needs, and where", () => {
+    expect(statusLine({ name: "laptop", status: "online" })).toBeNull();
+    expect(statusLine({ name: "laptop", status: "degraded", degradedReason: "claude is not logged in. Fix: claude auth login" })).toBe("Claude is not logged in. Open laptop for the fix.");
+    expect(statusLine({ name: "laptop", status: "degraded" })).toBe("Something needs a look. Open laptop for the fix.");
+    expect(statusLine({ name: "laptop", status: "offline" })).toContain("Repair sets its node up again");
+  });
+
+  it("says where a fix runs as the hub says: the machine, or the hub's machine", () => {
+    const fix = { kind: "manual", label: "Run machine setup again from the hub", command: "fleetd machine add builder-1" } as const;
+    expect(fixPlace({ ...fix, on: "hub" }, "builder-1", hosts)).toBe("devbox, the hub");
+    expect(fixPlace({ ...fix, on: "hub" }, "builder-1", undefined)).toBe("the hub's machine");
+    expect(fixPlace({ ...fix, on: "machine" }, "builder-1", hosts)).toBe("builder-1");
+    // A hub before it says: nowhere, and the label says where.
+    expect(fixPlace(fix, "builder-1", hosts)).toBeNull();
   });
 
   it("says what Remove does: the service and the key, or the key alone", () => {

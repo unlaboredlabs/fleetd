@@ -39,7 +39,18 @@ fn check(host: SessionHost, off: Option<HostOff>, detail: impl Into<String>) -> 
         off,
         on: None,
         idle_minutes: None,
+        fix: None,
     }
+}
+
+/// The check with the command that clears what stands in the way, where it can't run and one does.
+fn fixed(mut check: HostCheck, fix: Option<&str>) -> HostCheck {
+    if !check.ready {
+        check.fix = fix
+            .filter(|f| !f.is_empty() && f.len() <= 300)
+            .map(|f| Line::unchecked(f.to_owned()));
+    }
+    check
 }
 
 /// The check with its switch in Settings (`on`) and its idle timeout from node.json.
@@ -120,7 +131,10 @@ fn android_check(config: &DeviceConfig, health: Option<AndroidHealth>) -> HostCh
                 _ if device::sdk::kvm().is_ok() => None,
                 _ => Some(HostOff::Missing),
             };
-            check(host, off, health.message.as_str())
+            fixed(
+                check(host, off, health.message.as_str()),
+                health.fix.as_ref().map(|f| f.as_str()),
+            )
         }
         None => check(
             host,
@@ -163,17 +177,26 @@ pub fn ios(home: &Path, config: &IosConfig) -> HostCheck {
                 (false, _) => Some(HostOff::Missing),
             };
             (
-                check(host, off, health.message.as_str()),
+                fixed(
+                    check(host, off, health.message.as_str()),
+                    health.fix.as_ref().map(|f| f.as_str()),
+                ),
                 config.opted_in() || health.state == IosState::Ready,
             )
         }
         None => (
-            check(host, Some(HostOff::Missing), no_xcode(config)),
+            fixed(
+                check(host, Some(HostOff::Missing), no_xcode(config)),
+                Some(XCODE_FIX),
+            ),
             config.opted_in(),
         ),
     };
     with(checked, on, config.idle_minutes)
 }
+
+/// Opens Xcode's page in the App Store, on the Mac it runs on.
+const XCODE_FIX: &str = "open macappstore://apps.apple.com/app/id497799835";
 
 /// What a Mac without Xcode lacks: only Xcode once iOS is turned on, else Xcode and then the switch.
 fn no_xcode(config: &IosConfig) -> &'static str {
@@ -204,15 +227,21 @@ fn desktop(home: &Path, config: &DesktopConfig) -> HostCheck {
         )
     } else {
         match desktop::health(home, config) {
-            Some(health) => check(
-                host,
-                match health.state {
-                    DesktopState::Unavailable => Some(HostOff::Missing),
-                    _ => None,
-                },
-                health.message.as_str(),
+            Some(health) => fixed(
+                check(
+                    host,
+                    match health.state {
+                        DesktopState::Unavailable => Some(HostOff::Missing),
+                        _ => None,
+                    },
+                    health.message.as_str(),
+                ),
+                health.fix.as_ref().map(|f| f.as_str()),
             ),
-            None => check(host, Some(HostOff::Missing), "no docker, podman or Xvfb"),
+            None => fixed(
+                check(host, Some(HostOff::Missing), "no docker, podman or Xvfb"),
+                Some(&desktop::install_fix()),
+            ),
         }
     };
     with(checked, config.enabled(), config.idle_minutes)
@@ -345,6 +374,25 @@ mod tests {
         assert!(!no_xcode(&on).contains("turn iOS on"), "{}", no_xcode(&on));
         assert!(!no_xcode(&on).contains("node.json"));
         assert!(no_xcode(&IosConfig::default()).contains("turn iOS on"));
+    }
+
+    #[test]
+    fn what_stands_in_the_way_comes_with_its_command_and_only_then() {
+        let missing = check(SessionHost::Desktop, Some(HostOff::Missing), "no Xvfb");
+        let fix = fixed(missing, Some("sudo apt-get install -y xvfb")).fix;
+        assert_eq!(
+            fix.as_ref().map(|f| f.as_str()),
+            Some("sudo apt-get install -y xvfb")
+        );
+        let ready = check(SessionHost::Desktop, None, "Xvfb at /usr/bin/Xvfb");
+        assert_eq!(fixed(ready, Some("sudo apt-get install -y xvfb")).fix, None);
+        let none = check(SessionHost::Android, Some(HostOff::Missing), "no /dev/kvm");
+        assert_eq!(fixed(none, None).fix, None);
+        // A desktop that can't run installs Xvfb with this machine's package manager.
+        assert!(
+            desktop::install_fix().starts_with("sudo ")
+                && desktop::install_fix().to_lowercase().contains("xvfb")
+        );
     }
 
     #[test]

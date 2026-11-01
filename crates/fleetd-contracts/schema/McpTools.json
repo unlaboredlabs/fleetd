@@ -5131,6 +5131,10 @@
         "label": {
           "maxLength": 200,
           "type": "string"
+        },
+        "on": {
+          "$ref": "#/$defs/DoctorScope",
+          "description": "Where `command` runs: `hub` on the hub's machine, `machine` on the check's machine. Absent from a hub before\nit: where the label says."
         }
       },
       "required": [
@@ -6209,6 +6213,13 @@
       "description": "Whether a machine can host one kind of session, and why, in plain words: \"Chrome 131 at /usr/bin/google-chrome\",\n\"Android SDK at ~/Android/Sdk, but no /dev/kvm\".",
       "properties": {
         "detail": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "fix": {
+          "description": "The command that clears what stands in the way, for a person to run in a terminal on the machine\n(`sudo apt-get install -y xvfb`). Absent where none does, and from a node before it.",
           "maxLength": 300,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",

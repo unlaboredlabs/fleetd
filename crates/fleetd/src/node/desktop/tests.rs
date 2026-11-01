@@ -107,7 +107,11 @@ fn a_runtime_that_does_not_answer_is_why_sessions_cant_run() {
         health.message.as_str().contains("`docker info` failed"),
         "{health:?}"
     );
-    assert!(health.fix.unwrap().as_str().contains("usermod -aG docker"));
+    assert!(
+        health.message.as_str().contains("docker info` answer"),
+        "{health:?}"
+    );
+    assert!(health.fix.unwrap().as_str().contains("xvfb"));
     let why = super::prepare(home.path(), &broken, &|_| {}).err().unwrap();
     assert!(why.contains("`docker info` failed"), "{why}");
     let xvfb = DesktopConfig {
