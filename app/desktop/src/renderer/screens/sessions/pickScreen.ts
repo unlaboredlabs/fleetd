@@ -3,7 +3,8 @@
 // places), and each machine's slots in words, full ones offering to wait. A Navi's browser runs only on the Navi's own
 // machine, where it keeps its sign-ins. An iOS or Android screen can take an open PR's CI build, installed before the
 // person gets it. A kind no machine can host says why, from what the machines' nodes report, and what fixes it: an
-// admin's Turn on where it is only switched off, else who to ask. Pure, so it is unit-tested.
+// admin's Turn on where it is only switched off, else who to ask. Pure, so it is unit-tested. The phone app runs it
+// too, on Hermes, which has no Array toSorted: each list here sorts its own fresh copy instead.
 import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
 
 export type ScreenKind = "browser" | "ios" | "android" | "linux_desktop";
@@ -41,7 +42,7 @@ export const hostsFor = (machines: readonly MachineRolesEntry[], kind: ScreenKin
   machines
     .filter((m) => ready(m, kind) && (navi === undefined || kind !== "browser" || m.machineId === navi))
     .map((m) => ({ machineId: m.machineId, name: m.name, live: m.sessionsLive, max: m.maxSessions, online: m.online, full: m.sessionsLive >= m.maxSessions }))
-    .toSorted((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name));
+    .sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name));
 
 /** Whether any machine can host `kind`: a kind none can is shown, and says why ([`whyOff`]). */
 export const canOpen = (machines: readonly MachineRolesEntry[], kind: ScreenKind, navi?: string): boolean => hostsFor(machines, kind, navi).length > 0;
@@ -131,7 +132,7 @@ export const whyOff = (machines: readonly MachineRolesEntry[], kind: ScreenKind,
   const best = hosting
     .map((m) => machineOff(m, kind))
     .filter((r): r is OffReason & { readonly rank: number } => r !== null)
-    .toSorted((a, b) => a.rank - b.rank || (a.machine?.name ?? "").localeCompare(b.machine?.name ?? ""))[0];
+    .sort((a, b) => a.rank - b.rank || (a.machine?.name ?? "").localeCompare(b.machine?.name ?? ""))[0];
   if (best === undefined) return { why: `No machine can host ${LOWER[kind]} yet.`, short: "Can’t open", fix: "none" };
   const { rank: _rank, ...reason } = best;
   return reason;
