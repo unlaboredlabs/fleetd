@@ -499,6 +499,104 @@ async fn a_prompt_waits_for_the_hub_unless_policy_answers_it() {
     assert_eq!(answers, 2);
 }
 
+/// Tool calls made at once ask together, and claude waits for every answer. A Navi's 09:30 brief on devbox made three
+/// at once: the node kept only the last as pending and refused answers to the others, so the turn hung until fleetd
+/// interrupted it and the brief never posted. The node shows one prompt at a time and queues the rest.
+#[tokio::test]
+async fn prompts_asked_together_are_each_shown_and_answered_in_turn() {
+    let recorded = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/node/runner/fixtures/claude-2.1.302-permission-allow.jsonl"),
+    )
+    .unwrap();
+    let (first, second) = ("7b61bb9d-782a-4cbe-b52a-01bcfaf05da6", "second-prompt");
+    let mut lines = Vec::new();
+    for line in recorded.lines() {
+        lines.push(line.to_owned());
+        if line.contains("\"can_use_tool\"") && line.contains("\"dir\": \"out\"") {
+            lines.push(
+                line.replace(first, second)
+                    .replace("toolu_01BkSaeJX8QfJhbbZVabhXdh", "toolu_02SecondPrompt")
+                    .replace("perm-test.txt", "perm-two.txt"),
+            );
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::from_lines(&lines.join("\n")),
+    )
+    .await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::ApprovalRequired,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    // Both prompts are in.
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while hub
+            .service
+            .store()
+            .item("s1", &format!("permission-{second}"))
+            .unwrap()
+            .is_none()
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the second prompt never came");
+    let pending = |hub: &Hub| {
+        let row = hub.service.store().session("s1").unwrap().unwrap();
+        row.summary
+            .pending_permission
+            .map(|p| p.request_id.to_string())
+    };
+    assert_eq!(
+        pending(&hub).as_deref(),
+        Some(first),
+        "the first asked shows first"
+    );
+    let answer = |request_id: &str| SessionCall::Answer {
+        session_id: ThreadId::unchecked("s1"),
+        request_id: NonEmpty::unchecked(request_id),
+        by: None,
+        decision: PermissionDecision::Allow {
+            updated_input: None,
+        },
+    };
+    hub.ok(answer(first)).await;
+    let waiting = hub
+        .summary(|s| {
+            s.pending_permission
+                .as_ref()
+                .is_some_and(|p| p.request_id == second)
+        })
+        .await;
+    assert_eq!(waiting.status, SessionStatus::Waiting);
+    assert_eq!(
+        waiting.pending_permission.unwrap().summary.as_str(),
+        "touch perm-two.txt"
+    );
+    hub.ok(answer(second)).await;
+    let done = hub.settled("r1").await;
+    assert_eq!(done.latest_assistant_tail.as_deref(), Some("DONE"));
+    assert_eq!(done.pending_permission, None);
+    let answered: Vec<_> = hub
+        .runner
+        .received()
+        .into_iter()
+        .filter_map(|c| match c {
+            SessionCommand::Answer { request_id, .. } => Some(request_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(answered, [first, second]);
+}
+
 /// Ahead of an update the node holds its agents between steps (node/hold.rs): a session with a tool call running is
 /// mid-step until the call ends, or until its hook holds it before it starts.
 #[tokio::test]

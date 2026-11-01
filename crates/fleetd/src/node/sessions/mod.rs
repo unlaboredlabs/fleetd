@@ -689,10 +689,14 @@ impl Change<'_> {
         self.events.push(ThreadEvent::Message(message));
     }
 
-    /// Marks a prompt that can no longer be answered; the hub closes its ask.
+    /// Marks the prompts that can no longer be answered, the pending one and any queued behind it; the hub closes
+    /// their asks.
     fn cancel_pending(&mut self) {
         if let Some(pending) = self.row.summary.pending_permission.take() {
             self.cancel_prompt(&pending.request_id);
+        }
+        for queued in std::mem::take(&mut self.row.local.queued_prompts) {
+            self.cancel_prompt(&queued.request_id);
         }
     }
 
@@ -708,10 +712,44 @@ impl Change<'_> {
         }
     }
 
+    /// A prompt claude asks: pending, or queued behind the one pending (claude asks for tool calls made at once
+    /// together, and waits for every answer).
+    fn ask(&mut self, prompt: PendingPermission) {
+        if self.row.summary.pending_permission.is_some() {
+            self.row.local.queued_prompts.push(prompt);
+        } else {
+            self.row.summary.pending_permission = Some(prompt);
+        }
+        if let Some(run) = self.active_mut() {
+            run.status = RunStatus::Waiting;
+        }
+    }
+
+    /// The pending prompt is done with (answered or withdrawn): the next queued one is pending now, or the run is no
+    /// longer waiting.
+    fn next_prompt(&mut self) {
+        let queued = &mut self.row.local.queued_prompts;
+        self.row.summary.pending_permission = (!queued.is_empty()).then(|| queued.remove(0));
+        if self.row.summary.pending_permission.is_some() {
+            return;
+        }
+        for run in self
+            .runs
+            .iter_mut()
+            .filter(|r| r.status == RunStatus::Waiting)
+        {
+            run.status = RunStatus::Running;
+        }
+    }
+
     /// claude withdrew prompt `request_id` (`control_cancel_request`, e.g. its tool call was aborted): nobody can
-    /// answer it any more, so the pending permission clears and the run is no longer waiting.
+    /// answer it any more, so it leaves the queue, or, pending, makes way for the next.
     fn withdraw_prompt(&mut self, request_id: &str) {
         self.cancel_prompt(request_id);
+        self.row
+            .local
+            .queued_prompts
+            .retain(|p| p.request_id != request_id);
         if self
             .row
             .summary
@@ -719,14 +757,7 @@ impl Change<'_> {
             .as_ref()
             .is_some_and(|p| p.request_id == request_id)
         {
-            self.row.summary.pending_permission = None;
-            for run in self
-                .runs
-                .iter_mut()
-                .filter(|r| r.status == RunStatus::Waiting)
-            {
-                run.status = RunStatus::Running;
-            }
+            self.next_prompt();
         }
     }
 }
@@ -1692,6 +1723,10 @@ impl SessionService {
             ..
         } = change;
         state::settle(&mut row.summary, &runs, &at);
+        // No prompt pending (no active run): none queued behind one either.
+        if row.summary.pending_permission.is_none() {
+            row.local.queued_prompts.clear();
+        }
         let changed: Vec<&RunInfo> = runs.iter().filter(|r| !before.1.contains(r)).collect();
         let same_summary = {
             let mut s = row.summary.clone();
@@ -2103,6 +2138,7 @@ impl SessionService {
                 claude_account: launch.claude_account.clone(),
                 onepassword: launch.onepassword.clone(),
                 system_prompt,
+                queued_prompts: Vec::new(),
             },
         };
         self.store().commit(&row, &[], false)?;
@@ -3421,7 +3457,7 @@ impl SessionService {
                 },
             });
             if decision.is_none() {
-                c.row.summary.pending_permission = Some(PendingPermission {
+                c.ask(PendingPermission {
                     request_id: NonEmpty::new(request_id.clone())
                         .unwrap_or_else(|_| NonEmpty::unchecked("?")),
                     tool_name: NonEmpty::new(tool_name.clone())
@@ -3432,9 +3468,6 @@ impl SessionService {
                         .is_ok_and(|json| json.len() <= PENDING_INPUT_MAX)
                         .then(|| input.clone()),
                 });
-                if let Some(run) = c.active_mut() {
-                    run.status = RunStatus::Waiting;
-                }
             }
             decision
         });
@@ -4144,10 +4177,7 @@ impl SessionService {
                 item.updated_at = c.at.clone();
                 c.put_item(item);
             }
-            c.row.summary.pending_permission = None;
-            for run in c.runs.iter_mut().filter(|r| r.status == RunStatus::Waiting) {
-                run.status = RunStatus::Running;
-            }
+            c.next_prompt();
         })?;
         Ok(SessionOutput::Done)
     }
