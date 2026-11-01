@@ -12,6 +12,10 @@
 // view watches its frames from its first render. An answer without the screen (a hub that answers before it has it)
 // is followed in the list, as browser.session events read it again, until the person's new screen shows; only past
 // FOLLOW_MS does the picker give up and land on the list. While an open is slow, the footer says what is starting.
+//
+// A kind no machine can host stays pickable: its tile says why in a word or two, and picked, the machine list gives way
+// to the reason from the machines' nodes and its one fix. An admin's is a button (Turn on, which sets it on that machine
+// with machine_screens_set, or the place in Settings › Hub › Machines that fixes it); a member's says who to ask.
 import { AppWindow, Globe, Monitor, Smartphone, TabletSmartphone } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Button, Dialog, Radio, RadioGroup, Select, Text, cx } from "../../ui";
@@ -21,10 +25,15 @@ import { HubText } from "../projects/HubText";
 import { isNavi } from "../navi/model";
 import { projectKey } from "../../src/data/store";
 import { currentRoute, navigate } from "../shell/navigation";
+import { useHubRole } from "../admin/role";
+import { revealNext } from "../settings/reveal";
 import { panelRoute, type ProjectKey } from "../shell/routes";
 import type { BrowserSession, BrowserSessionsOutput } from "../../../shared/contracts";
 import {
-  canOpen,
+  adminNames,
+  askLine,
+  fixLabel,
+  fixReveal,
   hostsFor,
   KINDS,
   newScreenOf,
@@ -36,6 +45,8 @@ import {
   slotLine,
   startingLine,
   takesBuild,
+  whyOff,
+  type OffReason,
   type ScreenKind,
 } from "./pickScreen";
 import { screenMark } from "./timing";
@@ -300,16 +311,16 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
       <div className={s.picker} data-screen="sessions.new">
         <div className={s.kinds} role="radiogroup" aria-label="Kind of screen">
           {KINDS.map((k) => {
-            const able = loading || canOpen(machines, k.kind, naviHome);
+            const off = loading ? null : whyOff(machines, k.kind, naviHome);
             return (
               <button
                 key={k.kind}
                 type="button"
                 role="radio"
                 aria-checked={kind === k.kind}
-                className={cx(s.kind, kind === k.kind && s.kindOn)}
-                disabled={!able || busy}
-                title={able ? undefined : "No machine can host it yet"}
+                className={cx(s.kind, kind === k.kind && s.kindOn, off !== null && s.kindOff)}
+                data-off={off?.fix}
+                disabled={busy}
                 onClick={() => {
                   setKind(k.kind);
                   setError(null);
@@ -319,8 +330,8 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
                 <Text size="sm" strong>
                   {k.label}
                 </Text>
-                <Text size="xs" tone="quiet">
-                  {k.line}
+                <Text size="xs" tone={off === null ? "quiet" : "warning"}>
+                  {off === null ? k.line : off.short}
                 </Text>
               </button>
             );
@@ -335,9 +346,7 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
               Reading machines…
             </Text>
           ) : hosts.length === 0 ? (
-            <Text size="sm" tone="quiet">
-              No machine can host this yet. A hub admin turns screens on for a machine in Settings › Hub › Machines.
-            </Text>
+            <OffLine kind={kind} reason={whyOff(machines, kind, naviHome)} onLeave={onClose} />
           ) : (
             <RadioGroup value={host?.machineId ?? ""} onValueChange={setPicked} disabled={busy} aria-labelledby="screen-host">
               {hosts.map((h) => (
@@ -409,3 +418,62 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
     </Dialog>
   );
 }
+
+/**
+ * Why the kind picked can't open, from the machines' nodes, and its one fix: an admin's button, a member's who to ask.
+ * Turn on sets the kind on in that machine's node.json through the hub; the machines are read again with its answer.
+ */
+function OffLine({ kind, reason, onLeave }: { kind: ScreenKind; reason: OffReason | null; onLeave: () => void }) {
+  const layer = useDataLayer();
+  const { administers } = useHubRole();
+  const people = useToolQuery("people_list", noInput, { enabled: !administers && reason !== null });
+  const [turning, setTurning] = useState(false);
+  const [said, setSaid] = useState<{ readonly ok: boolean; readonly text: string } | null>(null);
+  if (reason === null) return null;
+  const label = administers ? fixLabel(reason.fix) : null;
+  const ask = administers ? null : askLine(reason, kind, adminNames(people.data?.people ?? []));
+  const act = async () => {
+    const reveal = fixReveal(reason.fix);
+    if (reason.fix !== "turn_on" || reason.machine === undefined) {
+      onLeave();
+      revealNext(reveal);
+      navigate({ id: "settings", tab: "hub.machines" });
+      return;
+    }
+    setTurning(true);
+    setSaid(null);
+    const out = await layer.call("machine_screens_set", { machineId: reason.machine.machineId, host: HOST_OF[kind], on: true });
+    setTurning(false);
+    setSaid(out.ok ? { ok: true, text: out.output.next ?? "Turned on." } : { ok: false, text: out.error.message });
+    void layer.queryClient.invalidateQueries({ queryKey: ["call", "machine_roles"] });
+  };
+  return (
+    <div className={s.offReason} data-off-reason={reason.fix}>
+      <div>
+        <Text as="p" size="sm">
+          {reason.why}
+        </Text>
+        {ask === null ? null : (
+          <Text as="p" size="xs" tone="quiet">
+            {ask}
+          </Text>
+        )}
+        {said === null ? null : (
+          <div role={said.ok ? "status" : "alert"}>
+            <Text size="xs" tone={said.ok ? "quiet" : "danger"}>
+              {said.text}
+            </Text>
+          </div>
+        )}
+      </div>
+      {label === null ? null : (
+        <Button size="sm" variant={reason.fix === "turn_on" ? "primary" : "secondary"} disabled={turning} onClick={() => void act()}>
+          {turning ? "Turning on…" : label}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** A kind's word in machine_screens_set. */
+const HOST_OF: Readonly<Record<ScreenKind, "browser" | "android" | "ios" | "desktop">> = { browser: "browser", ios: "ios", android: "android", linux_desktop: "desktop" };

@@ -1,5 +1,6 @@
 //! `node_action` frames from the hub: the doctor's probe of the commit identity, updates and the hold ahead of one,
-//! Claude Code's install and its login from the app. Each always answers, in plain words.
+//! Claude Code's install and its login from the app, and screen settings from Settings. Each always answers, in plain
+//! words.
 use std::time::Duration;
 
 use super::util::{exec, head_utf16};
@@ -67,6 +68,7 @@ pub async fn run_node_action(
                 probe: Some(probe_host().await),
                 login_url: None,
                 steps: None,
+                hosts: None,
                 stage: None,
             },
             None,
@@ -111,6 +113,7 @@ pub async fn run_node_action(
                         probe: None,
                         login_url: None,
                         steps: None,
+                        hosts: None,
                     },
                     None,
                 ),
@@ -170,6 +173,7 @@ pub async fn run_node_action(
                         probe: None,
                         login_url: None,
                         steps: None,
+                        hosts: None,
                     },
                     None,
                 )
@@ -196,6 +200,39 @@ pub async fn run_node_action(
                     probe: None,
                     login_url: None,
                     steps: Some(steps),
+                    hosts: None,
+                },
+                None,
+            )
+        }
+        NodeActionKind::Screens => {
+            let home = home.clone();
+            let settings = frame.screens.clone();
+            let done = tokio::task::spawn_blocking(move || {
+                let done = match &settings {
+                    Some(settings) => super::screens::apply(&home, settings),
+                    None => Err("the hub named no screen settings".to_owned()),
+                };
+                let config = super::config::read_config(&home).ok().flatten();
+                (done, super::hosts::checks(&home, config.as_ref()))
+            })
+            .await;
+            let (done, hosts) = match done {
+                Ok((done, hosts)) => (done, Some(hosts)),
+                Err(e) => (Err(format!("the settings didn't save: {e}")), None),
+            };
+            (
+                NodeActionResult {
+                    id: frame.id,
+                    ok: done.is_ok(),
+                    message: head_text(match &done {
+                        Ok(said) | Err(said) => said,
+                    }),
+                    probe: None,
+                    stage: None,
+                    login_url: None,
+                    steps: None,
+                    hosts,
                 },
                 None,
             )
@@ -218,6 +255,7 @@ pub async fn run_node_action(
                         probe: None,
                         login_url: None,
                         steps: None,
+                        hosts: None,
                     },
                     answer.watch,
                 ),
@@ -248,6 +286,7 @@ fn login_answer(
         stage: None,
         login_url: done.ok().filter(|_| url).map(head_text),
         steps: None,
+        hosts: None,
     }
 }
 
@@ -264,5 +303,6 @@ pub fn failed(
         probe: None,
         login_url: None,
         steps: None,
+        hosts: None,
     }
 }

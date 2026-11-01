@@ -574,7 +574,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "machine_roles",
-        "Every machine's roles (agents, sessions or both), its session slots (live of max, and where the max comes from) and what it can host for browser and device sessions, each in plain words: Chrome, an Android emulator (SDK and KVM), an iOS simulator (Xcode on macOS), a desktop (docker or Xvfb). Read-only.",
+        "Every machine's roles (agents, sessions or both), its session slots (live of max, and where the max comes from) and what it can host for browser and device sessions, each in plain words: Chrome, an Android emulator (SDK and KVM), an iOS simulator (Xcode on macOS), a desktop (docker or Xvfb). Each kind's check says why it can't (off: off, restarting, unsupported, missing, installing, failed), whether its switch is on and its idle timeout; screenSettings says whether machine_screens_set reaches the machine, and retention how long recordings are kept. Read-only.",
+    ),
+    (
+        "machine_screens_set",
+        "Turn a kind of screen on or off on a machine (host browser, android, ios or desktop, with on), or set its screens' idle timeout (idleMinutes 1 to 1440, every kind). The machine's node writes its node.json, as a person would by hand: turning Android or iOS on opts the machine in, so it installs what it needs. The node restarts itself to apply it once no screen is live there; until then a kind turned on says it is restarting. Needs a node that takes it (machine_roles' screenSettings). Admin on the machine.",
     ),
     (
         "machine_roles_set",

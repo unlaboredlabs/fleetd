@@ -364,7 +364,10 @@ impl NodeCommands {
         action: NodeActionKind,
     ) -> Result<NodeActionResult, NodeCommandError> {
         let wait = match action {
-            NodeActionKind::Probe | NodeActionKind::Fetch | NodeActionKind::Hold => 30,
+            NodeActionKind::Probe
+            | NodeActionKind::Fetch
+            | NodeActionKind::Hold
+            | NodeActionKind::Screens => 30,
             NodeActionKind::Claude => CLAUDE_WAIT_SEC,
             NodeActionKind::ClaudeLogin | NodeActionKind::ClaudeLoginCode => LOGIN_WAIT_SEC,
             NodeActionKind::Update => UPDATE_WAIT_SEC,
@@ -429,6 +432,18 @@ impl NodeCommands {
             }
         };
         self.node_action(machine_id, request, LOGIN_WAIT_SEC).await
+    }
+
+    /// A node's change of its screen settings in its node.json, answered once written with what it can host now (only
+    /// for a node that lists `CAP_SCREEN_SETTINGS`).
+    pub async fn screens(
+        &self,
+        machine_id: &MachineId,
+        settings: &fleetd_contracts::machine_roles::ScreenSettings,
+    ) -> Result<NodeActionResult, NodeCommandError> {
+        let request =
+            json!({ "t": "node_action", "action": NodeActionKind::Screens, "screens": settings });
+        self.node_action(machine_id, request, 30).await
     }
 
     /// A node's hold of its agents' tool calls ahead of its update, answered at once with how many sessions are still
@@ -562,6 +577,7 @@ mod tests {
             stage: None,
             login_url: None,
             steps: None,
+            hosts: None,
         })
     }
 

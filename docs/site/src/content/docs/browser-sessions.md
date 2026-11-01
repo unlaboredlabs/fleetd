@@ -75,7 +75,10 @@ You can open a screen of your own: **New screen** at the top of a project's or a
 or Navi's ⓘ page ([Phone app](/docs/mobile#screens)).
 
 1. **Pick the kind**: a browser, an iOS simulator, an Android emulator or a Linux desktop. A kind no machine can host
-   yet can't be picked.
+   says why under its name (`Turned off`, `Needs a Mac`, `Installing`, `Offline`, `Needs an update`). Pick it for the
+   reason in full, from the machines' nodes, and its one fix: an owner or admin gets **Turn on** where the kind is only
+   switched off on a machine (it turns it on there, as [Settings](#settings) does), or a button to the part of
+   Settings › Hub › Machines that fixes it; anyone else is told whom to ask.
 2. **Pick the machine.** The list has only the machines that can host that kind (the sessions role, the kind set up,
    and a current fleetd), each with its screens in use: `1 of 2 screens in use`.
 3. **Pick a PR** (optional, iOS and Android): one of the project's open PRs, whose CI build is installed before you get
@@ -231,12 +234,32 @@ logins made for agents.
 The hub keeps each recording for **30 days**, and up to **20 GB** per project, deleting a project's oldest first. It
 checks every hour. An upload still in progress counts toward the size, and is never cut short. One its machine never
 finished is treated as a recording from a day after it started: it goes past the 30 days, or when its project is over
-its size. An expired screen keeps its row, with no files. An admin key on every machine
-changes both limits with `browser_retention_set`.
+its size. An expired screen keeps its row, with no files. An owner or admin changes both limits under
+**Settings › Hub › Machines › Screens** ([below](#settings)); an admin key on every machine changes them with
+`browser_retention_set`.
 
 The app and any [MCP client](/docs/mcp-clients) read screens with `browser_sessions`: each one's agent and task,
 purpose, state (`live`, `uploading`, `recorded`, `lost` or `expired`) and files. They read a file with
 `browser_recording_get`, 512 KiB at a time. A `browser.session` event says when one started, ended or landed.
+
+## Turn screens on in Settings {#settings}
+
+**Settings › Hub › Machines › Screens**, for a hub's owners and admins, lists each machine that hosts screens:
+
+- **A switch per kind**: Browser, iOS, Android and Linux desktop. Under each, what the machine's node says: ready, off,
+  installing, or what stands in the way (no Xcode, no KVM, no docker or Xvfb). A kind the machine can't run at all
+  (iOS on Linux) can't be switched on.
+- **Idle screens end after**: the minutes without a command before a screen there ends, for every kind.
+- **Recordings**: how long the hub keeps them and how much per project, for every project
+  ([On the hub](#hub)).
+
+A switch writes the machine's node.json for you: the kind's `enabled`, or every kind's `idleMinutes`; the rest of the
+file stays as it is. Turning Android or iOS on opts the machine in, so it installs what it needs, as the setting
+below does by hand. A node reads its screen settings as it starts, so it restarts itself to apply a change once no
+screen is live on it. Until then a kind turned on says it starts once the node restarts. A node that doesn't run as
+the service `fleetd machine add` sets up saves the change and says to restart it. The machine has to be online, and
+its fleetd new enough: an older one's switches show what it hosts but don't move. MCP clients use
+`machine_screens_set`, and `machine_roles` reads each kind's reason (`off`), switch (`on`) and `idleMinutes`.
 
 ## On each machine {#setup}
 
@@ -256,7 +279,8 @@ as does the first one after an install that failed as the node started (say, bef
 without Node.js, `session_start` explains why it can't start one. A machine without an ffmpeg records screens without
 their video, and each screen's note says so.
 
-Settings go under `browser` in [node.json](/docs/config-and-files#node-json):
+Settings go under `browser` in [node.json](/docs/config-and-files#node-json) (`enabled` and `idleMinutes` from
+[Settings](#settings) too):
 
 | Key | Means |
 |---|---|
@@ -320,7 +344,8 @@ The doctor's `android` check says when it can't, and the fix (usually `sudo user
 the node; an ACL set with `setfacl` is lost whenever udev makes `/dev/kvm` again). A machine runs them only while that
 check passes, and lists `session_android` to the hub.
 
-Nothing is installed until a person opts a machine in with `"device": {"enabled": true}` in its node.json. The node
+Nothing is installed until a person opts a machine in: Android's switch in [Settings](#settings), or
+`"device": {"enabled": true}` in its node.json. The node
 then installs everything the first time an agent asks for an Android screen, about 2 GB under
 `~/.fleetd/node/device`, each download checked against its pinned digest:
 
@@ -408,7 +433,8 @@ every Mac with Xcode. It fails with the fix when something is missing (`sudo xco
 /Applications/Xcode.app` when only the command line tools are selected). A Mac lists `session_ios` to the hub only once
 its golden simulator is made.
 
-Nothing is made until a person opts a Mac in with `"ios": {"enabled": true}` in its node.json. The node then installs
+Nothing is made until a person opts a Mac in: iOS's switch in [Settings](#settings), or `"ios": {"enabled": true}`
+in its node.json. The node then installs
 agent-device 0.21.31 (the same pin Android screens use) and makes the golden. That takes minutes: the boot that
 settles, and an `xcodebuild` of agent-device's runner. Until it's done, `session_start` says the Mac is still making
 it. The node deletes clones that a stopped node left behind each time it starts.

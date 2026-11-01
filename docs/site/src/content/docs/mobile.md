@@ -116,8 +116,10 @@ and a slow connection skips frames rather than falling behind. Only a person's d
 operate on its machine, and a Navi's screen is its owner's alone: nobody else can watch it, take it over or read its
 recording. What you type goes to the page; the action log says that you took over, never what you typed.
 
-**New Screen**, on a project's or Navi's ⓘ page, opens a screen of your own: a browser unless you pick another kind
-that one of your machines can host, and the machine when more than one can. It opens in the live view with you in
+**New Screen**, on a project's or Navi's ⓘ page, opens a screen of your own: a browser unless you pick another kind,
+and the machine when more than one can. A kind no machine can host says why in its row; picked, it says why in full
+under **Can't open**, with **Turn On** for an owner or admin where it is only switched off on a machine, or whom to
+ask. It opens in the live view with you in
 control, and **End Screen** closes it. A browser starts on a blank page: tap the bar at the top to say where it goes. A Navi's browser runs on the Navi's own profile, so a site you sign in to there
 stays signed in for it. On a full machine, **Wait** keeps your place for its next slot, and the screen opens once it
 has one. A PR's build opens from the desktop app. See [Open one yourself](/docs/browser-sessions#yours).

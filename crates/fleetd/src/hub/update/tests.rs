@@ -243,6 +243,7 @@ fn result(ok: bool, stage: Option<UpdateStage>, message: &str) -> NodeActionResu
         stage,
         login_url: None,
         steps: None,
+        hosts: None,
     }
 }
 

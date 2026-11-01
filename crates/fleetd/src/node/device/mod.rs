@@ -374,6 +374,11 @@ impl Devices {
         }
     }
 
+    /// How many of its sessions are live.
+    pub fn count(&self) -> usize {
+        lock(&self.sessions).len()
+    }
+
     /// The live session of an agent session.
     pub fn live(&self, thread: &str) -> Option<Arc<Session>> {
         lock(&self.sessions).get(thread).cloned()
@@ -800,6 +805,14 @@ impl Router {
             let router = router.clone();
             Box::pin(async move { router.handle(thread, frame).await })
         })
+    }
+
+    /// How many screens of every kind are live here.
+    pub fn count(&self) -> usize {
+        self.browser.as_ref().map_or(0, |b| b.count())
+            + self.devices.as_ref().map_or(0, |d| d.count())
+            + self.ios.as_ref().map_or(0, |i| i.count())
+            + self.desktops.as_ref().map_or(0, |d| d.count())
     }
 
     /// Whether the agent session has a session of any kind live here.

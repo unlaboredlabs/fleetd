@@ -886,6 +886,21 @@ section + section .group {
 .kindOn .kindIcon {
   color: var(--accent);
 }
+/* A kind no machine can host: still picked, to say why; its icon and name step back. */
+.kindOff .kindIcon,
+.kindOff > :nth-child(2) {
+  opacity: 0.55;
+}
+/* Why the kind picked can't open, and the one thing that fixes it. */
+.offReason {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--hover);
+}
 .hosts {
   display: flex;
   flex-direction: column;

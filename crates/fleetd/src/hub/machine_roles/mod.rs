@@ -485,6 +485,7 @@ pub fn entry(runner: Runner, roles: Roles, why: String) -> MachineRolesEntry {
             .filter(|_| roles.sessions)
             .map(Line::unchecked),
         navi_sandbox: None,
+        screen_settings: None,
         operates: None,
     }
 }

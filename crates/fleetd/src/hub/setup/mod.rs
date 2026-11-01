@@ -145,26 +145,38 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
             )
         },
         HubSetupStep {
-            parts: vec![part(
-                "Add a machine",
-                Some(
-                    "The hub's own machine can run agents too: fleetd init on the hub offers it. In the app, \
+            parts: vec![
+                part(
+                    "Add a machine",
+                    Some(
+                        "The hub's own machine can run agents too: fleetd init on the hub offers it. In the app, \
                      Settings › Hub › Machines › Add machine does the same.",
+                    ),
+                    vec![],
+                    vec![
+                        command(
+                            "On the hub, for a code",
+                            "fleetd pair --worker <name>",
+                            None,
+                        ),
+                        command(
+                            "On the machine",
+                            format!("fleetd init --join {base} --code <code>"),
+                            Some("Or, from the hub, over SSH: fleetd machine add <ssh host>."),
+                        ),
+                    ],
                 ),
-                vec![],
-                vec![
-                    command(
-                        "On the hub, for a code",
-                        "fleetd pair --worker <name>",
-                        None,
+                part(
+                    "Turn on iOS or Android screens (optional)",
+                    Some(
+                        "A browser and a Linux desktop are on wherever they can run. iOS simulators (a Mac with Xcode) and \
+                     Android emulators (Linux with KVM) install once a machine is opted in: its switch in Settings › \
+                     Hub › Machines › Screens.",
                     ),
-                    command(
-                        "On the machine",
-                        format!("fleetd init --join {base} --code <code>"),
-                        Some("Or, from the hub, over SSH: fleetd machine add <ssh host>."),
-                    ),
-                ],
-            )],
+                    vec![],
+                    vec![],
+                ),
+            ],
             place: Some("machines".into()),
             ways: vec![way(None, &["*/online"])],
             ..step(

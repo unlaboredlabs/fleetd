@@ -1,11 +1,15 @@
-//! `machine_roles` and `machine_roles_set`: Settings › Hub › Machines and `fleetd machine set <id> --roles`.
+//! `machine_roles` and `machine_roles_set`: Settings › Hub › Machines and `fleetd machine set <id> --roles`; and
+//! `machine_screens_set`, its Screens: a kind of screen turned on or off on a machine, or its idle timeout, which the
+//! machine's node writes into its node.json (node/screens.rs).
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::machine_roles::{MachineRole, MachineRolesEntry};
+use fleetd_contracts::machine_roles::{MachineRole, MachineRolesEntry, ScreenSettings};
 use fleetd_contracts::mcp::{
     ErrorCode, MachineRolesInput, MachineRolesOutput, MachineRolesSetInput, MachineRolesSetOutput,
+    MachineScreensSetInput, MachineScreensSetOutput,
 };
+use fleetd_contracts::node_link::CAP_SCREEN_SETTINGS;
 use fleetd_contracts::prim::List;
 
 use super::{entry, roles_on, runners, set_roles};
@@ -14,6 +18,7 @@ use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, readable, requir
 pub fn register(tools: &mut Registry) {
     tools.add("machine_roles", machine_roles);
     tools.add("machine_roles_set", machine_roles_set);
+    tools.add("machine_screens_set", machine_screens_set);
 }
 
 async fn machine_roles(
@@ -32,15 +37,17 @@ async fn machine_roles(
     Ok(MachineRolesOutput {
         machines: List::unchecked(machines),
         best: crate::hub::projects::best_worker(&hub),
+        retention: Some(hub.db.with(crate::hub::browser::retention_on)?),
         next,
         truncated: None,
     })
 }
 
 /// What the app's Navi dialog reads besides roles: the machine's Navi sandbox, and whether the caller may make a Navi
-/// there.
+/// there; and whether its node takes screen settings.
 fn for_caller(hub: &Hub, caller: &Caller, entry: MachineRolesEntry) -> MachineRolesEntry {
     MachineRolesEntry {
+        screen_settings: Some(hub.link.node_can(&entry.machine_id, CAP_SCREEN_SETTINGS)),
         navi_sandbox: hub
             .executors
             .cached_runner(&entry.machine_id)
@@ -98,6 +105,67 @@ async fn machine_roles_set(
     Ok(MachineRolesSetOutput {
         machine: for_caller(&hub, &caller, entry(runner, roles, why)),
         next,
+        truncated: None,
+    })
+}
+
+async fn machine_screens_set(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: MachineScreensSetInput,
+) -> Result<MachineScreensSetOutput, ToolError> {
+    let m = &input.machine_id;
+    require(&caller, Role::Admin, Some(m))?;
+    let Some(machine) = hub.store.machine_get(m)? else {
+        return Err(
+            ToolError::new(ErrorCode::NotFound, format!("No machine {m}."))
+                .with_fix("machine_roles lists the machines."),
+        );
+    };
+    let name = machine.name;
+    if !hub.link.node_can(m, CAP_SCREEN_SETTINGS) {
+        let (code, why, fix) = match hub.node_commands.linked(m) {
+            false => (
+                ErrorCode::MachineOffline,
+                format!("{name} is offline."),
+                format!("Start {name}'s node, then try again."),
+            ),
+            true => (
+                ErrorCode::Failed,
+                format!("{name}'s fleetd is too old to take screen settings from the hub."),
+                format!(
+                    "Update it from Settings › Hub › Machines › Updates, or set it in {name}'s node.json by hand."
+                ),
+            ),
+        };
+        return Err(ToolError::new(code, why).with_fix(fix));
+    }
+    let settings = ScreenSettings {
+        host: input.host,
+        on: input.on,
+        idle_minutes: input.idle_minutes,
+    };
+    let answer = hub
+        .node_commands
+        .screens(m, &settings)
+        .await
+        .map_err(|e| ToolError::new(ErrorCode::Failed, e.message))?;
+    if let Some(hosts) = answer.hosts {
+        hub.link.set_hosts(m, hosts);
+    }
+    if !answer.ok {
+        return Err(ToolError::new(
+            ErrorCode::Failed,
+            format!("{name} didn't change: {}", answer.message.as_str()),
+        ));
+    }
+    let (runner, roles, why) = runners(&hub)?
+        .into_iter()
+        .find(|(r, _, _)| &r.machine_id == m)
+        .ok_or_else(|| ToolError::new(ErrorCode::NotFound, format!("No machine {m}.")))?;
+    Ok(MachineScreensSetOutput {
+        machine: for_caller(&hub, &caller, entry(runner, roles, why)),
+        next: Some(answer.message.as_str().to_owned()),
         truncated: None,
     })
 }

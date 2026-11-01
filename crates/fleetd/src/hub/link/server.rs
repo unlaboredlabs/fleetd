@@ -97,6 +97,17 @@ impl NodeLinkServer {
         self.state.lock().unwrap().loads.get(machine_id).cloned()
     }
 
+    /// What the machine can host, as its node answered a change of its screen settings: kept until its next heartbeat.
+    pub fn set_hosts(
+        &self,
+        machine_id: &MachineId,
+        hosts: fleetd_contracts::machine_roles::HostChecks,
+    ) {
+        if let Some(load) = self.state.lock().unwrap().loads.get_mut(machine_id) {
+            load.hosts = Some(hosts);
+        }
+    }
+
     /// Why new agents wait on the machine, e.g. "Paused new agents: 14 GB free on builder-1"; None while they start.
     pub fn paused(&self, machine_id: &MachineId) -> Option<String> {
         let state = self.state.lock().unwrap();

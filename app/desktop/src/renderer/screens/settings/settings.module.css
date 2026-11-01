@@ -448,18 +448,11 @@
 .machineCap {
   width: 112px;
 }
-/* What it can host: the kind, whether it can, then why, each line on one baseline. */
-.machineHosts {
+/* Hub › Machines › Screens: a switch per kind, two a row, each with its line from the machine's node under it. */
+.screenKinds {
   display: grid;
-  grid-template-columns: max-content max-content minmax(0, 1fr);
-  column-gap: var(--space-3);
-  row-gap: var(--space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.machineHosts > li {
-  display: contents;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
 }
 /* Settings → Projects → Repos: a repo a row, rows apart by a hairline as machines are, its facts a label and a value. */
 .repoList {

@@ -1,18 +1,20 @@
 // New Screen, a sheet from a project's or Navi's Info: a screen of the person's own, as the desktop's picker opens one
-// (screen_open). A browser unless they pick another kind, and only the kinds a machine can host; the machine, when
+// (screen_open). A browser unless they pick another kind; a kind no machine can host says why in its row, and picked,
+// says why in full with its fix: an admin's Turn On where it is only switched off on a machine (machine_screens_set),
+// a member's who to ask. Other fixes are on the desktop (Settings › Hub › Machines). The machine, when
 // more than one can (a Navi's browser is only its own machine's, on the profile that keeps its sign-ins), each with its
 // slots in words. Open puts them in its live view, in control, with End Screen; a full machine offers Wait for a Slot,
 // which this sheet follows until the screen opens (or Cancel gives it up). A PR's build is the desktop's.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Keyboard, ScrollView, StyleSheet, Text, View } from "react-native";
-import { canOpen, hostsFor, isNavi, openWord, pickHost, SCREEN_KINDS, slotLine, type HubError, type ScreenKind } from "../../desktop";
+import { adminNames, askLine, hostsFor, isNavi, openWord, pickHost, SCREEN_KINDS, slotLine, whyOff, type HubError, type OffReason, type ScreenKind } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { waitLine, waitOutcome, type Wait } from "../../screen";
 import { refOf } from "../../store";
 import { space, type, useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
-import { ListSection } from "../../ui/List";
+import { ListRow, ListSection } from "../../ui/List";
 import { SHEET_GONE_MS } from "./arrival";
 import { CheckRow, errorWords, Problem, sheetOptions, useRead } from "./parts";
 
@@ -25,9 +27,12 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
   const roles = useRead(() => session.call("machine_roles", {}), [session]);
   const machines = roles.value?.ok === true ? roles.value.output.machines : [];
   const home = navi ? refOf(key).machineId : undefined;
-  const kinds = SCREEN_KINDS.filter((k) => canOpen(machines, k.kind, home));
   const [kind, setKind] = useState<ScreenKind>("browser");
-  const shownKind = kinds.some((k) => k.kind === kind) ? kind : (kinds[0]?.kind ?? "browser");
+  const shownKind = kind;
+  const off = whyOff(machines, shownKind, home);
+  const people = useRead(() => session.call("people_list", {}), [session]);
+  const admins = people.value?.ok === true ? adminNames(people.value.output.people) : [];
+  const [turning, setTurning] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
   const hosts = hostsFor(machines, shownKind, home);
   const host = pickHost(hosts, picked);
@@ -83,6 +88,22 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
     });
   });
 
+  // An admin's Turn On: the kind on, on the machine where it's only switched off; the machines are read again.
+  const turnOn = async (reason: OffReason) => {
+    if (reason.machine === undefined || turning) return;
+    setTurning(true);
+    setError(null);
+    const host = shownKind === "linux_desktop" ? "desktop" : shownKind;
+    const r = await session.call("machine_screens_set", { machineId: reason.machine.machineId, host, on: true });
+    setTurning(false);
+    if (!r.ok) {
+      haptics.warning();
+      return setError(r.error);
+    }
+    haptics.success();
+    roles.reload();
+  };
+
   // Cancel gives a wait up on the hub; else it just closes.
   const cancel = () => {
     if (wait !== null) void session.call("screen_end", { waitId: wait.wait.waitId });
@@ -100,45 +121,53 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }} style={{ backgroundColor: t.grouped }}>
       {reading ? (
         <ActivityIndicator style={styles.loading} color={t.secondary} />
-      ) : kinds.length === 0 ? (
-        <Text style={[type.footnote, styles.none, { color: t.secondary }]}>
-          {failed === undefined ? "No machine hosts screens yet. Turn on the sessions role for one in the desktop app, under Settings › Hub › Machines." : errorWords(failed)}
-        </Text>
+      ) : failed !== undefined ? (
+        <Text style={[type.footnote, styles.none, { color: t.secondary }]}>{errorWords(failed)}</Text>
       ) : (
         <>
           <ListSection
             header="Kind"
             footer={shownKind === "browser" && navi ? `It opens on ${project?.title ?? "the Navi"}'s own browser profile: a site you sign in to stays signed in for it. Close yours before it needs its own.` : "Yours from the start. It's recorded like an agent's, and ends after 30 minutes without your input."}
           >
-            {kinds.map((k) => (
-              <CheckRow
-                key={k.kind}
-                title={k.label}
-                detail={k.line}
-                checked={k.kind === shownKind}
-                disabled={busy || wait !== null}
-                onPress={() => {
-                  haptics.select();
-                  setKind(k.kind);
-                }}
-              />
-            ))}
+            {SCREEN_KINDS.map((k) => {
+              const kindOff = whyOff(machines, k.kind, home);
+              return (
+                <CheckRow
+                  key={k.kind}
+                  title={k.label}
+                  detail={kindOff === null ? k.line : kindOff.short}
+                  checked={k.kind === shownKind}
+                  disabled={busy || wait !== null}
+                  onPress={() => {
+                    haptics.select();
+                    setKind(k.kind);
+                  }}
+                />
+              );
+            })}
           </ListSection>
-          <ListSection header="Machine">
-            {hosts.map((h) => (
-              <CheckRow
-                key={h.machineId}
-                title={h.name}
-                detail={slotLine(h)}
-                checked={h.machineId === host?.machineId}
-                disabled={busy || wait !== null || !h.online}
-                onPress={() => {
-                  haptics.select();
-                  setPicked(h.machineId);
-                }}
-              />
-            ))}
-          </ListSection>
+          {off !== null ? (
+            <ListSection header="Can't open" {...offFooter(off, state.admin === true, askLine(off, shownKind, admins))}>
+              <ListRow title={off.short} detail={off.why} />
+              {state.admin === true && off.fix === "turn_on" ? <ListRow title={turning ? "Turning On…" : "Turn On"} onPress={() => void turnOn(off)} chevron={false} /> : null}
+            </ListSection>
+          ) : (
+            <ListSection header="Machine">
+              {hosts.map((h) => (
+                <CheckRow
+                  key={h.machineId}
+                  title={h.name}
+                  detail={slotLine(h)}
+                  checked={h.machineId === host?.machineId}
+                  disabled={busy || wait !== null || !h.online}
+                  onPress={() => {
+                    haptics.select();
+                    setPicked(h.machineId);
+                  }}
+                />
+              ))}
+            </ListSection>
+          )}
         </>
       )}
       {wait === null ? null : (
@@ -151,6 +180,12 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
     </ScrollView>
   );
 }
+
+/** Under why a kind can't open: a member's who to ask, or where an admin fixes what isn't a switch; none for Turn On. */
+const offFooter = (off: OffReason, admin: boolean, ask: string | null): { footer?: string } => {
+  if (!admin) return ask === null ? {} : { footer: ask };
+  return off.fix === "turn_on" || off.fix === "none" ? {} : { footer: "Fix it in the desktop app, under Settings › Hub › Machines." };
+};
 
 const styles = StyleSheet.create({
   loading: { marginTop: 48 },

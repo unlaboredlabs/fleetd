@@ -94,6 +94,50 @@ pub struct HostCheck {
     pub host: SessionHost,
     pub ready: bool,
     pub detail: Line<1, 300>,
+    /// Why it can't, as a word the app acts on. Absent while it can, and from a node before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub off: Option<HostOff>,
+    /// Its switch in Settings › Hub › Machines › Screens: node.json turns this kind on, by its `enabled` or by default.
+    /// Absent from a node before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on: Option<bool>,
+    /// Minutes without a command before a screen of this kind ends (node.json's `idleMinutes`). Absent from a node
+    /// before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_minutes: Option<IdleMinutes>,
+}
+
+/// Why a machine can't host a kind of screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum HostOff {
+    /// Turned off, or never opted in, in its node.json: an admin turns it on.
+    Off,
+    /// Turned on, and it starts once the node restarts, after the screens live there end.
+    Restarting,
+    /// Not on this kind of machine: iOS needs a Mac, Android Linux x86_64, a desktop Linux.
+    Unsupported,
+    /// Something it needs isn't on the machine: Xcode, KVM, docker or Xvfb, Node.js. `detail` says what.
+    Missing,
+    /// Installing what it needs now.
+    Installing,
+    /// Its install or setup failed; `detail` says how.
+    Failed,
+}
+
+/// A screen's idle timeout, in minutes.
+pub type IdleMinutes = Int<1, 1440>;
+
+/// What `node_action` `screens` changes in a machine's node.json: a kind of screen turned on or off (`host` with
+/// `on`), the idle timeout of every kind, or both.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenSettings {
+    pub host: Option<SessionHost>,
+    pub on: Option<bool>,
+    pub idle_minutes: Option<IdleMinutes>,
 }
 
 /// What a node can host, one check per kind.
@@ -132,6 +176,9 @@ pub struct MachineRolesEntry {
     pub navi_sandbox: Option<crate::sessions::NaviSandbox>,
     /// The caller may work there (operate): make a Navi, start agents. Absent from a hub before it.
     pub operates: Option<bool>,
+    /// Its node takes screen settings from the hub (`machine_screens_set`). Absent: its fleetd is older, or it is
+    /// offline.
+    pub screen_settings: Option<bool>,
 }
 
 brand!(

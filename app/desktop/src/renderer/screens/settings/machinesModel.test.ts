@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MachineRolesEntry } from "../../../shared/contracts";
-import { capChoices, choiceOf, hostName, hostsInOrder, hostsNote, rolesOf, sessionsLine } from "./machinesModel";
+import { capChoices, choiceOf, hostsNote, rolesOf, sessionsLine } from "./machinesModel";
 
 const devbox: MachineRolesEntry = {
   machineId: "devbox",
@@ -41,10 +41,6 @@ describe("machine roles", () => {
     expect(set.at(-1)).toEqual({ value: "40", label: "40" });
   });
 
-  it("lists what it can host first, by name", () => {
-    expect(hostsInOrder(devbox.hosts ?? []).map((h) => hostName(h.host))).toEqual(["Browser", "Desktop", "Android emulator"]);
-    expect(hostName("ios")).toBe("iOS simulator");
-  });
 
   it("notes a machine that can't take others' sessions yet", () => {
     expect(hostsNote(devbox)).toBeNull();

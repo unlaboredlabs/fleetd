@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Hub › Machines' roles: each machine's roles, session slots and what it can host, read from machine_roles; a role
+// Hub › Machines' roles: each machine's roles and session slots, read from machine_roles; a role
 // change goes out as machine_roles_set and the hub's line about it shows under the row.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -102,17 +102,12 @@ const render = async () => {
 const row = (name: string) => host.querySelector<HTMLElement>(`section[aria-labelledby="machine-${name}-name"]`);
 const pressed = (within: HTMLElement | null) => within?.querySelector('button[aria-pressed="true"]')?.textContent;
 
-it("shows each machine's roles, sessions and what it can host in plain words", async () => {
+it("shows each machine's roles and sessions in plain words", async () => {
   await render();
   const box = row("devbox");
   expect(pressed(box)).toBe("Both");
   expect(box?.textContent).toContain("1 of 4 screens now (auto: 8 CPUs, 16 GB)");
-  expect(box?.textContent).toContain("Chrome at /usr/bin/google-chrome");
-  expect(box?.textContent).toContain("but no /dev/kvm: the emulator needs KVM");
-  const hosts = [...(box?.querySelectorAll("ul li") ?? [])].map((li) => li.firstElementChild?.textContent);
-  expect(hosts).toEqual(["Browser", "Desktop", "Android emulator", "iOS simulator"]);
   expect(pressed(row("mac1"))).toBe("Screens");
-  expect(row("mac1")?.textContent).toContain("Xcode with 6 iOS simulators");
 });
 
 it("sets a machine's roles with machine_roles_set and says what follows", async () => {
