@@ -40,6 +40,7 @@ use tokio::task::JoinHandle;
 
 use crate::clock::Clock;
 use crate::hub::leads::lead::AutoStart;
+use crate::hub::leads::wakes::wake_request_id;
 use crate::hub::leads::workstreams::IntakeInput;
 use crate::hub::leads::{Area, LeadError};
 use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, WaitInput, iso_ms, now_ms};
@@ -51,6 +52,8 @@ const ORDER_CHARS: usize = 4000;
 /// Webhook calls kept per automation while a run is open; one past them is skipped, as a schedule's is. With
 /// `WEBHOOK_BODY_MAX` each, at most 320 KB wait.
 pub const QUEUED_MAX: usize = 20;
+/// Runs per lead thread `navi_turns` remembers seeing: more than one turn's wakes, steers and chat messages.
+const RUNS_SEEN: usize = 32;
 /// The room a kept calls' order leaves for naming the bodies that didn't fit: 20 run ids and the words around them.
 const QUEUED_TAIL: usize = 600;
 
@@ -837,16 +840,28 @@ impl Automations {
             Some(w) => format!("run {} is still going ({w} is open)", r.run_id),
             None => format!("run {} is still starting", r.run_id),
         });
-        // A webhook call's body is data, so one that comes while a run is open is kept (D279), up to QUEUED_MAX.
-        let queued = matches!(start, Start::Webhook { .. })
-            && !a.paused
-            && going.is_some()
-            && self.queued_count(id)? < QUEUED_MAX;
+        let webhook = matches!(start, Start::Webhook { .. });
+        let waiting = if webhook { self.queued_count(id)? } else { 0 };
+        let open_now = going.is_some();
+        // A webhook call's body is data, so one that comes while a run is open is kept (D279), up to QUEUED_MAX; one
+        // that comes while calls kept earlier still wait for their order (the open run just ended) joins them, so
+        // they go oldest first.
+        let kept = match &going {
+            _ if !webhook || a.paused => None,
+            Some(going) if waiting < QUEUED_MAX => {
+                Some(format!("Kept: {going}; it goes once that ends."))
+            }
+            None if waiting > 0 => {
+                Some("Kept: it goes with the calls kept while the last run was open.".to_owned())
+            }
+            _ => None,
+        };
         let skipped = match (&start, going) {
+            _ if kept.is_some() => None,
             (Start::Schedule { .. } | Start::Webhook { .. }, _) if a.paused => {
                 Some("the automation is paused".to_owned())
             }
-            (Start::Webhook { .. }, Some(going)) if !queued => Some(format!(
+            (Start::Webhook { .. }, Some(going)) => Some(format!(
                 "{going}, and {QUEUED_MAX} webhook calls already wait for it"
             )),
             (_, Some(going)) => Some(going),
@@ -872,24 +887,21 @@ impl Automations {
             automation_id: a.automation_id.clone(),
             trigger,
             at: iso_ms(now).into(),
-            state: match (&skipped, queued) {
-                (Some(_), true) => AutomationRunState::Queued,
-                (Some(_), false) => AutomationRunState::Skipped,
-                (None, _) => AutomationRunState::Running,
+            state: match (&skipped, &kept) {
+                (Some(_), _) => AutomationRunState::Skipped,
+                (None, Some(_)) => AutomationRunState::Queued,
+                (None, None) => AutomationRunState::Running,
             },
             workstream_id: None,
             scheduled_at,
             late_min,
             payload_bytes: payload.as_ref().map(|p| Count::unchecked(p.len() as i64)),
-            why: match &skipped {
-                Some(going) if queued => why(format!("Kept: {going}; it goes once that ends.")),
-                other => other.as_ref().and_then(why),
-            },
+            why: kept.as_ref().or(skipped.as_ref()).and_then(why),
             by: match &start {
                 Start::Manual { by } => Some(by.clone()),
                 _ => None,
             },
-            ended_at: (skipped.is_some() && !queued).then(|| iso_ms(now).into()),
+            ended_at: skipped.is_some().then(|| iso_ms(now).into()),
         };
         self.db.transaction(|c| {
             c.execute(
@@ -915,8 +927,21 @@ impl Automations {
         })?;
         if let Some(reason) = &skipped {
             drop(guard);
-            let what = if queued { "kept for later" } else { "skipped" };
-            self.run_event(&a, &run, format!("{what}: {reason}"));
+            self.run_event(&a, &run, format!("skipped: {reason}"));
+            return Ok((a, run));
+        }
+        if let Some(reason) = &kept {
+            if !open_now {
+                // No run is open: the batch it joined goes now, with it.
+                self.deliver_locked(id)?;
+                if let Some((delivered, _)) = self.run_with_payload(id, run.run_id.as_str())? {
+                    run = delivered;
+                }
+            }
+            drop(guard);
+            if open_now {
+                self.run_event(&a, &run, format!("kept for later: {reason}"));
+            }
             return Ok((a, run));
         }
         self.open_order(&a, &mut run, payload.as_deref())?;
@@ -1133,6 +1158,11 @@ impl Automations {
         id: &str,
     ) -> Result<Option<(Automation, AutomationRun)>, LeadError> {
         let _guard = self.starting.lock().expect("lock");
+        self.deliver_locked(id)
+    }
+
+    /// [`Automations::deliver_queued`] under the `starting` lock its caller holds.
+    fn deliver_locked(&self, id: &str) -> Result<Option<(Automation, AutomationRun)>, LeadError> {
         let Some(a) = self.row(id)? else {
             return Ok(None);
         };
@@ -1253,19 +1283,23 @@ impl Automations {
 
     // ---- a Navi's runs ---------------------------------------------------------------------------
 
-    /// Follows lead turn ends, from a catch-up pass over every Navi at the start, and closes the runs each Navi's turns
-    /// have dealt with (`close_navi_runs`).
+    /// Follows lead threads' runs and turn ends, from a catch-up pass over every Navi at the start, and closes the runs
+    /// each Navi's turns have dealt with (`close_navi_runs`). Keeps the runs each lead thread was seen running.
     async fn navi_turns(self: Arc<Self>) {
         let events = Arc::clone(&self.events);
         let mut cursor = events.head();
+        let mut ran: std::collections::HashMap<String, std::collections::VecDeque<String>> =
+            Default::default();
         for lead in self.leads.records.leads_list().unwrap_or_default() {
-            self.close_navi_runs(&lead.project_ref).await;
+            self.close_navi_runs(&lead.project_ref, &[]).await;
         }
         loop {
             let page = match events
                 .wait(WaitInput {
                     cursor: Some(cursor),
                     types: Some(vec![
+                        HubEventType::ThreadStarted,
+                        HubEventType::ThreadWaiting,
                         HubEventType::ThreadCompleted,
                         HubEventType::ThreadFailed,
                         HubEventType::ThreadInterrupted,
@@ -1289,29 +1323,46 @@ impl Automations {
             }
             let leads = self.leads.records.leads_list().unwrap_or_default();
             for event in &page.events {
+                let data = event.data.as_ref();
                 let thread = event.thread_id.as_ref().map(|t| t.as_str()).or_else(|| {
-                    event
-                        .data
-                        .as_ref()
-                        .and_then(|d| d.get("threadId"))
+                    data.and_then(|d| d.get("threadId"))
                         .and_then(|t| t.as_str())
                 });
-                if let Some(lead) = leads.iter().find(|l| {
+                let Some(lead) = leads.iter().find(|l| {
                     event.machine_id.as_ref() == Some(&l.project_ref.machine_id)
                         && thread == Some(l.thread_id.as_str())
-                }) {
-                    self.close_navi_runs(&lead.project_ref).await;
+                }) else {
+                    continue;
+                };
+                let key = format!("{}/{}", lead.project_ref.machine_id, lead.thread_id);
+                let seen = ran.entry(key).or_default();
+                if let Some(run) = data.and_then(|d| d.get("runId")).and_then(|r| r.as_str())
+                    && !seen.iter().any(|s| s == run)
+                {
+                    seen.push_back(run.to_owned());
+                    if seen.len() > RUNS_SEEN {
+                        seen.pop_front();
+                    }
+                }
+                if !matches!(
+                    event.r#type,
+                    HubEventType::ThreadStarted | HubEventType::ThreadWaiting
+                ) {
+                    let seen: Vec<String> = seen.iter().cloned().collect();
+                    self.close_navi_runs(&lead.project_ref, &seen).await;
                 }
             }
         }
     }
 
     /// A Navi's automation runs close themselves (D277), so one its lead never closed can't skip every later run. The
-    /// rule: once the lead's thread has no turn going or queued, each run whose order opened by the time of the lead's
-    /// last message (its start or latest wake, whose digest listed the order) closes, whether that turn replied, failed
-    /// or was cut off. A run whose order still has agents at work or PRs in the train waits for a later turn end. Other
-    /// projects' runs stay open until their lead closes them.
-    pub async fn close_navi_runs(&self, r: &ProjectRef) {
+    /// rule: once the lead's thread has no turn going or queued, a run closes whose order the lead was given in a
+    /// message whose own run has been seen (`ran`, or the thread's latest run): its first message (the start, whose
+    /// run is the thread's first) for an order opened by then, else its latest wake (whose run id its request id
+    /// names) for one opened by that wake, whether the turn replied, failed or was cut off. So a turn end the node
+    /// reported before it took a wake never closes the wake's orders. A run whose order still has agents at work or PRs
+    /// in the train waits for a later turn end. Other projects' runs stay open until their lead closes them.
+    pub async fn close_navi_runs(&self, r: &ProjectRef, ran: &[String]) {
         let ctx = &self.leads.ctx;
         if !crate::hub::integrations::is_navi(&ctx.db, r).unwrap_or(false) {
             return;
@@ -1323,18 +1374,28 @@ impl Automations {
             machine_id: r.machine_id.clone(),
             thread_id: lead.thread_id.clone(),
         };
-        match ctx.store.thread_get(&thread) {
+        let latest = match ctx.store.thread_get(&thread) {
             Ok(Some(t))
                 if !matches!(
                     t.thread.status,
                     fleetd_contracts::model::ThreadStatus::Running
                         | fleetd_contracts::model::ThreadStatus::Waiting
-                ) => {}
+                ) =>
+            {
+                t.last_run_id
+            }
             _ => return,
-        }
-        let sent = match &lead.last_wake_at {
-            Some(w) if w.as_str() > lead.started_at.as_str() => w.as_str(),
-            _ => lead.started_at.as_str(),
+        };
+        let woken = lead.last_wake_at.as_ref().filter(|w| {
+            w.as_str() > lead.started_at.as_str() && {
+                let crid = wake_request_id(r, lead.session_generation, w.as_str());
+                let run = crate::hub::executor::Executors::send_run_id(&thread, &crid);
+                latest.as_deref() == Some(run.as_str()) || ran.contains(&run)
+            }
+        });
+        let sent = match woken {
+            Some(w) => w.as_str(),
+            None => lead.started_at.as_str(),
         };
         let rows: Result<Vec<String>, StoreError> = self.db.with(|c| {
             let mut stmt = c.prepare(

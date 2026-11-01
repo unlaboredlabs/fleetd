@@ -318,6 +318,12 @@ fn key_of(r: &ProjectRef) -> String {
     format!("{}/{}", r.machine_id, r.project_id)
 }
 
+/// A wake's request id, which names its run on the node (`Executors::send_run_id`): `at` is the wake's
+/// `last_wake_at`, so a reader of the lead's record knows the run its latest wake started.
+pub fn wake_request_id(r: &ProjectRef, session_generation: i64, at: &str) -> String {
+    format!("fleetd-wake:{}:{session_generation}:{at}", key_of(r))
+}
+
 pub struct LeadWakes {
     ctx: Arc<Ctx>,
     records: Arc<LeadRecords>,
@@ -596,7 +602,7 @@ impl LeadWakes {
             None => {
                 let (digest, idle) = self.digest_to_send(r).await?;
                 let message = render_wake(&set, &digest, &triggers);
-                let crid = format!("fleetd-wake:{}:{}:{at}", key_of(r), lead.session_generation);
+                let crid = wake_request_id(r, lead.session_generation, &at);
                 // Through the offline write queue, so a wake to an offline machine waits for it instead of being dropped.
                 match self.ctx.ports().send(thread, message, crid).await {
                     Ok(queued) => {
