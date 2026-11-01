@@ -3204,6 +3204,12 @@ impl SessionService {
         if let Err(e) = super::hold::hold(home) {
             tracing::warn!("update: couldn't hold the agents' tool calls: {e}");
         }
+        self.mid_step()
+    }
+
+    /// How many sessions are mid-step: a tool call of theirs runs that the hold (node/hold.rs) didn't stop from starting.
+    pub fn mid_step(&self) -> u32 {
+        let home = &self.inner.config.home;
         let held = super::hold::held(home);
         let st = self.st();
         let mid_step = st
