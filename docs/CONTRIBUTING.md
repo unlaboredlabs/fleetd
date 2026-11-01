@@ -52,7 +52,9 @@ DevTools-driven tests; never ship one. `pnpm debug-guard-check` checks both.
 ## Checks
 
 Before every push, run `scripts/check.sh`; its header says what each check runs, and `ci.yml`'s comments say what
-CI runs.
+CI runs. Run it after your last commit and rebase: it checks the worktree against `origin/main` as it fetches it then,
+so a migration main gained since, stale generated contracts, a fixture with no answer for a screen's new call, or the
+host name in a new file fails there instead of in CI.
 
 `crates/fleetd` must not link macOS frameworks, because the darwin binaries are cross-built on Linux. The
 `darwin-deps` CI job checks this: rusqlite takes only named features such as `bundled`, chrono has no `clock`, and
@@ -75,8 +77,9 @@ what it does. The build runs them in prefix order and fails on two with one pref
 name with its file's SHA-256 (`migrations_applied`) and runs every one it hasn't, so a file that sorts before one a hub
 already ran still runs there; one that changed after it ran never runs again, and the hub warns at its start. Never
 edit, rename or remove a file that is on main: CI checks that a PR only adds files, each sorting after every one on
-main, so every hub runs them in the order a fresh one does. After a rebase onto a newer migration, rename yours to a
-later time (the merge train does it for you).
+main, so every hub runs them in the order a fresh one does; `scripts/check.sh` runs the same check on your worktree merged
+onto a fresh `origin/main`. After a rebase onto a newer migration, rename yours to a later time (the merge train does it
+for you).
 
 ## Conventions
 

@@ -1,12 +1,13 @@
 // A hub runs each migration it hasn't by name, and only warns about one that changed after it ran, so a PR only adds
 // new ones, never edits, renames or removes one on its base, and each sorts after every one there, so every hub runs
 // them in the order a fresh one does. build.rs fails the build on a duplicate prefix.
-// Run by CI's rust-lint job on a PR, from the repo root: node .github/migrations-check.mjs <base commit>
+// Run by CI's rust-lint job on a PR, from the repo root: node .github/migrations-check.mjs <base commit> [<head>]
+// <head> is HEAD (CI's merge commit) unless named: scripts/check.sh names its worktree merged onto origin/main.
 import { execFileSync } from "node:child_process";
 
 const DIR = "crates/fleetd/src/hub/store/migrations/";
-const base = process.argv[2];
-if (!base) throw new Error("usage: node .github/migrations-check.mjs <base commit>");
+const [base, head = "HEAD"] = process.argv.slice(2);
+if (!base) throw new Error("usage: node .github/migrations-check.mjs <base commit> [<head>]");
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).split("\n").filter((line) => line !== "");
 const prefix = (name) => Number(name.split("_")[0]);
 
@@ -15,7 +16,7 @@ const shipped = git("ls-tree", "--name-only", base, DIR).map((path) => path.slic
 if (shipped.length === 0) process.exit(0);
 const last = shipped.reduce((a, b) => (prefix(a) > prefix(b) ? a : b), "0_");
 const problems = [];
-for (const line of git("diff", "--name-status", "--no-renames", base, "HEAD", "--", DIR)) {
+for (const line of git("diff", "--name-status", "--no-renames", base, head, "--", DIR)) {
   const [status, path] = line.split("\t");
   const name = path.slice(DIR.length);
   if (status !== "A") {
