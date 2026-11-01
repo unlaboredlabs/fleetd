@@ -1429,3 +1429,55 @@ async fn a_navis_mail_that_came_during_a_run_reaches_it_once_that_turn_ends() {
     );
     autos.stop();
 }
+
+/// Skips piling up behind a long open run (a schedule every few minutes, calls past QUEUED_MAX) never prune the open
+/// run or a kept call: its row is the body's only copy.
+#[tokio::test(flavor = "current_thread")]
+async fn skips_piling_up_never_prune_the_open_run_or_a_kept_call() {
+    let h = lead_hub(true);
+    let autos = over(&h);
+    let (a, _) = autos.create(new(&h.project, None, true)).unwrap();
+    let id = a.automation_id.as_str();
+    let first = autos.run(id, hook("first")).await.unwrap();
+    h.clock.advance(Duration::from_secs(1));
+    let kept = autos.run(id, hook("kept mail")).await.unwrap();
+    assert_eq!(kept.state, AutomationRunState::Queued);
+    for _ in 0..RUNS_KEPT + 20 {
+        h.clock.advance(Duration::from_secs(1));
+        let tick = autos
+            .run(
+                id,
+                Start::Schedule {
+                    due_ms: 1_792_231_200_000,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(tick.state, AutomationRunState::Skipped);
+    }
+    let (open, _) = autos
+        .run_with_payload(id, first.run_id.as_str())
+        .unwrap()
+        .expect("the open run stays");
+    assert_eq!(open.state, AutomationRunState::Running);
+    let (_, body) = autos
+        .run_with_payload(id, kept.run_id.as_str())
+        .unwrap()
+        .expect("the kept call stays");
+    assert_eq!(body.as_deref(), Some("kept mail"));
+    let rows: i64 = autos
+        .db
+        .with(|c| {
+            Ok(c.query_row(
+                "SELECT COUNT(*) FROM automation_runs WHERE automation_id = ?",
+                [id],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(
+        rows,
+        RUNS_KEPT as i64 + 2,
+        "the skips are pruned to RUNS_KEPT"
+    );
+}

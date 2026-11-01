@@ -904,9 +904,10 @@ impl Automations {
                     serde_json::to_string(&run)?
                 ],
             )?;
-            // The newest RUNS_KEPT stay.
+            // The newest RUNS_KEPT stay, and every run still open or kept: a kept call's row is its body's only copy,
+            // and the open run is what makes later triggers wait.
             c.execute(
-                "DELETE FROM automation_runs WHERE automation_id = ?1 AND run_id NOT IN
+                "DELETE FROM automation_runs WHERE automation_id = ?1 AND state NOT IN ('running', 'queued') AND run_id NOT IN
                    (SELECT run_id FROM automation_runs WHERE automation_id = ?1 ORDER BY at_ms DESC, rowid DESC LIMIT ?2)",
                 params![id, RUNS_KEPT as i64],
             )?;
