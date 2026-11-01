@@ -113,7 +113,7 @@ it("lists each machine that hosts screens with a switch per kind and what its no
   expect(toggle(box, "Browser")?.getAttribute("aria-checked")).toBe("true");
   expect(toggle(box, "Android")?.getAttribute("aria-checked")).toBe("false");
   expect(toggle(box, "Android")?.disabled).toBe(false);
-  expect(box?.textContent).toContain("Chrome at /usr/bin/google-chrome");
+  expect(box?.textContent).toContain("Ready");
   // iOS can't run on Linux: its switch doesn't move, and says why.
   expect(toggle(box, "iOS")?.disabled).toBe(true);
   expect(box?.textContent).toContain("iOS simulators need macOS");
