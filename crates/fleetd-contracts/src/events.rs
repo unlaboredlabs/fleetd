@@ -25,6 +25,11 @@ pub enum HubEventType {
     /// The machine's node woke from sleep; `data.fromMs`, `data.toMs` (epoch milliseconds).
     #[serde(rename = "machine.slept")]
     MachineSlept,
+    /// The machine's node linked again before the hub marked it offline: it restarted, say onto a new build, and no
+    /// machine.online marks that. The views that read what its link says (what it can take, its build) read it again;
+    /// `data.nodeVersion`.
+    #[serde(rename = "machine.linked")]
+    MachineLinked,
     /// The machine's disk or load stopped new agents there, or no longer does; `data.paused`, and the summary says
     /// why. Agents already running keep going.
     #[serde(rename = "machine.guard")]
@@ -290,6 +295,7 @@ impl HubEventType {
             Self::MachineOffline => "machine.offline",
             Self::MachineDegraded => "machine.degraded",
             Self::MachineSlept => "machine.slept",
+            Self::MachineLinked => "machine.linked",
             Self::MachineGuard => "machine.guard",
             Self::MachineRecoveryPaused => "machine.recovery_paused",
             Self::ThreadOrphaned => "thread.orphaned",

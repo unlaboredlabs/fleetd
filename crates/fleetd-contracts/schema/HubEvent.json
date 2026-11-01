@@ -86,6 +86,11 @@
           "type": "string"
         },
         {
+          "const": "machine.linked",
+          "description": "The machine's node linked again before the hub marked it offline: it restarted, say onto a new build, and no\nmachine.online marks that. The views that read what its link says (what it can take, its build) read it again;\n`data.nodeVersion`.",
+          "type": "string"
+        },
+        {
           "const": "machine.guard",
           "description": "The machine's disk or load stopped new agents there, or no longer does; `data.paused`, and the summary says\nwhy. Agents already running keep going.",
           "type": "string"

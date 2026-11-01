@@ -249,6 +249,23 @@ impl NodeLinkServer {
         out
     }
 
+    /// The machine's link `id` ended: it and what its hello listed are forgotten, unless a newer link took over.
+    fn unlink(&self, machine_id: &MachineId, id: u64) {
+        let mut state = self.state.lock().unwrap();
+        if state.links.get(machine_id).map(|l| l.0) == Some(id) {
+            state.links.remove(machine_id);
+            state.capabilities.remove(machine_id);
+        }
+    }
+
+    /// The machine's live link ends, as a node's restart ends it.
+    #[cfg(test)]
+    pub fn test_unlink(&self, machine_id: &MachineId) {
+        if let Some(id) = self.link_id(machine_id) {
+            self.unlink(machine_id, id);
+        }
+    }
+
     /// A frame from a node, as its link hands it on: a browser session's screen.
     pub fn browser_frame(
         &self,
@@ -504,6 +521,28 @@ impl NodeLinkServer {
                 )
             }
         });
+    }
+
+    /// A node linked while this hub still counts its machine online (it restarted, onto a new build or to apply a
+    /// screen setting): logged as machine.linked, since its status doesn't change. The views that read what its link
+    /// says read it again; without it, one read while the node was away kept saying it couldn't take screen settings.
+    fn relinked(&self, machine_id: &MachineId, node_version: &str) {
+        if !self
+            .state
+            .lock()
+            .unwrap()
+            .announced
+            .contains_key(machine_id)
+        {
+            return;
+        }
+        self.append(event(
+            &self.now_iso(),
+            "machine.linked",
+            machine_id,
+            format!("{machine_id}'s node linked again, on fleetd {node_version}"),
+            Some(json!({ "nodeVersion": node_version })),
+        ));
     }
 
     /// The node woke from sleep: kept on the machine for the status views, and logged as machine.slept.
@@ -856,6 +895,7 @@ impl NodeLinkServer {
         if let Err(e) = self.deps.store.machine_upsert(&machine, None) {
             tracing::error!(error = %e, "node link: machine write failed");
         }
+        self.relinked(&machine_id, &hello.node_version);
         self.touch(&machine_id);
         send(
             tx,
@@ -1073,11 +1113,7 @@ struct Unlink {
 
 impl Drop for Unlink {
     fn drop(&mut self) {
-        let mut state = self.server.state.lock().unwrap();
-        if state.links.get(&self.machine_id).map(|l| l.0) == Some(self.id) {
-            state.links.remove(&self.machine_id);
-            state.capabilities.remove(&self.machine_id);
-        }
+        self.server.unlink(&self.machine_id, self.id);
     }
 }
 
@@ -1114,4 +1150,64 @@ pub fn hub_id() -> String {
         "fleetd-{}",
         if host.is_empty() { "localhost" } else { &host }
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use fleetd_contracts::ids::MachineId;
+
+    use crate::hub::api::{HubConfig, Listen};
+    use crate::hub::store::HubDb;
+    use crate::hub::store::test_clock::ManualClock;
+
+    /// A node that links again while its machine still counts as online (it restarted onto a new build) logs
+    /// machine.linked, so the app reads what its link says again; its first link after a hub start doesn't, since
+    /// machine.online marks that one.
+    #[tokio::test]
+    async fn a_node_linking_again_without_going_offline_is_logged() {
+        let home = tempfile::tempdir().unwrap();
+        let config = HubConfig {
+            home: home.path().to_path_buf(),
+            listen: Listen::default(),
+            url: None,
+        };
+        let hub = crate::hub::serve::build_on(
+            HubDb::open_memory().unwrap(),
+            config,
+            ManualClock::at(1_792_000_000_000),
+        )
+        .unwrap();
+        let devbox = MachineId::unchecked("devbox");
+        let linked = || {
+            hub.db
+                .with(|c| {
+                    let mut stmt = c.prepare(
+                        "SELECT data FROM events WHERE type = 'machine.linked' ORDER BY seq",
+                    )?;
+                    let rows = stmt
+                        .query_map([], |r| r.get::<_, String>(0))?
+                        .collect::<rusqlite::Result<Vec<_>>>()?;
+                    Ok(rows)
+                })
+                .unwrap()
+        };
+
+        let _first = hub.link.test_link(&devbox, &[]);
+        hub.link.relinked(&devbox, "0.1.0");
+        assert!(linked().is_empty(), "the first link is machine.online's");
+
+        hub.link.apply_runner(&devbox, None);
+        hub.link.test_unlink(&devbox);
+        let _again = hub.link.test_link(&devbox, &[]);
+        hub.link.relinked(&devbox, "0.2.0");
+        let events = linked();
+        assert_eq!(events.len(), 1, "{events:?}");
+        let event: serde_json::Value = serde_json::from_str(&events[0]).unwrap();
+        assert_eq!(event["machineId"], "devbox");
+        assert_eq!(event["data"]["nodeVersion"], "0.2.0");
+        assert_eq!(
+            event["summary"],
+            "devbox's node linked again, on fleetd 0.2.0"
+        );
+    }
 }

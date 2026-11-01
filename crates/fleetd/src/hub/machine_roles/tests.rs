@@ -1351,6 +1351,64 @@ async fn machine_roles_say_where_a_navi_can_live() {
     assert_eq!(read["best"], listed["best"]);
 }
 
+/// After an update (or a screen setting) restarts a node, the machine still counts as online while its node is away:
+/// it reads as neither able nor too old then, so Screens doesn't say "too old". Only a linked node that doesn't list
+/// screen settings is too old, and then the hub says how to restart it there: as `fleetd machine add` set it up, else
+/// a command for either system.
+#[tokio::test]
+async fn a_node_restarting_after_an_update_is_not_too_old_for_screen_settings() {
+    let (hub, home) = hub();
+    let screens = [
+        CAP_SESSION_HOST,
+        CAP_SESSION_SEAL,
+        fleetd_contracts::node_link::CAP_SCREEN_SETTINGS,
+    ];
+    let row = |listed: &Value, m: &str| {
+        listed["machines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["machineId"] == m)
+            .unwrap()
+            .clone()
+    };
+    let _devbox = hub.link.test_link(&mid("devbox"), &screens);
+    let listed = tool(&hub, "machine_roles", json!({})).await.unwrap();
+    assert_eq!(row(&listed, "devbox")["screenSettings"], true);
+    assert_eq!(row(&listed, "devbox")["nodeRestart"], Value::Null);
+
+    // Its node restarts onto the new build: online still, and nothing said about screen settings.
+    hub.link.test_unlink(&mid("devbox"));
+    let listed = tool(&hub, "machine_roles", json!({})).await.unwrap();
+    let devbox = row(&listed, "devbox");
+    assert_eq!(devbox["online"], true);
+    assert_eq!(devbox["screenSettings"], Value::Null, "{devbox}");
+    assert_eq!(devbox["nodeRestart"], Value::Null);
+
+    // Back on the new build: it takes them again.
+    let _devbox = hub.link.test_link(&mid("devbox"), &screens);
+    let listed = tool(&hub, "machine_roles", json!({})).await.unwrap();
+    assert_eq!(row(&listed, "devbox")["screenSettings"], true);
+
+    // A node that linked on a build before screen settings is too old, with the command that restarts it there.
+    let unknown = row(&listed, "mac1");
+    assert_eq!(unknown["screenSettings"], false);
+    assert_eq!(
+        unknown["nodeRestart"],
+        "launchctl kickstart -k gui/$(id -u)/sh.fleetd.node 2>/dev/null || systemctl --user restart fleetd-node.service"
+    );
+    std::fs::write(
+        home.path().join("setup.json"),
+        r#"{ "machines": { "mac1": { "sshHost": "mac1.local", "platform": "darwin", "uid": 501 } } }"#,
+    )
+    .unwrap();
+    let listed = tool(&hub, "machine_roles", json!({})).await.unwrap();
+    assert_eq!(
+        row(&listed, "mac1")["nodeRestart"],
+        "launchctl kickstart -k gui/501/sh.fleetd.node"
+    );
+}
+
 /// Settings › Hub › Machines › Screens: the hub hands the change to the machine's node, which writes its node.json, and
 /// keeps what it says it can host now; a node that can't take it is told apart from one that's offline.
 #[tokio::test]

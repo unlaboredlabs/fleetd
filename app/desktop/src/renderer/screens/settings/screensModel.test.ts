@@ -1,7 +1,7 @@
 // Hub › Machines › Screens' words: a kind's switch and its line from the machine's node, and the choices.
 import { describe, expect, it } from "vitest";
 import type { MachineRolesEntry } from "../../../shared/contracts";
-import { daysChoices, idleChoices, idleOf, lockedWhy, stateLine, switchOn } from "./screensModel";
+import { daysChoices, idleChoices, idleOf, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
 
 const devbox: MachineRolesEntry = {
   machineId: "devbox",
@@ -39,6 +39,12 @@ describe("a kind's switch", () => {
     expect(lockedWhy(devbox, check("ios"))).toBe("iOS simulators need macOS");
     expect(lockedWhy({ ...devbox, online: false }, check("android"))).toBe("Offline");
     expect(lockedWhy({ ...devbox, screenSettings: false }, check("android"))).toContain("too old");
+    // Its node between two links, as after an update: restarting, never too old.
+    expect(lockedWhy({ ...devbox, screenSettings: undefined }, check("android"))).toBe("Its node is restarting");
+    expect(nodeWait({ ...devbox, screenSettings: undefined })).toBe("restarting");
+    expect(nodeWait({ ...devbox, screenSettings: false })).toBe("old");
+    expect(nodeWait({ ...devbox, online: false, screenSettings: undefined })).toBeNull();
+    expect(nodeWait(devbox)).toBeNull();
   });
 });
 

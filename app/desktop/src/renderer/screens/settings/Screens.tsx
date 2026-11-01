@@ -8,7 +8,8 @@ import type { HostCheck, MachineRolesEntry, SessionHost } from "../../../shared/
 import { useToolQuery } from "../../src/data/react";
 import { Select, Switch, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { daysChoices, gbChoices, idleChoices, idleOf, lockedWhy, SCREEN_KINDS, stateLine, switchOn } from "./screensModel";
+import { CommandLine } from "../onboarding/Prose";
+import { daysChoices, gbChoices, idleChoices, idleOf, lockedWhy, nodeWait, SCREEN_KINDS, stateLine, switchOn } from "./screensModel";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -67,7 +68,7 @@ function ScreensRow({ machine: m }: { machine: MachineRolesEntry }) {
   };
   const check = (host: SessionHost): HostCheck | undefined => (m.hosts ?? []).find((h) => h.host === host);
   const idle = idleOf(m);
-  const old = m.online && m.screenSettings !== true;
+  const wait = nodeWait(m);
   return (
     <section className={s.machineRow} aria-labelledby={`${id}-name`} data-screens={m.machineId}>
       <div className={s.agentsHead}>
@@ -106,10 +107,25 @@ function ScreensRow({ machine: m }: { machine: MachineRolesEntry }) {
           onValueChange={(v) => set({ idleMinutes: Number(v) })}
         />
       </div>
-      {old ? (
+      {wait === "restarting" ? (
         <Text size="xs" tone="quiet">
-          Its fleetd is too old to change these from here: update it under Updates below.
+          {`${m.name}'s node is restarting: these come back once it links again.`}
         </Text>
+      ) : null}
+      {wait === "old" ? (
+        <>
+          <Text size="xs" tone="quiet">
+            {`${m.name}'s fleetd is too old to change these from here: press Update under Updates below.`}
+          </Text>
+          {m.nodeRestart === undefined ? null : (
+            <>
+              <Text size="xs" tone="quiet">
+                {`Still says this once ${m.name} is updated? Its node didn't restart onto the new build: run this on ${m.name}.`}
+              </Text>
+              <CommandLine command={m.nodeRestart} />
+            </>
+          )}
+        </>
       ) : null}
       <EchoLine echo={echo} />
     </section>

@@ -43,6 +43,7 @@ const mac1: MachineRolesEntry = {
   name: "mac1",
   roles: ["sessions"],
   screenSettings: false,
+  nodeRestart: "launchctl kickstart -k gui/501/sh.fleetd.node",
   hosts: [{ host: "ios", ready: true, detail: "Xcode with 6 iOS simulators" }],
 };
 const agentsOnly: MachineRolesEntry = { ...devbox, machineId: "builder", name: "builder", roles: ["agents"] };
@@ -52,12 +53,16 @@ const machine = (id: string) => ({ machineId: id, name: id, nodeVersion: "1", st
 let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
+/** What machine_roles answers now. */
+let listed: MachineRolesEntry[];
+let send: (frame: HubFrame) => void;
 
 beforeEach(() => {
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
   calls = [];
+  listed = [devbox, mac1, agentsOnly];
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -74,7 +79,7 @@ const render = async () => {
       calls.push({ tool, input });
       const output =
         tool === "machine_roles"
-          ? { machines: [devbox, mac1, agentsOnly], retention: { retentionDays: 30, maxGbPerProject: 20 } }
+          ? { machines: listed, retention: { retentionDays: 30, maxGbPerProject: 20 } }
           : tool === "machine_screens_set"
             ? { machine: devbox, next: "Saved. It applies once the screen live here ends, when the node restarts." }
             : {};
@@ -100,6 +105,7 @@ const render = async () => {
     listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [machine("devbox"), machine("mac1")], projects: [] } });
     await new Promise((r) => setTimeout(r, 0));
   });
+  send = listener;
   await settle();
 };
 
@@ -121,8 +127,33 @@ it("lists each machine that hosts screens with a switch per kind and what its no
   // An older node: what it hosts shows, and why it can't be switched from here.
   expect(toggle(row("mac1"), "iOS")?.getAttribute("aria-checked")).toBe("true");
   expect(toggle(row("mac1"), "iOS")?.disabled).toBe(true);
-  expect(row("mac1")?.textContent).toContain("too old to change these from here");
+  expect(row("mac1")?.textContent).toContain("mac1's fleetd is too old to change these from here: press Update under Updates below.");
+  // And if an update didn't restart it: the command, to copy, and where to run it.
+  expect(row("mac1")?.textContent).toContain("run this on mac1");
+  expect(row("mac1")?.textContent).toContain("launchctl kickstart -k gui/501/sh.fleetd.node");
+  expect([...(row("mac1")?.querySelectorAll("button") ?? [])].some((b) => b.textContent === "Copy")).toBe(true);
+  expect(row("devbox")?.textContent).not.toContain("too old");
   expect(host.querySelector("[data-screens-retention]")?.textContent).toContain("30 days");
+});
+
+// The person updated: the hub read the machines while devbox's node was restarting onto the new build (the machine
+// still online), and the node linked again with no status change. It never reads as too old, and its switches come
+// back once machine.linked says the node is back.
+it("a node restarting after an update is not too old, and its switches come back once it links again", async () => {
+  listed = [{ ...devbox, screenSettings: undefined }];
+  await render();
+  expect(row("devbox")?.textContent).not.toContain("too old");
+  expect(row("devbox")?.textContent).toContain("devbox's node is restarting: these come back once it links again.");
+  expect(toggle(row("devbox"), "Android")?.disabled).toBe(true);
+
+  listed = [devbox];
+  await act(async () => {
+    send({ t: "event", event: { seq: 2, at: AT, type: "machine.linked", machineId: "devbox", summary: "devbox's node linked again, on fleetd 2", data: { nodeVersion: "2" } } });
+    await new Promise((r) => setTimeout(r, 300));
+  });
+  for (let i = 0; i < 3; i++) await settle();
+  expect(row("devbox")?.textContent).not.toContain("restarting");
+  expect(toggle(row("devbox"), "Android")?.disabled).toBe(false);
 });
 
 it("turns a kind on with machine_screens_set and shows the node's answer", async () => {

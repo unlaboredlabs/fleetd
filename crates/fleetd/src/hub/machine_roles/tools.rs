@@ -10,7 +10,7 @@ use fleetd_contracts::mcp::{
     MachineScreensSetInput, MachineScreensSetOutput,
 };
 use fleetd_contracts::node_link::CAP_SCREEN_SETTINGS;
-use fleetd_contracts::prim::List;
+use fleetd_contracts::prim::{Line, List};
 
 use super::{entry, roles_on, runners, set_roles};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, readable, require};
@@ -44,16 +44,34 @@ async fn machine_roles(
 }
 
 /// What the app's Navi dialog reads besides roles: the machine's Navi sandbox, and whether the caller may make a Navi
-/// there; and whether its node takes screen settings.
+/// there; and whether its node takes screen settings. A node between two links (restarting after an update or a
+/// screen setting, while the machine still counts as online) says nothing either way: only a linked node that doesn't
+/// list them is too old, and then the command that restarts it goes with it.
 fn for_caller(hub: &Hub, caller: &Caller, entry: MachineRolesEntry) -> MachineRolesEntry {
+    let m = &entry.machine_id;
+    let (can, old) = (
+        hub.link.node_can(m, CAP_SCREEN_SETTINGS),
+        hub.link.node_lacks(m, CAP_SCREEN_SETTINGS),
+    );
+    let setup = old.then(|| crate::hub::doctor::config::read_hub_config(&hub.config.home).0);
     MachineRolesEntry {
-        screen_settings: Some(hub.link.node_can(&entry.machine_id, CAP_SCREEN_SETTINGS)),
+        screen_settings: (can || old).then_some(can),
+        node_restart: setup.map(|s| Line::unchecked(node_restart(s.machines.get(m.as_str())))),
         navi_sandbox: hub
             .executors
             .cached_runner(&entry.machine_id)
             .and_then(|info| info.sandbox),
         operates: Some(allows(caller, Role::Operate, Some(&entry.machine_id))),
         ..entry
+    }
+}
+
+/// The command that restarts a machine's node, run there: as `fleetd machine add` set it up, else one that does on
+/// either system.
+fn node_restart(setup: Option<&crate::hub::doctor::config::MachineSetup>) -> String {
+    match setup {
+        Some(_) => crate::hub::doctor::config::restart_command("node", setup),
+        None => "launchctl kickstart -k gui/$(id -u)/sh.fleetd.node 2>/dev/null || systemctl --user restart fleetd-node.service".to_owned(),
     }
 }
 

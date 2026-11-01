@@ -94,7 +94,9 @@ const machineOff = (m: MachineRolesEntry, kind: ScreenKind): (OffReason & { read
   }
   switch (check.off) {
     case "off":
-      return m.screenSettings === true
+      // No word on screen settings: its node is between two links (restarting, as after an update), not too old.
+      if (m.screenSettings === undefined) return { rank: 2, why: `${noun} are turned off on ${m.name}, and its node is restarting: turn them on once it links again.`, short: "Turned off", fix: "none", machine };
+      return m.screenSettings
         ? { rank: 0, why: `${noun} are turned off on ${m.name}.`, short: "Turned off", fix: "turn_on", machine }
         : { rank: 1, why: `${noun} are turned off on ${m.name}, and its fleetd is too old to turn them on from here.`, short: "Turned off", fix: "update", machine };
     case "restarting":

@@ -574,7 +574,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "machine_roles",
-        "Every machine's roles (agents, sessions or both), its session slots (live of max, and where the max comes from) and what it can host for browser and device sessions, each in plain words: Chrome, an Android emulator (SDK and KVM), an iOS simulator (Xcode on macOS), a desktop (docker or Xvfb). Each kind's check says why it can't (off: off, restarting, unsupported, missing, installing, failed), whether its switch is on and its idle timeout; screenSettings says whether machine_screens_set reaches the machine, and retention how long recordings are kept. Read-only.",
+        "Every machine's roles (agents, sessions or both), its session slots (live of max, and where the max comes from) and what it can host for browser and device sessions, each in plain words: Chrome, an Android emulator (SDK and KVM), an iOS simulator (Xcode on macOS), a desktop (docker or Xvfb). Each kind's check says why it can't (off: off, restarting, unsupported, missing, installing, failed), whether its switch is on and its idle timeout; screenSettings says whether machine_screens_set reaches the machine (false: its node is too old, and nodeRestart is the command that restarts it there; absent while its node is restarting), and retention how long recordings are kept. Read-only.",
     ),
     (
         "machine_screens_set",
