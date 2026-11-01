@@ -64,6 +64,12 @@
               "value": "fleetd init --join http://devbox:4790 --code <code>"
             }
           ]
+        },
+        {
+          "links": [],
+          "note": "A browser and a Linux desktop are on wherever they can run. iOS simulators (a Mac with Xcode) and Android emulators (Linux with KVM) install once a machine is opted in: its switch in Settings › Hub › Machines › Screens.",
+          "title": "Turn on iOS or Android screens (optional)",
+          "values": []
         }
       ],
       "place": "machines",

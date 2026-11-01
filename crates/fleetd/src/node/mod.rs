@@ -30,6 +30,7 @@ pub mod relay;
 mod relay_tests;
 pub mod repos;
 pub mod runner;
+pub mod screens;
 pub mod secrets;
 pub mod self_exe;
 pub mod session_route;
@@ -346,6 +347,17 @@ async fn run_node(
         },
         remotes: Default::default(),
     });
+    {
+        let router = sessions_router.clone();
+        screens::started(
+            &config,
+            Box::new(move || router.as_ref().map_or(0, |r| r.count())),
+            {
+                let sessions = node_sessions.clone();
+                Box::new(move || sessions.hold())
+            },
+        );
+    }
     // Forwarders and screen folders a stopped node left: their screens went with it.
     device::remote::sweep(home);
     if sessions_router.is_some() {
@@ -416,7 +428,8 @@ async fn run_node(
     tokio::select! {
         fatal = link::run_node(options) => Err(NodeError::Refused(fatal)),
         () = enrolled => Ok(()),
-        () = shutdown_signal() => {
+        // A screen setting changed in Settings: the node stops as for SIGTERM, and its service manager starts it again.
+        () = async { tokio::select! { () = shutdown_signal() => {}, () = screens::restart_wanted() => {} } } => {
             telegram.shutdown();
             node_sessions.shutdown().await;
             if let Some(router) = &sessions_router {

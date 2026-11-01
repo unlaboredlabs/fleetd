@@ -252,25 +252,7 @@ pub fn read(limits: Vec<LoginLimit>, home: &Path) -> Option<NodeLoad> {
         )),
         limits: List::unchecked(limits.into_iter().take(4).collect()),
         disk: disk(home, setting(|c| c.min_free_gb)),
-        hosts: Some(super::hosts::checks(
-            home,
-            &config
-                .as_ref()
-                .and_then(|c| c.browser.clone())
-                .unwrap_or_default(),
-            &config
-                .as_ref()
-                .and_then(|c| c.device.clone())
-                .unwrap_or_default(),
-            &config
-                .as_ref()
-                .and_then(|c| c.ios.clone())
-                .unwrap_or_default(),
-            &config
-                .as_ref()
-                .and_then(|c| c.desktop.clone())
-                .unwrap_or_default(),
-        )),
+        hosts: Some(super::hosts::checks(home, config.as_ref())),
         android: super::device::health(
             home,
             &config

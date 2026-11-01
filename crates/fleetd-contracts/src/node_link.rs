@@ -195,6 +195,10 @@ pub const CAP_PROFILE_NAMES: &str = "profile_names";
 /// The node passes a launch's `systemPrompt` to its runner at every start of the session (W218).
 pub const CAP_SYSTEM_PROMPT: &str = "system_prompt";
 
+/// `node_action` `screens`: the node turns a kind of screen on or off and sets their idle timeout in its node.json, from
+/// Settings › Hub › Machines › Screens (W268).
+pub const CAP_SCREEN_SETTINGS: &str = "screen_settings";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -491,6 +495,11 @@ pub enum NodeActionKind {
     /// the restart finds its agents between steps; the tool calls already running carry on. Answered at once with how
     /// many sessions are still mid-step (`steps`). Only for a node that lists [`CAP_UPDATE_HOLD`].
     Hold,
+    /// Write `screens` into the node's node.json: a kind of screen turned on (which installs what it needs, as the
+    /// file's own opt-in does) or off, or the idle timeout of every kind. The node restarts itself to apply it once no
+    /// screen is live there. Answered at once with the machine's host checks as they are now (`hosts`). Only for a
+    /// node that lists [`CAP_SCREEN_SETTINGS`].
+    Screens,
 }
 
 /// Hub -> node: M11 doctor's probe, and the hub's update of its nodes.
@@ -505,6 +514,8 @@ pub struct NodeAction {
     pub claude: Option<Text<1, 40>>,
     /// `claude_login_code` only: the code the sign-in page showed.
     pub code: Option<Text<1, 500>>,
+    /// `screens` only.
+    pub screens: Option<crate::machine_roles::ScreenSettings>,
 }
 
 /// How long a `hold` lasts unless the hub asks again: a hub that stops asking (it went away, the update ended without
@@ -564,6 +575,8 @@ pub struct NodeActionResult {
     pub login_url: Option<Text<1, 4000>>,
     /// `hold`: the sessions still mid-step, a tool call of theirs running.
     pub steps: Option<u32>,
+    /// `screens`: what the machine can host with the new settings.
+    pub hosts: Option<crate::machine_roles::HostChecks>,
 }
 
 /// Node -> hub: time spans from the node's outbox rows `fromRid..=toRid`, oldest first. A resend after a

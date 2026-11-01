@@ -2335,8 +2335,25 @@ export type GrantMachines = Star | MachineId[];
 export type HostCheck = {
   detail: string;
   host: SessionHost;
+  /**
+   * Minutes without a command before a screen of this kind ends (node.json's `idleMinutes`). Absent from a node
+   * before it.
+   */
+  idleMinutes?: number;
+  /** Why it can't, as a word the app acts on. Absent while it can, and from a node before it. */
+  off?: HostOff;
+  /**
+   * Its switch in Settings › Hub › Machines › Screens: node.json turns this kind on, by its `enabled` or by default.
+   * Absent from a node before it.
+   */
+  on?: boolean;
   ready: boolean;
 };
+
+/** Why a machine can't host a kind of screen. */
+export type KnownHostOff = "off" | "restarting" | "unsupported" | "missing" | "installing" | "failed";
+/** KnownHostOff, or a value from a newer hub. */
+export type HostOff = KnownHostOff | (string & {});
 
 /** One thing in flight on the hub. */
 export type HubBusyItem = {
@@ -3322,6 +3339,11 @@ export type MachineRolesEntry = {
   /** The caller may work there (operate): make a Navi, start agents. Absent from a hub before it. */
   operates?: boolean;
   roles: MachineRole[];
+  /**
+   * Its node takes screen settings from the hub (`machine_screens_set`). Absent: its fleetd is older, or it is
+   * offline.
+   */
+  screenSettings?: boolean;
   /** Its sessions live now, its own agents' and other machines'. */
   sessionsLive: number;
 };
@@ -3333,6 +3355,11 @@ export type MachineRolesOutput = {
   best?: MachineId;
   machines: MachineRolesEntry[];
   next?: string;
+  /**
+   * How long the hub keeps screens' recordings (`browser_retention_set`), for Settings › Hub › Machines › Screens.
+   * Absent from a hub before it.
+   */
+  retention?: BrowserRetention;
   truncated?: boolean;
 };
 
@@ -3346,6 +3373,20 @@ export type MachineRolesSetInput = {
 };
 
 export type MachineRolesSetOutput = {
+  machine: MachineRolesEntry;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type MachineScreensSetInput = {
+  host?: SessionHost;
+  /** Minutes without a command before a screen there ends, for every kind. */
+  idleMinutes?: number;
+  machineId: MachineId;
+  on?: boolean;
+};
+
+export type MachineScreensSetOutput = {
   machine: MachineRolesEntry;
   next?: string;
   truncated?: boolean;
@@ -8298,6 +8339,7 @@ export interface ToolMap {
   machine_remove: { input: MachineRemoveInput; output: MachineRemoveOutput };
   machine_roles: { input: MachineRolesInput; output: MachineRolesOutput };
   machine_roles_set: { input: MachineRolesSetInput; output: MachineRolesSetOutput };
+  machine_screens_set: { input: MachineScreensSetInput; output: MachineScreensSetOutput };
   mcp_server_remove: { input: McpServerRemoveInput; output: McpServerRemoveOutput };
   mcp_server_set: { input: McpServerSetInput; output: McpServerSetOutput };
   mcp_server_test: { input: McpServerTestInput; output: McpServerTestOutput };

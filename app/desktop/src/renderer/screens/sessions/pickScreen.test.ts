@@ -2,7 +2,7 @@
 // machine it starts on, and each machine's slots in words, a full one offering to wait.
 import { describe, expect, it } from "vitest";
 import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
-import { canOpen, hostsFor, newScreenOf, openingLine, openWord, pickHost, prChoices, slotLine, startingLine, takesBuild } from "./pickScreen";
+import { adminNames, askLine, canOpen, fixLabel, fixReveal, hostsFor, idleFor, idleWords, newScreenOf, openingLine, openWord, pickHost, prChoices, slotLine, startingLine, takesBuild, whyOff } from "./pickScreen";
 
 const machine = (machineId: string, ready: readonly string[], more: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({
   machineId,
@@ -107,5 +107,101 @@ describe("newScreenOf", () => {
   it("skips an agent's screen and one that has ended", () => {
     const { openedBy: _person, ...agents } = row("B3");
     expect(newScreenOf([agents, row("B2", { state: "uploading" })], "browser", new Set())).toBeUndefined();
+  });
+});
+
+/** A reason the test expects there to be. */
+const must = <T,>(x: T | null | undefined): T => {
+  if (x === null || x === undefined) throw new Error("expected a reason");
+  return x;
+};
+
+describe("why a kind can't open", () => {
+  /** A machine whose node says, for each kind, what it can't host and why. */
+  const off = (machineId: string, offs: Partial<Record<string, string>>, more: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({
+    ...machine(machineId, []),
+    screenSettings: true,
+    hosts: ["browser", "android", "ios", "desktop"].map((host) => {
+      const why = offs[host];
+      return why === undefined ? { host, ready: true, detail: "ready", on: true } : { host, ready: false, detail: `${host} ${why} on the node`, off: why, on: why !== "off" };
+    }),
+    ...more,
+  });
+
+  it("says nothing of a kind a machine can host", () => {
+    expect(whyOff([off("devbox", {})], "android")).toBeNull();
+  });
+
+  it("offers an admin's Turn on where it is only switched off, on that machine", () => {
+    const reason = whyOff([off("devbox", { android: "off" }), off("lab", { android: "missing" })], "android");
+    expect(reason).toEqual({ why: "Android emulators are turned off on devbox.", short: "Turned off", fix: "turn_on", machine: { machineId: "devbox", name: "devbox" } });
+    expect(fixLabel("turn_on")).toBe("Turn on");
+    expect(askLine(must(reason), "android", ["Ana"])).toBe("Ask Ana to turn them on in Settings › Hub › Machines › Screens.");
+  });
+
+  it("sends an older node's switch to an update, since the hub can't reach it", () => {
+    const reason = whyOff([off("devbox", { linux_desktop: "off", desktop: "off" }, { screenSettings: false })], "linux_desktop");
+    expect(reason?.fix).toBe("update");
+    expect(reason?.why).toBe("Linux desktops are turned off on devbox, and its fleetd is too old to turn them on from here.");
+    expect(fixReveal("update")).toBe("hub.updates");
+    expect(askLine(must(reason), "linux_desktop", ["Ana", "Bo"])).toBe("Ask Ana or Bo to update fleetd on devbox.");
+  });
+
+  it("says a Mac is needed where no machine can ever run iOS", () => {
+    const reason = whyOff([off("devbox", { ios: "unsupported" }), off("lab", { ios: "unsupported" })], "ios");
+    expect(reason).toEqual({ why: "iOS simulators need a Mac with Xcode, and no Mac here hosts screens.", short: "Needs a Mac", fix: "add" });
+    expect(askLine(must(reason), "ios", [])).toBe("Ask a hub admin to add a Mac.");
+    expect(fixLabel("add")).toBe("Add machine");
+  });
+
+  it("prefers the nearest fix: a Mac installing before one that's offline, before a Linux box", () => {
+    const machines = [off("devbox", { ios: "unsupported" }), off("mac-old", { ios: "off" }, { online: false }), off("mac", { ios: "installing" })];
+    const reason = whyOff(machines, "ios");
+    expect(reason?.why).toBe("mac is installing what iOS simulators need.");
+    expect(reason?.fix).toBe("none");
+    expect(askLine(must(reason), "ios", ["Ana"])).toBeNull();
+    expect(fixLabel("none")).toBeNull();
+    expect(whyOff(machines.slice(0, 2), "ios")).toMatchObject({ why: "mac-old is offline.", short: "Offline" });
+  });
+
+  it("says a kind turned on waits for its node's restart", () => {
+    expect(whyOff([off("devbox", { android: "restarting" })], "android")?.short).toBe("Starting up");
+  });
+
+  it("gives the node's own words for what is missing or failed", () => {
+    const reason = whyOff([off("devbox", { android: "missing" })], "android");
+    expect(reason?.why).toBe("devbox: android missing on the node.");
+    expect(reason?.short).toBe("Not set up");
+    expect(whyOff([off("devbox", { android: "failed" })], "android")?.short).toBe("Setup failed");
+  });
+
+  it("names an older node and a machine whose role is agents only", () => {
+    expect(whyOff([off("devbox", {}, { hosts: [] })], "browser")).toMatchObject({ fix: "update", short: "Needs an update" });
+    expect(whyOff([off("devbox", {}, { roles: ["agents"] })], "browser")).toMatchObject({ why: "devbox doesn’t host screens: its role is agents only.", fix: "roles" });
+    expect(whyOff([], "browser")).toMatchObject({ why: "No machine has joined this hub yet.", fix: "add" });
+  });
+
+  it("keeps a Navi's browser to its own machine's reason", () => {
+    expect(whyOff([off("devbox", {}), off("home", { browser: "off" })], "browser", "home")?.why).toBe("Browser screens are turned off on home.");
+  });
+
+  it("asks the hub's owners and admins, never members or people removed", () => {
+    expect(
+      adminNames([
+        { name: "Ana", role: "owner" },
+        { name: "Bo", role: "admin" },
+        { name: "Cy", role: "member" },
+        { name: "Di", role: "admin", removedAt: "2026-10-01T00:00:00.000Z" },
+      ]),
+    ).toEqual(["Ana", "Bo"]);
+  });
+});
+
+describe("when a person's screen ends", () => {
+  it("says the machine's own idle timeout, and no number from a node that doesn't report one", () => {
+    const m = { ...machine("devbox", ["browser"]), hosts: [{ host: "browser", ready: true, detail: "ready", idleMinutes: 45 }] };
+    expect(idleWords(idleFor([m], "devbox", "browser"))).toBe("after 45 minutes idle");
+    expect(idleWords(idleFor([machine("devbox", ["browser"])], "devbox", "browser"))).toBe("once it sits idle");
+    expect(idleWords(idleFor([m], "mac", "browser"))).toBe("once it sits idle");
   });
 });

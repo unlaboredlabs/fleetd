@@ -93,6 +93,9 @@ pub(super) fn report_hosts(hub: &Hub, m: &str, ready: &[SessionHost]) {
                 host,
                 ready: ready.contains(&host),
                 detail: Line::unchecked("as tested"),
+                off: None,
+                on: None,
+                idle_minutes: None,
             })
             .collect(),
     ));
@@ -687,6 +690,9 @@ fn runner(m: &str, sessions: bool, ready: bool, live: i64, max: i64) -> Runner {
             host: SessionHost::Browser,
             ready,
             detail: Line::unchecked("as tested"),
+            off: None,
+            on: None,
+            idle_minutes: None,
         }])),
         hosts_others: true,
         others_note: None,
@@ -1343,4 +1349,98 @@ async fn machine_roles_say_where_a_navi_can_live() {
         .unwrap();
     assert_eq!(read["machines"][0]["operates"], false);
     assert_eq!(read["best"], listed["best"]);
+}
+
+/// Settings › Hub › Machines › Screens: the hub hands the change to the machine's node, which writes its node.json, and
+/// keeps what it says it can host now; a node that can't take it is told apart from one that's offline.
+#[tokio::test]
+async fn screen_settings_go_to_the_machines_node_and_its_answer_shows_at_once() {
+    let (hub, _home) = hub();
+    let listed = tool(&hub, "machine_roles", json!({})).await.unwrap();
+    assert_eq!(
+        listed["retention"],
+        json!({ "retentionDays": 30, "maxGbPerProject": 20 })
+    );
+    assert_eq!(listed["machines"][0]["screenSettings"], false);
+
+    // A node too old to take them, then one that's gone.
+    let (tx, rx) = mpsc::unbounded_channel::<HubToNode>();
+    let link = hub.node_commands.attach(&mid("devbox"), tx);
+    let old = tool(
+        &hub,
+        "machine_screens_set",
+        json!({ "machineId": "devbox", "host": "android", "on": true }),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{old:?}").contains("too old"), "{old:?}");
+    drop(link);
+    let offline = tool(
+        &hub,
+        "machine_screens_set",
+        json!({ "machineId": "devbox", "idleMinutes": 20 }),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{offline:?}").contains("offline"), "{offline:?}");
+    assert!(
+        tool(
+            &hub,
+            "machine_screens_set",
+            json!({ "machineId": "devbox", "host": "android" })
+        )
+        .await
+        .is_err(),
+        "a kind needs on"
+    );
+    drop(rx);
+
+    // A node that takes them: Android turned on, and what it says it hosts now replaces its last heartbeat's.
+    hub.link.set_capabilities(
+        &mid("devbox"),
+        &[
+            CAP_SESSION_HOST,
+            CAP_SESSION_SEAL,
+            fleetd_contracts::node_link::CAP_SCREEN_SETTINGS,
+        ],
+    );
+    let (tx, mut rx) = mpsc::unbounded_channel::<HubToNode>();
+    let _link = hub.node_commands.attach(&mid("devbox"), tx);
+    let node = {
+        let hub = hub.clone();
+        tokio::spawn(async move {
+            let Some(HubToNode::NodeAction(action)) = rx.recv().await else {
+                panic!("expected a node action");
+            };
+            assert_eq!(
+                action.action,
+                fleetd_contracts::node_link::NodeActionKind::Screens
+            );
+            let screens = action.screens.unwrap();
+            assert_eq!(
+                (screens.host, screens.on),
+                (Some(SessionHost::Android), Some(true))
+            );
+            let reply = serde_json::from_value(json!({
+                "t": "node_action_result", "id": action.id, "ok": true,
+                "message": "Saved. The node restarts now to apply it.",
+                "hosts": [{ "host": "android", "ready": false, "off": "restarting", "on": true, "idleMinutes": 30,
+                            "detail": "turned on: it starts when this machine's node restarts" }],
+            }))
+            .unwrap();
+            hub.node_commands.resolve(&mid("devbox"), reply);
+        })
+    };
+    let out = tool(
+        &hub,
+        "machine_screens_set",
+        json!({ "machineId": "devbox", "host": "android", "on": true }),
+    )
+    .await
+    .unwrap();
+    node.await.unwrap();
+    assert_eq!(out["next"], "Saved. The node restarts now to apply it.");
+    assert_eq!(out["machine"]["screenSettings"], true);
+    assert_eq!(out["machine"]["hosts"][0]["off"], "restarting");
+    assert_eq!(out["machine"]["hosts"][0]["on"], true);
 }

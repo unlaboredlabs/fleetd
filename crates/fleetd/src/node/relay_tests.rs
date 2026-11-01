@@ -135,6 +135,9 @@ async fn hub(home: &std::path::Path, mac1_key: &str) -> (Arc<Hub>, String) {
             host: SessionHost::Browser,
             ready: m == "mac1",
             detail: Line::unchecked("as tested"),
+            off: None,
+            on: None,
+            idle_minutes: None,
         }]));
         hub.link.observe_load(&mid(m), Some(load), at);
     }

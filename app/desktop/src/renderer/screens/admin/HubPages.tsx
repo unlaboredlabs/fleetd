@@ -1,7 +1,7 @@
 // Settings' Hub group (#/settings/hub/<page>, D211): the hub's owners' and admins' pages, in the Settings window and
 // shown to nobody else; the hub refuses anyone else's change too. People (roles, Invite someone and the invites open,
 // and every hub link); Machines (Add machine, the machines with Repair and Remove, each one's page with its checklist,
-// their roles, their caps, and Updates: each one's fleetd with Update…); Every project, laid out as a project's own pages are: Profiles, Tools & skills,
+// their roles, their screens, their caps, and Updates: each one's fleetd with Update…); Every project, laid out as a project's own pages are: Profiles, Tools & skills,
 // Instructions & memory and Prompts, each reaching every project on the hub; Hub accounts (the hub's Claude API key
 // and its GitHub App, github/AdminGithub.tsx); and Setup, the hub's guided steps (setup/SetupScreen.tsx), listed only
 // while a required one is left. With several hubs the group manages
@@ -15,6 +15,7 @@ import { HUB_COLOR } from "../shell/hubColor";
 import { AddMachine, type View } from "../addMachine";
 import { HubCaps } from "../settings/Agents";
 import { MachineRoles } from "../settings/MachineRoles";
+import { Screens } from "../settings/Screens";
 import { SharedMemory } from "../settings/Memory";
 import { HubInstructions } from "../settings/Instructions";
 import { HubMcpServers } from "../settings/McpServers";
@@ -130,8 +131,8 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
 
 /**
  * Adding machines to the hub (this computer, one the hub reaches over SSH, or any other), then its machines, each with
- * Repair (which opens in Add machine) and Remove, and a page of its own with its checklist; then their roles, and how
- * many agents each machine and all of them together run at once.
+ * Repair (which opens in Add machine) and Remove, and a page of its own with its checklist; then their roles, the
+ * screens each opens, and how many agents each machine and all of them together run at once.
  */
 function Machines() {
   const [open, setOpen] = useState<{ view: View; at: number }>();
@@ -149,6 +150,9 @@ function Machines() {
         />
         <Separator />
         <MachineRoles />
+        <PagePart title="Screens" reveal="hub.screens" intro="Which kinds of screen each machine opens, when an idle one ends, and how long the hub keeps recordings.">
+          <Screens />
+        </PagePart>
         <PagePart title="Max agents" reveal="hub.caps" intro="Every project's agents together: on each machine, and on all of them.">
           <HubCaps />
         </PagePart>

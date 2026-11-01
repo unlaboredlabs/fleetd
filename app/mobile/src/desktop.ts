@@ -79,4 +79,18 @@ export { updatesView, type Line, type PartLine, type UpdatesView } from "../../d
 export { loadRun, resetFlow, retryMachine, startOver, startUpdate, updateNow, useFlow, useReady, useRun, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
 export { cellFrames, CELLS, GRAIN, GRAIN_BEATS, LEVELS, litOn, phaseOf, RING, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";
 export { doingWords, leadLaneId, sentenceCase, workedFor } from "../../desktop/src/shared/turnWords";
-export { canOpen, hostsFor, KINDS as SCREEN_KINDS, openWord, pickHost, slotLine, type HostChoice, type ScreenKind } from "../../desktop/src/renderer/screens/sessions/pickScreen";
+export {
+  adminNames,
+  askLine,
+  hostsFor,
+  idleFor,
+  idleWords,
+  KINDS as SCREEN_KINDS,
+  openWord,
+  pickHost,
+  slotLine,
+  whyOff,
+  type HostChoice,
+  type OffReason,
+  type ScreenKind,
+} from "../../desktop/src/renderer/screens/sessions/pickScreen";

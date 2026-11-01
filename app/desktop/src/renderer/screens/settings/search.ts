@@ -1,9 +1,11 @@
 // Settings search: every page and option by its own name, plus the words people use for it ("dark", "theme"), so
 // typing in the sidebar's field narrows to the option and opening one lands on it. Matching is pure and tested; the
 // reveal is a one-shot "focus this option" that the page showing it takes up when it renders.
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { revealNext } from "./reveal";
 import { ENTRIES } from "./catalog";
 import { isHubTab, promptHref, tabHref, type Tab } from "./route";
+
+export { revealNext, useReveal } from "./reveal";
 
 export interface SettingsOption {
   /** Unique; also the reveal key the page's option registers with useReveal. */
@@ -108,6 +110,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   page("hub.machines", ["machine", "computer", "box", "repair", "remove", "devices"]),
   { key: "hub.add-machine", label: "Add machine", tab: "hub.machines", keywords: ["machine", "ssh", "join", "computer", "this computer"] },
   { key: "hub.roles", label: "Machine roles", tab: "hub.machines", keywords: ["role", "sessions", "at once", "browser", "android", "ios", "desktop", "hosts"] },
+  { key: "hub.screens", label: "Screens", tab: "hub.machines", keywords: ["screens", "browser", "android", "ios", "iphone", "simulator", "emulator", "linux desktop", "turn on", "idle", "timeout", "recordings", "retention", "keep"] },
   { key: "hub.caps", label: "Machine max agents", tab: "hub.machines", keywords: ["max agents", "whole fleet", "fleet cap", "machine cap", "limit", "at once", "all machines"] },
   { key: "hub.updates", label: "Updates", tab: "hub.machines", keywords: ["update", "upgrade", "hub version", "machine version", "fleetd update", "release"] },
   page("hub.profiles", ["task profiles", "profile", "model", "effort", "reasoning", "fast mode", "default", "every project"]),
@@ -158,38 +161,8 @@ export function searchSettings(query: string, options: ReadonlyArray<SettingsOpt
 /** A prompt opens in the project the Prompts page was last showing: dropping it would make Save write hub-wide. */
 export const optionHref = (o: SettingsOption): string => (o.prompt !== undefined ? promptHref(o.prompt) : tabHref(o.tab));
 
-// The option to reveal once its page shows it.
-let wanted: string | null = null;
-const listeners = new Set<() => void>();
-const subscribe = (l: () => void) => {
-  listeners.add(l);
-  return () => listeners.delete(l);
-};
-
-/** The next page to show the element marked `key` (useReveal) scrolls to it and focuses it. */
-export function revealNext(key: string | null) {
-  wanted = key;
-  for (const l of listeners) l();
-}
-
 /** Opens an option: its page (or prompt), then focus on the option itself. */
 export function openOption(o: SettingsOption) {
   revealNext(o.prompt === undefined && o.key !== o.tab ? o.key : null);
   window.location.hash = optionHref(o);
-}
-
-const FOCUSABLE = 'input, textarea, button:not([disabled]), [role="slider"]';
-
-/** Marks an option's element: when a search opens this option, it scrolls into view and its first control takes focus. */
-export function useReveal<T extends HTMLElement>(key: string) {
-  const ref = useRef<T>(null);
-  const want = useSyncExternalStore(subscribe, () => wanted);
-  useEffect(() => {
-    const el = ref.current;
-    if (want !== key || el === null) return;
-    wanted = null;
-    el.scrollIntoView({ block: "nearest" });
-    (el.querySelector<HTMLElement>(FOCUSABLE) ?? el).focus({ preventScroll: true });
-  }, [want, key]);
-  return ref;
 }

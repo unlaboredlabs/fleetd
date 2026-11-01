@@ -1,5 +1,5 @@
-// Hub › Machines' machine roles: what each machine is for (agents, sessions or both), how many browser and device
-// sessions it hosts at once, and what it can host, each in plain words as its node reported it. Hub-wide, so only its
+// Hub › Machines' machine roles: what each machine is for (agents, sessions or both) and how many browser and device
+// sessions it hosts at once; what it can host is under Screens (Screens.tsx), with a switch each. Hub-wide, so only its
 // owners and admins see it. Reads machine_roles; a change is a machine_roles_set call (an admin's), and the hub's
 // answer replaces the row.
 import { useState } from "react";
@@ -8,7 +8,7 @@ import { useToolQuery } from "../../src/data/react";
 import { Segmented, Select, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { useReveal } from "./search";
-import { capChoices, choiceOf, hostName, hostsInOrder, hostsNote, ROLE_CHOICES, ROLE_HELP, rolesOf, sessionsLine, type RolesChoice } from "./machinesModel";
+import { capChoices, choiceOf, hostsNote, ROLE_CHOICES, ROLE_HELP, rolesOf, sessionsLine, type RolesChoice } from "./machinesModel";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -100,21 +100,6 @@ function MachineRow({ machine: m }: { machine: MachineRolesEntry }) {
               onValueChange={(cap) => set({ cap })}
             />
           </div>
-          <ul className={s.machineHosts} aria-label={`What ${m.name} can host`}>
-            {hostsInOrder(m.hosts ?? []).map((h) => (
-              <li key={h.host}>
-                <Text size="xs" strong={h.ready} tone={h.ready ? "default" : "quiet"}>
-                  {hostName(h.host)}
-                </Text>
-                <Text size="xs" tone={h.ready ? "default" : "quiet"}>
-                  {h.ready ? "can host" : "can't host"}
-                </Text>
-                <Text size="xs" tone="quiet">
-                  {h.detail}
-                </Text>
-              </li>
-            ))}
-          </ul>
           {note === null ? null : (
             <Text size="xs" tone="quiet">
               {note}

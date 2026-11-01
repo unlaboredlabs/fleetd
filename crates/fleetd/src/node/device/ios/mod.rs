@@ -313,8 +313,8 @@ fn health_from(
         return health(
             IosState::Wanted,
             format!(
-                "Xcode with {runtime}; iOS screens are off until this Mac opts in with \"ios\": {{\"enabled\": \
-                 true}} in its node.json."
+                "Xcode with {runtime}; iOS screens are off until this Mac is turned on in Settings › Hub › \
+                 Machines › Screens (or \"ios\": {{\"enabled\": true}} in its node.json)."
             ),
             None,
             false,
@@ -580,6 +580,11 @@ impl Simulators {
         if let Prep::Ready(pool) = &*lock(&self.prep) {
             pool.hold(held);
         }
+    }
+
+    /// How many of its sessions are live.
+    pub fn count(&self) -> usize {
+        lock(&self.sessions).len()
     }
 
     /// The live session of an agent session.

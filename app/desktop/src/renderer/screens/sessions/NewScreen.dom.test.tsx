@@ -69,6 +69,13 @@ let sessions: unknown[] = [];
 let prsFail = 0;
 /** screen_open answers without its session, as a hub that answers before it has the session does. */
 let forgets = false;
+/** What machine_roles, hub_info and people_list answer. */
+let machines: unknown[] = MACHINES;
+let info: unknown = {};
+const PEOPLE = [
+  { personId: "p_anaanaan", name: "Ana", role: "owner", createdAt: AT },
+  { personId: "p_bobobobo", name: "Bo", role: "member", createdAt: AT },
+];
 
 beforeEach(() => {
   vi.stubGlobal("fleetd", { platform: "darwin", fixture: null, hub: { watch: () => Promise.resolve(), input: () => Promise.resolve() } });
@@ -80,6 +87,8 @@ beforeEach(() => {
   forgets = false;
   waits = [];
   sessions = [];
+  machines = MACHINES;
+  info = {};
   window.location.hash = "";
 });
 afterEach(() => {
@@ -105,7 +114,13 @@ const mount = async () => {
       calls.push({ tool, input, timeoutMs: options?.timeoutMs });
       if (tool === "screen_open" && refuse !== undefined) return Promise.reject(new Error(refuse));
       if (tool === "browser_sessions") return Promise.resolve({ ok: true, output: { sessions, waits, retention: { retentionDays: 30, maxGbPerProject: 20 } } });
-      if (tool === "machine_roles") return Promise.resolve({ ok: true, output: { machines: MACHINES } });
+      if (tool === "machine_roles") return Promise.resolve({ ok: true, output: { machines } });
+      if (tool === "hub_info") return Promise.resolve({ ok: true, output: info });
+      if (tool === "people_list") return Promise.resolve({ ok: true, output: { people: PEOPLE, devices: [], invites: [] } });
+      if (tool === "machine_screens_set") {
+        machines = MACHINES;
+        return Promise.resolve({ ok: true, output: { machine: MACHINES[0], next: "Saved. The node restarts now to apply it." } });
+      }
       if (tool === "pr_list") {
         if (prsFail > 0) {
           prsFail -= 1;
@@ -346,4 +361,60 @@ it("offers New screen… in the palette for the project on screen", async () => 
   act(() => command?.run());
   await settle();
   expect(picker()).not.toBeNull();
+});
+
+/** devbox with Android switched off in its node.json, and a node that takes screen settings from the hub. */
+const ANDROID_OFF = [
+  {
+    ...machine("devbox", ["browser", "desktop"]),
+    screenSettings: true,
+    hosts: ["browser", "android", "ios", "desktop"].map((host) =>
+      host === "android"
+        ? { host, ready: false, detail: "Android screens are off in node.json", off: "off", on: false }
+        : host === "ios"
+          ? { host, ready: false, detail: "iOS simulators need macOS", off: "unsupported", on: false }
+          : { host, ready: true, detail: "as tested", on: true },
+    ),
+  },
+];
+
+it("says why a kind can't open, and an admin turns it on from there", async () => {
+  machines = ANDROID_OFF;
+  await mount();
+  act(() => button("New screen")?.click());
+  await settle();
+  // Each kind that can't open says so in its tile, and stays pickable.
+  const tile = (name: string) => button(name);
+  expect(tile("Android")?.textContent).toContain("Turned off");
+  expect(tile("iOS")?.textContent).toContain("Needs a Mac");
+  expect(tile("Android")?.disabled).toBe(false);
+  act(() => tile("iOS")?.click());
+  await settle();
+  expect(document.querySelector("[data-off-reason]")?.textContent).toContain("iOS simulators need a Mac with Xcode");
+  expect(button("Add machine")).toBeDefined();
+  act(() => tile("Android")?.click());
+  await settle();
+  expect(document.querySelector("[data-off-reason='turn_on']")?.textContent).toContain("Android emulators are turned off on devbox.");
+  expect(button("Open screen")?.disabled).toBe(true);
+  act(() => button("Turn on")?.click());
+  await settle();
+  expect(calls.find((c) => c.tool === "machine_screens_set")?.input).toEqual({ machineId: "devbox", host: "android", on: true });
+  // The machines are read again: devbox hosts Android now, so the picker lists it.
+  await eventSettle();
+  const listed = [...document.querySelectorAll("[role='radiogroup'] label")].map((l) => l.textContent);
+  expect(listed.some((m) => m.startsWith("devbox"))).toBe(true);
+});
+
+it("tells a member who to ask, with no button", async () => {
+  machines = ANDROID_OFF;
+  info = { admin: false, me: PEOPLE[1] };
+  await mount();
+  act(() => button("New screen")?.click());
+  await settle();
+  act(() => button("Android")?.click());
+  await settle();
+  const reason = document.querySelector("[data-off-reason='turn_on']");
+  expect(reason?.textContent).toContain("Android emulators are turned off on devbox.");
+  expect(reason?.textContent).toContain("Ask Ana to turn them on in Settings › Hub › Machines › Screens.");
+  expect(button("Turn on")).toBeUndefined();
 });
