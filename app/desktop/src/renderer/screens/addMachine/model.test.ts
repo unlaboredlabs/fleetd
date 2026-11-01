@@ -111,5 +111,12 @@ describe("Add machine's model", () => {
       expect(problem?.note).toContain("check it is on and awake");
     }
     expect(sshProblem("builder-1", "claude is not installed on builder-1")).toBeUndefined();
+    // A host key that changed: ssh refuses it without asking, so the old one goes first.
+    expect(sshProblem("builder-1", said("@@@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @@@ Host key verification failed."))).toMatchObject({
+      kind: "host-key-changed",
+      command: "ssh-keygen -R builder-1 && ssh builder-1 true",
+    });
+    // The probe ran there and failed: its "Permission denied" is the machine's, not a refused key.
+    expect(sshProblem("builder-1", "cannot read builder-1 over SSH (exit 1): mkdir: cannot create directory: Permission denied")).toBeUndefined();
   });
 });

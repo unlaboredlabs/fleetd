@@ -94,6 +94,49 @@ pub fn tail(text: &str) -> String {
     lines[lines.len().saturating_sub(15)..].join("\n")
 }
 
+/// What lets the hub read a host it couldn't, from ssh's exit and what it said, as the start of a "Fix:" ending in
+/// ", ": ssh's own failures exit 255 (a refused key, a host key it doesn't know or that changed, a host that didn't
+/// answer); any other exit is the probe failing on the machine itself, which no SSH step fixes. The app's Add machine
+/// tells the same cases apart (addMachine/model.ts sshProblem).
+pub fn ssh_fix(host: &str, code: i32, stderr: &str) -> String {
+    let said = stderr.to_lowercase();
+    let any = |words: &[&str]| words.iter().any(|w| said.contains(w));
+    if code != 255 {
+        return format!("fix what it says on {host}, ");
+    }
+    if any(&["remote host identification has changed"]) {
+        return format!(
+            "{host}'s host key changed (reinstalled?): if you expected that, run `ssh-keygen -R {host} && ssh {host} \
+             true` here and check the new key, "
+        );
+    }
+    if any(&["host key verification failed"]) {
+        return format!("run `ssh {host} true` here, check {host}'s host key and answer yes, ");
+    }
+    if any(&["permission denied", "too many authentication failures"]) {
+        return format!(
+            "let this machine log in with its key: `ssh-copy-id {host}` here (it asks for {host}'s password once), "
+        );
+    }
+    if any(&[
+        "could not resolve hostname",
+        "name or service not known",
+        "connection refused",
+        "connection timed out",
+        "operation timed out",
+        "no route to host",
+        "network is unreachable",
+        "connection closed by remote host",
+        "host is down",
+    ]) {
+        return format!(
+            "{host} didn't answer: check it is on and awake, on this machine's network or tailnet, and has SSH on (a \
+             Mac: System Settings › General › Sharing › Remote Login); `ssh {host} true` here tries it, "
+        );
+    }
+    format!("make `ssh {host} true` work here without a password, ")
+}
+
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -922,10 +965,7 @@ pub async fn prepare(
                 if r.local {
                     String::new()
                 } else {
-                    format!(
-                        "make `ssh {h} true` work without a password (ssh-copy-id {h}), ",
-                        h = r.host
-                    )
+                    ssh_fix(&r.host, code, &probed.stderr)
                 },
                 r.again
             )));
@@ -1394,6 +1434,45 @@ pub(super) fn logged_in(stdout: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_host_ssh_cant_read_gets_the_fix_for_its_cause() {
+        let fix = |code, stderr| ssh_fix("builder-1", code, stderr);
+        assert!(
+            fix(255, "builder-1: Permission denied (publickey,password).")
+                .contains("`ssh-copy-id builder-1`")
+        );
+        let changed = fix(
+            255,
+            "@@@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @@@\nHost key verification failed.",
+        );
+        assert!(
+            changed.contains("`ssh-keygen -R builder-1 && ssh builder-1 true`"),
+            "{changed}"
+        );
+        let unknown = fix(255, "Host key verification failed.");
+        assert!(
+            unknown.contains("`ssh builder-1 true`") && !unknown.contains("ssh-keygen"),
+            "{unknown}"
+        );
+        for down in [
+            "ssh: Could not resolve hostname builder-1: Name or service not known",
+            "ssh: connect to host builder-1 port 22: Connection timed out",
+            "ssh: connect to host builder-1 port 22: Connection refused",
+        ] {
+            let said = fix(255, down);
+            assert!(
+                said.contains("didn't answer") && !said.contains("ssh-copy-id"),
+                "{said}"
+            );
+        }
+        // The probe ran on the machine and failed there: no SSH step fixes that, whatever it says.
+        let remote = fix(1, "mkdir: cannot create directory: Permission denied");
+        assert!(
+            !remote.contains("ssh-copy-id") && remote.contains("on builder-1"),
+            "{remote}"
+        );
+    }
 
     #[test]
     fn a_machine_of_another_os_or_cpu_gets_its_versions_release() {
