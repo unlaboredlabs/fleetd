@@ -1034,8 +1034,9 @@ fn make_navi(h: &auto_start_tests::Hub) {
         .unwrap();
 }
 
-/// The lead's thread as the node last reported it, then the end of one of its turns.
-fn turn_ended(h: &auto_start_tests::Hub, status: &str, kind: HubEventType) {
+/// The lead's thread as the node last reported it (its latest run `run`), then the event of that change: a turn's
+/// start or end.
+fn turn_ended(h: &auto_start_tests::Hub, status: &str, kind: HubEventType, run: &str) {
     let at = iso_ms(now_ms(h.clock.as_ref()));
     h.area
         .ctx
@@ -1047,7 +1048,7 @@ fn turn_ended(h: &auto_start_tests::Hub, status: &str, kind: HubEventType) {
             }))
             .unwrap(),
             last_sequence: None,
-            last_run_id: None,
+            last_run_id: Some(run.to_owned()),
             last_run_status: None,
         })
         .unwrap();
@@ -1058,11 +1059,28 @@ fn turn_ended(h: &auto_start_tests::Hub, status: &str, kind: HubEventType) {
             machine_id: Some(h.project.machine_id.clone()),
             project_id: Some(h.project.project_id.clone()),
             thread_id: Some(fleetd_contracts::ids::ThreadId::unchecked("lead-1")),
-            summary: "lead-1 ended".into(),
-            data: Some(json!({ "threadId": "lead-1" })),
+            summary: "lead-1 moved".into(),
+            data: Some(json!({ "threadId": "lead-1", "runId": run })),
             attention: None,
         })
         .unwrap();
+}
+
+/// The run the lead's latest wake started on the node, as its request id names it.
+fn wake_run(h: &auto_start_tests::Hub) -> String {
+    let lead = h.area.records.lead_get(&h.project).unwrap().unwrap();
+    let crid = wake_request_id(
+        &h.project,
+        lead.session_generation,
+        lead.last_wake_at.unwrap().as_str(),
+    );
+    crate::hub::executor::Executors::send_run_id(
+        &fleetd_contracts::ids::ThreadRef {
+            machine_id: h.project.machine_id.clone(),
+            thread_id: lead.thread_id,
+        },
+        &crid,
+    )
 }
 
 fn order_state(h: &auto_start_tests::Hub, run: &AutomationRun) -> WorkstreamState {
@@ -1095,12 +1113,12 @@ async fn a_navis_run_closes_once_its_turn_ends_and_the_next_scheduled_run_starts
 
     // An earlier turn's end while the one with the order still runs closes nothing.
     h.clock.advance(Duration::from_secs(MIN));
-    turn_ended(&h, "running", HubEventType::ThreadCompleted);
+    turn_ended(&h, "running", HubEventType::ThreadCompleted, "r-start");
     settle().await;
     assert_eq!(order_state(&h, &first), WorkstreamState::Open);
 
     // Its turn ends with the reply posted: the run is done, with the reason on its order, and no push.
-    turn_ended(&h, "completed", HubEventType::ThreadCompleted);
+    turn_ended(&h, "completed", HubEventType::ThreadCompleted, "r-start");
     settle().await;
     assert_eq!(order_state(&h, &first), WorkstreamState::Done);
     let first = autos.runs(id, 1).unwrap().remove(0);
@@ -1148,7 +1166,7 @@ async fn a_navis_run_closes_when_its_turn_ends_without_a_reply_but_not_before_th
         .unwrap();
 
     h.clock.advance(Duration::from_secs(MIN));
-    turn_ended(&h, "failed", HubEventType::ThreadFailed);
+    turn_ended(&h, "failed", HubEventType::ThreadFailed, "r-start");
     settle().await;
     assert_eq!(order_state(&h, &first), WorkstreamState::Done);
     h.clock.advance(Duration::from_secs(MIN));
@@ -1165,7 +1183,7 @@ async fn a_navis_run_closes_when_its_turn_ends_without_a_reply_but_not_before_th
 
     // The second order reaches the running lead as a wake; a turn that ends before it went closes nothing.
     h.clock.advance(Duration::from_secs(1));
-    turn_ended(&h, "completed", HubEventType::ThreadCompleted);
+    turn_ended(&h, "completed", HubEventType::ThreadCompleted, "r-start");
     settle().await;
     assert_eq!(order_state(&h, &second), WorkstreamState::Open);
     h.after_debounce().await;
@@ -1178,7 +1196,12 @@ async fn a_navis_run_closes_when_its_turn_ends_without_a_reply_but_not_before_th
             .any(|m| m.contains(second.workstream_id.as_ref().unwrap().as_str()))
     );
     h.clock.advance(Duration::from_secs(MIN));
-    turn_ended(&h, "interrupted", HubEventType::ThreadInterrupted);
+    turn_ended(
+        &h,
+        "interrupted",
+        HubEventType::ThreadInterrupted,
+        &wake_run(&h),
+    );
     settle().await;
     assert_eq!(order_state(&h, &second), WorkstreamState::Done);
     let third = autos
@@ -1203,7 +1226,7 @@ async fn a_code_projects_run_stays_open_after_its_leads_turn() {
         .await
         .unwrap();
     h.clock.advance(Duration::from_secs(MIN));
-    turn_ended(&h, "completed", HubEventType::ThreadCompleted);
+    turn_ended(&h, "completed", HubEventType::ThreadCompleted, "r-start");
     settle().await;
     assert_eq!(order_state(&h, &first), WorkstreamState::Open);
     let next = autos
@@ -1410,7 +1433,7 @@ async fn a_navis_mail_that_came_during_a_run_reaches_it_once_that_turn_ends() {
     let later = autos.run(id, hook("mail from the bank")).await.unwrap();
     assert_eq!(later.state, AutomationRunState::Queued);
 
-    turn_ended(&h, "completed", HubEventType::ThreadCompleted);
+    turn_ended(&h, "completed", HubEventType::ThreadCompleted, "r-start");
     settle().await;
     assert_eq!(order_state(&h, &first), WorkstreamState::Done);
     let later = autos.runs(id, 1).unwrap().remove(0);
@@ -1480,4 +1503,87 @@ async fn skips_piling_up_never_prune_the_open_run_or_a_kept_call() {
         RUNS_KEPT as i64 + 2,
         "the skips are pruned to RUNS_KEPT"
     );
+}
+
+/// The race: a turn end the node reported before it took the wake with the order, read after the wake went, closes
+/// nothing; the order closes once the wake's own run has ended, even when a chat message ran after it.
+#[tokio::test(flavor = "current_thread")]
+async fn a_navis_order_never_closes_before_the_run_that_carried_it_ended() {
+    let h = lead_hub(true);
+    make_navi(&h);
+    let autos = over(&h);
+    autos.start();
+    settle().await;
+    let (a, _) = autos.create(new(&h.project, None, false)).unwrap();
+    let id = a.automation_id.to_string();
+    // The Navi is running and idle; the order reaches it by a wake.
+    h.area.leads.auto_start(&h.project, None).await;
+    h.clock.advance(Duration::from_secs(MIN));
+    let run = autos
+        .run(&id, Start::Manual { by: "human".into() })
+        .await
+        .unwrap();
+    h.after_debounce().await;
+    let carried = wake_run(&h);
+
+    // The end of the turn before it, read only now: the thread is idle, but its latest run is the older one.
+    turn_ended(&h, "completed", HubEventType::ThreadCompleted, "r-before");
+    settle().await;
+    assert_eq!(order_state(&h, &run), WorkstreamState::Open);
+
+    // The wake's run starts, a person's chat message runs after it, and the thread goes idle on the chat's run.
+    turn_ended(&h, "running", HubEventType::ThreadStarted, &carried);
+    settle().await;
+    assert_eq!(
+        order_state(&h, &run),
+        WorkstreamState::Open,
+        "still running"
+    );
+    turn_ended(&h, "completed", HubEventType::ThreadCompleted, "r-chat");
+    settle().await;
+    assert_eq!(order_state(&h, &run), WorkstreamState::Done);
+    autos.stop();
+}
+
+/// A webhook call that comes after the open run's order closed, but before the calls kept meanwhile went, joins them:
+/// one order, oldest first, and the caller hears it runs.
+#[tokio::test(flavor = "current_thread")]
+async fn a_webhook_call_in_the_gap_joins_the_kept_calls_oldest_first() {
+    let h = lead_hub(true);
+    // No follower: the gap stays open until the call comes.
+    let autos = over(&h);
+    let (a, _) = autos.create(new(&h.project, None, true)).unwrap();
+    let id = a.automation_id.as_str();
+    let first = autos.run(id, hook("first")).await.unwrap();
+    h.clock.advance(Duration::from_secs(1));
+    let kept = autos.run(id, hook("m-older")).await.unwrap();
+    assert_eq!(kept.state, AutomationRunState::Queued);
+    h.area
+        .workstreams
+        .close(
+            &h.project,
+            first.workstream_id.as_ref().unwrap(),
+            "done",
+            "lead:lab-a/p-a",
+        )
+        .await
+        .unwrap();
+
+    h.clock.advance(Duration::from_secs(1));
+    let late = autos.run(id, hook("m-newer")).await.unwrap();
+    assert_eq!(late.state, AutomationRunState::Running);
+    let w = late.workstream_id.clone().unwrap();
+    let (older, _) = autos
+        .run_with_payload(id, kept.run_id.as_str())
+        .unwrap()
+        .unwrap();
+    assert_eq!(older.workstream_id.as_ref(), Some(&w), "one order for both");
+    let text = h.area.workstreams.get(&w).unwrap().unwrap().source.text;
+    let text = text.as_str();
+    assert!(text.contains("2 calls to its webhook"), "{text}");
+    assert!(
+        text.find("m-older").unwrap() < text.find("m-newer").unwrap(),
+        "oldest first"
+    );
+    assert_eq!(orders(&h).len(), 2);
 }
