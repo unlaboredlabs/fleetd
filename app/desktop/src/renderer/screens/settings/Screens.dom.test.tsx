@@ -140,7 +140,8 @@ it("lists each machine that hosts screens with a switch per kind and what its no
 // still online), and the node linked again with no status change. It never reads as too old, and its switches come
 // back once machine.linked says the node is back.
 it("a node restarting after an update is not too old, and its switches come back once it links again", async () => {
-  listed = [{ ...devbox, screenSettings: undefined }];
+  const { screenSettings: _, ...restarting } = devbox;
+  listed = [restarting];
   await render();
   expect(row("devbox")?.textContent).not.toContain("too old");
   expect(row("devbox")?.textContent).toContain("devbox's node is restarting: these come back once it links again.");

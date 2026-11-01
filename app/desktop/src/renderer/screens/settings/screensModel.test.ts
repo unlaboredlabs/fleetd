@@ -40,10 +40,11 @@ describe("a kind's switch", () => {
     expect(lockedWhy({ ...devbox, online: false }, check("android"))).toBe("Offline");
     expect(lockedWhy({ ...devbox, screenSettings: false }, check("android"))).toContain("too old");
     // Its node between two links, as after an update: restarting, never too old.
-    expect(lockedWhy({ ...devbox, screenSettings: undefined }, check("android"))).toBe("Its node is restarting");
-    expect(nodeWait({ ...devbox, screenSettings: undefined })).toBe("restarting");
+    const { screenSettings: _, ...restarting } = devbox;
+    expect(lockedWhy(restarting, check("android"))).toBe("Its node is restarting");
+    expect(nodeWait(restarting)).toBe("restarting");
     expect(nodeWait({ ...devbox, screenSettings: false })).toBe("old");
-    expect(nodeWait({ ...devbox, online: false, screenSettings: undefined })).toBeNull();
+    expect(nodeWait({ ...restarting, online: false })).toBeNull();
     expect(nodeWait(devbox)).toBeNull();
   });
 });

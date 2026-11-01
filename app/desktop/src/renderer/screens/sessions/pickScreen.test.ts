@@ -148,7 +148,8 @@ describe("why a kind can't open", () => {
   });
 
   it("never calls a node restarting after an update too old", () => {
-    const reason = whyOff([off("devbox", { android: "off" }, { screenSettings: undefined })], "android");
+    const { screenSettings: _, ...restarting } = off("devbox", { android: "off" });
+    const reason = whyOff([restarting], "android");
     expect(reason).toEqual({
       why: "Android emulators are turned off on devbox, and its node is restarting: turn them on once it links again.",
       short: "Turned off",
