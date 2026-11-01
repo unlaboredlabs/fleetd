@@ -511,7 +511,7 @@ const clips = (frames: ReadonlyArray<{ at: number }>): Record<"lead" | "team" | 
     await press(page, page.getByRole("link", { name: /signed-in shopper/u }));
     await look(page, sent + STEPS.screens + 1500, sent + 8500, page.getByLabel(/^The page/u));
     await sleepUntil(sent + 9600);
-    await press(page, page.getByText("All screens"));
+    await press(page, page.getByRole("button", { name: "All screens" }));
     await sleepUntil(sent + 10_200);
     await press(page, page.getByRole("link", { name: /iPhone app/u }));
     const takeOver = sent + STEPS.phoneAsks + 1200;

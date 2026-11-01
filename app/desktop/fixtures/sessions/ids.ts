@@ -10,4 +10,6 @@ export const SESSION = {
   expired: "Bcabe309c063fd2c81d41bbfdf709c0cf",
   /** A person's own, from New screen. */
   mine: "B5e2c4a6f8d0b1a3c5e7f9d1b3a5c7e9f",
+  /** A person's own iOS simulator on the Mac, live and theirs. */
+  phone: "B3c5e7a9b1d3f5a7c9e1b3d5f7a9c1e3d",
 } as const;

@@ -1,6 +1,6 @@
 // The panel beside a project's chat, in four sections (Sections.tsx): Agents, Shipping, Plan and History, two of them
 // with a view each side of an inner row of tabs. A row opens one agent's live work or one PR in the list's place, with
-// a way back above it. Sections, views, rows and Back are all routes (shell/routes.ts), so links from the chat, Status
+// a way back above it; one screen takes the whole section, its way back in its own line. Sections, views, rows and Back are all routes (shell/routes.ts), so links from the chat, Status
 // and the palette open the same views. Only the open view's pane is mounted and reads from the hub; the counts on the
 // tabs read only what is cheap. A Navi's panel has its own sections (Sections.tsx, NAVI_SECTIONS).
 import { ChevronLeft } from "lucide-react";
@@ -9,7 +9,7 @@ import { Boundary } from "../../src/Boundary";
 import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { isNavi } from "../navi/model";
-import { Button, TabPanel, Tabs } from "../../ui";
+import { Button, TabPanel, Tabs, cx } from "../../ui";
 import { navigate } from "../shell/navigation";
 import { hasItem, listView, panelRoute, type PanelView, type ProjectKey } from "../shell/routes";
 import { PanesProvider } from "./panes";
@@ -45,9 +45,12 @@ export function ProjectPanel({ project, view: asked, onWide }: { project: Projec
     if (isPanelTab(tab)) navigate(panelRoute(project, listView(tab)), { replace: true });
   };
   const count = (tab: PanelTab) => <Count id={tab} project={project} active={tab === view.tab} />;
+  // One screen has the section's height to itself, with no line or inner tabs above it: its own line has the way back
+  // (sessions/SessionView.tsx).
+  const alone = hasItem(view) && view.tab === "sessions";
   const body = (
     <>
-      {hasItem(view) && entry.back !== undefined ? (
+      {hasItem(view) && entry.back !== undefined && !alone ? (
         <div className={s.back}>
           <Button variant="quiet" size="sm" icon={<ChevronLeft aria-hidden />} onClick={() => navigate(panelRoute(project, listView(view.tab)))}>
             {entry.back}
@@ -70,15 +73,15 @@ export function ProjectPanel({ project, view: asked, onWide }: { project: Projec
         <TabPanel value={section.id} className={s.section}>
           {section.views.length > 1 ? (
             <Tabs className={s.section} value={view.tab} onValueChange={pick}>
-              <SectionHead section={section} count={count} />
-              <TabPanel value={view.tab} className={s.body}>
+              {alone ? null : <SectionHead section={section} count={count} />}
+              <TabPanel value={view.tab} className={cx(s.body, alone && s.flush)}>
                 {body}
               </TabPanel>
             </Tabs>
           ) : (
             <>
-              <SectionHead section={section} count={count} />
-              <div className={s.body}>{body}</div>
+              {alone ? null : <SectionHead section={section} count={count} />}
+              <div className={cx(s.body, alone && s.flush)}>{body}</div>
             </>
           )}
         </TabPanel>

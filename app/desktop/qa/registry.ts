@@ -1614,6 +1614,17 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "sessions", route: SESSION_ROUTE(SESSION.payouts), fixtures: ["sessions-preview"], variant: "asking" },
+  // W266: an iOS simulator of your own on the Mac, the phone in its bezel the panel's full height under one line.
+  {
+    id: "sessions",
+    route: SESSION_ROUTE(SESSION.phone),
+    fixtures: ["sessions-preview"],
+    variant: "ios",
+    open: async (page) => {
+      await expect(page.getByRole("application", { name: "The page: your clicks and keys go to it" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "End", exact: true })).toBeVisible();
+    },
+  },
   // D239: New screen at the top of Screens: the kind as four tiles, the machines that can host it with their slots; the
   // Mac, its two simulators in use, offers to wait, and the wait shows in the list until cancelled.
   {
@@ -1669,7 +1680,7 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText("Installing #14’s build on devbox…")).toBeVisible();
     },
   },
-  // ...and a browser of your own on devbox: its live view, yours from the start, with End screen and no Hand back.
+  // ...and a browser of your own on devbox: its live view, yours from the start, with End and no Hand back.
   {
     id: "sessions",
     route: `${CHAT}/sessions`,
@@ -1678,7 +1689,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("button", { name: "New screen", exact: true }).click();
       await page.getByRole("button", { name: "Open screen" }).click();
-      await expect(page.getByRole("button", { name: "End screen" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "End", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: /^Hand back/u })).toHaveCount(0);
     },
   },

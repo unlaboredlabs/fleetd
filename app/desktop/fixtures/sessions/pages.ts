@@ -190,3 +190,58 @@ export const payDashboard = ({ downloaded = false }: { downloaded?: boolean }, a
     at,
   );
 };
+
+// The shop's iPhone app, in an iOS simulator: 402×874 points (an iPhone 16 Pro's), its status bar, large title, a
+// grid of products and its tab bar, as the simulator's screenshot has them (no island: the device's frame draws it).
+export const PHONE_W = 402;
+export const PHONE_H = 874;
+
+const phoneSvg = (body: string) =>
+  `data:image/svg+xml;utf8,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${String(PHONE_W)} ${String(PHONE_H)}" font-family="-apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif">${rect(0, 0, PHONE_W, PHONE_H, "#fbfaf7")}${body}</svg>`,
+  )}`;
+
+const statusBar = () =>
+  text(52, 34, "9:41", 17, "#111", 600, "middle") +
+  // Signal, wifi and battery, drawn small and plain.
+  [0, 1, 2, 3].map((i) => rect(300 + i * 5.5, 30 - (i + 1) * 3, 3.5, (i + 1) * 3, "#111", 1)).join("") +
+  `<path d="M328 22 a10 10 0 0 1 14 0 l-2 2 a7 7 0 0 0 -10 0 Z M331 26 a5.5 5.5 0 0 1 8 0 l-4 4 Z" fill="#111"/>` +
+  rect(350, 21, 25, 12, "none", 3.5, "#111") +
+  rect(352, 23, 19, 8, "#111", 2) +
+  rect(376, 25, 1.5, 4, "#111", 0.75);
+
+const appProduct = (x: number, y: number, name: string, price: string, tone: string) =>
+  rect(x, y, 173, 210, tone, 14) + text(x + 2, y + 232, name, 15, "#111", 600) + text(x + 2, y + 252, price, 14, "#6b6b66");
+
+export const shopApp = (): string =>
+  phoneSvg(
+    statusBar() +
+      text(20, 108, "Shop", 34, "#111", 700) +
+      text(382, 108, "Linen & Co.", 13, SHOP, 600, "end") +
+      rect(20, 124, 362, 38, "#efede7", 11) +
+      `<circle cx="40" cy="143" r="6" fill="none" stroke="#8a8a84" stroke-width="1.8"/><path d="M44.5 147.5 L49 152" stroke="#8a8a84" stroke-width="1.8" stroke-linecap="round"/>` +
+      text(56, 148, "Search linen", 16, "#8a8a84") +
+      rect(20, 180, 362, 132, "#e9e4d8", 16) +
+      text(40, 228, "Autumn linen", 24, SHOP, 700) +
+      text(40, 254, "Washed, breathable, made to last.", 14, "#444") +
+      rect(40, 270, 92, 28, SHOP, 14) +
+      text(86, 289, "Shop now", 13, "#fff", 600, "middle") +
+      text(20, 346, "New in", 20, "#111", 700) +
+      text(382, 346, "See all", 15, SHOP, 500, "end") +
+      appProduct(20, 362, "Linen shirt", "$68.00", "#ddd6c6") +
+      appProduct(209, 362, "Linen trousers", "$84.00", "#d4dbd3") +
+      appProduct(20, 632, "Overshirt", "$96.00", "#e3d9cf") +
+      appProduct(209, 632, "Throw", "$120.00", "#d7d3dc") +
+      // The tab bar, frosted over the grid, and the home indicator.
+      rect(0, 790, PHONE_W, 84, "#fbfaf7ee") +
+      rect(0, 790, PHONE_W, 0.6, "#00000022") +
+      [
+        ["Shop", 50, true],
+        ["Search", 150, false],
+        ["Bag", 252, false],
+        ["Account", 352, false],
+      ]
+        .map(([label, x, on]) => rect((x as number) - 12, 802, 24, 22, on ? SHOP : "#9a9a94", 6) + text(x as number, 840, label as string, 10, on ? SHOP : "#8a8a84", 500, "middle"))
+        .join("") +
+      rect(134, 860, 134, 5, "#111", 2.5),
+  );

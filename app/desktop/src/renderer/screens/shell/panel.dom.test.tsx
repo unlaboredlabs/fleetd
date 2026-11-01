@@ -424,6 +424,21 @@ it("shows four sections as tabs, each view a route of its own under its section,
   }
 });
 
+it("gives one screen the section's whole height: no section line, inner tabs or back row, its own line going back", async () => {
+  await mount({ features: ["browser_sessions"] });
+  await go(`${CHAT}/sessions`);
+  expect(panel()?.querySelector("[role='tab'][data-tab='sessions']")).not.toBeNull();
+  await go(`${CHAT}/sessions/Bgone`);
+  expect(panel()?.querySelector("[data-screen='sessions.missing']")).not.toBeNull();
+  expect(panel()?.querySelector("[role='tab'][data-tab='sessions']")).toBeNull();
+  expect(panel()?.textContent).not.toContain(SECTIONS[0]?.line);
+  const back = [...(panel()?.querySelectorAll("button") ?? [])].filter((b) => b.textContent === "All screens");
+  expect(back).toHaveLength(1);
+  act(() => back[0]?.click());
+  await settle();
+  expect(panel()?.querySelector("[data-screen='sessions']")).not.toBeNull();
+});
+
 it("shows Agents alone from a hub that doesn't serve browser sessions, and opens Agents for a link to them", async () => {
   await mount();
   await go(`${CHAT}/agents`);
