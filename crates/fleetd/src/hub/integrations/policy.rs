@@ -9,7 +9,9 @@ use fleetd_contracts::integrations::{
 };
 use fleetd_contracts::mcp_servers::{FLEETD_SERVER, McpServer, McpServerName};
 use fleetd_contracts::prim::{Line, Text, js_len};
+use regex::Regex;
 use serde_json::Value;
+use std::sync::LazyLock;
 
 /// What the hub does with one call of one tool.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -171,10 +173,10 @@ const READS: &[&str] = &[
     "describe", "track", "status", "cancel",
 ];
 /// A tool whose name has one of these only reads, unless it also has a word of [`ACTS`]. `cancel` is no read here, as
-/// it is in [`READS`].
+/// it is in [`READS`], nor `query` (a database's runs any statement) or `track` (analytics records what it's given).
 const READ_ONLY: &[&str] = &[
-    "get", "list", "search", "find", "read", "show", "fetch", "view", "lookup", "query",
-    "describe", "track", "status", "count",
+    "get", "list", "search", "find", "read", "show", "fetch", "view", "lookup", "describe",
+    "status", "count",
 ];
 /// Words that do something: a tool with one doesn't only read (`get_or_create`, `fetch_and_send`). Nouns such as
 /// `message` or `email` aren't here: `get_message` reads.
@@ -320,30 +322,96 @@ pub fn reads(tool: &str) -> bool {
     has(READ_ONLY) && !has(ACTS)
 }
 
-/// The tool a gateway's call runs: a tool named for one (`call_tool`, `call_read_tool`, `run_tool`) names it in its
-/// input's `name` (or `tool`, `tool_name`).
+/// Whether a tool is a gateway's, running another tool it names in its input: `tool` and a verb that runs it
+/// (`call_tool`, `call_read_tool`, `run_tool`, `invoke_tool`).
+pub fn gateway(tool: &str) -> bool {
+    let w = words(tool);
+    w.iter().any(|x| x == "tool")
+        && w.iter().any(|x| {
+            [
+                "call", "run", "invoke", "use", "execute", "exec", "dispatch", "proxy",
+            ]
+            .contains(&x.as_str())
+        })
+}
+
+/// Keys that name the tool a gateway runs.
+const CALLED: &[&str] = &[
+    "name",
+    "tool",
+    "tool_name",
+    "toolName",
+    "toolname",
+    "method",
+];
+/// Keys that hold the arguments a gateway passes on: a `name` in them is an argument's, not the tool's.
+const ARGUMENTS: &[&str] = &[
+    "arguments",
+    "args",
+    "params",
+    "parameters",
+    "input",
+    "payload",
+];
+
+/// The tool a gateway's call runs: the first string under a key of [`CALLED`], level by level through the input (so
+/// `{"tool": {"name": "send_message"}}` names `send_message`), outside its arguments. None for any other tool, or a
+/// gateway's call that names none.
 pub fn called<'a>(tool: &str, input: &'a Value) -> Option<&'a str> {
-    if !words(tool).iter().any(|w| w == "tool") {
+    if !gateway(tool) {
         return None;
     }
-    ["name", "tool", "tool_name", "toolName"]
-        .iter()
-        .find_map(|k| input.get(k)?.as_str())
+    let mut level = vec![input];
+    while !level.is_empty() {
+        let mut next = Vec::new();
+        for v in level {
+            match v {
+                Value::Object(o) => {
+                    for (k, v) in o {
+                        if ARGUMENTS.contains(&k.as_str()) {
+                            continue;
+                        }
+                        match v {
+                            Value::String(name) if CALLED.contains(&k.as_str()) => {
+                                return Some(name);
+                            }
+                            _ => next.push(v),
+                        }
+                    }
+                }
+                Value::Array(items) => next.extend(items),
+                _ => {}
+            }
+        }
+        level = next;
+    }
+    None
 }
 
 /// Whether a call's names say it only reads: its own, and a gateway's the tool it calls too (`call_read_tool` running
-/// `send_message` doesn't, nor `call_write_tool` running `list_events`).
+/// `send_message` doesn't, nor `call_write_tool` running `list_events`). A gateway's call that names no tool fleetd
+/// can find isn't one.
 pub fn named_reads(tool: &str, input: &Value) -> bool {
-    match called(tool, input) {
-        Some(inner) => reads(inner) && !words(tool).iter().any(|w| ACTS.contains(&w.as_str())),
-        None => reads(tool),
+    if !gateway(tool) {
+        return reads(tool);
     }
+    called(tool, input).is_some_and(|inner| {
+        reads(inner) && !words(tool).iter().any(|w| ACTS.contains(&w.as_str()))
+    })
 }
 
-/// Whether any string in `input` holds a link: a server fetching it would take whatever the link carries there.
+static EMAIL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}").unwrap()
+});
+/// A host, with or without a scheme: `attacker.example`, `www.example.org/path`.
+static HOST: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b").unwrap());
+
+/// Whether any string in `input` holds a link, with a scheme or without (`attacker.example/?d=…`): a server fetching
+/// it would take whatever the link carries there. An email address is no link.
 fn links(input: &Value) -> bool {
     match input {
-        Value::String(s) => s.contains("://"),
+        Value::String(s) => s.contains("://") || HOST.is_match(&EMAIL.replace_all(s, " ")),
         Value::Array(items) => items.iter().any(links),
         Value::Object(o) => o.values().any(links),
         _ => false,

@@ -151,7 +151,8 @@ fleetd's own rules hold whatever the checker says:
   final Confirm whose button cancels, returns or refunds an order goes through the mode like any other; a payment
   goes through a purchase.
 - **It asks you at least** when a recipient, share target, forwarding address or site came only from content the
-  Navi read (a field that picks which of your own accounts the tool acts as, such as `account`, is no recipient); when a link carries data (an email address, a long code, text quoted from your mail), even on a site you
+  Navi read (on a write to your own data, an `account` or `user_id` the Navi already read your data as is no recipient; on a
+  send or an invite it counts like any other); when a link carries data (an email address, a long code, text quoted from your mail), even on a site you
   allowed; for a public or anyone-with-the-link share, edit access for someone new, a rule that forwards your mail to
   another domain, an address on a domain one or two letters off a contact's, more than 10 recipients at once, or a
   one-time code or an encoded blob in the text.

