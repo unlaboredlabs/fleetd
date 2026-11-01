@@ -541,9 +541,21 @@ async fn run_link_once(
                 let flush = flush.clone();
                 let sessions = shared.node_sessions.clone();
                 tasks.spawn(async move {
+                    let screens = action.action == super::wire::NodeActionKind::Screens;
                     let (result, watch) = run_node_action(action, &sessions).await;
                     let id = result.id.clone();
                     let _ = tx.send(to_json(&NodeToHub::NodeActionResult(result)));
+                    if screens {
+                        // A screen setting's restart waits for its answer to be on the link, as an update's does.
+                        let (done, written) = tokio::sync::oneshot::channel();
+                        if flush.send(done).is_ok() {
+                            let _ =
+                                tokio::time::timeout(crate::update::finish::ANSWER_WAIT, written)
+                                    .await;
+                        }
+                        super::screens::answered();
+                        return;
+                    }
                     let Some(watch) = watch else { return };
                     // The answer is on the link: the watcher restarts this node now.
                     let (done, written) = tokio::sync::oneshot::channel();

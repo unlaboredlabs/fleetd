@@ -3,7 +3,7 @@
 //! screen services read node.json once, as the node starts, so the node restarts itself to apply a change
 //! ([`restart_wanted`]) once no screen is live here. Until then a kind turned on says it waits for that restart.
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
@@ -49,6 +49,12 @@ static STARTED: Mutex<Option<Sections>> = Mutex::new(None);
 static LIVE: OnceLock<Box<dyn Fn() -> usize + Send + Sync>> = OnceLock::new();
 static WATCHING: AtomicBool = AtomicBool::new(false);
 static RESTART: tokio::sync::Notify = tokio::sync::Notify::const_new();
+/// Changes asked for, and changes whose answer is on the link: a restart never cuts off the answer that asked for it.
+static ASKED: AtomicU64 = AtomicU64::new(0);
+static FLUSHED: AtomicU64 = AtomicU64::new(0);
+static ANSWERED: tokio::sync::Notify = tokio::sync::Notify::const_new();
+/// How long a restart waits for its answer to reach the link, at most.
+const ANSWER_WAIT: Duration = Duration::from_secs(60);
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -90,6 +96,26 @@ fn gated(checks: &mut [HostCheck], started: &Sections, now: &Sections) {
             );
         }
     }
+}
+
+/// The answer to every change asked for so far is on the link (node/link.rs, once it is written).
+pub fn answered() {
+    FLUSHED.store(ASKED.load(Ordering::SeqCst), Ordering::SeqCst);
+    ANSWERED.notify_waiters();
+}
+
+/// Waits until the answer to change `asked` is on the link, or `at_most` passed.
+async fn wait_answered(asked: u64, at_most: Duration) {
+    let _ = tokio::time::timeout(at_most, async {
+        loop {
+            let next = ANSWERED.notified();
+            if FLUSHED.load(Ordering::SeqCst) >= asked {
+                return;
+            }
+            next.await;
+        }
+    })
+    .await;
 }
 
 /// Why `host` can't turn on here, in plain words; None where it can.
@@ -184,7 +210,8 @@ pub fn apply(home: &Path, settings: &ScreenSettings) -> Result<String, String> {
         std::fs::rename(&next, &file).map_err(|e| format!("couldn't write node.json: {e}"))?;
     }
     super::hosts::forget();
-    Ok(schedule(home))
+    let asked = ASKED.fetch_add(1, Ordering::SeqCst) + 1;
+    Ok(schedule(home, asked))
 }
 
 /// Whether the services run other settings than node.json has now.
@@ -204,8 +231,9 @@ fn live() -> usize {
     LIVE.get().map_or(0, |f| f())
 }
 
-/// Starts the wait for the restart that applies node.json, unless one waits already; what the answer says of it.
-fn schedule(home: &Path) -> String {
+/// Starts the wait for the restart that applies node.json, unless one waits already; what the answer says of it. The
+/// restart comes only once the answer to change `asked` is on the link.
+fn schedule(home: &Path, asked: u64) -> String {
     if !differs(home) {
         return "Saved.".to_owned();
     }
@@ -222,6 +250,7 @@ fn schedule(home: &Path) -> String {
     if !WATCHING.swap(true, Ordering::SeqCst) {
         let home = home.to_path_buf();
         tokio::spawn(async move {
+            wait_answered(asked, ANSWER_WAIT).await;
             loop {
                 if !differs(&home) {
                     break;
@@ -337,6 +366,27 @@ mod tests {
         // alone changes nothing that is ready.
         assert_eq!(waiting, [SessionHost::Browser, SessionHost::Android]);
         assert!(checks.iter().all(|c| c.ready == c.off.is_none()));
+    }
+
+    /// The restart waits for the answer that asked for it to be on the link, so the hub hears it before the node goes.
+    #[tokio::test]
+    async fn a_restart_waits_for_its_answer_to_be_on_the_link() {
+        let asked = ASKED.fetch_add(1, Ordering::SeqCst) + 1;
+        let waiting = tokio::spawn(wait_answered(asked, Duration::from_secs(30)));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!waiting.is_finished(), "the answer isn't written yet");
+        answered();
+        tokio::time::timeout(Duration::from_secs(5), waiting)
+            .await
+            .expect("released once it is")
+            .unwrap();
+        // One already written doesn't wait.
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            wait_answered(asked, Duration::from_secs(30)),
+        )
+        .await
+        .unwrap();
     }
 
     #[test]
