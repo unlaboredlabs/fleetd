@@ -14,13 +14,14 @@ import { HubText } from "../projects/HubText";
 import { errorText, useHubCall, useLive } from "../settings/hub";
 import { revealNext } from "../settings/search";
 import { PageHead } from "../settings/parts";
-import { RunOn } from "../setup/Guide";
+import { RunOn, Values } from "../setup/Guide";
 import { toHash } from "../shell/routes";
-import { checklistOf, MACHINE_WAIT_MS, type ChecklistItem, type ItemState } from "./machines";
+import { checklistOf, fixPlace, MACHINE_WAIT_MS, type ChecklistItem, type ItemState } from "./machines";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
 
 const allChecks = {};
+const noInput = {};
 
 const GLYPH: Readonly<Record<ItemState, GlyphState>> = { done: "done", failed: "failed", warn: "waiting", waiting: "queued" };
 
@@ -109,7 +110,7 @@ function Item({ item, machineId, name, onLoggedIn }: { item: ChecklistItem; mach
             <HubText>{line}</HubText>
           </Text>
         ))}
-        {item.login ? <ClaudeLogin machineId={machineId} onLoggedIn={onLoggedIn} /> : item.fix ? <Fix fix={item.fix} where={name} /> : null}
+        {item.login ? <ClaudeLogin machineId={machineId} onLoggedIn={onLoggedIn} /> : item.fix ? <Fix fix={item.fix} name={name} /> : null}
         {item.screens === true ? (
           <span>
             <Button
@@ -129,8 +130,10 @@ function Item({ item, machineId, name, onLoggedIn }: { item: ChecklistItem; mach
   );
 }
 
-/** The hub's fix: what to do, and the command to run on the machine, with Copy. */
-function Fix({ fix, where }: { fix: DoctorFix; where: string }) {
+/** The hub's fix: what to do, and its command with Copy, on the machine or the hub's, where the hub says it runs. */
+function Fix({ fix, name }: { fix: DoctorFix; name: string }) {
+  const hosts = useToolQuery("machine_hosts", noInput).data?.hosts;
+  const where = fixPlace(fix, name, hosts);
   return (
     <div className={a.fix}>
       {fix.label ? (
@@ -138,7 +141,11 @@ function Fix({ fix, where }: { fix: DoctorFix; where: string }) {
           <HubText>{fix.label}</HubText>
         </Text>
       ) : null}
-      {fix.command ? <RunOn where={where} command={fix.command} /> : null}
+      {fix.command === undefined ? null : where === null ? (
+        <Values values={[{ label: "Command", value: fix.command, copied: "Command copied" }]} />
+      ) : (
+        <RunOn where={where} command={fix.command} />
+      )}
     </div>
   );
 }

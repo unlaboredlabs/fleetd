@@ -36,6 +36,17 @@ export const statusLine = (m: Pick<Machine, "name" | "status" | "degradedReason"
   return `${why === undefined || why === "" ? "Something needs a look" : why.charAt(0).toUpperCase() + why.slice(1)}. Open ${m.name} for the fix.`;
 };
 
+/**
+ * Where a check's fix runs, for its "Run on …" row: the machine itself, or the hub's machine, as the hub says. Null
+ * from a hub before it says so: the fix's label says where.
+ */
+export const fixPlace = (fix: DoctorFix, machine: string, hosts: ReadonlyArray<MachineHost> | undefined): string | null => {
+  if (fix.on === "machine") return machine;
+  if (fix.on !== "hub") return null;
+  const hub = hosts?.find((h) => h.source === "hub")?.machineId;
+  return hub === undefined ? "the hub's machine" : `${hub}, the hub`;
+};
+
 export type ItemState = "done" | "failed" | "warn" | "waiting";
 
 export interface ChecklistItem {

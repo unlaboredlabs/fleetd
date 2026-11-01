@@ -40,7 +40,7 @@ const LOGGED_OUT: DoctorCheck[] = [
   check("claude_login", "fail", "laptop: claude is not logged in, so its sessions can't start.", { kind: "manual", label: "Log claude in on laptop", command: "claude auth login" }),
   check("commit_identity", "ok", "laptop commits as 1+ada-lovelace@users.noreply.github.com."),
   check("git_fetch", "ok", "At each project's last start on laptop: storefront fetched its remote."),
-  check("android", "warn", "Android screens are off: /dev/kvm isn't readable by ada.", { kind: "manual", label: "Let ada use KVM", command: "sudo usermod -aG kvm ada" }),
+  check("android", "warn", "Android screens are off: /dev/kvm isn't readable by ada.", { kind: "manual", label: "Let ada use KVM", command: "sudo usermod -aG kvm ada", on: "machine" }),
 ];
 const READY: DoctorCheck[] = LOGGED_OUT.map((c) => (c.id === "laptop/claude_login" ? check("claude_login", "ok", "laptop: claude is logged in (Max).") : c));
 const LOGIN_URL = "https://claude.ai/oauth/authorize?code=true&client_id=9d1c&state=s1";
@@ -227,6 +227,23 @@ it("gives each fix as the command to run on the machine, with Copy", async () =>
   const android = host.querySelector("li[data-item='capabilities']");
   expect(android?.querySelector("dt")?.textContent).toBe("Run on laptop");
   expect(android?.querySelector("dd [data-text='code']")?.textContent).toBe("sudo usermod -aG kvm ada");
+});
+
+it("gives a fix that runs on the hub as the command to run on the hub's machine, not the machine's", async () => {
+  checks = LOGGED_OUT.map((c) =>
+    c.id === "laptop/commit_identity"
+      ? check("commit_identity", "warn", "Commits on laptop use ada@home.example; the hub's identity is 1+ada-lovelace@users.noreply.github.com.", {
+          kind: "manual",
+          label: "Join laptop again: run this on the hub, then the line it prints on laptop; it carries the identity",
+          command: "fleetd pair --worker laptop",
+          on: "hub",
+        })
+      : c,
+  );
+  await render(<MachinePage machineId="laptop" />);
+  const identity = host.querySelector("li[data-item='identity']");
+  expect(identity?.querySelector("dt")?.textContent).toBe("Run on devbox, the hub");
+  expect(identity?.querySelector("dd [data-text='code']")?.textContent).toBe("fleetd pair --worker laptop");
 });
 
 it("logs claude in from the app: the URL to sign in at, then the code, once", async () => {

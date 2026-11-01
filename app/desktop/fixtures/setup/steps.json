@@ -264,7 +264,8 @@
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
-            "label": "Log gh in on the hub machine"
+            "label": "Log gh in on the hub machine",
+            "on": "hub"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
           "status": "todo"
@@ -292,7 +293,8 @@
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
-            "label": "Log gh in on the hub machine"
+            "label": "Log gh in on the hub machine",
+            "on": "hub"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
           "status": "todo"
@@ -371,7 +373,8 @@
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
-            "label": "Log gh in on the hub machine"
+            "label": "Log gh in on the hub machine",
+            "on": "hub"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
           "status": "todo"
@@ -400,7 +403,8 @@
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
-            "label": "Log gh in on the hub machine"
+            "label": "Log gh in on the hub machine",
+            "on": "hub"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
           "status": "todo"
@@ -429,7 +433,8 @@
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
-            "label": "Log gh in on the hub machine"
+            "label": "Log gh in on the hub machine",
+            "on": "hub"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
           "status": "todo"

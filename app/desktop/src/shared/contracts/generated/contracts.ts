@@ -1955,6 +1955,11 @@ export type DoctorFix = {
   command?: string;
   kind: DoctorFixKind;
   label: string;
+  /**
+   * Where `command` runs: `hub` on the hub's machine, `machine` on the check's machine. Absent from a hub before
+   * it: where the label says.
+   */
+  on?: DoctorScope;
 };
 
 export type DoctorFixInput = {

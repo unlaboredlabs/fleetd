@@ -39,6 +39,9 @@ pub struct DoctorFix {
     pub kind: DoctorFixKind,
     pub label: Text<0, 200>,
     pub command: Option<Text<0, 500>>,
+    /// Where `command` runs: `hub` on the hub's machine, `machine` on the check's machine. Absent from a hub before
+    /// it: where the label says.
+    pub on: Option<DoctorScope>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
