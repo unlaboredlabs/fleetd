@@ -101,13 +101,23 @@ enum Kind {
     Other,
 }
 
-/// What a read is, by its tool's name alone: never by its input (a search for "-in:sent" is no sent folder).
+/// What a read is, by its tool's name alone: never by its input (a search for "-in:sent" is no sent folder). A
+/// gateway's call (`call_read_tool`) is the tool it called, by the name in its input; one whose call was cut too short
+/// to say is anyone's content.
 fn kind(source: &str) -> Kind {
-    let w = policy::words(source.split_whitespace().next().unwrap_or_default());
+    let (tool, input) = source.split_once(' ').unwrap_or((source, ""));
+    let mut w = policy::words(tool);
+    if w.iter().any(|x| x == "tool") {
+        let input = serde_json::from_str::<Value>(input).unwrap_or_default();
+        match policy::called(tool, &input) {
+            Some(called) => w = policy::words(called),
+            None => return Kind::Other,
+        }
+    }
     let has = |list: &[&str]| w.iter().any(|x| list.contains(&x.as_str()));
     if has(&["contact", "contacts", "people", "directory"]) {
         Kind::Contacts
-    } else if has(&["calendar", "event", "events"]) {
+    } else if has(&["calendar", "calendars", "event", "events"]) {
         Kind::Calendar
     } else if has(&[
         "mail", "gmail", "email", "emails", "message", "messages", "thread", "threads", "inbox",
@@ -652,8 +662,22 @@ const DESTINATIONS: &[&str] = &[
     "host",
 ];
 
+/// Keys that name which of the person's own accounts a tool acts as: no one it reaches, as a tool can only act as an
+/// account the person connected.
+const ACTING_AS: &[&str] = &[
+    "account",
+    "account_id",
+    "accountid",
+    "mailbox",
+    "user_id",
+    "userid",
+];
+
 fn is_destination(p: &Provenance, confirm: bool) -> bool {
     let k = key(&p.part);
+    if ACTING_AS.contains(&k.as_str()) {
+        return false;
+    }
     DESTINATIONS.contains(&k.as_str())
         // A final confirm reaches the site it is on.
         || (confirm && p.part == "site")

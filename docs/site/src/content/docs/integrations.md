@@ -1,6 +1,6 @@
 ---
 title: Integrations
-description: Connect a Navi to any MCP server, with your own credentials. Tools you mark as reads run unasked; everything else goes by the Navi's approval mode, and a card shows exactly what it would send.
+description: Connect a Navi to any MCP server, with your own credentials. Reads run unasked; everything else goes by the Navi's approval mode, and a card shows exactly what it would send.
 ---
 
 A Navi can reach any service with an MCP server. You connect each one yourself in the Navi's settings, under
@@ -15,15 +15,16 @@ The hub decides each call, not the Navi. The model can't talk its way past it.
 
 | | Examples | What happens |
 |---|---|---|
-| **Reads** | The tools you ticked as only reading when you connected the server | Runs without asking. |
+| **Reads** | A tool whose name only reads (`search_tools`, `get_page`, `list_events`: a word such as get, list, search, find, read or fetch, and none that changes, sends, deletes or pays), a gateway's call of one (`call_read_tool` running `list_calendars`), and the tools you ticked as only reading when you connected the server | Runs without asking: no checker, no card, no line in the chat. One whose input holds a link goes by the approval mode instead, since the server would fetch it with whatever it carries. |
 | **Writes, sends, deletes, shares** | Every other tool | Goes by the Navi's [approval mode](/docs/navi#approvals). By default a checker model judges it first: what you asked for runs, with one line in the chat; anything else asks you in the chat with exactly what it would send. With **Ask me about everything** each one asks you; with **YOLO** none does. |
 | **Spending** | A `pay`, `purchase`, `checkout`, `book`, `reserve` or `subscribe` tool, and one that makes an order, a booking or a reservation (`create_order`, `confirm_booking`; reading one, such as `list_orders`, doesn't count) | Asks you, marked **Costs money**, and asks once more before it runs. Only you answer it, whatever approval mode the Navi runs in. |
 | **Never** | Moving money between accounts (`transfer`, `send_money`, `send_transaction`), trading and crypto (`buy_stock`, `sell`, `buy_crypto`, and any `place_order` or `submit_order`, which could be a broker's), creating accounts in your name; sending or storing what looks like a password, key or token; a call too large to show on the card in full | Refused, even if you would approve it. The Navi is told to leave it to you. A shop's checkout goes through a [purchase](/docs/navi#purchases) instead. |
 
 The **Never** row and spending hold in every mode, YOLO included, and fleetd's own rules make the checker's go an
 ask for a recipient only an email or a page named, a public share, a forwarding rule and the like (see
-[Approvals](/docs/navi#approvals)). The same rules cover the MCP servers in your own claude setup: none of their tools
-counts as a read.
+[Approvals](/docs/navi#approvals)). A gateway's call (`call_tool`, `call_write_tool`, naming the tool it runs in its
+input) goes by the tool it runs too: `call_write_tool` running `create_order` spends, and one running `transfer_funds`
+is refused. The same rules cover the MCP servers in your own claude setup: their tools are reads by the same names.
 
 ## The approval card {#card}
 
@@ -54,9 +55,9 @@ approved at 09:12". The tool may still refuse or fail; what it did is in the Nav
 **Add an MCP server** takes a URL (MCP's streamable HTTP) or a command started on the Navi's machine, and an optional
 key: a header such as `Authorization: Bearer …`, or an environment variable. The key is sealed to the Navi's machine.
 
-After **Connect and test**, fleetd lists the server's tools. Tick the ones that only read: they run unasked. A tool its
-server marks read-only (MCP's `readOnlyHint`) is ticked to start with. Every tool you leave unticked asks you each
-time. A tool the blocked list refuses (its name says transfer, payout, withdraw, trade, sell, sign up, create account
+After **Connect and test**, fleetd lists the server's tools. A tool whose name says it only reads is listed as a read
+already; tick any other that only reads, and it runs unasked too. A tool its server marks read-only (MCP's
+`readOnlyHint`) is ticked to start with. Every other tool goes by the Navi's approval mode. A tool the blocked list refuses (its name says transfer, payout, withdraw, trade, sell, sign up, create account
 and the like) can't be ticked, and is never run.
 
 **Test connection** on a connected server runs the test again and lists each tool by what the hub does with it.

