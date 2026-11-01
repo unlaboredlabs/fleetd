@@ -177,6 +177,7 @@ fleetd status storefront
 | A pull request stays queued on the [merge train](/docs/glossary#merge-train) | CI or a review is pending, or the train can't read GitHub. | The `train_get` tool shows each PR on the train with its state and last error. |
 | The lead hears "verdict not recorded" for a PR | Its reviewer ended without recording a verdict with `report`, usually because its fleetd tools didn't start. Whatever its last words say, that is no approval. | Nothing at first: the train starts one more reviewer. If that one ends the same way, the train starts no more until a new head; check the reviewer's transcript for the fleetd tools server. |
 | An agent's activity says "node retry 1/3 in 57 s: overloaded" | Claude's API was overloaded or the network failed, after claude's own retries. | Nothing. The node continues the same run after about 1, 4 and 15 minutes, then fails it with claude's words. |
+| The lead's turn ended with no reply, and its thread says it stalled | The turn made no progress for 10 minutes (20 inside a tool that states no timeout), so fleetd interrupted it. | Nothing at first: the lead carries on once by itself. If that turn ends the same way, it waits for your next message or the next event. |
 | Your message waits and the chat says why | The lead can't start: `claude` logged out, out of range, or the worker offline. | See [Claude](#claude) and [Machines](#machines). |
 
 Then check the logs (above) for the hub and the project's worker.
