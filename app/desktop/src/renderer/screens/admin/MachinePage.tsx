@@ -1,17 +1,20 @@
 // Settings › Hub › Machines › one machine (#/settings/hub/machines/<id>): what it needs once it has joined, as a checklist
 // read from the hub's own checks (doctor_list, refetched on doctor.changed): claude installed and logged in, the git
 // identity its commits carry, GitHub access, and the sessions it can host. Each item that wants a look has its fix: a
-// command to copy, or for claude's login, Log in, which runs `claude auth login` on the machine through its node. The
-// person signs in on their own device and pastes the code the page shows; the token stays on the machine.
-import { useState } from "react";
+// command to run on the machine, with Copy, or for claude's login, Log in, which runs `claude auth login` on the
+// machine through its node. The person signs in on their own device and pastes the code the page shows; the token
+// stays on the machine. A machine just joined, which the hub hasn't checked yet, is checked as its page opens.
+import { useEffect, useRef, useState } from "react";
 import type { DoctorFix } from "../../../shared/contracts";
 import { callKey } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
-import { Button, copyText, Field, InlineCode, Input, StateGlyph, Text, Truncate, toast, type GlyphState } from "../../ui";
+import { Button, copyText, Field, Input, StateGlyph, Text, Truncate, toast, type GlyphState } from "../../ui";
 import { openExternal } from "../prs/PrDetail";
 import { HubText } from "../projects/HubText";
 import { errorText, useHubCall, useLive } from "../settings/hub";
+import { revealNext } from "../settings/search";
 import { PageHead } from "../settings/parts";
+import { RunOn } from "../setup/Guide";
 import { toHash } from "../shell/routes";
 import { checklistOf, MACHINE_WAIT_MS, type ChecklistItem, type ItemState } from "./machines";
 import s from "../settings/settings.module.css";
@@ -36,6 +39,19 @@ export function MachinePage({ machineId }: { machineId: string }) {
     if (out.ok) layer.queryClient.setQueryData(callKey("doctor_list", allChecks), out.output);
     else toast({ title: "The checks didn't run", description: out.error.message, tone: "danger" });
   };
+
+  // A machine that has just joined (or whose node linked after the hub's last round) has no checks yet, or some the
+  // hub couldn't answer: the hub checks it now, rather than the page waiting for its next round. Once per page.
+  const checked = useRef(false);
+  const mine = checks.data?.checks.filter((c) => c.machineId === machineId);
+  const unchecked = machine !== undefined && machine.status !== "offline" && mine !== undefined && (mine.length === 0 || mine.some((c) => c.status === "unknown"));
+  useEffect(() => {
+    if (!unchecked || checked.current) return;
+    checked.current = true;
+    void rerun();
+    // Only when it turns unchecked: rerun is the same call each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unchecked]);
 
   const items = checks.data === undefined ? undefined : checklistOf(checks.data.checks, machineId);
   const status = machine === undefined ? undefined : machine.status === "online" ? "Online" : machine.status === "degraded" ? "Degraded" : "Offline";
@@ -69,7 +85,7 @@ export function MachinePage({ machineId }: { machineId: string }) {
             ) : (
               <ol className={a.checklist}>
                 {items.map((item) => (
-                  <Item key={item.key} item={item} machineId={machineId} onLoggedIn={() => void rerun()} />
+                  <Item key={item.key} item={item} machineId={machineId} name={machine.name} onLoggedIn={() => void rerun()} />
                 ))}
               </ol>
             )}
@@ -80,7 +96,7 @@ export function MachinePage({ machineId }: { machineId: string }) {
   );
 }
 
-function Item({ item, machineId, onLoggedIn }: { item: ChecklistItem; machineId: string; onLoggedIn: () => void }) {
+function Item({ item, machineId, name, onLoggedIn }: { item: ChecklistItem; machineId: string; name: string; onLoggedIn: () => void }) {
   return (
     <li className={a.item} data-item={item.key} data-state={item.state}>
       <StateGlyph state={GLYPH[item.state]} size="sm" />
@@ -93,14 +109,28 @@ function Item({ item, machineId, onLoggedIn }: { item: ChecklistItem; machineId:
             <HubText>{line}</HubText>
           </Text>
         ))}
-        {item.login ? <ClaudeLogin machineId={machineId} onLoggedIn={onLoggedIn} /> : item.fix ? <Fix fix={item.fix} /> : null}
+        {item.login ? <ClaudeLogin machineId={machineId} onLoggedIn={onLoggedIn} /> : item.fix ? <Fix fix={item.fix} where={name} /> : null}
+        {item.screens === true ? (
+          <span>
+            <Button
+              variant="link"
+              size="sm"
+              onClick={() => {
+                revealNext("hub.screens");
+                window.location.hash = toHash({ id: "settings", tab: "hub.machines" });
+              }}
+            >
+              Turn them on under Screens
+            </Button>
+          </span>
+        ) : null}
       </div>
     </li>
   );
 }
 
-function Fix({ fix }: { fix: DoctorFix }) {
-  const [copied, setCopied] = useState(false);
+/** The hub's fix: what to do, and the command to run on the machine, with Copy. */
+function Fix({ fix, where }: { fix: DoctorFix; where: string }) {
   return (
     <div className={a.fix}>
       {fix.label ? (
@@ -108,14 +138,7 @@ function Fix({ fix }: { fix: DoctorFix }) {
           <HubText>{fix.label}</HubText>
         </Text>
       ) : null}
-      {fix.command ? (
-        <div className={a.link}>
-          <InlineCode>{fix.command}</InlineCode>
-          <Button size="sm" variant="quiet" onClick={() => void copyText(fix.command ?? "").then(setCopied)}>
-            {copied ? "Copied" : "Copy"}
-          </Button>
-        </div>
-      ) : null}
+      {fix.command ? <RunOn where={where} command={fix.command} /> : null}
     </div>
   );
 }

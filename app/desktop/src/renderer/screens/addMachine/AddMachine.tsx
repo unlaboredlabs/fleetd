@@ -3,7 +3,8 @@
 //     (machine_add local), one holding an enrolled node is a machine already; on any other, main downloads the hub's
 //     own fleetd build, checks it, and joins with a one-time code (src/main/joinHere.ts).
 //   - A machine the hub can reach: pick one of machine_hosts, see machine_add_plan's steps, Add, and watch each step;
-//     a failed step shows its output, the fix and Retry (finished steps are skipped).
+//     a failed step shows its output, the fix and Retry (finished steps are skipped). A host the hub can't log in to
+//     shows `ssh-copy-id <host>` to run on the hub's machine, and Try again.
 //   - Any other machine: name it, and paste the one line machine_join makes (fleetd pair --worker's) in its terminal.
 //     "Waiting for <name>…" turns into "Joined" once its node is online; a code that expires first says so.
 // Repair from the machine list opens the plan of a machine the hub reaches, or a line that enrolls it again.
@@ -15,6 +16,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { MachineAddRun, MachineHost, MachineJoinOutput, SetupStep } from "../../../shared/contracts";
 import type { JoinHere, ThisComputer } from "../../../shared/joinHere";
+import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, copyText, Field, InlineCode, Input, StateGlyph, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
@@ -34,10 +36,12 @@ import {
   runTitle,
   sentence,
   shortOutput,
+  sshFix,
   stepTitle,
   untilLine,
   type Here,
 } from "./model";
+import { RunOn } from "../setup/Guide";
 import { toHash } from "../shell/routes";
 import s from "./addMachine.module.css";
 
@@ -139,6 +143,8 @@ export function AddMachine({ open }: { open?: { readonly view: View; readonly at
           return r === undefined ? { kind: "choose" } : { kind: "run", runId: r.runId };
         })());
 
+  // The hub's own machine, where a command that lets the hub reach another one runs.
+  const hubMachine = hosts.data?.hosts.find((h) => h.source === "hub")?.machineId ?? "the hub's machine";
   const here =
     hosts.data && hostName !== undefined && computer !== undefined && !info.isPending ? hereOf(hosts.data.hosts, hubFingerprint, hostName, computer, new Set(Object.keys(machines))) : undefined;
 
@@ -177,9 +183,9 @@ export function AddMachine({ open }: { open?: { readonly view: View; readonly at
       ) : shown.kind === "choose" ? (
         <Choose here={here} busy={busy} onHere={addHere} onHosts={() => setView({ kind: "hosts" })} onLine={() => setView({ kind: "line" })} />
       ) : shown.kind === "hosts" ? (
-        <Hosts read={hosts} onPick={(host) => setView({ kind: "plan", host })} onBack={() => setView({ kind: "choose" })} />
+        <Hosts read={hosts} hubMachine={hubMachine} onPick={(host) => setView({ kind: "plan", host })} onBack={() => setView({ kind: "choose" })} />
       ) : shown.kind === "plan" ? (
-        <Plan host={shown.host} busy={busy} onAdd={() => add(shown.host.host === undefined ? { local: true } : { host: shown.host.host })} onBack={() => setView({ kind: "hosts" })} />
+        <Plan host={shown.host} hubMachine={hubMachine} busy={busy} onAdd={() => add(shown.host.host === undefined ? { local: true } : { host: shown.host.host })} onBack={() => setView({ kind: "hosts" })} />
       ) : shown.kind === "run" ? (
         <Run
           run={runs?.find((r) => r.runId === shown.runId)}
@@ -257,7 +263,7 @@ function Choose(props: { here: Here | undefined; busy: boolean; onHere: (h: Here
   );
 }
 
-function Hosts(props: { read: ReturnType<typeof useToolQuery<"machine_hosts">>; onPick: (h: MachineHost) => void; onBack: () => void }) {
+function Hosts(props: { read: ReturnType<typeof useToolQuery<"machine_hosts">>; hubMachine: string; onPick: (h: MachineHost) => void; onBack: () => void }) {
   const hosts = props.read.data?.hosts;
   return (
     <>
@@ -273,6 +279,10 @@ function Hosts(props: { read: ReturnType<typeof useToolQuery<"machine_hosts">>; 
         <Text tone="danger">{`Couldn't list them: ${errorText(props.read.error)}`}</Text>
       ) : hosts === undefined ? (
         <Text tone="quiet">Looking…</Text>
+      ) : pickable(hosts).length === 0 ? (
+        <Text size="sm" tone="quiet">
+          {`The hub finds none. Name the machine in ~/.ssh/config on ${props.hubMachine}, or add it as any other machine.`}
+        </Text>
       ) : (
         <ul className={s.rows} aria-label="Hosts">
           {pickable(hosts).map((h) => (
@@ -361,7 +371,7 @@ function Notes(props: { notes: ReadonlyArray<string> }) {
   );
 }
 
-function Plan(props: { host: MachineHost; busy: boolean; onAdd: () => void; onBack: () => void }) {
+function Plan(props: { host: MachineHost; hubMachine: string; busy: boolean; onAdd: () => void; onBack: () => void }) {
   const input = props.host.host === undefined ? { local: true as const } : { host: props.host.host };
   const plan = useToolQuery("machine_add_plan", input);
   const m = props.host.machineId;
@@ -372,7 +382,7 @@ function Plan(props: { host: MachineHost; busy: boolean; onAdd: () => void; onBa
         line={plan.data ? `${plan.data.platform} · ${hostLine(props.host)}. Nothing has changed on it yet.` : `Reading ${m} over SSH; nothing changes on it.`}
       />
       {plan.error ? (
-        <Text tone="danger">{errorText(plan.error)}</Text>
+        <PlanError host={props.host.host} hubMachine={props.hubMachine} error={plan.error} />
       ) : plan.data === undefined ? (
         <Text tone="quiet">Reading the machine…</Text>
       ) : (
@@ -382,14 +392,36 @@ function Plan(props: { host: MachineHost; busy: boolean; onAdd: () => void; onBa
         </>
       )}
       <div className={s.actions}>
-        <Button variant="primary" disabled={plan.data === undefined || props.busy} onClick={props.onAdd}>
-          {props.host.joined ? `Repair ${m}` : `Add ${m}`}
-        </Button>
+        {plan.error ? (
+          <Button variant="primary" disabled={plan.isFetching} onClick={() => void plan.refetch()}>
+            {plan.isFetching ? "Trying…" : "Try again"}
+          </Button>
+        ) : (
+          <Button variant="primary" disabled={plan.data === undefined || props.busy} onClick={props.onAdd}>
+            {props.host.joined ? `Repair ${m}` : `Add ${m}`}
+          </Button>
+        )}
         <Button variant="ghost" onClick={props.onBack}>
           Back
         </Button>
       </div>
     </>
+  );
+}
+
+/**
+ * Why the hub couldn't read the machine. When it couldn't log in over SSH, the command that lets it, to run on the
+ * hub's machine, then Try again; else the hub's own fix.
+ */
+function PlanError(props: { host: string | undefined; hubMachine: string; error: Error }) {
+  const fix = props.error instanceof CallError ? props.error.error.fix : undefined;
+  const command = props.host === undefined ? undefined : sshFix(props.host, fix);
+  if (command === undefined) return <Text tone="danger">{errorText(props.error)}</Text>;
+  return (
+    <div className={s.head}>
+      <Text tone="danger">{sentence(props.error.message.split("\n")[0] ?? "")}</Text>
+      <RunOn where={props.hubMachine} command={command} note={`It asks for ${props.host ?? ""}'s password once, then the hub logs in with its key. Then Try again.`} />
+    </div>
   );
 }
 

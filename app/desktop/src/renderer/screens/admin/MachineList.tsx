@@ -1,7 +1,8 @@
-// Settings › Hub › Machines: the hub's machines, each a row between hairlines with its state, a link to its page
-// (the checklist), Repair and Remove. Repair goes again over SSH when the hub reaches the machine, else it makes a
-// line that enrolls it again (machine_join with rejoin); Remove asks first, then runs machine_remove. The hub sends no
-// event when it forgets a machine, so a removed one leaves the list here at once and the store's next snapshot.
+// Settings › Hub › Machines: the hub's machines, each a row between hairlines with its state (and, unless online, what
+// it needs), a link to its page (the checklist), Repair and Remove. Repair goes again over SSH when the hub reaches
+// the machine, else it makes a line that enrolls it again (machine_join with rejoin); Remove asks first, then runs
+// machine_remove. The hub sends no event when it forgets a machine, so a removed one leaves the list here at once and
+// the store's next snapshot.
 import { useState } from "react";
 import type { Machine } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
@@ -10,7 +11,7 @@ import { Button, Dialog, Text, toast } from "../../ui";
 import { machineOrder } from "../projects/machineText";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { toHash } from "../shell/routes";
-import { MACHINE_WAIT_MS, removeLine, repairOf, type Repair } from "./machines";
+import { MACHINE_WAIT_MS, removeLine, repairOf, statusLine, type Repair } from "./machines";
 import a from "./admin.module.css";
 
 const noInput = {};
@@ -53,6 +54,11 @@ export function MachineList({ onRepair }: { onRepair: (r: Repair) => void }) {
                 <Text size="xs" tone="quiet">
                   {`fleetd ${m.nodeVersion}${m.machineId === m.name ? "" : ` · ${m.machineId}`}`}
                 </Text>
+                {statusLine(m) === null ? null : (
+                  <Text size="xs" tone={m.status === "degraded" ? "warning" : "default"}>
+                    {statusLine(m)}
+                  </Text>
+                )}
               </div>
               <div className={a.controls}>
                 <Button size="sm" variant="ghost" onClick={() => onRepair(repairOf(m.machineId, hosts))}>

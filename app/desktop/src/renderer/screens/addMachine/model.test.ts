@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MachineAddRun, MachineHost } from "../../../shared/contracts";
-import { hereLine, hereOf, hostLine, joinSteps, lineState, lineWords, machineIdProblem, pickable, resumable, shortOutput } from "./model";
+import { hereLine, hereOf, hostLine, joinSteps, lineState, lineWords, machineIdProblem, pickable, resumable, shortOutput, sshFix } from "./model";
 
 const hub: MachineHost = { machineId: "devbox", source: "hub", joined: true };
 const builder: MachineHost = { machineId: "builder-1", host: "builder-1", source: "ssh_config", joined: false };
@@ -92,5 +92,12 @@ describe("Add machine's model", () => {
     expect(lineState(repair, true, at + 15 * 60_000, false)).toBe("expired");
     expect(lineWords("waiting", "laptop")).toBe("Waiting for laptop…");
     expect(lineWords("joined", "laptop")).toBe("laptop joined.");
+  });
+
+  it("gives a host the hub can't log in to the command that lets it, and nothing for another failure", () => {
+    const fix = "make `ssh builder-1 true` work without a password (ssh-copy-id builder-1), then run Add again";
+    expect(sshFix("builder-1", fix)).toBe("ssh-copy-id builder-1");
+    expect(sshFix("builder-1", "install claude on it")).toBeUndefined();
+    expect(sshFix("builder-1", undefined)).toBeUndefined();
   });
 });

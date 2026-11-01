@@ -6214,6 +6214,13 @@
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
+        "fix": {
+          "description": "The command that clears what stands in the way, for a person to run in a terminal on the machine\n(`sudo apt-get install -y xvfb`). Absent where none does, and from a node before it.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
         "host": {
           "$ref": "#/$defs/SessionHost"
         },

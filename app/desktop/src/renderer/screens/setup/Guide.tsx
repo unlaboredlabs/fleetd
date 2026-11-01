@@ -14,6 +14,8 @@ export interface PasteValue {
   readonly plain?: boolean;
   /** Filled in by fleetd (a manifest, a link), shown to read and never copied. */
   readonly filled?: boolean;
+  /** The toast once copied; absent: "<label> copied". */
+  readonly copied?: string;
 }
 
 /** A provider's page, opened in the browser. */
@@ -89,7 +91,7 @@ export function Values({ values }: { values: ReadonlyArray<PasteValue> }) {
                   icon={<Copy size={14} />}
                   onClick={() => {
                     void copyText(v.value);
-                    toast({ title: `${v.label} copied` });
+                    toast({ title: v.copied ?? `${v.label} copied` });
                   }}
                 />
               </span>
@@ -104,6 +106,14 @@ export function Values({ values }: { values: ReadonlyArray<PasteValue> }) {
       ))}
     </dl>
   );
+}
+
+/**
+ * A command a person runs in a terminal, and where: "Run on mac-mini", the command and Copy. `note` says what happens
+ * once it has run.
+ */
+export function RunOn({ where, command, note }: { where: string; command: string; note?: string }) {
+  return <Values values={[{ label: `Run on ${where}`, value: command, copied: "Command copied", ...(note === undefined ? {} : { note }) }]} />;
 }
 
 export function Part({ n, title, optional = false, children }: { n: number; title: string; optional?: boolean; children: ReactNode }) {

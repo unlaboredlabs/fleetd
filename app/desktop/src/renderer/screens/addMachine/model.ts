@@ -110,6 +110,13 @@ export const joinSteps = (join: JoinHere, online: boolean): ReadonlyArray<SetupS
   return [...steps, { title: `wait until ${join.machineId} is online`, state: waitState }];
 };
 
+/**
+ * The command that lets the hub reach a host it couldn't read over SSH, as the hub's fix names it: `ssh-copy-id <host>`,
+ * run on the hub's machine. Undefined for any other failure.
+ */
+export const sshFix = (host: string, fix: string | undefined): string | undefined =>
+  fix?.includes(`ssh-copy-id ${host}`) === true ? `ssh-copy-id ${host}` : undefined;
+
 /** Why a name can't be a machine id, or undefined when it can. */
 export const machineIdProblem = (name: string): string | undefined => {
   if (name.trim() === "") return "Give it a name: how the hub and its agents will call it.";

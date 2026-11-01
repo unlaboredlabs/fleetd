@@ -1,7 +1,8 @@
 // Hub › Machines › Screens (W268): which kinds of screen each machine that hosts screens opens, a switch each, how long
 // an idle one lasts there, and how long the hub keeps recordings. A switch is a machine_screens_set call: the machine's
 // node writes its node.json, so turning Android or iOS on installs what it needs, and the line under the switch follows
-// what the node says (installing, starting once its live screens end). Retention is browser_retention_set, for every
+// what the node says (installing, starting once its live screens end). A kind that can't run for something missing
+// shows the command that fixes it, to run on that machine. Retention is browser_retention_set, for every
 // project. Hub-wide, so only owners and admins see it; the hub's answer reads the machines again.
 import { useState } from "react";
 import type { HostCheck, MachineRolesEntry, SessionHost } from "../../../shared/contracts";
@@ -9,7 +10,8 @@ import { useToolQuery } from "../../src/data/react";
 import { Select, Switch, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { CommandLine } from "../onboarding/Prose";
-import { daysChoices, gbChoices, idleChoices, idleOf, lockedWhy, nodeWait, SCREEN_KINDS, stateLine, switchOn } from "./screensModel";
+import { RunOn } from "../setup/Guide";
+import { daysChoices, fixOf, gbChoices, idleChoices, idleOf, lockedWhy, nodeWait, SCREEN_KINDS, stateLine, switchOn } from "./screensModel";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -96,6 +98,10 @@ function ScreensRow({ machine: m }: { machine: MachineRolesEntry }) {
           );
         })}
       </div>
+      {SCREEN_KINDS.map(({ host, label }) => {
+        const fix = fixOf(m, check(host));
+        return fix === null ? null : <RunOn key={host} where={`${m.name}, for ${label}`} command={fix} />;
+      })}
       <div className={s.inline}>
         <Text size="xs">Idle screens end after</Text>
         <Select

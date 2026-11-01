@@ -105,6 +105,10 @@ pub struct HostCheck {
     /// before it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idle_minutes: Option<IdleMinutes>,
+    /// The command that clears what stands in the way, for a person to run in a terminal on the machine
+    /// (`sudo apt-get install -y xvfb`). Absent where none does, and from a node before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fix: Option<Line<1, 300>>,
 }
 
 /// Why a machine can't host a kind of screen.

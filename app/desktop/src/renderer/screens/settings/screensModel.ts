@@ -45,6 +45,15 @@ export const stateLine = (check: HostCheck | undefined): string => {
   }
 };
 
+/**
+ * The command that lets a kind run, for the person to run on the machine: where it is on (or wanted) and something
+ * it needs is missing or failed. None while it is off, on a machine that can't host it, restarting or installing.
+ */
+export const fixOf = (m: MachineRolesEntry, check: HostCheck | undefined): string | null => {
+  if (!m.online || check === undefined || check.ready || check.fix === undefined) return null;
+  return check.off === "missing" || check.off === "failed" ? check.fix : null;
+};
+
 /** The machine's idle timeout, as its node reports it: every kind has one, the browser's is shown. */
 export const idleOf = (m: MachineRolesEntry): number | undefined => (m.hosts ?? []).find((h) => h.idleMinutes !== undefined)?.idleMinutes;
 

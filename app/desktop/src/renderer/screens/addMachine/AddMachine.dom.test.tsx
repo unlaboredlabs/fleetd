@@ -86,6 +86,8 @@ let calls: Array<{ tool: string; input: unknown }>;
 let runs: MachineAddRun[];
 /** machine_join's code expiry. */
 let expiresAt: string;
+/** How many more machine_add_plan calls the hub refuses: it can't log in to the host over SSH. */
+let planRefusals = 0;
 /** The hub's frames, for a test to send more. */
 let send: (frame: HubFrame) => void = () => undefined;
 const LINE = "curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox.example.ts.net:4790 --code K7Q2-M4XP --machine-id laptop";
@@ -100,6 +102,7 @@ beforeEach(() => {
   computer = { kind: "none" };
   hubInfo = undefined;
   expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
+  planRefusals = 0;
   joinHere.mockClear();
 });
 afterEach(() => {
@@ -116,6 +119,17 @@ const render = async (open?: { view: View; at: number }) => {
     call: (tool, input) => {
       calls.push({ tool, input });
       if (tool === "hub_info" && hubInfo !== undefined) return hubInfo;
+      if (tool === "machine_add_plan" && planRefusals > 0) {
+        planRefusals -= 1;
+        return Promise.resolve({
+          ok: false,
+          error: {
+            code: "failed",
+            message: "cannot read builder-1 over SSH (exit 255): builder-1: Permission denied (publickey).",
+            fix: "make `ssh builder-1 true` work without a password (ssh-copy-id builder-1), then run fleetd machine add builder-1",
+          },
+        });
+      }
       const output =
         tool === "hub_info"
           ? { version: "0.9.0", protocol: 1, busy: [], admin: true, machineFingerprint: HUB_FP }
@@ -276,6 +290,23 @@ it("plans a host the hub can reach, adds it and follows its steps", async () => 
   expect(host.textContent).toContain("Adding builder-1.");
   expect(button("Retry")).toBeUndefined();
 });
+
+it("gives a host the hub can't log in to the command to run on the hub's machine, then tries again", async () => {
+  // The query asks three times before it gives up.
+  planRefusals = 3;
+  await render();
+  await click("Choose…");
+  await click("Plan…");
+  await vi.waitFor(() => expect(button("Try again")).toBeDefined(), { timeout: 8000 });
+  expect(host.textContent).toContain("Cannot read builder-1 over SSH");
+  // The values row of the hub's setup guide: where, the command, and Copy.
+  expect(host.querySelector("dt")?.textContent).toBe("Run on devbox");
+  expect(host.querySelector("dd [data-text='code']")?.textContent).toBe("ssh-copy-id builder-1");
+  expect(button("Add builder-1")).toBeUndefined();
+  await click("Try again");
+  await vi.waitFor(() => expect(button("Add builder-1")).toBeDefined());
+  expect(host.textContent).toContain("Install fleetd 0.9.0");
+}, 15_000);
 
 it("opens on a run still going, step by step", async () => {
   runs = [RUNNING];

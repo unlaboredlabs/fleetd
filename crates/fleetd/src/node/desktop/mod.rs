@@ -107,8 +107,20 @@ fn state_path(home: &Path) -> PathBuf {
     desktop_dir(home).join("state.json")
 }
 
-/// The fix a person runs on a machine with neither.
-const INSTALL_FIX: &str = "sudo apt install xvfb (or install docker or podman)";
+/// The fix a person runs on a machine with neither docker nor Xvfb that works: Xvfb, with its package manager (apt's
+/// where it has none of these).
+pub fn install_fix() -> String {
+    const BY_MANAGER: [(&str, &str); 3] = [
+        ("apt-get", "sudo apt-get install -y xvfb"),
+        ("dnf", "sudo dnf install -y xorg-x11-server-Xvfb"),
+        ("pacman", "sudo pacman -S --needed xorg-server-xvfb"),
+    ];
+    BY_MANAGER
+        .iter()
+        .find(|(manager, _)| display::on_path(manager).is_some())
+        .map_or(BY_MANAGER[0].1, |(_, fix)| fix)
+        .to_owned()
+}
 
 /// What the node found, before it prepares anything: a usable runtime is checked only when it prepares.
 fn choose(config: &DesktopConfig, home: &Path) -> (Option<Runtime>, Option<PathBuf>) {
@@ -210,19 +222,20 @@ fn health_with(home: &Path, config: &DesktopConfig, block: bool) -> Option<Deskt
         (Some(runtime), Some(Err(why)), None) => health_of(
             DesktopState::Unavailable,
             Some(DesktopBackend::Container),
-            format!("Desktop screens can't run here: {why}, and there's no Xvfb.",),
-            Some(&format!(
-                "sudo usermod -aG docker $USER (then log in again), or sudo apt install xvfb; {} must answer `{} info`",
-                runtime.bin.display(),
-                runtime.name()
-            )),
+            format!(
+                "Desktop screens can't run here: {why}, and there's no Xvfb. Install Xvfb, or make `{} info` answer \
+                 for this user ({}).",
+                runtime.name(),
+                runtime.bin.display()
+            ),
+            Some(&install_fix()),
         ),
         _ => health_of(
             DesktopState::Unavailable,
             None,
             "Desktop screens need docker or podman, or Xvfb; this machine has none that works."
                 .into(),
-            Some(INSTALL_FIX),
+            Some(&install_fix()),
         ),
     })
 }
@@ -387,7 +400,7 @@ impl Desktops {
                         DesktopState::Unavailable,
                         None,
                         format!("Desktop screens can't run here: {why}."),
-                        Some(INSTALL_FIX),
+                        Some(&install_fix()),
                     ));
                     *lock(&desktops.prep) = Prep::Unavailable(why);
                     desktops.prepared.notify_waiters();
@@ -452,7 +465,8 @@ impl Desktops {
                 ErrorCode::Failed,
                 format!("This machine can't host desktop sessions: {why}."),
                 &format!(
-                    "say so in your result: a person must run `{INSTALL_FIX}` on this machine"
+                    "say so in your result: a person must run `{}` on this machine",
+                    install_fix()
                 ),
             )),
         }

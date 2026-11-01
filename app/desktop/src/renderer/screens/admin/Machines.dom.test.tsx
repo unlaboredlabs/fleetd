@@ -151,6 +151,9 @@ it("lists the machines, each with its page, Repair and Remove", async () => {
   // Online first, then by name.
   expect(names).toEqual(["builder-1", "devbox", "laptop"]);
   expect(row("laptop")?.textContent).toContain("Offline");
+  // What brings it back, and nothing under one that is online.
+  expect(row("laptop")?.textContent).toContain("If the machine is on, Repair sets its node up again.");
+  expect(row("devbox")?.textContent).not.toContain("Repair sets");
   expect(row("laptop")?.querySelector("a")?.getAttribute("href")).toBe("#/settings/hub/machines/laptop");
 
   await click(rowButton("builder-1", "Repair"));
@@ -192,6 +195,38 @@ it("shows a joined machine's checklist, each item waiting until the hub has chec
   expect(host.textContent).toContain("Offline · fleetd 0.9.0");
   expect(items()).toEqual(["claude:waiting", "identity:waiting", "github:waiting", "capabilities:done"]);
   expect(host.textContent).toContain("Checked when an agent first starts in one of its projects.");
+});
+
+it("checks a machine the hub hasn't checked yet as its page opens, once", async () => {
+  checks = [];
+  await render(<MachinePage machineId="builder-1" />);
+  const reruns = () => calls.filter((c) => c.tool === "doctor_list" && (c.input as { rerun?: boolean }).rerun === true);
+  expect(reruns()).toHaveLength(1);
+  await settle();
+  expect(reruns()).toHaveLength(1);
+});
+
+it("checks a machine again as its page opens when the hub couldn't answer some of its checks, unless it is offline", async () => {
+  const reruns = () => calls.filter((c) => c.tool === "doctor_list" && (c.input as { rerun?: boolean }).rerun === true);
+  checks = [
+    { id: "builder-1/commit_identity", scope: "machine", machineId: "builder-1", status: "unknown", message: "builder-1's node is not linked to the hub" },
+    check("commit_identity", "unknown", "laptop's node is not linked to the hub"),
+  ];
+  await render(<MachinePage machineId="builder-1" />);
+  expect(reruns()).toHaveLength(1);
+  act(() => root.unmount());
+  root = createRoot(host);
+  calls = [];
+  // laptop is offline: nothing to ask it.
+  await render(<MachinePage machineId="laptop" />);
+  expect(reruns()).toHaveLength(0);
+});
+
+it("gives each fix as the command to run on the machine, with Copy", async () => {
+  await render(<MachinePage machineId="laptop" />);
+  const android = host.querySelector("li[data-item='capabilities']");
+  expect(android?.querySelector("dt")?.textContent).toBe("Run on laptop");
+  expect(android?.querySelector("dd [data-text='code']")?.textContent).toBe("sudo usermod -aG kvm ada");
 });
 
 it("logs claude in from the app: the URL to sign in at, then the code, once", async () => {

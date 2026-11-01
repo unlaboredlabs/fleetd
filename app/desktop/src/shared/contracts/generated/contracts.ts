@@ -2334,6 +2334,11 @@ export type GrantMachines = Star | MachineId[];
  */
 export type HostCheck = {
   detail: string;
+  /**
+   * The command that clears what stands in the way, for a person to run in a terminal on the machine
+   * (`sudo apt-get install -y xvfb`). Absent where none does, and from a node before it.
+   */
+  fix?: string;
   host: SessionHost;
   /**
    * Minutes without a command before a screen of this kind ends (node.json's `idleMinutes`). Absent from a node

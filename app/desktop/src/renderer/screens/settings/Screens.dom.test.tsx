@@ -46,6 +46,16 @@ const mac1: MachineRolesEntry = {
   nodeRestart: "launchctl kickstart -k gui/501/sh.fleetd.node",
   hosts: [{ host: "ios", ready: true, detail: "Xcode with 6 iOS simulators" }],
 };
+// A Linux box with no Xvfb: its node says what installs it.
+const lab: MachineRolesEntry = {
+  ...devbox,
+  machineId: "lab",
+  name: "lab",
+  hosts: [
+    { host: "browser", ready: true, detail: "Chrome at /usr/bin/google-chrome", on: true, idleMinutes: 30 },
+    { host: "desktop", ready: false, detail: "no docker, podman or Xvfb", off: "missing", on: true, idleMinutes: 30, fix: "sudo apt-get install -y xvfb" },
+  ],
+};
 const agentsOnly: MachineRolesEntry = { ...devbox, machineId: "builder", name: "builder", roles: ["agents"] };
 
 const machine = (id: string) => ({ machineId: id, name: id, nodeVersion: "1", status: "online" as const, lastSeenAt: AT, tags: [] });
@@ -62,7 +72,7 @@ beforeEach(() => {
   document.body.appendChild(host);
   root = createRoot(host);
   calls = [];
-  listed = [devbox, mac1, agentsOnly];
+  listed = [devbox, mac1, lab, agentsOnly];
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -166,4 +176,14 @@ it("turns a kind on with machine_screens_set and shows the node's answer", async
   await settle();
   expect(calls.find((c) => c.tool === "machine_screens_set")?.input).toEqual({ machineId: "devbox", host: "android", on: true });
   expect(row("devbox")?.textContent).toContain("It applies once the screen live here ends, when the node restarts.");
+});
+
+it("shows what a kind that can't run is missing as the command to run on that machine", async () => {
+  await render();
+  const box = row("lab");
+  expect(box?.querySelector("dt")?.textContent).toBe("Run on lab, for Linux desktop");
+  expect(box?.querySelector("dd [data-text='code']")?.textContent).toBe("sudo apt-get install -y xvfb");
+  expect(box?.querySelector("button[aria-label^='Copy']")).not.toBeNull();
+  // Where every kind runs or is simply off, no command.
+  expect(row("devbox")?.querySelector("dt")).toBeNull();
 });

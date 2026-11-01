@@ -450,6 +450,7 @@ mod tests {
             off: None,
             on: Some(true),
             idle_minutes: None,
+            fix: None,
         };
         let started = Sections {
             browser: super::super::browser::BrowserConfig {

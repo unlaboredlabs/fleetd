@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DoctorCheck, MachineHost } from "../../../shared/contracts";
-import { checklistOf, removeLine, repairOf } from "./machines";
+import { checklistOf, removeLine, repairOf, statusLine } from "./machines";
 
 const hosts: MachineHost[] = [
   { machineId: "devbox", source: "hub", joined: true },
@@ -17,6 +17,13 @@ describe("Administration › Machines' model", () => {
     expect(repairOf("mac-mini", hosts)).toEqual({ kind: "plan", host: { ...hosts[2], joined: true } });
     expect(repairOf("laptop", hosts)).toEqual({ kind: "line", machineId: "laptop", rejoin: true });
     expect(repairOf("laptop", undefined)).toEqual({ kind: "line", machineId: "laptop", rejoin: true });
+  });
+
+  it("says under a machine that isn't online what it needs, and where", () => {
+    expect(statusLine({ name: "laptop", status: "online" })).toBeNull();
+    expect(statusLine({ name: "laptop", status: "degraded", degradedReason: "claude is not logged in. Fix: claude auth login" })).toBe("Claude is not logged in. Open laptop for the fix.");
+    expect(statusLine({ name: "laptop", status: "degraded" })).toBe("Something needs a look. Open laptop for the fix.");
+    expect(statusLine({ name: "laptop", status: "offline" })).toContain("Repair sets its node up again");
   });
 
   it("says what Remove does: the service and the key, or the key alone", () => {

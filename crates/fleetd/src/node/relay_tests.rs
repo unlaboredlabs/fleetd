@@ -138,6 +138,7 @@ async fn hub(home: &std::path::Path, mac1_key: &str) -> (Arc<Hub>, String) {
             off: None,
             on: None,
             idle_minutes: None,
+            fix: None,
         }]));
         hub.link.observe_load(&mid(m), Some(load), at);
     }
