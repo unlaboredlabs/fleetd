@@ -78,9 +78,52 @@ pub fn started(
     let _ = HOLD.set(hold);
 }
 
+/// How often [`when_idle`] looks, and how long it lets agents finish their step.
+struct Pace {
+    look: Duration,
+    drain_look: Duration,
+    drain_max: Duration,
+}
+
+/// Waits until the node may restart to apply node.json: no screen live, then its agents held between steps with still
+/// no screen live (one can open while they finish: a person's, a Navi's, or an agent's start that was mid-step). A
+/// screen that opened meanwhile lets the agents go again, and the wait starts over. False once nothing differs any
+/// more: changed back, so nothing to apply.
+async fn when_idle(
+    differs: impl Fn() -> bool,
+    live: impl Fn() -> usize,
+    hold: impl Fn() -> u32,
+    clear: impl Fn(),
+    pace: Pace,
+) -> bool {
+    loop {
+        if !differs() {
+            return false;
+        }
+        if live() == 0 {
+            if !drain(&hold, pace.drain_look, pace.drain_max).await {
+                tracing::warn!(
+                    "screen settings: agents still mid-step after 10 min; restarting anyway"
+                );
+            }
+            if !differs() {
+                // Changed back meanwhile: nothing to apply, and what the hold stopped goes on now.
+                clear();
+                return false;
+            }
+            if live() == 0 {
+                return true;
+            }
+            // A screen opened while the agents finished their step: it isn't cut off, and they carry on.
+            clear();
+        }
+        tokio::time::sleep(pace.look).await;
+    }
+}
+
 /// Holds the agents' tool calls and waits for those mid-step to finish (`hold` renews the hold and counts them), at
 /// most `at_most`; whether they all did. Past it the restart goes anyway: a session cut off mid-step resumes after it.
-async fn drain(hold: impl Fn() -> u32, look: Duration, at_most: Duration) -> bool {
+async fn drain(hold: &impl Fn() -> u32, look: Duration, at_most: Duration) -> bool {
     let started = tokio::time::Instant::now();
     loop {
         if hold() == 0 {
@@ -278,26 +321,21 @@ fn schedule(home: &Path, asked: u64) -> String {
         let home = home.to_path_buf();
         tokio::spawn(async move {
             wait_answered(asked, ANSWER_WAIT).await;
-            loop {
-                if !differs(&home) {
-                    break;
-                }
-                if live() == 0 {
-                    if !drain(|| HOLD.get().map_or(0, |f| f()), DRAIN_LOOK, DRAIN_MAX).await {
-                        tracing::warn!(
-                            "screen settings: agents still mid-step after 10 min; restarting anyway"
-                        );
-                    }
-                    if !differs(&home) {
-                        // Changed back meanwhile: nothing to apply, and what the hold stopped goes on now.
-                        super::hold::clear(&home);
-                        break;
-                    }
-                    tracing::info!("screen settings changed: restarting the node to apply them");
-                    RESTART.notify_one();
-                    break;
-                }
-                tokio::time::sleep(LOOK).await;
+            let restart = when_idle(
+                || differs(&home),
+                live,
+                || HOLD.get().map_or(0, |f| f()),
+                || super::hold::clear(&home),
+                Pace {
+                    look: LOOK,
+                    drain_look: DRAIN_LOOK,
+                    drain_max: DRAIN_MAX,
+                },
+            )
+            .await;
+            if restart {
+                tracing::info!("screen settings changed: restarting the node to apply them");
+                RESTART.notify_one();
             }
             WATCHING.store(false, Ordering::SeqCst);
         });
@@ -439,7 +477,7 @@ mod tests {
         };
         assert!(
             drain(
-                || left(&asks),
+                &|| left(&asks),
                 Duration::from_secs(2),
                 Duration::from_secs(600)
             )
@@ -451,7 +489,7 @@ mod tests {
         let started = tokio::time::Instant::now();
         assert!(
             !drain(
-                || {
+                &|| {
                     stuck.fetch_add(1, Ordering::SeqCst);
                     1
                 },
@@ -461,6 +499,62 @@ mod tests {
             .await
         );
         assert!(started.elapsed() >= Duration::from_secs(600));
+    }
+
+    /// A screen that opens while the agents finish their step isn't cut off: the hold lets go, and the wait starts over.
+    #[tokio::test(start_paused = true)]
+    async fn a_screen_opened_during_the_hold_puts_the_restart_off() {
+        use std::sync::atomic::AtomicUsize;
+        let pace = || Pace {
+            look: Duration::from_secs(10),
+            drain_look: Duration::from_secs(2),
+            drain_max: Duration::from_secs(600),
+        };
+        // Asked for live screens: none, then one (opened during the drain), then it is still live, then none twice.
+        let looks = AtomicUsize::new(0);
+        let screens = [0, 1, 1, 0, 0];
+        let live = || {
+            screens
+                .get(looks.fetch_add(1, Ordering::SeqCst))
+                .copied()
+                .unwrap_or(0)
+        };
+        let cleared = AtomicUsize::new(0);
+        let restart = when_idle(
+            || true,
+            live,
+            || 0,
+            || {
+                cleared.fetch_add(1, Ordering::SeqCst);
+            },
+            pace(),
+        )
+        .await;
+        assert!(restart);
+        assert_eq!(
+            cleared.load(Ordering::SeqCst),
+            1,
+            "the hold let go once, for the screen that opened"
+        );
+        assert_eq!(looks.load(Ordering::SeqCst), 5);
+
+        // Changed back while held: no restart, and the hold lets go.
+        let back = AtomicUsize::new(0);
+        let differs = || back.fetch_add(1, Ordering::SeqCst) == 0;
+        let cleared = AtomicUsize::new(0);
+        assert!(
+            !when_idle(
+                differs,
+                || 0,
+                || 0,
+                || {
+                    cleared.fetch_add(1, Ordering::SeqCst);
+                },
+                pace()
+            )
+            .await
+        );
+        assert_eq!(cleared.load(Ordering::SeqCst), 1);
     }
 
     #[test]
