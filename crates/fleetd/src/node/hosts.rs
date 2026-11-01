@@ -125,7 +125,7 @@ fn android_check(config: &DeviceConfig, health: Option<AndroidHealth>) -> HostCh
         None => check(
             host,
             Some(HostOff::Off),
-            "not set up: opt this machine in with \"device\": {\"enabled\": true} in node.json",
+            "not set up: turn Android on in Settings › Hub › Machines › Screens (or \"device\": {\"enabled\": true} in node.json)",
         ),
     }
 }
@@ -168,15 +168,23 @@ pub fn ios(home: &Path, config: &IosConfig) -> HostCheck {
             )
         }
         None => (
-            check(
-                host,
-                Some(HostOff::Missing),
-                "no Xcode: install it, then opt this Mac in with \"ios\": {\"enabled\": true} in node.json",
-            ),
+            check(host, Some(HostOff::Missing), no_xcode(config)),
             config.opted_in(),
         ),
     };
     with(checked, on, config.idle_minutes)
+}
+
+/// What a Mac without Xcode lacks: only Xcode once iOS is turned on, else Xcode and then the switch.
+fn no_xcode(config: &IosConfig) -> &'static str {
+    match config.opted_in() {
+        true => {
+            "no Xcode: install it, with an iOS simulator runtime (Xcode > Settings > Components)"
+        }
+        false => {
+            "no Xcode: install it, then turn iOS on for this Mac in Settings › Hub › Machines › Screens"
+        }
+    }
 }
 
 /// The desktop sessions' own word (node/desktop): what preparing found, else what is on the PATH.
@@ -274,7 +282,7 @@ mod tests {
         assert!(!unset.ready, "neither installed nor opted in");
         if device::sdk::supported() {
             assert!(
-                unset.detail.as_str().contains("opt this machine in"),
+                unset.detail.as_str().contains("turn Android on"),
                 "{unset:?}"
             );
         }
@@ -326,6 +334,17 @@ mod tests {
             assert!(!asked.ready);
             assert_eq!(asked.detail.as_str(), "iOS simulators need macOS");
         }
+    }
+
+    #[test]
+    fn a_mac_without_xcode_says_only_what_is_missing_once_turned_on() {
+        let on = IosConfig {
+            enabled: Some(true),
+            ..IosConfig::default()
+        };
+        assert!(!no_xcode(&on).contains("turn iOS on"), "{}", no_xcode(&on));
+        assert!(!no_xcode(&on).contains("node.json"));
+        assert!(no_xcode(&IosConfig::default()).contains("turn iOS on"));
     }
 
     #[test]

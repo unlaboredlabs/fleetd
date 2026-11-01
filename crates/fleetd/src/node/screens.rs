@@ -1,7 +1,8 @@
 //! Settings › Hub › Machines › Screens (W268): `node_action` `screens` turns a kind of screen on or off, or sets every
 //! kind's idle timeout, in this node's node.json, as a person would by hand; the rest of the file stays as it was. The
 //! screen services read node.json once, as the node starts, so the node restarts itself to apply a change
-//! ([`restart_wanted`]) once no screen is live here. Until then a kind turned on says it waits for that restart.
+//! ([`restart_wanted`]) once no screen is live here, holding its agents' tool calls first, as an update's restart does
+//! (node/hold.rs), so it finds them between steps. Until then a kind turned on says it waits for that restart.
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -47,6 +48,8 @@ impl Sections {
 
 static STARTED: Mutex<Option<Sections>> = Mutex::new(None);
 static LIVE: OnceLock<Box<dyn Fn() -> usize + Send + Sync>> = OnceLock::new();
+/// Holds the agents' tool calls that haven't started, for the hold's lease; how many sessions are still mid-step.
+static HOLD: OnceLock<Box<dyn Fn() -> u32 + Send + Sync>> = OnceLock::new();
 static WATCHING: AtomicBool = AtomicBool::new(false);
 static RESTART: tokio::sync::Notify = tokio::sync::Notify::const_new();
 /// Changes asked for, and changes whose answer is on the link: a restart never cuts off the answer that asked for it.
@@ -55,15 +58,39 @@ static FLUSHED: AtomicU64 = AtomicU64::new(0);
 static ANSWERED: tokio::sync::Notify = tokio::sync::Notify::const_new();
 /// How long a restart waits for its answer to reach the link, at most.
 const ANSWER_WAIT: Duration = Duration::from_secs(60);
+/// How often the hold is renewed while agents finish the step they're on, and how long they get, as `fleetd update`.
+const DRAIN_LOOK: Duration = Duration::from_secs(2);
+const DRAIN_MAX: Duration = Duration::from_secs(600);
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// As the node starts its screen services: the settings they run with, and how many screens are live here.
-pub fn started(config: &NodeConfig, live: Box<dyn Fn() -> usize + Send + Sync>) {
+/// As the node starts its screen services: the settings they run with, how many screens are live here, and the hold
+/// of its agents' tool calls ahead of a restart.
+pub fn started(
+    config: &NodeConfig,
+    live: Box<dyn Fn() -> usize + Send + Sync>,
+    hold: Box<dyn Fn() -> u32 + Send + Sync>,
+) {
     *lock(&STARTED) = Some(Sections::of(config));
     let _ = LIVE.set(live);
+    let _ = HOLD.set(hold);
+}
+
+/// Holds the agents' tool calls and waits for those mid-step to finish (`hold` renews the hold and counts them), at
+/// most `at_most`; whether they all did. Past it the restart goes anyway: a session cut off mid-step resumes after it.
+async fn drain(hold: impl Fn() -> u32, look: Duration, at_most: Duration) -> bool {
+    let started = tokio::time::Instant::now();
+    loop {
+        if hold() == 0 {
+            return true;
+        }
+        if started.elapsed() >= at_most {
+            return false;
+        }
+        tokio::time::sleep(look).await;
+    }
 }
 
 /// Resolves once a change wants the node restarted: the node then stops as it does for SIGTERM, and its service
@@ -256,6 +283,16 @@ fn schedule(home: &Path, asked: u64) -> String {
                     break;
                 }
                 if live() == 0 {
+                    if !drain(|| HOLD.get().map_or(0, |f| f()), DRAIN_LOOK, DRAIN_MAX).await {
+                        tracing::warn!(
+                            "screen settings: agents still mid-step after 10 min; restarting anyway"
+                        );
+                    }
+                    if !differs(&home) {
+                        // Changed back meanwhile: nothing to apply, and what the hold stopped goes on now.
+                        super::hold::clear(&home);
+                        break;
+                    }
                     tracing::info!("screen settings changed: restarting the node to apply them");
                     RESTART.notify_one();
                     break;
@@ -387,6 +424,43 @@ mod tests {
         )
         .await
         .unwrap();
+    }
+
+    /// The restart holds the agents' tool calls first, and goes once none is mid-step, as an update's does.
+    #[tokio::test(start_paused = true)]
+    async fn a_restart_waits_for_agents_mid_step() {
+        use std::sync::atomic::AtomicU32;
+        let asks = AtomicU32::new(0);
+        // Two sessions mid-step, then one, then none: the hold is renewed each time it is asked.
+        let left = |n: &AtomicU32| match n.fetch_add(1, Ordering::SeqCst) {
+            0 => 2,
+            1 => 1,
+            _ => 0,
+        };
+        assert!(
+            drain(
+                || left(&asks),
+                Duration::from_secs(2),
+                Duration::from_secs(600)
+            )
+            .await
+        );
+        assert_eq!(asks.load(Ordering::SeqCst), 3);
+        // A step that never ends doesn't keep the restart for ever.
+        let stuck = AtomicU32::new(0);
+        let started = tokio::time::Instant::now();
+        assert!(
+            !drain(
+                || {
+                    stuck.fetch_add(1, Ordering::SeqCst);
+                    1
+                },
+                Duration::from_secs(2),
+                Duration::from_secs(600)
+            )
+            .await
+        );
+        assert!(started.elapsed() >= Duration::from_secs(600));
     }
 
     #[test]

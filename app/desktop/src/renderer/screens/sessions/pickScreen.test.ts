@@ -2,7 +2,7 @@
 // machine it starts on, and each machine's slots in words, a full one offering to wait.
 import { describe, expect, it } from "vitest";
 import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
-import { adminNames, askLine, canOpen, fixLabel, fixReveal, hostsFor, newScreenOf, openingLine, openWord, pickHost, prChoices, slotLine, startingLine, takesBuild, whyOff } from "./pickScreen";
+import { adminNames, askLine, canOpen, fixLabel, fixReveal, hostsFor, idleFor, idleWords, newScreenOf, openingLine, openWord, pickHost, prChoices, slotLine, startingLine, takesBuild, whyOff } from "./pickScreen";
 
 const machine = (machineId: string, ready: readonly string[], more: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({
   machineId,
@@ -136,7 +136,7 @@ describe("why a kind can't open", () => {
     const reason = whyOff([off("devbox", { android: "off" }), off("lab", { android: "missing" })], "android");
     expect(reason).toEqual({ why: "Android emulators are turned off on devbox.", short: "Turned off", fix: "turn_on", machine: { machineId: "devbox", name: "devbox" } });
     expect(fixLabel("turn_on")).toBe("Turn on");
-    expect(askLine(must(reason), "android", ["Ana"])).toBe("Ask Ana to turn them on in Settings › Hub › Machines.");
+    expect(askLine(must(reason), "android", ["Ana"])).toBe("Ask Ana to turn them on in Settings › Hub › Machines › Screens.");
   });
 
   it("sends an older node's switch to an update, since the hub can't reach it", () => {
@@ -194,5 +194,14 @@ describe("why a kind can't open", () => {
         { name: "Di", role: "admin", removedAt: "2026-10-01T00:00:00.000Z" },
       ]),
     ).toEqual(["Ana", "Bo"]);
+  });
+});
+
+describe("when a person's screen ends", () => {
+  it("says the machine's own idle timeout, and no number from a node that doesn't report one", () => {
+    const m = { ...machine("devbox", ["browser"]), hosts: [{ host: "browser", ready: true, detail: "ready", idleMinutes: 45 }] };
+    expect(idleWords(idleFor([m], "devbox", "browser"))).toBe("after 45 minutes idle");
+    expect(idleWords(idleFor([machine("devbox", ["browser"])], "devbox", "browser"))).toBe("once it sits idle");
+    expect(idleWords(idleFor([m], "mac", "browser"))).toBe("once it sits idle");
   });
 });

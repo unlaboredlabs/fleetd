@@ -352,6 +352,10 @@ async fn run_node(
         screens::started(
             &config,
             Box::new(move || router.as_ref().map_or(0, |r| r.count())),
+            {
+                let sessions = node_sessions.clone();
+                Box::new(move || sessions.hold())
+            },
         );
     }
     // Forwarders and screen folders a stopped node left: their screens went with it.

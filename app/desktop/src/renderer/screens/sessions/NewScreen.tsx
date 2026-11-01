@@ -35,6 +35,8 @@ import {
   fixLabel,
   fixReveal,
   hostsFor,
+  idleFor,
+  idleWords,
   KINDS,
   newScreenOf,
   NO_PR,
@@ -141,6 +143,7 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
   const [error, setError] = useState<{ message: string; fix?: string | undefined } | null>(null);
   const hosts = hostsFor(machines, kind, naviHome);
   const host = pickHost(hosts, picked);
+  const idle = idleWords(idleFor(machines, host?.machineId, kind));
   const projectRef = { machineId: project.machineId, projectId: project.projectId };
   // A PR's build only where the kind can open: else the picker says why instead.
   const offersPr = takesBuild(kind) && hosts.length > 0;
@@ -288,8 +291,8 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
       title="New screen"
       description={
         navi !== undefined && kind === "browser"
-            ? `A browser on ${navi}’s saved sign-ins: sites you sign in to stay signed in for ${navi}. You’re in control; it ends when you close it or after 30 minutes idle.`
-            : "You’re in control from the start. It’s recorded like agents’ screens, and ends when you close it or after 30 minutes idle."
+          ? `A browser on ${navi}’s saved sign-ins: sites you sign in to stay signed in for ${navi}. You’re in control; it ends when you close it or ${idle}.`
+          : `You’re in control from the start. It’s recorded like agents’ screens, and ends when you close it or ${idle}.`
       }
       footer={
         <>

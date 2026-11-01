@@ -84,7 +84,8 @@ or Navi's ⓘ page ([Phone app](/docs/mobile#screens)).
 3. **Pick a PR** (optional, iOS and Android): one of the project's open PRs, whose CI build is installed before you get
    it ([below](#yours-pr)). If the PRs can't be read, the picker says why, with Retry.
 4. **Open screen.** It opens in the panel's live view with you in control from the start, and lists under Screens as
-   yours. **End screen** closes it. It also ends after 30 minutes without your input.
+   yours. **End screen** closes it. It also ends after the machine's idle timeout without your input: 30 minutes
+   unless set in [Settings](#settings). The picker says the machine's own.
 
 Your screen is recorded and kept like an agent's, and plays back the same way once it ends. There's no agent to hand it
 to, so it has no Hand back. You need operate on the project's machine to open one, as to take a screen over.
@@ -256,7 +257,9 @@ purpose, state (`live`, `uploading`, `recorded`, `lost` or `expired`) and files.
 A switch writes the machine's node.json for you: the kind's `enabled`, or every kind's `idleMinutes`; the rest of the
 file stays as it is. Turning Android or iOS on opts the machine in, so it installs what it needs, as the setting
 below does by hand. A node reads its screen settings as it starts, so it restarts itself to apply a change once no
-screen is live on it. Until then a kind turned on says it starts once the node restarts. A node that doesn't run as
+screen is live on it. As for an [update](/docs/updating-and-uninstall), it first holds its agents' tool calls and
+waits for the ones mid-step to finish (10 minutes at most), so the restart finds them between steps; they carry on
+after it. Until then a kind turned on says it starts once the node restarts. A node that doesn't run as
 the service `fleetd machine add` sets up saves the change and says to restart it. The machine has to be online, and
 its fleetd new enough: an older one's switches show what it hosts but don't move. MCP clients use
 `machine_screens_set`, and `machine_roles` reads each kind's reason (`off`), switch (`on`) and `idleMinutes`.

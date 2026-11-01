@@ -137,6 +137,14 @@ export const whyOff = (machines: readonly MachineRolesEntry[], kind: ScreenKind,
   return reason;
 };
 
+/** The idle timeout of `kind` on the machine, as its node reports it; undefined from a node before it. */
+export const idleFor = (machines: readonly MachineRolesEntry[], machineId: string | undefined, kind: ScreenKind): number | undefined =>
+  machines.find((m) => m.machineId === machineId)?.hosts?.find((h) => h.host === HOST[kind])?.idleMinutes;
+
+/** When a person's screen ends without them, in words: the machine's own idle timeout, or no number where it's unknown. */
+export const idleWords = (minutes: number | undefined): string =>
+  minutes === undefined ? "once it sits idle" : `after ${String(minutes)} ${minutes === 1 ? "minute" : "minutes"} idle`;
+
 /** The hub's admins, for a member's "who to ask": its owners' and admins' names. */
 export const adminNames = (people: readonly { readonly name: string; readonly role: string; readonly removedAt?: string | undefined }[]): string[] =>
   people.filter((p) => (p.role === "owner" || p.role === "admin") && p.removedAt === undefined).map((p) => p.name);
@@ -154,7 +162,7 @@ export const askLine = (reason: OffReason, kind: ScreenKind, admins: readonly st
   const on = reason.machine === undefined ? "" : ` on ${reason.machine.name}`;
   switch (reason.fix) {
     case "turn_on":
-      return `${ask} to turn them on in Settings › Hub › Machines.`;
+      return `${ask} to turn them on in Settings › Hub › Machines › Screens.`;
     case "update":
       return `${ask} to update fleetd${on}.`;
     case "roles":
