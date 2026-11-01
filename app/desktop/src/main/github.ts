@@ -5,7 +5,7 @@
 // it for the App's keys, which never reach this computer. It works on any hub, plain HTTP included. One at a time: a
 // new one, or Cancel, ends the one waiting.
 import { randomBytes } from "node:crypto";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { GithubAppManifestOutput, ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError } from "../shared/hub";
@@ -70,6 +70,9 @@ export const createGithubApp = async (
   let server: Server | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    // Here, not at the top: importing node:http costs Electron's main process ~10 ms of every launch.
+    const { createServer } = await import("node:http");
+    if (cancelled()) return failed("cancelled", "Creating the App was cancelled.");
     const state = randomBytes(16).toString("base64url");
     // The form to GitHub, once the hub has made the manifest.
     const served: { page?: string } = {};

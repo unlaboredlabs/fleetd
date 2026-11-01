@@ -5,7 +5,7 @@
 // and the hub redeems them with the App's client secret, which never leaves it. One connect at a time: a new one, or
 // Cancel, ends the one waiting.
 import { randomBytes } from "node:crypto";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { GithubAppGetOutput, ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError } from "../shared/hub";
@@ -65,6 +65,8 @@ export const connectGithub = async (call: Call, open: (url: string) => Promise<v
   let server: Server | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    // Here, not at the top: importing node:http costs Electron's main process ~10 ms of every launch.
+    const { createServer } = await import("node:http");
     const got = await call("github_app_get", {});
     if (!got.ok) return got;
     if (cancelled()) return failed("cancelled", "Connecting was cancelled.");
