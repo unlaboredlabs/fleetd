@@ -1,8 +1,10 @@
 //! Automations: a project's stored prompt with its triggers, a cron schedule in an IANA time zone, an incoming
 //! webhook and Run now. Each run opens an order for the project's lead (channel `automation`), which starts the work
 //! without a person's message; reviews, the merge train and gated approvals apply as to any order. One run at a time
-//! per automation: a trigger while its order is open is skipped and recorded. The scheduler sleeps on the hub clock
-//! until the earliest schedule is due; a schedule missed while the hub was down runs once, late, on its return.
+//! per automation: a schedule or Run now while its order is open is skipped and recorded; a webhook call is kept with
+//! its body (D279), and every call kept meanwhile goes in one follow-up order once the open run ends. A Navi's run
+//! closes its order by itself once the Navi's turn for it ends (D277). The scheduler sleeps on the hub clock until the
+//! earliest schedule is due; a schedule missed while the hub was down runs once, late, on its return.
 //!
 //! A webhook URL is `<hub url>/hooks/<automationId>/<secret>`. The hub keeps the secret's SHA-256 only, compares in
 //! constant time, and never logs the secret or the body; the body is kept with its run and given to the lead.
@@ -46,6 +48,11 @@ use crate::hub::wakes::schedule::{next_cron, parse_cron, zoned_parts};
 
 /// The longest order text the ledger keeps (`IntakeText`).
 const ORDER_CHARS: usize = 4000;
+/// Webhook calls kept per automation while a run is open; one past them is skipped, as a schedule's is. With
+/// `WEBHOOK_BODY_MAX` each, at most 320 KB wait.
+pub const QUEUED_MAX: usize = 20;
+/// The room a kept calls' order leaves for naming the bodies that didn't fit: 20 run ids and the words around them.
+const QUEUED_TAIL: usize = 600;
 
 /// A new automation: the app's automation_create or the lead's.
 #[derive(Clone, Debug)]
@@ -190,6 +197,7 @@ pub(crate) fn state_str(state: AutomationRunState) -> &'static str {
         AutomationRunState::Done => "done",
         AutomationRunState::Stopped => "stopped",
         AutomationRunState::Skipped => "skipped",
+        AutomationRunState::Queued => "queued",
         AutomationRunState::Failed => "failed",
     }
 }
@@ -243,21 +251,66 @@ pub fn order_text(a: &Automation, run: &AutomationRun, payload: Option<&str>) ->
         a.name, a.automation_id, run.run_id, a.prompt
     );
     if let Some(body) = payload {
-        let bytes = body.len();
-        let f = fence(body);
-        let head = format!("\n\nThe webhook's body ({bytes} bytes):\n{f}\n");
-        let cut_note = format!(
-            "\n{f}\nCut here; automation_runs with runId {} has the whole body.",
-            run.run_id
-        );
-        let room = ORDER_CHARS
-            .saturating_sub(text.chars().count() + head.chars().count() + cut_note.chars().count());
-        if body.chars().count() <= room {
-            text.push_str(&format!("{head}{body}\n{f}"));
-        } else {
-            let part: String = body.chars().take(room).collect();
-            text.push_str(&format!("{head}{part}{cut_note}"));
+        push_body(&mut text, "The webhook's body", &run.run_id, body);
+    }
+    text.chars().take(ORDER_CHARS).collect()
+}
+
+/// Appends a webhook body to an order's text as far as it fits; the rest is one `automation_runs` call away.
+fn push_body(text: &mut String, label: &str, run_id: &AutomationRunId, body: &str) {
+    let bytes = body.len();
+    let f = fence(body);
+    let head = format!("\n\n{label} ({bytes} bytes):\n{f}\n");
+    let cut_note =
+        format!("\n{f}\nCut here; automation_runs with runId {run_id} has the whole body.");
+    let room = ORDER_CHARS
+        .saturating_sub(text.chars().count() + head.chars().count() + cut_note.chars().count());
+    if body.chars().count() <= room {
+        text.push_str(&format!("{head}{body}\n{f}"));
+    } else {
+        let part: String = body.chars().take(room).collect();
+        text.push_str(&format!("{head}{part}{cut_note}"));
+    }
+}
+
+/// The one order for the webhook calls kept while an earlier run was open (`Automations::deliver_queued`): every
+/// body, oldest first, inline while the order has room; the ones past that are named by run, for `automation_runs`.
+pub fn queued_order_text(a: &Automation, runs: &[(AutomationRun, Option<String>)]) -> String {
+    let ids: Vec<&str> = runs.iter().map(|(r, _)| r.run_id.as_str()).collect();
+    let n = runs.len();
+    let mut text = format!(
+        "{}\nFrom automation {}: {n} call{} to its webhook that came while its last run was open (run{} {}). \
+         Start the work without asking the human first; reviews, the merge train and approvals apply as always. \
+         Deal with every body.\n\n{}",
+        a.name,
+        a.automation_id,
+        if n == 1 { "" } else { "s" },
+        if n == 1 { "" } else { "s" },
+        ids.join(", "),
+        a.prompt
+    );
+    for (i, (run, payload)) in runs.iter().enumerate() {
+        // Room for the names of the bodies left stays; a body that would leave less goes by name too.
+        if ORDER_CHARS.saturating_sub(text.chars().count()) < QUEUED_TAIL {
+            text.push_str(&format!(
+                "\n\nNo room for bodies {} to {n} here: automation_runs with runId {} has each.",
+                i + 1,
+                ids[i..].join(", ")
+            ));
+            break;
         }
+        let label = format!(
+            "Webhook body {} of {n} (run {}, at {})",
+            i + 1,
+            run.run_id,
+            run.at
+        );
+        push_body(
+            &mut text,
+            &label,
+            &run.run_id,
+            payload.as_deref().unwrap_or(""),
+        );
     }
     text.chars().take(ORDER_CHARS).collect()
 }
@@ -296,7 +349,8 @@ impl Automations {
     }
 
     /// Deletes the automations of projects removed while the hub was down, recovers runs a stop left without their
-    /// order, then runs the scheduler and follows project removals; `stop` (or aborting the handle) ends it.
+    /// order, then runs the scheduler and follows project removals, Navi turn ends (`navi_turns`) and closed orders
+    /// (`kept_calls`); `stop` (or aborting the handle) ends it.
     pub fn start(self: &Arc<Self>) -> JoinHandle<()> {
         let me = Arc::clone(self);
         let handle = tokio::spawn(async move {
@@ -304,7 +358,12 @@ impl Automations {
                 tracing::warn!(error = %error.message, "automations of removed projects not deleted");
             }
             me.recover_all().await;
-            tokio::join!(Arc::clone(&me).scheduler(), Arc::clone(&me).removals());
+            tokio::join!(
+                Arc::clone(&me).scheduler(),
+                Arc::clone(&me).removals(),
+                Arc::clone(&me).navi_turns(),
+                Arc::clone(&me).kept_calls()
+            );
         });
         if let Some(old) = self
             .task
@@ -755,7 +814,8 @@ impl Automations {
     // ---- runs ------------------------------------------------------------------------------------
 
     /// A run: skipped (and recorded) while the automation is paused (schedule and webhook only) or another run's
-    /// order is open; else it opens the order and starts the project's lead if it has none.
+    /// order is open, but a webhook call then is kept (`deliver_queued`); else it opens the order and starts the
+    /// project's lead if it has none.
     pub async fn run(&self, id: &str, start: Start) -> Result<AutomationRun, LeadError> {
         let (a, run) = self.open(id, start)?;
         self.wake_lead(&a, &run).await;
@@ -773,14 +833,23 @@ impl Automations {
         let now = self.now();
         let trigger = start.trigger();
         let busy = self.active(id)?;
-        let skipped = match (&start, busy.as_ref()) {
+        let going = busy.as_ref().map(|r| match &r.workstream_id {
+            Some(w) => format!("run {} is still going ({w} is open)", r.run_id),
+            None => format!("run {} is still starting", r.run_id),
+        });
+        // A webhook call's body is data, so one that comes while a run is open is kept (D279), up to QUEUED_MAX.
+        let queued = matches!(start, Start::Webhook { .. })
+            && !a.paused
+            && going.is_some()
+            && self.queued_count(id)? < QUEUED_MAX;
+        let skipped = match (&start, going) {
             (Start::Schedule { .. } | Start::Webhook { .. }, _) if a.paused => {
                 Some("the automation is paused".to_owned())
             }
-            (_, Some(r)) => Some(match &r.workstream_id {
-                Some(w) => format!("run {} is still going ({w} is open)", r.run_id),
-                None => format!("run {} is still starting", r.run_id),
-            }),
+            (Start::Webhook { .. }, Some(going)) if !queued => Some(format!(
+                "{going}, and {QUEUED_MAX} webhook calls already wait for it"
+            )),
+            (_, Some(going)) => Some(going),
             _ => None,
         };
         let (scheduled_at, late_min) = match &start {
@@ -803,21 +872,24 @@ impl Automations {
             automation_id: a.automation_id.clone(),
             trigger,
             at: iso_ms(now).into(),
-            state: if skipped.is_some() {
-                AutomationRunState::Skipped
-            } else {
-                AutomationRunState::Running
+            state: match (&skipped, queued) {
+                (Some(_), true) => AutomationRunState::Queued,
+                (Some(_), false) => AutomationRunState::Skipped,
+                (None, _) => AutomationRunState::Running,
             },
             workstream_id: None,
             scheduled_at,
             late_min,
             payload_bytes: payload.as_ref().map(|p| Count::unchecked(p.len() as i64)),
-            why: skipped.as_ref().and_then(why),
+            why: match &skipped {
+                Some(going) if queued => why(format!("Kept: {going}; it goes once that ends.")),
+                other => other.as_ref().and_then(why),
+            },
             by: match &start {
                 Start::Manual { by } => Some(by.clone()),
                 _ => None,
             },
-            ended_at: skipped.is_some().then(|| iso_ms(now).into()),
+            ended_at: (skipped.is_some() && !queued).then(|| iso_ms(now).into()),
         };
         self.db.transaction(|c| {
             c.execute(
@@ -842,7 +914,8 @@ impl Automations {
         })?;
         if let Some(reason) = &skipped {
             drop(guard);
-            self.run_event(&a, &run, format!("skipped: {reason}"));
+            let what = if queued { "kept for later" } else { "skipped" };
+            self.run_event(&a, &run, format!("{what}: {reason}"));
             return Ok((a, run));
         }
         self.open_order(&a, &mut run, payload.as_deref())?;
@@ -1035,6 +1108,289 @@ impl Automations {
                 && let Err(error) = self.prune_removed()
             {
                 tracing::warn!(error = %error.message, "automations of a removed project not deleted");
+            }
+        }
+    }
+
+    // ---- webhook calls kept while a run was open -------------------------------------------------
+
+    fn queued_count(&self, id: &str) -> Result<usize, StoreError> {
+        self.db.with(|c| {
+            Ok(c.query_row(
+                "SELECT COUNT(*) FROM automation_runs WHERE automation_id = ? AND state = 'queued'",
+                [id],
+                |r| r.get::<_, i64>(0),
+            )? as usize)
+        })
+    }
+
+    /// The webhook calls kept while the automation's last run was open, once it no longer is: one order for them all
+    /// (`queued_order_text`), and each call's run running with it. None while a run is open or none wait. Idempotent:
+    /// the order's request id is the oldest call's run id, so a stop between the two finds the same order again.
+    pub fn deliver_queued(
+        &self,
+        id: &str,
+    ) -> Result<Option<(Automation, AutomationRun)>, LeadError> {
+        let _guard = self.starting.lock().expect("lock");
+        let Some(a) = self.row(id)? else {
+            return Ok(None);
+        };
+        if self.active(id)?.is_some() {
+            return Ok(None);
+        }
+        let rows: Vec<(String, Option<String>)> = self.db.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT data, payload FROM automation_runs WHERE automation_id = ? AND state = 'queued'
+                 ORDER BY at_ms, rowid",
+            )?;
+            let rows = stmt
+                .query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows)
+        })?;
+        let runs = rows
+            .into_iter()
+            .map(|(data, payload)| Ok((decode_run(&data)?, payload)))
+            .collect::<Result<Vec<_>, StoreError>>()?;
+        let Some((first, _)) = runs.first() else {
+            return Ok(None);
+        };
+        let opened = self.leads.workstreams.intake(IntakeInput {
+            project_ref: a.project_ref.clone(),
+            text: queued_order_text(&a, &runs),
+            client_request_id: first.run_id.to_string(),
+            channel: IntakeChannel::Automation,
+            by: format!("automation:{}", a.automation_id),
+        });
+        let n = runs.len();
+        let mut delivered = Vec::with_capacity(n);
+        for (mut run, _) in runs {
+            match &opened {
+                Ok(outcome) => {
+                    run.state = AutomationRunState::Running;
+                    run.workstream_id = Some(outcome.workstream_id.clone());
+                    run.why = why(format!(
+                        "Kept while an earlier run was open; went in {} with {n} webhook call{}.",
+                        outcome.workstream_id,
+                        if n == 1 { "" } else { "s" }
+                    ));
+                }
+                Err(e) => {
+                    run.state = AutomationRunState::Failed;
+                    run.why = why(&e.message);
+                    run.ended_at = Some(iso_ms(self.now()).into());
+                }
+            }
+            self.put_run(&run)?;
+            delivered.push(run);
+        }
+        let first = delivered.swap_remove(0);
+        if first.workstream_id.is_none() {
+            self.run_event(
+                &a,
+                &first,
+                format!("failed: the order for {n} kept webhook calls could not be opened"),
+            );
+        }
+        Ok(Some((a, first)))
+    }
+
+    /// Delivers every automation's kept webhook calls whose open run has ended, and starts the leads that get them.
+    async fn deliver_all(&self) {
+        let ids: Result<Vec<String>, StoreError> = self.db.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT DISTINCT automation_id FROM automation_runs WHERE state = 'queued'",
+            )?;
+            let rows = stmt
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows)
+        });
+        for id in ids.unwrap_or_default() {
+            match self.deliver_queued(&id) {
+                Ok(Some((a, run))) => self.wake_lead(&a, &run).await,
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::warn!(error = %error.message, "kept webhook calls not delivered")
+                }
+            }
+        }
+    }
+
+    /// Follows orders closing or stopping, from a catch-up pass at the start: a run's end lets its automation's kept
+    /// webhook calls go (`deliver_queued`).
+    async fn kept_calls(self: Arc<Self>) {
+        let events = Arc::clone(&self.events);
+        let mut cursor = events.head();
+        self.deliver_all().await;
+        loop {
+            let page = match events
+                .wait(WaitInput {
+                    cursor: Some(cursor),
+                    types: Some(vec![
+                        HubEventType::WorkstreamDone,
+                        HubEventType::WorkstreamState,
+                    ]),
+                    machine_id: None,
+                    timeout_sec: 3600,
+                })
+                .await
+            {
+                Ok(page) => page,
+                Err(error) => {
+                    tracing::warn!(%error, "automations: event log read failed");
+                    self.clock.sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            };
+            cursor = page.cursor;
+            if !page.events.is_empty() {
+                self.deliver_all().await;
+            }
+        }
+    }
+
+    // ---- a Navi's runs ---------------------------------------------------------------------------
+
+    /// Follows lead turn ends, from a catch-up pass over every Navi at the start, and closes the runs each Navi's turns
+    /// have dealt with (`close_navi_runs`).
+    async fn navi_turns(self: Arc<Self>) {
+        let events = Arc::clone(&self.events);
+        let mut cursor = events.head();
+        for lead in self.leads.records.leads_list().unwrap_or_default() {
+            self.close_navi_runs(&lead.project_ref).await;
+        }
+        loop {
+            let page = match events
+                .wait(WaitInput {
+                    cursor: Some(cursor),
+                    types: Some(vec![
+                        HubEventType::ThreadCompleted,
+                        HubEventType::ThreadFailed,
+                        HubEventType::ThreadInterrupted,
+                        HubEventType::ThreadUsageLimited,
+                    ]),
+                    machine_id: None,
+                    timeout_sec: 3600,
+                })
+                .await
+            {
+                Ok(page) => page,
+                Err(error) => {
+                    tracing::warn!(%error, "automations: event log read failed");
+                    self.clock.sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            };
+            cursor = page.cursor;
+            if page.events.is_empty() {
+                continue;
+            }
+            let leads = self.leads.records.leads_list().unwrap_or_default();
+            for event in &page.events {
+                let thread = event.thread_id.as_ref().map(|t| t.as_str()).or_else(|| {
+                    event
+                        .data
+                        .as_ref()
+                        .and_then(|d| d.get("threadId"))
+                        .and_then(|t| t.as_str())
+                });
+                if let Some(lead) = leads.iter().find(|l| {
+                    event.machine_id.as_ref() == Some(&l.project_ref.machine_id)
+                        && thread == Some(l.thread_id.as_str())
+                }) {
+                    self.close_navi_runs(&lead.project_ref).await;
+                }
+            }
+        }
+    }
+
+    /// A Navi's automation runs close themselves (D277), so one its lead never closed can't skip every later run. The
+    /// rule: once the lead's thread has no turn going or queued, each run whose order opened by the time of the lead's
+    /// last message (its start or latest wake, whose digest listed the order) closes, whether that turn replied, failed
+    /// or was cut off. A run whose order still has agents at work or PRs in the train waits for a later turn end. Other
+    /// projects' runs stay open until their lead closes them.
+    pub async fn close_navi_runs(&self, r: &ProjectRef) {
+        let ctx = &self.leads.ctx;
+        if !crate::hub::integrations::is_navi(&ctx.db, r).unwrap_or(false) {
+            return;
+        }
+        let Ok(Some(lead)) = self.leads.records.lead_get(r) else {
+            return;
+        };
+        let thread = fleetd_contracts::ids::ThreadRef {
+            machine_id: r.machine_id.clone(),
+            thread_id: lead.thread_id.clone(),
+        };
+        match ctx.store.thread_get(&thread) {
+            Ok(Some(t))
+                if !matches!(
+                    t.thread.status,
+                    fleetd_contracts::model::ThreadStatus::Running
+                        | fleetd_contracts::model::ThreadStatus::Waiting
+                ) => {}
+            _ => return,
+        }
+        let sent = match &lead.last_wake_at {
+            Some(w) if w.as_str() > lead.started_at.as_str() => w.as_str(),
+            _ => lead.started_at.as_str(),
+        };
+        let rows: Result<Vec<String>, StoreError> = self.db.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT r.data FROM automation_runs r JOIN automations a ON a.automation_id = r.automation_id
+                 WHERE a.machine_id = ? AND a.project_id = ? AND r.state = 'running' AND r.workstream_id IS NOT NULL
+                 ORDER BY r.at_ms",
+            )?;
+            let rows = stmt
+                .query_map(params![r.machine_id.as_str(), r.project_id.as_str()], |r| {
+                    r.get(0)
+                })?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows)
+        });
+        for data in rows.unwrap_or_default() {
+            let Ok(run) = decode_run(&data) else { continue };
+            let Some(w) = run.workstream_id.clone() else {
+                continue;
+            };
+            // One opened after the last message is the next turn's. The same millisecond counts as before: the message
+            // took its time before it read the digest, and a lead started with the order is usually that close.
+            let seen = self
+                .leads
+                .workstreams
+                .get(&w)
+                .ok()
+                .flatten()
+                .is_some_and(|ws| {
+                    ws.state == WorkstreamState::Open && ws.created_at.as_str() <= sent
+                });
+            let busy = ctx
+                .hooks
+                .tasks
+                .get()
+                .is_some_and(|t| !t.leftovers(r, &w).is_empty());
+            if !seen || busy {
+                continue;
+            }
+            let by = format!("automation:{}", run.automation_id);
+            if let Err(error) = self
+                .leads
+                .workstreams
+                .close(r, &w, "the Navi's turn for this run ended", &by)
+                .await
+            {
+                tracing::info!(workstream = %w, error = %error.message, "Navi automation run left open");
+                continue;
+            }
+            match self.settle(run) {
+                Ok(run) => {
+                    if let Ok(Some(a)) = self.row(run.automation_id.as_str()) {
+                        self.run_event(&a, &run, format!("closed {w} once the Navi's turn ended"));
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(error = %error.message, "Navi automation run not settled")
+                }
             }
         }
     }

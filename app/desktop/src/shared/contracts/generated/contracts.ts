@@ -576,7 +576,7 @@ export type AutomationRunOutput = {
   truncated?: boolean;
 };
 
-export type KnownAutomationRunState = "running" | "done" | "stopped" | "skipped" | "failed";
+export type KnownAutomationRunState = "running" | "done" | "stopped" | "skipped" | "queued" | "failed";
 /** KnownAutomationRunState, or a value from a newer hub. */
 export type AutomationRunState = KnownAutomationRunState | (string & {});
 

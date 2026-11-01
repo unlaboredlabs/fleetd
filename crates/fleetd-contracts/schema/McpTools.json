@@ -1371,6 +1371,11 @@
           "type": "string"
         },
         {
+          "const": "queued",
+          "description": "A webhook call that came while another run was going: kept with its body, it goes to the lead in one order\nwith every other call kept meanwhile once that run ends (it is `running` then, with that order).",
+          "type": "string"
+        },
+        {
           "const": "failed",
           "description": "Its order could not be opened; `why` says why.",
           "type": "string"

@@ -60,6 +60,9 @@ pub enum AutomationRunState {
     Stopped,
     /// It came while another run was going, or while the automation was paused; `why` says which.
     Skipped,
+    /// A webhook call that came while another run was going: kept with its body, it goes to the lead in one order
+    /// with every other call kept meanwhile once that run ends (it is `running` then, with that order).
+    Queued,
     /// Its order could not be opened; `why` says why.
     Failed,
 }

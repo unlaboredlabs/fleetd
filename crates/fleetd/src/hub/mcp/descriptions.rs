@@ -542,11 +542,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "automation_run",
-        "Run an automation now: it opens its order for the lead. Skipped, and recorded, while its last run's order is open.",
+        "Run an automation now: it opens its order for the lead. Skipped, and recorded, while its last run's order is open (a webhook call then is kept and goes in one follow-up order once that run ends).",
     ),
     (
         "automation_runs",
-        "An automation's runs, newest first: trigger, state, the order each opened, and why a run was skipped or failed.",
+        "An automation's runs, newest first: trigger, state, the order each opened, and why a run was skipped or failed. queued: a webhook call kept while a run was open; once that run ends it runs with the one follow-up order every call kept meanwhile goes in.",
     ),
     (
         "browser_sessions",

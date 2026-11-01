@@ -114,6 +114,7 @@ const STATE: Readonly<Record<AutomationRunState, { tone: StatusTone; label: stri
   done: { tone: "done", label: "Done" },
   stopped: { tone: "idle", label: "Stopped" },
   skipped: { tone: "quiet", label: "Skipped" },
+  queued: { tone: "idle", label: "Queued" },
   failed: { tone: "failed", label: "Failed" },
 };
 

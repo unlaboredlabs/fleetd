@@ -1329,3 +1329,20 @@ async fn every_text_beside_an_approvable_command_is_plain_too() {
     assert_eq!(got[1..], [Some(PushCategory::Review); 6]);
     assert!(plain("Push the fix") && !plain("Shop\u{202E}") && !plain("a\u{FEFF}"));
 }
+
+/// A closed order is pushed, but not a Navi's automation run closing itself (D277): the Navi's reply was the news.
+#[tokio::test]
+async fn a_navis_automation_run_closing_itself_is_no_notification() {
+    let (hub, _home) = hub();
+    let _owner = owner_device(&hub);
+    let done = |by: &str| -> fleetd_contracts::events::HubEvent {
+        serde_json::from_value(json!({
+            "seq": 1, "at": AT, "type": "workstream.done", "machineId": "devbox", "projectId": "navi",
+            "summary": "W3 is done: closed", "data": { "workstreamId": "W3", "reason": "closed", "by": by },
+        }))
+        .unwrap()
+    };
+    let pushed = notice(&hub, &done("lead:devbox/navi")).unwrap().unwrap();
+    assert_eq!(pushed.payload.kind, PushKind::Order);
+    assert!(notice(&hub, &done("automation:au_1")).unwrap().is_none());
+}
