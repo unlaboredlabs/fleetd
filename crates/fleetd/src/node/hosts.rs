@@ -7,20 +7,22 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use fleetd_contracts::machine_roles::{HostCheck, HostChecks, SessionHost};
-use fleetd_contracts::prim::{Line, List};
-
-use fleetd_contracts::node_link::{AndroidState, DesktopState};
+use fleetd_contracts::machine_roles::{HostCheck, HostChecks, HostOff, SessionHost};
+use fleetd_contracts::node_link::{AndroidHealth, AndroidState, DesktopState, IosState};
+use fleetd_contracts::prim::{Int, Line, List};
 
 use super::browser::BrowserConfig;
 use super::browser::chrome;
+use super::config::NodeConfig;
 use super::desktop::{self, DesktopConfig};
 use super::device::ios::IosConfig;
 use super::device::{self, DeviceConfig};
 
 const FRESH: Duration = Duration::from_secs(300);
+/// A screen's idle timeout where node.json sets none.
+const IDLE_MINUTES: u64 = 30;
 
-fn check(host: SessionHost, ready: bool, detail: impl Into<String>) -> HostCheck {
+fn check(host: SessionHost, off: Option<HostOff>, detail: impl Into<String>) -> HostCheck {
     let mut detail: String = detail.into();
     if detail.len() > 300 {
         let mut end = 297;
@@ -32,31 +34,53 @@ fn check(host: SessionHost, ready: bool, detail: impl Into<String>) -> HostCheck
     }
     HostCheck {
         host,
-        ready,
+        ready: off.is_none(),
         detail: Line::unchecked(detail),
+        off,
+        on: None,
+        idle_minutes: None,
     }
 }
 
+/// The check with its switch in Settings (`on`) and its idle timeout from node.json.
+fn with(mut check: HostCheck, on: bool, idle_minutes: Option<u64>) -> HostCheck {
+    check.on = Some(on);
+    check.idle_minutes = Int::new(idle_minutes.unwrap_or(IDLE_MINUTES).clamp(1, 1440) as i64).ok();
+    check
+}
+
 pub fn browser(home: &Path, config: &BrowserConfig) -> HostCheck {
+    with(
+        browser_check(home, config),
+        config.enabled(),
+        config.idle_minutes,
+    )
+}
+
+fn browser_check(home: &Path, config: &BrowserConfig) -> HostCheck {
     let host = SessionHost::Browser;
     if !config.enabled() {
-        return check(host, false, "browser screens are off in node.json");
+        return check(
+            host,
+            Some(HostOff::Off),
+            "browser screens are off in node.json",
+        );
     }
     if let Some(chrome) = &config.chrome {
         return match Path::new(chrome).is_file() {
-            true => check(host, true, format!("Chrome at {chrome} (node.json)")),
+            true => check(host, None, format!("Chrome at {chrome} (node.json)")),
             false => check(
                 host,
-                false,
+                Some(HostOff::Missing),
                 format!("node.json names Chrome at {chrome}, which is not there"),
             ),
         };
     }
     match chrome::find_chrome(&chrome::install_dir(home)) {
-        Some(found) => check(host, true, format!("Chrome at {}", found.display())),
+        Some(found) => check(host, None, format!("Chrome at {}", found.display())),
         None => check(
             host,
-            true,
+            None,
             "Chrome not installed yet: the node installs it with the first screen",
         ),
     }
@@ -66,28 +90,41 @@ pub fn browser(home: &Path, config: &BrowserConfig) -> HostCheck {
 /// session installs it (again, after an install that failed), and /dev/kvm opens; else what stands in the way, as the
 /// doctor says it.
 pub fn android(home: &Path, config: &DeviceConfig) -> HostCheck {
+    let health = device::health(home, config);
+    let on = health.is_some();
+    with(android_check(config, health), on, config.idle_minutes)
+}
+
+fn android_check(config: &DeviceConfig, health: Option<AndroidHealth>) -> HostCheck {
     let host = SessionHost::Android;
-    if !config.enabled() {
-        let why = match device::sdk::supported() {
-            true => "Android screens are off in node.json",
-            false => "Android screens run on Linux x86_64 with KVM",
-        };
-        return check(host, false, why);
-    }
-    match device::health(home, config) {
-        Some(health) => check(
+    if !device::sdk::supported() {
+        return check(
             host,
-            match health.state {
-                AndroidState::Ready | AndroidState::Wanted => true,
-                AndroidState::Installing => false,
+            Some(HostOff::Unsupported),
+            "Android screens run on Linux x86_64 with KVM",
+        );
+    }
+    if !config.enabled() {
+        return check(
+            host,
+            Some(HostOff::Off),
+            "Android screens are off in node.json",
+        );
+    }
+    match health {
+        Some(health) => {
+            let off = match health.state {
+                AndroidState::Ready | AndroidState::Wanted => None,
+                AndroidState::Installing => Some(HostOff::Installing),
                 // With KVM opening, only a failed install: the next session tries it again, so the hub must send it.
-                _ => device::sdk::kvm().is_ok(),
-            },
-            health.message.as_str(),
-        ),
+                _ if device::sdk::kvm().is_ok() => None,
+                _ => Some(HostOff::Missing),
+            };
+            check(host, off, health.message.as_str())
+        }
         None => check(
             host,
-            false,
+            Some(HostOff::Off),
             "not set up: opt this machine in with \"device\": {\"enabled\": true} in node.json",
         ),
     }
@@ -97,69 +134,128 @@ pub fn android(home: &Path, config: &DeviceConfig) -> HostCheck {
 /// the way, as the doctor says it.
 pub fn ios(home: &Path, config: &IosConfig) -> HostCheck {
     let host = SessionHost::Ios;
+    if !device::ios::supported() {
+        return with(
+            check(
+                host,
+                Some(HostOff::Unsupported),
+                "iOS simulators need macOS",
+            ),
+            false,
+            config.idle_minutes,
+        );
+    }
     if !config.enabled() {
-        let why = match device::ios::supported() {
-            true => "iOS screens are off in node.json",
-            false => "iOS simulators need macOS",
-        };
-        return check(host, false, why);
+        return with(
+            check(host, Some(HostOff::Off), "iOS screens are off in node.json"),
+            false,
+            config.idle_minutes,
+        );
     }
     // Ready where the golden is made, and also on a Mac opted in while it is made or after it failed, so the hub sends
     // the session there: the node says it is still making it, and the next session_start tries a failed one again.
-    match device::ios::host(home, config) {
-        Some((health, placeable)) => check(host, placeable, health.message.as_str()),
-        None => check(
-            host,
-            false,
-            "no Xcode: install it, then opt this Mac in with \"ios\": {\"enabled\": true} in node.json",
+    let (checked, on) = match device::ios::host(home, config) {
+        Some((health, placeable)) => {
+            let off = match (placeable, health.state) {
+                (true, _) => None,
+                (false, IosState::Wanted) => Some(HostOff::Off),
+                (false, IosState::Preparing) => Some(HostOff::Installing),
+                (false, _) => Some(HostOff::Missing),
+            };
+            (
+                check(host, off, health.message.as_str()),
+                config.opted_in() || health.state == IosState::Ready,
+            )
+        }
+        None => (
+            check(
+                host,
+                Some(HostOff::Missing),
+                "no Xcode: install it, then opt this Mac in with \"ios\": {\"enabled\": true} in node.json",
+            ),
+            config.opted_in(),
         ),
-    }
+    };
+    with(checked, on, config.idle_minutes)
 }
 
 /// The desktop sessions' own word (node/desktop): what preparing found, else what is on the PATH.
 fn desktop(home: &Path, config: &DesktopConfig) -> HostCheck {
     let host = SessionHost::Desktop;
-    if !cfg!(target_os = "linux") {
-        return check(host, false, "desktop screens run on Linux (docker or Xvfb)");
-    }
-    if !config.enabled() {
-        return check(host, false, "desktop screens are off in node.json");
-    }
-    match desktop::health(home, config) {
-        Some(health) => check(
+    let checked = if !cfg!(target_os = "linux") {
+        check(
             host,
-            health.state != DesktopState::Unavailable,
-            health.message.as_str(),
-        ),
-        None => check(host, false, "no docker, podman or Xvfb"),
-    }
+            Some(HostOff::Unsupported),
+            "desktop screens run on Linux (docker or Xvfb)",
+        )
+    } else if !config.enabled() {
+        check(
+            host,
+            Some(HostOff::Off),
+            "desktop screens are off in node.json",
+        )
+    } else {
+        match desktop::health(home, config) {
+            Some(health) => check(
+                host,
+                match health.state {
+                    DesktopState::Unavailable => Some(HostOff::Missing),
+                    _ => None,
+                },
+                health.message.as_str(),
+            ),
+            None => check(host, Some(HostOff::Missing), "no docker, podman or Xvfb"),
+        }
+    };
+    with(checked, config.enabled(), config.idle_minutes)
 }
 
-/// What this machine can host now, read at most every few minutes. Blocking: run it off the async threads.
-pub fn checks(
-    home: &Path,
-    config: &BrowserConfig,
-    device: &DeviceConfig,
-    ios_config: &IosConfig,
-    desktop_config: &DesktopConfig,
-) -> HostChecks {
-    static LAST: Mutex<Option<(Instant, Vec<HostCheck>)>> = Mutex::new(None);
+/// What this machine can host now, read at most every few minutes, from node.json's screen sections (`config`). A
+/// kind turned on since the node started waits for its restart (node/screens). Blocking: run it off the async threads.
+pub fn checks(home: &Path, config: Option<&NodeConfig>) -> HostChecks {
+    let mut checks = cached(home, config);
+    super::screens::gate(&mut checks, config);
+    List::unchecked(checks)
+}
+
+static LAST: Mutex<Option<(Instant, Vec<HostCheck>)>> = Mutex::new(None);
+
+/// Drops what was read, so the next heartbeat reads the machine again: node.json just changed.
+pub fn forget() {
+    *LAST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+}
+
+fn cached(home: &Path, config: Option<&NodeConfig>) -> Vec<HostCheck> {
     let mut last = LAST
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some((at, checks)) = last.as_ref()
         && at.elapsed() < FRESH
     {
-        return List::unchecked(checks.clone());
+        return checks.clone();
     }
     let checks = vec![
-        browser(home, config),
-        android(home, device),
-        ios(home, ios_config),
-        desktop(home, desktop_config),
+        browser(
+            home,
+            &config.and_then(|c| c.browser.clone()).unwrap_or_default(),
+        ),
+        android(
+            home,
+            &config.and_then(|c| c.device.clone()).unwrap_or_default(),
+        ),
+        ios(
+            home,
+            &config.and_then(|c| c.ios.clone()).unwrap_or_default(),
+        ),
+        desktop(
+            home,
+            &config.and_then(|c| c.desktop.clone()).unwrap_or_default(),
+        ),
     ];
     *last = Some((Instant::now(), checks.clone()));
-    List::unchecked(checks)
+    checks
 }
 
 #[cfg(test)]

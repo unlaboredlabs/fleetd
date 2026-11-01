@@ -708,6 +708,20 @@
         "host": {
           "$ref": "#/$defs/SessionHost"
         },
+        "idleMinutes": {
+          "description": "Minutes without a command before a screen of this kind ends (node.json's `idleMinutes`). Absent from a node\nbefore it.",
+          "maximum": 1440,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "off": {
+          "$ref": "#/$defs/HostOff",
+          "description": "Why it can't, as a word the app acts on. Absent while it can, and from a node before it."
+        },
+        "on": {
+          "description": "Its switch in Settings › Hub › Machines › Screens: node.json turns this kind on, by its `enabled` or by default.\nAbsent from a node before it.",
+          "type": "boolean"
+        },
         "ready": {
           "type": "boolean"
         }
@@ -718,6 +732,42 @@
         "detail"
       ],
       "type": "object"
+    },
+    "HostOff": {
+      "description": "Why a machine can't host a kind of screen.",
+      "oneOf": [
+        {
+          "const": "off",
+          "description": "Turned off, or never opted in, in its node.json: an admin turns it on.",
+          "type": "string"
+        },
+        {
+          "const": "restarting",
+          "description": "Turned on, and it starts once the node restarts, after the screens live there end.",
+          "type": "string"
+        },
+        {
+          "const": "unsupported",
+          "description": "Not on this kind of machine: iOS needs a Mac, Android Linux x86_64, a desktop Linux.",
+          "type": "string"
+        },
+        {
+          "const": "missing",
+          "description": "Something it needs isn't on the machine: Xcode, KVM, docker or Xvfb, Node.js. `detail` says what.",
+          "type": "string"
+        },
+        {
+          "const": "installing",
+          "description": "Installing what it needs now.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Its install or setup failed; `detail` says how.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     },
     "HubEvent": {
       "properties": {

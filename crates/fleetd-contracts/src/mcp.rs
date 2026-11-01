@@ -1869,6 +1869,9 @@ output!(MachineRolesOutput {
     machines: List<crate::machine_roles::MachineRolesEntry, 0, 1000>,
     /// Where a new Navi or project goes when none is named (`project_discover.best`). Absent: no machine is.
     best: Option<MachineId>,
+    /// How long the hub keeps screens' recordings (`browser_retention_set`), for Settings › Hub › Machines › Screens.
+    /// Absent from a hub before it.
+    retention: Option<crate::browser::BrowserRetention>,
 });
 
 // machine_roles_set: what a machine is for, and the most sessions it hosts at once. Turning agents off stops nothing:
@@ -1900,6 +1903,32 @@ checked!(MachineRolesSetInput, |input| {
     Ok(())
 });
 output!(MachineRolesSetOutput {
+    machine: crate::machine_roles::MachineRolesEntry,
+});
+
+// machine_screens_set: Settings › Hub › Machines › Screens. Turns a kind of screen on or off on a machine (on installs
+// what it needs, as node.json's opt-in does) or sets its screens' idle timeout. The machine's node writes its node.json
+// and restarts itself to apply it once no screen is live there.
+input!(
+    #[serde(remote = "Self")]
+    MachineScreensSetInput {
+        machine_id: MachineId,
+        host: Option<crate::machine_roles::SessionHost>,
+        on: Option<bool>,
+        /// Minutes without a command before a screen there ends, for every kind.
+        idle_minutes: Option<crate::machine_roles::IdleMinutes>,
+    }
+);
+checked!(MachineScreensSetInput, |input| {
+    if input.host.is_some() != input.on.is_some() {
+        return Err("expected host and on together".into());
+    }
+    if input.host.is_none() && input.idle_minutes.is_none() {
+        return Err("expected host and on, or idleMinutes".into());
+    }
+    Ok(())
+});
+output!(MachineScreensSetOutput {
     machine: crate::machine_roles::MachineRolesEntry,
 });
 
@@ -3376,6 +3405,8 @@ tools! {
     browser_retention_set => BrowserRetentionSet, Admin, BrowserRetentionSetInput, BrowserRetentionSetOutput;
     machine_roles => MachineRoles, Read, MachineRolesInput, MachineRolesOutput;
     machine_roles_set => MachineRolesSet, Admin, MachineRolesSetInput, MachineRolesSetOutput;
+    // An owner's or admin's device only (the handler checks).
+    machine_screens_set => MachineScreensSet, Admin, MachineScreensSetInput, MachineScreensSetOutput;
     // An owner's or admin's device only (the handlers check).
     machine_add_plan => MachineAddPlan, Admin, MachineAddPlanInput, MachineAddPlanOutput;
     machine_add => MachineAdd, Admin, MachineAddInput, MachineAddOutput;

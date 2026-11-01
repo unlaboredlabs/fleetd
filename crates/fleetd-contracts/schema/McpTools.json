@@ -6217,6 +6217,20 @@
         "host": {
           "$ref": "#/$defs/SessionHost"
         },
+        "idleMinutes": {
+          "description": "Minutes without a command before a screen of this kind ends (node.json's `idleMinutes`). Absent from a node\nbefore it.",
+          "maximum": 1440,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "off": {
+          "$ref": "#/$defs/HostOff",
+          "description": "Why it can't, as a word the app acts on. Absent while it can, and from a node before it."
+        },
+        "on": {
+          "description": "Its switch in Settings › Hub › Machines › Screens: node.json turns this kind on, by its `enabled` or by default.\nAbsent from a node before it.",
+          "type": "boolean"
+        },
         "ready": {
           "type": "boolean"
         }
@@ -6227,6 +6241,42 @@
         "detail"
       ],
       "type": "object"
+    },
+    "HostOff": {
+      "description": "Why a machine can't host a kind of screen.",
+      "oneOf": [
+        {
+          "const": "off",
+          "description": "Turned off, or never opted in, in its node.json: an admin turns it on.",
+          "type": "string"
+        },
+        {
+          "const": "restarting",
+          "description": "Turned on, and it starts once the node restarts, after the screens live there end.",
+          "type": "string"
+        },
+        {
+          "const": "unsupported",
+          "description": "Not on this kind of machine: iOS needs a Mac, Android Linux x86_64, a desktop Linux.",
+          "type": "string"
+        },
+        {
+          "const": "missing",
+          "description": "Something it needs isn't on the machine: Xcode, KVM, docker or Xvfb, Node.js. `detail` says what.",
+          "type": "string"
+        },
+        {
+          "const": "installing",
+          "description": "Installing what it needs now.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Its install or setup failed; `detail` says how.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     },
     "HubBusyItem": {
       "description": "One thing in flight on the hub.",
@@ -8743,6 +8793,10 @@
           "minItems": 1,
           "type": "array"
         },
+        "screenSettings": {
+          "description": "Its node takes screen settings from the hub (`machine_screens_set`). Absent: its fleetd is older, or it is\noffline.",
+          "type": "boolean"
+        },
         "sessionsLive": {
           "description": "Its sessions live now, its own agents' and other machines'.",
           "maximum": 9007199254740991,
@@ -8780,6 +8834,10 @@
         },
         "next": {
           "type": "string"
+        },
+        "retention": {
+          "$ref": "#/$defs/BrowserRetention",
+          "description": "How long the hub keeps screens' recordings (`browser_retention_set`), for Settings › Hub › Machines › Screens.\nAbsent from a hub before it."
         },
         "truncated": {
           "type": "boolean"
@@ -8820,6 +8878,46 @@
       "type": "object"
     },
     "MachineRolesSetOutput": {
+      "properties": {
+        "machine": {
+          "$ref": "#/$defs/MachineRolesEntry"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machine"
+      ],
+      "type": "object"
+    },
+    "MachineScreensSetInput": {
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/SessionHost"
+        },
+        "idleMinutes": {
+          "description": "Minutes without a command before a screen there ends, for every kind.",
+          "maximum": 1440,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "on": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machineId"
+      ],
+      "type": "object"
+    },
+    "MachineScreensSetOutput": {
       "properties": {
         "machine": {
           "$ref": "#/$defs/MachineRolesEntry"
@@ -9753,6 +9851,12 @@
         "machine_roles_set.output": {
           "$ref": "#/$defs/MachineRolesSetOutput"
         },
+        "machine_screens_set.input": {
+          "$ref": "#/$defs/MachineScreensSetInput"
+        },
+        "machine_screens_set.output": {
+          "$ref": "#/$defs/MachineScreensSetOutput"
+        },
         "mcp_server_remove.input": {
           "$ref": "#/$defs/McpServerRemoveInput"
         },
@@ -10577,6 +10681,8 @@
         "machine_roles.output",
         "machine_roles_set.input",
         "machine_roles_set.output",
+        "machine_screens_set.input",
+        "machine_screens_set.output",
         "mcp_server_remove.input",
         "mcp_server_remove.output",
         "mcp_server_set.input",

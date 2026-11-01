@@ -1,6 +1,6 @@
 // The words of Hub › Machines' roles, pure so they are tested on their own: a machine's roles as one
-// choice, its session slots as a line, and what it can host, each kind by its name.
-import type { HostCheck, MachineRole, MachineRolesEntry, SessionHost } from "../../../shared/contracts";
+// choice, and its session slots as a line.
+import type { MachineRole, MachineRolesEntry } from "../../../shared/contracts";
 
 export type RolesChoice = "agents" | "sessions" | "both";
 
@@ -27,18 +27,6 @@ export const sessionsLine = (m: MachineRolesEntry): string => {
   const why = m.maxSessionsWhy === "set" ? "you set it" : m.maxSessionsWhy;
   return `${m.sessionsLive} of ${m.maxSessions} ${m.maxSessions === 1 ? "screen" : "screens"} now (${why})`;
 };
-
-const HOST_NAME: Readonly<Record<string, string>> = {
-  browser: "Browser",
-  android: "Android emulator",
-  ios: "iOS simulator",
-  desktop: "Desktop",
-};
-
-export const hostName = (host: SessionHost): string => HOST_NAME[host] ?? host;
-
-/** The kinds it can host first, then the rest, each in the hub's order. */
-export const hostsInOrder = (hosts: readonly HostCheck[]): HostCheck[] => [...hosts.filter((h) => h.ready), ...hosts.filter((h) => !h.ready)];
 
 /** The session cap's choices: auto, then 1 to 16, and the set value when it is above. */
 export const capChoices = (m: MachineRolesEntry): Array<{ value: string; label: string }> => {

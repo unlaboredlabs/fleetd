@@ -390,6 +390,7 @@ async fn run_link_once(
             fleetd_contracts::node_link::CAP_SESSION_END.to_owned(),
             fleetd_contracts::node_link::CAP_NAVI_SIGNINS.to_owned(),
             fleetd_contracts::node_link::CAP_ISOLATED.to_owned(),
+            fleetd_contracts::node_link::CAP_SCREEN_SETTINGS.to_owned(),
         ]
         .into_iter()
         .chain(

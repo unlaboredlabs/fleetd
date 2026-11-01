@@ -172,12 +172,12 @@ it("nests Every project's pages, Setup last saying how many required steps are l
   expect(nav()?.querySelector("[role='group'][aria-label='Prompts']")).not.toBeNull();
 });
 
-it("puts machine roles and caps on Machines, and the hub's Claude and GitHub on Hub accounts", async () => {
+it("puts machine roles, screens and caps on Machines, and the hub's Claude and GitHub on Hub accounts", async () => {
   window.location.hash = "#/settings/hub/machines";
   await render(admin);
   expect(host.querySelector("[data-screen='settings.hub.machines']")).not.toBeNull();
   expect(host.querySelector("#machine-roles")).not.toBeNull();
-  expect(parts()).toEqual(["hub.caps", "hub.updates"]);
+  expect(parts()).toEqual(["hub.screens", "hub.caps", "hub.updates"]);
 
   await click(button("Hub accounts", nav() ?? document));
   expect(host.querySelector("[data-screen='settings.hub.accounts']")).not.toBeNull();

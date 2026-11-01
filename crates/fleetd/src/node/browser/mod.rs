@@ -559,6 +559,11 @@ impl Broker {
         }
     }
 
+    /// How many of its sessions are live.
+    pub fn count(&self) -> usize {
+        lock(&self.sessions).len()
+    }
+
     /// The live session of an agent session.
     pub fn live(&self, thread: &str) -> Option<Arc<Session>> {
         lock(&self.sessions).get(thread).cloned()
