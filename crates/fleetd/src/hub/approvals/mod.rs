@@ -253,7 +253,8 @@ pub trait ApprovalHub: Send + Sync {
         action: &'a crate::hub::navi::checker::Action,
         settings: &'a fleetd_contracts::navi::NaviApprovals,
     ) -> BoxFut<'a, fleetd_contracts::ledger::CheckerNote>;
-    /// A Navi's action ran without asking: one quiet line in its chat, and an entry in its auto-approved log.
+    /// A Navi's action ran without asking: an entry in its auto-approved log, and a checker's go also one quiet line in
+    /// its chat (YOLO posts none).
     fn navi_auto_approved<'a>(
         &'a self,
         project: &'a ProjectRef,

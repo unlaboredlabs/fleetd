@@ -290,7 +290,7 @@ pub struct AutoApproved {
     pub what: Line<1, 300>,
     /// The checker's reason; absent in YOLO.
     pub reason: Option<Line<1, 300>>,
-    /// The quiet line in the Navi's chat that told the person.
+    /// The quiet line in the Navi's chat that told the person; absent in YOLO, which posts none.
     pub message_id: Option<ChatMessageId>,
 }
 
