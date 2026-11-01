@@ -313,8 +313,8 @@ fn health_from(
         return health(
             IosState::Wanted,
             format!(
-                "Xcode with {runtime}; iOS screens are off until this Mac opts in with \"ios\": {{\"enabled\": \
-                 true}} in its node.json."
+                "Xcode with {runtime}; iOS screens are off until this Mac is turned on in Settings › Hub › \
+                 Machines › Screens (or \"ios\": {{\"enabled\": true}} in its node.json)."
             ),
             None,
             false,

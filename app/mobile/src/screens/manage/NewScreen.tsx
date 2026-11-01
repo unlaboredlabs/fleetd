@@ -8,7 +8,7 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Keyboard, ScrollView, StyleSheet, Text, View } from "react-native";
-import { adminNames, askLine, hostsFor, isNavi, openWord, pickHost, SCREEN_KINDS, slotLine, whyOff, type HubError, type OffReason, type ScreenKind } from "../../desktop";
+import { adminNames, askLine, hostsFor, idleFor, idleWords, isNavi, openWord, pickHost, SCREEN_KINDS, slotLine, whyOff, type HubError, type OffReason, type ScreenKind } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { waitLine, waitOutcome, type Wait } from "../../screen";
 import { refOf } from "../../store";
@@ -127,7 +127,7 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
         <>
           <ListSection
             header="Kind"
-            footer={shownKind === "browser" && navi ? `It opens on ${project?.title ?? "the Navi"}'s own browser profile: a site you sign in to stays signed in for it. Close yours before it needs its own.` : "Yours from the start. It's recorded like an agent's, and ends after 30 minutes without your input."}
+            footer={shownKind === "browser" && navi ? `It opens on ${project?.title ?? "the Navi"}'s own browser profile: a site you sign in to stays signed in for it. Close yours before it needs its own.` : `Yours from the start. It's recorded like an agent's, and ends ${idleWords(idleFor(machines, host?.machineId, shownKind))}.`}
           >
             {SCREEN_KINDS.map((k) => {
               const kindOff = whyOff(machines, k.kind, home);

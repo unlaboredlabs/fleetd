@@ -83,6 +83,8 @@ export {
   adminNames,
   askLine,
   hostsFor,
+  idleFor,
+  idleWords,
   KINDS as SCREEN_KINDS,
   openWord,
   pickHost,
