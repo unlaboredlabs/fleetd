@@ -1,10 +1,11 @@
 //! Holding a node's agents between steps ahead of its update's restart (`node_action` `hold`, `fleetd update`). The
-//! hold is a file, `<node home>/update/hold`, naming when it ends (epoch ms). Every session's PreToolUse hook
-//! ([`hook_command`]) waits while it lasts, so a tool call that hasn't started doesn't start until the restart ends
-//! its session (claude resumes it afterwards); each waiting call marks itself held (`update/held/<tool_use_id>`), so the
-//! node counts only the steps still running ([`crate::node::sessions::SessionService::hold`]). A hold lasts
-//! [`HOLD_LEASE_SECS`] past the last ask, so one nobody renews (the hub went away, the update ended without a restart)
-//! lets every call go; a node that starts clears it.
+//! hold is a file, `<node home>/update/hold`, naming when it ends (epoch ms); `hold.update` and `hold.screens` beside
+//! it note whose it is (an update's, a screen-settings restart's), so one releasing its own leaves the other's. Every
+//! session's PreToolUse hook ([`hook_command`]) waits while it lasts, so a tool call that hasn't started doesn't start
+//! until the restart ends its session (claude resumes it afterwards); each waiting call marks itself held
+//! (`update/held/<tool_use_id>`), so the node counts only the steps still running
+//! ([`crate::node::sessions::SessionService::hold`]). A hold lasts [`HOLD_LEASE_SECS`] past the last ask, so one nobody
+//! renews (the hub went away, the update ended without a restart) lets every call go; a node that starts clears it.
 //!
 //! A Navi's sandbox hides the node's home, so its hook never sees a hold: its tool calls aren't held, only counted.
 use std::collections::HashSet;
@@ -35,9 +36,16 @@ fn now_ms() -> u128 {
         .as_millis()
 }
 
-/// Holds the node's agents for [`HOLD_LEASE_SECS`] from now.
+/// Holds the node's agents for [`HOLD_LEASE_SECS`] from now, for an update (`node_action` `hold`): noted as the
+/// update's, so a screen-settings restart's [`release_screens`] leaves it alone while it lasts.
 pub fn hold(home: &Path) -> std::io::Result<()> {
-    hold_until(home).map(|_| ())
+    let until = hold_until(home)?;
+    crate::update::replace_file(&update_mark(home), until.to_string().as_bytes())
+}
+
+/// Where an update notes the end of the hold it last wrote.
+fn update_mark(home: &Path) -> PathBuf {
+    hold_path(home).with_file_name("hold.update")
 }
 
 /// [`hold`], answering when it ends.
@@ -54,20 +62,20 @@ fn screens_mark(home: &Path) -> PathBuf {
     hold_path(home).with_file_name("hold.screens")
 }
 
-/// [`hold`] for a screen-settings restart, noting the end it wrote, so [`release_screens`] can tell whether anyone else
-/// renewed the hold since.
+/// A hold for a screen-settings restart (node/screens.rs), noted as its own.
 pub fn hold_for_screens(home: &Path) -> std::io::Result<()> {
     let until = hold_until(home)?;
     crate::update::replace_file(&screens_mark(home), until.to_string().as_bytes())
 }
 
-/// Ends a screen-settings restart's hold, unless someone renewed it since (an update's drain, `fleetd update`): their
-/// hold then stays theirs, and lapses or clears as theirs does.
+/// Ends a screen-settings restart's hold, unless an update holds too: its mark still lasts, whoever wrote the hold
+/// last. The hold then stays the update's, and lapses or clears as the update's does.
 pub fn release_screens(home: &Path) {
     let mark = screens_mark(home);
-    let ours = until(&mark);
+    let ours = until(&mark).is_some();
     let _ = fs::remove_file(&mark);
-    if ours.is_some() && until(&hold_path(home)) == ours {
+    let updating = until(&update_mark(home)).is_some_and(|until| now_ms() < until);
+    if ours && !updating {
         clear(home);
     }
 }
@@ -88,6 +96,7 @@ pub fn clear(home: &Path) {
     let path = hold_path(home);
     let _ = fs::remove_file(&path);
     let _ = fs::remove_file(screens_mark(home));
+    let _ = fs::remove_file(update_mark(home));
     let _ = fs::remove_dir_all(held_dir(&path));
 }
 
@@ -146,27 +155,41 @@ mod tests {
     fn a_screen_settings_release_leaves_an_updates_hold_alone() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
-        // Its own hold, renewed by nobody else: released.
+        // Its own hold, and no update's: released.
         hold_for_screens(home).unwrap();
         release_screens(home);
         assert_eq!(until(&hold_path(home)), None);
 
-        // An update renewed the hold meanwhile (a later end): the update's hold stays.
-        hold_for_screens(home).unwrap();
-        std::thread::sleep(Duration::from_millis(5));
+        // An update holds too, and the screens restart wrote the hold last (it renews more often): the hold stays.
         hold(home).unwrap();
-        let updates = until(&hold_path(home));
+        std::thread::sleep(Duration::from_millis(5));
+        hold_for_screens(home).unwrap();
         release_screens(home);
-        assert_eq!(
-            until(&hold_path(home)),
-            updates,
+        assert!(
+            until(&hold_path(home)).is_some(),
             "the update's hold isn't released"
         );
         assert_eq!(until(&screens_mark(home)), None);
 
-        // A release with no hold of its own does nothing.
+        // The same with the update writing last.
+        hold_for_screens(home).unwrap();
+        std::thread::sleep(Duration::from_millis(5));
+        hold(home).unwrap();
         release_screens(home);
-        assert_eq!(until(&hold_path(home)), updates);
+        assert!(until(&hold_path(home)).is_some());
+
+        // An update's mark that lapsed doesn't keep a screens hold.
+        crate::update::replace_file(&update_mark(home), b"1").unwrap();
+        hold_for_screens(home).unwrap();
+        release_screens(home);
+        assert_eq!(until(&hold_path(home)), None);
+
+        // A release with no hold of its own does nothing, and the node's clear drops both marks.
+        hold(home).unwrap();
+        release_screens(home);
+        assert!(until(&hold_path(home)).is_some());
+        clear(home);
+        assert_eq!(until(&update_mark(home)), None);
     }
 
     #[test]
