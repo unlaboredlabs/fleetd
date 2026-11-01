@@ -176,9 +176,12 @@ pub struct MachineRolesEntry {
     pub navi_sandbox: Option<crate::sessions::NaviSandbox>,
     /// The caller may work there (operate): make a Navi, start agents. Absent from a hub before it.
     pub operates: Option<bool>,
-    /// Its node takes screen settings from the hub (`machine_screens_set`). Absent: its fleetd is older, or it is
-    /// offline.
+    /// Its node takes screen settings from the hub (`machine_screens_set`); false: its linked node's fleetd is too
+    /// old for them. Absent while its node isn't linked (restarting, or offline), and from a hub before it.
     pub screen_settings: Option<bool>,
+    /// The command that restarts its node, to run on that machine, while `screenSettings` is false: after an update,
+    /// a node that still runs its old build needs it.
+    pub node_restart: Option<Line<1, 200>>,
 }
 
 brand!(

@@ -486,6 +486,7 @@ pub fn entry(runner: Runner, roles: Roles, why: String) -> MachineRolesEntry {
             .map(Line::unchecked),
         navi_sandbox: None,
         screen_settings: None,
+        node_restart: None,
         operates: None,
     }
 }

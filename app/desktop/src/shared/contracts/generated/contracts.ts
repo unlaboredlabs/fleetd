@@ -2415,6 +2415,7 @@ export type KnownHubEventType =
   | "task.cancelled"
   | "steer.withdrawn"
   | "machine.slept"
+  | "machine.linked"
   | "machine.guard"
   | "machine.recovery_paused"
   | "thread.orphaned"
@@ -3334,14 +3335,19 @@ export type MachineRolesEntry = {
    * reports, from a node before it, and on a system fleetd has no sandbox for.
    */
   naviSandbox?: NaviSandbox;
+  /**
+   * The command that restarts its node, to run on that machine, while `screenSettings` is false: after an update,
+   * a node that still runs its old build needs it.
+   */
+  nodeRestart?: string;
   /** Its node is linked to the hub now. */
   online: boolean;
   /** The caller may work there (operate): make a Navi, start agents. Absent from a hub before it. */
   operates?: boolean;
   roles: MachineRole[];
   /**
-   * Its node takes screen settings from the hub (`machine_screens_set`). Absent: its fleetd is older, or it is
-   * offline.
+   * Its node takes screen settings from the hub (`machine_screens_set`); false: its linked node's fleetd is too
+   * old for them. Absent while its node isn't linked (restarting, or offline), and from a hub before it.
    */
   screenSettings?: boolean;
   /** Its sessions live now, its own agents' and other machines'. */

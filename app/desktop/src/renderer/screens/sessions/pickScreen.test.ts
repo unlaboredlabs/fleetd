@@ -147,6 +147,17 @@ describe("why a kind can't open", () => {
     expect(askLine(must(reason), "linux_desktop", ["Ana", "Bo"])).toBe("Ask Ana or Bo to update fleetd on devbox.");
   });
 
+  it("never calls a node restarting after an update too old", () => {
+    const { screenSettings: _, ...restarting } = off("devbox", { android: "off" });
+    const reason = whyOff([restarting], "android");
+    expect(reason).toEqual({
+      why: "Android emulators are turned off on devbox, and its node is restarting: turn them on once it links again.",
+      short: "Turned off",
+      fix: "none",
+      machine: { machineId: "devbox", name: "devbox" },
+    });
+  });
+
   it("says a Mac is needed where no machine can ever run iOS", () => {
     const reason = whyOff([off("devbox", { ios: "unsupported" }), off("lab", { ios: "unsupported" })], "ios");
     expect(reason).toEqual({ why: "iOS simulators need a Mac with Xcode, and no Mac here hosts screens.", short: "Needs a Mac", fix: "add" });

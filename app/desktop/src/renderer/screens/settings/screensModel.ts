@@ -13,10 +13,19 @@ export const SCREEN_KINDS: ReadonlyArray<{ readonly host: SessionHost; readonly 
 /** A kind's switch: on as node.json has it (a node before switches: on where it can host it). */
 export const switchOn = (check: HostCheck | undefined): boolean => check?.on ?? check?.ready ?? false;
 
+/**
+ * What keeps an online machine's switches still: its node between two links, as after an update or a screen setting
+ * restarts it (the hub says nothing either way then), or a linked node too old for them; null when they move.
+ */
+export const nodeWait = (m: MachineRolesEntry): "restarting" | "old" | null =>
+  !m.online || m.screenSettings === true ? null : m.screenSettings === false ? "old" : "restarting";
+
 /** Why a kind's switch can't move, or null where it can. */
 export const lockedWhy = (m: MachineRolesEntry, check: HostCheck | undefined): string | null => {
   if (!m.online) return "Offline";
-  if (m.screenSettings !== true) return "Its fleetd is too old to change this from here";
+  const wait = nodeWait(m);
+  if (wait === "restarting") return "Its node is restarting";
+  if (wait === "old") return "Its fleetd is too old to change this from here";
   if (check === undefined) return "Its node hasn't said";
   if (check.off === "unsupported") return check.detail;
   return null;
