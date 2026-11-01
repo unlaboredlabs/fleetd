@@ -555,7 +555,7 @@ async fn run_link_once(
                                 tokio::time::timeout(crate::update::finish::ANSWER_WAIT, written)
                                     .await;
                         }
-                        super::screens::answered(ask);
+                        drop(ask);
                         return;
                     }
                     let Some(watch) = watch else { return };

@@ -86,6 +86,8 @@ struct Pace {
     look: Duration,
     drain_look: Duration,
     drain_max: Duration,
+    /// How long it waits for a change's answer to reach the link once the agents are held, at most.
+    answer_max: Duration,
 }
 
 /// Waits until the node may restart to apply node.json: no screen live, then its agents held between steps with still
@@ -97,6 +99,7 @@ async fn when_idle(
     live: impl Fn() -> usize,
     hold: impl Fn() -> u32,
     clear: impl Fn(),
+    pending: impl Fn() -> bool,
     pace: Pace,
 ) -> bool {
     loop {
@@ -113,6 +116,13 @@ async fn when_idle(
                 // Changed back meanwhile: nothing to apply, and what the hold stopped goes on now.
                 clear();
                 return false;
+            }
+            // A change asked for meanwhile: its answer goes out before the node does, the hold renewed while it waits
+            // so it doesn't lapse under a held call.
+            let waited = tokio::time::Instant::now();
+            while pending() && waited.elapsed() < pace.answer_max {
+                hold();
+                tokio::time::sleep(pace.drain_look).await;
             }
             if live() == 0 {
                 return true;
@@ -171,16 +181,26 @@ fn gated(checks: &mut [HostCheck], started: &Sections, now: &Sections) {
     }
 }
 
-/// A change of the screen settings is asked for (node/link.rs, before it runs): its answer is pending until
-/// [`answered`] says it is on the link.
-pub fn ask() -> u64 {
+/// A change of the screen settings is asked for (node/link.rs, before it runs): its answer is pending until the
+/// [`Asked`] this returns is dropped.
+pub fn ask() -> Asked {
     let ask = NEXT.fetch_add(1, Ordering::SeqCst) + 1;
     lock(&PENDING).insert(ask);
-    ask
+    Asked(ask)
 }
 
-/// The answer to change `ask` is on the link (node/link.rs, once it is written).
-pub fn answered(ask: u64) {
+/// A change's answer, pending while this lives: dropped once the answer is on the link, or with the link's task when
+/// the link drops mid-action, so a lost answer never keeps later restarts waiting.
+pub struct Asked(u64);
+
+impl Drop for Asked {
+    fn drop(&mut self) {
+        answered(self.0);
+    }
+}
+
+/// The answer to change `ask` is on the link, or never will be (its [`Asked`] dropped).
+fn answered(ask: u64) {
     lock(&PENDING).remove(&ask);
     ANSWERED.notify_waiters();
 }
@@ -336,16 +356,16 @@ fn schedule(home: &Path) -> String {
                 live,
                 || HOLD.get().map_or(0, |f| f()),
                 || super::hold::release_screens(&home),
+                || !lock(&PENDING).is_empty(),
                 Pace {
                     look: LOOK,
                     drain_look: DRAIN_LOOK,
                     drain_max: DRAIN_MAX,
+                    answer_max: ANSWER_WAIT,
                 },
             )
             .await;
             if restart {
-                // A change asked for while this waited: its answer goes out before the node does.
-                wait_answered(ANSWER_WAIT).await;
                 tracing::info!("screen settings changed: restarting the node to apply them");
                 RESTART.notify_one();
             }
@@ -465,17 +485,31 @@ mod tests {
         let waiting = tokio::spawn(wait_answered(Duration::from_secs(30)));
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(!waiting.is_finished(), "neither answer is written yet");
-        answered(first);
+        drop(first);
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(
             !waiting.is_finished(),
             "the second change's answer isn't written yet"
         );
-        answered(second);
+        drop(second);
         tokio::time::timeout(Duration::from_secs(5), waiting)
             .await
             .expect("released once both are")
             .unwrap();
+        // The link dropped mid-action: its task is aborted with the answer never written, and the answer stops being
+        // pending with it, so later restarts don't wait for it.
+        let link = tokio::spawn(async {
+            let _asked = ask();
+            std::future::pending::<()>().await;
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!lock(&PENDING).is_empty(), "pending while the action runs");
+        link.abort();
+        let _ = link.await;
+        assert!(
+            lock(&PENDING).is_empty(),
+            "the aborted action's answer isn't pending"
+        );
         // None pending: no wait.
         tokio::time::timeout(
             Duration::from_secs(5),
@@ -530,6 +564,7 @@ mod tests {
             look: Duration::from_secs(10),
             drain_look: Duration::from_secs(2),
             drain_max: Duration::from_secs(600),
+            answer_max: Duration::from_secs(60),
         };
         // Asked for live screens: none, then one (opened during the drain), then it is still live, then none twice.
         let looks = AtomicUsize::new(0);
@@ -548,6 +583,7 @@ mod tests {
             || {
                 cleared.fetch_add(1, Ordering::SeqCst);
             },
+            || false,
             pace(),
         )
         .await;
@@ -571,11 +607,60 @@ mod tests {
                 || {
                     cleared.fetch_add(1, Ordering::SeqCst);
                 },
+                || false,
                 pace()
             )
             .await
         );
         assert_eq!(cleared.load(Ordering::SeqCst), 1);
+    }
+
+    /// A change asked for while the agents are held: the restart waits for its answer, renewing the hold meanwhile so
+    /// it doesn't lapse under a held call, and looks for a screen opened in that wait before it goes.
+    #[tokio::test(start_paused = true)]
+    async fn the_hold_lasts_while_a_late_answer_goes_out() {
+        use std::sync::atomic::AtomicUsize;
+        let pace = || Pace {
+            look: Duration::from_secs(10),
+            drain_look: Duration::from_secs(2),
+            drain_max: Duration::from_secs(600),
+            answer_max: Duration::from_secs(60),
+        };
+        // The answer stays pending for three looks; each look of the wait renews the hold.
+        let pending_looks = AtomicUsize::new(0);
+        let pending = || pending_looks.fetch_add(1, Ordering::SeqCst) < 3;
+        let holds = AtomicUsize::new(0);
+        let hold = || {
+            holds.fetch_add(1, Ordering::SeqCst);
+            0
+        };
+        assert!(when_idle(|| true, || 0, hold, || {}, pending, pace()).await);
+        // One renewal from the drain, then one for each look the answer was still pending.
+        assert_eq!(holds.load(Ordering::SeqCst), 4);
+
+        // A screen opened during that wait: the hold lets go, and the restart waits for it to end.
+        let looks = AtomicUsize::new(0);
+        let screens = [0, 1, 0, 0];
+        let live = || {
+            screens
+                .get(looks.fetch_add(1, Ordering::SeqCst))
+                .copied()
+                .unwrap_or(0)
+        };
+        let pending_looks = AtomicUsize::new(0);
+        let pending = || pending_looks.fetch_add(1, Ordering::SeqCst) < 1;
+        let cleared = AtomicUsize::new(0);
+        let clear = || {
+            cleared.fetch_add(1, Ordering::SeqCst);
+        };
+        assert!(when_idle(|| true, live, || 0, clear, pending, pace()).await);
+        assert_eq!(cleared.load(Ordering::SeqCst), 1);
+
+        // An answer that never goes out keeps the restart at most the answer's wait.
+        let started = tokio::time::Instant::now();
+        assert!(when_idle(|| true, || 0, || 0, || {}, || true, pace()).await);
+        assert!(started.elapsed() >= Duration::from_secs(60));
+        assert!(started.elapsed() < Duration::from_secs(70));
     }
 
     #[test]
