@@ -28,7 +28,6 @@ fn only_commands_that_drive_the_screen_run_on_another_machine() {
         &["shutdown"],
         &["clipboard", "read"],
         &["install-from-source", "https://example.com/app.zip"],
-        &["logs", "path"],
         &["sh", "-c", "id"],
     ] {
         let why = refused(line);
@@ -65,6 +64,9 @@ fn only_commands_that_drive_the_screen_run_on_another_machine() {
     // A file a command writes is always named, so it can come back.
     assert!(refused(&["screenshot"]).contains("file name"));
     assert!(refused(&["record", "start"]).contains("file name"));
+    assert!(refused(&["logs", "path"]).contains("file name"));
+    assert!(refused(&["logs", "tail", "app.log"]).contains("logs path <file>"));
+    assert!(refused(&["logs", "start", "--platform", "macos"]).contains("doesn't run here"));
     assert!(refused(&["snapshot", "-i=1"]).contains("no value"));
 }
 
@@ -124,6 +126,9 @@ fn a_command_reads_as_the_screens_node_runs_it() {
         &["record", "stop"],
         &["settings", "appearance", "dark"],
         &["help", "workflow"],
+        &["logs", "clear", "--restart"],
+        &["logs", "mark", "before", "New Screen"],
+        &["logs", "doctor"],
         &["--help"],
         &[],
     ] {
@@ -167,6 +172,15 @@ fn files_come_only_from_the_worktree_and_go_back_into_it() {
     .unwrap();
     assert_eq!(shot.args, args(&["screenshot", "out/2-home.png"]));
     assert_eq!(shot.outputs[0].path, real.join("shots/new/home.png"));
+    let log = map(
+        &args(&["logs", "path", "logs/app.log"]),
+        &worktree,
+        &worktree,
+        &mut seq,
+    )
+    .unwrap();
+    assert_eq!(log.args, args(&["logs", "path", "out/3-app.log"]));
+    assert_eq!(log.outputs[0].path, real.join("logs/app.log"));
     for (line, cwd) in [
         (&["install", "../secret.txt"][..], &worktree),
         (&["install", "/etc/hosts"], &worktree),
@@ -340,6 +354,101 @@ async fn a_file_goes_in_and_a_file_comes_back_on_the_screens_node() {
     assert_eq!(shot.stderr.trim(), "saved out/3-home.png");
     work.remove();
     assert!(!work.dir().exists());
+}
+
+/// `logs path` on the screen's node: agent-device names its app log in the screen's agent-device home, and the log
+/// comes back in its file as a screenshot does. A path anywhere else stays on the Mac.
+#[tokio::test]
+async fn the_app_log_comes_back_from_the_screens_node() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("node");
+    let work = Work::at(&home, "H0123456789abcdef0123456789abcdef");
+    let session =
+        home.join("sessions/H0123456789abcdef0123456789abcdef/agent-device/state/sessions/default");
+    std::fs::create_dir_all(&session).unwrap();
+    std::fs::write(session.join("app.log"), "Fatal error: the sheet crashed\n").unwrap();
+    std::fs::write(dir.path().join("app.log"), "the Mac's own\n").unwrap();
+    let program = dir.path().join("agent-device");
+    std::fs::write(
+        &program,
+        "#!/bin/sh\n\
+         [ \"$*\" = \"logs path\" ] || [ \"$*\" = \"logs path --json\" ] || { echo \"ran $*\"; exit 2; }\n\
+         if [ -n \"$WHERE\" ]; then log=\"$WHERE\"; else log=\"$AGENT_DEVICE_HOME/state/sessions/default/app.log\"; fi\n\
+         if [ \"$3\" = --json ]; then printf '{\"success\":true,\"data\":{\"path\":\"%s\"}}\\n' \"$log\"; else echo \"$log\"; fi\n\
+         echo 'active=true backend=ios-simulator' >&2\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        &program,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let ad_home = home.join("sessions/H0123456789abcdef0123456789abcdef/agent-device");
+    let env = |r#where: Option<&Path>| {
+        let mut env = vec![(
+            "AGENT_DEVICE_HOME".to_owned(),
+            ad_home.to_string_lossy().into_owned(),
+        )];
+        if let Some(path) = r#where {
+            env.push(("WHERE".to_owned(), path.to_string_lossy().into_owned()));
+        }
+        env
+    };
+    let line = args(&["logs", "path", "out/1-app.log"]);
+    work.check(&line, true).unwrap();
+    let ran = work.run(&program, &env(None), &line, RUN_WAIT).await;
+    assert_eq!(
+        (ran.exit_code, ran.stdout.trim()),
+        (0, "out/1-app.log"),
+        "{ran:?}"
+    );
+    assert_eq!(
+        ran.files,
+        vec![DeviceFile {
+            name: "1-app.log".into(),
+            bytes: 31
+        }]
+    );
+    let DeviceDone::Get { data_b64, .. } = work.get("1-app.log", 0).unwrap() else {
+        panic!("a get");
+    };
+    assert_eq!(
+        B64.decode(data_b64).unwrap(),
+        b"Fatal error: the sheet crashed\n"
+    );
+    let json = work
+        .run(
+            &program,
+            &env(None),
+            &args(&["logs", "path", "--json", "out/2-app.log"]),
+            RUN_WAIT,
+        )
+        .await;
+    assert_eq!(json.exit_code, 0, "{json:?}");
+    assert!(
+        json.stdout.contains("\"path\":\"out/2-app.log\""),
+        "{}",
+        json.stdout
+    );
+    let _ = work.get("2-app.log", 0);
+    // A log outside the node's home, or none yet, doesn't come back.
+    for r#where in [dir.path().join("app.log"), session.join("missing/app.log")] {
+        let ran = work
+            .run(
+                &program,
+                &env(Some(&r#where)),
+                &args(&["logs", "path", "out/3-app.log"]),
+                RUN_WAIT,
+            )
+            .await;
+        assert_eq!(ran.exit_code, 1, "{ran:?}");
+        assert!(
+            ran.stderr.contains("no app log to send back"),
+            "{}",
+            ran.stderr
+        );
+        assert!(ran.files.is_empty());
+    }
 }
 
 #[tokio::test]

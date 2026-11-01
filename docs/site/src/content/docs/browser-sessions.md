@@ -409,12 +409,14 @@ straight to the Mac, and only the Mac's frames reach them.
   goes from the agent's worktree to the Mac first, 4 MiB at a time, up to 64 MiB per command. A folder doesn't go:
   zip an `.app` first (`ditto -c -k --keepParent fleetd.app fleetd.zip`). A file a command writes (`screenshot
   shots/home.png`, or `record start run.mp4` then `record stop`) comes back to that path in the worktree.
-  `screenshot` and `record start` need a file name. A path outside the worktree is refused on the agent's machine.
+  `screenshot` and `record start` need a file name. So does `logs path`: the app log agent-device keeps on the Mac
+  comes back to that path (`logs path logs/app.log`), its last 64 MiB if it's longer. A path outside the worktree is
+  refused on the agent's machine.
 - **Only commands that drive the screen run.** The Mac runs agent-device commands from a fixed list, each with its
   own flags: `open`, `close`, `install`, `reinstall`, `uninstall`, `apps`, `appstate`, `snapshot`, `screenshot`,
   `record`, `press`, `click`, `fill`, `type`, `scroll`, `swipe`, `longpress`, `gesture`, `wait`, `get`, `is`, `find`,
   `back`, `home`, `app-switcher`, `alert`, `keyboard`, `settings`, `push`, `orientation`, `focus`, `action-button`,
-  `hardware-button`, `capabilities` and `help`. They run in a folder of the screen's own, which goes with it. There's
+  `hardware-button`, `logs` (`path`, `start`, `stop`, `clear`, `doctor`, `mark`), `capabilities` and `help`. They run in a folder of the screen's own, which goes with it. There's
   no shell and no `xcrun simctl`: no scripts (`batch`, `replay`, `test`), no servers or remote state (`mcp`, `daemon`,
   `proxy`, `connect`, `plugins`), no clipboard, and no flag that picks another device, platform, session or config
   (`--udid`, `--device`, `--platform`, `--session`, `--config`). `open` takes an app or a URL, never a file on the Mac.
