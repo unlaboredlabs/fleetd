@@ -7,6 +7,12 @@ import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../../shar
 import type { CallRequest } from "../../shared/ipc";
 import type { HubSource } from "./source";
 
+/**
+ * Any JSON value. JSON.parse made it, so it is JSON already: z.json() checked so again value by value, which took two
+ * thirds of loading the chat-long fixture (~600 KB, mostly prompts) before a test launch's window, more with every call.
+ */
+const jsonValue = z.custom<z.core.util.JSONType>((value) => value !== undefined);
+
 const delay = z.int().min(0).max(600_000).optional();
 const hubError = z.object({ code: z.string(), message: z.string(), fix: z.string().optional() });
 
@@ -19,7 +25,7 @@ const State = z.discriminatedUnion("phase", [
 ]);
 
 /** Items of `tool`'s answers under `field` that match `where` (a deep subset), e.g. requests_list's open Q1. */
-const Rows = z.object({ tool: z.string(), field: z.string(), where: z.json() });
+const Rows = z.object({ tool: z.string(), field: z.string(), where: jsonValue });
 
 const Frame = z.discriminatedUnion("t", [
   // The connection changing mid-run, as a hub restart does: retrying, then live again and a fresh snapshot.
@@ -73,15 +79,15 @@ const OneHub = z.object({
   calls: z.array(
     z.object({
       tool: z.string(),
-      input: z.json().optional(),
-      outcome: z.union([z.object({ ok: z.literal(true), output: z.json() }), z.object({ ok: z.literal(false), error: hubError })]),
+      input: jsonValue.optional(),
+      outcome: z.union([z.object({ ok: z.literal(true), output: jsonValue }), z.object({ ok: z.literal(false), error: hubError })]),
       delayMs: delay,
       then: Then.optional(),
     }),
   ),
   connect: z.union([z.object({ ok: z.literal(true) }), z.object({ ok: z.literal(false), message: z.string() })]).optional(),
   /** The renderer's disk cache as an earlier launch left it (src/renderer/src/data/cache.ts); never written over. */
-  cache: z.json().optional(),
+  cache: jsonValue.optional(),
   /** Rows hidden from the first answer on, until a rows frame shows them. */
   hidden: z.array(Rows).optional(),
   /** The hub's label and colour in the app (shared/hubs.ts); shown once there are several. */

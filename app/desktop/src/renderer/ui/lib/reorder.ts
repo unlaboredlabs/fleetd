@@ -103,6 +103,9 @@ const onScreen = <K>(els: ReadonlyMap<K, HTMLElement>): ReadonlyMap<K, number> =
  * rows gliding.
  */
 const glide = <K>(els: ReadonlyMap<K, HTMLElement>, from: ReadonlyMap<K, number>, ms: number): HTMLElement[] => {
+  // No row was on screen (the list's first rows, as the app opens): none has a place to glide from, and reading theirs
+  // would lay out the whole window in the middle of its first paint.
+  if (from.size === 0) return [];
   // Their places now, with nothing moving them: a glide under way, or a drag's offset, cleared first.
   for (const el of els.values()) {
     el.style.transition = "none";
