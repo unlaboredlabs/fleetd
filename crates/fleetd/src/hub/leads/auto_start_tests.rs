@@ -660,6 +660,76 @@ async fn a_lead_its_node_cut_off_mid_turn_carries_on_by_itself() {
     follower.abort();
 }
 
+/// A Navi's 09:30 brief woke its lead, whose turn hung in a tool until the stall guard cut it off: the order then sat
+/// until the person wrote 80 minutes later. The lead now carries on by itself, once per run of failed turns: a turn
+/// that hangs again waits for the next trigger, and one that completes makes the next stall wake it again.
+#[tokio::test(flavor = "current_thread")]
+async fn a_lead_turn_the_stall_guard_cut_off_carries_on_once_by_itself() {
+    let hub = hub(true);
+    hub.order("Morning brief").await;
+    hub.after_debounce().await;
+    let follower = tokio::spawn(Arc::clone(&hub.area).run_cut_off());
+    settle().await;
+    let sends = || hub.node.sends.lock().unwrap().clone();
+    let start = sends().len();
+    let stalled = |hub: &Hub| {
+        hub.thread_ended(
+            HubEventType::ThreadFailed,
+            "lead-1",
+            serde_json::json!({
+                "threadId": "lead-1", "reason": "stalled", "status": "failed",
+                "error": { "class": "stalled", "message": "no progress for 1216 s inside a tool, so fleetd interrupted it" },
+            }),
+        );
+        // The watchdog's interrupt, as the node reports it.
+        hub.thread_ended(
+            HubEventType::ThreadInterrupted,
+            "lead-1",
+            serde_json::json!({ "threadId": "lead-1", "endCause": "requested", "error": { "class": "process_exited", "message": "interrupted through fleetd" } }),
+        );
+    };
+
+    stalled(&hub);
+    hub.after_debounce().await;
+    let woken = sends();
+    assert_eq!(woken.len(), start + 1, "{woken:#?}");
+    assert!(
+        woken[start].contains(
+            "Your last turn was cut off: no output for too long: no progress for 1216 s inside a tool, so fleetd \
+             interrupted it."
+        ),
+        "{}",
+        woken[start]
+    );
+    assert_eq!(hub.launched_prompts().len(), 1, "in its own thread");
+
+    // The carried-on turn hangs too: no third try until something else wakes it.
+    stalled(&hub);
+    hub.after_debounce().await;
+    assert_eq!(sends().len(), start + 1);
+
+    // A turn that completes ends the run: the next stall, or a claude that exited unasked, wakes it again.
+    hub.thread_ended(
+        HubEventType::ThreadCompleted,
+        "lead-1",
+        serde_json::json!({ "threadId": "lead-1", "endCause": "completed" }),
+    );
+    hub.thread_ended(
+        HubEventType::ThreadFailed,
+        "lead-1",
+        serde_json::json!({ "threadId": "lead-1", "endCause": "exited", "error": { "class": "process_exited", "message": "claude exited with code 1" } }),
+    );
+    hub.after_debounce().await;
+    let woken = sends();
+    assert_eq!(woken.len(), start + 2, "{woken:#?}");
+    assert!(
+        woken[start + 1].contains("Your last turn was cut off: claude exited with code 1."),
+        "{}",
+        woken[start + 1]
+    );
+    follower.abort();
+}
+
 /// Agents with 3 slots free for 30 minutes of the idle stretch it holds.
 struct IdleTasks(std::sync::atomic::AtomicI64);
 
