@@ -954,7 +954,7 @@
         },
         "messageId": {
           "$ref": "#/$defs/ChatMessageId",
-          "description": "The quiet line in the Navi's chat that told the person."
+          "description": "The quiet line in the Navi's chat that told the person; absent in YOLO, which posts none."
         },
         "reason": {
           "description": "The checker's reason; absent in YOLO.",
