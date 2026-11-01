@@ -25,7 +25,7 @@ export const lockedWhy = (m: MachineRolesEntry, check: HostCheck | undefined): s
 /** The line under a kind's switch: ready, off, or what stands in the way, in the node's words. */
 export const stateLine = (check: HostCheck | undefined): string => {
   if (check === undefined) return "Its node hasn't said";
-  if (check.ready) return check.detail;
+  if (check.ready) return "Ready";
   switch (check.off) {
     case "off":
       return "Off";

@@ -142,7 +142,8 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
   const hosts = hostsFor(machines, kind, naviHome);
   const host = pickHost(hosts, picked);
   const projectRef = { machineId: project.machineId, projectId: project.projectId };
-  const offersPr = takesBuild(kind);
+  // A PR's build only where the kind can open: else the picker says why instead.
+  const offersPr = takesBuild(kind) && hosts.length > 0;
   const prs = useToolQuery("pr_list", { projectRef }, { enabled: offersPr });
   const choices = prChoices(prs.data?.prs ?? []);
   const [prPicked, setPr] = useState(NO_PR);

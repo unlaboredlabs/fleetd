@@ -27,7 +27,7 @@ describe("a kind's switch", () => {
     expect(switchOn(check("browser"))).toBe(true);
     expect(switchOn(check("android"))).toBe(false);
     expect(switchOn(check("desktop"))).toBe(true);
-    expect(stateLine(check("browser"))).toBe("Chrome at /usr/bin/google-chrome");
+    expect(stateLine(check("browser"))).toBe("Ready");
     expect(stateLine(check("android"))).toBe("Off");
     expect(stateLine(check("desktop"))).toBe("Starts when its node restarts, once the screens live there end");
     // A node before switches: on where it can host.

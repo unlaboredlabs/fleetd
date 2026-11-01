@@ -140,11 +140,15 @@ function Retention({ days, gb }: { days: number; gb: number }) {
     <section className={s.machineRow} aria-label="Recordings" data-screens-retention>
       <Text strong>Recordings</Text>
       <div className={s.inline}>
-        <Text size="xs">The hub keeps each screen&apos;s recording for</Text>
+        <Text size="xs">Keep each screen&apos;s recording for</Text>
         <Select aria-label="Keep recordings for" className={s.machineCap} value={String(days)} options={daysChoices(days)} disabled={!live || busy} onValueChange={(v) => set(Number(v), gb)} />
-        <Text size="xs">and up to</Text>
+      </div>
+      <div className={s.inline}>
+        <Text size="xs">At most, per project</Text>
         <Select aria-label="Recordings per project, at most" className={s.machineCap} value={String(gb)} options={gbChoices(gb)} disabled={!live || busy} onValueChange={(v) => set(days, Number(v))} />
-        <Text size="xs">per project, its oldest going first.</Text>
+        <Text size="xs" tone="quiet">
+          Its oldest go first.
+        </Text>
       </div>
       <EchoLine echo={echo} />
     </section>
