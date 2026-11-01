@@ -178,8 +178,8 @@ function automations(f: Fixture) {
 
 /**
  * Settings → Machines: the fleet's first machine runs agents and hosts sessions on Linux (Chrome and Xvfb; an Android
- * SDK without KVM), the next only hosts sessions on macOS (iOS simulators), and any after them only run agents. A role
- * change answers with the row it asked for.
+ * SDK without KVM), the next only hosts sessions on macOS (iOS simulators) on a node too old for screen settings, and
+ * any after them only run agents. A role change answers with the row it asked for.
  */
 function machineRoles(f: Fixture) {
   const machines = isObject(f.snapshot) && Array.isArray(f.snapshot["machines"]) ? f.snapshot["machines"].filter(isObject) : [];
@@ -198,9 +198,13 @@ function machineRoles(f: Fixture) {
   const entries: JsonObject[] = machines.map((m, i) => {
     const machineId = asText(m["machineId"]);
     const base: JsonObject = { machineId, name: asText(m["name"]) || machineId, online: m["status"] !== "offline", hostsOthers: true };
-    if (i === 0) return { ...base, roles: ["agents", "sessions"], maxSessions: 8, maxSessionsWhy: "auto: 16 CPUs, 60 GB", sessionsLive: 2, hosts: linux };
-    if (i === 1) return { ...base, roles: ["sessions"], maxSessions: 2, maxSessionsSet: 2, maxSessionsWhy: "set", sessionsLive: 1, hosts: mac };
-    return { ...base, roles: ["agents"], maxSessions: 4, maxSessionsWhy: "auto: 8 CPUs, 32 GB", sessionsLive: 0, hosts: linux };
+    if (i === 0) return { ...base, roles: ["agents", "sessions"], maxSessions: 8, maxSessionsWhy: "auto: 16 CPUs, 60 GB", sessionsLive: 2, hosts: linux, screenSettings: true };
+    // A Mac whose node runs a build before screen settings: Screens says to update it, and how to restart it there.
+    if (i === 1) {
+      const old = { screenSettings: false, nodeRestart: "launchctl kickstart -k gui/501/sh.fleetd.node" };
+      return { ...base, roles: ["sessions"], maxSessions: 2, maxSessionsSet: 2, maxSessionsWhy: "set", sessionsLive: 1, hosts: mac, ...old };
+    }
+    return { ...base, roles: ["agents"], maxSessions: 4, maxSessionsWhy: "auto: 8 CPUs, 32 GB", sessionsLive: 0, hosts: linux, screenSettings: true };
   });
   f.answer("machine_roles", undefined, { machines: entries });
   for (const e of entries) {
