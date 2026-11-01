@@ -1112,6 +1112,20 @@ fn an_account_field_is_a_recipient_unless_it_is_the_one_the_navi_read_as() {
         ),
         None
     );
+    // A send from the account the Navi read as, to someone the person named: the sender is no one it reaches.
+    let mut asked = context.clone();
+    asked
+        .person_messages
+        .push("Tell ana@example.com that Sunday works".to_owned());
+    let send = gateway(
+        "call_write_tool",
+        json!({ "name": "send_message", "arguments": { "account": "sam@example.org", "to": "ana@example.com", "body": "Sunday works" } }),
+        ToolAction::Send,
+    );
+    assert_eq!(
+        super::review::rules(&checker::review(&send, &asked)).map(|n| n.verdict),
+        None
+    );
     // A direct message to an address only the email named.
     assert_eq!(
         review(

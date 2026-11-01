@@ -215,7 +215,6 @@ fn a_tool_whose_name_only_reads_runs_unasked_unless_it_links_elsewhere() {
         ),
         Some(Verdict::Block(Never::Credential.why()))
     );
-    // The connect screen lists them by name.
     // The connect screen lists them by name: a gateway's tool reads only by what it calls, which no name says.
     assert_eq!(tool_policy(&gateway[0], "search_tools"), ToolPolicy::Read);
     assert_eq!(tool_policy(&gateway[0], "call_read_tool"), ToolPolicy::Ask);
@@ -239,6 +238,33 @@ fn a_read_that_could_carry_data_out_goes_by_the_mode() {
         json!({ "query": "notes for ana", "site": "a1b2.attacker.example" }),
     ] {
         assert_eq!(asks("mcp__xaq__fetch_page", input), ToolAction::Write);
+    }
+    // A dotted word is no link: a file's name, a shop's domain in a mail search, a library, a missing space.
+    for (tool, input) in [
+        ("mcp__drive__get_file", json!({ "name": "budget.xlsx" })),
+        ("mcp__notes__read_note", json!({ "path": "/notes/todo.md" })),
+        (
+            "mcp__drive__search_files",
+            json!({ "query": "Q3 report.pdf" }),
+        ),
+        (
+            "mcp__xaq__search_threads",
+            json!({ "query": "from:amazon.com newer_than:30d" }),
+        ),
+        (
+            "mcp__docs__search_pages",
+            json!({ "query": "node.js streams" }),
+        ),
+        (
+            "mcp__mail__search_mail",
+            json!({ "query": "Thanks.See you Sunday" }),
+        ),
+    ] {
+        assert_eq!(
+            on(tool, input.clone()),
+            Some(Verdict::Allow),
+            "{tool} {input}"
+        );
     }
     // An email address is no link: a search for a sender still runs unasked.
     assert_eq!(

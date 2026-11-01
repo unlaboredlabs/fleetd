@@ -695,11 +695,18 @@ const ACCOUNT: &str = "an account the Navi read the person's data as";
 static ACCOUNT_IN_CALL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#""([A-Za-z_]+)"\s*:\s*"([^"]+)""#).unwrap());
 
-/// Whether a part names whom or where the action reaches. On a write to the person's own data, an [`ACTING_AS`] key
-/// whose value the Navi already read the person's data as picks the account it writes in: it reaches no one.
+/// Keys of [`ACTING_AS`] that only ever pick the account a tool acts as, on a send too: its sender.
+const SENDER: &[&str] = &["account", "account_id", "accountid", "mailbox"];
+
+/// Whether a part names whom or where the action reaches. An [`ACTING_AS`] key whose value the Navi already read the
+/// person's data as picks the account the tool acts in, and reaches no one: a [`SENDER`] key on any action, a
+/// `user_id` only on a write to the person's own data (on a send it may be whom it messages).
 fn is_destination(p: &Provenance, confirm: bool, write: bool) -> bool {
     let k = key(&p.part);
-    if write && ACTING_AS.contains(&k.as_str()) && p.sources.iter().any(|s| s == ACCOUNT) {
+    if ACTING_AS.contains(&k.as_str())
+        && (write || SENDER.contains(&k.as_str()))
+        && p.sources.iter().any(|s| s == ACCOUNT)
+    {
         return false;
     }
     DESTINATIONS.contains(&k.as_str())

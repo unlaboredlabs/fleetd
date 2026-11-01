@@ -403,17 +403,27 @@ pub fn named_reads(tool: &str, input: &Value) -> bool {
 static EMAIL: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}").unwrap()
 });
-/// A host, with or without a scheme: `attacker.example`, `www.example.org/path`.
-static HOST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b").unwrap());
+/// A link without a scheme: `www.` and a host, or a host with a path or a query (`attacker.example/?d=…`). A dotted word
+/// alone (`budget.xlsx`, `from:amazon.com`, `node.js`) is none.
+static BARE_LINK: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\bwww\.[a-z0-9-]+\.|\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?[/?#]").unwrap()
+});
+/// Keys whose value is a link or a host, whatever it looks like.
+const LINK_KEYS: &[&str] = &[
+    "url", "uri", "link", "href", "site", "host", "hostname", "domain", "endpoint", "website",
+];
 
-/// Whether any string in `input` holds a link, with a scheme or without (`attacker.example/?d=…`): a server fetching
-/// it would take whatever the link carries there. An email address is no link.
+/// Whether `input` holds a link: a string with a scheme or shaped like a link without one, or any value under a key
+/// of [`LINK_KEYS`]. A server fetching it would take whatever the link carries there. An email address is no link.
 fn links(input: &Value) -> bool {
     match input {
-        Value::String(s) => s.contains("://") || HOST.is_match(&EMAIL.replace_all(s, " ")),
+        Value::String(s) => s.contains("://") || BARE_LINK.is_match(&EMAIL.replace_all(s, " ")),
         Value::Array(items) => items.iter().any(links),
-        Value::Object(o) => o.values().any(links),
+        Value::Object(o) => o.iter().any(|(k, v)| {
+            links(v)
+                || (LINK_KEYS.contains(&k.to_ascii_lowercase().as_str())
+                    && v.as_str().is_some_and(|s| !s.trim().is_empty()))
+        }),
         _ => false,
     }
 }
