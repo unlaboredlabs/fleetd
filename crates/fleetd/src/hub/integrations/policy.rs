@@ -255,6 +255,18 @@ const ACTS: &[&str] = &[
     "reserve",
     "subscribe",
     "rent",
+    "replace",
+    "respond",
+    "comment",
+    "react",
+    "resolve",
+    "revoke",
+    "unshare",
+    "unsubscribe",
+    "deploy",
+    "push",
+    "commit",
+    "sign",
 ];
 const DELETE: &[&str] = &[
     "delete", "remove", "trash", "destroy", "erase", "purge", "drop",

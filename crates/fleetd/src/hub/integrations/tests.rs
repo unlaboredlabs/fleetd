@@ -157,6 +157,24 @@ fn a_tool_whose_name_only_reads_runs_unasked_unless_it_links_elsewhere() {
         asks("mcp__xaq__get_or_create_page", json!({})),
         ToolAction::Write
     );
+    // A read word beside one that edits, answers, revokes or ships is no read.
+    for edits in [
+        "mcp__docs__find_and_replace",
+        "mcp__docs__search_and_replace_doc",
+        "mcp__mail__read_and_respond",
+        "mcp__docs__get_and_comment",
+        "mcp__drive__list_and_revoke",
+        "mcp__mail__find_and_unsubscribe",
+        "mcp__ci__fetch_and_deploy",
+        "mcp__git__fetch_and_push",
+        "mcp__git__view_and_commit",
+        "mcp__docs__get_and_sign",
+    ] {
+        assert!(
+            matches!(on(edits, json!({})), Some(Verdict::Ask(_))),
+            "{edits}"
+        );
+    }
     assert_eq!(
         asks(
             "mcp__xaq__call_read_tool",
