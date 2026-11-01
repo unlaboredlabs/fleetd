@@ -197,22 +197,57 @@ pub fn supported() -> bool {
     cfg!(all(target_os = "linux", target_arch = "x86_64"))
 }
 
-/// Why this process can't use KVM, with the command that fixes it when a person can; Ok when it can.
-pub fn kvm() -> Result<(), (String, Option<String>)> {
+/// How the emulator gets /dev/kvm.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kvm {
+    /// This process opens it.
+    Direct,
+    /// The user joined group kvm after the node started, so its process lacks the group (a restart of the node
+    /// doesn't help: it is still its systemd user manager's child, which has the old groups). `sg kvm` starts the
+    /// emulator with the group, as a fresh login would, with no restart and no password.
+    Sg,
+}
+
+/// Why this process can't use KVM, with the command that fixes it when a person can; how the emulator gets it when
+/// it can.
+pub fn kvm() -> Result<Kvm, (String, Option<String>)> {
     if !supported() {
         return Err((
             "Android screens run only on Linux x86_64 machines with KVM.".to_owned(),
             None,
         ));
     }
-    kvm_at(Path::new("/dev/kvm"), Path::new("/etc/group"))
+    kvm_at(Path::new("/dev/kvm"), Path::new("/etc/group"), sg_opens)
 }
 
-/// Restarts the user's systemd manager, and with it fleetd's node: a process only takes a new group when it starts
-/// from a login that has it, and a restarted node is still the old manager's child.
-const RESTART_MANAGER: &str = "sudo systemctl restart user@$(id -u).service";
+/// Whether `sg kvm` gives a command read-write /dev/kvm. Once it does, it always will: the answer is kept.
+fn sg_opens(dev: &Path) -> bool {
+    static OPENS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if OPENS.load(std::sync::atomic::Ordering::Relaxed) {
+        return true;
+    }
+    let dev = quoted(&dev.to_string_lossy());
+    let opens = std::process::Command::new("sg")
+        .args(["kvm", "-c", &format!("test -r {dev} && test -w {dev}")])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success());
+    OPENS.store(opens, std::sync::atomic::Ordering::Relaxed);
+    opens
+}
 
-fn kvm_at(dev: &Path, group_file: &Path) -> Result<(), (String, Option<String>)> {
+/// A word for `sh -c`, single-quoted.
+pub fn quoted(word: &str) -> String {
+    format!("'{}'", word.replace('\'', r"'\''"))
+}
+
+fn kvm_at(
+    dev: &Path,
+    group_file: &Path,
+    sg_opens: impl Fn(&Path) -> bool,
+) -> Result<Kvm, (String, Option<String>)> {
     if !dev.exists() {
         return Err((
             "This machine has no /dev/kvm: turn on hardware virtualization (VT-x or AMD-V) in its firmware, or \
@@ -224,7 +259,7 @@ fn kvm_at(dev: &Path, group_file: &Path) -> Result<(), (String, Option<String>)>
     // Open it as the emulator will: whatever grants it (a group, an ACL, a udev rule), this is the answer.
     let opened = std::fs::OpenOptions::new().read(true).write(true).open(dev);
     if opened.is_ok() {
-        return Ok(());
+        return Ok(Kvm::Direct);
     }
     let user = std::env::var("USER").unwrap_or_else(|_| "$USER".to_owned());
     let joined = std::fs::read_to_string(group_file).is_ok_and(|groups| {
@@ -236,23 +271,25 @@ fn kvm_at(dev: &Path, group_file: &Path) -> Result<(), (String, Option<String>)>
                     .is_some_and(|members| members.split(',').any(|m| m == user))
         })
     });
+    if joined && sg_opens(dev) {
+        return Ok(Kvm::Sg);
+    }
     if joined {
         return Err((
             format!(
-                "{user} is in group kvm, but fleetd's node started before that, so it can't open /dev/kvm yet: it \
-                 gets the group once {user}'s systemd user manager, which it runs under, restarts (the command \
-                 does that, as a reboot does). Its agents resume by themselves."
+                "{user} is in group kvm, but fleetd's node started before that and `sg kvm` can't give it the \
+                 group, so it can't open /dev/kvm. Reboot this machine when no agents are running: that stops the \
+                 node's agents (and, on the hub's own machine, the hub) until it is back."
             ),
-            Some(RESTART_MANAGER.to_owned()),
+            None,
         ));
     }
     Err((
         format!(
-            "{user} can't open /dev/kvm read-write. The command adds them to group kvm, then restarts {user}'s \
-             systemd user manager, which fleetd's node runs under, so the node gets the group (a node restart alone \
-             doesn't). Its agents resume by themselves."
+            "{user} can't open /dev/kvm read-write: the command adds them to group kvm. The node then starts the \
+             emulator with that group through `sg kvm`, within minutes, with no restart."
         ),
-        Some(format!("sudo usermod -aG kvm {user} && {RESTART_MANAGER}")),
+        Some(format!("sudo usermod -aG kvm {user}")),
     ))
 }
 
@@ -447,7 +484,9 @@ mod tests {
     #[test]
     fn kvm_says_what_is_wrong_and_how_to_fix_it() {
         let dir = tempfile::tempdir().unwrap();
-        let (why, fix) = kvm_at(&dir.path().join("kvm"), &dir.path().join("group")).unwrap_err();
+        let never = |_: &Path| false;
+        let (why, fix) =
+            kvm_at(&dir.path().join("kvm"), &dir.path().join("group"), never).unwrap_err();
         assert!(why.contains("no /dev/kvm"), "{why}");
         assert_eq!(fix, None);
 
@@ -462,23 +501,27 @@ mod tests {
         let user = std::env::var("USER").unwrap_or_else(|_| "$USER".to_owned());
         let group = dir.path().join("group");
         std::fs::write(&group, "kvm:x:992:\n").unwrap();
-        let (why, fix) = kvm_at(&dev, &group).unwrap_err();
-        assert!(why.contains("adds them to group kvm"), "{why}");
-        // The group takes only once the node starts again under a manager that has it: the command does both.
-        assert_eq!(
-            fix,
-            Some(format!(
-                "sudo usermod -aG kvm {user} && sudo systemctl restart user@$(id -u).service"
-            ))
+        // Not in the group: adding them is all it takes, never a restart that stops the agents.
+        let (why, fix) = kvm_at(&dev, &group, |_: &Path| true).unwrap_err();
+        assert!(
+            why.contains("adds them to group kvm") && why.contains("no restart"),
+            "{why}"
         );
+        assert_eq!(fix, Some(format!("sudo usermod -aG kvm {user}")));
 
+        // Joined since the node started: `sg kvm` starts the emulator with the group.
         std::fs::write(&group, format!("kvm:x:992:other,{user}\n")).unwrap();
-        let (why, fix) = kvm_at(&dev, &group).unwrap_err();
-        assert!(why.contains("started before that"), "{why}");
-        assert_eq!(
-            fix.as_deref(),
-            Some("sudo systemctl restart user@$(id -u).service")
-        );
+        assert_eq!(kvm_at(&dev, &group, |_: &Path| true), Ok(Kvm::Sg));
+        // Where sg can't, only a reboot gives it the group: said with what it stops, and no command to copy.
+        let (why, fix) = kvm_at(&dev, &group, never).unwrap_err();
+        assert!(why.contains("Reboot") && why.contains("the hub"), "{why}");
+        assert_eq!(fix, None);
+    }
+
+    #[test]
+    fn a_word_for_sh_is_quoted_whole() {
+        assert_eq!(quoted("/opt/sdk/emulator"), "'/opt/sdk/emulator'");
+        assert_eq!(quoted("it's"), r"'it'\''s'");
     }
 
     #[test]
