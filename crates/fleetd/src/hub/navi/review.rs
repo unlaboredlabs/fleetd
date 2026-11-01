@@ -101,13 +101,23 @@ enum Kind {
     Other,
 }
 
-/// What a read is, by its tool's name alone: never by its input (a search for "-in:sent" is no sent folder).
+/// What a read is, by its tool's name alone: never by its input (a search for "-in:sent" is no sent folder). A
+/// gateway's call (`call_read_tool`) is the tool it called, by the name in its input; one whose call was cut too short
+/// to say is anyone's content.
 fn kind(source: &str) -> Kind {
-    let w = policy::words(source.split_whitespace().next().unwrap_or_default());
+    let (tool, input) = source.split_once(' ').unwrap_or((source, ""));
+    let mut w = policy::words(tool);
+    if policy::gateway(tool) {
+        let input = serde_json::from_str::<Value>(input).unwrap_or_default();
+        match policy::called(tool, &input) {
+            Some(called) => w = policy::words(called),
+            None => return Kind::Other,
+        }
+    }
     let has = |list: &[&str]| w.iter().any(|x| list.contains(&x.as_str()));
     if has(&["contact", "contacts", "people", "directory"]) {
         Kind::Contacts
-    } else if has(&["calendar", "event", "events"]) {
+    } else if has(&["calendar", "calendars", "event", "events"]) {
         Kind::Calendar
     } else if has(&[
         "mail", "gmail", "email", "emails", "message", "messages", "thread", "threads", "inbox",
@@ -236,6 +246,8 @@ struct Sources {
     /// What the person said, lower case: their own words, and what they pasted (quoted lines, code blocks).
     said: Vec<String>,
     pasted: Vec<String>,
+    /// The accounts the Navi read the person's data as: each value of an [`ACTING_AS`] key in its reads' calls.
+    accounts: Vec<String>,
 }
 
 impl Sources {
@@ -294,11 +306,20 @@ impl Sources {
             }
             untrusted.push((norm(&r.text), label(k, r)));
         }
+        let mut accounts: Vec<String> = reads
+            .iter()
+            .flat_map(|r| ACCOUNT_IN_CALL.captures_iter(&r.source))
+            .filter(|c| ACTING_AS.contains(&&c[1]))
+            .map(|c| c[2].to_lowercase())
+            .collect();
+        accounts.sort();
+        accounts.dedup();
         Sources {
             own,
             untrusted,
             said,
             pasted,
+            accounts,
         }
     }
 
@@ -568,9 +589,15 @@ pub fn provenance(
                 .find(&text)
                 .is_some_and(|m| m.as_str().len() + 40 > text.len())
         {
+            let mut from = sources.of(&text);
+            if ACTING_AS.contains(&key(&at).as_str())
+                && sources.accounts.contains(&text.trim().to_lowercase())
+            {
+                from.push(ACCOUNT.to_owned());
+            }
             out.push(Provenance {
                 part: at.clone(),
-                sources: sources.of(&text),
+                sources: from,
                 value: Some(text.clone()),
                 ..Default::default()
             });
@@ -652,8 +679,36 @@ const DESTINATIONS: &[&str] = &[
     "host",
 ];
 
-fn is_destination(p: &Provenance, confirm: bool) -> bool {
+/// Keys that can name which of the person's own accounts a tool acts as. On a send or an invite they may name whom it
+/// reaches.
+const ACTING_AS: &[&str] = &[
+    "account",
+    "account_id",
+    "accountid",
+    "mailbox",
+    "user_id",
+    "userid",
+];
+/// The source of an [`ACTING_AS`] value the Navi already read the person's data as. It vouches for no recipient.
+const ACCOUNT: &str = "an account the Navi read the person's data as";
+/// An [`ACTING_AS`] key's value in a read's call: `"account":"sam@example.org"`, at any depth, in a cut call too.
+static ACCOUNT_IN_CALL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#""([A-Za-z_]+)"\s*:\s*"([^"]+)""#).unwrap());
+
+/// Keys of [`ACTING_AS`] that only ever pick the account a tool acts as, on a send too: its sender.
+const SENDER: &[&str] = &["account", "account_id", "accountid", "mailbox"];
+
+/// Whether a part names whom or where the action reaches. An [`ACTING_AS`] key whose value the Navi already read the
+/// person's data as picks the account the tool acts in, and reaches no one: a [`SENDER`] key on any action, a
+/// `user_id` only on a write to the person's own data (on a send it may be whom it messages).
+fn is_destination(p: &Provenance, confirm: bool, write: bool) -> bool {
     let k = key(&p.part);
+    if ACTING_AS.contains(&k.as_str())
+        && (write || SENDER.contains(&k.as_str()))
+        && p.sources.iter().any(|s| s == ACCOUNT)
+    {
+        return false;
+    }
     DESTINATIONS.contains(&k.as_str())
         // A final confirm reaches the site it is on.
         || (confirm && p.part == "site")
@@ -672,7 +727,7 @@ fn untrusted(source: &str) -> bool {
 
 /// A source of the person's own: anything but untrusted content and the Navi.
 fn own(source: &str) -> bool {
-    !untrusted(source) && source != "navi"
+    !untrusted(source) && source != "navi" && source != ACCOUNT
 }
 
 /// The addresses an action reaches: each destination's value, and every address in a list part.
@@ -797,10 +852,11 @@ pub fn rules(review: &Review) -> Option<CheckerNote> {
     }
     // A destination only untrusted content named.
     let confirm = review.action.get("kind").and_then(Value::as_str) == Some("confirm_step");
+    let write = review.action.get("kind").and_then(Value::as_str) == Some("write");
     for p in review
         .provenance
         .iter()
-        .filter(|p| is_destination(p, confirm))
+        .filter(|p| is_destination(p, confirm, write))
     {
         if p.sources.iter().any(|s| untrusted(s)) && !p.sources.iter().any(|s| own(s)) {
             let what = p.value.clone().unwrap_or_else(|| p.part.clone());

@@ -323,6 +323,14 @@ pub fn review(action: &Action, context: &Context) -> Review {
         (Some(ToolAction::Share), _) => "share",
         (Some(ToolAction::Delete), _) => "delete",
         (Some(ToolAction::Spend), _) => "spend",
+        // A read that reaches the checker links somewhere (`policy::rule`).
+        (Some(ToolAction::Write), _)
+            if action.preview.as_ref().is_some_and(|p| {
+                crate::hub::integrations::policy::named_reads(p.tool.as_str(), &action.input)
+            }) =>
+        {
+            "read"
+        }
         (Some(ToolAction::Write), _) => "write",
         (Some(ToolAction::Confirm), _) => "confirm_step",
         (None, Some(_)) => "visit",

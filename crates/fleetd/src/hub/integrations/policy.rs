@@ -1,13 +1,17 @@
 //! The per-tool policy the hub enforces on a session's MCP tools. Every tool resolves to a [`Rule`]: first the blocked
-//! list, by the words of the tool's name, for every server; then the server's tools the person marked as reading;
-//! anything else asks, with an action guessed from its name. An asking tool whose input looks like it holds a
-//! credential is blocked too.
+//! list, by the words of the tool's name, for every server; then the server's tools the person marked as reading; then
+//! a tool whose name says it only reads (`search_tools`, `get_page`) and whose input links nowhere, which can't send the
+//! person's data anywhere but the server they connected; anything else asks, with an action guessed from its name. A
+//! gateway's call (`call_read_tool`, `call_tool`, naming the tool it calls in its input) is judged by that tool's name
+//! too. An asking tool whose input looks like it holds a credential is blocked too.
 use fleetd_contracts::integrations::{
     McpToolName, PREVIEW_INPUT_MAX, ToolAction, ToolPolicy, ToolPreview,
 };
 use fleetd_contracts::mcp_servers::{FLEETD_SERVER, McpServer, McpServerName};
 use fleetd_contracts::prim::{Line, Text, js_len};
+use regex::Regex;
 use serde_json::Value;
+use std::sync::LazyLock;
 
 /// What the hub does with one call of one tool.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,6 +172,104 @@ const READS: &[&str] = &[
     "get", "list", "search", "find", "read", "show", "fetch", "view", "lookup", "query",
     "describe", "track", "status", "cancel",
 ];
+/// A tool whose name has one of these only reads, unless it also has a word of [`ACTS`]. `cancel` is no read here, as
+/// it is in [`READS`], nor `query` (a database's runs any statement) or `track` (analytics records what it's given).
+const READ_ONLY: &[&str] = &[
+    "get", "list", "search", "find", "read", "show", "fetch", "view", "lookup", "describe",
+    "status", "count",
+];
+/// Words that do something: a tool with one doesn't only read (`get_or_create`, `fetch_and_send`). Nouns such as
+/// `message` or `email` aren't here: `get_message` reads.
+const ACTS: &[&str] = &[
+    "create",
+    "add",
+    "new",
+    "update",
+    "upsert",
+    "set",
+    "edit",
+    "modify",
+    "change",
+    "write",
+    "put",
+    "patch",
+    "insert",
+    "upload",
+    "save",
+    "move",
+    "rename",
+    "archive",
+    "mark",
+    "label",
+    "run",
+    "execute",
+    "exec",
+    "cancel",
+    "approve",
+    "accept",
+    "decline",
+    "reject",
+    "submit",
+    "complete",
+    "close",
+    "open",
+    "start",
+    "stop",
+    "enable",
+    "disable",
+    "sync",
+    "import",
+    "export",
+    "schedule",
+    "assign",
+    "merge",
+    "restore",
+    "copy",
+    "apply",
+    "toggle",
+    "trigger",
+    "clear",
+    "reset",
+    "draft",
+    "delete",
+    "remove",
+    "trash",
+    "destroy",
+    "erase",
+    "purge",
+    "drop",
+    "send",
+    "reply",
+    "forward",
+    "post",
+    "publish",
+    "invite",
+    "notify",
+    "tweet",
+    "share",
+    "grant",
+    "pay",
+    "purchase",
+    "buy",
+    "checkout",
+    "charge",
+    "book",
+    "reserve",
+    "subscribe",
+    "rent",
+    "replace",
+    "respond",
+    "comment",
+    "react",
+    "resolve",
+    "revoke",
+    "unshare",
+    "unsubscribe",
+    "deploy",
+    "push",
+    "commit",
+    "sign",
+];
 const DELETE: &[&str] = &[
     "delete", "remove", "trash", "destroy", "erase", "purge", "drop",
 ];
@@ -213,6 +315,127 @@ pub fn guess(tool: &str) -> ToolAction {
     }
 }
 
+/// Whether a tool's name says it only reads: a word of [`READ_ONLY`], and none of [`ACTS`].
+pub fn reads(tool: &str) -> bool {
+    let w = words(tool);
+    let has = |list: &[&str]| w.iter().any(|x| list.contains(&x.as_str()));
+    has(READ_ONLY) && !has(ACTS)
+}
+
+/// Whether a tool is a gateway's, running another tool it names in its input: `tool` and a verb that runs it
+/// (`call_tool`, `call_read_tool`, `run_tool`, `invoke_tool`).
+pub fn gateway(tool: &str) -> bool {
+    let w = words(tool);
+    w.iter().any(|x| x == "tool")
+        && w.iter().any(|x| {
+            [
+                "call", "run", "invoke", "use", "execute", "exec", "dispatch", "proxy",
+            ]
+            .contains(&x.as_str())
+        })
+}
+
+/// Keys that name the tool a gateway runs.
+const CALLED: &[&str] = &[
+    "name",
+    "tool",
+    "tool_name",
+    "toolName",
+    "toolname",
+    "method",
+];
+/// Keys that hold the arguments a gateway passes on: a `name` in them is an argument's, not the tool's.
+const ARGUMENTS: &[&str] = &[
+    "arguments",
+    "args",
+    "params",
+    "parameters",
+    "input",
+    "payload",
+];
+
+/// The tool a gateway's call runs: the first string under a key of [`CALLED`], level by level through the input (so
+/// `{"tool": {"name": "send_message"}}` names `send_message`), outside its arguments. None for any other tool, or a
+/// gateway's call that names none.
+pub fn called<'a>(tool: &str, input: &'a Value) -> Option<&'a str> {
+    if !gateway(tool) {
+        return None;
+    }
+    let mut level = vec![input];
+    while !level.is_empty() {
+        let mut next = Vec::new();
+        for v in level {
+            match v {
+                Value::Object(o) => {
+                    for (k, v) in o {
+                        if ARGUMENTS.contains(&k.as_str()) {
+                            continue;
+                        }
+                        match v {
+                            Value::String(name) if CALLED.contains(&k.as_str()) => {
+                                return Some(name);
+                            }
+                            _ => next.push(v),
+                        }
+                    }
+                }
+                Value::Array(items) => next.extend(items),
+                _ => {}
+            }
+        }
+        level = next;
+    }
+    None
+}
+
+/// Whether a call's names say it only reads: its own, and a gateway's the tool it calls too (`call_read_tool` running
+/// `send_message` doesn't, nor `call_write_tool` running `list_events`). A gateway's call that names no tool fleetd
+/// can find isn't one.
+pub fn named_reads(tool: &str, input: &Value) -> bool {
+    if !gateway(tool) {
+        return reads(tool);
+    }
+    called(tool, input).is_some_and(|inner| {
+        reads(inner) && !words(tool).iter().any(|w| ACTS.contains(&w.as_str()))
+    })
+}
+
+static EMAIL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}").unwrap()
+});
+/// A link without a scheme: `www.` and a host, or a host with a path or a query (`attacker.example/?d=…`). A dotted word
+/// alone (`budget.xlsx`, `from:amazon.com`, `node.js`) is none.
+static BARE_LINK: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\bwww\.[a-z0-9-]+\.|\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?[/?#]").unwrap()
+});
+/// Keys whose value is a link or a host, whatever it looks like.
+const LINK_KEYS: &[&str] = &[
+    "url", "uri", "link", "href", "site", "host", "hostname", "domain", "endpoint", "website",
+];
+
+/// Whether `input` holds a link: a string with a scheme or shaped like a link without one, or any value under a key
+/// of [`LINK_KEYS`]. A server fetching it would take whatever the link carries there. An email address is no link.
+fn links(input: &Value) -> bool {
+    match input {
+        Value::String(s) => s.contains("://") || BARE_LINK.is_match(&EMAIL.replace_all(s, " ")),
+        Value::Array(items) => items.iter().any(links),
+        Value::Object(o) => o.iter().any(|(k, v)| {
+            links(v)
+                || (LINK_KEYS.contains(&k.to_ascii_lowercase().as_str())
+                    && v.as_str().is_some_and(|s| !s.trim().is_empty()))
+        }),
+        _ => false,
+    }
+}
+
+/// What a call does: a gateway's by the tool it calls, unless that one's name says nothing more than a change.
+fn action(tool: &str, input: &Value) -> ToolAction {
+    called(tool, input)
+        .map(guess)
+        .filter(|a| *a != ToolAction::Write)
+        .unwrap_or_else(|| guess(tool))
+}
+
 /// The tools a server's person marked as reading.
 fn reads_of(server: Option<&McpServer>) -> &[McpToolName] {
     server
@@ -220,20 +443,27 @@ fn reads_of(server: Option<&McpServer>) -> &[McpToolName] {
         .map_or(&[], |i| i.read_tools.as_slice())
 }
 
-/// The rule for one call: blocked by name, then the tools marked as reading, then an ask.
-pub fn rule(read_tools: &[McpToolName], tool: &str) -> Rule {
-    if let Some(n) = never(tool) {
+/// The rule for one call: blocked by its name or the name of the tool it calls, then the tools marked as reading, then
+/// a call whose names say it only reads ([`named_reads`]) and that links nowhere, then an ask.
+pub fn rule(read_tools: &[McpToolName], tool: &str, input: &Value) -> Rule {
+    if let Some(n) = never(tool).or_else(|| called(tool, input).and_then(never)) {
         return Rule::Blocked(n);
     }
     if read_tools.iter().any(|t| t.as_str() == tool) {
         return Rule::Read;
     }
-    Rule::Ask(guess(tool))
+    match named_reads(tool, input) {
+        // A read can't send the person's data anywhere but the server they connected, unless it links elsewhere: the
+        // checker judges that one. One holding a credential asks, and `verdict` refuses it.
+        true if !links(input) && !holds_credential(input) => Rule::Read,
+        true => Rule::Ask(ToolAction::Write),
+        false => Rule::Ask(action(tool, input)),
+    }
 }
 
 /// A tool's policy by its name alone, as the connect screen lists it.
 pub fn tool_policy(server: &McpServer, tool: &str) -> ToolPolicy {
-    rule(reads_of(Some(server)), tool).into()
+    rule(reads_of(Some(server)), tool, &Value::Null).into()
 }
 
 /// `mcp__<server>__<tool>` split at a configured server's name, or at the first `__` after the prefix.
@@ -258,7 +488,7 @@ pub fn verdict(tool_name: &str, input: &Value, servers: &[McpServer]) -> Option<
         return None;
     }
     let server = servers.iter().find(|s| s.name.as_str() == server_name);
-    Some(match rule(reads_of(server), tool) {
+    Some(match rule(reads_of(server), tool, input) {
         Rule::Read => Verdict::Allow,
         Rule::Blocked(n) => Verdict::Block(n.why()),
         Rule::Ask(action) => {

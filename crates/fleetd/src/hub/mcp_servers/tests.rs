@@ -407,10 +407,10 @@ async fn a_global_servers_secret_missing_on_an_offline_machine_leaves_it_out_the
     )
     .await
     .unwrap();
-    // Each tool comes back with what the hub's tool policy does with it: a custom server's tool asks.
+    // Each tool comes back with what the hub's tool policy does with it: one whose name only reads runs unasked.
     assert_eq!(
         tested["result"]["tools"],
-        json!([{ "name": "search", "policy": "ask" }])
+        json!([{ "name": "search", "policy": "read" }])
     );
     let offline = call(
         &hub,
