@@ -1148,7 +1148,7 @@ pub fn android_sessions(
     };
     let fix = health.fix.as_ref().map(|command| {
         manual(
-            &format!("On {machine_id}, then restart its node"),
+            &format!("On {machine_id}; its node checks again by itself within minutes"),
             Some(command.to_string()),
         )
     });
@@ -1171,7 +1171,7 @@ pub fn ios_sessions(machine_id: &str, offline: bool, health: Option<&IosHealth>)
     };
     let fix = health.fix.as_ref().map(|command| {
         manual(
-            &format!("On {machine_id}, then restart its node"),
+            &format!("On {machine_id}; its node checks again by itself within minutes"),
             Some(command.to_string()),
         )
     });
@@ -1198,7 +1198,7 @@ pub fn desktop_sessions(
     };
     let fix = health.fix.as_ref().map(|command| {
         manual(
-            &format!("On {machine_id}, then restart its node"),
+            &format!("On {machine_id}; its node checks again by itself within minutes"),
             Some(command.to_string()),
         )
     });

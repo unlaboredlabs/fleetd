@@ -58,7 +58,12 @@ fn the_doctor_reads_xcode_and_says_what_fixes_it() {
     );
     let none = xcode_from(Err("not found".into()), None, false).unwrap_err();
     assert!(none.0.contains("no Xcode"), "{none:?}");
-    assert_eq!(none.1, None);
+    // A way that works over SSH, and the App Store's page for someone at the Mac.
+    assert_eq!(none.1.as_deref(), Some(super::XCODE_FIX));
+    assert!(
+        none.0.contains("over SSH") && none.0.contains(super::XCODE_PAGE),
+        "{none:?}"
+    );
 }
 
 #[test]
@@ -83,6 +88,21 @@ fn the_doctor_hears_of_macs_with_xcode_and_of_macs_opted_in() {
         .map(|(h, _)| h)
         .unwrap();
     assert_eq!(unavailable.state, IosState::Unavailable);
+    // A Mac turned on without Xcode: the line under its switch, with the command to copy.
+    let no_xcode =
+        || xcode_from(Err("not found".into()), None, false).map(|_| "iOS 27.0".to_owned());
+    let turned_on = health_from(&opted_in(), None, &idle, no_xcode, || true)
+        .map(|(h, _)| h)
+        .unwrap();
+    assert_eq!(turned_on.state, IosState::Unavailable);
+    assert!(
+        turned_on.message.as_str().contains("over SSH"),
+        "{turned_on:?}"
+    );
+    assert_eq!(
+        turned_on.fix.as_ref().map(|f| f.as_str()),
+        Some(super::XCODE_FIX)
+    );
     let no_node = health_from(&opted_in(), None, &idle, fine, || false)
         .map(|(h, _)| h)
         .unwrap();

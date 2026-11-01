@@ -89,9 +89,31 @@ pub fn args(port: u16, read_only: bool) -> Vec<String> {
     args
 }
 
+/// The command that starts the emulator: itself, or through `sg kvm` where the node's process lacks the group its
+/// user has joined since (sdk::Kvm::Sg). sg execs the shell, which execs the emulator: one process, its pid the
+/// child's, so its process group is killed as ever.
+fn command(sdk: &Sdk, args: Vec<String>, kvm: Option<super::sdk::Kvm>) -> Command {
+    match kvm {
+        Some(super::sdk::Kvm::Sg) => {
+            let line = std::iter::once(sdk.emulator.to_string_lossy().into_owned())
+                .chain(args)
+                .map(|w| super::sdk::quoted(&w))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let mut command = Command::new("sg");
+            command.args(["kvm", "-c", &format!("exec {line}")]);
+            command
+        }
+        _ => {
+            let mut command = Command::new(&sdk.emulator);
+            command.args(args);
+            command
+        }
+    }
+}
+
 pub fn spawn(sdk: &Sdk, port: u16, read_only: bool) -> Result<Emulator, String> {
-    let mut child = Command::new(&sdk.emulator)
-        .args(args(port, read_only))
+    let mut child = command(sdk, args(port, read_only), super::sdk::kvm().ok())
         .envs(sdk.env())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -393,6 +415,75 @@ impl Pool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn a_user_who_joined_kvm_since_the_node_started_runs_the_emulator_through_sg() {
+        let sdk = Sdk {
+            emulator: "/opt/sdk/emulator/emulator".into(),
+            ..Sdk::at(Path::new("/nonexistent"))
+        };
+        let words = |c: &Command| {
+            let std = c.as_std();
+            std::iter::once(std.get_program().to_string_lossy().into_owned())
+                .chain(std.get_args().map(|a| a.to_string_lossy().into_owned()))
+                .collect::<Vec<_>>()
+        };
+        let direct = command(
+            &sdk,
+            vec!["-port".into(), "5554".into()],
+            Some(super::super::sdk::Kvm::Direct),
+        );
+        assert_eq!(
+            words(&direct),
+            ["/opt/sdk/emulator/emulator", "-port", "5554"]
+        );
+        let through = command(
+            &sdk,
+            vec!["-port".into(), "5554".into()],
+            Some(super::super::sdk::Kvm::Sg),
+        );
+        assert_eq!(
+            words(&through),
+            [
+                "sg",
+                "kvm",
+                "-c",
+                "exec '/opt/sdk/emulator/emulator' '-port' '5554'"
+            ]
+        );
+    }
+
+    /// On a machine whose user joined kvm after its login (as fleetd's own devbox), the command sg runs is the child
+    /// itself: its pid and process group are the ones the node kills.
+    #[tokio::test]
+    async fn through_sg_the_emulator_is_the_child_itself() {
+        if super::super::sdk::kvm() != Ok(super::super::sdk::Kvm::Sg) {
+            return;
+        }
+        let sdk = Sdk {
+            emulator: "/bin/sh".into(),
+            ..Sdk::at(Path::new("/nonexistent"))
+        };
+        let mut child = command(
+            &sdk,
+            vec!["-c".into(), "echo $$; id -nG; exec sleep 30".into()],
+            Some(super::super::sdk::Kvm::Sg),
+        )
+        .stdout(Stdio::piped())
+        .process_group(0)
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+        let pid = child.id().unwrap();
+        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        let said = lines.next_line().await.unwrap().unwrap();
+        let groups = lines.next_line().await.unwrap().unwrap();
+        assert_eq!(said, pid.to_string(), "sg and its shell exec: one process");
+        assert!(groups.split(' ').any(|g| g == "kvm"), "{groups}");
+        let _ = killpg(Pid::from_raw(pid as i32), Signal::SIGKILL);
+        assert!(child.wait().await.is_ok());
+    }
 
     #[test]
     fn a_copy_loads_the_snapshot_and_saves_nothing() {

@@ -16,7 +16,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { MachineAddRun, MachineHost, MachineJoinOutput, SetupStep } from "../../../shared/contracts";
 import type { JoinHere, ThisComputer } from "../../../shared/joinHere";
-import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, copyText, Field, InlineCode, Input, StateGlyph, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
@@ -36,7 +35,7 @@ import {
   runTitle,
   sentence,
   shortOutput,
-  sshFix,
+  sshProblem,
   stepTitle,
   untilLine,
   type Here,
@@ -410,17 +409,16 @@ function Plan(props: { host: MachineHost; hubMachine: string; busy: boolean; onA
 }
 
 /**
- * Why the hub couldn't read the machine. When it couldn't log in over SSH, the command that lets it, to run on the
- * hub's machine, then Try again; else the hub's own fix.
+ * Why the hub couldn't read the machine over SSH, and what to run on the hub's machine for it (sshProblem): its key
+ * refused, a host key it doesn't know, or the host not answering at all. Else the hub's own words and fix.
  */
 function PlanError(props: { host: string | undefined; hubMachine: string; error: Error }) {
-  const fix = props.error instanceof CallError ? props.error.error.fix : undefined;
-  const command = props.host === undefined ? undefined : sshFix(props.host, fix);
-  if (command === undefined) return <Text tone="danger">{errorText(props.error)}</Text>;
+  const problem = props.host === undefined ? undefined : sshProblem(props.host, props.error.message);
+  if (problem === undefined) return <Text tone="danger">{errorText(props.error)}</Text>;
   return (
-    <div className={s.head}>
+    <div className={s.head} data-ssh={problem.kind}>
       <Text tone="danger">{sentence(props.error.message.split("\n")[0] ?? "")}</Text>
-      <RunOn where={props.hubMachine} command={command} note={`It asks for ${props.host ?? ""}'s password once, then the hub logs in with its key. Then Try again.`} />
+      <RunOn where={props.hubMachine} command={problem.command} note={problem.note} />
     </div>
   );
 }

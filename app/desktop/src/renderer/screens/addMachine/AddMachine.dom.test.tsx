@@ -86,8 +86,9 @@ let calls: Array<{ tool: string; input: unknown }>;
 let runs: MachineAddRun[];
 /** machine_join's code expiry. */
 let expiresAt: string;
-/** How many more machine_add_plan calls the hub refuses: it can't log in to the host over SSH. */
+/** How many more machine_add_plan calls the hub refuses, and what ssh said: by default, the host refused its key. */
 let planRefusals = 0;
+let sshSaid = "builder-1: Permission denied (publickey).";
 /** The hub's frames, for a test to send more. */
 let send: (frame: HubFrame) => void = () => undefined;
 const LINE = "curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox.example.ts.net:4790 --code K7Q2-M4XP --machine-id laptop";
@@ -103,6 +104,7 @@ beforeEach(() => {
   hubInfo = undefined;
   expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
   planRefusals = 0;
+  sshSaid = "builder-1: Permission denied (publickey).";
   joinHere.mockClear();
 });
 afterEach(() => {
@@ -125,7 +127,7 @@ const render = async (open?: { view: View; at: number }) => {
           ok: false,
           error: {
             code: "failed",
-            message: "cannot read builder-1 over SSH (exit 255): builder-1: Permission denied (publickey).",
+            message: `cannot read builder-1 over SSH (exit 255): ${sshSaid}`,
             fix: "make `ssh builder-1 true` work without a password (ssh-copy-id builder-1), then run fleetd machine add builder-1",
           },
         });
@@ -306,6 +308,19 @@ it("gives a host the hub can't log in to the command to run on the hub's machine
   await click("Try again");
   await vi.waitFor(() => expect(button("Add builder-1")).toBeDefined());
   expect(host.textContent).toContain("Install fleetd 0.9.0");
+}, 15_000);
+
+it("says a host that didn't answer is down or unreachable, and offers no key to copy", async () => {
+  planRefusals = 3;
+  sshSaid = "ssh: connect to host builder-1 port 22: Connection timed out";
+  await render();
+  await click("Choose…");
+  await click("Plan…");
+  await vi.waitFor(() => expect(button("Try again")).toBeDefined(), { timeout: 8000 });
+  expect(host.querySelector("[data-ssh]")?.getAttribute("data-ssh")).toBe("unreachable");
+  expect(host.querySelector("dd [data-text='code']")?.textContent).toBe("ssh builder-1 true");
+  expect(host.textContent).not.toContain("ssh-copy-id");
+  expect(host.textContent).toContain("check it is on and awake");
 }, 15_000);
 
 it("opens on a run still going, step by step", async () => {

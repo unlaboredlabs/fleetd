@@ -561,7 +561,12 @@ async fn a_machine_whose_read_fails_says_how_to_reach_it() {
         "{}",
         e.message
     );
-    assert!(e.fix.unwrap().contains("ssh-copy-id builder-1"));
+    // It ran there and failed (exit 1, "Permission denied" from mkdir): a fix on the machine, not a key to copy.
+    let fix = e.fix.unwrap();
+    assert!(
+        !fix.contains("ssh-copy-id") && fix.contains("on builder-1"),
+        "{fix}"
+    );
 }
 
 #[tokio::test]

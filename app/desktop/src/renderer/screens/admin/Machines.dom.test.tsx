@@ -242,7 +242,8 @@ it("gives a fix that runs on the hub as the command to run on the hub's machine,
   );
   await render(<MachinePage machineId="laptop" />);
   const identity = host.querySelector("li[data-item='identity']");
-  expect(identity?.querySelector("dt")?.textContent).toBe("Run on devbox, the hub");
+  // Named once the hub has said which machine it runs on (machine_hosts, asked as the fix shows).
+  await vi.waitFor(() => expect(identity?.querySelector("dt")?.textContent).toBe("Run on devbox, the hub"));
   expect(identity?.querySelector("dd [data-text='code']")?.textContent).toBe("fleetd pair --worker laptop");
 });
 
