@@ -78,6 +78,8 @@ enum Files {
     Push,
     /// `open [app or URL] [URL]`: never a path or a file URL on the screen's machine.
     Open,
+    /// `logs path <path>`: the app log, which agent-device keeps on the screen's machine, comes back there.
+    Logs,
 }
 
 struct Command {
@@ -123,8 +125,8 @@ const fn command(
 
 /// The commands a screen on another machine runs, with their flags. Not here, so refused: device lifecycle (`boot`,
 /// `shutdown`, `devices`), scripts (`batch`, `replay`, `test`), servers and remote state (`mcp`, `daemon`, `proxy`,
-/// `connect`, `auth`, `plugins`, `metro`, `web`), the host's clipboard, logs and diagnostics, and every device or
-/// config selector (`--platform`, `--udid`, `--device`, `--serial`, `--session`, `--config`).
+/// `connect`, `auth`, `plugins`, `metro`, `web`), the host's clipboard and diagnostics, and every device or config
+/// selector (`--platform`, `--udid`, `--device`, `--serial`, `--session`, `--config`).
 const COMMANDS: &[Command] = &[
     command(
         "open",
@@ -266,6 +268,7 @@ const COMMANDS: &[Command] = &[
     command("focus", &[], Files::None),
     command("action-button", &[], Files::None),
     command("hardware-button", &[], Files::None),
+    command("logs", &[&[("--restart", N)]], Files::Logs),
     command("capabilities", &[], Files::None),
     command("help", &[], Files::None),
 ];
@@ -377,13 +380,13 @@ pub fn parse(args: &[String]) -> Result<Parsed, McpToolError> {
             parsed.roles[p] = role;
         }
     };
-    let named = |what: &str| {
+    let named = |what: &str, example: &str| {
         refuse(
             format!(
                 "agent-device {} needs a file name for {what} here.",
                 command.name
             ),
-            "name one in your worktree, as in `agent-device screenshot shots/home.png`",
+            &format!("name one in your worktree, as in `agent-device {example}`"),
         )
     };
     match command.files {
@@ -401,16 +404,28 @@ pub fn parse(args: &[String]) -> Result<Parsed, McpToolError> {
         Files::Screenshot => match (positional.len(), outs) {
             (1, 0) => role(0, Role::Out),
             (0, 1) => {}
-            _ => return Err(named("the screenshot")),
+            _ => return Err(named("the screenshot", "screenshot shots/home.png")),
         },
         Files::Record => match (at(0), positional.len(), outs) {
             (Some("start"), 2, 0) => role(1, Role::Out),
             (Some("start"), 1, 1) => {}
-            (Some("start"), ..) => return Err(named("the recording")),
+            (Some("start"), ..) => return Err(named("the recording", "record start run.mp4")),
             (Some("stop"), 1, 0) => {}
             _ => {
                 return Err(refuse(
                     "Only `record start <file>` and `record stop` run here.",
+                    "leave the rest out",
+                ));
+            }
+        },
+        Files::Logs => match (at(0), positional.len()) {
+            (Some("path"), 2) => role(1, Role::Out),
+            (Some("path"), _) => return Err(named("the log", "logs path logs/app.log")),
+            (Some("start" | "stop" | "clear" | "doctor"), 1) | (Some("mark"), _) => {}
+            _ => {
+                return Err(refuse(
+                    "Only `logs path <file>`, `logs start`, `logs stop`, `logs clear`, `logs doctor` and `logs mark \
+                     [message]` run here.",
                     "leave the rest out",
                 ));
             }
@@ -1003,9 +1018,18 @@ impl Work {
                 files: Vec::new(),
             };
         }
+        // `logs path <file>`: agent-device takes no file there, and its log is copied into `out/` after it.
+        let log = parse(args)
+            .ok()
+            .filter(|p| p.command == "logs")
+            .and_then(|p| p.roles.iter().position(|r| *r == Role::Out));
+        let mut run_args = self.paths(args);
+        if let Some(i) = log {
+            run_args.remove(i);
+        }
         let mut command = tokio::process::Command::new(program);
         command
-            .args(self.paths(args))
+            .args(run_args)
             .current_dir(&self.dir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -1017,7 +1041,7 @@ impl Work {
             }
         }
         command.envs(env.iter().map(|(k, v)| (k, v)));
-        let (stdout, stderr, exit_code) = match command.spawn() {
+        let (mut stdout, mut stderr, mut exit_code) = match command.spawn() {
             Err(e) => (
                 String::new(),
                 format!("fleetd: agent-device did not start: {e}\n"),
@@ -1045,12 +1069,71 @@ impl Work {
             },
         };
         let _ = std::fs::remove_dir_all(self.dir.join("in"));
+        if let Some(i) = log
+            && exit_code == 0
+        {
+            let out = &args[i];
+            match self.bring_log(&stdout, out.strip_prefix("out/").unwrap_or(out)) {
+                Ok(said) => stdout = stdout.replace(&said, out),
+                Err(e) => {
+                    stderr.push_str(&format!("fleetd: {e}\n"));
+                    exit_code = 1;
+                }
+            }
+        }
         Ran {
             stdout,
             stderr,
             exit_code,
             files: self.written(),
         }
+    }
+
+    /// The app log `logs path` named, in an agent-device home of this node (the screen's own, or the clone's it
+    /// lends), copied into `out/` as `name`, its last [`FILE_MAX`] bytes if it is longer, so it comes back as a
+    /// screenshot does. The path agent-device said, from its text or its `--json`.
+    fn bring_log(&self, stdout: &str, name: &str) -> Result<String, String> {
+        let said = serde_json::from_str::<serde_json::Value>(stdout)
+            .ok()
+            .and_then(|v| {
+                let path = v.pointer("/data/path").or_else(|| v.get("path"))?;
+                path.as_str().map(str::to_owned)
+            })
+            .unwrap_or_else(|| stdout.lines().next().unwrap_or_default().trim().to_owned());
+        let home = self
+            .dir
+            .ancestors()
+            .nth(3)
+            .and_then(|home| std::fs::canonicalize(home).ok());
+        let real = std::fs::canonicalize(&said).ok().filter(|real| {
+            real.file_name().is_some_and(|n| n == "app.log")
+                && home.as_ref().is_some_and(|home| real.starts_with(home))
+                && real.is_file()
+        });
+        let Some(real) = real else {
+            return Err(format!(
+                "there is no app log to send back yet ({}): open the app, or run `agent-device logs start`, first",
+                if said.is_empty() {
+                    "agent-device named none"
+                } else {
+                    &said
+                }
+            ));
+        };
+        let copy = || -> std::io::Result<()> {
+            let mut log = std::fs::File::open(&real)?;
+            let len = log.metadata()?.len();
+            log.seek(std::io::SeekFrom::Start(len.saturating_sub(FILE_MAX)))?;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .custom_flags(nix::libc::O_NOFOLLOW)
+                .open(self.dir.join("out").join(name))?;
+            std::io::copy(&mut log.take(FILE_MAX), &mut file).map(drop)
+        };
+        copy().map_err(|e| format!("the app log {said} could not be copied: {e}"))?;
+        Ok(said)
     }
 
     /// A checked command with its files (`in/…`, `out/…`) as full paths in this folder: agent-device's daemon reads
