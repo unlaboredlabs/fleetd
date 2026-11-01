@@ -58,7 +58,9 @@ the order is closed, the next trigger runs.
 
 A webhook call that comes in while a run is open is kept instead, with its body: its run shows as **Queued**. Once the
 open run's order is closed or stopped, every call kept meanwhile goes to the lead in one follow-up order, with each
-body, oldest first. Up to 20 calls wait per automation (each body is at most 16 KiB); one past that is skipped.
+body, oldest first. A call that comes after the open run ended but before that order went joins it. Up to 20 calls
+wait per automation (each body is at most 16 KiB); one past that is skipped. Pausing the automation skips new calls,
+but calls kept before the pause still go once the open run ends.
 
 A [Navi](/docs/navi)'s run closes its order by itself once the Navi's turn for it ends, whether it replied, failed or
 was cut off, so one run it never closed can't hold up the next ones. A coding project's lead closes its runs' orders
