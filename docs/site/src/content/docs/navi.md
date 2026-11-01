@@ -123,7 +123,7 @@ integration, a site it opens on its own for the first time, and the final Confir
 |---|---|
 | **Checker decides** (default) | A fresh model judges each risky action first. **Go** runs it and puts one quiet line in the chat: "Let through without asking you: send_message on gmail, to sam@example.org. The checker's reason: you asked to tell Sam that Saturday works". **Ask** brings the approval card, with the checker's reason on it. **Block** refuses it and tells you why, on a card with **Approve anyway**. |
 | **Ask me about everything** | Every risky action waits for you on a card. No checker runs. |
-| **YOLO** | No checker runs and nothing asks, not even for the cases fleetd's own rules ask about below (a recipient only an email named, a public share, a link carrying data). The floors still hold. Each action still gets its line in the chat. |
+| **YOLO** | No checker runs and nothing asks, not even for the cases fleetd's own rules ask about below (a recipient only an email named, a public share, a link carrying data). The floors still hold. Nothing shows in the chat; each action is still in the log below. |
 
 The checker runs on your own Claude ([Claude accounts](/docs/people#claude)), as a session with no tools at all, in
 an empty folder of fleetd's own rather than the Navi's (so no `CLAUDE.md`, settings or skills the Navi wrote reach it),
