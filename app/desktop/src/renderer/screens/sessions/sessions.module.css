@@ -1,5 +1,5 @@
-/* The panel's browser sessions: a calm list like the agents', and one session in the wide panel, its page in a frame
-   (the one card here: a page stands apart from everything around it). Separation by space and hairlines, state in
+/* The panel's browser sessions: a calm list like the agents', and one session in the wide panel, its page in a device's
+   frame or a window (the one card here: a page stands apart from everything around it). Separation by space and hairlines, state in
    words first, no coloured edge, and only what is live moves (ui/DESIGN.md). */
 
 .pane {
@@ -120,23 +120,49 @@ section + section .group {
   min-width: 0;
   min-height: 0;
 }
+/* Its one line: back, its purpose (cut first), its state, its agent and how long, then its controls at the end. */
 .head {
   flex: none;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1-5);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--hairline);
-  overflow-wrap: anywhere;
-}
-.headState,
-.headMeta {
-  display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-width: 0;
+  height: 40px;
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
 }
+.title {
+  flex: 0 1 auto;
+  display: flex;
+  min-width: 0;
+  margin: 0;
+}
+/* In its own window, with no way back, it starts where the window's title does. */
+.title:first-child {
+  margin-inline-start: var(--space-2);
+}
+.headState {
+  margin-inline-start: var(--space-1);
+}
+.headState,
+.headTime {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+.headTime .key {
+  width: 11px;
+  height: 11px;
+}
+.headGap {
+  flex: 1;
+  min-width: var(--space-2);
+}
+/* Its agent's role keeps its word; a title without one is cut, never longer than a short name. */
 .agentLink {
+  flex: none;
+  max-width: 14em;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1-5);
@@ -161,6 +187,39 @@ section + section .group {
   container-type: inline-size;
 }
 
+/* Under the line: the screen's stage the rest of the panel's height, the agent's ask above it. */
+.fill {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: var(--space-4);
+}
+/* The screen's stage: its size is what the screen fits in (container units), what the agent does right under it. A
+   phone stands in its middle; a page, as wide as the panel long before it is as tall, sits at its top. */
+.stageFit {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 0;
+  container-type: size;
+}
+.stageTop {
+  justify-content: flex-start;
+}
+.doing {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  --sweep-bg: var(--bg);
+}
+
 /* The agent asks you to take over: its reason in words, the one control beside it. A faint wash of the warning
    colour, as an agent's Now line has while it waits on you; no edge. */
 .ask {
@@ -180,20 +239,25 @@ section + section .group {
   min-width: 0;
 }
 
-/* A replay: the recording the full width. Its steps, opened, go under it (the view scrolls), and beside it once there
-   is room for both, as tall as the recording and scrolling within it. */
+/* A replay: the recording in the same frame, as large as fits above its controls. Its steps, opened, go under it, and
+   beside it once there is room for both; either way they scroll within their own part. */
+.replay {
+  container-type: inline-size;
+}
 .stage {
-  flex: none;
+  flex: 1;
   display: grid;
+  grid-template-rows: minmax(0, 1fr);
   gap: var(--space-3);
+  min-height: 0;
+}
+.withSteps {
+  grid-template-rows: minmax(0, 3fr) minmax(0, 2fr);
 }
 @container (min-width: 640px) {
   .withSteps {
+    grid-template-rows: minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr) minmax(240px, 34%);
-  }
-  .withSteps > .steps {
-    contain: size;
-    min-height: 200px;
   }
 }
 .player {
@@ -201,49 +265,94 @@ section + section .group {
   flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
+  min-height: 0;
 }
 
-/* The page in its frame: an address bar, then the page at its own aspect. */
-.frame {
+/* The page in its frame, never coloured by who has it. A phone in its bezel: the bezel `--b` of its width all round, its
+   outer corner its screen's plus the bezel, a hairline of metal at its edge and a soft shadow under it; its width the
+   most its stage holds at its shape. */
+.phone {
+  --w: min(100cqw, (100cqh - var(--below, 0px)) / ((1 - 2 * var(--b)) / var(--aspect) + 2 * var(--b)));
+  --screen-r: calc(var(--w) * (1 - 2 * var(--b)) * 0.137);
+  position: relative;
+  flex: none;
+  width: var(--w);
+  padding: calc(var(--w) * var(--b));
+  border-radius: calc(var(--screen-r) + var(--w) * var(--b));
+  background: #0c0c0d;
+  box-shadow:
+    inset 0 0 0 1px #ffffff1a,
+    0 0 0 1px #4a4a4e,
+    0 1px 2px #0000001f,
+    0 18px 40px -16px #00000059;
+}
+.phone[data-kind="android"] {
+  --screen-r: calc(var(--w) * (1 - 2 * var(--b)) * 0.085);
+}
+.phone .screen {
+  border-radius: var(--screen-r);
+}
+/* An iPhone's island over the top of its screen; an Android's camera, a dot. Clicks go through to the screen. */
+.camera {
+  position: absolute;
+  top: calc(var(--w) * (var(--b) + 0.026));
+  left: 50%;
+  width: calc(var(--w) * 0.29);
+  height: calc(var(--w) * 0.085);
+  border-radius: 999px;
+  background: #000;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.phone[data-kind="android"] .camera {
+  top: calc(var(--w) * (var(--b) + 0.03));
+  width: calc(var(--w) * 0.032);
+  height: calc(var(--w) * 0.032);
+}
+/* A browser or a desktop: a plain window, its bar saying where it is; as wide as its stage, or as its height allows. */
+.pageWindow {
+  --bar: 32px;
+  flex: none;
+  width: min(100cqw, (100cqh - var(--bar) - var(--below, 0px)) * var(--aspect));
   overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--raised);
-}
-/* A phone's screen: as tall as fits under the view's head, its width following, so it shows whole. */
-.frame[data-shape="portrait"] {
-  align-self: center;
-  width: min(100%, calc(min(520px, 58vh) * var(--aspect)));
-}
-/* Its bar is as narrow: its words wrap rather than run past it. */
-.frame[data-shape="portrait"] .bar {
-  height: auto;
-  min-height: var(--control);
-  padding-block: 2px;
+  box-shadow:
+    0 0 0 1px var(--hairline),
+    0 1px 2px #0000000f,
+    0 16px 36px -18px var(--shadow);
 }
 .bar {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  height: var(--control);
+  justify-content: center;
+  gap: var(--space-2);
+  height: var(--bar);
   padding: 0 var(--space-2);
   border-bottom: 1px solid var(--hairline);
-  color: var(--faint);
-  transition:
-    background var(--dur-quick) var(--ease-snap),
-    color var(--dur-quick) var(--ease-snap);
+  color: var(--quiet);
 }
 .url {
   flex: 1;
   display: flex;
   min-width: 0;
+  max-width: 72%;
   color: var(--quiet);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
+  text-align: center;
+}
+.url > span {
+  flex: 1;
+}
+/* A replay's words at the bar's end: whose the page was, or which step's snapshot is open. */
+.barNote {
+  flex: none;
+  padding-inline-end: var(--space-1);
 }
 .screen {
   position: relative;
-  aspect-ratio: 16 / 10;
+  overflow: hidden;
   background: var(--bg);
 }
 .screen img {
@@ -252,22 +361,13 @@ section + section .group {
   height: 100%;
   user-select: none;
 }
+.screen:focus-visible {
+  outline: none;
+}
 .blank {
   position: absolute;
   inset: 0;
   background: repeating-conic-gradient(var(--hover) 0 25%, transparent 0 50%) 0 0 / 4px 4px;
-}
-/* Yours: the bar turns over, in the text colour, and the frame's line with it; no colour of its own. */
-.yours {
-  border-color: var(--text);
-}
-.yours .bar {
-  border-bottom-color: var(--text);
-  background: var(--text);
-  color: var(--bg);
-}
-.yours .url {
-  color: var(--bg);
 }
 /* A browser that is yours: its address bar in the frame's bar, in the bar's own colours. */
 .address {
@@ -276,7 +376,6 @@ section + section .group {
   align-items: center;
   gap: 2px;
   min-width: 0;
-  margin-inline-start: calc(-1 * var(--space-1));
 }
 .navButton {
   display: inline-flex;
@@ -325,35 +424,6 @@ section + section .group {
 }
 .addressInput:focus {
   background: color-mix(in srgb, currentColor 18%, transparent);
-}
-.yours .screen {
-  cursor: default;
-}
-.yours .screen:focus-visible {
-  outline: none;
-}
-
-/* What the agent does now, and the one control, under the page. */
-.control {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: var(--row);
-}
-.nowLine {
-  flex: 1;
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-}
-.nowLine > :first-child {
-  flex: none;
-  white-space: nowrap;
-}
-.nowWords {
-  min-width: 0;
-  --sweep-bg: var(--bg);
 }
 
 /* Its steps: the time in, then the words; a login filled from a vault with a key beside it. */
@@ -471,6 +541,7 @@ section + section .group {
 
 /* Play, the scrubber, the time and the speed, in one compact row. */
 .transport {
+  align-self: stretch;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -733,12 +804,6 @@ section + section .group {
   width: 100%;
   height: 100%;
   background: var(--bg);
-}
-/* How many logins came from 1Password, with the key every fill has. */
-.filled {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
 }
 
 /* New screen, at the top of the list: one quiet button, right-aligned like a list's own action. */

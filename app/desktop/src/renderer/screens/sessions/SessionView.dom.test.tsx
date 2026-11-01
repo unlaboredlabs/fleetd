@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-// One screen in the panel: live, its page the full width with no Steps beside it (a phone's, standing up, as tall as
-// fits); ended, its recording the full width, its steps behind Steps, closed until opened, and closed again by it.
+// One screen in the panel: one line above it (back, what it is, who has it, how long, its controls); live, its page as
+// large as fits with no Steps beside it (a phone's standing up in its bezel, a browser's in a plain window); ended, its
+// recording in the same frame, its steps behind Steps, closed until opened, and closed again by it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -107,7 +108,10 @@ const stepsList = () => host.querySelector("ol[aria-label^='Its steps']");
 it("shows a live screen's page the full width, with no Steps beside it", async () => {
   await mount("bs-live");
   expect(host.querySelector("[data-screen='sessions.live']")).not.toBeNull();
-  expect(host.textContent).toContain("The agent is driving");
+  // The line says it is live; what the agent does is one line under the page.
+  expect(host.querySelector("h2")?.textContent).toBe("Check the order summary takes the SAVE10 code on staging");
+  expect(host.textContent).toContain("live");
+  expect(host.textContent).toContain("Working in the page");
   expect(host.querySelector("button")?.textContent).not.toBe("Steps");
   expect(stepsToggle()).toBeUndefined();
   expect(stepsList()).toBeNull();
@@ -195,7 +199,7 @@ it("gives a browser that is yours an address bar: where it is, Enter goes elsewh
   await settle();
   const bar = address();
   expect(bar?.value).toBe("https://staging.shop.example.com/cart");
-  expect(host.textContent).toContain("You’re in control");
+  expect(host.textContent).toContain("you’re in control");
   if (bar === null) throw new Error("no address bar");
   act(() => bar.focus());
   type(bar, "example.com/docs");
@@ -231,7 +235,7 @@ it("puts the page's address back on Escape, and shows a blank page's as empty", 
 
 it("has no address bar from a hub that doesn't relay it", async () => {
   await mount("bs-yours", ["browser_sessions"]);
-  expect(host.textContent).toContain("You’re in control: mouse and keys go to the page");
+  expect(host.textContent).toContain("you’re in control");
   expect(address()).toBeNull();
   expect(host.querySelector("button[aria-label='Back']")).toBeNull();
 });
@@ -243,6 +247,21 @@ it("has no address bar while the agent drives, nor on a device's screen", async 
   act(() => root?.unmount());
   root = undefined;
   await mount("bs-ios-yours");
-  expect(host.textContent).toContain("You’re in control: mouse and keys go to the page");
+  expect(host.textContent).toContain("you’re in control");
   expect(address()).toBeNull();
+});
+
+it("puts a phone in its bezel, the island over its screen, and its page takes your clicks through the island", async () => {
+  await mount("bs-ios-yours");
+  act(() => send({ t: "browser_frame", frame: { sessionId: "bs-ios-yours", seq: 1, jpegB64: "AAAA", width: 603, height: 1311, control: "human" } }));
+  await settle();
+  const phone = host.querySelector<HTMLElement>("[data-kind='ios']");
+  expect(phone?.dataset["shape"]).toBe("portrait");
+  expect(phone?.querySelector("[role='application']")).not.toBeNull();
+  // The island is drawn over the screen, outside it: the page's own element takes the pointer.
+  const island = phone?.querySelector("[aria-hidden='true']:not(img)");
+  expect(island?.closest("[role='application']")).toBeNull();
+  // No browser bar on a device, and nothing in the line but its words and its one control.
+  expect(host.querySelector("input[aria-label='Address']")).toBeNull();
+  expect(host.textContent).not.toContain("started");
 });

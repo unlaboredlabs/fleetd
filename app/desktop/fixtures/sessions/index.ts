@@ -1,6 +1,7 @@
 // The Sessions fixture (W46): many-agents' storefront with browser sessions, as a hub serving them sends them
 // (contracts browser.rs, app.rs): live ones (one driving, one asking you to take over, both streaming frames), and
-// ended ones recorded (with a video, without one), being saved, lost and expired. Taking over and handing back answer
+// ended ones recorded (with a video, without one), being saved, lost and expired, and an iOS simulator of Ada's, live
+// and hers. Taking over and handing back answer
 // as the hub does, the row changing hands. New screen (D239) answers too: a browser of your own opens on devbox, in your
 // control, and an iOS simulator on the Mac, whose two are in use, waits for a slot until you cancel; an Android screen
 // offers storefront's open PRs, whose build it would install. Its pages, frames and video: pages.ts, html.ts, script.ts and media/
@@ -210,7 +211,19 @@ const preview = (base: Fixture): Fixture => {
   };
   const ended: JsonObject = { ...mine, state: "uploading", endedAt: iso(0) };
   const wait: JsonObject = { waitId: "W5e2c4a6f8d0b1a3c5e7f9d1b3a5c7e9f", projectRef: STOREFRONT, kind: "ios", machineId: "mac", since: iso(0), ahead: 0 };
-  rows.unshift(mine, ended);
+  // An iOS simulator of Ada's on the Mac, hers from the start, the shop's app on it.
+  const phone: JsonObject = {
+    sessionId: SESSION.phone,
+    projectRef: STOREFRONT,
+    threadId: "screen-3c5e7a9b1d3f5a7c9e1b3d5f7a9c1e3d",
+    purpose: "iOS simulator opened by Ada",
+    kind: "ios",
+    state: "live",
+    control: "human",
+    startedAt: iso(34_000),
+    openedBy: { personId: "p_adaadaad", name: "Ada" },
+  };
+  rows.unshift(mine, ended, phone);
   // An Android emulator on devbox with #14's build, past its wait: its build going in.
   const installing: JsonObject = {
     waitId: "W7a9c1e3f5b7d9f1a3c5e7b9d1f3a5c7e",
@@ -291,6 +304,7 @@ const preview = (base: Fixture): Fixture => {
   const PAY = "https://dashboard.pay.example.com";
   const [code, dashboard, downloaded] = PAYOUTS_FRAMES;
   f.later(0, "browser_frame", frame(SESSION.payouts, 1, code, `${PAY}/login/verify`, "agent"));
+  f.later(0, "browser_frame", { sessionId: SESSION.phone, seq: 1, jpegB64: b64("shopApp.jpg"), width: 603, height: 1311, control: "human" });
   // Shot once its first pages are in, not after the whole run.
   f.settleAt(2_500);
 

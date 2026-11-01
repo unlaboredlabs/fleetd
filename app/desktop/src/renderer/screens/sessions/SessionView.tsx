@@ -1,11 +1,15 @@
-// One screen (a browser session, or a device's), in the panel's wide width. While it runs: the page as the agent sees
-// it, the full width, what the agent is doing now, and Take over. Taken over, the page is yours: the frame's bar turns
-// to say so and, on a browser, becomes its address bar (where it is, back, forward, reload), your clicks and keys go to the page, and Hand back gives it to the agent, which looks at the page again
-// and goes on; meanwhile it waits, and its line says so. A screen a person opened themselves (New screen) is theirs from
-// its start, with no agent: End screen closes it, and its recording goes to the hub as any screen's. An agent that asks you to take over says why above the page.
-// Once it has ended: its replay, the recording the full width; Steps opens its steps beside it, each step a jump to its
-// moment and a way into the page's snapshot at that step. A login filled from 1Password is a step in words; its value
-// is never on the hub to show, nor in a snapshot.
+// One screen (a browser session, or a device's), in the panel's wide width. Above it one slim line: back to the list,
+// what it is for, who has it and for how long, and its one or two controls at the line's end. Under the line the
+// screen, as large as the panel holds it at its own shape: a phone in its bezel, a browser or a desktop in a plain
+// window whose bar says where it is. While it runs the agent's screen shows what the agent does, in one quiet line
+// under it, and Take over. Taken over, the line says you're in control and, on a browser, the window's bar becomes its
+// address bar (where it is, back, forward, reload); your clicks and keys go to the page, and Hand back gives it to the
+// agent, which looks at the page again and goes on. A screen a person opened themselves (New screen) is theirs from its
+// start, with no agent: End closes it, and its recording goes to the hub as any screen's. An agent that asks you to
+// take over says why above the page.
+// Once it has ended: its replay, the recording in the same frame; Steps opens its steps beside it, each step a jump to
+// its moment and a way into the page's snapshot at that step. A login filled from 1Password is a step in words; its
+// value is never on the hub to show, nor in a snapshot.
 import { AppWindow, ArrowLeft, ArrowRight, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListOrdered, ListTree, Pause, Play, RotateCw, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, toast } from "../../ui";
@@ -15,7 +19,8 @@ import { RolePill } from "../agents/parts";
 import { useCommands } from "../palette";
 import { useNow } from "../live/clock";
 import { MiddleCut } from "../live/parts";
-import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
+import { navigate } from "../shell/navigation";
+import { listView, panelRoute, toHash, type ProjectKey } from "../shell/routes";
 import {
   actionLine,
   durationOf,
@@ -24,7 +29,6 @@ import {
   isLive,
   nodeLine,
   nowLine,
-  siteOf,
   spans,
   stepAt,
   STATE_TONE,
@@ -72,9 +76,18 @@ export function SessionView({ project, id, windowed = false }: { project: Projec
   const session = all.find((x) => x.id === id);
   // A session's window has its sessions from the main window a moment after it opens.
   if (session === undefined && windowed && all.length === 0) return <div className={s.view} aria-busy="true" />;
+  // Its own window has nowhere to go back to.
+  const back = windowed ? undefined : () => navigate(panelRoute(project, listView("sessions")));
   if (session === undefined) {
     return (
       <div className={s.view} data-screen="sessions.missing">
+        {back === undefined ? null : (
+          <div className={s.head}>
+            <Button variant="quiet" size="sm" icon={<ChevronLeft aria-hidden />} onClick={back}>
+              All screens
+            </Button>
+          </div>
+        )}
         <EmptyState title="This screen isn’t here">It may be from before the hub kept screens, or from another project.</EmptyState>
       </div>
     );
@@ -82,67 +95,86 @@ export function SessionView({ project, id, windowed = false }: { project: Projec
   const live = isLive(session);
   return (
     <section className={s.view} aria-label={session.purpose} data-screen={live ? "sessions.live" : "sessions.replay"}>
-      <Head session={session} windowed={windowed} />
-      {live ? <Live session={session} windowed={windowed} /> : <Replay key={session.id} session={session} />}
+      {live ? (
+        <Live session={session} windowed={windowed} back={back} />
+      ) : (
+        <>
+          <Head session={session} windowed={windowed} back={back} />
+          <Replay key={session.id} session={session} />
+        </>
+      )}
     </section>
   );
 }
 
-/** Its state in words beside its glyph, its agent (a link to its work); its purpose; the site, its start, how long. */
-function Head({ session: x, windowed }: { session: BrowserSession; windowed: boolean }) {
+/**
+ * The view's one line: back, what it is for, its state in words beside its glyph, its agent (a link to its work), how
+ * long it has run, then its controls at the end. Its start and the logins filled from 1Password are in the time's
+ * tooltip; a key beside the time says some were.
+ */
+function Head({ session: x, windowed, back, controls }: { session: BrowserSession; windowed: boolean; back: (() => void) | undefined; controls?: ReactNode }) {
   const now = useNow(isLive(x));
   const agent = toHash(panelRoute(x.projectRef, { tab: "agents", agent: x.agent.laneId }));
-  const who = (
-    <>
-      {x.agent.role === undefined ? null : <RolePill role={x.agent.role} />}
+  const filled = x.credentialsFilled === undefined ? "" : ` · ${String(x.credentialsFilled)} ${x.credentialsFilled === 1 ? "login" : "logins"} filled from 1Password`;
+  const who =
+    x.agent.role === undefined ? (
       <Truncate size="xs" tone="quiet" expand="none">
         {x.agent.title}
       </Truncate>
-    </>
-  );
+    ) : (
+      <RolePill role={x.agent.role} />
+    );
   return (
     <div className={s.head}>
+      {back === undefined ? null : (
+        <Tooltip content="All screens">
+          <Button variant="quiet" size="sm" iconOnly icon={<ChevronLeft aria-hidden />} aria-label="All screens" onClick={back} />
+        </Tooltip>
+      )}
+      <h2 className={s.title}>
+        <Truncate size="md" strong expand="none">
+          {x.purpose}
+        </Truncate>
+      </h2>
       <span className={s.headState}>
         <StateGlyph state={glyphOf(x.state)} label={STATE_WORD[x.state]} phase={1} />
         <Text size="xs" tone={STATE_TONE[x.state]} strong={x.state === "asking" || x.state === "yours"}>
           {STATE_WORD[x.state]}
         </Text>
-        {windowed || x.openedBy !== undefined ? (
+      </span>
+      {x.openedBy !== undefined ? null : windowed ? (
+        <Tooltip content={x.agent.title}>
           <span className={s.agentLink}>{who}</span>
-        ) : (
-          <a className={s.agentLink} href={agent} title="Open its agent">
+        </Tooltip>
+      ) : (
+        <Tooltip content={`Open its agent: ${x.agent.title}`}>
+          <a className={s.agentLink} href={agent} aria-label={`Open its agent: ${x.agent.title}`}>
             {who}
           </a>
-        )}
-      </span>
-      <Text as="h2" size="md" strong>
-        {x.purpose}
-      </Text>
-      <span className={s.headMeta}>
-        {siteOf(x) === "" ? null : <span className={s.site}>{siteOf(x)}</span>}
-        <Text size="xs" tone="quiet" tabular>
-          {`started ${clock.format(new Date(x.startedAt))} · ${fmtDuration(durationOf(x, now))}`}
-        </Text>
-        {x.credentialsFilled === undefined ? null : (
-          <span className={s.filled}>
-            <KeyRound aria-hidden className={s.key} />
-            <Text size="xs" tone="quiet">
-              {`${String(x.credentialsFilled)} ${x.credentialsFilled === 1 ? "login" : "logins"} filled from 1Password`}
-            </Text>
-          </span>
-        )}
-      </span>
+        </Tooltip>
+      )}
+      <Tooltip content={`started ${clock.format(new Date(x.startedAt))}${filled}`}>
+        <span className={s.headTime}>
+          {x.credentialsFilled === undefined ? null : <KeyRound aria-hidden className={s.key} />}
+          <Text size="xs" tone="quiet" tabular>
+            {fmtDuration(durationOf(x, now))}
+          </Text>
+        </span>
+      </Tooltip>
+      <span className={s.headGap} />
+      {controls}
     </div>
   );
 }
 
 /**
- * The page now, the full width, what the agent does and the one control (Take over or Hand back); its steps come with
- * its recording, once it ends. Beside Take over, the pop-out takes the page over in a window of its own; while the
- * screen is in its window, this one shows that and offers to bring that window forward. Taken over, ⌘⇧↩
- * (Ctrl+Shift+Enter) hands back: the app's keymap catches it in the capture phase, so the page never sees those keys.
+ * The page now, as large as the view holds it, what the agent does under it, and the one control (Take over or Hand
+ * back) at the end of the line; its steps come with its recording, once it ends. Beside Take over, the pop-out takes
+ * the page over in a window of its own; while the screen is in its window, this one shows that and offers to bring
+ * that window forward. Taken over, ⌘⇧↩ (Ctrl+Shift+Enter) hands back: the app's keymap catches it in the capture
+ * phase, so the page never sees those keys.
  */
-function Live({ session: x, windowed }: { session: BrowserSession; windowed: boolean }) {
+function Live({ session: x, windowed, back }: { session: BrowserSession; windowed: boolean; back: (() => void) | undefined }) {
   const layer = useDataLayer();
   const yours = x.state === "yours";
   const away = useInItsWindow(x.id) && !windowed;
@@ -215,101 +247,103 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
       </Button>
     </span>
   );
+  const controls = away ? (
+    <Button variant="secondary" size="sm" icon={<AppWindow aria-hidden />} onClick={() => showWindow(x.projectRef, x.id, layer.hub)}>
+      Show its window
+    </Button>
+  ) : own ? (
+    <span className={s.controls}>
+      {yours ? null : (
+        <Button variant="secondary" size="sm" icon={<Hand aria-hidden />} disabled={asking !== null} onClick={() => control("human")}>
+          Take control
+        </Button>
+      )}
+      <Tooltip content="End this screen; its recording goes to the hub">
+        <Button variant="quiet" size="sm" icon={<Square aria-hidden />} disabled={ending} onClick={end}>
+          {ending ? "Ending…" : "End"}
+        </Button>
+      </Tooltip>
+    </span>
+  ) : yours ? (
+    <Tooltip content={`Give it back to its agent, which waits and sees the page as you leave it · ${display("session.handBack", window.fleetd.platform)}`}>
+      <Button variant="secondary" size="sm" icon={<CornerUpLeft aria-hidden />} disabled={asking !== null} onClick={() => control("agent")}>
+        Hand back
+      </Button>
+    </Tooltip>
+  ) : x.state === "running" ? (
+    takeOver("secondary")
+  ) : null;
+  // What the agent does while it has the screen; nothing while you do, which the line says.
+  const doing = (x.state === "running" && !own) || x.state === "handingBack" ? nowLine(x) : undefined;
+  const phone = x.kind === "ios" || x.kind === "android";
   return (
-    <div className={s.body}>
-      {x.state === "asking" && x.handoff !== undefined ? (
-        <div className={s.ask} role="status">
-          <span className={s.askWords}>
-            <Text size="xs" tone="warning" strong>
-              It asks you to take over
-            </Text>
-            <Text size="sm">{x.handoff.reason}</Text>
-          </span>
-          {takeOver("primary")}
-        </div>
-      ) : null}
-      <div className={s.player}>
-        <Frame
-          {...(frame === undefined ? {} : { image: { src: `data:image/jpeg;base64,${frame.jpegB64}`, seq: frame.seq, url: frame.url, width: frame.width, height: frame.height } })}
-          yours={yours}
-          away={away}
-          pageRef={page}
-          input={input}
-          {...(x.kind === "ios" || x.kind === "android" ? { phone: true } : {})}
-          caption={away ? "It shows in its own window." : slow ? waitingFor(x) : undefined}
-          {...(nav === undefined ? {} : { nav })}
-        />
-        <div className={s.control}>
-          <span className={s.nowLine}>
-            <Text size="xs" tone="faint">
-              {own ? "You" : yours ? "The agent" : "Now"}
-            </Text>
-            <span className={s.nowWords}>
-              <Text size="xs" tone={x.state === "asking" ? "warning" : yours ? "quiet" : "default"}>
-                {nowLine(x)}
+    <>
+      <Head session={x} windowed={windowed} back={back} controls={controls} />
+      <div className={s.fill}>
+        {x.state === "asking" && x.handoff !== undefined ? (
+          <div className={s.ask} role="status">
+            <span className={s.askWords}>
+              <Text size="xs" tone="warning" strong>
+                It asks you to take over
               </Text>
+              <Text size="sm">{x.handoff.reason}</Text>
             </span>
-          </span>
-          {away ? (
-            <Button variant="secondary" size="sm" icon={<AppWindow aria-hidden />} onClick={() => showWindow(x.projectRef, x.id, layer.hub)}>
-              Show its window
-            </Button>
-          ) : own ? (
-            <span className={s.controls}>
-              {yours ? null : (
-                <Button variant="secondary" size="sm" icon={<Hand aria-hidden />} disabled={asking !== null} onClick={() => control("human")}>
-                  Take control
-                </Button>
-              )}
-              <Button variant="secondary" size="sm" icon={<Square aria-hidden />} disabled={ending} onClick={end}>
-                {ending ? "Ending…" : "End screen"}
-              </Button>
+            {takeOver("primary")}
+          </div>
+        ) : null}
+        {/* What the agent does sits right under the screen, which leaves it its room. */}
+        <div className={cx(s.stageFit, !phone && s.stageTop)} style={doing === undefined ? undefined : ({ "--below": "26px" } as CSSProperties)}>
+          <Frame
+            {...(frame === undefined ? {} : { image: { src: `data:image/jpeg;base64,${frame.jpegB64}`, seq: frame.seq, url: frame.url, width: frame.width, height: frame.height } })}
+            kind={x.kind}
+            yours={yours}
+            pageRef={page}
+            input={input}
+            caption={away ? "It shows in its own window." : slow ? waitingFor(x) : undefined}
+            {...(nav === undefined ? {} : { nav })}
+          />
+          {doing === undefined ? null : (
+            <span className={s.doing}>
+              <Truncate size="xs" tone="quiet" expand="none">
+                {doing}
+              </Truncate>
             </span>
-          ) : yours ? (
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<CornerUpLeft aria-hidden />}
-              shortcut={display("session.handBack", window.fleetd.platform)}
-              disabled={asking !== null}
-              onClick={() => control("agent")}
-            >
-              Hand back
-            </Button>
-          ) : x.state === "running" ? (
-            takeOver("secondary")
-          ) : null}
+          )}
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
+/** A phone's bezel, as its share of the phone's width all round. */
+const BEZEL = { ios: 0.034, android: 0.03 } as const;
+
 /**
- * The page in a frame, at the page's own shape (a phone's, standing up, as tall as fits the view): its address and who
- * drives it on a bar above. Yours, the bar turns over (the page's words on the text colour) and the page takes your
- * clicks, keys and pastes (`input`); the agent's, it only shows.
+ * The page at its own shape, as large as its stage holds it (container units): a phone standing up in its bezel (an
+ * iPhone's island, an Android's camera, drawn over the top of its screen as the device's own frame has them), a browser
+ * or a desktop in a plain window whose bar says where it is; a browser that is yours, its address bar. Never coloured
+ * by who has it: the view's line says that. Yours, the page takes your clicks, keys and pastes (`input`); the agent's,
+ * it only shows.
  */
 function Frame({
   image,
+  kind,
   yours = false,
-  away = false,
-  right,
+  note,
   media,
   caption,
   url: given,
   mark,
   input,
   pageRef,
-  phone = false,
   nav,
 }: {
   /** The page now: a live frame, in its own pixels. */
   image?: { readonly src: string; readonly seq?: number; readonly url?: string | undefined; readonly width: number; readonly height: number };
+  kind: BrowserSession["kind"];
   yours?: boolean;
-  /** Yours, but in the session's own window: this one only shows that. */
-  away?: boolean;
-  right?: string | undefined;
+  /** Quiet words at the end of a window's bar (a replay's: whose the page was, or which step's snapshot is open). */
+  note?: string;
   /** What plays in the page's place (a recording's video). */
   media?: ReactNode;
   /** Words on an empty page: why nothing shows there. */
@@ -320,63 +354,80 @@ function Frame({
   mark?: FrameBox | undefined;
   input?: ReturnType<typeof useFrameInput>;
   pageRef?: RefObject<HTMLDivElement | null>;
-  /** A phone's screen: standing up from the start, so its first frame lands without the frame changing shape. */
-  phone?: boolean;
   /** The page is yours, a browser's: the bar is its address bar. */
   nav?: PageNav;
 }) {
   const takes = input !== undefined;
   const url = image?.url ?? given;
+  const phone = kind === "ios" || kind === "android";
+  // A phone's stands up from the start, so its first frame lands without the frame changing shape.
+  const aspect = image === undefined ? (phone ? PHONE : 16 / 10) : image.width / image.height;
   const once = useRef(false);
   const painted = () => {
     if (once.current) return;
     once.current = true;
     requestAnimationFrame(() => screenMark("painted"));
   };
-  // A phone's screen, standing up: as tall as fits the view, not as wide as the panel.
-  const tall = image === undefined ? (phone ? PHONE : undefined) : image.height > image.width ? image.width / image.height : undefined;
-  return (
+  const screen = (
     <div
-      className={cx(s.frame, yours && s.yours)}
-      data-control={yours ? "you" : "agent"}
-      data-shape={tall === undefined ? undefined : "portrait"}
-      style={tall === undefined ? undefined : ({ "--aspect": String(tall) } as CSSProperties)}
+      ref={pageRef}
+      className={s.screen}
+      style={{ aspectRatio: String(aspect) }}
+      role={takes ? "application" : "img"}
+      aria-label={takes ? "The page: your clicks and keys go to it" : `The page${url === undefined ? "" : `: ${url}`}`}
+      tabIndex={takes ? 0 : undefined}
+      {...input}
     >
-      <div className={s.bar}>
-        {nav === undefined ? <span className={s.url}>{url === undefined ? <span /> : <MiddleCut text={url} />}</span> : <Address url={url} nav={nav} onDone={() => pageRef?.current?.focus()} />}
-        <Text size="xs" tone="inherit" strong={yours} tabular>
-          {right ??
-            (away ? "You’re in control, in its own window" : nav !== undefined ? "You’re in control" : yours ? "You’re in control: mouse and keys go to the page" : "The agent is driving")}
-        </Text>
+      {media ??
+        (image === undefined ? (
+          <span className={s.blank}>{caption === undefined ? null : <Text size="xs" tone="quiet">{caption}</Text>}</span>
+        ) : (
+          <img src={image.src} alt="" draggable={false} onLoad={painted} data-seq={image.seq} />
+        ))}
+      {mark === undefined ? null : (
+        <span
+          className={s.mark}
+          data-target-box=""
+          style={{
+            left: `${String((mark.x / FRAME.width) * 100)}%`,
+            top: `${String((mark.y / FRAME.height) * 100)}%`,
+            width: `${String((mark.width / FRAME.width) * 100)}%`,
+            height: `${String((mark.height / FRAME.height) * 100)}%`,
+          }}
+        />
+      )}
+    </div>
+  );
+  const shape = {
+    "data-control": yours ? "you" : "agent",
+    "data-shape": aspect < 1 ? "portrait" : undefined,
+  } as const;
+  if (phone) {
+    return (
+      <div className={s.phone} data-kind={kind} {...shape} style={{ "--aspect": String(aspect), "--b": String(BEZEL[kind]) } as CSSProperties}>
+        {screen}
+        <span className={s.camera} aria-hidden />
       </div>
-      <div
-        ref={pageRef}
-        className={s.screen}
-        style={image === undefined ? (phone ? { aspectRatio: String(PHONE) } : undefined) : { aspectRatio: `${String(image.width)} / ${String(image.height)}` }}
-        role={takes ? "application" : "img"}
-        aria-label={takes ? "The page: your clicks and keys go to it" : `The page${url === undefined ? "" : `: ${url}`}`}
-        tabIndex={takes ? 0 : undefined}
-        {...input}
-      >
-        {media ??
-          (image === undefined ? (
-            <span className={s.blank}>{caption === undefined ? null : <Text size="xs" tone="quiet">{caption}</Text>}</span>
-          ) : (
-            <img src={image.src} alt="" draggable={false} onLoad={painted} data-seq={image.seq} />
-          ))}
-        {mark === undefined ? null : (
-          <span
-            className={s.mark}
-            data-target-box=""
-            style={{
-              left: `${String((mark.x / FRAME.width) * 100)}%`,
-              top: `${String((mark.y / FRAME.height) * 100)}%`,
-              width: `${String((mark.width / FRAME.width) * 100)}%`,
-              height: `${String((mark.height / FRAME.height) * 100)}%`,
-            }}
-          />
+    );
+  }
+  const where = kind === "linux_desktop" ? "Linux desktop" : url === undefined || url === "about:blank" ? "" : url;
+  return (
+    <div className={s.pageWindow} data-kind={kind ?? "browser"} {...shape} style={{ "--aspect": String(aspect) } as CSSProperties}>
+      <div className={s.bar}>
+        {nav === undefined ? (
+          <span className={s.url}>{where === "" ? null : <MiddleCut text={where} />}</span>
+        ) : (
+          <Address url={url} nav={nav} onDone={() => pageRef?.current?.focus()} />
+        )}
+        {note === undefined ? null : (
+          <span className={s.barNote}>
+            <Text size="xs" tone="faint" tabular>
+              {note}
+            </Text>
+          </span>
         )}
       </div>
+      {screen}
     </div>
   );
 }
@@ -587,73 +638,77 @@ function Player({ session: x, actions, video }: { session: BrowserSession; actio
   };
 
   return (
-    <div className={s.body}>
+    <div className={cx(s.fill, s.replay)}>
       <div className={cx(s.stage, steps && s.withSteps)}>
         <div className={s.player}>
-          <Frame
-            caption={video === undefined ? (x.note ?? "This recording has no video. Its steps and pages are under Steps.") : undefined}
-            url={actions.slice(0, step + 1).findLast((a) => a.page !== undefined)?.page?.url}
-            mark={shown?.box}
-            media={
-              video === undefined ? undefined : (
-                <video
-                  ref={media}
-                  muted
-                  playsInline
-                  onPlay={() => setPlaying(true)}
-                  onPause={() => setPlaying(false)}
-                  onEnded={() => setPlaying(false)}
-                  onTimeUpdate={(e) => setAt(e.currentTarget.currentTime * 1000)}
+          {/* Its controls sit right under the recording, which leaves them their room. */}
+          <div className={cx(s.stageFit, !(x.kind === "ios" || x.kind === "android") && s.stageTop)} style={{ "--below": "40px" } as CSSProperties}>
+            <Frame
+              kind={x.kind}
+              caption={video === undefined ? (x.note ?? "This recording has no video. Its steps and pages are under Steps.") : undefined}
+              url={actions.slice(0, step + 1).findLast((a) => a.page !== undefined)?.page?.url}
+              mark={shown?.box}
+              media={
+                video === undefined ? undefined : (
+                  <video
+                    ref={media}
+                    muted
+                    playsInline
+                    onPlay={() => setPlaying(true)}
+                    onPause={() => setPlaying(false)}
+                    onEnded={() => setPlaying(false)}
+                    onTimeUpdate={(e) => setAt(e.currentTarget.currentTime * 1000)}
+                  />
+                )
+              }
+              note={shown !== undefined ? `Snapshot at ${fmtDuration(shown.at)}` : yours.some(([a, b]) => at >= a && at < b) ? "You had the page" : "Recording"}
+            />
+            <div className={s.transport}>
+              <Button variant="quiet" size="sm" iconOnly icon={playing ? <Pause aria-hidden /> : <Play aria-hidden />} aria-label={playing ? "Pause" : "Play"} onClick={play} />
+              <div className={s.scrub}>
+                <span className={s.track} />
+                <span className={s.played} style={{ "--at": String(duration === 0 ? 0 : at / duration) } as CSSProperties} />
+                {yours.map(([a, b]) => (
+                  <span key={a} className={s.yoursSpan} style={{ left: place(a), width: place(b - a) }} />
+                ))}
+                {actions.map((a, i) => (
+                  <span key={`${String(a.at)}:${String(i)}`} className={s.tick} style={{ left: place(a.at) }} />
+                ))}
+                <input
+                  className={s.range}
+                  type="range"
+                  min={0}
+                  max={duration}
+                  step={100}
+                  value={at}
+                  aria-label="Where in the recording"
+                  aria-valuetext={`${fmtDuration(at)} of ${fmtDuration(duration)}`}
+                  onChange={(e) => seek(Number(e.currentTarget.value))}
                 />
-              )
-            }
-            right={shown !== undefined ? `Snapshot at ${fmtDuration(shown.at)}` : yours.some(([a, b]) => at >= a && at < b) ? "You had the page" : "Recording"}
-          />
-          <div className={s.transport}>
-            <Button variant="quiet" size="sm" iconOnly icon={playing ? <Pause aria-hidden /> : <Play aria-hidden />} aria-label={playing ? "Pause" : "Play"} onClick={play} />
-            <div className={s.scrub}>
-              <span className={s.track} />
-              <span className={s.played} style={{ "--at": String(duration === 0 ? 0 : at / duration) } as CSSProperties} />
-              {yours.map(([a, b]) => (
-                <span key={a} className={s.yoursSpan} style={{ left: place(a), width: place(b - a) }} />
-              ))}
-              {actions.map((a, i) => (
-                <span key={`${String(a.at)}:${String(i)}`} className={s.tick} style={{ left: place(a.at) }} />
-              ))}
-              <input
-                className={s.range}
-                type="range"
-                min={0}
-                max={duration}
-                step={100}
-                value={at}
-                aria-label="Where in the recording"
-                aria-valuetext={`${fmtDuration(at)} of ${fmtDuration(duration)}`}
-                onChange={(e) => seek(Number(e.currentTarget.value))}
-              />
+              </div>
+              <Text size="xs" tone="quiet" tabular>
+                {`${fmtDuration(at)} / ${fmtDuration(duration)}`}
+              </Text>
+              <div className={s.speed} role="group" aria-label="Speed">
+                {SPEEDS.map((v) => (
+                  <button key={v} type="button" className={s.speedOption} aria-pressed={speed === v} onClick={() => setSpeed(v)}>
+                    {`${String(v)}×`}
+                  </button>
+                ))}
+              </div>
+              <Button
+                variant={steps ? "secondary" : "quiet"}
+                size="sm"
+                icon={<ListOrdered aria-hidden />}
+                aria-pressed={steps}
+                onClick={() => {
+                  setOpen(null);
+                  setSteps((o) => !o);
+                }}
+              >
+                Steps
+              </Button>
             </div>
-            <Text size="xs" tone="quiet" tabular>
-              {`${fmtDuration(at)} / ${fmtDuration(duration)}`}
-            </Text>
-            <div className={s.speed} role="group" aria-label="Speed">
-              {SPEEDS.map((v) => (
-                <button key={v} type="button" className={s.speedOption} aria-pressed={speed === v} onClick={() => setSpeed(v)}>
-                  {`${String(v)}×`}
-                </button>
-              ))}
-            </div>
-            <Button
-              variant={steps ? "secondary" : "quiet"}
-              size="sm"
-              icon={<ListOrdered aria-hidden />}
-              aria-pressed={steps}
-              onClick={() => {
-                setOpen(null);
-                setSteps((o) => !o);
-              }}
-            >
-              Steps
-            </Button>
           </div>
         </div>
         {!steps ? null : shown !== undefined && page !== undefined ? (

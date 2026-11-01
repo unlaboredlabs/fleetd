@@ -1,5 +1,6 @@
 // `node fixtures/sessions/media.ts`: renders the Sessions fixture's media once, into fixtures/sessions/media/: each
-// page pages.ts draws as a 960×600 JPEG (the live sessions' frames), and the share session's video as a VP9 WebM, its
+// page pages.ts draws as a 960×600 JPEG (the live sessions' frames), the phone's app as a 603×1311 one (`--phone`
+// renders only that), and the share session's video as a VP9 WebM, its
 // pages shown at the times script.ts gives them. Electron draws and encodes them (canvas, MediaRecorder); the files are
 // committed, so the fixture build itself needs neither. Run it again after changing a page or the share timeline.
 import { mkdirSync, writeFileSync, mkdtempSync } from "node:fs";
@@ -86,8 +87,19 @@ export const jpegsOf = (win: Awaited<ReturnType<typeof launchCanvas>>["win"], pa
     { pages, quality: 0.7 },
   );
 
+/** The phone's pages, drawn at 1.5× its points (the size a simulator's frame comes at). */
+export const PHONE_PAGES: Readonly<Record<string, string>> = { shopApp: page.shopApp() };
+
 const main = async () => {
   mkdirSync(OUT, { recursive: true });
+  const phone = await launchCanvas(page.PHONE_W * 1.5, page.PHONE_H * 1.5);
+  try {
+    const jpegs = await jpegsOf(phone.win, PHONE_PAGES);
+    for (const [name, b64] of Object.entries(jpegs)) writeFileSync(path.join(OUT, `${name}.jpg`), pixelsOnly(Buffer.from(b64, "base64")));
+  } finally {
+    await phone.app.close();
+  }
+  if (process.argv.includes("--phone")) return;
   const { app, win } = await launchCanvas();
   try {
     const jpegs = await jpegsOf(win, PAGES);

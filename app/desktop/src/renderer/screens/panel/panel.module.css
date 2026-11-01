@@ -52,6 +52,10 @@
   min-height: 0;
   padding-bottom: var(--space-2);
 }
+/* One screen runs to the window's bottom edge: its own stage keeps its margin. */
+.flush {
+  padding-bottom: 0;
+}
 /* A tab's pane, the first time it loads: nothing to read yet, nothing that moves. */
 .loading {
   flex: 1;
