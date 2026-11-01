@@ -1845,7 +1845,7 @@ async fn ask_mode_brings_a_card_for_every_risky_action_without_the_checker() {
     );
 }
 
-/// YOLO: every risky action runs with no card and no checker, and each still shows in the chat and the log.
+/// YOLO: every risky action runs with no card and no checker, and each is logged (with no line in the chat).
 #[tokio::test]
 async fn yolo_runs_every_risky_action_unasked_and_logs_each() {
     let fake = checker_navi(NaviApprovalMode::Yolo);

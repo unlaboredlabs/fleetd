@@ -177,7 +177,8 @@ pub fn log(c: &Connection, r: &ProjectRef) -> Result<Vec<AutoApproved>, StoreErr
         .collect())
 }
 
-/// An action that ran without asking: one quiet line in the Navi's chat, and an entry in its log that links to it.
+/// An action that ran without asking: an entry in the Navi's log. A checker's go is also one quiet line in the Navi's
+/// chat, which the entry links to; YOLO posts nothing, since the person chose not to be bothered.
 pub fn auto_approved(
     hub: &Hub,
     r: &ProjectRef,
@@ -191,13 +192,13 @@ pub fn auto_approved(
         .filter(|r| !r.is_empty())
         .map(|r| clip(&r, 300));
     let text = match (by, &reason) {
-        (AutoApprovedBy::Checker, Some(why)) => {
-            format!("Let through without asking you: {what}. The checker's reason: {why}")
-        }
-        (AutoApprovedBy::Checker, None) => format!("Let through without asking you: {what}."),
-        (AutoApprovedBy::Yolo, _) => format!("Ran without asking you (YOLO): {what}."),
+        (AutoApprovedBy::Checker, Some(why)) => Some(format!(
+            "Let through without asking you: {what}. The checker's reason: {why}"
+        )),
+        (AutoApprovedBy::Checker, None) => Some(format!("Let through without asking you: {what}.")),
+        (AutoApprovedBy::Yolo, _) => None,
     };
-    let line = hub.chat.system_line(r, &text)?;
+    let line = text.map(|t| hub.chat.system_line(r, &t)).transpose()?;
     let at = now_ms(hub.clock.as_ref());
     let entry = AutoApproved {
         at: iso_ms(at).into(),
@@ -205,7 +206,7 @@ pub fn auto_approved(
         tool: Line::new(clip(&action.tool, 200)).unwrap_or_else(|_| Line::unchecked("a tool")),
         what: Line::new(what).unwrap_or_else(|_| Line::unchecked("an action")),
         reason: reason.and_then(|r| Line::new(r).ok()),
-        message_id: Some(line.message_id),
+        message_id: line.map(|l| l.message_id),
     };
     hub.db.with(|c| {
         c.prepare_cached(

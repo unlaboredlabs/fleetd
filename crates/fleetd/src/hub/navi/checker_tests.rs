@@ -575,9 +575,9 @@ async fn the_checker_is_on_by_default_and_only_a_person_changes_it() {
     assert!(refused.is_err());
 }
 
-/// A go: one quiet line in the chat, and an entry in the log that links to it.
+/// A checker's go: one quiet line in the chat, and an entry in the log that links to it. A YOLO run: only the entry.
 #[tokio::test]
-async fn an_auto_approved_action_shows_in_the_chat_and_the_log() {
+async fn a_checkers_go_shows_in_the_chat_and_the_log_and_a_yolo_run_only_in_the_log() {
     let (hub, sam, _home) = hub();
     let reply = mail_send(json!({ "to": ["sam@friends.example"], "body": "Saturday works." }));
     let entry = checker::auto_approved(
@@ -588,7 +588,7 @@ async fn an_auto_approved_action_shows_in_the_chat_and_the_log() {
         Some("you asked to tell Sam that Saturday works"),
     )
     .unwrap();
-    checker::auto_approved(
+    let yolo = checker::auto_approved(
         &hub,
         &navi_ref(),
         &mail_send(json!({ "to": ["bo@example.com"] })),
@@ -596,6 +596,7 @@ async fn an_auto_approved_action_shows_in_the_chat_and_the_log() {
         None,
     )
     .unwrap();
+    assert_eq!(yolo.message_id, None);
     let (messages, _, _) = hub.chat.page(&navi_ref(), None, None, 10).unwrap();
     let lines: Vec<_> = messages
         .iter()
@@ -605,8 +606,7 @@ async fn an_auto_approved_action_shows_in_the_chat_and_the_log() {
     assert_eq!(
         lines,
         [
-            "Let through without asking you: `send_message` on `mail`, to sam@friends.example. The checker's reason: you asked to tell Sam that Saturday works",
-            "Ran without asking you (YOLO): `send_message` on `mail`, to bo@example.com.",
+            "Let through without asking you: `send_message` on `mail`, to sam@friends.example. The checker's reason: you asked to tell Sam that Saturday works"
         ]
     );
     assert_eq!(entry.message_id, Some(messages[0].message_id.clone()));
@@ -622,6 +622,11 @@ async fn an_auto_approved_action_shows_in_the_chat_and_the_log() {
     let log = out["log"].as_array().unwrap();
     assert_eq!(log.len(), 2);
     assert_eq!(log[0]["by"], "yolo", "newest first");
+    assert_eq!(
+        log[0]["what"],
+        "`send_message` on `mail`, to bo@example.com"
+    );
+    assert!(log[0].get("messageId").is_none());
     assert_eq!(log[1]["by"], "checker");
     assert_eq!(
         log[1]["what"],
