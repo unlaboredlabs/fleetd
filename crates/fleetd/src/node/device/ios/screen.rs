@@ -5,7 +5,8 @@
 //! A person's input goes through agent-device on the session's own home, so through the agent's daemon and the
 //! XCTest runner it already started: a tap is `press`, a drag `swipe`, a held tap `longpress`, the wheel a `swipe`,
 //! typing `type`, and Enter, Home and Back their own commands. Inputs queue and run one at a time; scrolls and typing
-//! that pile up behind a slow command go as one.
+//! that pile up behind a slow command go as one. agent-device runs them only in a session of its own: on a screen no
+//! agent opened, the first input that it refuses opens one (`open`, no app), then goes again.
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -282,18 +283,21 @@ async fn work(runner: Runner, mut gestures: Gestures, mut rx: mpsc::UnboundedRec
             let Some(args) = gestures.feed(&input, Instant::now()) else {
                 continue;
             };
-            let run = tokio::process::Command::new(&runner.wrapper)
-                .args(command_args(&args, &runner.udid))
-                .envs(runner.env.iter().map(|(k, v)| (k, v)))
-                .env_remove("FLEETD_DEVICE_CONTROL")
-                .stdin(std::process::Stdio::null())
-                .kill_on_drop(true)
-                .output();
-            match tokio::time::timeout(COMMAND, run).await {
+            let mut ran = run(&runner, &args).await;
+            // A screen a person opened has no agent-device session (no agent ran `open`), and press, swipe and type
+            // each need one: agent-device refuses them all. Open one on the simulator, with no app, and go again.
+            if let Ok(Ok(out)) = &ran
+                && !out.status.success()
+                && said(out).contains(NO_SESSION)
+                && matches!(run(&runner, &["open".to_owned()]).await, Ok(Ok(out)) if out.status.success())
+            {
+                ran = run(&runner, &args).await;
+            }
+            match ran {
                 Ok(Ok(out)) if out.status.success() => {}
                 Ok(Ok(out)) => tracing::warn!(
                     command = %args.join(" "),
-                    said = %String::from_utf8_lossy(&out.stderr).chars().take(300).collect::<String>(),
+                    said = %said(&out).chars().take(300).collect::<String>(),
                     "a person's input did not reach the iOS simulator"
                 ),
                 Ok(Err(e)) => tracing::warn!(error = %e, "cannot run agent-device"),
@@ -301,6 +305,33 @@ async fn work(runner: Runner, mut gestures: Gestures, mut rx: mpsc::UnboundedRec
             }
         }
     }
+}
+
+/// What agent-device says when no session of its own is open on the simulator.
+const NO_SESSION: &str = "SESSION_NOT_FOUND";
+
+/// One agent-device command on the session's simulator, given [`COMMAND`] to run.
+async fn run(
+    runner: &Runner,
+    args: &[String],
+) -> Result<std::io::Result<std::process::Output>, tokio::time::error::Elapsed> {
+    let run = tokio::process::Command::new(&runner.wrapper)
+        .args(command_args(args, &runner.udid))
+        .envs(runner.env.iter().map(|(k, v)| (k, v)))
+        .env_remove("FLEETD_DEVICE_CONTROL")
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .output();
+    tokio::time::timeout(COMMAND, run).await
+}
+
+/// What a command said: its errors, and its output too (agent-device prints some errors there).
+fn said(out: &std::process::Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stderr),
+        String::from_utf8_lossy(&out.stdout)
+    )
 }
 
 #[cfg(test)]
@@ -418,6 +449,81 @@ mod tests {
         assert_eq!(
             command_args(&["keyboard".into(), "return".into()], "U1"),
             ["keyboard", "--platform", "ios", "--udid", "U1", "return"]
+        );
+    }
+
+    /// A stand-in for agent-device that, as agent-device 0.21.31 does, refuses every input until a session is open on
+    /// the simulator (`open`), and logs each command it is given.
+    fn stand_in(dir: &std::path::Path) -> Runner {
+        let wrapper = dir.join("agent-device");
+        std::fs::write(
+            &wrapper,
+            "#!/bin/sh\n[ \"$1\" = --version ] && exit 0\necho \"$*\" >> \"$LOG\"\n\
+             if [ \"$1\" = open ]; then touch \"$OPENED\"; echo 'Opened: default'; exit 0; fi\n\
+             if [ ! -e \"$OPENED\" ]; then echo 'Error (SESSION_NOT_FOUND): No active session. Run open first.' >&2; exit 1; fi\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(
+            &wrapper,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        // Past ETXTBSY: another test's fork may hold the script's write fd for a moment.
+        while let Err(e) = std::process::Command::new(&wrapper)
+            .arg("--version")
+            .status()
+        {
+            assert!(e.to_string().contains("Text file busy"), "{e}");
+            std::thread::yield_now();
+        }
+        let path = |name: &str| dir.join(name).to_string_lossy().into_owned();
+        Runner {
+            wrapper,
+            env: vec![
+                ("LOG".into(), path("log")),
+                ("OPENED".into(), path("opened")),
+            ],
+            udid: "U1".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_persons_taps_drags_and_typing_reach_a_simulator_no_agent_opened() {
+        // A screen a person opened from the app: no agent ran `open`, so agent-device has no session on it.
+        let dir = tempfile::tempdir().unwrap();
+        let hands = Hands::start(stand_in(dir.path()), 3.0);
+        for input in [
+            touch(TouchAction::Down, 300.0, 600.0),
+            touch(TouchAction::Up, 300.0, 600.0),
+            Input::Text("hi".into()),
+            touch(TouchAction::Down, 300.0, 1500.0),
+            touch(TouchAction::Up, 300.0, 600.0),
+        ] {
+            assert!(hands.send(&input));
+        }
+        let log = dir.path().join("log");
+        let want = [
+            "press --platform ios --udid U1 100 200",
+            "open --platform ios --udid U1",
+            "press --platform ios --udid U1 100 200",
+            "type --platform ios --udid U1 -- hi",
+            "swipe --platform ios --udid U1 100 500 100 200",
+        ];
+        let ran = tokio::time::timeout(Duration::from_secs(20), async {
+            loop {
+                let ran = std::fs::read_to_string(&log).unwrap_or_default();
+                if ran.lines().count() >= want.len() {
+                    return ran;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| std::fs::read_to_string(&log).unwrap_or_default());
+        assert_eq!(
+            ran.lines().collect::<Vec<_>>(),
+            want,
+            "the tap went once a session was open"
         );
     }
 
