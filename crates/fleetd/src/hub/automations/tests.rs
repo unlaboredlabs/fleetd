@@ -191,8 +191,8 @@ async fn a_trigger_while_a_run_is_open_is_skipped_and_recorded() {
     let second = autos
         .run(
             id,
-            Start::Webhook {
-                payload: "{}".into(),
+            Start::Schedule {
+                due_ms: 1_792_231_200_000,
             },
         )
         .await
@@ -555,8 +555,15 @@ async fn a_webhook_post_with_its_secret_runs_with_the_body_and_a_wrong_secret_is
     let new = post(webhook_url(&base, &a.automation_id, &rotated), "{}".into()).await;
     assert_eq!(
         new.status(),
-        200,
-        "skipped: the first run's order is still open"
+        202,
+        "kept: the first run's order is still open"
+    );
+    let answer: serde_json::Value = new.json().await.unwrap();
+    assert_eq!(answer["state"], "queued");
+    assert!(answer["workstreamId"].is_null());
+    assert!(
+        answer["why"].as_str().unwrap().contains(w.as_str()),
+        "{answer}"
     );
     assert_eq!(
         hub.automations
@@ -1003,4 +1010,474 @@ async fn a_stuck_run_of_a_deleted_automation_fails_at_start() {
     assert_eq!(run.state, AutomationRunState::Failed);
     assert!(run.why.unwrap().as_str().contains("automation is gone"));
     autos.stop();
+}
+
+// ---- a Navi's runs close themselves (D277) --------------------------------------------------------------------
+
+fn make_navi(h: &auto_start_tests::Hub) {
+    let by = fleetd_contracts::model::ProjectCreator {
+        key_id: "k1".into(),
+        name: "laptop".into(),
+    };
+    h.area
+        .ctx
+        .db
+        .with(|c| {
+            Ok(crate::hub::navi::store::put(
+                c,
+                &h.project,
+                &by,
+                None,
+                1_792_231_200_000,
+            )?)
+        })
+        .unwrap();
+}
+
+/// The lead's thread as the node last reported it, then the end of one of its turns.
+fn turn_ended(h: &auto_start_tests::Hub, status: &str, kind: HubEventType) {
+    let at = iso_ms(now_ms(h.clock.as_ref()));
+    h.area
+        .ctx
+        .store
+        .thread_upsert(&crate::hub::store::StoredThread {
+            thread: serde_json::from_value(json!({
+                "machineId": "lab-a", "threadId": "lead-1", "projectId": "p-a", "title": "lead", "status": status,
+                "headline": "", "latestMessageTail": "", "lastProgressAt": at, "stale": false, "asOf": at,
+            }))
+            .unwrap(),
+            last_sequence: None,
+            last_run_id: None,
+            last_run_status: None,
+        })
+        .unwrap();
+    h.events
+        .append(NewEvent {
+            at: at.into(),
+            r#type: kind,
+            machine_id: Some(h.project.machine_id.clone()),
+            project_id: Some(h.project.project_id.clone()),
+            thread_id: Some(fleetd_contracts::ids::ThreadId::unchecked("lead-1")),
+            summary: "lead-1 ended".into(),
+            data: Some(json!({ "threadId": "lead-1" })),
+            attention: None,
+        })
+        .unwrap();
+}
+
+fn order_state(h: &auto_start_tests::Hub, run: &AutomationRun) -> WorkstreamState {
+    let w = run.workstream_id.as_ref().unwrap();
+    h.area.workstreams.get(w).unwrap().unwrap().state
+}
+
+/// The New mail runs a Navi never closed skipped every later one overnight: now the run closes once the Navi's turn
+/// for it ends, and the next scheduled run starts.
+#[tokio::test(flavor = "current_thread")]
+async fn a_navis_run_closes_once_its_turn_ends_and_the_next_scheduled_run_starts() {
+    let h = lead_hub(true);
+    make_navi(&h);
+    let autos = over(&h);
+    let (a, _) = autos
+        .create(new(
+            &h.project,
+            Some(schedule("*/30 * * * *", "UTC")),
+            false,
+        ))
+        .unwrap();
+    let id = a.automation_id.as_str();
+    autos.start();
+    settle().await;
+    h.clock.advance(Duration::from_secs(30 * MIN));
+    settle().await;
+    let first = autos.runs(id, 1).unwrap().remove(0);
+    assert_eq!(first.state, AutomationRunState::Running);
+    assert_eq!(h.launched_prompts().len(), 1, "the Navi started with it");
+
+    // An earlier turn's end while the one with the order still runs closes nothing.
+    h.clock.advance(Duration::from_secs(MIN));
+    turn_ended(&h, "running", HubEventType::ThreadCompleted);
+    settle().await;
+    assert_eq!(order_state(&h, &first), WorkstreamState::Open);
+
+    // Its turn ends with the reply posted: the run is done, with the reason on its order, and no push.
+    turn_ended(&h, "completed", HubEventType::ThreadCompleted);
+    settle().await;
+    assert_eq!(order_state(&h, &first), WorkstreamState::Done);
+    let first = autos.runs(id, 1).unwrap().remove(0);
+    assert_eq!(first.state, AutomationRunState::Done);
+    let done = events_of(&h, HubEventType::WorkstreamDone);
+    assert_eq!(done.len(), 1);
+    assert!(
+        done[0]
+            .summary
+            .as_str()
+            .contains("the Navi's turn for this run ended"),
+        "{}",
+        done[0].summary.as_str()
+    );
+    assert_eq!(
+        done[0].data.as_ref().unwrap()["by"],
+        format!("automation:{id}")
+    );
+
+    // The next scheduled run starts instead of being skipped.
+    h.clock.advance(Duration::from_secs(29 * MIN));
+    settle().await;
+    let runs = autos.runs(id, 10).unwrap();
+    assert_eq!(
+        runs.iter().map(|r| r.state).collect::<Vec<_>>(),
+        [AutomationRunState::Running, AutomationRunState::Done]
+    );
+    autos.stop();
+}
+
+/// A turn that ends with no reply (it failed, or the watchdog cut a stalled turn off) closes its run too, so no run
+/// blocks later ones; a run whose order came after the Navi's last message waits for the turn that has it.
+#[tokio::test(flavor = "current_thread")]
+async fn a_navis_run_closes_when_its_turn_ends_without_a_reply_but_not_before_the_navi_had_it() {
+    let h = lead_hub(true);
+    make_navi(&h);
+    let autos = over(&h);
+    autos.start();
+    settle().await;
+    let (mail, _) = autos.create(new(&h.project, None, false)).unwrap();
+    let mail = mail.automation_id.to_string();
+    let first = autos
+        .run(&mail, Start::Manual { by: "human".into() })
+        .await
+        .unwrap();
+
+    h.clock.advance(Duration::from_secs(MIN));
+    turn_ended(&h, "failed", HubEventType::ThreadFailed);
+    settle().await;
+    assert_eq!(order_state(&h, &first), WorkstreamState::Done);
+    h.clock.advance(Duration::from_secs(MIN));
+    let second = autos
+        .run(
+            &mail,
+            Start::Webhook {
+                payload: "{}".into(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(second.state, AutomationRunState::Running, "not skipped");
+
+    // The second order reaches the running lead as a wake; a turn that ends before it went closes nothing.
+    h.clock.advance(Duration::from_secs(1));
+    turn_ended(&h, "completed", HubEventType::ThreadCompleted);
+    settle().await;
+    assert_eq!(order_state(&h, &second), WorkstreamState::Open);
+    h.after_debounce().await;
+    assert!(
+        h.node
+            .sends
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|m| m.contains(second.workstream_id.as_ref().unwrap().as_str()))
+    );
+    h.clock.advance(Duration::from_secs(MIN));
+    turn_ended(&h, "interrupted", HubEventType::ThreadInterrupted);
+    settle().await;
+    assert_eq!(order_state(&h, &second), WorkstreamState::Done);
+    let third = autos
+        .run(&mail, Start::Manual { by: "human".into() })
+        .await
+        .unwrap();
+    assert_eq!(third.state, AutomationRunState::Running);
+    autos.stop();
+}
+
+/// A project of code keeps its runs open until its lead closes them, as before.
+#[tokio::test(flavor = "current_thread")]
+async fn a_code_projects_run_stays_open_after_its_leads_turn() {
+    let h = lead_hub(true);
+    let autos = over(&h);
+    autos.start();
+    settle().await;
+    let (a, _) = autos.create(new(&h.project, None, false)).unwrap();
+    let id = a.automation_id.as_str();
+    let first = autos
+        .run(id, Start::Manual { by: "human".into() })
+        .await
+        .unwrap();
+    h.clock.advance(Duration::from_secs(MIN));
+    turn_ended(&h, "completed", HubEventType::ThreadCompleted);
+    settle().await;
+    assert_eq!(order_state(&h, &first), WorkstreamState::Open);
+    let next = autos
+        .run(id, Start::Manual { by: "human".into() })
+        .await
+        .unwrap();
+    assert_eq!(next.state, AutomationRunState::Skipped);
+    autos.stop();
+}
+
+// ---- webhook calls kept while a run is open (D279) ------------------------------------------------------------
+
+fn hook(body: &str) -> Start {
+    Start::Webhook {
+        payload: body.into(),
+    }
+}
+
+fn orders(h: &auto_start_tests::Hub) -> Vec<fleetd_contracts::ledger::Workstream> {
+    h.area
+        .workstreams
+        .list(&crate::hub::leads::records::WorkstreamFilter {
+            project_ref: None,
+            state: None,
+            limit: 100,
+        })
+        .unwrap()
+}
+
+/// Webhook calls while a run is open are kept with their bodies, not skipped; once the run's order closes they reach
+/// the lead in one follow-up order with every body. A schedule then still skips.
+#[tokio::test(flavor = "current_thread")]
+async fn webhook_calls_while_a_run_is_open_go_in_one_follow_up_order_once_it_ends() {
+    let h = lead_hub(true);
+    let autos = over(&h);
+    autos.start();
+    settle().await;
+    let (a, _) = autos.create(new(&h.project, None, true)).unwrap();
+    let id = a.automation_id.as_str();
+    let first = autos.run(id, hook("{\"mail\":\"m-1\"}")).await.unwrap();
+    let w1 = first.workstream_id.clone().unwrap();
+
+    h.clock.advance(Duration::from_secs(MIN));
+    let second = autos.run(id, hook("{\"mail\":\"m-2\"}")).await.unwrap();
+    h.clock.advance(Duration::from_secs(MIN));
+    let third = autos.run(id, hook("```m-3```")).await.unwrap();
+    for kept in [&second, &third] {
+        assert_eq!(kept.state, AutomationRunState::Queued);
+        assert!(kept.workstream_id.is_none() && kept.ended_at.is_none());
+        assert!(
+            kept.why.as_ref().unwrap().as_str().contains(w1.as_str()),
+            "{:?}",
+            kept.why
+        );
+    }
+    let tick = autos
+        .run(
+            id,
+            Start::Schedule {
+                due_ms: 1_792_231_200_000,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        tick.state,
+        AutomationRunState::Skipped,
+        "a schedule still skips"
+    );
+    settle().await;
+    assert_eq!(orders(&h).len(), 1, "nothing goes while the run is open");
+
+    h.area
+        .workstreams
+        .close(&h.project, &w1, "triaged", "lead:lab-a/p-a")
+        .await
+        .unwrap();
+    settle().await;
+    let runs = autos.runs(id, 10).unwrap();
+    assert_eq!(
+        runs.iter().map(|r| r.state).collect::<Vec<_>>(),
+        [
+            AutomationRunState::Skipped,
+            AutomationRunState::Running,
+            AutomationRunState::Running,
+            AutomationRunState::Done
+        ]
+    );
+    let w2 = runs[1].workstream_id.clone().unwrap();
+    assert_eq!(
+        runs[2].workstream_id.as_ref(),
+        Some(&w2),
+        "one order for both"
+    );
+    assert_ne!(w2, w1);
+    let text = h.area.workstreams.get(&w2).unwrap().unwrap().source.text;
+    let text = text.as_str();
+    for needle in [
+        "2 calls to its webhook",
+        "{\"mail\":\"m-2\"}",
+        "```m-3```",
+        second.run_id.as_str(),
+        third.run_id.as_str(),
+        "Check the dependencies for updates",
+    ] {
+        assert!(text.contains(needle), "{needle} not in:\n{text}");
+    }
+    assert!(
+        text.find("m-2").unwrap() < text.find("m-3").unwrap(),
+        "oldest first"
+    );
+    assert_eq!(orders(&h).len(), 2);
+
+    // With no run open, a call runs at once again; the follow-up's order being open, the next ones wait for it.
+    let next = autos.run(id, hook("m-4")).await.unwrap();
+    assert_eq!(next.state, AutomationRunState::Queued);
+    autos.stop();
+}
+
+/// At most QUEUED_MAX calls wait, so what is kept stays bounded (20 × 16 KiB); the follow-up order stays within the
+/// ledger's size and names by run every body that didn't fit.
+#[tokio::test(flavor = "current_thread")]
+async fn kept_webhook_calls_are_bounded_and_every_one_is_named_in_the_follow_up() {
+    let h = lead_hub(true);
+    let autos = over(&h);
+    autos.start();
+    settle().await;
+    let (a, _) = autos.create(new(&h.project, None, true)).unwrap();
+    let id = a.automation_id.as_str();
+    let first = autos.run(id, hook("first")).await.unwrap();
+    let mut kept = Vec::new();
+    for i in 0..QUEUED_MAX {
+        let run = autos
+            .run(id, hook(&format!("mail-{i:02} {}", "x".repeat(400))))
+            .await
+            .unwrap();
+        assert_eq!(run.state, AutomationRunState::Queued);
+        kept.push(run);
+    }
+    let over_cap = autos.run(id, hook("one too many")).await.unwrap();
+    assert_eq!(over_cap.state, AutomationRunState::Skipped);
+    assert!(
+        over_cap
+            .why
+            .as_ref()
+            .unwrap()
+            .as_str()
+            .contains("20 webhook calls already wait"),
+        "{:?}",
+        over_cap.why
+    );
+
+    h.area
+        .workstreams
+        .close(
+            &h.project,
+            first.workstream_id.as_ref().unwrap(),
+            "done",
+            "lead:lab-a/p-a",
+        )
+        .await
+        .unwrap();
+    settle().await;
+    let (last, _) = autos
+        .run_with_payload(id, kept[QUEUED_MAX - 1].run_id.as_str())
+        .unwrap()
+        .unwrap();
+    let w = last
+        .workstream_id
+        .expect("the newest kept call runs with the follow-up");
+    let text = h.area.workstreams.get(&w).unwrap().unwrap().source.text;
+    let text = text.as_str();
+    assert!(text.chars().count() <= 4000);
+    assert!(
+        text.contains("mail-00") && text.contains("No room for bodies"),
+        "{text}"
+    );
+    for run in &kept {
+        assert!(
+            text.contains(run.run_id.as_str()),
+            "{} not named",
+            run.run_id
+        );
+    }
+    autos.stop();
+}
+
+/// The overnight case: a Navi's New mail webhook run whose turn ended closes, and the mail that came meanwhile goes
+/// to the Navi instead of being lost.
+#[tokio::test(flavor = "current_thread")]
+async fn a_navis_mail_that_came_during_a_run_reaches_it_once_that_turn_ends() {
+    let h = lead_hub(true);
+    make_navi(&h);
+    let autos = over(&h);
+    autos.start();
+    settle().await;
+    let (a, _) = autos.create(new(&h.project, None, true)).unwrap();
+    let id = a.automation_id.as_str();
+    let first = autos
+        .run(id, hook("mail from devbox alerts"))
+        .await
+        .unwrap();
+    h.clock.advance(Duration::from_secs(MIN));
+    let later = autos.run(id, hook("mail from the bank")).await.unwrap();
+    assert_eq!(later.state, AutomationRunState::Queued);
+
+    turn_ended(&h, "completed", HubEventType::ThreadCompleted);
+    settle().await;
+    assert_eq!(order_state(&h, &first), WorkstreamState::Done);
+    let later = autos.runs(id, 1).unwrap().remove(0);
+    assert_eq!(later.state, AutomationRunState::Running);
+    let w = later.workstream_id.unwrap();
+    assert!(
+        h.area
+            .workstreams
+            .get(&w)
+            .unwrap()
+            .unwrap()
+            .source
+            .text
+            .as_str()
+            .contains("mail from the bank")
+    );
+    autos.stop();
+}
+
+/// Skips piling up behind a long open run (a schedule every few minutes, calls past QUEUED_MAX) never prune the open
+/// run or a kept call: its row is the body's only copy.
+#[tokio::test(flavor = "current_thread")]
+async fn skips_piling_up_never_prune_the_open_run_or_a_kept_call() {
+    let h = lead_hub(true);
+    let autos = over(&h);
+    let (a, _) = autos.create(new(&h.project, None, true)).unwrap();
+    let id = a.automation_id.as_str();
+    let first = autos.run(id, hook("first")).await.unwrap();
+    h.clock.advance(Duration::from_secs(1));
+    let kept = autos.run(id, hook("kept mail")).await.unwrap();
+    assert_eq!(kept.state, AutomationRunState::Queued);
+    for _ in 0..RUNS_KEPT + 20 {
+        h.clock.advance(Duration::from_secs(1));
+        let tick = autos
+            .run(
+                id,
+                Start::Schedule {
+                    due_ms: 1_792_231_200_000,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(tick.state, AutomationRunState::Skipped);
+    }
+    let (open, _) = autos
+        .run_with_payload(id, first.run_id.as_str())
+        .unwrap()
+        .expect("the open run stays");
+    assert_eq!(open.state, AutomationRunState::Running);
+    let (_, body) = autos
+        .run_with_payload(id, kept.run_id.as_str())
+        .unwrap()
+        .expect("the kept call stays");
+    assert_eq!(body.as_deref(), Some("kept mail"));
+    let rows: i64 = autos
+        .db
+        .with(|c| {
+            Ok(c.query_row(
+                "SELECT COUNT(*) FROM automation_runs WHERE automation_id = ?",
+                [id],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(
+        rows,
+        RUNS_KEPT as i64 + 2,
+        "the skips are pruned to RUNS_KEPT"
+    );
 }

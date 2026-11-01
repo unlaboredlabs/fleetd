@@ -46,7 +46,7 @@ pub async fn handle(hub: Arc<Hub>, automation_id: &str, secret: &str, body: Body
         Err(e) => return refused(StatusCode::INTERNAL_SERVER_ERROR, &e.message),
     };
     let status = match run.state {
-        AutomationRunState::Running => StatusCode::ACCEPTED,
+        AutomationRunState::Running | AutomationRunState::Queued => StatusCode::ACCEPTED,
         AutomationRunState::Failed => StatusCode::INTERNAL_SERVER_ERROR,
         _ => StatusCode::OK,
     };

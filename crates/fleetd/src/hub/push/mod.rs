@@ -497,6 +497,12 @@ pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError>
             category = Some(PushCategory::Reply);
             (PushKind::Message, m.text.as_str().to_owned())
         }
+        // A Navi's automation run closed by itself (D277): its reply was the notification.
+        HubEventType::WorkstreamDone
+            if text("by").is_some_and(|by| by.starts_with("automation:")) =>
+        {
+            return Ok(None);
+        }
         HubEventType::WorkstreamDone => (PushKind::Order, event.summary.to_string()),
         HubEventType::WorkstreamState if text("state") == Some("stopped") => {
             (PushKind::Order, event.summary.to_string())

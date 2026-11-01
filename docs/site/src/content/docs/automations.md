@@ -52,12 +52,21 @@ automations with its own tools, listed under [Agent tools](/docs/reference/agent
 
 ## One run at a time
 
-An automation runs once at a time. If a trigger comes in while its last run's order is still open, that trigger is
-skipped. The skip shows in the run history with the reason, for example "run … is still going (W12 is open)". Once
+An automation runs once at a time. If a schedule or Run now comes in while its last run's order is still open, it
+is skipped. The skip shows in the run history with the reason, for example "run … is still going (W12 is open)". Once
 the order is closed, the next trigger runs.
 
-A run's state follows its order: **Running** while the order is open, then **Done** or **Stopped**. **Skipped**
-means it came during another run or while the automation was paused. **Failed** means the order couldn't be opened.
+A webhook call that comes in while a run is open is kept instead, with its body: its run shows as **Queued**. Once the
+open run's order is closed or stopped, every call kept meanwhile goes to the lead in one follow-up order, with each
+body, oldest first. Up to 20 calls wait per automation (each body is at most 16 KiB); one past that is skipped.
+
+A [Navi](/docs/navi)'s run closes its order by itself once the Navi's turn for it ends, whether it replied, failed or
+was cut off, so one run it never closed can't hold up the next ones. A coding project's lead closes its runs' orders
+itself, as it does any order.
+
+A run's state follows its order: **Running** while the order is open, then **Done** or **Stopped**. **Queued** is a
+webhook call waiting for the open run to end. **Skipped** means it came during another run or while the automation
+was paused. **Failed** means the order couldn't be opened.
 
 ## When the hub was down
 
@@ -89,8 +98,8 @@ curl -X POST --data '{"alert":"disk 91% on db-2"}' "$FLEETD_WEBHOOK_URL"
 
 | Answer | Meaning |
 |---|---|
-| `202` | A run started; the JSON has its `runId` and the `workstreamId` of its order. |
-| `200` | Recorded, but skipped: `state` is `skipped` and `why` says why (a run is still open, or it's paused). |
+| `202` | A run started (`state` is `running`; the JSON has its `runId` and the `workstreamId` of its order), or, while a run is open, the call was kept (`state` is `queued`) and goes in one follow-up order once that run ends. |
+| `200` | Recorded, but skipped: `state` is `skipped` and `why` says why (the automation is paused, or 20 calls already wait). |
 | `404` | The URL isn't valid: a wrong secret, a rotated URL, a deleted automation, or one whose project was removed. |
 | `413` | The body is over 16 KiB. |
 
