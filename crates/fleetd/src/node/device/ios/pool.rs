@@ -20,6 +20,12 @@ use crate::node::device::agent_device;
 /// A clone of a settled simulator boots in seconds on a Mac; on GitHub's 3-vCPU macOS VM, 80-100 s when idle, more with
 /// another simulator running. This allows a loaded machine.
 pub const BOOT_TIMEOUT: Duration = Duration::from_secs(300);
+/// How long [`start_runner`] gives a clone's runner: agent-device's whole start, and a minute for it to exit.
+const RUNNER_START_MAX: Duration = Duration::from_secs(super::session::RUNNER_START.as_secs() + 60);
+/// The longest a warm clone takes, each step to its limit: the clone, its boot and its runner's start.
+pub const WARM_MAX: Duration = Duration::from_secs(
+    super::simctl::CALL.as_secs() + BOOT_TIMEOUT.as_secs() + RUNNER_START_MAX.as_secs(),
+);
 /// The golden's first boot: it migrates data and builds caches.
 const FIRST_BOOT: Duration = Duration::from_secs(600);
 /// agent-device's runner builds with xcodebuild: minutes on a laptop.
@@ -363,7 +369,7 @@ async fn start_runner(home: &Path, lent: &Lent) -> Result<(), String> {
         .stdin(Stdio::null())
         .kill_on_drop(true)
         .output();
-    let out = tokio::time::timeout(RUNNER_START + Duration::from_secs(60), run)
+    let out = tokio::time::timeout(RUNNER_START_MAX, run)
         .await
         .map_err(|_| format!("it did not start in {} s", RUNNER_START.as_secs()))?
         .map_err(|e| format!("cannot run agent-device: {e}"))?;
