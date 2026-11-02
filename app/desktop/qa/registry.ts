@@ -951,6 +951,9 @@ export const screens: readonly Screen[] = [
         await log.evaluate((el) => el.scrollTo({ top: 0 }));
         await page.getByText("Loading earlier messages…").waitFor({ state: "hidden", timeout: 5_000 });
       }
+      // The last page lands with the start line rendered but already out of view: the list keeps the place below it,
+      // and drops that line on its next frame. Back at the top, the start and the past orders under it stay.
+      await log.evaluate((el) => el.scrollTo({ top: 0 }));
       await page.getByText("From before this chat").waitFor({ timeout: 10_000 });
     },
   },
