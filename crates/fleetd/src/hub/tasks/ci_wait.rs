@@ -248,7 +248,7 @@ impl Tasks {
     }
 
     /// Every open wait: task, URL, when asked, GitHub reads failed in a row.
-    fn ci_waits(&self) -> Vec<(TaskId, String, i64, i64)> {
+    pub(super) fn ci_waits(&self) -> Vec<(TaskId, String, i64, i64)> {
         self.db(|c| {
             c.prepare("SELECT task_id, url, created_ms, errors FROM ci_waits ORDER BY created_ms")?
                 .query_map([], |r| {

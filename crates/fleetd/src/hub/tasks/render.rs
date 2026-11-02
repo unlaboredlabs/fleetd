@@ -507,13 +507,15 @@ pub fn task_waiting_lines(task_id: &str, title: &str, question: &str) -> String 
     .render()
 }
 
-/// One digest line per task: running and idle, then queued with reasons, then those that ended since `since`.
-/// `offline` says since when a machine is offline (`HH:MM` UTC), for a running task on it.
+/// One digest line per task: running and idle, then queued with reasons, then those that ended since `since` and
+/// done ones still waiting on CI. `offline` says since when a machine is offline (`HH:MM` UTC), for a running task on
+/// it; `waits` gives a task's open wait_ci URLs.
 pub fn task_digest_lines(
     tasks: &[Task],
     since: Option<&str>,
     now: &str,
     offline: &dyn Fn(&str) -> Option<String>,
+    waits: &dyn Fn(&str) -> Vec<String>,
 ) -> Vec<String> {
     let title = |t: &Task| one_line(t.title.as_str(), 80);
     let mut out = Vec::new();
@@ -571,11 +573,13 @@ pub fn task_digest_lines(
             title(t)
         ));
     }
-    for t in tasks.iter().filter(|t| {
-        matches!(
-            t.state,
-            TaskState::Done | TaskState::Failed | TaskState::Cancelled
-        ) && since.is_none_or(|s| t.ended_at.as_ref().map_or("", |e| e.as_str()) > s)
+    let ended_since =
+        |t: &Task| since.is_none_or(|s| t.ended_at.as_ref().map_or("", |e| e.as_str()) > s);
+    for t in tasks.iter().filter(|t| match t.state {
+        // A done task with open waits isn't over: wait_ci continues it, so the lead needn't.
+        TaskState::Done => ended_since(t) || !waits(t.task_id.as_str()).is_empty(),
+        TaskState::Failed | TaskState::Cancelled => ended_since(t),
+        _ => false,
     }) {
         // A wake's event lines carry the result of a task that ended since the last one; only a lead's first message
         // has no such line.
@@ -613,8 +617,20 @@ pub fn task_digest_lines(
             .as_ref()
             .and_then(|r| r.pr_url.as_ref())
             .map_or_else(String::new, |p| format!(" [{}]", p.as_str()));
+        let when = if ended_since(t) {
+            " since your last wake"
+        } else {
+            ""
+        };
+        let waiting = match waits(t.task_id.as_str()) {
+            urls if urls.is_empty() || t.state != TaskState::Done => String::new(),
+            urls => format!(
+                "; waits on CI, and wait_ci wakes it as each ends: {}",
+                urls.join(" ")
+            ),
+        };
         out.push(format!(
-            "- {} {} since your last wake: {}{pr}{arrow}",
+            "- {} {}{when}: {}{pr}{waiting}{arrow}",
             t.task_id,
             state_str(t.state),
             title(t)
@@ -652,7 +668,11 @@ mod tests {
             "result": { "status": "done", "tail": "Fixed it.", "at": "2026-10-25T10:00:00.000Z" },
         }))
         .unwrap();
-        let lines = |since| task_digest_lines(std::slice::from_ref(&task), since, "", &|_| None);
+        let lines = |since| {
+            task_digest_lines(std::slice::from_ref(&task), since, "", &|_| None, &|_| {
+                Vec::new()
+            })
+        };
         assert!(lines(None)[0].ends_with("→ Fixed it."), "{:?}", lines(None));
         let wake = lines(Some("2026-10-25T09:30:00.000Z"));
         assert!(wake[0].ends_with(": B"), "{wake:?}");
@@ -725,7 +745,9 @@ mod tests {
                         "at": "2026-10-25T10:00:00.000Z" },
         }))
         .unwrap();
-        let line = &task_digest_lines(std::slice::from_ref(&task), None, "", &|_| None)[0];
+        let line = &task_digest_lines(std::slice::from_ref(&task), None, "", &|_| None, &|_| {
+            Vec::new()
+        })[0];
         assert!(line.contains("[https://github.com/o/r/pull/9]"), "{line}");
         assert!(line.ends_with("… Refs: F21 F22 9e8d7c6b"), "{line}");
     }

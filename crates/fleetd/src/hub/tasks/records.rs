@@ -307,7 +307,8 @@ impl TaskRecords {
         db.prepare_cached(
             "SELECT data FROM tasks
              WHERE machine_id = ?1 AND project_id = ?2
-               AND (state IN ('queued', 'running', 'idle') OR (?3 IS NULL OR ended_at > ?3))
+               AND (state IN ('queued', 'running', 'idle') OR (?3 IS NULL OR ended_at > ?3)
+                    OR (state = 'done' AND 'T' || n IN (SELECT task_id FROM ci_waits)))
              ORDER BY n DESC LIMIT ?4",
         )?
         .query_map(
