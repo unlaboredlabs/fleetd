@@ -1,6 +1,7 @@
 //! `wait_ci`: a task asks to be woken when a GitHub Actions run, or the checks on a PR's head, finish. Each wait is a
 //! row in `ci_waits`; every [`POLL_EVERY`] the hub reads GitHub for each, and one that finished continues its task's
 //! thread (a running task takes it at its next tool boundary) with one line: the outcome and the failing jobs.
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -248,7 +249,7 @@ impl Tasks {
     }
 
     /// Every open wait: task, URL, when asked, GitHub reads failed in a row.
-    pub(super) fn ci_waits(&self) -> Vec<(TaskId, String, i64, i64)> {
+    fn ci_waits(&self) -> Vec<(TaskId, String, i64, i64)> {
         self.db(|c| {
             c.prepare("SELECT task_id, url, created_ms, errors FROM ci_waits ORDER BY created_ms")?
                 .query_map([], |r| {
@@ -265,6 +266,25 @@ impl Tasks {
             tracing::warn!(%error, "ci waits not read");
             Vec::new()
         })
+    }
+
+    /// Each task's open wait URLs, by task id.
+    pub(super) fn open_ci_waits(&self) -> HashMap<String, Vec<String>> {
+        let mut open = HashMap::<String, Vec<String>>::new();
+        for (task_id, url, ..) in self.ci_waits() {
+            open.entry(task_id.as_str().to_owned())
+                .or_default()
+                .push(url);
+        }
+        open
+    }
+
+    /// The lead's line for a done task with open waits: wait_ci wakes it, so it needs no steer.
+    pub(super) fn waits_note(task_id: &str, urls: &[String]) -> String {
+        format!(
+            "{task_id} waits on CI, and wait_ci wakes it as each ends: {}.",
+            urls.join(" ")
+        )
     }
 
     fn ci_wait_done(&self, task_id: &TaskId, url: &str) {

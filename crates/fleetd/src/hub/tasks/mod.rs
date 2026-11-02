@@ -3004,12 +3004,7 @@ impl Tasks {
         let since = since.map(Timestamp::as_str);
         let offline = self.offline_since();
         let offline = |machine: &str| offline.get(machine).cloned();
-        let mut open = HashMap::<String, Vec<String>>::new();
-        for (task_id, url, ..) in self.ci_waits() {
-            open.entry(task_id.as_str().to_owned())
-                .or_default()
-                .push(url);
-        }
+        let open = self.open_ci_waits();
         let waits = |task_id: &str| open.get(task_id).cloned().unwrap_or_default();
         match self.db(|c| TaskRecords::for_digest(c, project_ref, since, limit)) {
             Ok(tasks) => {
