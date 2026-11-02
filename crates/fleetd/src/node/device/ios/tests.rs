@@ -713,10 +713,7 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
 async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simulators>) {
     let t = Instant::now();
     while simulators.warm() == 0 {
-        assert!(
-            t.elapsed() < Duration::from_secs(300),
-            "the pool booted no clone"
-        );
+        assert!(t.elapsed() < pool::WARM_MAX, "the pool booted no clone");
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     eprintln!(
@@ -921,11 +918,11 @@ async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simu
 
     // agent-device is done: the pool refills behind the session now. Beside the session's simulator and its recording,
     // GitHub's runner took 107 to 343 s and at times longer, so the test waits as long as the pool gives a refill (a
-    // clone, a boot, then BOOT_TIMEOUT for it to finish) and only measures it: a boot that ran out of time is logged,
-    // and the pool tries again later (pool.rs's tests cover that).
+    // clone, its boot and its runner's start, each to its limit, and a call to clear) and only measures it: a boot that
+    // ran out of time is logged, and the pool tries again later (pool.rs's tests cover that).
     simulators.hold_refill(false);
     let t = Instant::now();
-    let refill = 2 * simctl::CALL + pool::BOOT_TIMEOUT;
+    let refill = simctl::CALL + pool::WARM_MAX;
     loop {
         if simulators.warm() > 0 {
             eprintln!("the pool refilled behind it: {} ms", ms(t.elapsed()));
@@ -1038,10 +1035,7 @@ async fn hosted_screen(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simulat
     const KEY: &str = "H0123456789abcdef0123456789abcdef";
     let t = Instant::now();
     while simulators.warm() == 0 {
-        assert!(
-            t.elapsed() < Duration::from_secs(300),
-            "the pool booted no clone"
-        );
+        assert!(t.elapsed() < pool::WARM_MAX, "the pool booted no clone");
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     // One simulator at a time on CI's VM, as in the session above.
