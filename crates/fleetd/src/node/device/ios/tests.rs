@@ -887,6 +887,22 @@ async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simu
         "a person's Home, to a changed frame: {} ms",
         ms(t.elapsed())
     );
+    // The first changed frame is mid-way home. Handed back then, the agent's snapshot meets the runner still pressing
+    // Home, and its 1 s for the XCTest main thread runs out ("timed out while reading snapshot viewport"). Home is done
+    // once two frames in a row are the same.
+    let mut last = frame_after(&home, &mut frames, seen, Duration::from_secs(30)).await;
+    loop {
+        let frame = frame_after(&home, &mut frames, last.seq, Duration::from_secs(30)).await;
+        if frame.jpeg == last.jpeg {
+            break;
+        }
+        last = frame;
+        assert!(
+            t.elapsed() < Duration::from_secs(60),
+            "the screen never held still"
+        );
+    }
+    eprintln!("a person's Home, to a still screen: {} ms", ms(t.elapsed()));
     drop(frames);
     assert_eq!(
         simulators.set_control(&id, BrowserControl::HandingBack, "human:desk"),
