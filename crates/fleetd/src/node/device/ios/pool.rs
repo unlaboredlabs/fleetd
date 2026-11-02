@@ -24,6 +24,22 @@ pub const BOOT_TIMEOUT: Duration = Duration::from_secs(300);
 const FIRST_BOOT: Duration = Duration::from_secs(600);
 /// agent-device's runner builds with xcodebuild: minutes on a laptop.
 const RUNNER_BUILD: Duration = Duration::from_secs(1500);
+/// How long one of [`TOOLCHAIN`]'s reads may take, cold, before the golden is made.
+const TOOLCHAIN_READ: Duration = Duration::from_secs(300);
+/// What agent-device reads of Xcode before it builds or starts its runner (the toolchain its runner cache is keyed
+/// on), with 45 s for all three that its `--timeout` doesn't raise. Cold, `xcodebuild -version` alone can take that
+/// beside the golden's first boot on GitHub's 3-vCPU VM, and the build fails: "The Apple runner budget ran out before
+/// this step began". [`prepare`] reads them first, while the Mac is quiet, so agent-device's are warm.
+const TOOLCHAIN: [&[&str]; 3] = [
+    &["xcodebuild", "-version"],
+    &["xcrun", "--sdk", "iphonesimulator", "--show-sdk-version"],
+    &[
+        "xcrun",
+        "--sdk",
+        "iphonesimulator",
+        "--show-sdk-build-version",
+    ],
+];
 /// How long agent-device's daemon may take to stop its runner and exit.
 const DAEMON_EXIT: Duration = Duration::from_secs(60);
 /// How long the golden may take to settle before it is shut down anyway.
@@ -100,6 +116,7 @@ pub async fn prepare(home: &Path, device_type: Option<&str>) -> Result<Golden, S
     let simctl = Simctl::new(super::set_dir(home));
     let runtimes = simctl.runtimes().await?;
     let (runtime, device_type) = super::simctl::pick(&runtimes, device_type)?;
+    toolchain().await;
     let _ = std::fs::remove_file(golden_path(home));
     clear(&simctl, None).await;
     let homes = home.to_owned();
@@ -139,6 +156,25 @@ pub async fn prepare(home: &Path, device_type: Option<&str>) -> Result<Golden, S
     crate::node::secrets::write_atomic(&golden_path(home), &bytes)
         .map_err(|e| format!("cannot write {}: {e}", golden_path(home).display()))?;
     Ok(golden)
+}
+
+/// Reads [`TOOLCHAIN`] once, each to its end: what they say, and whether they fail, is agent-device's to report.
+async fn toolchain() {
+    let started = Instant::now();
+    for argv in TOOLCHAIN {
+        let run = tokio::process::Command::new(argv[0])
+            .args(&argv[1..])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .status();
+        let _ = tokio::time::timeout(TOOLCHAIN_READ, run).await;
+    }
+    tracing::info!(
+        ms = started.elapsed().as_millis() as u64,
+        "read Xcode's toolchain before the golden iOS simulator"
+    );
 }
 
 /// Waits until the booted golden's processes go quiet, or [`SETTLE_MAX`] passes.
