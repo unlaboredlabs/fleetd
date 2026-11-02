@@ -54,10 +54,12 @@ jobs:
     # simulator, a settling boot and an xcodebuild of agent-device's runner, takes minutes). A manual run first measures
     # what the design rests on (simctl clone needs its source shut down, boot times, the live view's screenshot loop,
     # recordVideo's MP4; idb's stream where idb is installed, which the runner's Homebrew refuses: facebook/fb is an
-    # untrusted tap), on a quiet machine.
+    # untrusted tap), on a quiet machine. The job took 21-56 minutes on GitHub's 3-vCPU VM (Nov 2026), and the tests
+    # wait for a warm clone as long as the pool gives one (pool::WARM_MAX): up to 12.5 minutes more than before #973,
+    # and the manual run's measuring ~5.5. Hence 80.
     name: ios sessions
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 80
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
