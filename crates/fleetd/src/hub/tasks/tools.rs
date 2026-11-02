@@ -3,11 +3,12 @@
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
+use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult, TaskListResult, TaskResultFrame};
 use fleetd_contracts::mcp::{CapSetInput, ErrorCode, TaskGetInput, TasksListInput};
 use fleetd_contracts::prim::List;
 use fleetd_contracts::repos::ProjectRepo;
-use fleetd_contracts::tasks::Task;
+use fleetd_contracts::tasks::{Task, TaskState};
 use serde_json::{Value, json};
 
 use super::cap::{CapChange, MachineCap, ProjectCap};
@@ -151,6 +152,22 @@ fn repos_line(repos: &[ProjectRepo]) -> Option<String> {
     })
 }
 
+/// `agents`' next: the project's repos, and each done task's open waits, so the lead leaves its wake to wait_ci.
+fn list_next(tasks: &Tasks, r: &ProjectRef, listed: &[Task]) -> Option<String> {
+    let open = tasks.open_ci_waits();
+    let waits = listed
+        .iter()
+        .filter(|t| t.state == TaskState::Done)
+        .filter_map(|t| {
+            open.get(t.task_id.as_str())
+                .map(|urls| Tasks::waits_note(t.task_id.as_str(), urls))
+        });
+    repos_line(&tasks.repos_of(r))
+        .into_iter()
+        .chain(waits)
+        .reduce(|a, b| format!("{a} {b}"))
+}
+
 fn internal(error: StoreError) -> TaskError {
     tracing::error!(%error, "task lead call failed");
     internal_error()
@@ -210,9 +227,9 @@ pub async fn lead_call(
                 return match tasks.get(id).map_err(internal)? {
                     Some(task) if task.project_ref == *r => {
                         Ok(LeadCallResult::TaskList(TaskListResult {
+                            next: list_next(tasks, r, std::slice::from_ref(&task)),
                             tasks: List::unchecked(vec![task]),
                             truncated: None,
-                            next: repos_line(&tasks.repos_of(r)),
                         }))
                     }
                     _ => Err(TaskError::new(
@@ -232,9 +249,9 @@ pub async fn lead_call(
             let truncated = listed.len() > TASK_LIST_LIMIT;
             listed.truncate(TASK_LIST_LIMIT);
             Ok(LeadCallResult::TaskList(TaskListResult {
+                next: list_next(tasks, r, &listed),
                 tasks: List::unchecked(listed),
                 truncated: truncated.then_some(true),
-                next: repos_line(&tasks.repos_of(r)),
             }))
         }
         LeadCall::TaskMessage(c) => Ok(LeadCallResult::TaskMessage(frame(

@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::sessions::SessionCall;
@@ -404,4 +405,88 @@ fn a_pr_head_is_not_green_before_its_later_jobs_register() {
             total: 2,
         }
     );
+}
+
+/// A task done with an open wait isn't over: its lead's wake digest lists it, with what it waits on, even after the
+/// wake that reported its end, so the lead leaves it to wait_ci. The finished run wakes it, and it runs again.
+#[tokio::test]
+async fn a_done_task_waiting_on_ci_shows_so_in_its_leads_digest_until_the_wait_wakes_it() {
+    let (hub, _home) = hub();
+    let mut calls = serve(&hub, Node::link(&hub).await);
+    shop_repo(&hub);
+    insert(
+        &hub,
+        json!({ "taskId": "T1", "title": "watch it", "state": "done", "startedAt": AT, "endedAt": AT,
+                "threadRef": { "machineId": "lab-a", "threadId": "t9" },
+                "result": { "status": "done", "tail": "Waiting on the release run.", "at": AT } }),
+    );
+    wait(&hub, t1(), RUN).unwrap();
+    let project = super::recovery_tests::project();
+    let later = Timestamp("2026-10-19T11:00:00.000Z".into());
+    let lines = hub.tasks.digest_lines(&project, Some(&later), 10);
+    assert_eq!(
+        lines,
+        [format!(
+            "- T1 done: watch it; waits on CI, and wait_ci wakes it as each ends: {RUN}"
+        )]
+    );
+    assert!(
+        hub.tasks.digest_lines(&project, None, 10)[0]
+            .starts_with(&format!(
+                "- T1 done since your last wake: watch it; waits on CI, and wait_ci wakes it as each ends: {RUN} →"
+            )),
+        "{:?}",
+        hub.tasks.digest_lines(&project, None, 10)
+    );
+
+    let reads = Reads::default();
+    reads.set(RUN, failed_run());
+    assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 1);
+    assert_eq!(sent(&mut calls).len(), 1, "the done task is woken");
+    assert_eq!(
+        hub.tasks.digest_lines(&project, Some(&later), 10),
+        ["- T1 running (read, high): watch it"],
+        "woken, it runs, its wait gone"
+    );
+}
+
+/// The lead's `agents` says the same of a done task with open waits, listed whole or by its id, until the wait ends.
+#[tokio::test]
+async fn the_leads_agents_list_says_a_done_task_waits_on_ci() {
+    let (hub, _home) = hub();
+    let _calls = serve(&hub, Node::link(&hub).await);
+    shop_repo(&hub);
+    insert(
+        &hub,
+        json!({ "taskId": "T1", "title": "watch it", "state": "done", "startedAt": AT, "endedAt": AT,
+                "threadRef": { "machineId": "lab-a", "threadId": "t9" },
+                "result": { "status": "done", "tail": "Waiting on the release run.", "at": AT } }),
+    );
+    wait(&hub, t1(), RUN).unwrap();
+    wait(&hub, t1(), PR).unwrap();
+    let agents = |input: serde_json::Value| {
+        let call: LeadCall = serde_json::from_value(input).unwrap();
+        let caller = LeadCaller {
+            project_ref: super::recovery_tests::project(),
+            by: "lead:lab-a/p1".into(),
+            agent: CallerAgent::Lead,
+        };
+        let handler = hub.lead_calls.handler("task_list").unwrap();
+        match futures_util::FutureExt::now_or_never(handler.handle(caller, call)).unwrap() {
+            Ok(LeadCallResult::TaskList(list)) => list.next,
+            other => panic!("{other:?}"),
+        }
+    };
+    let note = format!("T1 waits on CI, and wait_ci wakes it as each ends: {RUN} {PR}.");
+    assert_eq!(agents(json!({ "op": "task_list" })), Some(note.clone()));
+    assert_eq!(
+        agents(json!({ "op": "task_list", "taskId": "T1" })),
+        Some(note)
+    );
+
+    let reads = Reads::default();
+    reads.set(RUN, Read::Over("is not a run GitHub has".into()));
+    reads.set(PR, Read::Over("was merged".into()));
+    assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 2);
+    assert_eq!(agents(json!({ "op": "task_list" })), None);
 }

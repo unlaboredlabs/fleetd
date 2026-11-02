@@ -3004,8 +3004,12 @@ impl Tasks {
         let since = since.map(Timestamp::as_str);
         let offline = self.offline_since();
         let offline = |machine: &str| offline.get(machine).cloned();
+        let open = self.open_ci_waits();
+        let waits = |task_id: &str| open.get(task_id).cloned().unwrap_or_default();
         match self.db(|c| TaskRecords::for_digest(c, project_ref, since, limit)) {
-            Ok(tasks) => render::task_digest_lines(&tasks, since, &self.now_iso(), &offline),
+            Ok(tasks) => {
+                render::task_digest_lines(&tasks, since, &self.now_iso(), &offline, &waits)
+            }
             Err(error) => {
                 tracing::warn!(%error, "tasks: digest lines not read");
                 Vec::new()
