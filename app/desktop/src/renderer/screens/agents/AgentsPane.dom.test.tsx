@@ -196,6 +196,8 @@ it("a row's right-click menu opens the agent, copies its branch, and Steer opens
   const link = [...host.querySelectorAll<HTMLAnchorElement>("[data-screen='agents'] a")].find((a) => a.textContent.includes("Dark mode follows"));
   if (link === undefined) throw new Error("no row");
   const choose = async (label: string) => {
+    // A right-click focuses the row, as Chromium's mousedown does, so the menu has it to hand focus back to.
+    link.focus();
     act(() => {
       link.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
     });
@@ -203,6 +205,8 @@ it("a row's right-click menu opens the agent, copies its branch, and Steer opens
     const item = [...document.querySelectorAll<HTMLElement>("[role='menuitem']")].find((i) => i.textContent === label);
     act(() => item?.click());
     await act(() => Promise.resolve());
+    // The closed menu hands focus back a timer later (Radix's FocusScope); landing after the box's, it took the cursor.
+    await vi.waitFor(() => expect(document.activeElement).toBe(link));
   };
   await choose("Copy branch");
   expect(copy).toHaveBeenCalledWith("fleetd/T1-dark-mode");
