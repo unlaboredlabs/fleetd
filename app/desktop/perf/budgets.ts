@@ -47,9 +47,9 @@ export const RULES: Record<Metric, Rule> = {
   firstPaintOverMs: { label: "app over bare", unit: "ms", higher: false, regress: { ratio: 0.3, slack: 60 } },
   idleMemoryMb: { label: "idle memory", unit: "MB", higher: false, limit: 300, regress: { ratio: 0.15, slack: 25 } },
   idleRssMb: { label: "(summed RSS)", unit: "MB", higher: false },
-  // 60 fps, allowing 5% of frames to rAF jitter: below 57 means frames were dropped. CI's two runner kinds read about 55
-  // and 54 a round, as a page of older messages landing under the reader costs a few frames; perf/run.ts gates the
-  // median of five rounds.
+  // 60 fps, allowing 5% of frames to rAF jitter: below 57 means frames were dropped. CI reads about 58 a round
+  // (55 before the chat's day formatters were cached), as a page of older messages landing under the reader costs a
+  // few frames; perf/run.ts gates the median of five rounds.
   scrollFps: { label: "chat scroll", unit: "fps", higher: true, limit: 57, regress: { ratio: 0.07, slack: 3 } },
   // As scroll: each streamed delta rebuilds the chat's rows, so a cost per message held drops frames here first.
   streamFps: { label: "chat streaming", unit: "fps", higher: true, limit: 57, regress: { ratio: 0.07, slack: 3 } },
