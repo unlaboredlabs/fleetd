@@ -199,6 +199,10 @@ pub const CAP_SYSTEM_PROMPT: &str = "system_prompt";
 /// Settings › Hub › Machines › Screens (W268).
 pub const CAP_SCREEN_SETTINGS: &str = "screen_settings";
 
+/// `project_remove` with `erase` (and `removeFolder`): the node deletes a Navi's sessions, Claude Code's transcripts of
+/// them and the attachments in its folder, and the folder itself when asked (D287 navi.delete-erases).
+pub const CAP_NAVI_ERASE: &str = "navi_erase";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

@@ -361,6 +361,19 @@ fn source_repo() -> tempfile::TempDir {
     repo
 }
 
+/// A Navi's install fetches as no one: git itself takes https alone, so a local or SSH source fails even if one got
+/// past the Navi's check, while the same source fetches for a person.
+#[tokio::test]
+async fn an_anonymous_fetch_takes_https_alone() {
+    let repo = source_repo();
+    let source = install::parse(&format!("file://{}", repo.path().display())).unwrap();
+    assert!(install::fetch(&source, false).await.is_ok());
+    let Err(e) = install::fetch(&source, true).await else {
+        panic!("a file:// source was fetched as no one");
+    };
+    assert!(e.message.starts_with("git fetch"), "{}", e.message);
+}
+
 #[tokio::test]
 async fn an_install_is_pinned_and_moves_only_on_update() {
     let (hub, _home) = hub();
@@ -480,7 +493,7 @@ async fn a_repo_that_is_one_skill_installs_under_its_frontmatter_name_or_its_rep
     git(&repo, &["add", "-A"]);
     git(&repo, &["commit", "-q", "-m", "one"]);
     let source = install::parse(&format!("file://{}", repo.display())).unwrap();
-    let fetched = install::fetch(&source).await.unwrap();
+    let fetched = install::fetch(&source, false).await.unwrap();
     let found = install::find(fetched.tree.path(), &source, None).unwrap();
     let got: Vec<(&str, &str)> = found
         .iter()
@@ -712,7 +725,7 @@ async fn an_install_reads_nothing_through_a_link() {
     git(&repo, &["commit", "-q", "-m", "links"]);
 
     let source = install::parse(&format!("file://{}", repo.display())).unwrap();
-    let fetched = install::fetch(&source).await.unwrap();
+    let fetched = install::fetch(&source, false).await.unwrap();
     let tree = fetched.tree.path();
     // The skill holding a link is refused whole, naming the link.
     let e = install::find(tree, &source, Some(&SkillName::unchecked("pdf"))).unwrap_err();

@@ -368,6 +368,26 @@ fn content(item: &CommandApprovalItem) -> (String, String) {
     ("do something".to_owned(), String::new())
 }
 
+/// A quiet line of the chat's own (what the Navi remembered, a skill it saved): one line in italics.
+pub fn note(text: &str) -> String {
+    format!("<i>{}</i>", escape(text.trim()))
+}
+
+/// A Navi paused at its usage limit: one line, with when it picks up if the limit said.
+pub fn paused(navi: &str, resets: Option<&str>) -> String {
+    match resets {
+        Some(at) => format!(
+            "<i>{} is paused: its Claude usage limit is reached until {}. It picks up your message then.</i>",
+            escape(navi),
+            escape(at)
+        ),
+        None => format!(
+            "<i>{} is paused: its Claude usage limit is reached. It picks up your message once the limit resets.</i>",
+            escape(navi)
+        ),
+    }
+}
+
 /// A secret request: never asked for here, where a chat isn't sealed. A Navi's secure input says what and where.
 pub fn secret(navi: &str, item: &fleetd_contracts::chat::SecretRequestItem) -> String {
     match &item.secure_input {

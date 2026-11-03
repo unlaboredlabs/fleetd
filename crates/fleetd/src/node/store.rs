@@ -224,6 +224,28 @@ impl NodeStore {
         })
     }
 
+    /// Deletes the project's sessions and everything they hold (runs, messages, items, spans), and their summaries
+    /// from the machine stream, so a hub that reconnects with an older cursor gets none of them back: a Navi erased.
+    pub fn forget_sessions(&self, project_id: &str) -> StoreResult<()> {
+        self.tx(|conn| {
+            for table in ["runs", "messages", "items", "spans"] {
+                conn.execute(
+                    &format!(
+                        "DELETE FROM {table} WHERE session_id IN (SELECT id FROM sessions WHERE project_id = ?1)"
+                    ),
+                    [project_id],
+                )?;
+            }
+            conn.execute("DELETE FROM sessions WHERE project_id = ?1", [project_id])?;
+            conn.execute(
+                "DELETE FROM machine_events WHERE json_extract(json, '$.type') = 'session_updated'
+                   AND json_extract(json, '$.projectId') = ?1",
+                [project_id],
+            )?;
+            Ok(())
+        })
+    }
+
     pub fn project(&self, id: &str) -> StoreResult<Option<ProjectInfo>> {
         let json: Option<String> = self
             .lock()

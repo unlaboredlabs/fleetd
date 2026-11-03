@@ -129,7 +129,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       ...ref,
       title: fresh.title,
       path: fresh.workspaceRoot,
-      deleting: { unsaved: unsavedWorktrees(fresh).map((w) => ({ path: w.path, branch: w.branch })), plain },
+      deleting: { unsaved: unsavedWorktrees(fresh).map((w) => ({ path: w.path, branch: w.branch })), plain, navi },
     });
   };
   return (
@@ -161,13 +161,17 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
         </>
       ) : null}
       <Separator />
-      <Setting reveal="projects.delete" label="Delete project" help="Stops its agents and removes it from fleetd, with its fleetd worktrees.">
+      <Setting
+        reveal="projects.delete"
+        label={navi ? "Delete Navi" : "Delete project"}
+        help={navi ? "Stops it and erases everything it had: its chat, memory, skills and the rest." : "Stops its agents and removes it from fleetd, with its fleetd worktrees."}
+      >
         <Text size="sm" tone="quiet">
-          {plain ? "Its folder stays as it is." : "Its checkout, its branches and its pull requests stay as they are."}
+          {navi ? "Its folder stays unless you tick it when you delete." : plain ? "Its folder stays as it is." : "Its checkout, its branches and its pull requests stay as they are."}
         </Text>
         <div className={s.inline}>
           <Button variant="danger" disabled={unknown !== null || checking} onClick={() => void open()}>
-            {checking ? "Checking its worktrees…" : "Delete project…"}
+            {checking ? "Checking its worktrees…" : navi ? "Delete Navi…" : "Delete project…"}
           </Button>
         </div>
         {unknown !== null ? (

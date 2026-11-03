@@ -6,6 +6,9 @@
 //! - `https://github.com/owner/repo[.git]`, and `…/tree/<ref>/<path>` for a branch or tag and a folder in it.
 //! - Any other git URL (`https://…`, `ssh://…`, `git@host:…`, `file://…`).
 //!
+//! A person's install fetches as the hub does, with its git config, credential helpers and SSH keys, so a private repo
+//! the hub can read installs. A Navi's fetches over https only, as no one ([`fetch`] `anonymous`): none of those.
+//!
 //! In the fetched tree, a folder with a `SKILL.md` at the source's path is one skill; else the skills are the
 //! `<dir>/<name>/SKILL.md` of `skills/`, `.agents/skills/`, `.claude/skills/` and the top level, and failing those any
 //! `SKILL.md` up to four folders down.
@@ -155,7 +158,7 @@ pub struct Fetched {
     pub tree: tempfile::TempDir,
 }
 
-async fn git(dir: &Path, args: &[&str]) -> Result<String, SkillError> {
+async fn git(dir: &Path, args: &[&str], anonymous: bool) -> Result<String, SkillError> {
     let mut cmd = tokio::process::Command::new("git");
     cmd.args(args)
         .current_dir(dir)
@@ -163,6 +166,18 @@ async fn git(dir: &Path, args: &[&str]) -> Result<String, SkillError> {
         .env("GIT_ASKPASS", "true")
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
+    if anonymous {
+        // None of the hub's git config (its credential helpers, its `insteadOf` rewrites to SSH), no SSH key or agent,
+        // and https alone, redirects and submodules included.
+        cmd.env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_ALLOW_PROTOCOL", "https")
+            .env("GIT_SSH_COMMAND", "false")
+            .env_remove("SSH_AUTH_SOCK")
+            .env_remove("GIT_SSH")
+            .env_remove("GIT_CONFIG_PARAMETERS")
+            .env_remove("GIT_CONFIG_COUNT");
+    }
     let out = tokio::time::timeout(FETCH_TIMEOUT, cmd.output())
         .await
         .map_err(|_| {
@@ -195,11 +210,12 @@ async fn git(dir: &Path, args: &[&str]) -> Result<String, SkillError> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
 
-/// Fetches `source` at the newest commit of its ref, one commit deep.
-pub async fn fetch(source: &Source) -> Result<Fetched, SkillError> {
+/// Fetches `source` at the newest commit of its ref, one commit deep; `anonymous`: over https only, with none of the
+/// hub's git logins or SSH keys (a Navi's install).
+pub async fn fetch(source: &Source, anonymous: bool) -> Result<Fetched, SkillError> {
     let tree = tempfile::Builder::new().prefix("fleetd-skill-").tempdir()?;
     let dir = tree.path();
-    git(dir, &["init", "--quiet"]).await?;
+    git(dir, &["init", "--quiet"], anonymous).await?;
     git(
         dir,
         &[
@@ -212,9 +228,10 @@ pub async fn fetch(source: &Source) -> Result<Fetched, SkillError> {
             &source.url,
             &source.git_ref,
         ],
+        anonymous,
     )
     .await?;
-    let commit = git(dir, &["rev-parse", "FETCH_HEAD"]).await?;
+    let commit = git(dir, &["rev-parse", "FETCH_HEAD"], anonymous).await?;
     git(
         dir,
         &[
@@ -224,6 +241,7 @@ pub async fn fetch(source: &Source) -> Result<Fetched, SkillError> {
             "--quiet",
             "FETCH_HEAD",
         ],
+        anonymous,
     )
     .await?;
     Ok(Fetched { commit, tree })

@@ -5287,6 +5287,8 @@ export type ProjectRef = {
 export type ProjectRemoveInput = {
   machineId: MachineId;
   projectId: ProjectId;
+  /** A Navi's only: also delete its folder, with everything in it (its drafts and downloads). */
+  removeFolder?: boolean;
   /**
    * Also force-remove the fleetd worktrees its agents worked in, uncommitted changes and all, once its agents have
    * stopped. Their branches and the checkout stay as they are.
@@ -6525,10 +6527,18 @@ export type SkillRevertOutput = {
   truncated?: boolean;
 };
 
-/** A chat line's skill: a Navi saved or changed one (`skill_save`). The app links it to the skill's view. */
+/**
+ * A chat line's skill: a Navi saved or changed one (`skill_save`), or installed one (`skill_install`). The app links
+ * it to the skill's view.
+ */
 export type SkillSaved = {
   /** Its first version. */
   created: boolean;
+  /**
+   * Installed: the source as the Navi gave it, at the commit it is pinned to (`owner/repo@<12 hex>`). `why` then
+   * says the same, for an app that doesn't know this field.
+   */
+  installed?: string;
   name: SkillName;
   version: number;
   why: string;

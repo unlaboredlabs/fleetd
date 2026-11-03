@@ -155,6 +155,29 @@ const HIDDEN_IN_HOME: &[&str] = &[
     ".local/share/fish/fish_history",
     // git's credential store under XDG: tokens in plain text.
     ".config/git/credentials",
+    // Other assistants and coding agents: provider keys, bot tokens and logins (Hermes' `.env`, Codex's `auth.json`,
+    // Cursor's and Gemini's MCP tokens, ollama's key).
+    ".hermes",
+    ".openclaw",
+    ".codex",
+    ".cursor",
+    ".gemini",
+    ".ollama",
+    // A mail store with its saved passwords (Firefox's own is `.mozilla`).
+    ".thunderbird",
+    // Cloud, package and tunnel tokens, and database history.
+    ".s3cfg",
+    ".boto",
+    ".oci",
+    ".fly",
+    ".mc",
+    ".ngrok2",
+    ".kaggle",
+    ".gem/credentials",
+    ".m2/settings.xml",
+    ".cache/huggingface/token",
+    ".psql_history",
+    ".mysql_history",
 ];
 
 /// In the user's home on macOS: `~/Library` whole, where browsers keep cookies, apps their tokens, and the keychains

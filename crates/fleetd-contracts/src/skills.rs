@@ -237,7 +237,8 @@ pub struct SkillSaveResult {
     pub next: Option<String>,
 }
 
-/// A chat line's skill: a Navi saved or changed one (`skill_save`). The app links it to the skill's view.
+/// A chat line's skill: a Navi saved or changed one (`skill_save`), or installed one (`skill_install`). The app links
+/// it to the skill's view.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillSaved {
@@ -246,6 +247,10 @@ pub struct SkillSaved {
     /// Its first version.
     pub created: bool,
     pub why: Line<1, WHY_CAP>,
+    /// Installed: the source as the Navi gave it, at the commit it is pinned to (`owner/repo@<12 hex>`). `why` then
+    /// says the same, for an app that doesn't know this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installed: Option<Line<1, WHY_CAP>>,
 }
 
 /// A `SKILL.md`'s frontmatter: the `name` and `description` it gives.

@@ -383,7 +383,8 @@ const withOpacity = (hex: string, alpha: number): string => {
 /** A chat with nothing in it yet: who it is, and a few things to say to start. Turned upright: the list is upside down. */
 function EmptyThread({ picture, title, navi, onPick }: { picture: Pictured | undefined; title: string; navi: boolean; onPick: (text: string) => void }) {
   const t = useTheme();
-  const starters = navi ? ["What's on my calendar today?", "Summarize my unread email", "Remind me what I asked you last"] : ["What are you working on?", "Show me the open pull requests", "What failed in CI?"];
+  // A Navi's work with nothing connected yet, as the desktop's.
+  const starters = navi ? ["What can you do for me?", "Remind me every Friday to plan my week", "How are my projects going?"] : ["What are you working on?", "Show me the open pull requests", "What failed in CI?"];
   return (
     <View style={styles.emptyThread}>
       <Avatar name={title} navi={navi} size={88} picture={picture} />
@@ -914,7 +915,7 @@ function Event({ text, icon }: { text: string; icon?: "approvals" | "lock" }) {
 /** A Navi saved or changed one of its skills: one quiet line, the skill's name in the accent, that opens it. */
 function SkillLine({ saved, onPress }: { saved: SkillSaved; onPress: () => void }) {
   const t = useTheme();
-  const what = saved.created ? "Saved a skill" : "Updated a skill";
+  const what = saved.installed !== undefined ? "Installed a skill" : saved.created ? "Saved a skill" : "Updated a skill";
   return (
     <Pressable accessibilityRole="link" accessibilityLabel={`${what}: ${saved.name}. ${saved.why}`} accessibilityHint="Opens the skill" onPress={onPress} hitSlop={6} style={({ pressed }) => [styles.event, pressed && { opacity: PRESSED_OPACITY }]}>
       <Icon name="sparkles" size={13} color={t.secondary} />

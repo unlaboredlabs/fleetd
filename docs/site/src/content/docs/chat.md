@@ -111,7 +111,9 @@ The lead texts like a teammate: short messages, split into bubbles, with PR numb
 words aren't the best fit it sends a block instead: a chart, a table, a diff, a live card for a PR or an agent, a
 checklist, an image, or a question with buttons. Tapping a button sends your answer as a chat message, so only you
 can answer it. To change how it talks, edit the **Voice** prompt (`lead.voice`) like any
-[prompt](/docs/what-agents-are-told). Commit messages, PR bodies and agents' briefs stay plain whatever the voice.
+[prompt](/docs/what-agents-are-told). Commit messages, PR bodies and agents' briefs stay plain whatever the voice. A
+[Navi](/docs/navi) talks in a voice of its own, a personal assistant's rather than an engineer's: **Navi's voice**
+(`navi.voice`).
 
 An image can be one the lead or its agents made, such as a screenshot of a UI change: they upload it with
 [`chat_image`](/docs/reference/agent-tools#chat_image), which reads only a png, jpeg, webp or gif file (checked by its

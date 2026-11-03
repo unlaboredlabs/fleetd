@@ -36,7 +36,7 @@ struct Row {
     by: String,
 }
 
-fn dir(hub: &Hub) -> PathBuf {
+pub fn dir(hub: &Hub) -> PathBuf {
     hub.config.home.join("attachments")
 }
 
