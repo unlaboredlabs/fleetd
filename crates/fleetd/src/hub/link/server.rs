@@ -451,11 +451,11 @@ impl NodeLinkServer {
     fn touch(self: &Arc<Self>, machine_id: &MachineId) {
         let this = self.clone();
         let id = machine_id.clone();
-        let timeout = self.silence_timeout;
-        let clock = self.deps.clock.clone();
         let link = self.link_id(machine_id);
+        // Armed here, not in the task: its deadline counts from this frame, however late the task first runs.
+        let silence = self.deps.clock.sleep(self.silence_timeout);
         let handle = tokio::spawn(async move {
-            clock.sleep(timeout).await;
+            silence.await;
             this.mark_offline(&id, link).await;
         });
         if let Some(old) = self
@@ -1298,20 +1298,23 @@ mod tests {
         });
         is_held.recv().unwrap();
         clock.advance(hub.link.silence_timeout + Duration::from_secs(1));
-        timeout(WAIT, async {
-            while hub
-                .link
-                .state
-                .lock()
-                .unwrap()
-                .announced
-                .contains_key(&devbox)
-            {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        })
-        .await
-        .expect("the offline pass starts");
+        // Waited out on this thread, not with tokio's timers: the pass blocks the worker it runs on, and when that
+        // worker was the one driving the timers, nothing fires them until it is released.
+        let deadline = std::time::Instant::now() + WAIT;
+        while hub
+            .link
+            .state
+            .lock()
+            .unwrap()
+            .announced
+            .contains_key(&devbox)
+        {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the offline pass starts"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
 
         // Meanwhile the node links again, as serve links it.
         let _new = hub.link.test_link(&devbox, &[]);
