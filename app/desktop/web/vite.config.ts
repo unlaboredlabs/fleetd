@@ -59,6 +59,9 @@ export default defineConfig({
   root: resolve(desktopDir, "src/renderer"),
   plugins: [react(), webPreview()],
   resolve: { alias: [{ find: /^node:(fs|path)$/u, replacement: resolve(import.meta.dirname, "node-stub.ts") }] },
+  // Every dependency found before the first page loads: a dependency met later re-bundles them all, and with no HMR a
+  // module the page is still fetching then fails to load.
+  optimizeDeps: { include: ["zod"], entries: [standIn, "index.html", "src/**/*.{ts,tsx}", "screens/**/*.{ts,tsx}", "ui/**/*.{ts,tsx}", "!**/*.test.{ts,tsx}"] },
   server: {
     host: process.env["HOST"] ?? "127.0.0.1",
     port: Number(process.env["PORT"] ?? "5180"),

@@ -4,6 +4,8 @@ import type { Screen } from "./routes";
 import { ChatScreen } from "../chat";
 // Small, and in the title row of both its tabs: not a chunk of its own.
 import { FactoryTabs } from "../factory/FactoryTabs";
+// The Screens design preview (W399): loaded with the shell, so the preview never waits on a chunk of its own.
+import { ScreensPage } from "../screensPage/ScreensPage";
 
 // Each screen is its own chunk, loaded when its route first opens: the app starts by parsing the shell and the one
 // screen it shows, not all of them (startup time and idle memory, perf/budgets.ts).
@@ -12,7 +14,6 @@ const SettingsScreen = lazy(() => import("../settings/SettingsScreen").then((m) 
 const AddProjectScreen = lazy(() => import("../projects/AddProjectScreen").then((m) => ({ default: m.AddProjectScreen })));
 const StatusScreen = lazy(() => import("../status/StatusScreen").then((m) => ({ default: m.StatusScreen })));
 const FactoryScreen = lazy(() => import("../factory/FactoryScreen").then((m) => ({ default: m.FactoryScreen })));
-const ScreensPage = lazy(() => import("../screensPage/ScreensPage").then((m) => ({ default: m.ScreensPage })));
 const NaviScreen = lazy(() => import("../navi/NaviScreen").then((m) => ({ default: m.NaviScreen })));
 const TimeScreen = lazy(() => import("../time/TimeScreen").then((m) => ({ default: m.TimeScreen })));
 const SetupScreen = lazy(() => import("../setup/SetupScreen").then((m) => ({ default: m.SetupScreen })));

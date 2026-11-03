@@ -262,14 +262,14 @@ function OpenLine({ onClose }: { onClose: () => void }) {
           <Select<string>
             aria-label="Machine"
             className={s.pick}
-            value={on?.id}
+            value={on?.id ?? ""}
             onValueChange={setMachine}
             options={fits.map((h) => ({ value: h.id, label: <span className={s.hostOpt}>{h.id}<Text size="xs" tone="faint" tabular>{`${String(h.live)} of ${String(h.max)}`}</Text></span>, textValue: h.id }))}
           />
         </>
       )}
       <Text size="md">for</Text>
-      <Select<string> aria-label="For" className={s.pick} value={forProject === undefined ? undefined : keyOf(forProject)} onValueChange={setOwner} options={owners.map((p) => ({ value: keyOf(p), label: p.title }))} />
+      <Select<string> aria-label="For" className={s.pick} value={forProject === undefined ? "" : keyOf(forProject)} onValueChange={setOwner} options={owners.map((p) => ({ value: keyOf(p), label: p.title }))} />
       <span className={s.openHint}>
         <Text size="xs" tone="faint">
           {kind === "mac" ? "One at a time: agents wait while you have it." : forProject !== undefined && isNavi(forProject) ? "With its saved sign-ins." : "You’re in control from the start."}
@@ -616,7 +616,7 @@ function NewPane({ onClose }: { onClose: () => void }) {
           <Text size="xs" tone="quiet" strong>
             For
           </Text>
-          <Select<string> aria-label="For" className={s.pickWide} value={forProject === undefined ? undefined : keyOf(forProject)} onValueChange={setOwner} options={owners.map((p) => ({ value: keyOf(p), label: isNavi(p) ? `${p.title} (Navi)` : p.title, textValue: p.title }))} />
+          <Select<string> aria-label="For" className={s.pickWide} value={forProject === undefined ? "" : keyOf(forProject)} onValueChange={setOwner} options={owners.map((p) => ({ value: keyOf(p), label: isNavi(p) ? `${p.title} (Navi)` : p.title, textValue: p.title }))} />
         </div>
         <div className={s.newFoot}>
           <Button variant="primary" size="md" icon={<MonitorSmartphone aria-hidden />} disabled={on === undefined || forProject === undefined} onClick={() => on !== undefined && forProject !== undefined && void open(kind, on.id, forProject)}>
