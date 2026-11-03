@@ -349,11 +349,12 @@ speed. At a cap of 1 it works one piece at a time and says so once.
 ## Models and cost {#models}
 
 Every agent runs on a task profile: a name, a one-line note on what it is for, a model, an effort and fast mode. The
-hub keeps any number of them, and one is the default. A new hub has two:
+hub keeps any number of them, and one is the default. Leads start on the default too, unless a profile is picked for
+them (**Lead runs on**). A new hub has two:
 
 | Profile | Runs | For |
 |---|---|---|
-| `high` (default) | `claude-opus-5-5` at effort high | The lead, every review, claude's helper calls (session titles and the like), and every task the lead names no other profile for. |
+| `high` (default) | `claude-opus-5-5` at effort high | Every review, claude's helper calls (session titles and the like), every task the lead names no other profile for, and the lead while no other profile is picked for it. |
 | `medium` | `claude-opus-5-5` at effort medium | Mechanical tasks only: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures, cleanup. Never design, architecture or anything subtle. |
 
 A project allows the default and the profiles it picks; nothing else. Its lead is told each allowed profile's name and
@@ -366,6 +367,7 @@ profile.
 |---|---|
 | Which profiles a project allows | Settings → Projects → Agents → **Allowed profiles**: a checkbox each, the default checked for good. Or `fleetd project set <machine>/<project> --profiles medium,quick` (`none`: the default alone). |
 | A profile's model, effort, fast mode or note, or which is the default | Settings → Hub → Every project → **Profiles** (owners and admins): New profile, Edit and Delete. Or `fleetd project profile <name> --model claude-sonnet-5-5 --effort xhigh`: a name that doesn't exist yet makes a new profile; `--delete` removes one. |
+| Which profile leads run on | Settings → Hub → Every project → Profiles → **Lead runs on** (owners and admins): any of the hub's profiles, the default until another is picked. Or `fleetd project profile <name> --lead`. Every project's lead starts on it at its next start; reviews and tasks that name no profile stay on the default. Members see it on a project's Agents page, under Allowed profiles, with who to ask. |
 | How the lead picks | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told), or a profile's note. It takes effect at the lead's next start. |
 
 ### What a profile runs on {#profile-settings}
@@ -387,8 +389,24 @@ quick      claude-opus-5-5 at low (fast, not allowed)
 ```
 
 From an MCP client, `profiles_list`, `profile_create`, `profile_update`, `profile_delete` and `project_set` do the
-same. The default can't be deleted, only replaced; nor can a profile a task not yet ended runs on. A renamed profile
-keeps its tasks: the ones not yet ended move to the new name, ended ones show the name they ran on.
+same; `lead: true` on `profile_update` picks the one leads start on. The default can't be deleted, only replaced; nor
+can a profile a task not yet ended runs on. A renamed profile keeps its tasks: the ones not yet ended move to the new
+name, ended ones show the name they ran on.
+
+### The lead's profile {#lead-profile}
+
+Leads start on the profile picked under **Lead runs on**, the default until someone picks another. It is one setting
+for the whole hub, not one per project, and applies at each lead's next start: a lead already running keeps the model
+and effort it started on (`lead_start {fresh: true}` starts it again now). A Navi stays on the default.
+
+```text
+$ fleetd project profile lead --model claude-opus-5-5 --effort xhigh --lead
+✓ Projects allow lead once they pick it on their Agents page (project_set); new agents on it run claude-opus-5-5 at xhigh. Leads start on lead (claude-opus-5-5 at xhigh) from each lead's next start.
+```
+
+`fleetd project profiles` marks it `lead`. Picking the default (`fleetd project profile high --lead`) puts leads back
+on whichever profile is the default. Deleting the lead's profile does the same, and says so: `medium is gone, and no
+project allows it any more. Leads ran on it, so they start on the default, high, again from their next start.`
 
 A change applies to agents started after it. Agents already running keep the model and effort they started on, and
 each agent's usage, time and lane report the model it really ran on. A node older than the hub runs effort `xhigh` as high, and

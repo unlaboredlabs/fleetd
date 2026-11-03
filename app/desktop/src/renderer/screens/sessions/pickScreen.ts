@@ -155,7 +155,8 @@ export const idleWords = (minutes: number | undefined): string =>
 export const adminNames = (people: readonly { readonly name: string; readonly role: string; readonly removedAt?: string | undefined }[]): string[] =>
   people.filter((p) => (p.role === "owner" || p.role === "admin") && p.removedAt === undefined).map((p) => p.name);
 
-const who = (admins: readonly string[]): string => {
+/** Who a member asks, by name: up to two of the hub's admins, else "a hub admin". */
+export const adminWho = (admins: readonly string[]): string => {
   if (admins.length === 0) return "a hub admin";
   if (admins.length === 1) return admins[0] ?? "a hub admin";
   if (admins.length === 2) return `${admins[0] ?? ""} or ${admins[1] ?? ""}`;
@@ -173,7 +174,7 @@ const ADD: Readonly<Record<ScreenKind, string>> = {
 
 /** A member's one action: who to ask, and for what; null where asking wouldn't help (offline, installing). */
 export const askLine = (reason: OffReason, kind: ScreenKind, admins: readonly string[]): string | null => {
-  const ask = `Ask ${who(admins)}`;
+  const ask = `Ask ${adminWho(admins)}`;
   const on = reason.machine === undefined ? "" : ` on ${reason.machine.name}`;
   switch (reason.fix) {
     case "turn_on":

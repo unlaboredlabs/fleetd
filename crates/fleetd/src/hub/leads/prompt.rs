@@ -158,6 +158,7 @@ mod tests {
             effort: fleetd_contracts::effort::Effort::High,
             fast: false,
             default,
+            lead: false,
             refused: None,
             updated_at: fleetd_contracts::ids::Timestamp("2026-10-28T10:00:00.000Z".into()),
         }

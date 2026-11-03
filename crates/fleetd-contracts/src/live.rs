@@ -257,7 +257,7 @@ pub struct AgentLane {
     pub title: Text<0, 80>,
     pub model: Option<Text<1, 80>>,
     pub effort: Option<Effort>,
-    /// What it runs on: a task's own profile; a lead the default's. Absent from older hubs.
+    /// What it runs on: a task's own profile; a lead the one leads start on. Absent from older hubs.
     pub profile: Option<ProfileName>,
     pub status: LaneStatus,
     /// Queued, parked or failed: why, e.g. "fleet cap: 40 of 40 running", "usage limit: resumes 14:05".

@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 // Settings › Hub › Every project › Profiles: the hub's profiles listed with the default marked, one created with fast
-// mode, one renamed and deleted, fast mode off where the model has none, the default neither unmarked nor deleted; and
-// a project's Agents page, where the default is checked for good and another is allowed with project_set.
+// mode, one renamed and deleted, fast mode off where the model has none, the default neither unmarked nor deleted; Lead
+// runs on, picked with profile_update's lead and back on the default when its profile is deleted; and a project's Agents
+// page, where the default is checked for good and another is allowed with project_set, and which profile leads run on,
+// with who to ask for a member.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -13,6 +15,9 @@ import { UiProvider } from "../../ui";
 import { AllowedProfiles, ProfilesEditor } from "./Profiles";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+vi.hoisted(() => {
+  (globalThis as { fleetd?: unknown }).fleetd = { platform: "linux" };
+});
 
 const AT = "2026-10-28T10:00:00.000Z";
 const storefront = { machineId: "devbox", projectId: "storefront" };
@@ -36,6 +41,8 @@ let host: HTMLDivElement;
 let root: Root;
 let profiles: Profile[];
 let allowed: string[];
+/** hub_info's person: undefined for a hub from before it (the app lets them try). */
+let me: { name: string; role: string } | undefined;
 /** The writes, in turn; the page's reads aside. */
 let calls: { tool: string; input: Record<string, unknown> }[];
 
@@ -47,6 +54,7 @@ beforeEach(() => {
     profile(3, "wide", { model: "claude-sonnet-5-5", effort: "xhigh" }),
   ];
   allowed = ["high", "medium"];
+  me = undefined;
   calls = [];
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -67,6 +75,14 @@ const render = async (page: "editor" | "project") => {
         const list = { profiles, models: MODELS, modelsFrom: "builtin", efforts: ["low", "medium", "high", "xhigh", "max"] };
         return Promise.resolve({ ok: true, output: input["projectRef"] === undefined ? list : { ...list, allowed } });
       }
+      if (tool === "hub_info" && me !== undefined) return Promise.resolve({ ok: true, output: { me, admin: false } });
+      if (tool === "people_list") {
+        const people = [
+          { name: "Ada", role: "owner" },
+          { name: "Sam", role: "member" },
+        ];
+        return Promise.resolve({ ok: true, output: { people } });
+      }
       if (tool.startsWith("profile_") || tool === "project_set") calls.push({ tool, input });
       if (tool === "profile_create") {
         const made = profile(9, String(input["name"]), input);
@@ -75,7 +91,11 @@ const render = async (page: "editor" | "project") => {
       }
       if (tool === "profile_update") {
         const moves = input["default"] === true;
-        profiles = profiles.map((p) => (p.id === input["id"] ? { ...p, ...input } : moves ? { ...p, default: false } : p));
+        // As the hub keeps it: the lead's mark moves to the one picked, and never sits on the default.
+        const leads = input["lead"] === true;
+        profiles = profiles.map((p) =>
+          p.id === input["id"] ? { ...p, ...input, lead: leads && !p.default } : { ...p, ...(moves ? { default: false } : {}), ...(leads ? { lead: false } : {}) },
+        );
         return Promise.resolve({ ok: true, output: { profile: profiles.find((p) => p.id === input["id"]), next: "Saved." } });
       }
       if (tool === "profile_delete") {
@@ -146,7 +166,7 @@ const rows = () => [...host.querySelectorAll("[data-profile]")].map((r) => r.tex
 it("lists the hub's profiles, the default marked, and creates one in fast mode", async () => {
   await render("editor");
   expect(rows()).toEqual([
-    expect.stringMatching(/^highdefaultClaude Opus 5.5 · high effortEditThe default\.$/u),
+    expect.stringMatching(/^highdefaultleadClaude Opus 5.5 · high effortEditThe default\.$/u),
     expect.stringMatching(/^mediumClaude Opus 5.5 · medium effortEditOnly for mechanical work\.$/u),
     expect.stringMatching(/^wideClaude Sonnet 5.5 · extra high effortEdit$/u),
   ]);
@@ -181,7 +201,7 @@ it("renames a profile, sends only what changed, and deletes it after a confirm",
   await click(toggle("checkbox", "The default"));
   await click(button("Save"));
   expect(calls).toEqual([{ tool: "profile_update", input: { id: 2, name: "chores", default: true } }]);
-  expect(rows()[1]).toMatch(/^choresdefault/u);
+  expect(rows()[1]).toMatch(/^choresdefaultlead/u);
   await click(button("Edit chores"));
   // The default can be neither unmarked nor deleted, only replaced.
   expect(toggle("checkbox", "The default").disabled).toBe(true);
@@ -192,7 +212,55 @@ it("renames a profile, sends only what changed, and deletes it after a confirm",
   expect(host.textContent).toContain("Delete high? No project allows it after.");
   await click(button("Delete"));
   expect(calls.at(-1)).toEqual({ tool: "profile_delete", input: { id: 1 } });
-  expect(rows().map((r) => r.split("Claude")[0])).toEqual(["choresdefault", "wide"]);
+  expect(rows().map((r) => r.split("Claude")[0])).toEqual(["choresdefaultlead", "wide"]);
+});
+
+/** The Lead runs on picker's trigger, and the option for `name` once it is open. */
+const leadPicker = () => {
+  const trigger = host.querySelector<HTMLButtonElement>("[aria-label='Lead runs on'][role='combobox']");
+  if (trigger === null) throw new Error("no Lead runs on picker");
+  return trigger;
+};
+const pickLead = async (name: string) => {
+  await act(async () => {
+    leadPicker().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
+    leadPicker().click();
+    await Promise.resolve();
+  });
+  await settle();
+  const option = [...document.querySelectorAll<HTMLElement>("[role='option']")].find((o) => o.textContent.startsWith(name));
+  if (option === undefined) throw new Error(`no option ${name}`);
+  await click(option);
+};
+
+it("runs leads on the profile picked, back on the default when it is deleted", async () => {
+  await render("editor");
+  // Nothing picked: leads run on the default.
+  expect(leadPicker().textContent).toContain("high");
+  expect(host.textContent).toContain("Takes effect at each lead's next start");
+  await pickLead("wide");
+  expect(calls).toEqual([{ tool: "profile_update", input: { id: 3, lead: true } }]);
+  expect(leadPicker().textContent).toContain("wide");
+  expect(rows().map((r) => r.split("Claude")[0])).toEqual(["highdefault", "medium", "widelead"]);
+  // Deleting it says leads go back to the default, and they do.
+  await click(button("Edit wide"));
+  await click(button("Delete…"));
+  expect(host.textContent).toContain("Delete wide? No project allows it after, and leads go back to high at their next start.");
+  await click(button("Delete"));
+  expect(calls.at(-1)).toEqual({ tool: "profile_delete", input: { id: 3 } });
+  expect(leadPicker().textContent).toContain("high");
+  expect(rows()[0]).toMatch(/^highdefaultlead/u);
+});
+
+it("tells a project which profile leads run on: an admin the way to change it, a member who to ask", async () => {
+  profiles = profiles.map((p) => (p.name === "medium" ? { ...p, lead: true } : p));
+  await render("project");
+  expect(host.querySelector("[data-lead-profile]")?.textContent).toBe("Every project's lead runs on medium.Change in Every project › Profiles");
+  act(() => root.unmount());
+  root = createRoot(host);
+  me = { name: "Sam", role: "member" };
+  await render("project");
+  expect(host.querySelector("[data-lead-profile]")?.textContent).toBe("Every project's lead runs on medium. Ask Ada to change it.");
 });
 
 it("offers fast mode only on a model that has it", async () => {

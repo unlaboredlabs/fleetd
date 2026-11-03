@@ -416,7 +416,7 @@
         },
         "profile": {
           "$ref": "#/$defs/ProfileName",
-          "description": "What it runs on: a task's own profile; a lead the default's. Absent from older hubs."
+          "description": "What it runs on: a task's own profile; a lead the one leads start on. Absent from older hubs."
         },
         "role": {
           "$ref": "#/$defs/AgentRole"
@@ -494,7 +494,7 @@
         },
         "profile": {
           "$ref": "#/$defs/ProfileName",
-          "description": "What it runs on: a task's own profile; a lead the default's. Absent from older hubs."
+          "description": "What it runs on: a task's own profile; a lead the one leads start on. Absent from older hubs."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -14792,7 +14792,7 @@
       "x-open": true
     },
     "Profile": {
-      "description": "One task profile (Settings › Hub › Every project › Profiles): what an agent on it runs on. Exactly one is the hub's default, which\nevery project allows and the lead, every review and claude's helper calls run on.",
+      "description": "One task profile (Settings › Hub › Every project › Profiles): what an agent on it runs on. Exactly one is the hub's default, which\nevery project allows and every review and claude's helper calls run on; leads start on the one marked `lead`, or on\nthe default when none is.",
       "properties": {
         "default": {
           "type": "boolean"
@@ -14808,6 +14808,11 @@
           "maximum": 9007199254740991,
           "minimum": 1,
           "type": "integer"
+        },
+        "lead": {
+          "default": false,
+          "description": "Leads start on it (Lead runs on). At most one is; none: leads start on the default.",
+          "type": "boolean"
         },
         "model": {
           "$ref": "#/$defs/ModelName"
@@ -14851,6 +14856,10 @@
           "$ref": "#/$defs/Effort"
         },
         "fast": {
+          "type": "boolean"
+        },
+        "lead": {
+          "description": "Makes it the one leads start on.",
           "type": "boolean"
         },
         "model": {
@@ -14996,6 +15005,10 @@
           "maximum": 9007199254740991,
           "minimum": 1,
           "type": "integer"
+        },
+        "lead": {
+          "description": "True makes it the one leads start on, from each lead's next start; false (on that one) or true on the default\nhas leads start on the default again.",
+          "type": "boolean"
         },
         "model": {
           "$ref": "#/$defs/ModelName",

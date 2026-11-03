@@ -314,7 +314,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "lead_start",
-        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one; with fresh, starts a new lead thread from the current digest instead (sessionGeneration goes up), for a lead that is stuck or whose context is full, and the old thread stays on the node. A project's first order starts its lead by itself; call this to start it earlier. The lead always runs on the hub's default profile.",
+        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one; with fresh, starts a new lead thread from the current digest instead (sessionGeneration goes up), for a lead that is stuck or whose context is full, and the old thread stays on the node. A project's first order starts its lead by itself; call this to start it earlier. The lead runs on the profile picked for leads (lead: true in profiles_list), else the hub's default.",
     ),
     (
         "project_set",
@@ -322,19 +322,19 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "profiles_list",
-        "The hub's task profiles, the default first: each one's id, name, note (what it is for), model, effort, fast mode and, when claude refused its model, refused (its agents run on the runner's own until the model is set again). With projectRef, allowed: the ones the project allows. Also the models a profile may pick (models, from the Models API on the hub's API key, else fleetd's own list: modelsFrom), each with whether it has fast mode, and the efforts Claude Code takes.",
+        "The hub's task profiles, the default first: each one's id, name, note (what it is for), model, effort, fast mode, lead (leads start on it; none: they start on the default) and, when claude refused its model, refused (its agents run on the runner's own until the model is set again). With projectRef, allowed: the ones the project allows. Also the models a profile may pick (models, from the Models API on the hub's API key, else fleetd's own list: modelsFrom), each with whether it has fast mode, and the efforts Claude Code takes.",
     ),
     (
         "profile_create",
-        "Add a task profile (an owner's or admin's human key): a unique name (lowercase, as spawn_agent's profile takes it), a one-line note the lead picks by, a model profiles_list offers, an effort, fast (only on a model with fast mode), and default to make it the hub's default. Projects allow it on their own (project_set).",
+        "Add a task profile (an owner's or admin's human key): a unique name (lowercase, as spawn_agent's profile takes it), a one-line note the lead picks by, a model profiles_list offers, an effort, fast (only on a model with fast mode), default to make it the hub's default, and lead to make it the one leads start on. Projects allow it on their own (project_set).",
     ),
     (
         "profile_update",
-        "Change a task profile by id (an owner's or admin's human key): its name, note, model, effort, fast mode, or default: true to make it the default the lead, every review and helper calls run on. New agents follow it from their next start; running ones keep theirs. A model without fast mode turns fast off. Setting the model again clears a refusal. A rename moves the tasks not yet ended with it.",
+        "Change a task profile by id (an owner's or admin's human key): its name, note, model, effort, fast mode, default: true to make it the default every review, helper call and task naming no profile runs on, or lead: true to make it the one leads start on, from each lead's next start (true on the default, or false on the lead's: leads follow the default again). New agents follow it from their next start; running ones keep theirs. A model without fast mode turns fast off. Setting the model again clears a refusal. A rename moves the tasks not yet ended with it.",
     ),
     (
         "profile_delete",
-        "Delete a task profile by id (an owner's or admin's human key); every project stops allowing it. Refused for the default, and while a task not yet ended runs on it.",
+        "Delete a task profile by id (an owner's or admin's human key); every project stops allowing it. Refused for the default, and while a task not yet ended runs on it. Deleting the one leads start on puts them back on the default.",
     ),
     (
         "workstream_list",

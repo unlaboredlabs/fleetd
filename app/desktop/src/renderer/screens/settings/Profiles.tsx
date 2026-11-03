@@ -1,18 +1,23 @@
 // Task profiles (W146): Settings › Hub › Every project › Profiles lists the hub's profiles, each with its model, effort,
 // fast mode and note, and creates, edits, renames and deletes them and marks the default (profile_create,
-// profile_update, profile_delete: an owner's or admin's). Each project's Agents page picks which it allows
-// (AllowedProfiles, project_set).
+// profile_update, profile_delete: an owner's or admin's), and picks the one leads start on (Lead runs on: profile_update's
+// `lead`). Each project's Agents page picks which it allows (AllowedProfiles, project_set) and says which leads run on.
 import { useState } from "react";
 import type { Effort, Profile, ProfileModel, ProfileName, ProfilesListOutput, ProjectRef } from "../../../shared/contracts";
-import { Button, Checkbox, Field, Input, Select, Switch, Text } from "../../ui";
+import { Button, Checkbox, Field, Input, Select, Separator, Switch, Text } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
+import { toHash } from "../shell/routes";
+import { adminNames, adminWho } from "../sessions/pickScreen";
+import { useHubRole } from "../admin/role";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import {
   allowedAfter,
   createInput,
+  deleteWords,
   draftOf,
   EFFORT_WORD,
   hasFast,
+  leadOf,
   modelChoices,
   newDraft,
   NOTE_MAX,
@@ -21,6 +26,7 @@ import {
   updateInput,
   type ProfileDraft,
 } from "./profilesModel";
+import { Setting } from "./parts";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -50,7 +56,7 @@ export function ProfilesEditor() {
               <ProfileForm view={view} saved={p} onDone={done} />
             </div>
           ) : (
-            <ProfileRow key={p.id} profile={p} models={view.models} onEdit={() => (setEcho(undefined), setEditing({ kind: "edit", id: p.id }))} />
+            <ProfileRow key={p.id} profile={p} lead={p.id === leadOf(view.profiles)?.id} models={view.models} onEdit={() => (setEcho(undefined), setEditing({ kind: "edit", id: p.id }))} />
           ),
         )}
       </div>
@@ -73,11 +79,64 @@ export function ProfilesEditor() {
           </Text>
         )}
       </div>
+      <Separator />
+      <LeadPicker view={view} onDone={done} />
     </div>
   );
 }
 
-function ProfileRow({ profile: p, models, onEdit }: { profile: Profile; models: ReadonlyArray<ProfileModel>; onEdit: () => void }) {
+/** Lead runs on: the profile every project's lead starts on, the default until another is picked. Picking the default
+ * has leads follow the default again. */
+function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said: string | undefined) => void }) {
+  const call = useHubCall();
+  const refetch = useRefetch();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const lead = leadOf(view.profiles);
+  const pick = (name: string) => {
+    const p = view.profiles.find((q) => q.name === name);
+    if (p === undefined || p.id === lead?.id) return;
+    setBusy(true);
+    setError(undefined);
+    call("profile_update", { id: p.id, lead: true })
+      .then((out) => {
+        refetch(["profiles_list", "project_get"]);
+        onDone(out.next);
+      })
+      .catch((e: unknown) => setError(errorText(e)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Setting reveal="hub.lead" label="Lead runs on" help="Every project's lead. Reviews and tasks that name no profile stay on the default.">
+      <Select
+        aria-label="Lead runs on"
+        value={lead?.name ?? ""}
+        disabled={busy}
+        options={view.profiles.map((p) => ({
+          value: p.name,
+          label: (
+            <>
+              <Text mono>{p.name}</Text>
+              <Text size="xs" tone="quiet">{` ${runsLine(view.models, p)}${p.default ? " · default" : ""}`}</Text>
+            </>
+          ),
+          textValue: p.name,
+        }))}
+        onValueChange={pick}
+      />
+      <Text size="xs" tone="quiet">
+        Takes effect at each lead&apos;s next start; running leads keep theirs.
+      </Text>
+      {error === undefined ? null : (
+        <p role="alert" className={s.alertLine}>
+          <Text size="xs" tone="danger">{`Not changed: ${error}`}</Text>
+        </p>
+      )}
+    </Setting>
+  );
+}
+
+function ProfileRow({ profile: p, lead, models, onEdit }: { profile: Profile; lead: boolean; models: ReadonlyArray<ProfileModel>; onEdit: () => void }) {
   return (
     <div className={s.repoRow} role="listitem" aria-label={p.name} data-profile={p.name}>
       <div className={s.inline}>
@@ -87,6 +146,11 @@ function ProfileRow({ profile: p, models, onEdit }: { profile: Profile; models: 
         {p.default ? (
           <Text size="xs" tone="quiet">
             default
+          </Text>
+        ) : null}
+        {lead ? (
+          <Text size="xs" tone="quiet">
+            lead
           </Text>
         ) : null}
         <Text size="sm" tone="quiet">
@@ -173,7 +237,11 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
       />
       <Checkbox
         label="The default"
-        description={saved?.default ? "Every project allows it; the lead, every review and helper calls run on it. Make another the default to change it." : "Every project allows it; the lead, every review and helper calls run on it."}
+        description={
+          saved?.default
+            ? "Every project allows it; every review, helper call and task that names no profile runs on it. Make another the default to change it."
+            : "Every project allows it; every review, helper call and task that names no profile runs on it."
+        }
         checked={draft.default}
         disabled={saved?.default === true}
         onCheckedChange={(on) => set({ default: on === true })}
@@ -188,7 +256,7 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
         {saved && !saved.default ? (
           deleting ? (
             <>
-              <Text size="sm">{`Delete ${saved.name}? No project allows it after.`}</Text>
+              <Text size="sm">{deleteWords(saved, view.profiles.find((p) => p.default)?.name)}</Text>
               <Button variant="danger" disabled={busy} onClick={() => run(call("profile_delete", { id: saved.id }))}>
                 Delete
               </Button>
@@ -214,10 +282,13 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
 
 /**
  * A project's Agents page: a checkbox for each of the hub's profiles, checked for each its agents may run on
- * (project_set). The default is always allowed: checked, and can't be unchecked.
+ * (project_set). The default is always allowed: checked, and can't be unchecked. Under them, which profile leads start
+ * on: an owner or admin gets the way to change it, anyone else who to ask.
  */
 export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
   const live = useLive();
+  const { administers } = useHubRole();
+  const people = useToolQuery("people_list", noInput, { enabled: live && !administers });
   const call = useHubCall();
   const refetch = useRefetch();
   const list = useToolQuery("profiles_list", { projectRef }, { enabled: live });
@@ -227,6 +298,7 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
   if (view === undefined) return list.error ? <Text tone="danger">{`Not read: ${errorText(list.error)}`}</Text> : null;
   const allowed = view.allowed ?? [];
   const defaultName = view.profiles.find((p) => p.default)?.name;
+  const lead = leadOf(view.profiles);
   const toggle = (name: ProfileName, on: boolean) => {
     setBusy(name);
     setError(undefined);
@@ -252,6 +324,20 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
           onCheckedChange={(on) => toggle(p.name, on === true)}
         />
       ))}
+      {lead === undefined ? null : (
+        <div className={s.inline} data-lead-profile={lead.name}>
+          <Text size="xs" tone="quiet">
+            {administers
+              ? `Every project's lead runs on ${lead.name}.`
+              : `Every project's lead runs on ${lead.name}. Ask ${adminWho(adminNames(people.data?.people ?? []))} to change it.`}
+          </Text>
+          {administers ? (
+            <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.profiles" }))}>
+              Change in Every project › Profiles
+            </Button>
+          ) : null}
+        </div>
+      )}
       {error === undefined ? null : (
         <p role="alert" className={s.alertLine}>
           <Text size="xs" tone="danger">{`Not changed: ${error}`}</Text>

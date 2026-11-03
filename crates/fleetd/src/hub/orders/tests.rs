@@ -26,7 +26,7 @@ impl Lookups for Fake {
     fn live(&self, _: &ThreadRef) -> Option<LiveParts> {
         None
     }
-    fn default_profile(&self) -> Option<fleetd_contracts::effort::ProfileName> {
+    fn lead_profile(&self) -> Option<fleetd_contracts::effort::ProfileName> {
         Some(fleetd_contracts::effort::ProfileName::unchecked("high"))
     }
 }
