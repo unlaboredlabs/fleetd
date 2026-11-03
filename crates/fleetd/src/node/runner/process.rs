@@ -13,7 +13,6 @@
 //! Nothing here touches a process that is not provably the session's: groups are signalled only when their leader is
 //! in the sweep, the node's own group never, and on Linux every pid is re-checked against its start time first.
 use std::collections::{HashMap, HashSet};
-#[cfg(target_os = "linux")]
 use std::path::Path;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
@@ -378,6 +377,12 @@ pub(crate) fn reap_adopted() {
             let _ = waitpid(Pid::from_raw(proc.pid), Some(WaitPidFlag::WNOHANG));
         }
     }
+    if let Some(file) = LEFT.get() {
+        let live = children
+            .iter()
+            .filter(|p| !p.zombie && !tracked.contains(&p.pid));
+        record_left(file, live);
+    }
     // Forget orphans that are gone some other way (a sweep reaped them).
     known.retain(|key| children.iter().any(|p| (p.pid, p.start) == *key));
 }
@@ -424,6 +429,82 @@ fn stat_of(pid: i32) -> Option<Proc> {
         pid,
         &std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?,
     )
+}
+
+/// Where a session's host records the orphans its session's tree leaves it ([`record_left_in`]).
+#[cfg(target_os = "linux")]
+static LEFT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+/// What this process recorded there so far.
+#[cfg(target_os = "linux")]
+static RECORDED: LazyLock<Mutex<HashSet<ProcKey>>> = LazyLock::new(Default::default);
+
+/// A session's host: every live child that isn't its claude, which can only be an orphan of the session's tree (a
+/// browser a script started, then exited), goes to `file` by pid and start time as [`reap_adopted`] finds it. Such a
+/// process may drop the session's marker and move to a systemd scope of its own, so neither finds it later; the
+/// record does, when the session's task ends ([`left_behind`]). Set once.
+#[cfg(target_os = "linux")]
+pub fn record_left_in(file: std::path::PathBuf) {
+    let _ = LEFT.set(file);
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn record_left_in(_file: std::path::PathBuf) {}
+
+/// Appends to `file` the processes of `live` it doesn't list yet, one `<pid> <start>` line each.
+#[cfg(target_os = "linux")]
+fn record_left<'a>(file: &Path, live: impl Iterator<Item = &'a Proc>) {
+    use std::io::Write;
+    let mut recorded = RECORDED.lock().unwrap_or_else(|e| e.into_inner());
+    let lines: String = live
+        .filter_map(|p| Some((p.pid, p.start?)))
+        .filter(|(pid, start)| recorded.insert((*pid, Some(*start))))
+        .map(|(pid, start)| format!("{pid} {start}\n"))
+        .collect();
+    if lines.is_empty() {
+        return;
+    }
+    let written = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file)
+        .and_then(|mut f| f.write_all(lines.as_bytes()));
+    if let Err(e) = written {
+        tracing::warn!(file = %file.display(), "orphans not recorded: {e}");
+    }
+}
+
+/// What is left of the processes recorded in `file` ([`record_left_in`]): each still running with the start time it
+/// was recorded with, so a reused pid is never taken for it, and everything it started since. Blocking.
+#[cfg(target_os = "linux")]
+pub fn left_behind(file: &Path) -> Vec<Proc> {
+    let Ok(text) = std::fs::read_to_string(file) else {
+        return Vec::new();
+    };
+    let roots: Vec<Proc> = text
+        .lines()
+        .filter_map(|line| {
+            let (pid, start) = line.split_once(' ')?;
+            let (pid, start) = (pid.parse::<i32>().ok()?, start.trim().parse::<u64>().ok()?);
+            stat_of(pid)
+                .filter(|_| pid > 1)
+                .filter(|p| !p.zombie && p.start == Some(start))
+        })
+        .collect();
+    if roots.is_empty() {
+        return roots;
+    }
+    let table = table();
+    let mut found = roots.clone();
+    for root in &roots {
+        found.extend(descendants(&table, root.pid));
+    }
+    dedupe(&mut found);
+    found
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn left_behind(_file: &Path) -> Vec<Proc> {
+    Vec::new()
 }
 
 /// The thread id of the fleetd session this process runs in: its own `FLEETD_THREAD_ID` or, on Linux, the nearest
@@ -547,6 +628,35 @@ mod tests {
         found.retain(|p| p.pid == child.id() as i32);
         scanned.retain(|p| p.pid == child.id() as i32);
         assert_eq!(found, scanned);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn what_was_left_is_each_recorded_process_with_its_start_and_what_it_started() {
+        let mut shell = std::process::Command::new("sh")
+            .args(["-c", "sleep 30 & wait"])
+            .spawn()
+            .unwrap();
+        let pid = shell.id() as i32;
+        let start = stat_of(pid).unwrap().start.unwrap();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        // The same pid with another start time is a process that reused it: never taken.
+        std::fs::write(file.path(), format!("{pid} {start}\n{pid} {}\n", start + 1)).unwrap();
+        let mut found = Vec::new();
+        for _ in 0..200 {
+            found = left_behind(file.path());
+            if found.len() == 2 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        shell.kill().unwrap();
+        shell.wait().unwrap();
+        signal(&found, Signal::SIGKILL);
+        assert_eq!(found[0].pid, pid);
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert_eq!(found[1].ppid, pid);
+        assert!(left_behind(&file.path().with_extension("gone")).is_empty());
     }
 
     #[test]
