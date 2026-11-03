@@ -447,15 +447,16 @@ impl NodeLinkServer {
         }
     }
 
-    /// Any frame restarts the machine's silence timer.
+    /// Any frame restarts the machine's silence timer, armed for the link it came on.
     fn touch(self: &Arc<Self>, machine_id: &MachineId) {
         let this = self.clone();
         let id = machine_id.clone();
         let timeout = self.silence_timeout;
         let clock = self.deps.clock.clone();
+        let link = self.link_id(machine_id);
         let handle = tokio::spawn(async move {
             clock.sleep(timeout).await;
-            this.mark_offline(&id).await;
+            this.mark_offline(&id, link).await;
         });
         if let Some(old) = self
             .state
@@ -582,9 +583,16 @@ impl NodeLinkServer {
         ));
     }
 
-    async fn mark_offline(&self, machine_id: &MachineId) {
+    /// The machine went silent on `armed_for`, the link its timer was armed on (None: none yet, after a hub start).
+    async fn mark_offline(&self, machine_id: &MachineId, armed_for: Option<u64>) {
         let live = {
             let mut state = self.state.lock().unwrap();
+            // A timer that fired as a newer link came in: that link has a timer of its own.
+            if let Some((id, _)) = state.links.get(machine_id)
+                && Some(*id) != armed_for
+            {
+                return;
+            }
             state.announced.remove(machine_id);
             state.watchdogs.remove(machine_id);
             state.loads.remove(machine_id);
@@ -615,8 +623,10 @@ impl NodeLinkServer {
             e.attention = Some(Attention::Loud);
         }
         self.append(offline);
-        self.deps.executors.detach(machine_id).await;
-        if let Some((_, tx)) = live {
+        // Only the silent link's sessions: a node that linked again while this ran keeps its new link's. Detaching
+        // the machine's left that link up with no sessions on it, so every task queued as offline until a restart.
+        if let Some((id, tx)) = live {
+            self.deps.executors.detach_link(machine_id, id).await;
             let _ = tx.send(Out::Close(
                 close::HEARTBEAT_TIMEOUT,
                 format!("no frame for {seconds} s"),
@@ -1223,5 +1233,108 @@ mod tests {
             event["summary"],
             "devbox's node linked again, on fleetd 0.2.0"
         );
+    }
+
+    /// The 2026-11-03 outage: a stalled hub ran a quiet link's silence timer out just as the node linked again. Its
+    /// offline pass detached the machine's sessions after the new link had attached them, leaving that link up and
+    /// heartbeating with nothing on it: the node never heard, and every task queued as offline until a restart. The
+    /// pass ends only the link that went quiet, so the new one stays connected.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn a_silence_timer_that_runs_out_as_the_node_links_again_leaves_the_new_link_connected() {
+        use std::time::Duration;
+
+        use fleetd_contracts::node_link::{HubToNode, NodeToHub};
+        use tokio::time::timeout;
+
+        use crate::hub::executor::NodeSessions;
+
+        const WAIT: Duration = Duration::from_secs(10);
+        let home = tempfile::tempdir().unwrap();
+        let config = HubConfig {
+            home: home.path().to_path_buf(),
+            listen: Listen::default(),
+            url: None,
+        };
+        let clock = ManualClock::at(1_792_000_000_000);
+        let hub = crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock.clone())
+            .unwrap();
+        let devbox = MachineId::unchecked("devbox");
+
+        // The old link goes quiet and ends; its timer runs on, as one that already fired does.
+        let _old = hub.link.test_link(&devbox, &[]);
+        hub.link.touch(&devbox);
+        let timer = {
+            let mut state = hub.link.state.lock().unwrap();
+            state
+                .announced
+                .insert(devbox.clone(), super::Announced::Online);
+            state.watchdogs.remove(&devbox).unwrap()
+        };
+        hub.link.test_unlink(&devbox);
+
+        // The stalled hub: its database is busy, so the offline pass waits on it part way through.
+        let (held, is_held) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let db = hub.db.clone();
+        let holder = std::thread::spawn(move || {
+            db.with(|_| {
+                held.send(()).unwrap();
+                released.recv().unwrap();
+                Ok(())
+            })
+            .unwrap();
+        });
+        is_held.recv().unwrap();
+        clock.advance(hub.link.silence_timeout + Duration::from_secs(1));
+        timeout(WAIT, async {
+            while hub
+                .link
+                .state
+                .lock()
+                .unwrap()
+                .announced
+                .contains_key(&devbox)
+            {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the offline pass starts");
+
+        // Meanwhile the node links again, as serve links it.
+        let _new = hub.link.test_link(&devbox, &[]);
+        let new_id = hub.link.link_id(&devbox).unwrap();
+        let (send, mut calls) = tokio::sync::mpsc::unbounded_channel();
+        hub.executors
+            .attach(
+                &devbox,
+                NodeSessions {
+                    link_id: new_id,
+                    send,
+                },
+            )
+            .await;
+        hub.link.touch(&devbox);
+
+        release.send(()).unwrap();
+        holder.join().unwrap();
+        timeout(WAIT, timer)
+            .await
+            .expect("the offline pass ends")
+            .unwrap();
+
+        let Ok(Some(HubToNode::SessionCall(call))) = timeout(WAIT, calls.recv()).await else {
+            panic!("the hub dropped the new link's sessions")
+        };
+        let reply: NodeToHub = serde_json::from_value(serde_json::json!({
+            "t": "session_reply", "id": call.id, "result": { "ok": { "kind": "done" } }
+        }))
+        .unwrap();
+        hub.executors.handle_frame(&devbox, reply);
+        timeout(WAIT, hub.executors.await_live(&devbox))
+            .await
+            .expect("the new link goes live");
+        assert!(hub.executors.is_connected(&devbox));
+        assert_eq!(hub.link.link_id(&devbox), Some(new_id));
     }
 }
