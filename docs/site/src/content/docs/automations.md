@@ -68,6 +68,8 @@ words; the hub doesn't read words. Left without a zone, it runs in [yours](/docs
 - A time that has already passed is refused. Given with `Z` or an offset, it is kept as the zone's own clock time.
 - If the hub was down at that time, it runs once when the hub comes back, and its order tells the Navi how late it
   is, so the reminder says it comes late.
+- If another run of it is still open at that time (a Run now, say), it isn't skipped for good: it waits, shown as a
+  skipped run that "goes once that ends", and runs once that run's order closes, late in the same way.
 
 From the lead's tools, `automation_create` takes `schedule: { "at": "2026-11-03T18:00" }`, with `tz` only for another
 zone than the person's. From an MCP client, `automation_create` takes `{ "at": …, "tz": … }`.
