@@ -3,7 +3,7 @@
 //! a `cargo` of its own first on each agent's PATH (`<node home>/build-slots/bin/cargo`), which runs
 //! `fleetd build-slot`: a build, test, check, clippy (and the like, [`HEAVY`]) first takes one of the machine's slots,
 //! a file under `<node home>/build-slots` it holds a lock on while the real cargo runs, and every other cargo command
-//! runs at once. With every slot in use a build queues, first come first served, and says so in one line. The kernel
+//! runs at once but `run`, whose build alone takes a slot (what it runs may run for hours). With every slot in use a build queues, first come first served, and says so in one line. The kernel
 //! drops a lock when its holder exits however it ends, so a slot never stays taken by a build that's gone, and nothing
 //! running is ever stopped: a build only ever waits before it starts.
 //!
@@ -20,7 +20,7 @@ pub const COMMAND: &str = "build-slot";
 /// Memory to allow per agent build when node.json sets no `buildSlots`: two rustc jobs at 2 to 6 GB each.
 pub const MEM_PER_BUILD_GB: u64 = 8;
 
-/// The cargo commands that wait for a slot: those that compile. `run` doesn't, as what it runs may run for hours.
+/// The cargo commands that wait for a slot: those that compile. `run` builds first ([`build_first`]).
 const HEAVY: &[&str] = &[
     "build", "b", "check", "c", "clippy", "test", "t", "bench", "doc", "d", "rustc", "rustdoc",
     "install", "fix", "nextest", "llvm-cov", "miri",
@@ -67,18 +67,34 @@ pub fn slots_here(home: &Path) -> Option<u64> {
     }
 }
 
-/// Whether cargo's `args` compile: the first that is neither a toolchain (`+nightly`) nor a flag (nor a global flag's
-/// value) names a [`HEAVY`] command.
-pub fn heavy(args: &[String]) -> bool {
-    let mut args = args.iter().map(String::as_str);
-    while let Some(arg) = args.next() {
-        if ["-C", "--config", "-Z", "--color"].contains(&arg) {
-            args.next();
-        } else if !arg.starts_with('-') && !arg.starts_with('+') {
-            return HEAVY.contains(&arg);
+/// Where cargo's command is in `args`: the first that is neither a toolchain (`+nightly`) nor a flag (nor a global
+/// flag's value).
+fn command_at(args: &[String]) -> Option<usize> {
+    let mut at = 0;
+    while let Some(arg) = args.get(at) {
+        if ["-C", "--config", "-Z", "--color"].contains(&arg.as_str()) {
+            at += 2;
+        } else if arg.starts_with('-') || arg.starts_with('+') {
+            at += 1;
+        } else {
+            return Some(at);
         }
     }
-    false
+    None
+}
+
+/// Whether cargo's `args` name a [`HEAVY`] command.
+pub fn heavy(args: &[String]) -> bool {
+    command_at(args).is_some_and(|at| HEAVY.contains(&args[at].as_str()))
+}
+
+/// For a `cargo run`, the `cargo build` of what it runs: its arguments up to `--`, `build` for `run`. It builds in a
+/// slot, which frees before the program starts.
+pub fn build_first(args: &[String]) -> Option<Vec<String>> {
+    let at = command_at(args).filter(|&at| ["run", "r"].contains(&args[at].as_str()))?;
+    let mut build: Vec<String> = args.iter().take_while(|a| *a != "--").cloned().collect();
+    build[at] = "build".to_owned();
+    Some(build)
 }
 
 /// Writes the wrapper, which runs `exe` (this binary, as sessions start it), unless it already says the same.
@@ -95,12 +111,12 @@ pub fn install(home: &Path, exe: &str) -> std::io::Result<PathBuf> {
     script.push(' ');
     super::order_env::push_quoted(&mut script, &home.to_string_lossy());
     script.push_str(" \"$@\"\n");
+    // Runnable before it's in place: a cargo started meanwhile finds the old wrapper or this one, never neither.
     if std::fs::read_to_string(&wrapper).ok().as_deref() != Some(script.as_str()) {
-        super::secrets::write_atomic(&wrapper, script.as_bytes())?;
-        std::fs::set_permissions(
-            &wrapper,
-            std::os::unix::fs::PermissionsExt::from_mode(0o755),
-        )?;
+        let tmp = bin.join(format!(".cargo-{}", std::process::id()));
+        std::fs::write(&tmp, &script)?;
+        std::fs::set_permissions(&tmp, std::os::unix::fs::PermissionsExt::from_mode(0o755))?;
+        std::fs::rename(&tmp, &wrapper)?;
     }
     Ok(wrapper)
 }
@@ -130,7 +146,9 @@ pub fn add_to_path(home: &Path, exe: &str, env: &mut Vec<(String, String)>) {
 pub fn brief_line(slots: u64) -> String {
     format!(
         "- Cargo builds, tests, checks and clippy runs take turns: {slots} at once on this machine. One past that \
-         prints that it is queued for a build slot and starts by itself once one frees, so give it a long timeout.\n"
+         prints that it is queued for a build slot and starts by itself once one frees: run it in the background \
+         (`run_in_background`) rather than under a short timeout, since one stopped and started again goes to the \
+         back of the queue.\n"
     )
 }
 
@@ -264,12 +282,14 @@ pub fn queued_line(slots: u64, ahead: usize) -> String {
         1 => "1 build ahead".to_owned(),
         n => format!("{n} builds ahead"),
     };
-    let all = if slots == 1 {
-        "the one slot on this machine is".to_owned()
+    let slots = if slots == 1 {
+        "1 slot".to_owned()
     } else {
-        format!("all {slots} slots on this machine are")
+        format!("{slots} slots")
     };
-    format!("fleetd: queued for a build slot ({place}; {all} in use): it starts once one frees")
+    format!(
+        "fleetd: queued for a build slot ({place}; {slots} on this machine): it starts once one frees"
+    )
 }
 
 /// `fleetd build-slot <node home> <cargo's arguments>`: the real cargo with them, once a slot is free if it builds.
@@ -286,13 +306,12 @@ pub fn main(args: &[String]) -> ExitCode {
     };
     let mut command = std::process::Command::new(&cargo);
     command.args(args);
-    let waits = std::env::var_os(HELD).is_none() && heavy(args);
+    let held = std::env::var_os(HELD).is_some();
+    let build = build_first(args).filter(|_| !held);
+    let waits = !held && (build.is_some() || heavy(args));
     let slots = if waits { slots_here(home) } else { None };
     let Some(slots) = slots else {
-        use std::os::unix::process::CommandExt;
-        let e = command.exec();
-        eprintln!("fleetd: cannot run {}: {e}", cargo.display());
-        return ExitCode::from(126);
+        return exec(command, &cargo);
     };
     let slot = take(&dir(home), slots, POLL, |ahead| {
         eprintln!("{}", queued_line(slots, ahead));
@@ -300,8 +319,16 @@ pub fn main(args: &[String]) -> ExitCode {
     if let Err(e) = &slot {
         eprintln!("fleetd: build slots unavailable ({e}): building without waiting");
     }
-    command.env(HELD, "1");
-    let status = match command.status() {
+    let mut building = match &build {
+        Some(build) => {
+            let mut first = std::process::Command::new(&cargo);
+            first.args(build);
+            first
+        }
+        None => command,
+    };
+    building.env(HELD, "1");
+    let status = match building.status() {
         Ok(status) => status,
         Err(e) => {
             eprintln!("fleetd: cannot run {}: {e}", cargo.display());
@@ -309,12 +336,26 @@ pub fn main(args: &[String]) -> ExitCode {
         }
     };
     drop(slot);
+    // Built: the program runs outside the slot, with nothing left to compile.
+    if build.is_some() && status.success() {
+        let mut run = std::process::Command::new(&cargo);
+        run.args(args);
+        return exec(run, &cargo);
+    }
     use std::os::unix::process::ExitStatusExt;
     let code = status
         .code()
         .or_else(|| status.signal().map(|s| 128 + s))
         .unwrap_or(1);
     ExitCode::from(u8::try_from(code).unwrap_or(1))
+}
+
+/// Runs `command` in this process's place.
+fn exec(mut command: std::process::Command, cargo: &Path) -> ExitCode {
+    use std::os::unix::process::CommandExt;
+    let e = command.exec();
+    eprintln!("fleetd: cannot run {}: {e}", cargo.display());
+    ExitCode::from(126)
 }
 
 #[cfg(test)]
@@ -431,6 +472,23 @@ mod tests {
         assert_eq!(real_cargo(&only, &bin), None);
     }
 
+    /// `cargo run` builds what it runs in a slot first: everything up to `--`, as `build`.
+    #[test]
+    fn a_run_builds_first() {
+        assert_eq!(
+            build_first(&args(&[
+                "+nightly", "-q", "run", "-p", "docsgen", "--", "--check", "run"
+            ])),
+            Some(args(&["+nightly", "-q", "build", "-p", "docsgen"]))
+        );
+        assert_eq!(
+            build_first(&args(&["r", "--release"])),
+            Some(args(&["build", "--release"]))
+        );
+        assert_eq!(build_first(&args(&["-C", "run", "test"])), None);
+        assert_eq!(build_first(&args(&["build"])), None);
+    }
+
     #[test]
     fn only_commands_that_compile_wait() {
         for build in [
@@ -495,12 +553,9 @@ mod tests {
     fn the_queued_line_says_where_it_stands() {
         assert_eq!(
             queued_line(4, 2),
-            "fleetd: queued for a build slot (2 builds ahead; all 4 slots on this machine are in use): it starts \
-             once one frees"
+            "fleetd: queued for a build slot (2 builds ahead; 4 slots on this machine): it starts once one frees"
         );
-        assert!(
-            queued_line(1, 0).contains("(next in line; the one slot on this machine is in use)")
-        );
+        assert!(queued_line(1, 0).contains("(next in line; 1 slot on this machine)"));
     }
 
     #[test]
