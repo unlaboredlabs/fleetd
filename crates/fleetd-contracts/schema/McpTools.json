@@ -10671,6 +10671,12 @@
         "screen_open.output": {
           "$ref": "#/$defs/ScreenOpenOutput"
         },
+        "screens_count.input": {
+          "$ref": "#/$defs/ScreensCountInput"
+        },
+        "screens_count.output": {
+          "$ref": "#/$defs/ScreensCountOutput"
+        },
         "secret_submit.input": {
           "$ref": "#/$defs/SecretSubmitInput"
         },
@@ -11215,6 +11221,8 @@
         "screen_end.output",
         "screen_open.input",
         "screen_open.output",
+        "screens_count.input",
+        "screens_count.output",
         "secret_submit.input",
         "secret_submit.output",
         "session_prompt_get.input",
@@ -18095,6 +18103,36 @@
         "machineId",
         "since",
         "ahead"
+      ],
+      "type": "object"
+    },
+    "ScreensCountInput": {
+      "type": "object"
+    },
+    "ScreensCountOutput": {
+      "properties": {
+        "asking": {
+          "description": "Live screens whose agent asked for a person (`request_takeover`) and has no one yet.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "live": {
+          "description": "Live screens, those asking for a person included.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "live",
+        "asking"
       ],
       "type": "object"
     },

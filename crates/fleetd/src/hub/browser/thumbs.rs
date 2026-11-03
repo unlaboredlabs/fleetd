@@ -126,7 +126,7 @@ impl Thumbs {
 }
 
 /// Every live screen.
-fn live_sessions(hub: &Hub) -> Result<Vec<BrowserSession>, StoreError> {
+pub fn live_sessions(hub: &Hub) -> Result<Vec<BrowserSession>, StoreError> {
     hub.db.with(|c| {
         let mut stmt = c.prepare("SELECT data FROM browser_sessions WHERE state = 'live'")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
@@ -209,7 +209,7 @@ pub async fn round(hub: &Arc<Hub>) -> Result<usize, StoreError> {
 
 /// Whether `caller` may see a screen of `project`'s: it reads the project's machine, and another person's Navi's
 /// screens are theirs alone (D215).
-fn may_see(hub: &Hub, caller: &Caller, project: &ProjectRef) -> bool {
+pub fn may_see(hub: &Hub, caller: &Caller, project: &ProjectRef) -> bool {
     allows(caller, Role::Read, Some(&project.machine_id))
         && crate::hub::navi::owner::may_use(&hub.db, caller, project).unwrap_or(false)
 }

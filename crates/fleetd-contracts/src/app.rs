@@ -29,8 +29,8 @@ pub type AppCallId = Text<1, 64>;
 ///   and a skill list's `changed`, `off` and `lastUsedAt`: a Navi's Skills.
 /// - `browser_navigate`: `browser_input`'s `navigate`, `back`, `forward` and `reload`, so the apps show a browser's
 ///   address bar. A machine whose node is older drops them.
-/// - `screen_thumbs`: the Screens page's pictures: `screen_thumbs` is read, the hub sends `screen_thumb`s, and
-///   `browser_sessions` names each screen's machine and latest step.
+/// - `screen_thumbs`: the Screens page's pictures: `screen_thumbs` is read, the hub sends `screen_thumb`s,
+///   `browser_sessions` names each screen's machine and latest step, and the `screens_count` tool exists.
 ///
 /// The desktop app's `features.test.ts` checks that every feature it gates on is named here.
 pub const APP_FEATURES: [&str; 7] = [

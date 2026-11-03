@@ -17,13 +17,15 @@ project's under **Agents › Screens**. The agent tools that open and close one 
 
 ## The Screens page {#page}
 
-**Screens** in the sidebar shows every screen of the projects and Navis you can see, in three groups:
+**Screens** in the sidebar says "needs you" when a screen asks for you, else how many are live: one count for the
+whole hub (`screens_count`), read again as screens start, change hands and end. The page shows every screen of the
+projects and Navis you can see, in three groups:
 
 - **Needs you**: screens whose agent asked you to take over, each with a large picture, its reason and **Take over**.
 - **Live**: a grid of pictures. Over each, its project and where it runs (`Browser · devbox`, `Android · buildbox`,
   `Agents' Mac`); under it, what it's for, its state, who has it and the agent's latest step (`Typed "SAVE10" in @e12`,
   `Tapped "Add to cart"`).
-- **Recent**: screens that ended, newest first, with how they ended and when.
+- **Recent**: screens that ended, newest first, with how they ended and when: the first 12, then **Show more**.
 
 Opening a screen gives its live view or replay the whole page, with a back arrow to the wall. **New screen** at the top
 right opens a short sentence: the kind, the machine with its slots in use, and the project or Navi. A full machine

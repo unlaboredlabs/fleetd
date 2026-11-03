@@ -14,11 +14,10 @@
 // projects are a group under its name, which collapses; the footer has a row per hub. With one, there is no name and
 // no group, as before.
 import { Activity, ChevronDown, ChevronRight, Factory, MonitorSmartphone, Plus, Settings, Sparkle } from "lucide-react";
-import { split, useScreens } from "../screensPage/data";
 import { useMemo, useState, type ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import type { DataLayer } from "../../src/data/queries";
-import { HubScope, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
+import { HubScope, useData, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
 import { archiveNavi, RenameNaviDialog, type NaviTarget } from "../navi/actions";
 import { isNavi } from "../navi/model";
 import {
@@ -109,17 +108,26 @@ function SettingsEntry({ current, admin, trailing, go }: { current: boolean; adm
   );
 }
 
-/** Screens (D305): the words when one asks for you, else how many are live. */
+const NO_INPUT = {} as const;
+
+/**
+ * Screens (D305): the words when one asks for you, else how many are live. One hub-wide count (screens_count, read
+ * again on each screen's event), never a project's list: the row is always there.
+ */
 function ScreensEntry({ current, go }: { current: boolean; go: (screen: Screen) => void }) {
-  const { asking, live } = split(useScreens());
+  // The hub feature that brings screens_count (screensPage/data's THUMBS; named here so the shell loads none of the page).
+  const served = useData((d) => d.features.includes("screen_thumbs"));
+  const count = useToolQuery("screens_count", NO_INPUT, { enabled: served }).data;
+  const asking = count?.asking ?? 0;
+  const live = count?.live ?? 0;
   const trailing =
-    asking.length > 0 ? (
+    asking > 0 ? (
       <Text size="xs" tone="warning" strong>
         needs you
       </Text>
-    ) : live.length > 0 ? (
+    ) : live > 0 ? (
       <Text size="xs" tone="faint" tabular>
-        {String(live.length)}
+        {String(live)}
       </Text>
     ) : undefined;
   return <SidebarItem label="Screens" icon={<MonitorSmartphone />} current={current} trailing={trailing} onClick={() => go({ id: "screens", open: null })} />;

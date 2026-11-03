@@ -2106,6 +2106,16 @@ output!(ScreenEndOutput {
     session: Option<crate::browser::BrowserSession>,
 });
 
+// screens_count: how many screens are live across every project and Navi the key may see, and how many of them ask
+// for a person: the sidebar's Screens row, one read for the whole hub.
+input!(ScreensCountInput {});
+output!(ScreensCountOutput {
+    /// Live screens, those asking for a person included.
+    live: Count,
+    /// Live screens whose agent asked for a person (`request_takeover`) and has no one yet.
+    asking: Count,
+});
+
 // browser_retention_set: how long the hub keeps browser recordings, for every project.
 input!(BrowserRetentionSetInput {
     #[serde(flatten)]
@@ -3673,6 +3683,7 @@ tools! {
     checklist_remove => ChecklistRemove, Operate, ChecklistRemoveInput, ChecklistRemoveOutput;
     browser_sessions => BrowserSessions, Read, BrowserSessionsInput, BrowserSessionsOutput;
     browser_recording_get => BrowserRecordingGet, Read, BrowserRecordingGetInput, BrowserRecordingGetOutput;
+    screens_count => ScreensCount, Read, ScreensCountInput, ScreensCountOutput;
     // Human keys only (the handler checks).
     browser_control => BrowserControl, Operate, BrowserControlInput, BrowserControlOutput;
     // Human keys only (the handlers check).

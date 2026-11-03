@@ -6399,6 +6399,17 @@ export type ScreenWaitEventData = {
   waitId: string;
 };
 
+export type ScreensCountInput = { [key: string]: unknown };
+
+export type ScreensCountOutput = {
+  /** Live screens whose agent asked for a person (`request_takeover`) and has no one yet. */
+  asking: number;
+  /** Live screens, those asking for a person included. */
+  live: number;
+  next?: string;
+  truncated?: boolean;
+};
+
 export type SealedSecret = string;
 
 export type SecretEnvEntry = {
@@ -8729,6 +8740,7 @@ export interface ToolMap {
   requests_list: { input: RequestsListInput; output: RequestsListOutput };
   screen_end: { input: ScreenEndInput; output: ScreenEndOutput };
   screen_open: { input: ScreenOpenInput; output: ScreenOpenOutput };
+  screens_count: { input: ScreensCountInput; output: ScreensCountOutput };
   secret_submit: { input: SecretSubmitInput; output: SecretSubmitOutput };
   session_prompt_get: { input: SessionPromptGetInput; output: SessionPromptGetOutput };
   setup_list: { input: SetupListInput; output: SetupListOutput };

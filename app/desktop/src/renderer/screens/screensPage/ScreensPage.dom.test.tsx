@@ -41,12 +41,14 @@ let thumbs: boolean[] = [];
 let lists = 0;
 let hidden = false;
 let controls: unknown[] = [];
+let ended: ReturnType<typeof row>[] = [];
 
 beforeEach(() => {
   thumbs = [];
   lists = 0;
   hidden = false;
   controls = [];
+  ended = [];
   Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (hidden ? "hidden" : "visible") });
   vi.stubGlobal("fleetd", {
     platform: "darwin",
@@ -84,7 +86,7 @@ const mount = async (features: readonly string[] = ["browser_sessions", "screen_
       }
       if (tool === "browser_sessions") {
         lists++;
-        return Promise.resolve({ ok: true, output: { sessions: SESSIONS, waits: [], retention: { retentionDays: 30, maxGbPerProject: 20 } } });
+        return Promise.resolve({ ok: true, output: { sessions: [...SESSIONS, ...ended], waits: [], retention: { retentionDays: 30, maxGbPerProject: 20 } } });
       }
       return Promise.resolve({ ok: true, output: tool === "agents_list" ? { at: AT, agents: [] } : tool === "machine_roles" ? { machines: [] } : {} });
     },
@@ -134,6 +136,23 @@ it("takes control with Take over, then opens the screen on the page's own route"
   await settle();
   expect(controls).toEqual([{ sessionId: "B-asks", control: "human" }]);
   expect(location.hash).toBe("#/screens/devbox/storefront/B-asks");
+});
+
+it("shows the first 12 ended, then 12 more at each Show more", async () => {
+  ended = Array.from({ length: 28 }, (_, i) => row(`B-old-${String(i)}`, `Old screen ${String(i)}`, 9_000_000, { state: "recorded", endedAt: at(8_000_000 + i) }));
+  await mount();
+  const more = () => [...(group("Recent")?.querySelectorAll("button") ?? [])].find((b) => b.textContent.startsWith("Show"));
+  expect(listed("Recent")).toHaveLength(12);
+  expect(group("Recent")?.querySelector("h2")?.textContent).toBe("Recent30");
+  expect(more()?.textContent).toBe("Show 12 more");
+  act(() => more()?.click());
+  expect(listed("Recent")).toHaveLength(24);
+  expect(more()?.textContent).toBe("Show 6 more");
+  act(() => more()?.click());
+  expect(listed("Recent")).toHaveLength(30);
+  expect(more()).toBeUndefined();
+  // Newest first all the way down.
+  expect(listed("Recent").slice(0, 3)).toEqual(["Compare the home page copy", "Reproduce the 404", "Old screen 0"]);
 });
 
 it("names each live screen's kind and machine and its agent's latest step, and opens one on the page's own route", async () => {

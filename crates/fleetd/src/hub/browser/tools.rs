@@ -14,7 +14,7 @@ use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::mcp::{
     BrowserControlInput, BrowserControlOutput, BrowserRecordingGetInput, BrowserRecordingGetOutput,
     BrowserRetentionSetInput, BrowserRetentionSetOutput, BrowserSessionsInput,
-    BrowserSessionsOutput, ErrorCode,
+    BrowserSessionsOutput, ErrorCode, ScreensCountInput, ScreensCountOutput,
 };
 use fleetd_contracts::node_link::{CAP_BROWSER, HubToNode};
 use fleetd_contracts::prim::{List, Text};
@@ -33,6 +33,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("browser_recording_get", browser_recording_get);
     tools.add("browser_control", browser_control);
     tools.add("browser_retention_set", browser_retention_set);
+    tools.add("screens_count", screens_count);
 }
 
 /// "human:<device>", as the action log names a person's step.
@@ -206,6 +207,41 @@ async fn browser_sessions(
         waits: List::unchecked(waits),
         retention: hub.db.with(retention_on)?,
         next,
+        truncated: None,
+    })
+}
+
+/// One read for the whole hub: every live screen, counted for the projects the caller reads, a Navi's for its owner.
+async fn screens_count(
+    hub: Arc<Hub>,
+    caller: Caller,
+    _input: ScreensCountInput,
+) -> Result<ScreensCountOutput, ToolError> {
+    let live = super::thumbs::live_sessions(&hub)?;
+    let mut seen: std::collections::HashMap<fleetd_contracts::ids::ProjectRef, bool> =
+        std::collections::HashMap::new();
+    let (mut count, mut asking) = (0, 0);
+    for s in live {
+        let sees = match seen.get(&s.project_ref) {
+            Some(sees) => *sees,
+            None => {
+                let sees = super::thumbs::may_see(&hub, &caller, &s.project_ref);
+                seen.insert(s.project_ref.clone(), sees);
+                sees
+            }
+        };
+        if !sees {
+            continue;
+        }
+        count += 1;
+        if s.takeover_reason.is_some() && s.control == BrowserControl::Agent {
+            asking += 1;
+        }
+    }
+    Ok(ScreensCountOutput {
+        live: super::count(count),
+        asking: super::count(asking),
+        next: None,
         truncated: None,
     })
 }

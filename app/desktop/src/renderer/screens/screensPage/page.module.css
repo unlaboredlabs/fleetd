@@ -260,6 +260,13 @@ section + section > .heading {
   flex-direction: column;
   max-width: 920px;
 }
+/* Show more, under the rows it adds to, in line with their text. */
+.more {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0 calc(64px + var(--space-3) - var(--space-2));
+}
 .recentRow {
   display: flex;
   align-items: center;
