@@ -492,6 +492,8 @@ impl Tasks {
     /// The task's new thread, its branch, and where the branch started. `handoff`: a fresh restart, which takes over
     /// the task's thread and its worktree, and whose agent gets the handoff after its brief.
     async fn launch(&self, task: &Task, handoff: Option<&str>) -> Result<Launched, StartError> {
+        let mut stages = crate::stages::Stages::new("hub launch");
+        stages.id(task.task_id.as_str());
         let r = &task.project_ref;
         // Its worktree, branch and setup are its repo's: the work runs in the repo's checkout (W79).
         let repo = self.repo_of(task)?;
@@ -515,6 +517,7 @@ impl Tasks {
             }
         };
         let policy = self.d.policies.get(checkout).await?;
+        stages.done("policy");
         let brief = self.workstream(&task.workstream_id).and_then(|w| w.brief);
         let write = task.kind == TaskKind::Write;
         // Every task gets a worktree of its own from the default branch, a writer's on its branch and a reader's
@@ -529,6 +532,7 @@ impl Tasks {
         } else {
             None
         };
+        stages.done("default branch");
         // In another repo it needs a worktree of its own: run in the checkout itself, its session would be the
         // checkout's, not the project's, and every call it made would be refused.
         if let Some(repo) = &repo
@@ -620,7 +624,9 @@ impl Tasks {
             }),
             order_id: Some(task.workstream_id.clone()),
         };
+        stages.done("prompt");
         let (thread_id, base) = self.d.ports.launch(&checkout.machine_id, request).await?;
+        stages.done("node launch");
         // Every later message to this thread renders from the texts it starts with. The thread runs either way.
         if let Err(error) = self.d.db.prompts().pin(
             &set,
@@ -637,6 +643,8 @@ impl Tasks {
         ) {
             tracing::warn!(task = %task.task_id.as_str(), %error, "task prompts not pinned");
         }
+        stages.done("pinned");
+        stages.end();
         Ok((
             ThreadRef {
                 machine_id: checkout.machine_id.clone(),
@@ -2284,6 +2292,7 @@ impl Tasks {
         input: SpawnInput,
     ) -> Result<Spawned, TaskError> {
         let r = &caller.project_ref;
+        let mut stages = crate::stages::Stages::new("hub spawn");
         // An archived project (W79) starts nothing: its directory is another project's repo now.
         if let Some((holder, repo)) =
             crate::hub::repos::holder(&self.d.db, r).map_err(store_error)?
@@ -2326,7 +2335,9 @@ impl Tasks {
         } else {
             None
         };
+        stages.done("scope");
         let _guard = self.lock.lock().await;
+        stages.done("tasks lock");
         let ws = match self.workstream(&input.workstream_id) {
             Some(ws) if same_project(&ws.project_ref, r) => ws,
             _ => {
@@ -2429,6 +2440,8 @@ impl Tasks {
         let task = self
             .db(|c| TaskRecords::create(c, task))
             .map_err(store_error)?;
+        stages.id(task.task_id.as_str());
+        stages.done("checks");
         if !overridden.is_empty() {
             tracing::info!(
                 task = task.task_id.as_str(),
@@ -2447,6 +2460,8 @@ impl Tasks {
                 false,
             )
             .await;
+        stages.done("start");
+        stages.end();
         Ok(Spawned {
             task,
             note,
@@ -2665,7 +2680,10 @@ impl Tasks {
         task_id: &TaskId,
         text: &str,
     ) -> Result<Task, TaskError> {
+        let mut stages = crate::stages::Stages::new("hub message");
+        stages.id(task_id.as_str());
         let _guard = self.lock.lock().await;
+        stages.done("tasks lock");
         let stored = self.owned(caller, task_id)?;
         let task = stored.task.clone();
         let id = task_id.as_str();
@@ -2732,6 +2750,8 @@ impl Tasks {
                     .send(thread, text, &request_id(&task, &["msg", &uuid]))
                     .await
                     .map_err(|e| e.to_task_error(&thread.machine_id))?;
+                stages.done("send");
+                stages.end();
                 Ok(task)
             }
             _ => {
@@ -2744,7 +2764,7 @@ impl Tasks {
                     recovery.signature = None;
                     recovery.resumed_at = None;
                 }
-                Ok(self
+                let task = self
                     .try_start(
                         StoredTask {
                             task: next,
@@ -2752,7 +2772,10 @@ impl Tasks {
                         },
                         false,
                     )
-                    .await)
+                    .await;
+                stages.done("start");
+                stages.end();
+                Ok(task)
             }
         }
     }
