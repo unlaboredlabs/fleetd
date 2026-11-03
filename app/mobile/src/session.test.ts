@@ -139,6 +139,26 @@ describe("Session", () => {
     expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["All done."]);
   });
 
+  it("reads again only the previews that moved on while the link was down", async () => {
+    const { hub, session } = setup();
+    const reads = () => hub.sentOf("call").filter((c) => c.tool === "chat_history");
+    for (const c of reads()) hub.link.frame({ t: "result", id: c.id, output: page([message(1, "Morning."), message(2, "Two emails need you.")]) });
+    await flush();
+    hub.link.close(1006);
+    vi.advanceTimersByTime(1000);
+    hub.ready();
+    const navi = () => reads().filter((c) => (c.input as { projectRef: { projectId: string } }).projectRef.projectId === "navi");
+    // Nothing new in the navi's chat: it isn't read again.
+    hub.link.frame(snapshot);
+    await flush();
+    expect(navi()).toEqual([]);
+    expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["Two emails need you."]);
+    // The navi's chat moved on: only it is read.
+    hub.link.frame({ ...snapshot, cursor: 2, chats: [{ ...snapshot.chats[0], lastSeq: 3 }] });
+    await flush();
+    expect(navi()).toHaveLength(1);
+  });
+
   it("lifts a chat with its time when a message comes, with no change of what it waits for", () => {
     const { hub, session } = setup();
     const later = "2026-10-28T11:00:00Z";

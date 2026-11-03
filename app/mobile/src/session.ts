@@ -330,7 +330,7 @@ export class Session {
    */
   async #readLatest(): Promise<void> {
     const keys = Object.entries(this.#state.projects ?? {})
-      .filter(([key]) => key !== this.#open)
+      .filter(([key]) => key !== this.#open && this.#stale(key))
       .sort(([, a], [, b]) => b.lastActivityAt.localeCompare(a.lastActivityAt))
       .map(([key]) => key);
     let failed = false;
@@ -346,6 +346,17 @@ export class Session {
       return next();
     };
     await Promise.all(Array.from({ length: LATEST_AT_ONCE }, next));
+  }
+
+  /**
+   * A chat's newest few that the snapshot says moved on: none read yet, a newer seq than the newest kept, or one still
+   * streaming. Events keep them current while live, and the cache across launches.
+   */
+  #stale(key: Key): boolean {
+    const latest = this.#state.latest[key];
+    if (latest === undefined) return true;
+    const lastSeq = this.#state.chatStates[key]?.lastSeq;
+    return lastSeq === undefined || lastSeq > (latest.at(-1)?.seq ?? 0) || latest.some((m) => m.state === "streaming");
   }
 
   /** Who this phone's person is, and whether an admin, who sees Update; then, for one, the hub's update. */
