@@ -182,6 +182,23 @@ struct Start {
     continuing: bool,
 }
 
+/// Takes a task out of `starting` however its start ends, a panic included, and tells whoever waits on it.
+struct Starting {
+    tasks: Arc<Tasks>,
+    task_id: TaskId,
+}
+
+impl Drop for Starting {
+    fn drop(&mut self) {
+        self.tasks
+            .starting
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.task_id);
+        self.tasks.started.notify_waiters();
+    }
+}
+
 /// The node's answer to a start, and what the dead run was doing before it, for the lead's line.
 struct Sent {
     started: Result<Launched, StartError>,
@@ -897,7 +914,18 @@ impl Tasks {
         drop(guard);
         match reserved {
             Ok(Reserved::Now(task)) => task,
-            Ok(Reserved::Go(start)) => self.go(start).await,
+            // On a task of its own, as the queue's: a call that goes away (its client hung up) leaves the start to
+            // finish and be recorded.
+            Ok(Reserved::Go(start)) => {
+                let tasks = self.clone();
+                match tokio::spawn(async move { tasks.go(start).await }).await {
+                    Ok(task) => task,
+                    Err(error) => {
+                        tracing::warn!(task_id = stored.task.task_id.as_str(), %error, "task start failed");
+                        stored.task
+                    }
+                }
+            }
             Err(error) => {
                 tracing::warn!(task_id = stored.task.task_id.as_str(), %error, "task start failed");
                 stored.task
@@ -1038,9 +1066,13 @@ impl Tasks {
     /// A reserved start's node call, off the lock, then its record under the lock. Thread events held back for it
     /// (`held_back`) are applied once it is recorded, in the order they came.
     async fn go(self: &Arc<Self>, start: Start) -> Task {
+        let task_id = start.stored.task.task_id.clone();
+        let starting = Starting {
+            tasks: self.clone(),
+            task_id: task_id.clone(),
+        };
         let sent = self.send_start(&start).await;
         let _guard = self.lock.lock().await;
-        let task_id = start.stored.task.task_id.clone();
         let task = match self.record_start(&start, sent).await {
             Ok(task) => task,
             Err(error) => {
@@ -1048,8 +1080,7 @@ impl Tasks {
                 start.stored.task.clone()
             }
         };
-        self.starting.lock().unwrap().remove(&task_id);
-        self.started.notify_waiters();
+        drop(starting);
         self.replay().await;
         task
     }
@@ -5009,5 +5040,35 @@ mod tests {
         let task = tasks.get(&started.task_id).unwrap().unwrap();
         assert_eq!(task.state, TaskState::Done, "then its run's end applied");
         assert!(tasks.held.lock().unwrap().is_empty());
+    }
+
+    /// A lead's call that goes away while its start is with the node (its client hung up) leaves the start to finish:
+    /// it is recorded, and the task takes calls again.
+    #[tokio::test]
+    async fn a_call_dropped_during_its_launch_still_has_the_start_recorded() {
+        let (tasks, node) = tasks();
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        *node.gate.lock().unwrap() = Some(gate.clone());
+        let spawning = {
+            let tasks = tasks.clone();
+            tokio::spawn(async move { tasks.spawn(&lead(), reader(0)).await })
+        };
+        while node.launched.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+        spawning.abort();
+        assert!(spawning.await.unwrap_err().is_cancelled());
+
+        gate.add_permits(1);
+        let id = TaskId::unchecked("T1");
+        let messaged = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            tasks.message(&lead(), &id, "and the tests"),
+        )
+        .await
+        .expect("the start was recorded")
+        .unwrap();
+        assert_eq!(messaged.state, TaskState::Running);
+        assert!(tasks.starting.lock().unwrap().is_empty());
     }
 }
