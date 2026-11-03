@@ -1024,6 +1024,8 @@ impl NodeLinkServer {
                         .time
                         .heartbeat(machine_id.as_str(), beat.at.as_str());
                     self.observe_load(&machine_id, beat.load, beat.at.as_str());
+                    self.browser_live
+                        .steps_reported(&machine_id, beat.steps.into_inner());
                     let status = {
                         let state = self.state.lock().unwrap();
                         match state.announced.get(&machine_id) {

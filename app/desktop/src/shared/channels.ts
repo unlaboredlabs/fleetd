@@ -19,6 +19,8 @@ export const IPC = {
   hubFocus: "hub:focus",
   /** invoke(BrowserSessionId | null) → void. The session whose `browser_frame`s come; kept across reconnects. */
   hubWatch: "hub:watch",
+  /** invoke(boolean) → void. Whether this window shows the Screens page: `screen_thumb` frames come while one does. */
+  hubThumbs: "hub:thumbs",
   /** invoke(BrowserSessionId, BrowserInput) → void. A person's input to a session they took over; never answered. */
   hubInput: "hub:input",
   /** invoke() → void. A fresh snapshot, then events from its cursor. */

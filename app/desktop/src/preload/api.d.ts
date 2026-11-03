@@ -112,6 +112,8 @@ export interface FleetdApi {
     watch(hub: HubId, session: string | null): Promise<void>;
     /** A person's input to a session they took over, in its last frame's pixels; dropped while offline. */
     input(hub: HubId, session: string, input: BrowserInput): Promise<void>;
+    /** Whether this window shows the Screens page: each live screen's picture comes a few times a minute while one does. */
+    thumbs(hub: HubId, on: boolean): Promise<void>;
     resync(hub: HubId): Promise<void>;
     /** Dials the hub now instead of at the next retry (Retry now while offline). */
     retryNow(hub: HubId): Promise<void>;

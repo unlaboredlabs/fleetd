@@ -413,6 +413,20 @@
             "t"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ScreenThumb",
+          "description": "On `screen_thumbs` only: a live screen's picture, made small. Ephemeral: never replayed.",
+          "properties": {
+            "t": {
+              "const": "screen_thumb",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -2060,6 +2074,41 @@
       "description": "Repo name, [a-z0-9-]{1,32}",
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
+    },
+    "ScreenThumb": {
+      "description": "A live session's picture for the Screens page (`screen_thumb`): one of its frames, made small (at most\n[`THUMB_SIDE`] pixels a side), a few a minute while an app shows the page (`screen_thumbs`).",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the hub took the frame."
+        },
+        "height": {
+          "maximum": 8192,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "jpegB64": {
+          "description": "A JPEG, base64.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId"
+        },
+        "width": {
+          "maximum": 8192,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sessionId",
+        "jpegB64",
+        "width",
+        "height",
+        "at"
+      ],
+      "type": "object"
     },
     "SessionHost": {
       "description": "A kind of session a machine can host.",

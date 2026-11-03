@@ -13,7 +13,8 @@ use tokio::sync::broadcast;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::browser::{
-    BrowserControl, BrowserInput, BrowserInputFrame, BrowserSession, BrowserSessionState,
+    BrowserAction, BrowserControl, BrowserInput, BrowserInputFrame, BrowserSession,
+    BrowserSessionState, ScreenStep,
 };
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::node_link::CAP_BROWSER;
@@ -36,6 +37,10 @@ pub struct Live {
     inputs: Mutex<HashMap<BrowserSessionId, i64>>,
     /// Sessions watched with no frame from their node yet, since when: the wait for the first goes to the debug log.
     first: Mutex<HashMap<BrowserSessionId, std::time::Instant>>,
+    /// The Screens page's pictures, taken from these frames (thumbs.rs).
+    pub thumbs: Arc<super::thumbs::Thumbs>,
+    /// Each live session's latest step, and the machine whose heartbeat said it.
+    steps: Mutex<HashMap<BrowserSessionId, (MachineId, BrowserAction)>>,
 }
 
 impl Default for Live {
@@ -46,6 +51,8 @@ impl Default for Live {
             watched: Mutex::default(),
             inputs: Mutex::default(),
             first: Mutex::default(),
+            thumbs: Arc::default(),
+            steps: Mutex::default(),
         }
     }
 }
@@ -87,6 +94,7 @@ impl Live {
             if let Some(since) = waited {
                 tracing::debug!(target: "fleetd::stages", screen = %frame.session_id, ms = since.elapsed().as_millis() as u64, "watched screen's first frame");
             }
+            self.thumbs.offer(&frame);
             let _ = self.frames.send(frame);
         }
     }
@@ -209,6 +217,27 @@ impl Live {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(session);
+    }
+
+    /// A node's heartbeat named the latest step of each session live there: in place of all it said before.
+    pub fn steps_reported(&self, machine: &MachineId, steps: Vec<ScreenStep>) {
+        let mut kept = self
+            .steps
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        kept.retain(|_, (m, _)| m != machine);
+        for s in steps {
+            kept.insert(s.session_id, (machine.clone(), s.step));
+        }
+    }
+
+    /// A session's latest step, as its node's last heartbeat said.
+    pub fn step(&self, session: &BrowserSessionId) -> Option<BrowserAction> {
+        self.steps
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(session)
+            .map(|(_, step)| step.clone())
     }
 
     pub fn watchers(&self, session: &BrowserSessionId) -> usize {

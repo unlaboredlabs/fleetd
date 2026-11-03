@@ -176,13 +176,26 @@ async fn browser_sessions(
     if hub.store.project_get(&r)?.is_none() {
         return Err(unknown_project(&r));
     }
-    let sessions = match &input.session_id {
+    let mut sessions: Vec<BrowserSession> = match &input.session_id {
         Some(id) => get(&hub.db, id)?
             .filter(|s| s.project_ref == r)
             .into_iter()
             .collect(),
         None => list(&hub.db, &r, input.limit.get() as usize)?,
     };
+    // Where each runs, and what a live one's agent did last there.
+    hub.db.with(|c| {
+        for s in &mut sessions {
+            s.machine_id = Some(
+                crate::hub::machine_roles::runner_of(c, s.session_id.as_str())?
+                    .unwrap_or_else(|| s.project_ref.machine_id.clone()),
+            );
+            if s.state == BrowserSessionState::Live {
+                s.step = hub.link.browser_live.step(&s.session_id);
+            }
+        }
+        Ok(())
+    })?;
     let next = sessions.is_empty().then(|| {
         "No screens yet: an agent opens one with session_start, a person with screen_open."
             .to_owned()

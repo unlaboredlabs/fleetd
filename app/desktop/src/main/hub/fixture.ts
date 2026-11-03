@@ -49,6 +49,12 @@ const Frame = z.discriminatedUnion("t", [
     frame: z.looseObject({ sessionId: z.string(), seq: z.int().min(0), jpegB64: z.string(), width: z.int().min(1), height: z.int().min(1), control: z.string() }),
     afterMs: delay,
   }),
+  // A live screen's picture for the Screens page, sent while a window shows the page.
+  z.object({
+    t: z.literal("screen_thumb"),
+    thumb: z.looseObject({ sessionId: z.string(), jpegB64: z.string(), width: z.int().min(1), height: z.int().min(1), at: z.string() }),
+    afterMs: delay,
+  }),
 ]);
 
 /**
@@ -174,6 +180,9 @@ export class FixtureSource implements HubSource {
   /** The watched browser session, and each session's newest frame: as a hub, it sends only the watched one's. */
   #watch: string | null = null;
   readonly #frames = new Map<string, HubFrame & { t: "browser_frame" }>();
+  /** Whether a window shows the Screens page, and each screen's newest picture: sent only while one does. */
+  #thumbs = false;
+  readonly #pictures = new Map<string, HubFrame & { t: "screen_thumb" }>();
   readonly #out: (frame: HubFrame) => void;
 
   constructor(file: FixtureFile, emit: (frame: HubFrame) => void) {
@@ -185,6 +194,10 @@ export class FixtureSource implements HubSource {
       if (frame.t === "browser_frame") {
         this.#frames.set(frame.frame.sessionId, frame);
         if (frame.frame.sessionId !== this.#watch) return;
+      }
+      if (frame.t === "screen_thumb") {
+        this.#pictures.set(frame.thumb.sessionId, frame);
+        if (!this.#thumbs) return;
       }
       if (frame.t === "state") this.#state = frame.state;
       if (frame.t === "event") this.#seq = Math.max(this.#seq, frame.event.seq);
@@ -277,6 +290,11 @@ export class FixtureSource implements HubSource {
     this.#watch = session;
     const newest = session === null ? undefined : this.#frames.get(session);
     if (newest !== undefined) this.#out(newest);
+  }
+
+  thumbs(on: boolean): void {
+    this.#thumbs = on;
+    if (on) for (const picture of this.#pictures.values()) this.#out(picture);
   }
 
   input(): void {}

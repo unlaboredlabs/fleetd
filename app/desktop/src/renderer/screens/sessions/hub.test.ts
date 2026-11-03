@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BrowserSession as HubSession } from "../../../shared/contracts";
 import type { LiveAgent } from "../../src/data/selectors";
 import { actionLine } from "./model";
-import { agentOf, browserWords, fromHub, jsonLines, pageFor, shellWords, stepOf, stepsOf, viewState, type HubAction, type HubDom } from "./hub";
+import { agentOf, browserWords, fromHub, jsonLines, pageFor, shellWords, stepOf, stepsOf, stepWords, viewState, type HubAction, type HubDom } from "./hub";
 
 const ref = { machineId: "devbox", projectId: "storefront" };
 const row = (more: Partial<HubSession> = {}): HubSession => ({
@@ -68,6 +68,31 @@ describe("a hub session as the views show it", () => {
     const ios = fromHub(row({ state: "recorded", endedAt: "2026-10-19T10:02:41.000Z", files: [{ file: "video_mp4", bytes: 2000 }] }), { laneId: "T3", title: "x" });
     expect(ios.recording?.files).toEqual(["video_mp4"]);
     expect(fromHub(row({ takeoverReason: "a code" }), { laneId: "T3", title: "x" }).handoff?.reason).toBe("a code");
+  });
+});
+
+describe("a live screen's latest step", () => {
+  const step = (tool: string, args: Record<string, unknown>, ok = true) => ({ seq: 4, at: "2026-10-19T10:01:00.000Z", offsetMs: 60_000, tool, args, ok, durationMs: 40 });
+
+  it("is what its agent does now while it is live, and nothing once it ended", () => {
+    const live = fromHub(row({ step: step("agent-browser", { command: "agent-browser fill @e12 SAVE10" }) }), { laneId: "T3", title: "x" });
+    expect(live.now).toBe("Typed “SAVE10” in @e12");
+    const ended = fromHub(row({ state: "recorded", endedAt: "2026-10-19T10:02:41.000Z", step: step("agent-browser", { command: "click @e3" }) }), { laneId: "T3", title: "x" });
+    expect(ended.now).toBeUndefined();
+  });
+
+  it("says a browser's, a device's and a desktop's step in words", () => {
+    expect(stepWords(step("agent-browser", { command: "agent-browser open https://shop.example.com/cart" }))).toBe("Opened shop.example.com/cart");
+    expect(stepWords(step("agent-browser", { command: "agent-browser click @e3" }, false))).toBe("Clicked @e3 · failed");
+    expect(stepWords(step("agent-device", { command: 'agent-device tap "Add to cart"' }))).toBe("Tapped “Add to cart”");
+    expect(stepWords(step("agent-device", { command: "agent-device open sh.acme.storefront" }))).toBe("Opened sh.acme.storefront");
+    expect(stepWords(step("agent-device", { command: "agent-device rotate landscape" }))).toBe("Ran rotate landscape");
+    expect(stepWords(step("desktop", { action: "type", text: "cargo run --bin invoice-preview" }))).toBe("Typed “cargo run --bin invoice-preview”");
+    expect(stepWords(step("desktop", { action: "key", text: "ctrl+s" }))).toBe("Pressed ctrl+s");
+    expect(stepWords(step("desktop", { action: "left_click", coordinate: [10, 20] }))).toBe("Clicked");
+    // Args a heartbeat cut short: the tool's own words.
+    expect(stepWords(step("desktop", {}))).toBe("Used the desktop");
+    expect(stepWords(step("agent-device", {}))).toBe("Drove the device");
   });
 });
 

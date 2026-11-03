@@ -143,6 +143,8 @@ struct Session {
     /// The browser watch's forwarder, which holds the watch, and the slot for its newest frame.
     browser: Option<tokio::task::JoinHandle<()>>,
     browser_slot: Arc<live::LiveSlot>,
+    /// The Screens page's pictures' forwarder, which holds the page's showing (browser/thumbs.rs).
+    thumbs: Option<tokio::task::JoinHandle<()>>,
     /// The last reason a person's `browser_input` was refused, logged once until it changes: a refused drag would
     /// otherwise log every move.
     input_refused: Option<String>,
@@ -231,6 +233,19 @@ impl Session {
                         }));
                     }
                     Err(refused) => self.send(error_frame(&refused, None)),
+                }
+            }
+            AppClientMessage::ScreenThumbs { on } => {
+                // The page shows again (a reconnect, a second window) or no more: the running one ends either way.
+                if let Some(old) = self.thumbs.take() {
+                    old.abort();
+                }
+                if on {
+                    self.thumbs = Some(tokio::spawn(crate::hub::browser::thumbs::forward(
+                        self.hub.clone(),
+                        info,
+                        self.out.clone(),
+                    )));
                 }
             }
             AppClientMessage::BrowserInput { session, input } => {
@@ -414,6 +429,7 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
         chat: None,
         browser: None,
         browser_slot: Arc::default(),
+        thumbs: None,
         input_refused: None,
         live_slot: Arc::default(),
         budget: Arc::default(),
@@ -479,6 +495,9 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
     }
     if let Some(browser) = session.browser.take() {
         browser.abort();
+    }
+    if let Some(thumbs) = session.thumbs.take() {
+        thumbs.abort();
     }
     session.calls.abort_all();
     if let Some((code, reason)) = close {

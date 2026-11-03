@@ -77,14 +77,14 @@ const row = (label: string): HTMLElement => {
 describe("the sidebar's rows", () => {
   it("are Status, Factory and Settings, with no Time or Machines", () => {
     mount();
-    expect(labels()).toEqual(["Status", "Factory", "Settings"]);
+    expect(labels()).toEqual(["Status", "Screens", "Factory", "Settings"]);
     expect(host.textContent).not.toContain("Time");
     expect(host.textContent).not.toContain("Machines");
   });
 
   it("end with Settings for an admin too: the hub's pages are Settings' Hub group", () => {
     mount({ admin: true });
-    expect(labels()).toEqual(["Status", "Factory", "Settings"]);
+    expect(labels()).toEqual(["Status", "Screens", "Factory", "Settings"]);
   });
 
   it("open the Factory on Output, and on Agent time for a hub without metrics", () => {

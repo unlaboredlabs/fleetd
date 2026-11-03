@@ -469,6 +469,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
         hub.clone(),
     )));
     loops.push(tokio::spawn(crate::hub::browser::run_prune(hub.clone())));
+    loops.push(tokio::spawn(crate::hub::browser::thumbs::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::browser::run_end_outlived(
         hub.clone(),
     )));

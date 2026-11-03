@@ -531,11 +531,14 @@ async fn run_link_once(
             loop {
                 tokio::time::sleep(HEARTBEAT_EVERY).await;
                 let (limits, home) = (sessions.login_limits(), sessions.home());
-                let mut load =
-                    tokio::task::spawn_blocking(move || super::load::read(limits, &home))
-                        .await
-                        .ok()
-                        .flatten();
+                let (mut load, steps) = tokio::task::spawn_blocking(move || {
+                    (
+                        super::load::read(limits, &home),
+                        super::browser::record::steps::latest(),
+                    )
+                })
+                .await
+                .unwrap_or_default();
                 if let (Some(load), Some(mac)) = (load.as_mut(), mac.as_ref()) {
                     load.mac = mac.health();
                 }
@@ -543,6 +546,7 @@ async fn run_link_once(
                     .send(to_json(&NodeToHub::Heartbeat(Heartbeat {
                         at: Timestamp::from(now_iso()),
                         load,
+                        steps: fleetd_contracts::prim::List::unchecked(steps),
                     })))
                     .is_err()
                 {

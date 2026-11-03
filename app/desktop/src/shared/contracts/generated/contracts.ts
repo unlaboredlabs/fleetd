@@ -292,6 +292,9 @@ export type AppClientMessage = {
   input: BrowserInput;
   session: BrowserSessionId;
   t: "browser_input";
+} | {
+  on: boolean;
+  t: "screen_thumbs";
 };
 
 /** A `call` failed, or (without `id`) the session did. */
@@ -338,6 +341,8 @@ export type AppServerMessage = {
   t: "chat_delta";
 } | BrowserFrame & {
   t: "browser_frame";
+} | ScreenThumb & {
+  t: "screen_thumb";
 };
 
 export type ApprovalAnswerInput = {
@@ -692,6 +697,36 @@ export type Brief = {
 };
 
 /**
+ * One line of `actions.jsonl`: a tool call of the agent's that drove the browser (an `agent-browser` command, a
+ * session tool), or a person's step (`takeover`, `handback`; their input is not logged key by key).
+ */
+export type BrowserAction = {
+  /** The call's arguments, scrubbed. */
+  args: unknown;
+  at: Timestamp;
+  durationMs: number;
+  /** From the session's start: where the call is in the video. */
+  offsetMs: number;
+  ok: boolean;
+  /** The start of the result's text, scrubbed. */
+  result?: string;
+  /** 1, 2, ... in the order the calls started. */
+  seq: number;
+  /**
+   * The element the step clicked or typed into, as the node saw it just before; absent for a step that did
+   * neither.
+   */
+  target?: StepTarget;
+  /**
+   * `agent-browser` for a command (its words in `args.command`), or fleetd's step (`session_start`,
+   * `fill_credential`, `takeover`, ...).
+   */
+  tool: string;
+  /** The page after it, when the node could read it. */
+  url?: string;
+};
+
+/**
  * Who drives a live session's browser. A person takes it over (human) and hands it back (handing_back, until the
  * agent's next tool call sees the page as the person left it, then agent). While it isn't the agent's, the agent's
  * browser tools answer that a person has control.
@@ -830,6 +865,11 @@ export type BrowserSession = {
   /** The recording's files on the hub; empty until it is recorded, and again once it expired. */
   files?: BrowserRecordingEntry[];
   kind?: SessionKind;
+  /**
+   * The machine it runs on: the one hosting it for an agent elsewhere (the agents' Mac, another machine's
+   * emulator), else its project's. `browser_sessions` fills it in; absent from older hubs.
+   */
+  machineId?: MachineId;
   /** Why a session is lost, or what its recording lacks ("no video: this machine has no ffmpeg"). */
   note?: string;
   /**
@@ -842,6 +882,12 @@ export type BrowserSession = {
   sessionId: BrowserSessionId;
   startedAt: Timestamp;
   state: BrowserSessionState;
+  /**
+   * Its latest step while it is live: the newest line of its action log, as its node's heartbeat last said
+   * ([`ScreenStep`], every 15 s). `browser_sessions` fills it in; absent before the first step, once it ended, and
+   * from older hubs.
+   */
+  step?: BrowserAction;
   /** What the agent said it needs a person for, while it waits for one (`request_takeover`). */
   takeoverReason?: string;
   /** The task whose agent opened it; absent for the project's lead. */
@@ -2170,6 +2216,14 @@ export type FoundRepo = {
   remote?: string;
   /** When the remote is on GitHub. */
   repo?: GitHubRepo;
+};
+
+/** A rectangle in the frame's pixels, from its top left corner. */
+export type FrameBox = {
+  height: number;
+  width: number;
+  x: number;
+  y: number;
 };
 
 export type Gap = {
@@ -6302,6 +6356,20 @@ export type KnownScreenStage = "waiting" | "starting" | "installing" | "failed";
 export type ScreenStage = KnownScreenStage | (string & {});
 
 /**
+ * A live session's picture for the Screens page (`screen_thumb`): one of its frames, made small (at most
+ * [`THUMB_SIDE`] pixels a side), a few a minute while an app shows the page (`screen_thumbs`).
+ */
+export type ScreenThumb = {
+  /** When the hub took the frame. */
+  at: Timestamp;
+  height: number;
+  /** A JPEG, base64. */
+  jpegB64: string;
+  sessionId: BrowserSessionId;
+  width: number;
+};
+
+/**
  * A person's `screen_open` waiting for a slot on a full machine: it takes the next one free there, ahead of every
  * agent's start, and gives up after [`SCREEN_WAIT_MINUTES`].
  */
@@ -7266,6 +7334,21 @@ export type SteerWithdrawOutput = {
   truncated?: boolean;
   /** The order it belongs to (a task's own order for a task steer). */
   workstreamId: WorkstreamId;
+};
+
+/**
+ * The element a step acted on: the one under its click, or the one focused when it typed. The node reads it over
+ * its own connection just before the driver's input reaches the page.
+ */
+export type StepTarget = {
+  /** Chrome's id for its DOM node (`backendNodeId`), stable for the page's life. */
+  backendNodeId?: number;
+  /** Where it was on screen, in the video frame's pixels (1280×800, the live view's too). */
+  frameBox?: FrameBox;
+  /** The ref the agent named it by in its command (`@e3`), when it used one. */
+  ref?: string;
+  /** A CSS selector for it in the page as it was: from the nearest ancestor with an id, by tag and position. */
+  selector: string;
 };
 
 /** Rows of plain-text cells, one per column. */

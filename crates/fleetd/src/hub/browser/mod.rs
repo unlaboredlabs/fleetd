@@ -6,6 +6,7 @@
 //! are over its size.
 pub mod calls;
 pub mod live;
+pub mod thumbs;
 pub mod tools;
 
 #[cfg(test)]

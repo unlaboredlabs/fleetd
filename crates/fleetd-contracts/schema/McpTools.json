@@ -1693,6 +1693,63 @@
       ],
       "type": "object"
     },
+    "BrowserAction": {
+      "description": "One line of `actions.jsonl`: a tool call of the agent's that drove the browser (an `agent-browser` command, a\nsession tool), or a person's step (`takeover`, `handback`; their input is not logged key by key).",
+      "properties": {
+        "args": {
+          "description": "The call's arguments, scrubbed."
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "durationMs": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "offsetMs": {
+          "description": "From the session's start: where the call is in the video.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "result": {
+          "description": "The start of the result's text, scrubbed.",
+          "type": "string"
+        },
+        "seq": {
+          "description": "1, 2, ... in the order the calls started.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "target": {
+          "$ref": "#/$defs/StepTarget",
+          "description": "The element the step clicked or typed into, as the node saw it just before; absent for a step that did\nneither."
+        },
+        "tool": {
+          "description": "`agent-browser` for a command (its words in `args.command`), or fleetd's step (`session_start`,\n`fill_credential`, `takeover`, ...).",
+          "type": "string"
+        },
+        "url": {
+          "description": "The page after it, when the node could read it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "seq",
+        "at",
+        "offsetMs",
+        "tool",
+        "args",
+        "ok",
+        "durationMs"
+      ],
+      "type": "object"
+    },
     "BrowserControl": {
       "description": "Who drives a live session's browser. A person takes it over (human) and hands it back (handing_back, until the\nagent's next tool call sees the page as the person left it, then agent). While it isn't the agent's, the agent's\nbrowser tools answer that a person has control.",
       "enum": [
@@ -1917,6 +1974,10 @@
           "$ref": "#/$defs/SessionKind",
           "default": "browser"
         },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "The machine it runs on: the one hosting it for an agent elsewhere (the agents' Mac, another machine's\nemulator), else its project's. `browser_sessions` fills it in; absent from older hubs."
+        },
         "note": {
           "description": "Why a session is lost, or what its recording lacks (\"no video: this machine has no ffmpeg\").",
           "maxLength": 500,
@@ -1943,6 +2004,10 @@
         },
         "state": {
           "$ref": "#/$defs/BrowserSessionState"
+        },
+        "step": {
+          "$ref": "#/$defs/BrowserAction",
+          "description": "Its latest step while it is live: the newest line of its action log, as its node's heartbeat last said\n([`ScreenStep`], every 15 s). `browser_sessions` fills it in; absent before the first step, once it ended, and\nfrom older hubs."
         },
         "takeoverReason": {
           "description": "What the agent said it needs a person for, while it waits for one (`request_takeover`).",
@@ -5616,6 +5681,34 @@
       "required": [
         "path",
         "name"
+      ],
+      "type": "object"
+    },
+    "FrameBox": {
+      "description": "A rectangle in the frame's pixels, from its top left corner.",
+      "properties": {
+        "height": {
+          "format": "double",
+          "type": "number"
+        },
+        "width": {
+          "format": "double",
+          "type": "number"
+        },
+        "x": {
+          "format": "double",
+          "type": "number"
+        },
+        "y": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
       ],
       "type": "object"
     },
@@ -20665,6 +20758,33 @@
         "text",
         "stage",
         "queuedAt"
+      ],
+      "type": "object"
+    },
+    "StepTarget": {
+      "description": "The element a step acted on: the one under its click, or the one focused when it typed. The node reads it over\nits own connection just before the driver's input reaches the page.",
+      "properties": {
+        "backendNodeId": {
+          "description": "Chrome's id for its DOM node (`backendNodeId`), stable for the page's life.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "frameBox": {
+          "$ref": "#/$defs/FrameBox",
+          "description": "Where it was on screen, in the video frame's pixels (1280×800, the live view's too)."
+        },
+        "ref": {
+          "description": "The ref the agent named it by in its command (`@e3`), when it used one.",
+          "type": "string"
+        },
+        "selector": {
+          "description": "A CSS selector for it in the page as it was: from the nearest ancestor with an id, by tag and position.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "selector"
       ],
       "type": "object"
     },

@@ -28,7 +28,7 @@ import {
 } from "../../../shared/contracts";
 import type { HubFrame, HubState, BrowserFrame } from "../../../shared/hub";
 import { applyDelta, emptyChat, heldChat, mergeLive, settleSends, type Chat, type ChatSend } from "./chat";
-import type { AgentRow } from "../../../shared/contracts";
+import type { AgentRow, ScreenThumb } from "../../../shared/contracts";
 import { CHAT_EVENTS, type ChatDelta, type ProjectChatState } from "./chat-contract";
 import { ordersNamed } from "./effects";
 
@@ -75,6 +75,8 @@ export interface DataState {
   readonly features: readonly string[];
   /** The watched browser session's newest page (hub.watch): shown while it is the newest, never kept on disk. */
   readonly browserFrame?: BrowserFrame | undefined;
+  /** Each live screen's newest picture for the Screens page (hub.thumbs), by session; never kept on disk. */
+  readonly screenThumbs?: Readonly<Record<string, ScreenThumb>> | undefined;
   /** A snapshot arrived since the link last went down: what the store holds is current. */
   readonly fresh: boolean;
   /** Bumped by every snapshot; call results from an older generation are dropped. */
@@ -125,6 +127,18 @@ const ORDER_EVENTS = 100;
 /** Orders whose event lines are kept; the least recently active goes first. */
 const ORDERS_WITH_EVENTS = 100;
 const TEXT_TAIL = 2000;
+
+/** The pictures the page can show at once, newest kept: more than a page of screens, never more. */
+const THUMBS_KEPT = 48;
+
+/** `thumb` in place of its screen's last picture; past THUMBS_KEPT, the oldest go. */
+export const withThumb = (thumbs: Readonly<Record<string, ScreenThumb>> | undefined, thumb: ScreenThumb): Readonly<Record<string, ScreenThumb>> => {
+  const next = { ...thumbs, [thumb.sessionId]: thumb };
+  const all = Object.values(next);
+  if (all.length <= THUMBS_KEPT) return next;
+  const kept = all.sort((a, b) => b.at.localeCompare(a.at)).slice(0, THUMBS_KEPT);
+  return Object.fromEntries(kept.map((t) => [t.sessionId, t]));
+};
 
 const emptyLive: LiveState = { lanes: {}, ended: {}, text: {}, machines: {}, stale: true };
 
@@ -221,6 +235,8 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
       if (shown !== undefined && shown.sessionId === frame.frame.sessionId && shown.seq >= frame.frame.seq) return [s, {}];
       return [{ ...s, browserFrame: frame.frame }, {}];
     }
+    case "screen_thumb":
+      return [{ ...s, screenThumbs: withThumb(s.screenThumbs, frame.thumb) }, {}];
     case "live":
       return [{ ...s, live: applyLive(s.live, frame.frame, nowMs) }, {}];
     case "error":

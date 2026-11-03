@@ -71,13 +71,13 @@ const PHONE = 9 / 19.5;
 const clock = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" });
 
 /** One session; `windowed` in a window of its own (SessionWindow), which pops nothing out and links nowhere. */
-export function SessionView({ project, id, windowed = false }: { project: ProjectKey; id: string; windowed?: boolean }) {
+export function SessionView({ project, id, windowed = false, onBack }: { project: ProjectKey; id: string; windowed?: boolean; onBack?: (() => void) | null }) {
   const all = useSessions(project);
   const session = all.find((x) => x.id === id);
   // A session's window has its sessions from the main window a moment after it opens.
   if (session === undefined && windowed && all.length === 0) return <div className={s.view} aria-busy="true" />;
   // Its own window has nowhere to go back to.
-  const back = windowed ? undefined : () => navigate(panelRoute(project, listView("sessions")));
+  const back = windowed || onBack === null ? undefined : (onBack ?? (() => navigate(panelRoute(project, listView("sessions")))));
   if (session === undefined) {
     return (
       <div className={s.view} data-screen="sessions.missing">
