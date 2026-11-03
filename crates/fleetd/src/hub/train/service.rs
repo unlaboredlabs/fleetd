@@ -17,8 +17,8 @@ use super::contract::{
     parse_pr_url, state_str,
 };
 use super::github::{
-    BranchUpdate, CheckRun, CommitStatus, GhError, GhRunner, MergeOutcome, Pull, TRAIN_CONTEXT,
-    TrainGitHub, batch_heads,
+    BranchUpdate, CheckRun, CommitStatus, GhError, GhErrorKind, GhRunner, MergeOutcome, Pull,
+    READ_TRIES, TRAIN_CONTEXT, TrainGitHub, batch_heads,
 };
 use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
@@ -44,7 +44,7 @@ pub const TRAIN_BY: &str = "hub:train";
 /// A refusal in the lead/tool error shape `{ code, message, fix? }`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrainError {
-    /// "invalid" or "not_found".
+    /// "invalid", "not_found", or "unavailable" when GitHub failed transiently.
     pub code: &'static str,
     pub message: String,
     pub fix: Option<String>,
@@ -502,6 +502,9 @@ pub struct Train {
     last_ready_check: Mutex<HashMap<String, i64>>,
     /// The heads of writers' PRs already sent to review as a ready slice.
     ready_heads: Mutex<HashSet<(String, i64, String)>>,
+    /// Enqueues GitHub was unavailable for, by PR URL: each pass of their repo's train enqueues them again, until one
+    /// goes on the train or is refused for a reason of its own. Kept in memory.
+    unread: Mutex<HashMap<String, (ProjectRef, ChangeEnqueueCall)>>,
     merge_refusals: Mutex<HashMap<ChangeId, u32>>,
     /// Each verdict the gate records: a train waiting on a re-review reads it at once.
     verdicts: Notify,
@@ -588,6 +591,7 @@ impl Train {
             bases: Mutex::default(),
             last_ready_check: Mutex::default(),
             ready_heads: Mutex::default(),
+            unread: Mutex::default(),
             merge_refusals: Mutex::default(),
             verdicts: Notify::new(),
             overdue: Mutex::default(),
@@ -2776,6 +2780,36 @@ impl Train {
         }
     }
 
+    /// Enqueues each PR GitHub was unavailable for again. One that goes on the train or is refused leaves the list;
+    /// a refusal goes to the lead as the first try's would have.
+    async fn unread_pass(&self, repo: &str) {
+        let unread: Vec<(String, ProjectRef, ChangeEnqueueCall)> = lock(&self.unread)
+            .iter()
+            .filter(|(url, _)| parse_pr_url(url).is_some_and(|p| p.repo.eq_ignore_ascii_case(repo)))
+            .map(|(url, (project_ref, input))| (url.clone(), project_ref.clone(), input.clone()))
+            .collect();
+        for (pr_url, project_ref, input) in unread {
+            lock(&self.unread).remove(&pr_url);
+            match self.enqueue(&project_ref, input.clone()).await {
+                Ok(change) => {
+                    tracing::info!(change_id = %change.change_id, %pr_url, "train: read once GitHub answered")
+                }
+                // On the list again, for the next pass.
+                Err(e) if e.code == "unavailable" => {}
+                Err(e) => {
+                    let line = Event::PrRefused {
+                        pr_url: &pr_url,
+                        task: input.task_id.as_ref().map_or("the lead", |t| t.as_str()),
+                        message: &e.message,
+                        fix: e.fix.as_deref(),
+                    }
+                    .render();
+                    self.wake_lead(&project_ref, line).await;
+                }
+            }
+        }
+    }
+
     /// A writer's ready PR is a slice: any open PR that is not a draft, from the writer's branch or one named after
     /// it (`<branch>-<n>`), goes on the train at once as that writer's, so its review starts while the writer works
     /// on. Once per head, and not while the train already has it. Read from the repo's open PRs at once when a writer
@@ -3044,6 +3078,7 @@ impl Train {
         // Before refresh: a member of a batch that landed is merged, never read as a waiting PR that conflicts.
         self.reconcile_batches(&repo).await;
         self.refresh(&repo).await;
+        self.unread_pass(&repo).await;
         self.ready_pass(&repo, &train.project_ref).await;
         self.main_ci_pass(&repo, &train.project_ref).await;
         self.watch_pass(&repo).await;
@@ -3393,13 +3428,36 @@ impl Train {
             return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
         }
 
-        let pull = self.github.pull(&repo, pr_number).await.map_err(|e| {
-            TrainError::new(
-                "invalid",
-                format!("Could not read {pr_url} from GitHub: {}", e.message),
-                Some("Check the URL; the hub reads PRs with its own `gh` login."),
-            )
-        })?;
+        let pull = match self.github.pull(&repo, pr_number).await {
+            Ok(pull) => pull,
+            Err(e) if e.kind == GhErrorKind::Unavailable => {
+                // Nothing is wrong with the PR: its repo's next pass reads it again, or the caller does.
+                let again = self.records.train(&repo).is_some();
+                if again {
+                    lock(&self.unread).insert(pr_url.clone(), (project_ref.clone(), input));
+                }
+                return Err(TrainError::new(
+                    "unavailable",
+                    format!(
+                        "GitHub was unavailable for {pr_url} through {READ_TRIES} reads: {}. Nothing is wrong with \
+                         the PR.",
+                        e.message
+                    ),
+                    Some(if again {
+                        "nothing: the train reads it again on its next pass"
+                    } else {
+                        "enqueue it again in a minute"
+                    }),
+                ));
+            }
+            Err(e) => {
+                return Err(TrainError::new(
+                    "invalid",
+                    format!("Could not read {pr_url} from GitHub: {}", e.message),
+                    Some("Check the URL; the hub reads PRs with its own `gh` login."),
+                ));
+            }
+        };
         self.guard_base(&repo, &pull.base.ref_);
         let now = self.now_iso();
         let row = Change {
