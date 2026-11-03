@@ -383,6 +383,7 @@ fn only_agents_mac_makes_the_node_the_agents_mac() {
         mem_per_agent_gb: None,
         disk_per_agent_gb: None,
         warm_builds: None,
+        build_slots: None,
         enrolled: true,
         browser: None,
         device: None,
