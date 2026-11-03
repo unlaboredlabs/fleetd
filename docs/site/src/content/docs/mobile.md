@@ -214,7 +214,7 @@ clipboard, which it reads as content, not as your instructions. Approvals and no
 typed.
 
 **Put one on the Action Button:** open **Settings › Action Button**, swipe to **Shortcut**, tap **Choose a Shortcut**,
-then under **fleetd** pick an action. **Open Chat** lists each of your chats as its own shortcut ("Open Inbox"), so the
+then under **fleetd** pick an action. **Open Chat** lists each of your chats as its own shortcut ("Open Errands"), so the
 button opens that chat directly.
 
 **Only some chats notify during a Focus:** open **Settings › Focus**, pick a Focus, then under **Focus Filters** tap

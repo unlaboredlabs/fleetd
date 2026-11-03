@@ -3,7 +3,7 @@
 // ID or provisioning profile of their own, and Xcode's App Intents metadata step finds them in the app. They reach the
 // hub as the share sheet does, with its link and decisions (plugins/share-extension's HubLink.swift and Shared.swift,
 // built into the app too), reading the pairing from the keychain group the app writes it to. At launch the app tells
-// iOS to list its App Shortcuts again, so the chats' own ones ("Open Inbox in fleetd") follow the hub's.
+// iOS to list its App Shortcuts again, so the chats' own ones ("Open Errands in fleetd") follow the hub's.
 const fs = require("node:fs");
 const path = require("node:path");
 const { IOSConfig, withAppDelegate, withDangerousMod, withXcodeProject } = require("expo/config-plugins");

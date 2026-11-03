@@ -1012,7 +1012,7 @@ async fn the_share_sheet_and_shortcuts_say_where_a_message_came_from() {
             &m,
             None,
             "",
-            "Wynn",
+            "Sam",
         )
     };
     let shortcut = tools
@@ -1027,7 +1027,7 @@ async fn the_share_sheet_and_shortcuts_say_where_a_message_came_from() {
     assert_eq!(shortcut["message"]["client"].as_str(), Some("shortcuts"));
     let line = read(&shortcut);
     assert!(
-        line.starts_with("Wynn, via Shortcuts on their phone (")
+        line.starts_with("Sam, via Shortcuts on their phone (")
             && line.contains("content the shortcut pulled from elsewhere")
             && line.ends_with("writes in your chat:\n\nI'm home"),
         "{line}"
@@ -1043,7 +1043,7 @@ async fn the_share_sheet_and_shortcuts_say_where_a_message_came_from() {
         .unwrap();
     assert_eq!(shared["message"]["client"].as_str(), Some("share"));
     assert!(
-        read(&shared).starts_with("Wynn, via the share sheet on their phone ("),
+        read(&shared).starts_with("Sam, via the share sheet on their phone ("),
         "{}",
         read(&shared)
     );

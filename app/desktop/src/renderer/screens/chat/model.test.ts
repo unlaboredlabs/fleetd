@@ -383,6 +383,6 @@ describe("where a person's message came from", () => {
     expect([from(undefined), from("app"), from("cli"), from("someday")]).toEqual([undefined, undefined, undefined, undefined]);
   });
   it("names who a Telegram forward came from", () => {
-    expect(from("telegram", { forwardedFrom: "Mallory" } as Partial<ChatMessage>)).toEqual({ text: "Forwarded from Mallory on Telegram", forwarded: true });
+    expect(from("telegram", { forwardedFrom: "Mallory" })).toEqual({ text: "Forwarded from Mallory on Telegram", forwarded: true });
   });
 });
