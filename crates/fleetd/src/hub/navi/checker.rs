@@ -15,7 +15,7 @@
 //! credential in what goes out), and a spend always asks ([`always_asks`]).
 use std::sync::Arc;
 
-use fleetd_contracts::chat::ChatAuthor;
+use fleetd_contracts::chat::{ChatAuthor, ChatClient};
 use fleetd_contracts::effort::{Effort, ModelName, ProfileName};
 use fleetd_contracts::ids::{ProjectRef, ThreadRef};
 use fleetd_contracts::integrations::{ToolAction, ToolPreview};
@@ -34,7 +34,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 use std::sync::LazyLock;
 
-use super::review::{self, Answer, Read, Review};
+use super::review::{self, Answer, Read, Review, Standing};
 use crate::hub::api::Hub;
 use crate::hub::claude_accounts::{Whose, launch_account};
 use crate::hub::executor::turn::Turn;
@@ -261,6 +261,8 @@ pub struct Context {
     /// Oldest first.
     pub person_messages: Vec<String>,
     pub navi_last_question: Option<String>,
+    /// The automations the person wrote or said yes to whose runs are open now ([`standing`]).
+    pub standing: Vec<Standing>,
     pub reads: Vec<Read>,
     pub allowed_sites: Vec<String>,
     pub today: String,
@@ -278,7 +280,9 @@ pub fn person_messages(
     for m in &messages {
         let text = m.text.as_str().trim();
         match m.author {
-            ChatAuthor::Human if !text.is_empty() => said.push(clip(text, MESSAGE_MAX)),
+            ChatAuthor::Human if !text.is_empty() && authority(m) => {
+                said.push(clip(text, MESSAGE_MAX))
+            }
             ChatAuthor::Lead if text.contains('?') => {
                 question = Some((said.len(), clip(text, 1_000)))
             }
@@ -292,6 +296,36 @@ pub fn person_messages(
     let skip = said.len().saturating_sub(MESSAGES);
     said.drain(..skip);
     Ok((said, question))
+}
+
+/// Whether a human message is the person's own word (decision `navi.shortcuts-authority`): typed in the app, on
+/// Telegram or in `fleetd chat`. What came through the share sheet or a shortcut, and a message forwarded on Telegram,
+/// arrived without the person writing it to the Navi: no go-ahead for a send, a spend or any other risky action, as
+/// an automation the person never said yes to is none.
+fn authority(m: &fleetd_contracts::chat::ChatMessage) -> bool {
+    !matches!(m.client, Some(ChatClient::Share | ChatClient::Shortcuts))
+        && m.forwarded_from.is_none()
+}
+
+/// The recent human messages that are no authority ([`authority`]), as content the Navi read: what they name is
+/// untrusted to the checker, as an email's text is.
+pub fn relayed(hub: &Hub, r: &ProjectRef) -> Result<Vec<Read>, StoreError> {
+    let (messages, _, _) = hub.chat.page(r, None, None, MESSAGES_LOOKED)?;
+    let mut out: Vec<Read> = messages
+        .iter()
+        .filter(|m| m.author == ChatAuthor::Human && !authority(m))
+        .map(|m| Read {
+            source: match (m.client, &m.forwarded_from) {
+                (_, Some(from)) => format!("a message forwarded from {from}"),
+                (Some(ChatClient::Share), _) => "a message from the share sheet".to_owned(),
+                _ => "a message from a shortcut".to_owned(),
+            },
+            text: clip(m.text.as_str(), MESSAGE_MAX),
+        })
+        .collect();
+    let skip = out.len().saturating_sub(MESSAGES);
+    out.drain(..skip);
+    Ok(out)
 }
 
 /// What the Navi's lead read lately: its recent tool calls' whole output, each with its call (the tool's name first,
@@ -374,14 +408,83 @@ pub fn review(action: &Action, context: &Context) -> Review {
             .navi_last_question
             .as_ref()
             .map(|q| format!("(written by the Navi, not the person) {q}")),
+        standing_requests: context.standing.clone(),
         provenance: review::provenance(
             &action.input,
             url.as_deref(),
             &context.person_messages,
+            &context.standing,
             &context.reads,
             &context.allowed_sites,
         ),
         action: Value::Object(shown),
+    }
+}
+
+/// What the approval step decided on one of a Navi's actions.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Checked {
+    /// A plain public page read (D286): it runs on fleetd's own rule, with no checker call, no chat line and no log
+    /// entry, as a `curl` of the same page would.
+    PublicRead,
+    /// The checker's verdict, or a code rule's.
+    Note(CheckerNote),
+}
+
+/// Whether `action` is a plain public page read (decision `navi.public-reads-skip-checker`, D286): a fetch or a browser's
+/// first visit to a site, whose link carries no data from the person's chat, their own data or a secret
+/// ([`review::plain_read`]), and no floor. A link carrying data, and anything the signed-in browser does past opening
+/// a page, keeps the gate.
+pub fn public_read(action: &Action, context: &Context) -> bool {
+    if action.preview.is_some() || action.site.is_none() {
+        return false;
+    }
+    let Some(url) = review::visit_url(&action.input) else {
+        return false;
+    };
+    let mut shown = match &action.input {
+        Value::Object(o) => o.clone(),
+        _ => serde_json::Map::new(),
+    };
+    shown.insert("tool".to_owned(), Value::String(action.tool.clone()));
+    review::floor(&Value::Object(shown)).is_none()
+        && review::plain_read(&url, &context.person_messages, &context.reads)
+}
+
+/// The approval step on `action`: a plain public read passes on its rule ([`public_read`]); anything else goes to the
+/// checker ([`check`]).
+pub async fn judge(
+    hub: &Hub,
+    turn: &dyn Turn,
+    r: &ProjectRef,
+    owner: Option<&PersonId>,
+    settings: &NaviApprovals,
+    action: &Action,
+    context: &Context,
+) -> Checked {
+    if public_read(action, context) {
+        return Checked::PublicRead;
+    }
+    Checked::Note(check(hub, turn, r, owner, settings, action, context).await)
+}
+
+/// The person's standing word on what the Navi does now: the automations of `r` with a run open whose prompt the person
+/// wrote in the app or said yes to in the chat (`Automation.confirmed`). A Navi-made one they never saw counts for
+/// nothing, and a webhook's body is never part of it: only the prompt.
+pub fn standing(hub: &Hub, r: &ProjectRef) -> Vec<Standing> {
+    match hub.automations.running(r) {
+        Ok(running) => running
+            .into_iter()
+            .filter(|a| a.confirmed)
+            .map(|a| Standing {
+                automation: a.name.to_string(),
+                prompt: a.prompt.to_string(),
+            })
+            .collect(),
+        Err(e) => {
+            tracing::warn!(project = %r.project_id, "approval checker: the Navi's running automations not read: {}", e.message);
+            Vec::new()
+        }
     }
 }
 

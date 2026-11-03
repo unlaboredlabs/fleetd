@@ -29,6 +29,7 @@ fn cases() -> Vec<Case> {
                 today: context["today"].as_str().unwrap().to_owned(),
                 person_messages: serde_json::from_value(input["person_messages"].clone()).unwrap(),
                 navi_last_question: None,
+                standing_requests: Vec::new(),
                 action: input["action"].clone(),
                 provenance: serde_json::from_value::<Vec<Provenance>>(input["provenance"].clone())
                     .unwrap(),

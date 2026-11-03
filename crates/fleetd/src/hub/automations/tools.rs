@@ -87,6 +87,8 @@ async fn automation_create(
         schedule: input.schedule,
         webhook: input.webhook,
         by: by(&caller),
+        // Made in the app, the person wrote it.
+        confirmed: is_human(&caller),
         client_request_id: Some(input.client_request_id.into_inner()),
     })?;
     let webhook_url = url(&hub, &automation, secret);
@@ -118,6 +120,15 @@ async fn automation_update(
         (Some(s), _) => Some(Some(s)),
         (None, _) => None,
     };
+    // Edited in the app, the person stands behind what they saw; another key's change to what it runs or when unsets it.
+    let confirmed = match (
+        is_human(&caller),
+        input.prompt.is_some() || schedule.is_some(),
+    ) {
+        (true, _) => Some(true),
+        (false, true) => Some(false),
+        (false, false) => None,
+    };
     let (automation, secret) = hub.automations.update(
         a.automation_id.as_str(),
         Edit {
@@ -125,6 +136,7 @@ async fn automation_update(
             prompt: input.prompt,
             schedule,
             webhook: input.webhook,
+            confirmed,
         },
         &by(&caller),
     )?;

@@ -682,6 +682,7 @@ fn example(role: Role, tool: &str) -> Option<Value> {
         }),
         (Role::Lead, "automation_delete") => json!({ "automationId": "au_k3Jd8sQp2xYz" }),
         (Role::Lead, "automation_run") => json!({ "automationId": "au_k3Jd8sQp2xYz" }),
+        (Role::Lead, "automation_confirm") => json!({ "automationId": "au_k3Jd8sQp2xYz" }),
         (Role::Lead, "automation_runs") => json!({
             "automationId": "au_k3Jd8sQp2xYz",
             "runId": "ar_Qm7tZr1vBn4w",
