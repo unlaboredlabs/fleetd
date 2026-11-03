@@ -7,7 +7,8 @@ You can give fleetd's agents more tools through MCP servers: a GitHub or databas
 API. Configure them in the desktop app, for every project or for one, and pick which agents get each.
 
 A Navi's servers, whose tools ask before they write, are connected under its [Integrations](/docs/integrations)
-instead.
+instead. That is also where a server that signs you in with your account ([OAuth](/docs/integrations#sign-in)) is
+connected.
 
 ## Add a server {#add}
 
@@ -61,7 +62,9 @@ that server. The list says which machines lack its secrets: save the server agai
 **Test connection** has the node start the server (or connect to it), with its secrets, exactly as an agent's claude
 would, and list its tools within 30 seconds. A project's server is tested on its machine in the project's checkout; a
 global one on the first machine online. On failure it says why: a command that isn't on the machine's `PATH`, the
-command's error output (secrets masked), an HTTP status such as 401 when a header is wrong, or no answer in time.
+command's error output (secrets masked), an HTTP status such as 401 when a header is wrong, or no answer in time. A
+server given no key that answers 401 and asks for OAuth sign-in says so; a signed-in server whose token it turns away
+has the token renewed and is tested again.
 
 ## Your own MCP servers {#your-own}
 
@@ -74,4 +77,5 @@ tools) are always there and can't be replaced.
 
 `mcp_servers_get` lists the servers, `mcp_server_set` adds or replaces one (each secret sealed to each machine's
 `boxPubKey`), `mcp_server_remove` removes one, `mcp_settings_set` turns your own servers on or off, and
-`mcp_server_test` tests one. All but `mcp_servers_get` take a human key.
+`mcp_server_test` tests one, and `mcp_oauth_start` opens a project server's [sign-in](/docs/integrations#sign-in). All
+but `mcp_servers_get` take a human key.

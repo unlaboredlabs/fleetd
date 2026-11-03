@@ -285,6 +285,10 @@ pub enum HubEventType {
     /// machine_add_status reads the rest.
     #[serde(rename = "machine_add.step")]
     MachineAddStep,
+    /// An MCP server's sign-in changed: one started, finished or failed, or its token couldn't be renewed
+    /// (`data.projectRef`, `data.name`, `data.status`). mcp_servers_get reads the rest; never a token.
+    #[serde(rename = "mcp.oauth")]
+    McpOauth,
 }
 
 impl HubEventType {
@@ -376,6 +380,7 @@ impl HubEventType {
             Self::SidebarOrder => "sidebar.order",
             Self::ChatPins => "chat.pins",
             Self::MachineAddStep => "machine_add.step",
+            Self::McpOauth => "mcp.oauth",
         }
     }
 }

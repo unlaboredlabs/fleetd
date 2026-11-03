@@ -2512,7 +2512,8 @@ export type KnownHubEventType =
   | "people.changed"
   | "sidebar.order"
   | "chat.pins"
-  | "machine_add.step";
+  | "machine_add.step"
+  | "mcp.oauth";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -3457,6 +3458,73 @@ export type McpIntegration = {
   readTools?: McpToolName[];
 };
 
+/** An OAuth server's sign-in as the app shows it; never a token. */
+export type McpOauth = {
+  /** The person's own OAuth client, when the service doesn't let fleetd register itself. */
+  clientId?: string;
+  /** When the access token agents have now ends; the hub renews it before then. */
+  expiresAt?: Timestamp;
+  /** Where the person signs in: the authorization server, e.g. `https://auth.example.com`. */
+  issuer: string;
+  /**
+   * What went wrong last, in words for the person: a sign-in that failed, or a token the service wouldn't renew.
+   * None while it works.
+   */
+  problem?: string;
+  /** When the person last signed in. */
+  signedInAt?: Timestamp;
+  /** A sign-in waiting for the person to finish it in their browser. */
+  signingIn?: boolean;
+  status: McpOauthStatus;
+};
+
+/** A person's own OAuth client: its id, and its secret sealed to the hub's own box key (`needsClient.boxPubKey`). */
+export type McpOauthClientSet = {
+  clientId: string;
+  /** None for a public client, which has no secret. */
+  sealedSecret?: SealedSecret;
+};
+
+/** What making one's own OAuth client takes. */
+export type McpOauthNeedsClient = {
+  /** The hub's own box key, which the client secret is sealed to. */
+  boxPubKey: string;
+  /** The service's sign-in server, where the client is made. */
+  issuer: string;
+};
+
+export type McpOauthStartInput = {
+  /** The person's own OAuth client, for a service that doesn't let fleetd register itself. */
+  client?: McpOauthClientSet;
+  /**
+   * Where this app reaches the hub: the service sends the person's browser back to `<hubUrl>/oauth/callback`.
+   * Absent: the hub's own URL.
+   */
+  hubUrl?: string;
+  /** A saved HTTP or SSE server of a project. */
+  name: McpServerName;
+  scope: McpScope;
+};
+
+export type McpOauthStartOutput = {
+  /** Open this in the person's browser: the service's own sign-in page. Absent with `needsClient`. */
+  authorizeUrl?: string;
+  /**
+   * The service lets no app register itself: the person makes an OAuth client there that allows `redirectUri`,
+   * then starts again with `client`.
+   */
+  needsClient?: McpOauthNeedsClient;
+  next?: string;
+  /** Where the service sends the browser back, a page the hub serves: what the person's own client must allow. */
+  redirectUri: string;
+  truncated?: boolean;
+};
+
+/** Whether a server signed in with OAuth has a token agents can use. */
+export type KnownMcpOauthStatus = "connected" | "signed_out";
+/** KnownMcpOauthStatus, or a value from a newer hub. */
+export type McpOauthStatus = KnownMcpOauthStatus | (string & {});
+
 /** Which of fleetd's agents get a server. A plain thread a person starts gets none. */
 export type McpRoles = {
   /** The project's lead. */
@@ -3499,6 +3567,11 @@ export type McpServer = {
   /** The tools the person marked as only reading, for the hub's tool policy; none marks none. */
   integration?: McpIntegration;
   name: McpServerName;
+  /**
+   * It signs in with OAuth (`mcp_oauth_start`): the hub keeps the tokens and puts the access token in its
+   * `Authorization` header. None: a key or nothing.
+   */
+  oauth?: McpOauth;
   roles: McpRoles;
   scope: McpScope;
   transport: McpTransport;
@@ -3590,6 +3663,8 @@ export type McpTestResult = {
   error?: string;
   /** The name and version the server gave, e.g. `github-mcp 1.2.0`. */
   server?: string;
+  /** The server wants the person to sign in (OAuth), not a key: the app offers Sign in. */
+  signIn?: boolean;
   tools?: McpToolInfo[];
 };
 
@@ -8384,6 +8459,7 @@ export interface ToolMap {
   machine_roles: { input: MachineRolesInput; output: MachineRolesOutput };
   machine_roles_set: { input: MachineRolesSetInput; output: MachineRolesSetOutput };
   machine_screens_set: { input: MachineScreensSetInput; output: MachineScreensSetOutput };
+  mcp_oauth_start: { input: McpOauthStartInput; output: McpOauthStartOutput };
   mcp_server_remove: { input: McpServerRemoveInput; output: McpServerRemoveOutput };
   mcp_server_set: { input: McpServerSetInput; output: McpServerSetOutput };
   mcp_server_test: { input: McpServerTestInput; output: McpServerTestOutput };

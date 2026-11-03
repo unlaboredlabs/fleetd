@@ -247,6 +247,45 @@ impl SessionService {
         let _ = tokio::time::timeout(EXIT_WAIT, exited.wait_for(|e| *e)).await;
     }
 
+    /// A new turn of a session one of whose MCP servers' keys changed since its claude started (a sign-in the hub
+    /// renewed, a key replaced): that claude is closed now, while no run is active, so the send starts a new one with
+    /// the new key. Its conversation resumes as it was.
+    pub(super) async fn renew_mcp(&self, id: &str) {
+        let Ok(row) = self.session(id) else { return };
+        if row.summary.active_run_id.is_some() {
+            return;
+        }
+        let home = &self.inner.config.home;
+        let now = Secrets(super::super::mcp_servers::secrets(
+            home,
+            &home.join("sessions").join(id),
+        ));
+        let closing = {
+            let mut st = self.st();
+            let Some(live) = st.live.get_mut(id) else {
+                return;
+            };
+            let changed = now
+                .0
+                .iter()
+                .any(|(name, value)| live.spawned.0.iter().any(|(n, v)| n == name && v != value));
+            if live.closing || !changed {
+                return;
+            }
+            live.closing = true;
+            (live.commands.clone(), live.exited.clone())
+        };
+        tracing::info!(
+            session_id = id,
+            "an MCP server's key changed: claude starts again with it"
+        );
+        let (commands, mut exited) = closing;
+        let _ = commands
+            .send(SessionCommand::Shutdown { grace: REAP_GRACE })
+            .await;
+        let _ = tokio::time::timeout(EXIT_WAIT, exited.wait_for(|e| *e)).await;
+    }
+
     /// Records the session's first run, then runs the worktree's setup in the background and sends the brief once it
     /// is done: with what setup did added, or not at all when it failed and the project does not start agents anyway.
     pub(super) async fn begin_after_setup(

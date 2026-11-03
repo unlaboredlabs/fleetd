@@ -44,7 +44,7 @@ pub async fn probe(server: &Resolved, cwd: &Path, env: &[(String, String)]) -> M
         Ok((info, tools)) => McpTestResult {
             server: info,
             tools: tools.iter().filter_map(tool_info).collect(),
-            error: None,
+            ..Default::default()
         },
         Err(error) => McpTestResult {
             error: Some(masker.text(&error).into_owned()),
@@ -282,27 +282,35 @@ async fn http(
     url: &str,
     headers: &[(String, String)],
 ) -> Result<(Option<String>, Vec<Value>), String> {
+    let keyed = !headers.is_empty();
+    let error = |e| client_error(e, keyed);
     let mut client = McpClient::connect_to(url.to_owned(), None, headers.to_vec(), CLIENT, TIMEOUT)
         .await
-        .map_err(client_error)?;
-    let tools = client.list_tools(TIMEOUT).await.map_err(client_error)?;
+        .map_err(error)?;
+    let tools = client.list_tools(TIMEOUT).await.map_err(error)?;
     Ok((client.server.clone(), tools))
 }
 
-fn client_error(error: mcp_client::McpError) -> String {
+/// `keyed`: the server was given headers. One given none that answers 401 wants a key or a sign-in.
+fn client_error(error: mcp_client::McpError, keyed: bool) -> String {
     match error {
-        mcp_client::McpError::Unauthorized => {
+        mcp_client::McpError::Unauthorized if keyed => {
             "the server refused its credentials (HTTP 401): check its headers".into()
         }
-        mcp_client::McpError::Other(message) => http_error(message),
+        mcp_client::McpError::Unauthorized => {
+            "the server wants credentials (HTTP 401): a key, or signing in".into()
+        }
+        mcp_client::McpError::Other(message) => http_error(message, keyed),
     }
 }
 
-fn http_error(message: String) -> String {
-    if message.contains("401") {
-        format!("{message}: the server refused its credentials; check its headers")
-    } else {
-        message
+fn http_error(message: String, keyed: bool) -> String {
+    match message.contains("401") {
+        true if keyed => {
+            format!("{message}: the server refused its credentials; check its headers")
+        }
+        true => format!("{message}: the server wants credentials, a key or signing in"),
+        false => message,
     }
 }
 
@@ -389,11 +397,14 @@ impl Exchange for Sse {
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            return Err(http_error(format!(
-                "Error POSTing to endpoint (HTTP {}): {}",
-                status.as_u16(),
-                body.trim()
-            )));
+            return Err(http_error(
+                format!(
+                    "Error POSTing to endpoint (HTTP {}): {}",
+                    status.as_u16(),
+                    body.trim()
+                ),
+                !self.headers.is_empty(),
+            ));
         }
         Ok(())
     }
@@ -431,11 +442,14 @@ async fn sse(
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
-        return Err(http_error(format!(
-            "Error opening the event stream (HTTP {}): {}",
-            status.as_u16(),
-            body.trim()
-        )));
+        return Err(http_error(
+            format!(
+                "Error opening the event stream (HTTP {}): {}",
+                status.as_u16(),
+                body.trim()
+            ),
+            !headers.is_empty(),
+        ));
     }
     let mut x = Sse {
         http,

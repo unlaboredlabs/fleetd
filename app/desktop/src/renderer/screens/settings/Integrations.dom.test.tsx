@@ -47,6 +47,9 @@ let calls: Array<{ tool: string; input: unknown }>;
 let saved: McpServerRequest[];
 let tested: unknown;
 let project: McpServer[];
+let started: unknown;
+let opened: string[];
+let send: (frame: HubFrame) => void;
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -55,6 +58,8 @@ beforeEach(() => {
   calls = [];
   saved = [];
   project = [];
+  opened = [];
+  started = { authorizeUrl: "https://auth.mail.example/authorize?client_id=c1&state=s1", redirectUri: "http://devbox:4710/oauth/callback" };
   tested = {
     machineId: "devbox",
     result: {
@@ -68,7 +73,10 @@ beforeEach(() => {
   };
   vi.stubGlobal("fleetd", {
     platform: "linux",
-    openExternal: () => Promise.resolve({ ok: true }),
+    openExternal: (url: string) => {
+      opened.push(url);
+      return Promise.resolve({ ok: true });
+    },
     secret: {
       mcpServer: (_hub: string, request: McpServerRequest): Promise<CallOutcome> => {
         saved.push(request);
@@ -93,7 +101,14 @@ const render = async () => {
     call: (tool, input) => {
       calls.push({ tool, input });
       if (tool === "mcp_server_remove") project = [];
-      const output = tool === "mcp_servers_get" ? { global: [], project, userServers: true } : tool === "mcp_server_test" ? tested : { ok: true };
+      const output =
+        tool === "mcp_servers_get"
+          ? { global: [], project, userServers: true }
+          : tool === "mcp_server_test"
+            ? tested
+            : tool === "mcp_oauth_start"
+              ? started
+              : { ok: true };
       return Promise.resolve({ ok: true, output });
     },
     subscribe: (l) => ((listener = l), () => undefined),
@@ -102,6 +117,7 @@ const render = async () => {
     chat: () => Promise.resolve(),
   };
   const layer = createDataLayer(hub);
+  send = (frame) => listener(frame);
   await act(async () => {
     root.render(
       <UiProvider>
@@ -270,5 +286,127 @@ describe("a Navi's integrations", () => {
     expect(calls.find((c) => c.tool === "mcp_server_remove")?.input).toEqual({ scope: crm.scope, name: "crm" });
     await settle();
     expect(document.querySelector('[role="listitem"][aria-label="crm"]')).toBeNull();
+  });
+});
+
+const MAIL = "https://mcp.mail.example/mcp";
+const mail = (oauth: NonNullable<McpServer["oauth"]>): McpServer => ({ ...crm, name: "mail", transport: { type: "http", url: MAIL }, headers: [], oauth });
+
+/** The hub says the server's sign-in moved, as it does when the browser comes back. */
+let seq = 1;
+const signInMoved = async (oauth: NonNullable<McpServer["oauth"]>) => {
+  project = [mail(oauth)];
+  seq += 1;
+  await act(async () => {
+    send({ t: "event", event: { seq, at: AT, type: "mcp.oauth", summary: "mail's sign-in changed", data: { name: "mail" } } });
+    await new Promise((r) => setTimeout(r, 300));
+  });
+  await settle();
+};
+
+describe("an MCP server that signs you in", () => {
+  it("opens its sign-in page from Add, follows the sign-in, then asks which tools may run unasked", async () => {
+    tested = { machineId: "devbox", result: { error: "mail asks you to sign in with your own account, not a key.", signIn: true } };
+    await render();
+    await click(button("Add an MCP server"));
+    expect(dialog().textContent).toContain("Leave it empty for a service you sign in to with your account");
+    await type(field("Name"), "mail");
+    await type(field("URL"), MAIL);
+    await click(button("Connect and test", dialog()));
+    expect(saved[0]?.headers).toEqual([]);
+    expect(dialog().textContent).toContain("Sign in to mail");
+    expect(dialog().textContent).toContain("mail uses your own account with its service instead of a key.");
+    expect(dialog().textContent).toContain("Your browser opens mcp.mail.example's own sign-in page.");
+    expect(dialog().querySelector('[role="alert"]')).toBeNull();
+
+    await click(button("Sign in", dialog()));
+    // The redirect goes to where this app reaches the hub.
+    expect(calls.find((c) => c.tool === "mcp_oauth_start")?.input).toEqual({ scope: crm.scope, name: "mail", hubUrl: "http://devbox:4710" });
+    expect(opened).toEqual(["https://auth.mail.example/authorize?client_id=c1&state=s1"]);
+    await signInMoved({ status: "signed_out", issuer: "https://auth.mail.example", signingIn: true });
+    expect(dialog().textContent).toContain("Finish signing in on auth.mail.example's page in your browser.");
+    await click(button("Open the sign-in page again", dialog()));
+    expect(opened).toHaveLength(2);
+
+    tested = { machineId: "devbox", result: { server: "mail 1.0", tools: [{ name: "search_mail", readOnly: true, policy: "read" }, { name: "send_mail", policy: "ask" }] } };
+    await signInMoved({ status: "connected", issuer: "https://auth.mail.example", signedInAt: AT, expiresAt: AT });
+    expect(dialog().textContent).toContain("Which of mail's tools may Navi use without asking?");
+    expect(dialog().textContent).toContain("Works on devbox (mail 1.0).");
+    await click(button("Save", dialog()));
+    expect(saved[1]?.integration).toEqual({ readTools: ["search_mail"] });
+    expect(saved[1]?.headers).toEqual([]);
+  });
+
+  it("says why a sign-in failed, and lets the person try again", async () => {
+    project = [mail({ status: "signed_out", issuer: "https://auth.mail.example" })];
+    await render();
+    expect(row("mail").textContent).toContain("Signed out");
+    expect(row("mail").textContent).toContain("Not signed in yet: Navi can't use it until you sign in.");
+    await click(button("Sign in", row("mail")));
+    expect(dialog().textContent).toContain("Sign in to mail");
+    await click(button("Sign in", dialog()));
+    await signInMoved({ status: "signed_out", issuer: "https://auth.mail.example", signingIn: true });
+    await signInMoved({ status: "signed_out", issuer: "https://auth.mail.example", problem: "`auth.mail.example` didn't sign you in (The user denied access)." });
+    expect(dialog().querySelector('[role="alert"]')?.textContent).toBe("auth.mail.example didn't sign you in (The user denied access).");
+    expect(button("Sign in", dialog()).disabled).toBe(false);
+  });
+
+  it("takes the person's own app where the service lets none sign up, its secret sealed in main", async () => {
+    started = { redirectUri: "http://devbox:4710/oauth/callback", needsClient: { issuer: "https://login.mail.example", boxPubKey: BOX } };
+    const own: unknown[] = [];
+    vi.stubGlobal("fleetd", {
+      platform: "linux",
+      openExternal: (url: string) => {
+        opened.push(url);
+        return Promise.resolve({ ok: true });
+      },
+      secret: {
+        mcpOauthClient: (_hub: string, request: unknown): Promise<CallOutcome> => {
+          own.push(request);
+          return Promise.resolve({ ok: true, output: { authorizeUrl: "https://login.mail.example/authorize?client_id=mine", redirectUri: "http://devbox:4710/oauth/callback" } });
+        },
+      },
+    });
+    project = [mail({ status: "signed_out", issuer: "https://login.mail.example" })];
+    await render();
+    await click(button("Sign in", row("mail")));
+    await click(button("Sign in", dialog()));
+    expect(dialog().textContent).toContain("login.mail.example doesn't let apps sign up by themselves");
+    expect(dialog().querySelector('[aria-label="Redirect URL"]')?.textContent).toContain("http://devbox:4710/oauth/callback");
+    expect(dialog().textContent).toContain("encrypted on this computer so only the hub can read it");
+    expect(button("Sign in", dialog()).disabled).toBe(true);
+    await type(field("Client ID"), "mine");
+    await type(field("Client secret"), "own-secret-devbox");
+    await click(button("Sign in", dialog()));
+    expect(own).toEqual([{ scope: crm.scope, name: "mail", hubUrl: "http://devbox:4710", boxPubKey: BOX, clientId: "mine", clientSecret: "own-secret-devbox" }]);
+    expect(hubCalls()).not.toContain("own-secret-devbox");
+    expect(opened).toEqual(["https://login.mail.example/authorize?client_id=mine"]);
+  });
+
+  it("shows a signed-out server's reason with Reconnect, and tests it once it is back", async () => {
+    project = [
+      mail({
+        status: "signed_out",
+        issuer: "https://auth.mail.example",
+        signedInAt: AT,
+        problem: "`auth.mail.example` ended the sign-in (revoked), so you need to sign in again.",
+      }),
+    ];
+    await render();
+    const text = row("mail").textContent;
+    expect(text).toContain("Signed out");
+    expect(text).toContain("auth.mail.example ended the sign-in (revoked), so you need to sign in again.");
+    expect(text).not.toContain("Key sealed");
+    await click(button("Reconnect", row("mail")));
+    expect(dialog().textContent).toContain("Reconnect mail");
+    await click(button("Sign in", dialog()));
+    await signInMoved({ status: "signed_out", issuer: "https://auth.mail.example", signedInAt: AT, signingIn: true });
+    tested = { machineId: "devbox", result: { server: "mail 1.0", tools: [{ name: "search_mail", policy: "read" }] } };
+    await signInMoved({ status: "connected", issuer: "https://auth.mail.example", signedInAt: "2026-10-27T11:00:00.000Z" });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(row("mail").textContent).toContain("Connected");
+    expect(row("mail").textContent).toContain("Signed in with auth.mail.example. fleetd renews the sign-in by itself, and Navi never sees it.");
+    expect(row("mail").textContent).toContain("Works on devbox (mail 1.0): 1 tool runs without asking");
+    expect(row("mail").querySelector("button")?.textContent).not.toBe("Reconnect");
   });
 });
