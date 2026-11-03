@@ -456,10 +456,11 @@ Flag the chat message you just wrote for the human's look, with reason in a few 
 
 ### automation_create
 
-Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 \* \* 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app.
+Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 \* \* 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app. A Navi: ask the person first with its prompt and schedule, and pass confirmed: true right after they say yes; its runs then count as their go-ahead for what the prompt names.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `confirmed` | boolean | no | True: the person's last message said yes to this automation, its prompt and schedule, which you asked about. Its runs then count as their go-ahead for what the prompt names. |
 | `name` | string | yes | One line. At most 80 characters. |
 | `prompt` | string | yes | At most 2000 characters. |
 | `schedule` | object | no | Absent: it runs only on Run now (and a webhook, once a person adds one). |
@@ -505,6 +506,7 @@ Change an automation's name, prompt or schedule (removeSchedule: true takes it o
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `automationId` | string | yes | Matches `^au_[A-Za-z0-9_-]{6,40}$`. |
+| `confirmed` | boolean | no | True: the person's last message said yes to this change, which you asked about. A changed prompt or schedule without it no longer counts as their go-ahead. |
 | `name` | string | no | One line. At most 80 characters. |
 | `prompt` | string | no | At most 2000 characters. |
 | `removeSchedule` | boolean | no | True: take its schedule off. |
@@ -698,7 +700,7 @@ A Navi's call: save one of your own skills, new or changed, as its whole SKILL.m
 
 ### project_message
 
-A Navi's call: write to another project's lead in its chat, as this Navi, never as the person: "please add X", or a question. Its lead reads it as input, never as the person's answer or approval, and may open an order for it. Returns a handle (N&lt;n>); a later wake says when an order opened for it opens, closes, merges or fails. project is a title or project id from factory_status. With hub (a linked hub's label, from factory_status's hubs), it goes to that project on the other hub, as the person via this Navi. Open an order this way only when the person asked for it in this conversation.
+A Navi's call: write to another project's lead in its chat, as this Navi, never as the person: "please add X", or a question. Its lead reads it as input, never as the person's answer or approval, and may open an order for it. Returns a handle (N&lt;n>); a later wake says when an order opened for it opens, closes, merges or fails. project is a title or project id from factory_status. With hub (a linked hub's label, from factory_status's hubs), it goes to that project on the other hub, as the person via this Navi. It goes through your approval mode like a send, its exact text on the card. Open an order this way only when the person asked for it in this conversation.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1409,6 +1411,7 @@ fleetd also blocks any tool like these that a newer Claude Code adds: a session 
 | `Edit`, `Write`, `NotebookEdit` | A Navi writes anything but what its sandbox hides or keeps read-only. |
 | `WebFetch` | A Navi fetches a site unasked only once the person allowed or linked it. |
 | `mcp__fleetd__confirm_step` | A Navi's final Confirm on a site goes through its approval mode, like a send. |
+| `mcp__fleetd__project_message` | A Navi's message to another project's lead, who may open full-access work for it, goes through its approval mode, like a send. |
 
 ## Settings fleetd forces
 
