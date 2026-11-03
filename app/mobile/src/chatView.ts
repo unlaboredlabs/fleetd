@@ -83,6 +83,22 @@ export const quoteOf = (text: string): string => {
 /** Your words as a reply to a bubble: its quote, a blank line, then what you wrote. */
 export const replyText = (quote: string, text: string): string => (quote === "" ? text : `> ${quote}\n\n${text}`);
 
+/**
+ * What a send carries: the words trimmed, under the quote of the bubble it replies to, and which bubble that is; null
+ * with nothing to send. A photo goes with no words. A quick answer or a starter passes no reply: it never quotes what
+ * the composer's Reply banner holds, which stays for the words being typed.
+ */
+export const outgoing = (
+  body: string,
+  files: number,
+  reply: { readonly id: string; readonly part: number; readonly quote: string } | undefined,
+): { readonly text: string; readonly replyTo: { readonly messageId: string; readonly part: number } | undefined } | null => {
+  const words = body.trim();
+  if (words === "" && files === 0) return null;
+  if (reply === undefined) return { text: words, replyTo: undefined };
+  return { text: words === "" ? replyText(reply.quote, "").trim() : replyText(reply.quote, words), replyTo: { messageId: reply.id, part: reply.part } };
+};
+
 /** A message that replies to a bubble: the quote and the words under it; undefined for any other text. */
 export const replyOf = (text: string): { readonly quote: string; readonly body: string } | undefined => {
   const m = /^> ([^\n]+)\n\n(?!>)([\s\S]*\S[\s\S]*)$/u.exec(text);
@@ -215,11 +231,13 @@ const joins = (a: ChatItem | undefined, b: ChatItem | undefined): boolean =>
 export const threadRows = (items: readonly ChatItem[], working = false, readSeq?: number, clock: Pick<Clock, "timeZone"> = {}): ThreadRow[] => {
   const rows: ThreadRow[] = [];
   let prev: ChatItem | undefined;
+  let prevDay = 0;
   const firstUnread = readSeq === undefined ? -1 : items.findIndex((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > readSeq);
   for (const [i, item] of items.entries()) {
     if (i === firstUnread) rows.push({ t: "unread", id: "unread" });
-    const day = dayOf(msOf(item.at), clock);
-    if (prev === undefined || day !== dayOf(msOf(prev.at), clock)) rows.push({ t: "day", id: `day:${String(day)}`, at: item.at });
+    const day = dayAt(item.at, clock);
+    if (prev === undefined || day !== prevDay) rows.push({ t: "day", id: `day:${String(day)}`, at: item.at });
+    prevDay = day;
     const side = sideOf(item);
     const next = items[i + 1];
     rows.push({ t: "item", id: item.clientRequestId ?? item.id, item, side, first: i === firstUnread || !joins(prev, item), last: i + 1 === firstUnread || !joins(item, next) });
@@ -257,6 +275,19 @@ const dayOf = (ms: number, clock: Pick<Clock, "timeZone">): number => {
   const parts = formatter("en-US", { timeZone: clock.timeZone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(ms);
   const n = (type: string): number => Number(parts.find((p) => p.type === type)?.value ?? 0);
   return Date.UTC(n("year"), n("month") - 1, n("day"));
+};
+
+/** A message's day by its time as the hub wrote it, worked out once per zone: a thread asks for each with every word streamed. */
+const days = new Map<string, number>();
+const dayAt = (at: string, clock: Pick<Clock, "timeZone">): number => {
+  const key = `${clock.timeZone ?? ""}|${at}`;
+  let day = days.get(key);
+  if (day === undefined) {
+    if (days.size >= 10_000) days.clear();
+    day = dayOf(msOf(at), clock);
+    days.set(key, day);
+  }
+  return day;
 };
 
 /** Days from `ms` to now, by the calendar in the clock's zone: 0 today, 1 yesterday. */
@@ -301,4 +332,42 @@ export const listTime = (at: string, clock: Clock): string => {
   if (days === 1) return "Yesterday";
   if (days < 7) return fmt(ms, clock, { weekday: "long" });
   return fmt(ms, clock, { day: "numeric", month: "numeric", year: "2-digit" });
+};
+
+// Where the thread lands and what counts as read. The list is upside down: its offset 0 is the newest end, and a row's
+// offset is how far its newest edge is from there.
+
+/**
+ * scrollToIndex's viewOffset that puts a row at `viewPosition` (0 the newest end, 1 the oldest) of what shows between
+ * the composer and the bar over the thread, rather than of the whole list: VirtualizedList subtracts it from the
+ * offset, so a row at the far end goes `top` less far, under the bar, and one at the near end clears the composer.
+ */
+export const viewOffsetOf = (viewPosition: number, top: number, composer: number): number => (1 - viewPosition) * composer - viewPosition * top;
+
+/**
+ * Where the status bar's tap takes the thread: most of a screen (`room`, what shows between the bar and the composer)
+ * older than `y`, no further than the oldest end of `length`, in a list `height` tall.
+ */
+export const olderOffset = (y: number, length: number, room: number, height: number): number => Math.max(0, Math.min(y + room * 0.85, length - height));
+
+/** The newest message among the rows on screen: read once seen, as Telegram marks it. */
+export const seenSeq = (rows: readonly ThreadRow[]): number | undefined => {
+  let seq: number | undefined;
+  for (const r of rows) {
+    const s = r.t === "item" ? r.item.message?.seq : undefined;
+    if (s !== undefined && (seq === undefined || s > seq)) seq = s;
+  }
+  return seq;
+};
+
+/**
+ * Where the reply streaming in sits among the rows, newest first, while it's one of the newest few (under it only the
+ * turn line): the thread follows it until its first line reaches the bar, then holds it there.
+ */
+export const streamingAt = (newestFirst: readonly ThreadRow[]): number | undefined => {
+  for (const [i, r] of newestFirst.entries()) {
+    if (r.t === "turn") continue;
+    return r.t === "item" && r.item.message?.state === "streaming" ? i : undefined;
+  }
+  return undefined;
 };

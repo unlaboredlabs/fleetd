@@ -877,7 +877,7 @@ fn stop_caller(caller: &Caller, tool: &str, r: &ProjectRef) -> Result<(), ToolEr
 }
 
 /// Interrupts the lead's turn now, also one held on a permission prompt. True when it had one.
-async fn stop_lead(hub: &Hub, r: &ProjectRef) -> Result<bool, ToolError> {
+pub(crate) async fn stop_lead(hub: &Hub, r: &ProjectRef) -> Result<bool, ToolError> {
     let Some(thread) = lead_thread(hub, r) else {
         return Ok(false);
     };

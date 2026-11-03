@@ -192,6 +192,14 @@ async fn handle(
             forwarded_from,
             files,
             ..
+        } if forwarded_from.is_none() && files.is_empty() && is_stop(text) => {
+            stop(hub, r, e.seq, e.at.as_str()).await?;
+        }
+        TelegramEventKind::Message {
+            text,
+            forwarded_from,
+            files,
+            ..
         } => {
             let mut ids = Vec::new();
             let mut missing = Vec::new();
@@ -270,6 +278,46 @@ async fn handle(
             )?;
         }
     }
+    Ok(())
+}
+
+/// `/stop`, as Telegram's menu sends it too (`/stop@bot`).
+fn is_stop(text: &str) -> bool {
+    let text = text.trim();
+    text == "/stop" || text.starts_with("/stop@") && !text.contains(char::is_whitespace)
+}
+
+/// `/stop`: the Navi's running step stops now, as the app's Stop does, with a line in its chat saying so and the same
+/// words back in Telegram. Once per update: one handled again finds its line by its source and stops nothing; a second
+/// `/stop` finds nothing running.
+async fn stop(hub: &Arc<Hub>, r: &ProjectRef, seq: i64, at: &str) -> Result<(), ToolError> {
+    let source = format!("telegram-stop:{seq}:{at}");
+    let said = match hub.chat.by_source(r, &source)? {
+        Some(line) => line.text.to_string(),
+        None => {
+            let said = match crate::hub::chat::flow::stop_lead(hub, r).await {
+                Ok(true) => "Stopped.",
+                Ok(false) => "Nothing was running.",
+                Err(e) => {
+                    tracing::warn!(navi = %r.project_id, "telegram: stop: {}", e.message);
+                    "Couldn't stop: the Navi's machine didn't answer. Try /stop again."
+                }
+            };
+            crate::hub::chat::flow::ensure(hub, r).await?;
+            hub.chat.add(
+                r,
+                crate::hub::chat::NewMessage {
+                    author: Some(ChatAuthor::System),
+                    text: said.to_owned(),
+                    source: Some(source),
+                    ..Default::default()
+                },
+            )?;
+            crate::hub::chat::flow::state(hub, r)?;
+            said.to_owned()
+        }
+    };
+    text(hub, r, &format::escape(&said), Vec::new()).await?;
     Ok(())
 }
 

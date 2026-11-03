@@ -334,6 +334,8 @@ forget it. To delete the bot itself, send `/deletebot` to @BotFather.
 - **Photos and documents** arrive as attachments of the message: images, PDFs and text files, up to Telegram's 20 MB
   for bots. Anything else gets a short reply saying it wasn't passed on.
 - **Voice notes** aren't supported yet: you get a reply saying so.
+- **/stop** stops what the Navi is doing now, as **Stop** in the app does, and says so in Telegram and in its chat.
+  Sending it again once it has stopped does nothing more.
 - **A forwarded message** is marked *Forwarded from …*. The Navi reads it as someone else's words, untrusted content,
   never as your request or approval, and asks you before acting on anything it asks for.
 - **The Navi's replies** go to the app and to Telegram, formatted for Telegram and split when long. Its images go as

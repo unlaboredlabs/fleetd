@@ -58,6 +58,8 @@ struct Node {
     files: HashMap<String, Vec<u8>>,
     sent: Vec<TelegramSend>,
     calls: Vec<TelegramCall>,
+    /// The lead's turn interrupted.
+    interrupts: usize,
 }
 
 impl Node {
@@ -204,6 +206,10 @@ async fn node(hub: &Arc<Hub>) -> Shared {
                 SessionCall::Telegram { call, .. } => {
                     let answer = state.lock().unwrap().answer(call);
                     json!({ "ok": { "kind": "telegram", "answer": answer } })
+                }
+                SessionCall::Interrupt { .. } => {
+                    state.lock().unwrap().interrupts += 1;
+                    json!({ "ok": { "kind": "done" } })
                 }
                 _ => json!({ "ok": { "kind": "done" } }),
             };
@@ -374,6 +380,78 @@ async fn its_owner_seals_the_token_tests_and_pairs_and_nobody_else_can() {
     // Only a Navi has one.
     let plain = json!({ "navi": { "machineId": "lab", "projectId": "elsewhere" }, "sealed": sealed(TOKEN) });
     assert!(call(&hub, &desk, "telegram_set", plain).await.is_err());
+}
+
+/// `/stop` interrupts the Navi's running step, as the app's Stop does: a line in its chat and the same words back, never
+/// a message for the Navi. The update handled again stops nothing again; a second `/stop` finds nothing running.
+#[tokio::test]
+async fn stop_interrupts_the_navis_step_once() {
+    let (hub, _home, bob, node) = setup().await;
+    paired(&hub, &bob, &node).await;
+    hub.leads
+        .records
+        .lead_put(&crate::hub::leads::records::StoredLead {
+            project_ref: navi(),
+            thread_id: fleetd_contracts::ids::ThreadId::unchecked("ada-lead"),
+            started_at: AT.into(),
+            last_wake_at: None,
+            session_generation: 1,
+        })
+        .unwrap();
+    let working = |status: &str| {
+        let thread: crate::hub::store::StoredThread = serde_json::from_value(json!({
+            "machineId": "lab", "threadId": "ada-lead", "projectId": "ada", "title": "lead",
+            "status": status, "headline": "", "latestMessageTail": "", "lastProgressAt": AT,
+            "stale": false, "asOf": AT,
+        }))
+        .unwrap();
+        hub.store.thread_upsert(&thread).unwrap();
+    };
+    working("running");
+    let stop = |n: &Shared, message_id: i64, text: &str| {
+        n.lock().unwrap().event(TelegramEventKind::Message {
+            message_id,
+            text: text.into(),
+            forwarded_from: None,
+            files: Vec::new(),
+        })
+    };
+    stop(&node, 70, "/stop");
+    take_once(&hub, &navi(), 0).await.unwrap();
+    assert_eq!(node.lock().unwrap().interrupts, 1);
+    let lines: Vec<String> = chat(&hub)
+        .iter()
+        .map(|m| format!("{:?}: {}", m.author, m.text.as_str()))
+        .collect();
+    assert_eq!(lines, ["System: Stopped."], "no message for the Navi");
+    let words = |out: Vec<TelegramSend>| -> Vec<String> {
+        out.into_iter()
+            .filter_map(|s| match s {
+                TelegramSend::Text { html, .. } => Some(html),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(words(sent(&node)), ["Stopped."]);
+    // Handled again (the hub stopped before it kept its place): the same line, said again, nothing stopped twice.
+    super::set_taken(&hub.db, &navi(), 0).unwrap();
+    take_once(&hub, &navi(), 0).await.unwrap();
+    assert_eq!(node.lock().unwrap().interrupts, 1);
+    assert_eq!(words(sent(&node)), ["Stopped."]);
+    // Pressed again once it stopped, from the bot's menu.
+    working("idle");
+    stop(&node, 71, "/stop@ada_devbox_bot");
+    take_once(&hub, &navi(), 0).await.unwrap();
+    assert_eq!(node.lock().unwrap().interrupts, 1);
+    assert_eq!(words(sent(&node)), ["Nothing was running."]);
+    // Words after it are a message, not a stop.
+    stop(&node, 72, "/stop sending me those");
+    take_once(&hub, &navi(), 0).await.unwrap();
+    assert!(
+        chat(&hub)
+            .iter()
+            .any(|m| m.author == ChatAuthor::Human && m.text.as_str() == "/stop sending me those")
+    );
 }
 
 #[tokio::test]
