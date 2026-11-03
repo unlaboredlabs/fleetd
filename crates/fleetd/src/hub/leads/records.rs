@@ -1,6 +1,7 @@
 //! Leads, project settings and workstreams as stored (tables `leads`, `lead_mcp`, `project_settings`, `workstreams`).
 use std::sync::Arc;
 
+use fleetd_contracts::effort::ProfileName;
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::ledger::{
     IntakeChannel, Workstream, WorkstreamId, WorkstreamSource, WorkstreamState,
@@ -105,7 +106,8 @@ impl LeadRecords {
                 "INSERT INTO leads (machine_id, project_id, thread_id, started_at, last_wake_at, session_generation)
                  VALUES (?, ?, ?, ?, ?, ?)
                  ON CONFLICT (machine_id, project_id) DO UPDATE SET thread_id = excluded.thread_id, started_at = excluded.started_at,
-                   last_wake_at = excluded.last_wake_at, session_generation = excluded.session_generation",
+                   last_wake_at = excluded.last_wake_at, session_generation = excluded.session_generation,
+                   profile = CASE WHEN leads.thread_id = excluded.thread_id THEN leads.profile END",
                 params![
                     lead.project_ref.machine_id.as_str(),
                     lead.project_ref.project_id.as_str(),
@@ -114,6 +116,35 @@ impl LeadRecords {
                     lead.last_wake_at.as_ref().map(|t| t.as_str()),
                     lead.session_generation
                 ],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// The profile the project's current lead session started on; None for one started before fleetd kept it.
+    pub fn lead_profile_get(&self, r: &ProjectRef) -> Result<Option<ProfileName>, StoreError> {
+        let name: Option<Option<String>> = self.db.with(|c| {
+            Ok(c.query_row(
+                "SELECT profile FROM leads WHERE machine_id = ? AND project_id = ?",
+                params![r.machine_id.as_str(), r.project_id.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?)
+        })?;
+        Ok(name.flatten().map(ProfileName::unchecked))
+    }
+
+    /// Keeps the profile the lead session `thread_id` started on, once its row is in.
+    pub fn lead_profile_put(
+        &self,
+        r: &ProjectRef,
+        thread_id: &fleetd_contracts::ids::ThreadId,
+        profile: &ProfileName,
+    ) -> Result<(), StoreError> {
+        self.db.with(|c| {
+            c.execute(
+                "UPDATE leads SET profile = ? WHERE machine_id = ? AND project_id = ? AND thread_id = ?",
+                params![profile.as_str(), r.machine_id.as_str(), r.project_id.as_str(), thread_id.as_str()],
             )?;
             Ok(())
         })

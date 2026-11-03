@@ -442,13 +442,8 @@ impl Leads {
         // A Navi's lead runs from `navi.start` in the assistant role: manual permission mode, so every tool off its
         // read allow-list asks a person first (approvals/permissions.rs).
         let navi = project.kind == Some(ProjectKind::Assistant);
-        // A project's lead runs on the profile picked for leads (Lead runs on), else the default; a Navi stays on the
-        // default, like reviews.
-        let lead_profile = if navi {
-            profiles.default_profile()?
-        } else {
-            profiles.lead_profile()?
-        };
+        // Every lead, a Navi's too, runs on the profile picked for leads (Lead runs on), else the default.
+        let lead_profile = profiles.lead_profile()?;
         let you = crate::hub::memory::You::for_lead(&self.ctx.db, r)
             .unwrap_or(crate::hub::memory::You::Nobody);
         let start = render_lead_start(
@@ -540,6 +535,9 @@ impl Leads {
             session_generation,
         };
         self.records.lead_put(&lead)?;
+        // Its lane names the profile this session runs on, not a later pick.
+        self.records
+            .lead_profile_put(r, &lead.thread_id, &lead_profile.name)?;
         self.ctx.events.append(NewEvent {
             at,
             r#type: HubEventType::LeadStarted,

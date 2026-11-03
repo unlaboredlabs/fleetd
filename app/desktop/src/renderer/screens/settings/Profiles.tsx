@@ -85,7 +85,7 @@ export function ProfilesEditor() {
   );
 }
 
-/** Lead runs on: the profile every project's lead starts on, the default until another is picked. Picking the default
+/** Lead runs on: the profile every lead (a Navi's too) starts on, the default until another is picked. Picking the default
  * has leads follow the default again. */
 function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said: string | undefined) => void }) {
   const call = useHubCall();
@@ -107,7 +107,7 @@ function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said:
       .finally(() => setBusy(false));
   };
   return (
-    <Setting reveal="hub.lead" label="Lead runs on" help="Every project's lead. Reviews and tasks that name no profile stay on the default.">
+    <Setting reveal="hub.lead" label="Lead runs on" help="Every project's lead and every Navi. Reviews and tasks that name no profile stay on the default.">
       <Select
         aria-label="Lead runs on"
         value={lead?.name ?? ""}
@@ -328,8 +328,8 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
         <div className={s.inline} data-lead-profile={lead.name}>
           <Text size="xs" tone="quiet">
             {administers
-              ? `Every project's lead runs on ${lead.name}.`
-              : `Every project's lead runs on ${lead.name}. Ask ${adminWho(adminNames(people.data?.people ?? []))} to change it.`}
+              ? `Leads run on ${lead.name}.`
+              : `Leads run on ${lead.name}. Ask ${adminWho(adminNames(people.data?.people ?? []))} to change it.`}
           </Text>
           {administers ? (
             <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.profiles" }))}>

@@ -314,7 +314,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "lead_start",
-        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one; with fresh, starts a new lead thread from the current digest instead (sessionGeneration goes up), for a lead that is stuck or whose context is full, and the old thread stays on the node. A project's first order starts its lead by itself; call this to start it earlier. The lead runs on the profile picked for leads (lead: true in profiles_list), else the hub's default.",
+        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one; with fresh, starts a new lead thread from the current digest instead (sessionGeneration goes up), for a lead that is stuck or whose context is full, and the old thread stays on the node. A project's first order starts its lead by itself; call this to start it earlier. The lead (a Navi's too) runs on the profile picked for leads (lead: true in profiles_list), else the hub's default.",
     ),
     (
         "project_set",

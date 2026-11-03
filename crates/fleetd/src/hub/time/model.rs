@@ -30,7 +30,7 @@ pub struct Row {
     pub thread_id: Option<String>,
     /// The session's role: "lead", "implementer", "reviewer"…; absent on spans outside a lead's or task's session.
     pub role: Option<String>,
-    /// A task's profile, "high" for a lead; absent on spans of neither.
+    /// A task's profile; for a lead, the one its session started on; absent on spans of neither.
     pub profile: Option<String>,
     pub extra: SpanExtra,
 }

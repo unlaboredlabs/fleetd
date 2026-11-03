@@ -255,12 +255,12 @@ it("runs leads on the profile picked, back on the default when it is deleted", a
 it("tells a project which profile leads run on: an admin the way to change it, a member who to ask", async () => {
   profiles = profiles.map((p) => (p.name === "medium" ? { ...p, lead: true } : p));
   await render("project");
-  expect(host.querySelector("[data-lead-profile]")?.textContent).toBe("Every project's lead runs on medium.Change in Every project › Profiles");
+  expect(host.querySelector("[data-lead-profile]")?.textContent).toBe("Leads run on medium.Change in Every project › Profiles");
   act(() => root.unmount());
   root = createRoot(host);
   me = { name: "Sam", role: "member" };
   await render("project");
-  expect(host.querySelector("[data-lead-profile]")?.textContent).toBe("Every project's lead runs on medium. Ask Ada to change it.");
+  expect(host.querySelector("[data-lead-profile]")?.textContent).toBe("Leads run on medium. Ask Ada to change it.");
 });
 
 it("offers fast mode only on a model that has it", async () => {
