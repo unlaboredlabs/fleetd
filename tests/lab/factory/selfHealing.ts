@@ -1,10 +1,10 @@
 // W9 part 6 on a project that isn't fleetd, the part on main so far (#405): a writer commits and pushes its branch,
-// then, while it still runs, its worktree and local branch are deleted and its node is killed. When the lead messages
-// it, the node rebuilds the worktree at the same path from origin/<branch>, freshly fetched, and the agent's message
-// starts with a note saying so. The person's checkout is byte for byte as they left it.
-// TODO(W9 self-healing lab): #426 and PR5: the task resumes by itself after the kill (no message from the lead), and
-// the lead's next wake says "resumed automatically (attempt 2 of 4)"; a SIGTERM'd node; a session that dies twice on
-// the same command escalates once.
+// then, while it still runs, its worktree and local branch are deleted and its node is killed. The task resumes by
+// itself once the restarted node says it has reported the run it cut off (no message from the lead): the node rebuilds
+// the worktree at the same path from origin/<branch>, freshly fetched, and the agent's message starts with a note
+// saying so. The person's checkout is byte for byte as they left it.
+// TODO(W9 self-healing lab): the lead's next wake says "resumed automatically"; a SIGTERM'd node; a session that dies
+// twice on the same command escalates once.
 import fs from "node:fs";
 import { check, ok, sleep } from "../harness.ts";
 import type { Factory } from "./kit.ts";
@@ -51,10 +51,8 @@ export async function selfHealing(f: Factory) {
   });
   ok(`worktree and local branch deleted, node SIGKILLed and restarted: ${cut.event.type} "${cut.event.summary}"; ${taskId} is ${(await f.task(taskId)).state}`);
 
-  // The lead messages it, as it would by hand today: the session resumes in a worktree rebuilt from the pushed branch.
-  const from = await f.cursor();
-  const sent = f.lead("message_agent", { taskId, message: "Carry on.\nlab-run: git log -1 --format=%H && cat REPORT.md" });
-  check(sent.code === 0, `message_agent: ${sent.text}`);
+  // It resumes by itself: the session resumes in a worktree rebuilt from the pushed branch.
+  const from = cut.cursor;
   await f
     .waitEvent(`${taskId}'s resumed turn ends`, 120_000, {
       cursor: from,
@@ -68,7 +66,7 @@ export async function selfHealing(f: Factory) {
       const events = (await f.eventsSince(from)).filter((e) => e.threadId === threadId || e.data?.taskId === taskId);
       const held = JSON.stringify({ state: t.state, queuedReason: t.queuedReason, recovery: t.recovery, result: t.result });
       const seen = events.map((e) => `${e.at} ${e.type}: ${e.summary}`).join("\n  ");
-      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${taskId} now: ${held}\nits events since the message:\n  ${seen}`);
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${taskId} now: ${held}\nits events since the cut:\n  ${seen}`);
     });
   check(fs.existsSync(wt), `the worktree is back at the same path ${wt}`);
   check(git(wt, "rev-parse", "HEAD") === pushed, `it is at the pushed ${pushed.slice(0, 7)}`);
@@ -76,6 +74,7 @@ export async function selfHealing(f: Factory) {
   check(git(project.root, "rev-parse", `refs/heads/${branch}`) === pushed, `the local ${branch} is back at the pushed commit`);
   const note = f.messages(threadId).at(-1) ?? "";
   check(note.startsWith("fleetd: your worktree and its local branch were gone") && note.includes(`from origin/${branch}`), `the agent was told where its worktree came from:\n${note}`);
+  check(note.includes("fleetd: your run was cut off"), `with the note its automatic resume carries:\n${note}`);
   check(f.sessionSummary(threadId)?.recreatedFrom === "remote", `the session says recreatedFrom remote: ${JSON.stringify(f.sessionSummary(threadId))}`);
   ok(`rebuilt from origin/${branch} at ${pushed.slice(0, 7)}; the agent's message began: "${note.split("\n")[0]!.slice(0, 90)}…"`);
   human.unchanged("after the rebuild");
