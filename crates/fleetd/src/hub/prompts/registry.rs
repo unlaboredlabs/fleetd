@@ -335,7 +335,7 @@ pub const ENTRIES: &[Entry] = &[
         Lead,
         "Chat: the human",
         "with each chat message the human sends the lead",
-        "text!=the human's words; files=the attached files' paths, or nothing; writer=\"The human\", or the writer's name when the hub has more than one person",
+        "text!=the human's words; files=the attached files' paths, or nothing; writer=\"The human\", or the writer's name when the hub has more than one person; when=when they wrote it, on their clock: \"Tue 3 Nov 2026, 18:05 Europe/Berlin\" (their device's zone, else policy.tz, else the hub machine's, which it then names)",
         &[]
     ),
     entry!(

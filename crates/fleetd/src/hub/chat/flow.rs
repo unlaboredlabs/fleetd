@@ -232,6 +232,15 @@ pub async fn send(
         return Err(ToolError::new(ErrorCode::Invalid, message).with_fix(fix));
     }
     let writer = writer(hub, caller, &input)?;
+    if writer.author == ChatAuthor::Human
+        && let Some(tz) = input
+            .tz
+            .as_ref()
+            .and_then(|t| fleetd_contracts::wakes::TimeZone::new(t.as_str()).ok())
+    {
+        let person = writer.person.as_ref().map(|p| &p.person_id);
+        crate::hub::people::zone::set(&hub.db, person, &tz).map_err(store_error)?;
+    }
     let now = input.now == Some(true);
     if now && writer.author != ChatAuthor::Human {
         return Err(refused(
@@ -444,6 +453,7 @@ async fn go(
                 replied.as_ref(),
                 &files,
                 &crate::hub::people::writer(&hub.db, message.person.as_ref()),
+                &when(hub, &message),
             )
         }),
         false => None,
@@ -504,13 +514,15 @@ fn sent(hub: &Hub, message: &mut fleetd_contracts::chat::ChatMessage, delivery: 
 /// A chat message as the lead reads it: the writer's own words in the `chat.human` or `chat.agent` prompt. The
 /// human's are the human's wherever they wrote them; an agent's say plainly that they are not. A reply to one of the
 /// lead's bubbles (`replied`, the message `reply_to` names) opens with that bubble whole, in place of its one-line
-/// quote, and when the lead wrote it. `writer` names a human message's writer ([`crate::hub::people::writer`]).
+/// quote, and when the lead wrote it. `writer` names a human message's writer ([`crate::hub::people::writer`]), and
+/// `when` says when they wrote it on their clock ([`when`]).
 pub fn for_lead(
     set: &PromptSet,
     message: &fleetd_contracts::chat::ChatMessage,
     replied: Option<&fleetd_contracts::chat::ChatMessage>,
     files: &str,
     writer: &str,
+    when: &str,
 ) -> String {
     let replying = message
         .reply_to
@@ -550,9 +562,23 @@ pub fn for_lead(
         ),
         _ => set.render(
             "chat.human",
-            &[("writer", &writer), ("text", &text), ("files", &files)],
+            &[
+                ("writer", &writer),
+                ("when", &when),
+                ("text", &text),
+                ("files", &files),
+            ],
         ),
     }
+}
+
+/// When a human message was written, on its writer's clock: "Tue 3 Nov 2026, 18:05 Europe/Berlin"
+/// ([`crate::hub::people::zone`]).
+pub fn when(hub: &Hub, message: &fleetd_contracts::chat::ChatMessage) -> String {
+    let person = message.person.as_ref().map(|p| &p.person_id);
+    let ms = crate::hub::store::parse_ms(message.created_at.as_str())
+        .unwrap_or_else(|| crate::hub::store::now_ms(hub.clock.as_ref()));
+    crate::hub::people::zone::of_person(&hub.db, person).stamp(ms)
 }
 
 /// The longest quote of a replied bubble, in characters; a longer one keeps its start and end.
@@ -652,7 +678,14 @@ async fn deliver(
         .for_thread(&thread.machine_id, thread.thread_id.as_str());
     let replied = replied(hub, message);
     let writer = crate::hub::people::writer(&hub.db, message.person.as_ref());
-    let text = for_lead(&set, message, replied.as_ref(), &files, &writer);
+    let text = for_lead(
+        &set,
+        message,
+        replied.as_ref(),
+        &files,
+        &writer,
+        &when(hub, message),
+    );
     let crid = format!("chat:{}", message.message_id);
     let opts = SendOpts {
         mode: if now { SendMode::Now } else { SendMode::Plain },

@@ -6,7 +6,8 @@ description: Run a stored prompt on a schedule, from a webhook, or with Run now.
 An automation is a prompt you keep for a project, plus what starts it:
 
 - **Schedule**: a 5-field cron read in an IANA time zone, such as `0 9 * * 1-5` in `Europe/Berlin` (09:00 on
-  weekdays, Berlin time). `@daily`, `@hourly`, `@weekly`, `@monthly` and `@yearly` work too.
+  weekdays, Berlin time). `@daily`, `@hourly`, `@weekly`, `@monthly` and `@yearly` work too. Or one date and time,
+  for a [one-time run](#one-time) such as a reminder.
 - **Webhook**: a secret URL. A `POST` to it starts a run, and the request body goes to the lead with the prompt.
 - **Run now**: from the app, or by the lead.
 
@@ -49,6 +50,27 @@ From an MCP client, `automation_list` returns the row as `memoryRefresh`, and `m
 
 You can also ask the lead in the chat ("check the dependencies every Monday morning"). It manages a project's
 automations with its own tools, listed under [Agent tools](/docs/reference/agent-tools#lead-tools).
+
+## One-time runs: reminders and follow-ups {#one-time}
+
+Ask a Navi "remind me at 18:00 to call mom" or "check back on the refund Friday", and it makes an automation with a
+one-time schedule: `at`, one date and time such as `2026-11-03T18:00`. The Navi works out the date and time from your
+words; the hub doesn't read words. Left without a zone, it runs in [yours](/docs/what-agents-are-told#your-time).
+
+- It shows in the automations list as "Once, Tue 3 Nov 2026 at 18:00 (Europe/Berlin)", with its next run, until it
+  runs.
+- At that time it opens an order for the Navi once. The Navi's message lands in the chat, so it reaches
+  [Telegram](/docs/navi#telegram) and your phone's notifications like any reply.
+- Then it is **Done**: it stays in the list with its run, and runs again only with a new time (**Edit**) or Run now.
+  When a project's 50 automations are full, the oldest done one makes room for a new one.
+- Delete it to cancel it before it runs. Paused, it doesn't run; resuming it after its time is refused until it has
+  a new time.
+- A time that has already passed is refused. Given with `Z` or an offset, it is kept as the zone's own clock time.
+- If the hub was down at that time, it runs once when the hub comes back, and its order tells the Navi how late it
+  is, so the reminder says it comes late.
+
+From the lead's tools, `automation_create` takes `schedule: { "at": "2026-11-03T18:00" }`, with `tz` only for another
+zone than the person's. From an MCP client, `automation_create` takes `{ "at": …, "tz": … }`.
 
 ## One run at a time
 

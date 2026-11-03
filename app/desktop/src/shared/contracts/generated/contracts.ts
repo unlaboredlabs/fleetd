@@ -464,9 +464,11 @@ export type Automation = {
   createdAt: Timestamp;
   /** Who made it: a keyId, "human" or "lead:<machineId>/<projectId>". */
   createdBy: string;
+  /** A one-time schedule that has run: when. It starts nothing more by itself; Run now still runs it. */
+  doneAt?: Timestamp;
   lastRun?: AutomationRun;
   name: string;
-  /** The schedule's next run; absent while paused or without a schedule. */
+  /** The schedule's next run; absent while paused, without a schedule, or once a one-time schedule has run. */
   nextRunAt?: Timestamp;
   /** A paused automation's schedule and webhook start nothing; Run now still runs it. */
   paused: boolean;
@@ -591,9 +593,18 @@ export type AutomationRunsOutput = {
   truncated?: boolean;
 };
 
-/** Standard 5-field cron (or @daily, @hourly…) read in `tz`; the hub parses it. */
+/**
+ * When it runs by itself, read in `tz`: `cron` again and again, or `at` once (a reminder, a follow-up). Exactly one of
+ * the two; the hub parses them.
+ */
 export type AutomationSchedule = {
-  cron: string;
+  /**
+   * One time: a date and time on `tz`'s wall clock, such as 2026-11-03T18:00. One with Z or an offset names that
+   * instant, and the hub keeps it as `tz`'s wall clock. It runs once, then the automation is done (`doneAt`).
+   */
+  at?: string;
+  /** Standard 5-field cron (or @daily, @hourly…). */
+  cron?: string;
   tz: TimeZone;
 };
 
@@ -1285,6 +1296,11 @@ export type ChatSendInput = {
   /** Skills the person named with `$name`: the lead's message lists them, so it uses them. */
   skills?: SkillName[];
   text: string;
+  /**
+   * A human key: the IANA time zone of the device it is written on. The hub keeps it as the person's zone, and the
+   * lead reads each of their messages with the time there; one the hub doesn't know is left out, never refused.
+   */
+  tz?: string;
 };
 
 export type ChatSendOutput = {

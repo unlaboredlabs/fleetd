@@ -1587,3 +1587,294 @@ async fn a_webhook_call_in_the_gap_joins_the_kept_calls_oldest_first() {
     );
     assert_eq!(orders(&h).len(), 2);
 }
+
+// ---- one-time schedules (D288) -------------------------------------------------------------------
+
+fn once(at: &str, tz: &str) -> AutomationSchedule {
+    serde_json::from_value(json!({ "at": at, "tz": tz })).unwrap()
+}
+
+/// The hub's owner, whose app last sent `tz` with a chat message.
+fn person_in(h: &auto_start_tests::Hub, tz: &str) {
+    h.area
+        .ctx
+        .db
+        .with(|c| crate::hub::people::ensure_owner_on(c, "Ada", 0).map(|_| ()))
+        .unwrap();
+    crate::hub::people::zone::set(
+        &h.area.ctx.db,
+        None,
+        &fleetd_contracts::wakes::TimeZone::unchecked(tz),
+    )
+    .unwrap();
+}
+
+/// "Remind me at 18:00": the Navi gives the time and no zone, the person's zone is used, it runs once at 18:00 there
+/// with its order saying so, is listed until then and done after, and never runs again.
+#[tokio::test(flavor = "current_thread")]
+async fn a_one_time_schedule_runs_once_at_its_time_in_the_persons_zone_and_is_done() {
+    let h = lead_hub(true);
+    make_navi(&h);
+    person_in(&h, "America/New_York");
+    let autos = over(&h);
+    let me = lead(&h.project);
+    let LeadCallResult::AutomationCreate(made) = call(
+        &autos,
+        &me,
+        "automation_create",
+        json!({ "name": "Call mom", "prompt": "Remind them to call mom.",
+                "schedule": { "at": "2026-10-17T18:00" } }),
+    )
+    .await
+    .unwrap() else {
+        panic!("not a create result")
+    };
+    let a = made.automation;
+    let s = a.schedule.clone().unwrap();
+    assert_eq!(
+        (s.at.as_ref().map(|t| t.as_str()), s.tz.as_str(), s.cron),
+        (Some("2026-10-17T18:00"), "America/New_York", None)
+    );
+    // 18:00 in New York is 22:00 UTC in October (EDT).
+    assert_eq!(
+        a.next_run_at.as_ref().unwrap().as_str(),
+        "2026-10-17T22:00:00.000Z"
+    );
+    assert!(a.done_at.is_none());
+    assert!(
+        made.next
+            .as_deref()
+            .unwrap()
+            .contains("It runs once, at 2026-10-17T18:00 America/New_York"),
+        "{:?}",
+        made.next
+    );
+    let id = a.automation_id.to_string();
+    autos.start();
+    settle().await;
+
+    // Listed until it runs, a minute before too.
+    h.clock.advance(Duration::from_secs(12 * 60 * MIN - MIN));
+    settle().await;
+    assert!(autos.runs(&id, 10).unwrap().is_empty());
+    let listed = autos.list(&h.project).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert!(listed[0].next_run_at.is_some());
+
+    h.clock.advance(Duration::from_secs(MIN));
+    settle().await;
+    let runs = autos.runs(&id, 10).unwrap();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].trigger, AutomationTrigger::Schedule);
+    assert!(runs[0].late_min.is_none());
+    let order = h
+        .area
+        .workstreams
+        .get(runs[0].workstream_id.as_ref().unwrap())
+        .unwrap()
+        .unwrap();
+    let text = order.source.text.as_str();
+    assert!(
+        text.contains(
+            "its one-time schedule, due 2026-10-17 18:00 America/New_York; it runs only this once"
+        ) && text.contains("Remind them to call mom."),
+        "{text}"
+    );
+    let done = autos.get(&id).unwrap().unwrap();
+    assert!(done.next_run_at.is_none());
+    assert_eq!(
+        done.done_at.as_ref().unwrap().as_str(),
+        "2026-10-17T22:00:00.000Z"
+    );
+
+    // Done: a day on, nothing more; it stays listed with its run, and can still be renamed.
+    h.clock.advance(Duration::from_secs(24 * 60 * MIN));
+    settle().await;
+    assert_eq!(autos.runs(&id, 10).unwrap().len(), 1);
+    let (renamed, _) = autos
+        .update(
+            &id,
+            Edit {
+                name: Some(Line::unchecked("Called mom")),
+                ..Edit::default()
+            },
+            "human",
+        )
+        .unwrap();
+    assert!(renamed.done_at.is_some() && renamed.next_run_at.is_none());
+    autos.stop();
+}
+
+/// Cancelled before its time, it never runs: deleted, or paused (and resuming after its time is refused until it has a
+/// new one).
+#[tokio::test(flavor = "current_thread")]
+async fn a_one_time_schedule_cancelled_before_its_time_never_runs() {
+    let h = lead_hub(true);
+    let autos = over(&h);
+    let me = lead(&h.project);
+    let (gone, _) = autos
+        .create(new(
+            &h.project,
+            Some(once("2026-10-17T11:00", "UTC")),
+            false,
+        ))
+        .unwrap();
+    let (held, _) = autos
+        .create(new(
+            &h.project,
+            Some(once("2026-10-17T11:00", "UTC")),
+            false,
+        ))
+        .unwrap();
+    autos.start();
+    settle().await;
+    let LeadCallResult::AutomationDelete(_) = call(
+        &autos,
+        &me,
+        "automation_delete",
+        json!({ "automationId": gone.automation_id }),
+    )
+    .await
+    .unwrap() else {
+        panic!("not a delete result")
+    };
+    autos
+        .pause(held.automation_id.as_str(), true, "human")
+        .unwrap();
+    h.clock.advance(Duration::from_secs(120 * MIN));
+    settle().await;
+    assert!(autos.get(gone.automation_id.as_str()).unwrap().is_none());
+    assert!(
+        autos
+            .runs(held.automation_id.as_str(), 10)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(orders(&h).is_empty(), "no order opened");
+    let e = autos
+        .pause(held.automation_id.as_str(), false, "human")
+        .unwrap_err();
+    assert!(e.message.contains("has passed"), "{}", e.message);
+    autos.stop();
+}
+
+/// Missed while the hub was down, it runs once on the hub's return, and its order says how late, for the Navi to say.
+#[tokio::test(flavor = "current_thread")]
+async fn a_one_time_run_missed_while_the_hub_was_down_runs_once_late_and_says_so() {
+    let h = lead_hub(true);
+    let before = over(&h);
+    let (a, _) = before
+        .create(new(
+            &h.project,
+            Some(once("2026-10-17T11:00", "UTC")),
+            false,
+        ))
+        .unwrap();
+    // Down from 10:00 to 13:20.
+    h.clock.advance(Duration::from_secs(200 * MIN));
+    let autos = over(&h);
+    autos.start();
+    settle().await;
+    let runs = autos.runs(a.automation_id.as_str(), 10).unwrap();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].late_min.as_ref().map(|n| n.get()), Some(140));
+    let order = h
+        .area
+        .workstreams
+        .get(runs[0].workstream_id.as_ref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert!(
+        order
+            .source
+            .text
+            .as_str()
+            .contains("The hub was down then, so this is 140 min late: say that it comes late"),
+        "{}",
+        order.source.text.as_str()
+    );
+    let after = autos.get(a.automation_id.as_str()).unwrap().unwrap();
+    assert!(after.next_run_at.is_none() && after.done_at.is_some());
+    h.clock.advance(Duration::from_secs(24 * 60 * MIN));
+    settle().await;
+    assert_eq!(autos.runs(a.automation_id.as_str(), 10).unwrap().len(), 1);
+    autos.stop();
+}
+
+#[test]
+fn a_one_time_schedule_is_kept_on_its_zones_clock_and_one_past_or_ambiguous_is_refused() {
+    let h = lead_hub(true);
+    let autos = over(&h);
+    // 17:30 UTC is 19:30 in Berlin (CEST).
+    let (a, _) = autos
+        .create(new(
+            &h.project,
+            Some(once("2026-10-17T17:30:00Z", "Europe/Berlin")),
+            false,
+        ))
+        .unwrap();
+    assert_eq!(a.schedule.unwrap().at.unwrap().as_str(), "2026-10-17T19:30");
+    assert_eq!(a.next_run_at.unwrap().as_str(), "2026-10-17T17:30:00.000Z");
+    let both: AutomationSchedule = serde_json::from_value(
+        json!({ "cron": "0 9 * * *", "at": "2026-10-18T09:00", "tz": "UTC" }),
+    )
+    .unwrap();
+    let neither: AutomationSchedule = serde_json::from_value(json!({ "tz": "UTC" })).unwrap();
+    for s in [
+        once("2026-10-17T09:59", "UTC"),
+        once("2026-02-30T09:00", "UTC"),
+        both,
+        neither,
+    ] {
+        let e = autos.create(new(&h.project, Some(s), false)).unwrap_err();
+        assert_eq!(e.code, ErrorCode::Invalid, "{}", e.message);
+        assert!(e.fix.is_some());
+    }
+    let e = autos
+        .create(new(
+            &h.project,
+            Some(once("2026-10-17T09:00", "UTC")),
+            false,
+        ))
+        .unwrap_err();
+    assert!(
+        e.message
+            .contains("has passed: it is 2026-10-17 10:00 UTC there now"),
+        "{}",
+        e.message
+    );
+}
+
+/// A project whose 50 are full makes room with its oldest one-time automation that has run.
+#[tokio::test(flavor = "current_thread")]
+async fn a_full_project_makes_room_with_its_oldest_done_reminder() {
+    let h = lead_hub(true);
+    let autos = over(&h);
+    let (first, _) = autos
+        .create(new(
+            &h.project,
+            Some(once("2026-10-17T10:01", "UTC")),
+            false,
+        ))
+        .unwrap();
+    autos.start();
+    settle().await;
+    h.clock.advance(Duration::from_secs(MIN));
+    settle().await;
+    assert!(
+        autos
+            .get(first.automation_id.as_str())
+            .unwrap()
+            .unwrap()
+            .done_at
+            .is_some()
+    );
+    for _ in 1..AUTOMATIONS_PER_PROJECT {
+        autos.create(new(&h.project, None, false)).unwrap();
+    }
+    autos.create(new(&h.project, None, false)).unwrap();
+    assert!(autos.get(first.automation_id.as_str()).unwrap().is_none());
+    let e = autos.create(new(&h.project, None, false)).unwrap_err();
+    assert!(e.message.contains("the most it keeps"), "{}", e.message);
+    autos.stop();
+}

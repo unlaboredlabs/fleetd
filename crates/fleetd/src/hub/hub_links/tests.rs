@@ -1041,7 +1041,7 @@ async fn a_message_through_a_link_is_never_the_persons_answer_approval_or_secret
         "the question still waits on the person"
     );
     let set = l.acme.db.prompts().current(Some(&shop));
-    let for_lead = crate::hub::chat::flow::for_lead(&set, said, None, "", "The human");
+    let for_lead = crate::hub::chat::flow::for_lead(&set, said, None, "", "The human", "");
     assert!(for_lead.contains("Alex via home Navi"), "{for_lead}");
 
     // The key opens /link/v1 and nothing else: no tool, no approval, no chat read.

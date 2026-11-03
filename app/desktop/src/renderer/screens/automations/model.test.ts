@@ -5,6 +5,7 @@ import {
   draftOf,
   emptyDraft,
   hasProblems,
+  onceLine,
   orderHref,
   problems,
   refreshChanges,
@@ -107,5 +108,33 @@ describe("the nightly memory refresh's row", () => {
     // Off: no next run.
     const { nextRunAt: _, ...off } = { ...job, on: false };
     expect(refreshRuns({ ...off, lastRun: run })).toBe(`Last run ${when(run.at)}: done, 1 added, 2 updated, 1 removed`);
+  });
+});
+
+describe("a one-time automation (a reminder)", () => {
+  const reminder: Automation = {
+    ...nightly,
+    automationId: "au_r3m1nd3rXyz",
+    name: "Call mom",
+    schedule: { at: "2026-11-03T18:00", tz: "Europe/Berlin" },
+    nextRunAt: "2026-11-03T17:00:00.000Z",
+  };
+
+  it("says when it runs, once, on its zone's clock", () => {
+    expect(onceLine("2026-11-03T18:00", "Europe/Berlin")).toBe("Once, Tue 3 Nov 2026 at 18:00 (Europe/Berlin)");
+    expect(triggersLine(reminder)).toBe("Once, Tue 3 Nov 2026 at 18:00 (Europe/Berlin)");
+    expect(triggersLine({ ...reminder, webhook: true })).toBe("Once, Tue 3 Nov 2026 at 18:00 (Europe/Berlin) · Webhook");
+  });
+
+  it("edits its time, not a cron, and sends a new one only when it changed", () => {
+    const d = draftOf(reminder, "UTC");
+    expect(d.at).toBe("2026-11-03T18:00");
+    expect(problems(d)).toEqual({});
+    expect(updateInput(reminder, d)).toBeNull();
+    expect(updateInput(reminder, { ...d, at: "2026-11-04T09:30" })).toEqual({
+      automationId: reminder.automationId,
+      schedule: { at: "2026-11-04T09:30", tz: "Europe/Berlin" },
+    });
+    expect(problems({ ...d, at: "tomorrow" }).cron).toBe("Give a date and time.");
   });
 });

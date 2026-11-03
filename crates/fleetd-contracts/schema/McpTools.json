@@ -1013,6 +1013,10 @@
           "description": "Who made it: a keyId, \"human\" or \"lead:<machineId>/<projectId>\".",
           "type": "string"
         },
+        "doneAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "A one-time schedule that has run: when. It starts nothing more by itself; Run now still runs it."
+        },
         "lastRun": {
           "$ref": "#/$defs/AutomationRun"
         },
@@ -1024,7 +1028,7 @@
         },
         "nextRunAt": {
           "$ref": "#/$defs/Timestamp",
-          "description": "The schedule's next run; absent while paused or without a schedule."
+          "description": "The schedule's next run; absent while paused, without a schedule, or once a one-time schedule has run."
         },
         "paused": {
           "description": "A paused automation's schedule and webhook start nothing; Run now still runs it.",
@@ -1422,9 +1426,17 @@
       "type": "object"
     },
     "AutomationSchedule": {
-      "description": "Standard 5-field cron (or @daily, @hourly…) read in `tz`; the hub parses it.",
+      "description": "When it runs by itself, read in `tz`: `cron` again and again, or `at` once (a reminder, a follow-up). Exactly one of\nthe two; the hub parses them.",
       "properties": {
+        "at": {
+          "description": "One time: a date and time on `tz`'s wall clock, such as 2026-11-03T18:00. One with Z or an offset names that\ninstant, and the hub keeps it as `tz`'s wall clock. It runs once, then the automation is done (`doneAt`).",
+          "maxLength": 40,
+          "minLength": 16,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
         "cron": {
+          "description": "Standard 5-field cron (or @daily, @hourly…).",
           "maxLength": 100,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -1435,7 +1447,6 @@
         }
       },
       "required": [
-        "cron",
         "tz"
       ],
       "type": "object"
@@ -3223,6 +3234,13 @@
         "text": {
           "maxLength": 100000,
           "minLength": 1,
+          "type": "string"
+        },
+        "tz": {
+          "description": "A human key: the IANA time zone of the device it is written on. The hub keeps it as the person's zone, and the\nlead reads each of their messages with the time there; one the hub doesn't know is left out, never refused.",
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
           "type": "string"
         }
       },

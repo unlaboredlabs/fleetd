@@ -3,6 +3,7 @@
 //! hub's human keys all bind to it, so a one-person hub reads exactly as before. Invites are pairing codes bound to a
 //! person (hub/pair); the app's tools are in tools.rs.
 pub mod tools;
+pub mod zone;
 
 #[cfg(test)]
 mod tests;
