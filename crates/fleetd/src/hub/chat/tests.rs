@@ -910,6 +910,50 @@ async fn a_message_never_goes_missing_on_its_way_to_the_lead() {
     assert_eq!(hub.chat.page(&r, None, None, 10).unwrap().0.len(), 1);
 }
 
+/// A photo sent with no words is a message, as in Messages; no words and no files is refused.
+#[tokio::test]
+async fn a_photo_goes_with_no_words() {
+    use base64::Engine;
+    let (hub, _home) = hub();
+    let tools = crate::hub::api::registry();
+    let put = tools
+        .call(
+            &hub,
+            &person(),
+            "attachment_put",
+            json!({ "name": "shot.png", "mime": "image/png",
+            "dataB64": base64::engine::general_purpose::STANDARD.encode(b"png") }),
+        )
+        .await
+        .unwrap();
+    let file = put["attachmentId"].as_str().unwrap().to_owned();
+    let to = json!({ "machineId": "devbox", "projectId": "app" });
+    let sent = tools
+        .call(
+            &hub,
+            &person(),
+            "chat_send",
+            json!({ "projectRef": to, "text": "", "attachments": [file], "clientRequestId": "c1" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(sent["message"]["text"], "");
+    assert_eq!(sent["message"]["attachments"][0]["name"], "shot.png");
+    for nothing in [
+        json!({ "projectRef": to, "text": "", "clientRequestId": "c2" }),
+        json!({ "projectRef": to, "text": "", "attachments": [], "clientRequestId": "c3" }),
+    ] {
+        let refused = tools
+            .call(&hub, &person(), "chat_send", nothing)
+            .await
+            .unwrap_err();
+        let crate::hub::api::CallError::Invalid(why) = refused else {
+            panic!("not refused as invalid")
+        };
+        assert!(why.contains("text is empty"), "{why}");
+    }
+}
+
 /// A chat message's files become the project's when it is stored: kept past the unused-upload cleanup, and readable
 /// by another person of the project, not only the uploader.
 #[tokio::test]

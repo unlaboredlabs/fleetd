@@ -1301,6 +1301,7 @@ export type ChatSendInput = {
   session?: ThreadId;
   /** Skills the person named with `$name`: the lead's message lists them, so it uses them. */
   skills?: SkillName[];
+  /** Empty only with attachments: a photo sent with no words. */
   text: string;
   /**
    * A human key: the IANA time zone of the device it is written on. The hub keeps it as the person's zone, and the

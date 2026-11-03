@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyDelta, applyHistory, chatItems, emptyChat, type Chat, type ChatItem, type ChatMessage } from "./desktop";
-import { attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, listTime, previewOf, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, timeLine, type ThreadRow } from "./chatView";
+import { attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, streamingAt, threadRows, timeLine, viewOffsetOf, type ThreadRow } from "./chatView";
 
 const message = (text: string, parts?: ChatMessage["parts"]): ChatMessage => ({
   messageId: "m1",
@@ -252,5 +252,102 @@ describe("sameRow", () => {
     const [day2, one2] = rowsOf(next);
     expect(sameRow(day as ThreadRow, day2 as ThreadRow)).toBe(true);
     expect(sameRow(one as ThreadRow, one2 as ThreadRow)).toBe(false);
+  });
+});
+
+describe("outgoing", () => {
+  const reply = { id: "m7", part: 1, quote: "Deploy it now?" };
+
+  it("trims the words, and sends nothing with no words and no files", () => {
+    expect(outgoing("  ship it \n", 0, undefined)).toEqual({ text: "ship it", replyTo: undefined });
+    expect(outgoing(" \n ", 0, undefined)).toBeNull();
+  });
+
+  it("sends a photo with no words", () => {
+    expect(outgoing("  ", 1, undefined)).toEqual({ text: "", replyTo: undefined });
+  });
+
+  it("quotes the bubble a reply answers, and names it", () => {
+    expect(outgoing(" yes ", 0, reply)).toEqual({ text: "> Deploy it now?\n\nyes", replyTo: { messageId: "m7", part: 1 } });
+    expect(outgoing("", 1, reply)).toEqual({ text: "> Deploy it now?", replyTo: { messageId: "m7", part: 1 } });
+  });
+
+  it("a quick answer or starter passes no reply, so the banner never turns it into one", () => {
+    // Chat.tsx sends an ask's button and a starter with no reply, whatever the composer quotes.
+    expect(outgoing("Approve", 0, undefined)).toEqual({ text: "Approve", replyTo: undefined });
+  });
+});
+
+describe("viewOffsetOf", () => {
+  // VirtualizedList: offset = max(0, cell − viewPosition·(visible − length)) − viewOffset.
+  const offsetOf = (cell: number, length: number, visible: number, viewPosition: number, viewOffset: number) => Math.max(0, cell - viewPosition * (visible - length)) - viewOffset;
+  const visible = 800;
+  const top = 116;
+  const composer = 90;
+
+  it("puts the unread bar just under the bar over the thread, not above the screen", () => {
+    const cell = 2000;
+    const length = 30;
+    const offset = offsetOf(cell, length, visible, 1, viewOffsetOf(1, top, composer));
+    // The bar's oldest edge, from the bottom of the screen: the visible length less the bar over the thread.
+    expect(cell + length - offset).toBe(visible - top);
+  });
+
+  it("clears the composer at the newest end, and centres between the two", () => {
+    expect(2000 - offsetOf(2000, 40, visible, 0, viewOffsetOf(0, top, composer))).toBe(composer);
+    const offset = offsetOf(2000, 40, visible, 0.5, viewOffsetOf(0.5, top, composer));
+    const middle = 2000 + 20 - offset;
+    expect(middle).toBe((visible - top + composer) / 2);
+  });
+});
+
+describe("seenSeq", () => {
+  it("is the newest message on screen", () => {
+    const rows: ThreadRow[] = [
+      { t: "day", id: "d", at: "2026-10-28T10:00:00Z" },
+      { t: "item", id: "a", item: item("a", "lead", "2026-10-28T10:00:00Z", { message: { ...message("a"), seq: 7 } }), side: "them", first: true, last: true },
+      { t: "item", id: "b", item: item("b", "human", "2026-10-28T10:01:00Z", { message: { ...message("b"), seq: 9 } }), side: "me", first: true, last: true },
+      { t: "item", id: "c", item: item("c", "human", "2026-10-28T10:02:00Z"), side: "me", first: true, last: true },
+      { t: "unread", id: "unread" },
+    ];
+    expect(seenSeq(rows)).toBe(9);
+    expect(seenSeq([{ t: "unread", id: "unread" }])).toBeUndefined();
+  });
+});
+
+describe("streamingAt", () => {
+  const row = (id: string, state: ChatMessage["state"]): ThreadRow => ({ t: "item", id, item: item(id, "lead", "2026-10-28T10:00:00Z", { message: { ...message(id), state } }), side: "them", first: true, last: true });
+
+  it("finds the reply streaming in at the newest end, under the turn line", () => {
+    expect(streamingAt([{ t: "turn", id: "turn" }, row("a", "streaming"), row("b", "final")])).toBe(1);
+    expect(streamingAt([row("a", "streaming")])).toBe(0);
+  });
+
+  it("is none once it's final, or when something came after it", () => {
+    expect(streamingAt([{ t: "turn", id: "turn" }, row("a", "final")])).toBeUndefined();
+    expect(streamingAt([row("b", "final"), row("a", "streaming")])).toBeUndefined();
+    expect(streamingAt([])).toBeUndefined();
+  });
+});
+
+describe("threadRows' day lines, kept per message", () => {
+  it("still splits days by the clock's zone, asked again in another", () => {
+    const items = [item("a", "lead", "2026-10-28T22:30:00Z"), item("b", "lead", "2026-10-29T01:30:00Z")];
+    const days = (timeZone: string) => threadRows(items, false, undefined, { timeZone }).filter((r) => r.t === "day").length;
+    expect(days("UTC")).toBe(2);
+    expect(days("America/New_York")).toBe(1);
+    expect(days("UTC")).toBe(2);
+  });
+});
+
+describe("olderOffset", () => {
+  it("goes most of a screen older from a chat opened at its newest end, before any scroll", () => {
+    // Its content's length from onContentSizeChange, its offset still the 0 it opened at.
+    expect(olderOffset(0, 5000, 600, 800)).toBe(510);
+  });
+
+  it("stops at the oldest end, and stays put in a thread shorter than the screen", () => {
+    expect(olderOffset(4000, 5000, 600, 800)).toBe(4200);
+    expect(olderOffset(0, 500, 600, 800)).toBe(0);
   });
 });
