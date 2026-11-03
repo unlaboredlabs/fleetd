@@ -17,7 +17,7 @@ import { Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Tex
 import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import { filterChoices, filterLabel, meAvatar, type FilterChoice, type LinkTone } from "../chatsBar";
 import { listTime } from "../chatView";
-import { useHub, type RootParams } from "../hubContext";
+import { useHub, type ChatsParams, type RootParams } from "../hubContext";
 import { chatList, rowLine, type ChatRow, type Filter } from "../lists";
 import { pinnedSplit } from "../pinnedGrid";
 import { MAX_PINNED, pinsOf, togglePin } from "../prefs";
@@ -76,7 +76,7 @@ const useArrived = (keys: readonly string[]): ReadonlySet<string> => {
   }, [joined]);
 };
 
-export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined }, "Chats">) {
+export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams, "Chats">) {
   const t = useTheme();
   const reduce = useReduceMotion();
   const { state, session, paired } = useHub();
@@ -84,6 +84,11 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
   const root = useNavigation<NavigationProp<RootParams>>();
   const [typed, setTyped] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  // A link's filter (Open Approvals: Needs You), each time it's opened.
+  const asked = route.params;
+  useEffect(() => {
+    if (asked?.filter !== undefined) setFilter(asked.filter);
+  }, [asked?.filter, asked?.at]);
   const refreshing = useRefreshing(state.projects, state.hub.phase);
   const query = queryOf(typed);
   // The list's stack holds the open row (App.tsx ChatsHome), so a touch on its bars closes it too. Leaving the list

@@ -29,6 +29,39 @@ struct Pairing: Equatable {
   }
 }
 
+/// The pairing as the keychain gives it: there, not there, or there and closed while the phone is locked.
+enum Stored {
+  case found(Data)
+  case missing
+  case locked
+}
+
+/// The link to the hub as its senders use it (HubLink; a fake in tests): sign in for the chats, call tools, and follow
+/// the events after the snapshot.
+@MainActor
+protocol HubCalls: AnyObject {
+  func open() async throws -> [ChatTarget]
+  func call(_ tool: String, _ input: [String: Any]) async throws -> [String: Any]
+  func subscribe() async throws
+  /// The next event before `until`; nil once that time is up.
+  func event(until: Date) async throws -> (type: String, data: [String: Any])?
+  func close()
+}
+
+extension HubCalls {
+  /// chat_send as `client`; a hub from before it knew that sender takes it again as from the app (the same request id
+  /// keeps it one message).
+  func chatSend(_ input: [String: Any], client: Client) async throws -> [String: Any] {
+    do {
+      return try await call("chat_send", input)
+    } catch let problem as Problem where Calls.olderHub(problem, client: client) {
+      var plain = input
+      plain.removeValue(forKey: "client")
+      return try await call("chat_send", plain)
+    }
+  }
+}
+
 /// Why the sheet can't send, in the phone's words, with what to do.
 struct Problem: Equatable, Error {
   let title: String

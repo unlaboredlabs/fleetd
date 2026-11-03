@@ -6,7 +6,7 @@ import Foundation
 import Security
 
 @MainActor
-final class HubLink {
+final class HubLink: HubCalls {
   private let pairing: Pairing
   private let task: URLSessionWebSocketTask
   private var calls = 0
@@ -69,18 +69,6 @@ final class HubLink {
     } catch {
       close()
       throw Problem.dropped(pairing)
-    }
-  }
-
-  /// chat_send as `client`; a hub from before it knew that sender takes it again as from the app (the same request id
-  /// keeps it one message).
-  func chatSend(_ input: [String: Any], client: Client) async throws -> [String: Any] {
-    do {
-      return try await call("chat_send", input)
-    } catch let problem as Problem where Calls.olderHub(problem, client: client) {
-      var plain = input
-      plain.removeValue(forKey: "client")
-      return try await call("chat_send", plain)
     }
   }
 
@@ -155,13 +143,7 @@ final class HubLink {
 /// "app:no-auth" (or "app", from older versions), account "fleetd.hub". Read only, never copied. It opens only while
 /// the phone is unlocked (secure storage's default), so a locked phone reads as locked rather than unpaired.
 enum Keychain {
-  enum Read {
-    case found(Data)
-    case missing
-    case locked
-  }
-
-  static func read() -> Read {
+  static func read() -> Stored {
     var locked = false
     for service in ["app:no-auth", "app"] {
       let query: [String: Any] = [
