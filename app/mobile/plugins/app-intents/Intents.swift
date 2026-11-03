@@ -48,7 +48,7 @@ enum Kept {
     set {
       let changed = newValue.map(\.id) != chats.map(\.id) || newValue.map(\.title) != chats.map(\.title)
       UserDefaults.standard.set(Chats.encode(newValue), forKey: chatsKey)
-      // The chats' own App Shortcuts ("Open Inbox in fleetd") follow the list.
+      // The chats' own App Shortcuts ("Open Errands in fleetd") follow the list.
       if changed, #available(iOS 18.0, *) { FleetdShortcuts.updateAppShortcutParameters() }
     }
   }
@@ -445,7 +445,7 @@ struct ChatsFocusFilter: SetFocusFilterIntent {
 // MARK: App Shortcuts
 
 /// The actions as App Shortcuts: in Spotlight, Siri, the Shortcuts app and the Action Button's list with no setup, and
-/// Open Chat once per chat ("Open Inbox in fleetd").
+/// Open Chat once per chat ("Open Errands in fleetd").
 @available(iOS 18.0, *)
 struct FleetdShortcuts: AppShortcutsProvider {
   static var appShortcuts: [AppShortcut] {
