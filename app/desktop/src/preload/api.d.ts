@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { ChatScope, ClaudeAccountRequest, ErrorReport, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, TelegramRequest } from "../shared/ipc";
+import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, TelegramRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
@@ -77,6 +77,14 @@ export interface FleetdApi {
    * as `{ ok: false, message }` saying why; it never rejects.
    */
   openExternal(url: string): Promise<OpenOutcome>;
+  /**
+   * A chat's file on this computer: main reads it from the hub, keeps it under a name of its type, and opens it in the
+   * app for that type, or saves it where the person picks (a cancelled save is ok too). Never rejects.
+   */
+  readonly files: {
+    open(hub: HubId, request: FileRequest): Promise<OpenOutcome>;
+    save(hub: HubId, request: FileRequest): Promise<OpenOutcome>;
+  };
   /** The hubs this app is paired with, in sidebar order; never empty. */
   readonly hubs: {
     /** The hubs as main had them when it made this window, so the page renders without waiting; `list()` is current. */

@@ -1,20 +1,20 @@
 // What a message carries besides words: a picture, shown as itself with rounded corners as Messages does, which opens
-// full screen to pinch, zoom and share; and any other file, as a card with its name and size that opens the share
-// sheet (Save to Files, another app). Each is read from the hub once (attachment_get) as its bubble shows.
+// full screen to pinch, zoom and share; and any other file, as a card with its kind, name and size that opens the
+// share sheet (Save to Files, another app). Each is read from the hub once (attachment_get) as its bubble shows.
 import { File, Paths } from "expo-file-system";
 import { useEffect, useState } from "react";
-import { Image, Modal, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { bubble, bubbleMax, photoSize } from "../bubble";
 import { fileSize } from "../chatView";
-import type { AttachmentGetOutput } from "../desktop";
+import { glyphOf, kindOf, type AttachmentGetOutput, type FileGlyph } from "../desktop";
 import { useSession } from "../hubContext";
 import type { Key } from "../store";
-import { space, type, useTheme } from "../theme";
+import { space, type, useTheme, type Palette } from "../theme";
 import { Glass } from "./Glass";
 import { haptics } from "./haptics";
 import { Tail, TAIL_REACH } from "./Bubble";
-import { Icon } from "./Icon";
+import { Icon, type IconName } from "./Icon";
 import { SkeletonBlock } from "./Skeleton";
 
 /** A message's file, read from the hub; undefined while it comes, null when it couldn't be. */
@@ -99,39 +99,62 @@ export function ImageBubble({
   );
 }
 
-/** Any other file: its kind, name and size; tapping shares it (Save to Files, Quick Look in another app). */
+/** Each kind's glyph, and the system color its tile takes: red for a PDF, green for a sheet, as Files tints them. */
+const GLYPHS: Readonly<Record<FileGlyph, { readonly icon: IconName; readonly tint: (t: Palette) => string }>> = {
+  pdf: { icon: "pdf", tint: (t) => t.danger },
+  doc: { icon: "fileDoc", tint: (t) => t.blue },
+  sheet: { icon: "fileSheet", tint: (t) => t.success },
+  slides: { icon: "fileSlides", tint: (t) => t.orange },
+  zip: { icon: "fileZip", tint: (t) => t.indigo },
+  text: { icon: "fileText", tint: (t) => t.muted },
+  image: { icon: "fileImage", tint: (t) => t.blue },
+  file: { icon: "file", tint: (t) => t.muted },
+};
+
+/**
+ * Any other file: its kind's glyph on a tile of its color, its name, and its kind and size. Tapping opens the share
+ * sheet with the file as itself, its preview on top: Save to Files, or open it in Numbers, Pages or another app.
+ */
 export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine, tail = false }: { chatKey: Key; attachmentId: string; name: string; mime: string; bytes: number; mine: boolean; tail?: boolean }) {
   const t = useTheme();
   const got = useAttachment(chatKey, attachmentId);
   const screen = useWindowDimensions();
   const ink = mine ? t.onAccent : t.label;
   const fill = mine ? t.accentFill : t.bubble;
+  const glyph = GLYPHS[glyphOf(mime)];
+  const meta = got === null ? "Couldn't be read" : bytes > 0 ? `${kindOf(mime)} · ${fileSize(bytes)}` : kindOf(mime);
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`File, ${name}, ${fileSize(bytes)}`}
-      accessibilityHint="Shares or saves it"
+      accessibilityLabel={`${kindOf(mime)}, ${name}${bytes > 0 ? `, ${fileSize(bytes)}` : ""}`}
+      accessibilityHint="Opens the share sheet to save it or open it in another app"
       disabled={got === undefined || got === null}
       onPress={() => {
         if (got === undefined || got === null) return;
         haptics.tap();
         void shareFile(got).catch(() => undefined);
       }}
-      style={({ pressed }) => [styles.file, { backgroundColor: fill, maxWidth: bubbleMax(screen.width) }, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.file, { backgroundColor: fill, width: Math.min(bubbleMax(screen.width), FILE_WIDTH) }, pressed && styles.pressed]}
     >
       {tail ? <Tail side={mine ? "me" : "them"} fill={fill} /> : null}
-      <View style={[styles.fileIcon, { backgroundColor: mine ? "rgba(255,255,255,0.22)" : t.accentFill }]}>
-        <Icon name={mime === "application/pdf" ? "pdf" : "file"} size={18} color="#FFFFFF" />
+      <View style={[styles.fileIcon, { backgroundColor: mine ? "rgba(255,255,255,0.22)" : glyph.tint(t) }]}>
+        <Icon name={glyph.icon} size={20} color="#FFFFFF" />
       </View>
       <View style={styles.fileText}>
-        <Text style={[type.subhead, styles.strong, { color: ink }]} numberOfLines={1}>
+        <Text style={[type.subhead, styles.strong, { color: ink }]} numberOfLines={1} ellipsizeMode="middle">
           {name}
         </Text>
-        <Text style={[type.caption, { color: ink, opacity: 0.7 }]}>{got === null ? "Couldn't be read" : fileSize(bytes)}</Text>
+        <Text style={[type.caption, { color: ink, opacity: 0.7 }]} numberOfLines={1}>
+          {meta}
+        </Text>
       </View>
+      {got === undefined ? <ActivityIndicator size="small" color={ink} /> : <Icon name="share" size={17} color={mine ? ink : t.accent} weight="medium" />}
     </Pressable>
   );
 }
+
+/** A file card's width: one size for every file, as Messages draws them, within the bubble's widest. */
+const FILE_WIDTH = 288;
 
 /** A picture full screen, on black: pinch or double-tap to zoom, Share and Done over it in glass. */
 export function ImageViewer({ image, onClose }: { image: AttachmentGetOutput | null; onClose: () => void }) {
@@ -191,7 +214,7 @@ const styles = StyleSheet.create({
   missing: { flexDirection: "row", alignItems: "center", gap: space.sm, borderRadius: bubble.radius, borderCurve: "continuous", paddingHorizontal: bubble.padX, paddingVertical: bubble.padY },
   file: { flexDirection: "row", alignItems: "center", gap: space.md, borderRadius: bubble.radius, borderCurve: "continuous", paddingVertical: 10, paddingLeft: 10, paddingRight: bubble.padX },
   fileIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  fileText: { flexShrink: 1, gap: 1 },
+  fileText: { flex: 1, gap: 1 },
   strong: { fontWeight: "600" },
   viewer: { flex: 1, backgroundColor: "#000000" },
   zoom: { flexGrow: 1, alignItems: "center", justifyContent: "center" },

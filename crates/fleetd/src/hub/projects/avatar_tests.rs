@@ -363,7 +363,7 @@ async fn a_reader_cant_set_one_nor_a_key_use_another_keys_upload_nor_a_file_that
         ),
         ErrorCode::NotFound
     );
-    let text = upload(&hub, &desk, b"not a picture at all", "image/png").await;
+    let text = upload(&hub, &desk, b"not a picture at all", "text/plain").await;
     assert_eq!(
         code(
             call(

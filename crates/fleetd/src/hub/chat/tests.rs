@@ -967,7 +967,7 @@ async fn a_messages_attachments_are_the_projects() {
             &person(),
             "attachment_put",
             json!({ "name": "shot.png", "mime": "image/png",
-            "dataB64": base64::engine::general_purpose::STANDARD.encode(b"png") }),
+            "dataB64": base64::engine::general_purpose::STANDARD.encode(b"\x89PNG\r\n\x1a\n png") }),
         )
         .await
         .unwrap();
@@ -993,7 +993,7 @@ async fn a_messages_attachments_are_the_projects() {
         )
         .await
         .unwrap();
-    assert_eq!(got["bytes"], 3);
+    assert_eq!(got["bytes"], 12);
 }
 
 /// A message of 100,000 characters is taken whole; one more is refused before anything is stored.

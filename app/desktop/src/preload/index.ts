@@ -78,6 +78,10 @@ const api: FleetdApi = {
     cancel: () => ipcRenderer.invoke(IPC.githubAppCancel) as Promise<void>,
   },
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url) as Promise<OpenOutcome>,
+  files: {
+    open: (hub, request) => ipcRenderer.invoke(IPC.fileOpen, hub, request) as Promise<OpenOutcome>,
+    save: (hub, request) => ipcRenderer.invoke(IPC.fileSave, hub, request) as Promise<OpenOutcome>,
+  },
   hubs: {
     initial: initialHubs,
     list: () => ipcRenderer.invoke(IPC.hubsList) as Promise<readonly HubEntry[]>,

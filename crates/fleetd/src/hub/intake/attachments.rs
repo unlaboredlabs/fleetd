@@ -1,7 +1,9 @@
 //! Files a person attaches to an order or a note. `attachment_put` stores the bytes under `<home>/attachments/<sha256>`
 //! with a row; placing the order (or sending the note) writes them into the project's `.fleetd/attachments/<W>/` on
-//! its machine and lists them in the lead's wake. Rows never used are deleted after 24 h. A file too large for one
-//! call comes in pieces first (`attachment_part`), appended under `<home>/attachments/uploads/<id>`.
+//! its machine and lists them in the lead's wake, an Office file with its text beside it ([`super::office`]). Rows
+//! never used are deleted after 24 h. A file too large for one call comes in pieces first (`attachment_part`),
+//! appended under `<home>/attachments/uploads/<id>`. Every file's bytes must fit its type
+//! ([`AttachmentMime::fits`]), and its name carries an extension of that type.
 use std::path::PathBuf;
 
 use base64::Engine;
@@ -40,19 +42,8 @@ fn dir(hub: &Hub) -> PathBuf {
     hub.config.home.join("attachments")
 }
 
-fn mime_str(mime: AttachmentMime) -> String {
-    serde_json::to_value(mime)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_default()
-}
-
-fn kind_of(mime: &str) -> &'static str {
-    match mime {
-        m if m.starts_with("image/") => "image",
-        "application/pdf" => "PDF",
-        _ => "text",
-    }
+fn mime_of(mime: &str) -> Option<AttachmentMime> {
+    serde_json::from_value(serde_json::Value::String(mime.to_owned())).ok()
 }
 
 fn size(bytes: i64) -> String {
@@ -299,6 +290,21 @@ pub async fn put(
             bytes
         }
     };
+    if !input.mime.fits(&bytes) {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            format!(
+                "{} isn't {} ({}): its bytes say otherwise.",
+                input.name,
+                input.mime.kind(),
+                input.mime.as_str()
+            ),
+        )
+        .with_fix(
+            "Send images, PDF, text or CSV, Word, Excel or PowerPoint (.docx, .xlsx, .pptx) or zip, with the type its \
+             bytes are.",
+        ));
+    }
     let name = safe_name(&input.name);
     let (attachment_id, len, sha) =
         store(hub, bytes, &name, input.mime, caller.key_id.as_str()).await?;
@@ -312,7 +318,8 @@ pub async fn put(
 }
 
 /// Stores a file's bytes under their sha256 and gives it a row `by` its uploader (a key, or `lead:<project>` for an
-/// agent's image), deleting the unused uploads past their 24 h on the way. Its id, size and sha256.
+/// agent's image or file), its name with an extension of its type, deleting the unused uploads past their 24 h on the
+/// way. Its id, size and sha256.
 pub(crate) async fn store(
     hub: &Hub,
     bytes: Vec<u8>,
@@ -321,6 +328,7 @@ pub(crate) async fn store(
     by: &str,
 ) -> Result<(AttachmentId, usize, String), ToolError> {
     too_big(bytes.len())?;
+    let name = mime.named(name);
     let sha = hex(&Sha256::digest(&bytes));
     let root = dir(hub);
     let path = root.join(&sha);
@@ -361,7 +369,7 @@ pub(crate) async fn store(
         }
         c.execute(
             "INSERT INTO attachments (sha256, name, mime, bytes, by, created_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![sha, name, mime_str(mime), len as i64, by, now],
+            params![sha, name, mime.as_str(), len as i64, by, now],
         )?;
         Ok(c.last_insert_rowid())
     })?;
@@ -642,9 +650,11 @@ pub fn claim_own(
     Ok(ours)
 }
 
-/// A final lead message's parts, each `image` or `clip` block checked against project `r`: one whose attachment is
-/// the project's (a file a person gave it, or an image its lead or tasks made with `chat_image`) stays and marks the
-/// file the project's, so it is kept past the unused-upload cleanup and the app reads it; any other shows as its text.
+/// A final lead message's parts, each `image`, `clip` or `file` block checked against project `r`: one whose
+/// attachment is the project's (a file a person gave it, or one its lead or tasks made with `chat_image` or
+/// `chat_file`) stays, with the file's name, type and size filled in, and marks the file the project's, so it is kept
+/// past the unused-upload cleanup and the app reads it; any other shows as its text. An `image` block of a file that
+/// isn't an image shows as a `file` block.
 pub fn show(
     c: &rusqlite::Connection,
     r: &ProjectRef,
@@ -657,28 +667,42 @@ pub fn show(
     let lead = crate::hub::link::lead_calls::lead_by(r);
     let mut out = Vec::new();
     for mut part in parts {
-        if let Some(BlockBody::Image(media) | BlockBody::Clip(media)) =
-            part.block.as_ref().map(|b| &b.body)
+        if let Some(block) = part.block.as_mut()
+            && let BlockBody::Image(media) | BlockBody::Clip(media) | BlockBody::File(media) =
+                &mut block.body
         {
             let n: i64 = media.attachment_id.as_str()[1..].parse().unwrap_or(0);
-            let ours = c
+            let row: Option<(String, String, i64)> = c
                 .query_row(
-                    "SELECT 1 FROM attachments a
+                    "SELECT a.name, a.mime, a.bytes FROM attachments a
                      LEFT JOIN workstreams w ON w.n = CAST(substr(a.workstream_id, 2) AS INTEGER)
                      WHERE a.n = ?1 AND (a.project = ?2 OR (a.project IS NULL AND a.by = ?3)
                        OR (w.machine_id = ?4 AND w.project_id = ?5))",
                     params![n, key, lead, r.machine_id.as_str(), r.project_id.as_str()],
-                    |_| Ok(()),
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )
-                .optional()?
-                .is_some();
-            if ours {
-                c.execute(
-                    "UPDATE attachments SET project = ?1 WHERE n = ?2 AND project IS NULL",
-                    params![key, n],
-                )?;
-            } else {
-                part.block = None;
+                .optional()?;
+            match row {
+                Some((name, mime, bytes)) => {
+                    c.execute(
+                        "UPDATE attachments SET project = ?1 WHERE n = ?2 AND project IS NULL",
+                        params![key, n],
+                    )?;
+                    let mime = mime_of(&mime);
+                    media.name = Some(
+                        fleetd_contracts::prim::Line::new(name.as_str())
+                            .unwrap_or_else(|_| fleetd_contracts::prim::Line::unchecked("file")),
+                    );
+                    media.mime = mime;
+                    media.bytes = Some(Count::unchecked(bytes));
+                    if matches!(block.body, BlockBody::Image(_))
+                        && !mime.is_some_and(AttachmentMime::is_image)
+                        && let BlockBody::Image(media) = &block.body
+                    {
+                        block.body = BlockBody::File(media.clone());
+                    }
+                }
+                None => part.block = None,
             }
         }
         out.push(part);
@@ -714,17 +738,51 @@ pub async fn place(
             tracing::error!(error = %e, "attachment file missing");
             crate::hub::api::internal_error()
         })?;
-        let what = format!("{rel} ({}, {})", kind_of(&r.mime), size(r.bytes));
-        lines.push(
-            match hub
-                .executors
-                .put_file(project, &rel, B64.encode(&data))
-                .await
-            {
-                Ok(()) => format!("  - {what}; open it with Read."),
-                Err(e) => format!("  - {what}: not delivered ({e}); ask the human to resend it."),
-            },
+        let mime = mime_of(&r.mime);
+        let what = format!(
+            "{rel} ({}, {})",
+            mime.map_or("a file", AttachmentMime::kind),
+            size(r.bytes)
         );
+        // An Office file's text goes beside it, which Read opens where the file itself it can't.
+        let text = match mime {
+            Some(m @ (AttachmentMime::Docx | AttachmentMime::Xlsx | AttachmentMime::Pptx)) => {
+                let data = data.clone();
+                tokio::task::spawn_blocking(move || super::office::text(m, &data))
+                    .await
+                    .ok()
+                    .flatten()
+            }
+            _ => None,
+        };
+        let put = hub
+            .executors
+            .put_file(project, &rel, B64.encode(&data))
+            .await;
+        let line = match (put, text) {
+            (Err(e), _) => format!("  - {what}: not delivered ({e}); ask the human to resend it."),
+            (Ok(()), Some(text)) => {
+                let beside = format!("{rel}.txt");
+                match hub
+                    .executors
+                    .put_file(project, &beside, B64.encode(text.as_bytes()))
+                    .await
+                {
+                    Ok(()) => format!("  - {what}; its text is in {beside}: open that with Read."),
+                    Err(_) => format!("  - {what}; read it with a tool that opens it."),
+                }
+            }
+            (Ok(()), None) => match mime {
+                Some(AttachmentMime::Docx | AttachmentMime::Xlsx | AttachmentMime::Pptx) => {
+                    format!(
+                        "  - {what}; fleetd found no text in it: read it with a tool that opens it."
+                    )
+                }
+                Some(AttachmentMime::Zip) => format!("  - {what}; unzip it to read what it holds."),
+                _ => format!("  - {what}; open it with Read."),
+            },
+        };
+        lines.push(line);
         let n: i64 = id.as_str()[1..].parse().unwrap_or(0);
         hub.db.with(|c| {
             c.execute(
@@ -852,7 +910,7 @@ mod tests {
         .unwrap();
         let me = caller("k1", true, "operate");
         let put_input: AttachmentPutInput = serde_json::from_value(json!({
-            "name": "shot.png", "mime": "image/png", "dataB64": B64.encode(b"png bytes"),
+            "name": "shot.png", "mime": "image/png", "dataB64": B64.encode(b"\x89PNG\r\n\x1a\n bytes"),
         }))
         .unwrap();
         let id = put(&hub, &me, put_input).await.unwrap().attachment_id;
@@ -868,7 +926,12 @@ mod tests {
                 got.bytes.get(),
                 B64.decode(&got.data_b64).unwrap()
             ),
-            ("shot.png", AttachmentMime::Png, 9, b"png bytes".to_vec())
+            (
+                "shot.png",
+                AttachmentMime::Png,
+                14,
+                b"\x89PNG\r\n\x1a\n bytes".to_vec()
+            )
         );
         // Another key, and the file belongs to no order of the project: not found.
         let other = caller("k2", true, "read");
@@ -895,5 +958,63 @@ mod tests {
         assert_eq!(safe_name(".bashrc"), "bashrc");
         assert_eq!(safe_name("screenshot 1.png"), "screenshot 1.png");
         assert_eq!(safe_name("..."), "file");
+    }
+
+    /// The hub keeps a file only when its bytes are of the type it is sent as, and names it with an extension of
+    /// that type: a PDF, a CSV and a Word document go in; a "PDF" that isn't, or text as a .docx, doesn't.
+    #[tokio::test]
+    async fn a_file_is_kept_only_as_the_type_its_bytes_are() {
+        let home = tempfile::tempdir().unwrap();
+        let config = HubConfig {
+            home: home.path().to_path_buf(),
+            listen: Listen::default(),
+            url: None,
+        };
+        let hub = crate::hub::serve::build_on(
+            HubDb::open_memory().unwrap(),
+            config,
+            ManualClock::at(1_792_000_000_000),
+        )
+        .unwrap();
+        let me = caller("k1", true, "operate");
+        let send = |name: &str, mime: &str, bytes: &[u8]| {
+            serde_json::from_value::<AttachmentPutInput>(
+                json!({ "name": name, "mime": mime, "dataB64": B64.encode(bytes) }),
+            )
+            .unwrap()
+        };
+        let docx = super::super::office::tests::docx(&["Lease"]);
+        for (name, mime, bytes) in [
+            ("lease.pdf", "application/pdf", b"%PDF-1.7 lease".as_slice()),
+            ("bank.csv", "text/csv", b"date,amount\n".as_slice()),
+            (
+                "lease.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                docx.as_slice(),
+            ),
+        ] {
+            put(&hub, &me, send(name, mime, bytes)).await.unwrap();
+        }
+        for (name, mime, bytes) in [
+            ("lease.pdf", "application/pdf", b"just text".as_slice()),
+            (
+                "lease.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                b"just text".as_slice(),
+            ),
+            ("notes.txt", "text/plain", b"\0\x01\x02 binary".as_slice()),
+        ] {
+            let e = put(&hub, &me, send(name, mime, bytes)).await.unwrap_err();
+            assert!(
+                e.message.contains("its bytes say otherwise"),
+                "{name}: {}",
+                e.message
+            );
+        }
+        let script = put(&hub, &me, send("run.command", "text/plain", b"echo hi"))
+            .await
+            .unwrap()
+            .attachment_id;
+        assert_eq!(row(&hub, &script).unwrap().unwrap().name, "run.command.txt");
     }
 }

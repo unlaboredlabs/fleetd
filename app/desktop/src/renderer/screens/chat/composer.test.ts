@@ -120,7 +120,7 @@ describe("a project's draft", () => {
     await vi.waitFor(() => expect(d.store.getState()["devbox/api"]?.attached.every((a) => a.upload !== undefined)).toBe(true));
     const draft = d.store.getState()["devbox/api"];
     expect(draft?.attached.map((a) => [a.name, a.upload])).toEqual([["shot.png", { ok: true, ref: { attachmentId: "att-1", name: "shot.png", mime: "image/png", bytes: 3 } }]]);
-    expect(draft?.error).toMatch(/blob.bin: only images, text and PDF/);
+    expect(draft?.error).toMatch(/blob.bin can't be sent: chats take images, PDFs/);
   });
 
   it("takes back a message that didn't go with its files, after words already in the box", () => {

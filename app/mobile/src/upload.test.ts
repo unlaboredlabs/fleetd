@@ -7,7 +7,10 @@ describe("upload", () => {
     expect(mimeOf("IMG_1.HEIC", "image/jpeg")).toBe("image/jpeg");
     expect(mimeOf("notes.md", null)).toBe("text/plain");
     expect(mimeOf("report.pdf")).toBe("application/pdf");
-    expect(mimeOf("data.csv", "text/csv")).toBe("text/plain");
+    expect(mimeOf("data.csv", "text/csv")).toBe("text/csv");
+    expect(mimeOf("lease.docx", null)).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    expect(mimeOf("Budget", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    expect(mimeOf("old.xls", "application/vnd.ms-excel")).toBeUndefined();
     expect(mimeOf("movie.mov", "video/quicktime")).toBeUndefined();
   });
 
@@ -18,7 +21,7 @@ describe("upload", () => {
   });
 
   it("says why a file can't go before sending a byte", () => {
-    expect(refusal("movie.mov", undefined, 10)).toMatch(/pictures, text files and PDFs/u);
+    expect(refusal("movie.mov", undefined, 10)).toMatch(/chats take images, PDFs, text and CSV, Word, Excel and PowerPoint files, and zips/u);
     expect(refusal("big.png", "image/png", ATTACHMENT_MAX_BYTES + 1)).toMatch(/up to 25\.0 MB/u);
     expect(refusal("ok.png", "image/png", 10)).toBeUndefined();
   });

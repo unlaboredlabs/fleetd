@@ -21,7 +21,7 @@ import { STEER_WORDS } from "../fixtures/agents/steers.ts";
 import { SESSION } from "../fixtures/sessions/ids.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
-import { ADA_ROUTE, TAXES_ROUTE } from "../fixtures/navi/ids.ts";
+import { ADA_ROUTE, HOME_ROUTE, TAXES_ROUTE } from "../fixtures/navi/ids.ts";
 
 /**
  * What the system answers when the app posts a notification: shown, or not supported. Nothing reaches the screen of
@@ -257,6 +257,8 @@ export const fixtures = [
   // Hub links (fixtures/navi): Ada's Linked hubs and Sam's links to this hub; and neither yet.
   "navi-links",
   "navi-links-none",
+  // Files both ways in a Navi's chat (fixtures/navi): a lease and a bank export in, a trip PDF and receipts out.
+  "navi-files",
   // fleetd.sh's showcase: one request played from send to merge, recorded by showcase.spec.ts (fixtures/showcase).
   "showcase-order",
 ] as const;
@@ -878,6 +880,17 @@ export const screens: readonly Screen[] = [
       const panel = page.getByRole("complementary", { name: "Project panel" });
       await panel.getByRole("button", { name: /^History/u }).click();
       await panel.getByRole("region", { name: "Version 2 to 3" }).waitFor();
+    },
+  },
+  // A Navi's files: the person's .docx and .csv, and the PDF and CSV it made, each a card with Open and Save.
+  {
+    id: "chat",
+    route: HOME_ROUTE,
+    fixtures: ["navi-files"],
+    variant: "navi-files",
+    open: async (page) => {
+      await expect(page.getByRole("button", { name: "Save lisbon-itinerary.pdf" })).toBeVisible();
+      await expect(page.getByText("Word document · 47 KB")).toBeVisible();
     },
   },
   // An archived Navi still open: the palette offers its own views, never a code project's.

@@ -1,14 +1,16 @@
-//! `chat_image`: a lead or task puts an image it made (a screenshot of a UI change) in its project's chat. The hub
-//! asks the caller's own node for the file, which reads it only from that session's working directory, as the node
-//! started it, and only a png, jpeg, webp or gif by its bytes ([`crate::node::sessions::files::read_image`]). It is
-//! stored as an attachment `by` the project's lead (`lead:<project>`), so no person's key reads it and no other
-//! project shows it: a lead message's `image` block of it marks it the project's ([`super::attachments::show`]), and
-//! one never shown goes with the other unused uploads after 24 h.
+//! `chat_image` and `chat_file`: a lead or task puts an image it made (a screenshot of a UI change), or any file the
+//! chat takes (a PDF, a CSV, a document), in its project's chat. The hub asks the caller's own node for the file,
+//! which reads it only from that session's working directory, as the node started it, and only a png, jpeg, webp or
+//! gif by its bytes, or for `chat_file` a file whose bytes fit the type its name says
+//! ([`crate::node::sessions::files::read_image`]). It is stored as an attachment `by` the project's lead
+//! (`lead:<project>`), so no person's key reads it and no other project shows it: a lead message's `image` or `file`
+//! block of it marks it the project's ([`super::attachments::show`]), and one never shown goes with the other unused
+//! uploads after 24 h.
 use std::sync::{Arc, Weak};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use fleetd_contracts::chat::{ChatImageCall, ChatImageResult};
+use fleetd_contracts::chat::ChatImageResult;
 use fleetd_contracts::ids::ThreadRef;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::mcp::{ATTACHMENT_MAX_BYTES, AttachmentMime, ErrorCode, McpToolError};
@@ -19,7 +21,7 @@ use crate::hub::executor::ExecutorError;
 use crate::hub::link::LeadCaller;
 use crate::hub::link::lead_calls::{CallerAgent, LeadCallFuture, op_of};
 
-pub const OPS: [&str; 1] = ["chat_image"];
+pub const OPS: [&str; 2] = ["chat_image", "chat_file"];
 
 pub fn register_lead_calls(hub: &Arc<Hub>) {
     let weak: Weak<Hub> = Arc::downgrade(hub);
@@ -31,9 +33,14 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
                     McpToolError::new(ErrorCode::Invalid, "The hub is shutting down.")
                 })?;
                 match call {
-                    LeadCall::ChatImage(call) => chat_image(&hub, &caller, call)
+                    LeadCall::ChatImage(call) => {
+                        chat_image(&hub, &caller, call.path.as_str(), false)
+                            .await
+                            .map(LeadCallResult::ChatImage)
+                    }
+                    LeadCall::ChatFile(call) => chat_image(&hub, &caller, call.path.as_str(), true)
                         .await
-                        .map(LeadCallResult::ChatImage),
+                        .map(LeadCallResult::ChatFile),
                     other => Err(McpToolError::new(
                         ErrorCode::Invalid,
                         format!("{} is not a chat image call.", op_of(&other)),
@@ -56,25 +63,28 @@ fn session_of(hub: &Hub, caller: &LeadCaller) -> Result<ThreadRef, ToolError> {
         _ => {
             return Err(ToolError::new(
                 ErrorCode::Forbidden,
-                "Only a lead or a task's agent puts an image in the chat.",
+                "Only a lead or a task's agent puts an image or file in the chat.",
             ));
         }
     };
     thread.ok_or_else(|| {
         ToolError::new(
             ErrorCode::NotFound,
-            "The hub knows no session of yours to read the image from.",
+            "The hub knows no session of yours to read the file from.",
         )
-        .with_fix("Call chat_image from your own session.")
+        .with_fix("Call chat_image or chat_file from your own session.")
     })
 }
 
-fn refused(error: ExecutorError) -> ToolError {
+fn refused(error: ExecutorError, file: bool) -> ToolError {
     match error {
         ExecutorError::NodeRequestFailed { message, .. } => {
-            ToolError::new(ErrorCode::Invalid, message).with_fix(
-                "Save the image (png, jpeg, webp or gif) inside your working directory and pass its path.",
-            )
+            ToolError::new(ErrorCode::Invalid, message).with_fix(if file {
+                "Save the file (image, PDF, text or CSV, .docx, .xlsx, .pptx or zip) inside your working directory \
+                 and pass its path."
+            } else {
+                "Save the image (png, jpeg, webp or gif) inside your working directory and pass its path."
+            })
         }
         e => crate::hub::executor::tools::from_executor(e),
     }
@@ -85,23 +95,23 @@ fn changed(path: &str) -> ToolError {
         ErrorCode::Failed,
         format!("{path} changed while it was read."),
     )
-    .with_fix("Call chat_image again once the file is written.")
+    .with_fix("Call it again once the file is written.")
 }
 
 async fn chat_image(
     hub: &Hub,
     caller: &LeadCaller,
-    call: ChatImageCall,
+    path: &str,
+    file: bool,
 ) -> Result<ChatImageResult, ToolError> {
     let thread = session_of(hub, caller)?;
-    let path = call.path.as_str();
     let mut data: Vec<u8> = Vec::new();
     let (name, mime) = loop {
         let (name, mime, total, piece) = hub
             .executors
-            .read_image(&thread, path, data.len())
+            .read_image(&thread, path, data.len(), file)
             .await
-            .map_err(refused)?;
+            .map_err(|e| refused(e, file))?;
         let piece = B64.decode(piece.as_bytes()).map_err(|_| changed(path))?;
         if total > ATTACHMENT_MAX_BYTES as u64 || (piece.is_empty() && (data.len() as u64) < total)
         {
@@ -116,7 +126,12 @@ async fn chat_image(
         }
     };
     // The node checked the bytes; the hub checks what it holds again.
-    if AttachmentMime::of_image(&data) != Some(mime) {
+    let fits = if file {
+        mime.fits(&data)
+    } else {
+        AttachmentMime::of_image(&data) == Some(mime)
+    };
+    if !fits {
         return Err(changed(path));
     }
     let name = super::attachments::safe_name(&name);
@@ -127,7 +142,8 @@ async fn chat_image(
             "Put {attachment_id} in your result for your lead to show. Unshown, it is deleted after 24 h."
         ),
         _ => format!(
-            "Show it in your chat message with a fleetd-block {{\"v\":1,\"kind\":\"image\",\"attachmentId\":\"{attachment_id}\",\"caption\":\"…\"}}. Unshown, it is deleted after 24 h."
+            "Show it in your chat message with a fleetd-block {{\"v\":1,\"kind\":\"{kind}\",\"attachmentId\":\"{attachment_id}\",\"caption\":\"…\"}}. Unshown, it is deleted after 24 h.",
+            kind = if mime.is_image() { "image" } else { "file" }
         ),
     };
     Ok(ChatImageResult {

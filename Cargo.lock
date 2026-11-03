@@ -807,6 +807,7 @@ dependencies = [
  "crypto_secretbox",
  "diffy",
  "ed25519-dalek",
+ "flate2",
  "fleetd-contracts",
  "futures-util",
  "image",
