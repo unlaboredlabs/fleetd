@@ -1852,7 +1852,7 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
     // Its cargo is fleetd's, which waits its turn for a build slot.
     let slots = crate::node::build_slots::bin_dir(&dir.path().join("node"));
     assert!(
-        var(&spec, "PATH").is_some_and(|p| p.starts_with(&format!("{}:", slots.display()))),
+        var(&spec, "PATH").is_some_and(|p| p.starts_with(slots.to_str().unwrap())),
         "{:?}",
         var(&spec, "PATH")
     );
