@@ -30,6 +30,8 @@ use fleetd_contracts::sessions::SessionCall;
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(HEARTBEAT_INTERVAL_SECS);
 const SILENCE_TIMEOUT: Duration = Duration::from_secs(HEARTBEAT_TIMEOUT_SECS);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// The dial and the WebSocket upgrade: a hub that takes the connection but never answers it is as gone as a silent one.
+const CONNECT_TIMEOUT: Duration = SILENCE_TIMEOUT;
 /// How long a node that answered an update reads its watcher's verdict: a refused restart is decided within seconds.
 const RESTART_WATCH: Duration = Duration::from_secs(crate::update::finish::HEALTH_WAIT_SECS);
 /// The largest frame the node takes from its hub: an attachment's put_file with room to spare.
@@ -146,30 +148,71 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
     let mut enroll_token = options.enroll_token;
     let mut on_enrolled = options.on_enrolled;
     let mut attempt: u32 = 0;
+    // One line when the link goes and one when it is back: the tries between log only at debug.
+    let mut down = LinkDown::default();
     loop {
         let token_now = enroll_token.clone();
-        let end = run_link_once(&shared, token_now.as_ref().map(|t| t.as_str()), &mut || {
-            attempt = 0;
-            if enroll_token.take().is_some()
-                && let Some(enrolled) = on_enrolled.take()
-            {
-                enrolled();
-            }
-        })
+        let end = run_link_once(
+            &shared,
+            token_now.as_ref().map(|t| t.as_str()),
+            &mut |hub_id: &str| {
+                attempt = 0;
+                down.back(hub_id, &shared.settings.machine_id);
+                if enroll_token.take().is_some()
+                    && let Some(enrolled) = on_enrolled.take()
+                {
+                    enrolled();
+                }
+            },
+        )
         .await;
-        match end {
+        let lost = match end {
             LinkEnd::Fatal(fatal) => return fatal,
             LinkEnd::Woke => {
                 tracing::info!("the machine woke; linking to the hub again");
                 continue;
             }
-            LinkEnd::Lost(why) => tracing::warn!(%why, "hub link lost"),
-        }
+            LinkEnd::Lost(why) => why,
+        };
         let jitter: f64 = rand::thread_rng().gen_range(0.8..1.2);
         let delay = reconnect_delay(attempt, jitter);
         attempt = attempt.saturating_add(1);
-        tracing::info!(in_ms = delay.as_millis() as u64, "reconnecting to hub");
+        down.lost(&lost, delay);
         tokio::time::sleep(delay).await;
+    }
+}
+
+/// Since when the node has had no hub link, and whether it has had one at all.
+#[derive(Default)]
+struct LinkDown {
+    since: Option<std::time::Instant>,
+    linked_once: bool,
+}
+
+impl LinkDown {
+    /// A try ended; `retry_in` until the next.
+    fn lost(&mut self, why: &str, retry_in: Duration) {
+        let retry_in_ms = retry_in.as_millis() as u64;
+        if self.since.is_some() {
+            tracing::debug!(%why, retry_in_ms, "hub link still down");
+            return;
+        }
+        self.since = Some(std::time::Instant::now());
+        tracing::warn!(%why, retry_in_ms, "hub link lost; reconnecting until it is back");
+    }
+
+    /// A welcome: the first link logs as linked, any later one as back.
+    fn back(&mut self, hub_id: &str, machine_id: &str) {
+        let since = self.since.take();
+        if !std::mem::replace(&mut self.linked_once, true) {
+            tracing::info!(%hub_id, %machine_id, "linked to hub");
+        } else if let Some(since) = since {
+            let down_s = since.elapsed().as_secs();
+            tracing::info!(%hub_id, %machine_id, down_s, "hub link back");
+        } else {
+            // A relink after a wake, which reconnects without counting as a loss.
+            tracing::info!(%hub_id, %machine_id, "linked to hub again");
+        }
     }
 }
 
@@ -280,25 +323,42 @@ fn size_allowed(frame: &HubToNode, len: usize) -> bool {
         )
 }
 
+/// Dials the hub's link and upgrades it to a WebSocket within `within`. Without a bound, a hub that took the
+/// connection and never answered it (one stalled, or stopped) held the node here for good, and it logged nothing.
+async fn connect(
+    url: &str,
+    within: Duration,
+) -> Result<
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    String,
+> {
+    // Nagle off: the link's frames are small and answer each other, and holding one back for the last's ack costs a
+    // delayed ack (40 ms) per round trip, as a screen's start and its first frame have several.
+    let dial = tokio_tungstenite::connect_async_with_config(url, Some(link_config()), true);
+    match tokio::time::timeout(within, dial).await {
+        Err(_) => Err(format!(
+            "the hub did not answer the link within {} s",
+            within.as_secs()
+        )),
+        Ok(Err(error)) => Err(format!("cannot reach the hub: {error}")),
+        Ok(Ok((ws, _))) => Ok(ws),
+    }
+}
+
 /// One link: succeeds (`Lost`) when it ends after or before a welcome, `Fatal` on a refusal.
 async fn run_link_once(
     shared: &Arc<Shared>,
     enroll_token: Option<&str>,
-    on_welcome: &mut dyn FnMut(),
+    on_welcome: &mut dyn FnMut(&str),
 ) -> LinkEnd {
     let url = match link_url(&shared.settings.hub) {
         Ok(url) => url,
         Err(why) => return LinkEnd::Lost(why),
     };
-    // Nagle off: the link's frames are small and answer each other, and holding one back for the last's ack costs a
-    // delayed ack (40 ms) per round trip, as a screen's start and its first frame have several.
-    let ws =
-        match tokio_tungstenite::connect_async_with_config(url.as_str(), Some(link_config()), true)
-            .await
-        {
-            Ok((ws, _)) => ws,
-            Err(error) => return LinkEnd::Lost(format!("cannot reach the hub: {error}")),
-        };
+    let ws = match connect(&url, CONNECT_TIMEOUT).await {
+        Ok(ws) => ws,
+        Err(why) => return LinkEnd::Lost(why),
+    };
     let (mut sink, mut stream) = ws.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
     // Answered once every frame queued before it is written: what an update's answer waits on before its restart.
@@ -436,10 +496,9 @@ async fn run_link_once(
         Ok(other) => return LinkEnd::Lost(format!("expected a welcome, got {}", tag(&other))),
         Err(end) => return end,
     };
-    on_welcome();
+    on_welcome(hub_id.as_str());
     // For the watcher of an update's restart: this build came up and its hub took it.
     crate::update::finish::mark_up(&shared.node_sessions.home(), &shared.settings.node_version);
-    tracing::info!(%hub_id, machine_id = %shared.settings.machine_id, "linked to hub");
     let mut woke = shared.wakes.watch();
     woke.borrow_and_update();
     for slept in shared.wakes.take() {
@@ -650,6 +709,77 @@ mod tests {
             panic!("the frame did not arrive whole")
         };
         assert_eq!(got.len(), sent);
+    }
+
+    /// A hub that took the connection and never answered it (stalled, or stopped) held the node in its dial for good,
+    /// so it never noticed the link was gone. The dial now gives up within its bound, and the next one links once the
+    /// hub answers again.
+    #[tokio::test]
+    async fn a_hub_that_never_answers_the_link_is_given_up_on_and_dialled_again() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}/node/link", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            // The stalled hub: the kernel takes the connection, and nothing ever answers its upgrade.
+            let (_stalled, _) = listener.accept().await.unwrap();
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
+            let _ = ws.next().await;
+        });
+        let started = tokio::time::Instant::now();
+        let why = match connect(&url, Duration::from_millis(300)).await {
+            Ok(_) => panic!("a hub that never answered linked"),
+            Err(why) => why,
+        };
+        assert!(why.contains("did not answer the link"), "{why}");
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(connect(&url, Duration::from_secs(10)).await.is_ok());
+    }
+
+    /// A spell without the hub logs one line when the link goes and one when it is back, however many tries fail
+    /// between.
+    #[test]
+    fn a_lost_link_logs_once_when_it_goes_and_once_when_it_is_back() {
+        #[derive(Clone, Default)]
+        struct Logs(Arc<std::sync::Mutex<Vec<u8>>>);
+        impl std::io::Write for Logs {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(buf);
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let logs = Logs::default();
+        let writer = logs.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let mut down = LinkDown::default();
+        down.back("fleetd-devbox", "devbox");
+        down.lost("no frame from the hub for 45 s", Duration::from_millis(250));
+        for _ in 0..5 {
+            down.lost(
+                "cannot reach the hub: connection refused",
+                Duration::from_secs(30),
+            );
+        }
+        down.back("fleetd-devbox", "devbox");
+
+        let text = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 3, "{text}");
+        assert!(lines[0].contains("linked to hub"), "{text}");
+        assert!(lines[1].contains("hub link lost"), "{text}");
+        assert!(
+            lines[1].contains("no frame from the hub for 45 s"),
+            "{text}"
+        );
+        assert!(lines[2].contains("hub link back"), "{text}");
     }
 
     /// A hub that restarts (its update) is dialled again within a quarter second, then less and less often.
