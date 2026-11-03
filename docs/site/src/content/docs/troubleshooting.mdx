@@ -181,3 +181,12 @@ fleetd status storefront
 | Your message waits and the chat says why | The lead can't start: `claude` logged out, out of range, or the worker offline. | See [Claude](#claude) and [Machines](#machines). |
 
 Then check the logs (above) for the hub and the project's worker.
+
+### An agent was slow to start {#slow-start}
+
+An agent's launch that takes 2 s or more logs a `slow start` line at info, with the time of each stage. On the hub,
+`hub spawn` and `hub message` split a lead's call into `scope`, `tasks lock`, `checks` and `start`; `hub launch` splits
+the start into `policy`, `default branch`, `prompt`, `node launch` and `pinned`. On the node, `node launch` splits it
+into `checks`, `fetch` (a review's PR head with it), `launch lock`, `worktree`, `record` and `run`, and `node spawn` the run's
+`spawn lock`, `spec`, `fence` and `session host`. Set `FLEETD_LOG=info,fleetd::stages=debug` to log every launch's
+stages, and **node session host**'s `host` and `claude` too.
