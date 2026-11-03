@@ -2275,9 +2275,8 @@ input!(
         client_request_id: RequestId,
         /// A human key: where it is written. Absent means the app.
         client: Option<crate::chat::ChatClient>,
-        /// A human key: the IANA time zone of the device it is written on. The hub keeps it as the person's zone, and
-        /// the lead reads each of their messages with the time there; one the hub doesn't know is left out, never
-        /// refused.
+        /// A human key: the IANA time zone of the device it is written on. The hub keeps it as the person's zone, and the
+        /// lead reads each of their messages with the time there; one the hub doesn't know is left out, never refused.
         tz: Option<Line<1, 64>>,
         /// The lead's bubble this answers. `text` still opens with its one-line quote, for clients that show text as it
         /// is; the lead reads the whole bubble in its place.
