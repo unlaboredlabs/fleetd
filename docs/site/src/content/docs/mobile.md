@@ -186,6 +186,63 @@ app shares with its extensions, and keeps no copy. If the phone isn't paired, or
 says so and offers **Open fleetd**. If the hub can't be reached, it offers **Try Again** as well. Android doesn't have
 it yet.
 
+A message sent from the share sheet shows **From the Share Sheet** in the chat, on the phone and the desktop, and the
+Navi or lead is told it came that way: what another app shared is content to read, not your instructions.
+
+## Shortcuts and the Action Button {#shortcuts}
+
+On an iPhone with iOS 18 or later, fleetd's actions are in the Shortcuts app, Spotlight and Siri with no setup, and any
+of them can go on the Action Button. They sign in to your hub as the app does, with the phone's own pairing.
+
+| Action | What it does | Returns |
+| --- | --- | --- |
+| **Open Chat** | Opens a Navi's or project's chat. | |
+| **Send Message** | Sends text to a chat as you, without opening the app. Optionally waits for the reply. | The reply's text, with **Wait for Reply** on |
+| **Run Automation** | Runs one of your [automations](/docs/automations) now, as **Run now** does. | |
+| **Open Approvals** | Opens Chats on **Needs You**. | |
+| **Get Latest Messages** | Reads a chat's newest messages: a count, or the ones since a date. | Each message's author, text and date |
+| **Get Waiting Approvals** | Reads what is waiting on you. | How many, and each with its chat |
+
+None of them approves, denies, enters a secret or pays: those stay in the app. **Wait for Reply** is off by default;
+with it on, the action waits up to **Wait Up To** seconds (60 by default, at most 600) for the Navi's or lead's turn to
+end, then returns everything it said. If no reply comes in time, the action fails with **No reply yet**: the message is
+still sent, and the reply shows in the chat.
+
+A message from **Send Message** shows **From Shortcuts** under it, on the phone and the desktop, and the Navi or lead is
+told it came from Shortcuts: it may hold content the shortcut pulled from elsewhere, such as a web page or the
+clipboard, which it reads as content, not as your instructions. Approvals and notifications work as for a message you
+typed.
+
+**Put one on the Action Button:** open **Settings › Action Button**, swipe to **Shortcut**, tap **Choose a Shortcut**,
+then under **fleetd** pick an action. **Open Chat** lists each of your chats as its own shortcut ("Open Inbox"), so the
+button opens that chat directly.
+
+**Only some chats notify during a Focus:** open **Settings › Focus**, pick a Focus, then under **Focus Filters** tap
+**Add Filter › fleetd** and choose the chats. While that Focus is on, only those chats' notifications come through; an
+urgent one (money, irreversible commands) always does. A filter with no chats picked lets every chat notify.
+
+If an action can't run, it says why:
+
+- **Unlock your iPhone:** the phone's key to the hub opens only while the phone is unlocked. An automation that runs
+  while it's locked fails until you unlock it.
+- **Pair fleetd first:** the phone isn't paired. Open the app and pair it.
+- **Your hub refused this phone:** its key was revoked or the hub was set up again. Pair it again.
+- **Can't reach your hub:** the hub is down, or the phone can't reach it (on a tailnet, Tailscale is off).
+- **That chat isn't on your hub any more:** it was archived or deleted. Edit the shortcut and pick another.
+
+### Automation ideas {#automation-ideas}
+
+In the Shortcuts app's **Automation** tab:
+
+- **Arrive home → Send Message:** "I'm home" to your Navi, which can turn the lights on or post your evening plan.
+- **Work Focus → Focus filter:** only your projects notify while you work.
+- **NFC tag → Run Automation:** tap a tag on your desk to start your morning brief.
+- **CarPlay connects → Get Latest Messages, then Speak Text:** hear your Navi's last replies on the drive.
+- **Time of day, 9:00 → Get Waiting Approvals, then If Count is greater than 0, Show Notification:** a morning nudge
+  when something waits on you.
+
+Android doesn't have them yet.
+
 ## Notifications {#notifications}
 
 The first time the app connects, it asks to send notifications. They show what happened in full: a lead's reply, an
