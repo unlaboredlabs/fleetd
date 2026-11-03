@@ -20,7 +20,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackNavigationOptions, NativeStackScreenProps } from "@react-navigation/native-stack";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ActivityIndicator, AppState, FlatList, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ListViewToken } from "react-native";
+import { ActivityIndicator, Alert, AppState, FlatList, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ListViewToken } from "react-native";
 import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -30,7 +30,8 @@ import { chatItems, emptyChat, isNavi, type AttachmentGetOutput, type Attachment
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
-import type { Key } from "../store";
+import { changeDraft, useDraft } from "../draftsStore";
+import { refOf, type Key } from "../store";
 import { space, type, useTheme, type Palette } from "../theme";
 import { upload } from "../upload";
 import { Avatar, type Pictured } from "../ui/Avatar";
@@ -38,7 +39,7 @@ import { bubble as metrics, jumbo } from "../bubble";
 import { Bubble, Jumbo } from "../ui/Bubble";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
-import { Composer, type Reply } from "../ui/Composer";
+import { Composer } from "../ui/Composer";
 import { Glass } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
@@ -161,7 +162,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
 
   const list = useRef<FlatList<ThreadRow>>(null);
   const [composerHeight, setComposerHeight] = useState(60);
-  const [reply, setReply] = useState<(Reply & { id: string; part: number }) | undefined>(undefined);
+  // What you're writing here, and the bubble it replies to: the chat's draft, kept when you leave (drafts.ts).
+  const [draft, setDraft] = useDraft(chatKey);
+  const reply = draft.reply;
   const [selecting, setSelecting] = useState<string | null>(null);
   const [image, setImage] = useState<AttachmentGetOutput | null>(null);
   const [lit, setLit] = useState<string | null>(null);
@@ -327,12 +330,28 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const send = (body: string, files: readonly AttachmentRef[] = [], quoting = false) => {
     const out = outgoing(body, files.length, quoting ? reply : undefined);
     if (out === null) return;
-    if (quoting) setReply(undefined);
+    if (quoting) setDraft((d) => ({ ...d, reply: undefined }));
     setAwayFrom(null);
     // In a frame, once the hold above is off: on, the list would keep its place as your message went in under it.
     requestAnimationFrame(() => {
       session.send(chatKey, out.text, { attachments: files, replyTo: out.replyTo });
       toNewest();
+    });
+  };
+
+  // Stop while the lead works, as the desktop's: chat_stop stops its running step and the project's agents, and its
+  // line in the chat says what stopped. One press at a time, each its own request: the hub answers a request sent
+  // again (the link dropped) with the line it already wrote, stopping nothing twice.
+  const stopping = useRef(false);
+  const stop = () => {
+    if (stopping.current) return;
+    stopping.current = true;
+    haptics.tap();
+    void session.call("chat_stop", { projectRef: refOf(chatKey), clientRequestId: stopId() }).then((r) => {
+      stopping.current = false;
+      if (r.ok) return;
+      haptics.warning();
+      Alert.alert("The lead wasn't stopped", r.error.message);
     });
   };
 
@@ -343,7 +362,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     (): ThreadActions => ({
       reply: (r) => {
         haptics.tap();
-        setReply({ id: r.id, part: r.part, who: r.who, quote: r.quote });
+        changeDraft(now.current.chatKey, (d) => ({ ...d, reply: { id: r.id, part: r.part, who: r.who, quote: r.quote } }));
       },
       selectText: setSelecting,
       openImage: setImage,
@@ -478,8 +497,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
             onSend={(text, files) => send(text, files, true)}
             upload={(bytes, name, mime, progress) => upload((tool, input, timeoutMs) => session.call(tool, input, timeoutMs), bytes, name, mime, progress)}
             bottomInset={insets.bottom}
-            reply={reply}
-            onCancelReply={() => setReply(undefined)}
+            draft={draft}
+            onDraft={setDraft}
+            onStop={working && live ? stop : undefined}
             onHeight={setComposerHeight}
           />
         </KeyboardStickyView>
@@ -490,6 +510,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     </View>
   );
 }
+
+const stopId = (): string => `stop-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 
 const withOpacity = (hex: string, alpha: number): string => {
   const n = Number.parseInt(hex.slice(1), 16);

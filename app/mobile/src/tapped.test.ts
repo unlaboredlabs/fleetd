@@ -48,6 +48,11 @@ describe("tappedStack", () => {
     expect(tappedStack([home, chat("m1/a"), watching], { key: "m1/a", sessionId: "s1" }, 6).routes[2]).toEqual({ key: "Screen-9", name: "Screen", params: { key: "m1/a", sessionId: "s1" } });
   });
 
+  it("keeps the chats list's own stack, so Back finds it scrolled and searched as it was", () => {
+    const list = { key: "Home-1", name: "Home", state: { index: 0, routes: [{ key: "Chats-1", name: "Chats" }] } };
+    expect(tappedStack([list, chat("m1/a")], { key: "m1/b" }, 8).routes[0]).toEqual(list);
+  });
+
   it("starts from the list when the app has no stack yet", () => {
     expect(tappedStack([], { key: "m1/a" }, 7).routes).toEqual([{ name: "Home" }, { name: "Chat", params: { key: "m1/a", tap: 7 } }]);
   });

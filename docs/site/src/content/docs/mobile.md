@@ -6,8 +6,11 @@ description: Chat with your Navis and projects and answer approvals from your ph
 The phone app connects to your [hub](/docs/glossary#hub) as the desktop app does, with its own key. It shows your
 [Navis](/docs/navi) and projects, with what needs you on top, and their chats, live as the lead writes. A chat with an
 [approval](/docs/approvals-and-secrets) waiting on you sits at the top of the list with its count, and **Needs you**
-shows only those; you answer each from its card in the chat, with everything it would do. Its notifications show the
-full text, end-to-end encrypted. You can [watch and take over](#screens) a Navi's or agent's screen when it needs
+shows only those; you answer each from its card in the chat, with everything it would do. While the lead works, the
+send button is **Stop**, which stops its running step and the project's agents, as on the desktop. What you were
+writing in a chat (its words, picked files and the reply quote) stays there as you go between chats and when the app
+starts again; a file still uploading when the app closes is left out. Notifications show the full text,
+end-to-end encrypted. You can [watch and take over](#screens) a Navi's or agent's screen when it needs
 you (a captcha, a bank's check, a sign-in only you can do), open a screen of your own, make, rename and delete Navis
 and projects, and on an iPhone
 [share](#share) text, links and images into a chat from any app. An admin can update fleetd. Secrets, machines, people
