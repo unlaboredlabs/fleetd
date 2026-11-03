@@ -81,15 +81,14 @@ async fn agents_find_the_online_node_that_is_the_mac_and_nobody_else_does() {
         .await
         .unwrap_err();
     assert_eq!(none.code, ErrorCode::MachineOffline);
-    // Listing mac_tool but offline isn't enough.
-    hub.link.set_capabilities(&mid("mac1"), &[CAP_MAC_TOOL]);
+    // Listing mac_tool isn't enough on a machine that isn't the agents' Mac.
+    hub.link.set_capabilities(&mid("devbox"), &[CAP_MAC_TOOL]);
     assert!(
         ask(&hub, task(), json!({ "op": "mac_where" }))
             .await
             .is_err()
     );
-    let (tx, _rx) = mpsc::unbounded_channel::<HubToNode>();
-    let _link = hub.node_commands.attach(&mid("mac1"), tx);
+    hub.link.set_capabilities(&mid("mac1"), &[CAP_MAC_TOOL]);
     let Ok(LeadCallResult::MacWhere(found)) = ask(&hub, task(), json!({ "op": "mac_where" })).await
     else {
         panic!("no Mac")

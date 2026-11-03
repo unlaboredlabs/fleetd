@@ -616,4 +616,3 @@ async fn a_foreground_runs_line_closes_when_nobody_follows_it_and_keeps_its_star
     );
     assert!(closed.completed_at.is_some());
 }
-
