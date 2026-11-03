@@ -98,6 +98,14 @@ pub(super) async fn node(
                 {
                     json!({ "ok": { "kind": "folder", "path": format!("{HOME}/{workspace_root}") } })
                 }
+                // A Navi's delete without removeWorktrees stands for one whose answer never reached the hub.
+                SessionCall::ProjectRemove {
+                    erase: true,
+                    remove_worktrees: false,
+                    ..
+                } => {
+                    json!({ "err": { "code": "invalid", "message": "no answer within 80s" } })
+                }
                 // Every other path is a plain folder with no git.
                 SessionCall::RepoInspect { .. } => {
                     json!({ "ok": { "kind": "repo_facts", "exists": true, "isGit": false } })
@@ -868,4 +876,60 @@ async fn deleting_a_navi_erases_everything_it_had_and_its_folder_when_ticked() {
     assert_eq!(files(&r), 0);
     assert_eq!(files(&p1), 4);
     assert!(home.path().exists());
+}
+
+/// A delete whose answer never reached the hub (a timeout) is still finished: the hub keeps the Navi's data while its
+/// node still has it, and erases it once the node's `project_removed` says it is gone.
+#[tokio::test]
+async fn a_navi_removed_without_its_answer_is_still_erased_once_the_hub_sees_it_gone() {
+    use crate::hub::chat::NewMessage;
+    use fleetd_contracts::chat::ChatAuthor;
+    use fleetd_contracts::node_link::{CAP_NAVI_ERASE, CAP_PROJECT_SETTINGS};
+    let (hub, _home) = hub();
+    let _calls = node(
+        &hub,
+        &[
+            CAP_REPOS,
+            CAP_ASSISTANT,
+            CAP_PROJECT_SETTINGS,
+            CAP_NAVI_ERASE,
+        ],
+    )
+    .await;
+    let navi = ok(&hub, "navi_create", json!({ "name": "Ada" })).await["navi"].clone();
+    let r = ProjectRef {
+        machine_id: devbox(),
+        project_id: ProjectId::unchecked(navi["projectId"].as_str().unwrap()),
+    };
+    hub.chat
+        .add(
+            &r,
+            NewMessage {
+                author: Some(ChatAuthor::Human),
+                text: "my dentist is Dr Lee".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let memory = hub.db.memory().project_dir(&r).unwrap();
+    std::fs::create_dir_all(&memory).unwrap();
+    std::fs::write(memory.join("MEMORY.md"), "- dentist: Dr Lee").unwrap();
+    let chat = |hub: &Hub| hub.chat.page(&r, None, None, 10).unwrap().0.len();
+    let marks = |hub: &Hub| -> i64 {
+        hub.db
+            .with(|c| Ok(c.query_row("SELECT COUNT(*) FROM navi_erases", [], |row| row.get(0))?))
+            .unwrap()
+    };
+
+    let at = json!({ "machineId": "devbox", "projectId": r.project_id, "removeWorktrees": false });
+    assert!(call(&hub, "project_remove", at).await.is_err());
+    // Its node still has it, as far as the hub knows: nothing is erased yet.
+    assert_eq!(crate::hub::navi::erase::finish_pending(&hub).unwrap(), 0);
+    assert_eq!((chat(&hub), marks(&hub)), (1, 1));
+    assert!(memory.exists());
+    // The node's project_removed: the hub finishes the erase.
+    hub.store.project_remove(&r).unwrap();
+    assert_eq!(crate::hub::navi::erase::finish_pending(&hub).unwrap(), 1);
+    assert_eq!((chat(&hub), marks(&hub)), (0, 0));
+    assert!(!memory.exists());
 }

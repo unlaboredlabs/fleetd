@@ -374,6 +374,56 @@ async fn an_anonymous_fetch_takes_https_alone() {
     assert!(e.message.starts_with("git fetch"), "{}", e.message);
 }
 
+/// Fetched as no one, git reads none of the hub's logins: not its config's credential helpers or URL rewrites (the
+/// machine's own `~/.gitconfig` and `/etc/gitconfig` here), not its `~/.netrc` (its HOME is an empty dir of its
+/// own), not its SSH agent.
+#[tokio::test]
+async fn an_anonymous_fetch_reads_none_of_the_hubs_logins() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let cmd = install::command(
+        dir.path(),
+        &["config", "--list", "--show-origin"],
+        Some(home.path()),
+    );
+    let envs: std::collections::HashMap<_, _> = cmd
+        .as_std()
+        .get_envs()
+        .map(|(k, v)| {
+            (
+                k.to_string_lossy().into_owned(),
+                v.map(|v| v.to_string_lossy().into_owned()),
+            )
+        })
+        .collect();
+    let home_str = home.path().to_string_lossy().into_owned();
+    for (k, want) in [
+        ("HOME", Some(home_str.as_str())),
+        ("XDG_CONFIG_HOME", Some(home_str.as_str())),
+        ("CURL_HOME", Some(home_str.as_str())),
+        ("GIT_CONFIG_GLOBAL", Some("/dev/null")),
+        ("GIT_CONFIG_NOSYSTEM", Some("1")),
+        ("GIT_ALLOW_PROTOCOL", Some("https")),
+        ("SSH_AUTH_SOCK", None),
+        ("GIT_CONFIG_PARAMETERS", None),
+    ] {
+        assert_eq!(envs.get(k).map(Option::as_deref), Some(want), "{k}");
+    }
+    let mut cmd = cmd;
+    let out = cmd.output().await.unwrap();
+    let config = String::from_utf8_lossy(&out.stdout).to_lowercase();
+    // The empty helper the command passes is all git sees, from the command line alone.
+    for line in config.lines() {
+        assert!(
+            line.starts_with("command line:"),
+            "git read a config file: {line}"
+        );
+        assert!(!line.contains("insteadof"), "{line}");
+    }
+    assert!(config.contains("credential.helper="), "{config}");
+    assert_eq!(std::fs::read_dir(home.path()).unwrap().count(), 0);
+}
+
 #[tokio::test]
 async fn an_install_is_pinned_and_moves_only_on_update() {
     let (hub, _home) = hub();

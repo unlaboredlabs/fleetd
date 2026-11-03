@@ -84,6 +84,10 @@ async fn remove(
             format!("Run fleetd update on {m}, then delete it again."),
         ));
     }
+    // Marked first: should the node remove it but its answer never come, the hub still erases it (`navi::erase::run`).
+    if navi {
+        crate::hub::navi::erase::asked(&hub, &r)?;
+    }
     let mut checkouts = Vec::new();
     for checkout in super::repos::other_checkouts(&hub, &r)? {
         if hub.repos.holders(&checkout)?.iter().all(|(h, _)| *h == r) {
