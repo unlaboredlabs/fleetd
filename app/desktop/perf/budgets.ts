@@ -51,7 +51,9 @@ export const RULES: Record<Metric, Rule> = {
   // (55 before the chat's day formatters were cached), as a page of older messages landing under the reader costs a
   // few frames; perf/run.ts gates the median of five rounds.
   scrollFps: { label: "chat scroll", unit: "fps", higher: true, limit: 57, regress: { ratio: 0.07, slack: 3 } },
-  // As scroll: each streamed delta rebuilds the chat's rows, so a cost per message held drops frames here first.
+  // As scroll: each streamed delta rebuilds the chat's rows, so a cost per message held drops frames here first. CI reads
+  // about 59 on an EPYC 9V45 runner and 49.5 on a 7763, so its baseline is the slower runner's; a formatter made per
+  // message took it under 20.
   streamFps: { label: "chat streaming", unit: "fps", higher: true, limit: 57, regress: { ratio: 0.07, slack: 3 } },
   // A p95 over ~160 keys still moves with a few slow ones on a shared runner, hence the wide slack and perf/run.ts's median of five rounds.
   keyP95Ms: { label: "keypress to screen", unit: "ms", higher: false, limit: 16, regress: { ratio: 0.5, slack: 8 } },
