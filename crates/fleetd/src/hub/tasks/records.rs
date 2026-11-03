@@ -384,7 +384,7 @@ mod tests {
 
     fn create(c: &Connection, project: &str, workstream: &str, state: &str) -> Task {
         let task: Task = serde_json::from_value(json!({
-            "projectRef": { "machineId": "lab-a", "projectId": project }, "workstreamId": workstream,
+            "taskId": "T0", "projectRef": { "machineId": "lab-a", "projectId": project }, "workstreamId": workstream,
             "title": "do it", "prompt": "do it", "kind": "read", "state": state, "attempt": 1,
             "createdAt": "2026-11-03T10:00:00.000Z",
         }))
