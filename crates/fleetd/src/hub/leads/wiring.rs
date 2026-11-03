@@ -145,6 +145,10 @@ impl LeadPorts for HubPorts {
         })
     }
 
+    fn is_mac(&self, machine_id: &MachineId) -> bool {
+        self.link.is_mac(machine_id)
+    }
+
     fn open_requests(
         &self,
         project_ref: Option<&ProjectRef>,

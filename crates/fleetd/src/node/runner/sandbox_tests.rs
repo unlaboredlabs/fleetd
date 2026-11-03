@@ -1291,12 +1291,33 @@ b = socket.socket(socket.AF_UNIX); b.connect('\\0navi-own'); print('own')\"";
 
 #[test]
 fn the_machine_says_which_sandbox_a_navi_gets() {
+    if cfg!(target_os = "macos") {
+        return;
+    }
     let Some(_) = sandbox_or_skip() else {
         return;
     };
     let said = describe().expect("a sandbox here");
     assert_ne!(said.status, SandboxStatus::Missing, "{said:?}");
     assert!(said.line.starts_with("Navis run in"), "{said:?}");
+}
+
+/// D299: a Mac runs no Navi, whatever its sandbox-exec could do, and says so where a person reads the machine's
+/// sandbox.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_mac_runs_no_navi() {
+    let said = describe().expect("said on a Mac");
+    assert_eq!(said.status, SandboxStatus::Missing, "{said:?}");
+    assert!(
+        said.line.starts_with("Navis don't run on a Mac"),
+        "{said:?}"
+    );
+    let m = Machine::new();
+    let refused = check(&m.fence(), &m.folder).unwrap_err();
+    assert_eq!(refused.message, said.line);
+    let refused = wrap(&m.fence(), &m.folder, Path::new("/bin/sh"), vec![]).unwrap_err();
+    assert!(refused.fix.contains("Linux machine"), "{refused:?}");
 }
 
 #[test]

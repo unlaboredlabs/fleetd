@@ -63,7 +63,7 @@ describe("prChoices", () => {
       ["acme/app#3", "#3 PR 3"],
       ["acme/app#1", "#1 PR 1"],
     ]);
-    expect(["browser", "ios", "android", "linux_desktop"].filter((k) => takesBuild(k as never))).toEqual(["ios", "android"]);
+    expect(["browser", "ios", "android", "linux_desktop"].filter((k) => takesBuild(k as never))).toEqual(["android"]);
   });
 });
 

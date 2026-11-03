@@ -700,6 +700,8 @@ async fn run_elsewhere(
     frame: &BrowserCallFrame,
     args: &[String],
 ) -> Result<DeviceDone, McpToolError> {
+    // Before anything is read or sent: the screen's node refuses it too, an older one included.
+    remote_device::no_install(args)?;
     let turn = router
         .remotes
         .lock()
@@ -1652,7 +1654,7 @@ mod tests {
                             DeviceCall::Sealed { .. } => unreachable!(),
                         });
                         let done = match call {
-                            DeviceCall::Run { args } => match work.check(&args, true) {
+                            DeviceCall::Run { args } => match work.check(&args) {
                                 Ok(()) => Ok(work
                                     .run(&program, &[], &args, remote_device::RUN_WAIT)
                                     .await
@@ -1692,9 +1694,10 @@ mod tests {
         (attached, ops)
     }
 
-    /// An agent on devbox drives its iOS screen on mac1 with agent-device: its app goes from its worktree, in pieces;
-    /// the command runs there; the screenshot it took comes back into the worktree under the name it gave. Anything
-    /// else is refused before a step leaves, and the screen's end takes the forwarding agent-device away.
+    /// An agent on devbox drives its iOS screen on mac1 with agent-device: a file it names goes from its worktree, in
+    /// pieces; the command runs there; the screenshot it took comes back into the worktree under the name it gave.
+    /// Anything else (an install among them, D299) is refused before a step leaves, and the screen's end takes the
+    /// forwarding agent-device away.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn an_agents_command_for_its_ios_screen_elsewhere_runs_there_with_its_files() {
         const THREAD: &str = "th-agent-1";
@@ -1705,17 +1708,17 @@ mod tests {
             dir.path().join("mac"),
         );
         std::fs::create_dir_all(worktree.join("build")).unwrap();
-        let app = vec![b'z'; remote_device::PIECE + 5];
-        std::fs::write(worktree.join("build/app.zip"), &app).unwrap();
-        // As agent-device does, it reads the app in its daemon's working directory, not the command's: the session's
-        // daemon starts at session_start, in the node's.
+        let payload = vec![b'z'; remote_device::PIECE + 5];
+        std::fs::write(worktree.join("build/payload.json"), &payload).unwrap();
+        // As agent-device does, it reads the payload in its daemon's working directory, not the command's: the
+        // session's daemon starts at session_start, in the node's.
         let program = dir.path().join("agent-device");
         std::fs::write(
             &program,
             "#!/bin/sh\n\
              case \"$1\" in\n\
-             install) cd \"${0%/*}\"; [ -f \"$2\" ] || { echo \"App binary not found: $PWD/$2\" >&2; exit 1; }\n\
-             echo \"Installed $2: $(wc -c < \"$2\" | tr -d ' ') bytes\";;\n\
+             push) cd \"${0%/*}\"; [ -f \"$3\" ] || { echo \"Payload not found: $PWD/$3\" >&2; exit 1; }\n\
+             echo \"Pushed $3: $(wc -c < \"$3\" | tr -d ' ') bytes\";;\n\
              screenshot) printf PNG > \"$2\"; echo \"Saved $2\";;\n\
              *) echo \"ran $*\";;\n\
              esac\n",
@@ -1763,11 +1766,15 @@ mod tests {
         };
         let run = |args: &[&str]| json!({ "op": "device", "step": "run", "args": args });
 
-        let installed = call(run(&["install", "app.zip"]), &worktree.join("build")).await;
+        let pushed = call(
+            run(&["push", "sh.fleetd.app", "payload.json"]),
+            &worktree.join("build"),
+        )
+        .await;
         assert_eq!(
-            installed["result"]["stdout"],
-            format!("Installed app.zip: {} bytes\n", app.len()),
-            "{installed}"
+            pushed["result"]["stdout"],
+            format!("Pushed payload.json: {} bytes\n", payload.len()),
+            "{pushed}"
         );
         let shot = call(run(&["screenshot", "shots/home.png"]), &worktree).await;
         assert_eq!(shot["result"]["stdout"], "Saved shots/home.png\n", "{shot}");
@@ -1782,17 +1789,26 @@ mod tests {
         assert_eq!(
             *ops.lock().unwrap(),
             vec![
-                "put 1-app.zip 0".to_owned(),
-                format!("put 1-app.zip {}", remote_device::PIECE),
-                "run install in/1-app.zip".to_owned(),
+                "put 1-payload.json 0".to_owned(),
+                format!("put 1-payload.json {}", remote_device::PIECE),
+                "run push sh.fleetd.app in/1-payload.json".to_owned(),
                 "run screenshot out/2-home.png".to_owned(),
                 "get 2-home.png 0".to_owned(),
             ]
         );
 
-        // Refused on devbox, before anything goes: a file outside the worktree, a command that doesn't drive the
-        // screen, a file step of the agent's own.
-        let outside = call(run(&["install", "/etc/hosts"]), &worktree).await;
+        // Refused on devbox, before anything goes: an app to install, a file outside the worktree, a command that
+        // doesn't drive the screen, a file step of the agent's own.
+        let install = call(run(&["install", "build/payload.json"]), &worktree).await;
+        assert_eq!(install["error"]["code"], "forbidden", "{install}");
+        assert!(
+            install["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("outside the iOS sandbox"),
+            "{install}"
+        );
+        let outside = call(run(&["push", "sh.fleetd.app", "/etc/hosts"]), &worktree).await;
         assert!(
             outside["error"]["message"]
                 .as_str()

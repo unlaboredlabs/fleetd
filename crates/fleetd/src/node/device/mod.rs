@@ -534,7 +534,7 @@ impl Devices {
             session.touch();
             return work.step(call).map(BrowserCallResult::Device);
         };
-        work.check(&args, true)?;
+        work.check(&args)?;
         let program = agent_device::bin_dir(&self.home).join("agent-device");
         let path = std::env::var("PATH").ok();
         let env = agent_device::env(&self.home, thread, path.as_deref());

@@ -97,6 +97,20 @@ impl NodeLinkServer {
         self.state.lock().unwrap().loads.get(machine_id).cloned()
     }
 
+    /// Whether the machine is a Mac, as its node last said what it can host: only a Mac's node has an iOS simulator
+    /// ready, or off for any reason but `unsupported` (node/hosts.rs). False before its first heartbeat.
+    pub fn is_mac(&self, machine_id: &MachineId) -> bool {
+        use fleetd_contracts::machine_roles::{HostOff, SessionHost};
+        let state = self.state.lock().unwrap();
+        let hosts = state.loads.get(machine_id).and_then(|l| l.hosts.as_ref());
+        hosts.is_some_and(|hosts| {
+            hosts.iter().any(|h| {
+                h.host == SessionHost::Ios
+                    && (h.ready || h.off.is_some_and(|off| off != HostOff::Unsupported))
+            })
+        })
+    }
+
     /// What the machine can host, as its node answered a change of its screen settings: kept until its next heartbeat.
     pub fn set_hosts(
         &self,

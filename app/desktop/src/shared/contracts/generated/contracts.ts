@@ -3357,8 +3357,9 @@ export type MachineRolesEntry = {
   maxSessionsWhy: string;
   name: string;
   /**
-   * The OS sandbox a Navi runs in there, as its node last reported it (`RunnerInfo.sandbox`). Absent until it
-   * reports, from a node before it, and on a system fleetd has no sandbox for.
+   * The OS sandbox a Navi runs in there, as its node last reported it (`RunnerInfo.sandbox`); `missing` on a Mac,
+   * where Navis don't run (D299). Absent until it reports, from a node before it, and on a system fleetd has no
+   * sandbox for.
    */
   naviSandbox?: NaviSandbox;
   /**
@@ -6077,8 +6078,8 @@ export type ScreenOpenInput = {
   kind?: SessionKind;
   machineId: MachineId;
   /**
-   * A PR of the project's whose CI build is installed in the screen before it is yours (iOS, Android). Refused at
-   * once when the PR's head has no such build.
+   * A PR of the project's whose CI build is installed in the screen before it is yours (Android; iOS refuses it
+   * until the shared Mac). Refused at once when the PR's head has no such build.
    */
   pr?: ScreenPr;
   projectRef: ProjectRef;

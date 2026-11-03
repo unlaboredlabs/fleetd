@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 // New screen (D239): the Screens tab's button opens the picker; it lists the machines that can host the kind picked,
 // opens the screen there and goes to its live view; a full machine waits for a slot, and the wait shows in the list
-// with Cancel. An iOS or Android screen takes an open PR's build: the picker follows it in the hub until the screen is
-// yours, or says why it failed. The palette's "New screen…" opens the same picker.
+// with Cancel. An Android screen takes an open PR's build: the picker follows it in the hub until the screen is
+// yours, or says why it failed. An iOS one says why it takes none (D299). The palette's "New screen…" opens the same picker.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -271,6 +271,11 @@ it("installs an open PR's build into an Android screen, following it until the s
   await mount();
   act(() => button("New screen")?.click());
   await settle();
+  // An iOS screen takes none until the shared Mac (D299), and says why.
+  act(() => button("iOS")?.click());
+  await settle();
+  expect(document.querySelector("[aria-label='PR build']")).toBeNull();
+  expect(picker()?.textContent).toContain("PR builds go into Android screens for now");
   act(() => button("Android")?.click());
   await settle();
   expect(document.querySelector("[aria-label='PR build']")?.textContent).toBe("None");
@@ -330,7 +335,7 @@ it("says plainly when the project's PRs can't be read, and reads them again on R
   await mount();
   act(() => button("New screen")?.click());
   await settle();
-  act(() => button("iOS")?.click());
+  act(() => button("Android")?.click());
   await settle();
   await vi.waitFor(() => expect(picker()?.textContent).toContain("The project’s PRs couldn’t be read"), { timeout: 10_000 });
   prsFail = 0;

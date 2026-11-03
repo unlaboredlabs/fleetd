@@ -3,7 +3,8 @@
 // slots in words; a full one offers to wait for its next slot, which goes to people before agents. It opens in the
 // panel's live view with the person in control; a wait shows in the Screens list until its screen opens.
 //
-// A PR, optionally: an iOS or Android screen takes its CI build, which the hub installs before the person gets it. That
+// A PR, optionally: an Android screen takes its CI build, which the hub installs before the person gets it (an iOS one
+// doesn't until the shared Mac, D299, and says so). That
 // goes on in the hub (a slow simulator can take minutes): the picker follows it from the Screens list's row and lands
 // in the live view once the screen is theirs; closed meanwhile, the row shows in Screens until then. Opened from the top
 // of the Screens tab and from the palette's "New screen…".
@@ -39,6 +40,7 @@ import {
   idleWords,
   KINDS,
   newScreenOf,
+  NO_IOS_BUILD,
   NO_PR,
   openingLine,
   openWord,
@@ -369,6 +371,11 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
             </RadioGroup>
           )}
         </div>
+        {kind === "ios" && hosts.length > 0 ? (
+          <Text size="xs" tone="quiet">
+            {NO_IOS_BUILD}
+          </Text>
+        ) : null}
         {offersPr ? (
           <div className={s.hosts}>
             <Text id="screen-pr" size="xs" tone="quiet">
