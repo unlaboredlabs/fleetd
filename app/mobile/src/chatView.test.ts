@@ -63,7 +63,9 @@ describe("bubbles", () => {
 describe("sendNote", () => {
   it("says where a send is, and nothing once sent", () => {
     expect(sendNote({ state: "queued" })).toBe("Not connected: it goes when the hub is back.");
-    expect(sendNote({ state: "failed", error: { code: "invalid", message: "Too long." } })).toBe("Not sent: Too long. Tap to send again.");
+    expect(sendNote({ state: "failed", error: { code: "invalid", message: "Too long." } })).toBe("Not sent: Too long.");
+    // Nothing while it goes: no line that comes and goes under each send.
+    expect(sendNote({ state: "pending" })).toBeUndefined();
     expect(sendNote({ state: "sent" })).toBeUndefined();
   });
 });

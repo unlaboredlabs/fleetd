@@ -107,19 +107,23 @@ export const replyOf = (text: string): { readonly quote: string; readonly body: 
   return m === null ? undefined : { quote: m[1] ?? "", body: m[2] ?? "" };
 };
 
-/** What a row of the person's own says about where it is, or undefined once the hub has it. */
+/**
+ * What a row of the person's own says about where it is, or undefined once the hub has it. Nothing while it goes, as
+ * in Messages: a line that came and went under each send would bounce the thread. A failed one's ! offers Try Again
+ * and Delete.
+ */
 export const sendNote = (item: Pick<ChatItem, "state" | "error" | "leadWaiting">): string | undefined => {
   switch (item.state) {
     case "pending":
-      return "Sending…";
+      return undefined;
     case "queued":
       return "Not connected: it goes when the hub is back.";
     case "reconnecting":
       return "The link dropped: it goes again when the hub is back.";
     case "unanswered":
-      return "The hub didn't answer. Tap to send again.";
+      return "Not sent: the hub didn't answer.";
     case "failed":
-      return `Not sent: ${item.error?.message ?? "the hub refused it"} Tap to send again.`;
+      return `Not sent: ${item.error?.message ?? "the hub refused it."}`;
     default:
       return item.leadWaiting;
   }

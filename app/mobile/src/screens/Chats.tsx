@@ -18,7 +18,7 @@ import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reani
 import { filterChoices, filterLabel, meAvatar, type FilterChoice, type LinkTone } from "../chatsBar";
 import { listTime } from "../chatView";
 import { useHub, type RootParams } from "../hubContext";
-import { chatList, type ChatRow, type Filter } from "../lists";
+import { chatList, rowLine, type ChatRow, type Filter } from "../lists";
 import { pinnedSplit } from "../pinnedGrid";
 import { MAX_PINNED, pinsOf, togglePin } from "../prefs";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
@@ -38,6 +38,7 @@ import { StateGlyph } from "../ui/StateGlyph";
 import { Badge, EmptyState } from "../ui/States";
 import { SwipeRow, useSwipes, type SwipeAction } from "../ui/SwipeRow";
 import { Toolbar, bottomBar } from "../ui/Toolbar";
+import { unreachable } from "../link";
 import { useLinkDown, useLinkHeader } from "./linkHeader";
 import { newChatItems } from "./manage";
 import { PinnedGrid } from "./Pinned";
@@ -171,7 +172,20 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
   }, [navigation, root, swiped, me.initial, me.tone, me.label, filter, choicesKey]);
 
   const empty =
-    shown === undefined ? (
+    shown === undefined && unreachable(state.hub) ? (
+      <EmptyState
+        icon="offline"
+        title="Can't Reach the Hub"
+        body={`${paired.hubName} isn't answering. Check that this phone is on the hub's network, or its VPN, and that the hub is running.`}
+        action={{
+          label: "Try Again",
+          onPress: () => {
+            haptics.tap();
+            session.wake();
+          },
+        }}
+      />
+    ) : shown === undefined ? (
       <View>
         {[0.9, 0.6, 0.8, 0.5, 0.7, 0.6].map((w, i) => (
           <SkeletonRow key={i} wide={w} />
@@ -371,7 +385,7 @@ function SwipingChat({ row, separator, onPress, onPin }: { row: ChatRow; separat
 }
 
 const rowLabel = (row: ChatRow): string => {
-  const line = row.working ? "Working…" : (row.preview ?? row.want ?? (row.empty ? "No messages yet" : ""));
+  const line = row.working && row.preview !== undefined ? `Working, ${row.preview}` : rowLine(row);
   const counts = [
     row.pinned ? "Pinned" : undefined,
     row.muted ? "Muted" : undefined,
@@ -387,8 +401,8 @@ function ChatRowFace({ row, separator, lifted }: { row: ChatRow; separator: bool
   const line = useAnimatedStyle(() => ({ opacity: 1 - lifted.value }));
   const now = useNow();
   // Blank until its newest messages are read, rather than a stand-in that flickers away.
-  const text = row.working ? "Working…" : (row.preview ?? row.want ?? (row.empty ? "No messages yet" : ""));
-  const accentLine = row.working || (row.preview === undefined && row.want !== undefined);
+  const text = rowLine(row);
+  const accentLine = row.preview === undefined && (row.working || row.want !== undefined);
   const unread = row.unread > 0;
   const mine = !accentLine && text.startsWith("You: ");
   return (

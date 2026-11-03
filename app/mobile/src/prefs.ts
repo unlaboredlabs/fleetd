@@ -104,19 +104,17 @@ export const parsePrefs = (raw: unknown): Prefs => {
 };
 
 /**
- * How many messages from the other side came after what was read: those the phone holds, plus any newer it hasn't
- * read (the chat's last seq is past them). Your own don't count, nor anything when the chat is unknown here.
+ * How many messages from the other side came after what was read: those the phone holds, plus every newer one it
+ * doesn't hold (the hub's seq counts every message, so the seqs between are counted as they may be the lead's), before
+ * and after what it holds. Your own don't count, nor what came before your newest (you'd read it to answer), nor
+ * anything when the chat is unknown here.
  */
 export const unreadCount = (p: Prefs, key: Key, lastSeq: number | undefined, messages: readonly Pick<ChatMessage, "seq" | "author">[]): number => {
   const read = p.read[key];
   if (read === undefined || lastSeq === undefined || lastSeq <= read) return 0;
   const after = messages.filter((m) => m.seq > read);
-  const theirs = after.filter((m) => m.author !== "human").length;
-  const newest = after.reduce((n, m) => Math.max(n, m.seq), read);
-  // The hub's seq counts every message: those past what's held are counted as they may be the lead's.
-  const unheld = Math.max(0, lastSeq - newest);
-  // Yours, newest of all: you've read what came before it.
-  const lastMine = after.findLast((m) => m.author === "human");
-  if (lastMine !== undefined && unheld === 0) return after.filter((m) => m.seq > lastMine.seq && m.author !== "human").length;
-  return theirs + unheld;
+  const from = after.findLast((m) => m.author === "human")?.seq ?? read;
+  const held = after.filter((m) => m.seq > from);
+  const unheld = Math.max(0, lastSeq - from - held.filter((m) => m.seq <= lastSeq).length);
+  return held.length + unheld;
 };

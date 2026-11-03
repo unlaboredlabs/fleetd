@@ -2,7 +2,10 @@
 // (re)connect, then a fresh snapshot and the event stream from its cursor, so the screens always resync and never show
 // a dead link as live. Reconnects with backoff until the key is refused (close 4401, or an error before `ready`) or
 // the client is stopped. React Native's WebSocket can't ping, so a quiet link is probed with a small call (hub_info)
-// and dropped when nothing comes back: a phone that changed networks must not keep showing as live. One screen at a
+// and dropped when nothing comes back: a phone that changed networks must not keep showing as live. Coming back to the
+// front, a live link is asked for a sign of life and kept when one comes, rather than dropped and dialled again: what
+// the screens show (approvals, older pages, an upload) stays. While the app is in front, a quiet link is probed sooner
+// and retries wait less. One screen at a
 // time can be watched (browser_watch, sent again on each ready, as the desktop's main does): its frames come as
 // `browser_frame`s, and a person's touches on a screen they took over go as `browser_input`.
 import { leadLaneId, type BrowserFrame, type BrowserInput, type CallOutcome, type ChatDelta, type FleetStatus, type HubError, type HubEvent, type HubState, type LiveFrame, type ProjectRef, type ToolInput, type ToolName, type ToolOutput } from "../desktop";
@@ -11,9 +14,18 @@ import type { Navigation } from "../screen";
 export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 /** From dialling to `ready`. */
 export const READY_TIMEOUT_MS = 15_000;
-export const PROBE_EVERY_MS = 15_000;
-/** Nothing heard for this long: the link is dead. */
+/** How often a live link's silence is looked at. */
+export const PROBE_EVERY_MS = 5_000;
+/** Quiet this long, the link is probed: in front, and behind. */
+export const QUIET_FRONT_MS = 5_000;
+export const QUIET_BEHIND_MS = 15_000;
+/** Nothing heard for this long, the link is dead: in front, and behind. */
+export const SILENT_DEAD_FRONT_MS = 15_000;
 export const SILENT_DEAD_MS = 35_000;
+/** Back in front, a live link answers a probe within this, or it is dialled again. */
+export const WAKE_PROBE_MS = 2_500;
+/** In front, a retry waits at most this long: someone is looking at "Connecting…". */
+export const FRONT_BACKOFF_CAP_MS = 5_000;
 /** A link must stay up this long before the backoff starts over. */
 export const STABLE_MS = 30_000;
 /** The hub's close code for a refused key. */
@@ -114,6 +126,10 @@ export class HubClient {
   #attempt = 0;
   #readyAt = 0;
   #heardAt = 0;
+  /** When the probe's timer last ran: a tick far later than that means the app slept. */
+  #tickAt = 0;
+  /** Whether the app is in front, where the link is watched closer. */
+  #front = true;
   /** The newest event seq applied on this connection; the stream resumes after it. */
   #cursor: number | null = null;
   #resumeAttempt = 0;
@@ -129,6 +145,8 @@ export class HubClient {
   #readyTimer: ReturnType<typeof setTimeout> | null = null;
   #resumeTimer: ReturnType<typeof setTimeout> | null = null;
   #probe: ReturnType<typeof setInterval> | null = null;
+  /** A sign of life asked for (askAlive), until it is due. */
+  #aliveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: HubClientOptions) {
     this.#options = options;
@@ -155,7 +173,27 @@ export class HubClient {
     this.#dropLink("The app disconnected from the hub.");
   }
 
-  /** Drops the link and dials again at once: the app came back to the front, or the network changed. */
+  /**
+   * The app came back to the front: a live link may have died while it slept, so it is asked for a sign of life and
+   * dialled again only if none comes; a link waiting out its backoff dials now.
+   */
+  wake(): void {
+    if (this.#stopped) return;
+    this.#front = true;
+    if (this.#ready) return this.#askAlive();
+    if (this.#retryTimer === null) return;
+    clearTimeout(this.#retryTimer);
+    this.#retryTimer = null;
+    this.#attempt = 0;
+    this.#connect();
+  }
+
+  /** The app went behind: its link is watched as before, with the longer silences. */
+  sleep(): void {
+    this.#front = false;
+  }
+
+  /** Drops the link and dials again at once. */
   reconnectNow(): void {
     if (this.#stopped) return;
     this.#clearTimers();
@@ -242,11 +280,33 @@ export class HubClient {
   }
 
   #startProbe(): void {
+    this.#tickAt = Date.now();
     this.#probe = setInterval(() => {
-      const quiet = Date.now() - this.#heardAt;
-      if (quiet >= SILENT_DEAD_MS) this.#abandon("The hub stopped answering");
-      else if (quiet >= PROBE_EVERY_MS) this.#send({ t: "call", id: `${PROBE_ID}${String(++this.#nextId)}`, tool: "hub_info", input: {} });
+      const now = Date.now();
+      // A tick this late: the app slept (iOS stops its timers behind), which is no silence of the hub's. Ask.
+      const slept = now - this.#tickAt > 2 * PROBE_EVERY_MS;
+      this.#tickAt = now;
+      if (slept) return this.#askAlive();
+      if (this.#aliveTimer !== null) return;
+      const quiet = now - this.#heardAt;
+      if (quiet >= (this.#front ? SILENT_DEAD_FRONT_MS : SILENT_DEAD_MS)) this.#abandon("The hub stopped answering");
+      else if (quiet >= (this.#front ? QUIET_FRONT_MS : QUIET_BEHIND_MS)) this.#sendProbe();
     }, PROBE_EVERY_MS);
+  }
+
+  #sendProbe(): void {
+    this.#send({ t: "call", id: `${PROBE_ID}${String(++this.#nextId)}`, tool: "hub_info", input: {} });
+  }
+
+  /** A probe now: anything heard within WAKE_PROBE_MS keeps the link, silence dials again. */
+  #askAlive(): void {
+    if (this.#aliveTimer !== null) return;
+    const asked = Date.now();
+    this.#sendProbe();
+    this.#aliveTimer = setTimeout(() => {
+      this.#aliveTimer = null;
+      if (this.#heardAt < asked) this.reconnectNow();
+    }, WAKE_PROBE_MS);
   }
 
   #abandon(reason: string): void {
@@ -348,7 +408,8 @@ export class HubClient {
     if (this.#stopped) return;
     if (wasReady && Date.now() - this.#readyAt >= STABLE_MS) this.#attempt = 0;
     // ±25 %, so many phones behind one restarting hub don't come back in lockstep.
-    const retryIn = Math.round(backoff(this.#attempt++) * (0.75 + 0.5 * (this.#options.random ?? Math.random)()));
+    const wait = this.#front ? Math.min(backoff(this.#attempt++), FRONT_BACKOFF_CAP_MS) : backoff(this.#attempt++);
+    const retryIn = Math.round(wait * (0.75 + 0.5 * (this.#options.random ?? Math.random)()));
     this.#setState({ phase: "retrying", hub: this.#options.hub, reason, retryAt: Date.now() + retryIn });
     this.#retryTimer = setTimeout(() => {
       this.#retryTimer = null;
@@ -386,6 +447,8 @@ export class HubClient {
     if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
     if (this.#resumeTimer !== null) clearTimeout(this.#resumeTimer);
     if (this.#probe !== null) clearInterval(this.#probe);
+    if (this.#aliveTimer !== null) clearTimeout(this.#aliveTimer);
+    this.#aliveTimer = null;
     this.#retryTimer = null;
     this.#readyTimer = null;
     this.#resumeTimer = null;

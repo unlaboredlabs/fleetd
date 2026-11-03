@@ -20,7 +20,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackNavigationOptions, NativeStackScreenProps } from "@react-navigation/native-stack";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ActivityIndicator, AppState, findNodeHandle, FlatList, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ListViewToken } from "react-native";
+import { ActionSheetIOS, ActivityIndicator, Alert, AppState, findNodeHandle, FlatList, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ListViewToken } from "react-native";
 import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -769,13 +769,19 @@ function ItemView({
                 }
               />
             </View>
-            {retry ? <Icon name="error" size={22} color={t.danger} /> : null}
+            {retry ? <NotSent chatKey={chatKey} id={item.id} note={note} /> : null}
           </View>
         )}
         {files.map((b, i) => (
           <MediaView key={i} bubble={b} chatKey={chatKey} mine actions={actions} when={when} said={said} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} tail={last && i === files.length - 1} />
         ))}
-        {note === undefined ? null : <Text style={[type.caption, styles.note, { color: retry ? t.danger : t.secondary }]}>{note}</Text>}
+        {note === undefined ? null : (
+          <View style={styles.noteRow}>
+            <Text style={[type.caption, styles.note, { color: retry ? t.danger : t.secondary }]}>{note}</Text>
+            {/* Only files: the ! goes by the note, as there's no text bubble to put it by. */}
+            {retry && words.trim() === "" ? <NotSent chatKey={chatKey} id={item.id} note={note} /> : null}
+          </View>
+        )}
       </View>
     );
   }
@@ -805,6 +811,37 @@ function ItemView({
         <MediaView key={`f${String(i)}`} bubble={b} chatKey={chatKey} mine={false} actions={actions} when={when} said={said} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} tail={last && i === files.length - 1} />
       ))}
     </View>
+  );
+}
+
+/** A send that didn't go: its red !, which offers Try Again and Delete, as Messages' and Telegram's do. */
+function NotSent({ chatKey, id, note }: { chatKey: Key; id: string; note: string | undefined }) {
+  const t = useTheme();
+  const session = useSession();
+  const again = () => {
+    haptics.tap();
+    session.resend(chatKey, id);
+  };
+  const remove = () => session.discard(chatKey, id);
+  const open = () => {
+    haptics.tap();
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions({ message: note, options: ["Try Again", "Delete", "Cancel"], destructiveButtonIndex: 1, cancelButtonIndex: 2 }, (i) => {
+        if (i === 0) again();
+        if (i === 1) remove();
+      });
+    } else {
+      Alert.alert("Not Sent", note, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: remove },
+        { text: "Try Again", onPress: again },
+      ]);
+    }
+  };
+  return (
+    <Pressable onPress={open} hitSlop={11} accessibilityRole="button" accessibilityLabel="Not sent" accessibilityHint="Try again, or delete it">
+      <Icon name="error" size={22} color={t.danger} />
+    </Pressable>
   );
 }
 
@@ -1159,7 +1196,8 @@ const styles = StyleSheet.create({
   mineRow: { flexDirection: "row", alignItems: "center", gap: space.sm, maxWidth: "100%" },
   mineBubble: { flexShrink: 1 },
   pending: { opacity: 0.7 },
-  note: { marginTop: 3, marginRight: 4, textAlign: "right" },
+  note: { marginTop: 3, marginRight: 4, textAlign: "right", flexShrink: 1 },
+  noteRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: space.sm, maxWidth: "100%" },
   them: { alignItems: "flex-start", paddingRight: 56, gap: metrics.gap },
   // In line with the words in the bubble under it.
   by: { marginLeft: metrics.padX, marginBottom: 1 },

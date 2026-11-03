@@ -10,12 +10,15 @@ import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/clie
 import { memoryPins, Pins, type PinStore } from "./pins";
 import { deviceZone } from "./zone";
 import { registerDevice, signOut, type PushDeps } from "./push";
+import { cachedOf, parseCached, withCached, type Cached } from "./cache";
 import { initial, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
 
 export const CHAT_PAGE = 50;
 /** A chat's screens read at once: its live ones are among its newest. */
 export const SCREENS_PAGE = 20;
 const OPEN_REQUESTS = { state: "open", limit: 100 } as const;
+/** Chats whose newest messages are read at once after a snapshot. */
+export const LATEST_AT_ONCE = 4;
 
 export interface SessionOptions {
   readonly hub: string;
@@ -27,7 +30,18 @@ export interface SessionOptions {
   readonly push?: PushDeps;
   /** Where this phone keeps its copy of this hub's pinned chats (prefsStore.ts pinStoreFor); in memory without one. */
   readonly pins?: PinStore;
+  /** Where the chats as last seen and the messages on their way are kept between launches (cacheStore.ts); none without one. */
+  readonly cache?: CacheStore;
 }
+
+export interface CacheStore {
+  /** What was kept, as read back: parseCached says whether it's this hub's. */
+  load(): unknown;
+  save(cached: Cached): void;
+}
+
+/** How long after a change what the cache keeps is written: a burst of events writes once. */
+export const CACHE_SAVE_MS = 1000;
 
 const randomId = (): string => `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 
@@ -47,13 +61,20 @@ export class Session {
   readonly #push: PushDeps | undefined;
   #unsubscribeToken: (() => void) | undefined;
   readonly #pins: Pins;
+  readonly #hub: string;
+  readonly #cache: CacheStore | undefined;
+  #saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: SessionOptions) {
     this.#now = options.now ?? Date.now;
     this.#newId = options.newId ?? randomId;
     this.#key = options.key;
     this.#push = options.push;
-    this.#state = initial({ phase: "connecting", hub: options.hub, attempt: 0 });
+    this.#hub = options.hub;
+    this.#cache = options.cache;
+    const empty = initial({ phase: "connecting", hub: options.hub, attempt: 0 });
+    const cached = options.cache === undefined ? null : parseCached(options.cache.load(), options.hub);
+    this.#state = cached === null ? empty : withCached(empty, cached);
     this.#client = new HubClient({ hub: options.hub, key: options.key, transport: options.transport, emit: (f) => this.#onFrame(f) });
     this.#pins = new Pins((tool, input) => this.#client.call(tool, input), options.pins ?? memoryPins(), (key) => this.#state.projects?.[key] !== undefined);
   }
@@ -79,6 +100,9 @@ export class Session {
 
   stop(): void {
     this.#unsubscribeToken?.();
+    // Stopped for a Disconnect, or another hub: nothing more is kept (going behind kept what there was).
+    if (this.#saveTimer !== null) clearTimeout(this.#saveTimer);
+    this.#saveTimer = null;
     this.#client.stop();
     // The update's run is this hub's: another paired after it starts from nothing.
     resetFlow();
@@ -111,9 +135,18 @@ export class Session {
     return signOut(this.#client, { loadDevice: this.#push?.loadDevice ?? (async () => null) }, this.#key);
   }
 
-  /** The app came back to the front: its socket may have died while it slept. */
+  /**
+   * The app came back to the front from behind: its socket may have died while it slept, so it's asked for a sign of
+   * life and dialled again only without one (client.ts wake). A live link keeps what the screens show.
+   */
   wake(): void {
-    if (this.#state.hub.phase !== "refused") this.#client.reconnectNow();
+    if (this.#state.hub.phase !== "refused") this.#client.wake();
+  }
+
+  /** The app went behind, where iOS may end it: what the cache keeps is written now. */
+  sleep(): void {
+    this.#client.sleep();
+    this.#saveNow();
   }
 
   /** Pulled to refresh: a fresh snapshot (which reads the requests and the open chat again) while live, else a dial now. */
@@ -129,6 +162,7 @@ export class Session {
 
   openChat(key: Key | null): void {
     this.#open = key;
+    this.#push?.onScreen?.(key);
     this.#client.chat(key === null ? null : refOf(key));
     if (key === null) return;
     this.#dispatch({ t: "chat_open", key });
@@ -210,6 +244,11 @@ export class Session {
     if (row !== undefined) void this.#send(key, { ...row, state: { t: "sending" } });
   }
 
+  /** A failed or unanswered row deleted: it never goes (one the hub had anyway comes back as its message). */
+  discard(key: Key, clientRequestId: string): void {
+    this.#dispatch({ t: "discard", key, clientRequestId });
+  }
+
   /** A chat's screens, read again: as it opens, its live view opens, and one of them changes. */
   async readScreens(key: Key): Promise<void> {
     const r = await this.#client.call("browser_sessions", { projectRef: refOf(key), limit: SCREENS_PAGE });
@@ -280,17 +319,28 @@ export class Session {
     else if (r.error.code !== "offline") this.#dispatch({ t: "history_failed", key, error: r.error });
   }
 
-  /** Each unread chat's newest messages, for the chats list, one chat at a time: what spoke last first. */
+  /**
+   * Each chat's newest messages, for the chats list, a few chats at a time: what spoke last first. The open chat's
+   * latest page is read whole (loadLatest); a chat opened earlier is read too, as it's held and may have moved on.
+   */
   async #readLatest(): Promise<void> {
     const keys = Object.entries(this.#state.projects ?? {})
-      .filter(([key]) => this.#state.chats[key] === undefined)
+      .filter(([key]) => key !== this.#open)
       .sort(([, a], [, b]) => b.lastActivityAt.localeCompare(a.lastActivityAt))
       .map(([key]) => key);
-    for (const key of keys) {
+    let failed = false;
+    const next = async (): Promise<void> => {
+      const key = keys.shift();
+      if (key === undefined || failed) return;
       const r = await this.#client.call("chat_history", { projectRef: refOf(key), limit: LATEST });
-      if (!r.ok) return;
+      if (!r.ok) {
+        failed = true;
+        return;
+      }
       this.#dispatch({ t: "latest", key, messages: r.output.messages });
-    }
+      return next();
+    };
+    await Promise.all(Array.from({ length: LATEST_AT_ONCE }, next));
   }
 
   /** Who this phone's person is, and whether an admin, who sees Update; then, for one, the hub's update. */
@@ -383,10 +433,23 @@ export class Session {
   }
 
   #dispatch(action: Action): void {
-    const next = reduce(this.#state, action);
-    if (next === this.#state) return;
+    const was = this.#state;
+    const next = reduce(was, action);
+    if (next === was) return;
     this.#state = next;
+    if (next.projects !== was.projects || next.chatStates !== was.chatStates || next.latest !== was.latest || next.sends !== was.sends || next.meName !== was.meName) this.#saveSoon();
     this.#notify();
+  }
+
+  #saveSoon(): void {
+    if (this.#cache === undefined || this.#saveTimer !== null) return;
+    this.#saveTimer = setTimeout(() => this.#saveNow(), CACHE_SAVE_MS);
+  }
+
+  #saveNow(): void {
+    if (this.#saveTimer !== null) clearTimeout(this.#saveTimer);
+    this.#saveTimer = null;
+    this.#cache?.save(cachedOf(this.#hub, this.#state));
   }
 
   #notify(): void {
