@@ -163,6 +163,32 @@ fn store_error(error: StoreError) -> TaskError {
 /// A started task's thread, its branch, and where the branch started.
 type Launched = (ThreadRef, Option<String>, Option<WorktreeBase>);
 
+/// What `reserve` decided: the task as it stays now (queued, failed, or left as it was), or a start for `go`.
+enum Reserved {
+    Now(Task),
+    Go(Start),
+}
+
+/// A start `reserve` took the slot for, which `go` sends to the node off the lock.
+struct Start {
+    stored: StoredTask,
+    from_queue: bool,
+    /// A fresh restart's handoff.
+    handoff: Option<String>,
+    recovering: bool,
+    fresh: bool,
+    compact: bool,
+    /// It goes on in its thread, with the pending message or the recovery's note.
+    continuing: bool,
+}
+
+/// The node's answer to a start, and what the dead run was doing before it, for the lead's line.
+struct Sent {
+    started: Result<Launched, StartError>,
+    doing: String,
+    rebuilt_before: Option<ports::Rebuilt>,
+}
+
 /// Why a launch or continuation did not go out: the machine went offline (the task queues), or anything else
 /// (the task fails to start with this message).
 enum StartError {
@@ -289,8 +315,16 @@ enum SpawnScope {
 
 pub struct Tasks {
     d: TaskDeps,
-    // Every state change goes through this, so a release, a completion and a lead call never interleave.
+    // Every state change goes through this, so a release, a completion and a lead call never interleave. A start lets
+    // it go while the node launches or continues its task (`go`), and its task is `starting` until then.
     lock: tokio::sync::Mutex<()>,
+    /// Tasks whose start is with the node, off the lock: nothing else changes them until it is recorded. A call on one
+    /// waits for that (`lock_task`), the queue passes it over, and its thread's events wait too (`held_back`).
+    starting: Mutex<HashSet<TaskId>>,
+    /// Told each time a start is recorded.
+    started: tokio::sync::Notify,
+    /// Thread events held back for starts in flight, in the order they came: applied as those are recorded.
+    held: Mutex<Vec<HubEvent>>,
     /// Machines a queued task waits on; one waiter each.
     awaiting: Mutex<HashSet<MachineId>>,
     /// Tasks whose `ask_lead` question their lead hasn't answered yet (any message to the task answers it). Such a
@@ -342,6 +376,9 @@ impl Tasks {
         Arc::new(Self {
             d: deps,
             lock: tokio::sync::Mutex::new(()),
+            starting: Mutex::new(HashSet::new()),
+            started: tokio::sync::Notify::new(),
+            held: Mutex::new(Vec::new()),
             awaiting: Mutex::new(HashSet::new()),
             looking_up: Mutex::new(HashSet::new()),
             asking: Mutex::new(HashSet::new()),
@@ -755,17 +792,92 @@ impl Tasks {
         if seq <= self.applied.load(Ordering::SeqCst) {
             return;
         }
-        if let Err(error) = self.on_thread_event(event).await {
+        if self.held_back(event) {
+            self.held.lock().unwrap().push(event.clone());
+        } else if let Err(error) = self.on_thread_event(event).await {
             tracing::warn!(seq, %error, "task event not handled");
         }
         self.applied.store(seq, Ordering::SeqCst);
     }
 
-    /// A slot, then the launch or the pending message. Queues with the first reason it cannot go.
-    /// Never fails: a store failure is logged and the task returned as it was. Call with the lock held.
-    async fn try_start(self: &Arc<Self>, stored: StoredTask, from_queue: bool) -> Task {
-        match self.try_start_inner(&stored, from_queue).await {
-            Ok(task) => task,
+    /// Whether a thread event waits for a start in flight: it is of the thread a starting task is on, or of a thread no
+    /// task has yet, which may be the one a launch is making. As when the lock spanned the launch, it then applies to
+    /// the task as its start left it.
+    fn held_back(&self, event: &HubEvent) -> bool {
+        if self.starting.lock().unwrap().is_empty()
+            || matches!(
+                event.r#type,
+                HubEventType::UsageResumed
+                    | HubEventType::MachineGuard
+                    | HubEventType::PrMerged
+                    | HubEventType::MachineOnline
+            )
+        {
+            return false;
+        }
+        let (Some(machine_id), Some(thread_id)) = (&event.machine_id, &event.thread_id) else {
+            return false;
+        };
+        let thread = ThreadRef {
+            machine_id: machine_id.clone(),
+            thread_id: thread_id.clone(),
+        };
+        match self.db(|c| TaskRecords::by_thread(c, &thread)) {
+            Ok(Some(stored)) => self.starting.lock().unwrap().contains(&stored.task.task_id),
+            Ok(None) => true,
+            Err(_) => false,
+        }
+    }
+
+    /// Applies the events held back that no start in flight holds any more. Call with the lock held.
+    async fn replay(self: &Arc<Self>) {
+        let held = std::mem::take(&mut *self.held.lock().unwrap());
+        for event in held {
+            if self.held_back(&event) {
+                self.held.lock().unwrap().push(event);
+            } else if let Err(error) = self.on_thread_event(&event).await {
+                tracing::warn!(seq = event.seq.get(), %error, "task event not handled");
+            }
+        }
+    }
+
+    /// The lock, once `task_id`'s start in flight, if any, is recorded: a call on a task sees it as its start left it.
+    async fn lock_task(&self, task_id: &TaskId) -> tokio::sync::MutexGuard<'_, ()> {
+        self.lock_when(|starting| !starting.contains(task_id)).await
+    }
+
+    /// The lock, with no start in flight.
+    async fn lock_settled(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.lock_when(HashSet::is_empty).await
+    }
+
+    async fn lock_when(
+        &self,
+        ready: impl Fn(&HashSet<TaskId>) -> bool,
+    ) -> tokio::sync::MutexGuard<'_, ()> {
+        loop {
+            let guard = self.lock.lock().await;
+            // Made under the lock, so the next record, which tells under it, isn't missed.
+            let started = self.started.notified();
+            if ready(&self.starting.lock().unwrap()) {
+                return guard;
+            }
+            drop(guard);
+            started.await;
+        }
+    }
+
+    /// A slot, then the launch or the pending message. Queues with the first reason it cannot go. Call with the lock
+    /// held: what goes to the node goes from a task of its own, off the lock, which records it under the lock (`go`).
+    /// Never fails: a store failure is logged and the task returned as it was.
+    fn try_start(self: &Arc<Self>, stored: StoredTask, from_queue: bool) -> Task {
+        match self.reserve(&stored, from_queue) {
+            Ok(Reserved::Now(task)) => task,
+            Ok(Reserved::Go(start)) => {
+                let tasks = self.clone();
+                tokio::spawn(async move { tasks.go(start).await });
+                stored.task
+            }
             Err(error) => {
                 tracing::warn!(task_id = stored.task.task_id.as_str(), %error, "task start failed");
                 stored.task
@@ -773,11 +885,54 @@ impl Tasks {
         }
     }
 
-    async fn try_start_inner(
+    /// `try_start` for a lead's call, which waits for the start: `guard` (the lock) is let go while the node launches
+    /// or continues the task, so other calls and starts go on meanwhile.
+    async fn start_now(
+        self: &Arc<Self>,
+        guard: tokio::sync::MutexGuard<'_, ()>,
+        stored: StoredTask,
+        from_queue: bool,
+    ) -> Task {
+        let reserved = self.reserve(&stored, from_queue);
+        drop(guard);
+        match reserved {
+            Ok(Reserved::Now(task)) => task,
+            Ok(Reserved::Go(start)) => self.go(start).await,
+            Err(error) => {
+                tracing::warn!(task_id = stored.task.task_id.as_str(), %error, "task start failed");
+                stored.task
+            }
+        }
+    }
+
+    /// `try_start` as a lead's call makes it, taking the lock and waiting for the start.
+    #[cfg(test)]
+    pub(super) async fn start_waiting(
+        self: &Arc<Self>,
+        stored: StoredTask,
+        from_queue: bool,
+    ) -> Task {
+        let guard = self.lock.lock().await;
+        self.start_now(guard, stored, from_queue).await
+    }
+
+    /// Waits until no start is in flight. Call without the lock.
+    #[cfg(test)]
+    pub(super) async fn starts_recorded(&self) {
+        drop(self.lock_settled().await);
+    }
+
+    /// A start's first part, under the lock: every check, then the slot. One that goes to the node is `starting`
+    /// until `go` recorded it.
+    fn reserve(
         self: &Arc<Self>,
         stored: &StoredTask,
         from_queue: bool,
-    ) -> Result<Task, StoreError> {
+    ) -> Result<Reserved, StoreError> {
+        // Its start in flight goes on; another adds nothing to it.
+        if self.starting.lock().unwrap().contains(&stored.task.task_id) {
+            return Ok(Reserved::Now(stored.task.clone()));
+        }
         let task = &stored.task;
         let r = &task.project_ref;
         // The machine it runs on: its repo checkout's. One whose repo is gone fails at its launch.
@@ -788,7 +943,7 @@ impl Tasks {
         let offline = format!("machine {} is offline", machine.as_str());
         if !self.d.ports.is_connected(machine) {
             self.retry_when_live(machine);
-            return self.queue(stored, "offline", &offline);
+            return self.queue(stored, "offline", &offline).map(Reserved::Now);
         }
         // M4 usage: a paused login takes no new turns; usage.resumed runs the queue again. The login is the account
         // the task runs on: another account's pause on the machine never holds it.
@@ -802,7 +957,7 @@ impl Tasks {
             .get()
             .and_then(|u| u.gate_for(machine.as_str(), account.as_deref()))
         {
-            return self.queue(stored, "usage", &paused);
+            return self.queue(stored, "usage", &paused).map(Reserved::Now);
         }
         // A recovery due now goes on as its mode says: in its thread, `/compact` first, or in a fresh thread.
         let recovering = task.thread_ref.is_some()
@@ -818,11 +973,13 @@ impl Tasks {
             task.thread_ref.is_some() && !fresh && (stored.pending_message.is_some() || recovering);
         // The claude its last run's end ended is still being stopped: it goes on in its thread once that is done.
         if continuing && self.stopping.lock().unwrap().contains(&task.task_id) {
-            return self.queue(
-                stored,
-                "stopping",
-                "its last run's claude is still stopping",
-            );
+            return self
+                .queue(
+                    stored,
+                    "stopping",
+                    "its last run's claude is still stopping",
+                )
+                .map(Reserved::Now);
         }
         // The disk and load guard holds new agents only; machine.guard runs the queue again. One with a thread
         // continues in the worktree it has, a fresh restart too.
@@ -830,14 +987,14 @@ impl Tasks {
             && !fresh
             && let Some(paused) = self.d.ports.paused(machine)
         {
-            return self.queue(stored, "guard", &paused);
+            return self.queue(stored, "guard", &paused).map(Reserved::Now);
         }
         // A fresh restart's handoff reads the node (git, the thread's changes), off the lock: it waits queued until that
         // is in, and the gathering runs the queue again.
         let handoff = if fresh {
             match self.handoff_ready(task) {
                 Some(handoff) => Some(handoff),
-                None => return Ok(task.clone()),
+                None => return Ok(Reserved::Now(task.clone())),
             }
         } else {
             None
@@ -848,13 +1005,13 @@ impl Tasks {
             priority: priority_of(task.kind),
         })?;
         if let crate::hub::slots::Grant::Queued(reason) = slot {
-            return self.queue(stored, "slot", &reason);
+            return self.queue(stored, "slot", &reason).map(Reserved::Now);
         }
 
         // A paused agent's thread is still pushing its work: it continues once that turn ended, when its stop frees
         // the slot and runs the queue again. One that asked its lead meanwhile continues with the answer.
         if (continuing || fresh) && self.asking.lock().unwrap().contains(&task.task_id) {
-            return Ok(task.clone());
+            return Ok(Reserved::Now(task.clone()));
         }
         if (continuing || fresh)
             && let Some(thread) = &task.thread_ref
@@ -864,8 +1021,43 @@ impl Tasks {
                 .thread_get(thread)?
                 .is_some_and(|t| t.thread.status == fleetd_contracts::model::ThreadStatus::Running)
         {
-            return Ok(task.clone());
+            return Ok(Reserved::Now(task.clone()));
         }
+        self.starting.lock().unwrap().insert(task.task_id.clone());
+        Ok(Reserved::Go(Start {
+            stored: stored.clone(),
+            from_queue,
+            handoff,
+            recovering,
+            fresh,
+            compact,
+            continuing,
+        }))
+    }
+
+    /// A reserved start's node call, off the lock, then its record under the lock. Thread events held back for it
+    /// (`held_back`) are applied once it is recorded, in the order they came.
+    async fn go(self: &Arc<Self>, start: Start) -> Task {
+        let sent = self.send_start(&start).await;
+        let _guard = self.lock.lock().await;
+        let task_id = start.stored.task.task_id.clone();
+        let task = match self.record_start(&start, sent).await {
+            Ok(task) => task,
+            Err(error) => {
+                tracing::warn!(task_id = task_id.as_str(), %error, "task start failed");
+                start.stored.task.clone()
+            }
+        };
+        self.starting.lock().unwrap().remove(&task_id);
+        self.started.notify_waiters();
+        self.replay().await;
+        task
+    }
+
+    /// What a reserved start has the node do, off the lock: launch the task, or continue its thread with the message.
+    async fn send_start(&self, start: &Start) -> Sent {
+        let (stored, task) = (&start.stored, &start.stored.task);
+        let (recovering, compact) = (start.recovering, start.compact);
         // What the dead run did last and what its worktree was last rebuilt from, for the lead's line: read before
         // the resume adds to them.
         let (doing, rebuilt_before) = match &task.thread_ref {
@@ -883,9 +1075,10 @@ impl Tasks {
                 .collect::<Vec<_>>()
                 .join("\n\n")
         };
-        let started = if let Some(handoff) = handoff {
-            self.launch(task, Some(&with_pending(Some(handoff)))).await
-        } else if continuing {
+        let started = if let Some(handoff) = &start.handoff {
+            self.launch(task, Some(&with_pending(Some(handoff.clone()))))
+                .await
+        } else if start.continuing {
             let thread = task.thread_ref.as_ref().expect("continuing has a thread");
             // A full context compacts first; the note and anything sent meanwhile follow once that run completed.
             let message = if compact {
@@ -928,11 +1121,38 @@ impl Tasks {
         } else {
             self.launch(task, None).await
         };
+        Sent {
+            started,
+            doing,
+            rebuilt_before,
+        }
+    }
+
+    /// A start's last part, under the lock: the task as the node's answer leaves it.
+    async fn record_start(self: &Arc<Self>, start: &Start, sent: Sent) -> Result<Task, StoreError> {
+        let (stored, from_queue) = (&start.stored, start.from_queue);
+        let task = &stored.task;
+        let r = &task.project_ref;
+        let (recovering, fresh, compact, continuing) = (
+            start.recovering,
+            start.fresh,
+            start.compact,
+            start.continuing,
+        );
+        let Sent {
+            started,
+            doing,
+            rebuilt_before,
+        } = sent;
+        let machine = &self
+            .checkout_of(task)
+            .map_or_else(|_| r.machine_id.clone(), |checkout| checkout.machine_id);
         let (thread_ref, branch, base) = match started {
             Ok(started) => started,
             Err(StartError::Offline) => {
                 self.d.slots.release(task.task_id.as_str())?;
                 self.retry_when_live(machine);
+                let offline = format!("machine {} is offline", machine.as_str());
                 return self.queue(stored, "offline", &offline);
             }
             // Its thread can't go on (claude's conversation is gone, or its config dir changed): a new one takes over.
@@ -1113,6 +1333,10 @@ impl Tasks {
         let now = now_ms(self.d.clock.as_ref());
         self.close_quiet_breakers(now);
         for mut stored in queued {
+            // Its start is with the node already.
+            if self.starting.lock().unwrap().contains(&stored.task.task_id) {
+                continue;
+            }
             if let Err(error) = self.settle(&mut stored) {
                 tracing::warn!(task_id = stored.task.task_id.as_str(), %error, "tasks: recovery not settled");
             }
@@ -1158,7 +1382,7 @@ impl Tasks {
                 }
                 continue;
             }
-            self.try_start(stored, true).await;
+            self.try_start(stored, true);
         }
     }
 
@@ -1876,7 +2100,7 @@ impl Tasks {
         let Some(answer) = answer else {
             return false;
         };
-        let _guard = self.lock.lock().await;
+        let _guard = self.lock_task(task_id).await;
         self.settle_pr(task_id, at.as_ref(), answer)
             .unwrap_or_else(|error| {
                 tracing::warn!(%error, "tasks: PR not set");
@@ -2137,8 +2361,7 @@ impl Tasks {
                         pending_message: stored.pending_message.clone(),
                     },
                     true,
-                )
-                .await;
+                );
             }
             HubEventType::ThreadCompleted if live => {
                 // An agent there got its work done: the machine is fine again.
@@ -2336,7 +2559,7 @@ impl Tasks {
             None
         };
         stages.done("scope");
-        let _guard = self.lock.lock().await;
+        let guard = self.lock.lock().await;
         stages.done("tasks lock");
         let ws = match self.workstream(&input.workstream_id) {
             Some(ws) if same_project(&ws.project_ref, r) => ws,
@@ -2451,15 +2674,12 @@ impl Tasks {
                 "tasks: spawned over a possible duplicate"
             );
         }
-        let task = self
-            .try_start(
-                StoredTask {
-                    task,
-                    pending_message: None,
-                },
-                false,
-            )
-            .await;
+        let stored = StoredTask {
+            task,
+            pending_message: None,
+        };
+        // The launch goes on off the lock: other calls and starts don't wait for this one's node.
+        let task = self.start_now(guard, stored, false).await;
         stages.done("start");
         stages.end();
         Ok(Spawned {
@@ -2682,7 +2902,7 @@ impl Tasks {
     ) -> Result<Task, TaskError> {
         let mut stages = crate::stages::Stages::new("hub message");
         stages.id(task_id.as_str());
-        let _guard = self.lock.lock().await;
+        let guard = self.lock_task(task_id).await;
         stages.done("tasks lock");
         let stored = self.owned(caller, task_id)?;
         let task = stored.task.clone();
@@ -2764,15 +2984,11 @@ impl Tasks {
                     recovery.signature = None;
                     recovery.resumed_at = None;
                 }
-                let task = self
-                    .try_start(
-                        StoredTask {
-                            task: next,
-                            pending_message: Some(text.to_owned()),
-                        },
-                        false,
-                    )
-                    .await;
+                let stored = StoredTask {
+                    task: next,
+                    pending_message: Some(text.to_owned()),
+                };
+                let task = self.start_now(guard, stored, false).await;
                 stages.done("start");
                 stages.end();
                 Ok(task)
@@ -2783,7 +2999,7 @@ impl Tasks {
     /// Removes `text` from a task's pending message (a withdrawn steer that was waiting for its next run); false once
     /// that run went out.
     pub async fn take_back(&self, task_id: &TaskId, text: &str) -> Result<bool, TaskError> {
-        let _guard = self.lock.lock().await;
+        let _guard = self.lock_task(task_id).await;
         let Some(mut stored) = self
             .db(|c| TaskRecords::get(c, task_id))
             .map_err(store_error)?
@@ -2815,7 +3031,7 @@ impl Tasks {
         task_id: &TaskId,
         reason: Option<&str>,
     ) -> Result<Task, TaskError> {
-        let _guard = self.lock.lock().await;
+        let _guard = self.lock_task(task_id).await;
         let task = self.owned(caller, task_id)?.task;
         let id = task_id.as_str();
         match task.state {
@@ -3310,6 +3526,10 @@ mod tests {
         found: tokio::sync::Notify,
         pr_found: Mutex<Vec<TaskId>>,
         wakes: Mutex<Vec<(WakeKind, String)>>,
+        /// How long each launch and send takes the node, as a real one's git and claude spawn do.
+        delay: Mutex<std::time::Duration>,
+        /// Set: each launch waits for a permit, as a node still fetching.
+        gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
     }
 
     impl Node {
@@ -3343,7 +3563,15 @@ mod tests {
             let mut launched = self.launched.lock().unwrap();
             launched.push(request.worktree.and_then(|w| w.branch));
             let id = ThreadId::unchecked(format!("t{}", launched.len()));
-            Box::pin(async move { Ok((id, base)) })
+            let delay = *self.delay.lock().unwrap();
+            let gate = self.gate.lock().unwrap().clone();
+            Box::pin(async move {
+                if let Some(gate) = gate {
+                    gate.acquire().await.unwrap().forget();
+                }
+                tokio::time::sleep(delay).await;
+                Ok((id, base))
+            })
         }
         fn send<'a>(
             &'a self,
@@ -3351,7 +3579,11 @@ mod tests {
             _: &'a str,
             _: &'a str,
         ) -> BoxFut<'a, Result<(), PortError>> {
-            Box::pin(async { Ok(()) })
+            let delay = *self.delay.lock().unwrap();
+            Box::pin(async move {
+                tokio::time::sleep(delay).await;
+                Ok(())
+            })
         }
         fn started_run(&self, _: &ThreadRef) -> Option<String> {
             None
@@ -3806,6 +4038,7 @@ mod tests {
             let _guard = tasks.lock.lock().await;
             tasks.retry_queue().await;
         }
+        tasks.starts_recorded().await;
         let failed = tasks.get(&queued.task_id).unwrap().unwrap();
         assert_eq!(failed.state, TaskState::Failed);
         let tail = failed.result.unwrap().tail;
@@ -3958,6 +4191,7 @@ mod tests {
             let _guard = tasks.lock.lock().await;
             tasks.retry_queue().await;
         }
+        tasks.starts_recorded().await;
         let failed = tasks.get(&queued.task_id).unwrap().unwrap();
         assert_eq!(failed.state, TaskState::Failed);
         assert_eq!(
@@ -4594,5 +4828,186 @@ mod tests {
         assert!(!pending(&tasks, &review), "no lookup for a review");
         assert!(node.looked_up.lock().unwrap().is_empty());
         assert!(node.pr_found.lock().unwrap().is_empty());
+    }
+
+    fn reader(n: usize) -> TaskSpawnCall {
+        serde_json::from_value(json!({
+            "workstreamId": "W1", "title": format!("read slice {n}"), "kind": "read", "prompt": "do it",
+        }))
+        .unwrap()
+    }
+
+    /// Each call's time, in ms, sorted.
+    fn spread(mut ms: Vec<u128>) -> String {
+        ms.sort_unstable();
+        let at = |q: f64| ms[((ms.len() - 1) as f64 * q).round() as usize];
+        format!("p50 {} ms, p90 {} ms, max {} ms", at(0.5), at(0.9), at(1.0))
+    }
+
+    /// W363's before/after numbers: 10 spawns, then 10 continues of ended tasks, at once, each node launch or send
+    /// taking 500 ms (a launch alone measured about 0.5 s on the devbox). Prints each call's time as the lead sees it.
+    /// `cargo test -p fleetd --lib -- --ignored --nocapture parallel_calls_bench`
+    #[tokio::test]
+    #[ignore = "a measurement: prints numbers, asserts nothing"]
+    async fn parallel_calls_bench() {
+        const N: usize = 10;
+        let (tasks, node) = tasks();
+        *node.delay.lock().unwrap() = std::time::Duration::from_millis(500);
+        let timed = |task: Arc<Tasks>, n: usize| async move {
+            let at = std::time::Instant::now();
+            let task = task.spawn(&lead(), reader(n)).await.unwrap();
+            (task, at.elapsed().as_millis())
+        };
+        let at = std::time::Instant::now();
+        let spawned = futures_util::future::join_all((0..N).map(|n| timed(tasks.clone(), n))).await;
+        let all = at.elapsed().as_millis();
+        assert!(spawned.iter().all(|(t, _)| t.state == TaskState::Running));
+        println!(
+            "{N} spawns at once: {}; all in {all} ms",
+            spread(spawned.iter().map(|(_, ms)| *ms).collect())
+        );
+        for (task, _) in &spawned {
+            complete(&tasks, task).await;
+        }
+        let timed = |task: Arc<Tasks>, id: TaskId| async move {
+            let at = std::time::Instant::now();
+            let task = task.message(&lead(), &id, "go on").await.unwrap();
+            (task, at.elapsed().as_millis())
+        };
+        let at = std::time::Instant::now();
+        let continued = futures_util::future::join_all(
+            spawned
+                .iter()
+                .map(|(t, _)| timed(tasks.clone(), t.task_id.clone())),
+        )
+        .await;
+        let all = at.elapsed().as_millis();
+        assert!(continued.iter().all(|(t, _)| t.state == TaskState::Running));
+        println!(
+            "{N} continues at once: {}; all in {all} ms",
+            spread(continued.iter().map(|(_, ms)| *ms).collect())
+        );
+    }
+
+    /// W363: a lead's calls don't queue behind each other's node work. Ten spawns at once, each launch taking the node
+    /// 500 ms, all start within one launch's time, not ten; so do ten continues of ended tasks.
+    #[tokio::test(start_paused = true)]
+    async fn parallel_spawns_and_continues_wait_for_no_other_node_call() {
+        const N: usize = 10;
+        let (tasks, node) = tasks();
+        let launch = std::time::Duration::from_millis(500);
+        *node.delay.lock().unwrap() = launch;
+        let at = tokio::time::Instant::now();
+        let spawned = futures_util::future::join_all((0..N).map(|n| {
+            let tasks = tasks.clone();
+            async move { tasks.spawn(&lead(), reader(n)).await.unwrap() }
+        }))
+        .await;
+        assert!(at.elapsed() < launch * 2, "took {:?}", at.elapsed());
+        assert!(spawned.iter().all(|t| t.state == TaskState::Running));
+        let mut threads: Vec<_> = spawned
+            .iter()
+            .map(|t| t.thread_ref.clone().unwrap().thread_id)
+            .collect();
+        threads.dedup();
+        assert_eq!(threads.len(), N, "each its own thread");
+
+        for task in &spawned {
+            complete(&tasks, task).await;
+        }
+        let at = tokio::time::Instant::now();
+        let continued = futures_util::future::join_all(spawned.iter().map(|t| {
+            let tasks = tasks.clone();
+            async move { tasks.message(&lead(), &t.task_id, "go on").await.unwrap() }
+        }))
+        .await;
+        assert!(at.elapsed() < launch * 2, "took {:?}", at.elapsed());
+        assert!(continued.iter().all(|t| t.state == TaskState::Running));
+    }
+
+    /// A task whose launch is with the node takes no other call until the launch is recorded: a message to it waits
+    /// and then reaches the started task, while a call on another task goes on meanwhile.
+    #[tokio::test]
+    async fn a_call_on_a_starting_task_waits_for_its_start_and_others_go_on() {
+        let (tasks, node) = tasks();
+        let other = tasks.spawn(&lead(), reader(0)).await.unwrap();
+        complete(&tasks, &other).await;
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        *node.gate.lock().unwrap() = Some(gate.clone());
+        let spawning = {
+            let tasks = tasks.clone();
+            tokio::spawn(async move { tasks.spawn(&lead(), reader(1)).await.unwrap() })
+        };
+        while node.launched.lock().unwrap().len() < 2 {
+            tokio::task::yield_now().await;
+        }
+        let id = TaskId::unchecked("T2");
+        assert!(tasks.starting.lock().unwrap().contains(&id));
+        let message = {
+            let tasks = tasks.clone();
+            let id = id.clone();
+            tokio::spawn(async move { tasks.message(&lead(), &id, "and the tests").await })
+        };
+
+        // Another task's continue goes on while T2's launch is with the node.
+        let continued = tasks
+            .message(&lead(), &other.task_id, "go on")
+            .await
+            .unwrap();
+        assert_eq!(continued.state, TaskState::Running);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(!message.is_finished(), "it waits for the launch");
+
+        gate.add_permits(1);
+        let started = spawning.await.unwrap();
+        assert_eq!(started.state, TaskState::Running);
+        let messaged = message.await.unwrap().unwrap();
+        assert_eq!(messaged.state, TaskState::Running);
+        assert_eq!(messaged.thread_ref, started.thread_ref);
+    }
+
+    /// A thread's events that come in while its launch is with the node apply once the launch is recorded, in order:
+    /// a run that ended at once still ends its task, as when the lock spanned the launch.
+    #[tokio::test]
+    async fn a_runs_end_during_its_launch_ends_the_task_once_recorded() {
+        let (tasks, node) = tasks();
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        *node.gate.lock().unwrap() = Some(gate.clone());
+        let spawning = {
+            let tasks = tasks.clone();
+            tokio::spawn(async move { tasks.spawn(&lead(), reader(0)).await.unwrap() })
+        };
+        while node.launched.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+        // The node's first thread is t1; another thread's event, no task's, goes by too.
+        let event = |seq: i64, thread: &str| HubEvent {
+            seq: fleetd_contracts::ids::EventSeq::new(seq).unwrap(),
+            at: Timestamp(AT.into()),
+            r#type: HubEventType::ThreadCompleted,
+            machine_id: Some(MachineId::unchecked("lab-a")),
+            project_id: None,
+            thread_id: Some(ThreadId::unchecked(thread)),
+            summary: fleetd_contracts::prim::Text::unchecked(String::new()),
+            data: None,
+            attention: None,
+        };
+        {
+            let _guard = tasks.lock.lock().await;
+            tasks.apply(&event(1_000_000, "t1")).await;
+            tasks.apply(&event(1_000_001, "lead-thread")).await;
+        }
+        assert_eq!(tasks.held.lock().unwrap().len(), 2);
+
+        gate.add_permits(1);
+        let started = spawning.await.unwrap();
+        assert_eq!(
+            started.state,
+            TaskState::Running,
+            "the call reads it as started"
+        );
+        let task = tasks.get(&started.task_id).unwrap().unwrap();
+        assert_eq!(task.state, TaskState::Done, "then its run's end applied");
+        assert!(tasks.held.lock().unwrap().is_empty());
     }
 }
