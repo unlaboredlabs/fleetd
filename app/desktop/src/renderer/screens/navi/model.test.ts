@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectSummary } from "../../../shared/contracts";
-import { isYours, nameProblem, orderWords, sidebarOrder, splitNavis, yourNavis } from "./model";
+import { isYours, nameProblem, sidebarOrder, splitNavis, yourNavis } from "./model";
 
 const project = (title: string, extra: Partial<ProjectSummary> = {}): { project: ProjectSummary } => ({
   project: {
@@ -60,14 +60,5 @@ describe("a Navi's name", () => {
     expect(nameProblem("Ada")).toBeUndefined();
     expect(nameProblem("a".repeat(81))).toMatch(/80/u);
     expect(nameProblem("Ada\nLovelace")).toBe("One line");
-  });
-});
-
-describe("the work a Navi asked for", () => {
-  it("says each order's state in a word", () => {
-    const order = { workstreamId: "W12", title: "Saved carts" };
-    expect(orderWords({ ...order, state: "open" })).toBe("In progress");
-    expect(orderWords({ ...order, state: "done" })).toBe("Done");
-    expect(orderWords({ ...order, state: "stopped" })).toBe("Stopped");
   });
 });

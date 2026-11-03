@@ -57,7 +57,8 @@ pub struct BriefCreateCall {
     /// The order in the human's words, when this opens the workstream.
     pub text: Option<IntakeText>,
     pub brief: Brief,
-    /// The Navi message (`project_message`) this order is opened for, so that Navi hears when it lands.
+    /// The Navi message (`project_message`) this order is opened for, so that Navi hears when it lands. With
+    /// workstreamId, a later message folded into that open order: the Navi hears it went there.
     pub asked: Option<AskHandle>,
 }
 checked!(BriefCreateCall, |call| {
@@ -66,9 +67,6 @@ checked!(BriefCreateCall, |call| {
             Err("give workstreamId to brief an open workstream, or text to open one".into())
         }
         (Some(_), Some(_)) => Err("text opens a workstream; leave it out with workstreamId".into()),
-        (Some(_), None) if call.asked.is_some() => {
-            Err("asked names the Navi message an order is opened for; give it with text".into())
-        }
         _ => Ok(()),
     }
 });

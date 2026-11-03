@@ -2,7 +2,8 @@
 // #/navi: the first run says what Navi is and has one button, which makes a Navi (called Navi when unnamed) and opens
 // its chat once the hub has added it; with Navis, the list and the archived ones, each a click from coming back.
 // With more than one machine it could live on, a choice of them, each with its Navi sandbox: a missing one can't be
-// picked. Asked work, in a Navi's panel: each ask with its orders, or a plain sentence on a hub that doesn't serve it.
+// picked. Asked work, in a Navi's panel: each ask a row that opens to its orders, or a plain sentence on a hub that
+// doesn't serve it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,6 +13,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, live } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
+import { orderHref } from "../automations/model";
 import { AskedPane } from "./AskedPane";
 import { NaviScreen } from "./NaviScreen";
 
@@ -287,19 +289,33 @@ const READ: NaviAsksOutput = {
 };
 
 describe("Asked work", () => {
-  it("reads navi_asks for this Navi and shows each ask with its orders, in the hub's order, linking to the project", async () => {
+  it("reads navi_asks for this Navi and shows each ask as a row that opens to its words and orders, with no ids", async () => {
     const { calls } = await mount(<AskedPane project={{ machineId: "devbox", projectId: "ada" }} />, [STOREFRONT, ADA], (tool) => (tool === "navi_asks" ? { ok: true, output: READ } : undefined), ["navi_asks"]);
     expect(calls).toContainEqual({ tool: "navi_asks", input: { navi: { machineId: "devbox", projectId: "ada" } } });
     expect(screen()).toBe("asked");
     expect([...host.querySelectorAll("[data-ask]")].map((a) => a.getAttribute("data-ask"))).toEqual(["N4", "N3"]);
-    expect(host.querySelector("[data-ask=N4]")?.textContent).toContain("No order opened for it yet");
+    // Closed: the ask in a line, its chip, the project; no order yet is Waiting.
+    const waiting = host.querySelector("[data-ask=N4]");
+    expect(waiting?.getAttribute("data-state")).toBe("waiting");
+    expect(waiting?.textContent).toContain("Is the usage report ready?Waitingbilling");
     const ask = host.querySelector("[data-ask=N3]");
-    expect(ask?.textContent).toContain("Let people save their cart.");
-    expect(ask?.textContent).toContain("W12Saved cartsIn progress");
+    const row = ask?.querySelector("button[aria-expanded]");
+    expect(row?.getAttribute("aria-expanded")).toBe("false");
+    expect(ask?.textContent).toContain("Let people save their cart.Workingstorefront");
+    expect(ask?.textContent).not.toContain("Saved carts");
+    // Open: the orders by title, each linked to its page, the open one with its headline; a finished one without.
+    act(() => (row as HTMLButtonElement).click());
+    expect(row?.getAttribute("aria-expanded")).toBe("true");
+    const links = [...(ask?.querySelectorAll("a") ?? [])].map((a) => [a.textContent, a.getAttribute("href")]);
+    expect(links).toEqual([
+      ["Saved carts", orderHref("W12")],
+      ["Cart cleanup", orderHref("W9")],
+    ]);
+    expect(ask?.textContent).toContain("Saved cartsWorking");
     expect(ask?.textContent).toContain("A writer adds the table.");
-    // A finished order says so, without its last headline.
-    expect(ask?.textContent).toContain("W9Cart cleanupDone");
+    expect(ask?.textContent).toContain("Cart cleanupDone");
     expect(ask?.textContent).not.toContain("Merged #40.");
+    expect(host.textContent).not.toMatch(/\b[WN]\d+\b/u);
     act(() => button("storefront").click());
     expect(went).toEqual([{ id: "project", project: { machineId: "devbox", projectId: "storefront" }, message: null }]);
   });

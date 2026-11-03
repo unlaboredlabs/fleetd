@@ -1,5 +1,6 @@
 // What a bubble can do in its chat, handed down the list once rather than through every row: reply to it, put a
-// tapback on it, answer an ask in it, go to the bubble a reply quotes, and say a message you were nudged about was seen.
+// tapback on it, answer an ask in it or skip its questions, go to the bubble a reply quotes, and say a message you were
+// nudged about was seen.
 import { createContext, useContext } from "react";
 import type { ShownMark } from "./shown";
 import type { ProjectRef } from "./slots";
@@ -15,6 +16,8 @@ export interface BubbleActions {
   readonly project: ProjectRef;
   /** The lead's message it waits on you about, when it does. */
   readonly waitedOn: string | undefined;
+  /** The lead's message whose questions you may skip (Not needed), when it waits on questions. */
+  readonly skips?: string | undefined;
   /** Sends words to the lead as you (an ask's button, a 👍 that answers). */
   readonly send: (text: string) => void;
   /** Puts the bubble over the box: what you write next answers it. */

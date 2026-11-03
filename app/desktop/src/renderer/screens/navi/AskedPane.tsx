@@ -1,17 +1,19 @@
-// A Navi's panel, Asked work: each message it sent another project's lead (project_message), newest first, with the
-// orders that lead opened for it and how each is going; the project's name opens its chat. Read from the hub's
-// navi_asks for this Navi (#649), again whenever the order board changes, since the same events
-// move both. The tab shows only on a hub that serves it (the `navi_asks` feature); a link to it on another hub gets
-// a plain sentence, never a guess.
+// A Navi's panel, Asked work: each message it sent another project's lead (project_message), newest first, as one
+// row: the ask in a line, how its order is going as a chip, the project and how long ago. A row opens in place to the
+// Navi's whole message and the orders opened for it, each by its title, linked to its page; the project's name opens
+// its chat. No fleetd ids. Read from the hub's navi_asks for this Navi (#649), again whenever the order board
+// changes, since the same events move both. The tab shows only on a hub that serves it (the `navi_asks` feature); a
+// link to it on another hub gets a plain sentence, never a guess.
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { callKey } from "../../src/data/queries";
 import { useData, useToolQuery } from "../../src/data/react";
-import { Button, EmptyState, Text } from "../../ui";
+import { Button, EmptyState, StatusChip, Text, cx } from "../../ui";
+import { orderHref } from "../automations/model";
 import { navigate } from "../shell/navigation";
 import type { ProjectKey } from "../shell/routes";
-import { when } from "../status/view";
-import { NOT_TAKEN, orderWords, type Ask } from "./model";
+import { age, fullWhen } from "../status/view";
+import { ASK_STATE, askRows, orderState, type AskRow } from "./askedModel";
 import s from "./asked.module.css";
 
 /** The hub feature that says it serves navi_asks. */
@@ -37,7 +39,8 @@ export function AskedPane({ project }: { project: ProjectKey }) {
   const fresh = useData((st) => st.fresh);
   const { served, query } = useAskedWork(project);
   const asks = query.data?.asks;
-  // Day-grained stamps: read once a mount.
+  const rows = useMemo(() => (asks === undefined ? undefined : askRows(asks)), [asks]);
+  // "2d ago": read once a mount.
   const [now] = useState(() => Date.now());
 
   if (!served) {
@@ -78,8 +81,8 @@ export function AskedPane({ project }: { project: ProjectKey }) {
       ) : (
         <div className={s.scroll}>
           <ul className={s.rows} aria-label="Asked work">
-            {asks.map((a) => (
-              <AskRow key={a.handle} ask={a} now={now} />
+            {(rows ?? []).map((r) => (
+              <AskItem key={r.ask.handle} row={r} now={now} />
             ))}
           </ul>
           {query.data?.truncated === true ? (
@@ -93,49 +96,73 @@ export function AskedPane({ project }: { project: ProjectKey }) {
   );
 }
 
-function AskRow({ ask, now }: { ask: Ask; now: number }) {
-  const { machineId, projectId } = ask.to;
+/** "3h ago"; under a minute, "just now". */
+const ago = (iso: string, now: number): string => {
+  const a = age(now - new Date(iso).getTime());
+  return a === "<1m" ? "just now" : `${a} ago`;
+};
+
+function AskItem({ row, now }: { row: AskRow; now: number }) {
+  const { ask, summary, state, folded } = row;
+  const [open, setOpen] = useState(false);
+  const detail = useId();
+  const chip = ASK_STATE[state];
+  const project = { machineId: ask.to.machineId, projectId: ask.to.projectId };
   return (
-    <li className={s.ask} data-ask={ask.handle}>
-      <div className={s.head}>
-        <button type="button" className={s.project} title={`Open ${ask.toTitle}`} onClick={() => navigate({ id: "project", project: { machineId, projectId }, message: null })}>
-          {ask.toTitle}
-        </button>
-        <Text size="xs" tone="quiet" className={s.when}>
-          {when(ask.at, now)}
-        </Text>
-      </div>
-      <Text as="p" size="sm">
-        {ask.text}
-      </Text>
-      {ask.orders.length === 0 ? (
-        <Text size="xs" tone="quiet">
-          {NOT_TAKEN}
-        </Text>
-      ) : (
-        <ul className={s.orders}>
-          {ask.orders.map((o) => (
-            <li key={o.workstreamId} className={s.order}>
-              <span className={s.orderHead}>
-                <Text size="xs" tone="quiet" tabular>
-                  {o.workstreamId}
-                </Text>
-                <Text size="sm" tone={o.state === "open" ? "default" : "quiet"}>
-                  {o.title}
-                </Text>
-                <Text size="xs" tone="quiet">
-                  {orderWords(o)}
-                </Text>
-              </span>
-              {o.state === "open" && o.headline !== undefined ? (
-                <Text size="xs" tone="quiet">
-                  {o.headline}
-                </Text>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
+    <li className={cx(s.ask, open && s.open)} data-ask={ask.handle} data-state={state}>
+      <button type="button" className={s.row} aria-expanded={open} aria-controls={detail} onClick={() => setOpen((o) => !o)}>
+        <span className={s.summary}>{summary}</span>
+        <span className={s.chip} title={chip.hint}>
+          <StatusChip tone={chip.tone} inRow>
+            {chip.word}
+          </StatusChip>
+        </span>
+        <span className={s.meta}>
+          <span className={s.to}>{ask.toTitle}</span>
+          <span aria-hidden>·</span>
+          <span className={s.word} title={fullWhen(ask.at)}>
+            {ago(ask.at, now)}
+          </span>
+          {folded ? (
+            <>
+              <span aria-hidden>·</span>
+              <span className={s.word}>Folded into an earlier ask</span>
+            </>
+          ) : null}
+        </span>
+      </button>
+      {open ? (
+        <div className={s.detail} id={detail}>
+          <dl className={s.facts}>
+            <dt>To</dt>
+            <dd>
+              <button type="button" className={s.link} title={`Open ${ask.toTitle}’s chat`} onClick={() => navigate({ id: "project", project, message: null })}>
+                {ask.toTitle}
+              </button>
+              <span className={s.quiet}>{` · ${fullWhen(ask.at)}`}</span>
+            </dd>
+            <dt>{folded ? "Folded into" : ask.orders.length > 1 ? "Orders" : "Order"}</dt>
+            {ask.orders.length === 0 ? (
+              <dd className={s.quiet}>None yet: its lead hasn’t opened one, or answered in its chat</dd>
+            ) : (
+              ask.orders.map((o) => (
+                <dd key={o.workstreamId} className={s.order}>
+                  <span className={s.orderHead}>
+                    <a className={s.link} href={orderHref(o.workstreamId)} title={o.title}>
+                      {o.title}
+                    </a>
+                    {ask.orders.length > 1 ? <span className={s.word}>{ASK_STATE[orderState(o)].word}</span> : null}
+                  </span>
+                  {o.state === "open" && o.headline !== undefined ? <span className={s.quiet}>{o.headline}</span> : null}
+                </dd>
+              ))
+            )}
+          </dl>
+          <Text as="p" size="sm" className={s.body}>
+            {ask.text}
+          </Text>
+        </div>
+      ) : null}
     </li>
   );
 }

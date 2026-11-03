@@ -1,7 +1,7 @@
 // Navi in the app, as plain view data: which projects are Navis (a project the hub marks `kind: "assistant"`), the
 // sidebar's order (the Navis pinned above the projects, an archived one in neither), a name the hub would take, and
-// the work a Navi asked other projects for (navi_asks). Pure, so it is unit-tested.
-import type { MachineRolesEntry, NaviAsk, NaviAskOrder, ProjectSummary } from "../../../shared/contracts";
+// where a new one could live. Pure, so it is unit-tested. The Asked tab's rows are askedModel's.
+import type { MachineRolesEntry, ProjectSummary } from "../../../shared/contracts";
 
 /** A Navi: a plain-folder project with an assistant for its lead. */
 export const isNavi = (p: Pick<ProjectSummary, "kind">): boolean => p.kind === "assistant";
@@ -56,13 +56,3 @@ export const canHost = (m: Pick<MachineRolesEntry, "naviSandbox">): boolean => m
 export const firstHome = (homes: ReadonlyArray<MachineRolesEntry>, best: string | undefined): string | undefined =>
   (homes.find((m) => m.machineId === best && canHost(m)) ?? homes.find(canHost))?.machineId;
 
-/** One message the Navi sent another project's lead (project_message), and the orders that lead opened for it. */
-export type Ask = NaviAsk;
-
-export type AskedOrder = NaviAskOrder;
-
-/** An order's state in a word: open is under way. */
-export const orderWords = (o: AskedOrder): string => (o.state === "open" ? "In progress" : o.state === "done" ? "Done" : "Stopped");
-
-/** An ask with no order yet: its lead hasn't taken it up, or answered without one. */
-export const NOT_TAKEN = "No order opened for it yet";

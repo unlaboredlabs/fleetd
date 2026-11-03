@@ -568,6 +568,13 @@ span.changeUndo {
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
+/* Not needed, under the questions the lead waits on: a quiet link, level with the bubbles' words. */
+.skip {
+  display: flex;
+  padding: 2px var(--space-3) 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
 .attachments {
   display: flex;
   flex-wrap: wrap;

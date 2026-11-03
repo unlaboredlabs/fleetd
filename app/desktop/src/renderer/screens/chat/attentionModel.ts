@@ -20,6 +20,8 @@ export interface Waiting {
   readonly what: string;
   /** Where Show goes, a press each, in the chat's order; none when it isn't loaded (paged away). */
   readonly targets: readonly WaitTarget[];
+  /** The lead message whose questions these are: ones you may hide from the bar, or skip. Absent for an approval or a secret, which the lead can't go on without. */
+  readonly question?: string | undefined;
 }
 
 /** What the chat knows beyond its loaded items. */
@@ -83,7 +85,7 @@ export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }
       .filter((b) => b.n > 0);
     if (asking.length === 0) continue;
     const n = asking.length > 1 ? asking.reduce((sum, b) => sum + b.n, 0) : Math.max(countQuestions(ask.text), 1);
-    return { what: `${plural(n, "question")}, asked ${when(ask.at, nowMs, timeZone)}`, targets: asking.map((b) => ({ id: ask.id, part: b.key })) };
+    return { what: `${plural(n, "question")}, asked ${when(ask.at, nowMs, timeZone)}`, targets: asking.map((b) => ({ id: ask.id, part: b.key })), question: ask.id };
   }
   // A plain status line asks nothing; only a page not loaded can hold the wait, and only if you haven't written since.
   return older && since === 0 ? { what: "a reply", targets: [] } : undefined;

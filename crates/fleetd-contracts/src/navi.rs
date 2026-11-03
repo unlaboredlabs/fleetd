@@ -207,6 +207,8 @@ pub struct NaviAskOrder {
     pub state: WorkstreamState,
     /// The lead's latest one-line headline for it.
     pub headline: Option<String>,
+    /// True once a PR of it merged; absent otherwise.
+    pub merged: Option<bool>,
 }
 
 /// Sent to an agent message's project lead under the text: the handle it passes to `brief` as `asked`.

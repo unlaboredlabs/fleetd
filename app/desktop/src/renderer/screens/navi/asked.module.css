@@ -1,5 +1,5 @@
-/* The panel's Asked work: one ask a row, apart by a hairline; the project and when on top, Navi's words, then the
-   orders it became. No cards, no coloured edges (ui/DESIGN.md). */
+/* The panel's Asked work: one ask a row, apart by a hairline, that opens in place. No cards, no coloured edges
+   (ui/DESIGN.md). */
 .screen {
   --pad: var(--space-4);
   flex: 1;
@@ -28,67 +28,153 @@
   gap: var(--space-2);
   padding: var(--space-4) var(--pad);
 }
+/* Inset, so a row's hover keeps clear of the panel's edges; its words line up with the panel's padding. */
 .rows {
+  --inset: var(--space-2);
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: var(--space-1) var(--inset) 0;
 }
-.ask {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-3) var(--pad);
-}
+/* One ask: a button row that opens it in place. The ask in up to two lines at full voice, its chip at the right,
+   whose word never wraps; under them the project and when, xs and quiet. A done or stopped one steps back. */
 .ask + .ask {
   border-top: 1px solid var(--hairline);
 }
-.head {
+.row {
+  all: unset;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  row-gap: 2px;
+  width: 100%;
+  padding: var(--space-2) calc(var(--pad) - var(--inset));
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.row:hover {
+  background: var(--hover);
+}
+.row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.summary {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  font-weight: 500;
+}
+/* Open, the whole message is below: the line keeps to one. */
+.open .summary {
+  -webkit-line-clamp: 1;
+}
+.ask:is([data-state="done"], [data-state="merged"], [data-state="stopped"]) .summary {
+  color: var(--quiet);
+  font-weight: 400;
+}
+.chip {
+  display: flex;
+  align-items: center;
+  height: var(--leading-md);
+  white-space: nowrap;
+}
+.meta {
+  grid-column: 1 / -1;
   display: flex;
   align-items: baseline;
-  gap: var(--space-2);
+  gap: var(--space-1-5);
   min-width: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
 }
-.project {
-  all: unset;
-  cursor: pointer;
-  font-weight: 500;
+/* The project gives way first; when and folded keep their words whole. */
+.to {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.project:hover {
-  text-decoration: underline;
-  text-decoration-color: var(--faint);
-  text-underline-offset: 2px;
-}
-.project:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
-}
-.when {
-  margin-left: auto;
+.word {
   flex: none;
+  white-space: nowrap;
 }
-.orders {
-  list-style: none;
-  margin: var(--space-1) 0 0;
-  padding: 0;
+.meta > .word:last-child {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Opened: where it went and the orders opened for it, then the Navi's message in full. */
+.detail {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-3);
+  padding: var(--space-1) calc(var(--pad) - var(--inset)) var(--space-3);
+}
+/* Its line breaks kept; spaces collapse, so none hangs past the edge. */
+.body {
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.facts dt {
+  grid-column: 1;
+  color: var(--quiet);
+  white-space: nowrap;
+}
+.facts dd {
+  grid-column: 2;
+  margin: 0;
+  min-width: 0;
 }
 .order {
   display: flex;
   flex-direction: column;
-  min-width: 0;
 }
 .orderHead {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
   min-width: 0;
+}
+.link {
+  all: unset;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  cursor: pointer;
+}
+.link:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--faint);
+  text-underline-offset: 2px;
+}
+.link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.quiet {
+  color: var(--quiet);
 }
 .skeleton {
   display: flex;

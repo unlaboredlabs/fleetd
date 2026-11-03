@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // What there is to look at, in the top bar after the chat's title: a message the lead nudged you about. "1 to look
 // at" with its reason, below what the lead waits on you for; Show goes to it, marks it and clears it as seen; Dismiss
-// clears it; kept in view for a moment while the window has focus, it is seen too.
+// clears it; kept in view for a moment while the window has focus, it is seen too. Questions the lead waits on hide
+// with the bar's × until it asks again, and Not needed under them skips them.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
@@ -82,10 +83,13 @@ const settle = async () => {
 
 /** What the chat asked the hub to clear: message id, and whether dismissed. */
 let clears: { messageId: string; dismissed?: boolean }[] = [];
+/** The words the chat sent. */
+let sends: string[] = [];
 
 /** The chat with `messages` and chat state `state`, the project's Status row `row`; `say` tells it a new chat state. */
 const mount = async (messages: ChatMessage[], state: Partial<ProjectChatState>, row: Record<string, unknown> = {}) => {
   clears = [];
+  sends = [];
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const base = { projectRef: project, needsYou: false, leadWorking: false, lastSeq: messages.at(-1)?.seq ?? 0 };
   const page = { messages, moreBefore: false, moreAfter: false, state: { ...base, ...state } };
@@ -93,7 +97,9 @@ const mount = async (messages: ChatMessage[], state: Partial<ProjectChatState>, 
   const hub: HubApi = {
     call: (tool, input) => {
       if (tool === "chat_nudge_clear") clears.push(input as (typeof clears)[number]);
-      const output = tool === "chat_history" ? page : tool === "status_get" ? rows : tool === "requests_list" ? { requests: [] } : { ok: true };
+      if (tool === "chat_send") sends.push((input as { text: string }).text);
+      const sent = tool === "chat_send" ? { message: msg(99, { author: "human", text: (input as { text: string }).text }) } : undefined;
+      const output = tool === "chat_history" ? page : tool === "status_get" ? rows : tool === "requests_list" ? { requests: [] } : (sent ?? { ok: true });
       return Promise.resolve({ ok: true, output });
     },
     subscribe: (l) => ((send = l), () => undefined),
@@ -127,6 +133,7 @@ const mount = async (messages: ChatMessage[], state: Partial<ProjectChatState>, 
 };
 
 const line = () => host.querySelector("[data-attention]")?.textContent ?? null;
+const hide = () => host.querySelector<HTMLButtonElement>("[data-attention] button[aria-label='Hide until there’s a new question']");
 const press = async (words: string) => {
   const button = [...host.querySelectorAll<HTMLButtonElement>("[data-attention] button")].find((b) => b.textContent === words);
   expect(button).toBeDefined();
@@ -237,4 +244,43 @@ it("clears one once half of it stays in view for a moment while the window has f
   }
   await settle();
   expect(host.querySelector("[data-attention]")).toBeNull();
+});
+
+it("hides the questions it waits on with its ×, across a restart, until the lead asks again", async () => {
+  const asking = [msg(1, { author: "human", text: "Ship it?" }), msg(2, { text: "1. Ship it today?\n2. Tag it v2?" })];
+  await mount(asking, { needsYou: true });
+  expect(line()).toContain("Waiting on you: 2 questions");
+  act(() => hide()?.click());
+  await settle();
+  expect(host.querySelector("[data-attention]")).toBeNull();
+  // Not needed stays under the questions themselves.
+  expect(host.textContent).toContain("Not needed, skip it");
+
+  // Opened again (a restart), the bar still says nothing about them.
+  act(() => root?.unmount());
+  await mount(asking, { needsYou: true });
+  expect(host.querySelector("[data-attention]")).toBeNull();
+
+  // A newer question shows.
+  act(() => root?.unmount());
+  await mount([...asking, msg(3, { text: "One more: dark mode too?" })], { needsYou: true });
+  expect(line()).toContain("Waiting on you: 1 question");
+  expect(hide()).not.toBeNull();
+});
+
+it("has no × for an approval, which the lead can't go on without", async () => {
+  const gated = msg(1, { kind: "gated", text: "", item: { kind: "command_approval", state: "open" } } as unknown as Partial<ChatMessage>);
+  await mount([gated], { needsYou: true });
+  expect(line()).toContain("1 command to approve");
+  expect(hide()).toBeNull();
+  expect(host.textContent).not.toContain("Not needed, skip it");
+});
+
+it("skips the questions with Not needed, which tells the lead in plain words", async () => {
+  await mount([msg(1, { text: "1. Ship it today?" })], { needsYou: true });
+  const skip = [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Not needed, skip it");
+  expect(skip).toBeDefined();
+  act(() => skip?.click());
+  await settle();
+  expect(sends).toEqual(["Not needed: skip that and go on without an answer."]);
 });

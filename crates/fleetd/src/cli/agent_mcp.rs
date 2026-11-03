@@ -145,7 +145,7 @@ static TOOLS: &[Tool] = &[
          brief, and starts it: new work from the chat starts this way, even when every order is closed. With \
          workstreamId it sets that workstream's brief (goal, why, pointers, constraints, doneWhen lines) and starts \
          it, or edits it later. An order opened for a Navi's message gives asked, its N<n> handle, so the Navi hears \
-         when it lands.",
+         when it lands; a later Navi message folded into an open order gives asked with that workstreamId.",
         inline_schema::<BriefCreateCall>,
     ),
     lead(

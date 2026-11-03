@@ -284,6 +284,9 @@ function BubbleLine(props: {
   );
 }
 
+/** What Not needed sends, under the questions the lead waits on: the lead reads it as your answer. */
+export const SKIP = "Not needed: skip that and go on without an answer.";
+
 /** The lead writing, as a line: it enters with the message, and its text enters again once written. */
 function TypingLine({ enter }: { enter: Arrival | undefined }) {
   const e = useEnter(enter);
@@ -364,6 +367,15 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
             />
           ))
         )}
+        {lead && !typing && actions?.skips === i.id ? (
+          <div className={cx(s.skip, tail.className)} style={tail.style}>
+            <Tooltip content={`Sends “${SKIP}”`}>
+              <Button variant="link" onClick={() => actions.send(SKIP)}>
+                Not needed, skip it
+              </Button>
+            </Tooltip>
+          </div>
+        ) : null}
         {files && actions !== undefined ? (
           <div className={cx(s.attachments, tail.className)} style={tail.style}>
             {i.attachments.map((a) => (

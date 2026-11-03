@@ -4,7 +4,8 @@
 //!
 //! A message goes into the other project's chat as the agent "Navi <title>", never as the person, so its lead reads it
 //! as input and never as the person's answer or approval (`chat.agent`). Each message is an ask `N<n>`. The lead that
-//! opens an order for it passes `asked: "N<n>"` to `brief`; `workstream.created` says so, and from then on [`run`]
+//! opens an order for it passes `asked: "N<n>"` to `brief` (or, folding it into an open order, with that order's
+//! workstreamId); `workstream.created` (or `workstream.state`) says so, and from then on [`run`]
 //! follows the order in the event log: its opening, its close or stop, and its PRs merging or failing in the train
 //! each wake the asking Navi's lead with one line.
 //!
@@ -569,11 +570,12 @@ fn ask(db: &HubDb, handle: &str) -> Result<Option<Ask>, StoreError> {
     })
 }
 
-/// The ask an order was opened for.
+/// The ask an order was opened for: its first, when its lead folded others in later. Their Navi heard of the fold;
+/// what happens to the order after wakes the first's.
 fn ask_of(db: &HubDb, w: &WorkstreamId) -> Result<Option<Ask>, StoreError> {
     let n: Option<i64> = db.with(|c| {
         Ok(c.query_row(
-            "SELECT n FROM navi_ask_orders WHERE workstream_id = ?",
+            "SELECT n FROM navi_ask_orders WHERE workstream_id = ? ORDER BY rowid LIMIT 1",
             [w.as_str()],
             |row| row.get(0),
         )
@@ -702,7 +704,9 @@ fn news(hub: &Hub, e: &HubEvent) -> Result<Option<(Ask, String)>, StoreError> {
             .map(|r| format!(": {}", clip(r, 160)))
             .unwrap_or_default()
     };
-    if e.r#type == HubEventType::WorkstreamCreated {
+    // An order opened for an ask, or one its lead folded the ask into later (`brief` with workstreamId and asked).
+    let folded = e.r#type == HubEventType::WorkstreamState && data["asked"].is_string();
+    if e.r#type == HubEventType::WorkstreamCreated || folded {
         let Some(handle) = data["asked"].as_str() else {
             return Ok(None);
         };
@@ -721,7 +725,10 @@ fn news(hub: &Hub, e: &HubEvent) -> Result<Option<(Ask, String)>, StoreError> {
             )?;
             Ok(())
         })?;
-        let what = format!("its lead opened order {w}{}", title());
+        let what = match folded {
+            true => format!("its lead folded it into order {w}{}", title()),
+            false => format!("its lead opened order {w}{}", title()),
+        };
         return Ok(Some((asked, what)));
     }
     let Some(asked) = ask_of(&hub.db, &w)? else {

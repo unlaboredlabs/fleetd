@@ -17,6 +17,7 @@ import { Boundary } from "../../src/Boundary";
 import { LiveStrip, useNow } from "../live";
 import { AttentionLine } from "./Attention";
 import { lookingAt, sameLooks, waitingOn, type LookAt } from "./attentionModel";
+import { hideWait, useHiddenWait } from "./hiddenWait";
 import { leadTurnSince, leadTurnUntil } from "./activity";
 import { ChatList } from "./ChatList";
 import { useChatData } from "./data";
@@ -100,6 +101,10 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     () => (needsYou === true && items !== undefined ? waitingOn(items, { older, open: openItems }, Date.now(), undefined, me) : undefined),
     [needsYou, items, older, openItems, me],
   );
+  // Questions you hid stay off the bar until the lead asks in a newer message; the chat still waits on them.
+  const hidden = useHiddenWait(key);
+  const question = waiting?.question;
+  const barWaiting = question !== undefined && question === hidden ? undefined : waiting;
   // Show to what isn't loaded yet (an approval pages back): older pages load until it is, or there are none.
   const away = shown !== undefined && items !== undefined && !items.some((i) => i.id === shown.id);
   // A page that failed stops it: no retrying in a loop.
@@ -193,6 +198,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     (): BubbleActions => ({
       project,
       waitedOn,
+      skips: question,
       send: (text) => {
         onSent();
         void layer.chat.send(key, { text });
@@ -203,7 +209,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       lookAt,
       seen,
     }),
-    [project, waitedOn, onSent, layer, key, mark, lookAt, seen],
+    [project, waitedOn, question, onSent, layer, key, mark, lookAt, seen],
   );
 
   return (
@@ -219,7 +225,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         detail={
           data.missing ? undefined : (
             <AttentionLine
-              waiting={waiting}
+              waiting={barWaiting}
               // As the held chip says: a held chat doesn't say what the project is now.
               blocked={view?.held === true ? undefined : data.blocked}
               warning={view?.held === true ? undefined : data.warning}
@@ -229,6 +235,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
               looks={looks}
               onLook={showLook}
               onDismiss={dismissLook}
+              onHide={question === undefined ? undefined : () => hideWait(key, question)}
             />
           )
         }

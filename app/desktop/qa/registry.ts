@@ -819,6 +819,22 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("textbox", { name: /Message Ada/u })).toBeVisible();
     },
   },
+  // Asked work opened: a long ask the person's words were relayed in, and the follow-up folded into its order.
+  {
+    id: "chat",
+    route: `${ADA_ROUTE}/asked`,
+    fixtures: ["navi-two"],
+    variant: "navi-asked-open",
+    open: async (page) => {
+      const panel = page.getByRole("complementary", { name: "Project panel" });
+      await panel.locator('[data-screen="asked"]').waitFor();
+      for (const ask of ["N7", "N8"]) {
+        const row = panel.locator(`[data-ask="${ask}"] > button`);
+        await row.click();
+        await expect(row).toHaveAttribute("aria-expanded", "true");
+      }
+    },
+  },
   {
     id: "chat",
     route: `${ADA_ROUTE}/asked`,

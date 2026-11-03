@@ -2,7 +2,7 @@
 //! and navi_signins_forget: thin over
 //! the Navi service. And
 //! navi_asks: the app's read of what a Navi asked other projects for (`project_message`), with each order opened for
-//! it and its state. Read-only; the app calls it on a hub that names the `navi_asks` feature.
+//! it, its state and whether a PR of it merged. Read-only; the app calls it on a hub that names the `navi_asks` feature.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
@@ -68,11 +68,16 @@ async fn navi_asks(
                 .workstream_get(id)?
                 .filter(|w| readable(&caller, &w.project_ref.machine_id))
             {
+                let merged = hub
+                    .train
+                    .records()
+                    .any_merged(&w.project_ref, w.workstream_id.as_str());
                 orders.push(NaviAskOrder {
                     workstream_id: w.workstream_id,
                     title: w.title.to_string(),
                     state: w.state,
                     headline: w.headline.map(|h| h.to_string()).filter(|h| !h.is_empty()),
+                    merged: merged.then_some(true),
                 });
             }
         }

@@ -4090,6 +4090,8 @@ export type NaviAsk = {
 export type NaviAskOrder = {
   /** The lead's latest one-line headline for it. */
   headline?: string;
+  /** True once a PR of it merged; absent otherwise. */
+  merged?: boolean;
   state: WorkstreamState;
   title: string;
   workstreamId: WorkstreamId;
