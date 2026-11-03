@@ -12,6 +12,7 @@ import { Fixture, type CallThen } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { asText, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 import { SESSION } from "./ids.ts";
+import { screensPage } from "./page.ts";
 import { CHECKOUT_FRAMES, PAYOUTS_FRAMES, PRICING, PRICING_MS, SHARE, SHARE_MS, type Step } from "./script.ts";
 
 /** Every lane `laneId` in `v`, changed by `change`. */
@@ -345,5 +346,8 @@ const preview = (base: Fixture): Fixture => {
 };
 
 export default defineGroup({
-  fixtures: (base) => [preview(base("many-agents"))],
+  fixtures: (base) => {
+    const p = preview(base("many-agents"));
+    return [p, screensPage(p)];
+  },
 });

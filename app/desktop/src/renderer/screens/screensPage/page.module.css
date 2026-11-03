@@ -1,0 +1,622 @@
+/* Screens, a page of its own (design preview, W399). Pictures are the one thing allowed a frame: a screen stands apart
+   from what is around it. Everything else is type, space and hairlines, as in the panel's list (ui/DESIGN.md). */
+
+.screen {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-6) var(--space-8);
+}
+.viewWrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.gap {
+  flex: 1;
+}
+
+/* Needs you, Live, Recent: a heading with room above it and its count beside it. */
+.heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-4) 0 var(--space-2);
+}
+section + section > .heading {
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--hairline);
+}
+
+/* ---- A screen's picture. ---- */
+.thumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--sidebar);
+  box-shadow: 0 0 0 1px var(--hairline);
+}
+.thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+/* A phone stands up in the middle of its frame, its own corners round, a hairline its edge. */
+.phoneThumb img {
+  width: auto;
+  height: calc(100% - 16px);
+  margin: 8px auto 0;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--hairline), 0 0 0 3px var(--sidebar), 0 0 0 4px var(--border);
+}
+.thumbEnded img {
+  opacity: 0.72;
+  filter: grayscale(0.6);
+}
+[data-theme="dark"] .thumbEnded img {
+  opacity: 0.55;
+}
+.noThumb {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* No picture (starting, saving, lost, expired): no frame, the kind's mark and a word, faint. */
+.blank {
+  box-shadow: none;
+  background: var(--hover);
+}
+.noThumb {
+  flex-direction: column;
+  gap: 6px;
+}
+.kindIcon {
+  width: 16px;
+  height: 16px;
+  color: var(--faint);
+  stroke-width: 1.5;
+}
+.small .kindIcon,
+.mini .kindIcon {
+  width: 14px;
+  height: 14px;
+}
+.small {
+  width: 64px;
+  flex: none;
+  border-radius: var(--radius-sm);
+}
+.small.phoneThumb img,
+.mini.phoneThumb img {
+  height: calc(100% - 6px);
+  margin-top: 3px;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px var(--border);
+}
+.small .noThumb > :not(svg),
+.mini .noThumb > :not(svg) {
+  display: none;
+}
+.medium {
+  width: 168px;
+  flex: none;
+}
+.medium.phoneThumb img {
+  height: calc(100% - 10px);
+  margin-top: 5px;
+  border-radius: 6px;
+}
+.mini {
+  width: 56px;
+  flex: none;
+  border-radius: var(--radius-sm);
+}
+
+/* ---- A screen in words. ---- */
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  white-space: nowrap;
+}
+.state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.who {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.where {
+  flex: none;
+}
+.where::before,
+.time::before {
+  content: "·";
+  margin-right: var(--space-2);
+  color: var(--faint);
+  font-size: var(--text-xs);
+}
+.time {
+  flex: none;
+  margin-left: auto;
+}
+.time::before {
+  content: none;
+}
+.purpose {
+  font-weight: 500;
+}
+.purposeEnded {
+  color: var(--quiet);
+}
+.mono {
+  font-family: var(--font-mono);
+}
+.doing {
+  display: flex;
+  min-width: 0;
+  min-height: var(--leading-xs);
+}
+.titleLink {
+  display: flex;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.titleLink:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-underline-offset: 3px;
+}
+
+/* ---- A: the wall. ---- */
+.asking {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+  max-width: 920px;
+  padding-bottom: var(--space-2);
+}
+.askingPic {
+  display: block;
+  border-radius: var(--radius-md);
+}
+.askingText {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 2px;
+}
+.reason {
+  display: flex;
+  max-width: 520px;
+}
+.askingActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-6) var(--space-4);
+  padding-top: var(--space-1);
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius-md);
+}
+.tile .thumb {
+  transition: box-shadow var(--dur-quick) var(--ease-snap);
+}
+.tile:hover .thumb {
+  box-shadow: 0 0 0 1px var(--border);
+}
+.tile:focus-visible {
+  outline: none;
+}
+.tile:focus-visible .thumb,
+.askingPic:focus-visible .thumb {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+/* Over each picture, like the label on a monitor: whose it is, and what and where it runs. */
+.label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-bottom: -4px;
+  padding: 0 2px;
+  white-space: nowrap;
+}
+.label > :last-child {
+  margin-left: auto;
+}
+.askingText .meta .time {
+  margin-left: 0;
+}
+.askingText .meta .time::before {
+  content: "·";
+}
+.tileText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.recent {
+  display: flex;
+  flex-direction: column;
+  max-width: 920px;
+}
+.recentRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0 calc(-1 * var(--space-2));
+  padding: 6px var(--space-2);
+  border-radius: var(--radius-md);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.recentRow:hover {
+  background: var(--hover);
+}
+.recentText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* A's New screen: one sentence under the title. */
+.openLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-1);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  max-width: 920px;
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+  box-shadow: var(--float-shadow);
+  animation: lineIn var(--dur-row-in) var(--ease-snap) backwards;
+}
+@keyframes lineIn {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--row-rise)));
+  }
+}
+.pick {
+  width: auto;
+  min-width: 0;
+}
+.openHint {
+  flex: 1;
+  min-width: 0;
+  padding-left: var(--space-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hostOpt {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+/* A machine's slots, lit while in use (B and C). */
+.slots {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.cells {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-template-rows: 4px 4px;
+  gap: 1px;
+}
+.cells i {
+  width: 4px;
+  height: 4px;
+  background: var(--hairline);
+}
+.cells i:nth-child(odd) {
+  grid-row: 1;
+}
+.cells i:nth-child(even) {
+  grid-row: 2;
+}
+.cells i[data-on="true"] {
+  background: var(--text);
+}
+.chev {
+  width: 12px;
+  height: 12px;
+  margin-left: 2px;
+  opacity: 0.7;
+}
+
+/* ---- C: the console. ---- */
+.console {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+}
+.side {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-2) var(--space-6);
+  border-right: 1px solid var(--hairline);
+}
+.side .heading {
+  padding: var(--space-3) var(--space-2) var(--space-1);
+}
+.side section + section > .heading {
+  margin-top: var(--space-1);
+}
+.newRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.newRow:hover,
+.sideRow:hover {
+  background: var(--hover);
+}
+.newIcon {
+  width: 14px;
+  height: 14px;
+  margin: 0 21px 0 21px;
+  color: var(--quiet);
+}
+.sideRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  margin-bottom: 1px;
+  padding: 6px var(--space-2);
+  border-radius: var(--radius-md);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.sideRow.current,
+.newRow.current {
+  background: var(--selected);
+}
+.sideText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.sideText .meta .who {
+  display: none;
+}
+.detail {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.detail > * {
+  flex: 1;
+}
+
+/* C's New screen, in the view's place. */
+.newPane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.newHead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 40px;
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+.newBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-6);
+  max-width: 640px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.kinds,
+.hosts {
+  display: flex;
+  flex-direction: column;
+}
+.kind,
+.host {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  height: 32px;
+  margin: 0 calc(-1 * var(--space-2));
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  align-items: center;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.kind > :first-child,
+.host > :first-child {
+  width: 120px;
+  flex: none;
+}
+.kind:hover,
+.host:hover {
+  background: var(--hover);
+}
+.kindOn,
+.kindOn:hover {
+  background: var(--selected);
+}
+.pickWide {
+  width: 280px;
+}
+.newFoot {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ---- B: the ledger. ---- */
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-6);
+  padding: var(--space-3) 0 var(--space-2);
+}
+.stripHost {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ledger {
+  max-width: 1180px;
+  --ledger-cols: 56px minmax(220px, 1fr) 128px minmax(120px, 210px) 96px 150px 76px;
+}
+.columns,
+.ledgerRow {
+  display: grid;
+  grid-template-columns: var(--ledger-cols);
+  align-items: center;
+  column-gap: var(--space-3);
+}
+.columns {
+  height: 28px;
+  margin: var(--space-2) 0 0;
+  padding: 0 var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+}
+.ledgerGroup + .ledgerGroup {
+  margin-top: var(--space-1);
+}
+.ledgerHeading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-2) var(--space-1);
+}
+.ledgerRow {
+  min-height: 52px;
+  padding: 6px var(--space-2);
+  border-radius: var(--radius-md);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.ledgerRow:hover {
+  background: var(--hover);
+}
+.ledgerRow + .ledgerRow {
+  box-shadow: 0 -1px 0 var(--hairline);
+}
+.ledgerRow:hover,
+.ledgerRow:hover + .ledgerRow {
+  box-shadow: none;
+}
+.cellMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cell {
+  display: flex;
+  min-width: 0;
+  white-space: nowrap;
+}
+.cellEnd {
+  display: flex;
+  justify-content: flex-end;
+}
+.ledgerEnded .state {
+  opacity: 0.9;
+}
+.menuHost {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 6px var(--space-2) 2px;
+}
+/* The picks read as words of the sentence: no field edge, a tone step under them. */
+.openLine .pick {
+  height: 26px;
+  border-color: transparent;
+  background: var(--hover);
+  font-weight: 500;
+}
+.openLine .pick:hover {
+  background: var(--selected);
+}

@@ -1,0 +1,39 @@
+<!doctype html><html><head><style>
+*{box-sizing:border-box;margin:0}
+body{width:1280px;height:800px;overflow:hidden;background:#3b4048;font:12px "DejaVu Sans Mono",monospace;position:relative}
+.top{height:22px;background:#24272c;color:#c8ccd2;display:flex;align-items:center;padding:0 10px;gap:14px;font:12px "DejaVu Sans",sans-serif}
+.top .r{margin-left:auto}
+.x{position:absolute;background:#101214;border:1px solid #555;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+.x .t{height:20px;background:#2d3036;color:#ccc;font:11px "DejaVu Sans",sans-serif;display:flex;align-items:center;padding:0 8px}
+.x pre{padding:6px 8px;color:#d0d0d0;font:12px/1.45 "DejaVu Sans Mono",monospace;white-space:pre-wrap}
+.g{color:#8ae234}.r{color:#ef2929}.y{color:#fce94f}.d{color:#888}.b{color:#729fcf}
+.app{position:absolute;left:640px;top:60px;width:580px;height:600px;background:#fff;border:1px solid #555;box-shadow:0 6px 24px rgba(0,0,0,.4);font:13px "DejaVu Sans",sans-serif;color:#222}
+.app .t{height:24px;background:#e8e8e8;border-bottom:1px solid #ccc;display:flex;align-items:center;padding:0 8px;font-size:11px;color:#444}
+.app h1{font-size:18px;margin:18px 20px 8px}.app table{margin:0 20px;border-collapse:collapse;width:540px;font-size:12px}
+.app td,.app th{border-bottom:1px solid #e3e3e3;padding:7px 4px;text-align:left}.app th{color:#666;font-weight:600}
+.app .tot{font-weight:700}
+</style></head><body>
+<div class="top"><span>Applications</span><span>Places</span><span style="margin-left:auto">Tue 09:04</span></div>
+<div class="x" style="left:30px;top:50px;width:590px;height:420px"><div class="t">xterm — ~/src/billing</div><pre><span class="b">dev@buildbox</span>:<span class="b">~/src/billing</span>$ cargo run --bin invoice-preview -- --month 2026-10
+<span class="d">   Compiling billing v0.14.2 (/home/dev/src/billing)</span>
+<span class="d">    Finished dev [unoptimized] target(s) in 6.81s</span>
+<span class="d">     Running `target/debug/invoice-preview --month 2026-10`</span>
+rendering 3 invoices…
+  INV-2026-1041  Northwind     <span class="g">ok</span>   €1,840.00
+  INV-2026-1042  Lumen Labs    <span class="g">ok</span>     €312.50
+  INV-2026-1043  Harbor & Co   <span class="y">warn</span>   €46.00  rounding 0.005
+opened preview window (pid 48211)
+<span class="b">dev@buildbox</span>:<span class="b">~/src/billing</span>$ ▍</pre></div>
+<div class="x" style="left:60px;top:500px;width:520px;height:250px"><div class="t">xterm — htop</div><pre><span class="g">  CPU[|||||||||||||        38.2%]</span>
+<span class="g">  Mem[||||||||||||   3.1G/15.6G]</span>
+  PID USER   CPU% MEM% Command
+48211 dev    12.0  1.4 invoice-preview
+ 2201 dev     3.1  0.8 Xvfb :41
+ 2240 dev     0.7  0.2 openbox</pre></div>
+<div class="app"><div class="t">Invoice preview — October 2026</div><h1>INV-2026-1043 · Harbor &amp; Co</h1>
+<table><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Amount</th></tr>
+<tr><td>Agent hours</td><td>12</td><td>€3.50</td><td>€42.00</td></tr>
+<tr><td>Storage (GB-month)</td><td>8</td><td>€0.50</td><td>€4.00</td></tr>
+<tr><td>Rounding</td><td></td><td></td><td>€0.00</td></tr>
+<tr class="tot"><td>Total</td><td></td><td></td><td>€46.00</td></tr></table></div>
+</body></html>

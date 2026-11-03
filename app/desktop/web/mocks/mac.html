@@ -1,0 +1,35 @@
+<!doctype html><html><head><style>
+*{box-sizing:border-box;margin:0}
+body{width:1280px;height:800px;overflow:hidden;font:13px -apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;background:#1d2a33;position:relative;color:#ddd}
+.wall{position:absolute;inset:0;background:linear-gradient(160deg,#2b3e4a 0%,#1a2630 55%,#141c22 100%)}
+.menu{position:absolute;top:0;left:0;right:0;height:24px;background:rgba(30,32,36,.72);display:flex;align-items:center;gap:18px;padding:0 14px;font-size:13px;color:#eee}
+.menu b{font-weight:600}.menu .r{margin-left:auto;display:flex;gap:14px;opacity:.9}
+.win{position:absolute;border-radius:10px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.45),0 0 0 .5px rgba(255,255,255,.12)}
+.bar{height:28px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#2c2c2e;color:#bbb;font-size:12px}
+.dot{width:12px;height:12px;border-radius:6px;background:#ff5f57}.dot:nth-child(2){background:#febc2e}.dot:nth-child(3){background:#28c840}
+.bar span.t{margin:0 auto;padding-right:60px}
+.term{left:60px;top:70px;width:640px;height:460px;background:#1c1c1e}
+.term pre{padding:10px 12px;font:12px/1.5 "SF Mono",Menlo,monospace;color:#d6d6d6;white-space:pre-wrap}
+.g{color:#7ee787}.y{color:#e3b341}.d{color:#8b949e}
+.sim{left:780px;top:46px;width:330px;height:700px;background:#000;border-radius:54px;padding:12px;box-shadow:0 18px 50px rgba(0,0,0,.5),0 0 0 2px #3a3a3c}
+.sim img{width:100%;height:100%;object-fit:cover;border-radius:44px;display:block}
+.island{position:absolute;top:24px;left:50%;transform:translateX(-50%);width:100px;height:30px;background:#000;border-radius:16px}
+.dock{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);height:58px;padding:6px 10px;border-radius:18px;background:rgba(60,64,70,.55);display:flex;gap:10px;box-shadow:0 0 0 .5px rgba(255,255,255,.15)}
+.dock i{width:46px;height:46px;border-radius:11px;display:block}
+</style></head><body><div class="wall"></div>
+<div class="menu"><b>Terminal</b><span>Shell</span><span>Edit</span><span>View</span><span>Window</span><span>Help</span><div class="r"><span>agents</span><span>Tue 3 Nov 09:04</span></div></div>
+<div class="win term"><div class="bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="t">agents — zsh — 80×24</span></div><pre><span class="d">~/work/storefront-ios</span> <span class="g">❯</span> xcrun simctl boot "iPhone 17"
+<span class="d">~/work/storefront-ios</span> <span class="g">❯</span> xcodebuild -scheme Storefront -destination 'name=iPhone 17' build
+<span class="d">▸ Compiling CheckoutView.swift</span>
+<span class="d">▸ Compiling CartStore.swift</span>
+<span class="d">▸ Linking Storefront</span>
+<span class="g">** BUILD SUCCEEDED **</span> <span class="d">[41.2 sec]</span>
+<span class="d">~/work/storefront-ios</span> <span class="g">❯</span> xcrun simctl install booted build/Storefront.app
+<span class="d">~/work/storefront-ios</span> <span class="g">❯</span> agent-device open sh.acme.storefront
+<span class="y">opened</span> sh.acme.storefront on iPhone 17 (iOS 26.1)
+<span class="d">~/work/storefront-ios</span> <span class="g">❯</span> agent-device tap "Add to cart"
+<span class="y">tapped</span> button "Add to cart"
+<span class="d">~/work/storefront-ios</span> <span class="g">❯</span> ▍</pre></div>
+<div class="win sim"><img src="shopApp.jpg"><div class="island"></div></div>
+<div class="dock"><i style="background:#3d7bf7"></i><i style="background:#2b2b2b"></i><i style="background:#1e5fd8"></i><i style="background:#8e8e93"></i><i style="background:#30d158"></i></div>
+</body></html>

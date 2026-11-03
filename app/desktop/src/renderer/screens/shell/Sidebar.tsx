@@ -13,7 +13,8 @@
 // With several hubs the Navis of every hub stay on top, each saying its hub, and each hub's
 // projects are a group under its name, which collapses; the footer has a row per hub. With one, there is no name and
 // no group, as before.
-import { Activity, ChevronDown, ChevronRight, Factory, Plus, Settings, Sparkle } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, Factory, MonitorSmartphone, Plus, Settings, Sparkle } from "lucide-react";
+import { split, useScreens } from "../screensPage/data";
 import { useMemo, useState, type ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import type { DataLayer } from "../../src/data/queries";
@@ -106,6 +107,22 @@ function SettingsEntry({ current, admin, trailing, go }: { current: boolean; adm
       onClick={() => go({ id: "settings", tab: left > 0 ? "hub.setup" : "general" })}
     />
   );
+}
+
+/** Screens (D296, design preview): the word when one asks for you, else how many are live. */
+function ScreensEntry({ current, go }: { current: boolean; go: (screen: Screen) => void }) {
+  const { asking, live } = split(useScreens());
+  const trailing =
+    asking.length > 0 ? (
+      <Text size="xs" tone="warning" strong>
+        needs you
+      </Text>
+    ) : live.length > 0 ? (
+      <Text size="xs" tone="faint" tabular>
+        {String(live.length)}
+      </Text>
+    ) : undefined;
+  return <SidebarItem label="Screens" icon={<MonitorSmartphone />} current={current} trailing={trailing} onClick={() => go({ id: "screens", open: null })} />;
 }
 
 /** The row's one mark: why it wants you, else a new message, else a red main, else how many agents work. */
@@ -219,6 +236,7 @@ export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, f
 
       <SidebarSection>
         {nav("Status", <Activity />, { id: "status" }, screen.id === "status", kbd("status.toggle"))}
+        <ScreensEntry current={screen.id === "screens"} go={go} />
         {nav(
           "Factory",
           <Factory />,

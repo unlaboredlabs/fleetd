@@ -109,6 +109,8 @@ type ScreenOf =
    */
   | { readonly id: "project"; readonly project: ProjectKey; readonly message: string | null; readonly panel?: PanelView }
   | { readonly id: "status" }
+  /** Screens (D296): every live and recent screen you can see, or one of them open (design preview, W399). */
+  | { readonly id: "screens"; readonly open: { readonly project: ProjectKey; readonly session: string } | null }
   /** Your Navis: what Navi is, a new one, and the archived ones (navi/NaviScreen). */
   | { readonly id: "navi" }
   /** Merges and what they cost the person (D33), for one project (`?project=<machine>/<project>`) or (null) all. */
@@ -209,6 +211,10 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
     }
     case "status":
       return { id: "status" };
+    case "screens": {
+      const id = parts[3];
+      return { id: "screens", open: a === undefined || b === undefined || id === undefined ? null : { project: { machineId: a, projectId: b }, session: id } };
+    }
     case "navi":
       return { id: "navi" };
     case "session": {
@@ -285,6 +291,8 @@ const path = (screen: Screen): Array<string> => {
       return screen.view === null ? ["setup"] : ["setup", screen.view];
     case "session":
       return ["session", screen.project.machineId, screen.project.projectId, screen.session];
+    case "screens":
+      return screen.open === null ? ["screens"] : ["screens", screen.open.project.machineId, screen.open.project.projectId, screen.open.session];
     case "status":
     case "navi":
     case "factory":
