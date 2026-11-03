@@ -134,7 +134,7 @@ export default function App() {
 const largeTitle = (t: Palette): NativeStackNavigationOptions => ({
   headerLargeTitleEnabled: true,
   headerLargeTitleShadowVisible: false,
-  headerTintColor: t.accent,
+  headerTintColor: t.label,
   headerTitleStyle: { color: t.label },
   headerLargeTitleStyle: { color: t.label },
   ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.bg }, headerShadowVisible: false }),
@@ -145,7 +145,7 @@ const PairStack = createNativeStackNavigator<PairParams>();
 function Pairing({ note, onPaired }: { note: string | undefined; onPaired: (p: Paired) => Promise<void> }) {
   const t = useTheme();
   return (
-    <PairStack.Navigator screenOptions={{ headerTintColor: t.accent, headerTitleStyle: { color: t.label }, headerShadowVisible: false, headerStyle: { backgroundColor: t.grouped }, contentStyle: { backgroundColor: t.grouped } }}>
+    <PairStack.Navigator screenOptions={{ headerTintColor: t.label, headerTitleStyle: { color: t.label }, headerShadowVisible: false, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.grouped } }), contentStyle: { backgroundColor: t.grouped } }}>
       <PairStack.Screen name="Welcome" options={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
         {(props) => <Welcome {...props} note={note} />}
       </PairStack.Screen>
@@ -255,7 +255,7 @@ function Root() {
   return (
     // A screen under another (the chats list under a chat) doesn't draw again while it's covered: a streamed reply
     // changes the state with every word.
-    <RootStack.Navigator screenOptions={{ headerTintColor: t.accent, contentStyle: { backgroundColor: t.bg }, freezeOnBlur: true }}>
+    <RootStack.Navigator screenOptions={{ headerTintColor: t.label, contentStyle: { backgroundColor: t.bg }, freezeOnBlur: true }}>
       <RootStack.Screen name="Home" component={ChatsHome} options={{ headerShown: false, title: "Chats" }} />
       <RootStack.Screen name="Settings" component={SettingsScreens} options={{ headerShown: false }} />
       <RootStack.Screen name="Chat" component={Chat} options={({ route }) => ({ ...chatOptions(t), ...infoOptions(t, () => nav.navigate("ChatInfo", { screen: "Info", params: { key: route.params.key } })) })} />

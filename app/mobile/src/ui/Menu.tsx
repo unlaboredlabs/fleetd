@@ -80,7 +80,7 @@ export function Menu({
   const fade = FadeIn.duration(reduce ? 0 : dur.fast).easing(ease.out);
   return (
     <Modal transparent visible animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <Animated.View entering={fade} style={StyleSheet.absoluteFill}>
+      <Animated.View entering={fade} style={StyleSheet.absoluteFill} onAccessibilityEscape={onClose}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close menu">
           {Platform.OS === "ios" ? (
             <BlurView style={StyleSheet.absoluteFill} tint={t.dark ? "systemThinMaterialDark" : "systemThinMaterialLight"} intensity={60} />

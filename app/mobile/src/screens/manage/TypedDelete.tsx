@@ -39,7 +39,7 @@ export function TypedDelete({ words, name, onCancel, onDelete }: { words: Delete
       }}
     >
       {words === null ? null : (
-        <ScrollView style={{ backgroundColor: t.grouped }} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+        <ScrollView style={{ backgroundColor: t.grouped }} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" onAccessibilityEscape={() => close(false)}>
           <View style={styles.head}>
             <Symbol ios="exclamationmark.triangle.fill" android="warning" size={40} color={t.danger} />
             <Text style={[type.title3, styles.center, { color: t.label }]}>{words.title}</Text>

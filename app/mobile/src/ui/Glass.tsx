@@ -1,11 +1,13 @@
 // Chrome that floats over content (the composer, the scroll-to-bottom button, menus): iOS 26's Liquid
 // Glass, a material blur on older iOS, and a translucent fill on Android. With Reduce Transparency iOS draws the glass
-// frosted by itself.
+// frosted by itself. Glass is never faded: under an opacity below 1 UIKit doesn't draw it, so it flashes flat grey.
+// What comes and goes materializes instead (`appear`), as iOS's own glass does.
 import { BlurView } from "expo-blur";
 import { GlassContainer, GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import { useTheme } from "../theme";
+import { useReduceMotion } from "./motion";
 
 /** Whether this phone draws Liquid Glass. */
 export const liquidGlass = Platform.OS === "ios" && isLiquidGlassAvailable();
@@ -15,6 +17,7 @@ export function Glass({
   style,
   interactive = false,
   tint,
+  appear = false,
 }: {
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
@@ -22,11 +25,21 @@ export function Glass({
   interactive?: boolean;
   /** Tinted glass, as a primary glass button. */
   tint?: string;
+  /** Materializes as it mounts, for glass that comes and goes (a banner, a button that shows when needed). */
+  appear?: boolean;
 }) {
   const t = useTheme();
+  const reduce = useReduceMotion();
+  const [shown, setShown] = useState(!appear);
+  useEffect(() => setShown(true), []);
   if (liquidGlass) {
     return (
-      <GlassView style={style} glassEffectStyle="regular" isInteractive={interactive} {...(tint === undefined ? {} : { tintColor: tint })}>
+      <GlassView
+        style={style}
+        glassEffectStyle={!shown ? "none" : appear ? { style: "regular", animate: !reduce } : "regular"}
+        isInteractive={interactive}
+        {...(tint === undefined ? {} : { tintColor: tint })}
+      >
         {children}
       </GlassView>
     );

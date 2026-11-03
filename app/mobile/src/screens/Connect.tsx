@@ -17,6 +17,7 @@ import type { PairParams } from "../hubContext";
 import { pair, type Paired } from "../hub/pair";
 import { pairLinkStep, parsePairLink } from "../hub/pairLink";
 import { mono, space, TOUCH, type, useTheme } from "../theme";
+import { useAnnounce } from "../ui/announce";
 import { Button } from "../ui/Button";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
@@ -68,6 +69,7 @@ export function Scan({ navigation }: NativeStackScreenProps<PairParams, "Scan">)
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [problem, setProblem] = useState<string | undefined>(undefined);
+  useAnnounce(problem);
   // The camera reports a code many times a second: each is read once, and a wrong one again only after a pause.
   const seen = useRef<{ data: string; at: number } | null>(null);
   const done = useRef(false);
@@ -163,6 +165,7 @@ export function Pair({ route, onPaired }: NativeStackScreenProps<PairParams, "Pa
   const [code, setCode] = useState(route.params?.code ?? "");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<PairFailure | null>(null);
+  useAnnounce(failure === null ? undefined : failure.message);
   const [pasteNote, setPasteNote] = useState<string | undefined>(undefined);
   const codeField = useRef<ComponentRef<typeof TextInput>>(null);
   const ready = hub.trim() !== "" && code.trim() !== "";

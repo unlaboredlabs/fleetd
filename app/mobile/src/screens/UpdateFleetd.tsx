@@ -6,6 +6,7 @@ import { ActionSheetIOS, ActivityIndicator, Alert, Platform, StyleSheet, Text, V
 import { retryMachine, startOver, startUpdate, updateNow, useFlow, useReady, useRun, type Line } from "../desktop";
 import { useHub } from "../hubContext";
 import { space, type, useTheme, type Palette } from "../theme";
+import { useAnnounce } from "../ui/announce";
 import { Button } from "../ui/Button";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
@@ -21,6 +22,7 @@ export function UpdateFleetd() {
   const run = useRun();
   const ready = useReady();
   const section = updateSection({ admin: state.admin, hub: state.hub, machines: state.machines, run, flow, ready });
+  useAnnounce(section?.progress?.text);
   if (section === null) return null;
 
   const confirm = () => {

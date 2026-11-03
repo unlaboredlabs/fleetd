@@ -13,6 +13,7 @@ import { useHub, type RootParams } from "../../hubContext";
 import { waitLine, waitOutcome, type Wait } from "../../screen";
 import { refOf } from "../../store";
 import { space, type, useTheme } from "../../theme";
+import { useAnnounce } from "../../ui/announce";
 import { haptics } from "../../ui/haptics";
 import { ListRow, ListSection } from "../../ui/List";
 import { SHEET_GONE_MS } from "./arrival";
@@ -39,6 +40,7 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<HubError | null>(null);
   const [wait, setWait] = useState<{ readonly wait: Wait; readonly since: string; readonly machine: string } | null>(null);
+  useAnnounce(wait === null ? undefined : waitLine(wait.wait, wait.machine));
 
   // Opened: the sheet goes, then the live view comes (dismissing and presenting in one step crashes UIKit).
   const opened = useRef(false);
