@@ -2,7 +2,8 @@
 //! deletes its sessions, Claude Code's transcripts of them and the attachments in its folder (the folder too when the
 //! person ticks it, `node/sessions`), then [`erase`] deletes everything of it the hub keeps: its chat and the events
 //! that carried it, its approvals and purchases (`requests`), asks and decisions, its orders and what they hold, its
-//! memory and skills, its attachments and its screen recordings. Its settings go with the project as any project's do
+//! memory and skills, its attachments and its screen recordings, and the time inspector's record of its sessions (whose
+//! labels name its commands, searches and pages). Its settings go with the project as any project's do
 //! (`HubStore::project_remove`).
 use std::collections::BTreeSet;
 
@@ -49,6 +50,8 @@ const BY_THREAD: &[&str] = &[
     "steers",
     "thread_accounts",
     "task_threads",
+    "time_lead_runs",
+    "time_wakes",
 ];
 
 /// Tables with the Navi's rows by `project_key` (`<machine>/<project>`).
@@ -124,7 +127,7 @@ fn rows(c: &Connection, r: &ProjectRef) -> Result<(Vec<String>, BTreeSet<String>
         "DELETE FROM attachments WHERE project = ? OR workstream_id IN (SELECT value FROM json_each(?))",
         params![key, orders_json],
     )?;
-    for table in ["navi_ask_orders", "order_env", "time_orders"] {
+    for table in ["navi_ask_orders", "order_env", "time_orders", "time_paths"] {
         c.execute(
             &format!("DELETE FROM {table} WHERE workstream_id IN (SELECT value FROM json_each(?))"),
             [&orders_json],
@@ -139,6 +142,25 @@ fn rows(c: &Connection, r: &ProjectRef) -> Result<(Vec<String>, BTreeSet<String>
         "DELETE FROM automations WHERE machine_id = ? AND project_id = ?",
         params![m, p],
     )?;
+    // The time inspector's spans of its sessions, whose labels hold its commands, searches, URLs and paths: the
+    // spans, then each label no other span uses.
+    let spans = "FROM time_spans WHERE machine_id = ?1
+           AND (project_id = ?2 OR thread_id IN (SELECT value FROM json_each(?3)))";
+    let threads_json = serde_json::to_string(&threads)?;
+    let labels: Vec<i64> = c
+        .prepare(&format!(
+            "SELECT DISTINCT label_id {spans} AND label_id IS NOT NULL"
+        ))?
+        .query_map(params![m, p, threads_json], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    c.execute(&format!("DELETE {spans}"), params![m, p, threads_json])?;
+    for label in labels {
+        c.execute(
+            "DELETE FROM time_labels WHERE id = ?1
+               AND NOT EXISTS (SELECT 1 FROM time_spans WHERE label_id = ?1)",
+            [label],
+        )?;
+    }
     for table in BY_THREAD {
         for t in &threads {
             c.execute(
