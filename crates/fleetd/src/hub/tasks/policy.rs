@@ -44,6 +44,8 @@ pub const NODE_OPS: &[&str] = &[
     "secure_input_filled",
     "session_route",
     "session_step",
+    "mac_where",
+    "mac_send",
 ];
 /// The calls that start an agent.
 pub const SPAWN_OPS: &[&str] = &["task_spawn"];

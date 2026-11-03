@@ -7,6 +7,7 @@ pub mod args;
 pub mod chat;
 pub mod github_app;
 pub mod hub_key;
+pub mod mac_tool;
 pub mod mcp_client;
 pub mod metrics;
 pub mod navi;
@@ -280,6 +281,10 @@ async fn update_command(argv: &[String]) -> u8 {
 pub fn main() -> ExitCode {
     crate::update::keep_running_binary();
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    // `mac` on an agent session's PATH (node/mac_tool): every argument is mac's, `--help` too.
+    if argv.first().map(String::as_str) == Some("mac") {
+        return ExitCode::from(mac_tool::run(&argv[1..]));
+    }
     // The forwarding agent-device's (node/device/remote.rs): every argument is agent-device's, `--help` too.
     if argv.first().map(String::as_str) == Some("agent-device") {
         return ExitCode::from(agent_device::run(&argv[1..]));

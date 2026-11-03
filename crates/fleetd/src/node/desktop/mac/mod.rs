@@ -59,6 +59,9 @@ pub struct MacConfig {
     /// A session no action touched for this long ends. Absent: 5.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idle_minutes: Option<u64>,
+    /// iOS simulators agents may have booted at once (`mac sim`, node/mac_tool). Absent: from the Mac's memory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub simulators: Option<u32>,
 }
 
 impl MacConfig {

@@ -1744,6 +1744,19 @@ impl SessionService {
         navi.then(|| self.project_root(project_id).ok()).flatten()
     }
 
+    /// An item in the session's action log, under its run now (`fleetd mac run`'s line).
+    pub fn note_item(&self, id: &str, mut item: ThreadItem) {
+        let noted = self.update(id, |c| {
+            if item.run_id.is_none() {
+                item.run_id = c.row.summary.active_run_id.clone();
+            }
+            c.put_item(item);
+        });
+        if let Err(e) = noted {
+            tracing::warn!(session_id = id, error = %e.message, "action log item not recorded");
+        }
+    }
+
     /// The working directory this node started a session in (a task's worktree, a lead's workspace); None for a
     /// session it doesn't have.
     pub fn session_cwd(&self, id: &str) -> Option<PathBuf> {

@@ -1,7 +1,7 @@
-//! iOS sessions (W46): an agent opens one with `session_start` kind ios, on a Mac with Xcode. The node lends it a
-//! booted clone of its settled golden simulator from a warm pool (pool.rs), points the agent's agent-device at the
-//! clone's udid (wrapper.rs) and records the screen with `simctl io recordVideo` (session.rs); `session_end` deletes
-//! the clone. The simulators live in a device set of the node's own (simctl.rs), apart from a person's in Xcode.
+//! iOS sessions (W46): a person opens one (a screen of their own, a PR's build) on a Mac with Xcode; agents get a clone
+//! from the same pool through the agents' Mac instead (`mac sim`, node/mac_tool). The node lends a session a booted
+//! clone of its settled golden simulator from a warm pool (pool.rs), points its agent-device at the clone's udid
+//! (wrapper.rs) and records the screen with `simctl io recordVideo` (session.rs); `session_end` deletes the clone. The simulators live in a device set of the node's own (simctl.rs), apart from a person's in Xcode.
 //! Sessions share the browser sessions' tools, action log, upload and hub storage, as android sessions do; the
 //! [`Router`](super::Router) sends each call to the broker of its kind.
 //!
@@ -569,6 +569,34 @@ impl Simulators {
         }
     }
 
+    /// A booted clone from the warm pool for the agents' Mac's `mac sim start` (node/mac_tool), with no session around
+    /// it, and its device and runtime's names. Dropping it deletes the clone.
+    pub fn lend(self: &Arc<Self>) -> Result<(pool::Lent, String), McpToolError> {
+        let words = |mut e: McpToolError| {
+            if e.message.contains("isn't set up") {
+                return refuse(
+                    ErrorCode::Failed,
+                    "The agents' Mac has iOS simulators turned off (\"ios\": {\"enabled\": false} in its node.json).",
+                    "do without a simulator and say so in your result; an admin turns them on (fleetd docs: The \
+                     agents' Mac)",
+                );
+            }
+            e.message = e.message.replace("iOS sessions", "iOS simulators");
+            e.fix = e.fix.map(|f| f.replace("session_start", "mac sim start"));
+            e
+        };
+        let pool = self.pool().map_err(words)?;
+        let lent = pool.take().map_err(|waiting| {
+            let (message, fix) = waiting_words(&waiting);
+            words(refuse(ErrorCode::Failed, message, &fix))
+        })?;
+        let device = format!(
+            "{} on {}",
+            pool.golden.device_type_name, pool.golden.runtime_name
+        );
+        Ok((lent, device))
+    }
+
     /// Clones booted for the next sessions.
     pub fn warm(&self) -> usize {
         match &*lock(&self.prep) {
@@ -758,7 +786,7 @@ impl Simulators {
             refuse(
                 ErrorCode::NotFound,
                 "No iOS session is open.",
-                "start one with session_start kind ios",
+                "start a simulator with mac sim start; agent-device then drives it",
             )
         })?;
         let work = remote::Work::at(&self.home, thread);
