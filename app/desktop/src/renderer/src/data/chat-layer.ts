@@ -63,6 +63,12 @@ export interface ChatActions {
 
 const TRANSIENT = new Set(["timeout", "offline", "disconnected"]);
 
+/** The app's IANA zone, for chat_send's `tz`; nothing when the runtime can't say. */
+const zone = (): { tz?: string } => {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return tz ? { tz } : {};
+};
+
 export const refOf = (key: ProjectKey) => {
   const at = key.indexOf("/");
   return { machineId: key.slice(0, at), projectId: key.slice(at + 1) };
@@ -179,6 +185,8 @@ export const createChatActions = (
       ...(row.now === true ? { now: true } : {}),
       ...(row.replyTo === undefined ? {} : { replyTo: row.replyTo }),
       ...(row.skills !== undefined && row.skills.length > 0 ? { skills: [...row.skills] } : {}),
+      // The person's zone, so their lead reads when they wrote on their clock and schedules in it.
+      ...zone(),
     };
     for (let attempt = 0; ; attempt++) {
       const r = await call("chat_send", input);

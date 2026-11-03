@@ -51,6 +51,18 @@ Each project's lead talks to you in that project's chat. It is told to:
 - Start the work a reply asks for in the same turn, opening a new order for it when none is open. It never asks you
   to send it as an order.
 
+### Your time and time zone {#your-time}
+
+Each message you write reaches the lead with when you wrote it, on your clock: "The human writes in your chat (Tue 3
+Nov 2026, 18:05 Europe/Berlin):". So "tonight", "tomorrow" and "at 6" mean your evening, tomorrow and 6, and a
+[reminder](/docs/automations#one-time) it sets runs at that time where you are. A fresh session's recent chat has
+each message's time too.
+
+Your zone is the one your app or phone sends with each message (the desktop app's, or the phone's own setting).
+Before your devices have sent one, and for a hub that has no person for you, the lead gets the global decision
+`policy.tz`, else the hub machine's zone, and the message says which ("UTC, the hub machine's zone: theirs isn't known
+yet"). A message on [Telegram](/docs/navi#telegram) uses the zone your app or phone sent last.
+
 ### No time estimates {#no-time}
 
 fleetd never asks an agent how long something will take, and the lead is told never to put an ETA or a duration

@@ -641,8 +641,12 @@ async fn the_lead_reads_who_wrote_once_there_are_two_people_and_reads_as_before_
         None,
         "",
         &writer(&hub.db, mine.person.as_ref()),
+        "Tue 3 Nov 2026, 18:05 UTC",
     );
-    assert_eq!(one, "The human writes in your chat:\n\nship it");
+    assert_eq!(
+        one,
+        "The human writes in your chat (Tue 3 Nov 2026, 18:05 UTC):\n\nship it"
+    );
     assert_eq!(lead_start(&lead_people(&hub.db)), shipped);
     assert!(shipped.starts_with(
         "You are the lead of project app (devbox/app) in fleetd. You and the human share one chat: you turn what they \
@@ -659,8 +663,12 @@ async fn the_lead_reads_who_wrote_once_there_are_two_people_and_reads_as_before_
         None,
         "",
         &writer(&hub.db, hers.person.as_ref()),
+        "Tue 3 Nov 2026, 18:05 UTC",
     );
-    assert_eq!(two, "Alice writes in your chat:\n\nship it");
+    assert_eq!(
+        two,
+        "Alice writes in your chat (Tue 3 Nov 2026, 18:05 UTC):\n\nship it"
+    );
     let owner_name = owner.person.as_ref().unwrap().name.to_string();
     let started = lead_start(&lead_people(&hub.db));
     assert!(
@@ -673,4 +681,66 @@ async fn the_lead_reads_who_wrote_once_there_are_two_people_and_reads_as_before_
     // A message from before people names no one.
     let old = message(None);
     assert_eq!(writer(&hub.db, old.person.as_ref()), "The human");
+}
+
+/// The zone a lead reads a person's messages in (D288): their device's once it sent one with a chat message, else the
+/// hub's policy.tz, else the hub machine's, each saying how it was chosen when it isn't theirs.
+#[tokio::test]
+async fn a_persons_zone_is_their_devices_else_policy_tz_else_the_hubs_and_says_which() {
+    use super::zone::{self, Source};
+    use fleetd_contracts::ledger::{DecisionKey, DecisionScope, DecisionSource};
+    let (hub, _home) = hub();
+    let owner = owner_device(&hub);
+    let me = owner.person.as_ref().map(|p| p.person_id.clone());
+    // 17:05 UTC on Tue 3 Nov 2026.
+    let at = crate::hub::store::parse_ms("2026-11-03T17:05:00.000Z").unwrap();
+
+    let none = zone::of_person(&hub.db, me.as_ref());
+    assert_eq!(none.source, Source::Hub);
+    assert!(
+        none.stamp(at)
+            .contains(", the hub machine's zone: theirs isn't known yet"),
+        "{}",
+        none.stamp(at)
+    );
+
+    hub.decisions
+        .record(
+            crate::hub::ledger::repo::RecordInput::new(
+                DecisionKey::unchecked("policy.tz"),
+                DecisionScope::Global,
+                "America/New_York",
+            ),
+            &crate::hub::ledger::Actor {
+                source: DecisionSource::Human,
+                by: "human:desk".into(),
+                person: None,
+            },
+        )
+        .unwrap();
+    let policy = zone::of_person(&hub.db, me.as_ref());
+    assert_eq!(
+        policy.stamp(at),
+        "Tue 3 Nov 2026, 12:05 America/New_York, the hub's policy.tz: theirs isn't known yet"
+    );
+
+    // Their app sends its zone with a message; from then on it is theirs, on Telegram too.
+    let r = json!({ "machineId": "devbox", "projectId": "app" });
+    registry()
+        .call(
+            &hub,
+            &owner,
+            "chat_send",
+            json!({ "projectRef": r, "text": "hi", "clientRequestId": "z1", "tz": "Europe/Berlin" }),
+        )
+        .await
+        .unwrap();
+    let own = zone::of_person(&hub.db, me.as_ref());
+    assert_eq!(own.source, Source::Device);
+    assert_eq!(own.stamp(at), "Tue 3 Nov 2026, 18:05 Europe/Berlin");
+    assert_eq!(own.short(at), "Tue 3 Nov, 18:05");
+    // A key with no person acts for the hub's owner, and the chat's zone is its last writer's.
+    assert_eq!(zone::of_person(&hub.db, None).name(), "Europe/Berlin");
+    let project = serde_json::from_value(r).unwrap();
+    assert_eq!(zone::of_chat(&hub.db, &project).name(), "Europe/Berlin");
 }

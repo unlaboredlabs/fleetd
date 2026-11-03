@@ -9,6 +9,7 @@ import type { HubError, HumanRequest } from "./desktop";
 import { HubClient, READY_TIMEOUT_MS, type Transport } from "./hub/client";
 import { fromBase64, openSealed, toBase64, utf8, type KeyPair } from "./seal";
 import { keyOf, refOf, type Key } from "./store";
+import { deviceZone } from "./zone";
 
 export type Platform = "ios" | "android";
 
@@ -378,7 +379,7 @@ export const act = async (a: Act, p: PushPayload, link: HubLink, newId: () => st
   const r = await withHub(link, async (client) => {
     const done =
       a.t === "reply"
-        ? await client.call("chat_send", { projectRef: refOf(a.key), text: a.text, clientRequestId: newId() })
+        ? await client.call("chat_send", { projectRef: refOf(a.key), text: a.text, clientRequestId: newId(), ...deviceZone() })
         : await client.call("approval_answer", { requestId: a.requestId, decision: a.t });
     const badge = await client.call("push_badge", {});
     return { done, badge: badge.ok ? badge.output.badge : undefined };

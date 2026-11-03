@@ -1,10 +1,12 @@
-//! Automations: a project's stored prompt with its triggers, a cron schedule in an IANA time zone, an incoming
-//! webhook and Run now. Each run opens an order for the project's lead (channel `automation`), which starts the work
+//! Automations: a project's stored prompt with its triggers, a schedule in an IANA time zone (a cron, or one exact
+//! time for a reminder or follow-up, D288), an incoming webhook and Run now. Each run opens an order for the project's lead (channel `automation`), which starts the work
 //! without a person's message; reviews, the merge train and gated approvals apply as to any order. One run at a time
 //! per automation: a schedule or Run now while its order is open is skipped and recorded; a webhook call is kept with
 //! its body (D279), and every call kept meanwhile goes in one follow-up order once the open run ends. A Navi's run
 //! closes its order by itself once the Navi's turn for it ends (D277). The scheduler sleeps on the hub clock until the
-//! earliest schedule is due; a schedule missed while the hub was down runs once, late, on its return.
+//! earliest schedule is due; a schedule missed while the hub was down runs once, late, on its return. A one-time
+//! schedule runs once and its automation is done (`doneAt`): it stays listed with its runs until it is deleted, or
+//! until the project's 50 are full and a new one needs its place.
 //!
 //! A webhook URL is `<hub url>/hooks/<automationId>/<secret>`. The hub keeps the secret's SHA-256 only, compares in
 //! constant time, and never logs the secret or the body; the body is kept with its run and given to the lead.
@@ -23,8 +25,8 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono_tz::Tz;
 use fleetd_contracts::automations::{
     AUTOMATIONS_PER_PROJECT, Automation, AutomationId, AutomationName, AutomationPrompt,
-    AutomationRun, AutomationRunId, AutomationRunState, AutomationSchedule, AutomationTrigger,
-    RUNS_KEPT,
+    AutomationRun, AutomationRunId, AutomationRunState, AutomationSchedule, AutomationScheduleCall,
+    AutomationTrigger, RUNS_KEPT,
 };
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
@@ -45,7 +47,7 @@ use crate::hub::leads::workstreams::IntakeInput;
 use crate::hub::leads::{Area, LeadError};
 use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, WaitInput, iso_ms, now_ms};
 use crate::hub::wakes::LATE_AFTER;
-use crate::hub::wakes::schedule::{next_cron, parse_cron, zoned_parts};
+use crate::hub::wakes::schedule::{next_cron, parse_at, parse_cron, zoned_parts};
 
 /// The longest order text the ledger keeps (`IntakeText`).
 const ORDER_CHARS: usize = 4000;
@@ -165,21 +167,83 @@ fn zone(schedule: &AutomationSchedule) -> Result<Tz, LeadError> {
     })
 }
 
-/// The schedule's first run strictly after `after_ms`; refused when it doesn't parse or never runs.
+/// The instant a one-time schedule's `at` names.
+fn at_ms(at: &str, schedule: &AutomationSchedule) -> Result<i64, LeadError> {
+    parse_at(at, schedule.tz.as_str()).map_err(|e| {
+        LeadError::invalid(
+            format!("{}.", e.0),
+            "Give a date and time such as 2026-11-03T18:00, read in tz.",
+        )
+    })
+}
+
+/// The schedule's first run strictly after `after_ms`; refused when it doesn't parse or never runs, and a one-time
+/// schedule whose time has passed.
 pub fn next_after(schedule: &AutomationSchedule, after_ms: i64) -> Result<i64, LeadError> {
     let tz = zone(schedule)?;
-    let cron = parse_cron(schedule.cron.as_str()).map_err(|e| {
+    let cron = match (&schedule.cron, &schedule.at) {
+        (Some(cron), None) => cron,
+        (None, Some(at)) => {
+            let ms = at_ms(at.as_str(), schedule)?;
+            if ms <= after_ms {
+                return Err(LeadError::invalid(
+                    format!(
+                        "{at} in {} has passed: it is {} there now.",
+                        schedule.tz,
+                        local(after_ms, schedule)
+                    ),
+                    "Give a time still to come.",
+                ));
+            }
+            return Ok(ms);
+        }
+        _ => {
+            return Err(LeadError::invalid(
+                "A schedule has a cron or an at, one of the two.",
+                "Give cron (such as 0 9 * * 1-5) to run again and again, or at (such as 2026-11-03T18:00) to run once.",
+            ));
+        }
+    };
+    let parsed = parse_cron(cron.as_str()).map_err(|e| {
         LeadError::invalid(
-            format!("The cron '{}' doesn't parse: {e}.", schedule.cron),
+            format!("The cron '{cron}' doesn't parse: {e}."),
             "Give five fields, minute hour day-of-month month day-of-week, such as 0 9 * * 1-5.",
         )
     })?;
-    next_cron(&cron, after_ms, tz).ok_or_else(|| {
+    next_cron(&parsed, after_ms, tz).ok_or_else(|| {
         LeadError::invalid(
-            format!("The cron '{}' never runs.", schedule.cron),
+            format!("The cron '{cron}' never runs."),
             "Pick days that exist, such as 0 9 1 * * for the 1st of each month.",
         )
     })
+}
+
+/// The schedule as kept: a one-time `at` on `tz`'s wall clock, 2026-11-03T18:00, whatever offset it was given with.
+fn kept(mut schedule: AutomationSchedule) -> Result<AutomationSchedule, LeadError> {
+    let tz = zone(&schedule)?;
+    if let Some(at) = &schedule.at {
+        let t = zoned_parts(at_ms(at.as_str(), &schedule)?, tz);
+        let seconds = match t.second {
+            0 => String::new(),
+            s => format!(":{s:02}"),
+        };
+        schedule.at = Some(Line::unchecked(format!(
+            "{}-{:02}-{:02}T{:02}:{:02}{seconds}",
+            t.year, t.month, t.day, t.hour, t.minute
+        )));
+    }
+    Ok(schedule)
+}
+
+/// A lead's schedule, in `tz` (the person's zone, [`crate::hub::people::zone`]) where it names none.
+pub fn from_call(call: AutomationScheduleCall, tz: impl FnOnce() -> String) -> AutomationSchedule {
+    AutomationSchedule {
+        cron: call.cron,
+        at: call.at,
+        tz: call
+            .tz
+            .unwrap_or_else(|| fleetd_contracts::wakes::TimeZone::unchecked(tz())),
+    }
 }
 
 /// `2026-10-27 09:00 Europe/Berlin`: the instant on the schedule's wall clock.
@@ -233,11 +297,26 @@ pub fn order_text(a: &Automation, run: &AutomationRun, payload: Option<&str>) ->
                 .scheduled_at
                 .as_ref()
                 .and_then(|t| crate::hub::store::parse_ms(t.as_str()));
+            let once = schedule.is_some_and(|s| s.at.is_some());
             let when = match (schedule, due) {
-                (Some(s), Some(ms)) => format!("its schedule ({}), due {}", s.cron, local(ms, s)),
+                (Some(s), Some(ms)) if once => {
+                    format!(
+                        "its one-time schedule, due {}; it runs only this once",
+                        local(ms, s)
+                    )
+                }
+                (Some(s), Some(ms)) => format!(
+                    "its schedule ({}), due {}",
+                    s.cron.as_ref().map_or("", |c| c.as_str()),
+                    local(ms, s)
+                ),
                 _ => "its schedule".to_owned(),
             };
             match &run.late_min {
+                Some(late) if once => format!(
+                    "{when}. The hub was down then, so this is {} min late: say that it comes late",
+                    late.get()
+                ),
                 Some(late) => format!(
                     "{when}; the hub was down then, so this is that run {} min late, once",
                     late.get()
@@ -643,30 +722,43 @@ impl Automations {
                 |row| row.get(0),
             )?)
         })?;
-        if count as usize >= AUTOMATIONS_PER_PROJECT {
-            return Err(LeadError::invalid(
-                format!(
-                    "The project has {AUTOMATIONS_PER_PROJECT} automations, the most it keeps."
-                ),
-                "Delete one it no longer needs, or fold two into one prompt.",
-            ));
-        }
+        let schedule = input.schedule.map(kept).transpose()?;
         let now = self.now();
-        let next = input
-            .schedule
-            .as_ref()
-            .map(|s| next_after(s, now))
-            .transpose()?;
+        let next = schedule.as_ref().map(|s| next_after(s, now)).transpose()?;
+        if count as usize >= AUTOMATIONS_PER_PROJECT {
+            // The oldest one-time automation that has run makes room.
+            let done: Option<String> = self.db.with(|c| {
+                Ok(c.query_row(
+                    "SELECT automation_id FROM automations WHERE machine_id = ? AND project_id = ?
+                       AND json_extract(data, '$.doneAt') IS NOT NULL ORDER BY rowid LIMIT 1",
+                    params![r.machine_id.as_str(), r.project_id.as_str()],
+                    |row| row.get(0),
+                )
+                .optional()?)
+            })?;
+            match done {
+                Some(id) => self.delete(&id, "hub")?,
+                None => {
+                    return Err(LeadError::invalid(
+                        format!(
+                            "The project has {AUTOMATIONS_PER_PROJECT} automations, the most it keeps."
+                        ),
+                        "Delete one it no longer needs, or fold two into one prompt.",
+                    ));
+                }
+            }
+        }
         let at = iso_ms(now);
         let a = Automation {
             automation_id: AutomationId::unchecked(random_id("au_")),
             project_ref: r.clone(),
             name: input.name,
             prompt: input.prompt,
-            schedule: input.schedule,
+            schedule,
             webhook: input.webhook,
             paused: false,
             next_run_at: next.map(|n| iso_ms(n).into()),
+            done_at: None,
             last_run: None,
             created_by: input.by.clone(),
             created_at: at.clone().into(),
@@ -711,11 +803,13 @@ impl Automations {
             a.prompt = prompt;
         }
         if let Some(schedule) = edit.schedule {
-            a.schedule = schedule;
+            // A new schedule starts over, a one-time one that has run included.
+            a.schedule = schedule.map(kept).transpose()?;
+            a.done_at = None;
         }
         let now = self.now();
-        let next = match (&a.schedule, a.paused) {
-            (Some(s), false) => Some(next_after(s, now)?),
+        let next = match (&a.schedule, a.paused, &a.done_at) {
+            (Some(s), false, None) => Some(next_after(s, now)?),
             _ => None,
         };
         a.next_run_at = next.map(|n| iso_ms(n).into());
@@ -747,7 +841,7 @@ impl Automations {
     }
 
     /// Paused: its schedule and webhook start nothing. Resumed: the schedule goes on from now; what it missed
-    /// while paused doesn't run.
+    /// while paused doesn't run, and a one-time schedule whose time passed meanwhile is refused until it has a new one.
     pub fn pause(&self, id: &str, paused: bool, by: &str) -> Result<Automation, LeadError> {
         let mut a = self.row(id)?.ok_or_else(|| not_found(id))?;
         if a.paused == paused {
@@ -755,8 +849,8 @@ impl Automations {
         }
         let now = self.now();
         a.paused = paused;
-        a.next_run_at = match (&a.schedule, paused) {
-            (Some(s), false) => Some(iso_ms(next_after(s, now)?).into()),
+        a.next_run_at = match (&a.schedule, paused, &a.done_at) {
+            (Some(s), false, None) => Some(iso_ms(next_after(s, now)?).into()),
             _ => None,
         };
         a.updated_at = iso_ms(now).into();
@@ -1497,13 +1591,17 @@ impl Automations {
     // ---- the schedule ----------------------------------------------------------------------------
 
     /// A due schedule: its next run moves on first, from now, so runs missed while the hub was down collapse into
-    /// this one; then the run.
+    /// this one (a one-time schedule is done instead); then the run.
     async fn fire(&self, id: &str, due_ms: i64) -> Result<(), LeadError> {
         let Some(mut a) = self.row(id)? else {
             return Ok(());
         };
         let now = self.now();
         a.next_run_at = match (&a.schedule, a.paused) {
+            (Some(s), _) if s.at.is_some() => {
+                a.done_at = Some(iso_ms(now).into());
+                None
+            }
             (Some(s), false) => next_after(s, now).ok().map(|n| iso_ms(n).into()),
             _ => None,
         };

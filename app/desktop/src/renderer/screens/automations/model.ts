@@ -6,6 +6,7 @@ import type {
   AutomationCreateInput,
   AutomationRun,
   AutomationRunState,
+  AutomationSchedule,
   AutomationTrigger,
   AutomationUpdateInput,
   MemoryRefreshJob,
@@ -25,6 +26,8 @@ export interface Draft {
   readonly scheduled: boolean;
   readonly cron: string;
   readonly tz: string;
+  /** A one-time schedule's date and time on `tz`'s clock, 2026-11-03T18:00; absent: a cron. */
+  readonly at?: string;
   readonly webhook: boolean;
 }
 
@@ -39,6 +42,7 @@ export const draftOf = (a: Automation, tz: string): Draft => ({
   scheduled: a.schedule !== undefined,
   cron: a.schedule?.cron ?? "0 9 * * 1-5",
   tz: a.schedule?.tz ?? tz,
+  ...(a.schedule?.at !== undefined ? { at: a.schedule.at } : {}),
   webhook: a.webhook,
 });
 
@@ -60,8 +64,9 @@ export function problems(d: Draft): Problems {
   if (d.prompt.trim() === "") out.prompt = "Say what the lead should do on each run.";
   else if (chars(d.prompt) > PROMPT_MAX) out.prompt = `At most ${PROMPT_MAX.toLocaleString("en-US")} characters.`;
   if (d.scheduled) {
-    const reading = describeCron(d.cron, d.tz);
-    if (!reading.ok) out.cron = reading.error;
+    const reading = d.at === undefined ? describeCron(d.cron, d.tz) : null;
+    if (reading && !reading.ok) out.cron = reading.error;
+    else if (d.at !== undefined && !AT.test(d.at.trim())) out.cron = "Give a date and time.";
     else if (d.tz.trim() === "") out.cron = "Give a time zone, such as Europe/Berlin.";
   }
   return out;
@@ -69,7 +74,9 @@ export function problems(d: Draft): Problems {
 
 export const hasProblems = (p: Problems): boolean => Object.keys(p).length > 0;
 
-const schedule = (d: Draft) => ({ cron: d.cron.trim(), tz: d.tz.trim() });
+const AT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2})?$/u;
+
+const schedule = (d: Draft): AutomationSchedule => (d.at === undefined ? { cron: d.cron.trim(), tz: d.tz.trim() } : { at: d.at.trim(), tz: d.tz.trim() });
 
 export const createInput = (d: Draft, projectRef: ProjectRef, clientRequestId: string): AutomationCreateInput => ({
   projectRef,
@@ -86,18 +93,32 @@ export function updateInput(a: Automation, d: Draft): AutomationUpdateInput | nu
   if (d.name.trim() !== a.name) out.name = d.name.trim();
   if (d.prompt !== a.prompt) out.prompt = d.prompt;
   const next = schedule(d);
-  if (d.scheduled && (a.schedule?.cron !== next.cron || a.schedule.tz !== next.tz)) out.schedule = next;
+  if (d.scheduled && (a.schedule?.cron !== next.cron || a.schedule?.at !== next.at || a.schedule?.tz !== next.tz)) out.schedule = next;
   if (!d.scheduled && a.schedule !== undefined) out.removeSchedule = true;
   if (d.webhook !== a.webhook) out.webhook = d.webhook;
   return Object.keys(out).length > 1 ? out : null;
 }
 
+const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** A one-time schedule in words, on its own zone's clock: "Once, Tue 3 Nov 2026 at 18:00 (Europe/Berlin)". */
+export function onceLine(at: string, tz: string): string {
+  const m = AT.exec(at);
+  if (!m) return `Once, ${at} (${tz})`;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const day = DAY[new Date(Date.UTC(y, mo - 1, d)).getUTCDay()] ?? "";
+  return `Once, ${day} ${String(d)} ${MONTH[mo - 1] ?? ""} ${String(y)} at ${m[4] ?? ""}:${m[5] ?? ""} (${tz})`;
+}
+
 /** Its triggers in a line: the schedule in words, the webhook, else Run now only. */
 export function triggersLine(a: Automation): string {
   const parts: string[] = [];
-  if (a.schedule) {
-    const r = describeCron(a.schedule.cron, a.schedule.tz);
-    parts.push(r.ok ? r.text : `${a.schedule.cron} (${a.schedule.tz})`);
+  if (a.schedule?.at !== undefined) parts.push(onceLine(a.schedule.at, a.schedule.tz));
+  else if (a.schedule) {
+    const cron = a.schedule.cron ?? "";
+    const r = describeCron(cron, a.schedule.tz);
+    parts.push(r.ok ? r.text : `${cron} (${a.schedule.tz})`);
   }
   if (a.webhook) parts.push("Webhook");
   return parts.length > 0 ? parts.join(" · ") : "Run now only";

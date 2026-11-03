@@ -1,5 +1,5 @@
-//! Automations: a project's stored prompt and its triggers (a 5-field cron in an IANA time zone, an incoming webhook,
-//! Run now). Each run opens an order for the project's lead, which starts the work on its own.
+//! Automations: a project's stored prompt and its triggers (a 5-field cron or one exact time, in an IANA time zone; an
+//! incoming webhook; Run now). Each run opens an order for the project's lead, which starts the work on its own.
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
@@ -30,11 +30,30 @@ pub type AutomationName = Line<1, 80>;
 /// What the lead is asked to do on each run.
 pub type AutomationPrompt = Text<1, 2000>;
 
-/// Standard 5-field cron (or @daily, @hourly…) read in `tz`; the hub parses it.
+/// When it runs by itself, read in `tz`: `cron` again and again, or `at` once (a reminder, a follow-up). Exactly one of
+/// the two; the hub parses them.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct AutomationSchedule {
-    pub cron: Line<1, 100>,
+    /// Standard 5-field cron (or @daily, @hourly…).
+    pub cron: Option<Line<1, 100>>,
+    /// One time: a date and time on `tz`'s wall clock, such as 2026-11-03T18:00. One with Z or an offset names that
+    /// instant, and the hub keeps it as `tz`'s wall clock. It runs once, then the automation is done (`doneAt`).
+    pub at: Option<Line<16, 40>>,
     pub tz: TimeZone,
+}
+
+/// A schedule in the lead's calls: a cron or a one-time at, one of the two. A tz left out is the zone of the person who
+/// last wrote in the chat (their app or phone tells the hub), else the hub's `policy.tz`, else the hub machine's.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AutomationScheduleCall {
+    /// Standard 5-field cron (or @daily, @hourly…), for a recurring run.
+    pub cron: Option<Line<1, 100>>,
+    /// One time, for a reminder or follow-up: a date and time such as 2026-11-03T18:00 in `tz`. It runs once.
+    pub at: Option<Line<16, 40>>,
+    /// An IANA zone; leave it out for the person's own.
+    pub tz: Option<TimeZone>,
 }
 
 /// What started a run.
@@ -105,8 +124,10 @@ pub struct Automation {
     pub webhook: bool,
     /// A paused automation's schedule and webhook start nothing; Run now still runs it.
     pub paused: bool,
-    /// The schedule's next run; absent while paused or without a schedule.
+    /// The schedule's next run; absent while paused, without a schedule, or once a one-time schedule has run.
     pub next_run_at: Option<Timestamp>,
+    /// A one-time schedule that has run: when. It starts nothing more by itself; Run now still runs it.
+    pub done_at: Option<Timestamp>,
     pub last_run: Option<AutomationRun>,
     /// Who made it: a keyId, "human" or "lead:<machineId>/<projectId>".
     pub created_by: String,
@@ -164,7 +185,7 @@ pub struct AutomationCreateCall {
     pub name: AutomationName,
     pub prompt: AutomationPrompt,
     /// Absent: it runs only on Run now (and a webhook, once a person adds one).
-    pub schedule: Option<AutomationSchedule>,
+    pub schedule: Option<AutomationScheduleCall>,
 }
 
 /// `automation_list`: the project's automations with their last run.
@@ -179,7 +200,7 @@ pub struct AutomationUpdateCall {
     pub automation_id: AutomationId,
     pub name: Option<AutomationName>,
     pub prompt: Option<AutomationPrompt>,
-    pub schedule: Option<AutomationSchedule>,
+    pub schedule: Option<AutomationScheduleCall>,
     /// true: take its schedule off.
     pub remove_schedule: Option<bool>,
 }
@@ -267,5 +288,15 @@ mod tests {
         let bad: Result<AutomationSchedule, _> =
             serde_json::from_value(json!({ "cron": "0 9 * * 1-5", "tz": "Mars/Olympus" }));
         assert!(bad.is_err());
+        let once: AutomationSchedule =
+            serde_json::from_value(json!({ "at": "2026-11-03T18:00", "tz": "Europe/Berlin" }))
+                .unwrap();
+        assert_eq!(
+            serde_json::to_value(&once).unwrap(),
+            json!({ "at": "2026-11-03T18:00", "tz": "Europe/Berlin" })
+        );
+        let call: AutomationScheduleCall =
+            serde_json::from_value(json!({ "at": "2026-11-03T18:00" })).unwrap();
+        assert!(call.tz.is_none());
     }
 }

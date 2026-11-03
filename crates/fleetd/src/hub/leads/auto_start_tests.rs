@@ -529,6 +529,18 @@ async fn a_wake_to_a_lead_idle_past_its_cache_starts_a_fresh_session_with_the_ch
     let hub = hub(true);
     hub.order("fix the five bugs").await;
     hub.after_debounce().await;
+    // The person's app gave its zone: the tail reads each message's time on their clock.
+    hub.area
+        .ctx
+        .db
+        .with(|c| crate::hub::people::ensure_owner_on(c, "Ada", 0).map(|_| ()))
+        .unwrap();
+    crate::hub::people::zone::set(
+        &hub.area.ctx.db,
+        None,
+        &fleetd_contracts::wakes::TimeZone::unchecked("Europe/Berlin"),
+    )
+    .unwrap();
     let chat = Chat::new(
         Arc::clone(&hub.area.ctx.db),
         Arc::clone(&hub.events),
@@ -573,7 +585,11 @@ async fn a_wake_to_a_lead_idle_past_its_cache_starts_a_fresh_session_with_the_ch
     );
     let tail = fresh.split("## Recent chat\n").nth(1).unwrap();
     assert!(
-        tail.contains("Human: keep the old API\nYou: Will do, the old API stays.")
+        tail.starts_with(
+            "Your session started fresh; the chat before this is not in it. Times are in Europe/Berlin.\n"
+        ) && tail.contains(
+            "Human (Sat 17 Oct, 12:00): keep the old API\nYou (Sat 17 Oct, 12:00): Will do, the old API stays."
+        )
             && !tail.contains("PR #9")
             && tail.ends_with("T2 done"),
         "{tail}"

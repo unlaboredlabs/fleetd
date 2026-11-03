@@ -8,6 +8,7 @@ import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, typ
 import type { Navigation } from "./screen";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { memoryPins, Pins, type PinStore } from "./pins";
+import { deviceZone } from "./zone";
 import { registerDevice, signOut, type PushDeps } from "./push";
 import { initial, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
 
@@ -262,6 +263,7 @@ export class Session {
       clientRequestId: row.clientRequestId,
       ...(row.attachments.length === 0 ? {} : { attachments: row.attachments.map((a) => a.attachmentId) }),
       ...(row.replyTo === undefined ? {} : { replyTo: row.replyTo }),
+      ...deviceZone(),
     });
     this.#dispatch(
       r.ok

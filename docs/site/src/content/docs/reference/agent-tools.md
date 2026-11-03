@@ -58,8 +58,8 @@ Every lead gets these.
 | [`forget`](#forget) | Remove one entry from memory: entry quotes words of exactly one entry, as it reads now; scope and topic as for remember. | No |
 | [`memory_read`](#memory_read) | Read one of this project's memory topic files (MEMORY.md lists them). | No |
 | [`nudge`](#nudge) | Flag the chat message you just wrote for the human's look, with reason in a few words ("the Machines page redesign"): the app shows it as something to look at, below your questions, until they have seen it, for a day at most. | No |
-| [`automation_create`](#automation_create) | Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule (5-field cron and an IANA tz, such as 0 9 \* \* 1-5 in Europe/Berlin). | No |
-| [`automation_list`](#automation_list) | This project's automations with their schedule, next run, paused state and last run. | No |
+| [`automation_create`](#automation_create) | Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 \* \* 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). | No |
+| [`automation_list`](#automation_list) | This project's automations with their schedule, next run, paused state and last run; doneAt marks a one-time one that has run. | No |
 | [`automation_update`](#automation_update) | Change an automation's name, prompt or schedule (removeSchedule: true takes it off); fields left out stay. | No |
 | [`automation_pause`](#automation_pause) | Pause (paused: true) or resume an automation. | No |
 | [`automation_delete`](#automation_delete) | Delete an automation and its run history; orders its runs opened stay. | No |
@@ -456,15 +456,16 @@ Flag the chat message you just wrote for the human's look, with reason in a few 
 
 ### automation_create
 
-Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule (5-field cron and an IANA tz, such as 0 9 \* \* 1-5 in Europe/Berlin). Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app.
+Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 \* \* 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | yes | One line. At most 80 characters. |
 | `prompt` | string | yes | At most 2000 characters. |
 | `schedule` | object | no | Absent: it runs only on Run now (and a webhook, once a person adds one). |
-| `schedule.cron` | string | yes | One line. At most 100 characters. |
-| `schedule.tz` | string | yes |  |
+| `schedule.at` | string | no | One time, for a reminder or follow-up: a date and time such as 2026-11-03T18:00 in `tz`. It runs once. At most 40 characters. |
+| `schedule.cron` | string | no | Standard 5-field cron (or @daily, @hourly…), for a recurring run. At most 100 characters. |
+| `schedule.tz` | string | no | An IANA zone; leave it out for the person's own. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
@@ -484,7 +485,7 @@ Make an automation for this project: a name, the prompt each run gives you as a 
 
 ### automation_list
 
-This project's automations with their schedule, next run, paused state and last run.
+This project's automations with their schedule, next run, paused state and last run; doneAt marks a one-time one that has run.
 
 No parameters.
 
@@ -507,9 +508,10 @@ Change an automation's name, prompt or schedule (removeSchedule: true takes it o
 | `name` | string | no | One line. At most 80 characters. |
 | `prompt` | string | no | At most 2000 characters. |
 | `removeSchedule` | boolean | no | True: take its schedule off. |
-| `schedule` | object | no | Standard 5-field cron (or @daily, @hourly…) read in `tz`; the hub parses it. |
-| `schedule.cron` | string | yes | One line. At most 100 characters. |
-| `schedule.tz` | string | yes |  |
+| `schedule` | object | no | A schedule in the lead's calls: a cron or a one-time at, one of the two. A tz left out is the zone of the person who last wrote in the chat (their app or phone tells the hub), else the hub's `policy.tz`, else the hub machine's. |
+| `schedule.at` | string | no | One time, for a reminder or follow-up: a date and time such as 2026-11-03T18:00 in `tz`. It runs once. At most 40 characters. |
+| `schedule.cron` | string | no | Standard 5-field cron (or @daily, @hourly…), for a recurring run. At most 100 characters. |
+| `schedule.tz` | string | no | An IANA zone; leave it out for the person's own. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
 

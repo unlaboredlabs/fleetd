@@ -424,7 +424,7 @@ async fn messages_photos_and_forwards_land_in_the_chat_and_replies_go_back() {
     assert_eq!(forward.forwarded_from.as_ref().unwrap().as_str(), "Mallory");
     // The lead reads a forward as someone else's untrusted words, and knows where the person wrote.
     let set = hub.db.prompts().current(Some(&navi()));
-    let read = crate::hub::chat::flow::for_lead(&set, forward, None, "", "Bob");
+    let read = crate::hub::chat::flow::for_lead(&set, forward, None, "", "Bob", "");
     assert!(read.contains("Bob (on Telegram)"), "{read}");
     assert!(
         read.contains(

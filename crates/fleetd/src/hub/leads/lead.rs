@@ -554,9 +554,9 @@ pub const LEAD_FRESH_AFTER: Duration = Duration::from_secs(3600);
 const RECENT_CHAT: usize = 12;
 const RECENT_CHAT_CHARS: usize = 500;
 
-/// The project's last few chat messages between the human, the lead and agents, for a fresh lead session; None when
-/// there are none. System lines are left out (the digest has the state), and so are held messages: the one that
-/// starts the session follows on its own.
+/// The project's last few chat messages between the human, the lead and agents, each with its time on the person's
+/// clock, for a fresh lead session; None when there are none. System lines are left out (the digest has the state),
+/// and so are held messages: the one that starts the session follows on its own.
 fn recent_chat(db: &HubDb, r: &ProjectRef) -> Option<String> {
     let rows: Vec<String> = db
         .with(|c| {
@@ -572,6 +572,7 @@ fn recent_chat(db: &HubDb, r: &ProjectRef) -> Option<String> {
             Ok(rows)
         })
         .ok()?;
+    let zone = crate::hub::people::zone::of_chat(db, r);
     let mut lines: Vec<String> = rows
         .iter()
         .filter_map(|data| serde_json::from_str::<ChatMessage>(data).ok())
@@ -583,8 +584,10 @@ fn recent_chat(db: &HubDb, r: &ProjectRef) -> Option<String> {
                 ChatAuthor::Agent => format!("Agent {}", m.by.as_ref().map_or("", |b| b.as_str())),
                 ChatAuthor::System => return None,
             };
+            let at = crate::hub::store::parse_ms(m.created_at.as_str())
+                .map_or_else(String::new, |ms| format!(" ({})", zone.short(ms)));
             Some(format!(
-                "{}: {}",
+                "{}{at}: {}",
                 who.trim(),
                 clip(m.text.as_str().trim(), RECENT_CHAT_CHARS)
             ))
@@ -596,7 +599,8 @@ fn recent_chat(db: &HubDb, r: &ProjectRef) -> Option<String> {
     }
     lines.reverse();
     Some(format!(
-        "## Recent chat\nYour session started fresh; the chat before this is not in it.\n{}",
+        "## Recent chat\nYour session started fresh; the chat before this is not in it. Times are in {}.\n{}",
+        zone.told(),
         lines.join("\n")
     ))
 }

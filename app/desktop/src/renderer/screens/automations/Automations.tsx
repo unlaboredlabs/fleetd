@@ -22,6 +22,7 @@ import {
   emptyDraft,
   hasProblems,
   localZone,
+  onceLine,
   orderHref,
   problems,
   refreshRuns,
@@ -172,7 +173,13 @@ function Card(props: { automation: Automation; onEdit: () => void; onUrl: (u: { 
     <section className={s.card} aria-label={a.name} data-automation={a.automationId}>
       <div className={s.cardHead}>
         <Text strong>{a.name}</Text>
-        {a.paused ? <StatusChip tone="idle">Paused</StatusChip> : running ? <StatusChip tone="working">Running</StatusChip> : null}
+        {a.paused ? (
+          <StatusChip tone="idle">Paused</StatusChip>
+        ) : running ? (
+          <StatusChip tone="working">Running</StatusChip>
+        ) : a.doneAt ? (
+          <StatusChip tone="done">Done</StatusChip>
+        ) : null}
       </div>
       <Text size="sm">{triggersLine(a)}</Text>
       <Text size="xs" tone="quiet">
@@ -388,7 +395,7 @@ function Editor(props: { projectRef: ProjectRef; automation?: Automation; onClos
   const refetch = useRefetch();
   const issues = problems(draft);
   const shown = tried ? issues : {};
-  const preview = draft.scheduled ? describeCron(draft.cron, draft.tz) : null;
+  const preview = draft.scheduled && draft.at === undefined ? describeCron(draft.cron, draft.tz) : null;
   const set = (patch: Partial<Draft>) => setDraft({ ...draft, ...patch });
 
   const save = () => {
@@ -440,15 +447,21 @@ function Editor(props: { projectRef: ProjectRef; automation?: Automation; onClos
       {draft.scheduled ? (
         <>
           <div className={s.scheduleRow}>
-            <Field label="Cron" description="Minute, hour, day of month, month, day of week." error={shown.cron}>
-              <Input mono value={draft.cron} onChange={(e) => set({ cron: e.target.value })} />
-            </Field>
+            {draft.at === undefined ? (
+              <Field label="Cron" description="Minute, hour, day of month, month, day of week." error={shown.cron}>
+                <Input mono value={draft.cron} onChange={(e) => set({ cron: e.target.value })} />
+              </Field>
+            ) : (
+              <Field label="Once at" description="It runs once, then it's done. A new time runs it again." error={shown.cron}>
+                <Input type="datetime-local" value={draft.at} onChange={(e) => set({ at: e.target.value })} />
+              </Field>
+            )}
             <Field label="Time zone" description="An IANA zone, such as Europe/Berlin.">
               <Input value={draft.tz} onChange={(e) => set({ tz: e.target.value })} />
             </Field>
           </div>
-          <Text size="sm" tone={preview?.ok ? "default" : "danger"} aria-label="Schedule preview">
-            {preview ? (preview.ok ? preview.text : preview.error) : null}
+          <Text size="sm" tone={preview === null || preview.ok ? "default" : "danger"} aria-label="Schedule preview">
+            {preview ? (preview.ok ? preview.text : preview.error) : draft.at !== undefined ? onceLine(draft.at, draft.tz) : null}
           </Text>
           <Text size="xs" tone="quiet">
             A run missed while the hub is down runs once when it is back.

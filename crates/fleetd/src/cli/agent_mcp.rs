@@ -234,14 +234,18 @@ static TOOLS: &[Tool] = &[
         "automation_create",
         "automation_create",
         "Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a \
-         schedule (5-field cron and an IANA tz, such as 0 9 * * 1-5 in Europe/Berlin). Runs start work on their own; \
-         reviews, the train and approvals still apply. Only a person adds a webhook, in the app.",
+         schedule: a 5-field cron to run again and again (0 9 * * 1-5), or at, one date and time to run once (a \
+         reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat \
+         (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done \
+         once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and \
+         approvals still apply. Only a person adds a webhook, in the app.",
         inline_schema::<AutomationCreateCall>,
     ),
     lead(
         "automation_list",
         "automation_list",
-        "This project's automations with their schedule, next run, paused state and last run.",
+        "This project's automations with their schedule, next run, paused state and last run; doneAt marks a \
+         one-time one that has run.",
         inline_schema::<AutomationListCall>,
     ),
     lead(

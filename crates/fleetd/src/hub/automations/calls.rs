@@ -11,7 +11,7 @@ use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::prim::List;
 
-use super::{Automations, Edit, NewAutomation, Start, text_of};
+use super::{Automations, Edit, NewAutomation, Start, from_call, text_of};
 use crate::hub::api::Hub;
 use crate::hub::link::lead_calls::{LeadCallFuture, op_of};
 use crate::hub::link::{LeadCaller, LeadCalls};
@@ -55,23 +55,37 @@ pub async fn answer(
 ) -> Result<LeadCallResult, McpToolError> {
     let r = &caller.project_ref;
     let by = caller.by.as_str();
+    // A schedule without a zone runs in the person's (D288).
+    let person_zone = || {
+        crate::hub::people::zone::of_chat(&automations.db, r)
+            .name()
+            .to_owned()
+    };
     Ok(match call {
         LeadCall::AutomationCreate(c) => {
             let (automation, _) = automations.create(NewAutomation {
                 project_ref: r.clone(),
                 name: c.name,
                 prompt: c.prompt,
-                schedule: c.schedule,
+                schedule: c.schedule.map(|s| from_call(s, person_zone)),
                 webhook: false,
                 by: by.to_owned(),
                 client_request_id: None,
             })?;
-            let next = match &automation.next_run_at {
-                Some(at) => format!(
+            let once = automation
+                .schedule
+                .as_ref()
+                .and_then(|s| s.at.as_ref().zip(Some(&s.tz)));
+            let next = match (&automation.next_run_at, once) {
+                (Some(_), Some((at, tz))) => format!(
+                    "It runs once, at {at} {tz}, and opens an order for you then; it shows in the person's \
+                     automations list until it has run. automation_delete cancels it."
+                ),
+                (Some(at), None) => format!(
                     "Its first run is at {at}; each run opens an order for you. A webhook trigger is added by a \
                      person in the app (Settings > Automations), where its secret URL is shown once."
                 ),
-                None => "It runs when you call automation_run or a person presses Run now; a schedule or a \
+                (None, _) => "It runs when you call automation_run or a person presses Run now; a schedule or a \
                          webhook makes it run by itself."
                     .to_owned(),
             };
@@ -94,7 +108,7 @@ pub async fn answer(
             automations.own(r, &c.automation_id)?;
             let schedule = match (c.schedule, c.remove_schedule) {
                 (_, Some(true)) => Some(None),
-                (Some(s), _) => Some(Some(s)),
+                (Some(s), _) => Some(Some(from_call(s, person_zone))),
                 (None, _) => None,
             };
             let (automation, _) = automations.update(

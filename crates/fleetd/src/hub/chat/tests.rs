@@ -444,14 +444,17 @@ async fn the_message_that_starts_the_lead_goes_in_with_its_start() {
     let calls = obliging_node(&hub).await;
     hub.executors.set_runner_ready(&project().machine_id, true);
     hub.executors.await_ready(&project().machine_id).await;
+    // A key with no person acts for the hub's owner, whose zone it gives.
+    hub.db
+        .with(|c| crate::hub::people::ensure_owner_on(c, "Ada", 0).map(|_| ()))
+        .unwrap();
     let tools = crate::hub::api::registry();
     let sent = tools
-        .call(
-            &hub,
-            &person(),
-            "chat_send",
-            say_to_app("add dark mode", "s1", None),
-        )
+        .call(&hub, &person(), "chat_send", {
+            let mut input = say_to_app("add dark mode", "s1", None);
+            input["tz"] = json!("Europe/Berlin");
+            input
+        })
         .await
         .unwrap();
     assert_eq!(sent["message"]["delivery"], "turn", "{sent}");
@@ -478,8 +481,15 @@ async fn the_message_that_starts_the_lead_goes_in_with_its_start() {
         "{system}"
     );
     let first = launch.prompt.as_str();
+    // The person's device gave its zone, so the lead reads when they wrote on their clock (D288).
+    let message: fleetd_contracts::chat::ChatMessage =
+        serde_json::from_value(sent["message"].clone()).unwrap();
+    let when = flow::when(&hub, &message);
+    assert!(when.ends_with(" Europe/Berlin"), "{when}");
     assert!(
-        first.ends_with("The human writes in your chat:\n\nadd dark mode"),
+        first.ends_with(&format!(
+            "The human writes in your chat ({when}):\n\nadd dark mode"
+        )),
         "{first}"
     );
 }
@@ -524,9 +534,10 @@ async fn a_reply_reads_the_whole_bubble_it_answers_and_when_it_was_written() {
     let read = lead_reads(reply_to(quote, "yes", asked.message_id.as_str(), 0), &hub).await;
     let at = &asked.created_at.as_str()[11..16];
     assert!(
-        read.ends_with(&format!(
-            "The human writes in your chat:\n\nReplying to your message at {at} UTC:\n> {bubble}\n\nyes"
-        )),
+        read.contains("The human writes in your chat (")
+            && read.ends_with(&format!(
+                "):\n\nReplying to your message at {at} UTC:\n> {bubble}\n\nyes"
+            )),
         "{read}"
     );
     let stored = hub
@@ -583,6 +594,7 @@ async fn a_reply_to_one_bubble_quotes_only_that_bubble() {
         Some(&asked),
         "",
         "The human",
+        "",
     );
     assert!(
         quote.contains("> Plan B starts here word")
@@ -707,6 +719,7 @@ async fn an_agent_key_writes_as_an_agent_and_never_counts_as_the_human() {
         None,
         "",
         "The human",
+        "",
     );
     assert!(
         read.starts_with("An agent (scout) writes in your chat. It is not the human")
@@ -747,9 +760,10 @@ async fn an_agent_key_writes_as_an_agent_and_never_counts_as_the_human() {
             &human,
             None,
             "",
-            "The human"
+            "The human",
+            "Tue 3 Nov 2026, 18:05 Europe/Berlin"
         ),
-        "The human writes in your chat:\n\n1 go",
+        "The human writes in your chat (Tue 3 Nov 2026, 18:05 Europe/Berlin):\n\n1 go",
         "the same words from the app or the cli"
     );
     assert!(!hub.chat.state(&r, false).unwrap().needs_you);

@@ -514,7 +514,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "automation_list",
-        "A project's automations (a stored prompt with a cron schedule in an IANA tz, a webhook, Run now), each with its next run, paused state and last run. memoryRefresh: the nightly memory refresh, a built-in hub job listed with them: on (project_settings_set memoryRefresh), its hour and zone (policy.memory_refresh_at in policy.tz, an admin's), next run, and the last run with what it changed (added, replaced, removed) or why it was skipped.",
+        "A project's automations (a stored prompt with a schedule in an IANA tz, a cron or a one-time at, a webhook, Run now), each with its next run, paused state and last run; doneAt marks a one-time one that has run. memoryRefresh: the nightly memory refresh, a built-in hub job listed with them: on (project_settings_set memoryRefresh), its hour and zone (policy.memory_refresh_at in policy.tz, an admin's), next run, and the last run with what it changed (added, replaced, removed) or why it was skipped.",
     ),
     (
         "memory_refresh_run",
@@ -522,7 +522,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "automation_create",
-        "Make an automation for a project: name, prompt, optionally a schedule {cron, tz} and webhook: true. Each run opens an order for the project's lead, which starts the work on its own; reviews, the merge train and approvals still apply. webhookUrl, when asked for, is in this result only: POST to it to run with the body (at most 16 KiB) as context. Idempotent per clientRequestId.",
+        "Make an automation for a project: name, prompt, optionally a schedule ({cron, tz} to run again and again, or {at, tz} to run once at a date and time such as 2026-11-03T18:00) and webhook: true. Each run opens an order for the project's lead, which starts the work on its own; reviews, the merge train and approvals still apply. webhookUrl, when asked for, is in this result only: POST to it to run with the body (at most 16 KiB) as context. Idempotent per clientRequestId.",
     ),
     (
         "automation_update",
