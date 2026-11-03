@@ -586,7 +586,18 @@ async fn deleting_a_navi_erases_everything_it_had_and_its_folder_when_ticked() {
                      INSERT INTO checklists (machine_id, project_id, next_id, items, updated_ms)
                        VALUES ('devbox', '{pid}', 2, '[]', 1);
                      INSERT INTO browser_sessions (session_id, machine_id, project_id, started_ms, state, data)
-                       VALUES ('bs-{pid}', 'devbox', '{pid}', 1, 'ended', '{{}}');"
+                       VALUES ('bs-{pid}', 'devbox', '{pid}', 1, 'ended', '{{}}');
+                     INSERT INTO time_labels (hash, family, text) VALUES ('h-{pid}', 'bash', 'curl https://{pid}.example/q');
+                     INSERT INTO time_spans (src, src_key, kind, cat, start_ms, lane, status, machine_id, project_id,
+                       thread_id, label_id)
+                       VALUES ('node', 'a-{pid}', 'tool', 'tool', 1, 'lead', 'done', 'devbox', '{pid}', 'th-{pid}',
+                         (SELECT id FROM time_labels WHERE hash = 'h-{pid}'));
+                     INSERT INTO time_spans (src, src_key, kind, cat, start_ms, lane, status, machine_id, thread_id, label_id)
+                       VALUES ('node', 'b-{pid}', 'tool', 'tool', 2, 'lead', 'done', 'devbox', 'th-{pid}',
+                         (SELECT id FROM time_labels WHERE hash = 'h-{pid}'));
+                     INSERT INTO time_lead_runs (machine_id, thread_id, run_id, workstream_id, n, at_ms)
+                       VALUES ('devbox', 'th-{pid}', 'r1', 'W1', 1, 1);
+                     INSERT INTO time_wakes (machine_id, thread_id, at_ms, workstreams) VALUES ('devbox', 'th-{pid}', 1, '[]');"
                 ))?;
                 Ok(())
             })
@@ -733,9 +744,25 @@ async fn deleting_a_navi_erases_everything_it_had_and_its_folder_when_ticked() {
         "browser_sessions",
         "skill_versions",
         "events",
+        "time_spans",
+        "time_lead_runs",
+        "time_wakes",
     ] {
         assert!(kept.iter().any(|k| k == t), "p1 lost its {t}: {kept:?}");
     }
+    // Nor the time inspector's labels of its sessions (its commands, searches and pages); p1's stays.
+    let labels = |pid: &str| -> i64 {
+        hub.db
+            .with(|c| {
+                Ok(c.query_row(
+                    "SELECT COUNT(*) FROM time_labels WHERE text LIKE ?1",
+                    [format!("%{pid}.example%")],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap()
+    };
+    assert_eq!((labels(&id), labels("p1")), (0, 1));
     // Nor any file of it: its memory, skills, attachment and recording; p1's stay.
     let files = |p: &ProjectRef| {
         let pid = p.project_id.as_str();
