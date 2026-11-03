@@ -99,8 +99,8 @@ export interface BrowserSession {
   readonly agent: { readonly laneId: string; readonly title: string; readonly role?: AgentRole };
   /** Why the agent opened it, in its words. */
   readonly purpose: string;
-  /** What it shows, when not a browser: an Android emulator, an iOS simulator or a Linux desktop. */
-  readonly kind?: "android" | "ios" | "linux_desktop";
+  /** What it shows, when not a browser: an Android emulator, an iOS simulator, a Linux desktop or the agents' Mac. */
+  readonly kind?: "android" | "ios" | "linux_desktop" | "mac";
   readonly state: SessionState;
   readonly startedAt: string;
   readonly endedAt?: string;
@@ -125,7 +125,7 @@ export interface BrowserSession {
  */
 export interface ScreenWaiting {
   readonly id: string;
-  readonly kind: "browser" | "android" | "ios" | "linux_desktop";
+  readonly kind: "browser" | "android" | "ios" | "linux_desktop" | "mac";
   readonly machineId: string;
   readonly since: string;
   /** People's waits for that machine before this one. */
@@ -141,7 +141,7 @@ export interface ScreenWaiting {
 
 /** A wait in words: what and where, then how far it is (its place in line, the build going in, or why it failed). */
 export const waitLine = (w: ScreenWaiting, machine: string): { readonly title: string; readonly place: string } => {
-  const what = { browser: "Browser", android: "Android emulator", ios: "iOS simulator", linux_desktop: "Linux desktop" }[w.kind];
+  const what = { browser: "Browser", android: "Android emulator", ios: "iOS simulator", linux_desktop: "Linux desktop", mac: "Agents’ Mac" }[w.kind];
   const title = `${what} on ${machine}${w.pr === undefined ? "" : ` with #${String(w.pr)}`}`;
   switch (w.stage) {
     case "starting":
@@ -166,6 +166,8 @@ export const waitingFor = (s: Pick<BrowserSession, "kind">): string => {
       return "Waiting for the emulator…";
     case "linux_desktop":
       return "Waiting for the desktop…";
+    case "mac":
+      return "Waiting for the Mac’s screen…";
     default:
       return "Waiting for the page…";
   }

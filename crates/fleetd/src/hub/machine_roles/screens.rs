@@ -73,6 +73,7 @@ fn host_of(kind: SessionKind) -> SessionHost {
         SessionKind::Android => SessionHost::Android,
         SessionKind::Ios => SessionHost::Ios,
         SessionKind::LinuxDesktop => SessionHost::Desktop,
+        SessionKind::Mac => SessionHost::Mac,
         SessionKind::Browser => SessionHost::Browser,
     }
 }
@@ -88,6 +89,7 @@ fn purpose(kind: SessionKind, person: &PersonRef, pr: Option<&ScreenPr>) -> Stri
         SessionKind::Android => "Android emulator",
         SessionKind::Ios => "iOS simulator",
         SessionKind::LinuxDesktop => "Linux desktop",
+        SessionKind::Mac => "Agents' Mac",
     };
     match pr {
         Some(pr) => format!("{what} opened by {}, with PR #{}", person.name, pr.number),

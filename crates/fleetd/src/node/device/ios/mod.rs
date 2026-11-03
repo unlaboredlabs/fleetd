@@ -720,6 +720,7 @@ impl Simulators {
             udid: Some(Text::unchecked(udid)),
             desktop: None,
             worktree: None,
+            held_by: None,
             start_ms: started.elapsed().as_millis() as u64,
         }))
     }

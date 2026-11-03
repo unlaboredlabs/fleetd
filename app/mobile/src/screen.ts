@@ -24,13 +24,13 @@ export interface ScreenCard {
   /** Its agent asked the person to take over, and waits: why, in its words. */
   readonly reason?: string;
   readonly purpose: string;
-  readonly kind: "browser" | "android" | "ios" | "linux_desktop";
+  readonly kind: "browser" | "android" | "ios" | "linux_desktop" | "mac";
   readonly control: Control;
   /** A person opened it themselves (New screen): theirs to drive, with no agent to hand it to. */
   readonly own: boolean;
 }
 
-const KINDS = new Set(["android", "ios", "linux_desktop"]);
+const KINDS = new Set(["android", "ios", "linux_desktop", "mac"]);
 
 export const cardOf = (s: BrowserSession): ScreenCard => ({
   id: s.sessionId,
@@ -54,6 +54,7 @@ export const KIND_WORD: Record<ScreenCard["kind"], string> = {
   android: "Android emulator",
   ios: "iOS simulator",
   linux_desktop: "desktop",
+  mac: "Agents' Mac screen",
 };
 
 /** A card's title: "Nova needs you" while it asks, else "Nova's browser". */

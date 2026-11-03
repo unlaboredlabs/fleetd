@@ -21,7 +21,8 @@ permissions:
 
 jobs:
   rust-macos:
-    # rust (linux)'s sealed boxes on macOS, the node's power code (IOKit) and a Navi's sandbox-exec, natively.
+    # rust (linux)'s sealed boxes on macOS, the node's power code (IOKit), a Navi's sandbox-exec and the Mac screen's
+    # ScreenCaptureKit and CGEvent, natively.
     name: rust (macos)
     runs-on: macos-latest
     timeout-minutes: 30
@@ -48,6 +49,13 @@ jobs:
         run: cargo test --locked -p fleetd --lib node::runner::sandbox
         env:
           FLEETD_REQUIRE_SANDBOX: "1"
+      - name: The agents' Mac's screen (ScreenCaptureKit frames, CGEvent input, the console gate)
+        # The lease and the gate run anywhere; on the runner the real-screen test also reads a ScreenCaptureKit frame
+        # and moves the pointer with CGEvent (the runner's session grants Screen Recording: it did on #989's run), and
+        # prints what the gate found (the runner's user is an admin, so the gate refuses it, as it should).
+        run: cargo test --locked -p fleetd --lib node::desktop::mac -- --nocapture
+        env:
+          FLEETD_REQUIRE_MAC_SCREEN: "1"
 
   ios-sessions:
     # node/device/ios on a real iOS simulator: a session end to end with the hub in process (making the golden

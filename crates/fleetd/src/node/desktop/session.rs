@@ -1,6 +1,10 @@
-//! One live desktop session: the display it was lent, the node's X connection to it, the screen it reads ten times
-//! a second while anything changes (the video, and the frames a person watches), and the action log, a line per
-//! `desktop` action and session tool call as a browser session keeps it (node/browser/record.rs).
+//! One live desktop session: the display it was lent (or the Mac's lease), the node's connection to its screen
+//! (screen.rs), the screen it reads ten times a second while anything changes (the video, and the frames a person
+//! watches), and the action log, a line per `desktop` action and session tool call as a browser session keeps it
+//! (node/browser/record.rs).
+//!
+//! A Mac screen session that doesn't hold the Mac's lease only observes: it reads the screen only while a person
+//! watches it, records no video, and its actions that would act on the screen are refused (mod.rs).
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -18,8 +22,8 @@ use fleetd_contracts::node_link::NodeToHub;
 use fleetd_contracts::prim::{Int, NonEmpty};
 use serde_json::{Value, json};
 
-use super::display::Display;
-use super::x11::{self, X};
+use super::screen::{Lent, Screen};
+use super::x11;
 use crate::node::browser::FrameSlot;
 use crate::node::browser::record::{self, Meta, Scrub, VideoSink};
 use crate::node::mask::Secrets;
@@ -56,8 +60,13 @@ pub struct Session {
     pub start: Instant,
     pub dir: PathBuf,
     pub backend: fleetd_contracts::browser::DesktopBackend,
-    display: Mutex<Option<Display>>,
-    x: Arc<X>,
+    pub kind: SessionKind,
+    /// Taken out of the lock for each use, so a long agent-desktop command never holds up the session's end: what it
+    /// was lent goes once the last use is done.
+    lent: Mutex<Option<Arc<dyn Lent>>>,
+    screen: Arc<dyn Screen>,
+    /// A Mac screen session without the lease: it only observes.
+    observing: AtomicBool,
     ffmpeg: Option<PathBuf>,
     video: Mutex<Option<VideoSink>>,
     /// Set by [`Session::close`] under the video's lock: a frame that comes late starts nothing.
@@ -82,13 +91,16 @@ pub struct Opened {
     pub ffmpeg: Option<PathBuf>,
     /// The agent session's secrets (its project's, its order's, its MCP servers'), scrubbed from the action log.
     pub secrets: Secrets,
+    pub kind: SessionKind,
+    pub backend: fleetd_contracts::browser::DesktopBackend,
+    /// A Mac screen session that starts without the lease.
+    pub observing: bool,
 }
 
 impl Session {
-    /// Takes a lent display and the node's connection to it, and starts reading its screen. The recording's folder
-    /// is made already: nothing here fails, so no display is ever thrown away on the async threads.
-    pub fn open(display: Display, x: X, opened: Opened) -> Arc<Self> {
-        let x = Arc::new(x);
+    /// Takes a lent display (or the Mac's lease) and the node's connection to its screen, and starts reading it. The
+    /// recording's folder is made already: nothing here fails, so no display is ever thrown away on the async threads.
+    pub fn open(lent: Box<dyn Lent>, screen: Arc<dyn Screen>, opened: Opened) -> Arc<Self> {
         let (inputs, mut queued) = tokio::sync::mpsc::unbounded_channel::<BrowserInput>();
         let session = Arc::new(Self {
             id: opened.id,
@@ -98,9 +110,11 @@ impl Session {
             started_at: Timestamp(crate::node::util::now_iso()),
             start: Instant::now(),
             dir: opened.dir,
-            backend: display.backend,
-            display: Mutex::new(Some(display)),
-            x,
+            backend: opened.backend,
+            kind: opened.kind,
+            lent: Mutex::new(Some(Arc::from(lent))),
+            screen,
+            observing: AtomicBool::new(opened.observing),
             ffmpeg: opened.ffmpeg,
             video: Mutex::default(),
             closed: AtomicBool::new(false),
@@ -121,9 +135,10 @@ impl Session {
                 let Some(session) = weak.upgrade() else {
                     return;
                 };
-                let x = session.x.clone();
+                let screen = session.screen.clone();
                 drop(session);
-                let done = tokio::task::spawn_blocking(move || person_input(&x, input)).await;
+                let done =
+                    tokio::task::spawn_blocking(move || person_input(screen.as_ref(), input)).await;
                 if let Ok(Err(e)) = done {
                     tracing::debug!(error = %e, "a person's desktop input did not go");
                 }
@@ -157,10 +172,36 @@ impl Session {
         });
     }
 
+    /// Whether it only observes: a Mac screen session without the lease.
+    pub fn observing(&self) -> bool {
+        self.observing.load(Ordering::Relaxed)
+    }
+
+    /// Takes the Mac's lease (`false`: from now on its frames go into the video) or gives it up.
+    pub fn set_observing(&self, observing: bool) {
+        if self.observing.swap(observing, Ordering::Relaxed) != observing {
+            self.step(
+                if observing {
+                    "lease_lost"
+                } else {
+                    "lease_taken"
+                },
+                json!({}),
+                true,
+                None,
+                0,
+            );
+        }
+    }
+
+    fn watched(&self) -> bool {
+        lock(&self.live).watcher.is_some()
+    }
+
     pub fn meta(&self, ended_at: Option<String>) -> Meta {
         Meta {
             session_id: self.id.to_string(),
-            kind: SessionKind::LinuxDesktop,
+            kind: self.kind,
             thread_id: self.thread.clone(),
             cwd: self.cwd.clone(),
             purpose: self.purpose.clone(),
@@ -240,7 +281,7 @@ impl Session {
             if self.closed.load(Ordering::Relaxed) {
                 return;
             }
-            if video.is_none() && lock(&self.note).is_none() {
+            if video.is_none() && lock(&self.note).is_none() && !self.observing() {
                 match VideoSink::start(
                     self.ffmpeg.as_deref(),
                     self.dir.join(RecordingFile::Video.file_name()),
@@ -250,7 +291,7 @@ impl Session {
                     Err(why) => self.set_note(why),
                 }
             }
-            if let Some(sink) = video.as_ref() {
+            if let Some(sink) = video.as_ref().filter(|_| !self.observing()) {
                 sink.frame(jpeg.clone(), at);
             }
         }
@@ -332,7 +373,8 @@ impl Session {
         let session = self.clone();
         let outcome = tokio::task::spawn_blocking(move || match call.action {
             DesktopAction::Launch => session.launch_app(&call),
-            _ => act(&session.x, &call),
+            DesktopAction::AgentDesktop => session.agent_desktop(&call),
+            _ => act(session.screen.as_ref(), &call),
         })
         .await
         .unwrap_or_else(|e| Err(e.to_string()));
@@ -378,9 +420,24 @@ impl Session {
 
     /// Starts an app on the display (blocking).
     pub fn launch(&self, command: &str) -> Result<super::display::Launched, String> {
-        let display = lock(&self.display);
-        let display = display.as_ref().ok_or("the session has ended")?;
-        display.launch(command, Path::new(&self.cwd))
+        let lent = lock(&self.lent).clone().ok_or("the session has ended")?;
+        lent.launch(command, Path::new(&self.cwd))
+    }
+
+    /// `agent_desktop`: one agent-desktop command on the Mac's screen (blocking).
+    fn agent_desktop(&self, call: &DesktopCall) -> Result<DesktopDone, String> {
+        let args = call
+            .text
+            .as_ref()
+            .ok_or("agent_desktop needs text: its arguments, the command first")?;
+        let lent = lock(&self.lent).clone().ok_or("the session has ended")?;
+        let message = lent.agent_desktop(args.as_str())?;
+        Ok(DesktopDone {
+            message,
+            jpeg_b64: None,
+            width: None,
+            height: None,
+        })
     }
 
     /// Stops reading the screen, finishes the video and throws the display away with everything on it. Returns the
@@ -398,8 +455,8 @@ impl Session {
             let _ = std::fs::remove_file(self.dir.join(RecordingFile::Video.file_name()));
             self.set_note(format!("no video: {why}"));
         }
-        let display = lock(&self.display).take();
-        let _ = tokio::task::spawn_blocking(move || drop(display)).await;
+        let lent = lock(&self.lent).take();
+        let _ = tokio::task::spawn_blocking(move || drop(lent)).await;
         let actions = self.dir.join(RecordingFile::Actions.file_name());
         if let Err(e) = record::scrub_file(&actions, &self.scrub) {
             tracing::warn!(session = %self.id, error = %e, "recording not scrubbed");
@@ -410,6 +467,9 @@ impl Session {
     }
 }
 
+/// A read of the screen: its hash, its JPEG (empty when it didn't change) and its size.
+type Grabbed = (u64, Vec<u8>, (u32, u32));
+
 /// Reads the screen while the session lives: a new frame whenever it changed, and the video kept going between.
 async fn capture(session: std::sync::Weak<Session>) {
     let mut last_hash = None::<u64>;
@@ -419,33 +479,39 @@ async fn capture(session: std::sync::Weak<Session>) {
         let Some(this) = session.upgrade() else {
             return;
         };
-        let x = this.x.clone();
+        // An observer reads the screen only for a person watching it.
+        if this.observing() && !this.watched() {
+            drop(this);
+            tokio::time::sleep(FRAME_EVERY).await;
+            continue;
+        }
+        let x = this.screen.clone();
         let full = last_full.elapsed() >= FULL_EVERY;
-        let grabbed =
-            tokio::task::spawn_blocking(move || -> Result<Option<(u64, Vec<u8>)>, String> {
-                if !x.changed() && !full {
-                    return Ok(None);
-                }
-                let raw = x.grab_raw()?;
-                let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                raw.hash(&mut hasher);
-                let hash = hasher.finish();
-                if Some(hash) == last_hash {
-                    return Ok(Some((hash, Vec::new())));
-                }
-                Ok(Some((hash, x.encode(&raw)?)))
-            })
-            .await
-            .unwrap_or_else(|e| Err(e.to_string()));
+        let grabbed = tokio::task::spawn_blocking(move || -> Result<Option<Grabbed>, String> {
+            if !x.changed() && !full {
+                return Ok(None);
+            }
+            let raw = x.grab_raw()?;
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            raw.data.hash(&mut hasher);
+            (raw.width, raw.height).hash(&mut hasher);
+            let hash = hasher.finish();
+            if Some(hash) == last_hash {
+                return Ok(Some((hash, Vec::new(), (raw.width, raw.height))));
+            }
+            Ok(Some((hash, x.encode(&raw)?, (raw.width, raw.height))))
+        })
+        .await
+        .unwrap_or_else(|e| Err(e.to_string()));
         let at = this.start.elapsed();
         match grabbed {
-            Ok(Some((hash, jpeg))) => {
+            Ok(Some((hash, jpeg, size))) => {
                 if full {
                     last_full = Instant::now();
                 }
                 if !jpeg.is_empty() {
                     last_hash = Some(hash);
-                    this.frame(jpeg, this.x.size(), at);
+                    this.frame(jpeg, size, at);
                     last_tick = Instant::now();
                 }
             }
@@ -469,8 +535,8 @@ fn point(c: Option<[Int<0, 8192>; 2]>) -> Option<(i64, i64)> {
     c.map(|[x, y]| (x.get(), y.get()))
 }
 
-/// One `desktop` action on the display (blocking).
-fn act(x: &X, call: &DesktopCall) -> Result<DesktopDone, String> {
+/// One `desktop` action on the screen (blocking).
+fn act(x: &dyn Screen, call: &DesktopCall) -> Result<DesktopDone, String> {
     let said = |message: String| DesktopDone {
         message,
         jpeg_b64: None,
@@ -563,12 +629,14 @@ fn act(x: &X, call: &DesktopCall) -> Result<DesktopDone, String> {
             let (px, py) = x.pointer()?;
             Ok(said(format!("The mouse is at ({px}, {py}).")))
         }
-        DesktopAction::Launch => Err("launch goes through the session".into()),
+        DesktopAction::Launch | DesktopAction::AgentDesktop => {
+            Err("launch and agent_desktop go through the session".into())
+        }
     }
 }
 
 /// A person's input from the live view, in the frame's pixels, which are the screen's.
-fn person_input(x: &X, input: BrowserInput) -> Result<(), String> {
+fn person_input(x: &dyn Screen, input: BrowserInput) -> Result<(), String> {
     match input {
         BrowserInput::Mouse {
             action,

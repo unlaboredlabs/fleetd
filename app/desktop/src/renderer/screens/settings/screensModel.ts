@@ -8,6 +8,7 @@ export const SCREEN_KINDS: ReadonlyArray<{ readonly host: SessionHost; readonly 
   { host: "ios", label: "iOS" },
   { host: "android", label: "Android" },
   { host: "desktop", label: "Linux desktop" },
+  { host: "mac", label: "Agents’ Mac" },
 ];
 
 /** A kind's switch: on as node.json has it (a node before switches: on where it can host it). */

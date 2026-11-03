@@ -1890,10 +1890,11 @@ export type DecisionsSearchOutput = {
 export type DeliveredHow = "turn" | "boundary" | "stopped" | "joined";
 
 /**
- * Where a desktop session's apps run: in a fresh container of the node's pinned image (docker or podman), or as the
- * node's user on an Xvfb display of their own with a fresh home directory.
+ * Where a desktop session's apps run: in a fresh container of the node's pinned image (docker or podman), as the
+ * node's user on an Xvfb display of their own with a fresh home directory, or on the agents' Mac's own screen
+ * (`mac`), where they stay after the session.
  */
-export type KnownDesktopBackend = "container" | "xvfb";
+export type KnownDesktopBackend = "container" | "xvfb" | "mac";
 /** KnownDesktopBackend, or a value from a newer hub. */
 export type DesktopBackend = KnownDesktopBackend | (string & {});
 
@@ -6229,7 +6230,7 @@ export type SecureInputSite = {
 };
 
 /** A kind of session a machine can host. */
-export type KnownSessionHost = "browser" | "android" | "ios" | "desktop";
+export type KnownSessionHost = "browser" | "android" | "ios" | "desktop" | "mac";
 /** KnownSessionHost, or a value from a newer hub. */
 export type SessionHost = KnownSessionHost | (string & {});
 
@@ -6238,12 +6239,14 @@ export type SessionHost = KnownSessionHost | (string & {});
  * `-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at
  * the copy's serial), a fresh clone of an iOS simulator from the node's settled golden device (`ios`, driven with
  * agent-device at the clone's udid), or an X display of its own with a window manager (`linux_desktop`, driven with
- * the agent's `desktop` tool), in a fresh container or else beside a fresh home directory. Every kind shares the
- * session tools, the action log, the video and the hub's storage; only a browser recording has a `dom` file, and an
- * iOS one's video is `video_mp4`. A node hosts android sessions when it lists the `session_android` capability, iOS
- * ones when it lists `session_ios`, and desktop ones when it lists `session_linux_desktop`.
+ * the agent's `desktop` tool), in a fresh container or else beside a fresh home directory, or the agents' Mac's own
+ * screen (`mac`: the GUI session of the Mac's standard `agents` user, leased to one agent at a time, driven with the
+ * `desktop` tool and agent-desktop). Every kind shares the session tools, the action log, the video and the hub's
+ * storage; only a browser recording has a `dom` file, and an iOS one's video is `video_mp4`. A node hosts android
+ * sessions when it lists the `session_android` capability, iOS ones when it lists `session_ios`, and desktop ones
+ * when it lists `session_linux_desktop`; a Mac screen where its `mac` host check is ready.
  */
-export type KnownSessionKind = "browser" | "android" | "ios" | "linux_desktop";
+export type KnownSessionKind = "browser" | "android" | "ios" | "linux_desktop" | "mac";
 /** KnownSessionKind, or a value from a newer hub. */
 export type SessionKind = KnownSessionKind | (string & {});
 

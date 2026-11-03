@@ -827,6 +827,7 @@ impl Broker {
             udid: None,
             desktop: None,
             worktree: None,
+            held_by: None,
             start_ms: stages.total_ms(),
         }))
     }

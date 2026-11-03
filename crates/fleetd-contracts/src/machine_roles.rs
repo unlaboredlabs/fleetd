@@ -61,10 +61,18 @@ pub enum SessionHost {
     Ios,
     /// A Linux desktop: docker or Xvfb.
     Desktop,
+    /// The agents' Mac's own screen: its `agents` user's GUI session, on the console and unlocked, one agent at a time.
+    Mac,
 }
 
 impl SessionHost {
-    pub const ALL: [SessionHost; 4] = [Self::Browser, Self::Android, Self::Ios, Self::Desktop];
+    pub const ALL: [SessionHost; 5] = [
+        Self::Browser,
+        Self::Android,
+        Self::Ios,
+        Self::Desktop,
+        Self::Mac,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -72,6 +80,7 @@ impl SessionHost {
             Self::Android => "android",
             Self::Ios => "ios",
             Self::Desktop => "desktop",
+            Self::Mac => "mac",
         }
     }
 
@@ -82,6 +91,7 @@ impl SessionHost {
             Self::Android => "an Android emulator",
             Self::Ios => "an iOS simulator",
             Self::Desktop => "a desktop",
+            Self::Mac => "the agents' Mac screen",
         }
     }
 }
@@ -145,7 +155,7 @@ pub struct ScreenSettings {
 }
 
 /// What a node can host, one check per kind.
-pub type HostChecks = List<HostCheck, 0, 4>;
+pub type HostChecks = List<HostCheck, 0, 5>;
 
 /// A machine's session cap a person set.
 pub type MaxSessions = Int<1, 64>;

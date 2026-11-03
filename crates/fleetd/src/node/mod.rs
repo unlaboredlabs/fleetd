@@ -133,6 +133,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         device: None,
         ios: None,
         desktop: None,
+        mac: None,
     };
     write_config(&home, &config).map_err(|_| {
         NodeError::Setup(format!(
@@ -302,11 +303,13 @@ async fn run_node(
         false => None,
     };
     let desktop_config = config.desktop.clone().unwrap_or_default();
-    let desktops = match desktop_config.enabled() {
+    let mac_config = config.mac.clone().unwrap_or_default();
+    let desktops = match desktop_config.enabled() || mac_config.enabled() {
         true => Some(
             desktop::Desktops::start(
                 home,
                 desktop_config,
+                mac_config,
                 // A hosted desktop's sealed secrets go once it reports itself ended, as a browser's do.
                 hosted.watch(Arc::new(browser::upload::RelayHub(relay.clone()))),
                 secrets_for.clone(),

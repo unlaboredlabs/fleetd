@@ -410,11 +410,15 @@ function Frame({
       </div>
     );
   }
-  const where = kind === "linux_desktop" ? "Linux desktop" : url === undefined || url === "about:blank" ? "" : url;
+  const where = kind === "linux_desktop" ? "Linux desktop" : kind === "mac" ? "" : url === undefined || url === "about:blank" ? "" : url;
   return (
     <div className={s.pageWindow} data-kind={kind ?? "browser"} {...shape} style={{ "--aspect": String(aspect) } as CSSProperties}>
       <div className={s.bar}>
-        {nav === undefined ? (
+        {kind === "mac" ? (
+          <span className={s.macBadge} title={MAC_WARNING}>
+            Agents’ Mac · not your account: never type your own passwords here
+          </span>
+        ) : nav === undefined ? (
           <span className={s.url}>{where === "" ? null : <MiddleCut text={where} />}</span>
         ) : (
           <Address url={url} nav={nav} onDone={() => pageRef?.current?.focus()} />
@@ -431,6 +435,10 @@ function Frame({
     </div>
   );
 }
+
+/** Why the agents' Mac's screen is badged: an agent can paint a fake sign-in there, and anything typed is theirs to read. */
+const MAC_WARNING =
+  "This is the agents’ shared Mac, not your account. Agents can read and draw anything on it, a fake sign-in dialog included: never type your own passwords or an admin password here.";
 
 /**
  * A browser's address bar, in the frame's bar while the page is yours: back, forward and reload, then where the page
