@@ -136,7 +136,8 @@ async fn a_navi_writes_to_another_lead_as_itself_never_as_the_person() {
     assert_eq!(
         said.text,
         "Please add gift cards at checkout.\n\n(Ask N1. If you open an order for it, pass asked: \"N1\" to brief, \
-         so Navi hears when it lands.)"
+         so Navi hears when it lands. If you fold it into an order already open, call brief with that workstreamId \
+         and asked: \"N1\".)"
     );
     // What the lead reads says it is an agent's, not the person's.
     let set = hub.db.prompts().current(Some(&project("storefront")));
