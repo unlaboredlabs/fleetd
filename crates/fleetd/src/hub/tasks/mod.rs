@@ -1318,8 +1318,10 @@ impl Tasks {
             format!("{} {verb}: {}", task.task_id.as_str(), task.title.as_str()),
             extra,
         )?;
-        // A reader's worktree holds no work, so it goes now; a writer's waits for its PR to merge.
-        if !write {
+        // A review's worktree holds no work, so it goes now. A reader's stays for the lead's next message, which
+        // continues it there with its $TMPDIR (its builds, installs and copies) as it left them: it goes when the task
+        // is cancelled, or with the nightly sweep. A writer's waits for its PR to merge.
+        if task.kind == TaskKind::Review {
             self.remove_worktree(&next);
         }
         if look_up {

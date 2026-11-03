@@ -53,6 +53,10 @@ pub enum SessionWorkspace {
         base_ref: NonEmpty,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pr: Option<NonEmpty>,
+        /// `pr`'s head commit as the hub's merge train knows it: a node that already has it starts there without
+        /// asking the remote. Older nodes ignore it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        head: Option<NonEmpty>,
     },
 }
 

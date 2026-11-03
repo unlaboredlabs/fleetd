@@ -68,6 +68,15 @@ const DELTA_EVERY: Duration = Duration::from_millis(100);
 const FILES_FOR: Duration = Duration::from_secs(30);
 /// Live usage goes to followers at most this often per session.
 const USAGE_EVERY: Duration = Duration::from_secs(1);
+/// A summary whose only change is `updatedAt` (an item or message came: progress) goes on the machine stream at most
+/// this often per session; the latest once the time is up. Any other change goes at once. The hub's watchdog reads
+/// progress off the thread frames, which go out as ever.
+const PROGRESS_EVERY: Duration = Duration::from_secs(10);
+/// The steps prune runs this long after the node starts, then every [`ITEMS_PRUNE_EVERY`], pausing
+/// [`ITEMS_PRUNE_PAUSE`] between batches.
+const ITEMS_PRUNE_AFTER_START: Duration = Duration::from_secs(10 * 60);
+const ITEMS_PRUNE_EVERY: Duration = Duration::from_secs(24 * 3600);
+const ITEMS_PRUNE_PAUSE: Duration = Duration::from_millis(100);
 /// An interrupt claude has not honoured by then escalates to SIGTERM, then SIGKILL.
 const INTERRUPT_GRACE: Duration = Duration::from_secs(5);
 /// `stop`: stdin closed, SIGTERM after this.
@@ -572,6 +581,9 @@ struct State {
     /// Cancels a session's running setup (`true`): an interrupt or stop ends it, killing its command.
     /// The run each setup is for, too: only that run's interrupt ends it.
     setup_cancel: HashMap<String, (String, watch::Sender<bool>)>,
+    /// Per session: when its summary last went on the machine stream, and whether progress since waits for
+    /// [`PROGRESS_EVERY`] to pass.
+    announced: HashMap<String, (Instant, bool)>,
 }
 
 impl State {
@@ -581,7 +593,11 @@ impl State {
         }
     }
 
-    fn machine(&self, frame: MachineEventFrame) {
+    fn machine(&mut self, frame: MachineEventFrame) {
+        if let MachineEvent::SessionUpdated(s) = &frame.event {
+            self.announced
+                .insert(s.session_id.to_string(), (Instant::now(), false));
+        }
         if self.subscribed {
             self.send(NodeToHub::MachineEvent(frame));
         }
@@ -919,6 +935,7 @@ impl SessionService {
             tracing::info!(removed, "removed clones a previous node left half done");
         }
         service.spawn_warm_pruner();
+        service.spawn_items_pruner();
         service.spawn_reaper();
         service.spawn_prober();
         service.spawn_span_flusher(service.inner.span_wake.clone());
@@ -1733,11 +1750,24 @@ impl SessionService {
             s.updated_at = before.0.updated_at.clone();
             s == before.0
         };
-        let quiet = !announce && changed.is_empty() && events.is_empty() && same_summary;
+        let progress = !announce && changed.is_empty() && same_summary;
+        let quiet = progress && events.is_empty();
         if quiet {
             row.summary.updated_at = before.0.updated_at;
         }
-        let frame = self.store().commit(&row, &changed, !quiet)?;
+        // Progress alone, soon after the last summary went out: stored now, sent once [`PROGRESS_EVERY`] is up.
+        let held = progress
+            && !quiet
+            && st
+                .announced
+                .get(id)
+                .is_some_and(|(at, _)| at.elapsed() < PROGRESS_EVERY);
+        let frame = self.store().commit(&row, &changed, !quiet && !held)?;
+        if let Some((at, pending)) = st.announced.get_mut(id).filter(|_| held)
+            && !std::mem::replace(pending, true)
+        {
+            self.send_progress(id, PROGRESS_EVERY.saturating_sub(at.elapsed()));
+        }
         events.extend(changed.into_iter().map(|r| ThreadEvent::Run(r.clone())));
         for event in events {
             st.thread(id, event);
@@ -1755,6 +1785,33 @@ impl SessionService {
             .running
             .send_if_modified(|n| std::mem::replace(n, running) != running);
         Ok(out)
+    }
+
+    /// Sends the summary of `id` after `wait`, unless one went out meanwhile: the progress [`Self::update`] held.
+    fn send_progress(&self, id: &str, wait: Duration) {
+        let weak = Arc::downgrade(&self.inner);
+        let id = id.to_owned();
+        tokio::spawn(async move {
+            tokio::time::sleep(wait).await;
+            let Some(inner) = weak.upgrade() else { return };
+            let service = SessionService { inner };
+            let mut st = service.st();
+            match st.announced.get_mut(&id) {
+                Some((_, pending)) if *pending => *pending = false,
+                // A summary went out meanwhile.
+                _ => return,
+            }
+            match service.store().session(&id) {
+                Ok(Some(row)) => match service.store().commit(&row, &[], true) {
+                    Ok(Some(frame)) => st.machine(frame),
+                    Ok(None) => {}
+                    Err(e) => tracing::warn!(session_id = %id, "progress not sent: {e}"),
+                },
+                _ => {
+                    st.announced.remove(&id);
+                }
+            }
+        });
     }
 
     /// How many sessions have an active run, updated as runs start and end.
@@ -1877,7 +1934,7 @@ impl SessionService {
             workspace_root: root.clone(),
             updated_at: now(),
         };
-        let st = self.st();
+        let mut st = self.st();
         st.machine(self.store().upsert_project(&info)?);
         Ok(match folder {
             Some(_) => SessionOutput::Folder { path: root },
@@ -1920,24 +1977,37 @@ impl SessionService {
         // `base_ref` names the PRs' target; the branch starts from a fresh fetch of the remote's copy of it. The fetch
         // runs outside the launch lock, so a slow remote holds up only the starts that need it, and starts that
         // arrive together share it.
-        let base = match &launch.workspace {
-            SessionWorkspace::Root => None,
-            SessionWorkspace::Worktree { .. } if taken.is_some() => None,
-            SessionWorkspace::Worktree { base_ref, .. }
-            | SessionWorkspace::Detached { base_ref, .. } => {
-                let (r, name) = (root.clone(), base_ref.to_string());
-                let base = blocking(move || worktree::fresh_base(&r, &name)).await?;
-                if let Some(note) = &base.note {
-                    tracing::warn!(session_id = id.as_str(), "worktree {note}");
+        let base = async {
+            Ok::<_, SessionError>(match &launch.workspace {
+                SessionWorkspace::Root => None,
+                SessionWorkspace::Worktree { .. } if taken.is_some() => None,
+                SessionWorkspace::Worktree { base_ref, .. }
+                | SessionWorkspace::Detached { base_ref, .. } => {
+                    let (r, name) = (root.clone(), base_ref.to_string());
+                    let base = blocking(move || worktree::fresh_base(&r, &name)).await?;
+                    if let Some(note) = &base.note {
+                        tracing::warn!(session_id = id.as_str(), "worktree {note}");
+                    }
+                    Some(base)
                 }
-                Some(base)
-            }
+            })
         };
-        // A review reads its PR's head when the remote publishes it, else the base; its prompt has it check.
-        let head = match &launch.workspace {
-            SessionWorkspace::Detached { pr: Some(pr), .. } => {
-                let (r, url) = (root.clone(), pr.to_string());
-                blocking(move || worktree::pr_head(&r, &url))
+        // A review reads its PR's head when the remote publishes it, else the base; its prompt has it check. The head
+        // the hub named needs no remote when this machine has its commit (its writer pushed from here); else the
+        // remote is asked while the base fetches.
+        let head = async {
+            match &launch.workspace {
+                SessionWorkspace::Detached {
+                    pr: Some(pr), head, ..
+                } => {
+                    let (r, url) = (root.clone(), pr.to_string());
+                    let known = head.as_ref().map(ToString::to_string);
+                    blocking(
+                        move || match known.and_then(|h| worktree::known_commit(&r, &h)) {
+                            Some(sha) => Ok(sha),
+                            None => worktree::pr_head(&r, &url),
+                        },
+                    )
                     .await
                     .inspect_err(|e| {
                         tracing::warn!(
@@ -1946,9 +2016,12 @@ impl SessionService {
                         );
                     })
                     .ok()
+                }
+                _ => None,
             }
-            _ => None,
         };
+        let (base, head) = tokio::join!(base, head);
+        let base = base?;
         let _launching = self.inner.launching.lock().await;
         // A retry that arrived while this one fetched.
         if let Some(row) = self.store().session(&id)? {
@@ -2438,7 +2511,11 @@ impl SessionService {
         let secrets = Arc::new(secrets);
         self.inner.runner.fence(&spec).await.map_err(runner_error)?;
         let fence = spec.sandbox.clone();
-        let handle = self.inner.runner.spawn(spec).map_err(runner_error)?;
+        // A host's start waits for it to register (a few ms, polled): on a blocking thread, not an async worker.
+        let runner = self.inner.runner.clone();
+        let handle = blocking(move || runner.spawn(spec))
+            .await
+            .map_err(runner_error)?;
         let link = handle.link.clone();
         row.local.started = true;
         row.local.pid = Some(handle.pid);
@@ -4364,7 +4441,7 @@ impl SessionService {
             problem = info.problem.as_deref().unwrap_or(""),
             "runner_info changed"
         );
-        let st = self.st();
+        let mut st = self.st();
         match self.store().runner_info(&info) {
             Ok(frame) => st.machine(frame),
             Err(e) => tracing::warn!(error = %e, "cannot log the runner's state"),
@@ -4385,6 +4462,38 @@ impl SessionService {
                     tracing::info!(gone, "pruned warm builds");
                 }
                 tokio::time::sleep(super::warm::PRUNE_EVERY).await;
+            }
+        });
+    }
+
+    /// Prunes the steps older than [`ITEMS_KEPT`](crate::node::store::ITEMS_KEPT) once a day, the first a while after
+    /// the node starts: a batch at a time on a blocking thread, with a pause between, so sends never queue behind it.
+    fn spawn_items_pruner(&self) {
+        let weak = Arc::downgrade(&self.inner);
+        tokio::spawn(async move {
+            tokio::time::sleep(ITEMS_PRUNE_AFTER_START).await;
+            loop {
+                let kept =
+                    chrono::TimeDelta::seconds(crate::node::store::ITEMS_KEPT.as_secs() as i64);
+                let before = (chrono::Utc::now() - kept)
+                    .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+                let (mut gone, mut after) = (0, Some(0));
+                while let Some(from) = after {
+                    let Some(inner) = weak.upgrade() else { return };
+                    let before = before.clone();
+                    match blocking(move || inner.store.prune_items(from, &before)).await {
+                        Ok((n, next)) => (gone, after) = (gone + n, next),
+                        Err(e) => {
+                            tracing::warn!("steps not pruned: {e}");
+                            break;
+                        }
+                    }
+                    tokio::time::sleep(ITEMS_PRUNE_PAUSE).await;
+                }
+                if gone > 0 {
+                    tracing::info!(gone, "pruned steps older than 30 days");
+                }
+                tokio::time::sleep(ITEMS_PRUNE_EVERY).await;
             }
         });
     }
