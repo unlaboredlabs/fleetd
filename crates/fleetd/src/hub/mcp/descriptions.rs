@@ -573,6 +573,10 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "End a screen you opened (sessionId): it closes on its machine and its recording goes to the hub. Or give up your wait for one (waitId). A person's device only.",
     ),
     (
+        "screens_count",
+        "How many screens are live across every project and Navi you can see, and how many of those ask for a person to take over. Read-only.",
+    ),
+    (
         "browser_retention_set",
         "How long the hub keeps browser recordings: retentionDays (1 to 365, default 30) and maxGbPerProject (default 20; a project's oldest go first past it). Pruned hourly; an expired session keeps its row. Admin on every machine.",
     ),

@@ -141,6 +141,9 @@ export const screensPage = (preview: Fixture): Fixture => {
   f.later(0, "screen_thumb", thumb(PAGE_SESSION.android, "androidInvoices.jpg", 412, 915));
   f.later(0, "screen_thumb", thumb(PAGE_SESSION.navi, "tableBooking.jpg", 960, 600));
 
+  // The sidebar's Screens row: six live across the hub, one asking for you.
+  f.answer("screens_count", undefined, { live: 6, asking: 1 });
+
   // The machines' screens: devbox 3 of 8, buildbox 2 of 4, the agents' Mac leased to one agent at a time.
   const check = (host: string, ready: boolean) => ({ host, ready, detail: ready ? "ready" : "not set up here" });
   const machine = (machineId: string, ready: readonly string[], live: number, max: number): JsonObject => ({

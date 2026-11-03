@@ -1229,3 +1229,65 @@ async fn pictures_are_taken_only_while_an_app_shows_the_page_every_20_seconds() 
     assert!(watches_heard(&mut node).await.is_empty());
     run.abort();
 }
+
+#[tokio::test]
+async fn screens_count_is_one_read_for_the_whole_hub_of_the_screens_a_key_may_see() {
+    let (hub, _clock, _home) = hub();
+    let (storefront, checkout) = (project("storefront"), project("checkout"));
+    let count = |who: Caller| {
+        let hub = hub.clone();
+        async move {
+            let out = tool(&hub, &who, "screens_count", json!({})).await.unwrap();
+            (
+                out["live"].as_i64().unwrap(),
+                out["asking"].as_i64().unwrap(),
+            )
+        }
+    };
+    assert_eq!(count(reader()).await, (0, 0));
+    node_call(
+        &hub,
+        &storefront,
+        report(S1, "live", json!([])),
+        "browser_session",
+    )
+    .await
+    .unwrap();
+    node_call(
+        &hub,
+        &checkout,
+        report(S2, "live", json!([])),
+        "browser_session",
+    )
+    .await
+    .unwrap();
+    node_call(
+        &hub,
+        &checkout,
+        json!({ "sessionId": S2, "reason": "Solve the captcha" }),
+        "browser_takeover",
+    )
+    .await
+    .unwrap();
+    // Across projects, in one read.
+    assert_eq!(count(reader()).await, (2, 1));
+    // A key that reads no machine here sees none.
+    let elsewhere = caller(json!([{ "role": "read", "machines": ["laptop"] }]));
+    assert_eq!(count(elsewhere).await, (0, 0));
+    // Taken over: still live, no longer asking. Ended: not counted.
+    let mut human = report(S2, "live", json!([]));
+    human["control"] = "human".into();
+    node_call(&hub, &checkout, human, "browser_session")
+        .await
+        .unwrap();
+    assert_eq!(count(reader()).await, (2, 0));
+    node_call(
+        &hub,
+        &storefront,
+        report(S1, "uploading", json!([])),
+        "browser_session",
+    )
+    .await
+    .unwrap();
+    assert_eq!(count(reader()).await, (1, 0));
+}

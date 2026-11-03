@@ -99,11 +99,7 @@ function Wall({ all, now }: { all: readonly PageScreen[]; now: number }) {
         )}
         {recent.length === 0 ? null : (
           <Group title="Recent" count={recent.length}>
-            <div className={s.recent}>
-              {recent.map((p) => (
-                <RecentRow key={p.x.id} screen={p} now={now} />
-              ))}
-            </div>
+            <Recent recent={recent} now={now} />
           </Group>
         )}
       </div>
@@ -181,6 +177,32 @@ function Tile({ screen: p, now }: { screen: PageScreen; now: number }) {
         </span>
       </span>
     </a>
+  );
+}
+
+/** How many ended ones Recent shows at first, and how many more each Show more adds. */
+export const RECENT_STEP = 12;
+
+/** The ended ones, newest first: the first RECENT_STEP, then RECENT_STEP more at each Show more. */
+function Recent({ recent, now }: { recent: readonly PageScreen[]; now: number }) {
+  const [shown, setShown] = useState(RECENT_STEP);
+  const more = Math.min(RECENT_STEP, recent.length - shown);
+  return (
+    <div className={s.recent}>
+      {recent.slice(0, shown).map((p) => (
+        <RecentRow key={p.x.id} screen={p} now={now} />
+      ))}
+      {more > 0 ? (
+        <span className={s.more}>
+          <Button variant="quiet" size="sm" onClick={() => setShown((n) => n + RECENT_STEP)}>
+            {`Show ${String(more)} more`}
+          </Button>
+          <Text size="xs" tone="faint" tabular>
+            {`${String(shown)} of ${String(recent.length)}`}
+          </Text>
+        </span>
+      ) : null}
+    </div>
   );
 }
 
