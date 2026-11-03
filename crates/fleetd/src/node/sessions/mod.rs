@@ -4026,6 +4026,17 @@ impl SessionService {
                 }
             }
         }
+        // A task's stop is its end: what its session's tree left running in any of its turns goes now.
+        if row.local.role == SessionRole::Worker {
+            let ended = host::end_left(&hosts_dir(&self.inner.config.home).join(id)).await;
+            if ended > 0 {
+                tracing::info!(
+                    session_id = id,
+                    ended,
+                    "ended processes its session left running"
+                );
+            }
+        }
         // A session's scratch goes with its worktree, or with its process when it has none.
         if remove_worktree || row.local.base_ref.is_none() {
             let home = self.inner.config.home.clone();
@@ -4169,6 +4180,13 @@ impl SessionService {
         }
         if let Some(telegram) = self.inner.telegram.get() {
             telegram.forget(project_id);
+        }
+        // Its agents' tasks end with it, and what their sessions left running too.
+        let hosts = hosts_dir(&self.inner.config.home);
+        for row in self.store().sessions()? {
+            if row.summary.project_id == *project_id && row.local.role == SessionRole::Worker {
+                host::end_left(&hosts.join(row.summary.session_id.as_str())).await;
+            }
         }
         // Only once every process of the project has exited: none still works in a worktree that goes.
         if remove_worktrees {
