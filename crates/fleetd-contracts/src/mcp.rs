@@ -425,6 +425,29 @@ pub enum AttachmentMime {
     Zip,
 }
 
+/// Whether text starts with a UTF-16 byte-order mark: Some(true) for big-endian, Some(false) for little-endian.
+fn utf16_bom(bytes: &[u8]) -> Option<bool> {
+    match bytes {
+        [0xfe, 0xff, ..] => Some(true),
+        [0xff, 0xfe, ..] => Some(false),
+        _ => None,
+    }
+}
+
+/// A Windows-1252 byte as its character: Latin-1, but for the printable marks at 0x80 to 0x9F (€, curly quotes,
+/// dashes); its five unassigned bytes stay as Latin-1's controls.
+fn windows_1252(b: u8) -> char {
+    const HIGH: [char; 32] = [
+        '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8D}', 'Ž',
+        '\u{8F}', '\u{90}', '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9D}',
+        'ž', 'Ÿ',
+    ];
+    match b {
+        0x80..=0x9f => HIGH[(b - 0x80) as usize],
+        b => b as char,
+    }
+}
+
 /// Names that say a file is text: notes, data, calendar invites, mail, code. Any other name whose bytes are text is
 /// text too, with `.txt` added, so nothing opens it as a script.
 const TEXT_EXTENSIONS: &[&str] = &[
@@ -496,7 +519,8 @@ impl AttachmentMime {
     }
 
     /// Whether `bytes` hold a file of this type: an image's or a PDF's own first bytes, a zip archive for an Office
-    /// document, and UTF-8 with no NUL for text (judged on its first 64 KiB).
+    /// document, and for text UTF-16 with its byte-order mark, or any 8-bit text (UTF-8, Windows-1252) with no NUL in
+    /// its first 64 KiB. The hub keeps text as UTF-8 ([`AttachmentMime::utf8_text`]).
     pub fn fits(self, bytes: &[u8]) -> bool {
         match self {
             Self::Png | Self::Jpeg | Self::Webp | Self::Gif => Self::of_image(bytes) == Some(self),
@@ -504,14 +528,43 @@ impl AttachmentMime {
             Self::Docx | Self::Xlsx | Self::Pptx | Self::Zip => bytes.starts_with(b"PK\x03\x04"),
             Self::Text | Self::Csv => {
                 let head = &bytes[..bytes.len().min(64 * 1024)];
-                let utf8 = match std::str::from_utf8(head) {
-                    Ok(_) => true,
-                    // A character cut at the 64 KiB mark, or where the caller's read stopped, is still text.
-                    Err(e) => e.error_len().is_none(),
-                };
-                utf8 && !head.contains(&0)
+                utf16_bom(head).is_some() || !head.contains(&0)
             }
         }
+    }
+
+    /// Text as the hub keeps it, in UTF-8: UTF-16 by its byte-order mark (Excel's "Unicode Text"), UTF-8 when its
+    /// start reads as UTF-8 (a stray bad byte later becomes U+FFFD), and anything else as Windows-1252, the 8-bit
+    /// text a "CSV (Comma delimited)" save or a bank's export writes (Latin-1 is a subset). None when it isn't text.
+    pub fn utf8_text(bytes: &[u8]) -> Option<String> {
+        if let Some(big) = utf16_bom(bytes) {
+            let units = bytes[2..].chunks_exact(2).map(|p| {
+                if big {
+                    u16::from_be_bytes([p[0], p[1]])
+                } else {
+                    u16::from_le_bytes([p[0], p[1]])
+                }
+            });
+            return Some(
+                char::decode_utf16(units)
+                    .map(|c| c.unwrap_or('\u{FFFD}'))
+                    .collect(),
+            );
+        }
+        let head = &bytes[..bytes.len().min(64 * 1024)];
+        if head.contains(&0) {
+            return None;
+        }
+        let utf8 = match std::str::from_utf8(head) {
+            Ok(_) => true,
+            // A character cut at the 64 KiB mark (or at the end) is still UTF-8.
+            Err(e) => e.error_len().is_none(),
+        };
+        if utf8 {
+            let text = String::from_utf8_lossy(bytes);
+            return Some(text.strip_prefix('\u{FEFF}').unwrap_or(&text).to_owned());
+        }
+        Some(bytes.iter().map(|&b| windows_1252(b)).collect())
     }
 
     /// The extensions a file of this type may carry, its usual one first: a name with another gets that one added, so
@@ -3725,8 +3778,22 @@ mod tests {
             Some(M::Text)
         );
         assert_eq!(M::of_file("song.mp3", b"ID3\x04\0\0"), None);
-        // Text cut mid-character at the end of what was read is still text.
-        assert!(M::Text.fits("café".as_bytes().split_last().unwrap().1));
+        // Text in another encoding is text, kept as UTF-8: a bank's Windows-1252 CSV, Excel's UTF-16 "Unicode Text".
+        let latin = b"date;payee;amount\n01.10.2026;Caf\xe9 M\xfcller;\x8012,50\n";
+        assert_eq!(M::of_file("bank.csv", latin), Some(M::Csv));
+        assert_eq!(
+            M::utf8_text(latin).unwrap(),
+            "date;payee;amount\n01.10.2026;Café Müller;€12,50\n"
+        );
+        let utf16: Vec<u8> = [0xff, 0xfe]
+            .into_iter()
+            .chain("a\tb\nü\t€\n".encode_utf16().flat_map(u16::to_le_bytes))
+            .collect();
+        assert_eq!(M::of_file("export.txt", &utf16), Some(M::Text));
+        assert_eq!(M::utf8_text(&utf16).unwrap(), "a\tb\nü\t€\n");
+        assert_eq!(M::utf8_text("\u{FEFF}é,1\n".as_bytes()).unwrap(), "é,1\n");
+        assert_eq!(M::utf8_text(b"PK\x03\x04\0\0binary"), None);
+        assert!(!M::Text.fits(b"\0\x01\x02 binary"));
         assert_eq!(M::Text.named("run.command"), "run.command.txt");
         assert_eq!(M::Pdf.named("plan.pdf"), "plan.pdf");
         assert_eq!(M::Csv.named(".csv"), ".csv.csv");
