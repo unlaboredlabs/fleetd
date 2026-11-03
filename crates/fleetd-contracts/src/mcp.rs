@@ -506,7 +506,9 @@ impl AttachmentMime {
     }
 
     /// A file's type by its name and bytes together: what its name says when its bytes agree, an image by its bytes
-    /// whatever its name, and text for any other name whose bytes are text. None for anything else.
+    /// whatever its name, and text for any other name whose start is UTF-8, or UTF-16 with its byte-order mark. Text
+    /// in another 8-bit encoding (Windows-1252) needs a name that says text (.csv, .txt): without one, NUL-free bytes
+    /// could be any binary. None for anything else.
     pub fn of_file(name: &str, bytes: &[u8]) -> Option<Self> {
         if let Some(image) = Self::of_image(bytes) {
             return Some(image);
@@ -514,7 +516,15 @@ impl AttachmentMime {
         match Self::of_name(name) {
             Some(mime) if mime.fits(bytes) => Some(mime),
             Some(_) => None,
-            None => Self::Text.fits(bytes).then_some(Self::Text),
+            None => {
+                let head = &bytes[..bytes.len().min(64 * 1024)];
+                let utf8 = match std::str::from_utf8(head) {
+                    Ok(_) => true,
+                    // A character cut at the 64 KiB mark (by this or the caller's read) is still UTF-8.
+                    Err(e) => e.error_len().is_none() && head.len() == 64 * 1024,
+                };
+                (utf16_bom(head).is_some() || (utf8 && !head.contains(&0))).then_some(Self::Text)
+            }
         }
     }
 
@@ -533,8 +543,9 @@ impl AttachmentMime {
         }
     }
 
-    /// Text as the hub keeps it, in UTF-8: UTF-16 by its byte-order mark (Excel's "Unicode Text"), UTF-8 when its
-    /// start reads as UTF-8 (a stray bad byte later becomes U+FFFD), and anything else as Windows-1252, the 8-bit
+    /// Text as the hub keeps it, in UTF-8: UTF-16 by its byte-order mark (Excel's "Unicode Text"), UTF-8 when the
+    /// whole file reads as UTF-8 (a stray bad byte after its own characters becomes U+FFFD), and anything else as
+    /// Windows-1252, the 8-bit
     /// text a "CSV (Comma delimited)" save or a bank's export writes (Latin-1 is a subset). None when it isn't text.
     pub fn utf8_text(bytes: &[u8]) -> Option<String> {
         if let Some(big) = utf16_bom(bytes) {
@@ -551,14 +562,15 @@ impl AttachmentMime {
                     .collect(),
             );
         }
-        let head = &bytes[..bytes.len().min(64 * 1024)];
-        if head.contains(&0) {
+        if bytes[..bytes.len().min(64 * 1024)].contains(&0) {
             return None;
         }
-        let utf8 = match std::str::from_utf8(head) {
+        // Decided on the whole file, never its start alone: a long statement's first é may come after many rows of
+        // ASCII. UTF-8 when all of it is (a character cut at the end too), or when UTF-8's own multi-byte characters
+        // come before its first bad byte (a stray one becomes U+FFFD); else Windows-1252.
+        let utf8 = match std::str::from_utf8(bytes) {
             Ok(_) => true,
-            // A character cut at the 64 KiB mark (or at the end) is still UTF-8.
-            Err(e) => e.error_len().is_none(),
+            Err(e) => e.error_len().is_none() || !bytes[..e.valid_up_to()].is_ascii(),
         };
         if utf8 {
             let text = String::from_utf8_lossy(bytes);
@@ -3793,6 +3805,20 @@ mod tests {
         assert_eq!(M::utf8_text(&utf16).unwrap(), "a\tb\nü\t€\n");
         assert_eq!(M::utf8_text("\u{FEFF}é,1\n".as_bytes()).unwrap(), "é,1\n");
         assert_eq!(M::utf8_text(b"PK\x03\x04\0\0binary"), None);
+        // The encoding is the whole file's: a bank statement whose first é comes after 64 KiB of ASCII.
+        let mut long = b"date,payee,amount\n".repeat(5000);
+        long.extend_from_slice(b"2026-10-31,Caf\xe9,\x8012\n");
+        assert!(M::utf8_text(&long).unwrap().ends_with("Café,€12\n"));
+        let mut stray = "é,1\n".as_bytes().to_vec();
+        stray.extend_from_slice(b"\xff,2\n");
+        assert_eq!(M::utf8_text(&stray).unwrap(), "é,1\n\u{FFFD},2\n");
+        // Windows-1252 needs a name that says text: NUL-free bytes under another name could be any binary.
+        assert_eq!(
+            M::of_file("old.xls", b"\xd0\xcf\x11\xe0 an old workbook"),
+            None
+        );
+        assert_eq!(M::of_file("statement", b"Caf\xe9"), None);
+        assert_eq!(M::of_file("statement.txt", b"Caf\xe9"), Some(M::Text));
         assert!(!M::Text.fits(b"\0\x01\x02 binary"));
         assert_eq!(M::Text.named("run.command"), "run.command.txt");
         assert_eq!(M::Pdf.named("plan.pdf"), "plan.pdf");
