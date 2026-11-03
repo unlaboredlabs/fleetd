@@ -110,8 +110,10 @@ impl Tasks {
                 continue;
             };
             // Unreachable is not dead: it waits for its node, and the node's word on its return.
+            // One whose start is with the node is recorded once it answers.
             if !self.d.ports.is_connected(&thread.machine_id)
                 || self.continuing.lock().unwrap().contains_key(&task.task_id)
+                || self.starting.lock().unwrap().contains(&task.task_id)
             {
                 continue;
             }

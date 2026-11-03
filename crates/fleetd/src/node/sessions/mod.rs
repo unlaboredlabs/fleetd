@@ -1955,6 +1955,8 @@ impl SessionService {
 
     async fn launch(&self, launch: SessionLaunch) -> Reply {
         let id = launch.session_id.to_string();
+        let mut stages = crate::stages::Stages::new("node launch");
+        stages.id(&id);
         // Idempotent: a retried launch gets the session the first one made.
         if let Some(row) = self.store().session(&id)? {
             return Ok(SessionOutput::Launched {
@@ -1985,6 +1987,7 @@ impl SessionService {
             Some(from) => self.lost_worktree(from).await?,
             None => None,
         };
+        stages.done("checks");
         // `base_ref` names the PRs' target; the branch starts from a fresh fetch of the remote's copy of it. The fetch
         // runs outside the launch lock, so a slow remote holds up only the starts that need it, and starts that
         // arrive together share it.
@@ -2033,7 +2036,9 @@ impl SessionService {
         };
         let (base, head) = tokio::join!(base, head);
         let base = base?;
+        stages.done("fetch");
         let _launching = self.inner.launching.lock().await;
+        stages.done("launch lock");
         // A retry that arrived while this one fetched.
         if let Some(row) = self.store().session(&id)? {
             return Ok(SessionOutput::Launched {
@@ -2130,6 +2135,7 @@ impl SessionService {
             }
             _ => (root.clone(), Vec::new(), None, None),
         };
+        stages.done("worktree");
         let at = now();
         let title = launch.title.clone().unwrap_or_else(|| {
             let first = launch.prompt.lines().next().unwrap_or_default();
@@ -2245,17 +2251,21 @@ impl SessionService {
             )
         })?;
         let prompt = self.with_env_note(&row, prompt);
+        stages.done("record");
         // A new worktree is set up first, while the run shows as starting; the brief goes to claude once it is done.
         match setup {
             Some(setup) => {
                 self.begin_after_setup(&id, &launch.run_id, prompt, setup)
-                    .await?
+                    .await?;
+                stages.done("setup queued");
             }
             None => {
                 self.begin_run(&id, &launch.run_id, &prompt, SendMode::Plain, None)
                     .await?;
+                stages.done("run");
             }
         }
+        stages.end();
         Ok(SessionOutput::Launched {
             summary: self.session(&id)?.summary,
             base: reported,
@@ -2470,6 +2480,8 @@ impl SessionService {
         id: &str,
         opening: bool,
     ) -> Result<(mpsc::Sender<SessionCommand>, Option<String>), SessionError> {
+        let mut stages = crate::stages::Stages::new("node spawn");
+        stages.id(id);
         // Finding what is left of a lost worktree's branch can wait on remotes, so it runs before the spawn lock: other
         // sessions' starts never wait on it.
         let found = if self.st().live.contains_key(id) {
@@ -2478,6 +2490,7 @@ impl SessionService {
             self.lost_worktree(&self.session(id)?).await?
         };
         let _spawning = self.inner.spawning.lock().await;
+        stages.done("spawn lock");
         let closing = match self.st().live.get(id) {
             Some(live) if !live.closing => return Ok((live.commands.clone(), None)),
             Some(live) => Some(live.exited.clone()),
@@ -2528,13 +2541,16 @@ impl SessionService {
             _ => note,
         };
         let secrets = Arc::new(secrets);
+        stages.done("spec");
         self.inner.runner.fence(&spec).await.map_err(runner_error)?;
         let fence = spec.sandbox.clone();
+        stages.done("fence");
         // A host's start waits for it to register (a few ms, polled): on a blocking thread, not an async worker.
         let runner = self.inner.runner.clone();
         let handle = blocking(move || runner.spawn(spec))
             .await
             .map_err(runner_error)?;
+        stages.done("session host");
         let link = handle.link.clone();
         row.local.started = true;
         row.local.pid = Some(handle.pid);
@@ -2577,6 +2593,7 @@ impl SessionService {
             secrets,
             Pumped { run_id: None, link },
         ));
+        stages.end();
         Ok((handle.commands, note))
     }
 

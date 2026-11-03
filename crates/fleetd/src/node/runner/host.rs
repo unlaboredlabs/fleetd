@@ -500,9 +500,12 @@ pub fn launch(launch: Launch<'_>) -> Result<SessionHandle, LaunchError> {
         }
         cmd
     };
+    let mut stages = crate::stages::Stages::new("node session host");
+    stages.id(launch.session_id);
     let (mut child, scope_failed) =
         scope::spawn(scope.as_ref(), launch.exe, args, launch.session_id, build)
             .map_err(|e| LaunchError::NoHost(format!("it didn't start: {e}")))?;
+    stages.done("host");
     if let Some(why) = scope_failed {
         scope::failed(&why);
     }
@@ -526,6 +529,8 @@ pub fn launch(launch: Launch<'_>) -> Result<SessionHandle, LaunchError> {
         }
         std::thread::sleep(Duration::from_millis(2));
     };
+    // The host registers once it started claude.
+    stages.done("claude");
     tokio::spawn(async move {
         let _ = child.wait().await;
         process::untrack(host_pid);
