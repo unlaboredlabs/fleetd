@@ -24,6 +24,7 @@ use rusqlite::{OptionalExtension, params};
 use tokio::sync::broadcast;
 
 use crate::clock::Clock;
+use crate::hub::executor::shell_mapper::js_take;
 use crate::hub::intake::attachments;
 use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms};
 
@@ -72,11 +73,7 @@ fn key(r: &ProjectRef) -> String {
 }
 
 fn text_of(s: &str) -> Text<0, { fleetd_contracts::chat::CHAT_TEXT_MAX }> {
-    let mut cut = s;
-    while js_len(cut) > fleetd_contracts::chat::CHAT_TEXT_MAX {
-        cut = &cut[..cut.char_indices().next_back().map_or(0, |(i, _)| i)];
-    }
-    Text::unchecked(cut)
+    Text::unchecked(js_take(s, fleetd_contracts::chat::CHAT_TEXT_MAX))
 }
 
 fn line(s: &str) -> Option<Line<1, 120>> {
@@ -672,11 +669,7 @@ impl Chat {
         let mut at = offset;
         // Frames carry at most 4000 UTF-16 units.
         while !rest.is_empty() {
-            let mut cut = rest.len();
-            while js_len(&rest[..cut]) > 4000 {
-                cut = rest[..cut].char_indices().next_back().map_or(0, |(i, _)| i);
-            }
-            let part = &rest[..cut];
+            let part = js_take(rest, 4000);
             let _ = self.deltas.send(ChatDelta {
                 project_ref: message.project_ref.clone(),
                 message_id: message.message_id.clone(),
@@ -685,7 +678,7 @@ impl Chat {
                 append: Text::unchecked(part),
             });
             at += js_len(part);
-            rest = &rest[cut..];
+            rest = &rest[part.len()..];
         }
         Ok(())
     }

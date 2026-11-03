@@ -6,6 +6,7 @@
 //! streamed as text: a file written, a command composed, thinking. Without those an agent that mostly writes
 //! files reads as idle while it works hardest.
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use fleetd_contracts::live::{
     Activity, ActivityNow, SPARK_BUCKET_SECS, SPARK_BUCKETS, Spark, Tokens,
@@ -73,11 +74,12 @@ impl StreamText {
 }
 
 /// A text message as the node stored it, complete. Deltas aren't: the node drops one still pending
-/// when its complete message lands, so a reader that only follows deltas can miss a message's last words.
+/// when its complete message lands, so a reader that only follows deltas can miss a message's last words. Shared,
+/// as every chat tick and live frame reads it: a long reply isn't copied on each.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DoneText {
     pub message_id: String,
-    pub text: String,
+    pub text: Arc<str>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -248,7 +250,7 @@ impl ActivityTracker {
         self.done.retain(|d| d.message_id != m.id.as_str());
         self.done.push(DoneText {
             message_id: m.id.to_string(),
-            text: m.text.clone(),
+            text: m.text.as_str().into(),
         });
         if self.done.len() > DONE_KEPT {
             self.done.remove(0);

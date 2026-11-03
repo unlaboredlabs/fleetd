@@ -252,6 +252,116 @@ fn streamed_text_carries_its_utf16_offset_and_the_final_text_is_announced() {
     );
 }
 
+/// The old cut, one character at a time while the text is too long: what the chat kept and framed before it did
+/// so in one pass, and what it must still keep and frame.
+fn cut_one_at_a_time(s: &str, max: usize) -> &str {
+    let mut cut = s;
+    while fleetd_contracts::prim::js_len(cut) > max {
+        cut = &cut[..cut.char_indices().next_back().map_or(0, |(i, _)| i)];
+    }
+    cut
+}
+
+/// The first `max` UTF-16 units of `s`, less a surrogate pair the cut would split: the same, by units, for texts too
+/// long to cut a character at a time.
+fn first_units(s: &str, max: usize) -> String {
+    let units: Vec<u16> = s.encode_utf16().collect();
+    let mut k = units.len().min(max);
+    if k > 0 && k < units.len() && (0xD800..0xDC00).contains(&units[k - 1]) {
+        k -= 1;
+    }
+    String::from_utf16(&units[..k]).unwrap()
+}
+
+/// A reply far over the chat's cap streams and lands as it did when each cut went a character at a time: the same
+/// frames (at most 4000 UTF-16 units, contiguous offsets, emoji never split), the same stored text, and a 5 MB final
+/// kept to the cap, in one pass rather than one per character over it.
+#[test]
+fn a_reply_over_the_cap_streams_and_lands_as_before() {
+    let max = fleetd_contracts::chat::CHAT_TEXT_MAX;
+    for s in ["", "abc", "héllo 😀 ok", "😀😀😀", "a😀"] {
+        for n in 0..8 {
+            assert_eq!(cut_one_at_a_time(s, n), first_units(s, n), "{s:?} {n}");
+            assert_eq!(js_take(s, n), cut_one_at_a_time(s, n), "{s:?} {n}");
+        }
+    }
+    let frame = "word é 😀 ".repeat(450);
+    for n in [3999, 4000, 4001] {
+        assert_eq!(cut_one_at_a_time(&frame, n), first_units(&frame, n));
+    }
+    let (hub, _home) = hub();
+    let r = project();
+    let mut deltas = hub.chat.subscribe();
+    let (mut m, _) = hub
+        .chat
+        .add(
+            &r,
+            NewMessage {
+                streaming: true,
+                source: Some("lead:t:m1".into()),
+                ..lead_says("")
+            },
+        )
+        .unwrap();
+    // Appends of every size, some over a frame, with multi-unit characters across the 4000-unit frame edge and the
+    // cap; the stream goes on well past the cap.
+    let line = "word é 😀 ";
+    let mut streamed = String::new();
+    let mut stored = String::new();
+    let mut frames = Vec::new();
+    for n in 0..60 {
+        let append = format!("{n}: {}", line.repeat(1 + n * 97 % 1300));
+        let before = fleetd_contracts::prim::js_len(&stored);
+        streamed.push_str(&append);
+        hub.chat.append(&mut m, &append).unwrap();
+        // What each frame carried when the cut went a character at a time.
+        let (mut rest, mut at) = (append.as_str(), before);
+        while !rest.is_empty() {
+            let part = first_units(rest, 4000);
+            rest = &rest[part.len()..];
+            let units = fleetd_contracts::prim::js_len(&part);
+            frames.push((at as i64, part));
+            at += units;
+        }
+        stored = first_units(&format!("{stored}{append}"), max);
+        assert_eq!(m.text.as_str(), stored);
+    }
+    assert!(fleetd_contracts::prim::js_len(&streamed) > 3 * max);
+    let mut got = Vec::new();
+    while let Ok(d) = deltas.try_recv() {
+        got.push((d.offset.get(), d.append.as_str().to_owned()));
+    }
+    assert_eq!(got, frames);
+    let (page, _, _) = hub.chat.page(&r, None, None, 1).unwrap();
+    assert_eq!(
+        (page[0].text.as_str(), page[0].state),
+        (stored.as_str(), ChatMessageState::Streaming)
+    );
+    // A window that follows the frames reads what was streamed until the stored text is full.
+    let mut seen = String::new();
+    for (offset, append) in &got {
+        if *offset as usize == fleetd_contracts::prim::js_len(&seen) {
+            seen.push_str(append);
+        }
+    }
+    assert!(seen.starts_with(&stored) && streamed.starts_with(&seen));
+
+    // 100000 is 4 past a multiple of this line's 6 units: the cap falls inside its emoji.
+    let reply = "ab 😀 ".repeat(5_000_000 / 7);
+    hub.chat.finish(&mut m, &reply).unwrap();
+    let kept = first_units(&reply, max);
+    assert_eq!(
+        fleetd_contracts::prim::js_len(&kept),
+        max - 1,
+        "the cut never splits an emoji"
+    );
+    let (page, _, _) = hub.chat.page(&r, None, None, 1).unwrap();
+    assert_eq!(
+        (page[0].text.as_str(), page[0].state),
+        (kept.as_str(), ChatMessageState::Final)
+    );
+}
+
 #[test]
 fn an_open_inline_item_waits_on_you_until_its_state_moves() {
     let (hub, _home) = hub();

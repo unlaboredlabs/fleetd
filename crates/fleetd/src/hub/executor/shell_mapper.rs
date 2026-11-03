@@ -37,6 +37,10 @@ pub fn limit_of_summary(s: &Summary) -> Option<Limit> {
 
 /// The first `max` UTF-16 code units of `s`, as JS `slice(0, max)` (never splitting a character).
 pub fn js_take(s: &str, max: usize) -> &str {
+    // A character is never more UTF-16 units than UTF-8 bytes.
+    if s.len() <= max {
+        return s;
+    }
     let mut units = 0;
     for (i, c) in s.char_indices() {
         units += c.len_utf16();
