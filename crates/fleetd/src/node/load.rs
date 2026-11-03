@@ -153,7 +153,7 @@ fn macos_total() -> Option<u64> {
 }
 
 /// Physical memory in bytes.
-fn mem_total() -> Option<u64> {
+pub(crate) fn mem_total() -> Option<u64> {
     if cfg!(target_os = "linux") {
         memory().map(|m| m.total)
     } else {

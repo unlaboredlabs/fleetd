@@ -70,7 +70,7 @@ fn script(path: &Path) -> PathBuf {
 }
 
 /// Adds `value` to `out` quoted for a shell: in single quotes, each of its own as `'\''`.
-fn push_quoted(out: &mut String, value: &str) {
+pub(crate) fn push_quoted(out: &mut String, value: &str) {
     out.push('\'');
     for c in value.chars() {
         match c {
