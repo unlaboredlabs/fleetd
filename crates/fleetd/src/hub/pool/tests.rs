@@ -286,6 +286,8 @@ impl Boat for FakeBoat {
 struct FakeFleet {
     seen: Mutex<HashMap<String, i64>>,
     busy: Mutex<HashMap<String, bool>>,
+    /// Machines whose catch-up hasn't finished.
+    behind: Mutex<std::collections::HashSet<String>>,
     /// The hub hears its other machines.
     others: Mutex<bool>,
 }
@@ -296,6 +298,9 @@ impl Fleet for FakeFleet {
     }
     fn busy(&self, machine: &str) -> Option<bool> {
         self.busy.lock().unwrap().get(machine).copied()
+    }
+    fn ready(&self, machine: &str) -> bool {
+        !self.behind.lock().unwrap().contains(machine)
     }
     fn others_heard(&self, _besides: &[String], _now: i64) -> bool {
         *self.others.lock().unwrap()
@@ -1221,4 +1226,43 @@ async fn the_boat_key_is_sealed_to_the_hub() {
         super::open_key(&w.pool.ledger, other.path()),
         Err(BoatError::NoKey(_))
     ));
+}
+
+/// A machine that said hello but hasn't caught up (an update or the hub's Claude configuration failed) isn't awake for
+/// work: no claim, and its wake times out like one with no hello.
+#[tokio::test]
+async fn a_machine_is_awake_only_once_it_caught_up() {
+    let w = World::new().await;
+    w.asleep("boat-1").await;
+    w.pool.wake("boat-1", Why::Need).await.unwrap();
+    w.fleet.behind.lock().unwrap().insert("boat-1".into());
+    w.advance(MIN);
+    w.hello("boat-1", Some(false));
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Waking);
+    assert!(!w.pool.claim("boat-1"));
+    // Caught up: awake, and claimable.
+    w.fleet.behind.lock().unwrap().clear();
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Awake);
+    assert!(w.pool.claim("boat-1"));
+    // Its node restarted and catches up again: no claim meanwhile.
+    w.fleet.behind.lock().unwrap().insert("boat-1".into());
+    assert!(!w.pool.claim("boat-1"));
+    // A wake that never catches up counts as a wake failure.
+    w.pool
+        .stop("boat-1", State::Stopping, "test")
+        .await
+        .unwrap();
+    w.tick().await;
+    w.pool.wake("boat-1", Why::Need).await.unwrap();
+    w.advance(MIN);
+    w.hello("boat-1", Some(false));
+    w.advance(5 * MIN);
+    w.hello("boat-1", Some(false));
+    w.tick().await;
+    assert_eq!(
+        w.pool.ledger.slot("boat-1").unwrap().unwrap().wake_failures,
+        1
+    );
 }

@@ -77,8 +77,12 @@ pub const OVERDUE_MS: i64 = 2 * MINUTE;
 pub trait Fleet: Send + Sync + 'static {
     /// When the machine's node was last heard from (ms).
     fn last_seen(&self, machine: &str) -> Option<i64>;
-    /// The `busy` flag of the node's latest heartbeat; None from a node that doesn't send one, or offline.
+    /// Whether anything keeps the machine busy, from its node's latest heartbeat (`NodeBusy`); None from a node that
+    /// doesn't say, or offline.
     fn busy(&self, machine: &str) -> Option<bool>;
+    /// Whether its node has caught up since it linked (hub/cloud's `Cloud::ready`): its fleetd and Claude Code are the
+    /// hub's and it holds the hub's Claude configuration. Until then it isn't awake for work.
+    fn ready(&self, machine: &str) -> bool;
     /// Whether the hub hears its other machines normally: a stalled hub sees every node silent, and must not stop
     /// cloud machines for it. `besides` are the pool's own.
     fn others_heard(&self, besides: &[String], now: i64) -> bool;
@@ -327,12 +331,14 @@ impl Pool {
         )
     }
 
-    /// Placement's claim on an awake machine, before it launches there: false unless the machine is awake. A claim
+    /// Placement's claim on an awake machine, before it launches there: false unless the machine is awake and caught up
+    /// since its node last linked (`Cloud::ready`: a node that restarted catches up again first). A claim
     /// holds off the idle stop for [`CLAIM_MS`], and the idle stop's `stopping` write takes the same lock, so a
     /// machine is never stopped under a launch.
     pub fn claim(&self, slot: &str) -> bool {
         let mut claims = self.claims.lock().unwrap();
-        let awake = matches!(self.ledger.slot(slot), Ok(Some(r)) if r.state == State::Awake);
+        let awake = matches!(self.ledger.slot(slot), Ok(Some(r)) if r.state == State::Awake)
+            && self.fleet.ready(slot);
         if awake {
             claims.insert(slot.to_owned(), self.now());
         }
@@ -807,27 +813,46 @@ pub fn month_start(now: i64, zone: Tz) -> i64 {
         .map_or_else(|| day_start(now, zone), |t| t.timestamp_millis())
 }
 
-/// The hub's [`Fleet`]: machines' last sightings from the store, their busy flags from the node link.
+/// The hub's [`Fleet`]: machines' last sightings from the store, what keeps them busy from the node link, and whether
+/// they caught up from hub/cloud. Bound to the hub once it is built; until then it knows nothing.
+#[derive(Default)]
 pub struct HubFleet {
-    pub store: Arc<crate::hub::store::HubStore>,
-    pub link: Weak<crate::hub::link::NodeLinkServer>,
+    hub: std::sync::OnceLock<Weak<crate::hub::api::Hub>>,
+}
+
+impl HubFleet {
+    pub fn bind(&self, hub: &Arc<crate::hub::api::Hub>) {
+        let _ = self.hub.set(Arc::downgrade(hub));
+    }
+
+    fn hub(&self) -> Option<Arc<crate::hub::api::Hub>> {
+        self.hub.get()?.upgrade()
+    }
 }
 
 impl Fleet for HubFleet {
     fn last_seen(&self, machine: &str) -> Option<i64> {
         let id = fleetd_contracts::ids::MachineId::new(machine).ok()?;
-        let m = self.store.machine_get(&id).ok()??;
+        let m = self.hub()?.store.machine_get(&id).ok()??;
         crate::hub::store::parse_ms(m.last_seen_at.as_str())
     }
 
     fn busy(&self, machine: &str) -> Option<bool> {
         let id = fleetd_contracts::ids::MachineId::new(machine).ok()?;
-        self.link.upgrade()?.busy(&id)
+        self.hub()?.link.busy(&id).map(|b| !b.idle())
+    }
+
+    fn ready(&self, machine: &str) -> bool {
+        let (Ok(id), Some(hub)) = (fleetd_contracts::ids::MachineId::new(machine), self.hub())
+        else {
+            return false;
+        };
+        hub.cloud.ready(&hub, &id)
     }
 
     fn others_heard(&self, besides: &[String], now: i64) -> bool {
         use fleetd_contracts::model::MachineStatus;
-        let Ok(machines) = self.store.machines_list() else {
+        let Some(Ok(machines)) = self.hub().map(|h| h.store.machines_list()) else {
             return false;
         };
         let others: Vec<_> = machines

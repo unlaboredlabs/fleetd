@@ -108,6 +108,11 @@ impl TaskPorts for HubTaskPorts {
                 }
                 _ => None,
             };
+            // The checkout it runs in, where its order's GitHub token goes.
+            let on = ProjectRef {
+                machine_id: machine_id.clone(),
+                project_id: request.project_id.clone(),
+            };
             let input = LaunchInput {
                 project_id: request.project_id,
                 prompt: request.prompt,
@@ -163,15 +168,17 @@ impl TaskPorts for HubTaskPorts {
                 .map_err(|r| PortError::Failed(format!("{} {}", r.message, r.fix)))?,
                 None => None,
             };
-            // Its order's GitHub token (D187): its starter's, or the App's for work nobody started. A writer that can't
-            // have its starter's isn't run on the machine's login instead.
+            // Its order's GitHub token (D187): its starter's, or the App's for work nobody started, on the machine it
+            // launches on (a cloud machine's clone too). A writer that can't have its starter's isn't run on the
+            // machine's login instead.
             if let (Some(hub), Some(order)) = (self.hub(), request.order_id.as_ref())
-                && let Err(e) = crate::hub::github_app::sessions::deliver(
+                && let Err(e) = crate::hub::github_app::sessions::deliver_on(
                     &hub,
                     &request.project_ref,
                     order,
                     request.repo_id.as_ref(),
                     request.kind == fleetd_contracts::tasks::TaskKind::Write,
+                    Some(&on),
                 )
                 .await
             {

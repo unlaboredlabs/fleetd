@@ -1,6 +1,7 @@
 //! The life loop, every 30 s: each slot one step, under its lock.
-//! - **Hello**: a creating or waking machine whose node has spoken since the call is `awake`.
-//! - **Wake timeout**: no hello 5 minutes after a resume (15 after a create): stopped, and a wake failure counted;
+//! - **Hello**: a creating or waking machine whose node has spoken since the call, and caught up since it linked
+//!   (hub/cloud's catch-up: the hub's fleetd and Claude Code, and the hub's Claude configuration), is `awake`.
+//! - **Wake timeout**: no hello and catch-up 5 minutes after a resume (15 after a create): stopped, and a wake failure counted;
 //!   two in a row make the slot `broken`. A create that never said hello is deleted and `failed`.
 //! - **Lease**: an awake machine's deadline is renewed every 10 minutes through [`lease::clamp`], and at once when the
 //!   budget shortened it; when the clamp says stop, it is stopped.
@@ -47,7 +48,8 @@ async fn step(pool: &Pool, row: Slot) -> Result<(), String> {
         _ => false,
     };
     match row.state {
-        State::Creating | State::Waking if heard(row.wake_at) => {
+        // Its node spoke since the call and caught up since it linked (hub/cloud): awake for work.
+        State::Creating | State::Waking if heard(row.wake_at) && pool.fleet.ready(&row.slot) => {
             let mut row = row;
             row.state = State::Awake;
             row.awake_since = Some(now);

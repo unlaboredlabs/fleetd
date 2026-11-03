@@ -379,14 +379,12 @@ pub fn build_on_with(
         crate::hub::update::Timing::default(),
     );
     let repos = crate::hub::repos::Repos::new(db.clone());
+    let fleet = Arc::new(crate::hub::pool::HubFleet::default());
     let pool = crate::hub::pool::Pool::over_boat(
         db.clone(),
         config.home.clone(),
         crate::hub::pool::boat::API,
-        Arc::new(crate::hub::pool::HubFleet {
-            store: store.clone(),
-            link: Arc::downgrade(&link),
-        }),
+        fleet.clone(),
         clock.clone(),
         crate::hub::attention::hub_zone(),
     );
@@ -435,6 +433,7 @@ pub fn build_on_with(
         cloud: Arc::default(),
         pool,
     });
+    fleet.bind(&hub);
     hub.updates
         .set_ports(Arc::new(crate::hub::update::ports::HubPorts(
             Arc::downgrade(&hub),
