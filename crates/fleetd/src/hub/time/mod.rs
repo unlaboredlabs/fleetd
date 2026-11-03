@@ -22,7 +22,7 @@ use fleetd_contracts::node_link::SpansFrame;
 use tokio::sync::mpsc;
 
 use crate::clock::Clock;
-use crate::hub::store::{HubDb, now_ms, parse_ms};
+use crate::hub::store::{HubDb, StoreError, now_ms, parse_ms};
 pub use store::{Ids, NewSpan};
 
 /// Node batches waiting for the writer; past this a batch is not acked and the node resends it on reconnect.
@@ -32,6 +32,8 @@ pub const HUB_SPANS: usize = 10_000;
 /// Clock offsets are the minimum over this window of heartbeats.
 const OFFSET_WINDOW_MS: i64 = 10 * 60 * 1000;
 const PRUNE_EVERY: Duration = Duration::from_secs(3600);
+/// How long a breakdown's `storedBytes` may be reused (decision perf.timing-calls).
+const STORED_FOR_MS: i64 = 60_000;
 
 /// Where the hub's areas write spans. Cheap to clone; a full writer drops the span and counts it.
 #[derive(Clone)]
@@ -95,6 +97,8 @@ pub struct Time {
     /// Ingested and not acked because the writer was full.
     pub node_dropped: AtomicU64,
     pub paths: tools::PathCache,
+    /// `stored_bytes` and when it was measured (hub ms).
+    stored: Mutex<Option<(i64, i64)>>,
 }
 
 impl Time {
@@ -113,6 +117,7 @@ impl Time {
             offsets: Mutex::default(),
             node_dropped: AtomicU64::new(0),
             paths: tools::PathCache::default(),
+            stored: Mutex::default(),
         })
     }
 
@@ -122,6 +127,19 @@ impl Time {
 
     pub fn now_ms(&self) -> i64 {
         now_ms(self.clock.as_ref())
+    }
+
+    /// The bytes the time tables take on disk, measured at most [`STORED_FOR_MS`] ago: measuring walks every page of
+    /// them.
+    pub fn stored_bytes(&self, c: &rusqlite::Connection, now: i64) -> Result<i64, StoreError> {
+        if let Some((at, bytes)) = *self.stored.lock().unwrap()
+            && (0..STORED_FOR_MS).contains(&(now - at))
+        {
+            return Ok(bytes);
+        }
+        let bytes = store::stored_bytes(c)?;
+        *self.stored.lock().unwrap() = Some((now, bytes));
+        Ok(bytes)
     }
 
     /// A heartbeat from `machine` stamped `node_at` (its clock) arrived now.

@@ -1318,3 +1318,32 @@ fn google_and_notion_go_on_an_older_hub_and_their_secrets_are_queued_to_forget()
         ]
     );
 }
+
+#[test]
+fn a_long_read_runs_on_its_own_read_only_connection() {
+    let home = tempfile::tempdir().unwrap();
+    let db = HubDb::open(home.path()).unwrap();
+    db.with(|c| Ok(c.execute_batch("CREATE TABLE t (x)")?))
+        .unwrap();
+    let count = |c: &rusqlite::Connection| -> Result<i64, StoreError> {
+        Ok(c.query_row("SELECT COUNT(*) FROM t", [], |r| r.get(0))?)
+    };
+    // While a write holds the main connection, a read still runs, and sees what was committed before it.
+    db.transaction(|c| {
+        c.execute("INSERT INTO t VALUES (1)", [])?;
+        assert_eq!(db.read(count)?, 0);
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(db.read(count).unwrap(), 1);
+    assert!(
+        db.read(|c| Ok(c.execute("INSERT INTO t VALUES (2)", [])?))
+            .is_err()
+    );
+    // An in-memory database has one connection, which reads too.
+    let memory = HubDb::open_memory().unwrap();
+    memory
+        .with(|c| Ok(c.execute_batch("CREATE TABLE t (x); INSERT INTO t VALUES (1)")?))
+        .unwrap();
+    assert_eq!(memory.read(count).unwrap(), 1);
+}
