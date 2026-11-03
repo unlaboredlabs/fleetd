@@ -335,7 +335,7 @@ pub const ENTRIES: &[Entry] = &[
         Lead,
         "Chat: the human",
         "with each chat message the human sends the lead",
-        "text!=the human's words; files=the attached files' paths, or nothing; writer=\"The human\", or the writer's name when the hub has more than one person",
+        "text!=the human's words; files=the attached files' paths, or nothing; writer=\"The human\", or the writer's name when the hub has more than one person, with where it came from when not an app or the CLI (on Telegram, via Shortcuts, via the share sheet)",
         &[]
     ),
     entry!(
