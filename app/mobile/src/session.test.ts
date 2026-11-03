@@ -232,6 +232,19 @@ describe("Session", () => {
     expect(again.sentOf("call").filter((c) => c.tool === "chat_send")).toMatchObject([{ input: { text: "Send both" } }]);
   });
 
+  it("stops the open chat's stream behind, keeping the link, and follows it again back in front", () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    expect(hub.sentOf("chat").at(-1)).toEqual({ t: "chat", project: REF });
+    session.sleep();
+    expect(hub.sentOf("chat").at(-1)).toEqual({ t: "chat" });
+    expect(hub.sentOf("live").at(-1)).toEqual({ t: "live", board: false });
+    session.wake();
+    expect(hub.sentOf("chat").at(-1)).toEqual({ t: "chat", project: REF });
+    expect(hub.sentOf("live").at(-1)).toEqual({ t: "live", board: false, agent: "lead:m1/navi" });
+    expect(hub.links).toHaveLength(1);
+  });
+
   it("tries a refused send again under its own id, or deletes it", async () => {
     const { hub, session } = setup();
     session.send(KEY, "Ship it");
