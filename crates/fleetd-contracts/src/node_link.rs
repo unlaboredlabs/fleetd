@@ -207,7 +207,7 @@ pub const CAP_NAVI_ERASE: &str = "navi_erase";
 /// It takes `mac_call`, and the hub sends agents' `fleetd mac` steps to the online node that lists it.
 pub const CAP_MAC_TOOL: &str = "mac_tool";
 
-/// The node is the agents' Mac (D298: node.json's `mac.enabled`, which the installer's `--mac` sets): a tool, never a
+/// The node is the agents' Mac (D298: node.json's `agentsMac`, which only the installer's `--mac` sets): a tool, never a
 /// runner. It runs no claude and no Navis, takes no sealed secret, and lists none of the calls that carry them; the hub
 /// keeps its agents role off whatever the setting. Listed whatever its checks say (`mac_tool` only while they pass), so
 /// the hub knows the machine even while its tool is off.

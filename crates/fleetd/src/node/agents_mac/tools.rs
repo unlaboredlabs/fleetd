@@ -1,7 +1,7 @@
-//! What the agents' Mac installs for itself, pinned and checked by digest, into `<node home>/mac` (and agent-device
-//! where the device sessions keep it): Node.js, which agent-device runs on; agent-device, which drives iOS simulators;
-//! and agent-desktop, which drives the Mac's own apps. Nothing comes from the person's Homebrew, which agents can't
-//! write and must not plant binaries in.
+//! What the agents' Mac installs for itself, pinned and checked by digest: Node.js, which agent-device runs on, into
+//! `<node home>/mac`; agent-device, which drives iOS simulators, where the device sessions keep it; and agent-desktop,
+//! which drives the Mac's own apps, where its screen keeps it (node/desktop/mac/agent_desktop.rs). Nothing comes from
+//! the person's Homebrew, which agents can't write and must not plant binaries in.
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -22,12 +22,6 @@ const NODE_SHA256: [(&str, &str); 2] = [
         "d5e336d588c45be0c37dbd52cc29895593009ca4997a77a1fd02815131ed0e52",
     ),
 ];
-
-/// The agent-desktop release the Mac installs: its npm package, which ships its native binaries built, so no install
-/// script runs.
-pub const DESKTOP_VERSION: &str = "1.1.0";
-const DESKTOP_TARBALL: &str = "https://registry.npmjs.org/agent-desktop/-/agent-desktop-1.1.0.tgz";
-const DESKTOP_INTEGRITY: &str = "sha512-4aITRplPcbV6xBFNKeehMbxSN0/L+IOhnn6LBuPXezoyr08Xl73Y6rwZiR4sM4rM/eBO6iJMoKL+IvFQvHwLEw==";
 
 /// Where the pinned tools stand.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,8 +72,9 @@ impl Installing {
 
 pub fn versions() -> String {
     format!(
-        "Node.js {NODE_VERSION}, agent-device {}, agent-desktop {DESKTOP_VERSION}.",
-        crate::node::device::agent_device::VERSION
+        "Node.js {NODE_VERSION}, agent-device {}, agent-desktop {}.",
+        crate::node::device::agent_device::VERSION,
+        crate::node::desktop::mac::agent_desktop::VERSION
     )
 }
 
@@ -100,15 +95,6 @@ pub fn node_bin(home: &Path) -> PathBuf {
     node_dir(home).join("bin")
 }
 
-pub fn desktop_dir(home: &Path) -> PathBuf {
-    super::tools_dir(home).join("agent-desktop")
-}
-
-/// The `agent-desktop` wrapper: the native binary with its macOS helper beside it.
-pub fn desktop_bin(home: &Path) -> PathBuf {
-    desktop_dir(home).join("bin/agent-desktop")
-}
-
 fn pinned(dir: &Path, version: &str) -> bool {
     std::fs::read_to_string(dir.join("VERSION")).is_ok_and(|v| v.trim() == version)
 }
@@ -123,9 +109,7 @@ async fn install(home: &Path) -> Result<(), String> {
     if crate::node::device::agent_device::find(home).is_none() {
         crate::node::device::agent_device::install(home).await?;
     }
-    if !pinned(&desktop_dir(home), DESKTOP_VERSION) || !desktop_bin(home).is_file() {
-        install_desktop(home).await?;
-    }
+    crate::node::desktop::mac::agent_desktop::install(home).await?;
     Ok(())
 }
 
@@ -194,56 +178,4 @@ async fn install_node(home: &Path) -> Result<(), String> {
     let dir = node_dir(home);
     unpack(&tarball, &dir, "Node.js").await?;
     std::fs::write(dir.join("VERSION"), NODE_VERSION).map_err(|e| e.to_string())
-}
-
-async fn install_desktop(home: &Path) -> Result<(), String> {
-    use base64::Engine;
-    let tarball = fetch(DESKTOP_TARBALL, "agent-desktop").await?;
-    let integrity = format!(
-        "sha512-{}",
-        base64::engine::general_purpose::STANDARD.encode(sha2::Sha512::digest(&tarball))
-    );
-    if integrity != DESKTOP_INTEGRITY {
-        return Err(format!(
-            "agent-desktop's package is not the pinned one (integrity {integrity})"
-        ));
-    }
-    let dir = desktop_dir(home);
-    let package = dir.join("package");
-    unpack(&tarball, &package, "agent-desktop").await?;
-    let arch = arch();
-    let native = package.join(format!("bin/agent-desktop-darwin-{arch}"));
-    let helper = package.join(format!("bin/agent-desktop-macos-helper-darwin-{arch}"));
-    for file in [&native, &helper] {
-        if !file.is_file() {
-            return Err(format!("agent-desktop's package has no {}", file.display()));
-        }
-        std::fs::set_permissions(file, std::os::unix::fs::PermissionsExt::from_mode(0o755))
-            .map_err(|e| e.to_string())?;
-    }
-    let wrapper = desktop_bin(home);
-    if let Some(parent) = wrapper.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    crate::node::secrets::write_atomic(&wrapper, wrapper_script(&native, &helper).as_bytes())
-        .map_err(|e| format!("cannot write {}: {e}", wrapper.display()))?;
-    std::fs::set_permissions(
-        &wrapper,
-        std::os::unix::fs::PermissionsExt::from_mode(0o755),
-    )
-    .map_err(|e| e.to_string())?;
-    std::fs::write(dir.join("VERSION"), DESKTOP_VERSION).map_err(|e| e.to_string())
-}
-
-/// Runs the native agent-desktop with the helper of its own release, as its npm launcher does, without Node.js.
-pub fn wrapper_script(native: &Path, helper: &Path) -> String {
-    let quote = |p: &Path| p.to_string_lossy().replace('\'', r"'\''");
-    format!(
-        "#!/bin/sh\n\
-         # fleetd's: agent-desktop {DESKTOP_VERSION}.\n\
-         AGENT_DESKTOP_MACOS_HELPER_PATH='{helper}'\nexport AGENT_DESKTOP_MACOS_HELPER_PATH\n\
-         exec '{native}' \"$@\"\n",
-        helper = quote(helper),
-        native = quote(native),
-    )
 }

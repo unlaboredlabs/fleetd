@@ -260,12 +260,11 @@ async fn run_node(
     let agents_mac = agents_mac::is_agents_mac(&config);
     relay.set_tool_only(agents_mac);
     // Its tool is on while its user is a standard one (mac_tool's admin check runs id and sudo, so off the async threads).
-    let tool = match config.mac.clone() {
-        Some(mac) if agents_mac => tokio::task::spawn_blocking(move || mac.on())
+    let tool = agents_mac
+        && cfg!(target_os = "macos")
+        && tokio::task::spawn_blocking(|| mac_tool::admin_check().is_ok())
             .await
-            .unwrap_or(false),
-        _ => false,
-    };
+            .unwrap_or(false);
     let mac = agents_mac.then(|| agents_mac::AgentsMac::start(home, tool));
     let identify: lead::Identify = {
         let sessions = node_sessions.clone();

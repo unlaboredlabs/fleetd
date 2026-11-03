@@ -1,27 +1,6 @@
 //! The agents' Mac (D298): a Mac whose node runs as a standard `agents` user lends its shell, builds and iOS
 //! simulators to agents on every machine at once.
 
-use serde::{Deserialize, Serialize};
-
-/// node.json's `mac`: this Mac is the agents' Mac. Every field is optional.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MacToolConfig {
-    /// True makes this machine the agents' Mac, on macOS under a standard (non-admin) user only. Absent: off.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-    /// iOS simulators booted for agents at once. Absent: from the Mac's memory.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub simulators: Option<u32>,
-}
-
-impl MacToolConfig {
-    /// Whether the node is the agents' Mac: turned on, on macOS, and not running as an admin.
-    pub fn on(&self) -> bool {
-        self.enabled == Some(true) && cfg!(target_os = "macos") && admin_check().is_ok()
-    }
-}
-
 /// Why this process's user may not lend the Mac to agents: it's an admin (in the `admin` group, `id -Gn`) or may
 /// sudo without a password (`sudo -n true`). An unreadable `id` counts as admin, so the Mac stays off rather than lending
 /// an admin's account. Setup's check uses it too.

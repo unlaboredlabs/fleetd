@@ -79,7 +79,14 @@ Still logged in as fleetd agents, open **System Settings › Privacy & Security*
 **Accessibility** (agents click and type in the Mac's apps) and **Screen Recording** (you and agents see the screen).
 The node asked macOS for both when it started, so fleetd is in each list. macOS may ask for an administrator's
 name and password: type yours in that System Settings dialog at the Mac itself, never through fleetd's view of its
-screen. It asks again from time to time: the check says when.
+screen. Then restart the node in fleetd agents' Terminal, since macOS gives a running process a new grant only once
+it starts again:
+
+```sh
+launchctl kickstart -k gui/$(id -u)/sh.fleetd.node
+```
+
+macOS asks again from time to time: the check says when.
 
 Never grant Terminal, an editor or any app you use yourself in the agents' user: a grant reaches everything that app
 runs.
@@ -145,11 +152,9 @@ Mac is reachable from the agents' user.
 
 ## node.json {#node-json}
 
-`--mac` writes `"mac": {"enabled": true}` in the node's `node.json`. It takes effect only on macOS and only when that
-user is a standard one (not in `admin`, and `sudo -n` fails); otherwise the node offers agents no tool, and its
-`mac_standard_user` check says why.
+`--mac` writes two keys in the node's `node.json`:
 
-| Field | Default | What it does |
-|---|---|---|
-| `enabled` | off | This machine is the agents' Mac. |
-| `simulators` | from its memory | How many iOS simulators agents may have booted at once. |
+| Key | What it does |
+|---|---|
+| `"agentsMac": true` | This machine is the agents' Mac: a tool, never a runner. Only `--mac` sets it; no switch in the app turns it off. The node offers agents its tool only on macOS and while its user is a standard one (not in `admin`, and `sudo -n` fails); otherwise its `mac_standard_user` check says why. |
+| `"mac": {"enabled": true}` | Its own screen, which one agent at a time drives ([the Mac's screen](/docs/browser-sessions#mac)). Settings › Hub › Machines › Screens turns it off and on; the Mac stays a tool either way. |
