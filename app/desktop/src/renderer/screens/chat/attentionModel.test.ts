@@ -66,6 +66,7 @@ describe("what the lead waits on", () => {
         { id: "b", part: "1" },
         { id: "b", part: "2" },
       ],
+      question: "b",
     });
     expect(waitingOn([split("Built it.Shipped.", [{ start: 0, end: 9 }, { start: 9, end: 17 }])], LOADED, NOW, "UTC")).toBeUndefined();
   });

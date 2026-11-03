@@ -548,7 +548,10 @@ async fn a_follow_up_folded_into_an_open_order_says_so() {
     let (hub, _home) = hub();
     let navi = project("navi");
     let shop = project("storefront");
-    for text in ["Gift cards, please.", "Follow-up: gift cards need a balance check too."] {
+    for text in [
+        "Gift cards, please.",
+        "Follow-up: gift cards need a balance check too.",
+    ] {
         call(
             &hub,
             &navi,
@@ -646,7 +649,8 @@ async fn a_follow_up_folded_into_an_open_order_says_so() {
         .await
         .unwrap();
     let asks = out["asks"].as_array().unwrap();
-    let order = json!([{ "workstreamId": w, "title": "Gift cards", "state": "open", "merged": true }]);
+    let order =
+        json!([{ "workstreamId": w, "title": "Gift cards", "state": "open", "merged": true }]);
     assert_eq!(asks[0]["handle"], "N2");
     assert_eq!(asks[0]["orders"], order);
     assert_eq!(asks[1]["orders"], order);
