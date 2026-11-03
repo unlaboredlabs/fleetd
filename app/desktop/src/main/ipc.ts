@@ -1,6 +1,7 @@
 import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeTheme, shell, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
 import type { AppLog } from "./applog";
+import { artifactFrames } from "./artifactFrames";
 import { parseRequest, type CallRequest, type RequestArgs } from "../shared/ipc";
 import type { BrowserInput } from "../shared/contracts";
 import type { OpenOutcome } from "../shared/hub";
@@ -123,6 +124,7 @@ export const registerIpc = (
   handle(IPC.projectsPickFolder, (event) => pickFolder(event.sender));
   handle(IPC.projectsReadDrop, (_event, path) => readDrop(path));
   handle(IPC.copy, (_event, text) => clipboard.writeText(text));
+  handle(IPC.artifactFrame, (_event, html) => artifactFrames.put(html));
   handle(IPC.pairStart, () => pairing.start());
   handle(IPC.pairProbe, (_event, address) => pairing.probe(address));
   handle(IPC.pairRedeem, (_event, request) => pairing.redeem(request));

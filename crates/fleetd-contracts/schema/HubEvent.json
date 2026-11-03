@@ -381,6 +381,11 @@
           "type": "string"
         },
         {
+          "const": "artifacts.changed",
+          "description": "An artifact was published (`artifact_publish`): `data.projectRef`, `data.name`, `data.version`. artifacts_list\nreads it.",
+          "type": "string"
+        },
+        {
           "const": "browser.session",
           "description": "A browser session started, changed hands, ended, or its recording landed or was lost; `data` is\n`browser::BrowserSessionEventData`. browser_sessions reads the rest.",
           "type": "string"

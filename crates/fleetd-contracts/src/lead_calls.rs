@@ -320,6 +320,8 @@ pub enum LeadCall {
     Nudge(NudgeCall),
     /// A lead's or task's image for the chat, read from its own working directory by its node.
     ChatImage(ChatImageCall),
+    /// A lead's, task's or Navi's report for its project's chat (hub/artifacts).
+    ArtifactPublish(crate::artifacts::ArtifactPublishCall),
     AutomationCreate(AutomationCreateCall),
     AutomationList(AutomationListCall),
     AutomationUpdate(AutomationUpdateCall),
@@ -538,6 +540,7 @@ pub enum LeadCallResult {
     MemoryRead(MemoryReadResult),
     Nudge(NudgeResult),
     ChatImage(ChatImageResult),
+    ArtifactPublish(crate::artifacts::ArtifactPublishResult),
     AutomationCreate(AutomationResult),
     AutomationList(AutomationListResult),
     AutomationUpdate(AutomationResult),

@@ -29,15 +29,17 @@ pub type AppCallId = Text<1, 64>;
 ///   and a skill list's `changed`, `off` and `lastUsedAt`: a Navi's Skills.
 /// - `browser_navigate`: `browser_input`'s `navigate`, `back`, `forward` and `reload`, so the apps show a browser's
 ///   address bar. A machine whose node is older drops them.
+/// - `artifacts`: the `artifacts_list` and `artifact_get` tools and the `artifacts.changed` event: a chat's Artifacts.
 ///
 /// The desktop app's `features.test.ts` checks that every feature it gates on is named here.
-pub const APP_FEATURES: [&str; 6] = [
+pub const APP_FEATURES: [&str; 7] = [
     "presence",
     "browser_sessions",
     "navi_asks",
     "screen_open",
     "navi_skills",
     "browser_navigate",
+    "artifacts",
 ];
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

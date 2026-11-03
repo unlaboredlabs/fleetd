@@ -278,6 +278,9 @@ pub struct ChatMessage {
     /// A system line "Saved a skill: …": a Navi saved or changed one of its skills (`skill_save`); the app links it
     /// to the skill.
     pub skill_saved: Option<crate::skills::SkillSaved>,
+    /// A system line "Published …": a lead, task or Navi published an artifact (`artifact_publish`); the app shows a
+    /// card that opens it.
+    pub artifact: Option<crate::artifacts::ArtifactPublished>,
     /// The lead flagged it for the person's look (`nudge`).
     pub nudge: Option<ChatNudge>,
 }

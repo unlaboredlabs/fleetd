@@ -49,6 +49,8 @@ pub struct NewMessage {
     pub worktrees_kept: Option<fleetd_contracts::chat::WorktreesKept>,
     /// A Navi's saved skill (hub/skills/saves).
     pub skill_saved: Option<fleetd_contracts::skills::SkillSaved>,
+    /// A published artifact's card (hub/artifacts).
+    pub artifact: Option<fleetd_contracts::artifacts::ArtifactPublished>,
     /// A human message's `$name` skills.
     pub skills: Vec<fleetd_contracts::skills::SkillName>,
     pub by: Option<String>,
@@ -323,6 +325,7 @@ impl Chat {
                 memory_refreshed: new.memory_refreshed,
                 worktrees_kept: new.worktrees_kept,
                 skill_saved: new.skill_saved,
+                artifact: new.artifact,
                 skills: (!new.skills.is_empty()).then(|| List::unchecked(new.skills)),
                 nudge: None,
                 parts: attachments::show(

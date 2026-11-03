@@ -64,6 +64,8 @@ export const IPC = {
   projectsReadDrop: "projects:read-drop",
   /** invoke(text) → void. Writes the clipboard; the page itself has no clipboard permission. */
   copy: "app:copy",
+  /** invoke(html) → string. Main keeps an HTML artifact and returns the sandboxed address its frame loads (artifactFrames.ts). */
+  artifactFrame: "app:artifact-frame",
   /** invoke(SecretRequest) → SecretOutcome. Main seals the value to the machine's key and submits it. */
   secretSubmit: "secret:submit",
   /** invoke(ProjectEnvRequest) → CallOutcome. Main seals each secret to the project machine's key, then calls project_env_set. */

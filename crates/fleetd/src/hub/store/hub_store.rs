@@ -273,6 +273,7 @@ impl HubStore {
                 "project_icons",
                 "skill_versions",
                 "skill_uses",
+                "artifact_versions",
                 "telegram_bridges",
                 "telegram_cards",
             ] {

@@ -2048,6 +2048,27 @@ fn one_target(host: bool, local: Option<bool>) -> Result<(), String> {
     }
 }
 
+// artifacts_list: a chat's Artifacts, newest first, each with its newest version.
+input!(ArtifactsListInput {
+    project_ref: ProjectRef,
+});
+output!(ArtifactsListOutput {
+    artifacts: List<crate::artifacts::ArtifactSummary, 0, { crate::artifacts::ARTIFACTS_LISTED }>,
+});
+// artifact_get: one artifact's content, the newest version or `version`, and every kept version without content.
+input!(ArtifactGetInput {
+    project_ref: ProjectRef,
+    name: crate::artifacts::ArtifactName,
+    version: Option<crate::prim::Positive>,
+});
+output!(ArtifactGetOutput {
+    name: crate::artifacts::ArtifactName,
+    /// The version read.
+    artifact: crate::artifacts::ArtifactVersion,
+    content: Text<0, { crate::artifacts::ARTIFACT_TEXT_CAP }>,
+    /// Newest first.
+    versions: List<crate::artifacts::ArtifactVersion, 1, { crate::artifacts::ARTIFACT_VERSIONS_KEPT }>,
+});
 // skills_list: Settings > Skills and the composer's `$`. The hub's global skills; with projectRef also the project's
 // and its repo's (.agents/skills, .claude/skills), each marked when a skill of the same name outranks it.
 input!(SkillsListInput {
@@ -3415,6 +3436,8 @@ tools! {
     machine_remove => MachineRemove, Admin, MachineRemoveInput, MachineRemoveOutput;
     machine_join => MachineJoin, Admin, MachineJoinInput, MachineJoinOutput;
     machine_claude_login => MachineClaudeLogin, Admin, MachineClaudeLoginInput, MachineClaudeLoginOutput;
+    artifacts_list => ArtifactsList, Read, ArtifactsListInput, ArtifactsListOutput;
+    artifact_get => ArtifactGet, Read, ArtifactGetInput, ArtifactGetOutput;
     skills_list => SkillsList, Read, SkillsListInput, SkillsListOutput;
     skill_get => SkillGet, Read, SkillGetInput, SkillGetOutput;
     // Human keys only (the handlers check): a lead installs with its own skill_install.

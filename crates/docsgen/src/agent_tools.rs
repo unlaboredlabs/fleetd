@@ -734,6 +734,11 @@ fn example(role: Role, tool: &str) -> Option<Value> {
         }
         (_, "review_read") => json!({ "pr": "https://github.com/acme/storefront/pull/7" }),
         (_, "chat_image") => json!({ "path": "shots/checkout-after.png" }),
+        (_, "publish_artifact") => json!({
+            "name": "dependency-sweep",
+            "title": "Dependency sweep, November",
+            "path": "reports/sweep.html",
+        }),
         (_, "session_start") => json!({
             "purpose": "Check that signup works on the staging site",
         }),

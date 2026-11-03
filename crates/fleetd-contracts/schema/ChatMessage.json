@@ -16,6 +16,62 @@
       "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$",
       "type": "string"
     },
+    "ArtifactFormat": {
+      "oneOf": [
+        {
+          "const": "md",
+          "description": "Markdown, rendered in the app's own style.",
+          "type": "string"
+        },
+        {
+          "const": "html",
+          "description": "A whole HTML page, rendered sandboxed: its scripts run, with no network and no reach into the app.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ArtifactName": {
+      "description": "Lowercase letters, digits and single hyphens, at most 64 characters",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "ArtifactPublished": {
+      "description": "A chat line's artifact: one was published (`artifact_publish`). The app shows it as a card that opens it.",
+      "properties": {
+        "by": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "format": {
+          "$ref": "#/$defs/ArtifactFormat"
+        },
+        "name": {
+          "$ref": "#/$defs/ArtifactName"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "version": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "title",
+        "format",
+        "by"
+      ],
+      "type": "object"
+    },
     "AskBlock": {
       "description": "A question for the human, as buttons: Approve and Deny without `options`, one of `options` with them. The\nanswer is the human's chat reply (`chat_send` with the button's label as its text), so only the human answers\nit; an agent's message never does. A command that needs approval still goes through `gated_run`.",
       "properties": {
@@ -457,6 +513,10 @@
     },
     "ChatMessage": {
       "properties": {
+        "artifact": {
+          "$ref": "#/$defs/ArtifactPublished",
+          "description": "A system line \"Published …\": a lead, task or Navi published an artifact (`artifact_publish`); the app shows a\ncard that opens it."
+        },
         "attachments": {
           "default": [],
           "items": {

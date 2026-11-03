@@ -6,6 +6,7 @@ pub mod prim;
 
 pub mod agents;
 pub mod app;
+pub mod artifacts;
 pub mod auth;
 pub mod automations;
 pub mod blocks;

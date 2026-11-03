@@ -24,6 +24,7 @@ use super::wire::{
 };
 use fleetd_contracts::browser::{BrowserCallFrame, BrowserResultFrame};
 use fleetd_contracts::ids::ThreadId;
+use fleetd_contracts::lead_calls::LeadCall;
 
 pub fn lead_socket_path(home: &Path) -> PathBuf {
     home.join("node.sock")
@@ -202,6 +203,8 @@ impl LeadRelay {
 const MAX_FRAME_BYTES: usize = 256 * 1024;
 /// A browser-mcp frame carries a driver result's text (a page snapshot) to be scrubbed.
 const MAX_BROWSER_FRAME_BYTES: usize = 8 << 20;
+/// A published artifact carries its whole report (`ARTIFACT_TEXT_CAP` characters).
+const MAX_ARTIFACT_FRAME_BYTES: usize = MAX_BROWSER_FRAME_BYTES;
 
 /// Lead calls only the node makes, for a session's browser (node/browser): a process in a session can't send them.
 const NODE_OPS: &[&str] = crate::hub::tasks::policy::NODE_OPS;
@@ -221,11 +224,17 @@ enum Incoming {
 
 fn decode_call(line: &str) -> Result<Incoming, String> {
     match serde_json::from_str::<LeadSocketFrame>(line).map_err(|e| e.to_string())? {
-        LeadSocketFrame::LeadCall(frame) if line.len() > MAX_FRAME_BYTES => Err(format!(
-            "frame is larger than {MAX_FRAME_BYTES} bytes ({} for lead_call {})",
-            line.len(),
-            frame.id
-        )),
+        LeadSocketFrame::LeadCall(frame)
+            if line.len() > MAX_FRAME_BYTES
+                && !(matches!(frame.call, LeadCall::ArtifactPublish(_))
+                    && line.len() <= MAX_ARTIFACT_FRAME_BYTES) =>
+        {
+            Err(format!(
+                "frame is larger than {MAX_FRAME_BYTES} bytes ({} for lead_call {})",
+                line.len(),
+                frame.id
+            ))
+        }
         LeadSocketFrame::LeadCall(frame) => Ok(Incoming::Lead(frame)),
         LeadSocketFrame::BrowserCall(frame) => Ok(Incoming::Browser(frame)),
         LeadSocketFrame::Hold => Ok(Incoming::Hold),
@@ -634,6 +643,28 @@ mod attribution_tests {
             .is_err()
         );
         assert!(named(attribute(frame(None), None)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod frame_size_tests {
+    use super::*;
+
+    fn line(op: &str, content: usize) -> String {
+        serde_json::json!({
+            "t": "lead_call", "id": "cli-1", "cwd": "/w",
+            "call": { "op": op, "name": "sweep-report", "title": "Sweep", "content": "x".repeat(content) },
+        })
+        .to_string()
+    }
+
+    /// A published report may be far past a CLI frame's size; any other call that large is no CLI's.
+    #[test]
+    fn only_an_artifact_publish_carries_a_large_frame() {
+        assert!(matches!(decode_call(&line("artifact_publish", 1_000_000)), Ok(Incoming::Lead(_))));
+        let other = decode_call(&line("artifact_publish", 1_000_000).replace("artifact_publish", "task_list"));
+        assert!(other.is_err());
+        assert!(decode_call(&line("artifact_publish", MAX_ARTIFACT_FRAME_BYTES)).is_err());
     }
 }
 

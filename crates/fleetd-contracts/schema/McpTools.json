@@ -686,6 +686,212 @@
       ],
       "type": "string"
     },
+    "ArtifactFormat": {
+      "oneOf": [
+        {
+          "const": "md",
+          "description": "Markdown, rendered in the app's own style.",
+          "type": "string"
+        },
+        {
+          "const": "html",
+          "description": "A whole HTML page, rendered sandboxed: its scripts run, with no network and no reach into the app.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ArtifactGetInput": {
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/ArtifactName"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "version": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "projectRef",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ArtifactGetOutput": {
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/ArtifactVersion",
+          "description": "The version read."
+        },
+        "content": {
+          "maxLength": 2000000,
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/ArtifactName"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "versions": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/ArtifactVersion"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "artifact",
+        "content",
+        "versions"
+      ],
+      "type": "object"
+    },
+    "ArtifactName": {
+      "description": "Lowercase letters, digits and single hyphens, at most 64 characters",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "ArtifactPublished": {
+      "description": "A chat line's artifact: one was published (`artifact_publish`). The app shows it as a card that opens it.",
+      "properties": {
+        "by": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "format": {
+          "$ref": "#/$defs/ArtifactFormat"
+        },
+        "name": {
+          "$ref": "#/$defs/ArtifactName"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "version": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "title",
+        "format",
+        "by"
+      ],
+      "type": "object"
+    },
+    "ArtifactSummary": {
+      "description": "One artifact as the tab lists it: its name and its newest version.",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/ArtifactName"
+        },
+        "newest": {
+          "$ref": "#/$defs/ArtifactVersion"
+        }
+      },
+      "required": [
+        "name",
+        "newest"
+      ],
+      "type": "object"
+    },
+    "ArtifactVersion": {
+      "description": "One kept version of an artifact, without its content.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "description": "Who published it: the lead, a task's title, or a Navi's name.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "bytes": {
+          "description": "Its content's size in bytes.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "format": {
+          "$ref": "#/$defs/ArtifactFormat"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "version": {
+          "description": "1 for its first, one more for each publish after.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "title",
+        "format",
+        "by",
+        "at",
+        "bytes"
+      ],
+      "type": "object"
+    },
+    "ArtifactsListInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "ArtifactsListOutput": {
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/ArtifactSummary"
+          },
+          "maxItems": 500,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "artifacts"
+      ],
+      "type": "object"
+    },
     "AskBlock": {
       "description": "A question for the human, as buttons: Approve and Deny without `options`, one of `options` with them. The\nanswer is the human's chat reply (`chat_send` with the button's label as its text), so only the human answers\nit; an agent's message never does. A command that needs approval still goes through `gated_run`.",
       "properties": {
@@ -2778,6 +2984,10 @@
     },
     "ChatMessage": {
       "properties": {
+        "artifact": {
+          "$ref": "#/$defs/ArtifactPublished",
+          "description": "A system line \"Published …\": a lead, task or Navi published an artifact (`artifact_publish`); the app shows a\ncard that opens it."
+        },
         "attachments": {
           "default": [],
           "items": {
@@ -6734,6 +6944,11 @@
           "type": "string"
         },
         {
+          "const": "artifacts.changed",
+          "description": "An artifact was published (`artifact_publish`): `data.projectRef`, `data.name`, `data.version`. artifacts_list\nreads it.",
+          "type": "string"
+        },
+        {
           "const": "browser.session",
           "description": "A browser session started, changed hands, ended, or its recording landed or was lost; `data` is\n`browser::BrowserSessionEventData`. browser_sessions reads the rest.",
           "type": "string"
@@ -9448,6 +9663,18 @@
         "approval_answer.output": {
           "$ref": "#/$defs/ApprovalAnswerOutput"
         },
+        "artifact_get.input": {
+          "$ref": "#/$defs/ArtifactGetInput"
+        },
+        "artifact_get.output": {
+          "$ref": "#/$defs/ArtifactGetOutput"
+        },
+        "artifacts_list.input": {
+          "$ref": "#/$defs/ArtifactsListInput"
+        },
+        "artifacts_list.output": {
+          "$ref": "#/$defs/ArtifactsListOutput"
+        },
         "attachment_get.input": {
           "$ref": "#/$defs/AttachmentGetInput"
         },
@@ -10562,6 +10789,10 @@
         "agents_list.output",
         "approval_answer.input",
         "approval_answer.output",
+        "artifact_get.input",
+        "artifact_get.output",
+        "artifacts_list.input",
+        "artifacts_list.output",
         "attachment_get.input",
         "attachment_get.output",
         "attachment_part.input",

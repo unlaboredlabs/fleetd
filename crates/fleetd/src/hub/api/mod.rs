@@ -191,6 +191,7 @@ pub fn registry() -> Registry {
     crate::hub::machine_roles::screens::register(&mut tools);
     crate::hub::machine_setup::tools::register(&mut tools);
     crate::hub::skills::tools::register(&mut tools);
+    crate::hub::artifacts::register(&mut tools);
     crate::hub::time::tools::register(&mut tools);
     crate::hub::update::tools::register(&mut tools);
     crate::hub::metrics::tools::register(&mut tools);
