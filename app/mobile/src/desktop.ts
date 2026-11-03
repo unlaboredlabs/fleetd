@@ -52,10 +52,11 @@ export { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, PROTOCOL_VERSION } from ".
 export type { CallOutcome, HubError, HubState } from "../../desktop/src/shared/hub";
 export { hubOrigin, normalizeCode, protocolFit, type PairFailure } from "../../desktop/src/shared/pairing";
 export { initials, tintIndex } from "../../desktop/src/shared/avatar";
+export { glyphOf, kindOf, mimeOfFile, TAKES, type FileGlyph } from "../../desktop/src/shared/files";
 export { ICON_COLORS, ICON_FACES } from "../../desktop/src/shared/botIcons";
 export { baseScale, clampPan, clampZoom, cropOf, MAX_ZOOM, zoomAbout } from "../../desktop/src/shared/crop";
 export * from "../../desktop/src/renderer/src/data/chat";
-export { canHost, firstHome, isArchived, isNavi, isYours, NAME_MAX, nameProblem, naviHomes } from "../../desktop/src/renderer/screens/navi/model";
+export { canHost, firstHome, isArchived, isNavi, isYours, NAME_MAX, nameProblem, naviDeleteWords, naviHomes } from "../../desktop/src/renderer/screens/navi/model";
 export { addSource, baseName, otherHost, tilde } from "../../desktop/src/renderer/screens/projects/source";
 export {
   discovery,

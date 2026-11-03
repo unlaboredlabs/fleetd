@@ -722,6 +722,7 @@ fn removed(calls: &mut mpsc::UnboundedReceiver<SessionCall>) -> Vec<(String, boo
             SessionCall::ProjectRemove {
                 project_id,
                 remove_worktrees,
+                ..
             } => Some((project_id.to_string(), remove_worktrees)),
             _ => None,
         })

@@ -128,8 +128,11 @@ export const readForDelete = async (hub: Hub, p: ProjectRef): Promise<Result<Pro
   return r.ok ? { ok: true, value: r.output.settings } : r;
 };
 
-/** Stops its agents and forgets it with its fleetd worktrees and its other repos' checkouts; files and branches stay. */
-export const deleteProject = async (hub: Hub, p: ProjectRef): Promise<Result<null>> => {
-  const r = await hub.call("project_remove", { ...ref(p), removeWorktrees: true }, REMOVE_MS);
+/**
+ * Stops its agents and forgets it with its fleetd worktrees and its other repos' checkouts; files and branches stay. A
+ * Navi is erased, and with `removeFolder` its folder goes too.
+ */
+export const deleteProject = async (hub: Hub, p: ProjectRef, removeFolder = false): Promise<Result<null>> => {
+  const r = await hub.call("project_remove", { ...ref(p), removeWorktrees: true, ...(removeFolder ? { removeFolder: true } : {}) }, REMOVE_MS);
   return r.ok ? { ok: true, value: null } : r;
 };

@@ -203,12 +203,18 @@ pub enum SessionCall {
     },
     /// Stop the project's sessions and forget it. `removeWorktrees` also force-removes every worktree its sessions
     /// made under the node home, once their processes have exited; no branch is deleted and the checkout itself is
-    /// left as it is. Only nodes listing [`crate::node_link::CAP_PROJECT_SETTINGS`] get it set.
+    /// left as it is. Only nodes listing [`crate::node_link::CAP_PROJECT_SETTINGS`] get it set. `erase` (a Navi's)
+    /// also deletes its sessions, Claude Code's transcripts of them and the attachments placed in its folder, and
+    /// `removeFolder` the folder itself; only nodes listing [`crate::node_link::CAP_NAVI_ERASE`] get them.
     #[serde(rename_all = "camelCase")]
     ProjectRemove {
         project_id: ProjectId,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         remove_worktrees: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        erase: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        remove_folder: bool,
     },
     /// Add or replace (`set`) and remove (`remove`) the project's environment variables, which the node adds to every
     /// claude it starts for the project from then on. A secret's value is opened with the node's box key and kept
@@ -488,12 +494,16 @@ pub enum SessionCall {
     /// An image session `session_id` made, for its project's chat (`chat_image`): `path` is relative to the session's
     /// own working directory, or absolute inside it, symlinks resolved. A png, jpeg, webp or gif by its bytes, at most
     /// [`crate::mcp::ATTACHMENT_MAX_BYTES`]; the reply holds at most [`IMAGE_PIECE_BYTES`] of it from `offset`.
+    /// With `file`, any type the hub takes (`chat_file`), its bytes fitting the type its name says; a node from before
+    /// it ignores `file` and reads only an image.
     #[serde(rename_all = "camelCase")]
     ReadImage {
         session_id: ThreadId,
         path: NonEmpty,
         #[serde(default)]
         offset: Count,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        file: bool,
     },
 }
 

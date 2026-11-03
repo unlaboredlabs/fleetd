@@ -173,10 +173,13 @@ copies beside it (`~/.claude.json.backup.*`) aren't in a Linux Navi's home at al
 - Logins and keys: `~/.config` (but git's `config`, `ignore` and `attributes` in `~/.config/git`, never its
   `credentials`), `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.kube`, `~/.password-store`,
   `~/.local/share/keyrings`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`, `~/.cargo/credentials` and
-  `credentials.toml`, `~/.android/adbkey`, `~/.mozilla`, `~/.pgpass`, `~/.vault-token`, `~/.azure`, `~/.terraform.d`,
-  and `~/snap` (each snap's own data, logins included).
-- Shell and REPL history: `~/.bash_history`, `~/.zsh_history`, fish's `~/.local/share/fish/fish_history`,
-  `~/.python_history`, `~/.node_repl_history`.
+  `credentials.toml`, `~/.android/adbkey`, `~/.mozilla`, `~/.thunderbird`, `~/.pgpass`, `~/.vault-token`, `~/.azure`,
+  `~/.terraform.d`, `~/.s3cfg`, `~/.boto`, `~/.oci`, `~/.fly`, `~/.mc`, `~/.ngrok2`, `~/.kaggle`, `~/.gem/credentials`,
+  `~/.m2/settings.xml`, `~/.cache/huggingface/token`, and `~/snap` (each snap's own data, logins included).
+- Other assistants' and coding agents' keys and tokens: `~/.hermes`, `~/.openclaw`, `~/.codex`, `~/.cursor`,
+  `~/.gemini` and `~/.ollama`.
+- Shell, REPL and database history: `~/.bash_history`, `~/.zsh_history`, fish's `~/.local/share/fish/fish_history`,
+  `~/.python_history`, `~/.node_repl_history`, `~/.psql_history`, `~/.mysql_history`.
 - The X server: `~/.Xauthority` and `/tmp/.X11-unix`. `DISPLAY` and `XAUTHORITY` are unset.
 - `~/.agent-browser`, where other sessions' browsers listen. Its own listens in its scratch dir.
 - The docker socket (`/run/docker.sock`, `/var/run/docker.sock`).

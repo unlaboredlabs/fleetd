@@ -578,6 +578,55 @@ async fn messages_photos_and_forwards_land_in_the_chat_and_replies_go_back() {
     assert!(sent(&node).is_empty());
 }
 
+/// A file the Navi made (`chat_file`) and showed in a file block goes to Telegram as a document, under its own name
+/// and type, never as a photo.
+#[tokio::test]
+async fn a_file_the_navi_made_goes_out_as_a_document() {
+    let (hub, _home, bob, node) = setup().await;
+    paired(&hub, &bob, &node).await;
+    take_once(&hub, &navi(), 0).await.unwrap();
+    let csv = b"date,amount\n2026-10-01,12.50\n".to_vec();
+    let lead = crate::hub::link::lead_calls::lead_by(&navi());
+    let (id, _, _) = crate::hub::intake::attachments::store(
+        &hub,
+        csv.clone(),
+        "receipts.csv",
+        AttachmentMime::Csv,
+        &lead,
+    )
+    .await
+    .unwrap();
+    lead_says(
+        &hub,
+        &format!(
+            "Your receipts:\n\n```fleetd-block\n{{\"v\":1,\"kind\":\"file\",\"attachmentId\":\"{id}\"}}\n```"
+        ),
+    );
+    let shown = chat(&hub).into_iter().last().unwrap();
+    let block = shown.parts.as_ref().unwrap()[1].block.clone().unwrap();
+    let fleetd_contracts::blocks::BlockBody::File(card) = block.body else {
+        panic!("not a file card: {block:?}");
+    };
+    assert_eq!(
+        (
+            card.name.unwrap().as_str(),
+            card.mime,
+            card.bytes.unwrap().get()
+        ),
+        ("receipts.csv", Some(AttachmentMime::Csv), csv.len() as i64),
+        "the hub fills in what the card shows"
+    );
+    send_once(&hub, &navi()).await.unwrap();
+    let out = sent(&node);
+    assert!(
+        out.iter().any(
+            |s| matches!(s, TelegramSend::File { photo: false, name, mime, data_b64, .. }
+            if name == "receipts.csv" && mime == "text/csv" && B64.decode(data_b64).unwrap() == csv)
+        ),
+        "{out:?}"
+    );
+}
+
 #[tokio::test]
 async fn approvals_are_answered_from_either_side_and_both_update() {
     let (hub, _home, bob, node) = setup().await;
@@ -798,4 +847,149 @@ async fn a_bridge_nobody_paired_sends_nothing() {
     lead_says(&hub, "Nobody hears this on Telegram.");
     send_once(&hub, &navi()).await.unwrap();
     assert!(sent(&node).is_empty());
+}
+
+/// The Navi's quiet lines of what it remembered and the skills it saved reach Telegram as the app shows them; a usage
+/// pause of its lead posts one line there, not again until it has replied; and while the person talks to it on
+/// Telegram, its reply notifies them there only, never on their phone too.
+#[tokio::test]
+async fn memory_and_skill_lines_and_one_usage_pause_reach_telegram_and_a_reply_notifies_once() {
+    use fleetd_contracts::events::HubEventType;
+    let (hub, _home, bob, node) = setup().await;
+    paired(&hub, &bob, &node).await;
+    let quiet = |text: &str, remembered: bool| {
+        NewMessage {
+        author: Some(ChatAuthor::System),
+        text: text.to_owned(),
+        remembered: remembered.then(|| {
+            serde_json::from_value(json!({ "scope": "project", "text": "Sam's dentist is Dr Lee" }))
+                .unwrap()
+        }),
+        skill_saved: (!remembered).then(|| {
+            serde_json::from_value(json!({
+                "name": "pdf", "version": 1, "created": true,
+                "why": "installed from acme/skills@0123456789ab", "installed": "acme/skills@0123456789ab",
+            }))
+            .unwrap()
+        }),
+        ..Default::default()
+    }
+    };
+    hub.chat
+        .add(&navi(), quiet("Remembered: Sam's dentist is Dr Lee", true))
+        .unwrap();
+    hub.chat
+        .add(
+            &navi(),
+            quiet(
+                "Installed the skill pdf from acme/skills@0123456789ab",
+                false,
+            ),
+        )
+        .unwrap();
+    send_once(&hub, &navi()).await.unwrap();
+    let texts = |out: Vec<TelegramSend>| -> Vec<String> {
+        out.into_iter()
+            .filter_map(|s| match s {
+                TelegramSend::Text { html, .. } => Some(html),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(
+        texts(sent(&node)),
+        [
+            "<i>Remembered: Sam's dentist is Dr Lee</i>",
+            "<i>Installed the skill pdf from acme/skills@0123456789ab</i>",
+        ]
+    );
+
+    // Its lead stops at its usage limit: one line, and none for a second stop before it replies.
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO leads (machine_id, project_id, thread_id, started_at, session_generation)
+                 VALUES ('lab', 'ada', 'th-lead', ?, 1)",
+                [AT],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let limited = |thread: &str| {
+        hub.events
+            .append(crate::hub::store::NewEvent {
+                at: AT.into(),
+                r#type: HubEventType::ThreadUsageLimited,
+                machine_id: Some(navi().machine_id),
+                project_id: Some(navi().project_id),
+                thread_id: Some(fleetd_contracts::ids::ThreadId::unchecked(thread)),
+                summary: "\"ada\" on lab hit the usage limit".into(),
+                data: Some(json!({ "usageLimitResetAt": "2026-10-31T14:00:00.000Z" })),
+                attention: None,
+            })
+            .unwrap();
+    };
+    let start = hub.events.head();
+    limited("th-lead");
+    // A session of its own that isn't the Navi (a memory refresh) says nothing.
+    limited("th-refresh");
+    let cursor = super::run::usage_pauses(&hub, start).await;
+    let out = texts(sent(&node));
+    assert_eq!(out.len(), 1, "{out:?}");
+    assert!(
+        out[0].starts_with("<i>Ada is paused: its Claude usage limit is reached until Sat 14:00."),
+        "{}",
+        out[0]
+    );
+    limited("th-lead");
+    let cursor = super::run::usage_pauses(&hub, cursor).await;
+    assert!(sent(&node).is_empty());
+    // Once it has replied, the next stop posts again.
+    lead_says(&hub, "Back.");
+    send_once(&hub, &navi()).await.unwrap();
+    assert_eq!(texts(sent(&node)), ["Back."]);
+    limited("th-lead");
+    super::run::usage_pauses(&hub, cursor).await;
+    assert_eq!(texts(sent(&node)).len(), 1);
+
+    // A reply to what the person wrote in the app is pushed to their phone.
+    let pushed = |hub: &Hub| {
+        let page = hub
+            .events
+            .page(0, Some(&[HubEventType::ChatMessage]), None)
+            .unwrap();
+        let reply = page
+            .events
+            .iter()
+            .rev()
+            .find(|e| e.data.as_ref().and_then(|d| d.get("author")) == Some(&json!("lead")))
+            .unwrap()
+            .clone();
+        crate::hub::push::notice(hub, &reply).unwrap().is_some()
+    };
+    hub.chat
+        .add(
+            &navi(),
+            NewMessage {
+                author: Some(ChatAuthor::Human),
+                text: "from my desk".into(),
+                client: Some(ChatClient::App),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    lead_says(&hub, "Got it.");
+    assert!(pushed(&hub));
+    // Then they write on Telegram: the reply goes there, and isn't pushed again.
+    node.lock().unwrap().event(TelegramEventKind::Message {
+        message_id: 60,
+        text: "and one more thing".into(),
+        forwarded_from: None,
+        files: Vec::new(),
+    });
+    take_once(&hub, &navi(), 0).await.unwrap();
+    lead_says(&hub, "On it.");
+    assert!(!pushed(&hub));
+    send_once(&hub, &navi()).await.unwrap();
+    assert!(texts(sent(&node)).contains(&"On it.".to_owned()));
 }

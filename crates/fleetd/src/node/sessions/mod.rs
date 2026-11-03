@@ -448,6 +448,46 @@ pub(crate) fn path_safe(id: &str) -> bool {
 
 /// A relative project root (`navi/ada`) as the folder under the node's home it names; `None` for any other root. Each
 /// part is [`path_safe`], so it never leaves the home.
+/// Whether `folder` is a Navi's own, under the node home's `navi/`, which deleting the Navi may delete whole.
+fn navi_folder(home: &Path, folder: &Path) -> bool {
+    let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_owned());
+    let navis = real(&home.join("navi"));
+    let folder = real(folder);
+    folder.starts_with(&navis) && folder != navis
+}
+
+/// What a deleted Navi leaves on its machine, gone: Claude Code's transcripts of its sessions (each `<id>.jsonl`, the
+/// `<id>/` beside it, and its file backups and environment), the attachments placed in its folder, and with
+/// `remove_folder` the folder itself. Nothing there is no error; what can't go is logged.
+fn erase_navi(folder: &Path, sessions: &[(String, PathBuf, PathBuf)], remove_folder: bool) {
+    let gone = |path: &Path| {
+        let removed = match std::fs::symlink_metadata(path) {
+            Ok(m) if m.is_dir() => std::fs::remove_dir_all(path),
+            Ok(_) => std::fs::remove_file(path),
+            Err(_) => return,
+        };
+        if let Err(e) = removed {
+            tracing::warn!(path = %path.display(), "a deleted Navi's file was not removed: {e}");
+        }
+    };
+    for (id, config, cwd) in sessions {
+        let file = state::claude_session_file(config, cwd, id);
+        gone(&file);
+        gone(&file.with_extension(""));
+        gone(&config.join("file-history").join(id));
+        gone(&config.join("session-env").join(id));
+        // Its folder in claude's projects, once nothing of another session is left in it.
+        if let Some(dir) = file.parent() {
+            let _ = std::fs::remove_dir(dir);
+        }
+    }
+    if remove_folder {
+        gone(folder);
+    } else {
+        gone(&folder.join(".fleetd").join("attachments"));
+    }
+}
+
 fn home_folder(home: &Path, root: &str) -> Option<PathBuf> {
     if root.starts_with('/') {
         return None;
@@ -1082,7 +1122,12 @@ impl SessionService {
             SessionCall::ProjectRemove {
                 project_id,
                 remove_worktrees,
-            } => self.project_remove(&project_id, remove_worktrees).await,
+                erase,
+                remove_folder,
+            } => {
+                self.project_remove(&project_id, remove_worktrees, erase, remove_folder)
+                    .await
+            }
             SessionCall::ProjectEnv {
                 project_id,
                 set,
@@ -1598,6 +1643,7 @@ impl SessionService {
                 session_id,
                 path,
                 offset,
+                file,
             } => {
                 use base64::Engine;
                 // The session's own working directory, as this node started it: never one the call names.
@@ -1606,7 +1652,7 @@ impl SessionService {
                     .ok_or_else(|| not_found(format!("no session {session_id} on this machine")))?;
                 let offset = offset.get() as u64;
                 let (name, mime, bytes, piece) =
-                    blocking(move || files::read_image(&root, &path, offset))
+                    blocking(move || files::read_image(&root, &path, offset, file))
                         .await
                         .map_err(invalid)?;
                 Ok(SessionOutput::Image {
@@ -4175,7 +4221,22 @@ impl SessionService {
             .collect())
     }
 
-    async fn project_remove(&self, project_id: &ProjectId, remove_worktrees: bool) -> Reply {
+    /// `erase` (a Navi's, D287 navi.delete-erases): its sessions, Claude Code's transcripts of them and the attachments
+    /// placed in its folder go too; `remove_folder` the folder itself, only one of a Navi's under the node home.
+    async fn project_remove(
+        &self,
+        project_id: &ProjectId,
+        remove_worktrees: bool,
+        erase: bool,
+        remove_folder: bool,
+    ) -> Reply {
+        let folder = self.project_root(project_id)?;
+        if remove_folder && !navi_folder(&self.inner.config.home, &folder) {
+            return Err(invalid(format!(
+                "project {project_id}'s folder {} isn't a Navi's own: it stays",
+                folder.display()
+            )));
+        }
         let stopping: Vec<_> = {
             let mut st = self.st();
             let ids = self.live_in(&st, project_id);
@@ -4243,12 +4304,32 @@ impl SessionService {
             .store()
             .remove_project(project_id)?
             .ok_or_else(|| not_found(no_project(project_id.as_str())))?;
+        let transcripts: Vec<(String, PathBuf, PathBuf)> = if erase {
+            let sessions = self.store().sessions()?;
+            self.store().forget_sessions(project_id.as_str())?;
+            sessions
+                .into_iter()
+                .filter(|r| &r.summary.project_id == project_id)
+                .map(|r| {
+                    (
+                        r.summary.session_id.to_string(),
+                        r.local.config_dir,
+                        r.local.cwd,
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         let home = self.inner.config.home.clone();
         let id = project_id.to_string();
         blocking(move || {
             super::project_env::forget(&home, &id);
             super::mcp_servers::forget(&home, &id);
             sandbox::forget_navi(&sandbox::navi_dir(&home, &id));
+            if erase {
+                erase_navi(&folder, &transcripts, remove_folder);
+            }
         })
         .await;
         self.st().machine(frame);

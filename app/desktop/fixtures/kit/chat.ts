@@ -32,7 +32,7 @@ export interface Draft {
 /** A file sent with a message; `data` is what attachment_get returns for it. */
 export interface Attachment {
   readonly name: string;
-  readonly mime: "image/png" | "text/plain";
+  readonly mime: string;
   readonly data: Buffer;
 }
 

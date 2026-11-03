@@ -27,6 +27,7 @@ import {
 } from "../../ui";
 import { useBubbleActions } from "./actions";
 import { fmtBytes, imageFit, pngDensity } from "./attachments";
+import { FileCard } from "./blocks/FileCard";
 import { ImageViewer, ImageViewerContext, useOpenImage } from "./ImageViewer";
 import { Block } from "./blocks/Block";
 import { bubblesOf, isWide, quoteOf, TAPBACK_WORD, TAPBACKS, tapbackSend, unshownOnly, type Bubble, type Tapback } from "./bubbles";
@@ -92,8 +93,9 @@ function ImageAttachment({ project, file }: { project: ProjectRef; file: Attachm
   );
 }
 
+// Any other file is a card that opens or saves it, as a Navi's own files are.
 function Attachment({ project, file }: { project: ProjectRef; file: AttachmentRef }) {
-  return file.mime.startsWith("image/") ? <ImageAttachment project={project} file={file} /> : <FileChip file={file} />;
+  return file.mime.startsWith("image/") ? <ImageAttachment project={project} file={file} /> : <FileCard project={project} file={file} />;
 }
 
 /** A reply's bubbles enter a step apart, up to this many steps: a long one doesn't keep you waiting for its last. */

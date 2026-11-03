@@ -24,7 +24,7 @@ as soon as a chat opens. A new chat asks what the lead should do, with a few sta
 | You can | How |
 |---|---|
 | Describe work | In your own words. The lead turns it into tasks itself. |
-| Attach files | Paste, drop, or attach images, text or PDF: up to 20 files a message, 25 MB each. The lead gets them with your message. |
+| Attach files | Paste, drop, or attach images, PDFs, text and CSV, Word, Excel and PowerPoint files (.docx, .xlsx, .pptx) and zips: up to 20 files a message, 25 MB each. The hub checks each file's bytes are what its type says. The lead gets them with your message, a Word, Excel or PowerPoint file with its text beside it. |
 | Paste a screenshot | Paste it into the box. |
 | Send it again | Press ↑ in the empty box to bring back your last message. |
 
@@ -112,14 +112,21 @@ secrets and a blocked project, which always come first. A check red on main stil
 
 The lead texts like a teammate: short messages, split into bubbles, with PR numbers, commands and errors exact. When
 words aren't the best fit it sends a block instead: a chart, a table, a diff, a live card for a PR or an agent, a
-checklist, an image, or a question with buttons. Tapping a button sends your answer as a chat message, so only you
+checklist, an image, a file, or a question with buttons. Tapping a button sends your answer as a chat message, so only you
 can answer it. To change how it talks, edit the **Voice** prompt (`lead.voice`) like any
-[prompt](/docs/what-agents-are-told). Commit messages, PR bodies and agents' briefs stay plain whatever the voice.
+[prompt](/docs/what-agents-are-told). Commit messages, PR bodies and agents' briefs stay plain whatever the voice. A
+[Navi](/docs/navi) talks in a voice of its own, a personal assistant's rather than an engineer's: **Navi's voice**
+(`navi.voice`).
 
 An image can be one the lead or its agents made, such as a screenshot of a UI change: they upload it with
 [`chat_image`](/docs/reference/agent-tools#chat_image), which reads only a png, jpeg, webp or gif file (checked by its
 bytes, at most 25 MiB) inside the agent's own worktree or working directory, never anywhere else on the machine. The
 image belongs to that project: only its chat shows it. One the lead never shows is deleted after 24 hours.
+
+A file works the same way with [`chat_file`](/docs/reference/agent-tools#chat_file): a PDF, a CSV, a document or any
+other type a chat takes, its bytes checked against what its name says. It shows as a card with its name, kind and
+size. **Open** opens it in your computer's app for that kind, and the download button saves it where you pick; on the
+phone, tapping it opens the share sheet (Save to Files, or another app). A file you attached shows as the same card.
 
 It stays quiet on routine progress: a rebase, a review passing, CI starting, a PR queued or an agent resuming posts
 nothing (the panel's Activity tab shows those). It writes when you must act or decide, when something you asked about
@@ -155,7 +162,7 @@ Everything shows up in the chat, quietly:
 | The agents strip, under the lead's message | One line: how many agents are working, and on which PRs. Click it to see each agent in the panel's [Agents](/docs/desktop-app#agents) tab. |
 | A quiet line under the lead's reply | While the lead works: how long it has been working, what it's doing now, and the orders and agents it started. When it's done: how long it worked, such as "Worked for 3m 40s". |
 | One-line events | A pull request opened, merged, or sent back. |
-| Cards in the lead's messages | Charts, tables, a diff, a pull request or an agent with its live state, a checklist, an image. Click Open on a pull request or an agent to see it in the panel. |
+| Cards in the lead's messages | Charts, tables, a diff, a pull request or an agent with its live state, a checklist, an image, a file. Click Open on a pull request or an agent to see it in the panel. |
 | Three dots | The lead is writing; its message shows when it's done. |
 
 For a project's work at a glance, see [Status](/docs/status). For where the time went, see

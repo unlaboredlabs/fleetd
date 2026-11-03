@@ -54,6 +54,9 @@ pub enum BlockBody {
     Checklist(ChecklistBlock),
     Image(AttachmentBlock),
     Clip(AttachmentBlock),
+    /// A file as a card (its name, type and size) the person opens or saves: one they sent, or one the lead or its
+    /// tasks made and uploaded with `chat_file`.
+    File(AttachmentBlock),
     Ask(AskBlock),
 }
 
@@ -173,13 +176,18 @@ pub struct ChecklistBlock {
     pub items: List<ChecklistItem, 1, 30>,
 }
 
-/// An image or clip already uploaded to the hub: its bytes come from `attachment_get`.
+/// An image, clip or file already uploaded to the hub: its bytes come from `attachment_get`.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachmentBlock {
     pub attachment_id: AttachmentId,
     pub caption: Option<Line<1, 200>>,
+    /// The file's name, type and size, filled in by the hub from the file itself when the message is final, so a
+    /// client shows its card without reading it; whatever the lead wrote there is replaced.
+    pub name: Option<Line<1, 120>>,
+    pub mime: Option<crate::mcp::AttachmentMime>,
+    pub bytes: Option<crate::prim::Count>,
 }
 
 /// A question for the human, as buttons: Approve and Deny without `options`, one of `options` with them. The

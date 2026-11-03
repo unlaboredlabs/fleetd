@@ -288,7 +288,7 @@ impl Memory<'_> {
         })
     }
 
-    fn project_dir(&self, r: &ProjectRef) -> Option<PathBuf> {
+    pub fn project_dir(&self, r: &ProjectRef) -> Option<PathBuf> {
         Some(
             self.dir?
                 .join(r.machine_id.as_str())

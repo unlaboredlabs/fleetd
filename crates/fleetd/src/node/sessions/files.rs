@@ -172,29 +172,21 @@ pub fn put_file(root: &Path, rel_path: &str, bytes: &[u8]) -> Result<(), String>
     exclude_attachments(root)
 }
 
-fn mime_of_extension(path: &Path) -> Option<AttachmentMime> {
-    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
-    match ext.as_str() {
-        "png" => Some(AttachmentMime::Png),
-        "jpg" | "jpeg" => Some(AttachmentMime::Jpeg),
-        "gif" => Some(AttachmentMime::Gif),
-        "webp" => Some(AttachmentMime::Webp),
-        _ => None,
-    }
-}
-
-/// One image a session made, read for its chat: its name, type, whole size and the piece from `offset`. `path` is
+/// One file a session made, read for its chat: its name, type, whole size and the piece from `offset`. `path` is
 /// relative to `root` (the session's working directory) or absolute; after `..` and every symlink are resolved it
-/// must still lie under `root`, and it must be a png, jpeg, webp or gif by its extension and its bytes alike, at most
-/// [`ATTACHMENT_MAX_BYTES`]. Nothing else on the machine is ever read.
+/// must still lie under `root`, at most [`ATTACHMENT_MAX_BYTES`]. Without `file` it must be a png, jpeg, webp or gif
+/// by its extension and its bytes alike (`chat_image`); with it, any type the hub takes, by its name and bytes
+/// together ([`AttachmentMime::of_file`], `chat_file`). Nothing else on the machine is ever read.
 pub fn read_image(
     root: &Path,
     path: &str,
     offset: u64,
+    file: bool,
 ) -> Result<(String, AttachmentMime, u64, Vec<u8>), String> {
     use std::io::{Read, Seek};
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 
+    let what = if file { "file" } else { "image" };
     let root = root.canonicalize().map_err(|e| {
         format!(
             "your working directory {} is not readable: {e}",
@@ -207,22 +199,28 @@ pub fn read_image(
         .map_err(|e| format!("{path} is not readable here: {e}"))?;
     if !real.starts_with(&root) {
         return Err(format!(
-            "{path} is outside your working directory {}: only an image you made there can go in the chat",
-            root.display()
+            "{path} is outside your working directory {}: only a{} {what} you made there can go in the chat",
+            root.display(),
+            if file { "" } else { "n" }
         ));
     }
-    let Some(by_name) = mime_of_extension(&real) else {
+    let name = real
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let by_name = AttachmentMime::of_name(&name);
+    if !file && !by_name.is_some_and(AttachmentMime::is_image) {
         return Err(format!("{path} is not a .png, .jpg, .webp or .gif image"));
-    };
+    }
     // Opened without following a last symlink, and checked to be the file just resolved: a link swapped in since
     // cannot send the read elsewhere.
-    let mut file = std::fs::OpenOptions::new()
+    let mut opened_file = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
         .open(&real)
         .map_err(|e| format!("{path} is not readable here: {e}"))?;
     let (opened, named) = (
-        file.metadata().map_err(|e| e.to_string())?,
+        opened_file.metadata().map_err(|e| e.to_string())?,
         std::fs::symlink_metadata(&real).map_err(|e| e.to_string())?,
     );
     if !opened.is_file() || (opened.dev(), opened.ino()) != (named.dev(), named.ino()) {
@@ -231,28 +229,42 @@ pub fn read_image(
     let bytes = opened.len();
     if bytes > ATTACHMENT_MAX_BYTES as u64 {
         return Err(format!(
-            "{path} is {bytes} bytes; a chat image is at most {} MiB",
+            "{path} is {bytes} bytes; a chat {what} is at most {} MiB",
             ATTACHMENT_MAX_BYTES / (1024 * 1024)
         ));
     }
-    let mut head = [0u8; 12];
-    let n = file.read(&mut head).map_err(|e| e.to_string())?;
-    if AttachmentMime::of_image(&head[..n]) != Some(by_name) {
-        return Err(format!(
-            "{path} does not hold the image its name says: only png, jpeg, webp and gif images go in the chat"
-        ));
-    }
-    file.seek(std::io::SeekFrom::Start(offset))
+    // Enough of its start to tell its type: an image's or a PDF's first bytes, and text's first 64 KiB.
+    let mut head = Vec::new();
+    (&mut opened_file)
+        .take(64 * 1024)
+        .read_to_end(&mut head)
+        .map_err(|e| e.to_string())?;
+    let mime = if file {
+        AttachmentMime::of_file(&name, &head).ok_or_else(|| {
+            format!(
+                "{path} is not a file the chat takes, or its bytes aren't what its name says: images, PDF, text and \
+                 CSV, Word, Excel and PowerPoint (.docx, .xlsx, .pptx) and zip go in the chat"
+            )
+        })?
+    } else {
+        match (AttachmentMime::of_image(&head), by_name) {
+            (Some(m), Some(n)) if m == n => m,
+            _ => {
+                return Err(format!(
+                    "{path} does not hold the image its name says: only png, jpeg, webp and gif images go in the chat"
+                ));
+            }
+        }
+    };
+    opened_file
+        .seek(std::io::SeekFrom::Start(offset))
         .map_err(|e| e.to_string())?;
     let mut piece = Vec::new();
-    file.take(IMAGE_PIECE_BYTES as u64)
+    opened_file
+        .take(IMAGE_PIECE_BYTES as u64)
         .read_to_end(&mut piece)
         .map_err(|e| e.to_string())?;
-    let name = real
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    Ok((name, by_name, bytes, piece))
+    Ok((name, mime, bytes, piece))
 }
 
 fn exclude_attachments(root: &Path) -> Result<(), String> {
@@ -399,15 +411,15 @@ mod tests {
         let root = scratch("image-root");
         std::fs::create_dir_all(root.join("shots")).unwrap();
         std::fs::write(root.join("shots/after.png"), PNG).unwrap();
-        let (name, mime, bytes, piece) = read_image(&root, "shots/after.png", 0).unwrap();
+        let (name, mime, bytes, piece) = read_image(&root, "shots/after.png", 0, false).unwrap();
         assert_eq!(
             (name.as_str(), mime, bytes, piece.as_slice()),
             ("after.png", AttachmentMime::Png, PNG.len() as u64, PNG)
         );
         let absolute = root.join("shots/after.png").display().to_string();
-        assert!(read_image(&root, &absolute, 0).is_ok());
+        assert!(read_image(&root, &absolute, 0, false).is_ok());
         assert_eq!(
-            read_image(&root, "shots/after.png", 4).unwrap().3,
+            read_image(&root, "shots/after.png", 4, false).unwrap().3,
             &PNG[4..]
         );
 
@@ -423,7 +435,7 @@ mod tests {
             "linked.png".to_owned(),
             "linked/key.png".to_owned(),
         ] {
-            let err = read_image(&root, &path, 0).unwrap_err();
+            let err = read_image(&root, &path, 0, false).unwrap_err();
             assert!(
                 err.contains("outside your working directory"),
                 "{path}: {err}"
@@ -440,15 +452,15 @@ mod tests {
         std::fs::write(root.join("shot.svg"), b"<svg onload=alert(1)>").unwrap();
         std::fs::write(root.join("jpeg.png"), b"\xff\xd8\xff\xe0 a jpeg named png").unwrap();
         for path in ["id_ed25519", "shot.svg"] {
-            let err = read_image(&root, path, 0).unwrap_err();
+            let err = read_image(&root, path, 0, false).unwrap_err();
             assert!(err.contains("is not a .png"), "{path}: {err}");
         }
         for path in ["key.png", "jpeg.png"] {
-            let err = read_image(&root, path, 0).unwrap_err();
+            let err = read_image(&root, path, 0, false).unwrap_err();
             assert!(err.contains("does not hold the image"), "{path}: {err}");
         }
-        assert!(read_image(&root, "shots", 0).is_err(), "a directory");
-        assert!(read_image(&root, "missing.png", 0).is_err());
+        assert!(read_image(&root, "shots", 0, false).is_err(), "a directory");
+        assert!(read_image(&root, "missing.png", 0, false).is_err());
         for d in [outside, root] {
             std::fs::remove_dir_all(d).unwrap();
         }

@@ -3,6 +3,16 @@
 // where a new one could live. Pure, so it is unit-tested. The Asked tab's rows are askedModel's.
 import type { MachineRolesEntry, ProjectSummary } from "../../../shared/contracts";
 
+/**
+ * A Navi's delete (D287 navi.delete-erases), word for word on the desktop's dialog and the phone's sheet: what is
+ * erased, and the tickbox that deletes its folder too.
+ */
+export const naviDeleteWords = (title: string, machine: string, folder: string) => ({
+  message: `${title} stops now, and everything it had is erased from fleetd and ${machine}: its chat, memory, skills, approvals and purchases, attachments, screen recordings and transcripts. This can't be undone.`,
+  folder: `Also delete its folder, ${folder}`,
+  folderNote: "With everything in it: its drafts, downloads and notes. Unticked, the folder stays as it is.",
+});
+
 /** A Navi: a plain-folder project with an assistant for its lead. */
 export const isNavi = (p: Pick<ProjectSummary, "kind">): boolean => p.kind === "assistant";
 

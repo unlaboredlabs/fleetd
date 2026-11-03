@@ -396,7 +396,10 @@ pub const ATTACHMENT_MAX_BYTES: usize = 25 * 1024 * 1024;
 /// The piece of a file the app sends per attachment_part call, decoded: its base64 fits one app call.
 pub const ATTACHMENT_PART_BYTES: usize = 512 * 1024;
 
+/// A file's type, as the hub keeps attachments: images, PDF, text and CSV, Office documents and zip archives. The hub
+/// checks a file's bytes against its type ([`AttachmentMime::fits`]) before it keeps it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("x-open" = true))]
 pub enum AttachmentMime {
     #[serde(rename = "image/png")]
     Png,
@@ -410,7 +413,47 @@ pub enum AttachmentMime {
     Text,
     #[serde(rename = "application/pdf")]
     Pdf,
+    #[serde(rename = "text/csv")]
+    Csv,
+    #[serde(rename = "application/vnd.openxmlformats-officedocument.wordprocessingml.document")]
+    Docx,
+    #[serde(rename = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")]
+    Xlsx,
+    #[serde(rename = "application/vnd.openxmlformats-officedocument.presentationml.presentation")]
+    Pptx,
+    #[serde(rename = "application/zip")]
+    Zip,
 }
+
+/// Whether text starts with a UTF-16 byte-order mark: Some(true) for big-endian, Some(false) for little-endian.
+fn utf16_bom(bytes: &[u8]) -> Option<bool> {
+    match bytes {
+        [0xfe, 0xff, ..] => Some(true),
+        [0xff, 0xfe, ..] => Some(false),
+        _ => None,
+    }
+}
+
+/// A Windows-1252 byte as its character: Latin-1, but for the printable marks at 0x80 to 0x9F (€, curly quotes,
+/// dashes); its five unassigned bytes stay as Latin-1's controls.
+fn windows_1252(b: u8) -> char {
+    const HIGH: [char; 32] = [
+        '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8D}', 'Ž',
+        '\u{8F}', '\u{90}', '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9D}',
+        'ž', 'Ÿ',
+    ];
+    match b {
+        0x80..=0x9f => HIGH[(b - 0x80) as usize],
+        b => b as char,
+    }
+}
+
+/// Names that say a file is text: notes, data, calendar invites, mail, code. Any other name whose bytes are text is
+/// text too, with `.txt` added, so nothing opens it as a script.
+const TEXT_EXTENSIONS: &[&str] = &[
+    "txt", "md", "markdown", "log", "json", "yaml", "yml", "toml", "xml", "ics", "vcf", "eml",
+    "tsv", "srt", "vtt", "py", "js", "ts", "rs", "go", "sql",
+];
 
 impl AttachmentMime {
     /// An image's type by its first bytes (png, jpeg, gif, webp); None for anything else.
@@ -435,6 +478,171 @@ impl AttachmentMime {
                 ..,
             ] => Some(Self::Webp),
             _ => None,
+        }
+    }
+
+    pub fn is_image(self) -> bool {
+        matches!(self, Self::Png | Self::Jpeg | Self::Webp | Self::Gif)
+    }
+
+    /// The type a file's name says, by its extension; None for one the hub doesn't take. A name with no extension, or
+    /// another one, may still be text: see [`AttachmentMime::of_file`].
+    pub fn of_name(name: &str) -> Option<Self> {
+        let ext = name.rsplit_once('.')?.1.to_ascii_lowercase();
+        Some(match ext.as_str() {
+            "png" => Self::Png,
+            "jpg" | "jpeg" => Self::Jpeg,
+            "webp" => Self::Webp,
+            "gif" => Self::Gif,
+            "pdf" => Self::Pdf,
+            "csv" => Self::Csv,
+            "docx" => Self::Docx,
+            "xlsx" => Self::Xlsx,
+            "pptx" => Self::Pptx,
+            "zip" => Self::Zip,
+            e if TEXT_EXTENSIONS.contains(&e) => Self::Text,
+            _ => return None,
+        })
+    }
+
+    /// A file's type by its name and bytes together: what its name says when its bytes agree, an image by its bytes
+    /// whatever its name, and text for any other name whose start is UTF-8, or UTF-16 with its byte-order mark. Text
+    /// in another 8-bit encoding (Windows-1252) needs a name that says text (.csv, .txt): without one, NUL-free bytes
+    /// could be any binary. None for anything else.
+    pub fn of_file(name: &str, bytes: &[u8]) -> Option<Self> {
+        if let Some(image) = Self::of_image(bytes) {
+            return Some(image);
+        }
+        match Self::of_name(name) {
+            Some(mime) if mime.fits(bytes) => Some(mime),
+            Some(_) => None,
+            None => {
+                let head = &bytes[..bytes.len().min(64 * 1024)];
+                let utf8 = match std::str::from_utf8(head) {
+                    Ok(_) => true,
+                    // A character cut at the 64 KiB mark (by this or the caller's read) is still UTF-8.
+                    Err(e) => e.error_len().is_none() && head.len() == 64 * 1024,
+                };
+                (utf16_bom(head).is_some() || (utf8 && !head.contains(&0))).then_some(Self::Text)
+            }
+        }
+    }
+
+    /// Whether `bytes` hold a file of this type: an image's or a PDF's own first bytes, a zip archive for an Office
+    /// document, and for text UTF-16 with its byte-order mark, or any 8-bit text (UTF-8, Windows-1252) with no NUL in
+    /// its first 64 KiB. The hub keeps text as UTF-8 ([`AttachmentMime::utf8_text`]).
+    pub fn fits(self, bytes: &[u8]) -> bool {
+        match self {
+            Self::Png | Self::Jpeg | Self::Webp | Self::Gif => Self::of_image(bytes) == Some(self),
+            Self::Pdf => bytes.starts_with(b"%PDF-"),
+            Self::Docx | Self::Xlsx | Self::Pptx | Self::Zip => bytes.starts_with(b"PK\x03\x04"),
+            Self::Text | Self::Csv => {
+                let head = &bytes[..bytes.len().min(64 * 1024)];
+                utf16_bom(head).is_some() || !head.contains(&0)
+            }
+        }
+    }
+
+    /// Text as the hub keeps it, in UTF-8: UTF-16 by its byte-order mark (Excel's "Unicode Text"), UTF-8 when the
+    /// whole file reads as UTF-8 (a stray bad byte after its own characters becomes U+FFFD), and anything else as
+    /// Windows-1252, the 8-bit
+    /// text a "CSV (Comma delimited)" save or a bank's export writes (Latin-1 is a subset). None when it isn't text.
+    pub fn utf8_text(bytes: &[u8]) -> Option<String> {
+        if let Some(big) = utf16_bom(bytes) {
+            let (pairs, _) = bytes[2..].as_chunks::<2>();
+            let units = pairs.iter().map(|&p| {
+                if big {
+                    u16::from_be_bytes(p)
+                } else {
+                    u16::from_le_bytes(p)
+                }
+            });
+            return Some(
+                char::decode_utf16(units)
+                    .map(|c| c.unwrap_or('\u{FFFD}'))
+                    .collect(),
+            );
+        }
+        if bytes[..bytes.len().min(64 * 1024)].contains(&0) {
+            return None;
+        }
+        // Decided on the whole file, never its start alone: a long statement's first é may come after many rows of
+        // ASCII. UTF-8 when all of it is (a character cut at the end too), or when UTF-8's own multi-byte characters
+        // come before its first bad byte (a stray one becomes U+FFFD); else Windows-1252.
+        let utf8 = match std::str::from_utf8(bytes) {
+            Ok(_) => true,
+            Err(e) => e.error_len().is_none() || !bytes[..e.valid_up_to()].is_ascii(),
+        };
+        if utf8 {
+            let text = String::from_utf8_lossy(bytes);
+            return Some(text.strip_prefix('\u{FEFF}').unwrap_or(&text).to_owned());
+        }
+        Some(bytes.iter().map(|&b| windows_1252(b)).collect())
+    }
+
+    /// The extensions a file of this type may carry, its usual one first: a name with another gets that one added, so
+    /// no app opens a file as something its type isn't (a text file named `run.command`).
+    pub fn extensions(self) -> &'static [&'static str] {
+        match self {
+            Self::Png => &["png"],
+            Self::Jpeg => &["jpg", "jpeg"],
+            Self::Webp => &["webp"],
+            Self::Gif => &["gif"],
+            Self::Pdf => &["pdf"],
+            Self::Csv => &["csv"],
+            Self::Docx => &["docx"],
+            Self::Xlsx => &["xlsx"],
+            Self::Pptx => &["pptx"],
+            Self::Zip => &["zip"],
+            Self::Text => TEXT_EXTENSIONS,
+        }
+    }
+
+    /// `name` with an extension of this type: kept when it has one, else this type's usual one added.
+    pub fn named(self, name: &str) -> String {
+        let has = name.rsplit_once('.').is_some_and(|(stem, ext)| {
+            !stem.is_empty()
+                && self
+                    .extensions()
+                    .contains(&ext.to_ascii_lowercase().as_str())
+        });
+        if has {
+            name.to_owned()
+        } else {
+            format!("{name}.{}", self.extensions()[0])
+        }
+    }
+
+    /// What the file is, in a few words: "a PDF", "a Word document".
+    pub fn kind(self) -> &'static str {
+        match self {
+            Self::Png | Self::Jpeg | Self::Webp | Self::Gif => "an image",
+            Self::Pdf => "a PDF",
+            Self::Text => "a text file",
+            Self::Csv => "a CSV spreadsheet",
+            Self::Docx => "a Word document",
+            Self::Xlsx => "an Excel spreadsheet",
+            Self::Pptx => "a PowerPoint deck",
+            Self::Zip => "a zip archive",
+        }
+    }
+
+    /// Its type as the hub stores and sends it: `image/png`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Png => "image/png",
+            Self::Jpeg => "image/jpeg",
+            Self::Webp => "image/webp",
+            Self::Gif => "image/gif",
+            Self::Text => "text/plain",
+            Self::Pdf => "application/pdf",
+            Self::Csv => "text/csv",
+            Self::Docx => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            Self::Xlsx => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Self::Pptx => {
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            }
+            Self::Zip => "application/zip",
         }
     }
 }
@@ -1070,13 +1278,16 @@ output!(ProjectAddOutput {
 });
 
 // project_remove: stops the project's agent processes and forgets it. Its files and branches stay; its worktrees too,
-// unless removeWorktrees.
+// unless removeWorktrees. A Navi's is erased (D287 navi.delete-erases): its chat, approvals and purchases, asks and
+// decisions, memory, skills, transcripts, attachments and screen recordings go, on the hub and its machine.
 input!(ProjectRemoveInput {
     machine_id: MachineId,
     project_id: ProjectId,
     /// Also force-remove the fleetd worktrees its agents worked in, uncommitted changes and all, once its agents have
     /// stopped. Their branches and the checkout stay as they are.
     remove_worktrees: Option<bool>,
+    /// A Navi's only: also delete its folder, with everything in it (its drafts and downloads).
+    remove_folder: Option<bool>,
 });
 output!(ProjectRemoveOutput { ok: True });
 
@@ -3576,6 +3787,58 @@ impl std::error::Error for McpToolError {}
 
 #[cfg(test)]
 mod tests {
+
+    /// A file's type comes from its name and bytes together: an image by its bytes, an Office file or zip by the zip
+    /// it is, a PDF by its header, text by its bytes; a name its bytes don't back is nothing.
+    #[test]
+    fn a_files_type_is_its_name_backed_by_its_bytes() {
+        use AttachmentMime as M;
+        let png = b"\x89PNG\r\n\x1a\n....";
+        assert_eq!(M::of_file("shot.jpg", png), Some(M::Png));
+        assert_eq!(M::of_file("lease.DOCX", b"PK\x03\x04..."), Some(M::Docx));
+        assert_eq!(M::of_file("lease.docx", b"plain words"), None);
+        assert_eq!(M::of_file("plan.pdf", b"%PDF-1.7"), Some(M::Pdf));
+        assert_eq!(M::of_file("bank.csv", b"a,b\n1,2\n"), Some(M::Csv));
+        assert_eq!(
+            M::of_file("Makefile", b"all:\n\tcargo build\n"),
+            Some(M::Text)
+        );
+        assert_eq!(M::of_file("song.mp3", b"ID3\x04\0\0"), None);
+        // Text in another encoding is text, kept as UTF-8: a bank's Windows-1252 CSV, Excel's UTF-16 "Unicode Text".
+        let latin = b"date;payee;amount\n01.10.2026;Caf\xe9 M\xfcller;\x8012,50\n";
+        assert_eq!(M::of_file("bank.csv", latin), Some(M::Csv));
+        assert_eq!(
+            M::utf8_text(latin).unwrap(),
+            "date;payee;amount\n01.10.2026;Café Müller;€12,50\n"
+        );
+        let utf16: Vec<u8> = [0xff, 0xfe]
+            .into_iter()
+            .chain("a\tb\nü\t€\n".encode_utf16().flat_map(u16::to_le_bytes))
+            .collect();
+        assert_eq!(M::of_file("export.txt", &utf16), Some(M::Text));
+        assert_eq!(M::utf8_text(&utf16).unwrap(), "a\tb\nü\t€\n");
+        assert_eq!(M::utf8_text("\u{FEFF}é,1\n".as_bytes()).unwrap(), "é,1\n");
+        assert_eq!(M::utf8_text(b"PK\x03\x04\0\0binary"), None);
+        // The encoding is the whole file's: a bank statement whose first é comes after 64 KiB of ASCII.
+        let mut long = b"date,payee,amount\n".repeat(5000);
+        long.extend_from_slice(b"2026-10-31,Caf\xe9,\x8012\n");
+        assert!(M::utf8_text(&long).unwrap().ends_with("Café,€12\n"));
+        let mut stray = "é,1\n".as_bytes().to_vec();
+        stray.extend_from_slice(b"\xff,2\n");
+        assert_eq!(M::utf8_text(&stray).unwrap(), "é,1\n\u{FFFD},2\n");
+        // Windows-1252 needs a name that says text: NUL-free bytes under another name could be any binary.
+        assert_eq!(
+            M::of_file("old.xls", b"\xd0\xcf\x11\xe0 an old workbook"),
+            None
+        );
+        assert_eq!(M::of_file("statement", b"Caf\xe9"), None);
+        assert_eq!(M::of_file("statement.txt", b"Caf\xe9"), Some(M::Text));
+        assert!(!M::Text.fits(b"\0\x01\x02 binary"));
+        assert_eq!(M::Text.named("run.command"), "run.command.txt");
+        assert_eq!(M::Pdf.named("plan.pdf"), "plan.pdf");
+        assert_eq!(M::Csv.named(".csv"), ".csv.csv");
+    }
+
     use serde_json::json;
 
     use super::*;

@@ -8,8 +8,10 @@
 //! Out: whatever the Navi says in its chat after the bridge's last sent seq ([`send_once`]): its replies as Telegram
 //! HTML (split when long) with their images and files, approval cards with exactly what approving runs and Approve /
 //! Deny buttons, and a line pointing to the app for a secret. A card is edited once the request is answered, wherever
-//! that was. While the Navi works on a message sent from Telegram, the chat there shows "typing…".
-use std::collections::HashMap;
+//! that was. While the Navi works on a message sent from Telegram, the chat there shows "typing…". The quiet lines of
+//! what it remembered and the skills it saved go too, and one line when its lead stops at its usage limit
+//! ([`usage_pauses`]), not again until it has replied since.
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,6 +22,7 @@ use fleetd_contracts::chat::{
     ChatAuthor, ChatClient, ChatItem, ChatMessage, ChatMessageId, ChatMessageState, ChatReplyTo,
     CommandApprovalState, SecretRequestState,
 };
+use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::RequestState;
 use fleetd_contracts::mcp::{AttachmentId, AttachmentMime, ErrorCode};
@@ -28,7 +31,7 @@ use fleetd_contracts::telegram::{
     TELEGRAM_SEND_MAX, TELEGRAM_TAKE_WAIT_SECS, TelegramAnswer, TelegramBridge, TelegramButton,
     TelegramCall, TelegramEvent, TelegramEventKind, TelegramFile, TelegramSend,
 };
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
@@ -60,6 +63,8 @@ pub struct Bridges {
     typing: Mutex<HashMap<ProjectRef, i64>>,
     /// The seq each bridge is stuck on, and how often it failed.
     tries: Mutex<HashMap<ProjectRef, (i64, u32)>>,
+    /// The Navis told they are paused at their usage limit, until their next reply.
+    paused: Mutex<HashSet<ProjectRef>>,
 }
 
 impl Bridges {
@@ -73,8 +78,10 @@ impl Bridges {
 pub async fn run(hub: Arc<Hub>) {
     let mut takers: HashMap<ProjectRef, JoinHandle<()>> = HashMap::new();
     let mut head = hub.events.subscribe();
+    let mut usage = hub.events.head();
     loop {
         head.borrow_and_update();
+        usage = usage_pauses(&hub, usage).await;
         let all = rows(&hub.db).unwrap_or_else(|e| {
             tracing::warn!(error = %e, "telegram: bridges not read");
             Vec::new()
@@ -110,6 +117,81 @@ pub async fn run(hub: Arc<Hub>) {
             () = hub.clock.sleep(Duration::from_secs(2)) => {}
         }
     }
+}
+
+/// One Telegram line for each Navi whose lead stopped at its usage limit (`thread.usage_limited`) in the events after
+/// `cursor`, while its bridge sends, and none again until it has replied; the cursor to go on from. The hub's start
+/// is the first cursor: a pause from before it is old news.
+pub async fn usage_pauses(hub: &Arc<Hub>, mut cursor: i64) -> i64 {
+    let types = [HubEventType::ThreadUsageLimited];
+    loop {
+        let page = match hub.events.page(cursor, Some(&types), None) {
+            Ok(page) => page,
+            Err(e) => {
+                tracing::warn!(error = %e, "telegram: usage pauses not read");
+                return cursor;
+            }
+        };
+        for e in &page.events {
+            let (Some(m), Some(p), Some(t)) = (&e.machine_id, &e.project_id, &e.thread_id) else {
+                continue;
+            };
+            let r = ProjectRef {
+                machine_id: m.clone(),
+                project_id: p.clone(),
+            };
+            let Ok(Some(row)) = row(&hub.db, &r) else {
+                continue;
+            };
+            if !sending(hub, &row) || !is_lead(hub, &r, t.as_str()) {
+                continue;
+            }
+            if !hub.telegram.paused.lock().unwrap().insert(r.clone()) {
+                continue;
+            }
+            let resets = e
+                .data
+                .as_ref()
+                .and_then(|d| d.get("usageLimitResetAt"))
+                .and_then(serde_json::Value::as_str)
+                .and_then(parse_ms)
+                .map(|ms| local_time(hub, ms));
+            let line = format::paused(&title(hub, &r), resets.as_deref());
+            if let Err(e) = text(hub, &r, &line, Vec::new()).await {
+                tracing::debug!(navi = %r.project_id, "telegram: the usage pause wasn't sent: {}", e.message);
+                hub.telegram.paused.lock().unwrap().remove(&r);
+            }
+        }
+        cursor = page.cursor;
+        if !page.more {
+            return cursor;
+        }
+    }
+}
+
+/// Whether `thread` is the project's lead, the Navi itself rather than a session of its own (a memory refresh).
+fn is_lead(hub: &Hub, r: &ProjectRef, thread: &str) -> bool {
+    hub.db
+        .with(|c| {
+            Ok(c.prepare_cached(
+                "SELECT 1 FROM leads WHERE machine_id = ? AND project_id = ? AND thread_id = ?",
+            )?
+            .exists(params![
+                r.machine_id.as_str(),
+                r.project_id.as_str(),
+                thread
+            ])?)
+        })
+        .unwrap_or(false)
+}
+
+/// `ms` as the person reads a time, in the hub's time zone: "Tue 14:05".
+fn local_time(hub: &Hub, ms: i64) -> String {
+    let (tz, _) =
+        crate::hub::attention::quiet_policy(|k| hub.decisions.global_value(k).ok().flatten());
+    chrono::DateTime::from_timestamp_millis(ms)
+        .map(|at| at.with_timezone(&tz).format("%a %H:%M").to_string())
+        .unwrap_or_default()
 }
 
 /// Takes from one bridge's journal until the hub stops or the bridge goes.
@@ -357,14 +439,11 @@ async fn pull(hub: &Hub, r: &ProjectRef, f: &TelegramFile) -> Result<AttachmentI
             break;
         }
     }
-    // The node judged the type; an image's bytes must still say so.
-    if f.mime != AttachmentMime::Pdf
-        && f.mime != AttachmentMime::Text
-        && AttachmentMime::of_image(&data) != Some(f.mime)
-    {
+    // The node judged the type; the bytes must still say so.
+    if !f.mime.fits(&data) {
         return Err(ToolError::new(
             ErrorCode::Failed,
-            "The image's bytes aren't of its type.",
+            "The file's bytes aren't of its type.",
         ));
     }
     let name = crate::hub::intake::attachments::safe_name(&f.name);
@@ -511,6 +590,33 @@ fn sending(hub: &Hub, row: &Row) -> bool {
         )
 }
 
+/// Whether the person talks to the Navi on Telegram now: its bridge sends, and their latest message in its chat came
+/// from there. Its replies then reach them on Telegram, so the phone isn't pushed the same reply too.
+pub fn active(hub: &Hub, r: &ProjectRef) -> bool {
+    let Ok(Some(row)) = row(&hub.db, r) else {
+        return false;
+    };
+    if !sending(hub, &row) {
+        return false;
+    }
+    hub.db
+        .with(|c| {
+            Ok(c.prepare_cached(
+                "SELECT json_extract(data, '$.client') FROM chat_messages
+                 WHERE machine_id = ? AND project_id = ? AND json_extract(data, '$.author') = 'human'
+                 ORDER BY seq DESC LIMIT 1",
+            )?
+            .query_row(params![r.machine_id.as_str(), r.project_id.as_str()], |row| {
+                row.get::<_, Option<String>>(0)
+            })
+            .optional()?
+            .flatten())
+        })
+        .ok()
+        .flatten()
+        .is_some_and(|client| client == "telegram")
+}
+
 fn title(hub: &Hub, r: &ProjectRef) -> String {
     hub.store
         .project_get(r)
@@ -540,12 +646,20 @@ pub async fn send_once(hub: &Arc<Hub>, r: &ProjectRef) -> Result<(), ToolError> 
             set_sent(&hub.db, r, m.seq.get())?;
             continue;
         }
-        if m.author != ChatAuthor::Lead || m.history.is_some() || now - at > STALE_MS {
+        // What it remembered or forgot, and the skills it saved or installed, go too, as the quiet line the app shows.
+        let line = m.author == ChatAuthor::System
+            && (m.remembered.is_some() || m.memory_refreshed.is_some() || m.skill_saved.is_some());
+        if (m.author != ChatAuthor::Lead && !line) || m.history.is_some() || now - at > STALE_MS {
             set_sent(&hub.db, r, m.seq.get())?;
             continue;
         }
         let went = match &m.item {
-            None => reply(hub, r, &m).await,
+            None if line => text(hub, r, &format::note(m.text.as_str()), Vec::new())
+                .await
+                .map(|_| ()),
+            None => reply(hub, r, &m).await.inspect(|_| {
+                hub.telegram.paused.lock().unwrap().remove(r);
+            }),
             Some(ChatItem::CommandApproval(c)) if c.state == CommandApprovalState::Open => {
                 card(hub, r, &navi, c).await
             }
@@ -628,7 +742,7 @@ async fn reply(hub: &Hub, r: &ProjectRef, m: &ChatMessage) -> Result<(), ToolErr
             continue;
         };
         match &block.body {
-            BlockBody::Image(a) | BlockBody::Clip(a) => {
+            BlockBody::Image(a) | BlockBody::Clip(a) | BlockBody::File(a) => {
                 flush(hub, r, &mut md).await?;
                 file(
                     hub,
@@ -734,10 +848,7 @@ async fn file(
         .await?;
         return Ok(());
     }
-    let mime_text = serde_json::to_value(mime)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_else(|| "application/octet-stream".into());
+    let mime_text = mime.as_str().to_owned();
     send(
         hub,
         r,

@@ -113,7 +113,7 @@ describe("attachments", () => {
   const withFile = (mime: string, data: Buffer) => {
     const f = new Fixture("t", "");
     f.snapshot = { cursor: 0, machines: [], projects: [], attention: [] };
-    writeChat(f, { machineId: "devbox", projectId: "p1" }, [{ author: "human", text: "see attached", attachments: [{ name: "a", mime: mime as "text/plain", data }] }]);
+    writeChat(f, { machineId: "devbox", projectId: "p1" }, [{ author: "human", text: "see attached", attachments: [{ name: "a", mime: mime, data }] }]);
     return findLeaks(JSON.stringify(f.toFile()));
   };
   const png = (extra: Array<[string, Buffer]>) => {

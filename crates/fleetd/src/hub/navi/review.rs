@@ -118,15 +118,21 @@ enum Kind {
     Mail,
     Web,
     File,
+    /// A file sent in the chat (`.fleetd/attachments/`): the person passed it on, but anyone may have written it.
+    ChatFile,
     Telegram,
     Other,
 }
 
-/// What a read is, by its tool's name alone: never by its input (a search for "-in:sent" is no sent folder). A
-/// gateway's call (`call_read_tool`) is the tool it called, by the name in its input; one whose call was cut too short
-/// to say is anyone's content.
+/// What a read is, by its tool's name alone: never by its input (a search for "-in:sent" is no sent folder), but for a
+/// file sent in the chat, which any tool's input naming its folder reads. A gateway's call (`call_read_tool`) is the
+/// tool it called, by the name in its input; one whose call was cut too short to say is anyone's content.
 fn kind(source: &str) -> Kind {
     let (tool, input) = source.split_once(' ').unwrap_or((source, ""));
+    // Whatever tool read it, a chat file is what it is: never the person's own files.
+    if input.contains(".fleetd/attachments/") {
+        return Kind::ChatFile;
+    }
     let mut w = policy::words(tool);
     if policy::gateway(tool) {
         let input = serde_json::from_str::<Value>(input).unwrap_or_default();
@@ -525,6 +531,7 @@ fn label(k: Kind, r: &Read) -> String {
             None => "a web page".to_owned(),
         },
         Kind::File => "a file".to_owned(),
+        Kind::ChatFile => "a file sent in the chat".to_owned(),
         Kind::Contacts | Kind::Other => "content the Navi read".to_owned(),
     }
 }
