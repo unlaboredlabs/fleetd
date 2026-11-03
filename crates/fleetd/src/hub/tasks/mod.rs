@@ -1154,8 +1154,9 @@ impl Tasks {
         }
     }
 
-    /// A task its node's going away cut off resumes 30-40 s after the node is back, however early the node reported
-    /// the death: it moves its time to then, and the timer with it.
+    /// A task its node's going away cut off resumes once the node is back and has said it reported every run it cut
+    /// off, this one's end among them; from a node too old to say, 30-40 s after it is back, however early it reported
+    /// the death. It moves its time to then, and the timer with it.
     fn settle(self: &Arc<Self>, stored: &mut StoredTask) -> Result<(), StoreError> {
         let task = &stored.task;
         let Some(recovery) = task.recovery.as_ref() else {
@@ -1165,7 +1166,14 @@ impl Tasks {
             // Offline: its start queues it until the node is back, and this runs again then.
             return Ok(());
         };
-        let Some(at) = recovery::settled(recovery, back, task.task_id.as_str()) else {
+        let machine_id = &task.project_ref.machine_id;
+        let caught_up = match self.d.ports.caught_up(machine_id) {
+            Some(c) if recovery::cut_by_node(recovery) && self.cut_off_at(task)? <= c.head => {
+                Some(c.at_ms)
+            }
+            _ => None,
+        };
+        let Some(at) = recovery::settled(recovery, back, caught_up, task.task_id.as_str()) else {
             return Ok(());
         };
         let mut next = task.clone();

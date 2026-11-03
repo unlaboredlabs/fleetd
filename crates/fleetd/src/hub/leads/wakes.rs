@@ -24,8 +24,8 @@ use crate::hub::store::{NewEvent, now_ms};
 pub const WAKE_DEBOUNCE: Duration = Duration::from_secs(10);
 /// A steady trigger stream still wakes the lead this long after the first pending trigger.
 pub const WAKE_MAX_WAIT: Duration = Duration::from_secs(60);
-/// How long a wake that skips the debounce still waits for what comes right behind it: a batch's PRs merge seconds
-/// apart, and a train merge lands seconds after its review's result.
+/// How long a wake to an idle lead still waits for what comes right behind it: a batch's PRs merge seconds apart, a
+/// train merge lands seconds after its review's result, and a person's steer may come with a second one.
 pub const WAKE_COALESCE: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,19 +74,6 @@ impl Trigger {
             kind: LineKind::Train,
             text: line.to_owned(),
         }
-    }
-
-    /// A merge or other train outcome, or a task's result (a finished agent, a review verdict): what an idle lead
-    /// waits on to take its next step, so it goes after WAKE_COALESCE instead of the quiet window
-    /// ([`LeadWakes::trigger`]).
-    pub fn skips_debounce(&self) -> bool {
-        matches!(
-            self,
-            Trigger::Line {
-                kind: LineKind::TaskResult | LineKind::Train,
-                ..
-            }
-        )
     }
 
     pub fn kind(&self) -> &'static str {
@@ -364,10 +351,10 @@ impl LeadWakes {
     }
 
     /// Queues a trigger; the lead is woken once no new trigger has arrived for WAKE_DEBOUNCE, or WAKE_MAX_WAIT after
-    /// the first. One the lead waits on ([`Trigger::skips_debounce`]) goes WAKE_COALESCE after it, with whatever is
-    /// pending or comes in that time, when the lead is idle and was not woken within WAKE_DEBOUNCE: the long window only
-    /// pays off by batching a burst into one turn, and while the lead is busy (or a wake is still on its way) triggers
-    /// coalesce as before.
+    /// the first. To an idle lead that was not woken within WAKE_DEBOUNCE, a trigger (a result, a merge, a new order,
+    /// an agent's question, a person's steer) goes WAKE_COALESCE after it, with whatever is pending or comes in that
+    /// time: the long window only pays off by batching a burst into one turn, and few of them come in bursts. While the
+    /// lead is busy (or a wake is still on its way) triggers coalesce in the long window as before.
     pub fn trigger(self: &Arc<Self>, r: &ProjectRef, trigger: Trigger) {
         if trigger.quiet() {
             if let Some(held) = self.debouncer.join(r, trigger) {
@@ -381,7 +368,7 @@ impl LeadWakes {
             return;
         }
         self.first_trigger(r);
-        let now = trigger.skips_debounce() && self.lead_idle(r);
+        let now = self.lead_idle(r);
         let this = Arc::clone(self);
         self.debouncer
             .push(r.clone(), trigger, now, move |r, triggers| {

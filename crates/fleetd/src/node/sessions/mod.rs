@@ -1388,8 +1388,12 @@ impl SessionService {
                 decision,
                 by,
             } => self.answer(&session_id, &request_id, decision, by).await,
-            SessionCall::Subscribe { after, spans_after } => {
-                let reply = self.subscribe(after);
+            SessionCall::Subscribe {
+                after,
+                spans_after,
+                caught_up,
+            } => {
+                let reply = self.subscribe(after, caught_up);
                 if let Some(cursor) = spans_after {
                     // A cursor past every row this outbox ever had is from a reset database: send all of it.
                     let cursor = if cursor > self.store().spans_head()? {
@@ -4188,7 +4192,9 @@ impl SessionService {
         Ok(SessionOutput::Done)
     }
 
-    fn subscribe(&self, after: Option<u64>) -> Reply {
+    /// `caught_up`: the hub asked to be told once the replay or snapshot is out. Every run a restart cut off was
+    /// closed before the node linked (`start`), so it is in there.
+    fn subscribe(&self, after: Option<u64>, caught_up: bool) -> Reply {
         let mut st = self.st();
         st.subscribed = true;
         let replay = match after {
@@ -4213,6 +4219,13 @@ impl SessionService {
                 };
                 st.machine(frame);
             }
+        }
+        if caught_up {
+            st.machine(MachineEventFrame {
+                seq: self.store().latest_seq()?,
+                at: now(),
+                event: MachineEvent::CaughtUp,
+            });
         }
         Ok(SessionOutput::Done)
     }

@@ -470,14 +470,60 @@ async fn a_merge_or_a_result_wakes_an_idle_lead_soon_and_a_busy_one_after_the_wi
     hub.after_debounce().await;
     assert_eq!(sends(), start + 3);
 
-    // A person's words or a waiting agent still coalesce, idle lead or not.
+    // A person's words and a waiting agent's question go the same way to an idle lead: WAKE_COALESCE after the
+    // first, together.
     hub.clock.advance(WAKE_DEBOUNCE);
     wakes.trigger(&hub.project, line(LineKind::Human, "also the docs"));
+    settle().await;
+    hub.clock.advance(Duration::from_secs(2));
     wakes.trigger(&hub.project, line(LineKind::TaskWaiting, "T4 asks"));
     settle().await;
+    hub.clock.advance(WAKE_COALESCE - Duration::from_secs(3));
+    settle().await;
     assert_eq!(sends(), start + 3);
-    hub.after_debounce().await;
+    hub.clock.advance(Duration::from_secs(1));
+    settle().await;
+    assert_eq!(sends(), start + 4, "one wake for both");
+    let sent = hub.node.sends.lock().unwrap()[start + 3].clone();
+    assert!(sent.contains("also the docs") && sent.contains("T4 asks"));
+
+    // To a busy lead they wait out the quiet window, as before.
+    lead_thread(&hub, "running");
+    hub.clock.advance(WAKE_DEBOUNCE);
+    wakes.trigger(&hub.project, line(LineKind::TaskWaiting, "T5 asks"));
+    settle().await;
+    hub.clock.advance(WAKE_DEBOUNCE - Duration::from_secs(1));
+    settle().await;
     assert_eq!(sends(), start + 4);
+    hub.clock.advance(Duration::from_secs(1));
+    settle().await;
+    assert_eq!(sends(), start + 5);
+}
+
+/// A new order (a person's, or a Navi automation's run) reaches an idle lead WAKE_COALESCE after it, not after the
+/// quiet window; one right behind it rides along.
+#[tokio::test(flavor = "current_thread")]
+async fn a_new_order_wakes_an_idle_lead_after_the_short_window() {
+    let hub = hub(true);
+    hub.order("fix the five bugs").await;
+    hub.after_debounce().await;
+    let sends = || hub.node.sends.lock().unwrap().len();
+    let start = sends();
+    lead_thread(&hub, "idle");
+    hub.clock.advance(WAKE_DEBOUNCE);
+    hub.order("add dark mode").await;
+    settle().await;
+    hub.clock.advance(Duration::from_secs(1));
+    hub.order("and a light one").await;
+    settle().await;
+    hub.clock.advance(WAKE_COALESCE - Duration::from_secs(2));
+    settle().await;
+    assert_eq!(sends(), start);
+    hub.clock.advance(Duration::from_secs(1));
+    settle().await;
+    assert_eq!(sends(), start + 1, "one wake for both orders");
+    let sent = hub.node.sends.lock().unwrap()[start].clone();
+    assert!(sent.contains("add dark mode") && sent.contains("and a light one"));
 }
 
 /// A quiet line wakes nobody: it goes with the next wake, before that wake's own lines, and only once.

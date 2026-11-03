@@ -68,6 +68,7 @@ async fn hub_with(store: NodeStore, runner: FakeRunner, config: SessionConfig) -
     hub.ok(SessionCall::Subscribe {
         after: None,
         spans_after: None,
+        caught_up: false,
     })
     .await;
     hub
@@ -791,6 +792,41 @@ async fn a_restarted_node_closes_what_was_running_and_the_next_send_resumes() {
         .unwrap()
         .unwrap();
     assert_eq!(prompt.status, ItemStatus::Cancelled);
+
+    // A hub that asks is told once the replay is out: the run the restart cut off is in it, `caught_up` right behind.
+    after
+        .until(|frame| match frame {
+            NodeToHub::MachineEvent(f) if matches!(f.event, MachineEvent::Snapshot { .. }) => {
+                Some(())
+            }
+            _ => None,
+        })
+        .await;
+    after
+        .ok(SessionCall::Subscribe {
+            after: Some(0),
+            spans_after: None,
+            caught_up: true,
+        })
+        .await;
+    let mut replay = Vec::new();
+    after
+        .until(|frame| match frame {
+            NodeToHub::MachineEvent(f) if f.event == MachineEvent::CaughtUp => Some(()),
+            NodeToHub::MachineEvent(f) => {
+                replay.push(f.event);
+                None
+            }
+            _ => None,
+        })
+        .await;
+    assert!(
+        replay
+            .iter()
+            .any(|e| matches!(e, MachineEvent::SessionUpdated(s)
+            if s.latest_run.as_ref().is_some_and(|r| r.end == Some(RunEnd::NodeRestarted)))),
+        "{replay:?}"
+    );
 
     // The node never re-sends on its own; the hub's send resumes the claude session in place.
     assert!(after.runner.spawned().is_empty());

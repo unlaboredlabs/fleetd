@@ -370,12 +370,15 @@ pub enum SessionCall {
         by: Option<crate::time::DecidedBy>,
     },
     /// Start (or restart) the machine stream after `after`; none means from a fresh snapshot. `spansAfter` asks for
-    /// the node's time spans after that outbox row; a node sends spans only when it is present.
+    /// the node's time spans after that outbox row; a node sends spans only when it is present. `caughtUp` asks for a
+    /// [`MachineEvent::CaughtUp`] right behind the replay or snapshot; an older node ignores it and sends none.
     #[serde(rename_all = "camelCase")]
     Subscribe {
         after: Option<u64>,
         #[serde(default)]
         spans_after: Option<u64>,
+        #[serde(default)]
+        caught_up: bool,
     },
     /// Start the thread stream for one session: a bounded snapshot, then live events.
     #[serde(rename_all = "camelCase")]
@@ -1211,6 +1214,9 @@ pub enum MachineEvent {
     RunnerInfo(RunnerInfo),
     /// A steer's receipt moved (delivered, acknowledged, unacknowledged, withdrawn, failed).
     Steer(SteerReceipt),
+    /// Everything before it on this subscription is out: the replay or snapshot, with every run the node's restart cut
+    /// off. Once, right behind them, when `subscribe` asked for it. The hub resumes those runs' tasks on it.
+    CaughtUp,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

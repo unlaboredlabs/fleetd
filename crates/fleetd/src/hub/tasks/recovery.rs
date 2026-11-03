@@ -24,7 +24,8 @@ pub const RECOVERY_MAX: i64 = 3;
 /// Resumes after the node went away, which never count toward `RECOVERY_MAX`: a planned stop or an upgrade is
 /// "resume when it's back". This ceiling only stops a node that dies over and over from looping a task forever.
 pub const NODE_LOST_MAX: i64 = 20;
-/// A node back from a stop or a crash gets this long to settle (its other runs report in) before a task resumes.
+/// A node back from a stop or a crash gets this long to settle (its other runs report in) before a task resumes, unless
+/// it says sooner that it has reported every run it cut off (`caught_up`); a node too old to say gets all of it.
 const NODE_SETTLE_MS: i64 = 30_000;
 const NODE_JITTER_MS: i64 = 10_000;
 const MINUTE_MS: i64 = 60_000;
@@ -348,17 +349,32 @@ pub fn used(recovery: &TaskRecovery) -> String {
     )
 }
 
-/// When a task its node's going away cut off resumes, given that the node has been back since `live_since_ms`: the
-/// settle counts from its return, not from the death, which a node that stops cleanly reports before it goes. `None`
-/// when its time already allows for that, or it died some other way.
-pub fn settled(recovery: &TaskRecovery, live_since_ms: i64, task_id: &str) -> Option<Timestamp> {
-    if !matches!(
+/// Whether its last run ended with its node going away under it (stopped, or restarted).
+pub fn cut_by_node(recovery: &TaskRecovery) -> bool {
+    matches!(
         recovery.last_cause,
         RunEnd::NodeStopping | RunEnd::NodeRestarted
-    ) {
+    )
+}
+
+/// When a task its node's going away cut off resumes, given that the node has been back since `live_since_ms`. Back
+/// and caught up at `caught_up_ms` (it said it had reported every run it cut off, and this one's end came before that:
+/// the caller checks), it goes on then, sooner than its own delay too: nothing is left to wait for. Otherwise the
+/// settle counts from its return, not from the death, which a node that stops cleanly reports before it goes. `None`
+/// when its time already allows for that, or it died some other way.
+pub fn settled(
+    recovery: &TaskRecovery,
+    live_since_ms: i64,
+    caught_up_ms: Option<i64>,
+    task_id: &str,
+) -> Option<Timestamp> {
+    if !cut_by_node(recovery) {
         return None;
     }
     let at = parse_ms(recovery.next_at.as_ref()?.as_str())?;
+    if let Some(caught_up) = caught_up_ms {
+        return (caught_up != at).then(|| Timestamp(iso_ms(caught_up)));
+    }
     // Each task its own share of the jitter, the same every time it is asked.
     let share = task_id
         .bytes()
@@ -609,8 +625,8 @@ mod tests {
         ));
     }
 
-    /// A node that stops cleanly reports its runs' ends before it goes: their tasks resume 30-40 s after it is back,
-    /// not after the death. Other deaths keep their time.
+    /// A node that stops cleanly reports its runs' ends before it goes: their tasks resume 30-40 s after it is back
+    /// (from a node that doesn't say when it has caught up), not after the death. Other deaths keep their time.
     #[test]
     fn a_node_lost_task_settles_from_the_nodes_return() {
         let lost = resume(decide(
@@ -622,11 +638,14 @@ mod tests {
             3,
         ));
         let back = NOW + 600_000;
-        let at = parse_ms(settled(&lost, back, "T1").unwrap().as_str()).unwrap();
+        let at = parse_ms(settled(&lost, back, None, "T1").unwrap().as_str()).unwrap();
         assert!((back + 30_000..back + 40_000).contains(&at), "{at}");
-        assert_eq!(settled(&lost, back, "T1"), settled(&lost, back, "T1"));
+        assert_eq!(
+            settled(&lost, back, None, "T1"),
+            settled(&lost, back, None, "T1")
+        );
         // Back before the death was reported: its own 30 s from the death already allow for it.
-        assert_eq!(settled(&lost, NOW - 60_000, "T1"), None);
+        assert_eq!(settled(&lost, NOW - 60_000, None, "T1"), None);
         let killed = resume(decide(
             &failed(
                 json!({ "endCause": "exited", "error": { "class": "process_exited", "message": "claude was killed by signal 9" } }),
@@ -638,7 +657,46 @@ mod tests {
             0.0,
             3,
         ));
-        assert_eq!(settled(&killed, back, "T1"), None);
+        assert_eq!(settled(&killed, back, None, "T1"), None);
+        assert_eq!(settled(&killed, back, Some(back + 1_000), "T1"), None);
+    }
+
+    /// A node that says it has reported every run it cut off: their tasks go on then, not after the settle, and sooner
+    /// than their own delay from the death too. Said again later, it moves nothing that already went.
+    #[test]
+    fn a_node_lost_task_resumes_once_its_node_is_caught_up() {
+        for cause in ["node_stopping", "node_restarted"] {
+            let lost = resume(decide(
+                &interrupted(json!({ "endCause": cause })),
+                None,
+                false,
+                NOW,
+                0.0,
+                3,
+            ));
+            // Back long after the death: at once, not 30 s on.
+            let back = NOW + 600_000;
+            assert_eq!(
+                settled(&lost, back, Some(back + 1_300), "T1"),
+                Some(Timestamp(iso_ms(back + 1_300)))
+            );
+            // Back right after: before its own 30 s from the death.
+            assert_eq!(
+                settled(&lost, NOW + 2_000, Some(NOW + 3_000), "T1"),
+                Some(Timestamp(iso_ms(NOW + 3_000)))
+            );
+            let moved = TaskRecovery {
+                next_at: Some(Timestamp(iso_ms(NOW + 3_000))),
+                ..lost.clone()
+            };
+            assert_eq!(settled(&moved, NOW + 2_000, Some(NOW + 3_000), "T1"), None);
+            // Its resume went out: nothing to move.
+            let went = TaskRecovery {
+                next_at: None,
+                ..lost
+            };
+            assert_eq!(settled(&went, NOW + 2_000, Some(NOW + 3_000), "T1"), None);
+        }
     }
 
     /// A resumed run that dies within 5 minutes counts twice toward the cap.

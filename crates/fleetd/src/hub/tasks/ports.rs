@@ -128,6 +128,11 @@ pub trait TaskPorts: Send + Sync {
     fn live_since(&self, _machine_id: &MachineId) -> Option<i64> {
         None
     }
+    /// Executors.caughtUp: when the node of the machine's live link said it had reported every run its restart cut
+    /// off; None before that, and from a node too old to say.
+    fn caught_up(&self, _machine_id: &MachineId) -> Option<crate::hub::executor::CaughtUp> {
+        None
+    }
     /// Executors.launch: the thread, and where its worktree's branch started when it has one.
     fn launch<'a>(
         &'a self,
