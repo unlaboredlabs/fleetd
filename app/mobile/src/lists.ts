@@ -3,7 +3,7 @@
 // its lead waiting for your reply. An archived Navi is in none of them, unless an approval of its waits. Pure, so it is
 // unit-tested.
 import { previewOf } from "./chatView";
-import { chatItems, emptyChat, hasHidden, isArchived, isNavi, shellWord, type Chat, type HumanRequest, type ProjectSummary } from "./desktop";
+import { chatItems, emptyChat, hasHidden, isArchived, isNavi, shellWord, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectSummary } from "./desktop";
 import { unreadCount, type Prefs } from "./prefs";
 import { keyOf, type Key, type State } from "./store";
 
@@ -57,15 +57,49 @@ const knownChat = (s: Partial<Pick<State, "chats" | "latest">>, key: Key): Chat 
   return later.length === 0 ? chat : { ...chat, messages: [...chat.messages, ...later] };
 };
 
+/**
+ * Each message's line, made once: the list is drawn twice a render (all of it, and the filter's) and again on each
+ * event, and a line is a markdown parse. A streamed text isn't its message's, so it's made each time.
+ */
+const lines = new WeakMap<ChatMessage, string>();
+
+const lineOf = (item: ChatItem): string => {
+  const m = item.message;
+  if (m === undefined || item.text !== m.text) return previewOf(item);
+  const known = lines.get(m);
+  if (known !== undefined) return known;
+  const line = previewOf(item);
+  lines.set(m, line);
+  return line;
+};
+
+/** How many of a chat's newest messages a preview looks through first: an opened chat holds up to 2000. */
+const PREVIEW_TAIL = 20;
+
 const previewFor = (s: Partial<Pick<State, "chats" | "sends" | "latest">>, key: Key): string | undefined => {
   const chat = knownChat(s, key);
   if (chat === undefined) return undefined;
-  const items = chatItems(chat, s.sends?.[key] ?? []).filter((i) => i.kind !== "event");
-  for (let i = items.length - 1; i >= 0; i--) {
-    const line = previewOf(items[i] ?? { author: "system", text: "", message: undefined });
-    if (line !== "") return line;
-  }
-  return undefined;
+  const sends = s.sends?.[key] ?? [];
+  const newest = (c: Chat): string | undefined => {
+    const items = chatItems(c, sends);
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      if (item === undefined || item.kind === "event") continue;
+      const line = lineOf(item);
+      if (line !== "") return line;
+    }
+    return undefined;
+  };
+  if (chat.messages.length <= PREVIEW_TAIL) return newest(chat);
+  const tail = chat.messages.slice(-PREVIEW_TAIL);
+  const before = chat.messages.length - PREVIEW_TAIL;
+  // A stream whose message is older than the tail isn't the newest line (chatItems would put it last).
+  const older = (id: string): boolean => {
+    const at = chat.messages.findIndex((m) => m.messageId === id);
+    return at !== -1 && at < before;
+  };
+  const streams = Object.fromEntries(Object.entries(chat.streams).filter(([id]) => !older(id)));
+  return newest({ ...chat, messages: tail, streams }) ?? newest(chat);
 };
 
 /** Who spoke last first, as Messages orders chats. */
