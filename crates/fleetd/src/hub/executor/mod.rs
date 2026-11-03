@@ -358,6 +358,8 @@ struct Slot {
     live: bool,
     /// When `live` was last set, in ms.
     live_since_ms: i64,
+    /// Once the node said the current link's replay is out (`caught_up`).
+    caught_up: Option<CaughtUp>,
     shell: ShellState,
     watches: HashMap<String, Arc<Watch>>,
     /// Calls in flight on the current link, by frame id.
@@ -368,6 +370,17 @@ struct Slot {
 pub type PrSink = Arc<dyn Fn(&ThreadRef) + Send + Sync>;
 /// Told of each skill a session ran with the Skill tool, by the name it ran (the skills area).
 pub type SkillSink = Arc<dyn Fn(&ThreadRef, &str) + Send + Sync>;
+/// Told when a machine's node has reported every run its restart cut off (the tasks area).
+pub type CaughtUpSink = Arc<dyn Fn(&MachineId) + Send + Sync>;
+
+/// The node of a live link said it had sent everything it replayed on it, every run its restart cut off among them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CaughtUp {
+    /// When the hub applied that, in ms.
+    pub at_ms: i64,
+    /// The hub event log's head then: a run's end logged at or before it was in the replay.
+    pub head: i64,
+}
 
 pub struct Executors {
     store: Arc<HubStore>,
@@ -406,6 +419,8 @@ pub struct Executors {
     pr_sink: std::sync::OnceLock<PrSink>,
     /// Told of each skill a session ran (the skills area's last use).
     skill_sink: std::sync::OnceLock<SkillSink>,
+    /// Told when a node is caught up (the tasks area, which resumes what its restart cut off).
+    caught_up_sink: std::sync::OnceLock<CaughtUpSink>,
     /// Where later areas plug into the M1 tools.
     pub hooks: tools::ToolHooks,
     time: std::sync::OnceLock<Arc<crate::hub::time::Time>>,
@@ -587,6 +602,7 @@ impl Executors {
             steer_hub: std::sync::OnceLock::new(),
             pr_sink: std::sync::OnceLock::new(),
             skill_sink: std::sync::OnceLock::new(),
+            caught_up_sink: std::sync::OnceLock::new(),
             runners: Mutex::default(),
             ready: Mutex::default(),
             tool_policy: Mutex::default(),
@@ -613,6 +629,10 @@ impl Executors {
 
     pub fn set_skill_sink(&self, sink: SkillSink) {
         let _ = self.skill_sink.set(sink);
+    }
+
+    pub fn set_caught_up_sink(&self, sink: CaughtUpSink) {
+        let _ = self.caught_up_sink.set(sink);
     }
 
     /// `hub/serve` sets this once the link server exists: a node that lists no `CAP_PROFILE_NAMES` gets what it can
@@ -862,6 +882,17 @@ impl Executors {
             .get(machine_id)
             .filter(|s| s.live && s.link.is_some())
             .map(|s| s.live_since_ms)
+    }
+
+    /// When the node of the machine's live link said it had reported every run its restart cut off; None before that,
+    /// from a node too old to say (`SessionCall::Subscribe::caught_up`), and while it has no live link.
+    pub fn caught_up(&self, machine_id: &MachineId) -> Option<CaughtUp> {
+        self.machines
+            .lock()
+            .unwrap()
+            .get(machine_id)
+            .filter(|s| s.live && s.link.is_some())
+            .and_then(|s| s.caught_up)
     }
 
     /// Returns once the machine's node accepted the subscription, at once if it has.
@@ -1162,6 +1193,7 @@ impl Executors {
                     SessionCall::Subscribe {
                         after,
                         spans_after: self.time.get().map(|t| t.node_cursor(machine_id.as_str())),
+                        caught_up: true,
                     },
                     READ_TIMEOUT,
                 )
@@ -1180,6 +1212,7 @@ impl Executors {
         if let Some(slot) = self.machines.lock().unwrap().get_mut(&machine_id) {
             slot.live = true;
             slot.live_since_ms = now_ms(self.clock.as_ref());
+            slot.caught_up = None;
         }
         self.set_live(&machine_id, true);
         while let Some(frame) = events.recv().await {
@@ -1195,6 +1228,9 @@ impl Executors {
         event: &MachineEvent,
         baseline: bool,
     ) {
+        if let MachineEvent::CaughtUp = event {
+            return self.caught_up_now(machine_id);
+        }
         self.follow_active(machine_id, event);
         self.flag_refused(machine_id, event);
         if let MachineEvent::Steer(receipt) = event
@@ -1344,6 +1380,25 @@ impl Executors {
             && let Err(e) = self.store.cursor_set(machine_id, cursor as i64)
         {
             tracing::error!(error = %e, "executor: cursor write failed");
+        }
+    }
+
+    /// The node's replay is applied, so every run its restart cut off is logged by now: the tasks area may resume them.
+    fn caught_up_now(&self, machine_id: &MachineId) {
+        let caught_up = CaughtUp {
+            at_ms: now_ms(self.clock.as_ref()),
+            head: self.events.head(),
+        };
+        {
+            let mut machines = self.machines.lock().unwrap();
+            let Some(slot) = machines.get_mut(machine_id) else {
+                return;
+            };
+            slot.caught_up = Some(caught_up);
+            tracing::info!(machine_id = %machine_id, after_ms = caught_up.at_ms - slot.live_since_ms, "node caught up");
+        }
+        if let Some(sink) = self.caught_up_sink.get() {
+            sink(machine_id);
         }
     }
 

@@ -101,7 +101,8 @@ impl Node {
             call,
             SessionCall::Subscribe {
                 after: None,
-                spans_after: None
+                spans_after: None,
+                caught_up: true,
             }
         );
         self.push(json!({ "type": "snapshot", "projects": [project()], "sessions": sessions }));

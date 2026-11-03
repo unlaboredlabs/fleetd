@@ -1,6 +1,7 @@
 //! Automatic recovery over a real hub with a fake node: the deaths of T18, T19 and T23 on Oct 22 (their node was
 //! stopped under them, and came back hours later) each resume about 30 s after the node is back, with no message to
-//! the lead. One that keeps dying is escalated, and one that waits, or was cancelled, is left alone.
+//! the lead; at once from a node that says it has caught up. One that keeps dying is escalated, and one that waits, or
+//! was cancelled, is left alone.
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -125,6 +126,16 @@ pub(super) async fn away_and_back(
     let HubToNode::SessionCall(subscribe) = rx.recv().await.unwrap() else {
         panic!("not a subscribe")
     };
+    assert!(
+        matches!(
+            subscribe.call,
+            SessionCall::Subscribe {
+                caught_up: true,
+                ..
+            }
+        ),
+        "{subscribe:?}"
+    );
     report(hub);
     reply(
         hub,
@@ -942,6 +953,91 @@ async fn a_death_applied_while_the_node_is_offline_resumes_30_s_after_its_return
         "{text}"
     );
     assert_eq!(task(&hub).state, TaskState::Running);
+}
+
+/// The node's word that it has reported every run it cut off (`caught_up`, right behind its replay).
+fn caught_up(hub: &Hub) {
+    frame(
+        hub,
+        json!({ "t": "machine_event", "seq": 9, "at": AT, "event": { "type": "caught_up" } }),
+    );
+}
+
+/// The node restarted under T1 and reports the cut-off run on its return, then says it is caught up: T1 resumes then,
+/// not 30-40 s later. The node from before the word gets the settle (the test above).
+#[tokio::test]
+async fn a_run_cut_off_by_a_restart_resumes_once_its_node_is_caught_up() {
+    let (hub, clock, _first, _home) = running_t1().await;
+    let mut calls = away_and_back(&hub, &clock, Duration::from_secs(5), |hub| {
+        session(
+            hub,
+            3,
+            "r1",
+            "interrupted",
+            json!({ "end": "node_restarted", "failure": { "class": "process_exited", "message": "node restarted mid-run" } }),
+        );
+        caught_up(hub);
+    })
+    .await;
+    let (_, text) = sent(&mut calls).await;
+    assert!(text.starts_with("fleetd: your run was cut off"), "{text}");
+    assert_eq!(task(&hub).state, TaskState::Running);
+    // Once: its timers that come due later find nothing to resume.
+    clock.advance(Duration::from_secs(41));
+    nothing_sent(&mut calls).await;
+}
+
+/// A node stopped cleanly reports T1's end before it goes; back and caught up, T1 resumes at once, sooner than its
+/// own 30 s from the death too.
+#[tokio::test]
+async fn a_run_its_stopping_node_reported_resumes_once_the_node_is_back_and_caught_up() {
+    let (hub, clock, _first, _home) = running_t1().await;
+    session(
+        &hub,
+        3,
+        "r1",
+        "interrupted",
+        json!({ "end": "node_stopping", "failure": { "class": "process_exited", "message": "the node stopped" } }),
+    );
+    logged(&hub, "thread.interrupted", "r1").await;
+    hub.executors.detach(&lab_a()).await;
+    catch_up(&hub.tasks).await;
+    assert!(reason(&hub).starts_with("recovering: the node on lab-a stopped; resumes at "));
+
+    let mut calls = away_and_back(&hub, &clock, Duration::from_secs(3), caught_up).await;
+    let (_, text) = sent(&mut calls).await;
+    assert!(
+        text.starts_with("fleetd: your run was cut off (the node on lab-a stopped)."),
+        "{text}"
+    );
+    assert_eq!(task(&hub).state, TaskState::Running);
+}
+
+/// The node said it was caught up, then stops: the end it reports as it goes came after that word, so T1 waits out
+/// its time (the node is going away), and doesn't resume while it still has a link.
+#[tokio::test]
+async fn a_run_ended_after_its_node_was_caught_up_waits_out_its_time() {
+    let (hub, clock, _first, _home) = running_t1().await;
+    let mut calls = away_and_back(&hub, &clock, Duration::from_secs(1), caught_up).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    session(
+        &hub,
+        3,
+        "r1",
+        "interrupted",
+        json!({ "end": "node_stopping", "failure": { "class": "process_exited", "message": "the node stopped" } }),
+    );
+    logged(&hub, "thread.interrupted", "r1").await;
+    catch_up(&hub.tasks).await;
+    {
+        let _guard = hub.tasks.lock.lock().await;
+        hub.tasks.retry_queue().await;
+    }
+    nothing_sent(&mut calls).await;
+    assert!(reason(&hub).starts_with("recovering: the node on lab-a stopped; resumes at "));
+    clock.advance(Duration::from_secs(41));
+    let (_, text) = sent(&mut calls).await;
+    assert!(text.starts_with("fleetd: your run was cut off"), "{text}");
 }
 
 /// T1's PR merges while it waits to resume: its work is over, so it isn't resumed and ends with its run's result.

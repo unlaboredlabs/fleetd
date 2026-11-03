@@ -75,6 +75,10 @@ impl TaskPorts for HubTaskPorts {
         self.executors.live_since(machine_id)
     }
 
+    fn caught_up(&self, machine_id: &MachineId) -> Option<crate::hub::executor::CaughtUp> {
+        self.executors.caught_up(machine_id)
+    }
+
     fn launch<'a>(
         &'a self,
         machine_id: &'a MachineId,
@@ -709,6 +713,13 @@ pub fn wire(hub: &Arc<Hub>, ports: &HubTaskPorts) {
         Arc::clone(&hub.tasks),
         Arc::clone(&hub.reviews),
     )));
+    // A node back from a restart has reported every run it cut off: their tasks resume now, not after the settle.
+    let tasks = Arc::downgrade(&hub.tasks);
+    hub.executors.set_caught_up_sink(Arc::new(move |_| {
+        if let Some(tasks) = tasks.upgrade() {
+            tasks.retry_later();
+        }
+    }));
     let tasks = Arc::clone(&hub.tasks);
     hub.sweep.register(crate::hub::sweep::SweepCheck {
         name: "unreachable-tasks".into(),
