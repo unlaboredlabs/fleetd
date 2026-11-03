@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyDelta, applyHistory, chatItems, emptyChat, type Chat, type ChatItem, type ChatMessage } from "./desktop";
-import { attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, listTime, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, streamingAt, threadRows, timeLine, viewOffsetOf, type ThreadRow } from "./chatView";
+import { attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, streamingAt, threadRows, timeLine, viewOffsetOf, type ThreadRow } from "./chatView";
 
 const message = (text: string, parts?: ChatMessage["parts"]): ChatMessage => ({
   messageId: "m1",
@@ -337,5 +337,17 @@ describe("threadRows' day lines, kept per message", () => {
     expect(days("UTC")).toBe(2);
     expect(days("America/New_York")).toBe(1);
     expect(days("UTC")).toBe(2);
+  });
+});
+
+describe("olderOffset", () => {
+  it("goes most of a screen older from a chat opened at its newest end, before any scroll", () => {
+    // Its content's length from onContentSizeChange, its offset still the 0 it opened at.
+    expect(olderOffset(0, 5000, 600, 800)).toBe(510);
+  });
+
+  it("stops at the oldest end, and stays put in a thread shorter than the screen", () => {
+    expect(olderOffset(4000, 5000, 600, 800)).toBe(4200);
+    expect(olderOffset(0, 500, 600, 800)).toBe(0);
   });
 });

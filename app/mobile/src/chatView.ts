@@ -344,6 +344,12 @@ export const listTime = (at: string, clock: Clock): string => {
  */
 export const viewOffsetOf = (viewPosition: number, top: number, composer: number): number => (1 - viewPosition) * composer - viewPosition * top;
 
+/**
+ * Where the status bar's tap takes the thread: most of a screen (`room`, what shows between the bar and the composer)
+ * older than `y`, no further than the oldest end of `length`, in a list `height` tall.
+ */
+export const olderOffset = (y: number, length: number, room: number, height: number): number => Math.max(0, Math.min(y + room * 0.85, length - height));
+
 /** The newest message among the rows on screen: read once seen, as Telegram marks it. */
 export const seenSeq = (rows: readonly ThreadRow[]): number | undefined => {
   let seq: number | undefined;
