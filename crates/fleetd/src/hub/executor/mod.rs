@@ -2907,19 +2907,22 @@ impl Executors {
         }
     }
 
-    /// A piece of an image thread `r` made, from `offset`: read by its node in the thread's own working directory
-    /// (`chat_image`). Its name, type, whole size and the piece in base64.
+    /// A piece of an image thread `r` made, from `offset`, or with `file` of any file the chat takes: read by its node
+    /// in the thread's own working directory (`chat_image`, `chat_file`). Its name, type, whole size and the piece in
+    /// base64.
     pub async fn read_image(
         &self,
         r: &ThreadRef,
         path: &str,
         offset: usize,
+        file: bool,
     ) -> Result<(String, fleetd_contracts::mcp::AttachmentMime, u64, String), ExecutorError> {
         let op = NodeOperation::Read;
         let call = SessionCall::ReadImage {
             session_id: r.thread_id.clone(),
             path: non_empty(&r.machine_id, op, "path", path)?,
             offset: fleetd_contracts::prim::Count::unchecked(offset as i64),
+            file,
         };
         // A piece is at most 8 MiB: a minute is room for it on a slow link.
         match self

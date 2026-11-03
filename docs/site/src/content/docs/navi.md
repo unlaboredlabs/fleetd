@@ -338,15 +338,16 @@ forget it. To delete the bot itself, send `/deletebot` to @BotFather.
 
 - **Your messages** land in the Navi's chat as yours, marked *From Telegram*. While the Navi works on one, Telegram
   shows *typing…*.
-- **Photos and documents** arrive as attachments of the message: images, PDFs and text files, up to Telegram's 20 MB
-  for bots. Anything else gets a short reply saying it wasn't passed on.
+- **Photos and documents** arrive as attachments of the message: images, PDFs, text and CSV, Word, Excel and
+  PowerPoint files and zips, up to Telegram's 20 MB for bots ([Files](#files)). Anything else gets a short reply
+  saying it wasn't passed on.
 - **Voice notes** aren't supported yet: you get a reply saying so.
 - **/stop** stops what the Navi is doing now, as **Stop** in the app does, and says so in Telegram and in its chat.
   Sending it again once it has stopped does nothing more.
 - **A forwarded message** is marked *Forwarded from …*. The Navi reads it as someone else's words, untrusted content,
   never as your request or approval, and asks you before acting on anything it asks for.
 - **The Navi's replies** go to the app and to Telegram, formatted for Telegram and split when long. Its images go as
-  photos, its files as documents. A table shows as monospace; a chart or diff says to open the app. A question with
+  photos, the files it made as documents under their own names. A table shows as monospace; a chart or diff says to open the app. A question with
   choices comes with buttons, and pressing one is your reply.
 - **Quiet lines**: what the Navi remembered or forgot, and a skill it saved or installed, come as one line each, as in
   the app.
@@ -404,6 +405,26 @@ project of theirs*), and one word for its state:
 
 **Remove** deletes the key at once and asks the other hub to revoke it too. When that hub doesn't answer, the
 notice says so: its link stays listed there until someone revokes it, but nothing can use it.
+
+## Files {#files}
+
+Files go both ways in a Navi's chat, from the app, the phone and Telegram.
+
+- **What you send:** images, PDFs, text and CSV (and other text: notes, JSON, calendar invites, mail), Word, Excel and
+  PowerPoint files (.docx, .xlsx, .pptx) and zips, up to 25 MB each (20 MB from Telegram). The hub keeps a file only
+  when its bytes are what its type says, and gives it an extension of that type, so a text file named `run.command`
+  becomes `run.command.txt`.
+- **What the Navi reads:** each file lands in its folder under `.fleetd/attachments/chat/`. It reads images, PDFs and
+  text itself. For a Word, Excel or PowerPoint file the hub writes its text beside it (`lease.docx.txt`): a document's
+  paragraphs, each sheet of a workbook as CSV, each slide of a deck. A zip it unzips with its shell.
+- **Untrusted:** what a file says is content anyone could have written, like a web page. The [approval
+  checker](#approvals) marks what only a file sent in the chat names as `untrusted: a file sent in the chat`, never as
+  your files, so a send to an address only an attached invoice gives asks you first.
+- **What the Navi sends back:** a file it made in its folder (a trip as a PDF, receipts as a CSV, an invite as an
+  `.ics`) goes up with [`chat_file`](/docs/reference/agent-tools#chat_file) and shows as a card with its name, kind
+  and size. In the desktop app, **Open** opens it in your computer's app for its kind and the download button saves
+  it; on the phone, tapping it opens the share sheet. On Telegram it arrives as a document. Your files never leave
+  your hub: the app reads each one from it.
 
 ## Memory
 

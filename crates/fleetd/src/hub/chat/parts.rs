@@ -22,8 +22,8 @@ static UNSAFE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// One block's JSON, checked: within [`BLOCK_JSON_MAX`], the schema, and no markup or URL in its strings (a diff's
-/// hunks excepted: they are code, shown as text). The block, or the rule it broke, in words for the lead; an image
-/// or clip whose caption alone is wrong shows without it, and the lead still hears why.
+/// hunks excepted: they are code, shown as text). The block, or the rule it broke, in words for the lead; an image,
+/// clip or file whose caption alone is wrong shows without it, and the lead still hears why.
 pub fn block(json: &str) -> (Option<ChatBlock>, Option<String>) {
     if json.len() > BLOCK_JSON_MAX {
         let why = format!(
@@ -40,7 +40,7 @@ pub fn block(json: &str) -> (Option<ChatBlock>, Option<String>) {
         Ok(block) => return (Some(block), None),
         Err(why) => why,
     };
-    let media = matches!(value["kind"].as_str(), Some("image" | "clip"));
+    let media = matches!(value["kind"].as_str(), Some("image" | "clip" | "file"));
     let captioned = media
         && value
             .as_object_mut()
@@ -86,7 +86,7 @@ fn why(value: &Value) -> Option<String> {
         "pr" => read::<PrBlock>(&fields),
         "agent" => read::<AgentBlock>(&fields),
         "checklist" => read::<ChecklistBlock>(&fields),
-        "image" | "clip" => read::<AttachmentBlock>(&fields),
+        "image" | "clip" | "file" => read::<AttachmentBlock>(&fields),
         "ask" => read::<AskBlock>(&fields),
         _ => None,
     }

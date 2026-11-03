@@ -1,5 +1,5 @@
 // A chat as the phone lays it out, iMessage's way: a lead message of several parts is several bubbles, and its blocks
-// are cards (a pull request, a checklist, a table, an ask with its buttons; a chart, diff or clip is for the desktop,
+// are cards (a pull request, a checklist, a table, an ask with its buttons, a file; a chart, diff or clip is for the desktop,
 // said in words). Messages from one side in a burst group, tight, with the tail on the last; a time line goes between
 // bursts; and the desktop's turn line shows while the lead works. Pure, so it is unit-tested.
 import type { ChatItem } from "./desktop";
@@ -45,6 +45,8 @@ export const bubbles = (item: Pick<ChatItem, "text" | "message">): readonly Bubb
         return [{ kind: "table", title: block.title, columns: block.columns, rows: block.rows }];
       case "image":
         return [{ kind: "image", attachmentId: block.attachmentId, name: block.caption ?? "Image", caption: block.caption }];
+      case "file":
+        return [{ kind: "file", attachmentId: block.attachmentId, name: block.name ?? block.caption ?? "File", mime: block.mime ?? "", bytes: block.bytes ?? 0 }];
       default:
         return [{ kind: "block", text: `${BLOCK_WORDS[block.kind] ?? "Something"} the desktop app shows.` }];
     }

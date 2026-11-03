@@ -578,6 +578,55 @@ async fn messages_photos_and_forwards_land_in_the_chat_and_replies_go_back() {
     assert!(sent(&node).is_empty());
 }
 
+/// A file the Navi made (`chat_file`) and showed in a file block goes to Telegram as a document, under its own name
+/// and type, never as a photo.
+#[tokio::test]
+async fn a_file_the_navi_made_goes_out_as_a_document() {
+    let (hub, _home, bob, node) = setup().await;
+    paired(&hub, &bob, &node).await;
+    take_once(&hub, &navi(), 0).await.unwrap();
+    let csv = b"date,amount\n2026-10-01,12.50\n".to_vec();
+    let lead = crate::hub::link::lead_calls::lead_by(&navi());
+    let (id, _, _) = crate::hub::intake::attachments::store(
+        &hub,
+        csv.clone(),
+        "receipts.csv",
+        AttachmentMime::Csv,
+        &lead,
+    )
+    .await
+    .unwrap();
+    lead_says(
+        &hub,
+        &format!(
+            "Your receipts:\n\n```fleetd-block\n{{\"v\":1,\"kind\":\"file\",\"attachmentId\":\"{id}\"}}\n```"
+        ),
+    );
+    let shown = chat(&hub).into_iter().last().unwrap();
+    let block = shown.parts.as_ref().unwrap()[1].block.clone().unwrap();
+    let fleetd_contracts::blocks::BlockBody::File(card) = block.body else {
+        panic!("not a file card: {block:?}");
+    };
+    assert_eq!(
+        (
+            card.name.unwrap().as_str(),
+            card.mime,
+            card.bytes.unwrap().get()
+        ),
+        ("receipts.csv", Some(AttachmentMime::Csv), csv.len() as i64),
+        "the hub fills in what the card shows"
+    );
+    send_once(&hub, &navi()).await.unwrap();
+    let out = sent(&node);
+    assert!(
+        out.iter().any(
+            |s| matches!(s, TelegramSend::File { photo: false, name, mime, data_b64, .. }
+            if name == "receipts.csv" && mime == "text/csv" && B64.decode(data_b64).unwrap() == csv)
+        ),
+        "{out:?}"
+    );
+}
+
 #[tokio::test]
 async fn approvals_are_answered_from_either_side_and_both_update() {
     let (hub, _home, bob, node) = setup().await;

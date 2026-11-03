@@ -32,7 +32,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, its machine's cap within the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
 | Agents running at once, per machine | The machine's max agents, which a person may set up to the fleet cap (`cap_set`, `fleetd machine set`, Settings › Hub › Machines). Unset: what the machine fits, one per CPU less one in eight, and 2 GB of memory each after a quarter (4 to 16 GB) is left for the system, at most 64. Either way new agents pause while memory in use runs short, and wait for 5 GB of disk each above the free-space floor. |
 | Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |
-| Calls a task's agent may make | `report`, `ask_lead`, `brief_read`, `decisions_search`, `review_read`, `wait_ci`, `chat_image`. Every other call is refused. |
+| Calls a task's agent may make | `report`, `ask_lead`, `brief_read`, `decisions_search`, `review_read`, `wait_ci`, `chat_image`, `chat_file`. Every other call is refused. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 14400 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
@@ -78,6 +78,7 @@ Every lead gets these.
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`review_read`](#review_read) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
 | [`chat_image`](#chat_image) | Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. | No |
+| [`chat_file`](#chat_file) | Send the person a file you made (a PDF, a CSV, a document) in this project's chat, as a card they open or save on their computer or phone, and as a document on Telegram. | No |
 | [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). | No |
 | [`desktop`](#desktop) | Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. | No |
 | [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub. | No |
@@ -911,6 +912,25 @@ Put an image you made in this project's chat: use it for screenshots of UI chang
 }
 ```
 
+### chat_file
+
+Send the person a file you made (a PDF, a CSV, a document) in this project's chat, as a card they open or save on their computer or phone, and as a document on Telegram. path is a file inside your working directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB: an image, PDF, text or CSV, .docx, .xlsx, .pptx or .zip, its bytes what its name says. Returns its attachmentId. A lead shows it in its message with a file block ({"v":1,"kind":"file","attachmentId":"F12"}); a task puts the id in its result for its lead to show. Unshown, it is deleted after 24 h.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | yes | The file: relative to your working directory, or absolute inside it. At most 1000 characters. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "chat_file",
+  "arguments": {
+    "path": "trips/lisbon-itinerary.pdf"
+  }
+}
+```
+
 ### session_start
 
 Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool. kind mac lends you the agents' Mac's own screen, one agent at a time, driven with the desktop tool and agent-desktop; while another holds it you only observe, and it ends after 5 idle minutes.
@@ -1140,6 +1160,7 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`wait_ci`](#wait_ci) | Be woken when CI finishes: a GitHub Actions run, or the checks on a PR's current head. | No |
 | [`review_read`](#review_read-task) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
 | [`chat_image`](#chat_image-task) | Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. | No |
+| [`chat_file`](#chat_file-task) | Send the person a file you made (a PDF, a CSV, a document) in this project's chat, as a card they open or save on their computer or phone, and as a document on Telegram. | No |
 | [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). | No |
 | [`desktop`](#desktop-task) | Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. | No |
 | [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub. | No |
@@ -1275,6 +1296,25 @@ Put an image you made in this project's chat: use it for screenshots of UI chang
   "name": "chat_image",
   "arguments": {
     "path": "shots/checkout-after.png"
+  }
+}
+```
+
+### chat_file (task)
+
+Send the person a file you made (a PDF, a CSV, a document) in this project's chat, as a card they open or save on their computer or phone, and as a document on Telegram. path is a file inside your working directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB: an image, PDF, text or CSV, .docx, .xlsx, .pptx or .zip, its bytes what its name says. Returns its attachmentId. A lead shows it in its message with a file block ({"v":1,"kind":"file","attachmentId":"F12"}); a task puts the id in its result for its lead to show. Unshown, it is deleted after 24 h.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | yes | The file: relative to your working directory, or absolute inside it. At most 1000 characters. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "chat_file",
+  "arguments": {
+    "path": "trips/lisbon-itinerary.pdf"
   }
 }
 ```

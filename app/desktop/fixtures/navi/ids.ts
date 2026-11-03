@@ -8,3 +8,6 @@ export const ADA_ROUTE = `#/project/${ADA.machineId}/${ADA.projectId}`;
 
 /** Taxes' chat: an archived Navi, still open. */
 export const TAXES_ROUTE = `#/project/${TAXES.machineId}/${TAXES.projectId}`;
+
+/** Home's chat: navi-files' files both ways. */
+export const HOME_ROUTE = `#/project/${HOME.machineId}/${HOME.projectId}`;

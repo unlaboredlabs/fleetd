@@ -391,6 +391,17 @@ pub struct ChatImageResult {
     pub next: Option<String>,
 }
 
+/// `chat_file`: a lead or task uploads a file it made (a PDF, a CSV, a document) for its project's chat, as
+/// `chat_image` does an image: read from the session's own working directory by its node, any type the hub takes
+/// ([`AttachmentMime`]) with bytes that fit it, at most [`crate::mcp::ATTACHMENT_MAX_BYTES`]. A lead shows it with a
+/// `file` block; unshown, it goes after 24 h.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatFileCall {
+    /// The file: relative to your working directory, or absolute inside it.
+    pub path: Line<1, 1000>,
+}
+
 /// One chat's state, for the sidebar and the status row.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
