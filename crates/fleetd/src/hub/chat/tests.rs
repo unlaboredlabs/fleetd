@@ -922,7 +922,7 @@ async fn a_photo_goes_with_no_words() {
             &person(),
             "attachment_put",
             json!({ "name": "shot.png", "mime": "image/png",
-            "dataB64": base64::engine::general_purpose::STANDARD.encode(b"png") }),
+            "dataB64": base64::engine::general_purpose::STANDARD.encode(b"\x89PNG\r\n\x1a\n png") }),
         )
         .await
         .unwrap();
