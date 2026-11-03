@@ -1027,7 +1027,7 @@ export type ChatBlock = (ChartBlock & {
 };
 
 /** Where a human message was written. */
-export type KnownChatClient = "app" | "cli" | "telegram";
+export type KnownChatClient = "app" | "cli" | "telegram" | "share" | "shortcuts";
 /** KnownChatClient, or a value from a newer hub. */
 export type ChatClient = KnownChatClient | (string & {});
 

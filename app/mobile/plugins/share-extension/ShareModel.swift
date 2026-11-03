@@ -10,7 +10,6 @@ import Foundation
 import ImageIO
 import LinkPresentation
 import os
-import Security
 import UIKit
 import UniformTypeIdentifiers
 
@@ -184,7 +183,7 @@ final class ShareModel: ObservableObject {
         Self.log.info("sent \(file.name, privacy: .public) (\(file.data.count) bytes); footprint \(Self.footprint()) MB")
       }
       let ids = sizes.indices.compactMap { uploaded[$0] }
-      _ = try await link.call("chat_send", Calls.send(chat, text: out.text, attachments: ids, requestId: requestId))
+      _ = try await link.chatSend(Calls.send(chat, text: out.text, attachments: ids, requestId: requestId, client: .share), client: .share)
       phase = .sent
       UINotificationFeedbackGenerator().notificationOccurred(.success)
       link.close()
@@ -370,24 +369,5 @@ struct SharedImage {
   static func at(_ file: URL, name: String?) -> SharedImage? {
     guard let bytes = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int else { return nil }
     return SharedImage(file: file, name: name, bytes: bytes)
-  }
-}
-
-/// The paired hub, as expo-secure-store keeps it in the keychain group the app shares (src/vault.ts): service
-/// "app:no-auth" (or "app", from older versions), account "fleetd.hub". Read only, never copied.
-enum Keychain {
-  static func pairing() -> Data? {
-    for service in ["app:no-auth", "app"] {
-      let query: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: service,
-        kSecAttrAccount as String: Data("fleetd.hub".utf8),
-        kSecReturnData as String: true,
-        kSecMatchLimit as String: kSecMatchLimitOne,
-      ]
-      var item: CFTypeRef?
-      if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data { return data }
-    }
-    return nil
   }
 }

@@ -97,8 +97,14 @@ pub enum ChatClient {
     App,
     /// `fleetd chat`.
     Cli,
-    /// Telegram, through the Navi's own bot (`telegram.rs`).
+    /// Telegram, through the Navi's own bot (`telegram.rs`). Only the hub's Telegram path writes it: chat_send refuses
+    /// it.
     Telegram,
+    /// The phone's share sheet: what another app shared, with the person's note.
+    Share,
+    /// An iOS Shortcuts action (Send Message), run by the person or by one of their automations. Its text may hold
+    /// what the shortcut pulled from elsewhere.
+    Shortcuts,
 }
 
 /// How a human message reached the lead.

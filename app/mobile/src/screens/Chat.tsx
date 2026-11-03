@@ -23,7 +23,7 @@ import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimat
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
-import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, viaNote, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, emptyChat, isNavi, type AttachmentGetOutput, type AttachmentRef, type ChatItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
@@ -579,6 +579,7 @@ function ItemView({
 
   if (side === "me") {
     const note = sendNote(item);
+    const via = viaNote(item);
     const retry = item.state === "failed" || item.state === "unanswered";
     const replied = replyOf(item.text);
     const words = replied?.body ?? item.text;
@@ -622,6 +623,7 @@ function ItemView({
           <MediaView key={i} bubble={b} chatKey={chatKey} mine actions={actions} when={when} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} tail={last && i === files.length - 1} />
         ))}
         {note === undefined ? null : <Text style={[type.caption, styles.note, { color: retry ? t.danger : t.secondary }]}>{note}</Text>}
+        {via === undefined ? null : <Text style={[type.caption, styles.note, { color: t.secondary }]}>{via}</Text>}
       </View>
     );
   }
