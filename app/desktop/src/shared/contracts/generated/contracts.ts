@@ -3149,7 +3149,64 @@ export type LongestWait = {
 
 export type LoopbackUri = string;
 
+export type MacCheck = {
+  /** The exact command `fix` runs, to paste where it says, when there is one. */
+  command?: string;
+  /** What the person does about it, and where: in their own (admin) account, or at the Mac as the agents user. */
+  fix?: string;
+  id: MacCheckId;
+  /** Plain words: what the node found. */
+  message: string;
+  state: MacCheckState;
+};
+
+/** One setup check of the agents' Mac (docs: agents-mac.md), named as the doctor shows it: `<machine>/mac_<id>`. */
+export type KnownMacCheckId =
+  | "standard_user"
+  | "other_homes"
+  | "no_apple_id"
+  | "no_secure_token"
+  | "developer"
+  | "xcode"
+  | "ios_runtime"
+  | "accessibility"
+  | "screen_recording"
+  | "gui_session"
+  | "tools"
+  | "keep_awake";
+/** KnownMacCheckId, or a value from a newer hub. */
+export type MacCheckId = KnownMacCheckId | (string & {});
+
+export type KnownMacCheckState = "ok" | "fail" | "warn" | "unknown";
+/** KnownMacCheckState, or a value from a newer hub. */
+export type MacCheckState = KnownMacCheckState | (string & {});
+
+/**
+ * The agents' Mac's setup, as its node checked it last (each heartbeat reads the quick checks again; the slow ones,
+ * such as Xcode's, every few minutes and on a Test).
+ */
+export type MacHealth = {
+  checks: MacCheck[];
+  /** The macOS user the node runs as. */
+  user: string;
+};
+
+/** The agents' Mac's tool, as the hub routes agents' `mac` calls to it. */
+export type MacTool = {
+  /** Why agents can't use it now, in plain words, while they can't. */
+  note?: string;
+  /** "Agents may use this Mac": the admin's switch, on unless set off. */
+  on: boolean;
+  /** Its node offers the tool now (`mac_tool`): online, a standard user, the tool on in its node.json. */
+  ready: boolean;
+};
+
 export type Machine = {
+  /**
+   * The agents' Mac (D298): a tool every project's agents use, never a runner. No agent, lead or Navi runs there,
+   * and clients seal no secret to it. Absent on every other machine.
+   */
+  agentsMac?: boolean;
   /**
    * M8: the node's X25519 key from its hello; clients seal this machine's secrets to it. Absent: it takes no
    * secrets.
@@ -3298,6 +3355,8 @@ export type MachineHostsOutput = {
 export type MachineId = string;
 
 export type MachineJoinInput = {
+  /** The agents' Mac (`--mac`): the installer refuses an admin user, and the node runs as a tool, never a runner. */
+  mac?: boolean;
   machineId: MachineId;
   /** A machine that joined before: the line enrolls it again (`--rejoin`), which repairs it. */
   rejoin?: boolean;
@@ -3383,6 +3442,8 @@ export type MachineRolesEntry = {
   hostsOthers: boolean;
   /** Why it doesn't, in plain words, while it hosts sessions and doesn't. */
   hostsOthersNote?: string;
+  /** The agents' Mac only (D298): it runs no agents whatever its roles say, and this is its tool. */
+  mac?: MacTool;
   machineId: MachineId;
   /** The sessions it hosts at once: a person's setting, else what it fits. */
   maxSessions: number;
@@ -3434,6 +3495,8 @@ export type MachineRolesOutput = {
 export type MachineRolesSetInput = {
   /** Drop the session cap: it hosts what it fits again. */
   autoSessions?: boolean;
+  /** The agents' Mac only: "Agents may use this Mac", for every project's agents (Navis never). */
+  macTool?: boolean;
   machineId: MachineId;
   /** The most sessions it hosts at once, in place of what it fits. */
   maxSessions?: number;
@@ -4389,6 +4452,11 @@ export type NodeLoad = {
   limits?: LoginLimit[];
   /** The 1-minute load average. */
   load1: number;
+  /**
+   * The agents' Mac's setup checks, run by its node as its own user with no admin; absent on any other machine and
+   * from older nodes.
+   */
+  mac?: MacHealth;
   /**
    * Memory to allow per agent when sizing the machine's cap: node.json's `memPerAgentGb`, else 2 GB. Absent from
    * older nodes.
@@ -6471,7 +6539,7 @@ export type SetupStep = {
 };
 
 /** The steps, in the order they are listed. */
-export type KnownSetupStepId = "address" | "machines" | "claude" | "github" | "people";
+export type KnownSetupStepId = "address" | "machines" | "claude" | "github" | "people" | "mac";
 /** KnownSetupStepId, or a value from a newer hub. */
 export type SetupStepId = KnownSetupStepId | (string & {});
 

@@ -84,6 +84,7 @@ export default defineConfig({
             "integrations",
             "skills",
             "browser-sessions",
+            "agents-mac",
             "mcp-clients",
           ],
         },

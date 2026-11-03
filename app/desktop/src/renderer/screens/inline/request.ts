@@ -63,6 +63,13 @@ export const secretTarget = (machines: Readonly<Record<string, Machine>>, item: 
   if (machine === undefined) {
     return { ok: false, message: `fleetd doesn't know the machine ${machineId}.`, fix: "Add that machine first, or tell the lead in the chat." };
   }
+  if (machine.agentsMac === true) {
+    return {
+      ok: false,
+      message: `${machine.name} is the agents' Mac, which takes no secret.`,
+      fix: "Tell the lead in the chat: a secret goes to the machine its agents run on, never to the Mac.",
+    };
+  }
   if (machine.boxPubKey === undefined) {
     return { ok: false, message: `${machine.name} takes no secrets yet: its node has no box key.`, fix: `Update fleetd on ${machine.name}, then save it.` };
   }

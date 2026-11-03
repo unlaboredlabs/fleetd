@@ -38,11 +38,12 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--listen <host:port>] [--url <u
              machine (the GitHub noreply address for public repos); --no-service prepares
              everything but leaves starting the hub to you
   init --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin]
-       [--claude-config-dir <dir>]
+       [--claude-config-dir <dir>] [--mac]
              make this machine a worker of that hub, without SSH from the hub: the command
              fleetd pair --worker prints on the hub. Run again, it keeps the node's enrolment
-             and repairs the rest; --rejoin enrols again with a new code
-  init --step <address|machines|claude|github|people>
+             and repairs the rest; --rejoin enrols again with a new code; --mac joins the
+             agents' Mac, from its standard agents user (no claude there)
+  init --step <address|machines|claude|github|people|mac>
              open one of the hub's setup steps: why, the values to paste and the pages to open,
              then Test it, or put it off for later. The app's Settings › Hub › Setup has the same
              steps
@@ -347,6 +348,8 @@ pub struct InitOptions {
     pub machine_id: Option<String>,
     /// `--rejoin`: enrol again with the code even though this machine's node is enrolled with that hub.
     pub rejoin: bool,
+    /// `--mac`: join as the agents' Mac, from its standard agents user (docs: agents-mac.md).
+    pub mac: bool,
     /// `--claude-config-dir`: the CLAUDE_CONFIG_DIR this machine's node runs claude with (default: the user's own).
     pub claude_config_dir: Option<String>,
     /// `--step <id>`: open that one setup step against the hub this machine runs.
@@ -631,6 +634,7 @@ const INIT_OPTIONS: &[(&str, Kind)] = &[
     ("code", Kind::Str),
     ("machine-id", Kind::Str),
     ("rejoin", Kind::Bool),
+    ("mac", Kind::Bool),
     ("claude-config-dir", Kind::Str),
     ("step", Kind::Str),
 ];
@@ -677,6 +681,11 @@ fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
             ));
         }
     };
+    if v.flag("mac") && join.is_none() {
+        return Err(usage(
+            "--mac goes with --join and --code: the line Add machine › A Mac for agents shows",
+        ));
+    }
     let step = match v.str("step") {
         None => None,
         Some(id) => Some(
@@ -697,6 +706,7 @@ fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
         join,
         machine_id: v.string("machine-id"),
         rejoin: v.flag("rejoin"),
+        mac: v.flag("mac"),
         claude_config_dir: v.string("claude-config-dir"),
         home,
         previous,

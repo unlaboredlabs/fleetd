@@ -75,11 +75,20 @@ export function testLine(test: ClaudeTest, nowMs: number): { ok: boolean; text: 
   return { ok: false, text: `Failed on ${test.machineId}, ${at}: ${said}.` };
 }
 
-/** The box keys a Claude secret is sealed to: every machine whose node has one. */
-export const boxesOf = (machines: Readonly<Record<string, { machineId: string; boxPubKey?: unknown }>>): ClaudeAccountRequest["boxes"] =>
+/**
+ * The key the app seals a machine's secrets to: its node's, unless it is the agents' Mac (D298), which takes no secret
+ * of any kind (a Claude account, an API key, 1Password, an MCP server's, a project's, a browser fill).
+ */
+export const boxOf = (m: { boxPubKey?: unknown; agentsMac?: boolean | undefined } | undefined): string | undefined =>
+  m !== undefined && typeof m.boxPubKey === "string" && m.agentsMac !== true ? m.boxPubKey : undefined;
+
+/** The box keys a Claude secret is sealed to: every machine whose node has one, the agents' Mac never. */
+export const boxesOf = (machines: Readonly<Record<string, { machineId: string; boxPubKey?: unknown; agentsMac?: boolean | undefined }>>): ClaudeAccountRequest["boxes"] =>
   Object.values(machines)
-    .filter((m): m is { machineId: string; boxPubKey: string } => typeof m.boxPubKey === "string")
-    .map((m) => ({ machineId: m.machineId, boxPubKey: m.boxPubKey }))
+    .flatMap((m) => {
+      const box = boxOf(m);
+      return box === undefined ? [] : [{ machineId: m.machineId, boxPubKey: box }];
+    })
     .sort((a, b) => a.machineId.localeCompare(b.machineId));
 
 /** One account's usage pause, on any machine: "Paused on devbox until today 15:00: usage limit reached." */

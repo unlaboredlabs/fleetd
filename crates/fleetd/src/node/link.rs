@@ -20,12 +20,14 @@ use super::secrets::{SecretsContext, deliver_secret, run_gated};
 use super::sessions::SessionService;
 use super::util::now_iso;
 use super::wire::{
-    Heartbeat, HubToNode, MachineId, NodeHello, NodeToHub, PROTOCOL_VERSION, ProtocolVersion, Text,
-    Timestamp, close, decode_hub_frame, to_json,
+    GatedResult, Heartbeat, HubToNode, MachineId, NodeHello, NodeToHub, PROTOCOL_VERSION,
+    ProtocolVersion, SecretResult, Text, Timestamp, close, decode_hub_frame, to_json,
 };
 use fleetd_contracts::model::SleptSpan;
 use fleetd_contracts::node_link::{HEARTBEAT_INTERVAL_SECS, HEARTBEAT_TIMEOUT_SECS};
-use fleetd_contracts::sessions::SessionCall;
+use fleetd_contracts::sessions::{
+    SessionCall, SessionError, SessionErrorCode, SessionReplyFrame, SessionResult,
+};
 
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(HEARTBEAT_INTERVAL_SECS);
 const SILENCE_TIMEOUT: Duration = Duration::from_secs(HEARTBEAT_TIMEOUT_SECS);
@@ -103,6 +105,8 @@ pub struct RunNodeOptions {
     pub sessions: Option<Arc<crate::node::device::Router>>,
     /// What agents' nodes sealed to this one for the sessions it hosts for them.
     pub hosted: crate::node::session_route::Hosted,
+    /// The agents' Mac (node/agents_mac): a tool, never a runner, and its setup checks for the heartbeat.
+    pub agents_mac: Option<crate::node::agents_mac::AgentsMac>,
 }
 
 /// Everything one link needs, shared with the tasks it starts.
@@ -116,6 +120,7 @@ struct Shared {
     secrets: Option<NodeSecrets>,
     sessions: Option<Arc<crate::node::device::Router>>,
     hosted: crate::node::session_route::Hosted,
+    agents_mac: Option<crate::node::agents_mac::AgentsMac>,
 }
 
 impl Shared {
@@ -144,6 +149,7 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
         secrets: options.secrets,
         sessions: options.sessions,
         hosted: options.hosted,
+        agents_mac: options.agents_mac,
     });
     let mut enroll_token = options.enroll_token;
     let mut on_enrolled = options.on_enrolled;
@@ -406,7 +412,7 @@ async fn run_link_once(
         Ok(other) => return LinkEnd::Lost(format!("expected a challenge, got {}", tag(&other))),
         Err(end) => return end,
     };
-    send(NodeToHub::Hello(NodeHello {
+    let hello = NodeHello {
         machine_id: MachineId::unchecked(shared.settings.machine_id.clone()),
         name: shared.settings.name.clone(),
         // Tags are gone; an older hub still reads the list.
@@ -480,7 +486,11 @@ async fn run_link_once(
                 .unwrap_or_default(),
         )
         .collect(),
-    }));
+    };
+    send(NodeToHub::Hello(tool_only(
+        shared.agents_mac.is_some(),
+        hello,
+    )));
     let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {
         Ok(HubToNode::Welcome(welcome)) if welcome.protocol.get() != PROTOCOL_VERSION => {
             return LinkEnd::Fatal(LinkFatal {
@@ -510,15 +520,20 @@ async fn run_link_once(
 
     {
         let tx = tx.clone();
+        let mac = shared.agents_mac.clone();
         let sessions = shared.node_sessions.clone();
         tasks.spawn(async move {
             loop {
                 tokio::time::sleep(HEARTBEAT_EVERY).await;
                 let (limits, home) = (sessions.login_limits(), sessions.home());
-                let load = tokio::task::spawn_blocking(move || super::load::read(limits, &home))
-                    .await
-                    .ok()
-                    .flatten();
+                let mut load =
+                    tokio::task::spawn_blocking(move || super::load::read(limits, &home))
+                        .await
+                        .ok()
+                        .flatten();
+                if let (Some(load), Some(mac)) = (load.as_mut(), mac.as_ref()) {
+                    load.mac = mac.health();
+                }
                 if tx
                     .send(to_json(&NodeToHub::Heartbeat(Heartbeat {
                         at: Timestamp::from(now_iso()),
@@ -562,6 +577,40 @@ async fn run_link_once(
                     let result = run_cmd_check_from(check, &shared.cmd_roots, home).await;
                     let _ = tx.send(to_json(&NodeToHub::CmdResult(result)));
                 });
+            }
+            // The agents' Mac takes no secret and runs no approved command: the hub sends none, and one that comes
+            // anyway is refused unopened.
+            HubToNode::SecretDeliver(deliver) if shared.agents_mac.is_some() => {
+                send(NodeToHub::SecretResult(SecretResult {
+                    id: deliver.id,
+                    fingerprint: None,
+                    error: Some(Text::unchecked(crate::node::agents_mac::TOOL_ONLY)),
+                }))
+            }
+            HubToNode::GatedRun(gated) if shared.agents_mac.is_some() => {
+                send(NodeToHub::GatedResult(GatedResult {
+                    id: gated.id,
+                    exit_code: None,
+                    output_tail: Text::unchecked(""),
+                    timed_out: false,
+                    error: Some(Text::unchecked(crate::node::agents_mac::TOOL_ONLY)),
+                }))
+            }
+            HubToNode::SessionCall(call)
+                if shared.agents_mac.is_some()
+                    && !crate::node::agents_mac::session_call_allowed(&call.call) =>
+            {
+                send(NodeToHub::SessionReply(SessionReplyFrame {
+                    id: call.id,
+                    result: SessionResult::Err(SessionError {
+                        code: SessionErrorCode::RunnerUnavailable,
+                        message: Text::unchecked(crate::node::agents_mac::TOOL_ONLY),
+                        fix: Some(
+                            "start agents and projects on another machine; they use this Mac with `mac run` and `mac sim`"
+                                .into(),
+                        ),
+                    }),
+                }))
             }
             // A Navi's secure input: opened here and typed into its browser session's field by the broker.
             HubToNode::SecretDeliver(deliver)
@@ -681,6 +730,14 @@ async fn run_link_once(
             HubToNode::Challenge(_) | HubToNode::Welcome(_) | HubToNode::Heartbeat(_) => {}
         }
     }
+}
+
+/// The agents' Mac lists only a tool's calls (node/agents_mac); any other node, all it takes.
+fn tool_only(mac: bool, mut hello: NodeHello) -> NodeHello {
+    if mac {
+        hello.capabilities = crate::node::agents_mac::capabilities(hello.capabilities);
+    }
+    hello
 }
 
 #[cfg(test)]

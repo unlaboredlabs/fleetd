@@ -1426,8 +1426,154 @@
       ],
       "type": "object"
     },
+    "MacCheck": {
+      "properties": {
+        "command": {
+          "description": "The exact command `fix` runs, to paste where it says, when there is one.",
+          "maxLength": 300,
+          "type": "string"
+        },
+        "fix": {
+          "description": "What the person does about it, and where: in their own (admin) account, or at the Mac as the agents user.",
+          "maxLength": 300,
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/MacCheckId"
+        },
+        "message": {
+          "description": "Plain words: what the node found.",
+          "maxLength": 500,
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/MacCheckState"
+        }
+      },
+      "required": [
+        "id",
+        "state",
+        "message"
+      ],
+      "type": "object"
+    },
+    "MacCheckId": {
+      "description": "One setup check of the agents' Mac (docs: agents-mac.md), named as the doctor shows it: `<machine>/mac_<id>`.",
+      "oneOf": [
+        {
+          "const": "standard_user",
+          "description": "The node's user is a standard user: not in `admin`, and `sudo -n true` fails.",
+          "type": "string"
+        },
+        {
+          "const": "other_homes",
+          "description": "No other user's home under /Users opens for it.",
+          "type": "string"
+        },
+        {
+          "const": "no_apple_id",
+          "description": "No Apple ID is signed in for it.",
+          "type": "string"
+        },
+        {
+          "const": "no_secure_token",
+          "description": "It holds no FileVault secure token, so its password can't unlock the disk.",
+          "type": "string"
+        },
+        {
+          "const": "developer",
+          "description": "It is in `_developer`, so simulators and debugging need no admin prompt.",
+          "type": "string"
+        },
+        {
+          "const": "xcode",
+          "description": "A full Xcode is selected, its licence accepted and its first launch run.",
+          "type": "string"
+        },
+        {
+          "const": "ios_runtime",
+          "description": "An iOS simulator runtime is installed.",
+          "type": "string"
+        },
+        {
+          "const": "accessibility",
+          "description": "The node may control the computer (Accessibility).",
+          "type": "string"
+        },
+        {
+          "const": "screen_recording",
+          "description": "The node may record the screen (Screen Recording).",
+          "type": "string"
+        },
+        {
+          "const": "gui_session",
+          "description": "Its GUI session is the one on the Mac's screen: \"console\", or \"background\" behind another user's.",
+          "type": "string"
+        },
+        {
+          "const": "tools",
+          "description": "The node's pinned Node.js, agent-device and agent-desktop are installed.",
+          "type": "string"
+        },
+        {
+          "const": "keep_awake",
+          "description": "The node holds its keep-awake assertion.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "MacCheckState": {
+      "oneOf": [
+        {
+          "enum": [
+            "ok",
+            "fail"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "warn",
+          "description": "Works, short of what's recommended (a GUI session in the background).",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "The node couldn't tell, or is still at it (installing its tools).",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "MacHealth": {
+      "description": "The agents' Mac's setup, as its node checked it last (each heartbeat reads the quick checks again; the slow ones,\nsuch as Xcode's, every few minutes and on a Test).",
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/MacCheck"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        "user": {
+          "description": "The macOS user the node runs as.",
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "user",
+        "checks"
+      ],
+      "type": "object"
+    },
     "Machine": {
       "properties": {
+        "agentsMac": {
+          "description": "The agents' Mac (D298): a tool every project's agents use, never a runner. No agent, lead or Navi runs there,\nand clients seal no secret to it. Absent on every other machine.",
+          "type": "boolean"
+        },
         "boxPubKey": {
           "$ref": "#/$defs/BoxPublicKey",
           "description": "M8: the node's X25519 key from its hello; clients seal this machine's secrets to it. Absent: it takes no\nsecrets."
@@ -1610,6 +1756,10 @@
           "description": "The 1-minute load average.",
           "minimum": 0,
           "type": "number"
+        },
+        "mac": {
+          "$ref": "#/$defs/MacHealth",
+          "description": "The agents' Mac's setup checks, run by its node as its own user with no admin; absent on any other machine and\nfrom older nodes."
         },
         "memPerAgentBytes": {
           "description": "Memory to allow per agent when sizing the machine's cap: node.json's `memPerAgentGb`, else 2 GB. Absent from\nolder nodes.",

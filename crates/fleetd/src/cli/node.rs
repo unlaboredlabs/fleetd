@@ -19,6 +19,7 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("enroll-only", Kind::Bool),
     ("machine", Kind::Str),
     ("claude-config-dir", Kind::Str),
+    ("mac", Kind::Bool),
 ];
 
 fn usage(message: &str) -> u8 {
@@ -83,6 +84,7 @@ pub async fn node_command(argv: &[String]) -> u8 {
                 home,
                 enroll_only: v.flag("enroll-only"),
                 claude_config_dir: v.string("claude-config-dir").filter(|d| !d.is_empty()),
+                mac: v.flag("mac"),
             };
             exit(
                 crate::node::join(join)

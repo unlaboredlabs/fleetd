@@ -31,6 +31,7 @@ import { emptyDraft, nameProblem, type Draft } from "./mcpModel";
 import { CommandLine, Prose } from "../onboarding/Prose";
 import { Setting } from "./parts";
 import s from "./settings.module.css";
+import { boxOf } from "./claudeModel";
 
 type Ref = { machineId: string; projectId: string };
 type Tested = { machineId: string; result: McpTestResult } | { error: string };
@@ -39,9 +40,10 @@ const open = (url: string): void => void window.fleetd.openExternal(url);
 
 function useMachine(ref: Ref): { name: string; boxes: McpServerRequest["boxes"] } {
   const m = useData((d) => d.machines[ref.machineId]);
+  const box = boxOf(m);
   return {
     name: m?.name ?? ref.machineId,
-    boxes: typeof m?.boxPubKey === "string" ? [{ machineId: ref.machineId, boxPubKey: m.boxPubKey }] : [],
+    boxes: box === undefined ? [] : [{ machineId: ref.machineId, boxPubKey: box }],
   };
 }
 
