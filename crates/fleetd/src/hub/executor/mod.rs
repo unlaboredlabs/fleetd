@@ -2497,16 +2497,21 @@ impl Executors {
         }
     }
 
-    /// `remove_worktrees` only to a node listing `CAP_PROJECT_SETTINGS`.
+    /// `remove_worktrees` only to a node listing `CAP_PROJECT_SETTINGS`; `erase` and `remove_folder` (a Navi's) only to
+    /// one listing `CAP_NAVI_ERASE`.
     pub async fn project_remove(
         &self,
         machine_id: &MachineId,
         project_id: &ProjectId,
         remove_worktrees: bool,
+        erase: bool,
+        remove_folder: bool,
     ) -> Result<(), ExecutorError> {
         let call = SessionCall::ProjectRemove {
             project_id: project_id.clone(),
             remove_worktrees,
+            erase,
+            remove_folder,
         };
         self.call(machine_id, NodeOperation::Project, call, REMOVE_TIMEOUT)
             .await?;

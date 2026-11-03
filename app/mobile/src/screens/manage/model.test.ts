@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRow, OrderCard, PrRow, ProfilesListOutput, ProjectSettings, ProjectSummary, TodoItem } from "../../desktop";
+import { naviDeleteWords } from "../../desktop";
 import { agentLines, allowed, checklist, deleteBlocked, deleteConfirmed, deleteWords, merges, orderLines, profileLines, profilesValue, projectNameProblem, subtitle, suggestions } from "./model";
 
 const AT = "2026-10-28T10:00:00Z";
@@ -138,11 +139,16 @@ describe("its screen", () => {
 });
 
 describe("Delete", () => {
-  it("keeps a Navi's folder, and says its sign-ins go", () => {
+  it("erases a Navi in the desktop's words, with a tickbox naming its folder", () => {
     const w = deleteWords(navi(), settings({ workspaceRoot: "/home/ada/.fleetd/navi/ada" }), "devbox");
     expect(w.title).toBe("Delete Ada?");
     expect(w.button).toBe("Delete Navi");
-    expect(w.message).toBe("Its lead stops and fleetd forgets it, with its sign-ins. Its folder at ~/.fleetd/navi/ada on devbox stays, with everything in it.");
+    const desktop = naviDeleteWords("Ada", "devbox", "~/.fleetd/navi/ada");
+    expect(w.message).toBe(desktop.message);
+    expect(w.message).toContain("everything it had is erased from fleetd and devbox: its chat, memory, skills");
+    expect(w.folder).toEqual({ label: "Also delete its folder, ~/.fleetd/navi/ada", note: desktop.folderNote });
+    // A project's delete has no such tickbox.
+    expect(deleteWords(project(), settings(), "devbox").folder).toBeUndefined();
   });
 
   it("names a repo's other repos, which go with it, and worktrees with uncommitted changes", () => {

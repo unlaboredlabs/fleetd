@@ -15738,6 +15738,10 @@
         "projectId": {
           "$ref": "#/$defs/ProjectId"
         },
+        "removeFolder": {
+          "description": "A Navi's only: also delete its folder, with everything in it (its drafts and downloads).",
+          "type": "boolean"
+        },
         "removeWorktrees": {
           "description": "Also force-remove the fleetd worktrees its agents worked in, uncommitted changes and all, once its agents have\nstopped. Their branches and the checkout stay as they are.",
           "type": "boolean"
@@ -19006,11 +19010,18 @@
       "type": "object"
     },
     "SkillSaved": {
-      "description": "A chat line's skill: a Navi saved or changed one (`skill_save`). The app links it to the skill's view.",
+      "description": "A chat line's skill: a Navi saved or changed one (`skill_save`), or installed one (`skill_install`). The app links\nit to the skill's view.",
       "properties": {
         "created": {
           "description": "Its first version.",
           "type": "boolean"
+        },
+        "installed": {
+          "description": "Installed: the source as the Navi gave it, at the commit it is pinned to (`owner/repo@<12 hex>`). `why` then\nsays the same, for an app that doesn't know this field.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
         },
         "name": {
           "$ref": "#/$defs/SkillName"

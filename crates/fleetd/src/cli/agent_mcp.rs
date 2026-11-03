@@ -307,7 +307,7 @@ static TOOLS: &[Tool] = &[
         "Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) \
          for this project (scope project; global skills take an admin, so the human installs those); pinned to the \
          commit fetched, and the human updates it from Settings > Skills. Agents list it as fleetd:<name> and run it \
-         with the Skill tool.",
+         with the Skill tool. A Navi installs over https only, and its chat shows what it installed.",
         inline_schema::<SkillInstallCall>,
     ),
     lead(

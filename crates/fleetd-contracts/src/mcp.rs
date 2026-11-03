@@ -1070,13 +1070,16 @@ output!(ProjectAddOutput {
 });
 
 // project_remove: stops the project's agent processes and forgets it. Its files and branches stay; its worktrees too,
-// unless removeWorktrees.
+// unless removeWorktrees. A Navi's is erased (D287 navi.delete-erases): its chat, approvals and purchases, asks and
+// decisions, memory, skills, transcripts, attachments and screen recordings go, on the hub and its machine.
 input!(ProjectRemoveInput {
     machine_id: MachineId,
     project_id: ProjectId,
     /// Also force-remove the fleetd worktrees its agents worked in, uncommitted changes and all, once its agents have
     /// stopped. Their branches and the checkout stay as they are.
     remove_worktrees: Option<bool>,
+    /// A Navi's only: also delete its folder, with everything in it (its drafts and downloads).
+    remove_folder: Option<bool>,
 });
 output!(ProjectRemoveOutput { ok: True });
 

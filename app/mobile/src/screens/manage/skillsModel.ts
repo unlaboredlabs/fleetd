@@ -23,6 +23,8 @@ export interface SkillSaved {
   readonly version: number;
   readonly created: boolean;
   readonly why: string;
+  /** Installed (skill_install): the source at the commit it is pinned to, `owner/repo@<commit>`. */
+  readonly installed?: string;
 }
 /** skill_get's answer: the text of the version asked for, and every version kept, newest first. */
 export interface SkillRead {

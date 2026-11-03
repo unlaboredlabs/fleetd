@@ -171,6 +171,9 @@ describe("Forget sign-ins and Delete", () => {
     expect(call).toHaveBeenLastCalledWith("project_remove", { ...REF, removeWorktrees: true }, REMOVE_MS);
     hub.answer("project_remove", { ok: true });
     await expect(gone).resolves.toEqual({ ok: true, value: null });
+    // A Navi's folder, ticked, goes too.
+    void deleteProject(session, SHOP, true);
+    expect(calls("project_remove").at(-1)?.input).toEqual({ ...REF, removeWorktrees: true, removeFolder: true });
   });
 
   it("says why a delete was refused", async () => {

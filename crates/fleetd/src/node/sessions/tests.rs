@@ -1076,7 +1076,8 @@ async fn a_host_no_session_runs_on_is_stopped() {
 }
 
 /// A lead's and a Navi's voice is in their system prompt, which claude never compacts: after a compaction and a
-/// restart of their node, the claude that resumes each gets lead.voice verbatim again, and no first message had it.
+/// restart of their node, the claude that resumes each gets its voice (lead.voice, navi.voice) verbatim again, and no
+/// first message had it.
 #[tokio::test]
 async fn a_leads_voice_survives_a_compaction_and_a_resume_verbatim() {
     use fleetd_contracts::sessions::SessionRole;
@@ -1087,11 +1088,15 @@ async fn a_leads_voice_survives_a_compaction_and_a_resume_verbatim() {
         machine_id: fleetd_contracts::ids::MachineId::unchecked("devbox"),
         project_id: ProjectId::unchecked("p1"),
     };
-    let voice = set.render("lead.voice", &[]);
-    let voice = voice.trim_end();
+    let voice = |id: &str| set.render(id, &[]).trim_end().to_owned();
     let sessions = [
-        ("s1", SessionRole::Lead, None),
-        ("s2", SessionRole::Assistant, Some("/home/me/navi")),
+        ("s1", SessionRole::Lead, None, voice("lead.voice")),
+        (
+            "s2",
+            SessionRole::Assistant,
+            Some("/home/me/navi"),
+            voice("navi.voice"),
+        ),
     ];
     let mut before = hub(
         dir.path(),
@@ -1101,7 +1106,8 @@ async fn a_leads_voice_survives_a_compaction_and_a_resume_verbatim() {
     .await;
     before.project(dir.path()).await;
     let mut systems = Vec::new();
-    for (id, role, navi) in sessions {
+    for (id, role, navi, voice) in &sessions {
+        let (id, role, navi) = (*id, *role, *navi);
         let start = crate::hub::leads::prompt::render_lead_start(
             set,
             &r,
@@ -1112,7 +1118,7 @@ async fn a_leads_voice_survives_a_compaction_and_a_resume_verbatim() {
             "",
             navi,
         );
-        assert!(start.system.contains(voice), "{}", start.system);
+        assert!(start.system.contains(voice.as_str()), "{}", start.system);
         let SessionCall::Launch(lead) = launch(id, RuntimeMode::FullAccess, SessionWorkspace::Root)
         else {
             unreachable!()
@@ -1131,7 +1137,9 @@ async fn a_leads_voice_survives_a_compaction_and_a_resume_verbatim() {
         systems.push(start.system);
     }
     for (_, first) in sends(&before.runner) {
-        assert!(!first.contains(voice), "{first}");
+        for (.., voice) in &sessions {
+            assert!(!first.contains(voice.as_str()), "{first}");
+        }
     }
     drop(before);
 
@@ -1141,7 +1149,7 @@ async fn a_leads_voice_survives_a_compaction_and_a_resume_verbatim() {
         FakeRunner::fixture("init-partial-two-turns"),
     )
     .await;
-    for ((id, ..), system) in sessions.iter().zip(&systems) {
+    for ((id, .., voice), system) in sessions.iter().zip(&systems) {
         let run = format!("{id}-r2");
         after.ok(send(id, &run)).await;
         after.settled(&run).await;
@@ -1159,7 +1167,7 @@ async fn a_leads_voice_survives_a_compaction_and_a_resume_verbatim() {
             .unwrap();
         let file = std::fs::read_to_string(&args[at + 1]).unwrap();
         assert_eq!(&file, system);
-        assert!(file.contains(voice));
+        assert!(file.contains(voice.as_str()));
     }
 }
 
@@ -2805,6 +2813,8 @@ async fn removing_a_project_stops_its_claude_processes_first() {
     let remove = || SessionCall::ProjectRemove {
         project_id: ProjectId::unchecked("p1"),
         remove_worktrees: false,
+        erase: false,
+        remove_folder: false,
     };
     assert_eq!(hub.ok(remove()).await, SessionOutput::Done);
     let ended = hub.settled("r1").await;
@@ -2932,6 +2942,8 @@ async fn project_env_reaches_a_new_session_and_deleting_the_project_leaves_the_c
         hub.ok(SessionCall::ProjectRemove {
             project_id: ProjectId::unchecked("p1"),
             remove_worktrees: true,
+            erase: false,
+            remove_folder: false,
         })
         .await,
         SessionOutput::Done
@@ -2982,6 +2994,8 @@ async fn deleting_a_plain_folder_project_with_its_worktrees_skips_git() {
     let remove = || SessionCall::ProjectRemove {
         project_id: ProjectId::unchecked("p1"),
         remove_worktrees: true,
+        erase: false,
+        remove_folder: false,
     };
     assert_eq!(hub.ok(remove()).await, SessionOutput::Done);
     assert_eq!(hub.settled("r1").await.status, SessionStatus::Interrupted);
@@ -3035,6 +3049,8 @@ async fn forgetting_a_navis_sign_ins_or_deleting_it_deletes_its_browser_profile(
         hub.ok(SessionCall::ProjectRemove {
             project_id: ProjectId::unchecked("p1"),
             remove_worktrees: false,
+            erase: false,
+            remove_folder: false,
         })
         .await,
         SessionOutput::Done
@@ -5048,4 +5064,104 @@ async fn what_a_tasks_session_left_running_lives_through_its_turns_and_ends_with
     assert!(stat(pid).is_none_or(|p| p.zombie), "the task's end ends it");
     assert!(!record.exists());
     drop(left);
+}
+
+/// Deleting a Navi erases it on its node (D287 navi.delete-erases): its sessions and their summaries in the machine
+/// stream, Claude Code's transcripts of them, and the attachments placed in its folder go, while its other files stay;
+/// ticked, its folder goes whole. Only a folder of a Navi's own, under the node home, is ever deleted.
+#[tokio::test]
+async fn deleting_a_navi_erases_its_sessions_transcripts_and_attachments_and_its_folder_when_asked()
+{
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("sessions.sqlite");
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    let navi = |id: &str, root: &str| SessionCall::ProjectUpsert {
+        project_id: ProjectId::unchecked(id),
+        title: NonEmpty::unchecked(id),
+        workspace_root: NonEmpty::unchecked(root),
+    };
+    hub.ok(navi("p1", "navi/ada")).await;
+    let folder = dir.path().join("node/navi/ada");
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.settled("r1").await;
+    let row = NodeStore::open(&db)
+        .unwrap()
+        .sessions()
+        .unwrap()
+        .into_iter()
+        .find(|r| r.summary.session_id.as_str() == "s1")
+        .unwrap();
+    let config = row.local.config_dir.clone();
+    let transcript = super::state::claude_session_file(&config, &row.local.cwd, "s1");
+    let other = config.join("projects/-src-other/t9.jsonl");
+    for (file, text) in [
+        (transcript.clone(), "my passport number is in the drawer"),
+        (
+            transcript.with_extension("").join("subagents/a.jsonl"),
+            "{}",
+        ),
+        (config.join("file-history/s1/backup"), "draft"),
+        (other.clone(), "another project's conversation"),
+        (folder.join(".fleetd/attachments/chat/passport.png"), "png"),
+        (folder.join("notes.md"), "the person's notes"),
+    ] {
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, text).unwrap();
+    }
+    let remove = |id: &str, remove_folder: bool| SessionCall::ProjectRemove {
+        project_id: ProjectId::unchecked(id),
+        remove_worktrees: true,
+        erase: true,
+        remove_folder,
+    };
+    assert_eq!(hub.ok(remove("p1", false)).await, SessionOutput::Done);
+    let store = NodeStore::open(&db).unwrap();
+    assert!(store.sessions().unwrap().is_empty());
+    assert!(
+        !store
+            .events_after(0)
+            .unwrap()
+            .unwrap_or_default()
+            .iter()
+            .any(|f| matches!(&f.event, MachineEvent::SessionUpdated(s) if s.project_id.as_str() == "p1")),
+        "a reconnecting hub would get its sessions back"
+    );
+    for gone in [
+        transcript.clone(),
+        transcript.with_extension(""),
+        config.join("file-history/s1"),
+        folder.join(".fleetd/attachments"),
+    ] {
+        assert!(!gone.exists(), "{} is left", gone.display());
+    }
+    assert!(other.exists() && folder.join("notes.md").exists());
+
+    // Ticked, the folder goes whole; a project's own folder elsewhere never does.
+    hub.ok(navi("p2", "navi/bea")).await;
+    let bea = dir.path().join("node/navi/bea");
+    std::fs::write(bea.join("draft.md"), "a draft").unwrap();
+    assert_eq!(hub.ok(remove("p2", true)).await, SessionOutput::Done);
+    assert!(!bea.exists());
+    let code = dir.path().join("code");
+    std::fs::create_dir_all(&code).unwrap();
+    hub.ok(navi("p3", &code.to_string_lossy())).await;
+    let SessionResult::Err(refused) = hub.call(remove("p3", true)).await else {
+        panic!("a project's own folder was deleted")
+    };
+    assert!(
+        refused.message.contains("isn't a Navi's own"),
+        "{}",
+        refused.message
+    );
+    assert!(code.exists());
 }

@@ -13,7 +13,8 @@
 //! Each Navi has an owner (D215, `owner`): only they see it and use it, and the hub refuses anyone else.
 //!
 //! Its browser keeps its sign-ins between sessions in a profile of its own on its node (D221, node/browser/chrome.rs);
-//! `navi_signins_forget` deletes it, and deleting the Navi (`project_remove`) does too.
+//! `navi_signins_forget` deletes it, and deleting the Navi (`project_remove`) does too: that erases all of it (D287,
+//! `erase`), its folder too when asked.
 //!
 //! Navis never run on a Mac (D299 mac.interim-lockdown): `navi_create` refuses one, picks none by default, and a Navi
 //! already on a Mac doesn't start there ([`on_mac`]); the node on a Mac refuses its sandbox too.
@@ -28,6 +29,7 @@ pub mod checker;
 #[cfg(test)]
 mod checker_tests;
 pub mod confirm;
+pub mod erase;
 #[cfg(test)]
 mod mcp_fresh_tests;
 pub mod owner;

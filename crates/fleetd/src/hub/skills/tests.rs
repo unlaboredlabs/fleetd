@@ -361,6 +361,69 @@ fn source_repo() -> tempfile::TempDir {
     repo
 }
 
+/// A Navi's install fetches as no one: git itself takes https alone, so a local or SSH source fails even if one got
+/// past the Navi's check, while the same source fetches for a person.
+#[tokio::test]
+async fn an_anonymous_fetch_takes_https_alone() {
+    let repo = source_repo();
+    let source = install::parse(&format!("file://{}", repo.path().display())).unwrap();
+    assert!(install::fetch(&source, false).await.is_ok());
+    let Err(e) = install::fetch(&source, true).await else {
+        panic!("a file:// source was fetched as no one");
+    };
+    assert!(e.message.starts_with("git fetch"), "{}", e.message);
+}
+
+/// Fetched as no one, git reads none of the hub's logins: not its config's credential helpers or URL rewrites (the
+/// machine's own `~/.gitconfig` and `/etc/gitconfig` here), not its `~/.netrc` (its HOME is an empty dir of its
+/// own), not its SSH agent.
+#[tokio::test]
+async fn an_anonymous_fetch_reads_none_of_the_hubs_logins() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let cmd = install::command(
+        dir.path(),
+        &["config", "--list", "--show-origin"],
+        Some(home.path()),
+    );
+    let envs: std::collections::HashMap<_, _> = cmd
+        .as_std()
+        .get_envs()
+        .map(|(k, v)| {
+            (
+                k.to_string_lossy().into_owned(),
+                v.map(|v| v.to_string_lossy().into_owned()),
+            )
+        })
+        .collect();
+    let home_str = home.path().to_string_lossy().into_owned();
+    for (k, want) in [
+        ("HOME", Some(home_str.as_str())),
+        ("XDG_CONFIG_HOME", Some(home_str.as_str())),
+        ("CURL_HOME", Some(home_str.as_str())),
+        ("GIT_CONFIG_GLOBAL", Some("/dev/null")),
+        ("GIT_CONFIG_NOSYSTEM", Some("1")),
+        ("GIT_ALLOW_PROTOCOL", Some("https")),
+        ("SSH_AUTH_SOCK", None),
+        ("GIT_CONFIG_PARAMETERS", None),
+    ] {
+        assert_eq!(envs.get(k).map(Option::as_deref), Some(want), "{k}");
+    }
+    let mut cmd = cmd;
+    let out = cmd.output().await.unwrap();
+    let config = String::from_utf8_lossy(&out.stdout).to_lowercase();
+    // The empty helper the command passes is all git sees, from the command line alone.
+    for line in config.lines() {
+        assert!(
+            line.starts_with("command line:"),
+            "git read a config file: {line}"
+        );
+        assert!(!line.contains("insteadof"), "{line}");
+    }
+    assert!(config.contains("credential.helper="), "{config}");
+    assert_eq!(std::fs::read_dir(home.path()).unwrap().count(), 0);
+}
+
 #[tokio::test]
 async fn an_install_is_pinned_and_moves_only_on_update() {
     let (hub, _home) = hub();
@@ -480,7 +543,7 @@ async fn a_repo_that_is_one_skill_installs_under_its_frontmatter_name_or_its_rep
     git(&repo, &["add", "-A"]);
     git(&repo, &["commit", "-q", "-m", "one"]);
     let source = install::parse(&format!("file://{}", repo.display())).unwrap();
-    let fetched = install::fetch(&source).await.unwrap();
+    let fetched = install::fetch(&source, false).await.unwrap();
     let found = install::find(fetched.tree.path(), &source, None).unwrap();
     let got: Vec<(&str, &str)> = found
         .iter()
@@ -712,7 +775,7 @@ async fn an_install_reads_nothing_through_a_link() {
     git(&repo, &["commit", "-q", "-m", "links"]);
 
     let source = install::parse(&format!("file://{}", repo.display())).unwrap();
-    let fetched = install::fetch(&source).await.unwrap();
+    let fetched = install::fetch(&source, false).await.unwrap();
     let tree = fetched.tree.path();
     // The skill holding a link is refused whole, naming the link.
     let e = install::find(tree, &source, Some(&SkillName::unchecked("pdf"))).unwrap_err();

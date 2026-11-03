@@ -1,7 +1,7 @@
 // What a project's and a Navi's screens show and offer, from the hub's answers: pure, so the tests pin them. The hub
 // checks every call (a member operates, a Navi is its owner's alone); these only leave out what it would refuse, and
 // say in the desktop's words what a delete does.
-import { foundRows, isNavi, isYours, tilde, type AgentRow, type Discovery, type Found, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
+import { foundRows, isNavi, isYours, naviDeleteWords, tilde, type AgentRow, type Discovery, type Found, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
 import type { Machine } from "../../store";
 
 /** What the person may do to it from the phone. */
@@ -172,10 +172,13 @@ export interface DeleteWords {
   readonly button: string;
   /** Its worktrees with uncommitted changes, which the delete loses: each named, and its name typed to confirm. */
   readonly unsaved: readonly string[];
+  /** A Navi's: the tickbox that deletes its folder too, and its note. Its delete is always confirmed by its name. */
+  readonly folder?: { readonly label: string; readonly note: string };
 }
 
 /**
- * The delete's confirm, as the desktop's: a Navi or a plain folder keeps its folder; a repo's checkout, branches and
+ * The delete's confirm, as the desktop's: a Navi is erased, its folder too when ticked (`naviDeleteWords`, the
+ * desktop's own words); a plain folder keeps its folder; a repo's checkout, branches and
  * pull requests stay while its fleetd worktrees go (any with uncommitted changes named); the other repos a project
  * holds go from fleetd with it (#803), their checkouts staying on the machine. Uncommitted changes it would lose are
  * named apart (`unsaved`), for the confirm that asks for its name.
@@ -183,19 +186,21 @@ export interface DeleteWords {
 export const deleteWords = (p: ProjectSummary, settings: ProjectSettings, machine: string): DeleteWords => {
   const navi = isNavi(p);
   const own = (r: NonNullable<ProjectSummary["repos"]>[number]) => r.checkout.machineId === p.machineId && r.checkout.projectId === p.projectId;
-  const plain = navi || !(p.repos ?? []).some(own);
+  const plain = !(p.repos ?? []).some(own);
   const others = (p.repos ?? []).filter((r) => !own(r)).map((r) => r.name);
   const unsaved = (settings.worktrees?.worktrees ?? []).filter((w) => w.uncommitted).map((w) => w.branch ?? tilde(w.path));
   const path = tilde(settings.workspaceRoot);
+  if (navi) {
+    const words = naviDeleteWords(p.title, machine, path);
+    return { title: `Delete ${p.title}?`, message: words.message, button: "Delete Navi", unsaved, folder: { label: words.folder, note: words.folderNote } };
+  }
   const lines = [
-    navi
-      ? `Its lead stops and fleetd forgets it, with its sign-ins. Its folder at ${path} on ${machine} stays, with everything in it.`
-      : plain
-        ? `Its agents stop now and fleetd forgets it and its settings. Its folder at ${path} on ${machine} stays as it is.`
-        : `Its agents stop now, fleetd forgets it and its settings, and the worktrees its agents worked in are removed. Its checkout at ${path}, its branches and its pull requests stay.`,
+    plain
+      ? `Its agents stop now and fleetd forgets it and its settings. Its folder at ${path} on ${machine} stays as it is.`
+      : `Its agents stop now, fleetd forgets it and its settings, and the worktrees its agents worked in are removed. Its checkout at ${path}, its branches and its pull requests stay.`,
   ];
   if (others.length > 0) lines.push(`Its other ${others.length === 1 ? "repo" : "repos"}, ${others.join(", ")}, ${others.length === 1 ? "goes" : "go"} from fleetd with it; ${others.length === 1 ? "its checkout stays" : "their checkouts stay"} on ${machine}.`);
-  return { title: `Delete ${p.title}?`, message: lines.join("\n\n"), button: navi ? "Delete Navi" : "Delete Project", unsaved };
+  return { title: `Delete ${p.title}?`, message: lines.join("\n\n"), button: "Delete Project", unsaved };
 };
 
 /** A delete that loses uncommitted changes is confirmed by typing its name, as on the desktop: exactly, around spaces. */
