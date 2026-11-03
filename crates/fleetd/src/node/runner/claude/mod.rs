@@ -160,6 +160,9 @@ explained! {
         "NotebookEdit" => "A Navi writes anything but what its sandbox hides or keeps read-only.",
         "WebFetch" => "A Navi fetches a site unasked only once the person allowed or linked it.",
         "mcp__fleetd__confirm_step" => "A Navi's final Confirm on a site goes through its approval mode, like a send.",
+        "mcp__fleetd__automation_confirm" => "Only the person lets an automation run on its own, on its card.",
+        "mcp__fleetd__project_message" => "A Navi's message to another project's lead, who may open full-access work \
+                                           for it, goes through its approval mode, like a send.",
     ]
 }
 

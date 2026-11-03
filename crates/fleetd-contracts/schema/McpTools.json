@@ -1006,6 +1006,11 @@
         "automationId": {
           "$ref": "#/$defs/AutomationId"
         },
+        "confirmed": {
+          "default": false,
+          "description": "Whether the person stands behind its prompt: they made or edited it in the app, or approved it on the card\n`automation_confirm` shows them (\"Let it run on its own\"). A Navi's approval checker then takes the prompt as\ntheir own word on its runs. Only the person sets it; a lead's change to its prompt or schedule unsets it.",
+          "type": "boolean"
+        },
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -2627,6 +2632,16 @@
         {
           "const": "telegram",
           "description": "Telegram, through the Navi's own bot (`telegram.rs`).",
+          "type": "string"
+        },
+        {
+          "const": "share",
+          "description": "The phone's share sheet: what another app handed over.",
+          "type": "string"
+        },
+        {
+          "const": "shortcuts",
+          "description": "A Shortcuts action or Siri on the phone.",
           "type": "string"
         }
       ],

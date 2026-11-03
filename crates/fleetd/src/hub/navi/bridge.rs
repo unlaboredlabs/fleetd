@@ -13,20 +13,27 @@
 //! the link here. Its asks go into chats as "<person> via <label> Navi", reach only the link's projects, and what
 //! happens to them goes out on the link's feed instead of a wake. A Navi here names a linked hub with `hub`, and the
 //! calls go there (`hub_links::client`).
+//!
+//! The lead it writes to may open an order whose agents work with full access, so a Navi's `project_message` is a send:
+//! its lead is always asked for the call (the node's `ASSISTANT_ASK`), and the approvals relay decides it by the Navi's
+//! approval mode ([`preview`] is its card, with the exact text): the checker's go, the person's approval or YOLO.
 use std::collections::HashSet;
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::checklist::TodoState;
 use fleetd_contracts::events::{HubEvent, HubEventType};
 use fleetd_contracts::ids::{ProjectId, ProjectRef, Timestamp};
+use fleetd_contracts::integrations::{McpToolName, ToolAction, ToolPreview};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::ledger::{WorkstreamId, WorkstreamState};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
+use fleetd_contracts::mcp_servers::McpServerName;
 use fleetd_contracts::model::ProjectSummary;
 use fleetd_contracts::navi::{
     AskHandle, FactoryAsk, FactoryOrder, FactoryProject, FactoryStatusCall, FactoryStatusResult,
     ProjectMessageCall, ProjectMessageResult, ask_footer,
 };
+use fleetd_contracts::prim::{Line, Text};
 use fleetd_contracts::status::ChangeStateData;
 use fleetd_contracts::train::ChangeState;
 use rusqlite::{OptionalExtension, params};
@@ -45,6 +52,8 @@ use crate::hub::store::{HubDb, StoreError, iso_ms, now_ms};
 mod tests;
 
 pub const OPS: [&str; 2] = ["project_message", "factory_status"];
+/// `project_message` as a Navi's session asks for it.
+pub const TOOL: &str = "mcp__fleetd__project_message";
 /// The event log cursor [`run`] keeps in `time_cursors`.
 const CURSOR: &str = "navi.bridge";
 /// How long the same words to the same project count as a retry of the first ask, not a new one.
@@ -57,6 +66,24 @@ const TYPES: [HubEventType; 4] = [
     HubEventType::WorkstreamState,
     HubEventType::ChangeState,
 ];
+
+/// The card for a `project_message` prompt: whose lead it reaches, and the call whole, its exact text included. None
+/// for a call that can't be read.
+pub fn preview(input: &serde_json::Value) -> Option<ToolPreview> {
+    let call: ProjectMessageCall = serde_json::from_value(input.clone()).ok()?;
+    let title = match &call.hub {
+        Some(hub) => format!("Message the lead of {} on {hub}", call.project),
+        None => format!("Message the lead of {}", call.project),
+    };
+    let (title, _) = crate::hub::integrations::policy::clip_utf16(&title, 200);
+    Some(ToolPreview {
+        server: McpServerName::new("fleetd").ok()?,
+        tool: McpToolName::new("project_message").ok()?,
+        action: ToolAction::Send,
+        title: Line::new(title).ok()?,
+        input: Text::new(serde_json::to_string_pretty(input).ok()?).ok()?,
+    })
+}
 
 pub fn register_lead_calls(hub: &Arc<Hub>) {
     let weak: Weak<Hub> = Arc::downgrade(hub);

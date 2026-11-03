@@ -254,6 +254,41 @@ impl ApprovalHub for OpsPorts {
         })
     }
 
+    fn navi_automation<'a>(
+        &'a self,
+        project: &'a ports::ProjectRef,
+        id: &'a str,
+    ) -> BoxFut<'a, Option<fleetd_contracts::automations::Automation>> {
+        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
+        Box::pin(async move {
+            let r = r?;
+            self.hub().automations.own(&r, id).ok()
+        })
+    }
+
+    fn navi_automation_confirm<'a>(
+        &'a self,
+        project: &'a ports::ProjectRef,
+        shown: &'a serde_json::Value,
+        by: &'a str,
+    ) -> BoxFut<'a, bool> {
+        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
+        Box::pin(async move {
+            let (Some(r), Some(id)) = (r, shown.get("automationId").and_then(|v| v.as_str()))
+            else {
+                return false;
+            };
+            let hub = self.hub();
+            if hub.automations.own(&r, id).is_err() {
+                return false;
+            }
+            hub.automations.confirm(id, shown, by).unwrap_or_else(|e| {
+                tracing::warn!(error = %e.message, "approvals: an automation the person let run was not marked");
+                false
+            })
+        })
+    }
+
     fn navi_image<'a>(
         &'a self,
         project: &'a ports::ProjectRef,
@@ -304,14 +339,16 @@ impl ApprovalHub for OpsPorts {
         thread_id: &'a str,
         action: &'a crate::hub::navi::checker::Action,
         settings: &'a fleetd_contracts::navi::NaviApprovals,
-    ) -> BoxFut<'a, fleetd_contracts::ledger::CheckerNote> {
+    ) -> BoxFut<'a, crate::hub::navi::checker::Checked> {
         use crate::hub::navi::checker;
         let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
         Box::pin(async move {
             let hub = self.hub();
-            let failed = |why: &str| fleetd_contracts::ledger::CheckerNote {
-                verdict: fleetd_contracts::ledger::CheckerVerdict::Ask,
-                reason: fleetd_contracts::prim::Line::unchecked(clip(why, 300)),
+            let failed = |why: &str| {
+                checker::Checked::Note(fleetd_contracts::ledger::CheckerNote {
+                    verdict: fleetd_contracts::ledger::CheckerVerdict::Ask,
+                    reason: fleetd_contracts::prim::Line::unchecked(clip(why, 300)),
+                })
             };
             let Some(r) = r else {
                 return failed("the checker couldn't find the Navi");
@@ -347,7 +384,12 @@ impl ApprovalHub for OpsPorts {
                 person: serde_json::json!({ "name": name }),
                 person_messages,
                 navi_last_question,
-                reads: checker::reads(&hub, &thread).await,
+                standing: checker::standing(&hub, &r),
+                reads: checker::reads(&hub, &thread)
+                    .await
+                    .into_iter()
+                    .chain(checker::relayed(&hub, &r).unwrap_or_default())
+                    .collect(),
                 allowed_sites,
                 today: now.get(..10).unwrap_or_default().to_owned(),
             };
@@ -355,7 +397,7 @@ impl ApprovalHub for OpsPorts {
                 &hub,
                 crate::hub::executor::turn::Owner::ApprovalCheck,
             );
-            checker::check(&hub, &turn, &r, owner.as_ref(), settings, action, &context).await
+            checker::judge(&hub, &turn, &r, owner.as_ref(), settings, action, &context).await
         })
     }
 

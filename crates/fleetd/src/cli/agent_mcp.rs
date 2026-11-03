@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use fleetd_contracts::automations::{
-    AutomationCreateCall, AutomationDeleteCall, AutomationListCall, AutomationPauseCall,
-    AutomationRunCall, AutomationRunsCall, AutomationUpdateCall,
+    AutomationConfirmCall, AutomationCreateCall, AutomationDeleteCall, AutomationListCall,
+    AutomationPauseCall, AutomationRunCall, AutomationRunsCall, AutomationUpdateCall,
 };
 use fleetd_contracts::browser::{
     BrowserCall, DesktopCall, FillCredentialCall, RequestTakeoverCall, SessionEndCall,
@@ -238,7 +238,9 @@ static TOOLS: &[Tool] = &[
          reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat \
          (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done \
          once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and \
-         approvals still apply. Only a person adds a webhook, in the app.",
+         approvals still apply. Only a person adds a webhook, in the app. A \
+         Navi: for one whose runs send or change something, call automation_confirm after it, so the person can let \
+         it run on its own.",
         inline_schema::<AutomationCreateCall>,
     ),
     lead(
@@ -282,6 +284,15 @@ static TOOLS: &[Tool] = &[
         inline_schema::<AutomationRunsCall>,
     ),
     lead(
+        "automation_confirm",
+        "automation_confirm",
+        "A Navi's call: ask the person to let one of your automations run on its own. They get a card with its name, \
+         prompt and schedule; once they approve it, its runs count as their go-ahead for what the prompt names, so a \
+         weekly send doesn't ask each week. Only their approval marks it; changing its prompt or schedule unmarks \
+         it. Returns whether it is marked.",
+        inline_schema::<AutomationConfirmCall>,
+    ),
+    lead(
         "checklist",
         "checklist",
         "Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done. An \
@@ -316,7 +327,8 @@ static TOOLS: &[Tool] = &[
          may open an order for it. Returns a handle (N<n>); a later wake says when an order opened for it opens, \
          closes, merges or fails. project is a title or project id from factory_status. With hub (a linked hub's \
          label, from factory_status's hubs), it goes to that project on the other hub, as the person via this Navi. \
-         Open an order this way only when the person asked for it in this conversation.",
+         It goes through your approval mode like a send, its exact text on the card. Open an order this way only \
+         when the person asked for it in this conversation.",
         inline_schema::<ProjectMessageCall>,
     ),
     lead(
