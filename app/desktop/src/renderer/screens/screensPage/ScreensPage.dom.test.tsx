@@ -40,11 +40,13 @@ let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
 let thumbs: boolean[] = [];
 let lists = 0;
 let hidden = false;
+let controls: unknown[] = [];
 
 beforeEach(() => {
   thumbs = [];
   lists = 0;
   hidden = false;
+  controls = [];
   Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (hidden ? "hidden" : "visible") });
   vi.stubGlobal("fleetd", {
     platform: "darwin",
@@ -75,7 +77,11 @@ const settle = async () => {
 const mount = async (features: readonly string[] = ["browser_sessions", "screen_open", "screen_thumbs"]) => {
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
   const hub: HubApi = {
-    call: (tool) => {
+    call: (tool, input) => {
+      if (tool === "browser_control") {
+        controls.push(input);
+        return Promise.resolve({ ok: true, output: { session: { ...SESSIONS[2], control: "human" } } });
+      }
       if (tool === "browser_sessions") {
         lists++;
         return Promise.resolve({ ok: true, output: { sessions: SESSIONS, waits: [], retention: { retentionDays: 30, maxGbPerProject: 20 } } });
@@ -117,6 +123,17 @@ it("puts what asks for you on top, the rest live oldest first, then the ended ne
   expect(group("Needs you")?.querySelector("button")?.textContent).toBe("Take over");
   expect(listed("Live")).toEqual(["Run the cart fix on the iOS simulator", "Android emulator opened by Sam", "Check the new cart drawer"]);
   expect(listed("Recent")).toEqual(["Compare the home page copy", "Reproduce the 404"]);
+});
+
+it("takes control with Take over, then opens the screen on the page's own route", async () => {
+  await mount();
+  location.hash = "#/screens";
+  const take = group("Needs you")?.querySelector("button");
+  expect(take?.textContent).toBe("Take over");
+  act(() => take?.click());
+  await settle();
+  expect(controls).toEqual([{ sessionId: "B-asks", control: "human" }]);
+  expect(location.hash).toBe("#/screens/devbox/storefront/B-asks");
 });
 
 it("names each live screen's kind and machine and its agent's latest step, and opens one on the page's own route", async () => {

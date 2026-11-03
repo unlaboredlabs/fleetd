@@ -15,6 +15,7 @@ import { isNavi } from "../navi/model";
 import { useNow } from "../live/clock";
 import { navigate } from "../shell/navigation";
 import { panelRoute, type ProjectKey } from "../shell/routes";
+import { setControl } from "../sessions/live";
 import { SessionView } from "../sessions/SessionView";
 import { isLive } from "../sessions/model";
 import { NEW_SCREEN } from "../sessions/NewScreen";
@@ -119,8 +120,9 @@ function Group({ title, count, tone, children }: { title: string; count: number;
   );
 }
 
-/** One that asks for you: its picture at a size to read, why it asks, and Take over beside it. */
+/** One that asks for you: its picture at a size to read, why it asks, and Take over beside it, which takes control and opens it. */
 function AskingRow({ screen: p, now }: { screen: PageScreen; now: number }) {
+  const layer = useDataLayer();
   return (
     <div className={s.asking} data-state={p.x.state}>
       <a className={s.askingPic} href={openHref(p)} aria-label={`Open ${p.x.purpose}`}>
@@ -137,7 +139,14 @@ function AskingRow({ screen: p, now }: { screen: PageScreen; now: number }) {
           <Doing screen={p} />
         </span>
         <span className={s.askingActions}>
-          <Button variant="primary" size="sm" onClick={() => navigate(openRoute(p))}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              void setControl(layer, p.x.id, "human");
+              navigate(openRoute(p));
+            }}
+          >
             Take over
           </Button>
           <Text size="xs" tone="faint">
