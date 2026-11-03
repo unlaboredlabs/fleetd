@@ -30,6 +30,9 @@
 //
 // "fleetd" in iOS's share sheet, which sends text, links and images from other apps into a chat, is the Share
 // Extension from plugins/share-extension.
+//
+// fleetd's Shortcuts actions (Open Chat, Send Message and the rest, D289) are App Intents in the app's own target, from
+// plugins/app-intents: no extension, so no App ID or profile of their own.
 import { relative, resolve } from "node:path";
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
@@ -108,6 +111,8 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     // extension's product joins the embedding phase the notification extension made.
     "./plugins/share-extension",
     "./plugins/notification-service",
+    // Shortcuts' actions, in the app's own target.
+    "./plugins/app-intents",
     "./plugins/android-signing",
   ],
 });

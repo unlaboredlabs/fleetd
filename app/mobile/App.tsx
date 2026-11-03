@@ -2,7 +2,7 @@
 // storage (vault.ts); one Session talks to it while the app runs, and dials again whenever the app comes back to the
 // front. Pairing makes the phone's notification key; Disconnect signs the phone out on the hub, after a confirm, and
 // forgets both. A pairing link (`fleetd://pair?…`, from a QR code scanned with iOS's Camera) opens the app and, once
-// confirmed, pairs it.
+// confirmed, pairs it. A Shortcuts action's link (src/shortcutLink.ts) opens a chat, or Chats on Needs You.
 //
 // Navigation is iOS's own (react-native-screens): Chats, as Messages on iOS 26, with a compact bar on top and the
 // search field and filters in a toolbar at the bottom, no tab bar; the person's avatar at its top left pushes
@@ -21,7 +21,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { webSocketTransport } from "./src/hub/socket";
 import type { Paired } from "./src/hub/pair";
 import { pairLinkStep } from "./src/hub/pairLink";
-import { HubContext, SessionContext, type HubContextValue, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
+import { HubContext, SessionContext, type ChatsParams, type HubContextValue, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
 import { pushDeps, useTappedRoute } from "./src/notifications";
 import { pinStoreFor } from "./src/prefsStore";
 import { chatAt, type Route } from "./src/push";
@@ -32,6 +32,7 @@ import { backTo, infoOptions, manageScreens, newChatOptions, pushed } from "./sr
 import { ImportMemory } from "./src/screens/ImportMemory";
 import { Screen } from "./src/screens/Screen";
 import { Settings } from "./src/screens/Settings";
+import { parseShortcutLink, type ShortcutLink } from "./src/shortcutLink";
 import { Session } from "./src/session";
 import { navigationTheme, useTheme, type Palette } from "./src/theme";
 import { haptics } from "./src/ui/haptics";
@@ -74,8 +75,16 @@ export default function App() {
   const [link, handled] = useOpenedLink();
   // Bumped each time the pairing screens come up: a link that came first goes on then.
   const [pairShown, setPairShown] = useState(0);
+  // A Shortcuts action's link, until the paired hub's screens go there.
+  const [opened, setOpened] = useState<ShortcutLink | null>(null);
   useEffect(() => {
     if (link === null || paired === undefined) return;
+    const shortcut = parseShortcutLink(link);
+    if (shortcut !== null) {
+      // A phone that isn't paired shows its pairing screens.
+      if (paired !== null) setOpened(shortcut);
+      return handled();
+    }
     const step = pairLinkStep(link, "outside", paired?.hubName ?? null);
     if (step.t === "ignore") return handled();
     if (step.t === "paired") {
@@ -120,7 +129,7 @@ export default function App() {
           </NavigationContainer>
         ) : (
           <NavigationContainer ref={nav} theme={theme}>
-            <Hub key={`${paired.hub} ${paired.key}`} paired={paired} onForget={forget} />
+            <Hub key={`${paired.hub} ${paired.key}`} paired={paired} onForget={forget} opened={opened} onOpened={() => setOpened(null)} />
           </NavigationContainer>
         )}
       </View>
@@ -171,13 +180,20 @@ const go = (route: Route, requests: Parameters<typeof chatAt>[1]): boolean => {
   return true;
 };
 
-function Hub({ paired, onForget }: { paired: Paired; onForget: (why?: string) => void }) {
+function Hub({ paired, onForget, opened, onOpened }: { paired: Paired; onForget: (why?: string) => void; opened: ShortcutLink | null; onOpened: () => void }) {
   const session = useMemo(() => new Session({ hub: paired.hub, key: paired.key, transport: webSocketTransport, push: pushDeps, pins: pinStoreFor(paired.hub) }), [paired]);
   const state = useSyncExternalStore(session.subscribe, session.getState);
   // A tapped notification before the navigator is ready, or before an approval's chat is known, waits for them.
   const pending = useRef<Route | null>(null);
+  // Open Approvals' link, which waits for the navigator too.
+  const approvals = useRef(false);
   const tryPending = useCallback(() => {
-    if (pending.current === null || !nav.isReady()) return;
+    if (!nav.isReady()) return;
+    if (approvals.current) {
+      approvals.current = false;
+      nav.navigate("Home", { screen: "Chats", params: { filter: "needsYou", at: ++taps } });
+    }
+    if (pending.current === null) return;
     if (go(pending.current, session.getState().requests)) pending.current = null;
   }, [session]);
   useTappedRoute((route) => {
@@ -189,6 +205,13 @@ function Hub({ paired, onForget }: { paired: Paired; onForget: (why?: string) =>
     return nav.addListener("state", tryPending);
   }, [tryPending]);
   useEffect(tryPending, [state.requests, tryPending]);
+  useEffect(() => {
+    if (opened === null) return;
+    if (opened.t === "chat") pending.current = { t: "chat", key: opened.key };
+    else approvals.current = true;
+    onOpened();
+    tryPending();
+  }, [opened, onOpened, tryPending]);
 
   useEffect(() => {
     session.start();
@@ -265,7 +288,7 @@ function Root() {
   );
 }
 
-const ChatsStack = createNativeStackNavigator<{ Chats: undefined }>();
+const ChatsStack = createNativeStackNavigator<ChatsParams>();
 const SettingsStack = createNativeStackNavigator<SettingsParams>();
 
 /** The chats list in a stack of its own, whose bar and toolbar (ui/Toolbar.tsx) slide away under a chat. */

@@ -50,7 +50,7 @@ const prebuild = async () => {
     }
   }
   const root = mkdtempSync(join(tmpdir(), "share-extension-"));
-  const modRequest = { platform: "ios", projectRoot: root, platformProjectRoot: join(root, "ios"), introspect: false };
+  const modRequest = { platform: "ios", projectRoot: root, platformProjectRoot: join(root, "ios"), projectName: "fleetd", introspect: false };
   const mods = config.mods?.ios ?? {};
   const run = async (name: string, modResults: unknown) => (await mods[name]!({ ...config, modResults, modRequest: { ...modRequest, modName: name } })).modResults;
   const project = (await run("xcodeproj", xcode.project(join(__dirname, "test/project.pbxproj")).parseSync())) as Project;
