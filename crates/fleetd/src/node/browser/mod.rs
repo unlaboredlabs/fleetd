@@ -66,7 +66,7 @@ pub struct BrowserConfig {
     /// A Chrome or headless shell to use instead of the node's pinned install.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chrome: Option<String>,
-    /// An ffmpeg to encode the video with instead of the pinned one (it needs mjpeg in and libvpx-vp9 out).
+    /// An ffmpeg to encode the video with instead of the pinned one (it needs matroska and mjpeg in, and libvpx-vp9 out).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ffmpeg: Option<String>,
     /// Browsers kept launched for the next sessions. Absent: 1.

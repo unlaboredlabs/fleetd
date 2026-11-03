@@ -54,15 +54,92 @@ pub fn read_meta(dir: &Path) -> Option<Meta> {
     serde_json::from_slice(&std::fs::read(dir.join(META)).ok()?).ok()
 }
 
+/// Matroska as ffmpeg reads it from a pipe: one MJPEG track, each frame a cluster of its own stamped with its time and
+/// how long it shows (in ms), so ffmpeg decodes a frame once and repeats it itself for its constant frame rate.
+mod mkv {
+    /// An EBML number in its shortest form (all ones is reserved for "unknown").
+    pub(super) fn size(n: usize, out: &mut Vec<u8>) {
+        let len = (1..8).find(|l| n < (1 << (7 * l)) - 1).unwrap_or(8);
+        let marked = n as u64 | 1 << (7 * len);
+        out.extend_from_slice(&marked.to_be_bytes()[8 - len..]);
+    }
+
+    fn element(id: &[u8], body: &[u8], out: &mut Vec<u8>) {
+        out.extend_from_slice(id);
+        size(body.len(), out);
+        out.extend_from_slice(body);
+    }
+
+    fn uint(id: &[u8], n: u64, out: &mut Vec<u8>) {
+        let bytes = n.to_be_bytes();
+        let skip = (n.leading_zeros() as usize / 8).min(7);
+        element(id, &bytes[skip..], out);
+    }
+
+    /// The file's start: a segment of unknown size (it is a stream), times in ms, one `width`×`height` MJPEG track.
+    pub fn header((width, height): (u32, u32)) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut ebml = Vec::new();
+        element(&[0x42, 0x82], b"matroska", &mut ebml);
+        uint(&[0x42, 0x87], 4, &mut ebml);
+        uint(&[0x42, 0x85], 2, &mut ebml);
+        element(&[0x1a, 0x45, 0xdf, 0xa3], &ebml, &mut out);
+        // The segment, of unknown size.
+        out.extend_from_slice(&[
+            0x18, 0x53, 0x80, 0x67, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        ]);
+        let mut info = Vec::new();
+        uint(&[0x2a, 0xd7, 0xb1], 1_000_000, &mut info);
+        element(&[0x15, 0x49, 0xa9, 0x66], &info, &mut out);
+        let mut video = Vec::new();
+        uint(&[0xb0], width.into(), &mut video);
+        uint(&[0xba], height.into(), &mut video);
+        let mut track = Vec::new();
+        uint(&[0xd7], 1, &mut track);
+        uint(&[0x73, 0xc5], 1, &mut track);
+        uint(&[0x83], 1, &mut track);
+        element(&[0x86], b"V_MJPEG", &mut track);
+        element(&[0xe0], &video, &mut track);
+        let mut entry = Vec::new();
+        element(&[0xae], &track, &mut entry);
+        element(&[0x16, 0x54, 0xae, 0x6b], &entry, &mut out);
+        out
+    }
+
+    /// A frame shown from `at_ms` for `shows_ms`.
+    pub fn frame(jpeg: &[u8], at_ms: u64, shows_ms: u64, out: &mut Vec<u8>) {
+        let mut block = Vec::with_capacity(jpeg.len() + 4);
+        // Track 1, at the cluster's own time, no flags.
+        block.extend_from_slice(&[0x81, 0, 0, 0]);
+        block.extend_from_slice(jpeg);
+        let mut group = Vec::with_capacity(block.len() + 16);
+        element(&[0xa1], &block, &mut group);
+        uint(&[0x9b], shows_ms, &mut group);
+        let mut cluster = Vec::with_capacity(group.len() + 16);
+        uint(&[0xe7], at_ms, &mut cluster);
+        element(&[0xa0], &group, &mut cluster);
+        element(&[0x1f, 0x43, 0xb6, 0x75], &cluster, out);
+    }
+}
+
+/// A frame and the first tick of the video it shows in.
+struct Held {
+    jpeg: Vec<u8>,
+    tick: u64,
+}
+
 /// The video encoder, fed frames by [`VideoSink`]. None without an ffmpeg.
 struct Encoder {
     child: Child,
     stdin: ChildStdin,
     /// ffmpeg's own words, beside the video; never uploaded.
     log: PathBuf,
-    /// Frames written so far.
-    written: u64,
-    last: Option<Vec<u8>>,
+    size: (u32, u32),
+    /// The newest frame, not written yet: how long it shows is known once a later one comes, time passes or the
+    /// video ends.
+    held: Option<Held>,
+    /// Whether the header has gone.
+    started: bool,
 }
 
 impl Encoder {
@@ -72,14 +149,7 @@ impl Encoder {
         let stderr = std::fs::File::create(&log)
             .map_err(|e| format!("cannot write {}: {e}", log.display()))?;
         let mut child = Command::new(ffmpeg)
-            .args([
-                "-loglevel",
-                "error",
-                "-f",
-                "image2pipe",
-                "-avioflags",
-                "direct",
-            ])
+            .args(["-loglevel", "error", "-f", "matroska"])
             .args([
                 "-fpsprobesize",
                 "0",
@@ -88,14 +158,8 @@ impl Encoder {
                 "-analyzeduration",
                 "0",
             ])
-            .args([
-                "-framerate",
-                &FPS.to_string(),
-                "-c:v",
-                "mjpeg",
-                "-i",
-                "pipe:0",
-            ])
+            .args(["-i", "pipe:0"])
+            // A steady FPS: ffmpeg shows each frame for its ticks, as the frames' times and durations say.
             .args(["-y", "-an", "-r", &FPS.to_string(), "-c:v", "libvpx-vp9"])
             .args([
                 "-qmin",
@@ -107,7 +171,17 @@ impl Encoder {
                 "-deadline",
                 "realtime",
             ])
-            .args(["-speed", "8", "-b:v", "1M", "-threads", "1"])
+            // No look-ahead (the realtime deadline uses none anyway; the video is the same, ffmpeg holds ~60 MB less).
+            .args([
+                "-speed",
+                "8",
+                "-b:v",
+                "1M",
+                "-threads",
+                "1",
+                "-lag-in-frames",
+                "0",
+            ])
             .args(["-vf", &format!("pad={size}:0:0:gray,crop={size}:0:0")])
             .arg(out)
             .stdin(Stdio::piped())
@@ -121,32 +195,69 @@ impl Encoder {
             child,
             stdin,
             log,
-            written: 0,
-            last: None,
+            size: (width, height),
+            held: None,
+            started: false,
         })
     }
 
-    /// Holds the last frame up to `at`.
-    async fn fill_to(&mut self, at: Duration) -> std::io::Result<()> {
-        let due = frames_at(at);
-        let Some(last) = &self.last else {
+    /// Writes the held frame, shown until tick `until`, its last `own` ticks each a block of their own. So the video's
+    /// last frame always comes one tick after the block before it: ffmpeg 6 shows the last frame as long as that gap,
+    /// whatever its duration says.
+    async fn write(&mut self, until: u64, own: u64) -> std::io::Result<()> {
+        let Some(held) = &self.held else {
             return Ok(());
         };
-        while self.written < due {
-            self.stdin.write_all(last).await?;
-            self.written += 1;
+        let ms = |tick: u64| tick * 1000 / FPS;
+        let mut bytes = if self.started {
+            Vec::with_capacity((held.jpeg.len() + 64) * (own as usize + 1))
+        } else {
+            mkv::header(self.size)
+        };
+        let cut = until.saturating_sub(own).max(held.tick + 1);
+        mkv::frame(&held.jpeg, ms(held.tick), ms(cut - held.tick), &mut bytes);
+        for tick in cut..until {
+            mkv::frame(&held.jpeg, ms(tick), ms(1), &mut bytes);
         }
+        self.stdin.write_all(&bytes).await?;
+        self.started = true;
         Ok(())
     }
 
-    /// The frame shown until now runs until this one's time; the first also covers the time before it.
+    /// The frame shown until now runs until this one's time; the first also covers the time before it. Of frames
+    /// within one tick the newest shows.
     async fn frame(&mut self, jpeg: Vec<u8>, at: Duration) -> std::io::Result<()> {
-        if self.last.is_none() {
-            self.last = Some(jpeg.clone());
+        let tick = frames_at(at);
+        let from = self.held.as_ref().map_or(0, |held| held.tick);
+        if from < tick {
+            if self.held.is_none() {
+                self.held = Some(Held {
+                    jpeg: jpeg.clone(),
+                    tick: 0,
+                });
+            }
+            self.write(tick, 1).await?;
         }
-        self.fill_to(at).await?;
-        self.last = Some(jpeg);
+        self.held = Some(Held {
+            jpeg,
+            tick: from.max(tick),
+        });
         Ok(())
+    }
+
+    /// Time passes on a still page: once a second its frame is written up to now, so the file keeps up.
+    async fn tick(&mut self, at: Duration) -> std::io::Result<()> {
+        let due = frames_at(at);
+        match &self.held {
+            Some(held) if held.tick + FPS < due => {
+                self.write(due - 1, 1).await?;
+                if let Some(held) = &mut self.held {
+                    held.tick = due - 1;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 
     /// The end of what ffmpeg said, to say why it failed.
@@ -161,13 +272,10 @@ impl Encoder {
     }
 
     async fn finish(mut self, at: Duration) -> Result<(), String> {
-        if let Some(last) = self.last.clone() {
-            let written = async {
-                self.fill_to(at).await?;
-                // The last frame shows for at least one tick.
-                self.stdin.write_all(&last).await
-            };
-            written
+        if let Some(held) = &self.held {
+            // The last frame shows for at least one tick.
+            let until = frames_at(at).max(held.tick + 1);
+            self.write(until, 2)
                 .await
                 .map_err(|e| format!("ffmpeg stopped taking frames ({e}): {}", self.said()))?;
         }
@@ -213,7 +321,7 @@ impl VideoSink {
             while let Some(feed) = rx.recv().await {
                 let step = match feed {
                     Feed::Frame(jpeg, at) if broken.is_none() => encoder.frame(jpeg, at).await,
-                    Feed::Tick(at) if broken.is_none() => encoder.fill_to(at).await,
+                    Feed::Tick(at) if broken.is_none() => encoder.tick(at).await,
                     Feed::Finish(at, done) => {
                         let result = match broken.take() {
                             Some(why) => Err(why),
@@ -344,4 +452,124 @@ pub fn scrub_file(path: &Path, scrub: &Scrub) -> std::io::Result<()> {
         crate::node::secrets::write_atomic(path, scrubbed.as_bytes())?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sizes_are_shortest_ebml_numbers() {
+        let size = |n| {
+            let mut out = Vec::new();
+            mkv::size(n, &mut out);
+            out
+        };
+        assert_eq!(size(0), [0x80]);
+        assert_eq!(size(126), [0xfe]);
+        // 127 in one byte would be all ones: "unknown".
+        assert_eq!(size(127), [0x40, 0x7f]);
+        assert_eq!(size(70_000), [0x21, 0x11, 0x70]);
+    }
+
+    fn jpeg(rgb: [u8; 3]) -> Vec<u8> {
+        let pixels: Vec<u8> = (0..64 * 48).flat_map(|_| rgb).collect();
+        let mut out = Vec::new();
+        jpeg_encoder::Encoder::new(&mut out, 80)
+            .encode(&pixels, 64, 48, jpeg_encoder::ColorType::Rgb)
+            .unwrap();
+        out
+    }
+
+    /// The (id, body) of each EBML element in `bytes`.
+    fn elements(mut bytes: &[u8]) -> Vec<(u32, &[u8])> {
+        let number = |bytes: &[u8], keep_marker: bool| {
+            let len = bytes[0].leading_zeros() as usize + 1;
+            let mut n = u64::from(if keep_marker {
+                bytes[0]
+            } else {
+                bytes[0] & 0xff_u8.checked_shr(len as u32).unwrap_or(0)
+            });
+            for b in &bytes[1..len] {
+                n = n << 8 | u64::from(*b);
+            }
+            (n, len)
+        };
+        let mut out = Vec::new();
+        while !bytes.is_empty() {
+            let (id, id_len) = number(bytes, true);
+            let (size, size_len) = number(&bytes[id_len..], false);
+            let start = id_len + size_len;
+            let end = (start + size as usize).min(bytes.len());
+            out.push((id as u32, &bytes[start..end]));
+            bytes = &bytes[end..];
+        }
+        out
+    }
+
+    /// Each video frame's time in ms, as the webm has them.
+    fn frame_times(webm: &[u8]) -> Vec<i64> {
+        let mut times = Vec::new();
+        let segment = elements(webm)
+            .into_iter()
+            .find(|(id, _)| *id == 0x1853_8067)
+            .expect("a segment")
+            .1;
+        for (_, cluster) in elements(segment)
+            .into_iter()
+            .filter(|(id, _)| *id == 0x1f43_b675)
+        {
+            let mut base = 0;
+            for (id, body) in elements(cluster) {
+                match id {
+                    0xe7 => base = body.iter().fold(0i64, |n, b| n << 8 | i64::from(*b)),
+                    0xa3 => times.push(base + i64::from(i16::from_be_bytes([body[1], body[2]]))),
+                    _ => {}
+                }
+            }
+        }
+        times
+    }
+
+    /// Frames at their own times, newest per tick, a still page's ticks and the end: the video has a frame for every
+    /// 1/25 s up to the end, as when the encoder was fed the held frame 25 times a second.
+    #[tokio::test]
+    async fn the_video_holds_each_frame_at_a_steady_rate() {
+        let Some(ffmpeg) = super::super::tests::ffmpeg() else {
+            eprintln!("skipped: no ffmpeg");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("video.webm");
+        let sink = VideoSink::start(Some(&ffmpeg), out.clone(), (64, 48)).unwrap();
+        let ms = Duration::from_millis;
+        sink.frame(jpeg([200, 0, 0]), ms(130));
+        sink.frame(jpeg([0, 200, 0]), ms(150));
+        sink.frame(jpeg([0, 0, 200]), ms(170));
+        sink.tick(ms(1000));
+        sink.frame(jpeg([200, 200, 0]), ms(1210));
+        for second in 2..=4 {
+            sink.tick(ms(second * 1000));
+        }
+        sink.frame(jpeg([0, 200, 200]), ms(4415));
+        sink.finish(ms(4503)).await.unwrap();
+        let times = frame_times(&std::fs::read(&out).unwrap());
+        assert_eq!(times, (0..112).map(|n| n * 40).collect::<Vec<_>>());
+    }
+
+    /// A frame in the last tick still shows, for one tick.
+    #[tokio::test]
+    async fn the_last_frame_shows() {
+        let Some(ffmpeg) = super::super::tests::ffmpeg() else {
+            eprintln!("skipped: no ffmpeg");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("video.webm");
+        let sink = VideoSink::start(Some(&ffmpeg), out.clone(), (64, 48)).unwrap();
+        sink.frame(jpeg([200, 0, 0]), Duration::from_millis(300));
+        sink.finish(Duration::from_millis(310)).await.unwrap();
+        let times = frame_times(&std::fs::read(&out).unwrap());
+        assert_eq!(times, (0..8).map(|n| n * 40).collect::<Vec<_>>());
+    }
 }

@@ -542,10 +542,14 @@ async fn a_navi_takes_only_agent_browsers_commands_its_fence_stays_up_and_its_se
         assert!(Instant::now() < deadline, "the session didn't end");
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+    // The proxy refuses what comes after, or has closed with the session.
     let answer = driver
-        .send(Some(&page), "Page.navigate", json!({ "url": file }))
+        .answer(Some(&page), "Page.navigate", json!({ "url": file }))
         .await;
-    assert!(answer.get("error").is_some(), "{answer}");
+    assert!(
+        answer.as_ref().is_none_or(|a| a.get("error").is_some()),
+        "{answer:?}"
+    );
 }
 
 /// The real agent-browser, driving a Navi's session from the Navi's folder: everything it does there gets through,

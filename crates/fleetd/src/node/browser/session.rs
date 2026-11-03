@@ -35,6 +35,9 @@ const TARGET_WAIT: Duration = Duration::from_millis(250);
 /// What Chrome answers `Page.startScreencast` on a page between renderers, and the longest a page's start waits it out.
 const NO_ACTIVE_PAGE: &str = "Not attached to an active page";
 const SCREENCAST_START: Duration = Duration::from_secs(10);
+/// The least time between two frames of the live view (30 a second, as Android's): a page's screencast sends up to
+/// 60. The newest still goes, once the time is up; the video takes every frame.
+const LIVE_GAP: Duration = Duration::from_micros(33_333);
 /// What the agent's driver hears while a person has control.
 pub const PAUSED: &str = "A person has control of the browser now. Wait for them to hand it back (carry on with other \
                           work meanwhile); your next command after that sees the page as they left it.";
@@ -120,6 +123,8 @@ struct Live {
     watcher: Option<Arc<super::FrameSlot>>,
     seq: u64,
     last: Option<BrowserFrame>,
+    /// When the last frame went to the watcher, and its `seq`.
+    sent: Option<(Instant, u64)>,
     /// The page's size in CSS pixels, as the last frame's metadata gave it: a person's input is scaled to it.
     page: (f64, f64),
     /// Each page's address, by target, as the browser last said: the followed one's goes on its frames.
@@ -340,11 +345,10 @@ impl Session {
         }
     }
 
-    /// One screencast frame of the followed page: kept as the newest, and sent while the hub watches.
-    fn live_frame(&self, data: &str, jpeg: &[u8], metadata: &Value) {
-        let Some((width, height)) = jpeg_size(jpeg) else {
-            return;
-        };
+    /// One screencast frame of the followed page: kept as the newest, and sent while the hub watches, at most one per
+    /// [`LIVE_GAP`]. `Some`: when to send the newest ([`Self::flush_live`]), which this one waits for.
+    fn live_frame(&self, data: &str, jpeg: &[u8], metadata: &Value) -> Option<Instant> {
+        let (width, height) = jpeg_size(jpeg)?;
         let mut live = lock(&self.live);
         live.seq += 1;
         if live.seq == 1 {
@@ -374,13 +378,36 @@ impl Session {
         {
             live.watcher = None;
         }
-        if let Some(watcher) = &live.watcher {
+        let seq = live.seq;
+        live.last = Some(frame);
+        let now = Instant::now();
+        match live.sent {
+            Some((at, _)) if live.watcher.is_some() && now < at + LIVE_GAP => Some(at + LIVE_GAP),
+            _ => {
+                self.send_newest(&mut live, now, seq);
+                None
+            }
+        }
+    }
+
+    /// The newest frame, if it hasn't gone to the watcher yet: once the live view's [`LIVE_GAP`] has passed.
+    fn flush_live(&self) {
+        let mut live = lock(&self.live);
+        if let Some(seq) = live.last.as_ref().map(|f| f.seq)
+            && live.sent.is_none_or(|(_, sent)| sent < seq)
+        {
+            self.send_newest(&mut live, Instant::now(), seq);
+        }
+    }
+
+    fn send_newest(&self, live: &mut Live, now: Instant, seq: u64) {
+        if let (Some(watcher), Some(frame)) = (&live.watcher, &live.last) {
             watcher.replace(
                 self.id.as_str(),
                 to_json(&NodeToHub::BrowserFrame(frame.clone())),
             );
+            live.sent = Some((now, seq));
         }
-        live.last = Some(frame);
     }
 
     /// Queues a person's input behind what came before it.
@@ -883,6 +910,8 @@ impl Session {
     /// Stops recording and the browser: the video is finished, the text files scrubbed once more with every value the
     /// session knew, and the browser killed with its profile (a Navi's kept one stays). Returns the files there are.
     pub async fn close(&self) -> Vec<(RecordingFile, u64)> {
+        let mut stages = crate::stages::Stages::new("node browser end");
+        stages.id(self.id.as_str());
         // Every step's DOM capture queued so far lands first, while the page is still there.
         let (done, flushed) = tokio::sync::oneshot::channel();
         if self.captures.send(Capture::Flush(done)).is_ok()
@@ -894,6 +923,7 @@ impl Session {
         }
         // Held to the end: no capture runs while the files are scrubbed and closed.
         let _turn = self.dom_turn.lock().await;
+        stages.done("captures");
         lock(&self._ticker).take();
         if let Some((_, page)) = self.page() {
             let _ = self
@@ -902,16 +932,19 @@ impl Session {
                 .await;
         }
         lock(&self._screencast).take();
+        stages.done("screencast");
         if let Some(video) = &self.video
             && let Err(why) = video.finish(self.start.elapsed()).await
         {
             let _ = std::fs::remove_file(self.dir.join(RecordingFile::Video.file_name()));
             self.set_note(format!("no video: {why}"));
         }
+        stages.done("video");
         let browser = lock(&self.browser).take();
         if let Some(browser) = browser {
             browser.close().await;
         }
+        stages.done("browser");
         let scrub = self.scrub();
         for file in [RecordingFile::Actions, RecordingFile::Dom] {
             if let Err(e) = record::scrub_file(&self.dir.join(file.file_name()), &scrub) {
@@ -920,6 +953,7 @@ impl Session {
             }
         }
         self.write_meta(Some(crate::node::util::now_iso()));
+        stages.done("scrub");
         files(&self.dir)
     }
 }
@@ -940,8 +974,26 @@ async fn screencast(
     session: std::sync::Weak<Session>,
     mut events: tokio::sync::mpsc::UnboundedReceiver<Event>,
 ) {
+    // A frame that waits for its turn in the live view goes then, unless a newer one went first.
+    let mut flush: Option<Instant> = None;
     loop {
-        let Some(event) = events.recv().await else {
+        let wait = async {
+            match flush {
+                Some(at) => tokio::time::sleep_until(at.into()).await,
+                None => std::future::pending().await,
+            }
+        };
+        let event = tokio::select! {
+            event = events.recv() => event,
+            () = wait => {
+                flush = None;
+                if let Some(session) = session.upgrade() {
+                    session.flush_live();
+                }
+                continue;
+            }
+        };
+        let Some(event) = event else {
             return;
         };
         let Some(session) = session.upgrade() else {
@@ -970,7 +1022,9 @@ async fn screencast(
                 let Ok(jpeg) = B64.decode(data) else {
                     continue;
                 };
-                session.live_frame(data, &jpeg, &event.params["metadata"]);
+                if let Some(at) = session.live_frame(data, &jpeg, &event.params["metadata"]) {
+                    flush.get_or_insert(at);
+                }
                 if let Some(video) = &session.video {
                     video.frame(jpeg, session.start.elapsed());
                 }
