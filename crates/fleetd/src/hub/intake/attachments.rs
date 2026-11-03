@@ -3,7 +3,8 @@
 //! its machine and lists them in the lead's wake, an Office file with its text beside it ([`super::office`]). Rows
 //! never used are deleted after 24 h. A file too large for one call comes in pieces first (`attachment_part`),
 //! appended under `<home>/attachments/uploads/<id>`. Every file's bytes must fit its type
-//! ([`AttachmentMime::fits`]), and its name carries an extension of that type.
+//! ([`AttachmentMime::fits`]), its name carries an extension of that type, and text is kept as UTF-8 (a bank's
+//! Windows-1252 CSV, Excel's UTF-16 text).
 use std::path::PathBuf;
 
 use base64::Engine;
@@ -300,10 +301,16 @@ pub async fn put(
                 input.mime.as_str()
             ),
         )
-        .with_fix(
-            "Send images, PDF, text or CSV, Word, Excel or PowerPoint (.docx, .xlsx, .pptx) or zip, with the type its \
-             bytes are.",
-        ));
+        .with_fix(match input.mime {
+            AttachmentMime::Text | AttachmentMime::Csv => {
+                "It holds binary data, not text: save or export it as CSV or plain text (any encoding), or send the \
+                 original file (an .xlsx, a PDF) as itself."
+            }
+            _ => {
+                "Send images, PDF, text or CSV, Word, Excel or PowerPoint (.docx, .xlsx, .pptx) or zip, with the \
+                 type its bytes are."
+            }
+        }));
     }
     let name = safe_name(&input.name);
     let (attachment_id, len, sha) =
@@ -318,8 +325,8 @@ pub async fn put(
 }
 
 /// Stores a file's bytes under their sha256 and gives it a row `by` its uploader (a key, or `lead:<project>` for an
-/// agent's image or file), its name with an extension of its type, deleting the unused uploads past their 24 h on the
-/// way. Its id, size and sha256.
+/// agent's image or file), its name with an extension of its type and text as UTF-8, deleting the unused uploads past
+/// their 24 h on the way. Its id, size and sha256.
 pub(crate) async fn store(
     hub: &Hub,
     bytes: Vec<u8>,
@@ -327,6 +334,14 @@ pub(crate) async fn store(
     mime: AttachmentMime,
     by: &str,
 ) -> Result<(AttachmentId, usize, String), ToolError> {
+    // Text is kept as UTF-8, whatever it was written in, so the lead's Read and every app read it as written.
+    let bytes = match mime {
+        AttachmentMime::Text | AttachmentMime::Csv => match AttachmentMime::utf8_text(&bytes) {
+            Some(text) => text.into_bytes(),
+            None => bytes,
+        },
+        _ => bytes,
+    };
     too_big(bytes.len())?;
     let name = mime.named(name);
     let sha = hex(&Sha256::digest(&bytes));
@@ -1003,6 +1018,11 @@ mod tests {
                 b"just text".as_slice(),
             ),
             ("notes.txt", "text/plain", b"\0\x01\x02 binary".as_slice()),
+            (
+                "bank.csv",
+                "text/csv",
+                b"PK\x03\x04\0\0 a workbook".as_slice(),
+            ),
         ] {
             let e = put(&hub, &me, send(name, mime, bytes)).await.unwrap_err();
             assert!(
@@ -1011,6 +1031,21 @@ mod tests {
                 e.message
             );
         }
+        // A bank's Windows-1252 CSV goes in, kept as UTF-8.
+        let bank = put(
+            &hub,
+            &me,
+            send("bank.csv", "text/csv", b"payee;amount\nCaf\xe9;\x8012\n"),
+        )
+        .await
+        .unwrap()
+        .attachment_id;
+        let kept = row(&hub, &bank).unwrap().unwrap();
+        assert_eq!(
+            std::fs::read(dir(&hub).join(&kept.sha256)).unwrap(),
+            "payee;amount\nCafé;€12\n".as_bytes()
+        );
+        assert_eq!(kept.bytes, "payee;amount\nCafé;€12\n".len() as i64);
         let script = put(&hub, &me, send("run.command", "text/plain", b"echo hi"))
             .await
             .unwrap()
