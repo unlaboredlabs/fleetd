@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ChatItem } from "../../src/data/chat";
 import type { ChatMessage } from "../../src/data/chat-contract";
-import { arrivalsOf, authorLabel, chatRows, ENTER_MS, dayLabel, heldLabel, keepRows, latestLabel, newestKey, rowIndexOf, type Row } from "./model";
+import { arrivalsOf, authorLabel, chatRows, ENTER_MS, dayLabel, heldLabel, keepRows, latestLabel, newestKey, rowIndexOf, viaOf, type Row } from "./model";
 
 const at = (d: number, h: number, m = 0) => new Date(Date.UTC(2026, 9, d, h, m)).toISOString();
 const NOW = Date.parse(at(19, 18));
@@ -372,5 +372,17 @@ describe("what enters with motion", () => {
     const opened = arrivalsOf(undefined, [hub("a", 1)], true, NOW);
     const next = arrivalsOf(opened, [hub("a", 1), hub("b", 2)], true, NOW);
     expect(entering(arrivalsOf(next, [hub("a", 1), hub("b", 2), hub("c", 3)], true, NOW + ENTER_MS))).toEqual({ c: 0 });
+  });
+});
+
+describe("where a person's message came from", () => {
+  const from = (client: string | undefined, over: Partial<ChatMessage> = {}) =>
+    viaOf(item("m", "human", at(19, 9), { message: { client, ...over } as ChatMessage }));
+  it("says so for Telegram, Shortcuts and the Share Sheet, and nothing for the apps or the CLI", () => {
+    expect([from("telegram"), from("shortcuts"), from("share")].map((v) => v?.text)).toEqual(["From Telegram", "From Shortcuts", "From the Share Sheet"]);
+    expect([from(undefined), from("app"), from("cli"), from("someday")]).toEqual([undefined, undefined, undefined, undefined]);
+  });
+  it("names who a Telegram forward came from", () => {
+    expect(from("telegram", { forwardedFrom: "Mallory" } as Partial<ChatMessage>)).toEqual({ text: "Forwarded from Mallory on Telegram", forwarded: true });
   });
 });

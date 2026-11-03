@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyDelta, applyHistory, chatItems, emptyChat, type Chat, type ChatItem, type ChatMessage } from "./desktop";
-import { aimOf, attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, sendWait, SLOW_SEND_MS, streamingAt, threadRows, timeLine, viewOffsetOf, type ThreadRow } from "./chatView";
+import { aimOf, attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, sendWait, SLOW_SEND_MS, streamingAt, viaNote, threadRows, timeLine, viewOffsetOf, type ThreadRow } from "./chatView";
 
 const message = (text: string, parts?: ChatMessage["parts"]): ChatMessage => ({
   messageId: "m1",
@@ -57,6 +57,14 @@ describe("bubbles", () => {
     expect(previewOf({ author: "lead", text: streaming.text, message: streaming })).toBe("One more:");
     // A person's own fence is what they wrote: the chats list shows it as text.
     expect(previewOf({ author: "human", text: fence })).toBe('You: {"v":1,"kind":"table","columns":["PR",""],"rows":[]}');
+  });
+});
+
+describe("viaNote", () => {
+  it("says where a person's message came from when not the app, and nothing for the lead's", () => {
+    const from = (client: string | undefined, author: ChatItem["author"] = "human") => viaNote({ author, message: { client } as ChatItem["message"] });
+    expect([from("shortcuts"), from("share"), from("telegram")]).toEqual(["From Shortcuts", "From the Share Sheet", "From Telegram"]);
+    expect([from(undefined), from("app"), from("cli"), from("shortcuts", "lead")]).toEqual([undefined, undefined, undefined, undefined]);
   });
 });
 

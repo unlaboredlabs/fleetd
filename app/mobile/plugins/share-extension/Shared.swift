@@ -37,6 +37,8 @@ struct Problem: Equatable, Error {
   let retry: Bool
   /// An SF Symbol for it.
   let symbol: String
+  /// The hub's error code, for a refusal it sent.
+  var code: String? = nil
 
   static let notPaired = Problem(
     title: "Pair fleetd first",
@@ -81,7 +83,7 @@ struct Problem: Equatable, Error {
   }
 
   static func hub(code: String, message: String, fix: String?) -> Problem {
-    Problem(title: "The hub didn't take it", message: [message, fix].compactMap { $0 }.joined(separator: " "), retry: true, symbol: "exclamationmark.triangle")
+    Problem(title: "The hub didn't take it", message: [message, fix].compactMap { $0 }.joined(separator: " "), retry: true, symbol: "exclamationmark.triangle", code: code)
   }
 }
 
@@ -90,6 +92,8 @@ enum Frame {
   case ready
   case snapshot([String: Any])
   case result(id: String, output: [String: Any])
+  /// One of the hub's events, after an `events` subscription: its type ("chat.message") and data.
+  case event(type: String, data: [String: Any])
   case error(id: String?, code: String, message: String, fix: String?)
 
   static func parse(_ text: Data) -> Frame? {
@@ -97,6 +101,9 @@ enum Frame {
     switch t {
     case "ready": return .ready
     case "snapshot": return .snapshot(f)
+    case "event":
+      guard let type = f["type"] as? String else { return nil }
+      return .event(type: type, data: f["data"] as? [String: Any] ?? [:])
     case "result":
       guard let id = f["id"] as? String else { return nil }
       return .result(id: id, output: f["output"] as? [String: Any] ?? [:])
@@ -312,14 +319,27 @@ enum Calls {
     return input
   }
 
-  /// The same requestId on a retry returns the message already sent, never a second one.
-  static func send(_ chat: ChatTarget, text: String, attachments: [String], requestId: String) -> [String: Any] {
+  /// The same requestId on a retry returns the message already sent, never a second one. `client` is where it was
+  /// written, which the chat shows under it and the lead reads: each sender names its own, never its input.
+  static func send(_ chat: ChatTarget, text: String, attachments: [String], requestId: String, client: Client) -> [String: Any] {
     var input: [String: Any] = [
       "projectRef": ["machineId": chat.machineId, "projectId": chat.projectId],
       "text": text,
       "clientRequestId": requestId,
+      "client": client.rawValue,
     ]
     if !attachments.isEmpty { input["attachments"] = attachments }
     return input
   }
+
+  /// A hub from before `client` named this sender refuses the input; it goes again without it, as from the app.
+  static func olderHub(_ problem: Problem, client: Client) -> Bool {
+    problem.code == "invalid" && problem.message.contains("`\(client.rawValue)`")
+  }
+}
+
+/// Where a message was written (ChatClient in crates/fleetd-contracts/src/chat.rs), for the senders outside the app.
+enum Client: String {
+  case share
+  case shortcuts
 }

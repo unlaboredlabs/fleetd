@@ -337,7 +337,7 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
           </div>
         ) : null}
         {via !== undefined ? (
-          <div className={cx(s.via, quote.className)} style={quote.style} data-via={via.forwarded ? "forward" : "telegram"}>
+          <div className={cx(s.via, quote.className)} style={quote.style} data-via={via.forwarded ? "forward" : i.message?.client}>
             {via.forwarded ? <Forward size={12} aria-hidden /> : <Send size={12} aria-hidden />}
             <Text size="xs" tone="quiet">
               {via.text}
