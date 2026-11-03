@@ -16,6 +16,11 @@ pub enum StoreError {
 /// The hub's SQLite database. HubStore, EventLog, Auth and the areas with tables share this one connection.
 pub struct HubDb {
     conn: Mutex<Connection>,
+    /// `<home>/hub.sqlite`; None for an in-memory database.
+    path: Option<PathBuf>,
+    /// A read-only second connection to `path`, opened on the first `read`, for long reads (the time tools) that
+    /// would otherwise hold `conn` for seconds; None when it can't open, and then `read` uses `conn`.
+    reader: OnceLock<Option<Mutex<Connection>>>,
     /// `<home>/prompts`, where prompt overrides live; None for an in-memory database, which has the shipped prompts only.
     prompts_dir: Option<PathBuf>,
     /// `<home>/memory`, the leads' memory (`hub::memory`); set by `open`, or by the hub built over an in-memory one.
@@ -33,8 +38,10 @@ impl HubDb {
         #[cfg(unix)]
         std::os::unix::fs::DirBuilderExt::mode(&mut dir, 0o700);
         dir.create(home)?;
+        let path = home.join("hub.sqlite");
         let db = Self::from_connection(
-            Connection::open(home.join("hub.sqlite"))?,
+            Connection::open(&path)?,
+            Some(path),
             Some(home.join("prompts")),
         )?;
         db.set_memory_dir(home.join("memory"));
@@ -45,11 +52,12 @@ impl HubDb {
     /// A private in-memory database, for tests.
     #[cfg(test)]
     pub fn open_memory() -> Result<Arc<Self>, StoreError> {
-        Self::from_connection(Connection::open_in_memory()?, None)
+        Self::from_connection(Connection::open_in_memory()?, None, None)
     }
 
     fn from_connection(
         conn: Connection,
+        path: Option<PathBuf>,
         prompts_dir: Option<PathBuf>,
     ) -> Result<Arc<Self>, StoreError> {
         // Lets the CLI write keys while the hub runs; a writer waits up to 5 s for the other's lock.
@@ -58,6 +66,8 @@ impl HubDb {
         conn.execute_batch("PRAGMA synchronous = NORMAL")?;
         let db = Self {
             conn: Mutex::new(conn),
+            path,
+            reader: OnceLock::new(),
             prompts_dir,
             memory_dir: OnceLock::new(),
             skills_dir: OnceLock::new(),
@@ -78,6 +88,38 @@ impl HubDb {
         f: impl FnOnce(&Connection) -> Result<R, StoreError>,
     ) -> Result<R, StoreError> {
         f(&self.lock())
+    }
+
+    /// Runs `f` on a read-only connection of its own, so a long read never holds up the hub's other calls. It sees
+    /// what was committed when it starts, as `with` does (WAL). In-memory databases have no second connection and
+    /// use the main one.
+    pub fn read<R>(
+        &self,
+        f: impl FnOnce(&Connection) -> Result<R, StoreError>,
+    ) -> Result<R, StoreError> {
+        let reader = self.reader.get_or_init(|| {
+            let path = self.path.as_ref()?;
+            match Self::open_reader(path) {
+                Ok(conn) => Some(Mutex::new(conn)),
+                Err(e) => {
+                    tracing::warn!(error = %e, "hub db: no read-only connection; long reads share the main one");
+                    None
+                }
+            }
+        });
+        match reader {
+            Some(conn) => f(&conn.lock().unwrap_or_else(|poisoned| poisoned.into_inner())),
+            None => self.with(f),
+        }
+    }
+
+    fn open_reader(path: &Path) -> Result<Connection, StoreError> {
+        let conn = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.execute_batch("PRAGMA busy_timeout = 5000")?;
+        Ok(conn)
     }
 
     /// Runs `f` in a write transaction (`BEGIN IMMEDIATE`), so a concurrent writer (the CLI next to a running hub)
