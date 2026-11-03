@@ -513,6 +513,8 @@ impl Pool {
             return Err(format!("{slot} is gone at boat.dev: Reset it"));
         }
         let already_up = seen.phase() == Phase::Up;
+        // Kept for a refused resume: the machine never ran, so its 12 days to the keepalive still count from here.
+        let asleep_since = row.asleep_since;
         row.state = State::Waking;
         row.wake_at = Some(now);
         row.wake_why = Some(why.as_str().to_owned());
@@ -578,7 +580,7 @@ impl Pool {
                 };
                 row.lease_until = None;
                 row.renewed_at = None;
-                row.asleep_since = Some(now);
+                row.asleep_since = asleep_since;
                 row.note = Some(e.line());
                 if e == BoatError::DataExpired {
                     row.sandbox_id = None;

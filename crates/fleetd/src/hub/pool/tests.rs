@@ -1266,3 +1266,53 @@ async fn a_machine_is_awake_only_once_it_caught_up() {
         1
     );
 }
+
+/// A refused wake (routine with failFast) leaves the machine's 12 days counting from when it really went to sleep, so
+/// the keepalive is tried again at the next sweep, not 12 days later after boat expired the disk.
+#[tokio::test]
+async fn a_refused_wake_keeps_the_keepalive_count() {
+    let w = World::new().await;
+    w.asleep("boat-1").await;
+    let slept = w.pool.ledger.slot("boat-1").unwrap().unwrap().asleep_since;
+    w.advance(Duration::from_secs(12 * 86_400));
+    w.boat.refuse("resume", BoatError::NoReadyMachine);
+    sweep::sweep(&w.pool).await.unwrap();
+    let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
+    assert_eq!((row.state, row.asleep_since), (State::Asleep, slept));
+    // The next sweep, past the backoff, tries again.
+    w.advance(10 * MIN);
+    sweep::sweep(&w.pool).await.unwrap();
+    assert_eq!(w.state("boat-1"), State::Waking);
+    assert_eq!(w.boat.calls_like("resume").len(), 2);
+}
+
+/// boat's machines-at-once limit, filled by machines outside the pool while none of ours runs: the sweep lifts the
+/// hold once /limits shows room again, so bursting isn't held for good.
+#[tokio::test]
+async fn the_machines_at_once_hold_lifts_when_boat_has_room() {
+    let w = World::new().await;
+    w.asleep("boat-1").await;
+    w.boat.plant("bx_persons1", &[("mine", "yes")], "running");
+    w.boat.s.lock().unwrap().limits.max_active_sandboxes = 1;
+    w.boat.refuse("resume", BoatError::LimitReached);
+    w.pool.wake("boat-1", Why::Need).await.unwrap_err();
+    assert_eq!(
+        w.pool.start_held().as_deref(),
+        Some("boat.dev: machines-at-once limit reached")
+    );
+    // Still full at boat: held.
+    sweep::sweep(&w.pool).await.unwrap();
+    assert!(w.pool.start_held().is_some());
+    // The person's own machine stops: room, and the hold lifts with no machine of ours stopping.
+    w.boat
+        .s
+        .lock()
+        .unwrap()
+        .machines
+        .get_mut("bx_persons1")
+        .unwrap()
+        .state = "archived".into();
+    sweep::sweep(&w.pool).await.unwrap();
+    assert_eq!(w.pool.start_held(), None);
+    w.pool.wake("boat-1", Why::Need).await.unwrap();
+}

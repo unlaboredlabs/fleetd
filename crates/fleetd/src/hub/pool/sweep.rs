@@ -14,8 +14,8 @@
 //!
 //! A list that can't be read whole changes nothing. Machines with another hub's label are never touched. The sweep
 //! also takes the plan's starts and dollars from `GET /limits`, lifts a billing or key pause once boat can start
-//! again, warns once when boat runs more machines than the hub knows, reads boat's cost into the meter, and wakes a
-//! slot that has slept 12 days (the keepalive).
+//! again and a machines-at-once hold once it has room, warns once when boat runs more machines than the hub knows,
+//! reads boat's cost into the meter, and wakes a slot that has slept 12 days (the keepalive).
 use std::sync::atomic::Ordering;
 
 use super::boat::{BoatError, Phase};
@@ -47,6 +47,13 @@ pub async fn sweep(pool: &Pool) -> Result<(), String> {
     if limits.can_start && s.paused.is_some() {
         tracing::info!("pool: boat.dev can start again; bursting resumes");
         pool.ledger.set_paused(None).map_err(|e| e.to_string())?;
+    }
+    // boat's machines-at-once limit: held only while /limits still shows it full. Machines the person runs outside the
+    // pool may have filled it, and none of ours stopping would ever lift it; a member cap /limits doesn't show is
+    // tried again at the next start, which boat refuses without counting it.
+    if s.full && limits.active_sandboxes < limits.max_active_sandboxes {
+        tracing::info!("pool: boat.dev has room for a machine again");
+        pool.ledger.set_full(false).map_err(|e| e.to_string())?;
     }
     let labels = [(LABEL_HUB.to_owned(), s.hub_id.clone())];
     let list = pool.boat.list(&labels).await.map_err(|e| e.line())?;
