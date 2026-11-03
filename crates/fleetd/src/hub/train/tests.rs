@@ -5731,6 +5731,60 @@ async fn a_writers_pr_set_after_it_completed_is_queued_as_its_own() {
     assert_eq!(writers_changes(&kit), [(9, Some("T1".into()))]);
 }
 
+/// A PR merged on GitHub before the train saw it, as `#{n}` would be: closed and merged.
+fn merge_on_github(kit: &Kit, n: i64) {
+    let mut pulls = kit.gh.pulls.lock().unwrap();
+    let p = pulls.get_mut(&n).unwrap();
+    p.state = "closed".into();
+    p.merged = true;
+    p.merged_at = Some("2026-10-17T12:00:00Z".into());
+}
+
+/// A writer that ends after its PR merged names it in its result: nothing to enqueue, so no Change and no refusal
+/// woken to the lead.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_task_results_merged_pr_is_skipped_quietly() {
+    let kit = Kit::new();
+    kit.running_task("T1", "write");
+    let pr = kit.open_pr(7, "fleetd/T1", &[add("a1.txt", "a\n")]);
+    merge_on_github(&kit, 7);
+    {
+        let mut tasks = kit.host.tasks.lock().unwrap();
+        let writer = tasks.get_mut("T1").unwrap();
+        writer.state = "done".into();
+        writer.pr_url = Some(pr);
+    }
+    kit.train.on_task_pr("T1").await;
+    assert_eq!(writers_changes(&kit), []);
+    assert_eq!(kit.host.events_of("change.refused"), Vec::<Value>::new());
+    assert_eq!(kit.host.wakes.lock().unwrap().clone(), Vec::<String>::new());
+}
+
+/// A lead's own `change_enqueue` of a merged PR is still refused, with its fix.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_leads_enqueue_of_a_merged_pr_is_refused() {
+    let kit = Kit::new();
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    merge_on_github(&kit, 7);
+    let e = kit
+        .train
+        .enqueue(&project(), enqueue_call(pr.clone()))
+        .await
+        .expect_err("refused");
+    assert_eq!(
+        e.message,
+        format!("The train refused {pr}: It is already merged.")
+    );
+    assert_eq!(e.fix.as_deref(), Some("enqueue an open PR"));
+    let refused = kit.train.list(&ListFilter {
+        state: Some(ChangeState::Refused),
+        limit: 10,
+        ..Default::default()
+    });
+    assert_eq!(refused.len(), 1);
+    assert_eq!(kit.host.events_of("change.refused").len(), 1);
+}
+
 /// The ready pass and a writer's result may enqueue one PR at once: one Change, one review round.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn racing_enqueues_of_one_pr_make_one_change_and_one_review_round() {
