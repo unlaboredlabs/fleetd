@@ -169,6 +169,7 @@ pub fn registry() -> Registry {
     crate::hub::approvals::tools::register(&mut tools);
     crate::hub::projects::tools::register(&mut tools);
     crate::hub::mcp_servers::tools::register(&mut tools);
+    crate::hub::mcp_oauth::tools::register(&mut tools);
     crate::hub::claude_accounts::tools::register(&mut tools);
     crate::hub::onepassword::register(&mut tools);
     crate::hub::telegram::register(&mut tools);

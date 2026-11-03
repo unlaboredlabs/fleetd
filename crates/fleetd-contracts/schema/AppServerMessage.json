@@ -1173,6 +1173,11 @@
           "const": "machine_add.step",
           "description": "A machine_add started, moved a step or ended; `data` is `machine_setup::MachineAddStepData`.\nmachine_add_status reads the rest.",
           "type": "string"
+        },
+        {
+          "const": "mcp.oauth",
+          "description": "An MCP server's sign-in changed: one started, finished or failed, or its token couldn't be renewed\n(`data.projectRef`, `data.name`, `data.status`). mcp_servers_get reads the rest; never a token.",
+          "type": "string"
         }
       ],
       "x-open": true

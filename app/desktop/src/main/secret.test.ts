@@ -4,7 +4,7 @@ import rust from "./secret.rust-seal.json";
 import { SECRET_MAX_BYTES } from "../shared/contracts";
 import { IPC } from "../shared/channels";
 import { parseRequest } from "../shared/ipc";
-import { seal, submitClaudeAccount, submitHubLink, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret, submitTelegram } from "./secret";
+import { seal, submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret, submitTelegram } from "./secret";
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, "base64"));
 
@@ -205,6 +205,33 @@ describe("a pasted hub link key", () => {
     expect(wrong.ok).toBe(false);
     if (!wrong.ok) expect(wrong.error.fix).toContain("flk_");
     expect(sent).toEqual([]);
+  });
+});
+
+describe("a person's own OAuth client for an MCP server's sign-in", () => {
+  it("goes to mcp_oauth_start with its secret sealed to the hub's own key, and a public client with none", async () => {
+    await sodium.ready;
+    const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
+    const sent: unknown[] = [];
+    const call = (tool: string, input: unknown) => {
+      sent.push(tool, input);
+      return Promise.resolve({ ok: true as const, output: { redirectUri: "http://devbox:4790/oauth/callback" } });
+    };
+    const scope = { kind: "project" as const, machineId: "devbox", projectId: "ada" };
+    const request = { scope, name: "mail", hubUrl: "http://devbox:4790", boxPubKey: rust.publicKey, clientId: " my-client ", clientSecret: "s3cret-devbox\n" };
+    expect(parseRequest(IPC.mcpOauthClientSubmit, ["hub", request]).ok).toBe(true);
+    expect(parseRequest(IPC.mcpOauthClientSubmit, ["hub", { ...request, scope: { kind: "global" } }]).ok).toBe(false);
+    expect((await submitMcpOauthClient(request, call)).ok).toBe(true);
+    expect(sent[0]).toBe("mcp_oauth_start");
+    const input = sent[1] as { client: { clientId: string; sealedSecret: string } };
+    expect(JSON.stringify(input)).not.toContain("s3cret");
+    expect(input).toMatchObject({ scope, name: "mail", hubUrl: "http://devbox:4790", client: { clientId: "my-client" } });
+    expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.client.sealedSecret), pk, sk))).toBe("s3cret-devbox");
+
+    sent.length = 0;
+    await submitMcpOauthClient({ ...request, clientSecret: "  " }, call);
+    expect(sent[1]).toMatchObject({ client: { clientId: "my-client" } });
+    expect((sent[1] as { client: object }).client).not.toHaveProperty("sealedSecret");
   });
 });
 

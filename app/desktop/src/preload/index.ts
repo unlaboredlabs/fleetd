@@ -67,6 +67,7 @@ const api: FleetdApi = {
     projectEnv: (hub, request) => ipcRenderer.invoke(IPC.projectEnvSubmit, hub, request) as Promise<CallOutcome>,
     mcpServer: (hub, request) => ipcRenderer.invoke(IPC.mcpServerSubmit, hub, request) as Promise<CallOutcome>,
     hubLink: (hub, request) => ipcRenderer.invoke(IPC.hubLinkSubmit, hub, request) as Promise<CallOutcome>,
+    mcpOauthClient: (hub, request) => ipcRenderer.invoke(IPC.mcpOauthClientSubmit, hub, request) as Promise<CallOutcome>,
     claudeAccount: (hub, request) => ipcRenderer.invoke(IPC.claudeAccountSubmit, hub, request) as Promise<CallOutcome>,
     onePassword: (hub, request) => ipcRenderer.invoke(IPC.onePasswordSubmit, hub, request) as Promise<CallOutcome>,
     telegram: (hub, request) => ipcRenderer.invoke(IPC.telegramSubmit, hub, request) as Promise<CallOutcome>,

@@ -73,6 +73,11 @@ export const IPC = {
   /** invoke(HubLinkRequest) → CallOutcome. Main seals a pasted link key to the hub's own key, then calls hub_link_add. */
   hubLinkSubmit: "hub-link:submit",
   /**
+   * invoke(McpOauthClientRequest) → CallOutcome. Main seals the person's own OAuth client secret to the hub's own key,
+   * then calls mcp_oauth_start with the client.
+   */
+  mcpOauthClientSubmit: "mcp:oauth-client-submit",
+  /**
    * invoke(GithubAppRequest) → CallOutcome. Main posts the hub's App manifest to GitHub from a loopback page, catches
    * GitHub's code there and calls github_app_create; `cancelled` when the admin stops waiting.
    */

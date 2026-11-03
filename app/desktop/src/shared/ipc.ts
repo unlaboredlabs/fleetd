@@ -179,6 +179,20 @@ export const McpServerRequest = z.strictObject({
 });
 export type McpServerRequest = z.infer<typeof McpServerRequest>;
 /**
+ * The person's own OAuth client for an MCP server whose service lets no app register itself (a Navi's Integrations):
+ * main seals `clientSecret` to `boxPubKey`, the hub's own key from mcp_oauth_start's needsClient, and calls
+ * mcp_oauth_start with the client. The hub gets the box, never the secret. No secret: a public client.
+ */
+export const McpOauthClientRequest = z.strictObject({
+  scope: z.strictObject({ kind: z.literal("project"), machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) }),
+  name: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u),
+  hubUrl: z.string().trim().min(1).max(2048).optional(),
+  boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),
+  clientId: z.string().trim().min(1).max(512),
+  clientSecret: z.string().max(4096),
+});
+export type McpOauthClientRequest = z.infer<typeof McpOauthClientRequest>;
+/**
  * A link key pasted into a Navi's Linked hubs (Settings › Projects): main seals `key` to `boxPubKey`, the hub's own key
  * from hub_links_get, and calls hub_link_add. The hub gets the box, never the key, and nothing returns it.
  */
@@ -337,6 +351,7 @@ export const REQUESTS = {
   [IPC.projectEnvSubmit]: z.tuple([HubId, ProjectEnvRequest]),
   [IPC.mcpServerSubmit]: z.tuple([HubId, McpServerRequest]),
   [IPC.hubLinkSubmit]: z.tuple([HubId, HubLinkRequest]),
+  [IPC.mcpOauthClientSubmit]: z.tuple([HubId, McpOauthClientRequest]),
   [IPC.githubAppCreate]: z.tuple([HubId, GithubAppRequest]),
   [IPC.githubAppCancel]: none,
   [IPC.githubConnect]: z.tuple([HubId]),

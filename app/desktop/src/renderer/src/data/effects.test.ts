@@ -66,6 +66,10 @@ describe("event effects", () => {
     expect(tools(e("people.changed"))).toContain("setup_list");
   });
 
+  it("an MCP server's sign-in moved: Integrations reads the servers again, and nothing else", () => {
+    expect(effectsOf(e("mcp.oauth", { name: "mail", status: "connected" }))).toEqual({ invalidate: [{ tool: "mcp_servers_get" }], resync: false });
+  });
+
   it("your sidebar order moved on another desktop: this one reads it again, and nothing else", () => {
     expect(effectsOf(e("sidebar.order"))).toEqual({ invalidate: [{ tool: "sidebar_order_get" }], resync: false });
   });

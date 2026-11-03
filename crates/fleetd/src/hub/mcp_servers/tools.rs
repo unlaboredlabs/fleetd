@@ -12,7 +12,7 @@ use fleetd_contracts::mcp::{
 };
 use fleetd_contracts::mcp_servers::{
     MCP_SERVERS_MAX, McpField, McpScope, McpSealedOn, McpSecretKey, McpSecretSet, McpServer,
-    McpTestResult, McpValue, McpValueName, McpValueSet,
+    McpTestResult, McpValue, McpValueName, McpValueSet, OAUTH_HEADER,
 };
 use fleetd_contracts::node_link::CAP_MCP_SERVERS;
 use fleetd_contracts::prim::True;
@@ -36,7 +36,7 @@ pub fn register(tools: &mut Registry) {
 /// A server runs whatever it is given on the machines its agents run on: only a person changes them, a project's with
 /// operate on its machine. A global one (and whether agents get the person's own) reaches every teammate's agents, so
 /// it takes admin on every machine: an owner's or admin's device, never a member's (D209).
-fn may_change(caller: &Caller, scope: &McpScope) -> Result<(), ToolError> {
+pub(crate) fn may_change(caller: &Caller, scope: &McpScope) -> Result<(), ToolError> {
     let allowed = match scope {
         McpScope::Project { machine_id, .. } => allows(caller, Role::Operate, Some(machine_id)),
         McpScope::Global => allows_everywhere(caller, Role::Admin),
@@ -65,7 +65,7 @@ fn may_change(caller: &Caller, scope: &McpScope) -> Result<(), ToolError> {
     .with_fix("Change them in the desktop app: Settings › Hub › Every project › Tools & skills, or the project's settings."))
 }
 
-fn project_of(hub: &Hub, scope: &McpScope) -> Result<Option<ProjectRef>, ToolError> {
+pub(crate) fn project_of(hub: &Hub, scope: &McpScope) -> Result<Option<ProjectRef>, ToolError> {
     let McpScope::Project {
         machine_id,
         project_id,
@@ -84,7 +84,7 @@ fn project_of(hub: &Hub, scope: &McpScope) -> Result<Option<ProjectRef>, ToolErr
 }
 
 /// The node can take MCP calls: online and new enough.
-fn node_ready(hub: &Hub, m: &MachineId) -> Result<(), ToolError> {
+pub(crate) fn node_ready(hub: &Hub, m: &MachineId) -> Result<(), ToolError> {
     if !hub.executors.is_connected(m) {
         return Err(offline(m));
     }
@@ -98,7 +98,7 @@ fn node_ready(hub: &Hub, m: &MachineId) -> Result<(), ToolError> {
     Ok(())
 }
 
-fn not_found(scope: &McpScope, name: &str) -> ToolError {
+pub(crate) fn not_found(scope: &McpScope, name: &str) -> ToolError {
     let place = match scope {
         McpScope::Global => "global".to_owned(),
         McpScope::Project { project_id, .. } => format!("project {project_id}'s"),
@@ -176,14 +176,42 @@ async fn set(
         )
         .with_fix("Remove one first."));
     }
-    let field_of = |field: McpField| match field {
-        McpField::Env => &input.env,
-        McpField::Header => &input.headers,
-    };
     let saved_secret = |field: McpField, name: &McpValueName| -> Option<&McpValue> {
         before.as_ref()?.values().find_map(|(f, v)| {
             (f == field && &v.name == name && v.kind == EnvVarKind::Secret).then_some(v)
         })
+    };
+    // A server signed in with OAuth keeps its sign-in, and its token on the machine, through a save that leaves its
+    // URL and its Authorization header alone; a new URL, or a typed Authorization, ends it.
+    let typed_token = input
+        .headers
+        .iter()
+        .any(|v| v.name().as_str().eq_ignore_ascii_case(OAUTH_HEADER));
+    let had_sign_in = before.as_ref().is_some_and(|b| b.oauth.is_some());
+    let signs_in = had_sign_in
+        && !typed_token
+        && before
+            .as_ref()
+            .is_some_and(|b| b.transport == input.transport);
+    let token = McpValueName::unchecked(OAUTH_HEADER);
+    let env: Vec<McpValueSet> = input.env.iter().cloned().collect();
+    let headers: Vec<McpValueSet> = input
+        .headers
+        .iter()
+        .cloned()
+        .chain(
+            (signs_in && saved_secret(McpField::Header, &token).is_some()).then(|| {
+                McpValueSet::Keep {
+                    name: token.clone(),
+                }
+            }),
+        )
+        .collect();
+    let field_of = |field: McpField| -> &[McpValueSet] {
+        match field {
+            McpField::Env => &env,
+            McpField::Header => &headers,
+        }
     };
     // Every machine that gets a node call: those the new boxes are for, and those holding this server's secrets now.
     let mut targets: BTreeSet<MachineId> = BTreeSet::new();
@@ -328,6 +356,11 @@ async fn set(
             })
             .collect()
     };
+    // Read again: a renewal may have changed the sign-in while the nodes answered.
+    let oauth = match signs_in {
+        true => store.get(&input.scope, &input.name)?.and_then(|s| s.oauth),
+        false => None,
+    };
     let server = McpServer {
         scope: input.scope.clone(),
         name: input.name.clone(),
@@ -337,9 +370,13 @@ async fn set(
         env: values(McpField::Env),
         headers: values(McpField::Header),
         integration: input.integration.clone(),
+        oauth,
         updated_at: now(&hub),
     };
     store.put(&server)?;
+    if had_sign_in && !signs_in {
+        crate::hub::mcp_oauth::forget(&hub, &input.scope, &input.name).await;
+    }
     let machines: Vec<MachineId> = match &project {
         Some(r) => vec![r.machine_id.clone()],
         None => hub
@@ -386,6 +423,9 @@ async fn remove(
         return Err(not_found(&input.scope, &input.name));
     };
     store.remove(&input.scope, &input.name)?;
+    if before.oauth.is_some() {
+        crate::hub::mcp_oauth::forget(&hub, &input.scope, &input.name).await;
+    }
     // Each node holding its secrets forgets them; one offline keeps them unused until the server is saved again.
     let holders: BTreeSet<MachineId> = before
         .values()
@@ -503,6 +543,23 @@ async fn test(
             })?,
     };
     require(&caller, Role::Operate, Some(&machine_id))?;
+    if let Some(oauth) = server.oauth.as_ref().filter(|_| !super::signed_in(&server)) {
+        return Ok(McpServerTestOutput {
+            machine_id,
+            result: McpTestResult {
+                error: Some(oauth.problem.clone().unwrap_or_else(|| {
+                    format!(
+                        "{} isn't signed in yet: sign in with your own account.",
+                        server.name
+                    )
+                })),
+                sign_in: Some(true),
+                ..Default::default()
+            },
+            next: Some("mcp_oauth_start opens its sign-in.".into()),
+            truncated: None,
+        });
+    }
     node_ready(&hub, &machine_id)?;
     let missing = server.secrets_missing_on(&machine_id);
     let Some(session) = super::for_session(&server, &machine_id) else {
@@ -520,11 +577,15 @@ async fn test(
             truncated: None,
         });
     };
+    let project_id = project.map(|r| r.project_id);
     let mut result = hub
         .executors
-        .mcp_test(&machine_id, project.map(|r| r.project_id), session)
+        .mcp_test(&machine_id, project_id.clone(), session.clone())
         .await
         .map_err(from_executor)?;
+    if result.error.as_deref().is_some_and(refused) {
+        result = turned_away(&hub, &server, &machine_id, project_id, session, result).await?;
+    }
     for tool in &mut result.tools {
         tool.policy = Some(crate::hub::integrations::policy::tool_policy(
             &server, &tool.name,
@@ -536,4 +597,76 @@ async fn test(
         next: None,
         truncated: None,
     })
+}
+
+/// A test the server turned away (HTTP 401).
+fn refused(error: &str) -> bool {
+    error.contains("401")
+}
+
+/// A test the server turned away: a signed-in server's token is renewed and tested again, and one the service won't
+/// renew is signed out; a server with no key that asks for sign-in says so.
+async fn turned_away(
+    hub: &Hub,
+    server: &McpServer,
+    machine_id: &MachineId,
+    project_id: Option<fleetd_contracts::ids::ProjectId>,
+    session: fleetd_contracts::mcp_servers::McpSessionServer,
+    result: McpTestResult,
+) -> Result<McpTestResult, ToolError> {
+    use crate::hub::mcp_oauth::{Renewed, renew_now, url_of};
+    if server.oauth.is_some() {
+        let renewed = renew_now(hub, &server.scope, &server.name)
+            .await
+            .map_err(|why| ToolError::new(ErrorCode::Failed, why))?;
+        return match renewed {
+            // Tested again as the server is now: its header may have reached the machine since the first test.
+            Renewed::Yes => {
+                let now = hub.db.mcp_servers().get(&server.scope, &server.name)?;
+                let session = now
+                    .as_ref()
+                    .and_then(|s| super::for_session(s, machine_id))
+                    .unwrap_or(session);
+                Ok(hub
+                    .executors
+                    .mcp_test(machine_id, project_id, session)
+                    .await
+                    .map_err(from_executor)?)
+            }
+            Renewed::SignedOut => {
+                let problem = hub
+                    .db
+                    .mcp_servers()
+                    .get(&server.scope, &server.name)?
+                    .and_then(|s| s.oauth?.problem);
+                Ok(McpTestResult {
+                    error: Some(problem.unwrap_or_else(|| {
+                        format!("{} signed fleetd out: sign in again.", server.name)
+                    })),
+                    sign_in: Some(true),
+                    ..result
+                })
+            }
+            Renewed::Later => Ok(result),
+        };
+    }
+    let keyed = server
+        .headers
+        .iter()
+        .any(|v| v.name.as_str().eq_ignore_ascii_case(OAUTH_HEADER));
+    match url_of(server) {
+        Some((url, sse))
+            if !keyed && crate::hub::mcp_oauth::oauth::offers_sign_in(url, sse).await =>
+        {
+            Ok(McpTestResult {
+                error: Some(format!(
+                    "{} asks you to sign in with your own account, not a key.",
+                    server.name
+                )),
+                sign_in: Some(true),
+                ..result
+            })
+        }
+        _ => Ok(result),
+    }
 }

@@ -1,10 +1,11 @@
 ---
 title: Integrations
-description: Connect a Navi to any MCP server, with your own credentials. Reads run unasked; everything else goes by the Navi's approval mode, and a card shows exactly what it would send.
+description: Connect a Navi to any MCP server, with a key or by signing in with your own account. Reads run unasked; everything else goes by the Navi's approval mode, and a card shows exactly what it would send.
 ---
 
 A Navi can reach any service with an MCP server. You connect each one yourself in the Navi's settings, under
-**Integrations**, with credentials you make. Your keys are sealed on the Navi's machine, and the Navi never sees them.
+**Integrations**, with a key you make or by signing in with your own account. Your keys are sealed on the Navi's
+machine, and the Navi never sees them.
 
 Integrations connect only to a Navi. A coding project's lead runs with full access, so it would send unasked; the hub
 refuses an integration on any other project.
@@ -54,6 +55,8 @@ approved at 09:12". The tool may still refuse or fail; what it did is in the Nav
 
 **Add an MCP server** takes a URL (MCP's streamable HTTP) or a command started on the Navi's machine, and an optional
 key: a header such as `Authorization: Bearer …`, or an environment variable. The key is sealed to the Navi's machine.
+A service that signs you in with your account instead takes no key: leave it empty, and **Connect and test** offers
+[Sign in](#sign-in).
 
 After **Connect and test**, fleetd lists the server's tools. A tool whose name says it only reads is listed as a read
 already; tick any other that only reads, and it runs unasked too. A tool its server marks read-only (MCP's
@@ -62,14 +65,44 @@ and the like) can't be ticked, and is never run.
 
 **Test connection** on a connected server runs the test again and lists each tool by what the hub does with it.
 
+## Sign in with your account {#sign-in}
+
+Many hosted MCP servers take no key: you sign in on the service's own page instead (OAuth). fleetd does this as MCP's
+[authorization spec](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) says, with no
+fleetd-run app in between:
+
+1. **Connect and test** finds that the server asks you to sign in, and **Sign in** opens the service's sign-in page in
+   your browser.
+2. You sign in there and allow fleetd. The service sends your browser back to a page the hub serves,
+   `<hub>/oauth/callback`, at the address this app reaches the hub by, so it works from any computer that reaches it.
+3. The dialog moves on by itself: it tests the server and asks which tools may run unasked, as for a key. The Navi gets
+   the server at its next message, and says once that it is connected.
+
+fleetd registers itself with the service where the service allows it (dynamic client registration). Where it doesn't,
+the dialog says so and asks for an OAuth app of your own: make one in the service's developer settings, allow the
+**Redirect URL** the dialog shows (copy it exactly), and enter its client ID and secret. The secret is sealed in the app
+to the hub's own key. Signing in uses PKCE, and goes over https unless the service is on this machine or your tailnet.
+
+**Renewing.** A sign-in's token lasts a while (often an hour). The hub renews it before it ends, from half its life left
+and at most 30 minutes before, and hands the new one to the Navi's machine; the Navi's next message picks it up,
+without starting a new conversation. Scheduled runs use it the same way.
+
+**When the service ends the sign-in** (you revoked fleetd's access, changed your password, or the sign-in expired with
+no way to renew it), the server shows **Signed out** with the service's reason and **Reconnect**, the Navi goes without
+it, and its chat says so once: "mail is signed out: … Navi can't use it until you press Reconnect". **Reconnect** signs
+in again with the same app. If the service only can't be reached, the hub keeps trying every 2 minutes; once the token
+has ended, the chat says that once too, and again when it works.
+
 ## Disconnect {#disconnect}
 
 **Disconnect** removes the connection. The Navi starts without it from its next message, and the key is erased from the
-Navi's machine. To cut it off at the source too, revoke the key where you made it.
+Navi's machine. To cut it off at the source too, revoke the key where you made it. A server you signed in to is signed
+out at the service too, where the service offers that (token revocation).
 
 ## Where your credentials are {#credentials}
 
 | What | Where |
 |---|---|
 | A server's key | Sealed in the app to the Navi's machine. The hub keeps only a fingerprint; the node keeps the value in `~/.fleetd/node/mcp-secrets/` (mode `0600`). See [MCP servers](/docs/mcp-servers#secrets). |
+| A sign-in's tokens | The hub keeps the access and refresh tokens, and your own app's secret, sealed to its own key (`<hub home>/box.key`) in its database, since it renews them. Each access token is sealed to the Navi's machine as the server's `Authorization` header, where it is kept as a key is. |
 | In the chat, transcripts, memory | Never. The node puts the key only into the MCP config it writes for the Navi's claude (mode `0600`), not into its conversation; a call holding something that looks like a key is refused. |
