@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HumanRequest, ProjectSummary, ToolPreview } from "./desktop";
-import { approvals, approvalView, chatList, fieldCopy, lists } from "./lists";
+import { approvals, approvalView, chatList, fieldCopy, lists, rowLine } from "./lists";
 import { exactRuns } from "./exact";
 import { noPrefs } from "./prefs";
 
@@ -98,6 +98,13 @@ describe("lists' order and previews", () => {
     };
     const chatStates = { "m1/b": { projectRef: { machineId: "m1", projectId: "b" }, lastSeq: 4, leadWorking: false, needsYou: false, lastMessageAt: "2026-10-28T11:00:00Z" } };
     expect(lists({ projects, chatStates, requests: [] })?.navis.map((r) => r.project.title)).toEqual(["Bea", "Ada"]);
+  });
+
+  it("keeps a working chat's newest message as its line, saying Working… only while it has none", () => {
+    const row = { preview: "Sent both.", working: true, want: undefined, empty: false };
+    expect(rowLine(row)).toBe("Sent both.");
+    expect(rowLine({ ...row, preview: undefined })).toBe("Working…");
+    expect(rowLine({ ...row, preview: undefined, working: false, want: "Waiting for your reply" })).toBe("Waiting for your reply");
   });
 
   it("previews a chat not opened yet from its newest messages", () => {

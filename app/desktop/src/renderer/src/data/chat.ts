@@ -134,13 +134,19 @@ export const mergeOwn = (chat: Chat, message: ChatMessage): Chat =>
 
 /**
  * A history page: the latest one, or one before the oldest message held. The latest page starts a cached chat over:
- * the page is the truth now, and what it showed may not join up with it. Its live messages kept aside then go in.
+ * the page is the truth now. What it showed from before the page's first message stays when the page joins up with
+ * it (reaches back to its newest message) and says there is more before, so older pages read before aren't lost to a
+ * reconnect. Its live messages
+ * kept aside then go in.
  */
 export const applyHistory = (chat: Chat, page: ChatHistoryOutput, direction: "latest" | "older"): Chat => {
   const restart = direction === "latest" && chat.cached === true;
-  const base = restart ? { ...chat, messages: [], streams: {}, hasOlder: false, cached: false } : chat;
+  const first = page.messages[0]?.seq;
+  const newest = chat.messages.at(-1)?.seq;
+  const kept = restart && page.moreBefore && first !== undefined && newest !== undefined && first <= newest + 1 ? chat.messages.filter((m) => m.seq < first) : [];
+  const base = restart ? { ...chat, messages: kept, streams: {}, hasOlder: kept.length > 0 && chat.hasOlder, cached: false } : chat;
   const merged = mergeMessages(base, page.messages, direction === "older");
-  const fresh = !chat.loaded || restart;
+  const fresh = (!chat.loaded || restart) && kept.length === 0;
   const next = {
     ...merged,
     // The latest page says nothing about what's older than messages already held from an earlier page.

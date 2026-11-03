@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { linkStatus } from "./link";
+import { linkStatus, unreachable } from "./link";
 
 const SRC = import.meta.dirname;
 
@@ -46,5 +46,14 @@ describe("the link's indicator", () => {
     const chats = files.find(([name]) => name === "screens/Chats.tsx")?.[1] ?? "";
     expect(chats).toMatch(/useLinkHeader\(navigation, "", \{ spinner: false \}\)/u);
     expect(chats).toContain('meAvatar(state.meName, paired.hubName, link === undefined ? "live" : state.hub.phase)');
+  });
+});
+
+describe("unreachable", () => {
+  it("says so once a try failed, and while the next one dials, not on the first dial", () => {
+    expect(unreachable({ phase: "connecting", hub: "http://devbox:4790", attempt: 0 })).toBe(false);
+    expect(unreachable({ phase: "retrying", hub: "http://devbox:4790", reason: "Can't reach http://devbox:4790", retryAt: 1 })).toBe(true);
+    expect(unreachable({ phase: "connecting", hub: "http://devbox:4790", attempt: 1 })).toBe(true);
+    expect(unreachable({ phase: "live", hub: "http://devbox:4790", protocol: 1 })).toBe(false);
   });
 });

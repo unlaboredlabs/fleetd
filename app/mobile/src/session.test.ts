@@ -4,7 +4,7 @@ import { fakeHub } from "./hub/fake";
 import { lists } from "./lists";
 import { memoryPins } from "./pins";
 import { controlOf, PageTouches } from "./screen";
-import { Session } from "./session";
+import { Session, type SessionOptions } from "./session";
 
 const REF = { machineId: "m1", projectId: "navi" };
 const KEY = "m1/navi";
@@ -58,10 +58,10 @@ const approval = (requestId: string): HumanRequest => ({
   },
 });
 
-const setup = () => {
+const setup = (options: Partial<SessionOptions> = {}) => {
   const hub = fakeHub();
   let id = 0;
-  const session = new Session({ hub: "http://devbox:4790", key: "key_abc", transport: hub.transport, now: () => Date.parse(AT), newId: () => `c${String(++id)}` });
+  const session = new Session({ hub: "http://devbox:4790", key: "key_abc", transport: hub.transport, now: () => Date.parse(AT), newId: () => `c${String(++id)}`, ...options });
   session.start();
   hub.ready();
   hub.link.frame(snapshot);
@@ -107,13 +107,59 @@ describe("Session", () => {
   it("previews each chat from its newest messages, read after the snapshot and kept by events", async () => {
     const { hub, session } = setup();
     const reads = () => hub.sentOf("call").filter((c) => c.tool === "chat_history");
-    expect(reads().map((c) => c.input)).toEqual([{ projectRef: REF, limit: 3 }]);
-    hub.answer("chat_history", page([message(1, "Morning."), message(2, "Two **emails** need you.")]));
+    // A few chats at once, not one round trip after another.
+    expect(reads().map((c) => c.input)).toEqual([
+      { projectRef: REF, limit: 3 },
+      { projectRef: { machineId: "m1", projectId: "shop" }, limit: 3 },
+    ]);
+    hub.link.frame({ t: "result", id: reads()[0]?.id, output: page([message(1, "Morning."), message(2, "Two **emails** need you.")]) });
     await flush();
-    expect(reads().map((c) => (c.input as { projectRef: unknown }).projectRef)).toEqual([REF, { machineId: "m1", projectId: "shop" }]);
     expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["Two emails need you."]);
     hub.link.frame({ t: "event", seq: 2, type: "chat.message", at: AT, data: { projectRef: REF, messageId: "msg3", seq: 3, author: "lead", state: "final", message: message(3, "Sent both.") } });
     expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["Sent both."]);
+  });
+
+  it("keeps the preview and count of a chat opened earlier true after the link comes back", async () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    hub.answer("chat_history", page([message(1, "Morning."), message(2, "Two emails need you.")]));
+    await flush();
+    session.openChat(null);
+    hub.link.close(1006);
+    vi.advanceTimersByTime(1000);
+    hub.ready();
+    hub.link.frame({ ...snapshot, chats: [{ ...snapshot.chats[0], lastSeq: 4 }] });
+    // A chat opened here is read again too, as it is held from the link before.
+    const read = hub.sentOf("call").find((c) => c.tool === "chat_history" && (c.input as { projectRef: { projectId: string } }).projectRef.projectId === "navi");
+    hub.link.frame({ t: "result", id: read?.id, output: page([message(2, "Two emails need you."), message(3, "Sent the first."), message(4, "Sent both.")]) });
+    await flush();
+    expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["Sent both."]);
+    // A message after it lands aside in the held chat; the list still shows it.
+    hub.link.frame({ t: "event", seq: 2, type: "chat.message", at: AT, data: { projectRef: REF, messageId: "msg5", seq: 5, author: "lead", state: "final", message: message(5, "All done.") } });
+    expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["All done."]);
+  });
+
+  it("lifts a chat with its time when a message comes, with no change of what it waits for", () => {
+    const { hub, session } = setup();
+    const later = "2026-10-28T11:00:00Z";
+    hub.link.frame({
+      t: "event",
+      seq: 2,
+      type: "chat.message",
+      at: later,
+      data: { projectRef: { machineId: "m1", projectId: "shop" }, messageId: "s1", seq: 1, author: "lead", state: "final", message: { ...message(1, "Deployed."), messageId: "s1", projectRef: { machineId: "m1", projectId: "shop" }, createdAt: later } },
+    });
+    expect(session.state.chatStates["m1/shop"]).toBeUndefined();
+    hub.link.frame({ ...snapshot, cursor: 2, chats: [...snapshot.chats, { projectRef: { machineId: "m1", projectId: "shop" }, lastSeq: 1, leadWorking: false, needsYou: false, lastMessageAt: AT }] });
+    hub.link.frame({
+      t: "event",
+      seq: 3,
+      type: "chat.message",
+      at: later,
+      data: { projectRef: { machineId: "m1", projectId: "shop" }, messageId: "s2", seq: 2, author: "lead", state: "final", message: { ...message(2, "Live."), messageId: "s2", projectRef: { machineId: "m1", projectId: "shop" }, createdAt: later } },
+    });
+    expect(session.state.chatStates["m1/shop"]).toMatchObject({ lastSeq: 2, lastMessageAt: later });
+    expect(lists(session.state)?.projects.map((r) => r.at)).toEqual([later]);
   });
 
   it("opens a chat at its latest page, streams the lead's text and takes its final message", async () => {
@@ -160,6 +206,46 @@ describe("Session", () => {
     expect(hub.sentOf("call").filter((c) => c.tool === "chat_send")).toMatchObject([{ input: { text: "Later", clientRequestId: "c1" } }]);
   });
 
+  it("opens on the chats as last seen, and sends what was on its way when the app was killed", async () => {
+    const saved: unknown[] = [];
+    const disk = { load: () => saved.at(-1) ?? null, save: (c: unknown) => void saved.push(JSON.parse(JSON.stringify(c))) };
+    const { hub, session } = setup({ cache: disk });
+    const read = hub.sentOf("call").find((c) => c.tool === "chat_history");
+    hub.link.frame({ t: "result", id: read?.id, output: page([message(1, "Morning."), message(2, "Two emails need you.")]) });
+    await flush();
+    hub.link.close(1006);
+    session.send(KEY, "Send both");
+    await flush();
+    // Going behind writes it at once: iOS may end the app there.
+    session.sleep();
+    session.stop();
+    const next = new Session({ hub: "http://devbox:4790", key: "key_abc", transport: fakeHub().transport, cache: disk });
+    expect(lists(next.state)?.navis.map((r) => [r.project.title, r.preview])).toEqual([["Ada", "You: Send both"]]);
+    expect(next.state.sends[KEY]).toMatchObject([{ text: "Send both", state: { t: "queued" } }]);
+    // Another hub's is never shown.
+    expect(new Session({ hub: "http://lab:4790", key: "key_abc", transport: fakeHub().transport, cache: disk }).state.projects).toBeUndefined();
+    const again = fakeHub();
+    const relaunched = new Session({ hub: "http://devbox:4790", key: "key_abc", transport: again.transport, cache: disk });
+    relaunched.start();
+    again.ready();
+    again.link.frame(snapshot);
+    expect(again.sentOf("call").filter((c) => c.tool === "chat_send")).toMatchObject([{ input: { text: "Send both" } }]);
+  });
+
+  it("tries a refused send again under its own id, or deletes it", async () => {
+    const { hub, session } = setup();
+    session.send(KEY, "Ship it");
+    hub.fail("chat_send", "invalid", "Too long.");
+    await flush();
+    expect(session.state.sends[KEY]).toMatchObject([{ clientRequestId: "c1", state: { t: "failed" } }]);
+    session.resend(KEY, "c1");
+    expect(hub.sentOf("call").filter((c) => c.tool === "chat_send").map((c) => (c.input as { clientRequestId: string }).clientRequestId)).toEqual(["c1", "c1"]);
+    hub.fail("chat_send", "invalid", "Too long.");
+    await flush();
+    session.discard(KEY, "c1");
+    expect(session.state.sends[KEY]).toEqual([]);
+  });
+
   it("approves an open request and drops it from the list", async () => {
     const { hub, session } = setup();
     hub.answer("requests_list", { requests: [approval("r1"), approval("r2")] });
@@ -182,6 +268,40 @@ describe("Session", () => {
     await answer;
     expect(session.state.requests?.map((r) => r.requestId)).toEqual(["r1"]);
     expect(session.state.answerErrors.r1).toMatchObject({ message: "Already answered on the desktop." });
+  });
+
+  it("keeps the approvals through a dropped link, and an answer the drop cut off on its way till the requests are read again", async () => {
+    const { hub, session } = setup();
+    hub.answer("requests_list", { requests: [approval("r1"), approval("r2")] });
+    await flush();
+    const answer = session.answer("r1", "approve");
+    hub.link.close(1006);
+    await answer;
+    // The card stays, still on its way: the answer may have reached the hub.
+    expect(session.state.requests?.map((r) => r.requestId)).toEqual(["r1", "r2"]);
+    expect(session.state.answering).toEqual({ r1: true });
+    expect(session.state.answerErrors).toEqual({});
+    vi.advanceTimersByTime(1000);
+    hub.ready();
+    hub.link.frame(snapshot);
+    hub.answer("requests_list", { requests: [approval("r2")] });
+    await flush();
+    expect(session.state.requests?.map((r) => r.requestId)).toEqual(["r2"]);
+    expect(session.state.answering).toEqual({});
+  });
+
+  it("keeps the link, and what it shows, when the app comes back to the front and the hub answers", async () => {
+    const { hub, session } = setup();
+    hub.answer("requests_list", { requests: [approval("r1")] });
+    await flush();
+    session.sleep();
+    vi.advanceTimersByTime(1000);
+    session.wake();
+    hub.answer("hub_info", {});
+    vi.advanceTimersByTime(5000);
+    expect(hub.links).toHaveLength(1);
+    expect(session.state.hub.phase).toBe("live");
+    expect(session.state.requests?.map((r) => r.requestId)).toEqual(["r1"]);
   });
 
   it("refreshes with a fresh snapshot while live", () => {

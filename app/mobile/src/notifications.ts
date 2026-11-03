@@ -1,6 +1,7 @@
 // The OS side of push.ts, through expo-notifications with the platforms' own push (APNs, FCM), never Expo's service:
 // the device token, Android's channels, the background task that opens and posts an Android notification, the
-// notification buttons and what they do, the app icon's badge, and what a tap opens. index.ts loads this module first,
+// notification buttons and what they do, the app icon's badge, what a tap opens, what shows while the app is open (not
+// the chat on screen) and what goes once read. index.ts loads this module first,
 // so the task and the button handler exist when the OS starts the app in the background for an FCM data message or a
 // button. iOS shows its notifications through the Notification Service Extension instead.
 import * as Device from "expo-device";
@@ -16,7 +17,9 @@ import {
   CATEGORIES,
   CATEGORY_SUMMARIES,
   CHANNELS,
+  inApp,
   opensRoute,
+  readClears,
   pushedPayload,
   tapRoute,
   withHub,
@@ -27,9 +30,14 @@ import {
   type Route,
   type Shown,
 } from "./push";
+import { onPrefs } from "./prefsStore";
+import type { Key } from "./store";
 import { loadPaired, loadPushDevice, loadPushKeys, pushKeys, savePushDevice } from "./vault";
 
 const TASK = "fleetd-push";
+
+/** The chat on screen, whose notifications don't show while the app is open (push.ts inApp). */
+let onScreen: Key | null = null;
 
 export const pushDeps: PushDeps = {
   platform: Platform.OS === "ios" ? "ios" : "android",
@@ -49,6 +57,9 @@ export const pushDeps: PushDeps = {
   },
   saveDevice: savePushDevice,
   loadDevice: loadPushDevice,
+  onScreen: (key) => {
+    onScreen = key;
+  },
 };
 
 const channels = async (): Promise<void> => {
@@ -135,6 +146,18 @@ const categories = async (): Promise<void> => {
   }
 };
 
+/** Where a shown notification goes, as a tap would. */
+const routeOfShown = (request: Notifications.NotificationRequest, keys: Awaited<ReturnType<typeof loadPushKeys>>): Route | undefined =>
+  tapRoute(request.content.data, (request.trigger as { payload?: unknown } | null)?.payload, keys);
+
+/** A chat read here: its messages go from Notification Center, as Messages clears a conversation once read. */
+const clearRead = async (key: Key): Promise<void> => {
+  const keys = await loadPushKeys();
+  for (const n of await Notifications.getPresentedNotificationsAsync()) {
+    if (readClears(routeOfShown(n.request, keys), key)) await Notifications.dismissNotificationAsync(n.request.identifier);
+  }
+};
+
 /** The badge again from the hub: as the app goes behind, after the person acted in it. */
 const refreshBadge = async (): Promise<void> => {
   const hub = await link();
@@ -160,7 +183,10 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(TASK, async ({ dat
 export const setUpNotifications = (): void => {
   Notifications.setNotificationHandler({
     handleNotification: async (n) => {
-      const show = (n.request.content.title ?? "") !== "" || (n.request.content.body ?? "") !== "";
+      const words = (n.request.content.title ?? "") !== "" || (n.request.content.body ?? "") !== "";
+      // The chat on screen only counts while the app is in front: Android's task posts with it behind too.
+      const looking = AppState.currentState === "active" ? onScreen : null;
+      const show = words && (looking === null || inApp(routeOfShown(n.request, await loadPushKeys()), looking));
       return { shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show && n.request.content.sound !== null, shouldSetBadge: true };
     },
   });
@@ -170,6 +196,14 @@ export const setUpNotifications = (): void => {
   if (last !== null && last !== undefined) void onResponse(last);
   AppState.addEventListener("change", (s) => {
     if (s === "background") void refreshBadge();
+  });
+  // Read further (the chat open at its newest, or Mark as Read): not a chat seen for the first time.
+  onPrefs((now, was) => {
+    if (now.read === was.read) return;
+    for (const [key, seq] of Object.entries(now.read)) {
+      const before = was.read[key];
+      if (before !== undefined && seq > before) void clearRead(key).catch(() => undefined);
+    }
   });
   if (Platform.OS === "android") {
     void channels();

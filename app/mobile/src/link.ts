@@ -18,3 +18,9 @@ export const linkStatus = (state: HubState): { readonly text: string; readonly b
 
 /** How long a link is down before the title says so: a wake's quick redial doesn't flash it. */
 export const LINK_GRACE_MS = 1000;
+
+/**
+ * With nothing to show yet: whether the hub has failed to answer at least once, so the screen says it can't reach it,
+ * with Try Again, rather than shimmer forever. It stays said while the next try dials.
+ */
+export const unreachable = (state: HubState): boolean => state.phase === "retrying" || (state.phase === "connecting" && state.attempt > 0);

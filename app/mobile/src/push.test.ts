@@ -21,6 +21,8 @@ import {
   registerDevice,
   shownOf,
   tapRoute,
+  inApp,
+  readClears,
   type PushDeps,
   type PushPayload,
 } from "./push";
@@ -399,5 +401,24 @@ describe("a notification's buttons", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("with the app open", () => {
+  it("shows nothing for the chat on screen or its approvals, and everything else", () => {
+    expect(inApp({ t: "chat", key: "devbox/navi" }, "devbox/navi")).toBe(false);
+    expect(inApp({ t: "approval", requestId: "Q7", key: "devbox/navi" }, "devbox/navi")).toBe(false);
+    expect(inApp({ t: "chat", key: "devbox/shop" }, "devbox/navi")).toBe(true);
+    expect(inApp({ t: "chat", key: "devbox/navi" }, null)).toBe(true);
+    // An approval that didn't say its chat, and a screen asking for the person, always show.
+    expect(inApp({ t: "approval", requestId: "Q7" }, "devbox/navi")).toBe(true);
+    expect(inApp({ t: "screen", key: "devbox/navi", sessionId: "B1" }, "devbox/navi")).toBe(true);
+    expect(inApp(undefined, "devbox/navi")).toBe(true);
+  });
+
+  it("clears a chat's messages from Notification Center once it's read, never an approval still waiting", () => {
+    expect(readClears({ t: "chat", key: "devbox/navi" }, "devbox/navi")).toBe(true);
+    expect(readClears({ t: "chat", key: "devbox/shop" }, "devbox/navi")).toBe(false);
+    expect(readClears({ t: "approval", requestId: "Q7", key: "devbox/navi" }, "devbox/navi")).toBe(false);
   });
 });
