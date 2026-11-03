@@ -134,11 +134,21 @@ fn names(wanted: &str, pr: &PrUrl) -> bool {
 
 /// The PR's still-open blocking findings, for a message about it: each blocking verdict of its latest review, under its
 /// reviewer and head. Empty when its latest review blocks nothing. A rebase since doesn't close them: only a review of a
-/// newer head does.
+/// newer head does, or the lead resolving them (`change_enqueue` again) or the reviewer being superseded.
 pub fn open_blocking(db: &HubDb, pr: &str) -> String {
+    let closed = |task: &TaskId| {
+        db.with(|conn| {
+            Ok(conn
+                .prepare_cached(
+                    "SELECT 1 FROM review_tasks WHERE task_id = ?1 AND role IN ('resolved', 'superseded')",
+                )?
+                .exists([task.as_str()])?)
+        })
+        .unwrap_or(false)
+    };
     let open: Vec<String> = latest(db, pr)
         .into_iter()
-        .filter(|r| r.blocking.get() > 0)
+        .filter(|r| r.blocking.get() > 0 && !closed(&r.task_id))
         .map(|r| {
             let at = r
                 .pr_head_sha

@@ -922,9 +922,11 @@ impl Reviews {
                 "{BLOCKED}{task_id} found {blocking} blocking at {}",
                 short(&sha)
             );
-            // A parked Change keeps why it was sent back.
+            // A parked Change keeps why it was sent back: the log has it instead.
             let note = |text: &str| {
-                if !parked {
+                if parked {
+                    tracing::warn!(change_id = %change_id, text, "reviews: findings on a parked change");
+                } else {
                     self.note(&change_id, text);
                 }
             };
@@ -934,7 +936,9 @@ impl Reviews {
                 ));
                 return Ok(());
             };
-            note(&format!("{waiting}; sent to {author}"));
+            if !parked {
+                self.note(&change_id, &format!("{waiting}; sent to {author}"));
+            }
             let text = findings_message(
                 &self
                     .db

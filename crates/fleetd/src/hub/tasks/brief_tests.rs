@@ -408,7 +408,22 @@ async fn an_author_reads_its_latest_reviews_findings_after_a_rebase() {
         "{open}"
     );
 
-    // A clean review of the new head closes them.
+    // The lead resolves them (`change_enqueue` again): a fresh review of the same head starts, and nothing is open,
+    // before its verdict or after a clean one.
+    hub.db
+        .with(|conn| {
+            conn.execute(
+                "INSERT INTO review_tasks (task_id, change_id, role, patch_id) VALUES ('T9', 'X1', 'resolved', 'p1')",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(crate::hub::reviews::read::open_blocking(&hub.db, pr), "");
+    verdict(&hub, "T11", pr, 'a', 0, "non-blocking: fine as it is");
+    assert_eq!(crate::hub::reviews::read::open_blocking(&hub.db, pr), "");
+
+    // A clean review of the new head closes them too.
     verdict(&hub, "T10", pr, 'b', 0, "non-blocking: a clearer name");
     assert_eq!(crate::hub::reviews::read::open_blocking(&hub.db, pr), "");
 }
