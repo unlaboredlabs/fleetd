@@ -414,13 +414,13 @@ async fn pausing_the_extras_parks_the_newest_and_continues_them_in_their_thread(
     );
 
     // While its thread still runs, a retry leaves it queued; once stopped, its slot continues it there.
-    let again = hub.tasks.try_start(stored.clone(), true).await;
+    let again = hub.tasks.start_waiting(stored.clone(), true).await;
     assert_eq!(again.state, TaskState::Queued);
     let mut summary = hub.store.thread_get(&thread).unwrap().unwrap();
     summary.thread.status = fleetd_contracts::model::ThreadStatus::Completed;
     hub.store.thread_upsert(&summary).unwrap();
     let tasks = hub.tasks.clone();
-    let resumed = tokio::spawn(async move { tasks.try_start(stored, true).await });
+    let resumed = tokio::spawn(async move { tasks.start_waiting(stored, true).await });
     assert_eq!(node.sent(&hub).await, ("t3".to_owned(), resume));
     assert_eq!(resumed.await.unwrap().state, TaskState::Running);
 }
@@ -496,7 +496,7 @@ async fn a_question_to_the_lead_outlives_a_pause() {
     summary.thread.status = fleetd_contracts::model::ThreadStatus::Completed;
     hub.store.thread_upsert(&summary).unwrap();
     assert_eq!(
-        hub.tasks.try_start(stored, true).await.state,
+        hub.tasks.start_waiting(stored, true).await.state,
         TaskState::Queued
     );
 
