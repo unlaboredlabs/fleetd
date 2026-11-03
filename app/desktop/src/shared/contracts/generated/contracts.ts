@@ -368,10 +368,17 @@ export type AskBlock = {
 
 export type AskHandle = string;
 
-/** An image or clip already uploaded to the hub: its bytes come from `attachment_get`. */
+/** An image, clip or file already uploaded to the hub: its bytes come from `attachment_get`. */
 export type AttachmentBlock = {
   attachmentId: AttachmentId;
+  bytes?: number;
   caption?: string;
+  mime?: AttachmentMime;
+  /**
+   * The file's name, type and size, filled in by the hub from the file itself when the message is final, so a
+   * client shows its card without reading it; whatever the lead wrote there is replaced.
+   */
+  name?: string;
 };
 
 export type AttachmentGetInput = {
@@ -392,7 +399,24 @@ export type AttachmentGetOutput = {
 
 export type AttachmentId = string;
 
-export type AttachmentMime = "image/png" | "image/jpeg" | "image/webp" | "image/gif" | "text/plain" | "application/pdf";
+/**
+ * A file's type, as the hub keeps attachments: images, PDF, text and CSV, Office documents and zip archives. The hub
+ * checks a file's bytes against its type ([`AttachmentMime::fits`]) before it keeps it.
+ */
+export type KnownAttachmentMime =
+  | "image/png"
+  | "image/jpeg"
+  | "image/webp"
+  | "image/gif"
+  | "text/plain"
+  | "application/pdf"
+  | "text/csv"
+  | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  | "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  | "application/zip";
+/** KnownAttachmentMime, or a value from a newer hub. */
+export type AttachmentMime = KnownAttachmentMime | (string & {});
 
 export type AttachmentPartInput = {
   /** Standard base64. */
@@ -1037,6 +1061,8 @@ export type ChatBlock = (ChartBlock & {
   kind: "image";
 } | AttachmentBlock & {
   kind: "clip";
+} | AttachmentBlock & {
+  kind: "file";
 } | AskBlock & {
   kind: "ask";
 }) & {

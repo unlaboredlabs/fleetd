@@ -16,7 +16,7 @@ use fleetd_contracts::browser::{
     BrowserCall, DesktopCall, FillCredentialCall, RequestTakeoverCall, SessionEndCall,
     SessionStartCall,
 };
-use fleetd_contracts::chat::{ChatImageCall, NudgeCall};
+use fleetd_contracts::chat::{ChatFileCall, ChatImageCall, NudgeCall};
 use fleetd_contracts::checklist::ChecklistCall;
 use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, BriefReadCall, ChangeEnqueueCall, CloseCall, DecideCall,
@@ -455,6 +455,20 @@ static TOOLS: &[Tool] = &[
              with an image block ({\"v\":1,\"kind\":\"image\",\"attachmentId\":\"F12\",\"caption\":\"…\"}); a task \
              puts the id in its result for its lead to show. Unshown, it is deleted after 24 h.",
             inline_schema::<ChatImageCall>,
+        )
+    },
+    Tool {
+        worker: true,
+        ..lead(
+            "chat_file",
+            "chat_file",
+            "Send the person a file you made (a PDF, a CSV, a document) in this project's chat, as a card they open \
+             or save on their computer or phone, and as a document on Telegram. path is a file inside your working \
+             directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB: an image, PDF, \
+             text or CSV, .docx, .xlsx, .pptx or .zip, its bytes what its name says. Returns its attachmentId. A lead \
+             shows it in its message with a file block ({\"v\":1,\"kind\":\"file\",\"attachmentId\":\"F12\"}); \
+             a task puts the id in its result for its lead to show. Unshown, it is deleted after 24 h.",
+            inline_schema::<ChatFileCall>,
         )
     },
     browser(
@@ -1088,6 +1102,7 @@ mod tests {
                 "wait_ci",
                 "review_read",
                 "chat_image",
+                "chat_file",
                 "session_start",
                 "desktop",
                 "session_end",
@@ -1120,6 +1135,7 @@ mod tests {
             "confirm_step",
             "review_read",
             "chat_image",
+            "chat_file",
         ] {
             assert!(lead.contains(&tool.to_owned()), "{tool}");
         }

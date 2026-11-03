@@ -4,6 +4,8 @@
 // work (Asked work, navi_asks), and keeps skills it learned (Skills, with weekly-invoices' history). navi-old-hub: the
 // same on a hub that doesn't serve Asked work or a Navi's skills to the app yet.
 // navi-links: Ada's Linked hubs and Sam's links to this hub (hubLinks/); navi-links-none: neither yet.
+// navi-files: files both ways in Home's chat: the person sends a lease (.docx) and a bank export (.csv), and Home sends
+// back the trip as a PDF and the receipts as a CSV, each a card that opens or saves.
 import { writeChat, type Ref } from "../kit/chat.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -324,13 +326,50 @@ const linksNone = (from: Fixture): Fixture => {
   return f;
 };
 
+/** A file block as the hub fills it in (`file`, its name, type and size), and attachment_get's answer for it. */
+const madeFile = (f: Fixture, ref: Ref, attachmentId: string, name: string, mime: string, data: Buffer, caption?: string): JsonObject => {
+  f.answer("attachment_get", { projectRef: { ...ref }, attachmentId }, { attachmentId, name, mime, bytes: data.length, dataB64: data.toString("base64") });
+  return { v: 1, kind: "file", attachmentId, name, mime, bytes: data.length, ...(caption === undefined ? {} : { caption }) };
+};
+
+const files = (from: Fixture): Fixture => {
+  const f = Fixture.from(from, "navi-files", "Navi: files both ways in Home's chat, a lease and a bank export in, a trip PDF and a receipts CSV out as cards.");
+  const docx = { name: "lease-2027.docx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data: Buffer.alloc(48_640, "PK") };
+  const csv = { name: "bank-october.csv", mime: "text/csv", data: Buffer.from("date,description,amount\n2026-10-01,Rent,-1450.00\n".repeat(120)) };
+  const blocks = [
+    madeFile(f, HOME, "F11", "lisbon-itinerary.pdf", "application/pdf", Buffer.alloc(184_320, "%PDF-1.7 ")),
+    madeFile(f, HOME, "F12", "receipts-october.csv", "text/csv", Buffer.from("date,merchant,amount\n2026-10-03,Casa Lina,42.50\n".repeat(60))),
+  ];
+  const intro = "Here's the trip, with every booking and check-in time, and October's receipts for your expenses.";
+  let text = intro;
+  const parts: JsonObject[] = [{ start: 0, end: intro.length }];
+  for (const block of blocks) {
+    text += "\n\n";
+    const start = text.length;
+    text += `\`\`\`fleetd-block\n${JSON.stringify(block)}\n\`\`\``;
+    parts.push({ start, end: text.length, block });
+  }
+  writeChat(f, HOME, [
+    { author: "human", text: "Here's the new lease and last month's bank export. Anything I should know?", attachments: [docx, csv], minutesAgo: 34 },
+    {
+      author: "lead",
+      text: "Two things in the lease: rent goes up 3% in March, and notice is now 60 days, not 30. The bank export matches your budget except a €89 gym charge you said you'd cancelled.",
+      minutesAgo: 33,
+    },
+    { author: "human", text: "Can you put the Lisbon trip together as a PDF I can keep offline? And the receipts as a spreadsheet.", minutesAgo: 6 },
+    { author: "lead", text, parts, minutesAgo: 1 },
+  ]);
+  f.answer("navi_asks", { navi: { ...HOME } }, { navi: { ...HOME }, asks: [], next: "This Navi has asked no other project for anything yet." });
+  return f;
+};
+
 const none = (base: Fixture): Fixture => Fixture.from(base, "navi-none", "Navi: projects and no Navi yet, so the sidebar offers to meet it and #/navi is its first run.");
 
 export default defineGroup({
   fixtures: (base) => {
     const made = two(base("chat-waiting"));
     const linked = links(made);
-    return [none(base("chat-waiting")), made, oldHub(made), linked, linksNone(linked)];
+    return [none(base("chat-waiting")), made, oldHub(made), linked, linksNone(linked), files(made)];
   },
 });
 

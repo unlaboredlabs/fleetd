@@ -95,6 +95,10 @@ export const IPC = {
   onePasswordSubmit: "onepassword:submit",
   /** invoke(TelegramRequest) → CallOutcome. Main seals a Navi's Telegram bot token to its machine's key, then calls telegram_set. */
   telegramSubmit: "telegram:submit",
+  /** invoke(HubId, FileRequest) → OpenOutcome. Main reads a chat's file from the hub and opens it in this computer's app for its type. */
+  fileOpen: "file:open",
+  /** invoke(HubId, FileRequest) → OpenOutcome. Main reads a chat's file from the hub and saves it where the person picks. */
+  fileSave: "file:save",
   /** invoke(url) → OpenOutcome. Opens an http(s) link in the user's browser; refuses other schemes. */
   openExternal: "app:openExternal",
   /** main → renderer: (HubId, HubFrame) */

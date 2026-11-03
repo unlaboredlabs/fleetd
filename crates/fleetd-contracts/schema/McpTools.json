@@ -717,13 +717,28 @@
       "type": "string"
     },
     "AttachmentBlock": {
-      "description": "An image or clip already uploaded to the hub: its bytes come from `attachment_get`.",
+      "description": "An image, clip or file already uploaded to the hub: its bytes come from `attachment_get`.",
       "properties": {
         "attachmentId": {
           "$ref": "#/$defs/AttachmentId"
         },
+        "bytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "caption": {
           "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "mime": {
+          "$ref": "#/$defs/AttachmentMime"
+        },
+        "name": {
+          "description": "The file's name, type and size, filled in by the hub from the file itself when the message is final, so a\nclient shows its card without reading it; whatever the lead wrote there is replaced.",
+          "maxLength": 120,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
@@ -793,15 +808,22 @@
       "type": "string"
     },
     "AttachmentMime": {
+      "description": "A file's type, as the hub keeps attachments: images, PDF, text and CSV, Office documents and zip archives. The hub\nchecks a file's bytes against its type ([`AttachmentMime::fits`]) before it keeps it.",
       "enum": [
         "image/png",
         "image/jpeg",
         "image/webp",
         "image/gif",
         "text/plain",
-        "application/pdf"
+        "application/pdf",
+        "text/csv",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/zip"
       ],
-      "type": "string"
+      "type": "string",
+      "x-open": true
     },
     "AttachmentPartInput": {
       "properties": {
@@ -2582,6 +2604,20 @@
           "properties": {
             "kind": {
               "const": "clip",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AttachmentBlock",
+          "description": "A file as a card (its name, type and size) the person opens or saves: one they sent, or one the lead or its\ntasks made and uploaded with `chat_file`.",
+          "properties": {
+            "kind": {
+              "const": "file",
               "type": "string"
             }
           },

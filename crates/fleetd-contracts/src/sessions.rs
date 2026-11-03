@@ -488,12 +488,16 @@ pub enum SessionCall {
     /// An image session `session_id` made, for its project's chat (`chat_image`): `path` is relative to the session's
     /// own working directory, or absolute inside it, symlinks resolved. A png, jpeg, webp or gif by its bytes, at most
     /// [`crate::mcp::ATTACHMENT_MAX_BYTES`]; the reply holds at most [`IMAGE_PIECE_BYTES`] of it from `offset`.
+    /// With `file`, any type the hub takes (`chat_file`), its bytes fitting the type its name says; a node from before
+    /// it ignores `file` and reads only an image.
     #[serde(rename_all = "camelCase")]
     ReadImage {
         session_id: ThreadId,
         path: NonEmpty,
         #[serde(default)]
         offset: Count,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        file: bool,
     },
 }
 

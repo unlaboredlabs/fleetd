@@ -1,24 +1,14 @@
 // What a message can carry (the hub's attachment_put limits) and how a file becomes one. From the board composer.
 
 import { ATTACHMENTS_MAX, type AttachmentMime } from "../../../shared/contracts";
+import { mimeOfFile } from "../../../shared/files";
 
 export const MAX_ATTACHMENTS = ATTACHMENTS_MAX;
 /** A paste longer than this becomes a `pasted-N.txt` attachment (T3 Code's large-paste rule, under the limit). */
 export const PASTE_AS_FILE = 3500;
 
-/** The mime type the hub takes for a file; undefined when it isn't an image, text or PDF. */
-export const mimeFor = (name: string, looksText: boolean): AttachmentMime | undefined => {
-  const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
-  const known: Record<string, AttachmentMime> = {
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    webp: "image/webp",
-    gif: "image/gif",
-    pdf: "application/pdf",
-  };
-  return known[ext] ?? (looksText ? "text/plain" : undefined);
-};
+/** The mime type the hub takes for a file; undefined when it takes none (shared/files.ts). */
+export const mimeFor = (name: string, looksText: boolean): AttachmentMime | undefined => mimeOfFile(name, looksText);
 
 /** A pasted image has no useful name ("image.png"): name it by its kind and number. */
 export const pastedName = (mime: string, n: number): string => {

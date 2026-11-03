@@ -184,20 +184,13 @@ pub fn decide(state: &State, update: &Value, now_ms: i64) -> Decision {
     })
 }
 
-/// A file's type as fleetd keeps attachments: an image by its bytes, a PDF, or UTF-8 text.
+/// A file's type as fleetd keeps attachments ([`AttachmentMime::of_file`]): by its name and bytes together, or text
+/// when Telegram says text and its bytes are.
 fn kind_of(bytes: &[u8], name: &str, mime: Option<&str>) -> Option<AttachmentMime> {
-    if let Some(image) = AttachmentMime::of_image(bytes) {
-        return Some(image);
-    }
-    if bytes.starts_with(b"%PDF") {
-        return Some(AttachmentMime::Pdf);
-    }
-    let lower = name.to_ascii_lowercase();
-    let texty = mime.is_some_and(|m| m.starts_with("text/") || m == "application/json")
-        || [".txt", ".md", ".csv", ".json", ".log"]
-            .iter()
-            .any(|e| lower.ends_with(e));
-    (texty && std::str::from_utf8(bytes).is_ok()).then_some(AttachmentMime::Text)
+    AttachmentMime::of_file(name, bytes).or_else(|| {
+        let texty = mime.is_some_and(|m| m.starts_with("text/") || m == "application/json");
+        (texty && AttachmentMime::Text.fits(bytes)).then_some(AttachmentMime::Text)
+    })
 }
 
 /// The message's event, with its file fetched into the bridge's files; a line back when the file couldn't come.
@@ -240,7 +233,8 @@ pub async fn fetch(
                     }
                     None => {
                         said = Some(
-                            "Your Navi takes photos, images, PDFs and text files. That file wasn't passed on.",
+                            "Your Navi takes photos, PDFs, text and CSV, Word, Excel and PowerPoint files and zips. That file \
+                             wasn't passed on.",
                         );
                     }
                 },

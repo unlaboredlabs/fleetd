@@ -1598,6 +1598,7 @@ impl SessionService {
                 session_id,
                 path,
                 offset,
+                file,
             } => {
                 use base64::Engine;
                 // The session's own working directory, as this node started it: never one the call names.
@@ -1606,7 +1607,7 @@ impl SessionService {
                     .ok_or_else(|| not_found(format!("no session {session_id} on this machine")))?;
                 let offset = offset.get() as u64;
                 let (name, mime, bytes, piece) =
-                    blocking(move || files::read_image(&root, &path, offset))
+                    blocking(move || files::read_image(&root, &path, offset, file))
                         .await
                         .map_err(invalid)?;
                 Ok(SessionOutput::Image {
