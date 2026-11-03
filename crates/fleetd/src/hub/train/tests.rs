@@ -1126,6 +1126,8 @@ struct FakeHost {
     /// The checkouts whose train settings were read, in order.
     /// The project's GitHub repos and their checkouts: none known unless a test sets them.
     repos: Mutex<Vec<(String, ProjectRef)>>,
+    /// The projects still on their machines with the repo: none unless a test sets them.
+    repo_projects: Mutex<Vec<ProjectRef>>,
     /// Orders opened through the host, in order: request id and text. Each is `W<100 + n>`, open until closed.
     orders: Mutex<Vec<(String, String)>>,
     closed_orders: Mutex<HashSet<String>>,
@@ -1202,6 +1204,9 @@ impl FakeHost {
 impl TrainHost for FakeHost {
     fn github_repos(&self, _: &ProjectRef) -> Vec<(String, ProjectRef)> {
         self.repos.lock().unwrap().clone()
+    }
+    fn repo_projects(&self, _: &str) -> Vec<ProjectRef> {
+        self.repo_projects.lock().unwrap().clone()
     }
     fn landings_watched(&self, _repo: &str, base: &str) -> bool {
         self.watched.lock().unwrap().contains(base)
@@ -1579,6 +1584,7 @@ impl Kit {
             branches: Mutex::default(),
             watched: Mutex::default(),
             repos: Mutex::default(),
+            repo_projects: Mutex::default(),
             orders: Mutex::default(),
             closed_orders: Mutex::default(),
             checkout: Mutex::default(),
@@ -1978,6 +1984,106 @@ async fn moves_the_train_to_the_repos_new_project_when_its_first_project_was_rem
         kit.train.records().train(REPO).unwrap().project_ref,
         project()
     );
+}
+
+fn removed() -> ProjectRef {
+    ProjectRef {
+        machine_id: MachineId::unchecked("lab-a"),
+        project_id: ProjectId::unchecked(REMOVED),
+    }
+}
+
+async fn until(what: &str, done: impl Fn() -> bool) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !done() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("never: {what}"));
+}
+
+/// A project's train goes with it when it is removed, and a live project's train stays; the repo's next PR makes it
+/// again, as for any repo.
+#[tokio::test(flavor = "multi_thread")]
+async fn drops_a_removed_projects_train_and_its_next_pr_makes_it_again() {
+    let kit = Kit::new();
+    kit.train.records().ensure_train(REPO, &removed(), 0);
+    kit.train.records().ensure_train("acme/docs", &project(), 0);
+
+    kit.host.push_event("project.removed", json!({}));
+    until("the train dropped", || {
+        kit.train.records().train(REPO).is_none()
+    })
+    .await;
+    assert_eq!(
+        kit.train.records().train("acme/docs").unwrap().project_ref,
+        project()
+    );
+
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert_eq!(
+        kit.train.records().train(REPO).unwrap().project_ref,
+        project()
+    );
+}
+
+/// A train whose project went while the hub was down is dropped when the train starts.
+#[tokio::test(flavor = "multi_thread")]
+async fn drops_a_removed_projects_train_at_start() {
+    let kit = Kit::new();
+    kit.train.records().ensure_train(REPO, &removed(), 0);
+    let train = kit.restarted();
+    assert!(train.records().train(REPO).is_none());
+}
+
+/// A removed project's train stays when another project has the repo, and moves to it.
+#[tokio::test(flavor = "multi_thread")]
+async fn moves_a_removed_projects_train_to_another_project_with_the_repo() {
+    let kit = Kit::new();
+    kit.train.records().ensure_train(REPO, &removed(), 7);
+    let other = ProjectRef {
+        machine_id: MachineId::unchecked("lab-b"),
+        project_id: ProjectId::unchecked("pb"),
+    };
+    *kit.host.repo_projects.lock().unwrap() = vec![other.clone()];
+
+    kit.train.drop_removed();
+    let train = kit.train.records().train(REPO).unwrap();
+    assert_eq!(train.project_ref, other);
+    assert_eq!(train.watch_since_ms, 7);
+}
+
+/// A dropped train's loop ends, its status sources with it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dropped_trains_loop_ends() {
+    let kit = Kit::new();
+    kit.train.records().ensure_train(REPO, &project(), 0);
+    kit.train.stop();
+    let fresh = Arc::new(crate::hub::status::fresh::Fresh::default());
+    let gate = kit.gate.clone();
+    let train = Train::new(
+        kit.host.clone(),
+        Arc::new(SystemClock),
+        kit.db.clone(),
+        kit.gh.clone(),
+        TrainOptions {
+            poll_interval: Duration::from_millis(20),
+            fresh: fresh.clone(),
+            ..TrainOptions::default()
+        },
+        |_| gate,
+    );
+    train.start();
+    let source = crate::hub::status::fresh::train(REPO);
+    assert!(fresh.view(&source, 0).is_some());
+
+    train.records().drop_train(REPO, &project());
+    until("the loop ended", || fresh.view(&source, 0).is_none()).await;
+    train.stop();
 }
 
 #[tokio::test(flavor = "multi_thread")]

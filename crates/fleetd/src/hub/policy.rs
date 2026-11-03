@@ -11,6 +11,7 @@ use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::tasks::{POLICY_FILE_PATH, PolicyFile};
 
 use crate::clock::Clock;
+use crate::hub::executor::ExecutorError;
 use crate::hub::tasks::ports::{BoxFut, TaskError as LeadError};
 
 pub const POLICY_TTL_MS: u128 = 60_000;
@@ -36,6 +37,15 @@ pub fn parse_policy(text: &str) -> Result<PolicyFile, LeadError> {
         .map_err(|e| invalid(e.to_string().lines().next().unwrap_or_default()))
 }
 
+/// Why a policy file wasn't read.
+#[derive(Debug)]
+pub enum ReadFailure {
+    /// The machine answered that it has no such project: removed from it, or not added yet.
+    NoProject(LeadError),
+    /// Anything else, an offline machine among them.
+    Other(LeadError),
+}
+
 /// Where a project's policy file comes from. The hub's source asks the machine's node
 /// (`Executors::read_project_file`); tests use a fake.
 pub trait PolicySource: Send + Sync {
@@ -43,7 +53,7 @@ pub trait PolicySource: Send + Sync {
     fn read<'a>(
         &'a self,
         project_ref: &'a ProjectRef,
-    ) -> BoxFut<'a, Result<Option<String>, LeadError>>;
+    ) -> BoxFut<'a, Result<Option<String>, ReadFailure>>;
 }
 
 /// Reads the file from the project's workspace through the machine's node.
@@ -57,13 +67,13 @@ impl PolicySource for NodePolicySource {
     fn read<'a>(
         &'a self,
         project_ref: &'a ProjectRef,
-    ) -> BoxFut<'a, Result<Option<String>, LeadError>> {
+    ) -> BoxFut<'a, Result<Option<String>, ReadFailure>> {
         Box::pin(async move {
             let Some(executors) = self.executors.upgrade() else {
-                return Err(LeadError::new(
+                return Err(ReadFailure::Other(LeadError::new(
                     ErrorCode::Failed,
                     "The hub is shutting down.",
-                ));
+                )));
             };
             executors
                 .read_project_file(
@@ -73,7 +83,15 @@ impl PolicySource for NodePolicySource {
                 )
                 .await
                 .map_err(|e| {
-                    crate::hub::tasks::wire::port_error(e).to_task_error(&project_ref.machine_id)
+                    let no_project = matches!(&e, ExecutorError::NodeRequestFailed { message, .. }
+                        if *message == crate::node::sessions::no_project(project_ref.project_id.as_str()));
+                    let error = crate::hub::tasks::wire::port_error(e)
+                        .to_task_error(&project_ref.machine_id);
+                    if no_project {
+                        ReadFailure::NoProject(error)
+                    } else {
+                        ReadFailure::Other(error)
+                    }
                 })
         })
     }
@@ -105,7 +123,8 @@ impl Policies {
             .unwrap_or(0)
     }
 
-    /// The project's policy from its file, cached up to 60 s. A read failure (machine offline) is not cached.
+    /// The project's policy from its file, cached up to 60 s. A read failure (machine offline) is not cached, except
+    /// the machine's answer that it has no such project.
     pub async fn get(&self, project_ref: &ProjectRef) -> Result<PolicyFile, LeadError> {
         let now = self.now_ms();
         if let Some((at, result)) = self.cache.lock().unwrap().get(project_ref)
@@ -113,9 +132,15 @@ impl Policies {
         {
             return result.clone();
         }
-        let result = match self.source.read(project_ref).await? {
-            None => Ok(PolicyFile::default()),
-            Some(text) => parse_policy(&text),
+        let result = match self.source.read(project_ref).await {
+            Ok(None) => Ok(PolicyFile::default()),
+            Ok(Some(text)) => parse_policy(&text),
+            // The one failure cached (decision perf.timing-calls): the machine answered, and a project it doesn't have
+            // is still gone a moment later, so a caller asking every few seconds (the merge train) doesn't send the
+            // node a request each time. A project added back is read once the 60 s are up. An offline machine, or
+            // any other failure, is read again on the next call.
+            Err(ReadFailure::NoProject(error)) => Err(error),
+            Err(ReadFailure::Other(error)) => return Err(error),
         };
         self.cache
             .lock()
@@ -184,16 +209,27 @@ mod tests {
         text: Mutex<Option<String>>,
         reads: AtomicUsize,
         offline: AtomicBool,
+        /// The machine doesn't have the project.
+        gone: AtomicBool,
     }
 
     impl PolicySource for Fake {
-        fn read<'a>(&'a self, _: &'a ProjectRef) -> BoxFut<'a, Result<Option<String>, LeadError>> {
+        fn read<'a>(
+            &'a self,
+            _: &'a ProjectRef,
+        ) -> BoxFut<'a, Result<Option<String>, ReadFailure>> {
             Box::pin(async move {
                 self.reads.fetch_add(1, Ordering::SeqCst);
                 if self.offline.load(Ordering::SeqCst) {
-                    return Err(
-                        LeadError::new(ErrorCode::MachineOffline, "offline").with_fix("wait")
-                    );
+                    return Err(ReadFailure::Other(
+                        LeadError::new(ErrorCode::MachineOffline, "offline").with_fix("wait"),
+                    ));
+                }
+                if self.gone.load(Ordering::SeqCst) {
+                    return Err(ReadFailure::NoProject(LeadError::new(
+                        ErrorCode::Failed,
+                        "no project pa on this machine",
+                    )));
                 }
                 Ok(self.text.lock().unwrap().clone())
             })
@@ -236,7 +272,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rereads_after_invalidate_caches_a_broken_file_and_never_a_failed_read() {
+    async fn rereads_after_invalidate_caches_a_broken_file_and_never_an_offline_read() {
         let (fake, _clock, policies, a) = setup();
         *fake.text.lock().unwrap() = Some("branchPrefix: no slash\n".into());
         assert_eq!(policies.get(&a).await.unwrap_err().code, ErrorCode::Invalid);
@@ -259,6 +295,42 @@ mod tests {
             serde_json::to_value(policies.get(&a).await.unwrap()).unwrap(),
             team()
         );
+        assert_eq!(fake.reads.load(Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test]
+    async fn caches_a_project_the_machine_does_not_have_for_60_s_and_reads_it_once_it_is_back() {
+        let (fake, clock, policies, a) = setup();
+        fake.gone.store(true, Ordering::SeqCst);
+        assert_eq!(policies.get(&a).await.unwrap_err().code, ErrorCode::Failed);
+        clock.advance(Duration::from_secs(30));
+        assert_eq!(policies.get(&a).await.unwrap_err().code, ErrorCode::Failed);
+        assert_eq!(fake.reads.load(Ordering::SeqCst), 1);
+        // The project is back: read again, and found, within the 60 s.
+        fake.gone.store(false, Ordering::SeqCst);
+        *fake.text.lock().unwrap() = Some("branchPrefix: team/\n".into());
+        clock.advance(Duration::from_secs(30));
+        assert_eq!(
+            serde_json::to_value(policies.get(&a).await.unwrap()).unwrap(),
+            team()
+        );
+        assert_eq!(fake.reads.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn never_caches_an_offline_machine() {
+        let (fake, clock, policies, a) = setup();
+        fake.offline.store(true, Ordering::SeqCst);
+        for _ in 0..3 {
+            assert_eq!(
+                policies.get(&a).await.unwrap_err().code,
+                ErrorCode::MachineOffline
+            );
+            clock.advance(Duration::from_secs(1));
+        }
+        assert_eq!(fake.reads.load(Ordering::SeqCst), 3);
+        fake.offline.store(false, Ordering::SeqCst);
+        assert_eq!(policies.get(&a).await.unwrap(), PolicyFile::default());
         assert_eq!(fake.reads.load(Ordering::SeqCst), 4);
     }
 }

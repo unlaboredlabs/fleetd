@@ -332,6 +332,21 @@ impl ChangeRecords {
         });
     }
 
+    /// Forgets the repo's train while it is still `project_ref`'s; its Changes stay, as history.
+    pub fn drop_train(&self, repo: &str, project_ref: &ProjectRef) {
+        sql(&self.db, |conn| {
+            conn.execute(
+                "DELETE FROM trains WHERE repo = ?1 AND machine_id = ?2 AND project_id = ?3",
+                params![
+                    repo.to_lowercase(),
+                    project_ref.machine_id.as_str(),
+                    project_ref.project_id.as_str()
+                ],
+            )
+            .expect("drop train")
+        });
+    }
+
     pub fn train(&self, repo: &str) -> Option<TrainRow> {
         sql(&self.db, |conn| {
             conn.query_row(

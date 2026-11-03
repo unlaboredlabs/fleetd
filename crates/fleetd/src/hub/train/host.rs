@@ -109,6 +109,10 @@ pub trait TrainHost: Send + Sync + 'static {
     fn github_repos(&self, _project_ref: &ProjectRef) -> Vec<(String, ProjectRef)> {
         Vec::new()
     }
+    /// The projects still on their machines that have `repo` (`owner/name`, lowercased) as one of their repos.
+    fn repo_projects(&self, _repo: &str) -> Vec<ProjectRef> {
+        Vec::new()
+    }
     /// Runs `argv` (never through a shell) in `cwd` on the machine of `checkout`, the repo's checkout, for at most
     /// `timeout_sec`: only on a linked node whose role takes agents, as agent and review work runs, never on the hub's
     /// own machine for that. The error says why it can't run there now.

@@ -3232,7 +3232,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::hub::policy::PolicySource;
+    use crate::hub::policy::{PolicySource, ReadFailure};
     use crate::hub::store::test_clock::ManualClock;
     use crate::hub::tasks::ports::{BoxFut, CmdOutput, ThreadChanges};
 
@@ -3467,13 +3467,15 @@ mod tests {
         fn read<'a>(
             &'a self,
             project_ref: &'a ProjectRef,
-        ) -> BoxFut<'a, Result<Option<String>, TaskError>> {
+        ) -> BoxFut<'a, Result<Option<String>, ReadFailure>> {
             self.policy_reads
                 .lock()
                 .unwrap()
                 .push(project_ref.project_id.to_string());
             let read = if self.offline() {
-                Err(PortError::Offline.to_task_error(&project_ref.machine_id))
+                Err(ReadFailure::Other(
+                    PortError::Offline.to_task_error(&project_ref.machine_id),
+                ))
             } else {
                 Ok(self.policy.lock().unwrap().clone())
             };

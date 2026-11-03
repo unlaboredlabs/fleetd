@@ -1,7 +1,8 @@
 //! The hub's `TrainHost`: the train and reviews reach other areas only through here, forwarding to their services on
 //! the `Hub`. Built before the `Hub` exists (the train goes into the `Hub`), so it is bound right after; until then
 //! the cross-area calls answer as if there were nothing.
-use std::sync::{Arc, OnceLock, Weak};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
@@ -21,6 +22,29 @@ pub struct HubHost {
     pub events: Arc<EventLog>,
     pub store: Arc<HubStore>,
     pub hub: OnceLock<Weak<Hub>>,
+    policy_unread: Unread,
+}
+
+/// The projects whose policy the train couldn't read, each with the error last warned about. The train asks every
+/// pass, so each project gets one warning per error until a read succeeds, not one a pass.
+#[derive(Default)]
+struct Unread(Mutex<HashMap<ProjectRef, String>>);
+
+impl Unread {
+    /// The read failed with `error`: true when it is news (the first failure, or another error than the last).
+    fn failed(&self, project_ref: &ProjectRef, error: &str) -> bool {
+        let mut unread = self.0.lock().unwrap();
+        if unread.get(project_ref).is_some_and(|last| last == error) {
+            return false;
+        }
+        unread.insert(project_ref.clone(), error.to_string());
+        true
+    }
+
+    /// The read succeeded: true when it had failed.
+    fn read(&self, project_ref: &ProjectRef) -> bool {
+        self.0.lock().unwrap().remove(project_ref).is_some()
+    }
 }
 
 impl HubHost {
@@ -30,6 +54,7 @@ impl HubHost {
             events,
             store,
             hub: OnceLock::new(),
+            policy_unread: Unread::default(),
         })
     }
 
@@ -80,13 +105,23 @@ impl TrainHost for HubHost {
     fn branch_prefix<'a>(&'a self, project_ref: &'a ProjectRef) -> BoxFut<'a, Option<String>> {
         Box::pin(async move {
             let policy = self.hub()?.policies.get(project_ref).await;
+            let unread = &self.policy_unread;
             match policy {
-                Ok(policy) => Some(policy.branch_prefix.map_or_else(
-                    || fleetd_contracts::tasks::DEFAULT_BRANCH_PREFIX.to_string(),
-                    |p| p.as_str().to_string(),
-                )),
+                Ok(policy) => {
+                    if unread.read(project_ref) {
+                        tracing::info!(machine = %project_ref.machine_id, project = %project_ref.project_id, "train: policy read again for the branch prefix");
+                    }
+                    Some(policy.branch_prefix.map_or_else(
+                        || fleetd_contracts::tasks::DEFAULT_BRANCH_PREFIX.to_string(),
+                        |p| p.as_str().to_string(),
+                    ))
+                }
+                Err(error) if unread.failed(project_ref, &error.message) => {
+                    tracing::warn!(?error, machine = %project_ref.machine_id, project = %project_ref.project_id, "train: policy not read for the branch prefix");
+                    None
+                }
                 Err(error) => {
-                    tracing::warn!(?error, "train: policy not read for the branch prefix");
+                    tracing::debug!(?error, machine = %project_ref.machine_id, project = %project_ref.project_id, "train: policy still not read for the branch prefix");
                     None
                 }
             }
@@ -328,6 +363,19 @@ impl TrainHost for HubHost {
         }
     }
 
+    fn repo_projects(&self, repo: &str) -> Vec<ProjectRef> {
+        let Some(hub) = self.hub() else {
+            return Vec::new();
+        };
+        match hub.repos.projects_with(&format!("github.com/{repo}")) {
+            Ok(projects) => projects,
+            Err(error) => {
+                tracing::warn!(%error, repo, "train: the repo's projects not read");
+                Vec::new()
+            }
+        }
+    }
+
     fn landings_watched(&self, repo: &str, base: &str) -> bool {
         let Some(hub) = self.hub() else { return false };
         let scope = fleetd_contracts::work::RepoKey::of(&format!("github.com/{repo}"))
@@ -388,5 +436,34 @@ impl TrainHost for HubHost {
                 .trigger(project_ref, crate::hub::leads::wakes::Trigger::train(&line));
         }
         Box::pin(async {})
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use fleetd_contracts::ids::{MachineId, ProjectId};
+
+    use super::*;
+
+    fn project(id: &str) -> ProjectRef {
+        ProjectRef {
+            machine_id: MachineId::unchecked("devbox"),
+            project_id: ProjectId::unchecked(id),
+        }
+    }
+
+    #[test]
+    fn warns_once_per_project_and_error_until_a_read_succeeds() {
+        let unread = Unread::default();
+        let (a, b) = (project("pa"), project("pb"));
+        assert!(unread.failed(&a, "no project pa on this machine"));
+        assert!(!unread.failed(&a, "no project pa on this machine"));
+        assert!(unread.failed(&b, "no project pb on this machine"));
+        // Another error is news, once.
+        assert!(unread.failed(&a, "Machine devbox has no live node link."));
+        assert!(!unread.failed(&a, "Machine devbox has no live node link."));
+        assert!(unread.read(&a));
+        assert!(!unread.read(&a));
+        assert!(unread.failed(&a, "no project pa on this machine"));
     }
 }

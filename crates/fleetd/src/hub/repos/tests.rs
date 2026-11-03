@@ -430,3 +430,36 @@ fn a_taken_name_gets_a_number() {
         })
         .unwrap();
 }
+
+/// The projects on a repo, for a train whose project was removed: by their repos or their own bound work, never a
+/// removed project.
+#[test]
+fn the_projects_on_a_repo_are_the_ones_still_there() {
+    let (hub, _home) = hub();
+    node_reports(
+        &hub,
+        &[
+            summary("shop", "/srv/shop"),
+            summary("shop-2", "/srv/shop-2"),
+            summary("api", "/srv/api"),
+        ],
+    );
+    let key = "github.com/acme/shop";
+    for id in ["shop", "shop-2"] {
+        hub.work
+            .bind_project(&project(id), &scope(key, "main"))
+            .unwrap();
+    }
+    hub.work
+        .bind_project(&project("api"), &scope("github.com/acme/api", "main"))
+        .unwrap();
+    assert_eq!(
+        hub.repos.projects_with(key).unwrap(),
+        [project("shop"), project("shop-2")]
+    );
+
+    hub.store.project_remove(&project("shop")).unwrap();
+    assert_eq!(hub.repos.projects_with(key).unwrap(), [project("shop-2")]);
+    hub.store.project_remove(&project("shop-2")).unwrap();
+    assert_eq!(hub.repos.projects_with(key).unwrap(), []);
+}
