@@ -491,3 +491,22 @@ fn a_wake_mid_turn_yields_to_the_model_on_the_path() {
         ]
     );
 }
+
+#[test]
+fn stored_bytes_are_measured_at_most_once_a_minute() {
+    let db = crate::hub::store::HubDb::open_memory().unwrap();
+    let time = super::Time::new(
+        db.clone(),
+        crate::hub::store::test_clock::ManualClock::at(0),
+    );
+    let first = db.with(|c| time.stored_bytes(c, 0)).unwrap();
+    db.with(|c| {
+        Ok(c.execute_batch(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 50)
+             INSERT INTO time_labels (hash, family, text) SELECT randomblob(16), 'f', hex(randomblob(2000)) FROM n",
+        )?)
+    })
+    .unwrap();
+    assert_eq!(db.with(|c| time.stored_bytes(c, MIN - 1)).unwrap(), first);
+    assert!(db.with(|c| time.stored_bytes(c, MIN)).unwrap() > first);
+}
