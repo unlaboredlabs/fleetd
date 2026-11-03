@@ -1,5 +1,5 @@
 //! The agents' Mac (D298, docs: agents-mac.md): a dedicated Mac whose node runs in a standard, non-admin user of its
-//! own (`agents`), joined with the installer's `--mac`, which sets node.json's `mac.enabled` (node/mac_tool). It is a
+//! own (`agents`), joined with the installer's `--mac`, which sets node.json's `agentsMac` (no screen switch does). It is a
 //! tool every project's agents use from their own machines, never a runner:
 //!
 //! - it runs no claude, no lead, no task and no Navi: [`session_call_allowed`] refuses every session call but the few
@@ -48,7 +48,7 @@ pub const TOOL_ONLY: &str =
 /// Whether this node is the agents' Mac. On any OS: a node.json that says so keeps the node a tool, though only macOS
 /// gives agents a tool there.
 pub fn is_agents_mac(config: &NodeConfig) -> bool {
-    config.mac.as_ref().is_some_and(|m| m.enabled == Some(true))
+    config.agents_mac == Some(true)
 }
 
 /// Whether this user may join as the agents' Mac: on macOS, as a standard user that can't sudo. The installer's
@@ -68,7 +68,7 @@ pub fn may_join() -> Result<(), String> {
 /// The calls the agents' Mac lists at its hello: updates, screens it hosts for agents elsewhere, and a project's
 /// removal (a project that lived on the Mac before it moved into the agents user goes cleanly). Nothing that carries a
 /// secret, a claude or a Navi, which the hub then never sends. `others` are the session kinds the node found it can
-/// host. `tool`: the Mac's tool is on (node/mac_tool's `MacToolConfig::on`: macOS, a standard user that can't sudo),
+/// host. `tool`: the Mac's tool is on (macOS, and node/mac_tool's `admin_check` passes: a standard user that can't sudo),
 /// so it lists [`CAP_MAC_TOOL`] too, once.
 pub fn capabilities(others: impl IntoIterator<Item = String>, tool: bool) -> Vec<String> {
     const KEPT: [&str; 11] = [

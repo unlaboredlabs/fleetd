@@ -347,14 +347,6 @@ fn the_mac_lists_its_tool_only_while_it_is_on() {
         super::capabilities(with_tool, false),
         [CAP_AGENTS_MAC, CAP_SELF_UPDATE]
     );
-    // Off macOS the tool is never on, whatever node.json says.
-    let on = crate::node::mac_tool::MacToolConfig {
-        enabled: Some(true),
-        simulators: None,
-    };
-    if !cfg!(target_os = "macos") {
-        assert!(!on.on());
-    }
 }
 
 #[test]
@@ -377,52 +369,37 @@ fn the_mac_answers_only_the_runners_figures_and_a_projects_removal() {
     }
 }
 
+/// Only `agentsMac`, which the installer's `--mac` writes, makes the node the agents' Mac: never the Mac screen's own
+/// switch, which Settings › Screens turns on and off.
 #[test]
-fn only_mac_enabled_makes_the_node_the_agents_mac() {
-    let config =
-        |mac: Option<crate::node::mac_tool::MacToolConfig>| crate::node::config::NodeConfig {
-            hub: "http://devbox:4790".into(),
-            machine_id: "mac".into(),
-            name: "mac".into(),
-            cmd_roots: None,
-            claude_config_dir: None,
-            min_free_gb: None,
-            mem_per_agent_gb: None,
-            disk_per_agent_gb: None,
-            warm_builds: None,
-            enrolled: true,
-            browser: None,
-            device: None,
-            ios: None,
-            desktop: None,
-            mac,
-        };
-    assert!(!super::is_agents_mac(&config(None)));
-    assert!(!super::is_agents_mac(&config(Some(
-        crate::node::mac_tool::MacToolConfig::default()
-    ))));
-    let on = config(Some(crate::node::mac_tool::MacToolConfig {
-        enabled: Some(true),
-        simulators: None,
-    }));
+fn only_agents_mac_makes_the_node_the_agents_mac() {
+    let config = |mac: Option<bool>, agents_mac: Option<bool>| crate::node::config::NodeConfig {
+        hub: "http://devbox:4790".into(),
+        machine_id: "mac".into(),
+        name: "mac".into(),
+        cmd_roots: None,
+        claude_config_dir: None,
+        min_free_gb: None,
+        mem_per_agent_gb: None,
+        disk_per_agent_gb: None,
+        warm_builds: None,
+        enrolled: true,
+        browser: None,
+        device: None,
+        ios: None,
+        desktop: None,
+        mac: mac.map(|on| crate::node::desktop::mac::MacConfig {
+            enabled: Some(on),
+            idle_minutes: None,
+        }),
+        agents_mac,
+    };
+    assert!(!super::is_agents_mac(&config(None, None)));
+    assert!(!super::is_agents_mac(&config(Some(true), None)));
+    assert!(!super::is_agents_mac(&config(None, Some(false))));
+    // The screen turned off leaves it the agents' Mac.
+    let on = config(Some(false), Some(true));
     assert!(super::is_agents_mac(&on));
     let text = serde_json::to_string(&on).unwrap();
-    assert!(text.contains(r#""mac":{"enabled":true}"#), "{text}");
-}
-
-#[test]
-fn the_desktop_wrapper_runs_the_native_binary_with_its_own_helper() {
-    let script = super::tools::wrapper_script(
-        std::path::Path::new("/n/agent-desktop-darwin-arm64"),
-        std::path::Path::new("/n/agent-desktop-macos-helper-darwin-arm64"),
-    );
-    assert!(
-        script.contains(
-            "AGENT_DESKTOP_MACOS_HELPER_PATH='/n/agent-desktop-macos-helper-darwin-arm64'"
-        )
-    );
-    assert!(
-        script.ends_with("exec '/n/agent-desktop-darwin-arm64' \"$@\"\n"),
-        "{script}"
-    );
+    assert!(text.contains(r#""agentsMac":true"#), "{text}");
 }

@@ -282,7 +282,7 @@
         },
         {
           "links": [],
-          "note": "Still logged in as fleetd agents: turn on fleetd in Accessibility and in Screen Recording, so agents can drive the Mac's apps and you can watch them. macOS may ask for an administrator's name and password: type yours in that System Settings dialog at the Mac itself, never through fleetd's view of its screen. It asks again from time to time; the check says when.",
+          "note": "Still logged in as fleetd agents: turn on fleetd in Accessibility and in Screen Recording, so agents can drive the Mac's apps and you can watch them. macOS may ask for an administrator's name and password: type yours in that System Settings dialog at the Mac itself, never through fleetd's view of its screen. Then restart its node (launchctl kickstart -k gui/$(id -u)/sh.fleetd.node): macOS gives a running process a new grant only once it starts again. It asks again from time to time; the check says when.",
           "title": "Two clicks at the Mac",
           "values": [
             {
