@@ -549,11 +549,12 @@ impl AttachmentMime {
     /// text a "CSV (Comma delimited)" save or a bank's export writes (Latin-1 is a subset). None when it isn't text.
     pub fn utf8_text(bytes: &[u8]) -> Option<String> {
         if let Some(big) = utf16_bom(bytes) {
-            let units = bytes[2..].chunks_exact(2).map(|p| {
+            let (pairs, _) = bytes[2..].as_chunks::<2>();
+            let units = pairs.iter().map(|&p| {
                 if big {
-                    u16::from_be_bytes([p[0], p[1]])
+                    u16::from_be_bytes(p)
                 } else {
-                    u16::from_le_bytes([p[0], p[1]])
+                    u16::from_le_bytes(p)
                 }
             });
             return Some(
