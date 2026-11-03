@@ -394,6 +394,7 @@ pub fn main(argv: &[String]) -> ExitCode {
         else {
             return refuse(std::io::Error::other("can't watch for SIGTERM"));
         };
+        process::record_left_in(left_file(&dir));
         let handle = match super::claude::hosted(
             Path::new(program),
             command[1..].to_vec(),
@@ -762,6 +763,35 @@ pub async fn stop(dir: &Path) {
         let _ = tokio::task::spawn_blocking(move || kill_tree(&registration)).await;
     }
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Where the host in `dir` records the orphans its session leaves it: beside the dir, which the session's next
+/// host starts afresh, so the record holds every host's of the session until its task ends ([`end_left`]).
+pub fn left_file(dir: &Path) -> PathBuf {
+    let mut name = dir.file_name().unwrap_or_default().to_os_string();
+    name.push(".left");
+    dir.with_file_name(name)
+}
+
+/// The session's task ended: SIGKILLs what its hosts recorded its tree left behind (by pid and start time, whatever
+/// scope or environment it has now) and everything those started, and forgets the record. Never between the session's
+/// turns, which may leave a browser or a server running on purpose. How many processes it ended.
+pub async fn end_left(dir: &Path) -> usize {
+    let file = left_file(dir);
+    let found = {
+        let file = file.clone();
+        tokio::task::spawn_blocking(move || process::left_behind(&file))
+            .await
+            .unwrap_or_default()
+    };
+    process::signal(&found, Signal::SIGKILL);
+    process::reap(&found, STOP_WAIT).await;
+    if let Err(e) = std::fs::remove_file(&file)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(file = %file.display(), "orphan record not removed: {e}");
+    }
+    found.len()
 }
 
 /// SIGKILLs what's left of a host: claude's tree while claude is the registered process, every process carrying the
