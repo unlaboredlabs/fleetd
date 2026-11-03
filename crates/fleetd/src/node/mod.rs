@@ -4,6 +4,7 @@
 //! SIGINT or SIGTERM (`Ok`) or a failure the node cannot retry past (`Err`, exit 1 with `fleetd: <message>`).
 pub mod actions;
 pub mod browser;
+pub mod build_slots;
 pub mod checkouts;
 pub mod claude_accounts;
 pub mod claude_login;
@@ -128,6 +129,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         mem_per_agent_gb: None,
         disk_per_agent_gb: None,
         warm_builds: None,
+        build_slots: None,
         enrolled: false,
         browser: None,
         device: None,
