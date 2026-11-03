@@ -6,7 +6,8 @@
 //! closes its order by itself once the Navi's turn for it ends (D277). The scheduler sleeps on the hub clock until the
 //! earliest schedule is due; a schedule missed while the hub was down runs once, late, on its return. A one-time
 //! schedule runs once and its automation is done (`doneAt`): it stays listed with its runs until it is deleted, or
-//! until the project's 50 are full and a new one needs its place.
+//! until the project's 50 are full and a new one needs its place. One that comes due while another run of its order is
+//! open waits instead of being skipped, and runs once that run ends (`fire_waiting`), so a reminder always arrives.
 //!
 //! A webhook URL is `<hub url>/hooks/<automationId>/<secret>`. The hub keeps the secret's SHA-256 only, compares in
 //! constant time, and never logs the secret or the body; the body is kept with its run and given to the lead.
@@ -314,7 +315,8 @@ pub fn order_text(a: &Automation, run: &AutomationRun, payload: Option<&str>) ->
             };
             match &run.late_min {
                 Some(late) if once => format!(
-                    "{when}. The hub was down then, so this is {} min late: say that it comes late",
+                    "{when}. It comes {} min late, since the hub was down or its last run was still open then: say \
+                     that it comes late",
                     late.get()
                 ),
                 Some(late) => format!(
@@ -958,6 +960,11 @@ impl Automations {
             (Start::Webhook { .. }, Some(going)) => Some(format!(
                 "{going}, and {QUEUED_MAX} webhook calls already wait for it"
             )),
+            (Start::Schedule { .. }, Some(going))
+                if a.schedule.as_ref().is_some_and(|s| s.at.is_some()) =>
+            {
+                Some(format!("{going}; this one-time run goes once that ends"))
+            }
             (_, Some(going)) => Some(going),
             _ => None,
         };
@@ -1343,11 +1350,12 @@ impl Automations {
     }
 
     /// Follows orders closing or stopping, from a catch-up pass at the start: a run's end lets its automation's kept
-    /// webhook calls go (`deliver_queued`).
+    /// webhook calls go (`deliver_queued`), and a one-time run that waited for it (`fire_waiting`).
     async fn kept_calls(self: Arc<Self>) {
         let events = Arc::clone(&self.events);
         let mut cursor = events.head();
         self.deliver_all().await;
+        self.fire_waiting().await;
         loop {
             let page = match events
                 .wait(WaitInput {
@@ -1371,6 +1379,7 @@ impl Automations {
             cursor = page.cursor;
             if !page.events.is_empty() {
                 self.deliver_all().await;
+                self.fire_waiting().await;
             }
         }
     }
@@ -1591,14 +1600,16 @@ impl Automations {
     // ---- the schedule ----------------------------------------------------------------------------
 
     /// A due schedule: its next run moves on first, from now, so runs missed while the hub was down collapse into
-    /// this one (a one-time schedule is done instead); then the run.
+    /// this one (a one-time schedule is done instead); then the run. A one-time run skipped for an open run isn't done:
+    /// it waits for that run to end (`fire_waiting`).
     async fn fire(&self, id: &str, due_ms: i64) -> Result<(), LeadError> {
         let Some(mut a) = self.row(id)? else {
             return Ok(());
         };
         let now = self.now();
+        let once = a.schedule.as_ref().is_some_and(|s| s.at.is_some());
         a.next_run_at = match (&a.schedule, a.paused) {
-            (Some(s), _) if s.at.is_some() => {
+            _ if once => {
                 a.done_at = Some(iso_ms(now).into());
                 None
             }
@@ -1606,8 +1617,50 @@ impl Automations {
             _ => None,
         };
         self.put(&a)?;
-        self.run(id, Start::Schedule { due_ms }).await?;
+        let run = self.run(id, Start::Schedule { due_ms }).await?;
+        if once
+            && run.state == AutomationRunState::Skipped
+            && let Some(mut waiting) = self.row(id)?
+            && !waiting.paused
+        {
+            waiting.done_at = None;
+            self.put(&waiting)?;
+        }
         Ok(())
+    }
+
+    /// Runs each one-time schedule that came due while another run of its automation was open, once none is: due,
+    /// not done, not paused, and off the scheduler's clock (`fire` left it so).
+    async fn fire_waiting(&self) {
+        let rows: Result<Vec<String>, StoreError> = self.db.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT data FROM automations WHERE next_run_ms IS NULL AND paused = 0
+                   AND json_extract(data, '$.schedule.at') IS NOT NULL AND json_extract(data, '$.doneAt') IS NULL
+                 ORDER BY rowid",
+            )?;
+            let rows = stmt
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows)
+        });
+        let now = self.now();
+        for data in rows.unwrap_or_default() {
+            let Ok(a) = decode(&data) else { continue };
+            let due = a
+                .schedule
+                .as_ref()
+                .and_then(|s| s.at.as_ref().and_then(|at| at_ms(at.as_str(), s).ok()));
+            let Some(due) = due.filter(|&due| due <= now) else {
+                continue;
+            };
+            let id = a.automation_id.as_str();
+            if !matches!(self.active(id), Ok(None)) {
+                continue;
+            }
+            if let Err(error) = self.fire(id, due).await {
+                tracing::warn!(automation = %id, error = %error.message, "waiting one-time run not started");
+            }
+        }
     }
 
     /// Sleeps until the earliest schedule is due, or until an automation changes.

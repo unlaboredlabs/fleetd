@@ -1785,11 +1785,9 @@ async fn a_one_time_run_missed_while_the_hub_was_down_runs_once_late_and_says_so
         .unwrap()
         .unwrap();
     assert!(
-        order
-            .source
-            .text
-            .as_str()
-            .contains("The hub was down then, so this is 140 min late: say that it comes late"),
+        order.source.text.as_str().contains(
+            "It comes 140 min late, since the hub was down or its last run was still open"
+        ),
         "{}",
         order.source.text.as_str()
     );
@@ -1876,5 +1874,80 @@ async fn a_full_project_makes_room_with_its_oldest_done_reminder() {
     assert!(autos.get(first.automation_id.as_str()).unwrap().is_none());
     let e = autos.create(new(&h.project, None, false)).unwrap_err();
     assert!(e.message.contains("the most it keeps"), "{}", e.message);
+    autos.stop();
+}
+
+/// A reminder due while a Run now order of its automation is still open isn't lost (D288): it waits, isn't done, and
+/// runs once that order closes, saying it comes late.
+#[tokio::test(flavor = "current_thread")]
+async fn a_one_time_run_due_while_another_run_is_open_waits_and_runs_once_that_ends() {
+    let h = lead_hub(true);
+    let autos = over(&h);
+    let (a, _) = autos
+        .create(new(
+            &h.project,
+            Some(once("2026-10-17T10:30", "UTC")),
+            false,
+        ))
+        .unwrap();
+    let id = a.automation_id.to_string();
+    let first = autos
+        .run(&id, Start::Manual { by: "human".into() })
+        .await
+        .unwrap();
+    let w = first.workstream_id.clone().unwrap();
+    autos.start();
+    settle().await;
+
+    h.clock.advance(Duration::from_secs(30 * MIN));
+    settle().await;
+    let runs = autos.runs(&id, 10).unwrap();
+    assert_eq!(runs[0].state, AutomationRunState::Skipped);
+    assert!(
+        runs[0]
+            .why
+            .as_ref()
+            .unwrap()
+            .as_str()
+            .contains("this one-time run goes once that ends"),
+        "{:?}",
+        runs[0].why
+    );
+    let waiting = autos.get(&id).unwrap().unwrap();
+    assert!(waiting.done_at.is_none() && waiting.next_run_at.is_none());
+    assert_eq!(orders(&h).len(), 1, "no order while the first is open");
+
+    // Its own run's end lets it go, once.
+    h.clock.advance(Duration::from_secs(10 * MIN));
+    h.area
+        .workstreams
+        .close(&h.project, &w, "done", "lead:lab-a/p-a")
+        .await
+        .unwrap();
+    settle().await;
+    let runs = autos.runs(&id, 10).unwrap();
+    assert_eq!(runs.len(), 3, "{runs:?}");
+    assert_eq!(
+        (runs[0].trigger, runs[0].state),
+        (AutomationTrigger::Schedule, AutomationRunState::Running)
+    );
+    assert_eq!(runs[0].late_min.as_ref().map(|n| n.get()), Some(10));
+    let order = h
+        .area
+        .workstreams
+        .get(runs[0].workstream_id.as_ref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert!(
+        order.source.text.as_str().contains(
+            "It comes 10 min late, since the hub was down or its last run was still open"
+        ),
+        "{}",
+        order.source.text.as_str()
+    );
+    assert!(autos.get(&id).unwrap().unwrap().done_at.is_some());
+    h.clock.advance(Duration::from_secs(24 * 60 * MIN));
+    settle().await;
+    assert_eq!(autos.runs(&id, 10).unwrap().len(), 3);
     autos.stop();
 }
