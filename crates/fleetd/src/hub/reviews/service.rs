@@ -912,20 +912,33 @@ impl Reviews {
         }
         // Findings on an older patch were already overtaken by a new head, unless its approval carried to this one.
         let patch_id = carried_to.unwrap_or(patch_id);
-        if blocking > 0 && change.patch_id.as_deref() == Some(patch_id.as_str()) {
+        // Sent back mid-review, the Change keeps no patch, but its writer is at work on that very head: they go to it.
+        let parked = change.state == ChangeState::NeedsRebase
+            && change.patch_id.is_none()
+            && change.head_sha.as_str() == sha;
+        if blocking > 0 && (parked || change.patch_id.as_deref() == Some(patch_id.as_str())) {
             let summary = self.findings_on(&change, &patch_id, &task_id, &sha);
             let waiting = format!(
                 "{BLOCKED}{task_id} found {blocking} blocking at {}",
                 short(&sha)
             );
+            // A parked Change keeps why it was sent back: the log has it instead.
+            let note = |text: &str| {
+                if parked {
+                    tracing::warn!(change_id = %change_id, text, "reviews: findings on a parked change");
+                } else {
+                    self.note(&change_id, text);
+                }
+            };
             let Some(author) = &change.task_id else {
-                self.note(
-                    &change_id,
-                    &format!("{waiting}; no author task to send them to: {summary}"),
-                );
+                note(&format!(
+                    "{waiting}; no author task to send them to: {summary}"
+                ));
                 return Ok(());
             };
-            self.note(&change_id, &format!("{waiting}; sent to {author}"));
+            if !parked {
+                self.note(&change_id, &format!("{waiting}; sent to {author}"));
+            }
             let text = findings_message(
                 &self
                     .db
@@ -947,10 +960,7 @@ impl Reviews {
                 .message_task(&change.project_ref, REVIEWS_BY, author, text)
                 .await
             {
-                self.note(
-                    &change_id,
-                    &format!("{waiting}; sending them to {author} failed: {e}"),
-                );
+                note(&format!("{waiting}; sending them to {author} failed: {e}"));
             }
             return Ok(());
         }

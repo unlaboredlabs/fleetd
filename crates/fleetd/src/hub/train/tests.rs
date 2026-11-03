@@ -7888,6 +7888,7 @@ async fn an_overdue_re_review_waits_out_of_the_line_until_it_is_done() {
     assert_eq!(*kit.gh.merges.lock().unwrap(), [(7, tested)]);
 }
 
+mod findings;
 mod pipeline;
 mod regen;
 mod repos;

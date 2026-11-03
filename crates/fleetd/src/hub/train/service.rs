@@ -30,6 +30,7 @@ use super::rules::Refusal;
 use crate::clock::Clock;
 use crate::hub::leads::events::Event;
 use crate::hub::prompts::PromptSet;
+use crate::hub::reviews::read::open_blocking;
 use crate::hub::status::fresh::{self, Fresh};
 use crate::hub::store::{iso_ms, parse_ms, system_ms};
 use fleetd_contracts::ledger::WorkstreamId;
@@ -857,14 +858,21 @@ impl Train {
         self.tell_author_with(change, problem, "").await
     }
 
-    /// `tell_author` with details below the problem.
+    /// `tell_author` with details below the problem. The PR's still-open blocking findings go below them: a writer
+    /// sent back mid-review (needs_rebase parks the PR) fixes them with the rebase instead of pushing the same code.
     async fn tell_author_with(&self, change: &Change, problem: &str, details: &str) {
         let prompts = self.records.db().prompts();
         let set = match &change.task_id {
             Some(task_id) => prompts.for_task(&change.project_ref, task_id.as_str()),
             None => prompts.current(Some(&change.project_ref)),
         };
-        let text = fix_your_pr(&set, change, problem, details);
+        let open = open_blocking(self.records.db(), change.pr_url.as_str());
+        let details = [details.trim(), open.as_str()]
+            .into_iter()
+            .filter(|d| !d.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let text = fix_your_pr(&set, change, problem, &details);
         if let Some(task_id) = &change.task_id {
             match self
                 .host
