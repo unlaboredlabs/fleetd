@@ -1,9 +1,9 @@
 // The panel's tabs, in the order its tab bar shows them: the one list the bar, the routes (`/<tab>` after a project),
 // the palette's Go to commands and the remembered tab all read. A new tab is one entry here: its words, its icon, its
-// pane and, if it has one, its count, each loaded the first time the panel shows it. Agents, Sessions, Pull requests
-// and Skills also name an item in their routes (one agent's work, one session, one PR, one skill); every other tab's
-// view is `{ tab }`.
-import { Activity, AppWindow, BookOpen, Bot, GitPullRequest, ListChecks, Scale, Send, TrainFront, type LucideIcon } from "lucide-react";
+// pane and, if it has one, its count, each loaded the first time the panel shows it. Agents, Sessions, Pull requests,
+// Skills and Artifacts also name an item in their routes (one agent's work, one session, one PR, one skill, one
+// artifact); every other tab's view is `{ tab }`.
+import { Activity, AppWindow, BookOpen, Bot, FileText, GitPullRequest, ListChecks, Scale, Send, TrainFront, type LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 import type { PanelView, ProjectKey } from "../shell/routes";
 
@@ -85,6 +85,16 @@ export const PANEL_TABS = [
     keywords: ["todo", "to-do", "tasks", "progress", "plan", "list"],
     pane: () => import("../checklist/ChecklistPane").then((m) => m.ChecklistPane),
     count: () => import("../checklist/ChecklistPane").then((m) => m.ChecklistCount),
+  },
+  {
+    id: "artifacts",
+    label: "Artifacts",
+    icon: FileText,
+    detail: "Reports the lead and its agents published in this chat, every version kept",
+    keywords: ["report", "reports", "artifact", "document", "page", "html", "markdown", "published", "versions"],
+    back: "All artifacts",
+    pane: () => import("./panes").then((m) => m.ArtifactsTab),
+    feature: "artifacts",
   },
   {
     id: "activity",

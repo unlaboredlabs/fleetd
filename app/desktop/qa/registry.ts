@@ -707,6 +707,54 @@ export const screens: readonly Screen[] = [
       await page.getByRole("complementary", { name: "Project panel" }).waitFor({ state: "detached" });
     },
   },
+  // The panel's Artifacts (W367): the reports published in the chat, newest first; a Markdown one at an older version
+  // a card opened, with its version picker; an HTML one in its sandboxed frame, drawn by its own script; and none yet.
+  {
+    id: "shell",
+    route: `${CHAT}/artifacts`,
+    fixtures: ["artifacts-published"],
+    variant: "panel-artifacts",
+    open: async (page) => {
+      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="artifacts"]').waitFor();
+    },
+  },
+  {
+    id: "shell",
+    route: `${CHAT}/artifacts/dependency-sweep`,
+    fixtures: ["artifacts-published"],
+    variant: "panel-artifact-md",
+    open: async (page) => {
+      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="artifact"]').waitFor();
+    },
+  },
+  {
+    id: "shell",
+    route: `${CHAT}/artifacts/dependency-sweep/1`,
+    fixtures: ["artifacts-published"],
+    variant: "panel-artifact-older",
+    open: async (page) => {
+      const panel = page.getByRole("complementary", { name: "Project panel" });
+      await expect(panel.getByRole("button", { name: "Show the newest" })).toBeVisible();
+    },
+  },
+  {
+    id: "shell",
+    route: `${CHAT}/artifacts/build-times`,
+    fixtures: ["artifacts-published"],
+    variant: "panel-artifact-html",
+    open: async (page) => {
+      await expect(page.frameLocator('iframe[sandbox="allow-scripts"]').locator("rect.bar")).toHaveCount(6);
+    },
+  },
+  {
+    id: "shell",
+    route: `${CHAT}/artifacts`,
+    fixtures: ["artifacts-none"],
+    variant: "panel-artifacts-empty",
+    open: async (page) => {
+      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="artifacts.empty"]').waitFor();
+    },
+  },
   // The panel's Checklist tab: how far along, doing and to do, done folded; done unfolded; and none set yet.
   {
     id: "shell",

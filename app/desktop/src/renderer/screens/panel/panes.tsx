@@ -1,5 +1,5 @@
 // The Agents, Sessions and Pull requests tabs as the tab list (tabs.ts) loads them: AgentsPane, SessionsPane and
-// PrsPane with the state they share with their counts. The agents' scope (this project or all) is the panel's, so the
+// PrsPane with the state they share with their counts; Skills and Artifacts, which open one item in the wide panel. The agents' scope (this project or all) is the panel's, so the
 // tab's count follows the list; the PR tab you read (Overview or Changes) is kept while the app runs, so reading diffs
 // one PR after another stays on Changes, and Changes asks the frame for its wide width.
 import { createContext, useContext, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
@@ -11,6 +11,7 @@ import type { PrTab } from "../prs/PrDetail";
 import { PrsPane, usePrList } from "../prs/PrsPane";
 import { SessionsPane } from "../sessions/SessionsPane";
 import { SkillsTabView } from "../navi/SkillsPane";
+import { ArtifactsTabView } from "../artifacts/ArtifactsPane";
 import { isLive } from "../sessions/model";
 import { useSessions } from "../sessions/hub";
 import { openCount } from "../prs/words";
@@ -56,6 +57,12 @@ export function SessionsTab({ project, view, onWide }: PaneProps) {
 /** A Navi's skills, or one of them, which asks for the frame's wide width. */
 export function SkillsTab({ project, view, onWide }: PaneProps) {
   return <SkillsTabView project={project} skill={view.tab === "skills" ? view.skill : null} onWide={onWide} />;
+}
+
+/** The chat's artifacts, or one of them, which asks for the frame's wide width. */
+export function ArtifactsTab({ project, view, onWide }: PaneProps) {
+  const one = view.tab === "artifacts" ? view : null;
+  return <ArtifactsTabView project={project} artifact={one?.artifact ?? null} version={one?.version} onWide={onWide} />;
 }
 
 /** The sessions open now, the ones asking for you among them. */

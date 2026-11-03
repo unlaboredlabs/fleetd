@@ -103,6 +103,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // Only the open panel's project has its checklist mounted.
   if (type === "checklist.changed") out.push({ tool: "checklist_get" });
   if (type === "skills.changed") out.push({ tool: "skills_list" });
+  // A name published again is a new version: the list, and the open artifact's list of versions.
+  if (type === "artifacts.changed") out.push({ tool: "artifacts_list" }, { tool: "artifact_get" });
   // Someone invited, joined, renamed, given a role or removed: the Hub group's lists, and whether this person still
   // administers (the sidebar's entry).
   // Setup's People step reads it too.
