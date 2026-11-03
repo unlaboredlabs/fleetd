@@ -5,6 +5,7 @@ pub mod agent_device;
 pub mod agent_mcp;
 pub mod args;
 pub mod chat;
+pub mod cloud;
 pub mod github_app;
 pub mod hub_key;
 pub mod mac_tool;
@@ -73,7 +74,7 @@ setting up (on the hub machine):
 projects:
 {}{}
 running by hand:
-{}{}{}{}{}{}{}{}{}{}{}{}",
+{}{}{}{}{}{}{}{}{}{}{}{}{}",
         UPDATE_USAGE,
         setup::SETUP_USAGE,
         setup::machine::machine_usage(),
@@ -91,6 +92,7 @@ running by hand:
         metrics::METRICS_USAGE,
         status::STATUS_USAGE,
         usage::USAGE_USAGE,
+        cloud::CLOUD_USAGE,
         steer::STEER_USAGE,
         chat::CHAT_USAGE,
         work::WORK_USAGE
@@ -136,6 +138,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "update" => UPDATE_USAGE.to_owned(),
         "status" => status::STATUS_USAGE.to_owned(),
         "usage" => usage::USAGE_USAGE.to_owned(),
+        "cloud" => cloud::CLOUD_USAGE.to_owned(),
         "steer" | "steers" => steer::STEER_USAGE.to_owned(),
         "chat" => chat::CHAT_USAGE.to_owned(),
         "work" => work::WORK_USAGE.to_owned(),
@@ -219,6 +222,7 @@ fn is_long_running(argv: &[String]) -> bool {
                 | "chat"
                 | "status"
                 | "usage"
+                | "cloud"
                 | "work"
         )
     )
@@ -238,6 +242,7 @@ async fn run_long_running(argv: &[String]) -> u8 {
         "push-relay" => push_relay::push_relay_command(rest).await,
         "status" => status::status_command(rest).await,
         "usage" => usage::usage_command(rest).await,
+        "cloud" => cloud::cloud_command(rest).await,
         "steer" => steer::steer_command(rest, false).await,
         "steers" => steer::steer_command(rest, true).await,
         "chat" => chat::chat_command(rest).await,

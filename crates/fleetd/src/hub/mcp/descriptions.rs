@@ -193,6 +193,10 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Owners' and admins' devices only. Forget the hub's GitHub App and its keys; the hub's gh goes back to the machine's own login. settingsUrl is its settings on GitHub, where it is deleted.",
     ),
     (
+        "cloud_stop",
+        "Admin keys only. The cloud machines' kill switch: turns cloud machines (boat.dev) off, then lists every machine boat.dev holds with this hub's label, from boat itself, not the hub's ledger, and stops each one still running. stopped names the machines a stop went to, failed those boat refused; unlisted says why boat's list couldn't be read, when the hub stopped only the machines its ledger knows (their leases stop any other within 30 minutes). Every sweep stops them again while cloud machines stay off.",
+    ),
+    (
         "claude_hub_api_set",
         "Owners' and admins' devices only. Set the hub's Claude API configuration: sealed, the API key sealed on the client with crypto_box_seal to each machine's boxPubKey (every machine agents run on), or empty to keep the saved key; endpoint, a custom ANTHROPIC_BASE_URL, absent for Anthropic's own. The hub relays each box to its node and keeps the fingerprint, never the key; missingOn names machines that don't hold it, where nothing runs on it until it is saved again while they are online. Projects' leads and work nobody started run on it, and so do people who choose it.",
     ),

@@ -1770,6 +1770,22 @@ export type CloneTarget = {
   sameRemote: boolean;
 };
 
+export type CloudStopInput = { [key: string]: unknown };
+
+export type CloudStopOutput = {
+  /** Those boat refused, each as "<machine>: <why>". */
+  failed: string[];
+  next?: string;
+  /** The machines a stop went to: their machine ids (`boat-2`), or boat's ids for one the hub didn't know. */
+  stopped: string[];
+  truncated?: boolean;
+  /**
+   * Why boat's list couldn't be read, when it couldn't: the hub stopped the machines its ledger knows, and their
+   * leases stop any other within 30 minutes.
+   */
+  unlisted?: string;
+};
+
 /**
  * A risky command (prod write, spend, delete, credential use), a session's permission prompt, a purchase or a secure
  * input waits for the human: exactly what it would do, then Approve or Deny. Answered with `approval_answer`, naming
@@ -8629,6 +8645,7 @@ export interface ToolMap {
   claude_settings_set: { input: ClaudeSettingsSetInput; output: ClaudeSettingsSetOutput };
   claude_subscription_remove: { input: ClaudeSubscriptionRemoveInput; output: ClaudeSubscriptionRemoveOutput };
   claude_subscription_set: { input: ClaudeSubscriptionSetInput; output: ClaudeSubscriptionSetOutput };
+  cloud_stop: { input: CloudStopInput; output: CloudStopOutput };
   decisions_list: { input: DecisionsListInput; output: DecisionsListOutput };
   decisions_overturn: { input: DecisionsOverturnInput; output: DecisionsOverturnOutput };
   decisions_record: { input: DecisionsRecordInput; output: DecisionsRecordOutput };

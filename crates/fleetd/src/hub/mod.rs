@@ -38,6 +38,7 @@ pub mod orders;
 pub mod pair;
 pub mod people;
 pub mod policy;
+pub mod pool;
 pub mod projects;
 pub mod prompts;
 pub mod prs;

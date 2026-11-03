@@ -4455,6 +4455,42 @@
       ],
       "type": "object"
     },
+    "CloudStopInput": {
+      "type": "object"
+    },
+    "CloudStopOutput": {
+      "properties": {
+        "failed": {
+          "description": "Those boat refused, each as \"<machine>: <why>\".",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "stopped": {
+          "description": "The machines a stop went to: their machine ids (`boat-2`), or boat's ids for one the hub didn't know.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "unlisted": {
+          "description": "Why boat's list couldn't be read, when it couldn't: the hub stopped the machines its ledger knows, and their\nleases stop any other within 30 minutes.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stopped",
+        "failed"
+      ],
+      "type": "object"
+    },
     "CommandApprovalItem": {
       "description": "A risky command (prod write, spend, delete, credential use), a session's permission prompt, a purchase or a secure\ninput waits for the human: exactly what it would do, then Approve or Deny. Answered with `approval_answer`, naming\n`requestId`. Exactly one of `gated`, `permission`, `purchase` and `secureInput`.",
       "properties": {
@@ -10005,6 +10041,12 @@
         "claude_subscription_set.output": {
           "$ref": "#/$defs/ClaudeSubscriptionSetOutput"
         },
+        "cloud_stop.input": {
+          "$ref": "#/$defs/CloudStopInput"
+        },
+        "cloud_stop.output": {
+          "$ref": "#/$defs/CloudStopOutput"
+        },
         "decisions_list.input": {
           "$ref": "#/$defs/DecisionsListInput"
         },
@@ -10999,6 +11041,8 @@
         "claude_subscription_remove.output",
         "claude_subscription_set.input",
         "claude_subscription_set.output",
+        "cloud_stop.input",
+        "cloud_stop.output",
         "decisions_list.input",
         "decisions_list.output",
         "decisions_overturn.input",

@@ -1,0 +1,1224 @@
+//! The pool against a fake boat that keeps its machines in memory and stops them at their lease, on a test clock:
+//! every stop path (idle, lease expiry, budget, kill switch, node vanished, wake timeout, hub restart, orphan sweep),
+//! the start budget and its backoff, the keepalive, and the ledger written before every call.
+use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use serde_json::Value;
+
+use super::boat::{Boat, BoatError, Limits, Sandbox, StartLimits};
+use super::lease::Ttl;
+use super::ledger::{SettingsChange, State};
+use super::{CreateSpec, Fleet, LABEL_ATTEMPT, LABEL_HUB, LABEL_SLOT, Pool, Why, life, sweep};
+use crate::hub::store::HubDb;
+use crate::hub::store::test_clock::ManualClock;
+use crate::hub::train::host::BoxFut;
+
+const T0: u64 = 1_793_786_400_000; // 2026-11-04T10:00:00Z
+const MIN: Duration = Duration::from_secs(60);
+
+#[derive(Default)]
+struct Boatish {
+    machines: BTreeMap<String, Sandbox>,
+    /// Every call, in order: "create boat-1", "get bx_1", "ttl bx_1 1800", "stop bx_1", …
+    calls: Vec<String>,
+    /// The next call whose line starts with the first refused with the second.
+    refuse: VecDeque<(&'static str, BoatError)>,
+    limits: Limits,
+    /// Idempotency-Key → (body, id).
+    idem: HashMap<String, (Vec<u8>, String)>,
+    next: u32,
+    /// boat's list can't be read.
+    list_down: bool,
+    usage: HashMap<String, f64>,
+    /// What the ledger said at each call that starts or stops a machine.
+    probes: Vec<String>,
+}
+
+struct FakeBoat {
+    s: Mutex<Boatish>,
+    clock: Arc<ManualClock>,
+    /// Reads the ledger at each create, resume and stop.
+    probe: Mutex<Option<Box<dyn Fn() -> String + Send + Sync>>>,
+}
+
+impl FakeBoat {
+    fn new(clock: Arc<ManualClock>) -> Arc<FakeBoat> {
+        let limits = Limits {
+            can_start: true,
+            next_start_dollars: Some(0.0),
+            max_active_sandboxes: 100,
+            start_limits: Some(StartLimits {
+                per_minute: 12,
+                per_hour: 60,
+                per_day: 200,
+            }),
+            sandbox_plan_dollars: Some(20.0),
+            ..Default::default()
+        };
+        Arc::new(FakeBoat {
+            s: Mutex::new(Boatish {
+                limits,
+                ..Default::default()
+            }),
+            clock,
+            probe: Mutex::default(),
+        })
+    }
+
+    fn now(&self) -> i64 {
+        crate::hub::store::now_ms(self.clock.as_ref())
+    }
+
+    fn call(&self, line: String) -> Result<(), BoatError> {
+        let starts_or_stops = ["create", "resume", "stop"]
+            .iter()
+            .any(|k| line.starts_with(k));
+        if starts_or_stops && let Some(probe) = self.probe.lock().unwrap().as_ref() {
+            let seen = probe();
+            self.s
+                .lock()
+                .unwrap()
+                .probes
+                .push(format!("{line}: {seen}"));
+        }
+        let mut s = self.s.lock().unwrap();
+        s.calls.push(line.clone());
+        if let Some(i) = s.refuse.iter().position(|(kind, _)| line.starts_with(kind)) {
+            return Err(s.refuse.remove(i).unwrap().1);
+        }
+        Ok(())
+    }
+
+    /// boat's auto-stop: every machine past its deadline stops.
+    fn expire(&self) {
+        let now = self.now();
+        for sb in self.s.lock().unwrap().machines.values_mut() {
+            if sb.state == "running" && sb.archive_after_ms().is_some_and(|at| at <= now) {
+                sb.state = "archived".into();
+            }
+        }
+    }
+
+    /// A machine boat runs that the hub's ledger doesn't hold.
+    fn plant(&self, id: &str, labels: &[(&str, &str)], state: &str) {
+        let sb = Sandbox {
+            id: id.into(),
+            state: state.into(),
+            labels: labels
+                .iter()
+                .map(|(k, v)| ((*k).into(), (*v).into()))
+                .collect(),
+            archive_after: Some(crate::hub::store::iso_ms(self.now() + 1_800_000)),
+            ..Default::default()
+        };
+        self.s.lock().unwrap().machines.insert(id.into(), sb);
+    }
+
+    fn state(&self, id: &str) -> Option<String> {
+        self.s
+            .lock()
+            .unwrap()
+            .machines
+            .get(id)
+            .map(|s| s.state.clone())
+    }
+
+    fn calls(&self) -> Vec<String> {
+        self.s.lock().unwrap().calls.clone()
+    }
+
+    fn calls_like(&self, prefix: &str) -> Vec<String> {
+        self.calls()
+            .into_iter()
+            .filter(|c| c.starts_with(prefix))
+            .collect()
+    }
+
+    fn refuse(&self, kind: &'static str, e: BoatError) {
+        self.s.lock().unwrap().refuse.push_back((kind, e));
+    }
+
+    fn running(&self) -> Vec<String> {
+        let s = self.s.lock().unwrap();
+        s.machines
+            .values()
+            .filter(|m| m.state == "running")
+            .map(|m| m.id.clone())
+            .collect()
+    }
+}
+
+fn iso(ms: i64) -> String {
+    crate::hub::store::iso_ms(ms)
+}
+
+impl Boat for FakeBoat {
+    fn create<'a>(
+        &'a self,
+        idem_key: &'a str,
+        body: &'a [u8],
+    ) -> BoxFut<'a, Result<Sandbox, BoatError>> {
+        Box::pin(async move {
+            let v: Value = serde_json::from_slice(body).unwrap();
+            let slot = v["labels"][LABEL_SLOT].as_str().unwrap_or("?").to_owned();
+            self.call(format!("create {slot}"))?;
+            let now = self.now();
+            let mut s = self.s.lock().unwrap();
+            if let Some((known, id)) = s.idem.get(idem_key).cloned() {
+                if known != body {
+                    return Err(BoatError::IdempotencyKeyReused);
+                }
+                return Ok(s.machines[&id].clone());
+            }
+            s.next += 1;
+            let id = format!("bx_{:08}", s.next);
+            let sb = Sandbox {
+                id: id.clone(),
+                state: "running".into(),
+                labels: serde_json::from_value(v["labels"].clone()).unwrap(),
+                archive_after: Some(iso(now + v["ttlSeconds"].as_i64().unwrap() * 1000)),
+                ttl_seconds: v["ttlSeconds"].as_i64(),
+                ..Default::default()
+            };
+            s.machines.insert(id.clone(), sb.clone());
+            s.idem.insert(idem_key.into(), (body.to_vec(), id));
+            Ok(sb)
+        })
+    }
+
+    fn get<'a>(&'a self, id: &'a str) -> BoxFut<'a, Result<Sandbox, BoatError>> {
+        Box::pin(async move {
+            self.call(format!("get {id}"))?;
+            self.s
+                .lock()
+                .unwrap()
+                .machines
+                .get(id)
+                .cloned()
+                .ok_or(BoatError::NotFound)
+        })
+    }
+
+    fn list<'a>(
+        &'a self,
+        labels: &'a [(String, String)],
+    ) -> BoxFut<'a, Result<Vec<Sandbox>, BoatError>> {
+        Box::pin(async move {
+            self.call("list".into())?;
+            let s = self.s.lock().unwrap();
+            if s.list_down {
+                return Err(BoatError::Network("reset".into()));
+            }
+            Ok(s.machines
+                .values()
+                .filter(|m| labels.iter().all(|(k, v)| m.labels.get(k) == Some(v)))
+                .cloned()
+                .collect())
+        })
+    }
+
+    fn set_ttl<'a>(&'a self, id: &'a str, ttl: Ttl) -> BoxFut<'a, Result<(), BoatError>> {
+        Box::pin(async move {
+            self.call(format!("ttl {id} {}", ttl.seconds()))?;
+            let now = self.now();
+            let mut s = self.s.lock().unwrap();
+            let m = s.machines.get_mut(id).ok_or(BoatError::NotFound)?;
+            m.archive_after = Some(iso(now + ttl.ms()));
+            Ok(())
+        })
+    }
+
+    fn stop<'a>(&'a self, id: &'a str) -> BoxFut<'a, Result<(), BoatError>> {
+        Box::pin(async move {
+            self.call(format!("stop {id}"))?;
+            let mut s = self.s.lock().unwrap();
+            let m = s.machines.get_mut(id).ok_or(BoatError::NotFound)?;
+            m.state = "archived".into();
+            Ok(())
+        })
+    }
+
+    fn resume<'a>(&'a self, id: &'a str, ttl: Ttl) -> BoxFut<'a, Result<Sandbox, BoatError>> {
+        Box::pin(async move {
+            self.call(format!("resume {id} {}", ttl.seconds()))?;
+            let now = self.now();
+            let mut s = self.s.lock().unwrap();
+            let m = s.machines.get_mut(id).ok_or(BoatError::NotFound)?;
+            assert_ne!(
+                m.state, "running",
+                "a resume only after a GET saw it stopped"
+            );
+            m.state = "running".into();
+            m.archive_after = Some(iso(now + ttl.ms()));
+            Ok(m.clone())
+        })
+    }
+
+    fn delete<'a>(&'a self, id: &'a str) -> BoxFut<'a, Result<(), BoatError>> {
+        Box::pin(async move {
+            self.call(format!("delete {id}"))?;
+            self.s.lock().unwrap().machines.remove(id);
+            Ok(())
+        })
+    }
+
+    fn limits(&self) -> BoxFut<'_, Result<Limits, BoatError>> {
+        Box::pin(async move {
+            self.call("limits".into())?;
+            let mut s = self.s.lock().unwrap();
+            let running = s.machines.values().filter(|m| m.state == "running").count() as u32;
+            s.limits.active_sandboxes = running;
+            Ok(s.limits.clone())
+        })
+    }
+
+    fn usage<'a>(&'a self, id: &'a str, _since_ms: i64) -> BoxFut<'a, Result<f64, BoatError>> {
+        Box::pin(async move {
+            self.call(format!("usage {id}"))?;
+            Ok(self.s.lock().unwrap().usage.get(id).copied().unwrap_or(0.0))
+        })
+    }
+}
+
+#[derive(Default)]
+struct FakeFleet {
+    seen: Mutex<HashMap<String, i64>>,
+    busy: Mutex<HashMap<String, bool>>,
+    /// The hub hears its other machines.
+    others: Mutex<bool>,
+}
+
+impl Fleet for FakeFleet {
+    fn last_seen(&self, machine: &str) -> Option<i64> {
+        self.seen.lock().unwrap().get(machine).copied()
+    }
+    fn busy(&self, machine: &str) -> Option<bool> {
+        self.busy.lock().unwrap().get(machine).copied()
+    }
+    fn others_heard(&self, _besides: &[String], _now: i64) -> bool {
+        *self.others.lock().unwrap()
+    }
+}
+
+struct World {
+    pool: Arc<Pool>,
+    boat: Arc<FakeBoat>,
+    fleet: Arc<FakeFleet>,
+    clock: Arc<ManualClock>,
+    db: Arc<HubDb>,
+    home: tempfile::TempDir,
+}
+
+impl World {
+    async fn new() -> World {
+        let clock = ManualClock::at(T0);
+        let db = HubDb::open_memory().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let boat = FakeBoat::new(clock.clone());
+        let fleet = Arc::new(FakeFleet::default());
+        *fleet.others.lock().unwrap() = true;
+        let pool = Pool::new(
+            db.clone(),
+            home.path().into(),
+            boat.clone(),
+            fleet.clone(),
+            clock.clone(),
+            chrono_tz::UTC,
+        );
+        pool.set_key("boat_test_key").unwrap();
+        pool.ledger
+            .change_settings(&SettingsChange {
+                enabled: true,
+                pool_size: 3,
+                machine_type: "large".into(),
+                day_budget: 3.0,
+                month_budget: None,
+                projects: Vec::new(),
+                environment: None,
+            })
+            .unwrap();
+        World {
+            pool,
+            boat,
+            fleet,
+            clock,
+            db,
+            home,
+        }
+    }
+
+    /// The pool again over the same ledger and boat: a hub restart.
+    fn restart(&self) -> Arc<Pool> {
+        Pool::new(
+            self.db.clone(),
+            self.home.path().into(),
+            self.boat.clone(),
+            self.fleet.clone(),
+            self.clock.clone(),
+            chrono_tz::UTC,
+        )
+    }
+
+    fn now(&self) -> i64 {
+        self.pool.now()
+    }
+
+    fn advance(&self, by: Duration) {
+        self.clock.advance(by);
+    }
+
+    fn hello(&self, slot: &str, busy: Option<bool>) {
+        self.fleet
+            .seen
+            .lock()
+            .unwrap()
+            .insert(slot.into(), self.now());
+        match busy {
+            Some(b) => self.fleet.busy.lock().unwrap().insert(slot.into(), b),
+            None => self.fleet.busy.lock().unwrap().remove(slot),
+        };
+    }
+
+    fn state(&self, slot: &str) -> State {
+        self.pool.ledger.slot(slot).unwrap().unwrap().state
+    }
+
+    fn sandbox(&self, slot: &str) -> String {
+        self.pool
+            .ledger
+            .slot(slot)
+            .unwrap()
+            .unwrap()
+            .sandbox_id
+            .unwrap()
+    }
+
+    async fn tick(&self) {
+        life::tick(&self.pool).await;
+    }
+
+    async fn create(&self, slot: &str) {
+        let spec = CreateSpec {
+            body_until: self.now() + 15 * 60_000,
+            ..Default::default()
+        };
+        self.pool.create(slot, spec).await.unwrap();
+    }
+
+    /// A created machine that joined: awake.
+    async fn awake(&self, slot: &str) {
+        self.create(slot).await;
+        self.advance(Duration::from_secs(20));
+        self.hello(slot, Some(true));
+        self.tick().await;
+        assert_eq!(self.state(slot), State::Awake);
+    }
+
+    /// An awake machine stopped and seen archived: asleep.
+    async fn asleep(&self, slot: &str) {
+        self.awake(slot).await;
+        self.pool.stop(slot, State::Stopping, "test").await.unwrap();
+        self.tick().await;
+        assert_eq!(self.state(slot), State::Asleep);
+    }
+
+    fn open_spend(&self, slot: &str) -> bool {
+        self.pool.ledger.has_open_spend(slot).unwrap()
+    }
+}
+
+/// Every create, resume and stop finds its row (and, for a start, its counted start and running meter) already in
+/// the ledger.
+#[tokio::test]
+async fn the_ledger_is_written_before_every_call() {
+    let w = World::new().await;
+    let ledger = w.pool.ledger.clone();
+    let clock = w.clock.clone();
+    *w.boat.probe.lock().unwrap() = Some(Box::new(move || {
+        let now = crate::hub::store::now_ms(clock.as_ref());
+        let row = ledger.slot("boat-1").unwrap().unwrap();
+        let starts = ledger.starts_in(super::ledger::Window::Day, now).unwrap().0;
+        let spend = ledger.has_open_spend("boat-1").unwrap();
+        format!("{} {starts} starts spend {spend}", row.state.as_str())
+    }));
+    w.asleep("boat-1").await;
+    w.pool.wake("boat-1", Why::Need).await.unwrap();
+    let probes = w.boat.s.lock().unwrap().probes.clone();
+    assert_eq!(
+        probes,
+        [
+            "create boat-1: creating 1 starts spend true",
+            format!("stop {}: stopping 1 starts spend true", w.sandbox("boat-1")).as_str(),
+            format!(
+                "resume {} 1800: waking 2 starts spend true",
+                w.sandbox("boat-1")
+            )
+            .as_str(),
+        ]
+    );
+    // The create went out labelled for this hub, its slot and its attempt, under the attempt's key.
+    let s = w.pool.ledger.settings().unwrap();
+    let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
+    let sb = &w.boat.s.lock().unwrap().machines[&w.sandbox("boat-1")];
+    assert_eq!(sb.label(LABEL_HUB), Some(s.hub_id.as_str()));
+    assert_eq!(sb.label(LABEL_SLOT), Some("boat-1"));
+    assert_eq!(sb.label(LABEL_ATTEMPT), row.idem_key.as_deref());
+    // Its body (it held the enroll token) is gone once boat answered.
+    assert_eq!(row.create_body, None);
+}
+
+#[tokio::test]
+async fn an_idle_machine_stops_after_15_minutes_and_sleeps() {
+    let w = World::new().await;
+    w.awake("boat-1").await;
+    let id = w.sandbox("boat-1");
+    w.hello("boat-1", Some(false));
+    w.tick().await; // idle from now
+    w.advance(14 * MIN);
+    w.hello("boat-1", Some(false));
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Awake);
+    // Busy again resets the grace.
+    w.hello("boat-1", Some(true));
+    w.tick().await;
+    w.advance(14 * MIN);
+    w.hello("boat-1", Some(false));
+    w.tick().await;
+    w.advance(14 * MIN);
+    w.hello("boat-1", Some(false));
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Awake);
+    w.advance(MIN);
+    w.hello("boat-1", Some(false));
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Stopping);
+    assert_eq!(w.boat.calls_like("stop"), [format!("stop {id}")]);
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Asleep);
+    assert!(
+        !w.open_spend("boat-1"),
+        "the meter closes when boat says archived"
+    );
+}
+
+/// A placement's claim holds off the idle stop, and the idle stop's write makes a later claim fail.
+#[tokio::test]
+async fn a_claim_holds_off_the_idle_stop() {
+    let w = World::new().await;
+    w.awake("boat-1").await;
+    w.hello("boat-1", Some(false));
+    w.tick().await;
+    w.advance(16 * MIN);
+    w.hello("boat-1", Some(false));
+    assert!(w.pool.claim("boat-1"));
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Awake);
+    w.advance(3 * MIN);
+    w.hello("boat-1", Some(false));
+    w.tick().await; // idle starts again after the claim
+    w.advance(16 * MIN);
+    w.hello("boat-1", Some(false));
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Stopping);
+    assert!(!w.pool.claim("boat-1"));
+}
+
+/// A node that sends no busy flag counts as busy: never stopped as idle (the lease and budget still bound it).
+#[tokio::test]
+async fn a_node_without_the_busy_flag_is_never_idle() {
+    let w = World::new().await;
+    w.awake("boat-1").await;
+    for _ in 0..4 {
+        w.hello("boat-1", None);
+        w.advance(10 * MIN);
+        w.tick().await;
+    }
+    assert_eq!(w.state("boat-1"), State::Awake);
+}
+
+/// While wanted, the lease is renewed every 10 minutes to 30 minutes ahead; boat's deadline is never more than 30
+/// minutes out. A hub that stops renewing (dead, stalled) has boat stop the machine itself at that deadline.
+#[tokio::test]
+async fn the_lease_is_renewed_every_10_minutes_and_boat_stops_a_machine_whose_hub_went_quiet() {
+    let w = World::new().await;
+    w.awake("boat-1").await;
+    let id = w.sandbox("boat-1");
+    assert!(w.boat.calls_like("ttl").is_empty());
+    let mut renewed = Vec::new();
+    for _ in 0..6 {
+        w.advance(5 * MIN);
+        w.hello("boat-1", Some(true));
+        w.tick().await;
+        if w.boat.calls_like("ttl").len() > renewed.len() {
+            renewed.push(w.now());
+        }
+    }
+    // At once to 30 minutes (the create's setup lease was 45), then every 10 minutes.
+    let t = |m: u64| (T0 + 20_000 + m * 60_000) as i64;
+    assert_eq!(renewed, [t(5), t(15), t(25)]);
+    assert!(
+        w.boat
+            .calls_like("ttl")
+            .iter()
+            .all(|c| c.ends_with(" 1800"))
+    );
+    let deadline = w.boat.s.lock().unwrap().machines[&id]
+        .archive_after_ms()
+        .unwrap();
+    assert_eq!(deadline, t(55));
+    // The hub goes quiet: no more ticks. boat stops it at the deadline, by itself.
+    w.advance(24 * MIN);
+    w.boat.expire();
+    assert_eq!(w.boat.state(&id).as_deref(), Some("running"));
+    w.advance(MIN);
+    w.boat.expire();
+    assert_eq!(w.boat.state(&id).as_deref(), Some("archived"));
+    // The hub back: its sweep sees boat stopped it.
+    sweep::sweep(&w.pool).await.unwrap();
+    assert_eq!(w.state("boat-1"), State::Asleep);
+    assert!(!w.open_spend("boat-1"));
+}
+
+/// The lease never outlasts the budget at the pool's burn rate: a second machine starting re-sends a shorter lease at
+/// once, and when the lease would be a minute or less the machine is stopped and no start is allowed.
+#[tokio::test]
+async fn the_budget_shortens_the_lease_then_stops_the_machine() {
+    let w = World::new().await;
+    let mut change = SettingsChange {
+        enabled: true,
+        pool_size: 3,
+        machine_type: "large".into(),
+        day_budget: 0.024, // 20 minutes of one large machine
+        month_budget: None,
+        projects: Vec::new(),
+        environment: None,
+    };
+    w.pool.ledger.change_settings(&change).unwrap();
+    w.awake("boat-1").await;
+    let id = w.sandbox("boat-1");
+    // Created with the budget's 20 minutes, not the setup's 45.
+    let created = w.boat.s.lock().unwrap().machines[&id].ttl_seconds;
+    assert_eq!(created, Some(1200));
+    // A second machine doubles the burn: boat-1's lease is cut at once.
+    w.advance(Duration::from_secs(40));
+    w.create("boat-2").await;
+    w.advance(Duration::from_secs(40));
+    w.hello("boat-1", Some(true));
+    w.tick().await;
+    let cut: u32 = w
+        .boat
+        .calls_like("ttl")
+        .last()
+        .unwrap()
+        .rsplit(' ')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((500..=560).contains(&cut), "{cut}");
+    // About 570 s in, a minute or less is left at the burn rate: stopped.
+    w.advance(Duration::from_secs(480));
+    w.hello("boat-1", Some(true));
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Stopping);
+    assert_eq!(w.boat.calls_like("stop"), [format!("stop {id}")]);
+    w.tick().await;
+    assert_eq!(
+        w.pool.wake("boat-1", Why::Need).await.unwrap_err(),
+        "cloud paused: too little budget left to start a machine"
+    );
+    assert!(w.boat.calls_like("resume").is_empty());
+    // Spent: the line says so.
+    w.advance(10 * MIN);
+    let held = w.pool.start_held().unwrap();
+    assert!(
+        held.starts_with("cloud paused: today's boat.dev budget ($0.02) is spent"),
+        "{held}"
+    );
+    // A bigger budget lets it start again.
+    change.day_budget = 3.0;
+    w.pool.ledger.change_settings(&change).unwrap();
+    w.pool.wake("boat-1", Why::Need).await.unwrap();
+}
+
+/// boat's own cost, when higher than the meter, is what the budget counts.
+#[tokio::test]
+async fn the_meter_takes_boats_cost_when_it_is_higher() {
+    let w = World::new().await;
+    w.awake("boat-1").await;
+    w.advance(10 * MIN);
+    let s = w.pool.ledger.settings().unwrap();
+    let ours = w.pool.budget(&s, w.now()).unwrap().day_spent;
+    assert!((0.012..0.0125).contains(&ours), "{ours}");
+    w.boat
+        .s
+        .lock()
+        .unwrap()
+        .usage
+        .insert(w.sandbox("boat-1"), 0.5);
+    w.hello("boat-1", Some(true));
+    sweep::sweep(&w.pool).await.unwrap();
+    let b = w.pool.budget(&s, w.now()).unwrap();
+    assert_eq!(b.day_spent, 0.5);
+    assert_eq!(b.month_spent, 0.5);
+    assert_eq!(
+        b.month_budget, 20.0,
+        "the month budget defaults to the plan's included dollars"
+    );
+}
+
+#[tokio::test]
+async fn a_machine_whose_node_vanished_is_stopped_unless_the_hub_hears_nobody() {
+    let w = World::new().await;
+    w.awake("boat-1").await;
+    // The hub itself stalled: every node looks silent. Nothing is stopped for it.
+    *w.fleet.others.lock().unwrap() = false;
+    w.advance(11 * MIN);
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Awake);
+    // Others heard normally: the silent one is stopped.
+    *w.fleet.others.lock().unwrap() = true;
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Stopping);
+    let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
+    assert_eq!(
+        row.note.as_deref(),
+        Some("its node went silent for 10 minutes")
+    );
+    assert_eq!(row.wake_failures, 0, "a vanished node is no wake failure");
+}
+
+/// A wake with no hello in 5 minutes is stopped and counted; two in a row make the slot broken, never woken again.
+#[tokio::test]
+async fn two_wakes_without_a_hello_make_the_slot_broken() {
+    let w = World::new().await;
+    w.asleep("boat-1").await;
+    for round in 1..=2 {
+        w.pool.wake("boat-1", Why::Need).await.unwrap();
+        assert_eq!(w.state("boat-1"), State::Waking);
+        w.advance(4 * MIN);
+        w.tick().await;
+        assert_eq!(w.state("boat-1"), State::Waking);
+        w.advance(2 * MIN);
+        w.tick().await;
+        let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
+        assert_eq!(row.wake_failures, round);
+        w.tick().await;
+        w.advance(MIN);
+    }
+    assert_eq!(w.state("boat-1"), State::Broken);
+    assert!(w.boat.running().is_empty());
+    assert!(!w.open_spend("boat-1"));
+    let e = w.pool.wake("boat-1", Why::Need).await.unwrap_err();
+    assert_eq!(e, "boat-1 doesn't come back: Reset it in Settings › Cloud");
+    assert_eq!(w.boat.calls_like("resume").len(), 2);
+}
+
+/// A hello resets the count.
+#[tokio::test]
+async fn a_hello_clears_the_wake_failures() {
+    let w = World::new().await;
+    w.asleep("boat-1").await;
+    w.pool.wake("boat-1", Why::Need).await.unwrap();
+    w.advance(6 * MIN);
+    w.tick().await;
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Asleep);
+    w.advance(MIN);
+    w.pool.wake("boat-1", Why::Need).await.unwrap();
+    w.advance(MIN);
+    w.hello("boat-1", Some(true));
+    w.tick().await;
+    let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
+    assert_eq!((row.state, row.wake_failures), (State::Awake, 0));
+}
+
+/// The kill switch lists boat itself: it stops this hub's machines the ledger knows, and one it doesn't, but never
+/// another hub's. Each sweep stops them again while the pool is off.
+#[tokio::test]
+async fn the_kill_switch_stops_every_machine_boat_lists_with_this_hubs_label() {
+    let w = World::new().await;
+    w.awake("boat-1").await;
+    w.awake("boat-2").await;
+    let hub = w.pool.ledger.settings().unwrap().hub_id;
+    w.boat.plant(
+        "bx_orphan01",
+        &[(LABEL_HUB, &hub), (LABEL_SLOT, "boat-9")],
+        "running",
+    );
+    w.boat.plant(
+        "bx_another1",
+        &[(LABEL_HUB, "someoneelse"), (LABEL_SLOT, "boat-1")],
+        "running",
+    );
+    let kill = w.pool.kill().await.unwrap();
+    let mut stopped = kill.stopped.clone();
+    stopped.sort();
+    assert_eq!(stopped, ["boat-1", "boat-2", "bx_orphan01"]);
+    assert!(kill.failed.is_empty() && kill.unlisted.is_none());
+    assert_eq!(w.boat.running(), ["bx_another1"]);
+    assert!(!w.pool.ledger.settings().unwrap().enabled);
+    assert_eq!(
+        w.pool.start_held().as_deref(),
+        Some("cloud machines are off")
+    );
+    // A racing call woke boat-1 again: the next sweep stops it.
+    w.boat
+        .s
+        .lock()
+        .unwrap()
+        .machines
+        .get_mut(&w.sandbox("boat-1"))
+        .unwrap()
+        .state = "running".into();
+    sweep::sweep(&w.pool).await.unwrap();
+    assert_eq!(w.boat.running(), ["bx_another1"]);
+}
+
+#[tokio::test]
+async fn the_kill_switch_stops_the_ledgers_machines_when_boats_list_is_down() {
+    let w = World::new().await;
+    w.awake("boat-1").await;
+    w.boat.s.lock().unwrap().list_down = true;
+    let kill = w.pool.kill().await.unwrap();
+    assert_eq!(kill.stopped, ["boat-1"]);
+    assert_eq!(
+        kill.unlisted.as_deref(),
+        Some("boat.dev unreachable, retrying")
+    );
+    assert!(w.boat.running().is_empty());
+}
+
+/// A hub restart: the new process places nothing until its sweep has run; the sweep reconciles what boat runs with the
+/// ledger, and renewal simply resumes.
+#[tokio::test]
+async fn after_a_hub_restart_the_sweep_runs_before_any_placement() {
+    let w = World::new().await;
+    w.awake("boat-1").await;
+    w.asleep("boat-2").await;
+    // boat-2 runs at boat though the ledger says asleep (a resume whose answer was lost before the crash).
+    let id2 = w.sandbox("boat-2");
+    w.boat
+        .s
+        .lock()
+        .unwrap()
+        .machines
+        .get_mut(&id2)
+        .unwrap()
+        .state = "running".into();
+    let pool = w.restart();
+    assert!(!pool.ready());
+    // boat down at start: still not ready; only cloud placement waits.
+    w.boat.refuse("limits", BoatError::Network("reset".into()));
+    assert!(sweep::sweep(&pool).await.is_err());
+    assert!(!pool.ready());
+    sweep::sweep(&pool).await.unwrap();
+    assert!(pool.ready());
+    assert_eq!(
+        w.boat.state(&id2).as_deref(),
+        Some("archived"),
+        "running while asleep in the ledger: stopped"
+    );
+    assert_eq!(
+        w.boat.state(&w.sandbox("boat-1")).as_deref(),
+        Some("running"),
+        "awake: kept"
+    );
+    let before = w.boat.calls_like("ttl").len();
+    w.advance(11 * MIN);
+    w.hello("boat-1", Some(true));
+    life::tick(&pool).await;
+    assert_eq!(
+        w.boat.calls_like("ttl").len(),
+        before + 1,
+        "renewal resumes"
+    );
+}
+
+/// The sweep, row by row (§4's table).
+#[tokio::test]
+async fn the_sweep_reconciles_boat_with_the_ledger() {
+    let w = World::new().await;
+    let hub = w.pool.ledger.settings().unwrap().hub_id;
+    w.awake("boat-1").await;
+    w.asleep("boat-2").await;
+    // An orphan with this hub's label, a stopped orphan, and another hub's machine.
+    w.boat.plant(
+        "bx_orphan01",
+        &[(LABEL_HUB, &hub), (LABEL_SLOT, "boat-7")],
+        "running",
+    );
+    w.boat.plant(
+        "bx_orphan02",
+        &[(LABEL_HUB, &hub), (LABEL_SLOT, "boat-8")],
+        "archived",
+    );
+    w.boat
+        .plant("bx_another1", &[(LABEL_HUB, "someoneelse")], "running");
+    // boat lost boat-2's machine.
+    let id2 = w.sandbox("boat-2");
+    w.boat.s.lock().unwrap().machines.remove(&id2);
+    sweep::sweep(&w.pool).await.unwrap();
+    assert_eq!(
+        w.boat.state("bx_orphan01").as_deref(),
+        Some("archived"),
+        "stopped first"
+    );
+    assert_eq!(
+        w.boat.state("bx_orphan02"),
+        None,
+        "a stopped orphan is deleted"
+    );
+    assert_eq!(
+        w.boat.state("bx_another1").as_deref(),
+        Some("running"),
+        "another hub's: untouched"
+    );
+    assert!(!w.boat.calls().iter().any(|c| c.contains("bx_another1")));
+    assert_eq!(w.state("boat-2"), State::Gone);
+    assert_eq!(w.state("boat-1"), State::Awake);
+    // The next sweep deletes the now-stopped orphan.
+    sweep::sweep(&w.pool).await.unwrap();
+    assert_eq!(w.boat.state("bx_orphan01"), None);
+    // boat ran a machine 3 minutes past its deadline: stopped.
+    let id1 = w.sandbox("boat-1");
+    w.boat
+        .s
+        .lock()
+        .unwrap()
+        .machines
+        .get_mut(&id1)
+        .unwrap()
+        .archive_after = Some(iso(w.now() - 3 * 60_000));
+    sweep::sweep(&w.pool).await.unwrap();
+    assert_eq!(w.boat.state(&id1).as_deref(), Some("archived"));
+}
+
+/// A create whose answer was lost: found by its attempt label first; with no machine found, its sealed body goes again
+/// under the same key while its token lives (boat makes no second machine); after, the slot fails.
+#[tokio::test]
+async fn a_lost_create_is_looked_up_by_its_attempt_before_any_retry() {
+    let w = World::new().await;
+    // boat made it, but the answer was lost.
+    w.boat
+        .s
+        .lock()
+        .unwrap()
+        .refuse
+        .push_back(("create", BoatError::Network("reset".into())));
+    let spec = CreateSpec {
+        body_until: w.now() + 15 * 60_000,
+        ..Default::default()
+    };
+    assert!(w.pool.create("boat-1", spec.clone()).await.is_err());
+    assert_eq!(w.state("boat-1"), State::Creating);
+    assert!(
+        w.pool
+            .ledger
+            .slot("boat-1")
+            .unwrap()
+            .unwrap()
+            .create_body
+            .is_some()
+    );
+    // The refusal came before boat made anything: nothing to find, so the sealed body goes again, same key.
+    w.advance(MIN);
+    sweep::sweep(&w.pool).await.unwrap();
+    let creates = w.boat.calls_like("create");
+    assert_eq!(creates.len(), 2);
+    let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
+    assert!(row.sandbox_id.is_some() && row.create_body.is_none());
+    assert_eq!(w.boat.s.lock().unwrap().machines.len(), 1);
+    assert_eq!(w.boat.s.lock().unwrap().idem.len(), 1, "one key, one body");
+
+    // boat-2: made at boat, answer lost after: the sweep adopts it by its attempt label and sends nothing again.
+    let probe_boat = w.boat.clone();
+    w.create("boat-2").await;
+    let row2 = w.pool.ledger.slot("boat-2").unwrap().unwrap();
+    let mut lost = row2.clone();
+    lost.sandbox_id = None;
+    w.pool.ledger.put(&lost).unwrap();
+    let before = probe_boat.calls_like("create").len();
+    sweep::sweep(&w.pool).await.unwrap();
+    assert_eq!(
+        w.pool.ledger.slot("boat-2").unwrap().unwrap().sandbox_id,
+        row2.sandbox_id
+    );
+    assert_eq!(probe_boat.calls_like("create").len(), before);
+
+    // boat-3: no answer, nothing made, and its token ended: failed, never re-sent.
+    w.boat
+        .s
+        .lock()
+        .unwrap()
+        .refuse
+        .push_back(("create", BoatError::Network("reset".into())));
+    let spec = CreateSpec {
+        body_until: w.now() + 60_000,
+        ..Default::default()
+    };
+    assert!(w.pool.create("boat-3", spec).await.is_err());
+    w.advance(2 * MIN);
+    let before = w.boat.calls_like("create").len();
+    sweep::sweep(&w.pool).await.unwrap();
+    assert_eq!(w.boat.calls_like("create").len(), before);
+    assert_eq!(w.state("boat-3"), State::Failed);
+    assert!(!w.open_spend("boat-3"));
+}
+
+/// A create that never says hello within 15 minutes is deleted (billing ends at once) and failed, with boat's setup
+/// error.
+#[tokio::test]
+async fn a_create_that_never_joins_is_deleted() {
+    let w = World::new().await;
+    w.create("boat-1").await;
+    let id = w.sandbox("boat-1");
+    w.boat
+        .s
+        .lock()
+        .unwrap()
+        .machines
+        .get_mut(&id)
+        .unwrap()
+        .setup_error = Some("exit 1: fleetd join refused".into());
+    w.advance(16 * MIN);
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Failed);
+    assert_eq!(w.boat.state(&id), None);
+    let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
+    assert_eq!(
+        row.note.as_deref(),
+        Some("its setup failed: exit 1: fleetd join refused")
+    );
+    assert!(!w.open_spend("boat-1"));
+}
+
+/// fleetd allows itself half of each included window; a full window holds starts with a plain line until it frees.
+#[tokio::test]
+async fn the_start_budget_holds_starts_at_half_of_boats_included() {
+    let w = World::new().await;
+    w.boat.s.lock().unwrap().limits.start_limits = Some(StartLimits {
+        per_minute: 4,
+        per_hour: 60,
+        per_day: 200,
+    });
+    w.asleep("boat-1").await; // 1 start (create), and /limits read: 2 a minute allowed
+    w.asleep("boat-2").await; // 2
+    let held = w.pool.wake("boat-1", Why::Need).await.unwrap_err();
+    assert_eq!(
+        held,
+        "fleetd's boat.dev start budget is used (2 of 2 this minute): next start at 10:01"
+    );
+    assert!(w.boat.calls_like("resume").is_empty());
+    w.advance(MIN);
+    w.pool.wake("boat-1", Why::Need).await.unwrap();
+}
+
+/// The pre-flight: no start unless boat says it can start at no cost; fleetd never buys an extra start.
+#[tokio::test]
+async fn the_preflight_never_buys_an_extra_start() {
+    let w = World::new().await;
+    w.asleep("boat-1").await;
+    w.boat.s.lock().unwrap().limits.next_start_dollars = Some(0.03);
+    let e = w.pool.wake("boat-1", Why::Need).await.unwrap_err();
+    assert_eq!(
+        e,
+        "boat.dev's included starts are used: fleetd never buys an extra start"
+    );
+    assert!(w.boat.calls_like("resume").is_empty());
+}
+
+/// Each refusal backs off its own way; a start boat clearly didn't count is uncounted; billing pauses bursting until a
+/// sweep sees boat can start again.
+#[tokio::test]
+async fn starts_back_off_on_every_boat_code() {
+    let w = World::new().await;
+    w.awake("boat-2").await;
+    w.asleep("boat-1").await;
+    // no_ready_machine: uncounted, the machine left asleep, no start for 5 s.
+    w.boat.refuse("resume", BoatError::NoReadyMachine);
+    let e = w.pool.wake("boat-1", Why::Need).await.unwrap_err();
+    assert_eq!(e, "boat.dev is short of machines, retrying");
+    assert_eq!(w.state("boat-1"), State::Asleep);
+    assert!(!w.open_spend("boat-1"));
+    assert_eq!(
+        w.pool
+            .ledger
+            .starts_in(super::ledger::Window::Day, w.now())
+            .unwrap()
+            .0,
+        2,
+        "only the creates count"
+    );
+    assert_eq!(
+        w.pool.start_held().as_deref(),
+        Some("boat.dev is short of machines, retrying")
+    );
+    w.advance(Duration::from_secs(6));
+    assert_eq!(w.pool.start_held(), None);
+    // rate_limited: not before boat's next start.
+    let next = w.now() + 90_000;
+    w.boat.refuse(
+        "resume",
+        BoatError::RateLimited {
+            next_start_at: Some(next),
+            retry_after_s: None,
+        },
+    );
+    w.pool.wake("boat-1", Why::Need).await.unwrap_err();
+    assert_eq!(
+        w.pool.start_held().as_deref(),
+        Some("boat.dev start limit: next start at 10:02")
+    );
+    w.advance(Duration::from_secs(91));
+    // limit_reached: full until one of ours stops.
+    w.boat.refuse("resume", BoatError::LimitReached);
+    w.pool.wake("boat-1", Why::Need).await.unwrap_err();
+    assert_eq!(
+        w.pool.start_held().as_deref(),
+        Some("boat.dev: machines-at-once limit reached")
+    );
+    // One of ours stops: room again.
+    w.pool
+        .stop("boat-2", State::Stopping, "test")
+        .await
+        .unwrap();
+    w.tick().await;
+    assert_eq!(w.pool.start_held(), None);
+    // billing: paused until a sweep's /limits says it can start.
+    w.boat.refuse(
+        "resume",
+        BoatError::Billing {
+            code: "billing_required".into(),
+            url: None,
+        },
+    );
+    w.pool.wake("boat-1", Why::Need).await.unwrap_err();
+    assert_eq!(
+        w.pool.start_held().as_deref(),
+        Some("boat.dev needs billing attention: Settings › Cloud")
+    );
+    w.boat.s.lock().unwrap().limits.can_start = false;
+    sweep::sweep(&w.pool).await.unwrap();
+    assert!(w.pool.start_held().is_some());
+    w.boat.s.lock().unwrap().limits.can_start = true;
+    sweep::sweep(&w.pool).await.unwrap();
+    assert_eq!(w.pool.start_held(), None);
+    // A key refused at boat pauses too.
+    w.boat.refuse(
+        "limits",
+        BoatError::KeyRefused {
+            code: "api_key_expired".into(),
+        },
+    );
+    w.pool.wake("boat-1", Why::Need).await.unwrap_err();
+    assert_eq!(
+        w.pool.start_held().as_deref(),
+        Some("boat.dev key refused: Settings › Cloud")
+    );
+    w.pool.resume_bursting().unwrap();
+    w.pool.wake("boat-1", Why::Need).await.unwrap();
+}
+
+/// A slot asleep 12 days is woken by the sweep (boat keeps a stopped disk 14), and stops 5 minutes after its node is
+/// idle.
+#[tokio::test]
+async fn a_slot_asleep_12_days_gets_a_keepalive_wake() {
+    let w = World::new().await;
+    w.asleep("boat-1").await;
+    w.advance(Duration::from_secs(11 * 86_400));
+    sweep::sweep(&w.pool).await.unwrap();
+    assert_eq!(w.state("boat-1"), State::Asleep);
+    w.advance(Duration::from_secs(86_400));
+    sweep::sweep(&w.pool).await.unwrap();
+    assert_eq!(w.state("boat-1"), State::Waking);
+    w.advance(MIN);
+    w.hello("boat-1", Some(false));
+    w.tick().await; // awake
+    w.tick().await; // idle from now
+    w.advance(5 * MIN);
+    w.hello("boat-1", Some(false));
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Stopping);
+    w.tick().await;
+    let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
+    assert_eq!(row.state, State::Asleep);
+    assert_eq!(
+        row.asleep_since,
+        Some(w.now()),
+        "its 12 days count again from now"
+    );
+}
+
+/// Turning the pool off stops an awake machine at the life loop's next step, too.
+#[tokio::test]
+async fn an_awake_machine_stops_when_the_pool_is_turned_off() {
+    let w = World::new().await;
+    w.awake("boat-1").await;
+    w.pool.ledger.set_enabled(false).unwrap();
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Stopping);
+    assert!(w.boat.running().is_empty());
+}
+
+/// Only the machine boat says is stopped is resumed: one already running is taken as waking, with no start.
+#[tokio::test]
+async fn a_resume_goes_only_after_a_get_saw_it_stopped() {
+    let w = World::new().await;
+    w.asleep("boat-1").await;
+    let id = w.sandbox("boat-1");
+    w.boat
+        .s
+        .lock()
+        .unwrap()
+        .machines
+        .get_mut(&id)
+        .unwrap()
+        .state = "running".into();
+    w.pool.wake("boat-1", Why::Need).await.unwrap();
+    assert!(w.boat.calls_like("resume").is_empty());
+    assert_eq!(w.state("boat-1"), State::Waking);
+    // Two wakes at once: one resume.
+    let w2 = World::new().await;
+    w2.asleep("boat-1").await;
+    let (a, b) = tokio::join!(
+        w2.pool.wake("boat-1", Why::Need),
+        w2.pool.wake("boat-1", Why::Need)
+    );
+    a.unwrap();
+    b.unwrap();
+    assert_eq!(w2.boat.calls_like("resume").len(), 1);
+}
+
+/// boat expired a long-stopped disk: the slot is gone, its machine needs a new create.
+#[tokio::test]
+async fn an_expired_disk_leaves_the_slot_gone() {
+    let w = World::new().await;
+    w.asleep("boat-1").await;
+    w.boat.refuse("resume", BoatError::DataExpired);
+    let e = w.pool.wake("boat-1", Why::Need).await.unwrap_err();
+    assert_eq!(e, "boat.dev deleted the stopped machine's disk");
+    let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
+    assert_eq!((row.state, row.sandbox_id), (State::Gone, None));
+}
+
+/// The hub's boat key is kept sealed to the hub's box key, never in the clear.
+#[tokio::test]
+async fn the_boat_key_is_sealed_to_the_hub() {
+    let w = World::new().await;
+    let sealed = w.pool.ledger.sealed_key().unwrap().unwrap();
+    assert!(!sealed.windows(13).any(|win| win == b"boat_test_key"));
+    assert_eq!(
+        super::open_key(&w.pool.ledger, w.home.path())
+            .unwrap()
+            .as_str(),
+        "boat_test_key"
+    );
+    let other = tempfile::tempdir().unwrap();
+    assert!(matches!(
+        super::open_key(&w.pool.ledger, other.path()),
+        Err(BoatError::NoKey(_))
+    ));
+}

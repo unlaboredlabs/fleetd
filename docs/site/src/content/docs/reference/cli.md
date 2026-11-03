@@ -565,6 +565,14 @@ fleetd usage resume <machine> [--json] [--hub <url> --key-file <path>]
 
 lift the machine's usage pause now and send every parked agent "continue", like Resume in the app; one whose login is still limited parks again with the real reset. `--json` adds pauseLifted (null when the pause couldn't be read first). On the hub machine neither needs `--hub` or `--key-file`
 
+### fleetd cloud stop {#cloud-stop}
+
+```text
+fleetd cloud stop [--json] [--hub <url> --key-file <path>]
+```
+
+the kill switch: turn cloud machines (boat.dev) off and stop every machine boat.dev lists with this hub's label, whether the hub's ledger knows it or not. They stay off until turned on again in Settings › Cloud. On the hub machine it needs neither `--hub` nor `--key-file`
+
 ### fleetd steer {#steer}
 
 ```text
