@@ -407,7 +407,7 @@ The node that starts a task adds a short section to the end of its brief, after 
 ## This machine
 - Builds get 2 parallel jobs per agent, your share of this machine's CPUs: CARGO_BUILD_JOBS, MAKEFLAGS, CMAKE_BUILD_PARALLEL_LEVEL, GOFLAGS are set to it. Keep any other build or test runner to 2 jobs too.
 - Scratch files go in $TMPDIR, a directory of your own on disk; never in /tmp, which may be held in memory.
-- Cargo builds, tests, checks and clippy runs take turns: 5 at once on this machine. One past that prints that it is queued for a build slot and starts by itself once one frees, so give it a long timeout.
+- Cargo builds, tests, checks and clippy runs take turns: 5 at once on this machine. One past that prints that it is queued for a build slot and starts by itself once one frees: run it in the background (`run_in_background`) rather than under a short timeout, since one stopped and started again goes to the back of the queue.
 ```
 
 The jobs line names only the variables fleetd set: one you set in `claude.env` stands, and drops out of the line. The
