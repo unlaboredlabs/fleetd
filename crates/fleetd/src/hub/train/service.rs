@@ -44,7 +44,7 @@ pub const TRAIN_BY: &str = "hub:train";
 /// A refusal in the lead/tool error shape `{ code, message, fix? }`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrainError {
-    /// "invalid", "not_found", or "unavailable" when GitHub failed transiently.
+    /// "invalid", "not_found", "unavailable" when GitHub failed transiently, or `MERGED` for a task result's PR.
     pub code: &'static str,
     pub message: String,
     pub fix: Option<String>,
@@ -194,6 +194,8 @@ type CiConfig = (i64, CiInfo);
 
 /// How long a repo's CI config (workflows, required checks) is trusted before it is read again.
 const CI_CONFIG_TTL_MS: i64 = 10 * 60_000;
+/// The error code of a task result's PR that already merged: nothing to enqueue, and nothing to tell the lead.
+const MERGED: &str = "merged";
 
 const GREEN: [&str; 3] = ["success", "neutral", "skipped"];
 
@@ -504,7 +506,8 @@ pub struct Train {
     ready_heads: Mutex<HashSet<(String, i64, String)>>,
     /// Enqueues GitHub was unavailable for, by PR URL: each pass of their repo's train enqueues them again, until one
     /// goes on the train or is refused for a reason of its own. Kept in memory.
-    unread: Mutex<HashMap<String, (ProjectRef, ChangeEnqueueCall)>>,
+    /// Each with whether it came from a task's result (`enqueue_result`).
+    unread: Mutex<HashMap<String, (ProjectRef, ChangeEnqueueCall, bool)>>,
     merge_refusals: Mutex<HashMap<ChangeId, u32>>,
     /// Each verdict the gate records: a train waiting on a re-review reads it at once.
     verdicts: Notify,
@@ -2783,19 +2786,21 @@ impl Train {
     /// Enqueues each PR GitHub was unavailable for again. One that goes on the train or is refused leaves the list;
     /// a refusal goes to the lead as the first try's would have.
     async fn unread_pass(&self, repo: &str) {
-        let unread: Vec<(String, ProjectRef, ChangeEnqueueCall)> = lock(&self.unread)
+        let unread: Vec<(String, ProjectRef, ChangeEnqueueCall, bool)> = lock(&self.unread)
             .iter()
             .filter(|(url, _)| parse_pr_url(url).is_some_and(|p| p.repo.eq_ignore_ascii_case(repo)))
-            .map(|(url, (project_ref, input))| (url.clone(), project_ref.clone(), input.clone()))
+            .map(|(url, (project_ref, input, result))| {
+                (url.clone(), project_ref.clone(), input.clone(), *result)
+            })
             .collect();
-        for (pr_url, project_ref, input) in unread {
+        for (pr_url, project_ref, input, result) in unread {
             lock(&self.unread).remove(&pr_url);
-            match self.enqueue(&project_ref, input.clone()).await {
+            match self.enqueue_from(&project_ref, input.clone(), result).await {
                 Ok(change) => {
                     tracing::info!(change_id = %change.change_id, %pr_url, "train: read once GitHub answered")
                 }
-                // On the list again, for the next pass.
-                Err(e) if e.code == "unavailable" => {}
+                // On the list again, for the next pass; or a task result's PR that merged meanwhile.
+                Err(e) if e.code == "unavailable" || e.code == MERGED => {}
                 Err(e) => {
                     let line = Event::PrRefused {
                         pr_url: &pr_url,
@@ -3320,6 +3325,17 @@ impl Train {
         project_ref: &ProjectRef,
         input: ChangeEnqueueCall,
     ) -> Result<Change, TrainError> {
+        self.enqueue_from(project_ref, input, false).await
+    }
+
+    /// `enqueue`, for a task's result when `result`: a PR that already merged (its writer often ends after it lands)
+    /// is no refusal but a quiet `MERGED` error, with no Change and no event.
+    async fn enqueue_from(
+        &self,
+        project_ref: &ProjectRef,
+        input: ChangeEnqueueCall,
+        result: bool,
+    ) -> Result<Change, TrainError> {
         let Some(parsed) = parse_pr_url(&input.pr_url) else {
             return Err(TrainError::new(
                 "invalid",
@@ -3434,7 +3450,7 @@ impl Train {
                 // Nothing is wrong with the PR: its repo's next pass reads it again, or the caller does.
                 let again = self.records.train(&repo).is_some();
                 if again {
-                    lock(&self.unread).insert(pr_url.clone(), (project_ref.clone(), input));
+                    lock(&self.unread).insert(pr_url.clone(), (project_ref.clone(), input, result));
                 }
                 return Err(TrainError::new(
                     "unavailable",
@@ -3480,6 +3496,13 @@ impl Train {
             created_at: now.clone(),
             updated_at: now.clone(),
         };
+        if pull.merged && result {
+            return Err(TrainError::new(
+                MERGED,
+                format!("{pr_url} is already merged."),
+                None,
+            ));
+        }
         if pull.merged || pull.state != "open" {
             let what = if pull.merged {
                 "already merged".to_string()
@@ -3602,7 +3625,7 @@ impl Train {
 
     // M7 auto-enqueue, hooked onto task completion through the event log: a write task whose result names a PR puts
     // it on the train. The result names one PR, so the ready pass runs now for any other slices the writer opened. A
-    // refusal goes to the lead with its fix.
+    // refusal goes to the lead with its fix; a PR that already merged is skipped quietly.
     async fn on_task_completed(&self, data: &Value) {
         if let Some(task_id) = data.get("taskId").and_then(Value::as_str) {
             self.on_task_pr(task_id).await;
@@ -3630,15 +3653,19 @@ impl Train {
             workstream_id: None,
             after: None,
         };
-        if let Err(e) = self.enqueue(&task.project_ref, input).await {
-            let line = Event::PrRefused {
-                pr_url: &pr_url,
-                task: task.task_id.as_str(),
-                message: &e.message,
-                fix: e.fix.as_deref(),
+        match self.enqueue_from(&task.project_ref, input, true).await {
+            Ok(_) => {}
+            Err(e) if e.code == MERGED => {}
+            Err(e) => {
+                let line = Event::PrRefused {
+                    pr_url: &pr_url,
+                    task: task.task_id.as_str(),
+                    message: &e.message,
+                    fix: e.fix.as_deref(),
+                }
+                .render();
+                self.wake_lead(&task.project_ref, line).await;
             }
-            .render();
-            self.wake_lead(&task.project_ref, line).await;
         }
     }
 
