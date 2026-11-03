@@ -54,11 +54,13 @@ pub const PROJECT_USAGE: &str =
              the hub's task profiles: model, effort, fast mode and note, and which
              the project allows
   project profile <name> [--model <model>] [--effort low|medium|high|xhigh|max]
-         [--fast on|off] [--note <text>] [--rename <new>] [--default] [--delete]
-         [--hub <url>]
+         [--fast on|off] [--note <text>] [--rename <new>] [--default] [--lead]
+         [--delete] [--hub <url>]
              create or change a task profile (owner or admin), or delete one. A new
-             one needs --model and --effort. --default makes it the one the lead,
-             every review and helper calls run on
+             one needs --model and --effort. --default makes it the one every review,
+             helper call and task naming no profile runs on; --lead the one leads
+             start on (on the default: leads follow the default), from each lead's
+             next start. Deleting the lead's puts leads back on the default
 ";
 
 const SPEC: Spec = Spec {
@@ -80,6 +82,7 @@ const SPEC: Spec = Spec {
         ("note", Kind::Str),
         ("rename", Kind::Str),
         ("default", Kind::Bool),
+        ("lead", Kind::Bool),
         ("delete", Kind::Bool),
         ("name", Kind::Str),
         ("new", Kind::Str),
@@ -602,6 +605,9 @@ pub fn profiles_lines(view: &Value) -> Vec<String> {
         if p["default"].as_bool() == Some(true) {
             marks.push("default");
         }
+        if p["lead"].as_bool() == Some(true) {
+            marks.push("lead");
+        }
         if p["fast"].as_bool() == Some(true) {
             marks.push("fast");
         }
@@ -654,6 +660,7 @@ pub fn profile_input(
     id: Option<i64>,
     v: &[(&str, &str)],
     default: bool,
+    lead: bool,
 ) -> Result<Value, String> {
     let mut input = match id {
         Some(id) => json!({ "id": id }),
@@ -684,6 +691,9 @@ pub fn profile_input(
     if default {
         input["default"] = json!(true);
     }
+    if lead {
+        input["lead"] = json!(true);
+    }
     if id.is_none() {
         if input.get("model").is_none() || input.get("effort").is_none() {
             return Err(format!("a new profile {name} needs --model and --effort"));
@@ -696,7 +706,7 @@ pub fn profile_input(
 }
 
 /// `fleetd project profile <name> [--model <m>] [--effort <e>] [--fast on|off] [--note <text>] [--rename <new>]
-/// [--default] | --delete`: an owner's or admin's.
+/// [--default] [--lead] | --delete`: an owner's or admin's.
 async fn profile(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), Stop> {
     let Some(name) = v.positionals.first() else {
         return Err(Stop(2, "give the profile's name".into(), None));
@@ -718,8 +728,8 @@ async fn profile(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<
             .into_iter()
             .filter_map(|f| v.str(f).map(|value| (f, value)))
             .collect();
-        let input =
-            profile_input(name, id, &flags, v.flag("default")).map_err(|m| Stop(2, m, None))?;
+        let input = profile_input(name, id, &flags, v.flag("default"), v.flag("lead"))
+            .map_err(|m| Stop(2, m, None))?;
         let tool = if id.is_some() {
             "profile_update"
         } else {
@@ -1335,25 +1345,34 @@ mod tests {
                     ("effort", "low"),
                     ("fast", "on")
                 ],
+                false,
                 false
             ),
             Ok(
                 json!({ "name": "fast", "model": "claude-opus-5-5", "effort": "low", "fast": true, "note": "" })
             )
         );
-        assert!(profile_input("fast", None, &[("model", "claude-opus-5-5")], false).is_err());
+        assert!(
+            profile_input("fast", None, &[("model", "claude-opus-5-5")], false, false).is_err()
+        );
         // An update sends only what was given.
         assert_eq!(
             profile_input(
                 "medium",
                 Some(2),
                 &[("effort", "xhigh"), ("rename", "chores")],
-                true
+                true,
+                false
             ),
             Ok(json!({ "id": 2, "effort": "xhigh", "name": "chores", "default": true }))
         );
-        assert!(profile_input("medium", Some(2), &[("effort", "huge")], false).is_err());
-        assert!(profile_input("medium", Some(2), &[("fast", "yes")], false).is_err());
+        // --lead alone picks the lead's profile.
+        assert_eq!(
+            profile_input("medium", Some(2), &[], false, true),
+            Ok(json!({ "id": 2, "lead": true }))
+        );
+        assert!(profile_input("medium", Some(2), &[("effort", "huge")], false, false).is_err());
+        assert!(profile_input("medium", Some(2), &[("fast", "yes")], false, false).is_err());
     }
 
     #[test]
@@ -1362,7 +1381,7 @@ mod tests {
             "profiles": [
                 { "id": 1, "name": "high", "note": "The default.", "model": "claude-opus-5-5", "effort": "high", "fast": false, "default": true },
                 { "id": 2, "name": "medium", "note": "", "model": "claude-nope", "effort": "medium", "fast": true, "default": false,
-                  "refused": "claude on devbox refused claude-nope" },
+                  "lead": true, "refused": "claude on devbox refused claude-nope" },
             ],
             "allowed": ["high"],
         });
@@ -1371,7 +1390,7 @@ mod tests {
             [
                 "high       claude-opus-5-5 at high (default, allowed)",
                 "           The default.",
-                "medium     claude-nope at medium (fast, not allowed)",
+                "medium     claude-nope at medium (lead, fast, not allowed)",
                 "           ! claude on devbox refused claude-nope",
             ]
         );

@@ -77,6 +77,15 @@ export function updateInput(models: ReadonlyArray<ProfileModel>, saved: Profile,
   return Object.keys(input).length > 1 ? input : undefined;
 }
 
+/** The profile leads start on: the one marked for leads, else the default. */
+export const leadOf = (profiles: ReadonlyArray<Profile>): Profile | undefined => profiles.find((p) => p.lead) ?? profiles.find((p) => p.default);
+
+/** What Lead runs on says it falls back to while a profile is open for deleting: the default, when it is the lead's. */
+export const deleteWords = (profile: Profile, defaultName: string | undefined): string =>
+  profile.lead && defaultName !== undefined
+    ? `Delete ${profile.name}? No project allows it after, and leads go back to ${defaultName} at their next start.`
+    : `Delete ${profile.name}? No project allows it after.`;
+
 /** project_set's `profiles` once `name` is checked or not: the allowed ones but the default. */
 export function allowedAfter(allowed: ReadonlyArray<string>, defaultName: string | undefined, name: string, on: boolean): string[] {
   const rest = allowed.filter((n) => n !== defaultName && n !== name);

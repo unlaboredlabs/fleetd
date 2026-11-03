@@ -1073,3 +1073,82 @@ async fn a_navi_archived_while_its_lead_runs_takes_no_more_turns() {
     );
     assert_eq!(hub.node.launches.lock().unwrap().len(), 1);
 }
+
+/// Marks `name` as the profile leads start on, as profile_update's `lead` does.
+fn lead_on(hub: &Hub, name: &str) {
+    let profiles = hub.area.ctx.db.profiles();
+    let id = profiles.by_name(name).unwrap().unwrap().id;
+    let edit = crate::hub::projects::profiles::ProfileEdit {
+        lead: Some(true),
+        ..Default::default()
+    };
+    profiles.update(id, &edit, &iso_ms(T0_MS as i64)).unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_lead_a_navi_s_too_starts_on_the_profile_picked_for_leads_and_keeps_it_as_the_one_it_ran_on()
+ {
+    let hub = hub(true);
+    lead_on(&hub, "medium");
+    assert!(matches!(
+        hub.area.leads.auto_start(&hub.project, None).await,
+        AutoStart::Started(_)
+    ));
+    assert_eq!(hub.node.launches.lock().unwrap()[0].profile, "medium");
+    // Its start is logged with the profile it ran on.
+    let started = hub
+        .events
+        .page(0, Some(&[HubEventType::LeadStarted]), None)
+        .unwrap()
+        .events;
+    assert_eq!(started[0].data.as_ref().unwrap()["profile"], "medium");
+    // Its row keeps it, for its lane and its time: a later pick doesn't change what this session runs on.
+    let records = &hub.area.records;
+    assert_eq!(
+        records.lead_profile_get(&hub.project).unwrap().unwrap(),
+        "medium"
+    );
+    lead_on(&hub, "high");
+    assert_eq!(
+        records.lead_profile_get(&hub.project).unwrap().unwrap(),
+        "medium"
+    );
+    // Its next start runs on the pick then, and keeps that.
+    hub.area.leads.restart(&hub.project).await.unwrap();
+    assert_eq!(hub.node.launches.lock().unwrap()[1].profile, "high");
+    assert_eq!(
+        records.lead_profile_get(&hub.project).unwrap().unwrap(),
+        "high"
+    );
+    // Tasks and reviews resolve from what the project allows, the default first: still high.
+    assert_eq!(
+        hub.area.leads.allowed_profiles(&hub.project).unwrap()[0],
+        "high"
+    );
+
+    // A Navi's lead follows the pick too.
+    let navi = self::hub(true);
+    lead_on(&navi, "medium");
+    let by = fleetd_contracts::model::ProjectCreator {
+        key_id: "k1".into(),
+        name: "laptop".into(),
+    };
+    navi.area
+        .ctx
+        .db
+        .with(|c| {
+            Ok(crate::hub::navi::store::put(
+                c,
+                &navi.project,
+                &by,
+                None,
+                T0_MS as i64,
+            )?)
+        })
+        .unwrap();
+    assert!(matches!(
+        navi.area.leads.auto_start(&navi.project, Some("hi")).await,
+        AutoStart::Started(_)
+    ));
+    assert_eq!(navi.node.launches.lock().unwrap()[0].profile, "medium");
+}

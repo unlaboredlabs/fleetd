@@ -1,5 +1,6 @@
 //! Task profiles over a real hub and a fake node: the two a hub migrates to, what a launch of each carries, who may
-//! create, change and delete them, what each project allows, and a model claude refused flagged and left out.
+//! create, change and delete them, what each project allows, the one leads start on (and the default again once it is
+//! deleted), and a model claude refused flagged and left out.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::KeyKind;
@@ -285,6 +286,7 @@ async fn only_owners_and_admins_change_profiles_and_anyone_lists_them() {
     for (tool, input) in [
         ("profile_create", new.clone()),
         ("profile_update", json!({ "id": 2, "effort": "low" })),
+        ("profile_update", json!({ "id": 2, "lead": true })),
         ("profile_delete", json!({ "id": 2 })),
     ] {
         let refused = call(&hub, &member, tool, input).await.unwrap_err();
@@ -536,6 +538,186 @@ async fn a_project_allows_what_project_set_picks_besides_the_default() {
     assert!(
         format!("{e:?}").contains("no profile is named nope"),
         "{e:?}"
+    );
+}
+
+/// Who is marked to lead, by name, as profiles_list shows it.
+async fn marked_lead(hub: &Arc<Hub>, admin: &Caller) -> Vec<String> {
+    let list = call(hub, admin, "profiles_list", json!({})).await.unwrap();
+    list["profiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["lead"] == true)
+        .map(|p| p["name"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[tokio::test]
+async fn leads_start_on_the_profile_picked_for_them_while_reviews_and_unnamed_tasks_stay_on_the_default()
+ {
+    let (hub, _home) = hub();
+    let mut launches = node(&hub).await;
+    let admin = device(&hub, true);
+    let p1 = fleetd_contracts::ids::ProjectRef {
+        machine_id: lab(),
+        project_id: ProjectId::unchecked("p1"),
+    };
+    let store = hub.db.profiles();
+    // Nothing picked: leads start on the default, and no profile is marked.
+    assert_eq!(store.lead_profile().unwrap().name, "high");
+    assert!(marked_lead(&hub, &admin).await.is_empty());
+    let lead = call(
+        &hub,
+        &admin,
+        "profile_create",
+        json!({ "name": "lead", "note": "", "model": "claude-sonnet-5-5", "effort": "xhigh" }),
+    )
+    .await
+    .unwrap();
+    let id = lead["profile"]["id"].as_i64().unwrap();
+    let picked = call(
+        &hub,
+        &admin,
+        "profile_update",
+        json!({ "id": id, "lead": true }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(picked["profile"]["lead"], true);
+    assert!(
+        picked["next"].as_str().unwrap().ends_with(
+            "Leads start on lead (claude-sonnet-5-5 at xhigh) from each lead's next start."
+        ),
+        "{picked}"
+    );
+    assert_eq!(marked_lead(&hub, &admin).await, ["lead"]);
+    // A lead's launch names the lead's profile, and the node gets its model and effort; the default stays high, which
+    // every review and every task naming no profile resolves to.
+    let on = store.lead_profile().unwrap().name;
+    assert_eq!(
+        launch(&hub, &mut launches, "p1", on.as_str()).await,
+        (
+            "lead".into(),
+            some("claude-sonnet-5-5"),
+            Some(Effort::Xhigh),
+            false,
+            some("claude-opus-5-5")
+        )
+    );
+    assert_eq!(store.default_profile().unwrap().name, "high");
+    let allowed = store.allowed(&p1).unwrap();
+    for kind in [
+        fleetd_contracts::tasks::TaskKind::Review,
+        fleetd_contracts::tasks::TaskKind::Write,
+    ] {
+        assert_eq!(
+            crate::hub::tasks::resolve::resolve_profile(None, kind, &allowed).unwrap(),
+            "high"
+        );
+    }
+    // Picking another moves the mark; a rename keeps it.
+    call(
+        &hub,
+        &admin,
+        "profile_update",
+        json!({ "id": 2, "lead": true }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(marked_lead(&hub, &admin).await, ["medium"]);
+    call(
+        &hub,
+        &admin,
+        "profile_update",
+        json!({ "id": 2, "name": "chores" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(marked_lead(&hub, &admin).await, ["chores"]);
+    // Picking the default unmarks every profile: leads follow the default, whichever it is.
+    call(
+        &hub,
+        &admin,
+        "profile_update",
+        json!({ "id": 1, "lead": true }),
+    )
+    .await
+    .unwrap();
+    assert!(marked_lead(&hub, &admin).await.is_empty());
+    call(
+        &hub,
+        &admin,
+        "profile_update",
+        json!({ "id": id, "default": true }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(store.lead_profile().unwrap().name, "lead");
+    // Making the lead's profile the default leaves it unmarked too.
+    call(
+        &hub,
+        &admin,
+        "profile_update",
+        json!({ "id": 2, "lead": true }),
+    )
+    .await
+    .unwrap();
+    call(
+        &hub,
+        &admin,
+        "profile_update",
+        json!({ "id": 2, "default": true }),
+    )
+    .await
+    .unwrap();
+    assert!(marked_lead(&hub, &admin).await.is_empty());
+    assert_eq!(store.lead_profile().unwrap().name, "chores");
+}
+
+#[tokio::test]
+async fn deleting_the_lead_s_profile_puts_leads_back_on_the_default_and_says_so() {
+    let (hub, _home) = hub();
+    let admin = device(&hub, true);
+    call(
+        &hub,
+        &admin,
+        "profile_update",
+        json!({ "id": 2, "lead": true }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(hub.db.profiles().lead_profile().unwrap().name, "medium");
+    let gone = call(&hub, &admin, "profile_delete", json!({ "id": 2 }))
+        .await
+        .unwrap();
+    assert_eq!(
+        gone["next"],
+        "medium is gone, and no project allows it any more. Leads ran on it, so they start on the default, high, \
+         again from their next start."
+    );
+    assert_eq!(hub.db.profiles().lead_profile().unwrap().name, "high");
+    assert!(marked_lead(&hub, &admin).await.is_empty());
+    // Deleting a profile leads don't run on says nothing of them.
+    let quick = call(
+        &hub,
+        &admin,
+        "profile_create",
+        json!({ "name": "quick", "note": "", "model": "claude-opus-5-5", "effort": "low" }),
+    )
+    .await
+    .unwrap();
+    let gone = call(
+        &hub,
+        &admin,
+        "profile_delete",
+        json!({ "id": quick["profile"]["id"] }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        gone["next"],
+        "quick is gone, and no project allows it any more."
     );
 }
 

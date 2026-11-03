@@ -432,7 +432,6 @@ impl Leads {
         let at = now_iso(&self.ctx);
         let set = self.ctx.db.prompts().current(Some(r));
         let profiles = self.ctx.db.profiles();
-        let default = profiles.default_profile()?;
         let names = profiles.allowed(r)?;
         let allowed: Vec<Profile> = profiles
             .list()?
@@ -443,6 +442,8 @@ impl Leads {
         // A Navi's lead runs from `navi.start` in the assistant role: manual permission mode, so every tool off its
         // read allow-list asks a person first (approvals/permissions.rs).
         let navi = project.kind == Some(ProjectKind::Assistant);
+        // Every lead, a Navi's too, runs on the profile picked for leads (Lead runs on), else the default.
+        let lead_profile = profiles.lead_profile()?;
         let you = crate::hub::memory::You::for_lead(&self.ctx.db, r)
             .unwrap_or(crate::hub::memory::You::Nobody);
         let start = render_lead_start(
@@ -470,12 +471,11 @@ impl Leads {
             .chars()
             .take(80)
             .collect();
-        // The lead always runs on the default.
         let input = LaunchInput {
             project_id: r.project_id.clone(),
             prompt: prompt.clone(),
             system_prompt: Some(start.system.clone()),
-            profile: default.name.clone(),
+            profile: lead_profile.name.clone(),
             runtime_mode: if navi {
                 RuntimeMode::ApprovalRequired
             } else {
@@ -535,6 +535,9 @@ impl Leads {
             session_generation,
         };
         self.records.lead_put(&lead)?;
+        // Its lane names the profile this session runs on, not a later pick.
+        self.records
+            .lead_profile_put(r, &lead.thread_id, &lead_profile.name)?;
         self.ctx.events.append(NewEvent {
             at,
             r#type: HubEventType::LeadStarted,
@@ -542,7 +545,7 @@ impl Leads {
             project_id: Some(r.project_id.clone()),
             thread_id: Some(thread_id),
             summary: format!("Lead of {} started (session {session_generation})", project.title),
-            data: Some(serde_json::json!({ "sessionGeneration": session_generation, "profile": default.name, "promptRef": set.get(super::prompt::start_prompt(navi)).r#ref, "textSha": text_sha })),
+            data: Some(serde_json::json!({ "sessionGeneration": session_generation, "profile": lead_profile.name, "promptRef": set.get(super::prompt::start_prompt(navi)).r#ref, "textSha": text_sha })),
             attention: None,
         })?;
         self.with_state(lead)

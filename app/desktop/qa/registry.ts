@@ -2114,8 +2114,8 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "settings.hub.tools", route: "#/settings/hub/tools", fixtures: ["admin-owner", "settings-agents", "admin-old-hub"] },
-  // Every project › Profiles: the hub's three profiles, high the default and quick in fast mode; and medium open in its
-  // editor, its model, reasoning, fast mode and the default mark.
+  // Every project › Profiles: the hub's three profiles, high the default and quick in fast mode; medium open in its
+  // editor, its model, reasoning, fast mode and the default mark. Under them, Lead runs on.
   { id: "settings.hub.profiles", route: "#/settings/hub/profiles", fixtures: ["admin-owner", "settings-agents"] },
   {
     id: "settings.hub.profiles",

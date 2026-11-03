@@ -305,6 +305,8 @@ input!(ProfileCreateInput {
     fast: Option<bool>,
     /// Makes it the hub's default.
     default: Option<bool>,
+    /// Makes it the one leads start on.
+    lead: Option<bool>,
 });
 output!(ProfileCreateOutput { profile: Profile });
 input!(ProfileUpdateInput {
@@ -318,6 +320,9 @@ input!(ProfileUpdateInput {
     fast: Option<bool>,
     /// True makes it the hub's default; the default can't be unset, only replaced.
     default: Option<bool>,
+    /// True makes it the one leads start on, from each lead's next start; false (on that one) or true on the default
+    /// has leads start on the default again.
+    lead: Option<bool>,
 });
 output!(ProfileUpdateOutput { profile: Profile });
 input!(ProfileDeleteInput { id: ProfileId });

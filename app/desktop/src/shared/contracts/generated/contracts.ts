@@ -157,7 +157,7 @@ export type AgentLane = {
   live?: LiveLane;
   model?: string;
   pr?: PrRef;
-  /** What it runs on: a task's own profile; a lead the default's. Absent from older hubs. */
+  /** What it runs on: a task's own profile; a lead the one leads start on. Absent from older hubs. */
   profile?: ProfileName;
   role: AgentRole;
   startedAt?: Timestamp;
@@ -181,7 +181,7 @@ export type AgentRow = {
   live?: LiveLane;
   model?: string;
   pr?: PrRef;
-  /** What it runs on: a task's own profile; a lead the default's. Absent from older hubs. */
+  /** What it runs on: a task's own profile; a lead the one leads start on. Absent from older hubs. */
   profile?: ProfileName;
   projectRef: ProjectRef;
   projectTitle: string;
@@ -5051,7 +5051,8 @@ export type PrState = KnownPrState | (string & {});
 
 /**
  * One task profile (Settings › Hub › Every project › Profiles): what an agent on it runs on. Exactly one is the hub's default, which
- * every project allows and the lead, every review and claude's helper calls run on.
+ * every project allows and every review and claude's helper calls run on; leads start on the one marked `lead`, or on
+ * the default when none is.
  */
 export type Profile = {
   default: boolean;
@@ -5059,6 +5060,8 @@ export type Profile = {
   /** Claude Code's fast mode (`fastMode`), only on a model that has it. */
   fast: boolean;
   id: number;
+  /** Leads start on it (Lead runs on). At most one is; none: leads start on the default. */
+  lead?: boolean;
   model: ModelName;
   name: ProfileName;
   /** What it is for, in one line; the lead reads it to pick one. */
@@ -5076,6 +5079,8 @@ export type ProfileCreateInput = {
   default?: boolean;
   effort: Effort;
   fast?: boolean;
+  /** Makes it the one leads start on. */
+  lead?: boolean;
   model: ModelName;
   name: ProfileName;
   note: string;
@@ -5127,6 +5132,11 @@ export type ProfileUpdateInput = {
   effort?: Effort;
   fast?: boolean;
   id: number;
+  /**
+   * True makes it the one leads start on, from each lead's next start; false (on that one) or true on the default
+   * has leads start on the default again.
+   */
+  lead?: boolean;
   /** Setting the model again clears a refusal. */
   model?: ModelName;
   /** A rename: the tasks not yet ended move to the new name; ended ones keep the old in their history. */

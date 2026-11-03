@@ -44,8 +44,8 @@ pub trait Lookups {
     /// The thread's status, model and effort as the hub last saw them.
     fn thread(&self, r: &ThreadRef) -> Option<ThreadSeen>;
     fn live(&self, r: &ThreadRef) -> Option<LiveParts>;
-    /// The hub's default profile, which leads run on.
-    fn default_profile(&self) -> Option<ProfileName>;
+    /// The profile the project's lead session started on: the default for one started before fleetd kept it.
+    fn lead_profile(&self, r: &ProjectRef) -> Option<ProfileName>;
 }
 
 #[derive(Clone, Debug, Default)]
@@ -66,8 +66,11 @@ impl Lookups for Hub {
     fn live(&self, r: &ThreadRef) -> Option<LiveParts> {
         self.executors.live(r)
     }
-    fn default_profile(&self) -> Option<ProfileName> {
-        self.db.profiles().default_profile().ok().map(|p| p.name)
+    fn lead_profile(&self, r: &ProjectRef) -> Option<ProfileName> {
+        match self.leads.records.lead_profile_get(r) {
+            Ok(Some(name)) => Some(name),
+            _ => self.db.profiles().default_profile().ok().map(|p| p.name),
+        }
     }
 }
 
@@ -326,8 +329,7 @@ pub fn lead_lane(lead: &Lead, project_title: &str, look: &dyn Lookups) -> AgentL
             .as_ref()
             .and_then(|t| t.effort.as_deref())
             .and_then(effort_of),
-        // The lead always runs on the default.
-        profile: look.default_profile(),
+        profile: look.lead_profile(&lead.project_ref),
         status,
         status_reason: None,
         started_at: Some(lead.started_at.clone()),

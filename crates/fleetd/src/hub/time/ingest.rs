@@ -176,15 +176,17 @@ pub fn who(c: &Connection, machine: &str, thread: &str) -> Result<Who, StoreErro
             lead: false,
         });
     }
-    let lead: Option<String> = c
+    // A lead's row keeps the profile its session started on; one started before fleetd kept it ran on the default.
+    let lead: Option<(String, Option<String>)> = c
         .query_row(
-            "SELECT project_id FROM leads WHERE machine_id = ?1 AND thread_id = ?2",
+            "SELECT project_id, COALESCE(profile, (SELECT name FROM profiles WHERE is_default = 1)) FROM leads
+             WHERE machine_id = ?1 AND thread_id = ?2",
             [machine, thread],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
     let project = match &lead {
-        Some(p) => Some(p.clone()),
+        Some((p, _)) => Some(p.clone()),
         None => c
             .query_row(
                 "SELECT project_id FROM threads WHERE machine_id = ?1 AND thread_id = ?2",
@@ -193,15 +195,7 @@ pub fn who(c: &Connection, machine: &str, thread: &str) -> Result<Who, StoreErro
             )
             .optional()?,
     };
-    // The lead always runs on the default.
-    let profile = match lead {
-        Some(_) => c
-            .query_row("SELECT name FROM profiles WHERE is_default = 1", [], |r| {
-                r.get(0)
-            })
-            .optional()?,
-        None => None,
-    };
+    let profile = lead.as_ref().and_then(|(_, profile)| profile.clone());
     Ok(Who {
         ids: Ids {
             machine_id: Some(machine.to_owned()),
@@ -573,8 +567,8 @@ mod tests {
         );
     }
 
-    /// A task's spans carry its profile (a row from before profiles reads high), a lead's are high, and a thread of
-    /// neither has none.
+    /// A task's spans carry its profile (a row from before profiles reads high), a lead's the profile its session
+    /// started on (high, the default, for one started before fleetd kept it), and a thread of neither has none.
     #[test]
     fn a_session_s_spans_carry_its_profile() {
         let db = HubDb::open_memory().unwrap();
@@ -584,12 +578,15 @@ mod tests {
                      (1, 'devbox', 'p1', 'W1', 'running', 't1', '{"kind":"write","profile":"medium"}'),
                      (2, 'devbox', 'p1', 'W1', 'running', 't2', '{"kind":"review"}');
                    INSERT INTO leads (machine_id, project_id, thread_id, started_at, session_generation)
-                     VALUES ('devbox', 'p1', 'lead-1', 't', 1);"#,
+                     VALUES ('devbox', 'p1', 'lead-1', 't', 1);
+                   INSERT INTO leads (machine_id, project_id, thread_id, started_at, session_generation, profile)
+                     VALUES ('devbox', 'p2', 'lead-2', 't', 1, 'medium');"#,
             )?;
             let profile = |thread: &str| who(c, "devbox", thread).map(|w| w.ids.profile);
             assert_eq!(profile("t1")?.as_deref(), Some("medium"));
             assert_eq!(profile("t2")?.as_deref(), Some("high"));
             assert_eq!(profile("lead-1")?.as_deref(), Some("high"));
+            assert_eq!(profile("lead-2")?.as_deref(), Some("medium"));
             assert_eq!(profile("other")?, None);
             Ok(())
         })

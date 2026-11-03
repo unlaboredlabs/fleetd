@@ -66,7 +66,8 @@ pub const PROFILES_MAX: usize = 50;
 pub type ProfileId = Positive;
 
 /// One task profile (Settings › Hub › Every project › Profiles): what an agent on it runs on. Exactly one is the hub's default, which
-/// every project allows and the lead, every review and claude's helper calls run on.
+/// every project allows and every review and claude's helper calls run on; leads start on the one marked `lead`, or on
+/// the default when none is.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -80,6 +81,9 @@ pub struct Profile {
     /// Claude Code's fast mode (`fastMode`), only on a model that has it.
     pub fast: bool,
     pub default: bool,
+    /// Leads start on it (Lead runs on). At most one is; none: leads start on the default.
+    #[serde(default)]
+    pub lead: bool,
     /// Set by the hub: claude refused `model`, so its agents run on the runner's own model until a person sets the
     /// model again. What claude said, and where.
     pub refused: Option<String>,

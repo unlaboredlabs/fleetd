@@ -1,6 +1,8 @@
 //! The hub's task profiles (Settings › Hub › Every project › Profiles): `profiles_list`, `profile_create`, `profile_update`,
 //! `profile_delete`, and the `profiles` rows they keep, one per profile, exactly one of them the default. Each project
-//! allows the default and the profiles in its `project_profiles` rows (`project_set`).
+//! allows the default and the profiles in its `project_profiles` rows (`project_set`). Leads start on the profile marked
+//! `is_lead` ([`ProfileStore::lead_profile`]), the default when none is: the mark is never on the default, so a lead
+//! left on it follows a new default, and deleting the marked profile leaves leads on the default.
 //!
 //! The executor reads [`ProfileStore::chosen`] at each launch. When claude refuses a profile's model, the node runs the
 //! session on the runner's own model and says so on the session; the executor then marks the profiles on that model
@@ -71,6 +73,8 @@ pub struct ProfileEdit {
     pub effort: Option<Effort>,
     pub fast: Option<bool>,
     pub default: bool,
+    /// Some(true) makes it the lead's (on the default: leads follow the default); Some(false) on the lead's: the same.
+    pub lead: Option<bool>,
 }
 
 /// A change the profiles refuse, in a person's words, or the store failing.
@@ -105,7 +109,7 @@ impl HubDb {
     }
 }
 
-const COLUMNS: &str = "id, name, note, model, effort, fast, is_default, refused, set_at";
+const COLUMNS: &str = "id, name, note, model, effort, fast, is_default, refused, set_at, is_lead";
 
 fn row_of(row: &rusqlite::Row<'_>) -> rusqlite::Result<Profile> {
     let effort: String = row.get(4)?;
@@ -117,6 +121,7 @@ fn row_of(row: &rusqlite::Row<'_>) -> rusqlite::Result<Profile> {
         effort: Effort::parse(&effort).unwrap_or(Effort::High),
         fast: row.get(5)?,
         default: row.get(6)?,
+        lead: row.get(9)?,
         refused: row.get(7)?,
         updated_at: Timestamp(row.get(8)?),
     })
@@ -168,6 +173,22 @@ impl ProfileStore<'_> {
             .optional()?)
         })?;
         found.ok_or_else(|| ProfileError::Refused("the hub has no default profile".into()))
+    }
+
+    /// The profile leads start on: the one marked, else the default.
+    pub fn lead_profile(&self) -> Result<Profile, ProfileError> {
+        let found = self.db.with(|c| {
+            Ok(c.query_row(
+                &format!("SELECT {COLUMNS} FROM profiles WHERE is_lead = 1"),
+                [],
+                row_of,
+            )
+            .optional()?)
+        })?;
+        match found {
+            Some(lead) => Ok(lead),
+            None => self.default_profile(),
+        }
     }
 
     /// The profiles a project allows, by name: the default first, then the ones it picked, by name.
@@ -232,10 +253,17 @@ impl ProfileStore<'_> {
         let id = self.db.with(|c| {
             let tx = c.unchecked_transaction()?;
             if edit.default {
-                tx.execute("UPDATE profiles SET is_default = 0 WHERE is_default = 1", [])?;
+                tx.execute(
+                    "UPDATE profiles SET is_default = 0 WHERE is_default = 1",
+                    [],
+                )?;
+            }
+            if edit.lead == Some(true) {
+                tx.execute("UPDATE profiles SET is_lead = 0 WHERE is_lead = 1", [])?;
             }
             tx.execute(
-                "INSERT INTO profiles (name, note, model, effort, fast, is_default, set_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO profiles (name, note, model, effort, fast, is_default, set_at, is_lead)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 params![
                     name.as_str(),
                     edit.note.as_deref().unwrap_or_default(),
@@ -243,7 +271,8 @@ impl ProfileStore<'_> {
                     effort.as_str(),
                     edit.fast.unwrap_or(false),
                     edit.default,
-                    at
+                    at,
+                    edit.lead == Some(true) && !edit.default
                 ],
             )?;
             let id = tx.last_insert_rowid();
@@ -279,18 +308,25 @@ impl ProfileStore<'_> {
             if edit.default {
                 tx.execute("UPDATE profiles SET is_default = 0 WHERE is_default = 1 AND id != ?", [id.get()])?;
             }
+            // Picking it for the lead moves the mark here, or off every profile when this is the default.
+            if edit.lead == Some(true) {
+                tx.execute("UPDATE profiles SET is_lead = 0 WHERE is_lead = 1 AND id != ?", [id.get()])?;
+            }
+            let default = edit.default || old.default;
+            let lead = edit.lead.unwrap_or(old.lead) && !default;
             tx.execute(
                 "UPDATE profiles SET name = ?, note = ?, model = ?, effort = ?, fast = ?, is_default = ?, refused = ?,
-                   set_at = ? WHERE id = ?",
+                   set_at = ?, is_lead = ? WHERE id = ?",
                 params![
                     edit.name.as_ref().unwrap_or(&old.name).as_str(),
                     edit.note.as_deref().unwrap_or(old.note.as_str()),
                     model.as_str(),
                     edit.effort.unwrap_or(old.effort).as_str(),
                     edit.fast.unwrap_or(old.fast),
-                    edit.default || old.default,
+                    default,
                     refused,
                     at,
+                    lead,
                     id.get()
                 ],
             )?;
@@ -443,6 +479,17 @@ fn require_administrator(hub: &Hub, caller: &Caller) -> Result<(), ToolError> {
     })
 }
 
+/// What a change of the lead's profile says: where leads start now, and when.
+fn lead_line(lead: &Profile) -> String {
+    format!(
+        " Leads start on {} ({} at {}{}) from each lead's next start.",
+        lead.name,
+        lead.model,
+        lead.effort.as_str(),
+        if lead.fast { ", fast" } else { "" }
+    )
+}
+
 fn unknown(id: ProfileId) -> ToolError {
     error(
         ErrorCode::NotFound,
@@ -532,14 +579,17 @@ async fn create(
         effort: Some(input.effort),
         fast: Some(fast),
         default: input.default.unwrap_or(false),
+        lead: input.lead,
     };
     let profile = store.create(&edit, &now(&hub))?;
+    let lead = (input.lead == Some(true)).then(|| lead_line(&profile));
     Ok(ProfileCreateOutput {
         next: Some(format!(
-            "Projects allow {} once they pick it on their Agents page (project_set); new agents on it run {} at {}.",
+            "Projects allow {} once they pick it on their Agents page (project_set); new agents on it run {} at {}.{}",
             profile.name,
             profile.model,
-            profile.effort.as_str()
+            profile.effort.as_str(),
+            lead.unwrap_or_default()
         )),
         profile,
         truncated: None,
@@ -575,8 +625,13 @@ async fn update(
         effort: input.effort,
         fast: Some(fast),
         default: input.default == Some(true),
+        lead: input.lead,
     };
     let profile = store.update(input.id, &edit, &now(&hub))?;
+    let lead = match input.lead {
+        Some(_) => lead_line(&store.lead_profile()?),
+        None => String::new(),
+    };
     let renamed = (profile.name != old.name).then(|| {
         format!(
             " Ended tasks keep {} in their history; the ones not yet ended are on {} now.",
@@ -585,12 +640,13 @@ async fn update(
     });
     Ok(ProfileUpdateOutput {
         next: Some(format!(
-            "New agents on {} run {} at {}{} from their next start; running ones keep theirs.{}",
+            "New agents on {} run {} at {}{} from their next start; running ones keep theirs.{}{}",
             profile.name,
             profile.model,
             profile.effort.as_str(),
             if profile.fast { ", fast" } else { "" },
-            renamed.unwrap_or_default()
+            renamed.unwrap_or_default(),
+            lead
         )),
         profile,
         truncated: None,
@@ -611,7 +667,7 @@ async fn delete(
         return Err(error(
             ErrorCode::Invalid,
             format!(
-                "{} is the default: leads, reviews and helper calls run on it.",
+                "{} is the default: every review and helper call runs on it.",
                 profile.name
             ),
             "Make another profile the default first.",
@@ -626,11 +682,20 @@ async fn delete(
         ));
     }
     store.delete(input.id)?;
+    // The lead's mark goes with its row: leads fall back to the default.
+    let lead = if profile.lead {
+        format!(
+            " Leads ran on it, so they start on the default, {}, again from their next start.",
+            store.default_profile()?.name
+        )
+    } else {
+        String::new()
+    };
     Ok(ProfileDeleteOutput {
         ok: True,
         next: Some(format!(
-            "{} is gone, and no project allows it any more.",
-            profile.name
+            "{} is gone, and no project allows it any more.{}",
+            profile.name, lead
         )),
         truncated: None,
     })

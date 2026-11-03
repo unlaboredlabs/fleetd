@@ -548,8 +548,8 @@ explained! {
 /// setting chose another), in its environment and its settings, so no call goes to another.
 pub const HELPER_MODEL_ENV: (&str, &str) = ("ANTHROPIC_DEFAULT_HAIKU_MODEL", MODEL);
 pub const HELPER_MODEL_WHY: &str = "claude's background helper calls (session titles and the like) run on the \
-                                    default profile's model like the lead and every review, not on the haiku model \
-                                    claude picks by default.";
+                                    default profile's model like every review, not on the haiku model claude \
+                                    picks by default.";
 
 explained! {
     /// Set in every session's environment or settings overlay, besides [`SUBAGENTS_OFF_ENV`] and auto memory.

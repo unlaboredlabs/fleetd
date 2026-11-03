@@ -114,6 +114,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.caps", label: "Machine max agents", tab: "hub.machines", keywords: ["max agents", "whole fleet", "fleet cap", "machine cap", "limit", "at once", "all machines"] },
   { key: "hub.updates", label: "Updates", tab: "hub.machines", keywords: ["update", "upgrade", "hub version", "machine version", "fleetd update", "release"] },
   page("hub.profiles", ["task profiles", "profile", "model", "effort", "reasoning", "fast mode", "default", "every project"]),
+  { key: "hub.lead", label: "Lead runs on", tab: "hub.profiles", keywords: ["lead", "lead model", "lead effort", "profile", "model", "effort"] },
   page("hub.tools", ["every project", "hub-wide", "global"]),
   { key: "hub.mcp", label: "MCP servers for every project", tab: "hub.tools", keywords: ["mcp", "tools", "servers", "global", "every project"] },
   { key: "mcp.servers", label: "Global MCP servers", tab: "hub.tools", keywords: ["mcp", "tools", "servers", "global", "every project"] },
