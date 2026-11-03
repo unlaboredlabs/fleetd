@@ -25,7 +25,7 @@ import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimat
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
-import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, outgoing, quoteOf, replyOf, sameRow, seenSeq, sendNote, streamingAt, threadRows, viewOffsetOf, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, olderOffset, outgoing, quoteOf, replyOf, sameRow, seenSeq, sendNote, streamingAt, threadRows, viewOffsetOf, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, emptyChat, isNavi, type AttachmentGetOutput, type AttachmentRef, type ChatItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
@@ -181,8 +181,12 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const [awayFrom, setAwayFrom] = useState<number | null>(null);
   const newestSeq = items.reduce((n, i) => Math.max(n, i.message?.seq ?? 0), 0);
   const cameSince = awayFrom === null ? 0 : items.filter((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > awayFrom).length;
-  // Where it's scrolled to, and how far it goes, for the status bar's tap.
+  // Where it's scrolled to, and how far it goes, for the status bar's tap: the length as the content grows (a chat
+  // opened at its newest end never scrolls, and older pages come in without a scroll).
   const scrolled = useRef({ y: 0, length: 0 });
+  const onContentSize = (_width: number, length: number) => {
+    scrolled.current = { ...scrolled.current, length };
+  };
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrolled.current = { y: e.nativeEvent.contentOffset.y, length: e.nativeEvent.contentSize.height };
     // How far from the newest end, wherever the keyboard puts it.
@@ -193,7 +197,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // The status bar's tap goes a screen older, as Telegram's, never to the newest end.
   const olderByAScreen = () => {
     const { y, length } = scrolled.current;
-    list.current?.scrollToOffset({ offset: Math.max(0, Math.min(y + room * 0.85, length - height)), animated: !reduce });
+    list.current?.scrollToOffset({ offset: olderOffset(y, length, room, height), animated: !reduce });
   };
 
   // Read is what you've seen: the newest message on screen once the chat has landed where it opens, and everything at
@@ -389,6 +393,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
             inverted
             style={moving ? styles.hidden : undefined}
             onLayout={(e) => setHeight(e.nativeEvent.layout.height)}
+            onContentSizeChange={onContentSize}
             maintainVisibleContentPosition={hold}
             onViewableItemsChanged={onViewable}
             viewabilityConfig={viewability}
