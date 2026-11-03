@@ -135,7 +135,7 @@ const scroll = async (page: Page, list: Locator) => {
 
 /**
  * The rAF rate while the lead's reply streams into a long chat: stream-in-long (fixtures/stream) on a window of its
- * own, reloaded for each round so its 500 messages arrive into the open chat and its reply streams again. Each delta
+ * own, reloaded for each round so its 1,500 messages arrive into the open chat and its reply streams again. Each delta
  * rebuilds the chat's rows, so a cost per message held shows here, as a date formatter made per message once did.
  */
 const streaming = async () => {
@@ -235,7 +235,7 @@ const main = async () => {
         idleRssMb: "summed RSS of the same processes; counts the shared Electron pages once per process, never gated",
         idleMemoryMb: `${process.platform === "linux" ? "PSS" : "physical footprint"} summed over all ${samples[0]?.processes ?? 0} processes read (${[...new Set(samples[0]?.kinds ?? [])].join(", ")}) after ${IDLE_MS / 1000} s idle`,
         scrollFps: `the chat-long fixture's chat; median of ${scrolled.rounds.length} rounds of ${SCROLL_MS / 1000} s from a reload, fps (long frames, px): ${scrolled.rounds.map((r) => `${r.fps.toFixed(1)} (${(r.dropped * 100).toFixed(1)}%, ${(r.moved / 1000).toFixed(0)}k)`).join(", ")}; display ${scrolled.rounds[0]?.refreshHz.toFixed(0) ?? "?"} Hz`,
-        streamFps: `the stream-in-long fixture's chat (550 messages) while a reply streams in at 10 deltas a second; median of ${streamed.rounds.length} rounds of ${STREAM_MS / 1000} s from a reload, fps (worst frame): ${streamed.rounds.map((r) => `${r.fps.toFixed(1)} (${r.worstMs.toFixed(0)} ms)`).join(", ")}`,
+        streamFps: `the stream-in-long fixture's chat (1,550 messages) while a reply streams in at 10 deltas a second; median of ${streamed.rounds.length} rounds of ${STREAM_MS / 1000} s from a reload, fps (worst frame): ${streamed.rounds.map((r) => `${r.fps.toFixed(1)} (${r.worstMs.toFixed(0)} ms)`).join(", ")}`,
         keyP95Ms: `the chat's composer; EventLatency, key press to presentation; median of ${typed.rounds.length} rounds of ${KEYS.length} keys, p95/p50 (keys at 16 ms or more): ${typed.rounds.map((r) => `${r.p95.toFixed(1)}/${r.p50.toFixed(1)} (${r.slow})`).join(", ")} ms`,
       };
     } finally {

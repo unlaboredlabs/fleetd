@@ -20,7 +20,7 @@ export interface Results {
   /** Frames per second while wheel-scrolling back through the chat-long fixture's chat. The median of a few rounds' rates. */
   readonly scrollFps: number;
   /**
-   * Frames per second while a reply from the lead streams into a long chat (the stream-in-long fixture: 550 messages
+   * Frames per second while a reply from the lead streams into a long chat (the stream-in-long fixture: 1,550 messages
    * held, a delta every 100 ms, as the node sends them). The median of a few rounds' rates.
    */
   readonly streamFps: number;

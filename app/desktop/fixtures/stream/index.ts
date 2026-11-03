@@ -65,17 +65,20 @@ const deltas = (text: string, size: number): string[] => {
 
 const SO_FAR = 220;
 
-/** How many messages arrive in stream-in-long's chat before the reply: with its first page, a long day's chat. */
-const ARRIVALS = 500;
+/**
+ * How many messages arrive in stream-in-long's chat before the reply: with its first page, a long day's chat (a chat
+ * keeps up to 2,000). Enough that a cost per message held drops frames even on a fast CI runner.
+ */
+const ARRIVALS = 1_500;
 /**
  * When stream-in-long's messages start arriving, ms after the window subscribes: once its chat has opened (its first
  * page read) on a slow runner, so they arrive live into it.
  */
 export const STREAM_IN_LONG_ARRIVE_MS = 2_000;
 /** When its reply starts streaming: after the arrivals have landed... */
-export const STREAM_IN_LONG_FROM_MS = 5_000;
+export const STREAM_IN_LONG_FROM_MS = 8_000;
 /** ...and when its last delta lands: perf/run.ts's streaming round must end before. */
-export const STREAM_IN_LONG_TO_MS = 20_000;
+export const STREAM_IN_LONG_TO_MS = 23_000;
 /** The node's rate: it sends a session's streamed text at most every 100 ms (DELTA_EVERY in node/sessions). */
 const NODE_DELTA_MS = 100;
 
@@ -153,7 +156,7 @@ export default defineGroup({
     });
     r.settleAt(2000);
     const long = streamIntoLong(
-      Fixture.from(base("chat-long"), "stream-in-long", "storefront's long chat with 500 more messages arriving, as over a long day, then the lead's reply streaming in at the node's rate (perf/run.ts)."),
+      Fixture.from(base("chat-long"), "stream-in-long", "storefront's long chat with 1,500 more messages arriving, as over a long day, then the lead's reply streaming in at the node's rate (perf/run.ts)."),
     );
     return [streamReply(f, ref, deltas(REPLY.slice(SO_FAR), 24), 25), r, long];
   },
