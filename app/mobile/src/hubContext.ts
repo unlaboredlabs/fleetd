@@ -71,6 +71,9 @@ export type ChatInfoParams = {
   SkillEdit: { key: Key; name: string };
   SkillHistory: { key: Key; origin: SkillOrigin; name: string };
   SkillVersion: { key: Key; origin: SkillOrigin; name: string; version: number };
+  /** The chat's artifacts (screens/artifacts), and one of them: its newest version, or `version`. */
+  Artifacts: { key: Key };
+  Artifact: { key: Key; name: string; version?: number | undefined };
 };
 /** A ChatInfo screen's props: its own stack's, and the root stack's above it (Photo, back to the chats list). */
 export type ChatInfoProps<T extends keyof ChatInfoParams> = CompositeScreenProps<NativeStackScreenProps<ChatInfoParams, T>, NativeStackScreenProps<RootParams>>;

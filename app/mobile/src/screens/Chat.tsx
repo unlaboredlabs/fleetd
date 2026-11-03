@@ -41,13 +41,15 @@ import { Glass } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
 import { HoldMenu } from "../ui/HoldMenu";
-import { Grid, Markdown } from "../ui/Markdown";
+import { ArtifactLinks, Grid, Markdown } from "../ui/Markdown";
 import { FileBubble, ImageBubble, ImageViewer, shareFile } from "../ui/Media";
 import { RevealArea, Revealed } from "../ui/Reveal";
 import type { MenuItem } from "../ui/Menu";
 import { bubbleIn, dur, ease, PRESSED_OPACITY, useReduceMotion } from "../ui/motion";
 import { SkeletonThread } from "../ui/Skeleton";
 import { ApprovalCard } from "./ApprovalCard";
+import { ArtifactCard } from "./artifacts/ArtifactCard";
+import { linkTarget } from "./artifacts/model";
 import { ScreenCards } from "./ScreenCards";
 import { Symbol } from "./manage/parts";
 import type { SkillSaved } from "./manage/skillsModel";
@@ -84,6 +86,8 @@ interface ThreadActions {
   readonly answer: (text: string) => void;
   /** A skill the Navi saved, opened over its Info screen. */
   readonly openSkill: (name: string) => void;
+  /** An artifact a card or link names, opened over its Info screen: its newest version, or `version`. */
+  readonly openArtifact: (name: string, version: number | undefined) => void;
 }
 
 export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "Chat">) {
@@ -260,6 +264,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
         const key = now.current.chatKey;
         navigation.navigate("ChatInfo", { state: { index: 1, routes: [{ name: "Info", params: { key } }, { name: "Skill", params: { key, origin: "project", name } }] } });
       },
+      openArtifact: (name, version) => {
+        haptics.tap();
+        const key = now.current.chatKey;
+        navigation.navigate("ChatInfo", { state: { index: 1, routes: [{ name: "Info", params: { key } }, { name: "Artifact", params: { key, name, version } }] } });
+      },
     }),
     [navigation],
   );
@@ -280,11 +289,21 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     [chatKey, title, index, lastHuman, actions, lit, entering, reduce, awayFrom],
   );
 
+  // An artifact link in a message opens it as its card does.
+  const openLink = useCallback(
+    (url: string) => {
+      const to = linkTarget(url);
+      if (to !== undefined) actions.openArtifact(to.name, to.version);
+      return to !== undefined;
+    },
+    [actions],
+  );
   const loading = !chat.loaded && chat.cached !== true;
   return (
     <View style={[styles.fill, { backgroundColor: t.thread }]}>
       <View style={styles.fill}>
         <RevealArea margin={metrics.margin}>
+          <ArtifactLinks.Provider value={openLink}>
           <FlatList
             ref={list}
             inverted
@@ -320,6 +339,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
             }
             renderItem={renderRow}
           />
+        </ArtifactLinks.Provider>
         </RevealArea>
         {Platform.OS === "ios" ? <LinearGradient pointerEvents="none" colors={[t.thread, withOpacity(t.thread, 0.85), withOpacity(t.thread, 0)]} locations={[0, 0.55, 1]} style={[styles.topFade, { height: top + space.lg }]} /> : null}
         {Platform.OS === "ios" ? (
@@ -571,6 +591,8 @@ function ItemView({
   }
   const saved = (item.message as { skillSaved?: SkillSaved } | undefined)?.skillSaved;
   if (saved !== undefined) return <SkillLine saved={saved} onPress={() => actions.openSkill(saved.name)} />;
+  const published = item.message?.artifact;
+  if (published !== undefined) return <ArtifactCard published={published} when={bubbleTime(item.at, now)} onPress={() => actions.openArtifact(published.name, published.version)} />;
   if (side === "center") return <Event text={item.text} />;
 
   const messageId = item.message?.messageId;

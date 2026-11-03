@@ -3,7 +3,7 @@
 // in it rather than drawn in the accent. A bubble's words aren't selectable where they stand, as in Messages: holding
 // one opens its menu, whose Select Text has them.
 import * as Clipboard from "expo-clipboard";
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Linking, PixelRatio, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type TextLayoutEvent, type TextStyle } from "react-native";
 import { fenceView, parseMarkdown, UNSHOWN, type Block, type Inline } from "../markdown";
 import { bubble, fitWidth } from "../bubble";
@@ -166,8 +166,12 @@ export function Grid({ header, rows, ink, rule }: { header: readonly ReactNode[]
   );
 }
 
+/** Opens an artifact link's artifact (`artifact:<name>[@<version>]`): the chat it is in provides it; elsewhere such a link reads as its words. */
+export const ArtifactLinks = createContext<((url: string) => boolean) | undefined>(undefined);
+
 function Inlines({ nodes, ink, onAccent }: { nodes: readonly Inline[]; ink: string; onAccent: boolean }) {
   const t = useTheme();
+  const openArtifact = useContext(ArtifactLinks);
   return (
     <>
       {nodes.map((n, i) => {
@@ -199,11 +203,15 @@ function Inlines({ nodes, ink, onAccent }: { nodes: readonly Inline[]; ink: stri
               </Text>
             );
           case "link":
+            if (n.url.startsWith("artifact:") && openArtifact === undefined) return <Inlines key={i} nodes={n.children} ink={ink} onAccent={onAccent} />;
             return (
               <Text
                 key={i}
                 accessibilityRole="link"
-                onPress={() => void Linking.openURL(n.url)}
+                onPress={() => {
+                  if (n.url.startsWith("artifact:")) openArtifact?.(n.url);
+                  else void Linking.openURL(n.url);
+                }}
                 style={onAccent ? styles.underline : [styles.underline, { color: t.accent }]}
               >
                 <Inlines nodes={n.children} ink={ink} onAccent={onAccent} />

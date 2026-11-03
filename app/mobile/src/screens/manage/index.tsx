@@ -1,7 +1,7 @@
 // Making and managing projects and Navis from the phone: their screens in the root stack (New Navi and New Project as
 // sheets; New Screen, a screen of your own, as one too; a project's or Navi's screen, Rename, Agent Profiles and a
 // Navi's skills pushed over its chat, in a stack of their own, its icon as a sheet, and Move and Scale for its picture
-// over everything), and the two ways in: the Chats list's + menu and a chat's bar. App.tsx adds these to its
+// over everything; a chat's Artifacts and one artifact pushed there too), and the two ways in: the Chats list's + menu and a chat's bar. App.tsx adds these to its
 // navigators.
 import { useNavigation } from "@react-navigation/native";
 import { createNativeStackNavigator, type NativeStackHeaderItemMenu, type NativeStackNavigationOptions } from "@react-navigation/native-stack";
@@ -23,6 +23,8 @@ import { SkillHistory } from "./SkillHistory";
 import { Skills } from "./Skills";
 import { SkillVersion } from "./SkillVersion";
 import { Symbol } from "./parts";
+import { Artifact } from "../artifacts/Artifact";
+import { Artifacts } from "../artifacts/Artifacts";
 
 type RootStack = ReturnType<typeof createNativeStackNavigator<RootParams>>;
 
@@ -120,6 +122,8 @@ function ChatInfo() {
       <InfoStack.Screen name="SkillEdit" component={SkillEdit} options={({ route }) => sheet(t, route.params.name)} />
       <InfoStack.Screen name="SkillHistory" component={SkillHistory} options={pushed(t, "History")} />
       <InfoStack.Screen name="SkillVersion" component={SkillVersion} options={({ route }) => pushed(t, `Version ${String(route.params.version)}`)} />
+      <InfoStack.Screen name="Artifacts" component={Artifacts} options={pushed(t, "Artifacts")} />
+      <InfoStack.Screen name="Artifact" component={Artifact} options={pushed(t, "")} />
     </InfoStack.Navigator>
   );
 }
