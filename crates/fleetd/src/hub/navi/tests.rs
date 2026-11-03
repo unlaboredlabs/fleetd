@@ -98,10 +98,12 @@ pub(super) async fn node(
                 {
                     json!({ "ok": { "kind": "folder", "path": format!("{HOME}/{workspace_root}") } })
                 }
-                // A Navi's delete without removeWorktrees stands for one whose answer never reached the hub.
+                // A Navi's delete with its folder but not its worktrees, which the app never sends, stands for one whose answer
+                // never reached the hub.
                 SessionCall::ProjectRemove {
                     erase: true,
                     remove_worktrees: false,
+                    remove_folder: true,
                     ..
                 } => {
                     json!({ "err": { "code": "invalid", "message": "no answer within 80s" } })
@@ -838,7 +840,7 @@ async fn a_navi_removed_without_its_answer_is_still_erased_once_the_hub_sees_it_
             .unwrap()
     };
 
-    let at = json!({ "machineId": "devbox", "projectId": r.project_id, "removeWorktrees": false });
+    let at = json!({ "machineId": "devbox", "projectId": r.project_id, "removeWorktrees": false, "removeFolder": true });
     assert!(call(&hub, "project_remove", at).await.is_err());
     // Its node still has it, as far as the hub knows: nothing is erased yet.
     assert_eq!(crate::hub::navi::erase::finish_pending(&hub).unwrap(), 0);
