@@ -13,10 +13,6 @@ pub enum StoreError {
     Io(#[from] std::io::Error),
 }
 
-/// The main connection's SQLite page cache, in KiB (a negative `cache_size`): SQLite's 2 MiB default sent reads of
-/// the hot tables (tasks is about 8 MB) to the kernel again on every call. 16 MiB holds them.
-const CACHE_KIB: i64 = 16 * 1024;
-
 /// The hub's SQLite database. HubStore, EventLog, Auth and the areas with tables share this one connection.
 pub struct HubDb {
     conn: Mutex<Connection>,
@@ -68,7 +64,6 @@ impl HubDb {
         conn.execute_batch("PRAGMA busy_timeout = 5000")?;
         let _mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
         conn.execute_batch("PRAGMA synchronous = NORMAL")?;
-        conn.execute_batch(&format!("PRAGMA cache_size = -{CACHE_KIB}"))?;
         let db = Self {
             conn: Mutex::new(conn),
             path,
