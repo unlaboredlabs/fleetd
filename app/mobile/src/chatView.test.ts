@@ -195,6 +195,13 @@ describe("attachments", () => {
     const parts: ChatMessage["parts"] = [{ start: 0, end: 0, block: { v: 1, kind: "image", attachmentId: "a", caption: "The chart" } as never }];
     expect(bubbles({ text: "", message: message("", parts) })).toEqual([{ kind: "image", attachmentId: "a", name: "The chart", caption: "The chart" }]);
   });
+
+  it("draws a Navi's file block as a file card with the name, type and size the hub filled in", () => {
+    const block = { v: 1, kind: "file", attachmentId: "F12", name: "lisbon-itinerary.pdf", mime: "application/pdf", bytes: 184_320 } as const;
+    const parts: ChatMessage["parts"] = [{ start: 0, end: 0, block }];
+    expect(bubbles({ text: "", message: message("", parts) })).toEqual([{ kind: "file", attachmentId: "F12", name: "lisbon-itinerary.pdf", mime: "application/pdf", bytes: 184_320 }]);
+    expect(previewOf({ author: "lead", text: "", message: message("", parts) })).toBe("lisbon-itinerary.pdf");
+  });
 });
 
 describe("the unread bar", () => {

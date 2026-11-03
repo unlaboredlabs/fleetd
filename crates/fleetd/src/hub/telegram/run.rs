@@ -309,14 +309,11 @@ async fn pull(hub: &Hub, r: &ProjectRef, f: &TelegramFile) -> Result<AttachmentI
             break;
         }
     }
-    // The node judged the type; an image's bytes must still say so.
-    if f.mime != AttachmentMime::Pdf
-        && f.mime != AttachmentMime::Text
-        && AttachmentMime::of_image(&data) != Some(f.mime)
-    {
+    // The node judged the type; the bytes must still say so.
+    if !f.mime.fits(&data) {
         return Err(ToolError::new(
             ErrorCode::Failed,
-            "The image's bytes aren't of its type.",
+            "The file's bytes aren't of its type.",
         ));
     }
     let name = crate::hub::intake::attachments::safe_name(&f.name);
@@ -580,7 +577,7 @@ async fn reply(hub: &Hub, r: &ProjectRef, m: &ChatMessage) -> Result<(), ToolErr
             continue;
         };
         match &block.body {
-            BlockBody::Image(a) | BlockBody::Clip(a) => {
+            BlockBody::Image(a) | BlockBody::Clip(a) | BlockBody::File(a) => {
                 flush(hub, r, &mut md).await?;
                 file(
                     hub,
@@ -686,10 +683,7 @@ async fn file(
         .await?;
         return Ok(());
     }
-    let mime_text = serde_json::to_value(mime)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_else(|| "application/octet-stream".into());
+    let mime_text = mime.as_str().to_owned();
     send(
         hub,
         r,

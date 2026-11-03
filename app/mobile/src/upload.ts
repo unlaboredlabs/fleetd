@@ -1,8 +1,8 @@
 // A photo or file sent from the composer, as the desktop app sends one (screens/chat/drafts.ts): what the hub takes
-// (an image, text or a PDF, up to its size limit), then attachment_part pieces in order and attachment_put with the
-// last, with progress after each. Pure but for the call it is given, so it is unit-tested.
+// (images, PDFs, text and CSV, Office files and zips, up to its size limit), then attachment_part pieces in order and
+// attachment_put with the last, with progress after each. Pure but for the call it is given, so it is unit-tested.
 import { fileSize } from "./chatView";
-import { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, type AttachmentMime, type AttachmentRef, type ToolInput, type ToolName } from "./desktop";
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, mimeOfFile, TAKES, type AttachmentMime, type AttachmentRef, type ToolInput, type ToolName } from "./desktop";
 import type { Typed } from "./hub/client";
 
 /** The hub's call, as HubClient's. */
@@ -12,27 +12,32 @@ export type Uploaded = { readonly ok: true; readonly ref: AttachmentRef } | { re
 
 export const UPLOAD_TIMEOUT_MS = 120_000;
 
-/** The mime type the hub takes for a file, by its name or the picker's type; undefined when it takes none. */
+/**
+ * The mime type the hub takes for a file, by its name, or the picker's type for a name that says nothing (text by
+ * either); undefined when it takes none. The hub checks the bytes again.
+ */
 export const mimeOf = (name: string, type?: string | null): AttachmentMime | undefined => {
-  const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
-  const byExt: Readonly<Record<string, AttachmentMime>> = {
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    webp: "image/webp",
-    gif: "image/gif",
-    pdf: "application/pdf",
-    txt: "text/plain",
-    md: "text/plain",
-    log: "text/plain",
-    csv: "text/plain",
-    json: "text/plain",
-  };
-  const known: readonly string[] = ["image/png", "image/jpeg", "image/webp", "image/gif", "text/plain", "application/pdf"];
-  if (type !== undefined && type !== null && known.includes(type)) return type as AttachmentMime;
-  if (type?.startsWith("text/") === true) return "text/plain";
-  return byExt[ext];
+  const known = mimeOfFile(name, false);
+  if (known !== undefined) return known;
+  const byType = type === undefined || type === null ? undefined : mimeOfFile(`file.${extensionFor(type)}`, false);
+  if (byType !== undefined) return byType;
+  return type?.startsWith("text/") === true ? "text/plain" : undefined;
 };
+
+/** The usual extension of a type a picker names, for mimeOfFile: `application/pdf` is `pdf`. */
+const extensionFor = (type: string): string =>
+  ({
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "application/pdf": "pdf",
+    "text/csv": "csv",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+    "application/zip": "zip",
+  })[type] ?? "";
 
 /**
  * A picked photo's name as what it is: the picker hands a HEIC from the library back as a JPEG (its uri says so) but
@@ -46,7 +51,7 @@ export const pickedName = (fileName: string | null | undefined, uri: string, fal
 
 /** Why the hub wouldn't take a file, before sending a byte; undefined when it would. */
 export const refusal = (name: string, mime: AttachmentMime | undefined, bytes: number): string | undefined => {
-  if (mime === undefined) return `${name} can't be sent: the hub takes pictures, text files and PDFs.`;
+  if (mime === undefined) return `${name} can't be sent: chats take ${TAKES}.`;
   if (bytes > ATTACHMENT_MAX_BYTES) return `${name} is ${fileSize(bytes)}: the hub takes files up to ${fileSize(ATTACHMENT_MAX_BYTES)}.`;
   return undefined;
 };

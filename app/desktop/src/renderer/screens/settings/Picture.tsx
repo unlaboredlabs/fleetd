@@ -45,7 +45,7 @@ export const readPicked = (file: File): Promise<Picked | string> => {
       const url = typeof reader.result === "string" ? reader.result : "";
       const img = new Image();
       img.onerror = () => resolve(`${file.name} couldn't be read as an image.`);
-      img.onload = () => resolve({ file, mime: file.type as AttachmentMime, url, size: { width: img.naturalWidth, height: img.naturalHeight } });
+      img.onload = () => resolve({ file, mime: file.type, url, size: { width: img.naturalWidth, height: img.naturalHeight } });
       img.src = url;
     };
     reader.readAsDataURL(file);

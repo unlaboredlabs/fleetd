@@ -15,7 +15,7 @@ export type Bubble =
   | { readonly kind: "text"; readonly key: string; readonly text: string }
   | { readonly kind: "block"; readonly key: string; readonly block: ChatBlock; readonly text: string };
 
-const KINDS = new Set(["chart", "table", "diff", "pr", "agent", "checklist", "image", "clip", "ask"]);
+const KINDS = new Set(["chart", "table", "diff", "pr", "agent", "checklist", "image", "clip", "file", "ask"]);
 
 const isStrings = (v: unknown): v is readonly string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
 
@@ -46,6 +46,7 @@ export function readable(block: ChatBlock): boolean {
       return Array.isArray(block.items) && block.items.every((i) => typeof i.text === "string");
     case "image":
     case "clip":
+    case "file":
       return typeof block.attachmentId === "string";
     case "ask":
       return typeof block.question === "string" && (block.options === undefined || (isStrings(block.options) && block.options.length > 0));

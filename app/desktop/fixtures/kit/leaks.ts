@@ -80,13 +80,19 @@ const jpegLeaks = (data: Buffer, where: string): Array<string> => {
 
 /**
  * Problems with one attached file's bytes: text (and NDJSON) is scanned whole; a PNG may only hold pixel chunks; a WebM
- * (a session's video, from its first byte) is scanned for text leaks in its header; nothing else.
+ * (a session's video, from its first byte) is scanned for text leaks in its header; a stand-in PDF, Office file or zip
+ * must be plain text; nothing else.
  */
 const attachmentLeaks = (mime: string, data: Buffer, name: string, first = true): Array<string> => {
   const where = ` in attachment ${name}`;
   if (mime.startsWith("text/") || mime === "application/x-ndjson" || mime === "application/json") return scan(asText(data), where);
   if (mime === "video/webm") return first && !data.subarray(0, 4).equals(EBML) ? [`a WebM that isn't one${where}`] : scan(data.toString("latin1"), where);
   if (mime === "image/jpeg") return jpegLeaks(data, where);
+  // A PDF, Office file or zip in a fixture is a stand-in (no screen reads its insides): its bytes must be plain text,
+  // scanned whole, so a real one with something compressed in it never slips in.
+  if (mime === "application/pdf" || mime === "application/zip" || mime.startsWith("application/vnd.openxmlformats-officedocument.")) {
+    return /^[\t\n\r\x20-\x7e]*$/u.test(data.toString("latin1")) ? scan(asText(data), where) : [`a stand-in ${mime} that isn't plain text${where}`];
+  }
   if (mime !== "image/png") return [`an attachment the check can't read${where} (${mime}): use text/* or a metadata-free PNG`];
   if (!data.subarray(0, 8).equals(PNG_SIGNATURE)) return [`a PNG that isn't one${where}`];
   const out: Array<string> = [];

@@ -396,7 +396,10 @@ pub const ATTACHMENT_MAX_BYTES: usize = 25 * 1024 * 1024;
 /// The piece of a file the app sends per attachment_part call, decoded: its base64 fits one app call.
 pub const ATTACHMENT_PART_BYTES: usize = 512 * 1024;
 
+/// A file's type, as the hub keeps attachments: images, PDF, text and CSV, Office documents and zip archives. The hub
+/// checks a file's bytes against its type ([`AttachmentMime::fits`]) before it keeps it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("x-open" = true))]
 pub enum AttachmentMime {
     #[serde(rename = "image/png")]
     Png,
@@ -410,7 +413,24 @@ pub enum AttachmentMime {
     Text,
     #[serde(rename = "application/pdf")]
     Pdf,
+    #[serde(rename = "text/csv")]
+    Csv,
+    #[serde(rename = "application/vnd.openxmlformats-officedocument.wordprocessingml.document")]
+    Docx,
+    #[serde(rename = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")]
+    Xlsx,
+    #[serde(rename = "application/vnd.openxmlformats-officedocument.presentationml.presentation")]
+    Pptx,
+    #[serde(rename = "application/zip")]
+    Zip,
 }
+
+/// Names that say a file is text: notes, data, calendar invites, mail, code. Any other name whose bytes are text is
+/// text too, with `.txt` added, so nothing opens it as a script.
+const TEXT_EXTENSIONS: &[&str] = &[
+    "txt", "md", "markdown", "log", "json", "yaml", "yml", "toml", "xml", "ics", "vcf", "eml",
+    "tsv", "srt", "vtt", "py", "js", "ts", "rs", "go", "sql",
+];
 
 impl AttachmentMime {
     /// An image's type by its first bytes (png, jpeg, gif, webp); None for anything else.
@@ -435,6 +455,128 @@ impl AttachmentMime {
                 ..,
             ] => Some(Self::Webp),
             _ => None,
+        }
+    }
+
+    pub fn is_image(self) -> bool {
+        matches!(self, Self::Png | Self::Jpeg | Self::Webp | Self::Gif)
+    }
+
+    /// The type a file's name says, by its extension; None for one the hub doesn't take. A name with no extension, or
+    /// another one, may still be text: see [`AttachmentMime::of_file`].
+    pub fn of_name(name: &str) -> Option<Self> {
+        let ext = name.rsplit_once('.')?.1.to_ascii_lowercase();
+        Some(match ext.as_str() {
+            "png" => Self::Png,
+            "jpg" | "jpeg" => Self::Jpeg,
+            "webp" => Self::Webp,
+            "gif" => Self::Gif,
+            "pdf" => Self::Pdf,
+            "csv" => Self::Csv,
+            "docx" => Self::Docx,
+            "xlsx" => Self::Xlsx,
+            "pptx" => Self::Pptx,
+            "zip" => Self::Zip,
+            e if TEXT_EXTENSIONS.contains(&e) => Self::Text,
+            _ => return None,
+        })
+    }
+
+    /// A file's type by its name and bytes together: what its name says when its bytes agree, an image by its bytes
+    /// whatever its name, and text for any other name whose bytes are text. None for anything else.
+    pub fn of_file(name: &str, bytes: &[u8]) -> Option<Self> {
+        if let Some(image) = Self::of_image(bytes) {
+            return Some(image);
+        }
+        match Self::of_name(name) {
+            Some(mime) if mime.fits(bytes) => Some(mime),
+            Some(_) => None,
+            None => Self::Text.fits(bytes).then_some(Self::Text),
+        }
+    }
+
+    /// Whether `bytes` hold a file of this type: an image's or a PDF's own first bytes, a zip archive for an Office
+    /// document, and UTF-8 with no NUL for text (judged on its first 64 KiB).
+    pub fn fits(self, bytes: &[u8]) -> bool {
+        match self {
+            Self::Png | Self::Jpeg | Self::Webp | Self::Gif => Self::of_image(bytes) == Some(self),
+            Self::Pdf => bytes.starts_with(b"%PDF-"),
+            Self::Docx | Self::Xlsx | Self::Pptx | Self::Zip => bytes.starts_with(b"PK\x03\x04"),
+            Self::Text | Self::Csv => {
+                let head = &bytes[..bytes.len().min(64 * 1024)];
+                let utf8 = match std::str::from_utf8(head) {
+                    Ok(_) => true,
+                    // A character cut at the 64 KiB mark, or where the caller's read stopped, is still text.
+                    Err(e) => e.error_len().is_none(),
+                };
+                utf8 && !head.contains(&0)
+            }
+        }
+    }
+
+    /// The extensions a file of this type may carry, its usual one first: a name with another gets that one added, so
+    /// no app opens a file as something its type isn't (a text file named `run.command`).
+    pub fn extensions(self) -> &'static [&'static str] {
+        match self {
+            Self::Png => &["png"],
+            Self::Jpeg => &["jpg", "jpeg"],
+            Self::Webp => &["webp"],
+            Self::Gif => &["gif"],
+            Self::Pdf => &["pdf"],
+            Self::Csv => &["csv"],
+            Self::Docx => &["docx"],
+            Self::Xlsx => &["xlsx"],
+            Self::Pptx => &["pptx"],
+            Self::Zip => &["zip"],
+            Self::Text => TEXT_EXTENSIONS,
+        }
+    }
+
+    /// `name` with an extension of this type: kept when it has one, else this type's usual one added.
+    pub fn named(self, name: &str) -> String {
+        let has = name.rsplit_once('.').is_some_and(|(stem, ext)| {
+            !stem.is_empty()
+                && self
+                    .extensions()
+                    .contains(&ext.to_ascii_lowercase().as_str())
+        });
+        if has {
+            name.to_owned()
+        } else {
+            format!("{name}.{}", self.extensions()[0])
+        }
+    }
+
+    /// What the file is, in a few words: "a PDF", "a Word document".
+    pub fn kind(self) -> &'static str {
+        match self {
+            Self::Png | Self::Jpeg | Self::Webp | Self::Gif => "an image",
+            Self::Pdf => "a PDF",
+            Self::Text => "a text file",
+            Self::Csv => "a CSV spreadsheet",
+            Self::Docx => "a Word document",
+            Self::Xlsx => "an Excel spreadsheet",
+            Self::Pptx => "a PowerPoint deck",
+            Self::Zip => "a zip archive",
+        }
+    }
+
+    /// Its type as the hub stores and sends it: `image/png`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Png => "image/png",
+            Self::Jpeg => "image/jpeg",
+            Self::Webp => "image/webp",
+            Self::Gif => "image/gif",
+            Self::Text => "text/plain",
+            Self::Pdf => "application/pdf",
+            Self::Csv => "text/csv",
+            Self::Docx => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            Self::Xlsx => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Self::Pptx => {
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            }
+            Self::Zip => "application/zip",
         }
     }
 }
@@ -3566,6 +3708,30 @@ impl std::error::Error for McpToolError {}
 
 #[cfg(test)]
 mod tests {
+
+    /// A file's type comes from its name and bytes together: an image by its bytes, an Office file or zip by the zip
+    /// it is, a PDF by its header, text by its bytes; a name its bytes don't back is nothing.
+    #[test]
+    fn a_files_type_is_its_name_backed_by_its_bytes() {
+        use AttachmentMime as M;
+        let png = b"\x89PNG\r\n\x1a\n....";
+        assert_eq!(M::of_file("shot.jpg", png), Some(M::Png));
+        assert_eq!(M::of_file("lease.DOCX", b"PK\x03\x04..."), Some(M::Docx));
+        assert_eq!(M::of_file("lease.docx", b"plain words"), None);
+        assert_eq!(M::of_file("plan.pdf", b"%PDF-1.7"), Some(M::Pdf));
+        assert_eq!(M::of_file("bank.csv", b"a,b\n1,2\n"), Some(M::Csv));
+        assert_eq!(
+            M::of_file("Makefile", b"all:\n\tcargo build\n"),
+            Some(M::Text)
+        );
+        assert_eq!(M::of_file("song.mp3", b"ID3\x04\0\0"), None);
+        // Text cut mid-character at the end of what was read is still text.
+        assert!(M::Text.fits("café".as_bytes().split_last().unwrap().1));
+        assert_eq!(M::Text.named("run.command"), "run.command.txt");
+        assert_eq!(M::Pdf.named("plan.pdf"), "plan.pdf");
+        assert_eq!(M::Csv.named(".csv"), ".csv.csv");
+    }
+
     use serde_json::json;
 
     use super::*;

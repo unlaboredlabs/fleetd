@@ -9,6 +9,7 @@ import type { AttachmentMime, AttachmentRef } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { useDataLayer } from "../../src/data/react";
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES } from "../../../shared/contracts";
+import { TAKES } from "../../../shared/files";
 import { fmtBytes, looksText, MAX_ATTACHMENTS, mimeFor, toBase64 } from "./attachments";
 
 /** Uploaded: the hub's reference to the file, which a message carries. */
@@ -106,7 +107,7 @@ export function createDrafts(layer: Pick<DataLayer, "call">, saved: Readonly<Rec
         });
         void file.slice(0, 4096).arrayBuffer().then(async (head) => {
           const mime = mimeFor(file.name, looksText(head));
-          if (!mime) return settle(key, local, undefined, `${file.name}: only images, text and PDF files attach.`);
+          if (!mime) return settle(key, local, undefined, `${file.name} can't be sent: chats take ${TAKES}.`);
           settle(key, local, await upload(layer, file, mime));
         });
       }

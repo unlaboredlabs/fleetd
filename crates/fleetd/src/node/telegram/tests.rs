@@ -420,7 +420,11 @@ async fn photos_and_documents_come_in_as_files_and_files_go_out() {
         f.files.insert("big-photo".into(), PNG.to_vec());
         f.files.insert("doc".into(), b"%PDF-1.7 the lease".to_vec());
         f.files
-            .insert("zip".into(), b"PK\x03\x04 an archive".to_vec());
+            .insert("docx".into(), b"PK\x03\x04 a document".to_vec());
+        f.files
+            .insert("csv".into(), b"date,amount\n2026-10-01,12.50\n".to_vec());
+        f.files
+            .insert("xls".into(), b"\xd0\xcf\x11\xe0 an old workbook".to_vec());
     }
     let chat = json!({ "id": ME, "type": "private" });
     let from = json!({ "id": ME, "first_name": "Sam Rivera" });
@@ -437,7 +441,17 @@ async fn photos_and_documents_come_in_as_files_and_files_go_out() {
     push(
         &fake,
         json!({ "update_id": 4, "message": { "message_id": 40, "from": from, "chat": chat,
-        "document": { "file_id": "zip", "file_name": "stuff.zip", "mime_type": "application/zip" } } }),
+        "document": { "file_id": "docx", "file_name": "lease.docx", "mime_type": "application/octet-stream" } } }),
+    );
+    push(
+        &fake,
+        json!({ "update_id": 5, "message": { "message_id": 50, "from": from, "chat": chat,
+        "document": { "file_id": "csv", "file_name": "bank.csv", "mime_type": "text/csv" } } }),
+    );
+    push(
+        &fake,
+        json!({ "update_id": 6, "message": { "message_id": 60, "from": from, "chat": chat,
+        "document": { "file_id": "xls", "file_name": "old.xls", "mime_type": "application/vnd.ms-excel" } } }),
     );
     settle(&fake).await;
     let (events, _) = take(&tg, 0).await;
@@ -448,7 +462,7 @@ async fn photos_and_documents_come_in_as_files_and_files_go_out() {
             _ => None,
         })
         .collect();
-    assert_eq!(files.len(), 2, "the zip isn't passed on: {files:?}");
+    assert_eq!(files.len(), 4, "the old .xls isn't passed on: {files:?}");
     assert_eq!(files[0].0, "this one?");
     assert_eq!(
         files[0].1[0].mime,
@@ -459,6 +473,13 @@ async fn photos_and_documents_come_in_as_files_and_files_go_out() {
         fleetd_contracts::mcp::AttachmentMime::Pdf
     );
     assert_eq!(files[1].1[0].name, "lease.pdf");
+    assert_eq!(
+        (files[2].1[0].mime, files[3].1[0].mime),
+        (
+            fleetd_contracts::mcp::AttachmentMime::Docx,
+            fleetd_contracts::mcp::AttachmentMime::Csv
+        )
+    );
     assert!(
         sent_to(&fake, ME)
             .iter()

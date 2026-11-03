@@ -317,6 +317,12 @@ export const BrowserInput = z.discriminatedUnion("kind", [
 /** A session to open in a window of its own; main builds the route from these, never from a URL the page sends. */
 const Segment = z.string().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u);
 /** `hub`: the session's hub, when it isn't the app's first (the route's `?hub=`). */
+/** A chat's file, to open or save: the project whose chat shows it, and its id. */
+export const FileRequest = z.strictObject({
+  projectRef: z.strictObject({ machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) }),
+  attachmentId: z.string().regex(/^F[1-9][0-9]{0,18}$/u),
+});
+export type FileRequest = z.infer<typeof FileRequest>;
 export const SessionWindowRequest = z.strictObject({ machineId: Segment, projectId: Segment, session: Segment, hub: z.string().regex(HUB_ID).optional() });
 export type SessionWindowRequest = z.infer<typeof SessionWindowRequest>;
 
@@ -380,6 +386,8 @@ export const REQUESTS = {
   [IPC.updatesKeep]: none,
   // The URL rules live in main (main/external.ts), which answers with the reason; this only bounds the size.
   [IPC.openExternal]: z.tuple([z.string().max(8192)]),
+  [IPC.fileOpen]: z.tuple([HubId, FileRequest]),
+  [IPC.fileSave]: z.tuple([HubId, FileRequest]),
 } as const satisfies Record<InvokeChannel, z.ZodType>;
 
 export type RequestArgs<C extends InvokeChannel> = z.infer<(typeof REQUESTS)[C]>;
