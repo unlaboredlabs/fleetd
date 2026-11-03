@@ -260,6 +260,30 @@ describe("HubClient", () => {
     expect(hub.sent).toEqual([{ t: "auth", key: "k1" }, { t: "snapshot" }, { t: "live", board: true }]);
   });
 
+  it("stops the live feed while no window shows, and asks for it again, focus kept, once one does", () => {
+    const { hub, client } = setup();
+    client.start();
+    client.focus("ws-1");
+    hub.ready();
+    hub.sent = [];
+    client.shown(false);
+    expect(hub.sent).toEqual([{ t: "live", board: false }]);
+    // Hidden, nothing asks for it: not a window's own refresh, a new focus, nor a reconnect (its new socket hears no live).
+    client.refreshLive();
+    client.focus("ws-2");
+    client.shown(false);
+    hub.close(1006);
+    vi.advanceTimersByTime(500);
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1 });
+    expect(hub.sent.filter((m) => m["t"] === "live")).toEqual([]);
+    hub.sent = [];
+    client.shown(true);
+    expect(hub.sent).toEqual([{ t: "live", board: true, focus: "ws-2" }]);
+    client.shown(true);
+    expect(hub.sent).toHaveLength(1);
+  });
+
   it("keeps the chat subscription across reconnects and forwards its deltas", () => {
     const { hub, frames, client } = setup();
     const project = { machineId: "devbox", projectId: "storefront" };

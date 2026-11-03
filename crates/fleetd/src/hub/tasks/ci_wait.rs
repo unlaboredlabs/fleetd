@@ -8,12 +8,13 @@ use std::time::Duration;
 use fleetd_contracts::lead_calls::WaitCiResult;
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::prim::Text;
-use fleetd_contracts::tasks::{TaskId, TaskState};
+use fleetd_contracts::tasks::{TaskId, TaskKind, TaskState};
 use rusqlite::params;
 
 use super::ports::TaskError;
 use super::{TaskCaller, Tasks, holds_pr, lead_error, store_error};
 use crate::hub::api::Hub;
+use crate::hub::reviews::read::open_blocking;
 use crate::hub::store::{now_ms, parse_ms};
 use crate::hub::work::BoxFut;
 
@@ -358,6 +359,17 @@ impl Tasks {
                 })
             }) else {
                 continue;
+            };
+            // A PR's wake carries its still-open blocking findings, so a writer back from a rebase still fixes them.
+            let open = match &target {
+                Target::Pr { .. } if task.kind != TaskKind::Review => {
+                    open_blocking(&self.d.db, &target.url())
+                }
+                _ => String::new(),
+            };
+            let line = match open.as_str() {
+                "" => line,
+                open => format!("{line}\n\n{open}"),
             };
             let caller = TaskCaller {
                 project_ref: task.project_ref.clone(),

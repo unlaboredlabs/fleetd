@@ -31,10 +31,12 @@ brand!(
 /// `-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at
 /// the copy's serial), a fresh clone of an iOS simulator from the node's settled golden device (`ios`, driven with
 /// agent-device at the clone's udid), or an X display of its own with a window manager (`linux_desktop`, driven with
-/// the agent's `desktop` tool), in a fresh container or else beside a fresh home directory. Every kind shares the
-/// session tools, the action log, the video and the hub's storage; only a browser recording has a `dom` file, and an
-/// iOS one's video is `video_mp4`. A node hosts android sessions when it lists the `session_android` capability, iOS
-/// ones when it lists `session_ios`, and desktop ones when it lists `session_linux_desktop`.
+/// the agent's `desktop` tool), in a fresh container or else beside a fresh home directory, or the agents' Mac's own
+/// screen (`mac`: the GUI session of the Mac's standard `agents` user, leased to one agent at a time, driven with the
+/// `desktop` tool and agent-desktop). Every kind shares the session tools, the action log, the video and the hub's
+/// storage; only a browser recording has a `dom` file, and an iOS one's video is `video_mp4`. A node hosts android
+/// sessions when it lists the `session_android` capability, iOS ones when it lists `session_ios`, and desktop ones
+/// when it lists `session_linux_desktop`; a Mac screen where its `mac` host check is ready.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(extend("x-open" = true))]
@@ -44,6 +46,7 @@ pub enum SessionKind {
     Android,
     Ios,
     LinuxDesktop,
+    Mac,
 }
 
 impl SessionKind {
@@ -53,6 +56,7 @@ impl SessionKind {
             Self::Android => "android",
             Self::Ios => "ios",
             Self::LinuxDesktop => "linux_desktop",
+            Self::Mac => "mac",
         }
     }
 }
@@ -546,7 +550,8 @@ pub struct SessionStartCall {
     /// What you need the browser for, in one line; the person replaying it sees it.
     pub purpose: BrowserPurpose,
     /// `android` for an Android emulator, `ios` for an iOS simulator, each driven with agent-device; `linux_desktop`
-    /// for a Linux desktop, driven with the `desktop` tool; absent for a browser.
+    /// for a Linux desktop, driven with the `desktop` tool; `mac` for the agents' Mac's screen, one agent at a time,
+    /// driven with the `desktop` tool and agent-desktop; absent for a browser.
     pub kind: Option<SessionKind>,
 }
 
@@ -585,8 +590,8 @@ pub struct RequestTakeoverCall {
     pub reason: Line<1, 500>,
 }
 
-/// `desktop`: one action on the agent's Linux desktop session, in the words of Anthropic's computer-use tool, plus
-/// `launch`. Coordinates are in the screenshot's pixels.
+/// `desktop`: one action on the agent's Linux desktop or Mac screen session, in the words of Anthropic's computer-use
+/// tool, plus `launch`, and on a Mac `agent_desktop`. Coordinates are in the screenshot's pixels.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesktopCall {
@@ -596,7 +601,9 @@ pub struct DesktopCall {
     /// `[x, y]`: where a `left_click_drag` starts.
     pub start_coordinate: Option<[Int<0, 8192>; 2]>,
     /// `type`: the text. `key`: keys as xdotool names them, `+` between those pressed together (`Return`,
-    /// `ctrl+s`, `alt+F4`). `launch`: a shell command started on the desktop (`xterm`, `./target/debug/app`).
+    /// `ctrl+s`, `alt+F4`; on a Mac `cmd+s` too). `launch`: a shell command started on the desktop (`xterm`,
+    /// `./target/debug/app`; on a Mac `open -a TextEdit`). `agent_desktop`: agent-desktop's arguments, its command
+    /// first (`snapshot --app Finder -i`, `click @s8f3k2p9:e12`).
     pub text: Option<Text<1, 10_000>>,
     pub scroll_direction: Option<ScrollDirection>,
     /// Wheel clicks; absent: 3.
@@ -622,6 +629,8 @@ pub enum DesktopAction {
     Wait,
     CursorPosition,
     Launch,
+    /// A Mac screen's only: one agent-desktop command, run by the Mac's node.
+    AgentDesktop,
 }
 
 impl DesktopAction {
@@ -641,6 +650,7 @@ impl DesktopAction {
             Self::Wait => "wait",
             Self::CursorPosition => "cursor_position",
             Self::Launch => "launch",
+            Self::AgentDesktop => "agent_desktop",
         }
     }
 }
@@ -654,14 +664,16 @@ pub enum ScrollDirection {
     Right,
 }
 
-/// Where a desktop session's apps run: in a fresh container of the node's pinned image (docker or podman), or as the
-/// node's user on an Xvfb display of their own with a fresh home directory.
+/// Where a desktop session's apps run: in a fresh container of the node's pinned image (docker or podman), as the
+/// node's user on an Xvfb display of their own with a fresh home directory, or on the agents' Mac's own screen
+/// (`mac`), where they stay after the session.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(extend("x-open" = true))]
 pub enum DesktopBackend {
     Container,
     Xvfb,
+    Mac,
 }
 
 impl DesktopBackend {
@@ -669,6 +681,7 @@ impl DesktopBackend {
         match self {
             Self::Container => "container",
             Self::Xvfb => "xvfb",
+            Self::Mac => "mac",
         }
     }
 }
@@ -728,6 +741,9 @@ pub struct SessionStarted {
     pub desktop: Option<DesktopBackend>,
     /// A desktop container's: the agent's worktree, read-only at this path in it.
     pub worktree: Option<Text<1, 4096>>,
+    /// A Mac screen's, while another holds its lease: who ("T12: Check the export dialog"). The session only observes
+    /// until its first other action finds the screen free.
+    pub held_by: Option<Text<1, 300>>,
     pub start_ms: u64,
 }
 

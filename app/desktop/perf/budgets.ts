@@ -1,4 +1,4 @@
-// The four budgets (docs/build/electron-app-spec.md: measured on an M-series Mac, scripts/perf-mac.sh) and the
+// The five budgets (docs/build/electron-app-spec.md: measured on an M-series Mac, scripts/perf-mac.sh) and the
 // regression rules the Linux CI job applies against perf/baseline-linux.json. CI runners are not the budget machine
 // and differ from each other, so CI gates regressions only, and first paint there only relative to a bare Electron
 // window launched in the same job.
@@ -19,6 +19,11 @@ export interface Results {
   readonly idleRssMb: number;
   /** Frames per second while wheel-scrolling back through the chat-long fixture's chat. The median of a few rounds' rates. */
   readonly scrollFps: number;
+  /**
+   * Frames per second while a reply from the lead streams into a long chat (the stream-in-long fixture: 1,550 messages
+   * held, a delta every 100 ms, as the node sends them). The median of a few rounds' rates.
+   */
+  readonly streamFps: number;
   /** p95, ms from a key press (its OS timestamp) to the presentation of the frame that shows it: Chromium's EventLatency. The median of a few rounds' p95s. */
   readonly keyP95Ms: number;
 }
@@ -42,10 +47,12 @@ export const RULES: Record<Metric, Rule> = {
   firstPaintOverMs: { label: "app over bare", unit: "ms", higher: false, regress: { ratio: 0.3, slack: 60 } },
   idleMemoryMb: { label: "idle memory", unit: "MB", higher: false, limit: 300, regress: { ratio: 0.15, slack: 25 } },
   idleRssMb: { label: "(summed RSS)", unit: "MB", higher: false },
-  // 60 fps, allowing 5% of frames to rAF jitter: below 57 means frames were dropped. CI's two runner kinds read about 55
-  // and 54 a round, as a page of older messages landing under the reader costs a few frames; perf/run.ts gates the
-  // median of five rounds.
+  // 60 fps, allowing 5% of frames to rAF jitter: below 57 means frames were dropped. CI reads about 58 a round
+  // (55 before the chat's day formatters were cached), as a page of older messages landing under the reader costs a
+  // few frames; perf/run.ts gates the median of five rounds.
   scrollFps: { label: "chat scroll", unit: "fps", higher: true, limit: 57, regress: { ratio: 0.07, slack: 3 } },
+  // As scroll: each streamed delta rebuilds the chat's rows, so a cost per message held drops frames here first.
+  streamFps: { label: "chat streaming", unit: "fps", higher: true, limit: 57, regress: { ratio: 0.07, slack: 3 } },
   // A p95 over ~160 keys still moves with a few slow ones on a shared runner, hence the wide slack and perf/run.ts's median of five rounds.
   keyP95Ms: { label: "keypress to screen", unit: "ms", higher: false, limit: 16, regress: { ratio: 0.5, slack: 8 } },
 };

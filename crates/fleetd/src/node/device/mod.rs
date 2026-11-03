@@ -488,6 +488,7 @@ impl Devices {
             udid: None,
             desktop: None,
             worktree: None,
+            held_by: None,
             start_ms: started.elapsed().as_millis() as u64,
         }))
     }
@@ -534,7 +535,7 @@ impl Devices {
             session.touch();
             return work.step(call).map(BrowserCallResult::Device);
         };
-        work.check(&args, true)?;
+        work.check(&args)?;
         let program = agent_device::bin_dir(&self.home).join("agent-device");
         let path = std::env::var("PATH").ok();
         let env = agent_device::env(&self.home, thread, path.as_deref());
@@ -863,7 +864,7 @@ impl Router {
             .or_else(|| ios.map(|s| (SessionKind::Ios, s.id.to_string())))
             .or_else(|| {
                 let desktop = self.desktops.as_ref().and_then(|d| d.live(thread))?;
-                Some((SessionKind::LinuxDesktop, desktop.id.to_string()))
+                Some((desktop.kind, desktop.id.to_string()))
             })
     }
 
@@ -871,7 +872,10 @@ impl Router {
         let open = self.open(&thread);
         let kind = match &frame.call {
             BrowserCall::SessionStart(call) => call.kind.unwrap_or_default(),
-            BrowserCall::Desktop(_) => SessionKind::LinuxDesktop,
+            BrowserCall::Desktop(_) => match &open {
+                Some((SessionKind::Mac, _)) => SessionKind::Mac,
+                _ => SessionKind::LinuxDesktop,
+            },
             _ => open
                 .as_ref()
                 .map_or(SessionKind::Browser, |(kind, _)| *kind),
@@ -899,6 +903,7 @@ impl Router {
                         SessionKind::Android => "an Android",
                         SessionKind::Ios => "an iOS",
                         SessionKind::LinuxDesktop => "a desktop",
+                        SessionKind::Mac => "a Mac screen",
                     }
                 ),
             );
@@ -918,7 +923,7 @@ impl Router {
             },
             SessionKind::Android => self.android(thread, frame).await,
             SessionKind::Ios => self.ios(thread, frame).await,
-            SessionKind::LinuxDesktop => self.desktop(thread, frame).await,
+            SessionKind::LinuxDesktop | SessionKind::Mac => self.desktop(thread, frame, kind).await,
         }
     }
 
@@ -959,18 +964,33 @@ impl Router {
         result_frame(&frame, outcome)
     }
 
-    async fn desktop(&self, thread: String, frame: BrowserCallFrame) -> BrowserResultFrame {
+    async fn desktop(
+        &self,
+        thread: String,
+        frame: BrowserCallFrame,
+        kind: SessionKind,
+    ) -> BrowserResultFrame {
         let Some(desktops) = &self.desktops else {
             return result_frame(
                 &frame,
                 Err(refuse(
                     ErrorCode::Failed,
-                    "This machine hosts no desktop sessions (node.json turns them off).",
+                    match kind {
+                        SessionKind::Mac => {
+                            "This machine lends no Mac screen (its node.json doesn't turn it on)."
+                        }
+                        _ => "This machine hosts no desktop sessions (node.json turns them off).",
+                    },
                     "say so in your result",
                 )),
             );
         };
         let outcome = match &frame.call {
+            BrowserCall::SessionStart(call) if kind == SessionKind::Mac => {
+                desktops
+                    .mac_start(thread, frame.cwd.to_string(), call.purpose.to_string())
+                    .await
+            }
             BrowserCall::SessionStart(call) => {
                 desktops
                     .session_start(thread, frame.cwd.to_string(), call.purpose.to_string())
@@ -1058,6 +1078,7 @@ fn noun(kind: SessionKind) -> &'static str {
         SessionKind::Android => "Android",
         SessionKind::Ios => "iOS",
         SessionKind::LinuxDesktop => "Desktop",
+        SessionKind::Mac => "Mac screen",
     }
 }
 

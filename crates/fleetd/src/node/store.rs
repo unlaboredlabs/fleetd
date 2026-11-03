@@ -56,6 +56,11 @@ PRAGMA user_version = 2;
 pub const SPANS_KEPT: i64 = 500_000;
 pub const SPANS_KEPT_MS: i64 = 7 * 24 * 3600 * 1000;
 const SPANS_DROP_BATCH: i64 = 5_000;
+/// A session's steps (`items`: tool calls and their outputs) are kept this long after they last changed; its messages,
+/// the chat itself, and the steps of a session at work now are kept whatever their age.
+pub const ITEMS_KEPT: std::time::Duration = std::time::Duration::from_secs(30 * 24 * 3600);
+/// Rows [`NodeStore::prune_items`] looks at per transaction, so no other store call waits long on it.
+pub const ITEMS_PRUNE_BATCH: i64 = 500;
 
 /// What the node keeps about a session beyond its summary: everything a respawn needs to resume it in place.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -407,6 +412,31 @@ impl NodeStore {
         self.newest("items", session_id, limit)
     }
 
+    /// One batch of the items prune: of the [`ITEMS_PRUNE_BATCH`] rows after row `after`, deletes those last updated
+    /// before `before` (RFC 3339), but none of a session with an active run. Returns how many went, and the row to go
+    /// on after, or None once the rest is newer: rows are numbered as they are first stored, so the oldest come first.
+    pub fn prune_items(&self, after: i64, before: &str) -> StoreResult<(usize, Option<i64>)> {
+        self.tx(|conn| {
+            let (last, oldest): (Option<i64>, Option<String>) = conn.query_row(
+                "SELECT MAX(rid), MIN(json_extract(json, '$.updatedAt')) FROM
+                   (SELECT rid, json FROM items WHERE rid > ?1 ORDER BY rid LIMIT ?2)",
+                params![after, ITEMS_PRUNE_BATCH],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            let Some(last) = last else {
+                return Ok((0, None));
+            };
+            let gone = conn.execute(
+                "DELETE FROM items WHERE rid > ?1 AND rid <= ?2 AND json_extract(json, '$.updatedAt') < ?3
+                   AND session_id NOT IN
+                     (SELECT id FROM sessions WHERE json_extract(summary, '$.activeRunId') IS NOT NULL)",
+                params![after, last, before],
+            )?;
+            let more = oldest.is_some_and(|oldest| oldest.as_str() < before);
+            Ok((gone, more.then_some(last)))
+        })
+    }
+
     /// Appends spans to the outbox in one transaction, then holds the outbox to its bounds.
     pub fn put_spans(&self, spans: &[SpanWire], now_ms: i64) -> StoreResult<()> {
         if spans.is_empty() {
@@ -730,5 +760,54 @@ mod tests {
         assert_eq!(texts, ["one", "2", "3", "4"]);
         assert!(truncated);
         assert!(!store.newest_messages("s1", 5).unwrap().1);
+    }
+
+    #[test]
+    fn the_items_prune_takes_old_steps_in_batches_but_no_chat_nor_a_working_sessions() {
+        let store = NodeStore::open_memory(10).unwrap();
+        let item = |id: String, at: &str| -> ThreadItem {
+            serde_json::from_value(serde_json::json!({
+                "id": id, "runId": "r1", "status": "completed", "title": "", "startedAt": at, "completedAt": at,
+                "updatedAt": at, "kind": { "type": "command", "command": "npm test", "output": "ok", "exitCode": 0 },
+            }))
+            .unwrap()
+        };
+        let (old, new) = ("2026-09-01T10:00:00.000Z", "2026-10-30T10:00:00.000Z");
+        // More old steps than one batch, then a run that is still at work in s2.
+        for n in 0..1_500 {
+            store.put_item("s1", &item(format!("i{n}"), old)).unwrap();
+        }
+        store.put_item("s2", &item("i0".into(), old)).unwrap();
+        for n in 0..3 {
+            store.put_item("s1", &item(format!("new{n}"), new)).unwrap();
+        }
+        store
+            .lock()
+            .execute(
+                "INSERT INTO sessions (id, project_id, summary, local)
+                   VALUES ('s2', 'p1', '{\"activeRunId\":\"r1\"}', '{}')",
+                [],
+            )
+            .unwrap();
+        let message = ThreadMessage {
+            id: fleetd_contracts::prim::NonEmpty::unchecked("m1"),
+            run_id: None,
+            role: fleetd_contracts::sessions::MessageRole::User,
+            text: "hi".into(),
+            created_at: Timestamp::from(old),
+        };
+        store.put_message("s1", &message).unwrap();
+        let before = "2026-10-04T10:00:00.000Z";
+        let (mut gone, mut batches, mut after) = (0, 0, Some(0));
+        while let Some(from) = after {
+            let (n, next) = store.prune_items(from, before).unwrap();
+            (gone, batches, after) = (gone + n, batches + 1, next);
+        }
+        assert_eq!((gone, batches), (1_500, 5));
+        let (left, _) = store.newest_items("s1", 10).unwrap();
+        let ids: Vec<_> = left.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, ["new0", "new1", "new2"]);
+        assert!(store.item("s2", "i0").unwrap().is_some());
+        assert!(store.message("s1", "m1").unwrap().is_some());
     }
 }

@@ -13,6 +13,8 @@
 //! Nothing here touches a process that is not provably the session's: groups are signalled only when their leader is
 //! in the sweep, the node's own group never, and on Linux every pid is re-checked against its start time first.
 use std::collections::{HashMap, HashSet};
+#[cfg(target_os = "linux")]
+use std::path::Path;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
@@ -69,13 +71,7 @@ pub fn table() -> Vec<Proc> {
         return Vec::new();
     };
     entries
-        .filter_map(|entry| {
-            let pid: i32 = entry.ok()?.file_name().to_str()?.parse().ok()?;
-            parse_stat(
-                pid,
-                &std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?,
-            )
-        })
+        .filter_map(|entry| stat_of(entry.ok()?.file_name().to_str()?.parse().ok()?))
         .collect()
 }
 
@@ -360,7 +356,16 @@ pub(crate) fn reap_adopted() {
     let own_marker = std::env::var(SESSION_MARKER).ok();
     let tracked = TRACKED.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let mut known = ADOPTED.lock().unwrap_or_else(|e| e.into_inner());
-    let children: Vec<Proc> = table().into_iter().filter(|p| p.ppid == own_pid).collect();
+    let mut children = own_children(own_pid);
+    // The kernel's children lists can skip one while others exit: an orphan this pass remembers but didn't see is
+    // looked up by itself before it is forgotten.
+    for (pid, start) in known.iter() {
+        if !children.iter().any(|p| p.pid == *pid)
+            && let Some(proc) = stat_of(*pid).filter(|p| p.ppid == own_pid && p.start == *start)
+        {
+            children.push(proc);
+        }
+    }
     for proc in &children {
         let key = (proc.pid, proc.start);
         if tracked.contains(&proc.pid) {
@@ -375,6 +380,50 @@ pub(crate) fn reap_adopted() {
     }
     // Forget orphans that are gone some other way (a sweep reaped them).
     known.retain(|key| children.iter().any(|p| (p.pid, p.start) == *key));
+}
+
+/// The process's own children: the pids each of its threads lists in `/proc/self/task/<tid>/children` (an orphan
+/// reparents to whichever thread of a subreaper is alive), each read from its own `/proc/<pid>/stat`. A few dozen
+/// syscalls, where [`table`] reads every process on the machine. Without those files (a kernel built without
+/// `CONFIG_PROC_CHILDREN`), the whole table.
+#[cfg(target_os = "linux")]
+fn own_children(own_pid: i32) -> Vec<Proc> {
+    let Some(pids) = children_pids(Path::new("/proc/self/task")) else {
+        return table().into_iter().filter(|p| p.ppid == own_pid).collect();
+    };
+    pids.into_iter()
+        .filter_map(stat_of)
+        .filter(|p| p.ppid == own_pid)
+        .collect()
+}
+
+/// The pids in every `<tasks>/<tid>/children`, each once; None when no thread has the file.
+#[cfg(target_os = "linux")]
+fn children_pids(tasks: &Path) -> Option<Vec<i32>> {
+    let mut pids = Vec::new();
+    let mut read_any = false;
+    for task in std::fs::read_dir(tasks).ok()?.filter_map(Result::ok) {
+        // A thread that ended since the directory was listed has nothing to say.
+        let Ok(list) = std::fs::read_to_string(task.path().join("children")) else {
+            continue;
+        };
+        read_any = true;
+        pids.extend(
+            list.split_whitespace()
+                .filter_map(|p| p.parse::<i32>().ok()),
+        );
+    }
+    pids.sort_unstable();
+    pids.dedup();
+    read_any.then_some(pids)
+}
+
+#[cfg(target_os = "linux")]
+fn stat_of(pid: i32) -> Option<Proc> {
+    parse_stat(
+        pid,
+        &std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?,
+    )
 }
 
 /// The thread id of the fleetd session this process runs in: its own `FLEETD_THREAD_ID` or, on Linux, the nearest
@@ -462,6 +511,42 @@ mod tests {
         assert!(descendants(&table, 13).is_empty());
         assert!(descendants(&table, 1).is_empty());
         assert!(descendants(&table, 0).is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn children_are_every_threads_list_once_and_none_without_the_files() {
+        let tasks = tempfile::tempdir().unwrap();
+        for (tid, list) in [("10", "11 12 "), ("13", "12 14"), ("15", "")] {
+            std::fs::create_dir(tasks.path().join(tid)).unwrap();
+            std::fs::write(tasks.path().join(tid).join("children"), list).unwrap();
+        }
+        // A thread that ended between the listing and the read.
+        std::fs::create_dir(tasks.path().join("16")).unwrap();
+        assert_eq!(children_pids(tasks.path()), Some(vec![11, 12, 14]));
+        let bare = tempfile::tempdir().unwrap();
+        std::fs::create_dir(bare.path().join("10")).unwrap();
+        assert_eq!(children_pids(bare.path()), None);
+        assert_eq!(children_pids(&bare.path().join("gone")), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn own_children_match_a_scan_of_every_process() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let own = getpid().as_raw();
+        let mut found = own_children(own);
+        let mut scanned: Vec<Proc> = table().into_iter().filter(|p| p.ppid == own).collect();
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(found.iter().any(|p| p.pid == child.id() as i32));
+        // Other tests' children come and go meanwhile: compare this one's only.
+        found.retain(|p| p.pid == child.id() as i32);
+        scanned.retain(|p| p.pid == child.id() as i32);
+        assert_eq!(found, scanned);
     }
 
     #[test]

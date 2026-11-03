@@ -495,6 +495,12 @@ pub fn pr_head(root: &Path, url: &str) -> Result<String, String> {
     ref_sha(root, &sha).ok_or_else(|| format!("{name} fetched without its commit {sha}"))
 }
 
+/// `sha` as a full commit id when this repo has that commit; None for anything but a hex commit id, or one it lacks.
+pub fn known_commit(root: &Path, sha: &str) -> Option<String> {
+    let hex = (7..=64).contains(&sha.len()) && sha.bytes().all(|b| b.is_ascii_hexdigit());
+    hex.then(|| ref_sha(root, sha)).flatten()
+}
+
 /// How [`remove`]'s refusals start: `kept <path>: <why>`. The hub's worktree sweep reads them as work kept, not as a
 /// removal that failed.
 pub const KEPT: &str = "kept ";

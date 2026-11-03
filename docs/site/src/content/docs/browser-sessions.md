@@ -1,6 +1,6 @@
 ---
 title: Screens
-description: Agents open a fresh Chrome, Android emulator, iOS simulator or Linux desktop of their own, drive it with agent-browser, agent-device or their desktop tool, and leave a recording on the hub.
+description: Agents open a fresh Chrome, Android emulator, iOS simulator or Linux desktop of their own, or borrow the agents' Mac's screen, drive it with agent-browser, agent-device, agent-desktop or their desktop tool, and leave a recording on the hub.
 ---
 
 An agent that needs a web page (to check a signup form on staging, read a dashboard, reproduce a bug) opens a browser
@@ -8,8 +8,8 @@ screen. It gets a fresh Chrome on its machine that no other screen shares, drive
 [agent-browser](https://github.com/vercel-labs/agent-browser) CLI, and closes it when done. You can watch it live in the
 app and take it over. The node records the screen and uploads the recording to the hub.
 
-A screen is any of these an agent opens: a browser, an [Android emulator](#android), an [iOS simulator](#ios) or a
-[Linux desktop](#desktop). You can [open one yourself](#yours) too. The app lists them under **Agents › Screens**. The
+A screen is any of these an agent opens: a browser, an [Android emulator](#android), an [iOS simulator](#ios), a
+[Linux desktop](#desktop), or the [agents' Mac's own screen](#mac), which agents take turns on. You can [open one yourself](#yours) too. The app lists them under **Agents › Screens**. The
 agent tools that open and close one keep their names, `session_start` and `session_end`.
 
 ## How an agent uses one {#use}
@@ -81,8 +81,9 @@ or Navi's ⓘ page ([Phone app](/docs/mobile#screens)).
    Settings › Hub › Machines that fixes it; anyone else is told whom to ask.
 2. **Pick the machine.** The list has only the machines that can host that kind (the sessions role, the kind set up,
    and a current fleetd), each with its screens in use: `1 of 2 screens in use`.
-3. **Pick a PR** (optional, iOS and Android): one of the project's open PRs, whose CI build is installed before you get
-   it ([below](#yours-pr)). If the PRs can't be read, the picker says why, with Retry.
+3. **Pick a PR** (optional, Android): one of the project's open PRs, whose CI build is installed before you get
+   it ([below](#yours-pr)). If the PRs can't be read, the picker says why, with Retry. An iOS screen takes no PR build
+   for now, and the picker says why.
 4. **Open screen.** It opens in the panel's live view with you in control from the start, and lists under Screens as
    yours. **End screen** closes it. It also ends after the machine's idle timeout without your input: 30 minutes
    unless set in [Settings](#settings). The picker says the machine's own.
@@ -104,13 +105,16 @@ many people wait. An agent's running screen is never ended to make room. A wait 
 
 ### A PR's build {#yours-pr}
 
-An iOS simulator or Android emulator can open with a PR's build installed. The hub takes the newest artifact of a CI
-run on the PR's head whose name says what it's for: `ios` for a zipped simulator `.app` (fleetd's own Mobile workflow
-uploads `fleetd-ios-simulator`), `android` or `apk` for an `.apk` (`fleetd-android-apk`). It downloads it with its
+An Android emulator can open with a PR's build installed. The hub takes the newest artifact of a CI run on the PR's
+head whose name says what it's for: `android` or `apk` for an `.apk` (`fleetd-android-apk`).
+
+An iOS simulator takes none until the shared Mac (decision `mac.interim-lockdown`, D299): an app installed in the
+Mac's simulator runs as the Mac's own user, outside the iOS sandbox ([why](#ios-elsewhere)). `screen_open` with a PR
+for an iOS screen is refused at once, and nothing starts. It downloads it with its
 `gh` (as the [GitHub App](/docs/github/) where it's installed), starts the screen, sends the file to the screen's
 machine sealed with that screen's key, and runs `agent-device install` there. Then the screen is yours.
 
-That can take minutes (a simulator's runner starting first), so it goes on in the hub. **Open screen** takes the slot at
+That can take minutes (an emulator starting first), so it goes on in the hub. **Open screen** takes the slot at
 once, and no agent or other person can take it while the build downloads. The picker then shows how far it is: reading
 the build and starting, then installing. It lands in the live view once the screen is yours. If you close the picker,
 the screen still opens: it shows at the top of Screens until then, and then lists as yours.
@@ -120,8 +124,6 @@ the screen still opens: it shows at the top of Screens until then, and then list
 - A build that doesn't install closes the screen. Its row in Screens says why, in agent-device's words, until you clear
   it.
 - A build can be at most 64 MiB, as an agent's install into a screen elsewhere.
-- On a Mac with `"remoteInstall": false` the install is refused, as an agent's is: a simulator app runs as the Mac's
-  user ([why](#ios-elsewhere)).
 - A wait with a PR gets its build when its slot frees.
 
 MCP clients use `screen_open` and `screen_end`. `browser_sessions` lists your screens on their way beside the screens,
@@ -247,10 +249,11 @@ purpose, state (`live`, `uploading`, `recorded`, `lost` or `expired`) and files.
 
 **Settings › Hub › Machines › Screens**, for a hub's owners and admins, lists each machine that hosts screens:
 
-- **A switch per kind**: Browser, iOS, Android and Linux desktop. Under each, what the machine's node says: ready, off,
+- **A switch per kind**: Browser, iOS, Android, Linux desktop and Agents' Mac. Under each, what the machine's node says: ready, off,
   installing, or what stands in the way (no Xcode, no KVM, no docker or Xvfb). A kind the machine can't run at all
   (iOS on Linux) can't be switched on.
-- **Idle screens end after**: the minutes without a command before a screen there ends, for every kind.
+- **Idle screens end after**: the minutes without a command before a screen there ends, for every kind but the
+  agents' Mac, whose screen goes back after 5 minutes so the next agent isn't kept waiting.
 - **Recordings**: how long the hub keeps them and how much per project, for every project
   ([On the hub](#hub)).
 
@@ -289,7 +292,7 @@ Settings go under `browser` in [node.json](/docs/config-and-files#node-json) (`e
 |---|---|
 | `enabled` | `false` turns browser screens off on this machine. Absent or `true`: on, and the node installs the browser as it starts. |
 | `chrome` | A Chrome or headless shell to use instead of the pinned one. |
-| `ffmpeg` | An ffmpeg to use instead of the pinned one. It needs MJPEG in and `libvpx-vp9` out. |
+| `ffmpeg` | An ffmpeg to use instead of the pinned one. It needs Matroska and MJPEG in, and `libvpx-vp9` out. |
 | `pool` | Chromes kept launched for the next screens. Absent: 1. Each waiting Chrome takes about 0.5 GB of memory. |
 | `sandbox` | `true` requires Chrome's own sandbox: a machine that refuses it starts no browser. `false` turns it off. Absent: on wherever the machine allows it, else off. |
 | `idleMinutes` | End a screen after this many minutes without an `agent-browser` command. Absent: 30. |
@@ -307,6 +310,9 @@ its time. Each stage goes to the log as it ends, with its own time (`ms`) and th
   into `recorder`, `discover` and `page`;
 - **node desktop**: `prepare`, `warm display` or `cold display` (with **node display**'s `xvfb` or `container`),
   `connect`, `secrets` and `session open`.
+
+A browser screen's end goes the same way, as **node browser end**: `captures` (the page after the last steps),
+`screencast`, `video` (ffmpeg finishing it), `browser` and `scrub`.
 
 The log also has each screen's first frame on its machine, when the hub asked for its frames, and how long the hub
 waited for the first. `FLEETD_LOG` takes the filter `RUST_LOG` does; without it, the log has info and above.
@@ -406,15 +412,14 @@ agent-device on the screen's clone and sends back its output and exit code. The 
 takeover, the idle timeout and `session_end` work as on the Mac: the hub sends a person's watch, takeover and taps
 straight to the Mac, and only the Mac's frames reach them.
 
-- **Files go both ways, inside the worktree.** A file a command reads (`install build/fleetd.zip`, a `push` payload)
-  goes from the agent's worktree to the Mac first, 4 MiB at a time, up to 64 MiB per command. A folder doesn't go:
-  zip an `.app` first (`ditto -c -k --keepParent fleetd.app fleetd.zip`). A file a command writes (`screenshot
+- **Files go both ways, inside the worktree.** A file a command reads (a `push` payload) goes from the agent's
+  worktree to the Mac first, 4 MiB at a time, up to 64 MiB per command. A folder doesn't go. A file a command writes (`screenshot
   shots/home.png`, or `record start run.mp4` then `record stop`) comes back to that path in the worktree.
   `screenshot` and `record start` need a file name. So does `logs path`: the app log agent-device keeps on the Mac
   comes back to that path (`logs path logs/app.log`), its last 64 MiB if it's longer. A path outside the worktree is
   refused on the agent's machine.
 - **Only commands that drive the screen run.** The Mac runs agent-device commands from a fixed list, each with its
-  own flags: `open`, `close`, `install`, `reinstall`, `uninstall`, `apps`, `appstate`, `snapshot`, `screenshot`,
+  own flags: `open`, `close`, `uninstall`, `apps`, `appstate`, `snapshot`, `screenshot`,
   `record`, `press`, `click`, `fill`, `type`, `scroll`, `swipe`, `longpress`, `gesture`, `wait`, `get`, `is`, `find`,
   `back`, `home`, `app-switcher`, `alert`, `keyboard`, `settings`, `push`, `orientation`, `focus`, `action-button`,
   `hardware-button`, `logs` (`path`, `start`, `stop`, `clear`, `doctor`, `mark`), `capabilities` and `help`. They run in a folder of the screen's own, which goes with it. There's
@@ -424,9 +429,11 @@ straight to the Mac, and only the Mac's frames reach them.
 - **Sealed between the two machines.** Each command and file goes sealed with the key the agent's node sealed to the
   Mac at the start, and numbered. The hub carries only ciphertext, and the Mac runs nothing the hub made up or sent
   twice.
-- **An app an agent installs runs as the Mac's user.** A simulator doesn't keep an app away from the Mac the way a
-  phone does: the app can read and change what the Mac's user can, and reach the network. Installs from other
-  machines are on by default; `"remoteInstall": false` turns them off on a Mac.
+- **No app goes in from another machine.** A simulator doesn't keep an app away from the Mac the way a phone does:
+  the app runs as the Mac's user, so it can read and change what that user can, and reach the network. Until the
+  shared Mac (decision `mac.interim-lockdown`, D299), `install` and `reinstall` are refused: on the agent's machine
+  before anything is sent, and again on the Mac. People's [PR builds](#yours-pr) don't go into an iOS screen either.
+  An agent on the Mac itself installs into its own screen as before.
 
 An Android screen the hub would place on another machine is refused for now: agent-device drives an emulator over adb
 from the emulator's own machine.
@@ -454,7 +461,6 @@ Settings go under `ios` in [node.json](/docs/config-and-files#node-json):
 | `pool` | Clones kept booted for the next screens. Absent: 1. Each takes 1–2 GB of memory. |
 | `idleMinutes` | End a screen after this many minutes without an `agent-device` command. Absent: 30. |
 | `deviceType` | The simulator's device type by name, such as `iPhone 17 Pro`. Absent: the newest plain iPhone of the newest iOS runtime. A change takes effect when the golden is made again (delete `device/ios/golden.json`). |
-| `remoteInstall` | `false` refuses `agent-device install` and `reinstall` from agents on other machines, and people's [PR builds](#yours-pr): an app installed in a simulator runs as this Mac's user ([why](#ios-elsewhere)). Absent or `true`: allowed. |
 
 ## Linux desktop screens {#desktop}
 
@@ -508,6 +514,61 @@ Settings go under `desktop` in [node.json](/docs/config-and-files#node-json):
 | `runtime` | The docker or podman to use instead of the one on the `PATH`. |
 | `image` | An image to run instead of building the pinned one. It must start Xvfb on `:0` with `-auth /fleetd/xauth`. |
 | `xvfb` | The Xvfb to use instead of the one on the `PATH`. |
-| `ffmpeg` | An ffmpeg for the video. It needs MJPEG in and `libvpx-vp9` out. |
+| `ffmpeg` | An ffmpeg for the video. It needs Matroska and MJPEG in, and `libvpx-vp9` out. |
 | `pool` | Displays kept started for the next screens. Absent: 1. |
 | `idleMinutes` | End a screen after this many minutes without a `desktop` action. Absent: 30. |
+
+## The agents' Mac's screen {#mac}
+
+A Mac set aside for agents runs its fleetd node as a standard `agents` user, and that user's desktop is a screen too:
+**`session_start`** with `kind` `mac`. Unlike the other kinds there is only one, so agents take turns on it:
+
+- **One holder at a time.** The first agent to open it holds it. Another agent's `session_start` still opens a session,
+  but it only observes: its `desktop` tool's `screenshot`, `cursor_position` and `wait`, and agent-desktop's reading
+  commands (`snapshot`, `find`, `get`, `is`, `list-apps`, ...), work; its other actions answer who holds the screen.
+  Once the holder ends, the observer's next action takes the screen.
+- **Idle release.** A Mac screen session with no action for 5 minutes ends, and the screen is free for the next one
+  (`idleMinutes` under `mac` below).
+- **Your takeover takes it.** Taking over any Mac screen session, or opening one yourself from **New screen ›
+  Agents' Mac**, makes it yours: the agent that held it only observes until you're done.
+
+The agent drives it with its `desktop` tool: the same computer-use actions as a Linux desktop (`key` also takes
+`cmd` and `option`, as in `cmd+s`), `launch` (a shell command, such as `open -a TextEdit`), and `agent_desktop`, which
+runs one [agent-desktop](https://github.com/vercel-labs/agent-desktop) command on the Mac: it reads an app's
+accessibility tree into refs (`snapshot --app Finder -i`) and acts on them (`click @s8f3k2p9:e12`) without moving the
+pointer. The Mac's node runs agent-desktop itself, a pinned release, so it acts under the node's own grants; each
+session gets its own agent-desktop folder, thrown away at its end. An app agent-desktop launches with `--cdp` keeps
+its DevTools port on the Mac's loopback (a launch naming another address is refused) and is closed when the session
+ends. Apps the agent opened otherwise stay open on the Mac, as yours would.
+
+What the screen is, and isn't:
+
+- **It's the agents' account, never yours.** The viewer is badged **Agents' Mac**. Agents can read and draw anything
+  there, a fake sign-in dialog included: never type your own passwords, an Apple ID or an admin password into it.
+  `fill_credential` isn't offered on it, and the Mac's node is sent none of an agent's secrets.
+- **It needs the agents session on the screen, unlocked.** macOS gives a session that is switched to the background or
+  locked only black frames, and drops its input. So the kind is offered only while the agents user is the one logged in
+  at the Mac's screen, unlocked, and the node checks it again at every start. Otherwise Settings and New screen say
+  exactly what stands in the way: the screen is locked, another user has it, nobody is logged in, a grant is missing,
+  or the node runs as an administrator (it never lends an administrator's screen).
+- **Recorded as any screen**: the video while a session holds the screen, and its action log, a line per action and
+  agent-desktop command. Recordings go to the hub's storage, under the same retention.
+- **No Navi** ever uses it.
+
+### On the Mac {#mac-setup}
+
+On a Mac set aside for agents, with the node running as its standard `agents` user:
+
+1. Log in as `agents` at the Mac and keep that session on the screen. Turn its screen lock off (System Settings ›
+   Lock Screen › Require password: Never), and its screen saver and display sleep: a locked screen is blind.
+2. Allow fleetd in System Settings › Privacy & Security › **Screen Recording** and **Accessibility**, in the agents
+   session, then restart its node (`launchctl kickstart -k gui/$(id -u)/sh.fleetd.node`). The Screens setting's fix
+   opens the right pane. macOS asks again for Screen Recording about once a month.
+3. Turn **Agents' Mac** on in Settings › Hub › Machines › Screens. The node installs agent-desktop as it starts.
+
+Settings go under `mac` in [node.json](/docs/config-and-files#node-json):
+
+| Key | Means |
+|---|---|
+| `enabled` | `true` lends the Mac's screen. Absent or `false`: off. |
+| `idleMinutes` | End a Mac screen session after this many minutes without an action. Absent: 5. |

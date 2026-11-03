@@ -192,6 +192,26 @@ pub(crate) fn target_machine(hub: &Hub, given: Option<&MachineId>) -> Result<Mac
     Ok(m)
 }
 
+/// [`target_machine`] for a Navi: by default the least busy worker that isn't a Mac, where Navis don't run (D299).
+pub(crate) fn navi_machine(hub: &Hub, given: Option<&MachineId>) -> Result<MachineId, ToolError> {
+    let all = workers(hub);
+    if given.is_some() || inspect::best_worker(&all).is_none() {
+        return target_machine(hub, given);
+    }
+    let others: Vec<Worker> = all
+        .into_iter()
+        .filter(|w| !hub.link.is_mac(&w.machine_id))
+        .collect();
+    let m = inspect::best_worker(&others).ok_or_else(|| {
+        problem_error(&problem(
+            ProjectProblemCode::NoWorker,
+            "only Macs are online, and Navis don't run on a Mac",
+            "Start a node on a Linux machine (fleetd node run there), then try again",
+        ))
+    })?;
+    target_machine(hub, Some(&m))
+}
+
 fn repo_of(text: &str) -> Result<GitHubRepo, ToolError> {
     github_repo(text).ok_or_else(|| {
         error(

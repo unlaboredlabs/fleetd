@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { frameStats, quantile, regressionLimit, regressions, withinBudget, type Results } from "./budgets.ts";
 
-const base: Results = { firstPaintMs: 300, firstPaintRefMs: 200, firstPaintOverMs: 100, idleMemoryMb: 200, idleRssMb: 500, scrollFps: 60, keyP95Ms: 6 };
+const base: Results = { firstPaintMs: 300, firstPaintRefMs: 200, firstPaintOverMs: 100, idleMemoryMb: 200, idleRssMb: 500, scrollFps: 60, streamFps: 60, keyP95Ms: 6 };
 
 describe("budgets", () => {
   it("passes strictly under a ceiling and at or over a floor; a metric without a budget has no verdict", () => {
@@ -26,11 +26,12 @@ describe("budgets", () => {
   it("reports only the gated metrics that got worse past their limit", () => {
     // A slow runner (both launches slower, the app's overhead the same) and summed RSS doubling are not regressions.
     expect(
-      regressions({ firstPaintMs: 900, firstPaintRefMs: 800, firstPaintOverMs: 100, idleMemoryMb: 260, idleRssMb: 1000, scrollFps: 61, keyP95Ms: 2 }, base),
+      regressions({ firstPaintMs: 900, firstPaintRefMs: 800, firstPaintOverMs: 100, idleMemoryMb: 260, idleRssMb: 1000, scrollFps: 61, streamFps: 59, keyP95Ms: 2 }, base),
     ).toEqual([{ metric: "idleMemoryMb", value: 260, limit: 230 }]);
-    expect(regressions({ ...base, firstPaintOverMs: 161, scrollFps: 50, keyP95Ms: 15 }, base).map((r) => r.metric)).toEqual([
+    expect(regressions({ ...base, firstPaintOverMs: 161, scrollFps: 50, streamFps: 20, keyP95Ms: 15 }, base).map((r) => r.metric)).toEqual([
       "firstPaintOverMs",
       "scrollFps",
+      "streamFps",
       "keyP95Ms",
     ]);
   });

@@ -347,7 +347,7 @@ impl SessionService {
         let rebuilt = match self.restore_worktree(id, &mut row, None).await {
             Ok((true, note)) => {
                 let frame = {
-                    let st = self.st();
+                    let mut st = self.st();
                     let frame = self.store().commit(&row, &[], true);
                     if let Ok(Some(frame)) = &frame {
                         st.machine(frame.clone());

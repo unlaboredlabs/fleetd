@@ -253,6 +253,11 @@ export class Hubs {
     for (const service of this.all()) service.windowFocused();
   }
 
+  /** Whether any of the app's windows shows; each hub's live feed pauses while none does. */
+  windowsShown(on: boolean): void {
+    for (const service of this.all()) service.windowsShown(on);
+  }
+
   systemResumed(): void {
     for (const service of this.all()) service.systemResumed();
   }

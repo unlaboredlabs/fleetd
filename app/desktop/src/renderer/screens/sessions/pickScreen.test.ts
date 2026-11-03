@@ -63,7 +63,7 @@ describe("prChoices", () => {
       ["acme/app#3", "#3 PR 3"],
       ["acme/app#1", "#1 PR 1"],
     ]);
-    expect(["browser", "ios", "android", "linux_desktop"].filter((k) => takesBuild(k as never))).toEqual(["ios", "android"]);
+    expect(["browser", "ios", "android", "linux_desktop"].filter((k) => takesBuild(k as never))).toEqual(["android"]);
   });
 });
 
@@ -121,7 +121,7 @@ describe("why a kind can't open", () => {
   const off = (machineId: string, offs: Partial<Record<string, string>>, more: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({
     ...machine(machineId, []),
     screenSettings: true,
-    hosts: ["browser", "android", "ios", "desktop"].map((host) => {
+    hosts: ["browser", "android", "ios", "desktop", "mac"].map((host) => {
       const why = offs[host];
       return why === undefined ? { host, ready: true, detail: "ready", on: true } : { host, ready: false, detail: `${host} ${why} on the node`, off: why, on: why !== "off" };
     }),
@@ -163,6 +163,13 @@ describe("why a kind can't open", () => {
     expect(reason).toEqual({ why: "iOS simulators need a Mac with Xcode, and no Mac here hosts screens.", short: "Needs a Mac", fix: "add" });
     expect(askLine(must(reason), "ios", [])).toBe("Ask a hub admin to add a Mac.");
     expect(fixLabel("add")).toBe("Add machine");
+  });
+
+  it("says the agents' Mac needs a Mac set aside for agents, not a Linux machine", () => {
+    const reason = whyOff([off("devbox", { mac: "unsupported" })], "mac");
+    expect(reason).toEqual({ why: "The agents’ Mac screen needs a Mac set aside for agents, whose node runs as its standard agents user.", short: "Needs a Mac", fix: "add" });
+    expect(askLine(must(reason), "mac", ["Ana"])).toBe("Ask Ana to add a Mac set aside for agents.");
+    expect(askLine(must(reason), "android", ["Ana"])).toBe("Ask Ana to add a Linux machine.");
   });
 
   it("prefers the nearest fix: a Mac installing before one that's offline, before a Linux box", () => {

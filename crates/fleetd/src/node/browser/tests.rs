@@ -376,6 +376,18 @@ impl Driver {
         method: &str,
         params: Value,
     ) -> Value {
+        self.answer(session, method, params)
+            .await
+            .expect("the proxy closed")
+    }
+
+    /// The whole answer, or None once the proxy closed.
+    pub(crate) async fn answer(
+        &mut self,
+        session: Option<&str>,
+        method: &str,
+        params: Value,
+    ) -> Option<Value> {
         self.next += 1;
         let mut message = json!({ "id": self.next, "method": method, "params": params });
         if let Some(session) = session {
@@ -384,17 +396,17 @@ impl Driver {
         self.ws
             .send(Message::Text(message.to_string().into()))
             .await
-            .unwrap();
+            .ok()?;
         loop {
             let next = tokio::time::timeout(Duration::from_secs(20), self.ws.next())
                 .await
                 .expect("an answer in 20 s");
             let Some(Ok(Message::Text(text))) = next else {
-                panic!("the proxy closed");
+                return None;
             };
             let value: Value = serde_json::from_str(&text).unwrap();
             if value["id"] == self.next {
-                return value;
+                return Some(value);
             }
             self.events.push(value);
         }
@@ -1959,6 +1971,74 @@ async fn a_browser_session_ends_with_its_agents_session() {
     let id = recorded(&rig.hub).await;
     let actions = String::from_utf8(read_file(&rig.hub, &id, "actions").await).unwrap();
     assert!(actions.contains("agent_session_ended"), "{actions}");
+}
+
+/// A spinning page sends its screencast at up to 60 frames a second; the live view gets at most 30 of them, and the
+/// newest always: once the page stops, the frame watched is its last.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_moving_pages_live_view_gets_at_most_30_frames_a_second_and_its_newest() {
+    use fleetd_contracts::browser::BrowserSessionId;
+    let Some(rig) = rig().await else { return };
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Watch it spin" }),
+    )
+    .await;
+    let id = BrowserSessionId::unchecked(started["result"]["sessionId"].as_str().unwrap());
+    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap())
+        .await
+        .unwrap();
+    let page = driver.page().await;
+    let html = "<body><p>Loading</p><div id=s style='width:40px;height:40px;border:6px solid #ccc;\
+                border-top-color:#333;border-radius:50%;animation:s 1s linear infinite'></div>\
+                <style>@keyframes s{to{transform:rotate(360deg)}}</style>\
+                <script>setTimeout(() => { s.remove(); document.title = 'still'; }, 3000)</script></body>";
+    driver
+        .ok(
+            Some(&page),
+            "Page.navigate",
+            json!({ "url": format!("data:text/html,{}", html.replace('#', "%23")) }),
+        )
+        .await;
+    let frames = Arc::new(super::FrameSlot::default());
+    rig.broker.watch(&id, Some(frames.clone()));
+    // Taken as soon as each is there, as a link with nothing else to send does.
+    let start = Instant::now();
+    let mut got: Vec<(Duration, u64, usize)> = Vec::new();
+    while start.elapsed() < Duration::from_secs(5) {
+        if tokio::time::timeout(Duration::from_millis(100), frames.notify.notified())
+            .await
+            .is_err()
+        {
+            continue;
+        }
+        for line in frames.take() {
+            let frame: Value = serde_json::from_str(&line).unwrap();
+            got.push((start.elapsed(), frame["seq"].as_u64().unwrap(), line.len()));
+        }
+    }
+    let moving: Vec<_> = got
+        .iter()
+        .filter(|(at, ..)| *at < Duration::from_millis(2900))
+        .collect();
+    let (first, last) = (moving.first().unwrap(), moving.last().unwrap());
+    let secs = (last.0 - first.0).as_secs_f64();
+    let sent = moving.len() as f64 - 1.0;
+    let screencast = (last.1 - first.1) as f64;
+    let bytes = moving.iter().map(|(.., len)| *len as f64).sum::<f64>() / moving.len() as f64;
+    eprintln!(
+        "moving page: the screencast sent {:.1} frames/s ({:.0} KB/s as browser_frame lines), the live view {:.1} ({:.0} KB/s)",
+        screencast / secs,
+        screencast / secs * bytes / 1024.0,
+        sent / secs,
+        sent / secs * bytes / 1024.0
+    );
+    assert!(sent / secs <= 31.0, "{:.1} frames a second", sent / secs);
+    // Once still, the newest frame is the one the watcher has: watching again gets it at once.
+    let again = Arc::new(super::FrameSlot::default());
+    rig.broker.watch(&id, Some(again.clone()));
+    let newest: Value = serde_json::from_str(&again.take().pop().unwrap()).unwrap();
+    assert_eq!(newest["seq"].as_u64(), got.last().map(|(_, seq, _)| *seq));
 }
 
 /// The devbox's case: the session's recording folder went while it was live (the upload's sweep took a session still

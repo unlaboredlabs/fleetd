@@ -148,6 +148,50 @@ async fn a_task_waiting_on_ci_is_woken_once_with_the_outcome_when_it_finishes() 
     assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 0);
 }
 
+/// W373 (#976): a PR's latest review blocked it, and its writer rebased and waits on CI: the wake names the finding,
+/// still open, so the writer fixes it instead of reporting nothing open.
+#[tokio::test]
+async fn a_prs_ci_wake_carries_its_open_blocking_findings() {
+    let (hub, _home) = hub();
+    let mut calls = serve(&hub, Node::link(&hub).await);
+    shop_repo(&hub);
+    running(&hub, 1);
+    assert!(wait(&hub, t1(), PR).is_ok());
+    let sha = "a".repeat(40);
+    let verdict = json!({ "taskId": "T9", "prHeadSha": sha, "blocking": 1, "nonBlocking": 0, "summary": "blocking: src/checker.rs:333 trusts any answer" });
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO review_verdicts (task_id, pr_key, sha, blocking, at_ms, data) VALUES ('T9', ?1, ?2, 1, 0, ?3)",
+                rusqlite::params![crate::hub::reviews::verdicts::pr_key(PR), sha, verdict.to_string()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+    let reads = Reads::default();
+    reads.set(
+        PR,
+        Read::Finished {
+            conclusion: None,
+            label: "3f9c2ab".into(),
+            failing: vec![],
+            total: 12,
+        },
+    );
+    assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 1);
+    let woke = sent(&mut calls);
+    assert_eq!(woke.len(), 1);
+    assert!(
+        woke[0].starts_with(&format!(
+            "CI you waited on (wait_ci) finished: {PR} at 3f9c2ab: all 12 checks passed.\n\nIts latest review's \
+             blocking findings are still open"
+        )) && woke[0].contains("src/checker.rs:333"),
+        "{}",
+        woke[0]
+    );
+}
+
 #[tokio::test]
 async fn wait_ci_takes_only_a_run_or_pr_of_the_tasks_project_and_only_from_a_task() {
     let (hub, _home) = hub();

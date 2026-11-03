@@ -268,6 +268,25 @@ pub fn remove_project(db: &Connection, project: &ProjectRef) -> rusqlite::Result
     Ok(())
 }
 
+/// The projects the hub has cached whose repos, or own directory's work, are on `repo_key`.
+pub fn with_key(db: &Connection, repo_key: &str) -> rusqlite::Result<Vec<ProjectRef>> {
+    db.prepare_cached(
+        "SELECT machine_id, project_id FROM projects p
+         WHERE EXISTS (SELECT 1 FROM repos r
+                       WHERE r.machine_id = p.machine_id AND r.project_id = p.project_id AND r.repo_key = ?1)
+            OR EXISTS (SELECT 1 FROM work_projects w
+                       WHERE w.machine_id = p.machine_id AND w.project_id = p.project_id AND w.repo_key = ?1)
+         ORDER BY machine_id, project_id",
+    )?
+    .query_map([repo_key], |row| {
+        Ok(ProjectRef {
+            machine_id: MachineId::unchecked(row.get::<_, String>(0)?),
+            project_id: ProjectId::unchecked(row.get::<_, String>(1)?),
+        })
+    })?
+    .collect()
+}
+
 /// Every project the hub has cached.
 pub fn cached_projects(db: &Connection) -> rusqlite::Result<Vec<ProjectRef>> {
     db.prepare_cached(

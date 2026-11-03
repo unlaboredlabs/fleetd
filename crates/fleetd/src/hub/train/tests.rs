@@ -1126,6 +1126,8 @@ struct FakeHost {
     /// The checkouts whose train settings were read, in order.
     /// The project's GitHub repos and their checkouts: none known unless a test sets them.
     repos: Mutex<Vec<(String, ProjectRef)>>,
+    /// The projects still on their machines with the repo: none unless a test sets them.
+    repo_projects: Mutex<Vec<ProjectRef>>,
     /// Orders opened through the host, in order: request id and text. Each is `W<100 + n>`, open until closed.
     orders: Mutex<Vec<(String, String)>>,
     closed_orders: Mutex<HashSet<String>>,
@@ -1203,6 +1205,9 @@ impl TrainHost for FakeHost {
     fn github_repos(&self, _: &ProjectRef) -> Vec<(String, ProjectRef)> {
         self.repos.lock().unwrap().clone()
     }
+    fn repo_projects(&self, _: &str) -> Vec<ProjectRef> {
+        self.repo_projects.lock().unwrap().clone()
+    }
     fn landings_watched(&self, _repo: &str, base: &str) -> bool {
         self.watched.lock().unwrap().contains(base)
     }
@@ -1231,6 +1236,13 @@ impl TrainHost for FakeHost {
         task_id: &'a TaskId,
         text: String,
     ) -> BoxFut<'a, Result<(), String>> {
+        // As Tasks.message: a review task whose turn ended continues in its own thread.
+        if let Some(task) = self.tasks.lock().unwrap().get_mut(task_id.as_str())
+            && task.kind == "review"
+            && task.state == "done"
+        {
+            task.state = "running".into();
+        }
         self.sends.lock().unwrap().push((task_id.to_string(), text));
         self.appended.notify_waiters();
         Box::pin(async { Ok(()) })
@@ -1579,6 +1591,7 @@ impl Kit {
             branches: Mutex::default(),
             watched: Mutex::default(),
             repos: Mutex::default(),
+            repo_projects: Mutex::default(),
             orders: Mutex::default(),
             closed_orders: Mutex::default(),
             checkout: Mutex::default(),
@@ -1978,6 +1991,106 @@ async fn moves_the_train_to_the_repos_new_project_when_its_first_project_was_rem
         kit.train.records().train(REPO).unwrap().project_ref,
         project()
     );
+}
+
+fn removed() -> ProjectRef {
+    ProjectRef {
+        machine_id: MachineId::unchecked("lab-a"),
+        project_id: ProjectId::unchecked(REMOVED),
+    }
+}
+
+async fn until(what: &str, done: impl Fn() -> bool) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !done() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("never: {what}"));
+}
+
+/// A project's train goes with it when it is removed, and a live project's train stays; the repo's next PR makes it
+/// again, as for any repo.
+#[tokio::test(flavor = "multi_thread")]
+async fn drops_a_removed_projects_train_and_its_next_pr_makes_it_again() {
+    let kit = Kit::new();
+    kit.train.records().ensure_train(REPO, &removed(), 0);
+    kit.train.records().ensure_train("acme/docs", &project(), 0);
+
+    kit.host.push_event("project.removed", json!({}));
+    until("the train dropped", || {
+        kit.train.records().train(REPO).is_none()
+    })
+    .await;
+    assert_eq!(
+        kit.train.records().train("acme/docs").unwrap().project_ref,
+        project()
+    );
+
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert_eq!(
+        kit.train.records().train(REPO).unwrap().project_ref,
+        project()
+    );
+}
+
+/// A train whose project went while the hub was down is dropped when the train starts.
+#[tokio::test(flavor = "multi_thread")]
+async fn drops_a_removed_projects_train_at_start() {
+    let kit = Kit::new();
+    kit.train.records().ensure_train(REPO, &removed(), 0);
+    let train = kit.restarted();
+    assert!(train.records().train(REPO).is_none());
+}
+
+/// A removed project's train stays when another project has the repo, and moves to it.
+#[tokio::test(flavor = "multi_thread")]
+async fn moves_a_removed_projects_train_to_another_project_with_the_repo() {
+    let kit = Kit::new();
+    kit.train.records().ensure_train(REPO, &removed(), 7);
+    let other = ProjectRef {
+        machine_id: MachineId::unchecked("lab-b"),
+        project_id: ProjectId::unchecked("pb"),
+    };
+    *kit.host.repo_projects.lock().unwrap() = vec![other.clone()];
+
+    kit.train.drop_removed();
+    let train = kit.train.records().train(REPO).unwrap();
+    assert_eq!(train.project_ref, other);
+    assert_eq!(train.watch_since_ms, 7);
+}
+
+/// A dropped train's loop ends, its status sources with it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dropped_trains_loop_ends() {
+    let kit = Kit::new();
+    kit.train.records().ensure_train(REPO, &project(), 0);
+    kit.train.stop();
+    let fresh = Arc::new(crate::hub::status::fresh::Fresh::default());
+    let gate = kit.gate.clone();
+    let train = Train::new(
+        kit.host.clone(),
+        Arc::new(SystemClock),
+        kit.db.clone(),
+        kit.gh.clone(),
+        TrainOptions {
+            poll_interval: Duration::from_millis(20),
+            fresh: fresh.clone(),
+            ..TrainOptions::default()
+        },
+        |_| gate,
+    );
+    train.start();
+    let source = crate::hub::status::fresh::train(REPO);
+    assert!(fresh.view(&source, 0).is_some());
+
+    train.records().drop_train(REPO, &project());
+    until("the loop ended", || fresh.view(&source, 0).is_none()).await;
+    train.stop();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -4880,6 +4993,24 @@ impl Kit {
     }
 
     /// The task ends as `event` (`task.completed`, ...) says, with `tail` as its last lines.
+    /// The follow-ups asking `task_id`, a reviewer that ended without a verdict, to finish and report.
+    fn nudges(&self, task_id: &str) -> usize {
+        self.host
+            .sends
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(to, text)| to == task_id && text.contains("ended without a verdict"))
+            .count()
+    }
+
+    /// `task_id`, a reviewer, ends its turn without a verdict, is asked once to finish, and ends without one again.
+    async fn end_unreported(&self, task_id: &str, tail: &str) {
+        self.end_task(task_id, "task.completed", tail);
+        eventually("asked to finish", || self.nudges(task_id) == 1).await;
+        self.end_task(task_id, "task.completed", tail);
+    }
+
     fn end_task(&self, task_id: &str, event: &str, tail: &str) {
         if let Some(task) = self.host.tasks.lock().unwrap().get_mut(task_id) {
             task.state = match event {
@@ -4936,6 +5067,92 @@ impl Kit {
     }
 }
 
+/// A reviewer that ends its turn without a verdict, its build still running, is asked once in its own thread to finish
+/// and report, and no new reviewer starts while it does (W385). Its verdict then counts; a reviewer that ends without
+/// one again is replaced by a fresh one, which is asked once too. A failed reviewer is never continued.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reviewer_that_ends_without_a_verdict_is_asked_once_to_report_before_a_fresh_one_starts()
+{
+    let kit = Kit::with_reviews();
+    let pr = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]);
+    let head = kit.head_of("slice-1");
+    let change = kit.enqueue(pr.clone()).await;
+    assert_eq!(kit.spawned(), 1);
+
+    kit.end_task(
+        "T50",
+        "task.completed",
+        "Still compiling; I'll report once the tests come back.",
+    );
+    eventually("T50 asked to finish", || kit.nudges("T50") == 1).await;
+    let (_, asked) = kit
+        .host
+        .sends
+        .lock()
+        .unwrap()
+        .iter()
+        .rfind(|(to, _)| to == "T50")
+        .cloned()
+        .unwrap();
+    assert!(
+        asked.contains(&pr) && asked.contains(&head) && asked.contains("`report` tool"),
+        "{asked}"
+    );
+    eventually("the train says so", || {
+        kit.get(&change.change_id)
+            .last_error
+            .as_ref()
+            .is_some_and(|e| {
+                e.contains("asked it once to finish and report") && e.contains("Still compiling")
+            })
+    })
+    .await;
+    kit.train.step(REPO).await;
+    assert_eq!(kit.spawned(), 1, "no fresh reviewer while T50 finishes");
+    assert_eq!(kit.get(&change.change_id).state, ChangeState::Reviewing);
+    assert!(
+        kit.host
+            .wakes
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|w| !w.contains("verdict not recorded")),
+        "the lead isn't woken for a follow-up"
+    );
+
+    // Its follow-up ends without a verdict too: a fresh reviewer starts, and T50 is not asked again.
+    kit.end_task("T50", "task.completed", "Tests still running.");
+    eventually("a fresh reviewer", || kit.spawned() == 2).await;
+    assert_eq!(kit.nudges("T50"), 1);
+    assert_eq!(kit.get(&change.change_id).state, ChangeState::Reviewing);
+
+    // The fresh one is asked once as well, and its verdict after the follow-up counts.
+    kit.end_task("T51", "task.completed", "Waiting on cargo test.");
+    eventually("T51 asked to finish", || kit.nudges("T51") == 1).await;
+    kit.train.step(REPO).await;
+    assert_eq!(kit.spawned(), 2);
+    let cursor = kit.host.events_head();
+    kit.host.push_event(
+        "review.verdict",
+        json!({ "taskId": "T51", "prHeadSha": head, "blocking": 0, "nonBlocking": 0 }),
+    );
+    kit.host.next_event(cursor, "change.ready").await;
+    assert_eq!(kit.spawned(), 2);
+    assert_eq!(kit.nudges("T51"), 1);
+}
+
+/// A reviewer that failed is not continued: a fresh one starts at once, as before.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_reviewer_is_not_asked_to_report() {
+    let kit = Kit::with_reviews();
+    kit.enqueue(kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]))
+        .await;
+    assert_eq!(kit.spawned(), 1);
+    kit.end_task("T50", "task.failed", "ran out of turns");
+    eventually("a fresh reviewer", || kit.spawned() == 2).await;
+    assert_eq!(kit.nudges("T50"), 0);
+}
+
 /// A reviewer that ends without a recorded verdict is no approval, even when its final text approves (W23): the train and the lead see "verdict not recorded" with that text, and one new reviewer starts for
 /// the same head. When that one ends without a verdict too, no more start and the lead is told once, with the PR and
 /// that reviewer's last lines.
@@ -4955,11 +5172,8 @@ async fn a_reviewer_that_ends_without_a_recorded_verdict_is_no_approval_and_is_r
             .collect::<Vec<_>>()
     };
 
-    kit.end_task(
-        "T50",
-        "task.completed",
-        "Approved: no blocking findings.\nDone reviewing.",
-    );
+    kit.end_unreported("T50", "Approved: no blocking findings.\nDone reviewing.")
+        .await;
     eventually("a second reviewer", || kit.spawned() == 2).await;
     eventually("the lead told", || {
         !woken("verdict not recorded: the reviewer T50").is_empty()
@@ -5049,7 +5263,7 @@ async fn a_stalled_review_is_told_once_across_a_restart() {
         .await;
     for (n, task) in ["T50", "T51"].into_iter().enumerate() {
         eventually("a reviewer", || kit.spawned() == n + 1).await;
-        kit.end_task(task, "task.completed", "Done.");
+        kit.end_unreported(task, "Done.").await;
     }
     let stalled = || {
         let wakes = kit.host.wakes.lock().unwrap();
@@ -5080,7 +5294,7 @@ async fn a_refused_replacement_reviewer_starts_on_a_later_pass() {
     *kit.host.spawn_refusal.lock().unwrap() = Some(
         "This project already has 32 open tasks, the most one lead may have at once (32).".into(),
     );
-    kit.end_task("T50", "task.completed", "Done.");
+    kit.end_unreported("T50", "Done.").await;
     let error = || {
         kit.get(&change.change_id)
             .last_error
@@ -7888,6 +8102,7 @@ async fn an_overdue_re_review_waits_out_of_the_line_until_it_is_done() {
     assert_eq!(*kit.gh.merges.lock().unwrap(), [(7, tested)]);
 }
 
+mod findings;
 mod pipeline;
 mod regen;
 mod repos;

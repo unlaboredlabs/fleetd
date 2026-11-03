@@ -1,4 +1,4 @@
-// The desktop app's four budgets, measured on the real chat (the chat-long fixture): `pnpm perf` after
+// The desktop app's five budgets, measured on the real chat (the chat-long fixture; stream-in-long for streaming): `pnpm perf` after
 // `pnpm build:test` (a release build refuses the DevTools port the harness drives it through). Prints one line per
 // budget.
 //
@@ -18,6 +18,7 @@ import { type Browser, chromium, type Locator, type Page } from "@playwright/tes
 import { devtoolsPort, launch, type Memory, openChat, sleep } from "./app.ts";
 import { frameStats, median, type Metric, METRICS, quantile, regressions, type Results, RULES, withinBudget } from "./budgets.ts";
 import { keyLatencies, traced } from "./trace.ts";
+import { STREAM_IN_LONG_ARRIVE_MS, STREAM_IN_LONG_FROM_MS, STREAM_IN_LONG_TO_MS } from "../fixtures/stream/index.ts";
 
 const { values: flags } = parseArgs({ options: { json: { type: "string" }, baseline: { type: "string" } } });
 /** Launches timed for first paint after an untimed first one; the median counts. */
@@ -36,6 +37,9 @@ const KEYS = "the writer ran the tests again and asked for a review. ".repeat(3)
  * for a second or two, and in a single round that put 16 slow keys into its p95 (17 ms against a usual 6-11).
  */
 const KEY_ROUNDS = 5;
+/** Rounds of STREAM_MS timed after an untimed first one, each on a reloaded window (its fixture replays from the start); the median round's rate counts. */
+const STREAM_ROUNDS = 5;
+const STREAM_MS = 4_000;
 
 const REFERENCE = path.join(import.meta.dirname, "reference", "main.mjs");
 
@@ -129,6 +133,46 @@ const scroll = async (page: Page, list: Locator) => {
   return { fps: median(rounds.map((r) => r.fps)), rounds };
 };
 
+/**
+ * The rAF rate while the lead's reply streams into a long chat: stream-in-long (fixtures/stream) on a window of its
+ * own, reloaded for each round so its 1,500 messages arrive into the open chat and its reply streams again. Each delta
+ * rebuilds the chat's rows, so a cost per message held shows here, as a date formatter made per message once did.
+ */
+const streaming = async () => {
+  const app = launch({ debug: true, env: { FLEETD_FIXTURE: "stream-in-long" } });
+  try {
+    const port = await devtoolsPort(app);
+    await app.waitFor(/^FLEETD_PERF launch /u, 30_000);
+    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+    try {
+      const page = browser.contexts().flatMap((c) => c.pages()).find((p) => new URL(p.url()).pathname.endsWith("/index.html"));
+      if (page === undefined) throw new Error("no app window over CDP");
+      await openChat(page);
+      const once = async () => {
+        const reloaded = Date.now();
+        await page.reload();
+        await openChat(page);
+        const opened = Date.now() - reloaded;
+        if (opened > STREAM_IN_LONG_ARRIVE_MS) throw new Error(`the chat took ${opened} ms to open, past its messages' arrival; the measurement would not mean anything`);
+        await sleep(STREAM_IN_LONG_FROM_MS + 500 - opened);
+        const stamps = await frames(page, () => sleep(STREAM_MS));
+        const ended = Date.now() - reloaded;
+        if (ended > STREAM_IN_LONG_TO_MS) throw new Error(`the round ended ${ended} ms after the reload, past the reply's last delta; the measurement would not mean anything`);
+        const gaps = stamps.slice(1).map((t, i) => t - (stamps[i] ?? t));
+        return { fps: (gaps.length * 1000) / ((stamps.at(-1) ?? 0) - (stamps[0] ?? 0)), worstMs: Math.max(...gaps) };
+      };
+      await once();
+      const rounds: Array<Awaited<ReturnType<typeof once>>> = [];
+      for (let i = 0; i < STREAM_ROUNDS; i++) rounds.push(await once());
+      return { fps: median(rounds.map((r) => r.fps)), rounds };
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await app.stop();
+  }
+};
+
 /** Per key: Chromium's EventLatency for the key press, input timestamp to presentation (perf/trace.ts), by round. */
 const keys = async (browser: Browser, page: Page, composer: Locator) => {
   await composer.click();
@@ -151,6 +195,7 @@ const keys = async (browser: Browser, page: Page, composer: Locator) => {
 
 const main = async () => {
   const paints = await firstPaint();
+  const streamed = await streaming();
 
   const app = launch({ debug: true });
   let results: Results;
@@ -180,6 +225,7 @@ const main = async () => {
         idleMemoryMb: median(samples.map((m) => m.uniqueMb)),
         idleRssMb: median(samples.map((m) => m.rssMb)),
         scrollFps: scrolled.fps,
+        streamFps: streamed.fps,
         keyP95Ms: typed.p95,
       };
       detail = {
@@ -189,6 +235,7 @@ const main = async () => {
         idleRssMb: "summed RSS of the same processes; counts the shared Electron pages once per process, never gated",
         idleMemoryMb: `${process.platform === "linux" ? "PSS" : "physical footprint"} summed over all ${samples[0]?.processes ?? 0} processes read (${[...new Set(samples[0]?.kinds ?? [])].join(", ")}) after ${IDLE_MS / 1000} s idle`,
         scrollFps: `the chat-long fixture's chat; median of ${scrolled.rounds.length} rounds of ${SCROLL_MS / 1000} s from a reload, fps (long frames, px): ${scrolled.rounds.map((r) => `${r.fps.toFixed(1)} (${(r.dropped * 100).toFixed(1)}%, ${(r.moved / 1000).toFixed(0)}k)`).join(", ")}; display ${scrolled.rounds[0]?.refreshHz.toFixed(0) ?? "?"} Hz`,
+        streamFps: `the stream-in-long fixture's chat (1,550 messages) while a reply streams in at 10 deltas a second; median of ${streamed.rounds.length} rounds of ${STREAM_MS / 1000} s from a reload, fps (worst frame): ${streamed.rounds.map((r) => `${r.fps.toFixed(1)} (${r.worstMs.toFixed(0)} ms)`).join(", ")}`,
         keyP95Ms: `the chat's composer; EventLatency, key press to presentation; median of ${typed.rounds.length} rounds of ${KEYS.length} keys, p95/p50 (keys at 16 ms or more): ${typed.rounds.map((r) => `${r.p95.toFixed(1)}/${r.p50.toFixed(1)} (${r.slow})`).join(", ")} ms`,
       };
     } finally {
@@ -205,7 +252,7 @@ const main = async () => {
     const value = results[metric];
     const ok = withinBudget(metric, value);
     // Frame rates to a tenth: 56.7 fps misses a budget of 57, and printed whole it would read 57 next to MISS.
-    const shown = metric === "keyP95Ms" || metric === "scrollFps" ? value.toFixed(1) : value.toFixed(0);
+    const shown = metric === "keyP95Ms" || metric === "scrollFps" || metric === "streamFps" ? value.toFixed(1) : value.toFixed(0);
     const gate = rule.limit !== undefined ? `budget ${rule.higher ? "≥" : "<"} ${rule.limit} ${rule.unit}` : rule.regress !== undefined ? "CI regression" : "information";
     const verdict = ok === undefined ? "    " : ok ? "ok  " : "MISS";
     return { ok, line: `  ${rule.label.padEnd(19)} ${`${shown} ${rule.unit}`.padStart(8)}   ${gate.padEnd(17)} ${verdict}  ${detail[metric]}` };
@@ -214,6 +261,7 @@ const main = async () => {
     "  first paint: from spawning the app until its window is shown and has painted its first content (the later of ready-to-show and FCP)",
     "  idle memory: deduplicated memory summed over every app process after 10 s idle: PSS on Linux, physical footprint (Activity Monitor's Memory) on macOS",
     "  chat scroll: requestAnimationFrame rate while wheel-scrolling back through the chat",
+    "  chat streaming: requestAnimationFrame rate while a reply from the lead streams into a long chat",
     `  keypress to screen: Chromium's EventLatency per key press, from the OS input timestamp to the presentation of the frame that shows it${process.platform === "linux" && process.env["WAYLAND_DISPLAY"] === undefined ? " (on X11/Xvfb, presentation is the swap, with no wait for a display's vsync)" : ""}`,
   ];
   const report = [header, ...rows.map((r) => r.line), ...definitions].join("\n");

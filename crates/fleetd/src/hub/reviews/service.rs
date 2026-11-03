@@ -5,8 +5,10 @@
 //! waits for a new head, which the train brings back here with its new patch id.
 //!
 //! A reviewer that ends without a recorded verdict never counts as approval, whatever its final text says: the train
-//! and the lead see "verdict not recorded" with that text, and a new reviewer starts, `RETRIES` times per patch, then
-//! no more until a new head. A reviewer still on an older patch when the Change moves on is stopped, and what it
+//! and the lead see "verdict not recorded" with that text. A reviewer whose turn ended (done, not failed or cancelled)
+//! is first asked once, in its own thread, to finish and report (`review.unreported`), as `wait_ci` continues a
+//! writer; when that turn ends without a verdict too, a new reviewer starts, `RETRIES` times per patch, then no more
+//! until a new head. A reviewer still on an older patch when the Change moves on is stopped, and what it
 //! reports later is ignored.
 //!
 //! A new patch after an approved head is re-reviewed by what changed (`classify`): when its own changed lines are the
@@ -39,6 +41,7 @@ use super::rebase::{Rebase, compare};
 use super::rules::{
     BoundReview, Conflicts, FindingsVerdict, Gate, TOOLS_FAILED, conflicts_prompt,
     findings_message, gate, one_line, review_prompt, review_title, tools_failed,
+    unreported_message,
 };
 use crate::hub::leads::events::Event;
 use crate::hub::train::contract::{
@@ -670,8 +673,8 @@ impl Reviews {
     }
 
     /// Where the review of the Change's patch stands, starting what it lacks: a stale reviewer is stopped, a carried
-    /// approval or a new reviewer is tried when none was started, and a reviewer that ended without a verdict is
-    /// replaced up to `RETRIES` times, the lead told each time. Under the gate's lock.
+    /// approval or a new reviewer is tried when none was started, and a reviewer that ended without a verdict is asked
+    /// once to finish (`nudge`), then replaced up to `RETRIES` times, the lead told each time. Under the gate's lock.
     async fn round(&self, change: &Change, patch_id: &str) -> Verdict {
         self.supersede(change, patch_id).await;
         let (before, reviews) = self.gate_for(change, patch_id);
@@ -704,6 +707,9 @@ impl Reviews {
         let reviewers: Vec<&String> = rounds.iter().filter(|(_, b)| !*b).map(|(t, _)| t).collect();
         let last = reviewers.last().copied().unwrap_or(last);
         let tries = reviewers.len();
+        if self.nudge(change, last).await {
+            return Verdict::Pending;
+        }
         if tries > RETRIES {
             self.stalled(change, patch_id, last, tries).await;
         } else if let Some(next) = self.spawn_reviewer(change, patch_id).await {
@@ -726,6 +732,50 @@ impl Reviews {
             self.host.wake_lead(&change.project_ref, line).await;
         }
         Verdict::Pending
+    }
+
+    /// Asks `last`, a reviewer whose turn ended without a verdict, once in its own thread to finish and report, which
+    /// continues it. Whether it was asked: never a failed or cancelled one (a wake never restarts those, as with
+    /// `wait_ci`), nor one asked before.
+    async fn nudge(&self, change: &Change, last: &str) -> bool {
+        let task_id = TaskId::unchecked(last);
+        if self.host.task(&task_id).is_none_or(|t| t.state != "done") {
+            return false;
+        }
+        let first = sql(&self.db, |conn| {
+            conn.execute(
+                "UPDATE review_tasks SET nudged = 1 WHERE task_id = ?1 AND nudged = 0",
+                [last],
+            )
+            .expect("nudge review task")
+        }) == 1;
+        if !first {
+            return false;
+        }
+        let text = unreported_message(
+            &self.db.prompts().for_task(&change.project_ref, last),
+            change,
+            change.head_sha.as_str(),
+        );
+        if let Err(e) = self
+            .host
+            .message_task(&change.project_ref, REVIEWS_BY, &task_id, text)
+            .await
+        {
+            self.note(
+                &change.change_id,
+                &format!("verdict not recorded: asking the reviewer {last} to finish failed: {e}"),
+            );
+            return false;
+        }
+        self.note(
+            &change.change_id,
+            &format!(
+                "verdict not recorded: the reviewer {last} ended without one, saying \"{}\"; asked it once to finish and report",
+                one_line(&self.final_text(last), 200)
+            ),
+        );
+        true
     }
 
     /// The patch's last reviewer, `last`, couldn't use fleetd's tools, the `failed`th to: a new one starts once its wait is
@@ -912,20 +962,33 @@ impl Reviews {
         }
         // Findings on an older patch were already overtaken by a new head, unless its approval carried to this one.
         let patch_id = carried_to.unwrap_or(patch_id);
-        if blocking > 0 && change.patch_id.as_deref() == Some(patch_id.as_str()) {
+        // Sent back mid-review, the Change keeps no patch, but its writer is at work on that very head: they go to it.
+        let parked = change.state == ChangeState::NeedsRebase
+            && change.patch_id.is_none()
+            && change.head_sha.as_str() == sha;
+        if blocking > 0 && (parked || change.patch_id.as_deref() == Some(patch_id.as_str())) {
             let summary = self.findings_on(&change, &patch_id, &task_id, &sha);
             let waiting = format!(
                 "{BLOCKED}{task_id} found {blocking} blocking at {}",
                 short(&sha)
             );
+            // A parked Change keeps why it was sent back: the log has it instead.
+            let note = |text: &str| {
+                if parked {
+                    tracing::warn!(change_id = %change_id, text, "reviews: findings on a parked change");
+                } else {
+                    self.note(&change_id, text);
+                }
+            };
             let Some(author) = &change.task_id else {
-                self.note(
-                    &change_id,
-                    &format!("{waiting}; no author task to send them to: {summary}"),
-                );
+                note(&format!(
+                    "{waiting}; no author task to send them to: {summary}"
+                ));
                 return Ok(());
             };
-            self.note(&change_id, &format!("{waiting}; sent to {author}"));
+            if !parked {
+                self.note(&change_id, &format!("{waiting}; sent to {author}"));
+            }
             let text = findings_message(
                 &self
                     .db
@@ -947,10 +1010,7 @@ impl Reviews {
                 .message_task(&change.project_ref, REVIEWS_BY, author, text)
                 .await
             {
-                self.note(
-                    &change_id,
-                    &format!("{waiting}; sending them to {author} failed: {e}"),
-                );
+                note(&format!("{waiting}; sending them to {author} failed: {e}"));
             }
             return Ok(());
         }

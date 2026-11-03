@@ -25,6 +25,7 @@ struct Sections {
     device: super::device::DeviceConfig,
     ios: super::device::ios::IosConfig,
     desktop: super::desktop::DesktopConfig,
+    mac: super::desktop::mac::MacConfig,
 }
 
 impl Sections {
@@ -34,6 +35,7 @@ impl Sections {
             device: config.device.clone().unwrap_or_default(),
             ios: config.ios.clone().unwrap_or_default(),
             desktop: config.desktop.clone().unwrap_or_default(),
+            mac: config.mac.clone().unwrap_or_default(),
         }
     }
 
@@ -43,6 +45,7 @@ impl Sections {
             SessionHost::Android => self.device.enabled,
             SessionHost::Ios => self.ios.enabled,
             SessionHost::Desktop => self.desktop.enabled,
+            SessionHost::Mac => self.mac.enabled,
         }
     }
 }
@@ -232,6 +235,9 @@ pub fn unsupported(host: SessionHost) -> Option<&'static str> {
         SessionHost::Desktop if !cfg!(target_os = "linux") => {
             Some("desktop screens run on Linux (docker or Xvfb)")
         }
+        SessionHost::Mac if !super::desktop::mac::supported() => {
+            Some("the Mac screen is a Mac's own: its agents session's screen")
+        }
         _ => None,
     }
 }
@@ -243,6 +249,7 @@ fn section(host: SessionHost) -> &'static str {
         SessionHost::Android => "device",
         SessionHost::Ios => "ios",
         SessionHost::Desktop => "desktop",
+        SessionHost::Mac => "mac",
     }
 }
 
@@ -269,7 +276,12 @@ pub fn edited(text: &str, settings: &ScreenSettings) -> Result<String, String> {
         set(section(host), "enabled", Value::Bool(on))?;
     }
     if let Some(minutes) = settings.idle_minutes {
-        for host in SessionHost::ALL {
+        // The Mac's lease keeps its own short idle release: one screen for every agent, so a long one keeps them all
+        // waiting.
+        for host in SessionHost::ALL
+            .into_iter()
+            .filter(|h| *h != SessionHost::Mac)
+        {
             set(section(host), "idleMinutes", Value::from(minutes.get()))?;
         }
     }
@@ -432,13 +444,17 @@ mod tests {
     }
 
     #[test]
-    fn the_idle_timeout_goes_to_every_kind() {
+    fn the_idle_timeout_goes_to_every_kind_but_the_macs_lease() {
         let out = edited(NODE, &settings(None, None, Some(45))).unwrap();
         let config: NodeConfig = serde_json::from_str(&out).unwrap();
         assert_eq!(config.browser.unwrap().idle_minutes, Some(45));
         assert_eq!(config.device.unwrap().idle_minutes, Some(45));
         assert_eq!(config.ios.unwrap().idle_minutes, Some(45));
         assert_eq!(config.desktop.unwrap().idle_minutes, Some(45));
+        assert!(config.mac.is_none(), "the Mac's screen keeps its 5 minutes");
+        let on = edited(NODE, &settings(Some(SessionHost::Mac), Some(true), None)).unwrap();
+        let config: NodeConfig = serde_json::from_str(&on).unwrap();
+        assert_eq!(config.mac.unwrap().enabled, Some(true));
     }
 
     #[test]

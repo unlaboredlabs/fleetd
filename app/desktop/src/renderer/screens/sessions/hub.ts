@@ -49,7 +49,7 @@ const RECORDED: ReadonlySet<string> = new Set<RecordedFile>(["actions", "dom", "
 const isRecorded = (file: string): file is RecordedFile => RECORDED.has(file);
 
 type DeviceKind = NonNullable<BrowserSession["kind"]>;
-const DEVICES: ReadonlySet<string> = new Set<DeviceKind>(["android", "ios", "linux_desktop"]);
+const DEVICES: ReadonlySet<string> = new Set<DeviceKind>(["android", "ios", "linux_desktop", "mac"]);
 const isDevice = (kind: string | undefined): kind is DeviceKind => kind !== undefined && DEVICES.has(kind);
 
 /** A hub session as the views show it: no frames or steps until its recording is read. */
@@ -349,7 +349,6 @@ export interface Recording {
   readonly video?: Blob;
 }
 
-const decode = (b64: string): Uint8Array => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 
 /** Reads a recording's file from the hub, a piece at a time, until it is all here. */
 export function useRecording(session: BrowserSession): { readonly data?: Recording; readonly error: boolean } {
@@ -361,31 +360,32 @@ export function useRecording(session: BrowserSession): { readonly data?: Recordi
     staleTime: Number.POSITIVE_INFINITY,
     retry: 1,
     queryFn: async (): Promise<Recording> => {
-      const read = async (file: RecordedFile): Promise<Uint8Array<ArrayBuffer>> => {
-        const parts: Uint8Array[] = [];
+      /** The file's pieces in order, each decoded natively: a char at a time took 23-38 s for a 529 MB video. */
+      const read = async (file: RecordedFile): Promise<Array<Uint8Array<ArrayBuffer>>> => {
+        const parts: Array<Uint8Array<ArrayBuffer>> = [];
         let offset = 0;
         // A file is at most what retention keeps; 2 000 pieces of 512 KB is past any recording's size.
         for (let i = 0; i < 2_000; i++) {
           const outcome = await layer.call("browser_recording_get", { sessionId: session.id, file, offset });
           if (!outcome.ok) throw new Error(outcome.error.message);
-          const piece = decode(outcome.output.dataB64);
+          const piece = Uint8Array.fromBase64(outcome.output.dataB64);
           parts.push(piece);
           offset += piece.length;
           if (outcome.output.done || piece.length === 0) break;
         }
-        const all = new Uint8Array(offset);
-        let at = 0;
-        for (const p of parts) {
-          all.set(p, at);
-          at += p.length;
-        }
-        return all;
+        return parts;
       };
-      const text = async (file: RecordedFile) => (files?.includes(file) === true ? new TextDecoder().decode(await read(file)) : "");
+      const text = async (file: RecordedFile) => {
+        if (files?.includes(file) !== true) return "";
+        // Streamed, so a character split between two pieces decodes whole.
+        const decoder = new TextDecoder();
+        return (await read(file)).map((p) => decoder.decode(p, { stream: true })).join("") + decoder.decode();
+      };
       const [actions, doms] = await Promise.all([text("actions"), text("dom")]);
       // A browser's or an Android emulator's video is WebM; an iOS simulator's is simctl's own MP4.
       const [file, type] = files?.includes("video_mp4") === true ? (["video_mp4", "video/mp4"] as const) : (["video", "video/webm"] as const);
-      const video = files?.includes(file) === true ? new Blob([await read(file)], { type }) : undefined;
+      // Made from the pieces as they are, without joining them into one more copy of the whole video first.
+      const video = files?.includes(file) === true ? new Blob(await read(file), { type }) : undefined;
       return { actions: stepsOf(jsonLines<HubAction>(actions), jsonLines<HubDom>(doms)), ...(video === undefined ? {} : { video }) };
     },
   });

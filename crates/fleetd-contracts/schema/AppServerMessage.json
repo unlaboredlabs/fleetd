@@ -574,10 +574,11 @@
       "type": "object"
     },
     "DesktopBackend": {
-      "description": "Where a desktop session's apps run: in a fresh container of the node's pinned image (docker or podman), or as the\nnode's user on an Xvfb display of their own with a fresh home directory.",
+      "description": "Where a desktop session's apps run: in a fresh container of the node's pinned image (docker or podman), as the\nnode's user on an Xvfb display of their own with a fresh home directory, or on the agents' Mac's own screen\n(`mac`), where they stay after the session.",
       "enum": [
         "container",
-        "xvfb"
+        "xvfb",
+        "mac"
       ],
       "type": "string",
       "x-open": true
@@ -1584,7 +1585,7 @@
           "items": {
             "$ref": "#/$defs/HostCheck"
           },
-          "maxItems": 4,
+          "maxItems": 5,
           "type": "array"
         },
         "ios": {
@@ -1926,6 +1927,11 @@
         {
           "const": "desktop",
           "description": "A Linux desktop: docker or Xvfb.",
+          "type": "string"
+        },
+        {
+          "const": "mac",
+          "description": "The agents' Mac's own screen: its `agents` user's GUI session, on the console and unlocked, one agent at a time.",
           "type": "string"
         }
       ],

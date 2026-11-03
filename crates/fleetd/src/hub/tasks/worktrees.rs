@@ -1,5 +1,6 @@
-//! The nightly worktree sweep: hub work, no model turn. A task's worktree goes when it ends (a reader's) or when its PR
-//! merges (a writer's); a cancelled writer's, one whose PR closed unmerged, and a removal that failed stay behind.
+//! The nightly worktree sweep: hub work, no model turn. A task's worktree goes when it ends (a review's) or when its PR
+//! merges (a writer's); a reader's (kept for its lead's next message), a cancelled writer's, one whose PR closed
+//! unmerged, and a removal that failed stay behind.
 //! Around 04:00 in `policy.tz` (else the hub's zone), and once soon after the hub starts, the sweep has the node remove
 //! the worktree of every task that ended over `policy.worktree_days` (3) days ago, through its safe removal. One
 //! holding work that exists only there (uncommitted changes, unpushed commits) is kept and the person is told once in

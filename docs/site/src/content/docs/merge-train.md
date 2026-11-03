@@ -145,7 +145,10 @@ straight to the branch.
 ## Review {#review}
 
 Every PR gets one fresh reviewer, which reports blocking findings only. Its verdict is bound to the PR's current
-patch. Blocking findings go to the agent that wrote the PR, and the PR waits for its next commit.
+patch. Blocking findings go to the agent that wrote the PR, and the PR waits for its next commit. They go to it even
+when the train sent the PR back mid-review. Until a review of a newer commit lands or the lead [resolves](#resolved)
+them, every later message about the PR (a conflict, red CI, a `wait_ci` wake) repeats them, so a rebase alone never
+leaves them behind.
 
 Before a reviewer starts, the train checks the PR doesn't undo work already on its base, as a commit made on a fresh
 main while its files were an older tree's does: a file the PR puts back, byte for byte, to a version main had before
@@ -175,6 +178,11 @@ A PR already approved at an earlier patch isn't sent back to wait for its new re
 CI runs, alone or in a batch, and the merge waits for both. If the review finds a blocker, the PR leaves the train for
 its author, and a batch it was in forms again without it, so its code never lands. If CI is green and the review is
 still at work after 15 minutes, the PR waits in review out of the train's way, and merges once the review is clean.
+
+A reviewer that ends its turn without recording a verdict, for example while its own build was still running, is
+asked once, in its own thread, to finish and report. No new reviewer starts while it does, and its verdict counts as
+any other. If that turn ends without a verdict too, or the reviewer failed, a fresh reviewer starts the review over,
+once per patch. A missing verdict never counts as approval.
 
 A reviewer that couldn't use fleetd's tools, so it couldn't record its verdict, is caught as soon as it ends. Its
 queue entry and the train's line say "review tools failed", and the lead hears once. A new reviewer starts by itself

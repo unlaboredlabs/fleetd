@@ -78,7 +78,7 @@ Every lead gets these.
 | [`review_read`](#review_read) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
 | [`chat_image`](#chat_image) | Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. | No |
 | [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). | No |
-| [`desktop`](#desktop) | Act on your Linux desktop session (session_start kind linux_desktop), with computer-use actions plus launch. | No |
+| [`desktop`](#desktop) | Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. | No |
 | [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
 | [`fill_credential`](#fill_credential) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
@@ -893,11 +893,11 @@ Put an image you made in this project's chat: use it for screenshots of UI chang
 
 ### session_start
 
-Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool.
+Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool. kind mac lends you the agents' Mac's own screen, one agent at a time, driven with the desktop tool and agent-desktop; while another holds it you only observe, and it ends after 5 idle minutes.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `kind` | string | no | `android` for an Android emulator, `ios` for an iOS simulator, each driven with agent-device; `linux_desktop` for a Linux desktop, driven with the `desktop` tool; absent for a browser. One of `browser`, `android`, `ios`, `linux_desktop`. |
+| `kind` | string | no | `android` for an Android emulator, `ios` for an iOS simulator, each driven with agent-device; `linux_desktop` for a Linux desktop, driven with the `desktop` tool; `mac` for the agents' Mac's screen, one agent at a time, driven with the `desktop` tool and agent-desktop; absent for a browser. One of `browser`, `android`, `ios`, `linux_desktop`, `mac`. |
 | `purpose` | string | yes | What you need the browser for, in one line; the person replaying it sees it. At most 200 characters. |
 
 **Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
@@ -913,17 +913,17 @@ Open a browser session: a fresh Chrome with an empty profile, only yours, thrown
 
 ### desktop
 
-Act on your Linux desktop session (session_start kind linux_desktop), with computer-use actions plus launch. screenshot returns the screen as an image; left_click, right_click, middle_click, double_click, triple_click and mouse_move at coordinate [x, y] in the screenshot's pixels; left_click_drag from start_coordinate to coordinate; type text; key with xdotool key names in text (Return, ctrl+s, alt+F4); scroll with scroll_direction and scroll_amount at coordinate; wait duration seconds; cursor_position; launch: text is a shell command started on the desktop (in your working directory where the desktop can see it). Take a screenshot after acting to see what happened.
+Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. screenshot returns the screen as an image; left_click, right_click, middle_click, double_click, triple_click and mouse_move at coordinate [x, y] in the screenshot's pixels; left_click_drag from start_coordinate to coordinate; type text; key with xdotool key names in text (Return, ctrl+s, alt+F4); scroll with scroll_direction and scroll_amount at coordinate; wait duration seconds; cursor_position; launch: text is a shell command started on the desktop (in your working directory where the desktop can see it; on the Mac in a folder of the session's: `open -a TextEdit`). On the Mac, key takes cmd and option too (cmd+s), and agent_desktop runs one agent-desktop command there, text its arguments with the command first (`snapshot --app Finder -i`, `click @s8f3k2p9:e12`; `skills get platform` first): it reads apps' accessibility trees into refs and acts on them without moving the pointer. Take a screenshot after acting to see what happened.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `action` | string | yes | One of `screenshot`, `left_click`, `right_click`, `middle_click`, `double_click`, `triple_click`, `mouse_move`, `left_click_drag`, `type`, `key`, `scroll`, `wait`, `cursor_position`, `launch`. |
+| `action` | string | yes |  |
 | `coordinate` | integer[] | no | `[x, y]`: where to click, move the mouse to, scroll at, or end a drag. At most 2 items. |
 | `duration` | integer | no | `wait`: seconds; absent: 1. 1 to 30. |
 | `scroll_amount` | integer | no | Wheel clicks; absent: 3. 1 to 50. |
 | `scroll_direction` | string | no | One of `up`, `down`, `left`, `right`. |
 | `start_coordinate` | integer[] | no | `[x, y]`: where a `left_click_drag` starts. At most 2 items. |
-| `text` | string | no | `type`: the text. `key`: keys as xdotool names them, `+` between those pressed together (`Return`, `ctrl+s`, `alt+F4`). `launch`: a shell command started on the desktop (`xterm`, `./target/debug/app`). At most 10000 characters. |
+| `text` | string | no | `type`: the text. `key`: keys as xdotool names them, `+` between those pressed together (`Return`, `ctrl+s`, `alt+F4`; on a Mac `cmd+s` too). `launch`: a shell command started on the desktop (`xterm`, `./target/debug/app`; on a Mac `open -a TextEdit`). `agent_desktop`: agent-desktop's arguments, its command first (`snapshot --app Finder -i`, `click @s8f3k2p9:e12`). At most 10000 characters. |
 
 **Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
 
@@ -1121,7 +1121,7 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`review_read`](#review_read-task) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
 | [`chat_image`](#chat_image-task) | Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. | No |
 | [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). | No |
-| [`desktop`](#desktop-task) | Act on your Linux desktop session (session_start kind linux_desktop), with computer-use actions plus launch. | No |
+| [`desktop`](#desktop-task) | Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. | No |
 | [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover-task) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
 | [`fill_credential`](#fill_credential-task) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
@@ -1261,11 +1261,11 @@ Put an image you made in this project's chat: use it for screenshots of UI chang
 
 ### session_start (task)
 
-Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool.
+Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool. kind mac lends you the agents' Mac's own screen, one agent at a time, driven with the desktop tool and agent-desktop; while another holds it you only observe, and it ends after 5 idle minutes.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `kind` | string | no | `android` for an Android emulator, `ios` for an iOS simulator, each driven with agent-device; `linux_desktop` for a Linux desktop, driven with the `desktop` tool; absent for a browser. One of `browser`, `android`, `ios`, `linux_desktop`. |
+| `kind` | string | no | `android` for an Android emulator, `ios` for an iOS simulator, each driven with agent-device; `linux_desktop` for a Linux desktop, driven with the `desktop` tool; `mac` for the agents' Mac's screen, one agent at a time, driven with the `desktop` tool and agent-desktop; absent for a browser. One of `browser`, `android`, `ios`, `linux_desktop`, `mac`. |
 | `purpose` | string | yes | What you need the browser for, in one line; the person replaying it sees it. At most 200 characters. |
 
 **Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
@@ -1281,17 +1281,17 @@ Open a browser session: a fresh Chrome with an empty profile, only yours, thrown
 
 ### desktop (task)
 
-Act on your Linux desktop session (session_start kind linux_desktop), with computer-use actions plus launch. screenshot returns the screen as an image; left_click, right_click, middle_click, double_click, triple_click and mouse_move at coordinate [x, y] in the screenshot's pixels; left_click_drag from start_coordinate to coordinate; type text; key with xdotool key names in text (Return, ctrl+s, alt+F4); scroll with scroll_direction and scroll_amount at coordinate; wait duration seconds; cursor_position; launch: text is a shell command started on the desktop (in your working directory where the desktop can see it). Take a screenshot after acting to see what happened.
+Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. screenshot returns the screen as an image; left_click, right_click, middle_click, double_click, triple_click and mouse_move at coordinate [x, y] in the screenshot's pixels; left_click_drag from start_coordinate to coordinate; type text; key with xdotool key names in text (Return, ctrl+s, alt+F4); scroll with scroll_direction and scroll_amount at coordinate; wait duration seconds; cursor_position; launch: text is a shell command started on the desktop (in your working directory where the desktop can see it; on the Mac in a folder of the session's: `open -a TextEdit`). On the Mac, key takes cmd and option too (cmd+s), and agent_desktop runs one agent-desktop command there, text its arguments with the command first (`snapshot --app Finder -i`, `click @s8f3k2p9:e12`; `skills get platform` first): it reads apps' accessibility trees into refs and acts on them without moving the pointer. Take a screenshot after acting to see what happened.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `action` | string | yes | One of `screenshot`, `left_click`, `right_click`, `middle_click`, `double_click`, `triple_click`, `mouse_move`, `left_click_drag`, `type`, `key`, `scroll`, `wait`, `cursor_position`, `launch`. |
+| `action` | string | yes |  |
 | `coordinate` | integer[] | no | `[x, y]`: where to click, move the mouse to, scroll at, or end a drag. At most 2 items. |
 | `duration` | integer | no | `wait`: seconds; absent: 1. 1 to 30. |
 | `scroll_amount` | integer | no | Wheel clicks; absent: 3. 1 to 50. |
 | `scroll_direction` | string | no | One of `up`, `down`, `left`, `right`. |
 | `start_coordinate` | integer[] | no | `[x, y]`: where a `left_click_drag` starts. At most 2 items. |
-| `text` | string | no | `type`: the text. `key`: keys as xdotool names them, `+` between those pressed together (`Return`, `ctrl+s`, `alt+F4`). `launch`: a shell command started on the desktop (`xterm`, `./target/debug/app`). At most 10000 characters. |
+| `text` | string | no | `type`: the text. `key`: keys as xdotool names them, `+` between those pressed together (`Return`, `ctrl+s`, `alt+F4`; on a Mac `cmd+s` too). `launch`: a shell command started on the desktop (`xterm`, `./target/debug/app`; on a Mac `open -a TextEdit`). `agent_desktop`: agent-desktop's arguments, its command first (`snapshot --app Finder -i`, `click @s8f3k2p9:e12`). At most 10000 characters. |
 
 **Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
 

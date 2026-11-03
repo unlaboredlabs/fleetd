@@ -279,6 +279,7 @@ async fn a_node_too_old_for_detached_worktrees_gets_the_old_launch() {
         SessionWorkspace::Detached {
             base_ref: NonEmpty::unchecked("main"),
             pr: Some(NonEmpty::unchecked(pr)),
+            head: None,
         }
     );
     assert!(

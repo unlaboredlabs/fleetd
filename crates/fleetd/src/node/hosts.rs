@@ -1,7 +1,8 @@
 //! What this machine can host for sessions (machine roles, W46), sent with each heartbeat's load: a browser (the
 //! broker's Chrome, or its install on the first session), an Android emulator (fleetd's own pinned one, node/device,
 //! with KVM), iOS simulators (fleetd's own golden and its clones, node/device/ios, with Xcode on macOS) and a Linux
-//! desktop (docker or Xvfb). Each says why in plain words. Read at most every few minutes: `xcrun simctl` takes a
+//! desktop (docker or Xvfb), and the agents' Mac's own screen (its agents session on the screen, unlocked, with
+//! fleetd's grants). Each says why in plain words. Read at most every few minutes: `xcrun simctl` takes a
 //! second.
 use std::path::Path;
 use std::sync::Mutex;
@@ -14,6 +15,7 @@ use fleetd_contracts::prim::{Int, Line, List};
 use super::browser::BrowserConfig;
 use super::browser::chrome;
 use super::config::NodeConfig;
+use super::desktop::mac::{self, MacConfig};
 use super::desktop::{self, DesktopConfig};
 use super::device::ios::IosConfig;
 use super::device::{self, DeviceConfig};
@@ -241,6 +243,43 @@ fn desktop(home: &Path, config: &DesktopConfig) -> HostCheck {
     with(checked, config.enabled(), config.idle_minutes)
 }
 
+/// The agents' Mac's own screen (node/desktop/mac): ready while the node's standard user is on the Mac's screen,
+/// unlocked, with Screen Recording and Accessibility allowed; else exactly what stands in the way and how to clear it.
+/// Each start checks it again.
+pub fn mac_screen(config: &MacConfig) -> HostCheck {
+    let host = SessionHost::Mac;
+    let checked = if !mac::supported() {
+        check(
+            host,
+            Some(HostOff::Unsupported),
+            "the Mac screen is a Mac's own: its agents session's screen",
+        )
+    } else if !config.enabled() {
+        check(
+            host,
+            Some(HostOff::Off),
+            "off: on a Mac set aside for agents, whose node runs as its standard agents user, turn the Mac screen on              in Settings › Hub › Machines › Screens",
+        )
+    } else {
+        match mac::blocked() {
+            None => check(
+                host,
+                None,
+                "the agents session is on the Mac's screen, unlocked, with Screen Recording and Accessibility",
+            ),
+            Some(blocked) => fixed(
+                check(host, Some(HostOff::Missing), blocked.message),
+                blocked.fix.as_deref(),
+            ),
+        }
+    };
+    with(
+        checked,
+        config.enabled(),
+        Some(config.idle_minutes.unwrap_or(mac::IDLE_MINUTES)),
+    )
+}
+
 /// What this machine can host now, read at most every few minutes, from node.json's screen sections (`config`). A
 /// kind turned on since the node started waits for its restart (node/screens). Blocking: run it off the async threads.
 pub fn checks(home: &Path, config: Option<&NodeConfig>) -> HostChecks {
@@ -284,6 +323,7 @@ fn cached(home: &Path, config: Option<&NodeConfig>) -> Vec<HostCheck> {
             home,
             &config.and_then(|c| c.desktop.clone()).unwrap_or_default(),
         ),
+        mac_screen(&config.and_then(|c| c.mac.clone()).unwrap_or_default()),
     ];
     *last = Some((Instant::now(), checks.clone()));
     checks

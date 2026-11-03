@@ -459,6 +459,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | Id | Sent | Safety rules |
 |---|---|---|
 | `steer.message` | per steer (steer\_send, task message), straight to the agent, at its next tool boundary or now |  |
+| `review.unreported` | to a train reviewer whose turn ended without a verdict, once, before a new reviewer starts |  |
 | `pr.fix` | to a PR's author when the train can't rebase it, its CI is red, or a review finds blocking findings | never merges; the train does (prompt only) |
 | `task.pause` | to each running agent above a lowered max agents, when a person pauses the extras |  |
 | `task.resume` | to a paused agent once a slot frees for it |  |

@@ -30,6 +30,7 @@ use super::rules::Refusal;
 use crate::clock::Clock;
 use crate::hub::leads::events::Event;
 use crate::hub::prompts::PromptSet;
+use crate::hub::reviews::read::open_blocking;
 use crate::hub::status::fresh::{self, Fresh};
 use crate::hub::store::{iso_ms, parse_ms, system_ms};
 use fleetd_contracts::ledger::WorkstreamId;
@@ -634,7 +635,8 @@ impl Train {
         }
     }
 
-    /// Follows `task.completed` for auto-enqueue and starts the loop of every known train.
+    /// Follows `task.completed` for auto-enqueue and `project.removed` for the trains that go with a project, and
+    /// starts the loop of every known train.
     pub fn start(self: &Arc<Self>) {
         // The cursor is read here, not in the task, so nothing appended before the task first runs is missed.
         let from = self.host.events_head();
@@ -645,15 +647,20 @@ impl Train {
                 let Some(train) = me.upgrade() else { return };
                 let (events, next) = train
                     .host
-                    .events_wait(cursor, &["task.completed"], 300)
+                    .events_wait(cursor, &["task.completed", "project.removed"], 300)
                     .await;
                 cursor = next;
                 for event in events {
-                    train.on_task_completed(&event.data).await;
+                    match event.event_type.as_str() {
+                        "project.removed" => train.drop_removed(),
+                        _ => train.on_task_completed(&event.data).await,
+                    }
                 }
             }
         });
         lock(&self.tasks).push(follower);
+        // Catches up with projects removed while the hub was down, or before trains went with them.
+        self.drop_removed();
         for train in self.records.trains() {
             self.ensure_loop(&train.repo);
         }
@@ -822,6 +829,36 @@ impl Train {
         }
     }
 
+    /// Each train whose project was removed goes with it, unless another project has the same repo: the train moves
+    /// to that one, as `train_project` would on its next PR. A train on a removed project can't run, and only fails
+    /// its reads every pass. Re-adding the project makes a new train on its next PR, as for any repo. Its Changes
+    /// stay, as history.
+    pub(super) fn drop_removed(&self) {
+        for train in self.records.trains() {
+            if self.host.project_root(&train.project_ref).is_some() {
+                continue;
+            }
+            let (repo, gone) = (&train.repo, &train.project_ref);
+            match self.host.repo_projects(repo).into_iter().next() {
+                Some(other) => {
+                    self.records.rebind_train(repo, &other);
+                    tracing::info!(
+                        repo, machine = %other.machine_id, project = %other.project_id,
+                        "train: moved to the repo's other project, its project {} was removed", gone.project_id
+                    );
+                }
+                None => {
+                    // Only while it is still the removed project's: a PR that moved it meanwhile keeps it.
+                    self.records.drop_train(repo, gone);
+                    tracing::info!(
+                        repo, machine = %gone.machine_id, project = %gone.project_id,
+                        "train: dropped, its project was removed; the repo's next PR once it is added back makes it again"
+                    );
+                }
+            }
+        }
+    }
+
     /// Where the repo's train reads its branch prefix and its rules: that repo's checkout in the project that owns
     /// the train (`train_project`), the project's own directory when the repo is its own.
     pub(super) fn train_checkout(&self, repo: &str, fallback: &ProjectRef) -> ProjectRef {
@@ -857,14 +894,21 @@ impl Train {
         self.tell_author_with(change, problem, "").await
     }
 
-    /// `tell_author` with details below the problem.
+    /// `tell_author` with details below the problem. The PR's still-open blocking findings go below them: a writer
+    /// sent back mid-review (needs_rebase parks the PR) fixes them with the rebase instead of pushing the same code.
     async fn tell_author_with(&self, change: &Change, problem: &str, details: &str) {
         let prompts = self.records.db().prompts();
         let set = match &change.task_id {
             Some(task_id) => prompts.for_task(&change.project_ref, task_id.as_str()),
             None => prompts.current(Some(&change.project_ref)),
         };
-        let text = fix_your_pr(&set, change, problem, details);
+        let open = open_blocking(self.records.db(), change.pr_url.as_str());
+        let details = [details.trim(), open.as_str()]
+            .into_iter()
+            .filter(|d| !d.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let text = fix_your_pr(&set, change, problem, &details);
         if let Some(task_id) = &change.task_id {
             match self
                 .host
@@ -3033,6 +3077,18 @@ impl Train {
                     tracing::warn!(repo, error = %e, "train: pass failed");
                     false
                 });
+                {
+                    // A dropped train's loop ends (`drop_removed`). Checked under `loops`, so a PR that makes the
+                    // train again either finds this loop going or starts a new one.
+                    let mut loops = lock(&train.loops);
+                    if train.records.train(&repo).is_none() {
+                        loops.remove(&repo);
+                        let fresh = &train.options.fresh;
+                        fresh.forget(&fresh::github(&repo));
+                        fresh.forget(&fresh::train(&repo));
+                        return;
+                    }
+                }
                 if !took {
                     let (clock, poll) = (train.clock.clone(), train.options.poll_interval);
                     drop(train);

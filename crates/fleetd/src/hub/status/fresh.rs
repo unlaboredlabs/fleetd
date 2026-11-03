@@ -94,6 +94,11 @@ impl Fresh {
         }
     }
 
+    /// Stops expecting the source: nothing reads it any more.
+    pub fn forget(&self, source: &str) {
+        self.sources.lock().unwrap().remove(source);
+    }
+
     /// A good answer at `at_ms`. A stale source turns fresh at once and the status task is woken.
     pub fn touch(&self, source: &str, at_ms: i64) {
         let mut sources = self.sources.lock().unwrap();

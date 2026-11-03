@@ -8,6 +8,10 @@
 //! A session placed elsewhere is driven through the hub's relay: this node's proxy pipes the agent's driver there
 //! (node/relay.rs), and each finished command that drove it goes to the runner for its recording (`session_step`).
 //!
+//! The agents' Mac's screen (kind mac) is always placed by the hub, never in a Navi's name, and sealed to the Mac with
+//! its relay key only: the Mac's node gets none of the session's secrets (mac.shared-mac). Its `desktop` actions go
+//! there through the hub, as a desktop's elsewhere do.
+//!
 //! An iOS screen placed elsewhere is driven by its agent's agent-device commands instead, each sent through the hub to
 //! the runner, sealed with the session's relay key (node/device/remote.rs).
 //!
@@ -150,6 +154,7 @@ fn host_of(frame: &BrowserCallFrame) -> SessionHost {
             SessionKind::Android => SessionHost::Android,
             SessionKind::Ios => SessionHost::Ios,
             SessionKind::LinuxDesktop => SessionHost::Desktop,
+            SessionKind::Mac => SessionHost::Mac,
             SessionKind::Browser => SessionHost::Browser,
         },
         BrowserCall::Desktop(_) => SessionHost::Desktop,
@@ -231,13 +236,26 @@ async fn seal_for(
     let secrets = tokio::task::spawn_blocking(move || secrets_for(&session))
         .await
         .map_err(|e| e.to_string())??;
-    let seal = Seal {
-        secrets: secrets
+    seal_with(
+        secrets
             .0
             .iter()
             .filter(|(name, _)| name != TOKEN_ENV)
             .cloned()
             .collect(),
+        to,
+        relay_key,
+    )
+}
+
+/// `secrets` and a relay key, sealed to `to`, base64.
+fn seal_with(
+    secrets: Vec<(String, String)>,
+    to: &BoxPublicKey,
+    relay_key: &[u8; 32],
+) -> Result<String, String> {
+    let seal = Seal {
+        secrets,
         relay_key: B64.encode(relay_key),
     };
     let plain = zeroize::Zeroizing::new(serde_json::to_vec(&seal).map_err(|e| e.to_string())?);
@@ -284,6 +302,9 @@ async fn ask(
 }
 
 async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> BrowserResultFrame {
+    if host_of(&frame) == SessionHost::Mac && !router.here().live(&thread) {
+        return mac_start(&router, thread, frame).await;
+    }
     if router.remotes.has(&thread) {
         return device_elsewhere(&router, thread, frame).await;
     }
@@ -306,6 +327,25 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
     let broker = match router.broker.as_ref() {
         Some(broker) => broker,
         None if device => return device_start(&router, thread, frame).await,
+        // A Mac screen's calls go where it runs, a machine with browser sessions off included.
+        None if !matches!(frame.call, BrowserCall::SessionStart(_)) => {
+            return match ask(&router, &thread, &frame, None).await {
+                Ok(routed) if routed.here => local(&router, thread, frame).await,
+                Ok(SessionRouteResult {
+                    answer: Some(mut answer),
+                    ..
+                }) => {
+                    answer.id = frame.id;
+                    answer
+                }
+                Ok(_) => error_frame(
+                    &frame.id,
+                    McpToolError::new(ErrorCode::Failed, "the hub sent no answer for the screen")
+                        .with_fix("try again"),
+                ),
+                Err(error) => error_frame(&frame.id, error),
+            };
+        }
         None => return local(&router, thread, frame).await,
     };
     if device {
@@ -432,6 +472,97 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
             )
             .with_fix("try again"),
         ),
+    }
+}
+
+/// A `session_start` kind mac: always the hub's to place, on the Mac that lends its screen. Sealed to it with its relay
+/// key alone: the Mac's node is a tool every agent there shares, so it gets none of the session's secrets. A Navi never
+/// uses the Mac.
+async fn mac_start(
+    router: &Arc<Router>,
+    thread: String,
+    frame: BrowserCallFrame,
+) -> BrowserResultFrame {
+    if router.broker.as_ref().is_some_and(|b| b.is_navi(&thread)) {
+        return error_frame(
+            &frame.id,
+            McpToolError::new(ErrorCode::Forbidden, "A Navi never uses the agents' Mac.")
+                .with_fix("do without it and say so"),
+        );
+    }
+    if !router.relay.hub_can(HUB_CAP_SESSION_ROUTE) {
+        return error_frame(
+            &frame.id,
+            McpToolError::new(
+                ErrorCode::Failed,
+                "This hub is too old to place a Mac screen.",
+            )
+            .with_fix("say so in your result: a person updates fleetd on the hub"),
+        );
+    }
+    let (to, runner) = match ask(router, &thread, &frame, None).await {
+        Ok(routed) if routed.here => return local(router, thread, frame).await,
+        Ok(SessionRouteResult {
+            answer: None,
+            seal_to: Some(to),
+            runner,
+            ..
+        }) => (to, runner),
+        Ok(SessionRouteResult {
+            answer: Some(mut answer),
+            ..
+        }) => {
+            answer.id = frame.id;
+            return answer;
+        }
+        Ok(_) => {
+            return error_frame(
+                &frame.id,
+                McpToolError::new(
+                    ErrorCode::Failed,
+                    "the hub placed the Mac screen but sent no answer",
+                )
+                .with_fix("try again"),
+            );
+        }
+        Err(error) => return error_frame(&frame.id, error),
+    };
+    let key = super::relay::new_key();
+    let data = match seal_with(Vec::new(), &to, &key) {
+        Ok(data) => data,
+        Err(why) => {
+            return error_frame(
+                &frame.id,
+                McpToolError::new(
+                    ErrorCode::Failed,
+                    format!("The node could not seal the Mac screen's start for {runner} ({why})."),
+                )
+                .with_fix("try again; if it keeps failing, check the node's log"),
+            );
+        }
+    };
+    let sealed = SealedForRunner {
+        runner,
+        data_b64: NonEmpty::unchecked(data),
+    };
+    match ask(router, &thread, &frame, Some(sealed)).await {
+        Ok(routed) if routed.here => local(router, thread, frame).await,
+        Ok(SessionRouteResult {
+            answer: Some(mut answer),
+            ..
+        }) => {
+            answer.id = frame.id;
+            answer
+        }
+        Ok(_) => error_frame(
+            &frame.id,
+            McpToolError::new(
+                ErrorCode::Failed,
+                "the hub placed the Mac screen but sent no answer",
+            )
+            .with_fix("try again"),
+        ),
+        Err(error) => error_frame(&frame.id, error),
     }
 }
 
@@ -700,6 +831,8 @@ async fn run_elsewhere(
     frame: &BrowserCallFrame,
     args: &[String],
 ) -> Result<DeviceDone, McpToolError> {
+    // Before anything is read or sent: the screen's node refuses it too, an older one included.
+    remote_device::no_install(args)?;
     let turn = router
         .remotes
         .lock()
@@ -1652,7 +1785,7 @@ mod tests {
                             DeviceCall::Sealed { .. } => unreachable!(),
                         });
                         let done = match call {
-                            DeviceCall::Run { args } => match work.check(&args, true) {
+                            DeviceCall::Run { args } => match work.check(&args) {
                                 Ok(()) => Ok(work
                                     .run(&program, &[], &args, remote_device::RUN_WAIT)
                                     .await
@@ -1692,9 +1825,10 @@ mod tests {
         (attached, ops)
     }
 
-    /// An agent on devbox drives its iOS screen on mac1 with agent-device: its app goes from its worktree, in pieces;
-    /// the command runs there; the screenshot it took comes back into the worktree under the name it gave. Anything
-    /// else is refused before a step leaves, and the screen's end takes the forwarding agent-device away.
+    /// An agent on devbox drives its iOS screen on mac1 with agent-device: a file it names goes from its worktree, in
+    /// pieces; the command runs there; the screenshot it took comes back into the worktree under the name it gave.
+    /// Anything else (an install among them, D299) is refused before a step leaves, and the screen's end takes the
+    /// forwarding agent-device away.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn an_agents_command_for_its_ios_screen_elsewhere_runs_there_with_its_files() {
         const THREAD: &str = "th-agent-1";
@@ -1705,17 +1839,17 @@ mod tests {
             dir.path().join("mac"),
         );
         std::fs::create_dir_all(worktree.join("build")).unwrap();
-        let app = vec![b'z'; remote_device::PIECE + 5];
-        std::fs::write(worktree.join("build/app.zip"), &app).unwrap();
-        // As agent-device does, it reads the app in its daemon's working directory, not the command's: the session's
-        // daemon starts at session_start, in the node's.
+        let payload = vec![b'z'; remote_device::PIECE + 5];
+        std::fs::write(worktree.join("build/payload.json"), &payload).unwrap();
+        // As agent-device does, it reads the payload in its daemon's working directory, not the command's: the
+        // session's daemon starts at session_start, in the node's.
         let program = dir.path().join("agent-device");
         std::fs::write(
             &program,
             "#!/bin/sh\n\
              case \"$1\" in\n\
-             install) cd \"${0%/*}\"; [ -f \"$2\" ] || { echo \"App binary not found: $PWD/$2\" >&2; exit 1; }\n\
-             echo \"Installed $2: $(wc -c < \"$2\" | tr -d ' ') bytes\";;\n\
+             push) cd \"${0%/*}\"; [ -f \"$3\" ] || { echo \"Payload not found: $PWD/$3\" >&2; exit 1; }\n\
+             echo \"Pushed $3: $(wc -c < \"$3\" | tr -d ' ') bytes\";;\n\
              screenshot) printf PNG > \"$2\"; echo \"Saved $2\";;\n\
              *) echo \"ran $*\";;\n\
              esac\n",
@@ -1763,11 +1897,15 @@ mod tests {
         };
         let run = |args: &[&str]| json!({ "op": "device", "step": "run", "args": args });
 
-        let installed = call(run(&["install", "app.zip"]), &worktree.join("build")).await;
+        let pushed = call(
+            run(&["push", "sh.fleetd.app", "payload.json"]),
+            &worktree.join("build"),
+        )
+        .await;
         assert_eq!(
-            installed["result"]["stdout"],
-            format!("Installed app.zip: {} bytes\n", app.len()),
-            "{installed}"
+            pushed["result"]["stdout"],
+            format!("Pushed payload.json: {} bytes\n", payload.len()),
+            "{pushed}"
         );
         let shot = call(run(&["screenshot", "shots/home.png"]), &worktree).await;
         assert_eq!(shot["result"]["stdout"], "Saved shots/home.png\n", "{shot}");
@@ -1782,17 +1920,26 @@ mod tests {
         assert_eq!(
             *ops.lock().unwrap(),
             vec![
-                "put 1-app.zip 0".to_owned(),
-                format!("put 1-app.zip {}", remote_device::PIECE),
-                "run install in/1-app.zip".to_owned(),
+                "put 1-payload.json 0".to_owned(),
+                format!("put 1-payload.json {}", remote_device::PIECE),
+                "run push sh.fleetd.app in/1-payload.json".to_owned(),
                 "run screenshot out/2-home.png".to_owned(),
                 "get 2-home.png 0".to_owned(),
             ]
         );
 
-        // Refused on devbox, before anything goes: a file outside the worktree, a command that doesn't drive the
-        // screen, a file step of the agent's own.
-        let outside = call(run(&["install", "/etc/hosts"]), &worktree).await;
+        // Refused on devbox, before anything goes: an app to install, a file outside the worktree, a command that
+        // doesn't drive the screen, a file step of the agent's own.
+        let install = call(run(&["install", "build/payload.json"]), &worktree).await;
+        assert_eq!(install["error"]["code"], "forbidden", "{install}");
+        assert!(
+            install["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("outside the iOS sandbox"),
+            "{install}"
+        );
+        let outside = call(run(&["push", "sh.fleetd.app", "/etc/hosts"]), &worktree).await;
         assert!(
             outside["error"]["message"]
                 .as_str()

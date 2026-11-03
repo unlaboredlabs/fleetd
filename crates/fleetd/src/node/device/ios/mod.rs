@@ -63,10 +63,6 @@ pub struct IosConfig {
     /// The simulator's device type by name ("iPhone 17 Pro"); absent, the newest plain iPhone of the newest iOS.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_type: Option<String>,
-    /// False refuses `agent-device install` and `reinstall` from agents on other machines (remote.rs): an app installed
-    /// in a simulator runs as this Mac's user. Absent: allowed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub remote_install: Option<bool>,
 }
 
 impl IosConfig {
@@ -724,6 +720,7 @@ impl Simulators {
             udid: Some(Text::unchecked(udid)),
             desktop: None,
             worktree: None,
+            held_by: None,
             start_ms: started.elapsed().as_millis() as u64,
         }))
     }
@@ -769,7 +766,8 @@ impl Simulators {
             session.touch();
             return work.step(call).map(BrowserCallResult::Device);
         };
-        work.check(&args, self.config.remote_install != Some(false))?;
+        remote::no_install(&args)?;
+        work.check(&args)?;
         if session.runner_starting() {
             session.touch();
             return Ok(BrowserCallResult::Device(

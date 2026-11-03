@@ -4,9 +4,10 @@
 #   bash <(curl -fsSL https://raw.githubusercontent.com/unlaboredlabs/fleetd/main/scripts/perf-mac.sh)
 #
 # first paint (< 600 ms), idle memory (< 300 MB, deduplicated: summed physical footprint; summed RSS is shown, not gated), 60 fps scroll back through a
-# long chat and keypress-to-screen (< 16 ms) in its composer, as app/desktop/perf/run.ts measures them on the chat-long fixture, each marked ok or MISS.
+# long chat, 60 fps while a reply streams into one, and keypress-to-screen (< 16 ms) in its composer, as app/desktop/perf/run.ts measures them on the
+# chat-long and stream-in-long fixtures, each marked ok or MISS.
 # It builds app/desktop at main (or the checkout it runs from) and launches it about six times; windows open and
-# close on their own, so leave the Mac alone for the two minutes it takes.
+# close on their own, so leave the Mac alone for the three minutes it takes.
 #
 # Everything lives in FLEETD_PERF_DIR (default ~/fleetd-perf): the checkout, a pinned Node if yours is older than
 # 24, pnpm (through Node's corepack when there's none on PATH). Each launch keeps its state in a temporary

@@ -1833,8 +1833,8 @@ input!(ScreenOpenInput {
     machine_id: MachineId,
     #[serde(default)]
     wait: bool,
-    /// A PR of the project's whose CI build is installed in the screen before it is yours (iOS, Android). Refused at
-    /// once when the PR's head has no such build.
+    /// A PR of the project's whose CI build is installed in the screen before it is yours (Android; iOS refuses it
+    /// until the shared Mac). Refused at once when the PR's head has no such build.
     pr: Option<crate::browser::ScreenPr>,
 });
 output!(ScreenOpenOutput {

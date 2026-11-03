@@ -100,7 +100,7 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 /// The end of a log, for a refusal.
-fn tail(path: &Path, max: usize) -> String {
+pub(super) fn tail(path: &Path, max: usize) -> String {
     let text = std::fs::read_to_string(path).unwrap_or_default();
     let start = text.len().saturating_sub(max);
     let start = (start..text.len())
@@ -156,6 +156,7 @@ impl Display {
             DesktopBackend::Container => {
                 Self::start_container(settings, &dir, cookie, &hex(&tag), mount)
             }
+            DesktopBackend::Mac => Err("a Mac lends its own screen, not a display".into()),
         };
         if made.is_err() {
             let _ = std::fs::remove_dir_all(&dir);
@@ -368,6 +369,12 @@ impl Display {
                 Ok(Launched { pid, exited })
             }
         }
+    }
+}
+
+impl super::screen::Lent for Display {
+    fn launch(&self, command: &str, cwd: &Path) -> Result<Launched, String> {
+        Display::launch(self, command, cwd)
     }
 }
 
