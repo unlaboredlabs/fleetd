@@ -3232,8 +3232,8 @@
           "uniqueItems": true
         },
         "text": {
+          "description": "Empty only with attachments: a photo sent with no words.",
           "maxLength": 100000,
-          "minLength": 1,
           "type": "string"
         },
         "tz": {

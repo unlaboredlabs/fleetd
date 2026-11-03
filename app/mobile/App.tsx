@@ -33,6 +33,8 @@ import { ImportMemory } from "./src/screens/ImportMemory";
 import { Screen } from "./src/screens/Screen";
 import { Settings } from "./src/screens/Settings";
 import { Session } from "./src/session";
+import type { State } from "./src/store";
+import { tapGoesNowhere, tappedStack } from "./src/tapped";
 import { navigationTheme, useTheme, type Palette } from "./src/theme";
 import { haptics } from "./src/ui/haptics";
 import { SwipeGroup, useSwipeGroup } from "./src/ui/SwipeRow";
@@ -161,13 +163,14 @@ let taps = 0;
 
 /**
  * Opens where a tapped notification goes, an approval's chat at its card, a screen's live view over its chat (push.ts
- * chatAt): false while not known yet.
+ * chatAt), over the chats list and nothing else (tapped.ts): false while not known yet.
  */
-const go = (route: Route, requests: Parameters<typeof chatAt>[1]): boolean => {
-  const at = chatAt(route, requests);
+const go = (route: Route, state: Pick<State, "requests" | "projects">): boolean => {
+  const at = chatAt(route, state.requests);
   if (at === undefined) return false;
-  if (at !== null) nav.navigate("Chat", at.requestId === undefined ? { key: at.key } : { key: at.key, requestId: at.requestId, tap: ++taps });
-  if (at?.sessionId !== undefined) nav.navigate("Screen", { key: at.key, sessionId: at.sessionId });
+  if (at === null || tapGoesNowhere(state.projects, at)) return true;
+  // A screen that won't let go (an edited skill's "Discard changes?") keeps the stack as it is.
+  nav.reset(tappedStack(nav.getRootState()?.routes ?? [], at, ++taps) as Parameters<typeof nav.reset>[0]);
   return true;
 };
 
@@ -178,7 +181,7 @@ function Hub({ paired, onForget }: { paired: Paired; onForget: (why?: string) =>
   const pending = useRef<Route | null>(null);
   const tryPending = useCallback(() => {
     if (pending.current === null || !nav.isReady()) return;
-    if (go(pending.current, session.getState().requests)) pending.current = null;
+    if (go(pending.current, session.getState())) pending.current = null;
   }, [session]);
   useTappedRoute((route) => {
     pending.current = route;
@@ -258,8 +261,9 @@ function Root() {
     <RootStack.Navigator screenOptions={{ headerTintColor: t.accent, contentStyle: { backgroundColor: t.bg }, freezeOnBlur: true }}>
       <RootStack.Screen name="Home" component={ChatsHome} options={{ headerShown: false, title: "Chats" }} />
       <RootStack.Screen name="Settings" component={SettingsScreens} options={{ headerShown: false }} />
-      <RootStack.Screen name="Chat" component={Chat} options={({ route }) => ({ ...chatOptions(t), ...infoOptions(t, () => nav.navigate("ChatInfo", { screen: "Info", params: { key: route.params.key } })) })} />
-      <RootStack.Screen name="Screen" component={Screen} options={{ headerShown: false, presentation: "fullScreenModal", gestureEnabled: false, contentStyle: { backgroundColor: t.dark ? "#000000" : t.grouped } }} />
+      {/* One screen per chat, and per live screen: opening another pushes it, never swaps the open one's in place. */}
+      <RootStack.Screen name="Chat" component={Chat} getId={({ params }) => params.key} options={({ route }) => ({ ...chatOptions(t), ...infoOptions(t, () => nav.navigate("ChatInfo", { screen: "Info", params: { key: route.params.key } })) })} />
+      <RootStack.Screen name="Screen" component={Screen} getId={({ params }) => params.sessionId} options={{ headerShown: false, presentation: "fullScreenModal", gestureEnabled: false, contentStyle: { backgroundColor: t.dark ? "#000000" : t.grouped } }} />
       {manageScreens(RootStack, t)}
     </RootStack.Navigator>
   );

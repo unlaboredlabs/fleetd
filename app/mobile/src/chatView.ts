@@ -83,6 +83,22 @@ export const quoteOf = (text: string): string => {
 /** Your words as a reply to a bubble: its quote, a blank line, then what you wrote. */
 export const replyText = (quote: string, text: string): string => (quote === "" ? text : `> ${quote}\n\n${text}`);
 
+/**
+ * What a send carries: the words trimmed, under the quote of the bubble it replies to, and which bubble that is; null
+ * with nothing to send. A photo goes with no words. A quick answer or a starter passes no reply: it never quotes what
+ * the composer's Reply banner holds, which stays for the words being typed.
+ */
+export const outgoing = (
+  body: string,
+  files: number,
+  reply: { readonly id: string; readonly part: number; readonly quote: string } | undefined,
+): { readonly text: string; readonly replyTo: { readonly messageId: string; readonly part: number } | undefined } | null => {
+  const words = body.trim();
+  if (words === "" && files === 0) return null;
+  if (reply === undefined) return { text: words, replyTo: undefined };
+  return { text: words === "" ? replyText(reply.quote, "").trim() : replyText(reply.quote, words), replyTo: { messageId: reply.id, part: reply.part } };
+};
+
 /** A message that replies to a bubble: the quote and the words under it; undefined for any other text. */
 export const replyOf = (text: string): { readonly quote: string; readonly body: string } | undefined => {
   const m = /^> ([^\n]+)\n\n(?!>)([\s\S]*\S[\s\S]*)$/u.exec(text);
@@ -301,4 +317,36 @@ export const listTime = (at: string, clock: Clock): string => {
   if (days === 1) return "Yesterday";
   if (days < 7) return fmt(ms, clock, { weekday: "long" });
   return fmt(ms, clock, { day: "numeric", month: "numeric", year: "2-digit" });
+};
+
+// Where the thread lands and what counts as read. The list is upside down: its offset 0 is the newest end, and a row's
+// offset is how far its newest edge is from there.
+
+/**
+ * scrollToIndex's viewOffset that puts a row at `viewPosition` (0 the newest end, 1 the oldest) of what shows between
+ * the composer and the bar over the thread, rather than of the whole list: VirtualizedList subtracts it from the
+ * offset, so a row at the far end goes `top` less far, under the bar, and one at the near end clears the composer.
+ */
+export const viewOffsetOf = (viewPosition: number, top: number, composer: number): number => (1 - viewPosition) * composer - viewPosition * top;
+
+/** The newest message among the rows on screen: read once seen, as Telegram marks it. */
+export const seenSeq = (rows: readonly ThreadRow[]): number | undefined => {
+  let seq: number | undefined;
+  for (const r of rows) {
+    const s = r.t === "item" ? r.item.message?.seq : undefined;
+    if (s !== undefined && (seq === undefined || s > seq)) seq = s;
+  }
+  return seq;
+};
+
+/**
+ * Where the reply streaming in sits among the rows, newest first, while it's one of the newest few (under it only the
+ * turn line): the thread follows it until its first line reaches the bar, then holds it there.
+ */
+export const streamingAt = (newestFirst: readonly ThreadRow[]): number | undefined => {
+  for (const [i, r] of newestFirst.entries()) {
+    if (r.t === "turn") continue;
+    return r.t === "item" && r.item.message?.state === "streaming" ? i : undefined;
+  }
+  return undefined;
 };

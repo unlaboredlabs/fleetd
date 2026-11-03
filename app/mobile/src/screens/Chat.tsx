@@ -5,8 +5,9 @@
 // cards; a skill the Navi saved as one quiet line that opens it; a live screen as a card at the newest end
 // (ScreenCards.tsx), which opens its live view.
 //
-// Opening it lands on the first message you haven't read, under an "Unread Messages" bar; reading to the bottom marks
-// it read. Scrolled up, a glass button takes you back down and counts what came meanwhile. Pressing and holding a
+// Opening it lands on the first message you haven't read, under an "Unread Messages" bar; what you scroll past is read,
+// as is everything once you're at the bottom. Scrolled up, the thread holds still while replies come, and a glass
+// button takes you back down and counts what came meanwhile; the status bar's tap goes a screen older. Pressing and holding a
 // bubble lifts it with iOS's own menu (ui/HoldMenu.tsx): Reply (quoted above your words), Copy, and Select Text.
 // Bubbles that arrive while you look rise in with the desktop's motion (ui/motion.ts). Messages written offline wait
 // and go when the hub is back.
@@ -16,14 +17,15 @@
 // thread (react-native-keyboard-controller), following a finger that drags the keyboard down.
 import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
+import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackNavigationOptions, NativeStackScreenProps } from "@react-navigation/native-stack";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ActivityIndicator, FlatList, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ActivityIndicator, AppState, FlatList, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ListViewToken } from "react-native";
 import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
-import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, outgoing, quoteOf, replyOf, sameRow, seenSeq, sendNote, streamingAt, threadRows, viewOffsetOf, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, emptyChat, isNavi, type AttachmentGetOutput, type AttachmentRef, type ChatItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
@@ -47,6 +49,7 @@ import { RevealArea, Revealed } from "../ui/Reveal";
 import type { MenuItem } from "../ui/Menu";
 import { bubbleIn, dur, ease, PRESSED_OPACITY, useReduceMotion } from "../ui/motion";
 import { SkeletonThread } from "../ui/Skeleton";
+import { StatusBarTap } from "../ui/StatusBarTap";
 import { ApprovalCard } from "./ApprovalCard";
 import { ScreenCards } from "./ScreenCards";
 import { Symbol } from "./manage/parts";
@@ -162,6 +165,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const [selecting, setSelecting] = useState<string | null>(null);
   const [image, setImage] = useState<AttachmentGetOutput | null>(null);
   const [lit, setLit] = useState<string | null>(null);
+  // The thread's height, and what of it shows between the bar over it and the composer.
+  const [height, setHeight] = useState(0);
+  const room = height - top - composerHeight;
 
   // The keyboard covers the home indicator's inset, which the composer keeps clear when it's down: up, the composer
   // sits a step above it, and the thread's newest end is that much less than the keyboard above where it was.
@@ -175,65 +181,150 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const [awayFrom, setAwayFrom] = useState<number | null>(null);
   const newestSeq = items.reduce((n, i) => Math.max(n, i.message?.seq ?? 0), 0);
   const cameSince = awayFrom === null ? 0 : items.filter((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > awayFrom).length;
+  // Where it's scrolled to, and how far it goes, for the status bar's tap.
+  const scrolled = useRef({ y: 0, length: 0 });
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrolled.current = { y: e.nativeEvent.contentOffset.y, length: e.nativeEvent.contentSize.height };
     // How far from the newest end, wherever the keyboard puts it.
     const y = e.nativeEvent.contentOffset.y - newestEnd();
     if (y > AWAY && awayFrom === null) setAwayFrom(newestSeq);
     else if (y < AWAY / 3 && awayFrom !== null) setAwayFrom(null);
   };
-  // At the newest with the chat open: read.
+  // The status bar's tap goes a screen older, as Telegram's, never to the newest end.
+  const olderByAScreen = () => {
+    const { y, length } = scrolled.current;
+    list.current?.scrollToOffset({ offset: Math.max(0, Math.min(y + room * 0.85, length - height)), animated: !reduce });
+  };
+
+  // Read is what you've seen: the newest message on screen once the chat has landed where it opens, and everything at
+  // the newest end. Not while the app is away or another screen covers the chat (Info, a live screen).
+  const focused = useIsFocused();
+  const [active, setActive] = useState(AppState.currentState === "active");
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => setActive(s === "active"));
+    return () => sub.remove();
+  }, []);
+  const [placed, setPlaced] = useState(false);
+  const reading = placed && focused && active;
   const lastSeq = chatState?.lastSeq;
   useEffect(() => {
-    if (awayFrom === null && lastSeq !== undefined && chat.loaded) dispatchPrefs({ t: "read", key: chatKey, seq: lastSeq });
-  }, [awayFrom, lastSeq, chat.loaded, chatKey]);
+    if (reading && awayFrom === null && lastSeq !== undefined && chat.loaded) dispatchPrefs({ t: "read", key: chatKey, seq: lastSeq });
+  }, [reading, awayFrom, lastSeq, chat.loaded, chatKey]);
+  const onScreen = useRef<readonly ThreadRow[]>([]);
+  const seen = useRef({ reading, chatKey });
+  seen.current = { reading, chatKey };
+  const readSeen = useCallback(() => {
+    const seq = seenSeq(onScreen.current);
+    if (seen.current.reading && seq !== undefined) dispatchPrefs({ t: "read", key: seen.current.chatKey, seq });
+  }, []);
+  // FlatList takes these once.
+  const onViewable = useRef(({ viewableItems }: { viewableItems: ListViewToken[] }) => {
+    onScreen.current = viewableItems.map((v) => v.item as ThreadRow);
+    readSeen();
+  }).current;
+  const viewability = useRef({ itemVisiblePercentThreshold: 60, minimumViewTime: 300 }).current;
+  useEffect(() => {
+    if (reading) readSeen();
+  }, [reading, readSeen]);
 
-  const scrollToRow = (find: (r: ThreadRow) => boolean, viewPosition: number) => {
+  // Scrolling to a row, at `viewPosition` of what shows between the bar and the composer (chatView viewOffsetOf). A
+  // row not drawn yet is gone to roughly, then again once it is; `done` once it's there.
+  const aim = useRef<{ viewPosition: number; viewOffset: number; animated: boolean; tries: number; done: (() => void) | undefined } | null>(null);
+  const aimAt = (index: number, a: NonNullable<typeof aim.current>) => {
+    const tries = a.tries;
+    list.current?.scrollToIndex({ index, animated: a.animated, viewPosition: a.viewPosition, viewOffset: a.viewOffset });
+    // It didn't fail (onScrollToIndexFailed counts a try): there.
+    if (a.tries === tries) requestAnimationFrame(() => a.done?.());
+  };
+  const scrollToRow = (find: (r: ThreadRow) => boolean, viewPosition: number, animated = !reduce, done?: () => void) => {
     const at = newestFirst.findIndex(find);
     if (at < 0) return false;
-    list.current?.scrollToIndex({ index: at, animated: !reduce, viewPosition, viewOffset: viewPosition > 0.5 ? top : composerHeight });
+    aim.current = { viewPosition, viewOffset: viewOffsetOf(viewPosition, top, composerHeight), animated, tries: 0, done };
+    aimAt(at, aim.current);
     return true;
   };
 
-  // Opened with unread messages: land on the first of them, under its bar, rather than at the very bottom. Opened at a
-  // message (a search hit) or an approval (its notification tapped, again too, while the chat is open): land on it,
-  // lit, reading older pages first while the approval's card is further back than them.
+  // Opened with unread messages: land on the first of them, its bar just under the bar over the thread, rather than at
+  // the very bottom. Opened at a message (a search hit) or an approval (its notification tapped, again too, while the
+  // chat is open): land on it, lit, reading older pages first while the approval's card is further back than them. A
+  // chat's notification tapped while it's open: its newest. The thread stays hidden for the moment it moves, so the
+  // newest end doesn't show first.
   const { messageId, requestId, tap } = route.params;
   const landed = useRef<string | null>(null);
-  useEffect(() => {
+  const [moving, setMoving] = useState(false);
+  useLayoutEffect(() => {
     const wanted = `${messageId ?? ""} ${requestId ?? ""} ${String(tap ?? 0)}`;
-    if (landed.current === wanted || !chat.loaded || newestFirst.length === 0) return;
+    if (landed.current === wanted || !chat.loaded) return;
+    if (newestFirst.length === 0) {
+      landed.current = wanted;
+      setPlaced(true);
+      return;
+    }
     const found = landingOf(items, { messageId, requestId }, { hasOlder: chat.hasOlder, failed: chat.error !== undefined });
     if (found === "older") {
       if (!chat.loadingOlder) void session.loadOlder(chatKey);
       return;
     }
+    const first = landed.current === null;
     landed.current = wanted;
     const target = found;
+    if (target === undefined && !first) {
+      setAwayFrom(null);
+      toNewest();
+      return;
+    }
     const at = target !== undefined ? newestFirst.findIndex((r) => r.t === "item" && r.item.message?.messageId === target) : newestFirst.findIndex((r) => r.t === "unread");
     // Near the bottom already: nothing to jump to.
     if (at < 6) {
       if (target !== undefined && at >= 0) setLit(target);
+      setPlaced(true);
       return;
     }
+    if (first) setMoving(true);
     setTimeout(() => {
-      scrollToRow((r) => (target !== undefined ? r.t === "item" && r.item.message?.messageId === target : r.t === "unread"), target !== undefined ? 0.5 : 1);
+      const there = () => {
+        setMoving(false);
+        setPlaced(true);
+      };
+      const find = (r: ThreadRow) => (target !== undefined ? r.t === "item" && r.item.message?.messageId === target : r.t === "unread");
+      if (!scrollToRow(find, target !== undefined ? 0.5 : 1, !first && !reduce, there)) there();
       if (target !== undefined) setLit(target);
       else if (unreadFrom !== undefined) setAwayFrom(unreadFrom);
     }, 50);
   });
+  // Never hidden for long, wherever it got to.
+  useEffect(() => {
+    if (!moving) return;
+    const timer = setTimeout(() => {
+      setMoving(false);
+      setPlaced(true);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [moving]);
   useEffect(() => {
     if (lit === null) return;
     const timer = setTimeout(() => setLit(null), 1600);
     return () => clearTimeout(timer);
   }, [lit]);
 
+  // Holding still: scrolled up, what you read stays where it is while replies come and stream in under it; at the
+  // newest end, a long reply is followed until its first line reaches the bar, then held there, as ChatGPT holds one,
+  // and the button down counts on. Each by maintainVisibleContentPosition, on the first row that should keep its place.
+  const streamAt = streamingAt(newestFirst);
+  const [tall, setTall] = useState(false);
+  useEffect(() => {
+    if (streamAt === undefined) setTall(false);
+  }, [streamAt]);
+  const holdFrom = awayFrom !== null ? 0 : tall && streamAt !== undefined ? streamAt + 1 : undefined;
+  const hold = useMemo(() => (holdFrom === undefined ? undefined : { minIndexForVisible: holdFrom }), [holdFrom]);
 
-  // What you send shows at once, as in Messages, wherever the thread was scrolled to.
-  const send = (body: string, files: readonly AttachmentRef[] = []) => {
-    if (body.trim() === "" && files.length === 0) return;
-    const text = reply === undefined ? body : replyText(reply.quote, body);
-    session.send(chatKey, text, { attachments: files, replyTo: reply === undefined ? undefined : { messageId: reply.id, part: reply.part } });
-    setReply(undefined);
+  // What you send shows at once, as in Messages, wherever the thread was scrolled to. The composer's words go as a
+  // reply while its banner shows; a quick answer or a starter never does, and leaves the banner for what you type.
+  const send = (body: string, files: readonly AttachmentRef[] = [], quoting = false) => {
+    const out = outgoing(body, files.length, quoting ? reply : undefined);
+    if (out === null) return;
+    session.send(chatKey, out.text, { attachments: files, replyTo: out.replyTo });
+    if (quoting) setReply(undefined);
     setAwayFrom(null);
     toNewest();
   };
@@ -263,8 +354,12 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     }),
     [navigation],
   );
+  // The reply streaming in is measured, to know when its first line reaches the bar.
+  const measureStream = useCallback((e: LayoutChangeEvent) => {
+    if (room > 0 && e.nativeEvent.layout.height >= room) setTall(true);
+  }, [room]);
   const renderRow = useCallback(
-    ({ item: row }: { item: ThreadRow }) => (
+    ({ item: row, index: at }: { item: ThreadRow; index: number }) => (
       <RowView
         row={row}
         chatKey={chatKey}
@@ -275,9 +370,10 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
         enter={row.t === "item" ? entering.get(rowKeyOf(row.item)) : undefined}
         reduce={reduce}
         still={row.t === "turn" && awayFrom !== null}
+        onLayout={at === streamAt ? measureStream : undefined}
       />
     ),
-    [chatKey, title, index, lastHuman, actions, lit, entering, reduce, awayFrom],
+    [chatKey, title, index, lastHuman, actions, lit, entering, reduce, awayFrom, streamAt, measureStream],
   );
 
   const loading = !chat.loaded && chat.cached !== true;
@@ -288,6 +384,13 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
           <FlatList
             ref={list}
             inverted
+            style={moving ? styles.hidden : undefined}
+            onLayout={(e) => setHeight(e.nativeEvent.layout.height)}
+            maintainVisibleContentPosition={hold}
+            onViewableItemsChanged={onViewable}
+            viewabilityConfig={viewability}
+            // Upside down, iOS's own status-bar tap would go to the newest end: StatusBarTap takes it instead.
+            scrollsToTop={false}
             renderScrollComponent={(props) => <KeyboardChatScrollView {...props} inverted offset={lift} />}
             data={loading && items.length === 0 ? [] : newestFirst}
             keyExtractor={(r) => r.id}
@@ -301,7 +404,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
             scrollEventThrottle={64}
             onScrollToIndexFailed={(info) => {
               list.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: false });
-              setTimeout(() => list.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0.5 }), 80);
+              const a = aim.current;
+              if (a === null) return;
+              a.tries += 1;
+              if (a.tries > 3) return void a.done?.();
+              setTimeout(() => aimAt(info.index, a), 80);
             }}
             onEndReached={() => void session.loadOlder(chatKey)}
             // Upside down too: the newest end, where its live screens sit over the composer.
@@ -360,7 +467,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
             </Animated.View>
           )}
           <Composer
-            onSend={send}
+            onSend={(text, files) => send(text, files, true)}
             upload={(bytes, name, mime, progress) => upload((tool, input, timeoutMs) => session.call(tool, input, timeoutMs), bytes, name, mime, progress)}
             bottomInset={insets.bottom}
             reply={reply}
@@ -369,6 +476,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
           />
         </KeyboardStickyView>
       </View>
+      {focused ? <StatusBarTap onTap={olderByAScreen} /> : null}
       <SelectText text={selecting} onClose={() => setSelecting(null)} />
       <ImageViewer image={image} onClose={() => setImage(null)} />
     </View>
@@ -462,13 +570,15 @@ interface RowProps {
   readonly reduce: boolean;
   /** The turn line, scrolled away from: it holds still. */
   readonly still: boolean;
+  /** The reply streaming in: its height, as it grows. */
+  readonly onLayout: ((e: LayoutChangeEvent) => void) | undefined;
 }
 
 /** Draws again only when its own row changed: the thread's rows are made anew with each streamed word. */
 const sameProps = (a: RowProps, b: RowProps): boolean =>
-  a.chatKey === b.chatKey && a.title === b.title && a.canAnswer === b.canAnswer && a.actions === b.actions && a.lit === b.lit && a.enter === b.enter && a.reduce === b.reduce && a.still === b.still && sameRow(a.row, b.row);
+  a.chatKey === b.chatKey && a.title === b.title && a.canAnswer === b.canAnswer && a.actions === b.actions && a.lit === b.lit && a.enter === b.enter && a.reduce === b.reduce && a.still === b.still && a.onLayout === b.onLayout && sameRow(a.row, b.row);
 
-const RowView = memo(function RowView({ row, chatKey, title, canAnswer, actions, lit, enter, reduce, still }: RowProps) {
+const RowView = memo(function RowView({ row, chatKey, title, canAnswer, actions, lit, enter, reduce, still, onLayout }: RowProps) {
   const t = useTheme();
   const now = useNow();
   // Entering only as it mounts soon after it came: a row scrolled back to later shows still.
@@ -508,6 +618,7 @@ const RowView = memo(function RowView({ row, chatKey, title, canAnswer, actions,
   return (
     <Animated.View
       {...(motion === undefined ? {} : { entering: bubbleIn(row.side === "me", motion.step, reduce) })}
+      onLayout={onLayout}
       style={[lit && { backgroundColor: t.accentSoft }, styles.litRow]}
     >
       {body}
@@ -952,6 +1063,7 @@ function SelectText({ text, onClose }: { text: string | null; onClose: () => voi
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  hidden: { opacity: 0 },
   list: { paddingHorizontal: metrics.margin, flexGrow: 1 },
   emptyThread: { flex: 1, alignItems: "center", justifyContent: "center", gap: space.sm, paddingHorizontal: space.xl, transform: [{ scaleY: -1 }] },
   center: { textAlign: "center" },

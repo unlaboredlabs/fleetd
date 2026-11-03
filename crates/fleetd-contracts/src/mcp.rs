@@ -2222,29 +2222,40 @@ output!(StatusGetOutput {
 // chat_send: writes to a project's lead. Delivered at once: a new turn when the lead is idle, a steer when it is
 // mid-turn, or queued while it starts. The same clientRequestId returns the same message. A human key writes as the
 // human; any other key as an agent, by its name: input for the lead, never the human's answer.
-input!(ChatSendInput {
-    project_ref: ProjectRef,
-    text: Text<1, { crate::chat::CHAT_TEXT_MAX }>,
-    /// A human key only: while the lead works, stop its running step and deliver at once (steer_send's `now`). An
-    /// idle lead takes it as any message.
-    now: Option<bool>,
-    /// From attachment_put.
-    attachments: Option<Attachments>,
-    /// Skills the person named with `$name`: the lead's message lists them, so it uses them.
-    skills: Option<List<crate::skills::SkillName, 1, 8, true>>,
-    client_request_id: RequestId,
-    /// A human key: where it is written. Absent means the app.
-    client: Option<crate::chat::ChatClient>,
-    /// A human key: the IANA time zone of the device it is written on. The hub keeps it as the person's zone, and the
-    /// lead reads each of their messages with the time there; one the hub doesn't know is left out, never refused.
-    tz: Option<Line<1, 64>>,
-    /// The lead's bubble this answers. `text` still opens with its one-line quote, for clients that show text as it
-    /// is; the lead reads the whole bubble in its place.
-    reply_to: Option<crate::chat::ChatReplyTo>,
-    /// Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID), as the caller reports it. The project's own
-    /// lead and tasks are refused (they use their fleetd tools), and so is a human key. It catches mistakes; the key,
-    /// not this field, carries authority.
-    session: Option<ThreadId>,
+input!(
+    #[serde(remote = "Self")]
+    ChatSendInput {
+        project_ref: ProjectRef,
+        /// Empty only with attachments: a photo sent with no words.
+        text: Text<0, { crate::chat::CHAT_TEXT_MAX }>,
+        /// A human key only: while the lead works, stop its running step and deliver at once (steer_send's `now`). An
+        /// idle lead takes it as any message.
+        now: Option<bool>,
+        /// From attachment_put.
+        attachments: Option<Attachments>,
+        /// Skills the person named with `$name`: the lead's message lists them, so it uses them.
+        skills: Option<List<crate::skills::SkillName, 1, 8, true>>,
+        client_request_id: RequestId,
+        /// A human key: where it is written. Absent means the app.
+        client: Option<crate::chat::ChatClient>,
+        /// A human key: the IANA time zone of the device it is written on. The hub keeps it as the person's zone, and
+        /// the lead reads each of their messages with the time there; one the hub doesn't know is left out, never
+        /// refused.
+        tz: Option<Line<1, 64>>,
+        /// The lead's bubble this answers. `text` still opens with its one-line quote, for clients that show text as it
+        /// is; the lead reads the whole bubble in its place.
+        reply_to: Option<crate::chat::ChatReplyTo>,
+        /// Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID), as the caller reports it. The project's own
+        /// lead and tasks are refused (they use their fleetd tools), and so is a human key. It catches mistakes; the key,
+        /// not this field, carries authority.
+        session: Option<ThreadId>,
+    }
+);
+checked!(ChatSendInput, |input| {
+    if input.text.as_str().is_empty() && input.attachments.as_ref().is_none_or(|a| a.is_empty()) {
+        return Err("text is empty: write something, or attach a file".into());
+    }
+    Ok(())
 });
 output!(ChatSendOutput {
     message: crate::chat::ChatMessage,
