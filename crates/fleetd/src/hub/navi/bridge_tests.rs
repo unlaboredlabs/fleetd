@@ -136,7 +136,8 @@ async fn a_navi_writes_to_another_lead_as_itself_never_as_the_person() {
     assert_eq!(
         said.text,
         "Please add gift cards at checkout.\n\n(Ask N1. If you open an order for it, pass asked: \"N1\" to brief, \
-         so Navi hears when it lands.)"
+         so Navi hears when it lands. If you fold it into an order already open, call brief with that workstreamId \
+         and asked: \"N1\".)"
     );
     // What the lead reads says it is an agent's, not the person's.
     let set = hub.db.prompts().current(Some(&project("storefront")));
@@ -541,4 +542,117 @@ async fn the_app_reads_another_machines_orders_only_with_read_there() {
     assert_eq!(ask["orders"], json!([]));
     assert!(!mine.to_string().contains("Payroll"), "{mine}");
     assert!(!mine.to_string().contains("\"title\""), "{mine}");
+}
+
+#[tokio::test]
+async fn a_follow_up_folded_into_an_open_order_says_so() {
+    let (hub, _home) = hub();
+    let navi = project("navi");
+    let shop = project("storefront");
+    for text in [
+        "Gift cards, please.",
+        "Follow-up: gift cards need a balance check too.",
+    ] {
+        call(
+            &hub,
+            &navi,
+            json!({ "op": "project_message", "project": "storefront", "text": text }),
+        )
+        .await
+        .unwrap();
+    }
+    let opened = call(
+        &hub,
+        &shop,
+        json!({ "op": "brief_create", "text": "Gift cards", "brief": brief(), "asked": "N1" }),
+    )
+    .await
+    .unwrap();
+    let w = opened["workstreamId"].as_str().unwrap().to_owned();
+    let (cursor, _) = follow(&hub, 0);
+    // Another project can't take the ask into an order of its own.
+    let other = call(
+        &hub,
+        &project("checkout"),
+        json!({ "op": "brief_create", "text": "Balances", "brief": brief() }),
+    )
+    .await
+    .unwrap();
+    let theirs = other["workstreamId"].as_str().unwrap();
+    call(
+        &hub,
+        &project("checkout"),
+        json!({ "op": "brief_create", "workstreamId": theirs, "brief": brief(), "asked": "N2" }),
+    )
+    .await
+    .unwrap();
+    // The asked project's lead folds the follow-up into the open order, its brief as it was.
+    let folded = call(
+        &hub,
+        &shop,
+        json!({ "op": "brief_create", "workstreamId": w, "brief": brief(), "asked": "N2" }),
+    )
+    .await
+    .unwrap();
+    assert!(folded["next"].as_str().unwrap().starts_with("Unchanged."));
+    let (cursor, sent) = follow(&hub, cursor);
+    assert_eq!(
+        sent,
+        [(
+            navi.clone(),
+            format!("- N2 to Storefront: its lead folded it into order {w} \"Gift cards\"")
+        )]
+    );
+
+    // What happens to the order after wakes its first ask, once.
+    hub.events
+        .append(NewEvent {
+            at: Timestamp(AT.into()),
+            r#type: HubEventType::ChangeState,
+            machine_id: Some(shop.machine_id.clone()),
+            project_id: Some(shop.project_id.clone()),
+            thread_id: None,
+            summary: "#42 merged".into(),
+            data: Some(
+                json!({ "changeId": "X4", "workstreamId": w, "repo": "acme/storefront", "prNumber": 42,
+                        "from": "merging", "to": "merged" }),
+            ),
+            attention: None,
+        })
+        .unwrap();
+    let (_, sent) = follow(&hub, cursor);
+    let lines: Vec<&str> = sent.iter().map(|(_, l)| l.as_str()).collect();
+    assert_eq!(
+        lines,
+        [format!(
+            "- N1 to Storefront: PR #42 (acme/storefront) of order {w} \"Gift cards\" merged"
+        )]
+    );
+
+    // The app reads the order under both asks, merged once the train's record of its PR says so.
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
+                 VALUES ('acme/storefront', 42, 'merged', 'devbox', 'storefront', 0, ?)",
+                [json!({ "workstreamId": w }).to_string()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let out = crate::hub::api::registry()
+        .call(
+            &hub,
+            &key(json!("*")),
+            "navi_asks",
+            json!({ "navi": { "machineId": "devbox", "projectId": "navi" } }),
+        )
+        .await
+        .unwrap();
+    let asks = out["asks"].as_array().unwrap();
+    let order =
+        json!([{ "workstreamId": w, "title": "Gift cards", "state": "open", "merged": true }]);
+    assert_eq!(asks[0]["handle"], "N2");
+    assert_eq!(asks[0]["orders"], order);
+    assert_eq!(asks[1]["orders"], order);
 }

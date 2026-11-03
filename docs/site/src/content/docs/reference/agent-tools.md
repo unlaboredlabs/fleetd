@@ -185,11 +185,11 @@ Stop a task: interrupts its thread and releases its slot.
 
 ### brief
 
-Open and start work. Without workstreamId it opens a new order from text (the human's words) and this brief, and starts it: new work from the chat starts this way, even when every order is closed. With workstreamId it sets that workstream's brief (goal, why, pointers, constraints, doneWhen lines) and starts it, or edits it later. An order opened for a Navi's message gives asked, its N&lt;n> handle, so the Navi hears when it lands.
+Open and start work. Without workstreamId it opens a new order from text (the human's words) and this brief, and starts it: new work from the chat starts this way, even when every order is closed. With workstreamId it sets that workstream's brief (goal, why, pointers, constraints, doneWhen lines) and starts it, or edits it later. An order opened for a Navi's message gives asked, its N&lt;n> handle, so the Navi hears when it lands; a later Navi message folded into an open order gives asked with that workstreamId.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `asked` | string | no | The Navi message (`project_message`) this order is opened for, so that Navi hears when it lands. |
+| `asked` | string | no | The Navi message (`project_message`) this order is opened for, so that Navi hears when it lands. With workstreamId, a later message folded into that open order: the Navi hears it went there. |
 | `brief` | object | yes |  |
 | `brief.constraints` | string[] | yes | At most 20 items. |
 | `brief.doneWhen` | string[] | yes | At least one. At most 20 items. |

@@ -213,6 +213,24 @@ impl ChangeRecords {
         self.latest(repo, pr_number, false)
     }
 
+    /// Whether a Change of the workstream merged.
+    pub fn any_merged(&self, project_ref: &ProjectRef, workstream_id: &str) -> bool {
+        sql(&self.db, |conn| {
+            conn.prepare_cached(
+                "SELECT 1 FROM changes WHERE machine_id = ?1 AND project_id = ?2
+                   AND json_extract(data, '$.workstreamId') = ?3 AND state = ?4 LIMIT 1",
+            )
+            .expect("prepare")
+            .exists(params![
+                project_ref.machine_id.as_str(),
+                project_ref.project_id.as_str(),
+                workstream_id,
+                state_str(ChangeState::Merged)
+            ])
+            .expect("query")
+        })
+    }
+
     /// The workstream's Changes that are not merged, refused or abandoned, oldest first.
     pub fn unlanded(&self, project_ref: &ProjectRef, workstream_id: &str) -> Vec<Change> {
         sql(&self.db, |conn| {

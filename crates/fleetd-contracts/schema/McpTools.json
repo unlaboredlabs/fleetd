@@ -12420,6 +12420,10 @@
           "description": "The lead's latest one-line headline for it.",
           "type": "string"
         },
+        "merged": {
+          "description": "True once a PR of it merged; absent otherwise.",
+          "type": "boolean"
+        },
         "state": {
           "$ref": "#/$defs/WorkstreamState"
         },

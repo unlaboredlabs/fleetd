@@ -127,13 +127,30 @@ const two = (base: Fixture): Fixture => {
   f.answer("navi_asks", { navi: { ...ADA } }, {
     navi: { ...ADA },
     asks: [
-      { handle: "N4", to: billing, toTitle: "billing", text: "Is the October usage report ready?", at: at(f.now, -300_000), orders: [] },
+      {
+        handle: "N8",
+        to: storefront,
+        toTitle: "storefront",
+        text: "Follow-up to my last message (the Machines setup page): please don't take my guess at the cause at face value. Check the hub's logs and the node's reported version first, and if part of my report is wrong, say so.",
+        at: at(f.now, -600_000),
+        // Folded into the order opened for N7.
+        orders: [{ workstreamId: "W14", title: "Machines setup gives exact commands, and the update notice clears", state: "open", headline: "A writer is on the copyable commands; the stale version is next." }],
+      },
+      {
+        handle: "N7",
+        to: storefront,
+        toTitle: "storefront",
+        text: 'From the person, relayed by their Navi (their words: "machines setup is not good ux enough. user doesnt know what to do, so make it automatic or provide commands. also it keeps saying its fleetd is too old right after i updated.") Two things on the Machines setup page in the app:\n\n1. UX: a user doesn\'t know what to do next during machine setup. Make the steps automatic where possible, and where a step needs the person, show the exact command to run (copyable), not a vague instruction.\n2. Bug: the page keeps saying "Its fleetd is too old to change these from here" right after the person updated. Verify the cause from the code and logs rather than assuming, fix the real cause, and make the message clear about what to do if it is ever genuinely stale.',
+        at: at(f.now, -1_200_000),
+        orders: [{ workstreamId: "W14", title: "Machines setup gives exact commands, and the update notice clears", state: "open", headline: "A writer is on the copyable commands; the stale version is next." }],
+      },
+      { handle: "N4", to: billing, toTitle: "billing", text: "Is the October usage report ready?", at: at(f.now, -7_200_000), orders: [] },
       {
         handle: "N3",
         to: storefront,
         toTitle: "storefront",
         text: "Let people save their cart for later and come back to it.",
-        at: at(f.now, -1_500_000),
+        at: at(f.now, -18_000_000),
         orders: [{ workstreamId: "W12", title: "Saved carts", state: "open", headline: "A writer adds the saved-cart table; the reviewer is on the first PR." }],
       },
       {
@@ -142,7 +159,15 @@ const two = (base: Fixture): Fixture => {
         toTitle: "billing",
         text: "Send me last month's invoice totals by customer.",
         at: at(f.now, -86_400_000),
-        orders: [{ workstreamId: "W9", title: "Invoice totals by customer", state: "done", headline: "Sent the totals as a CSV." }],
+        orders: [{ workstreamId: "W9", title: "Invoice totals by customer", state: "done", headline: "Sent the totals as a CSV.", merged: true }],
+      },
+      {
+        handle: "N1",
+        to: storefront,
+        toTitle: "storefront",
+        text: "Try a dark theme for the storefront.",
+        at: at(f.now, -3 * 86_400_000),
+        orders: [{ workstreamId: "W5", title: "Storefront dark theme", state: "stopped" }],
       },
     ],
   });

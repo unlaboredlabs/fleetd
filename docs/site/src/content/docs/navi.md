@@ -40,7 +40,7 @@ The panel beside the chat has a Navi's own sections:
 
 | Section | Shows |
 |---|---|
-| Asked | The work this Navi asked your other projects for, newest first. Each item shows the project (click to open its chat), when it was asked, the Navi's words, and each order opened for it (*In progress* with its latest headline, *Done* or *Stopped*). |
+| Asked | The work this Navi asked your other projects for, newest first: one row each, with the ask in a line, its state (*Waiting* for an order, *Working*, *Merged*, *Done* or *Stopped*), the project and how long ago. A follow-up its lead took into the order of an earlier ask says *Folded into an earlier ask*. Click a row for the Navi's whole message and the orders opened for it, each linked to its page; the project's name opens its chat. |
 | Screens | The browsers and devices it uses, once your hub serves screens. |
 | Plan | Its checklist. |
 | History | What happened, and what you and the Navi decided. |

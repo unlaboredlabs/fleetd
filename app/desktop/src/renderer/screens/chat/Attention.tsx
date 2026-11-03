@@ -6,7 +6,10 @@
 // look at, which the lead flagged (a showcase, something to try, a risk) or an agent suggested trying: how many, the
 // oldest one's reason, Show, which goes to it and counts as seeing it, and Dismiss, then the hub's warning if any.
 // Otherwise the hub's warning, which stops nothing (a check red on main). One row with no dot: the words truncate, and Show, Dismiss or Resume stays.
-import { Button, Text } from "../../ui";
+// Questions (not an approval or a secret, which the lead can't go on without) have an × that hides them from the bar
+// until the lead asks again; the chat remembers it (hiddenWait).
+import { X } from "lucide-react";
+import { Button, Text, Tooltip } from "../../ui";
 import { useCommands } from "../palette";
 import { HubText } from "../projects/HubText";
 import { ResumeButton } from "../status/Resume";
@@ -23,6 +26,7 @@ export function AttentionLine({
   looks,
   onLook,
   onDismiss,
+  onHide,
 }: {
   waiting: Waiting | undefined;
   blocked: string | undefined;
@@ -38,6 +42,8 @@ export function AttentionLine({
   /** Show the oldest one, and Dismiss it. */
   onLook?: (() => void) | undefined;
   onDismiss?: (() => void) | undefined;
+  /** Hides the questions it waits on until the lead asks again; only for questions. */
+  onHide?: (() => void) | undefined;
 }) {
   const canShow = waiting !== undefined && waiting.targets.length > 0;
   const look = looks?.[0];
@@ -119,6 +125,13 @@ export function AttentionLine({
         <Button variant="link" onClick={onShow}>
           Show
         </Button>
+      ) : null}
+      {waiting.question !== undefined && onHide !== undefined ? (
+        <Tooltip content="Hide until there’s a new question">
+          <Button variant="quiet" iconOnly aria-label="Hide until there’s a new question" onClick={onHide}>
+            <X />
+          </Button>
+        </Tooltip>
       ) : null}
     </div>
   );

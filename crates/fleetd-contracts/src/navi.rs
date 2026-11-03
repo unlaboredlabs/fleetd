@@ -207,12 +207,16 @@ pub struct NaviAskOrder {
     pub state: WorkstreamState,
     /// The lead's latest one-line headline for it.
     pub headline: Option<String>,
+    /// True once a PR of it merged; absent otherwise.
+    pub merged: Option<bool>,
 }
 
-/// Sent to an agent message's project lead under the text: the handle it passes to `brief` as `asked`.
+/// Sent to an agent message's project lead under the text: the handle it passes to `brief` as `asked`, opening an order
+/// for it or folding it into one already open.
 pub fn ask_footer(handle: &AskHandle) -> String {
     format!(
-        "(Ask {handle}. If you open an order for it, pass asked: \"{handle}\" to brief, so Navi hears when it lands.)"
+        "(Ask {handle}. If you open an order for it, pass asked: \"{handle}\" to brief, so Navi hears when it lands. \
+         If you fold it into an order already open, call brief with that workstreamId and asked: \"{handle}\".)"
     )
 }
 

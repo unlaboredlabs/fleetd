@@ -27,8 +27,8 @@ const QUESTIONS = "Two calls before I ship it:\n\n1. **Copy link**: public or im
 
 describe("what the lead waits on", () => {
   it("counts the lead's numbered questions, and says when it asked", () => {
-    expect(waitingOn([item("a", "human", "ship it"), item("b", "lead", QUESTIONS)], LOADED, NOW, "UTC")).toEqual({ what: "2 questions, asked at 09:02", targets: [{ id: "b", part: "0" }] });
-    expect(waitingOn([item("b", "lead", "Looks good on your end?", at(18, 16, 40))], LOADED, NOW, "UTC")).toEqual({ what: "1 question, asked yesterday at 16:40", targets: [{ id: "b", part: "0" }] });
+    expect(waitingOn([item("a", "human", "ship it"), item("b", "lead", QUESTIONS)], LOADED, NOW, "UTC")).toEqual({ what: "2 questions, asked at 09:02", targets: [{ id: "b", part: "0" }], question: "b" });
+    expect(waitingOn([item("b", "lead", "Looks good on your end?", at(18, 16, 40))], LOADED, NOW, "UTC")).toEqual({ what: "1 question, asked yesterday at 16:40", targets: [{ id: "b", part: "0" }], question: "b" });
     expect(waitingOn([item("b", "lead", "Is it live?", at(12, 8))], LOADED, NOW, "UTC")?.what).toBe("1 question, asked Mon 12 Oct at 08:00");
   });
 
@@ -42,7 +42,7 @@ describe("what the lead waits on", () => {
   it("still waits on you after a teammate writes, in a chat the team shares", () => {
     const by = (personId: string) => ({ message: { person: { personId, name: personId } } as ChatMessage });
     const items = [item("s", "human", "ship it", at(19, 8), by("P1")), item("a", "lead", QUESTIONS), item("p", "human", "looks fine to me", at(19, 9, 3), by("P2"))];
-    expect(waitingOn(items, LOADED, NOW, "UTC", "P1")).toEqual({ what: "2 questions, asked at 09:02", targets: [{ id: "a", part: "0" }] });
+    expect(waitingOn(items, LOADED, NOW, "UTC", "P1")).toEqual({ what: "2 questions, asked at 09:02", targets: [{ id: "a", part: "0" }], question: "a" });
     // The teammate's own app: their message answered it.
     expect(waitingOn(items, LOADED, NOW, "UTC", "P2")).toBeUndefined();
     // A page not loaded can't hold the wait once you wrote; a teammate writing doesn't count.
@@ -53,7 +53,7 @@ describe("what the lead waits on", () => {
 
   it("goes to an earlier question you haven't answered, past the lead's later status lines", () => {
     const items = [item("h", "human", "go"), item("a", "lead", QUESTIONS, at(19, 8, 30)), item("b", "lead", "Merged #12.", at(19, 9, 47)), item("c", "lead", "Done. Over to you.", at(19, 9, 50))];
-    expect(waitingOn(items, LOADED, NOW, "UTC")).toEqual({ what: "2 questions, asked at 08:30", targets: [{ id: "a", part: "0" }] });
+    expect(waitingOn(items, LOADED, NOW, "UTC")).toEqual({ what: "2 questions, asked at 08:30", targets: [{ id: "a", part: "0" }], question: "a" });
   });
 
   it("goes to each bubble that asks, an ask block among them", () => {
@@ -66,6 +66,7 @@ describe("what the lead waits on", () => {
         { id: "b", part: "1" },
         { id: "b", part: "2" },
       ],
+      question: "b",
     });
     expect(waitingOn([split("Built it.Shipped.", [{ start: 0, end: 9 }, { start: 9, end: 17 }])], LOADED, NOW, "UTC")).toBeUndefined();
   });

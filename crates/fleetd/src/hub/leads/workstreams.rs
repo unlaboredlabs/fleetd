@@ -204,12 +204,14 @@ impl Workstreams {
     }
 
     /// `fleetd brief create` from the lead of `caller`: sets the brief of a draft and starts it, or edits it. Every
-    /// write is an event, so the history shows each version.
+    /// write is an event, so the history shows each version. `folded` is a Navi message the lead folds into it, said
+    /// in a `workstream.state` event of its own for Navi's bridge (hub/navi), brief changed or not.
     pub fn brief_create(
         &self,
         caller: &ProjectRef,
         workstream_id: &WorkstreamId,
         brief: Brief,
+        folded: Option<&AskHandle>,
     ) -> Result<BriefCreateResult, LeadError> {
         let w = &self.own(caller, workstream_id)?;
         let id = &w.workstream_id;
@@ -228,6 +230,14 @@ impl Workstreams {
             state,
             next: Some(next),
         };
+        if let Some(asked) = folded {
+            self.event(
+                w,
+                HubEventType::WorkstreamState,
+                format!("{id} takes ask {asked}"),
+                Some(serde_json::json!({ "workstreamId": id, "state": w.state, "asked": asked })),
+            )?;
+        }
         if w.brief.as_ref() == Some(&brief) {
             return Ok(result(w.state, format!("Unchanged. {running}")));
         }

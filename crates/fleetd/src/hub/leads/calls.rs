@@ -20,10 +20,11 @@ impl Area {
         let r = project_ref;
         Ok(match call {
             LeadCall::BriefCreate(c) => {
-                let id = match c.workstream_id {
-                    Some(id) => id,
+                // With a workstream, `asked` is a Navi message folded into it; opening one, the message it is for.
+                let (id, folded) = match c.workstream_id {
+                    Some(id) => (id, c.asked.as_ref()),
                     // No intent wake: the lead that opens it already knows.
-                    None => {
+                    None => (
                         self.workstreams
                             .open(
                                 IntakeInput {
@@ -35,10 +36,11 @@ impl Area {
                                 },
                                 c.asked.as_ref(),
                             )?
-                            .workstream_id
-                    }
+                            .workstream_id,
+                        None,
+                    ),
                 };
-                LeadCallResult::BriefCreate(self.workstreams.brief_create(r, &id, c.brief)?)
+                LeadCallResult::BriefCreate(self.workstreams.brief_create(r, &id, c.brief, folded)?)
             }
             LeadCall::Close(c) => LeadCallResult::Close(
                 self.workstreams
