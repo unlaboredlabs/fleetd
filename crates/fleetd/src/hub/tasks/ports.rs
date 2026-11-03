@@ -128,6 +128,11 @@ pub trait TaskPorts: Send + Sync {
     fn live_since(&self, _machine_id: &MachineId) -> Option<i64> {
         None
     }
+    /// A cloud machine asleep (hub/cloud): offline by design, so the worktree sweep counts no failed try against it and
+    /// leaves its worktrees for its catch-up at the next wake.
+    fn asleep(&self, _machine_id: &MachineId) -> bool {
+        false
+    }
     /// Executors.caughtUp: when the node of the machine's live link said it had reported every run its restart cut
     /// off; None before that, and from a node too old to say.
     fn caught_up(&self, _machine_id: &MachineId) -> Option<crate::hub::executor::CaughtUp> {

@@ -2663,6 +2663,26 @@ impl Executors {
         }
     }
 
+    /// Has the node seal the account's secret it holds to the box key `to`; none when it holds none. Only to a node
+    /// listing `CAP_CLAUDE_RESEAL`.
+    pub async fn claude_account_reseal(
+        &self,
+        machine_id: &MachineId,
+        account: fleetd_contracts::claude_accounts::ClaudeAccount,
+        to: fleetd_contracts::secrets::BoxPublicKey,
+    ) -> Result<Option<fleetd_contracts::secrets::SealedSecret>, ExecutorError> {
+        let op = NodeOperation::Read;
+        let call = SessionCall::ClaudeAccountReseal { account, to };
+        match self.call(machine_id, op, call, READ_TIMEOUT).await? {
+            SessionOutput::ClaudeAccountResealed { sealed } => Ok(sealed),
+            _ => Err(failed(
+                machine_id,
+                op,
+                "the node sent no answer to claude_account_reseal",
+            )),
+        }
+    }
+
     /// Has the node make one tiny `claude -p` call on the account: whether it worked, else claude's words, masked.
     /// Only to a node listing `CAP_CLAUDE_ACCOUNTS`.
     pub async fn claude_account_test(

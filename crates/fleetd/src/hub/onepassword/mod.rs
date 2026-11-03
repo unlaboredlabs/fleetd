@@ -30,6 +30,7 @@ use rusqlite::{OptionalExtension, params};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, error, is_human, offline, require};
 use crate::hub::checks::now_ts;
 use crate::hub::claude_accounts::{Whose, whose_for_lead, whose_for_task};
+use crate::hub::cloud::outbox::Missed;
 use crate::hub::executor::tools::from_executor;
 use crate::hub::store::{HubDb, StoreError};
 
@@ -147,10 +148,13 @@ fn node_ready(hub: &Hub, m: &MachineId) -> Result<(), ToolError> {
 }
 
 /// Each online node of `machines` forgets the person's token. One offline keeps it unused: the hub names the person
-/// to no launch there, as it no longer records the machine as holding it.
+/// to no launch there, as it no longer records the machine as holding it; a sleeping cloud machine forgets it as it
+/// wakes (hub/cloud).
 async fn forget(hub: &Hub, person: &PersonId, machines: &[MachineId]) {
     for m in machines {
         if node_ready(hub, m).is_err() {
+            let person_id = person.clone();
+            crate::hub::cloud::outbox::missed(hub, m, Missed::OnePasswordForget { person_id });
             continue;
         }
         if let Err(e) = hub

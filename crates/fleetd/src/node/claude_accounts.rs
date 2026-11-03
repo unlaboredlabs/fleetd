@@ -13,7 +13,7 @@ use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::claude_accounts::{
     ACCOUNT_CLEARS, API_KEY_ENV, BASE_URL_ENV, ClaudeAccount, ClaudeSecretSet, OAUTH_TOKEN_ENV,
 };
-use fleetd_contracts::secrets::SecretFingerprint;
+use fleetd_contracts::secrets::{BoxPublicKey, SealedSecret, SecretFingerprint};
 use fleetd_contracts::sessions::ApiModel;
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
@@ -142,6 +142,28 @@ pub fn apply(
     write_atomic(&file, &bytes)
         .map_err(|e| format!("cannot write {}: {}", shown(account), io_why(&e)))?;
     Ok(Some(fingerprint))
+}
+
+/// The account's secret sealed to another machine's box key `to` (standard base64 of 32 bytes), for a cloud machine
+/// to take with nobody pasting it again; none when this node holds no such secret. The plaintext stays in wiped
+/// buffers here.
+pub fn reseal(
+    home: &Path,
+    account: &ClaudeAccount,
+    to: &BoxPublicKey,
+) -> Result<Option<SealedSecret>, String> {
+    let Some(file) = read(home, account)? else {
+        return Ok(None);
+    };
+    let key: [u8; 32] = B64
+        .decode(to.as_str())
+        .ok()
+        .and_then(|k| k.try_into().ok())
+        .ok_or_else(|| "the box key to seal to is not 32 bytes".to_owned())?;
+    let sealed = crypto_box::PublicKey::from(key)
+        .seal(&mut crypto_box::aead::OsRng, file.value.as_bytes())
+        .map_err(|_| format!("{} could not be sealed", shown(account)))?;
+    Ok(Some(SealedSecret::unchecked(B64.encode(sealed))))
 }
 
 /// The variables a claude on `account` gets, and its secret by the variable's name for masking. Fails when the node

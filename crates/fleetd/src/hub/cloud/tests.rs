@@ -1,0 +1,395 @@
+//! Cloud machines over a real hub with fake nodes: the hub's Claude configuration sealed to a cloud machine at its
+//! enroll by a machine holding it and re-sealed after a change it slept through, forgets it missed replayed at its
+//! hello while a fixed machine's are not kept, the catch-up marking it ready, its heartbeat's `busy`, and the setup
+//! script's values.
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+use fleetd_contracts::claude_accounts::ClaudeAccount;
+use fleetd_contracts::ids::MachineId;
+use fleetd_contracts::node_link::{
+    CAP_CLAUDE_ACCOUNTS, CAP_CLAUDE_RESEAL, HubToNode, NodeBusy, NodeToHub,
+};
+use fleetd_contracts::sessions::SessionCall;
+use serde_json::{Value, json};
+
+use super::claude::{self, Brought};
+use super::outbox::Missed;
+use super::setup::{SetupScript, render};
+use crate::hub::api::Hub;
+use crate::hub::claude_accounts::tests::{call, device, hub, owner, sealed};
+
+const AT: &str = "2026-10-27T10:00:00.000Z";
+const OLD: &str = "5ec2e7a1";
+const NEW: &str = "0b5e55ed";
+
+fn m(id: &str) -> MachineId {
+    MachineId::unchecked(id)
+}
+
+/// A box key for a machine row, as a node's hello gives it.
+fn box_key() -> String {
+    use base64::Engine;
+    let secret = crypto_box::SecretKey::generate(&mut crypto_box::aead::OsRng);
+    base64::engine::general_purpose::STANDARD.encode(secret.public_key().as_bytes())
+}
+
+fn machine(hub: &Hub, id: &str, key: &str) {
+    let machine = serde_json::from_value(json!({
+        "machineId": id, "name": id, "tags": [], "status": "online", "lastSeenAt": AT, "nodeVersion": "0.1.0",
+        "boxPubKey": key,
+    }))
+    .unwrap();
+    hub.store.machine_upsert(&machine, None).unwrap();
+}
+
+/// boat-1 enrolled with a pool token: a cloud machine.
+fn enroll_pool(hub: &Hub, id: &str) {
+    let token = hub.auth.create_pool_enroll_token(&m(id)).unwrap().token;
+    hub.auth
+        .enroll_node(
+            &token,
+            &m(id),
+            &format!("pub-{id}"),
+            Some(&format!("fp-{id}")),
+        )
+        .unwrap();
+}
+
+/// What one fake node holds of the hub's account, by fingerprint, and the calls it got.
+#[derive(Clone, Default)]
+struct Fake {
+    holds: Arc<Mutex<Option<&'static str>>>,
+    calls: Arc<Mutex<Vec<SessionCall>>>,
+}
+
+impl Fake {
+    fn calls(&self) -> Vec<SessionCall> {
+        std::mem::take(&mut self.calls.lock().unwrap())
+    }
+}
+
+/// The fingerprint a box sealed now opens to: what the machines holding the account hold.
+type Current = Arc<Mutex<&'static str>>;
+
+/// Links `id`'s node, answering Claude account calls as a node would from what `fake` holds.
+async fn link(hub: &Arc<Hub>, id: &str, link_id: u64, fake: &Fake, current: &Current) {
+    let machine_id = m(id);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    hub.executors
+        .attach(
+            &machine_id,
+            crate::hub::executor::NodeSessions { link_id, send: tx },
+        )
+        .await;
+    let HubToNode::SessionCall(subscribe) = rx.recv().await.unwrap() else {
+        panic!("not a subscribe")
+    };
+    let frame = |v: Value| {
+        hub.executors
+            .handle_frame(&machine_id, serde_json::from_value::<NodeToHub>(v).unwrap())
+    };
+    frame(
+        json!({ "t": "machine_event", "seq": 1, "at": AT, "event": { "type": "snapshot",
+        "projects": [], "sessions": [] } }),
+    );
+    frame(
+        json!({ "t": "session_reply", "id": subscribe.id, "result": { "ok": { "kind": "done" } } }),
+    );
+    hub.executors.await_live(&machine_id).await;
+    hub.link
+        .set_capabilities(&machine_id, &[CAP_CLAUDE_ACCOUNTS, CAP_CLAUDE_RESEAL]);
+    let (hub, fake, current) = (hub.clone(), fake.clone(), current.clone());
+    tokio::spawn(async move {
+        while let Some(frame) = rx.recv().await {
+            let HubToNode::SessionCall(f) = frame else {
+                continue;
+            };
+            let mut holds = fake.holds.lock().unwrap();
+            let result = match &f.call {
+                SessionCall::ClaudeAccountSecret { set: None, .. } => {
+                    *holds = None;
+                    json!({ "ok": { "kind": "claude_account_saved" } })
+                }
+                SessionCall::ClaudeAccountSecret { set: Some(set), .. } => {
+                    if set.sealed.is_some() {
+                        *holds = Some(*current.lock().unwrap());
+                    }
+                    match *holds {
+                        Some(fp) => {
+                            json!({ "ok": { "kind": "claude_account_saved", "fingerprint": fp } })
+                        }
+                        None => json!({ "err": { "code": "invalid",
+                            "message": "this machine holds no the hub's API key: seal it again" } }),
+                    }
+                }
+                SessionCall::ClaudeAccountReseal { .. } => match *holds {
+                    Some(_) => {
+                        json!({ "ok": { "kind": "claude_account_resealed", "sealed": sealed("sk-ant-api") } })
+                    }
+                    None => json!({ "ok": { "kind": "claude_account_resealed" } }),
+                },
+                _ => json!({ "ok": { "kind": "done" } }),
+            };
+            drop(holds);
+            fake.calls.lock().unwrap().push(f.call.clone());
+            let reply = json!({ "t": "session_reply", "id": f.id, "result": result });
+            hub.executors.handle_frame(
+                &machine_id,
+                serde_json::from_value::<NodeToHub>(reply).unwrap(),
+            );
+        }
+    });
+}
+
+/// The hub's API key, held on devbox, saved through the tools as the app does.
+async fn hub_api_on(hub: &Arc<Hub>, machines: &[&str]) -> Value {
+    let admin = device(hub, &owner(hub), "admin");
+    let seals: Vec<Value> = machines
+        .iter()
+        .map(|id| json!({ "machineId": id, "sealed": sealed("sk-ant-api") }))
+        .collect();
+    call(
+        hub,
+        &admin,
+        "claude_hub_api_set",
+        json!({ "sealed": seals }),
+    )
+    .await
+    .unwrap()
+}
+
+fn held_on(hub: &Hub) -> HashMap<String, String> {
+    hub.db
+        .claude_accounts()
+        .hub_api()
+        .unwrap()
+        .unwrap()
+        .sealed_on
+        .into_iter()
+        .map(|s| (s.machine_id.to_string(), s.fingerprint.to_string()))
+        .collect()
+}
+
+#[tokio::test]
+async fn a_cloud_machine_gets_the_hubs_claude_at_enroll_with_nobody_pasting_it() {
+    let (hub, _home) = hub();
+    let current: Current = Arc::new(Mutex::new(OLD));
+    let devbox = Fake::default();
+    machine(&hub, "devbox", &box_key());
+    link(&hub, "devbox", 1, &devbox, &current).await;
+    hub_api_on(&hub, &["devbox"]).await;
+    devbox.calls();
+
+    // boat-1 joins: a new VM, its own box key, holding nothing.
+    let boat_key = box_key();
+    machine(&hub, "boat-1", &boat_key);
+    enroll_pool(&hub, "boat-1");
+    let boat = Fake::default();
+    link(&hub, "boat-1", 2, &boat, &current).await;
+    assert_eq!(
+        claude::bring(&hub, &m("boat-1")).await,
+        Ok(Brought::Resealed {
+            account: ClaudeAccount::Hub,
+            from: m("devbox"),
+        })
+    );
+    // devbox sealed its copy to boat-1's box key, and boat-1 took the box.
+    let resealed = devbox.calls();
+    assert!(
+        matches!(&resealed[..], [SessionCall::ClaudeAccountReseal { account: ClaudeAccount::Hub, to }]
+            if to.as_str() == boat_key),
+        "{resealed:?}"
+    );
+    let took = boat.calls();
+    assert!(
+        matches!(took.last(), Some(SessionCall::ClaudeAccountSecret { set: Some(set), .. }) if set.sealed.is_some()),
+        "{took:?}"
+    );
+    assert_eq!(held_on(&hub)["boat-1"], OLD);
+    // Nothing of it is kept on the hub but fingerprints.
+    let rows = crate::hub::claude_accounts::tests::every_row(&hub);
+    assert!(!rows.contains("sk-ant-api"));
+
+    // At its next wake it holds the current key: one call, nothing resealed.
+    assert_eq!(
+        claude::bring(&hub, &m("boat-1")).await,
+        Ok(Brought::Current(ClaudeAccount::Hub))
+    );
+    assert!(devbox.calls().is_empty());
+    let probed = boat.calls();
+    assert!(
+        matches!(&probed[..], [SessionCall::ClaudeAccountSecret { set: Some(set), .. }] if set.sealed.is_none()),
+        "{probed:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_key_replaced_while_a_cloud_machine_slept_is_resealed_at_its_wake() {
+    let (hub, _home) = hub();
+    let current: Current = Arc::new(Mutex::new(OLD));
+    let devbox = Fake::default();
+    machine(&hub, "devbox", &box_key());
+    machine(&hub, "boat-1", &box_key());
+    enroll_pool(&hub, "boat-1");
+    link(&hub, "devbox", 1, &devbox, &current).await;
+    let boat = Fake::default();
+    link(&hub, "boat-1", 2, &boat, &current).await;
+    hub_api_on(&hub, &["devbox", "boat-1"]).await;
+    assert_eq!(held_on(&hub).len(), 2);
+
+    // boat-1 goes to sleep; the admin replaces the key, sealed to every machine in the list.
+    hub.executors.detach(&m("boat-1")).await;
+    *current.lock().unwrap() = NEW;
+    let saved = hub_api_on(&hub, &["devbox", "boat-1"]).await;
+    assert!(
+        saved["next"].as_str().unwrap().contains("boat-1"),
+        "{saved}"
+    );
+    assert_eq!(held_on(&hub).keys().collect::<Vec<_>>(), ["devbox"]);
+    // It must forget the old key: kept for its hello.
+    assert_eq!(
+        hub.db.cloud_outbox().list(&m("boat-1")).unwrap(),
+        [(
+            1,
+            Missed::ClaudeForget {
+                account: ClaudeAccount::Hub
+            }
+        )]
+    );
+
+    // It wakes: the catch-up forgets the old key, then the new one is sealed to it from devbox.
+    boat.calls();
+    link(&hub, "boat-1", 3, &boat, &current).await;
+    assert!(
+        !hub.cloud.ready(&hub, &m("boat-1")),
+        "not before its catch-up"
+    );
+    let report = super::catch_up::catch_up(&hub, &m("boat-1")).await;
+    assert!(report.problems.is_empty(), "{report:?}");
+    assert_eq!(report.forgotten, 1);
+    assert_eq!(
+        report.claude,
+        Some(Brought::Resealed {
+            account: ClaudeAccount::Hub,
+            from: m("devbox"),
+        })
+    );
+    let calls = boat.calls();
+    assert!(
+        matches!(
+            calls.first(),
+            Some(SessionCall::ClaudeAccountSecret { set: None, .. })
+        ),
+        "the forget first: {calls:?}"
+    );
+    assert_eq!(held_on(&hub)["boat-1"], NEW);
+    assert!(hub.db.cloud_outbox().list(&m("boat-1")).unwrap().is_empty());
+    assert!(hub.cloud.ready(&hub, &m("boat-1")));
+}
+
+#[tokio::test]
+async fn only_a_cloud_machine_keeps_what_it_missed() {
+    let (hub, _home) = hub();
+    let current: Current = Arc::new(Mutex::new(OLD));
+    for id in ["devbox", "laptop", "boat-1"] {
+        machine(&hub, id, &box_key());
+    }
+    enroll_pool(&hub, "boat-1");
+    let fakes: Vec<Fake> = (0..3).map(|_| Fake::default()).collect();
+    for (n, id) in ["devbox", "laptop", "boat-1"].iter().enumerate() {
+        link(&hub, id, n as u64 + 1, &fakes[n], &current).await;
+    }
+    hub_api_on(&hub, &["devbox", "laptop", "boat-1"]).await;
+    hub.executors.detach(&m("laptop")).await;
+    hub.executors.detach(&m("boat-1")).await;
+    let admin = device(&hub, &owner(&hub), "admin");
+    call(&hub, &admin, "claude_hub_api_remove", json!({}))
+        .await
+        .unwrap();
+    assert!(hub.db.cloud_outbox().list(&m("laptop")).unwrap().is_empty());
+    assert_eq!(hub.db.cloud_outbox().list(&m("boat-1")).unwrap().len(), 1);
+    // A fixed machine is always ready; a cloud machine offline never is.
+    assert!(hub.cloud.ready(&hub, &m("laptop")));
+    assert!(!hub.cloud.ready(&hub, &m("boat-1")));
+    // With no hub configuration left, there is nothing to bring.
+    link(&hub, "boat-1", 4, &fakes[2], &current).await;
+    let report = super::catch_up::catch_up(&hub, &m("boat-1")).await;
+    assert_eq!(report.claude, Some(Brought::Nothing));
+    assert_eq!(report.forgotten, 1);
+    assert!(
+        fakes[2].holds.lock().unwrap().is_none(),
+        "it forgot the key"
+    );
+}
+
+#[tokio::test]
+async fn the_hub_keeps_each_machines_busy_from_its_heartbeat() {
+    let (hub, _home) = hub();
+    let lab = m("lab");
+    assert_eq!(hub.link.busy(&lab), None);
+    let busy = NodeBusy {
+        threads: 1,
+        screens: 2,
+        uploads: 0,
+        hosted: 1,
+    };
+    hub.link.observe_busy(&lab, Some(busy));
+    assert_eq!(hub.link.busy(&lab), Some(busy));
+    assert!(!busy.idle());
+    hub.link.observe_busy(&lab, Some(NodeBusy::default()));
+    assert!(hub.link.busy(&lab).unwrap().idle());
+    // An older node sends none: nothing is assumed.
+    hub.link.observe_busy(&lab, None);
+    assert_eq!(hub.link.busy(&lab), None);
+    // On the wire, from a node.
+    let beat: NodeToHub = serde_json::from_value(json!({ "t": "hb", "at": AT,
+        "busy": { "threads": 0, "screens": 0, "uploads": 3, "hosted": 0 } }))
+    .unwrap();
+    let NodeToHub::Heartbeat(beat) = beat else {
+        panic!("not a heartbeat")
+    };
+    assert_eq!(beat.busy.map(|b| b.uploads), Some(3));
+}
+
+#[test]
+fn the_setup_script_joins_the_public_hub_on_its_channel_with_every_value_quoted() {
+    let slot = SetupScript {
+        hub_url: "https://devbox.example.net".into(),
+        machine_id: m("boat-2"),
+        version: "0.4.0".into(),
+        release_build: true,
+        git_identity: Some("Dev Box <dev@example.net>".into()),
+        claude: "2.1.314".into(),
+    };
+    let script = render(&slot);
+    for line in [
+        "HUB=https://devbox.example.net",
+        "MACHINE=boat-2",
+        "CHANNEL=stable",
+        "BASE_URL=https://github.com/unlaboredlabs/fleetd/releases/download/v0.4.0",
+        "IDENTITY='Dev Box <dev@example.net>'",
+        "TOKEN_FILE=/tmp/fleetd-enroll-token",
+        "AGENT=fleetd",
+        "CLAUDE=2.1.314",
+    ] {
+        assert!(script.lines().any(|l| l == line), "no {line}");
+    }
+    assert!(!script.contains("=@"), "every placeholder filled");
+    // An edge hub: the newest edge build, nothing pinned; no identity is an empty value.
+    let edge = render(&SetupScript {
+        version: "0.0.0-edge.202611031200+aeb0b7f".into(),
+        git_identity: None,
+        ..slot
+    });
+    assert!(edge.lines().any(|l| l == "CHANNEL=edge"));
+    assert!(edge.lines().any(|l| l == "BASE_URL=''"));
+    assert!(edge.lines().any(|l| l == "IDENTITY=''"));
+}
+
+#[test]
+fn cloud_machines_need_the_hubs_public_https_address() {
+    let (hub, _home) = hub();
+    let why = super::setup::public_hub_url(&hub).unwrap_err();
+    assert!(why.contains("fleetd init --url https://"), "{why}");
+}

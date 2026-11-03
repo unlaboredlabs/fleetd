@@ -465,3 +465,47 @@ async fn a_task_left_queued_under_an_order_closed_earlier_is_cancelled() {
     assert_ne!(state(2), TaskState::Cancelled);
     assert_eq!(hub.tasks.cancel_closed_queued().await, 0);
 }
+
+/// A cloud machine asleep at the nightly sweep is no failure: its worktrees wait, with no try counted, for its
+/// catch-up when it wakes, which sweeps that one machine only.
+#[tokio::test(flavor = "current_thread")]
+async fn a_sleeping_cloud_machine_is_swept_when_it_wakes_not_given_up_on() {
+    let (hub, _home) = hub_on(ManualClock::at(NOW as u64));
+    let node = Node::link(&hub).await;
+    let mut removals = serve(&hub, node, HashMap::new());
+    let boat = MachineId::unchecked("boat-1");
+    let token = hub.auth.create_pool_enroll_token(&boat).unwrap().token;
+    hub.auth
+        .enroll_node(&token, &boat, "pub-boat-1", Some("fp-boat-1"))
+        .unwrap();
+    ended(&hub, 1, 4);
+    ended_on(&hub, "boat-1", 2, 4);
+
+    for _ in 0..MAX_TRIES + 1 {
+        let night = hub.tasks.sweep_worktrees().await;
+        assert_eq!(night.failed, 0, "boat-1 asleep is not a failure");
+    }
+    assert_eq!(drain(&mut removals), ["t1"]);
+    assert!(system_lines(&hub).is_empty(), "nothing given up on");
+    let tries: i64 = hub
+        .db
+        .with(|c| {
+            Ok(
+                c.query_row("SELECT worktree_tries FROM tasks WHERE n = 2", [], |r| {
+                    r.get(0)
+                })?,
+            )
+        })
+        .unwrap();
+    assert_eq!(tries, 0);
+
+    // A wake's sweep is of its own machine only: lab-a's is done already, boat-1's is still due.
+    let lab = MachineId::unchecked("lab-a");
+    let woke = hub.tasks.sweep_worktrees_on(&lab).await;
+    assert_eq!((woke.removed, woke.failed), (0, 0));
+    let woke = hub.tasks.sweep_worktrees_on(&boat).await;
+    assert_eq!(
+        woke.failed, 1,
+        "boat-1 isn't linked in this test: tried, and counted, once awake"
+    );
+}

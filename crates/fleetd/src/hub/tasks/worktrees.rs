@@ -5,7 +5,8 @@
 //! the worktree of every task that ended over `policy.worktree_days` (3) days ago, through its safe removal. One
 //! holding work that exists only there (uncommitted changes, unpushed commits) is kept and the person is told once in
 //! the project's chat, in one line a sweep listing all it kept there; one the node couldn't remove (offline, a git
-//! error) is tried again the next night, up to [`MAX_TRIES`] times, then given up on with one line to the person. A
+//! error) is tried again the next night, up to [`MAX_TRIES`] times, then given up on with one line to the person; a
+//! cloud machine asleep is no failure, and its worktrees go in its catch-up when it wakes (hub/cloud). A
 //! session its node doesn't know counts as removed, as does a removal done at the task's end or merge. Each sweep also
 //! cancels tasks still queued under an order that has closed: they would never start.
 use std::sync::Arc;
@@ -47,8 +48,18 @@ pub struct Swept {
 }
 
 impl Tasks {
-    /// One sweep of the worktrees of tasks that ended over `policy.worktree_days` days ago, one at a time.
+    /// One sweep of the worktrees of tasks that ended over `policy.worktree_days` days ago, one at a time. A sleeping
+    /// cloud machine's are left for its catch-up ([`Self::sweep_worktrees_on`]), with no try counted.
     pub async fn sweep_worktrees(self: &Arc<Self>) -> Swept {
+        self.sweep_worktrees_of(None).await
+    }
+
+    /// [`Self::sweep_worktrees`] of one machine's worktrees only: a cloud machine's catch-up as it wakes (hub/cloud).
+    pub async fn sweep_worktrees_on(self: &Arc<Self>, machine_id: &MachineId) -> Swept {
+        self.sweep_worktrees_of(Some(machine_id)).await
+    }
+
+    async fn sweep_worktrees_of(self: &Arc<Self>, only: Option<&MachineId>) -> Swept {
         let days = self
             .d
             .ports
@@ -71,6 +82,11 @@ impl Tasks {
             let Some(thread) = &task.thread_ref else {
                 continue;
             };
+            if only.is_some_and(|m| *m != thread.machine_id)
+                || (only.is_none() && self.d.ports.asleep(&thread.machine_id))
+            {
+                continue;
+            }
             let id = task.task_id.as_str();
             let seen = match self.d.ports.remove_worktree(thread).await {
                 Ok(()) => {

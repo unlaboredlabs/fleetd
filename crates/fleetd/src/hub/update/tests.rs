@@ -1825,3 +1825,42 @@ fn a_run_saved_on_nightly_reads_as_edge() {
         serde_json::from_slice(&fs::read(dir.join("run.json")).unwrap()).unwrap();
     assert_eq!(written["channel"], "edge");
 }
+
+/// A cloud machine that slept through an update gets it at its hello: its node first (it restarts, and the rest waits
+/// for its next hello), then the Claude Code the hub's build was tested with; one that is current costs nothing.
+#[tokio::test]
+async fn a_cloud_machine_that_slept_through_an_update_catches_up_at_its_hello() {
+    use super::NodeCatchUp;
+    let home = tempfile::tempdir().unwrap();
+    let fake = Fake::new(home.path(), b"new")
+        .node("boat-1", OLD, true, true, Some(Answer::BackOn(NEW)))
+        .node("boat-2", OLD, true, false, None);
+    *fake.running.lock().unwrap() = NEW.into();
+    let fake = Arc::new(fake);
+    let updates = area(home.path(), &fake);
+    let boat = MachineId::unchecked("boat-1");
+
+    assert_eq!(updates.catch_up(&boat).await, Ok(NodeCatchUp::Restarting));
+    assert_eq!(*fake.asked.lock().unwrap(), ["boat-1"]);
+    assert!(
+        fake.claude_asked.lock().unwrap().is_empty(),
+        "Claude waits for the next hello"
+    );
+    // Back on the hub's build: its Claude Code is brought to the tested one.
+    assert_eq!(updates.catch_up(&boat).await, Ok(NodeCatchUp::Current));
+    assert_eq!(*fake.claude_asked.lock().unwrap(), ["boat-1"]);
+    assert_eq!(fake.asked.lock().unwrap().len(), 1, "not updated twice");
+    // Current on both: nothing asked.
+    for n in fake.nodes.lock().unwrap().iter_mut() {
+        n.claude = Some("2.1.314 (Claude Code)".into());
+    }
+    assert_eq!(updates.catch_up(&boat).await, Ok(NodeCatchUp::Current));
+    assert_eq!(fake.claude_asked.lock().unwrap().len(), 1);
+    // A node that can't update itself says so, and is never asked.
+    let why = updates
+        .catch_up(&MachineId::unchecked("boat-2"))
+        .await
+        .unwrap_err();
+    assert!(why.contains("fleetd update"), "{why}");
+    assert_eq!(fake.asked.lock().unwrap().len(), 1);
+}

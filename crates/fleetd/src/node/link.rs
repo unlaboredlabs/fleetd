@@ -450,6 +450,7 @@ async fn run_link_once(
             fleetd_contracts::node_link::CAP_CLAUDE_LOGIN.to_owned(),
             fleetd_contracts::node_link::CAP_SESSION_SEAL.to_owned(),
             fleetd_contracts::node_link::CAP_CLAUDE_ACCOUNTS.to_owned(),
+            fleetd_contracts::node_link::CAP_CLAUDE_RESEAL.to_owned(),
             fleetd_contracts::node_link::CAP_ONEPASSWORD.to_owned(),
             fleetd_contracts::node_link::CAP_TELEGRAM.to_owned(),
             fleetd_contracts::node_link::CAP_ONEPASSWORD_CARDS.to_owned(),
@@ -527,14 +528,23 @@ async fn run_link_once(
         let tx = tx.clone();
         let mac = shared.agents_mac.clone();
         let sessions = shared.node_sessions.clone();
+        let running = shared.node_sessions.running();
+        let screens = shared.sessions.clone();
+        let hosted = shared.hosted.clone();
         tasks.spawn(async move {
             loop {
                 tokio::time::sleep(HEARTBEAT_EVERY).await;
                 let (limits, home) = (sessions.login_limits(), sessions.home());
-                let (mut load, steps) = tokio::task::spawn_blocking(move || {
+                let (runs, live, hosted) = (
+                    *running.borrow(),
+                    screens.as_ref().map_or(0, |s| s.count()),
+                    hosted.count(),
+                );
+                let (mut load, steps, busy) = tokio::task::spawn_blocking(move || {
                     (
                         super::load::read(limits, &home),
                         super::browser::record::steps::latest(),
+                        Some(super::busy::read(runs, live, hosted, &home)),
                     )
                 })
                 .await
@@ -547,6 +557,7 @@ async fn run_link_once(
                         at: Timestamp::from(now_iso()),
                         load,
                         steps: fleetd_contracts::prim::List::unchecked(steps),
+                        busy,
                     })))
                     .is_err()
                 {

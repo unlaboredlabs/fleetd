@@ -1242,6 +1242,11 @@ impl Hosted {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    /// How many screens are hosted here for agents on other machines.
+    pub fn count(&self) -> usize {
+        self.lock().len()
+    }
+
     /// The secrets a session's agent's node sealed to this node, for its broker to scrub its recording with.
     pub fn secrets(&self, key: &str) -> Secrets {
         Secrets(

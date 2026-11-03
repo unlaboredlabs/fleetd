@@ -283,6 +283,15 @@ pub enum SessionCall {
         account: crate::claude_accounts::ClaudeAccount,
         set: Option<crate::claude_accounts::ClaudeSecretSet>,
     },
+    /// Seal the secret of one Claude account this node holds to another machine's box key (`to`): how a cloud machine
+    /// gets the hub's Claude configuration with nobody pasting it again (hub/cloud/claude.rs). The value never leaves
+    /// the node unsealed; the reply has the box, or none when the node holds no such secret. Only nodes listing
+    /// [`crate::node_link::CAP_CLAUDE_RESEAL`] get it.
+    #[serde(rename_all = "camelCase")]
+    ClaudeAccountReseal {
+        account: crate::claude_accounts::ClaudeAccount,
+        to: crate::secrets::BoxPublicKey,
+    },
     /// One tiny `claude -p` call made on the account, to prove its key or token works. Only nodes listing
     /// [`crate::node_link::CAP_CLAUDE_ACCOUNTS`] get it.
     #[serde(rename_all = "camelCase")]
@@ -814,6 +823,10 @@ pub enum SessionOutput {
     /// Answer to `claude_account_secret`: the fingerprint of the secret it holds now, none once forgotten.
     ClaudeAccountSaved {
         fingerprint: Option<crate::secrets::SecretFingerprint>,
+    },
+    /// Answer to `claude_account_reseal`: the secret sealed to the machine asked for, none when this node holds none.
+    ClaudeAccountResealed {
+        sealed: Option<crate::secrets::SealedSecret>,
     },
     /// Answer to `claude_account_test`: whether the call worked, else claude's words with the secret masked.
     ClaudeAccountTested {

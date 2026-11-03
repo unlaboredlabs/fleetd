@@ -28,6 +28,7 @@ use fleetd_contracts::prim::True;
 use super::Whose;
 use crate::hub::api::{Caller, Hub, Registry, ToolError, error, is_human, offline, require};
 use crate::hub::checks::now_ts;
+use crate::hub::cloud::outbox::Missed;
 use crate::hub::executor::tools::from_executor;
 use crate::hub::people::tools::administrator;
 
@@ -168,10 +169,13 @@ async fn relay(
 }
 
 /// Each online node of `machines` forgets the account's secret. One offline keeps it unused: the hub runs nothing
-/// on the account there, as it no longer records the machine as holding it.
+/// on the account there, as it no longer records the machine as holding it; a sleeping cloud machine forgets it as it
+/// wakes (hub/cloud).
 async fn forget(hub: &Hub, account: &ClaudeAccount, machines: &[MachineId]) {
     for m in machines {
         if node_ready(hub, m).is_err() {
+            let account = account.clone();
+            crate::hub::cloud::outbox::missed(hub, m, Missed::ClaudeForget { account });
             continue;
         }
         if let Err(e) = hub

@@ -12,6 +12,7 @@ pub mod chat_pins;
 pub mod checklist;
 pub mod checks;
 pub mod claude_accounts;
+pub mod cloud;
 pub mod doctor;
 pub mod executor;
 pub mod github_app;

@@ -444,18 +444,61 @@ impl Auth {
 
     /// One-time, valid for 15 minutes.
     pub fn create_enroll_token(&self, machine_id: &MachineId) -> Result<EnrollToken, StoreError> {
+        self.mint_enroll_token(machine_id, false)
+    }
+
+    /// A pool enroll token: [`Self::create_enroll_token`]'s, minted by the hub itself for one of its cloud machine slots
+    /// (hub/pool), so the slot enrolls with no person in the loop. Only such a token enrolls a pool machine's id from
+    /// a new computer, as a recreated VM is, and the machine it enrolls is a pool machine ([`Self::is_pool`]).
+    pub fn create_pool_enroll_token(
+        &self,
+        machine_id: &MachineId,
+    ) -> Result<EnrollToken, StoreError> {
+        self.mint_enroll_token(machine_id, true)
+    }
+
+    fn mint_enroll_token(
+        &self,
+        machine_id: &MachineId,
+        pool: bool,
+    ) -> Result<EnrollToken, StoreError> {
         let expires = self.now() + ENROLL_TTL_MS;
         let token = secret(ENROLL_PREFIX);
         self.db.with(|conn| {
             conn.prepare_cached(
-                "INSERT INTO enroll_tokens (hash, machine_id, expires_ms) VALUES (?, ?, ?)",
+                "INSERT INTO enroll_tokens (hash, machine_id, expires_ms, pool) VALUES (?, ?, ?, ?)",
             )?
-            .execute(params![sha256(&token), machine_id.as_str(), expires])?;
+            .execute(params![sha256(&token), machine_id.as_str(), expires, pool])?;
             Ok(())
         })?;
         Ok(EnrollToken {
             token,
             expires_at: iso_ms(expires),
+        })
+    }
+
+    /// Whether `token` is a pool enroll token for `machine_id` that can still be used.
+    fn pool_token_open(&self, token: &str, machine_id: &MachineId) -> Result<bool, StoreError> {
+        let now = self.now();
+        self.db.with(|conn| {
+            Ok(conn
+                .prepare_cached(
+                    "SELECT 1 FROM enroll_tokens WHERE hash = ? AND machine_id = ? AND pool = 1 AND used_ms IS NULL AND expires_ms > ?",
+                )?
+                .query_row(params![sha256(token), machine_id.as_str(), now], |_| Ok(()))
+                .optional()?
+                .is_some())
+        })
+    }
+
+    /// Whether the machine's node enrolled with a pool enroll token: one of the hub's cloud machines.
+    pub fn is_pool(&self, machine_id: &MachineId) -> Result<bool, StoreError> {
+        self.db.with(|conn| {
+            Ok(conn
+                .prepare_cached("SELECT pool FROM node_keys WHERE machine_id = ?")?
+                .query_row([machine_id.as_str()], |row| row.get::<_, bool>(0))
+                .optional()?
+                .unwrap_or(false))
         })
     }
 
@@ -470,18 +513,19 @@ impl Auth {
         let hash = sha256(token);
         let burned = self.db.transaction(|conn| {
             // One statement, so two nodes racing on one token cannot both win.
-            let changed = conn
+            let pool: Option<bool> = conn
                 .prepare_cached(
-                    "UPDATE enroll_tokens SET used_ms = $now WHERE hash = $hash AND machine_id = $machine AND used_ms IS NULL AND expires_ms > $now",
+                    "UPDATE enroll_tokens SET used_ms = $now WHERE hash = $hash AND machine_id = $machine AND used_ms IS NULL AND expires_ms > $now RETURNING pool",
                 )?
-                .execute(named_params! { "$now": now, "$hash": hash, "$machine": machine_id.as_str() })?;
-            if changed == 0 {
+                .query_row(named_params! { "$now": now, "$hash": hash, "$machine": machine_id.as_str() }, |row| row.get(0))
+                .optional()?;
+            let Some(pool) = pool else {
                 return Ok(false);
-            }
+            };
             conn.prepare_cached(
-                "INSERT INTO node_keys (machine_id, pub_key) VALUES (?, ?) ON CONFLICT (machine_id) DO UPDATE SET pub_key = excluded.pub_key",
+                "INSERT INTO node_keys (machine_id, pub_key, pool) VALUES (?, ?, ?) ON CONFLICT (machine_id) DO UPDATE SET pub_key = excluded.pub_key, pool = excluded.pool",
             )?
-            .execute(params![machine_id.as_str(), pub_key])?;
+            .execute(params![machine_id.as_str(), pub_key, pool])?;
             Ok(true)
         })?;
         if burned {
@@ -526,7 +570,9 @@ impl Auth {
 
     /// Enrolls `machine_id`'s node from the computer `fingerprint` names: refused when that id is already another
     /// computer's (whatever its name, its code or its folders), else the token is burned and the node's key and
-    /// computer recorded. A node with no fingerprint (an older one) is held to its token only.
+    /// computer recorded. A node with no fingerprint (an older one) is held to its token only. The one exception: a
+    /// pool machine's id enrolls from a new computer with a pool enroll token the hub minted for it (its VM was
+    /// recreated); a fixed machine's never does, whatever the token.
     pub fn enroll_node(
         &self,
         token: &str,
@@ -538,6 +584,7 @@ impl Auth {
         if let Some(theirs) = fingerprint
             && let Some(ours) = self.node_fingerprint(machine_id)?
             && theirs != ours
+            && !(self.is_pool(machine_id)? && self.pool_token_open(token, machine_id)?)
         {
             return Err(Unauthorized {
                 code: ErrorCode::Forbidden,

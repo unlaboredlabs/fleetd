@@ -1,4 +1,4 @@
-//! `fleetd node join|run|serve` and `fleetd hub start|serve`: the CLI parses the flags, the node and the hub run.
+//! `fleetd node join|run|serve|trust|flush` and `fleetd hub start|serve`: the CLI parses the flags, the node and the hub run.
 
 use std::path::PathBuf;
 
@@ -20,6 +20,7 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("machine", Kind::Str),
     ("claude-config-dir", Kind::Str),
     ("mac", Kind::Bool),
+    ("wait", Kind::Str),
 ];
 
 fn usage(message: &str) -> u8 {
@@ -117,6 +118,19 @@ pub async fn node_command(argv: &[String]) -> u8 {
                 }
                 Err(e) => exit(Err(format!("{} was not trusted: {e}", dir.display()))),
             }
+        }
+        Some("flush") => {
+            let wait = match v.str("wait").map(str::parse::<u64>) {
+                None => 50,
+                Some(Ok(secs)) => secs,
+                Some(Err(_)) => return usage("--wait takes a number of seconds"),
+            };
+            let home = home.unwrap_or_else(crate::node::config::default_node_home);
+            println!(
+                "{}",
+                crate::node::flush::flush(&home, std::time::Duration::from_secs(wait)).await
+            );
+            0
         }
         Some(other) => usage(&format!("unknown node command '{other}'")),
         None => usage("missing node command"),

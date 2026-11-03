@@ -174,6 +174,10 @@ pub const CAP_SESSION_SEAL: &str = "session_seal";
 /// `claudeAccount` on them (teams step 8).
 pub const CAP_CLAUDE_ACCOUNTS: &str = "claude_accounts";
 
+/// The node seals a Claude account's secret it holds to another machine's box key (`claude_account_reseal`): a cloud
+/// machine gets the hub's Claude configuration from a machine that holds it, through the hub as ciphertext only.
+pub const CAP_CLAUDE_RESEAL: &str = "claude_reseal";
+
 /// The node keeps people's 1Password tokens (`onepassword_token`, `onepassword_test`) and gives a launch's
 /// `onepassword` person's token to its fill_credential when its project and order have none.
 pub const CAP_ONEPASSWORD: &str = "onepassword";
@@ -239,7 +243,35 @@ pub struct Heartbeat {
     /// Node -> hub only: the latest step of each session live here, newest first. Absent from older nodes.
     #[serde(default, skip_serializing_if = "<[_]>::is_empty")]
     pub steps: List<crate::browser::ScreenStep, 0, { crate::browser::SCREEN_STEPS_MAX }>,
+    /// Node -> hub only: what keeps the machine busy now. Absent from older nodes.
+    pub busy: Option<NodeBusy>,
 }
+
+/// What keeps a machine busy, as its node counts it at each heartbeat. A cloud machine is idle, and may be stopped,
+/// only while every count is 0 (hub/pool); nothing in it is lost by a stop, it only waits for the next wake.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeBusy {
+    /// Agent sessions with a run going.
+    pub threads: u32,
+    /// Screens live here: browsers, Android emulators, iOS simulators and desktops, its own agents' and others'.
+    pub screens: u32,
+    /// Screen recordings that ended within [`UPLOAD_BUSY_SECS`] and wait to reach the hub. An older one goes at a later
+    /// wake, so it doesn't keep the machine up.
+    pub uploads: u32,
+    /// Of `screens`, those hosted here for agents on other machines.
+    pub hosted: u32,
+}
+
+impl NodeBusy {
+    /// Nothing runs, nothing is live and nothing waits to upload.
+    pub fn idle(&self) -> bool {
+        self.threads == 0 && self.screens == 0 && self.uploads == 0 && self.hosted == 0
+    }
+}
+
+/// How long an ended recording that hasn't reached the hub keeps its machine busy.
+pub const UPLOAD_BUSY_SECS: u64 = 30 * 60;
 
 /// What a machine reports about itself with each heartbeat.
 #[skip_serializing_none]
