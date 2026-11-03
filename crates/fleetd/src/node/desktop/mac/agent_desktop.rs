@@ -39,8 +39,10 @@ fn archive_url(target: &str) -> String {
     )
 }
 
-/// How long one command may run: `wait` waits, and a big app's snapshot reads for a while.
-pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
+/// How long one command may run: under the hub's wait for a call it forwards to the Mac (hub/machine_roles/calls.rs,
+/// CALL_WAIT 45 s), so the agent always gets the command's own answer, a stop at this limit included. A longer `wait`
+/// is the agent's to take in steps.
+pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(40);
 
 /// The start of what a command printed that the agent gets back.
 pub const OUTPUT_CHARS: usize = 100_000;
@@ -262,7 +264,11 @@ pub fn answer(stdout: &str, stderr: &str, code: Option<i32>) -> String {
         text = match code {
             Some(0) => "agent-desktop printed nothing.".to_owned(),
             Some(c) => format!("agent-desktop exited with code {c} and printed nothing."),
-            None => "agent-desktop was stopped and printed nothing.".to_owned(),
+            None => format!(
+                "agent-desktop was stopped after {} s and printed nothing: wait in shorter steps (--timeout-ms), or read a \
+                 smaller part (snapshot --skeleton, --root <ref>)",
+                COMMAND_TIMEOUT.as_secs()
+            ),
         };
     }
     if text.chars().count() > OUTPUT_CHARS {

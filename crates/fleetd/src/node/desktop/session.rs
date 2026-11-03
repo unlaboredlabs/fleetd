@@ -61,7 +61,9 @@ pub struct Session {
     pub dir: PathBuf,
     pub backend: fleetd_contracts::browser::DesktopBackend,
     pub kind: SessionKind,
-    lent: Mutex<Option<Box<dyn Lent>>>,
+    /// Taken out of the lock for each use, so a long agent-desktop command never holds up the session's end: what it
+    /// was lent goes once the last use is done.
+    lent: Mutex<Option<Arc<dyn Lent>>>,
     screen: Arc<dyn Screen>,
     /// A Mac screen session without the lease: it only observes.
     observing: AtomicBool,
@@ -110,7 +112,7 @@ impl Session {
             dir: opened.dir,
             backend: opened.backend,
             kind: opened.kind,
-            lent: Mutex::new(Some(lent)),
+            lent: Mutex::new(Some(Arc::from(lent))),
             screen,
             observing: AtomicBool::new(opened.observing),
             ffmpeg: opened.ffmpeg,
@@ -418,8 +420,7 @@ impl Session {
 
     /// Starts an app on the display (blocking).
     pub fn launch(&self, command: &str) -> Result<super::display::Launched, String> {
-        let lent = lock(&self.lent);
-        let lent = lent.as_ref().ok_or("the session has ended")?;
+        let lent = lock(&self.lent).clone().ok_or("the session has ended")?;
         lent.launch(command, Path::new(&self.cwd))
     }
 
@@ -429,8 +430,7 @@ impl Session {
             .text
             .as_ref()
             .ok_or("agent_desktop needs text: its arguments, the command first")?;
-        let lent = lock(&self.lent);
-        let lent = lent.as_ref().ok_or("the session has ended")?;
+        let lent = lock(&self.lent).clone().ok_or("the session has ended")?;
         let message = lent.agent_desktop(args.as_str())?;
         Ok(DesktopDone {
             message,

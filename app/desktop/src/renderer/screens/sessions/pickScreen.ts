@@ -162,6 +162,15 @@ const who = (admins: readonly string[]): string => {
   return `${admins.slice(0, 2).join(", ")} or another admin`;
 };
 
+/** The machine a kind no machine here can run needs. */
+const ADD: Readonly<Record<ScreenKind, string>> = {
+  browser: "a machine",
+  ios: "a Mac",
+  android: "a Linux machine",
+  linux_desktop: "a Linux machine",
+  mac: "a Mac set aside for agents",
+};
+
 /** A member's one action: who to ask, and for what; null where asking wouldn't help (offline, installing). */
 export const askLine = (reason: OffReason, kind: ScreenKind, admins: readonly string[]): string | null => {
   const ask = `Ask ${who(admins)}`;
@@ -174,7 +183,7 @@ export const askLine = (reason: OffReason, kind: ScreenKind, admins: readonly st
     case "roles":
       return `${ask} to let a machine host screens.`;
     case "add":
-      return `${ask} to add ${kind === "ios" ? "a Mac" : kind === "browser" ? "a machine" : "a Linux machine"}.`;
+      return `${ask} to add ${ADD[kind]}.`;
     case "none":
       return null;
   }

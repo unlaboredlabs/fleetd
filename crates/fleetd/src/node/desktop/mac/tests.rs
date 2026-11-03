@@ -205,6 +205,9 @@ fn agent_desktop_commands_are_checked_before_they_run() {
         agent_desktop::answer("", "", Some(2)),
         "agent-desktop exited with code 2 and printed nothing."
     );
+    // A command stopped at its limit says so, under the hub's 45 s wait for the Mac's answer.
+    assert!(agent_desktop::COMMAND_TIMEOUT < std::time::Duration::from_secs(45));
+    assert!(agent_desktop::answer("", "", None).contains("stopped after 40 s"));
 }
 
 fn call(action: DesktopAction, text: Option<&str>) -> DesktopCall {

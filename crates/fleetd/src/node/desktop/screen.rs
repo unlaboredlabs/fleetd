@@ -57,7 +57,7 @@ pub trait Screen: Send + Sync {
 
 /// What a session was lent to put its screen on: a display of its own, thrown away when this drops, or the Mac's
 /// lease, given back when this drops.
-pub trait Lent: Send {
+pub trait Lent: Send + Sync {
     /// Starts an app on the screen with `sh -c`, in `cwd` where the screen's apps can see it, and looks at it a moment
     /// later.
     fn launch(&self, command: &str, cwd: &Path) -> Result<Launched, String>;
