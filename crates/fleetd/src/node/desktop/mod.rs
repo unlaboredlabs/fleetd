@@ -7,8 +7,13 @@
 //!
 //! The session shares the browser sessions' recording (video from its frames, action log), upload, hub storage, live
 //! view and takeover (node/browser); [`super::device::Router`] sends each session call to the kind it is for.
+//!
+//! The agents' Mac's own screen (`session_start` kind mac) is a session here too, on the screen the Mac's node runs
+//! in rather than a display of its own, and leased to one session at a time (mac/).
 pub mod container;
 pub mod display;
+pub mod mac;
+pub mod screen;
 pub mod session;
 pub mod x11;
 
@@ -292,6 +297,12 @@ enum Prep {
 pub struct Desktops {
     home: PathBuf,
     config: DesktopConfig,
+    /// node.json's `mac`: the agents' Mac's screen, where this node lends it.
+    mac: mac::MacConfig,
+    /// The Mac screen session that holds the Mac's screen now.
+    lease: Mutex<Option<BrowserSessionId>>,
+    /// What stands in the way of the Mac's screen now ([`mac::blocked`]; a test's own).
+    mac_gate: Mutex<fn() -> Option<mac::Blocked>>,
     prep: Mutex<Prep>,
     /// Live sessions by the agent session they belong to: one each.
     sessions: Mutex<HashMap<String, Arc<Session>>>,
@@ -329,10 +340,12 @@ impl Drop for Starting {
 
 impl Desktops {
     /// The node's desktop sessions. Nothing starts here unless node.json turns them on explicitly; the first
-    /// linux_desktop `session_start` prepares them otherwise.
+    /// linux_desktop `session_start` prepares them otherwise. Where it lends the Mac's screen (`mac`), agent-desktop is
+    /// installed now.
     pub async fn start(
         home: &Path,
         config: DesktopConfig,
+        mac: mac::MacConfig,
         hub: Arc<dyn HubCalls>,
         secrets_for: SecretsFor,
         worktree_for: WorktreeFor,
@@ -350,12 +363,21 @@ impl Desktops {
             prepared: tokio::sync::Notify::new(),
             _loop: Mutex::default(),
             config,
+            mac,
+            lease: Mutex::default(),
+            mac_gate: Mutex::new(mac::blocked),
         });
-        if desktops.config.enabled == Some(true) {
-            desktops.begin_prepare();
-        } else if let (Some(runtime), _) = choose(&desktops.config, home) {
-            // Ask the runtime now, so the next link's hello knows whether containers work.
-            tokio::task::spawn_blocking(move || runtime_answers(&runtime, true));
+        if desktops.mac.enabled() {
+            desktops.prepare_mac();
+        }
+        // A Mac lends only its own screen: nothing of a Linux desktop to prepare there.
+        if desktops.config.enabled() {
+            if desktops.config.enabled == Some(true) {
+                desktops.begin_prepare();
+            } else if let (Some(runtime), _) = choose(&desktops.config, home) {
+                // Ask the runtime now, so the next link's hello knows whether containers work.
+                tokio::task::spawn_blocking(move || runtime_answers(&runtime, true));
+            }
         }
         let weak = Arc::downgrade(&desktops);
         *lock(&desktops._loop) = Some(AbortOnDrop(tokio::spawn(housekeeping(weak))));
@@ -421,7 +443,7 @@ impl Desktops {
                 DesktopBackend::Container => {
                     "Desktop screens run in containers of the pinned image.".into()
                 }
-                DesktopBackend::Xvfb => {
+                DesktopBackend::Xvfb | DesktopBackend::Mac => {
                     "Desktop screens run on Xvfb with a fresh home each.".into()
                 }
             },
@@ -504,6 +526,13 @@ impl Desktops {
         cwd: String,
         purpose: String,
     ) -> Result<BrowserCallResult, McpToolError> {
+        if !self.config.enabled() {
+            return Err(refuse(
+                ErrorCode::Failed,
+                "This machine hosts no Linux desktop sessions (they run on Linux, and node.json may turn them off).",
+                "say so in your result",
+            ));
+        }
         let mut stages = crate::stages::Stages::new("node desktop");
         let _starting = Starting::claim(&self.starting, &thread).ok_or_else(|| {
             refuse(
@@ -583,8 +612,8 @@ impl Desktops {
         stages.done("secrets");
         let backend = display.backend;
         let session = Session::open(
-            display,
-            x,
+            Box::new(display),
+            Arc::new(x),
             Opened {
                 dir: dir.clone(),
                 id,
@@ -593,6 +622,9 @@ impl Desktops {
                 purpose: purpose.clone(),
                 ffmpeg: self.ffmpeg(),
                 secrets,
+                kind: SessionKind::LinuxDesktop,
+                backend,
+                observing: false,
             },
         );
         lock(&self.sessions).insert(thread.clone(), session.clone());
@@ -614,6 +646,7 @@ impl Desktops {
             udid: None,
             desktop: Some(backend),
             worktree: mount.map(|m| Text::unchecked(m.to_string_lossy().into_owned())),
+            held_by: None,
             start_ms: {
                 stages.done("session open");
                 stages.total_ms()
@@ -656,9 +689,10 @@ impl Desktops {
     async fn close(self: &Arc<Self>, session: Arc<Session>) -> SessionEnded {
         session.step("session_end", json!({}), true, None, 0);
         let files = session.close().await;
+        self.release_lease(&session.id);
         let ended = SessionEnded {
             session_id: session.id.clone(),
-            kind: SessionKind::LinuxDesktop,
+            kind: session.kind,
             files: files
                 .iter()
                 .map(|(file, bytes)| BrowserRecordingEntry {
@@ -742,6 +776,9 @@ impl Desktops {
             }
             BrowserControl::Agent => {}
         }
+        if session.kind == SessionKind::Mac && session.observing() && !mac::observes(&call) {
+            self.take_lease(&session).await?;
+        }
         session
             .act(call)
             .await
@@ -822,6 +859,9 @@ impl Desktops {
             (BrowserControlTo::Agent, BrowserControl::Human) => BrowserControl::HandingBack,
             (BrowserControlTo::Agent, _) => return,
         };
+        if next == BrowserControl::Human && session.kind == SessionKind::Mac {
+            self.person_takes_lease(session);
+        }
         session.set_control(next, by);
         self.report(session, BrowserSessionState::Live);
     }
@@ -936,12 +976,16 @@ async fn housekeeping(desktops: std::sync::Weak<Desktops>) {
         let Some(this) = desktops.upgrade() else {
             return;
         };
-        let idle = Duration::from_secs(60 * this.config.idle_minutes.unwrap_or(30));
+        let linux = Duration::from_secs(60 * this.config.idle_minutes.unwrap_or(30));
+        let idle = |s: &Session| match s.kind {
+            SessionKind::Mac => this.mac.idle(),
+            _ => linux,
+        };
         let stale: Vec<Arc<Session>> = {
             let mut sessions = lock(&this.sessions);
             let threads: Vec<String> = sessions
                 .iter()
-                .filter(|(_, s)| s.idle_for() >= idle && s.control() == BrowserControl::Agent)
+                .filter(|(_, s)| s.idle_for() >= idle(s) && s.control() == BrowserControl::Agent)
                 .map(|(t, _)| t.clone())
                 .collect();
             threads.iter().filter_map(|t| sessions.remove(t)).collect()

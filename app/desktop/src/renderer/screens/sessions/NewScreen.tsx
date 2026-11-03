@@ -16,7 +16,7 @@
 // A kind no machine can host stays pickable: its tile says why in a word or two, and picked, the machine list gives way
 // to the reason from the machines' nodes and its one fix. An admin's is a button (Turn on, which sets it on that machine
 // with machine_screens_set, or the place in Settings › Hub › Machines that fixes it); a member's says who to ask.
-import { AppWindow, Globe, Monitor, Smartphone, TabletSmartphone } from "lucide-react";
+import { AppWindow, Globe, Laptop, Monitor, Smartphone, TabletSmartphone } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Button, Dialog, Radio, RadioGroup, Select, Text, cx } from "../../ui";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
@@ -67,6 +67,7 @@ const ICON: Readonly<Record<ScreenKind, ReactNode>> = {
   ios: <Smartphone aria-hidden />,
   android: <TabletSmartphone aria-hidden />,
   linux_desktop: <Monitor aria-hidden />,
+  mac: <Laptop aria-hidden />,
 };
 
 // The project the picker is open for, if it is: one picker for the window.
@@ -480,4 +481,4 @@ function OffLine({ kind, reason, onLeave }: { kind: ScreenKind; reason: OffReaso
 }
 
 /** A kind's word in machine_screens_set. */
-const HOST_OF: Readonly<Record<ScreenKind, "browser" | "android" | "ios" | "desktop">> = { browser: "browser", ios: "ios", android: "android", linux_desktop: "desktop" };
+const HOST_OF: Readonly<Record<ScreenKind, "browser" | "android" | "ios" | "desktop" | "mac">> = { browser: "browser", ios: "ios", android: "android", linux_desktop: "desktop", mac: "mac" };

@@ -7,17 +7,18 @@
 // too, on Hermes, which has no Array toSorted: each list here sorts its own fresh copy instead.
 import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
 
-export type ScreenKind = "browser" | "ios" | "android" | "linux_desktop";
+export type ScreenKind = "browser" | "ios" | "android" | "linux_desktop" | "mac";
 
 export const KINDS: readonly { readonly kind: ScreenKind; readonly label: string; readonly line: string }[] = [
   { kind: "browser", label: "Browser", line: "A fresh Chrome" },
   { kind: "ios", label: "iOS", line: "An iPhone simulator" },
   { kind: "android", label: "Android", line: "An Android emulator" },
   { kind: "linux_desktop", label: "Linux desktop", line: "A desktop with a terminal" },
+  { kind: "mac", label: "Agents’ Mac", line: "The Mac agents share, one at a time" },
 ];
 
 /** A kind's word in machine_roles' host checks. */
-const HOST: Readonly<Record<ScreenKind, string>> = { browser: "browser", ios: "ios", android: "android", linux_desktop: "desktop" };
+const HOST: Readonly<Record<ScreenKind, string>> = { browser: "browser", ios: "ios", android: "android", linux_desktop: "desktop", mac: "mac" };
 
 /** A machine as the picker lists it. */
 export interface HostChoice {
@@ -67,6 +68,7 @@ const PLURAL: Readonly<Record<ScreenKind, string>> = {
   ios: "iOS simulators",
   android: "Android emulators",
   linux_desktop: "Linux desktops",
+  mac: "Agents’ Mac screens",
 };
 
 /** The same inside a sentence. */
@@ -78,6 +80,7 @@ const NEEDS: Readonly<Record<ScreenKind, string>> = {
   ios: "iOS simulators need a Mac with Xcode, and no Mac here hosts screens.",
   android: "Android emulators need a Linux x86_64 machine with KVM, and none here hosts screens.",
   linux_desktop: "Linux desktops need a Linux machine, and none here hosts screens.",
+  mac: "The agents’ Mac screen needs a Mac set aside for agents, whose node runs as its standard agents user.",
 };
 
 /** One machine's reason, ranked: the one that fixes it soonest first. */
@@ -104,7 +107,7 @@ const machineOff = (m: MachineRolesEntry, kind: ScreenKind): (OffReason & { read
     case "installing":
       return { rank: 2, why: `${m.name} is installing what ${LOWER[kind]} need.`, short: "Installing", fix: "none", machine };
     case "unsupported":
-      return { rank: 7, why: NEEDS[kind], short: kind === "ios" ? "Needs a Mac" : "No machine for it", fix: "add" };
+      return { rank: 7, why: NEEDS[kind], short: kind === "ios" || kind === "mac" ? "Needs a Mac" : "No machine for it", fix: "add" };
     default:
       // Missing, failed, or a node before reasons: its own words.
       return { rank: 3, why: `${m.name}: ${sentence(check.detail)}`, short: check.off === "failed" ? "Setup failed" : "Not set up", fix: "none", machine };
@@ -255,6 +258,8 @@ export const startingLine = (kind: ScreenKind): string => {
       return "Starting the emulator…";
     case "linux_desktop":
       return "Starting the desktop…";
+    case "mac":
+      return "Opening the Mac’s screen…";
     default:
       return "Starting the browser…";
   }

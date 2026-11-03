@@ -677,7 +677,7 @@ async fn roles_need_an_admin_and_a_known_machine() {
     let devbox = &listed["machines"][0];
     assert_eq!(devbox["machineId"], "devbox");
     assert_eq!(devbox["roles"], json!(["agents", "sessions"]));
-    assert_eq!(devbox["hosts"].as_array().unwrap().len(), 4);
+    assert_eq!(devbox["hosts"].as_array().unwrap().len(), 5);
     assert_eq!(devbox["hostsOthers"], true);
 }
 

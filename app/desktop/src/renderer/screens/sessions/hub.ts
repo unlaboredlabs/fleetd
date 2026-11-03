@@ -49,7 +49,7 @@ const RECORDED: ReadonlySet<string> = new Set<RecordedFile>(["actions", "dom", "
 const isRecorded = (file: string): file is RecordedFile => RECORDED.has(file);
 
 type DeviceKind = NonNullable<BrowserSession["kind"]>;
-const DEVICES: ReadonlySet<string> = new Set<DeviceKind>(["android", "ios", "linux_desktop"]);
+const DEVICES: ReadonlySet<string> = new Set<DeviceKind>(["android", "ios", "linux_desktop", "mac"]);
 const isDevice = (kind: string | undefined): kind is DeviceKind => kind !== undefined && DEVICES.has(kind);
 
 /** A hub session as the views show it: no frames or steps until its recording is read. */

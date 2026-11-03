@@ -8768,7 +8768,7 @@
           "items": {
             "$ref": "#/$defs/HostCheck"
           },
-          "maxItems": 4,
+          "maxItems": 5,
           "type": "array"
         },
         "hostsOthers": {
@@ -17977,17 +17977,23 @@
           "const": "desktop",
           "description": "A Linux desktop: docker or Xvfb.",
           "type": "string"
+        },
+        {
+          "const": "mac",
+          "description": "The agents' Mac's own screen: its `agents` user's GUI session, on the console and unlocked, one agent at a time.",
+          "type": "string"
         }
       ],
       "x-open": true
     },
     "SessionKind": {
-      "description": "What a session drives: a fresh Chrome with an empty profile (`browser`, driven with agent-browser), or a fresh\n`-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at\nthe copy's serial), a fresh clone of an iOS simulator from the node's settled golden device (`ios`, driven with\nagent-device at the clone's udid), or an X display of its own with a window manager (`linux_desktop`, driven with\nthe agent's `desktop` tool), in a fresh container or else beside a fresh home directory. Every kind shares the\nsession tools, the action log, the video and the hub's storage; only a browser recording has a `dom` file, and an\niOS one's video is `video_mp4`. A node hosts android sessions when it lists the `session_android` capability, iOS\nones when it lists `session_ios`, and desktop ones when it lists `session_linux_desktop`.",
+      "description": "What a session drives: a fresh Chrome with an empty profile (`browser`, driven with agent-browser), or a fresh\n`-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at\nthe copy's serial), a fresh clone of an iOS simulator from the node's settled golden device (`ios`, driven with\nagent-device at the clone's udid), or an X display of its own with a window manager (`linux_desktop`, driven with\nthe agent's `desktop` tool), in a fresh container or else beside a fresh home directory, or the agents' Mac's own\nscreen (`mac`: the GUI session of the Mac's standard `agents` user, leased to one agent at a time, driven with the\n`desktop` tool and agent-desktop). Every kind shares the session tools, the action log, the video and the hub's\nstorage; only a browser recording has a `dom` file, and an iOS one's video is `video_mp4`. A node hosts android\nsessions when it lists the `session_android` capability, iOS ones when it lists `session_ios`, and desktop ones\nwhen it lists `session_linux_desktop`; a Mac screen where its `mac` host check is ready.",
       "enum": [
         "browser",
         "android",
         "ios",
-        "linux_desktop"
+        "linux_desktop",
+        "mac"
       ],
       "type": "string",
       "x-open": true

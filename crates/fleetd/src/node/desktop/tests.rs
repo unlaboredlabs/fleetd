@@ -268,6 +268,7 @@ async fn a_session_naming_another_agents_worktree_mounts_only_its_own() {
     let desktops = Desktops::start(
         node_home.path(),
         config,
+        Default::default(),
         hub.clone(),
         Arc::new(|_| Ok(crate::node::mask::Secrets(Vec::new()))),
         Arc::new(move |thread| (thread == THREAD).then(|| known.clone())),
@@ -329,6 +330,7 @@ async fn a_start_on_a_machine_that_cant_prepare_says_why_at_once() {
     let desktops = Desktops::start(
         node_home.path(),
         config,
+        Default::default(),
         hub(hub_home.path()),
         Arc::new(|_| Ok(crate::node::mask::Secrets(Vec::new()))),
         Arc::new(|_| None),
@@ -553,6 +555,7 @@ async fn an_agent_types_into_xterm_on_a_desktop_session_a_person_takes_over_and_
     let desktops = Desktops::start(
         node_home.path(),
         config,
+        Default::default(),
         hub.clone(),
         Arc::new(|_| {
             Ok(crate::node::mask::Secrets(vec![(
@@ -817,6 +820,7 @@ async fn the_first_desktop_start_after_the_node_starts_waits_for_it_to_prepare()
     let desktops = Desktops::start(
         node_home.path(),
         config,
+        Default::default(),
         hub.clone(),
         Arc::new(|_| Ok(crate::node::mask::Secrets(Vec::new()))),
         Arc::new(|_| None),
@@ -885,6 +889,7 @@ async fn a_secret_typed_in_a_desktop_hosted_for_another_machine_is_masked_in_its
     let desktops = Desktops::start(
         node_home.path(),
         config,
+        Default::default(),
         hub.clone(),
         hosted.secrets_for(Arc::new(|s| Err(format!("no session {s} on this machine")))),
         Arc::new(|_| None),

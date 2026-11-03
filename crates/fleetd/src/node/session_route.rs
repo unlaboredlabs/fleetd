@@ -8,6 +8,10 @@
 //! A session placed elsewhere is driven through the hub's relay: this node's proxy pipes the agent's driver there
 //! (node/relay.rs), and each finished command that drove it goes to the runner for its recording (`session_step`).
 //!
+//! The agents' Mac's screen (kind mac) is always placed by the hub, never in a Navi's name, and sealed to the Mac with
+//! its relay key only: the Mac's node gets none of the session's secrets (mac.shared-mac). Its `desktop` actions go
+//! there through the hub, as a desktop's elsewhere do.
+//!
 //! An iOS screen placed elsewhere is driven by its agent's agent-device commands instead, each sent through the hub to
 //! the runner, sealed with the session's relay key (node/device/remote.rs).
 //!
@@ -150,6 +154,7 @@ fn host_of(frame: &BrowserCallFrame) -> SessionHost {
             SessionKind::Android => SessionHost::Android,
             SessionKind::Ios => SessionHost::Ios,
             SessionKind::LinuxDesktop => SessionHost::Desktop,
+            SessionKind::Mac => SessionHost::Mac,
             SessionKind::Browser => SessionHost::Browser,
         },
         BrowserCall::Desktop(_) => SessionHost::Desktop,
@@ -231,13 +236,26 @@ async fn seal_for(
     let secrets = tokio::task::spawn_blocking(move || secrets_for(&session))
         .await
         .map_err(|e| e.to_string())??;
-    let seal = Seal {
-        secrets: secrets
+    seal_with(
+        secrets
             .0
             .iter()
             .filter(|(name, _)| name != TOKEN_ENV)
             .cloned()
             .collect(),
+        to,
+        relay_key,
+    )
+}
+
+/// `secrets` and a relay key, sealed to `to`, base64.
+fn seal_with(
+    secrets: Vec<(String, String)>,
+    to: &BoxPublicKey,
+    relay_key: &[u8; 32],
+) -> Result<String, String> {
+    let seal = Seal {
+        secrets,
         relay_key: B64.encode(relay_key),
     };
     let plain = zeroize::Zeroizing::new(serde_json::to_vec(&seal).map_err(|e| e.to_string())?);
@@ -284,6 +302,9 @@ async fn ask(
 }
 
 async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> BrowserResultFrame {
+    if host_of(&frame) == SessionHost::Mac && !router.here().live(&thread) {
+        return mac_start(&router, thread, frame).await;
+    }
     if router.remotes.has(&thread) {
         return device_elsewhere(&router, thread, frame).await;
     }
@@ -306,6 +327,25 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
     let broker = match router.broker.as_ref() {
         Some(broker) => broker,
         None if device => return device_start(&router, thread, frame).await,
+        // A Mac screen's calls go where it runs, a machine with browser sessions off included.
+        None if !matches!(frame.call, BrowserCall::SessionStart(_)) => {
+            return match ask(&router, &thread, &frame, None).await {
+                Ok(routed) if routed.here => local(&router, thread, frame).await,
+                Ok(SessionRouteResult {
+                    answer: Some(mut answer),
+                    ..
+                }) => {
+                    answer.id = frame.id;
+                    answer
+                }
+                Ok(_) => error_frame(
+                    &frame.id,
+                    McpToolError::new(ErrorCode::Failed, "the hub sent no answer for the screen")
+                        .with_fix("try again"),
+                ),
+                Err(error) => error_frame(&frame.id, error),
+            };
+        }
         None => return local(&router, thread, frame).await,
     };
     if device {
@@ -432,6 +472,97 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
             )
             .with_fix("try again"),
         ),
+    }
+}
+
+/// A `session_start` kind mac: always the hub's to place, on the Mac that lends its screen. Sealed to it with its relay
+/// key alone: the Mac's node is a tool every agent there shares, so it gets none of the session's secrets. A Navi never
+/// uses the Mac.
+async fn mac_start(
+    router: &Arc<Router>,
+    thread: String,
+    frame: BrowserCallFrame,
+) -> BrowserResultFrame {
+    if router.broker.as_ref().is_some_and(|b| b.is_navi(&thread)) {
+        return error_frame(
+            &frame.id,
+            McpToolError::new(ErrorCode::Forbidden, "A Navi never uses the agents' Mac.")
+                .with_fix("do without it and say so"),
+        );
+    }
+    if !router.relay.hub_can(HUB_CAP_SESSION_ROUTE) {
+        return error_frame(
+            &frame.id,
+            McpToolError::new(
+                ErrorCode::Failed,
+                "This hub is too old to place a Mac screen.",
+            )
+            .with_fix("say so in your result: a person updates fleetd on the hub"),
+        );
+    }
+    let (to, runner) = match ask(router, &thread, &frame, None).await {
+        Ok(routed) if routed.here => return local(router, thread, frame).await,
+        Ok(SessionRouteResult {
+            answer: None,
+            seal_to: Some(to),
+            runner,
+            ..
+        }) => (to, runner),
+        Ok(SessionRouteResult {
+            answer: Some(mut answer),
+            ..
+        }) => {
+            answer.id = frame.id;
+            return answer;
+        }
+        Ok(_) => {
+            return error_frame(
+                &frame.id,
+                McpToolError::new(
+                    ErrorCode::Failed,
+                    "the hub placed the Mac screen but sent no answer",
+                )
+                .with_fix("try again"),
+            );
+        }
+        Err(error) => return error_frame(&frame.id, error),
+    };
+    let key = super::relay::new_key();
+    let data = match seal_with(Vec::new(), &to, &key) {
+        Ok(data) => data,
+        Err(why) => {
+            return error_frame(
+                &frame.id,
+                McpToolError::new(
+                    ErrorCode::Failed,
+                    format!("The node could not seal the Mac screen's start for {runner} ({why})."),
+                )
+                .with_fix("try again; if it keeps failing, check the node's log"),
+            );
+        }
+    };
+    let sealed = SealedForRunner {
+        runner,
+        data_b64: NonEmpty::unchecked(data),
+    };
+    match ask(router, &thread, &frame, Some(sealed)).await {
+        Ok(routed) if routed.here => local(router, thread, frame).await,
+        Ok(SessionRouteResult {
+            answer: Some(mut answer),
+            ..
+        }) => {
+            answer.id = frame.id;
+            answer
+        }
+        Ok(_) => error_frame(
+            &frame.id,
+            McpToolError::new(
+                ErrorCode::Failed,
+                "the hub placed the Mac screen but sent no answer",
+            )
+            .with_fix("try again"),
+        ),
+        Err(error) => error_frame(&frame.id, error),
     }
 }
 

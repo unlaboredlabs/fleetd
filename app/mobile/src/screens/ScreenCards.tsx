@@ -13,7 +13,7 @@ import { haptics } from "../ui/haptics";
 import { Icon, type IconName } from "../ui/Icon";
 import { PRESSED_OPACITY, rowIn, rowMove, rowOut, useReduceMotion } from "../ui/motion";
 
-const ICON: Readonly<Record<ScreenCard["kind"], IconName>> = { browser: "browser", android: "device", ios: "device", linux_desktop: "desktop" };
+const ICON: Readonly<Record<ScreenCard["kind"], IconName>> = { browser: "browser", android: "device", ios: "device", linux_desktop: "desktop", mac: "desktop" };
 
 export const ScreenCards = memo(function ScreenCards({ chatKey }: { chatKey: Key }) {
   const { state } = useHub();

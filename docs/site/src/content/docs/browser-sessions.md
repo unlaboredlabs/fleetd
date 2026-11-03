@@ -1,6 +1,6 @@
 ---
 title: Screens
-description: Agents open a fresh Chrome, Android emulator, iOS simulator or Linux desktop of their own, drive it with agent-browser, agent-device or their desktop tool, and leave a recording on the hub.
+description: Agents open a fresh Chrome, Android emulator, iOS simulator or Linux desktop of their own, or borrow the agents' Mac's screen, drive it with agent-browser, agent-device, agent-desktop or their desktop tool, and leave a recording on the hub.
 ---
 
 An agent that needs a web page (to check a signup form on staging, read a dashboard, reproduce a bug) opens a browser
@@ -8,8 +8,8 @@ screen. It gets a fresh Chrome on its machine that no other screen shares, drive
 [agent-browser](https://github.com/vercel-labs/agent-browser) CLI, and closes it when done. You can watch it live in the
 app and take it over. The node records the screen and uploads the recording to the hub.
 
-A screen is any of these an agent opens: a browser, an [Android emulator](#android), an [iOS simulator](#ios) or a
-[Linux desktop](#desktop). You can [open one yourself](#yours) too. The app lists them under **Agents › Screens**. The
+A screen is any of these an agent opens: a browser, an [Android emulator](#android), an [iOS simulator](#ios), a
+[Linux desktop](#desktop), or the [agents' Mac's own screen](#mac), which agents take turns on. You can [open one yourself](#yours) too. The app lists them under **Agents › Screens**. The
 agent tools that open and close one keep their names, `session_start` and `session_end`.
 
 ## How an agent uses one {#use}
@@ -247,10 +247,11 @@ purpose, state (`live`, `uploading`, `recorded`, `lost` or `expired`) and files.
 
 **Settings › Hub › Machines › Screens**, for a hub's owners and admins, lists each machine that hosts screens:
 
-- **A switch per kind**: Browser, iOS, Android and Linux desktop. Under each, what the machine's node says: ready, off,
+- **A switch per kind**: Browser, iOS, Android, Linux desktop and Agents' Mac. Under each, what the machine's node says: ready, off,
   installing, or what stands in the way (no Xcode, no KVM, no docker or Xvfb). A kind the machine can't run at all
   (iOS on Linux) can't be switched on.
-- **Idle screens end after**: the minutes without a command before a screen there ends, for every kind.
+- **Idle screens end after**: the minutes without a command before a screen there ends, for every kind but the
+  agents' Mac, whose screen goes back after 5 minutes so the next agent isn't kept waiting.
 - **Recordings**: how long the hub keeps them and how much per project, for every project
   ([On the hub](#hub)).
 
@@ -511,3 +512,58 @@ Settings go under `desktop` in [node.json](/docs/config-and-files#node-json):
 | `ffmpeg` | An ffmpeg for the video. It needs MJPEG in and `libvpx-vp9` out. |
 | `pool` | Displays kept started for the next screens. Absent: 1. |
 | `idleMinutes` | End a screen after this many minutes without a `desktop` action. Absent: 30. |
+
+## The agents' Mac's screen {#mac}
+
+A Mac set aside for agents runs its fleetd node as a standard `agents` user, and that user's desktop is a screen too:
+**`session_start`** with `kind` `mac`. Unlike the other kinds there is only one, so agents take turns on it:
+
+- **One holder at a time.** The first agent to open it holds it. Another agent's `session_start` still opens a session,
+  but it only observes: its `desktop` tool's `screenshot`, `cursor_position` and `wait`, and agent-desktop's reading
+  commands (`snapshot`, `find`, `get`, `is`, `list-apps`, ...), work; its other actions answer who holds the screen.
+  Once the holder ends, the observer's next action takes the screen.
+- **Idle release.** A Mac screen session with no action for 5 minutes ends, and the screen is free for the next one
+  (`idleMinutes` under `mac` below).
+- **Your takeover takes it.** Taking over any Mac screen session, or opening one yourself from **New screen ›
+  Agents' Mac**, makes it yours: the agent that held it only observes until you're done.
+
+The agent drives it with its `desktop` tool: the same computer-use actions as a Linux desktop (`key` also takes
+`cmd` and `option`, as in `cmd+s`), `launch` (a shell command, such as `open -a TextEdit`), and `agent_desktop`, which
+runs one [agent-desktop](https://github.com/vercel-labs/agent-desktop) command on the Mac: it reads an app's
+accessibility tree into refs (`snapshot --app Finder -i`) and acts on them (`click @s8f3k2p9:e12`) without moving the
+pointer. The Mac's node runs agent-desktop itself, a pinned release, so it acts under the node's own grants; each
+session gets its own agent-desktop folder, thrown away at its end. An app agent-desktop launches with `--cdp` keeps
+its DevTools port on the Mac's loopback (a launch naming another address is refused) and is closed when the session
+ends. Apps the agent opened otherwise stay open on the Mac, as yours would.
+
+What the screen is, and isn't:
+
+- **It's the agents' account, never yours.** The viewer is badged **Agents' Mac**. Agents can read and draw anything
+  there, a fake sign-in dialog included: never type your own passwords, an Apple ID or an admin password into it.
+  `fill_credential` isn't offered on it, and the Mac's node is sent none of an agent's secrets.
+- **It needs the agents session on the screen, unlocked.** macOS gives a session that is switched to the background or
+  locked only black frames, and drops its input. So the kind is offered only while the agents user is the one logged in
+  at the Mac's screen, unlocked, and the node checks it again at every start. Otherwise Settings and New screen say
+  exactly what stands in the way: the screen is locked, another user has it, nobody is logged in, a grant is missing,
+  or the node runs as an administrator (it never lends an administrator's screen).
+- **Recorded as any screen**: the video while a session holds the screen, and its action log, a line per action and
+  agent-desktop command. Recordings go to the hub's storage, under the same retention.
+- **No Navi** ever uses it.
+
+### On the Mac {#mac-setup}
+
+On a Mac set aside for agents, with the node running as its standard `agents` user:
+
+1. Log in as `agents` at the Mac and keep that session on the screen. Turn its screen lock off (System Settings ›
+   Lock Screen › Require password: Never), and its screen saver and display sleep: a locked screen is blind.
+2. Allow fleetd in System Settings › Privacy & Security › **Screen Recording** and **Accessibility**, in the agents
+   session, then restart its node (`launchctl kickstart -k gui/$(id -u)/sh.fleetd.node`). The Screens setting's fix
+   opens the right pane. macOS asks again for Screen Recording about once a month.
+3. Turn **Agents' Mac** on in Settings › Hub › Machines › Screens. The node installs agent-desktop as it starts.
+
+Settings go under `mac` in [node.json](/docs/config-and-files#node-json):
+
+| Key | Means |
+|---|---|
+| `enabled` | `true` lends the Mac's screen. Absent or `false`: off. |
+| `idleMinutes` | End a Mac screen session after this many minutes without an action. Absent: 5. |

@@ -455,18 +455,22 @@ static TOOLS: &[Tool] = &[
          15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. \
          kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. kind \
          linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop \
-         tool.",
+         tool. kind mac lends you the agents' Mac's own screen, one agent at a time, driven with the desktop tool \
+         and agent-desktop; while another holds it you only observe, and it ends after 5 idle minutes.",
         inline_schema::<SessionStartCall>,
     ),
     browser(
         "desktop",
-        "Act on your Linux desktop session (session_start kind linux_desktop), with computer-use actions plus \
-         launch. screenshot returns the screen as an image; left_click, right_click, middle_click, double_click, triple_click and mouse_move at coordinate \
+        "Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind \
+         mac), with computer-use actions plus launch. screenshot returns the screen as an image; left_click, right_click, middle_click, double_click, triple_click and mouse_move at coordinate \
          [x, y] in the screenshot's pixels; left_click_drag from start_coordinate to coordinate; type text; key \
          with xdotool key names in text (Return, ctrl+s, alt+F4); scroll with scroll_direction and scroll_amount \
          at coordinate; wait duration seconds; cursor_position; launch: text is a shell command started on the \
-         desktop (in your working directory where the desktop can see it). Take a screenshot after acting to see \
-         what happened.",
+         desktop (in your working directory where the desktop can see it; on the Mac in a folder of the \
+         session's: `open -a TextEdit`). On the Mac, key takes cmd and option too (cmd+s), and agent_desktop runs \
+         one agent-desktop command there, text its arguments with the command first (`snapshot --app Finder -i`, \
+         `click @s8f3k2p9:e12`; `skills get platform` first): it reads apps' accessibility trees into refs and acts \
+         on them without moving the pointer. Take a screenshot after acting to see what happened.",
         inline_schema::<DesktopCall>,
     ),
     browser(
@@ -612,6 +616,23 @@ pub fn browser_result(answer: &Value) -> Value {
             result["sessionId"].as_str().unwrap_or_default(),
             result["startMs"]
         ),
+        Some("session_start") if result["desktop"] == "mac" => format!(
+            "Mac screen session {} is open: the agents' Mac's own screen, shared by every agent that uses the Mac, \
+             recorded. {} Drive it with the desktop tool: a screenshot first, then agent_desktop for apps' \
+             accessibility refs (`skills get platform` loads its Mac guide), clicks and keys for the rest. What \
+             agent-desktop launches with --cdp listens on the Mac's own loopback, not yours, and closes when the \
+             session ends; apps you open stay open on the Mac. Never type a secret there. It ends after 5 minutes \
+             without an action; end it with session_end when done.",
+            result["sessionId"].as_str().unwrap_or_default(),
+            match result["heldBy"].as_str() {
+                Some(held) => format!(
+                    "You only observe for now: {held}. screenshot, cursor_position, wait and agent-desktop's reading \
+                     commands (snapshot, find, get, is, list-apps) work; your first other action takes the screen once \
+                     it's free."
+                ),
+                None => "It is yours until you end it.".to_owned(),
+            }
+        ),
         Some("session_start") if result["desktop"].is_string() => format!(
             "Desktop session {} is open ({} ms): a fresh Linux desktop ({}), thrown away at session_end, recorded. \
              Drive it with the desktop tool: start with a screenshot, launch apps with action launch. End it with \
@@ -639,6 +660,18 @@ pub fn browser_result(answer: &Value) -> Value {
             content.push(json!({ "type": "text", "text": message }));
             return json!({ "content": content, "isError": false });
         }
+        Some("session_end") if result["kind"] == "mac" => format!(
+            "Mac screen session {} ended, and the Mac's screen is free for the next agent; what you opened stays on \
+             it. Its recording ({}) goes to the hub.",
+            result["sessionId"].as_str().unwrap_or_default(),
+            result["files"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|f| f["file"].as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
         Some("session_end") if result["kind"] == "linux_desktop" => format!(
             "Desktop session {} ended; the desktop and everything on it are gone. Its recording ({}) goes to the \
              hub.{}",

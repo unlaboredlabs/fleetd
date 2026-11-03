@@ -13,6 +13,9 @@ use x11rb::protocol::xproto::{self, ConnectionExt as _, ImageFormat, ImageOrder}
 use x11rb::protocol::xtest::{self, ConnectionExt as _};
 use x11rb::rust_connection::{DefaultStream, RustConnection};
 
+pub use super::screen::Shot;
+use super::screen::{Raw, Screen};
+
 /// JPEG quality of the frames: the live view's, the video's and the agent's screenshots.
 const QUALITY: u8 = 70;
 
@@ -21,13 +24,6 @@ const SHIFT_L: u32 = 0xffe1;
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-/// One grab of the screen.
-pub struct Shot {
-    pub jpeg: Vec<u8>,
-    pub width: u32,
-    pub height: u32,
 }
 
 pub struct X {
@@ -381,6 +377,73 @@ impl X {
     }
 }
 
+impl Screen for X {
+    fn size(&self) -> (u32, u32) {
+        X::size(self)
+    }
+
+    fn changed(&self) -> bool {
+        X::changed(self)
+    }
+
+    fn grab_raw(&self) -> Result<Raw, String> {
+        let (width, height) = X::size(self);
+        Ok(Raw {
+            data: X::grab_raw(self)?,
+            width,
+            height,
+        })
+    }
+
+    fn encode(&self, raw: &Raw) -> Result<Vec<u8>, String> {
+        X::encode(self, &raw.data)
+    }
+
+    fn grab(&self) -> Result<Shot, String> {
+        X::grab(self)
+    }
+
+    fn sync(&self) -> Result<(), String> {
+        X::sync(self)
+    }
+
+    fn move_to(&self, x: i64, y: i64) -> Result<(), String> {
+        X::move_to(self, x, y)
+    }
+
+    fn button(&self, button: u8, down: bool) -> Result<(), String> {
+        X::button(self, button, down)
+    }
+
+    fn click(&self, x: i64, y: i64, button: u8, count: u8) -> Result<(), String> {
+        X::click(self, x, y, button, count)
+    }
+
+    fn drag(&self, from: (i64, i64), to: (i64, i64)) -> Result<(), String> {
+        X::drag(self, from, to)
+    }
+
+    fn scroll(&self, x: i64, y: i64, dx: i64, dy: i64) -> Result<(), String> {
+        X::scroll(self, x, y, dx, dy)
+    }
+
+    fn pointer(&self) -> Result<(i64, i64), String> {
+        X::pointer(self)
+    }
+
+    fn key_sym(&self, sym: u32, down: bool, shift: bool) -> Result<(), String> {
+        X::key_sym(self, sym, down, shift)
+    }
+
+    fn chord(&self, chord: &str) -> Result<(), String> {
+        X::chord(self, chord)
+    }
+
+    fn type_text(&self, text: &str) -> Result<(), String> {
+        X::type_text(self, text)
+    }
+}
+
 fn read_keymap(conn: &RustConnection, min: u8, max: u8) -> Result<Keymap, String> {
     let map = conn
         .get_keyboard_mapping(min, max - min + 1)
@@ -441,9 +504,9 @@ pub fn keysym(name: &str) -> Option<u32> {
         "shift_r" => 0xffe2,
         "ctrl" | "control" | "control_l" => 0xffe3,
         "control_r" => 0xffe4,
-        "alt" | "alt_l" => 0xffe9,
+        "alt" | "alt_l" | "option" | "opt" => 0xffe9,
         "alt_r" | "altgraph" => 0xffea,
-        "super" | "super_l" | "meta" | "win" | "cmd" | "os" => 0xffeb,
+        "super" | "super_l" | "meta" | "win" | "cmd" | "command" | "os" => 0xffeb,
         "super_r" => 0xffec,
         "minus" => 0x2d,
         "plus" => 0x2b,

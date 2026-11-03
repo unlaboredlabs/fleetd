@@ -222,6 +222,18 @@ Nothing comes back after the node or the machine restarts, and there is no root,
   path hidden here but reachable through another mount of the same disk (a bind mount you made) is reachable there
   too.
 
+## The agents' Mac's screen {#mac-screen}
+
+The [agents' Mac](/docs/browser-sessions#mac) lends its `agents` user's desktop to one agent at a time.
+
+| Rule | Detail |
+|---|---|
+| Never an administrator's | The node lends the screen only while it runs as a standard user; under an administrator the kind says why and stays off. |
+| Never your passwords | The viewer is badged **Agents' Mac**. Agents can draw a fake sign-in or admin dialog there, and read what's typed: never type your own passwords, an Apple ID or an admin password into it. `fill_credential` isn't offered there. |
+| No secrets sent | A Mac screen's start is sealed to the Mac with its relay key alone: none of the agent's secrets go to the Mac's node, which every agent there shares. |
+| DevTools stay on the Mac | An app agent-desktop launches with `--cdp` listens on the Mac's loopback only, and is closed when its session ends. |
+| Only while it can be seen | The node checks at every start that the agents session is on the Mac's screen and unlocked, so an agent never drives a screen nobody could watch. |
+
 ## Hub links {#hub-links}
 
 A hub link lets a Navi on one hub open and follow work in projects on another hub, for example from a personal hub
