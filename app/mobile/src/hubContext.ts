@@ -41,7 +41,8 @@ export type RootParams = {
   Settings: undefined;
   /**
    * `messageId`: a search hit; `requestId`: an approval, at its card. Either is scrolled to and lit for a moment.
-   * `tap`: one notification tap from the next, so a second tap on the same one while the chat is open lands again.
+   * `tap`: one notification tap from the next, so a second tap on the same one while the chat is open lands again (a
+   * chat's own, with no message or approval, at its newest).
    */
   Chat: { key: Key; messageId?: string; requestId?: string; tap?: number };
   /** A Navi's or agent's live screen, full screen over its chat (screens/Screen.tsx). */

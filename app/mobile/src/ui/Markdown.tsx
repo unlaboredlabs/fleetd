@@ -104,7 +104,7 @@ function BlockView({ block, ink, onAccent, streaming = false, holdsBlocks = true
     case "table":
       return (
         // Not grown: a sideways ScrollView fills the height it's given, which in a bubble is far too much.
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sideways}>
+        <ScrollView horizontal scrollsToTop={false} showsHorizontalScrollIndicator={false} style={styles.sideways}>
           <Grid header={block.header.map((c) => <Inlines nodes={c} ink={ink} onAccent={onAccent} />)} rows={block.rows.map((r) => r.map((c) => <Inlines nodes={c} ink={ink} onAccent={onAccent} />))} ink={ink} rule={onAccent ? "rgba(255,255,255,0.3)" : t.separator} />
         </ScrollView>
       );
