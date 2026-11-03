@@ -11,7 +11,7 @@ export type ClientMessage =
   | { t: "snapshot" }
   | { t: "events"; cursor: number }
   | { t: "call"; id: string; tool: string; input: unknown }
-  | { t: "live"; board: true; focus?: string }
+  | { t: "live"; board: boolean; focus?: string }
   | { t: "chat"; project?: { machineId: string; projectId: string } }
   | { t: "presence"; id: string; focused: boolean; input: boolean; project?: { machineId: string; projectId: string } }
   | { t: "browser_watch"; session?: string }

@@ -58,6 +58,8 @@ export class HubClient implements HubSource {
   readonly #pending = new Map<string, Pending>();
   #chat: ChatScope | null = null;
   #focus: OrderFocus | null = null;
+  /** Whether any window shows (shown()); the live feed is asked for only then. */
+  #shown = true;
   #readyAt = 0;
   /** When anything last came from the hub on this connection. */
   #heardAt = 0;
@@ -143,6 +145,18 @@ export class HubClient implements HubSource {
   /** The hub sends a full live frame after each subscribe, so a window coming back to front asks again. */
   refreshLive(): void {
     if (this.#ready) this.#sendLive();
+  }
+
+  /**
+   * Whether any window shows. While none does (each hidden or minimized, or none open on macOS) nothing reads the
+   * live feed, so it stops; a window showing again asks again, and the hub's first frame after that is full.
+   */
+  shown(on: boolean): void {
+    if (on === this.#shown) return;
+    this.#shown = on;
+    if (!this.#ready) return;
+    if (on) this.#sendLive();
+    else this.#send({ t: "live", board: false });
   }
 
   resync(): void {
@@ -387,8 +401,9 @@ export class HubClient implements HubSource {
     this.#send(this.#chat === null ? { t: "chat" } : { t: "chat", project: this.#chat });
   }
 
-  /** Every open order's lanes, which the agents strip reads, so the app always wants them; plus the focus's text. */
+  /** Every open order's lanes, which the agents strip reads, so the app wants them whenever it shows; plus the focus's text. */
   #sendLive(): void {
+    if (!this.#shown) return;
     this.#send(this.#focus === null ? { t: "live", board: true } : { t: "live", board: true, focus: this.#focus });
   }
 

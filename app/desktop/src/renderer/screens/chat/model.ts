@@ -93,22 +93,36 @@ const msOf = (iso: string, nowMs: number): number => {
   return Number.isNaN(ms) ? nowMs : ms;
 };
 
-const dayKey = (iso: string, nowMs: number, timeZone?: string): string =>
-  new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", ...(timeZone ? { timeZone } : {}) }).format(msOf(iso, nowMs));
+/**
+ * One formatter per kind and time zone, made once (as format.ts's shortClock does): making one costs ~45 times what
+ * formatting with it does, and chatRows asks for a day twice per message each time the chat changes, a streamed
+ * delta included. In a chat of 500 messages, a reply streaming in took the renderer to 100% and GBs of memory.
+ */
+const formatters = new Map<string, Intl.DateTimeFormat>();
+const formatter = (kind: "day" | "label" | "labelYear", timeZone: string | undefined): Intl.DateTimeFormat => {
+  const key = `${kind} ${timeZone ?? ""}`;
+  let f = formatters.get(key);
+  if (f === undefined) {
+    const zone = timeZone ? { timeZone } : {};
+    f =
+      kind === "day"
+        ? new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", ...zone })
+        : new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", ...(kind === "labelYear" ? { year: "numeric" } : {}), ...zone });
+    formatters.set(key, f);
+  }
+  return f;
+};
+
+const dayKey = (iso: string, nowMs: number, timeZone?: string): string => formatter("day", timeZone).format(msOf(iso, nowMs));
 
 /** "Today", "Yesterday", or "Mon 19 Oct" (with the year when it isn't this year's). */
 export function dayLabel(iso: string, nowMs: number, timeZone?: string): string {
   const day = dayKey(iso, nowMs, timeZone);
-  if (day === dayKey(new Date(nowMs).toISOString(), nowMs, timeZone)) return "Today";
+  const today = dayKey(new Date(nowMs).toISOString(), nowMs, timeZone);
+  if (day === today) return "Today";
   if (day === dayKey(new Date(nowMs - 86_400_000).toISOString(), nowMs, timeZone)) return "Yesterday";
-  const sameYear = day.slice(0, 4) === dayKey(new Date(nowMs).toISOString(), nowMs, timeZone).slice(0, 4);
-  return new Intl.DateTimeFormat("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    ...(sameYear ? {} : { year: "numeric" }),
-    ...(timeZone ? { timeZone } : {}),
-  })
+  const sameYear = day.slice(0, 4) === today.slice(0, 4);
+  return formatter(sameYear ? "label" : "labelYear", timeZone)
     .format(msOf(iso, nowMs))
     .replace(",", "");
 }

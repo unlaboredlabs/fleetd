@@ -4,7 +4,7 @@
 import { fromLines, firstProject, streamReply, writeChat } from "../kit/chat.ts";
 import { at } from "../kit/ids.ts";
 import { arr, obj } from "../kit/stress.ts";
-import { isObject } from "../kit/json.ts";
+import { isObject, type JsonObject } from "../kit/json.ts";
 import { QUESTION } from "../kit/chatText.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -65,6 +65,62 @@ const deltas = (text: string, size: number): string[] => {
 
 const SO_FAR = 220;
 
+/** How many messages arrive in stream-in-long's chat before the reply: with its first page, a long day's chat. */
+const ARRIVALS = 500;
+/**
+ * When stream-in-long's messages start arriving, ms after the window subscribes: once its chat has opened (its first
+ * page read) on a slow runner, so they arrive live into it.
+ */
+export const STREAM_IN_LONG_ARRIVE_MS = 2_000;
+/** When its reply starts streaming: after the arrivals have landed... */
+export const STREAM_IN_LONG_FROM_MS = 5_000;
+/** ...and when its last delta lands: perf/run.ts's streaming round must end before. */
+export const STREAM_IN_LONG_TO_MS = 20_000;
+/** The node's rate: it sends a session's streamed text at most every 100 ms (DELTA_EVERY in node/sessions). */
+const NODE_DELTA_MS = 100;
+
+/**
+ * chat-long's chat with ARRIVALS more messages arriving live, as over a long day, then a reply from the lead streaming
+ * in at the node's rate: perf/run.ts's streaming round. Each delta rebuilds the chat's rows, so their cost grows with
+ * what the chat holds; a date formatter made per message once took this under 20 fps.
+ */
+const streamIntoLong = (f: Fixture): Fixture => {
+  const ref = firstProject(f);
+  const projectRef = { ...ref };
+  const newest = arr(obj(f.output("chat_history", { projectRef }))["messages"]).filter(isObject);
+  const texts = newest.map((m) => m["text"]).filter((t): t is string => typeof t === "string" && t !== "");
+  const last = Number(newest.at(-1)?.["seq"]);
+  if (!Number.isFinite(last) || texts.length === 0) throw new Error(`${f.name}: storefront's chat has no newest page`);
+  // Past every event the fixture has, or the app takes it for one it has seen.
+  let event = Math.max(Number(f.snapshot?.["cursor"] ?? 0), ...f.events.map((e) => Number(e["seq"] ?? 0))) + 1;
+  const arrive = (ms: number, message: JsonObject) =>
+    f.later(ms, "event", {
+      seq: event++,
+      at: message["createdAt"] ?? f.now,
+      type: "chat.message",
+      summary: "The lead in the chat",
+      machineId: ref.machineId,
+      projectId: ref.projectId,
+      data: { projectRef, messageId: message["messageId"] ?? "", seq: message["seq"] ?? 0, author: message["author"] ?? "lead", state: message["state"] ?? "final", message },
+    });
+  for (let i = 0; i < ARRIVALS; i++) {
+    const seq = last + 1 + i;
+    const message: JsonObject = { messageId: `m${String(seq)}`, projectRef, seq, author: i % 3 === 0 ? "human" : "lead", text: texts[i % texts.length] ?? "", attachments: [], createdAt: at(f.now, -15_000 + i * 20), state: "final" };
+    arrive(STREAM_IN_LONG_ARRIVE_MS + i * 2, message);
+  }
+  const seq = last + 1 + ARRIVALS;
+  const createdAt = at(f.now, -2_000);
+  const reply: JsonObject = { messageId: `m${String(seq)}`, projectRef, seq, author: "lead", text: "", attachments: [], createdAt, updatedAt: createdAt, state: "streaming" };
+  arrive(STREAM_IN_LONG_FROM_MS - NODE_DELTA_MS, reply);
+  const parts = deltas(REPLY.repeat(4), 40).slice(0, (STREAM_IN_LONG_TO_MS - STREAM_IN_LONG_FROM_MS) / NODE_DELTA_MS + 1);
+  let offset = 0;
+  parts.forEach((append, i) => {
+    f.later(STREAM_IN_LONG_FROM_MS + i * NODE_DELTA_MS, "chat_delta", { projectRef: { ...ref }, messageId: reply["messageId"] ?? "", seq, offset, append });
+    offset += append.length;
+  });
+  return f;
+};
+
 export default defineGroup({
   fixtures: (base) => {
     const f = Fixture.from(base("chat-streaming"), "stream-long", "A long lead reply streams in over the live chat feed in small deltas, headings, lists, code, a table and a quote, and is still unfinished at the last one.");
@@ -96,6 +152,9 @@ export default defineGroup({
       data: { projectRef: { ...rref }, messageId: last["messageId"] ?? "m1", seq: last["seq"] ?? 1, author: "lead", state: "final", message: { ...last, text, state: "final", updatedAt: at(r.now, 1400) } },
     });
     r.settleAt(2000);
-    return [streamReply(f, ref, deltas(REPLY.slice(SO_FAR), 24), 25), r];
+    const long = streamIntoLong(
+      Fixture.from(base("chat-long"), "stream-in-long", "storefront's long chat with 500 more messages arriving, as over a long day, then the lead's reply streaming in at the node's rate (perf/run.ts)."),
+    );
+    return [streamReply(f, ref, deltas(REPLY.slice(SO_FAR), 24), 25), r, long];
   },
 });

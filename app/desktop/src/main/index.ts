@@ -265,7 +265,15 @@ void app.whenReady().then(() => {
   registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog, updates: updater, presence, sessionWindows }, pairing);
   installMenu(opener, help);
   claimOnFirstRun();
+  // The hubs' live feeds only fill what windows show: paused while every window is hidden or minimized (or, on macOS,
+  // closed with the app still running), and asked for again, in full, once one is about to show.
+  const windowsShown = () => hub.windowsShown(BrowserWindow.getAllWindows().some((w) => !w.isDestroyed() && w.isVisible() && !w.isMinimized()));
+  app.on("browser-window-created", (_event, win) => {
+    hub.windowsShown(true);
+    win.on("show", windowsShown).on("hide", windowsShown).on("minimize", windowsShown).on("restore", windowsShown).on("closed", windowsShown);
+  });
   app.on("browser-window-focus", () => {
+    hub.windowsShown(true);
     hub.windowFocused();
     updater.focused();
   });

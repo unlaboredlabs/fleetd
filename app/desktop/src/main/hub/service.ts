@@ -45,6 +45,8 @@ export class HubService {
   /** The chat on screen, kept here so a client made later (a first pairing, a re-pair) starts with it. */
   #chat: ChatScope | null = null;
   #focus: OrderFocus | null = null;
+  /** Whether any window shows, kept here like the chat for a client made later. */
+  #shown = true;
   /** Each window's watched browser session: the hub watches the one asked for last (a pop-out over its main window). */
   readonly #watches = new Map<WebContents, string>();
   #watching: string | null = null;
@@ -170,6 +172,11 @@ export class HubService {
     this.#source?.refreshLive();
   }
 
+  windowsShown(on: boolean): void {
+    this.#shown = on;
+    this.#source?.shown(on);
+  }
+
   systemResumed(): void {
     this.#source?.reconnectNow();
   }
@@ -211,6 +218,7 @@ export class HubService {
     this.#source = client;
     client.chat(this.#chat);
     client.focus(this.#focus);
+    client.shown(this.#shown);
     client.watch(this.#watching);
     client.start();
   }

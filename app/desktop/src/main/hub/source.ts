@@ -15,6 +15,8 @@ export interface HubSource {
   focus(workstreamId: OrderFocus | null): void;
   /** The window came to the front. */
   refreshLive(): void;
+  /** Whether any window shows; the live feed pauses while none does. */
+  shown(on: boolean): void;
   /** A subscriber wants the current data: a fresh snapshot and the stream after it. */
   resync(): void;
   /** The machine woke; the socket may be half-open. */
