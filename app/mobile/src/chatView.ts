@@ -231,11 +231,13 @@ const joins = (a: ChatItem | undefined, b: ChatItem | undefined): boolean =>
 export const threadRows = (items: readonly ChatItem[], working = false, readSeq?: number, clock: Pick<Clock, "timeZone"> = {}): ThreadRow[] => {
   const rows: ThreadRow[] = [];
   let prev: ChatItem | undefined;
+  let prevDay = 0;
   const firstUnread = readSeq === undefined ? -1 : items.findIndex((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > readSeq);
   for (const [i, item] of items.entries()) {
     if (i === firstUnread) rows.push({ t: "unread", id: "unread" });
-    const day = dayOf(msOf(item.at), clock);
-    if (prev === undefined || day !== dayOf(msOf(prev.at), clock)) rows.push({ t: "day", id: `day:${String(day)}`, at: item.at });
+    const day = dayAt(item.at, clock);
+    if (prev === undefined || day !== prevDay) rows.push({ t: "day", id: `day:${String(day)}`, at: item.at });
+    prevDay = day;
     const side = sideOf(item);
     const next = items[i + 1];
     rows.push({ t: "item", id: item.clientRequestId ?? item.id, item, side, first: i === firstUnread || !joins(prev, item), last: i + 1 === firstUnread || !joins(item, next) });
@@ -273,6 +275,19 @@ const dayOf = (ms: number, clock: Pick<Clock, "timeZone">): number => {
   const parts = formatter("en-US", { timeZone: clock.timeZone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(ms);
   const n = (type: string): number => Number(parts.find((p) => p.type === type)?.value ?? 0);
   return Date.UTC(n("year"), n("month") - 1, n("day"));
+};
+
+/** A message's day by its time as the hub wrote it, worked out once per zone: a thread asks for each with every word streamed. */
+const days = new Map<string, number>();
+const dayAt = (at: string, clock: Pick<Clock, "timeZone">): number => {
+  const key = `${clock.timeZone ?? ""}|${at}`;
+  let day = days.get(key);
+  if (day === undefined) {
+    if (days.size >= 10_000) days.clear();
+    day = dayOf(msOf(at), clock);
+    days.set(key, day);
+  }
+  return day;
 };
 
 /** Days from `ms` to now, by the calendar in the clock's zone: 0 today, 1 yesterday. */

@@ -329,3 +329,13 @@ describe("streamingAt", () => {
     expect(streamingAt([])).toBeUndefined();
   });
 });
+
+describe("threadRows' day lines, kept per message", () => {
+  it("still splits days by the clock's zone, asked again in another", () => {
+    const items = [item("a", "lead", "2026-10-28T22:30:00Z"), item("b", "lead", "2026-10-29T01:30:00Z")];
+    const days = (timeZone: string) => threadRows(items, false, undefined, { timeZone }).filter((r) => r.t === "day").length;
+    expect(days("UTC")).toBe(2);
+    expect(days("America/New_York")).toBe(1);
+    expect(days("UTC")).toBe(2);
+  });
+});
