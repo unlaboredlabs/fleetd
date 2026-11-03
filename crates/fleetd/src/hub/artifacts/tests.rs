@@ -96,7 +96,12 @@ async fn publish(
     }
 }
 
-async fn read(hub: &Arc<Hub>, p: &str, name: &str, version: Option<i64>) -> Result<(String, Value), ErrorCode> {
+async fn read(
+    hub: &Arc<Hub>,
+    p: &str,
+    name: &str,
+    version: Option<i64>,
+) -> Result<(String, Value), ErrorCode> {
     let input = ArtifactGetInput {
         project_ref: project(p),
         name: ArtifactName::new(name).unwrap(),
@@ -104,12 +109,18 @@ async fn read(hub: &Arc<Hub>, p: &str, name: &str, version: Option<i64>) -> Resu
     };
     artifact_get(hub.clone(), person(), input)
         .await
-        .map(|got| (got.content.as_str().to_owned(), serde_json::to_value(&got).unwrap()))
+        .map(|got| {
+            (
+                got.content.as_str().to_owned(),
+                serde_json::to_value(&got).unwrap(),
+            )
+        })
         .map_err(|e| e.code)
 }
 
 const REPORT: &str = "# Sweep\n\n- 12 crates behind\n- 2 with advisories";
-const CHART: &str = "<!doctype html><svg id=c></svg><script>c.innerHTML='<rect width=40 height=10/>'</script>";
+const CHART: &str =
+    "<!doctype html><svg id=c></svg><script>c.innerHTML='<rect width=40 height=10/>'</script>";
 
 /// done:0, done:1 — a task publishes a Markdown report and the lead an HTML chart; each posts a card in the chat and
 /// lists in the tab; publishing the report again keeps version 2, and version 1 still reads.
@@ -117,12 +128,21 @@ const CHART: &str = "<!doctype html><svg id=c></svg><script>c.innerHTML='<rect w
 async fn a_lead_and_a_task_publish_and_a_name_again_is_a_new_version() {
     let (hub, _home) = rig();
     let task = CallerAgent::Task(TaskId::unchecked("T1"));
-    let first = publish(&hub, "app", task.clone(), json!({ "name": "sweep-report", "title": "Dependency sweep", "content": REPORT }))
-        .await
-        .unwrap();
+    let first = publish(
+        &hub,
+        "app",
+        task.clone(),
+        json!({ "name": "sweep-report", "title": "Dependency sweep", "content": REPORT }),
+    )
+    .await
+    .unwrap();
     assert_eq!(first.version.get(), 1);
     let next = first.next.unwrap();
-    assert!(next.contains("[Dependency sweep](artifact:sweep-report)") && next.contains("in your result"), "{next}");
+    assert!(
+        next.contains("[Dependency sweep](artifact:sweep-report)")
+            && next.contains("in your result"),
+        "{next}"
+    );
     let chart = publish(&hub, "app", CallerAgent::Lead, json!({ "name": "build-times", "title": "Build times", "format": "html", "content": CHART }))
         .await
         .unwrap();
@@ -132,13 +152,26 @@ async fn a_lead_and_a_task_publish_and_a_name_again_is_a_new_version() {
     let (messages, _, _) = hub.chat.page(&project("app"), None, None, 50).unwrap();
     let cards: Vec<_> = messages
         .iter()
-        .filter_map(|m| m.artifact.as_ref().map(|a| (m.author, m.text.as_str().to_owned(), a.clone())))
+        .filter_map(|m| {
+            m.artifact
+                .as_ref()
+                .map(|a| (m.author, m.text.as_str().to_owned(), a.clone()))
+        })
         .collect();
     assert_eq!(cards.len(), 2);
     assert_eq!(cards[0].0, ChatAuthor::System);
-    assert_eq!(cards[0].1, "Sweep the dependencies published Dependency sweep");
-    assert_eq!((cards[0].2.name.as_str(), cards[0].2.format), ("sweep-report", ArtifactFormat::Md));
-    assert_eq!((cards[1].1.as_str(), cards[1].2.by.as_str()), ("Lead published Build times", "Lead"));
+    assert_eq!(
+        cards[0].1,
+        "Sweep the dependencies published Dependency sweep"
+    );
+    assert_eq!(
+        (cards[0].2.name.as_str(), cards[0].2.format),
+        ("sweep-report", ArtifactFormat::Md)
+    );
+    assert_eq!(
+        (cards[1].1.as_str(), cards[1].2.by.as_str()),
+        ("Lead published Build times", "Lead")
+    );
     assert_eq!(cards[1].2.format, ArtifactFormat::Html);
 
     // Again: version 2, the first still there.
@@ -156,23 +189,52 @@ async fn a_lead_and_a_task_publish_and_a_name_again_is_a_new_version() {
     assert_eq!(got["artifact"]["version"], 2);
     assert_eq!(got["versions"].as_array().unwrap().len(), 2);
     assert_eq!(got["versions"][1]["bytes"], REPORT.len());
-    assert_eq!(read(&hub, "app", "sweep-report", Some(1)).await.unwrap().0, REPORT);
-    assert_eq!(read(&hub, "app", "sweep-report", Some(3)).await.unwrap_err(), ErrorCode::NotFound);
-    assert_eq!(read(&hub, "app", "build-times", None).await.unwrap().0, CHART);
+    assert_eq!(
+        read(&hub, "app", "sweep-report", Some(1)).await.unwrap().0,
+        REPORT
+    );
+    assert_eq!(
+        read(&hub, "app", "sweep-report", Some(3))
+            .await
+            .unwrap_err(),
+        ErrorCode::NotFound
+    );
+    assert_eq!(
+        read(&hub, "app", "build-times", None).await.unwrap().0,
+        CHART
+    );
 
     // The tab lists each name once, at its newest version, the newest published first.
-    let list = artifacts_list(hub.clone(), person(), ArtifactsListInput { project_ref: project("app") })
-        .await
-        .unwrap();
+    let list = artifacts_list(
+        hub.clone(),
+        person(),
+        ArtifactsListInput {
+            project_ref: project("app"),
+        },
+    )
+    .await
+    .unwrap();
     let rows: Vec<_> = list
         .artifacts
         .iter()
-        .map(|a| (a.name.as_str(), a.newest.version.get(), a.newest.title.as_str(), a.newest.by.as_str()))
+        .map(|a| {
+            (
+                a.name.as_str(),
+                a.newest.version.get(),
+                a.newest.title.as_str(),
+                a.newest.by.as_str(),
+            )
+        })
         .collect();
     assert_eq!(
         rows,
         [
-            ("sweep-report", 2, "Dependency sweep", "Sweep the dependencies"),
+            (
+                "sweep-report",
+                2,
+                "Dependency sweep",
+                "Sweep the dependencies"
+            ),
             ("build-times", 1, "Build times", "Lead")
         ]
     );
@@ -182,23 +244,46 @@ async fn a_lead_and_a_task_publish_and_a_name_again_is_a_new_version() {
 #[tokio::test]
 async fn artifacts_are_their_projects_own() {
     let (hub, _home) = rig();
-    publish(&hub, "app", CallerAgent::Lead, json!({ "name": "notes", "title": "Notes", "content": "app's" }))
-        .await
-        .unwrap();
-    assert_eq!(read(&hub, "shop", "notes", None).await.unwrap_err(), ErrorCode::NotFound);
-    let shop = publish(&hub, "shop", CallerAgent::Lead, json!({ "name": "notes", "title": "Notes", "content": "shop's" }))
-        .await
-        .unwrap();
+    publish(
+        &hub,
+        "app",
+        CallerAgent::Lead,
+        json!({ "name": "notes", "title": "Notes", "content": "app's" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        read(&hub, "shop", "notes", None).await.unwrap_err(),
+        ErrorCode::NotFound
+    );
+    let shop = publish(
+        &hub,
+        "shop",
+        CallerAgent::Lead,
+        json!({ "name": "notes", "title": "Notes", "content": "shop's" }),
+    )
+    .await
+    .unwrap();
     assert_eq!(shop.version.get(), 1);
     assert_eq!(read(&hub, "app", "notes", None).await.unwrap().0, "app's");
-    let (code, message) = publish(&hub, "app", CallerAgent::Lead, json!({ "name": "notes", "title": "Notes", "path": "notes.md" }))
-        .await
-        .unwrap_err();
+    let (code, message) = publish(
+        &hub,
+        "app",
+        CallerAgent::Lead,
+        json!({ "name": "notes", "title": "Notes", "path": "notes.md" }),
+    )
+    .await
+    .unwrap_err();
     assert_eq!(code, ErrorCode::Invalid);
     assert!(message.contains("no content"), "{message}");
     // The nightly memory refresh publishes nothing.
-    let (code, _) = publish(&hub, "app", CallerAgent::MemoryRefresh, json!({ "name": "notes", "title": "N", "content": "x" }))
-        .await
-        .unwrap_err();
+    let (code, _) = publish(
+        &hub,
+        "app",
+        CallerAgent::MemoryRefresh,
+        json!({ "name": "notes", "title": "N", "content": "x" }),
+    )
+    .await
+    .unwrap_err();
     assert_eq!(code, ErrorCode::Forbidden);
 }

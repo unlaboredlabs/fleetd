@@ -509,7 +509,9 @@ mod tests {
 
     #[test]
     fn an_artifact_link_is_its_title_alone() {
-        let out = messages("The [sweep & fixes](artifact:sweep-report@2) are in, and [docs](https://x.dev).");
+        let out = messages(
+            "The [sweep & fixes](artifact:sweep-report@2) are in, and [docs](https://x.dev).",
+        );
         assert_eq!(
             out,
             [r#"The sweep &amp; fixes are in, and <a href="https://x.dev">docs</a>."#]

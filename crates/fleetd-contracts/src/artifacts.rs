@@ -140,7 +140,14 @@ mod tests {
         assert_eq!((name.as_str(), version), ("sweep-report", None));
         let (name, version) = link_target("artifact:sweep-report@3").unwrap();
         assert_eq!((name.as_str(), version), ("sweep-report", Some(3)));
-        for bad in ["artifact:", "artifact:Sweep", "artifact:a@0", "artifact:a@x", "https://x.dev", "artifact:a b"] {
+        for bad in [
+            "artifact:",
+            "artifact:Sweep",
+            "artifact:a@0",
+            "artifact:a@x",
+            "https://x.dev",
+            "artifact:a b",
+        ] {
             assert!(link_target(bad).is_none(), "{bad}");
         }
     }
@@ -152,9 +159,22 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(call.content, None);
-        assert!(serde_json::from_value::<ArtifactPublishCall>(json!({ "name": "Sweep", "title": "S", "content": "x" })).is_err());
-        assert!(serde_json::from_value::<ArtifactPublishCall>(json!({ "name": "s", "title": "", "content": "x" })).is_err());
-        assert_eq!(ArtifactFormat::of_path("out/Sweep.HTML"), ArtifactFormat::Html);
+        assert!(
+            serde_json::from_value::<ArtifactPublishCall>(
+                json!({ "name": "Sweep", "title": "S", "content": "x" })
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<ArtifactPublishCall>(
+                json!({ "name": "s", "title": "", "content": "x" })
+            )
+            .is_err()
+        );
+        assert_eq!(
+            ArtifactFormat::of_path("out/Sweep.HTML"),
+            ArtifactFormat::Html
+        );
         assert_eq!(ArtifactFormat::of_path("out/sweep.md"), ArtifactFormat::Md);
     }
 }

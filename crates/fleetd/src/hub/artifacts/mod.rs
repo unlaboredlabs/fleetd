@@ -93,7 +93,11 @@ fn version_at(row: &rusqlite::Row<'_>, at: usize) -> rusqlite::Result<ArtifactVe
     let by: String = row.get(at + 3)?;
     Ok(ArtifactVersion {
         version: Int::unchecked(row.get(at)?),
-        title: Line::unchecked(if title.is_empty() { "Untitled".into() } else { title }),
+        title: Line::unchecked(if title.is_empty() {
+            "Untitled".into()
+        } else {
+            title
+        }),
         format: format_of(&row.get::<_, String>(at + 2)?),
         by: Line::unchecked(if by.is_empty() { "someone".into() } else { by }),
         at: Timestamp(iso_ms(row.get(at + 4)?)),
@@ -101,17 +105,30 @@ fn version_at(row: &rusqlite::Row<'_>, at: usize) -> rusqlite::Result<ArtifactVe
     })
 }
 
-/// A new version of `name` with `content`; returns its number. Only the newest [`ARTIFACT_VERSIONS_KEPT`] stay.
+/// One publish, as `keep` stores it.
+#[derive(Clone, Copy)]
+struct NewVersion<'a> {
+    title: &'a str,
+    format: ArtifactFormat,
+    by: &'a str,
+    content: &'a str,
+    at_ms: i64,
+}
+
+/// A new version of `name`; returns its number. Only the newest [`ARTIFACT_VERSIONS_KEPT`] stay.
 fn keep(
     c: &Connection,
     r: &ProjectRef,
     name: &ArtifactName,
-    title: &str,
-    format: ArtifactFormat,
-    by: &str,
-    content: &str,
-    at_ms: i64,
+    new: &NewVersion<'_>,
 ) -> Result<i64, StoreError> {
+    let NewVersion {
+        title,
+        format,
+        by,
+        content,
+        at_ms,
+    } = *new;
     let (m, p) = (r.machine_id.as_str(), r.project_id.as_str());
     let last: Option<i64> = c.query_row(
         "SELECT MAX(version) FROM artifact_versions WHERE machine_id = ? AND project_id = ? AND name = ?",
@@ -243,7 +260,16 @@ fn publish(
     let at_ms = now_ms(hub.clock.as_ref());
     let version = hub
         .db
-        .transaction(|c| keep(c, r, &call.name, call.title.as_str(), format, &by, content.as_str(), at_ms))
+        .transaction(|c| {
+            let new = NewVersion {
+                title: call.title.as_str(),
+                format,
+                by: &by,
+                content: content.as_str(),
+                at_ms,
+            };
+            keep(c, r, &call.name, &new)
+        })
         .map_err(failed)?;
     let title = call.title.as_str();
     let text = if version == 1 {
@@ -280,7 +306,9 @@ fn publish(
                 "artifact {} of {}/{} published, version {version}",
                 call.name, r.machine_id, r.project_id
             ),
-            data: Some(json!({ "projectRef": r, "name": call.name, "version": version, "by": caller.by })),
+            data: Some(
+                json!({ "projectRef": r, "name": call.name, "version": version, "by": caller.by }),
+            ),
             attention: None,
         })
         .map_err(failed)?;

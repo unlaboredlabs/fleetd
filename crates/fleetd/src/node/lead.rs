@@ -661,8 +661,13 @@ mod frame_size_tests {
     /// A published report may be far past a CLI frame's size; any other call that large is no CLI's.
     #[test]
     fn only_an_artifact_publish_carries_a_large_frame() {
-        assert!(matches!(decode_call(&line("artifact_publish", 1_000_000)), Ok(Incoming::Lead(_))));
-        let other = decode_call(&line("artifact_publish", 1_000_000).replace("artifact_publish", "task_list"));
+        assert!(matches!(
+            decode_call(&line("artifact_publish", 1_000_000)),
+            Ok(Incoming::Lead(_))
+        ));
+        let other = decode_call(
+            &line("artifact_publish", 1_000_000).replace("artifact_publish", "task_list"),
+        );
         assert!(other.is_err());
         assert!(decode_call(&line("artifact_publish", MAX_ARTIFACT_FRAME_BYTES)).is_err());
     }

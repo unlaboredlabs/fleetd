@@ -621,7 +621,9 @@ pub fn read_artifact_path(call: &mut Value, cwd: &Path) -> Result<(), String> {
         return Err(format!("{path} is empty."));
     }
     if text.encode_utf16().count() > ARTIFACT_TEXT_CAP {
-        return Err(format!("{path} is longer than {ARTIFACT_TEXT_CAP} characters: split it, or link large data out."));
+        return Err(format!(
+            "{path} is longer than {ARTIFACT_TEXT_CAP} characters: split it, or link large data out."
+        ));
     }
     if call["format"].is_null() {
         call["format"] = serde_json::to_value(ArtifactFormat::of_path(&path)).unwrap_or_default();
@@ -1074,7 +1076,8 @@ mod tests {
     }
 
     #[test]
-    fn a_worker_sees_only_report_ask_lead_its_brief_ci_decisions_reviews_images_artifacts_and_browser() {
+    fn a_worker_sees_only_report_ask_lead_its_brief_ci_decisions_reviews_images_artifacts_and_browser()
+     {
         assert_eq!(
             names(Role::Worker),
             [
@@ -1149,7 +1152,8 @@ mod tests {
         let mut md = json!({ "op": "artifact_publish", "name": "a", "title": "A", "format": "md", "path": "out/sweep.html" });
         read_artifact_path(&mut md, dir.path()).unwrap();
         assert_eq!(md["format"], "md");
-        let mut missing = json!({ "op": "artifact_publish", "name": "a", "title": "A", "path": "nope.md" });
+        let mut missing =
+            json!({ "op": "artifact_publish", "name": "a", "title": "A", "path": "nope.md" });
         let why = read_artifact_path(&mut missing, dir.path()).unwrap_err();
         assert!(why.starts_with("Can't read nope.md"), "{why}");
         // Other calls pass through untouched.

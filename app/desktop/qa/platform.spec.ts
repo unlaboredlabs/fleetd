@@ -224,7 +224,9 @@ test("an HTML artifact runs its scripts with no network and no reach into the ap
       })();
     </script>`;
     const tried = await page.evaluate(async (html) => {
-      const url = await window.fleetd.artifactFrame(html);
+      // The app's own bridge, as its page uses it (the QA specs don't see the renderer's types).
+      const bridge = (window as unknown as { fleetd: { artifactFrame: (page: string) => Promise<string> } }).fleetd;
+      const url = await bridge.artifactFrame(html);
       const got = new Promise<Record<string, string>>((done) => window.addEventListener("message", (e: MessageEvent<{ probe?: Record<string, string> }>) => e.data.probe && done(e.data.probe)));
       const frame = document.createElement("iframe");
       frame.setAttribute("sandbox", "allow-scripts");
