@@ -304,6 +304,11 @@ describe("outgoing", () => {
     expect(outgoing(" \n ", 0, undefined)).toBeNull();
   });
 
+  it("keeps a first line's indent, as of a code line, and drops only the blank lines around it", () => {
+    expect(outgoing("\n\n    npm test\n    npm run lint\n  \n", 0, undefined)).toEqual({ text: "    npm test\n    npm run lint", replyTo: undefined });
+    expect(outgoing("  - one\n  - two  ", 0, undefined)).toEqual({ text: "  - one\n  - two", replyTo: undefined });
+  });
+
   it("sends a photo with no words", () => {
     expect(outgoing("  ", 1, undefined)).toEqual({ text: "", replyTo: undefined });
   });
