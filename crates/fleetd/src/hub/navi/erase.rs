@@ -5,7 +5,16 @@
 //! memory and skills, its attachments and its screen recordings, and the time inspector's record of its sessions (whose
 //! labels name its commands, searches and pages). Its settings go with the project as any project's do
 //! (`HubStore::project_remove`).
+//!
+//! The delete is marked as asked for first (`navi_erases`, [`asked`]): when its node removes the Navi but its answer
+//! never reaches the hub (a timeout), [`run`] finishes the erase once the hub's cache no longer has the Navi, at the
+//! node's `project_removed` or the first snapshot after, and at the hub's start.
 use std::collections::BTreeSet;
+use std::sync::Arc;
+use std::time::Duration;
+
+use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::ids::{MachineId, ProjectId};
 
 use fleetd_contracts::browser::BrowserSessionId;
 use fleetd_contracts::ids::ProjectRef;
@@ -14,7 +23,7 @@ use rusqlite::{Connection, params};
 
 use crate::hub::api::Hub;
 use crate::hub::ledger::project_key;
-use crate::hub::store::StoreError;
+use crate::hub::store::{StoreError, now_ms};
 
 /// Tables with the Navi's rows by `machine_id` and `project_id`.
 const BY_PROJECT: &[&str] = &[
@@ -57,7 +66,77 @@ const BY_THREAD: &[&str] = &[
 /// Tables with the Navi's rows by `project_key` (`<machine>/<project>`).
 const BY_KEY: &[&str] = &["requests", "legacy_asks", "decisions"];
 
-/// Erases what the hub keeps of the Navi `r`, its rows and its files. Run once its node has forgotten it.
+/// Marks the Navi's delete as asked for, before its node is asked: [`run`] finishes it if the answer never comes.
+pub fn asked(hub: &Hub, r: &ProjectRef) -> Result<(), StoreError> {
+    hub.db.with(|c| {
+        c.execute(
+            "INSERT OR REPLACE INTO navi_erases (machine_id, project_id, asked_ms) VALUES (?, ?, ?)",
+            params![r.machine_id.as_str(), r.project_id.as_str(), now_ms(hub.clock.as_ref())],
+        )?;
+        Ok(())
+    })
+}
+
+/// Erases each Navi whose delete was asked for and that the hub's cache no longer has: its node removed it, whether
+/// or not its answer came. One its node still has (it refused, or is yet to answer) waits. How many were erased.
+pub fn finish_pending(hub: &Hub) -> Result<usize, StoreError> {
+    let asked: Vec<(String, String)> = hub.db.with(|c| {
+        Ok(c.prepare("SELECT machine_id, project_id FROM navi_erases")?
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?)
+    })?;
+    let mut n = 0;
+    for (machine_id, project_id) in asked {
+        let r = ProjectRef {
+            machine_id: MachineId::unchecked(machine_id),
+            project_id: ProjectId::unchecked(project_id),
+        };
+        if hub.store.project_get(&r)?.is_none() {
+            erase(hub, &r)?;
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
+/// Finishes the erases asked for at the hub's start, then at each `project.removed`, until the hub stops.
+pub async fn run(hub: Arc<Hub>) {
+    let mut head = hub.events.subscribe();
+    let mut cursor = hub.events.head();
+    let types = [HubEventType::ProjectRemoved];
+    let mut due = true;
+    loop {
+        head.borrow_and_update();
+        if due && let Err(e) = finish_pending(&hub) {
+            tracing::warn!(error = %e, "a deleted Navi's erase wasn't finished");
+        }
+        match hub.events.page(cursor, Some(&types), None) {
+            Ok(page) => {
+                due = !page.events.is_empty();
+                cursor = page.cursor;
+                if due || page.more {
+                    continue;
+                }
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "navi erases: event log read failed");
+                due = true;
+                tokio::select! {
+                    () = hub.shutdown.wait() => return,
+                    () = hub.clock.sleep(Duration::from_secs(5)) => {}
+                }
+                continue;
+            }
+        }
+        tokio::select! {
+            () = hub.shutdown.wait() => return,
+            changed = head.changed() => if changed.is_err() { return },
+        }
+    }
+}
+
+/// Erases what the hub keeps of the Navi `r`, its rows and its files, and its mark ([`asked`]). Run once its node has
+/// forgotten it.
 pub fn erase(hub: &Hub, r: &ProjectRef) -> Result<(), StoreError> {
     let (recordings, blobs) = hub.db.transaction(|c| rows(c, r))?;
     for id in &recordings {
@@ -85,7 +164,13 @@ pub fn erase(hub: &Hub, r: &ProjectRef) -> Result<(), StoreError> {
     if let Some(dir) = hub.db.skills().scope_dir(SkillScope::Project, Some(r)) {
         gone(&dir);
     }
-    Ok(())
+    hub.db.with(|c| {
+        c.execute(
+            "DELETE FROM navi_erases WHERE machine_id = ? AND project_id = ?",
+            params![r.machine_id.as_str(), r.project_id.as_str()],
+        )?;
+        Ok(())
+    })
 }
 
 /// Deletes the Navi's rows; the ids of its screen recordings and the files of its attachments, for their files.
