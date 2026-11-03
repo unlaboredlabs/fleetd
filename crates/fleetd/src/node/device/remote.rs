@@ -6,9 +6,9 @@
 //!
 //! The hosting machine is a person's own Mac, so it runs only what [`parse`] allows: agent-device commands that
 //! drive the screen, with flags that can't pick another device, another config, a script or a server, and paths only
-//! in the screen's own folder ([`Work`]). Files go both ways: what a command reads (an app to install) is read by the
-//! agent's node from its worktree and sent first, a piece at a time ([`map`]); what it writes (a screenshot) comes back
-//! the same way into the worktree.
+//! in the screen's own folder ([`Work`]), and never an install on iOS ([`no_install`]). Files go both ways: what a command
+//! reads (a push payload) is read by the agent's node from its worktree and sent first, a piece at a time ([`map`]);
+//! what it writes (a screenshot) comes back the same way into the worktree.
 use std::collections::HashMap;
 use std::io::{Read, Seek, Write};
 use std::os::unix::fs::OpenOptionsExt;
@@ -284,6 +284,26 @@ pub struct Parsed {
 /// A negative number stands where a positional argument does (`swipe 10 -20 …`), not a flag.
 fn is_flag(arg: &str) -> bool {
     arg.starts_with('-') && !arg[1..].starts_with(|c: char| c.is_ascii_digit())
+}
+
+/// Refuses `install` and `reinstall` for an iOS screen (D299 mac.interim-lockdown): an app installed in a simulator runs
+/// as the Mac's own user, outside the iOS sandbox, so no app goes into one from another machine until the shared Mac.
+/// Both nodes refuse it: the agent's before it sends the app, the Mac's before it runs anything.
+pub fn no_install(args: &[String]) -> Result<(), McpToolError> {
+    match args.first().map(String::as_str) {
+        Some(command @ ("install" | "reinstall")) => Err(McpToolError::new(
+            ErrorCode::Forbidden,
+            format!(
+                "`agent-device {command}` doesn't run on an iOS screen on another machine: an app installed there \
+                 runs as the Mac's own user, outside the iOS sandbox, so fleetd takes no apps from other machines \
+                 until the shared Mac."
+            ),
+        )
+        .with_fix(
+            "drive the apps already on the screen, and say in your result that your build couldn't be installed",
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// Reads an agent-device command against the commands and flags a screen on another machine runs: refused with the
@@ -592,7 +612,7 @@ pub fn map(
         if meta.is_dir() {
             return Err(refuse(
                 format!("{shown} is a folder, and only files go to the screen on another machine."),
-                "zip it first (`ditto -c -k --keepParent App.app App.zip`, or `zip -qry App.zip App.app`) and pass the .zip",
+                "name a file in it instead",
             ));
         }
         total += meta.len();
@@ -958,25 +978,14 @@ impl Work {
     }
 
     /// Checks a command the agent's node sent: one [`parse`] allows, its files only in this folder (`in/` ones sent
-    /// already), and an install only where the node allows it.
-    pub fn check(&self, args: &[String], install: bool) -> Result<(), McpToolError> {
+    /// already). An iOS screen refuses an install first ([`no_install`]); an Android one takes it.
+    pub fn check(&self, args: &[String]) -> Result<(), McpToolError> {
         let parsed = parse(args)?;
         if parsed.args != args {
             return Err(refuse(
                 "the command is not in its plain form",
                 "send it as the agent's node maps it",
             ));
-        }
-        if !install && matches!(parsed.command, "install" | "reinstall") {
-            return Err(McpToolError::new(
-                ErrorCode::Forbidden,
-                format!(
-                    "The Mac hosting this screen doesn't take apps from agents on other machines: its node.json has \
-                     \"ios\": {{\"remoteInstall\": false}}, so `agent-device {}` is refused.",
-                    parsed.command
-                ),
-            )
-            .with_fix("say so in your result: a person sets \"remoteInstall\" to true (or leaves it out) in that Mac's node.json"));
         }
         for (arg, role) in parsed.args.iter().zip(&parsed.roles) {
             let (side, name) = match role {

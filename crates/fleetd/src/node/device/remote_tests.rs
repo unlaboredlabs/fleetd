@@ -195,14 +195,14 @@ fn files_come_only_from_the_worktree_and_go_back_into_it() {
         assert!(why.contains("outside your worktree"), "{line:?}: {why}");
     }
     let folder = map(
-        &args(&["install", "build/App.app"]),
+        &args(&["push", "sh.fleetd.app", "build/App.app"]),
         &worktree,
         &worktree,
         &mut seq,
     )
     .unwrap_err();
     assert!(folder.message.contains("is a folder"), "{}", folder.message);
-    assert!(folder.fix.unwrap().contains("zip"));
+    assert!(folder.fix.unwrap().contains("name a file"));
     // Back into the worktree: its folders made, never written through a link out of it.
     write_output(&worktree, &shot.outputs[0].path, b"png").unwrap();
     assert_eq!(
@@ -287,16 +287,23 @@ async fn a_file_goes_in_and_a_file_comes_back_on_the_screens_node() {
     assert!(work.put(".agent-device.json", 0, &first).is_err());
     work.put("1-app.zip", PIECE as u64, &B64.encode(&app[PIECE..]))
         .unwrap();
-    // Only what this folder holds, and only an install the node allows.
+    // Only what this folder holds. An install is an Android screen's alone: an iOS one refuses it first (D299), as the
+    // app would run as the Mac's own user.
     let install = args(&["install", "in/1-app.zip"]);
-    work.check(&install, true).unwrap();
-    let off = work.check(&install, false).unwrap_err();
-    assert_eq!(off.code, ErrorCode::Forbidden);
-    assert!(
-        off.message.contains("\"remoteInstall\": false"),
-        "{}",
-        off.message
-    );
+    work.check(&install).unwrap();
+    for refused in [
+        install.clone(),
+        args(&["reinstall", "sh.fleetd.app", "in/1-app.zip"]),
+    ] {
+        let off = no_install(&refused).unwrap_err();
+        assert_eq!(off.code, ErrorCode::Forbidden);
+        assert!(
+            off.message.contains("outside the iOS sandbox"),
+            "{}",
+            off.message
+        );
+    }
+    no_install(&args(&["uninstall", "sh.fleetd.app"])).unwrap();
     for bad in [
         &["install", "in/2-other.zip"][..],
         &["install", "/Users/me/App.zip"],
@@ -305,7 +312,7 @@ async fn a_file_goes_in_and_a_file_comes_back_on_the_screens_node() {
         &["screenshot", "shot.png"],
         &["screenshot", "--out=out/1.png"],
     ] {
-        assert!(work.check(&args(bad), true).is_err(), "{bad:?}");
+        assert!(work.check(&args(bad)).is_err(), "{bad:?}");
     }
     let env = vec![(
         "AGENT_DEVICE_HOME".to_owned(),
@@ -395,7 +402,7 @@ async fn the_app_log_comes_back_from_the_screens_node() {
         env
     };
     let line = args(&["logs", "path", "out/1-app.log"]);
-    work.check(&line, true).unwrap();
+    work.check(&line).unwrap();
     let ran = work.run(&program, &env(None), &line, RUN_WAIT).await;
     assert_eq!(
         (ran.exit_code, ran.stdout.trim()),

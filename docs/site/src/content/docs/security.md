@@ -99,8 +99,12 @@ shell commands run unasked (decision `navi.shell-unasked`, D208): the OS sandbox
 command finds a way around the checks. Only Navis run in it; other agents don't.
 
 The sandbox guards what matters and leaves the rest open (decision `navi.sandbox-open-home`, D234): a Navi installs
-and runs things as you would, and can't read your keys and logins or fleetd's own files. Both systems apply the same
-fence. These are the paths, with `~` the machine user's home and `~/.claude` Claude Code's config dir (or
+and runs things as you would, and can't read your keys and logins or fleetd's own files.
+
+**Linux only.** Navis run in bubblewrap on Linux and never on a Mac (decision `mac.interim-lockdown`, D299). macOS's
+`sandbox-exec` leaves ways out that no profile closes: the keychain through its system service (`security`), jobs
+handed to `launchctl`, which run outside the sandbox, and Apple Events to the person's apps. The hub refuses a Navi on
+a Mac, doesn't start one already there, and the Mac's node refuses a Navi's sandbox itself ([Navi](/docs/navi)). These are the paths, with `~` the machine user's home and `~/.claude` Claude Code's config dir (or
 `$CLAUDE_CONFIG_DIR`).
 
 **Its own home.** Each Navi has a home of its own in fleetd's node directory, `navis/<project id>/home`, kept across
@@ -110,7 +114,7 @@ and `PIP_BREAK_SYSTEM_PACKAGES=1`, so npm's global installs, `pip install --user
 `curl … | sh` installers put what they install there. `RUSTUP_HOME` points at your `~/.rustup` when you have one, so
 your toolchains still run. Claude Code itself keeps your `HOME`, where its login is. No Navi sees another's home.
 
-**Writes**, on both: anywhere you can write on the machine, except what runs outside its sandbox later: your shells,
+**Writes**: anywhere you can write on the machine, except what runs outside its sandbox later: your shells,
 your systemd, and fleetd's own agents, which run unsandboxed in your checkouts and hold tokens. Those stay read-only,
 so a Navi that is talked into something can't plant code there that reads your keys:
 
@@ -137,7 +141,7 @@ so a Navi that is talked into something can't plant code there that reads your k
   a new `.mcp.json`'s servers don't run until settings it can't write approve them. The rest of a checkout is yours
   to have it write: its code, a commit.
 - A read-only path that is a link (`CLAUDE.md` linked to `AGENTS.md`, `~/.local/bin` linked into your dotfiles) is
-  read-only where it leads, and the link itself stays. On macOS the link can't be removed or replaced. On Linux, where
+  read-only where it leads, and the link itself stays. On Linux, where
   nothing can be mounted on a link, the folder holding a linked bin dir of your home (`~/.local` for `~/.local/bin`)
   is listed like the home: the link comes back as a link and the folder's other entries as they are, but nothing new
   is made at its top. A Navi installs into its own home, so that costs it nothing. A checkout isn't listed (it can
@@ -145,8 +149,8 @@ so a Navi that is talked into something can't plant code there that reads your k
 - Each folder on the way to a read-only or hidden path that the Navi could rename (`~/dotfiles/pkg` above
   `~/dotfiles/pkg/.local/bin`, a checkout, `/opt/brew` above `/opt/brew/bin`, `~/.local/share` above your keyrings,
   the folder a linked `~/.aws` leads into) can't be moved aside, so nothing it put in its place is run, and no
-  session finds your keys at a path no longer hidden. What is in it is written as before. On Linux it is bound onto
-  itself; on macOS the folder itself isn't written. A hidden path that is a link stays a link, as a read-only one
+  session finds your keys at a path no longer hidden. What is in it is written as before. It is bound onto
+  itself. A hidden path that is a link stays a link, as a read-only one
   does (on Linux its folder is listed the same way).
 - `~/.claude` (but its own session's files: its conversation in `~/.claude/projects/<its folder>`,
   `~/.claude/session-env/<session>`, `~/.claude/file-history/<session>`, and the login file
@@ -157,10 +161,9 @@ so a Navi that is talked into something can't plant code there that reads your k
 **`~/.claude.json`** holds every MCP server's settings, with their tokens, and every project's history. On Linux a
 Navi gets its own copy in its place, made fresh at each start: without `mcpServers`, without `projects`, and without
 any key named like a secret but Claude Code's own login. What it writes there stays in its copy. Its backups and other
-copies beside it (`~/.claude.json.backup.*`) aren't in a Linux Navi's home at all. On macOS, where nothing can stand
-in for a path, the real file and its copies are hidden.
+copies beside it (`~/.claude.json.backup.*`) aren't in a Linux Navi's home at all.
 
-**Can't read**, on both:
+**Can't read**:
 
 - fleetd's directory: the hub, the node, worktrees, secrets and integration tokens, Chrome's profiles, and every
   other Navi's folder and home. Only its own folder, home and session's files are there: its MCP config, settings and
@@ -196,24 +199,24 @@ new file there (a startup file of a shell you don't use yet). Inside an entry, i
 namespaces, started with its first session and ended when the node stops. Every session of the Navi runs in it, with
 its own mounts. What a command leaves running (`nohup …&`, `setsid`) is reparented to the box's init, not killed at
 the end of the turn, and the next turn finds it. The box's processes see each other and nothing else on the machine.
-Its sessions share one `/tmp`, emptied when the box starts. On macOS a detached process outlives the session already.
-Nothing comes back after the node or the machine restarts, and there is no root, `apt` or systemd service.
+Its sessions share one `/tmp`, emptied when the box starts. Nothing comes back after the node or the machine
+restarts, and there is no root, `apt` or systemd service.
 
-| | Linux (bubblewrap) | macOS (`sandbox-exec`) |
-|---|---|---|
-| Also can't read | `$XDG_RUNTIME_DIR` (`/run/user/<uid>`): the user's D-Bus, systemd and SSH agent sockets, which would start commands outside. Their variables are unset. `/sys` is read-only. | `~/Library` whole: browser cookies, app tokens, keychain files. Claude Code reads its login through the keychain's daemon, not the files. |
-| Abstract sockets | Landlock scopes them (Linux 6.12 and later): nothing inside connects to one made outside, such as an X server's or a D-Bus bus's, nor to one a process of an earlier turn made. On an older kernel they stay reachable, and the machine's Navi sandbox check says so. | Not used on macOS |
-| `/tmp` | The Navi's own, shared by its sessions, emptied when its box starts | The machine's. Its commands' `TMPDIR` is its own `navis/<project id>/tmp`; Claude Code's own temp dir (`CLAUDE_CODE_TMPDIR`) is its scratch dir. |
-| Processes | Its box's (`/proc`, a pid namespace): no other process, so no way back to the disk through one. A process from an earlier turn can be signalled, not traced. | Others are visible, as for any program |
-| Claude Code's shared state | Shell snapshots, todos, tasks, plans, `statsig`, `debug` and the paste cache get a private copy per session | Read-only: `sandbox-exec` can't give a private copy. A Mac Navi's todo list, plan files and shell snapshot may not save. |
-| Terminal | A session of its own (`--new-session`): it can't push keystrokes into the node's terminal | |
-| Network | As before: the site gate decides | The same |
+| | Linux (bubblewrap) |
+|---|---|
+| Also can't read | `$XDG_RUNTIME_DIR` (`/run/user/<uid>`): the user's D-Bus, systemd and SSH agent sockets, which would start commands outside. Their variables are unset. `/sys` is read-only. |
+| Abstract sockets | Landlock scopes them (Linux 6.12 and later): nothing inside connects to one made outside, such as an X server's or a D-Bus bus's, nor to one a process of an earlier turn made. On an older kernel they stay reachable, and the machine's Navi sandbox check says so. |
+| `/tmp` | The Navi's own, shared by its sessions, emptied when its box starts |
+| Processes | Its box's (`/proc`, a pid namespace): no other process, so no way back to the disk through one. A process from an earlier turn can be signalled, not traced. |
+| Claude Code's shared state | Shell snapshots, todos, tasks, plans, `statsig`, `debug` and the paste cache get a private copy per session |
+| Terminal | A session of its own (`--new-session`): it can't push keystrokes into the node's terminal |
+| Network | As before: the site gate decides |
 
 - **No sandbox, no Navi.** When bubblewrap is missing or can't start, the Navi doesn't run, and its chat says how to
   fix it ([Navi](/docs/navi)). fleetd never runs a Navi unsandboxed.
 - **Each machine says which it gets.** `fleetd doctor` shows a **Navi sandbox** line per machine: bubblewrap
   with abstract sockets scoped; bubblewrap on a kernel too old to scope them (a warning, with the fix); or none, so
-  Navis can't run there (with how to install bubblewrap).
+  Navis can't run there (with how to install bubblewrap, or, on a Mac, why none runs there).
 - **What it doesn't cover.** The network is shared, as the site gate needs. On Linux before 6.12, abstract Unix
   sockets stay reachable, including an X server that accepts local connections without a cookie
   (`xhost +si:localuser`, the GNOME default). fleetd's own screens don't listen there. Its folder, its session's

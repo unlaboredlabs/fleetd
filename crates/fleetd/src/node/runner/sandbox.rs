@@ -18,8 +18,9 @@
 //!   (`navi_box`), so what it leaves running in the background outlives the turn, until the node stops, and no
 //!   process outside the box (and no `/proc/<pid>/root` into the real disk) is in reach. Its sessions share one
 //!   `/tmp`, kept until the box ends.
-//! - macOS: `sandbox-exec` with a profile made here: writes everywhere but the hidden and read-only paths, and no
-//!   reading the hidden ones. A detached process outlives the session there already.
+//! - macOS: none runs (D299 mac.interim-lockdown, [`on_mac`]): `sandbox-exec` leaves a Navi ways out, so a Mac refuses
+//!   every Navi session, as the hub does first. The profile made here ([`seatbelt`]: writes everywhere but the hidden
+//!   and read-only paths, and no reading the hidden ones) stays, tested, behind [`wrap_with`].
 //!
 //! A sandbox that can't start never falls back to none: the session is refused with how to fix it ([`Refusal`]).
 //! Only Navis are fenced; every other session runs as before.
@@ -988,6 +989,9 @@ pub fn wrap(
     program: &Path,
     args: Vec<String>,
 ) -> Result<Sandboxed, Refusal> {
+    if cfg!(target_os = "macos") {
+        return Err(on_mac());
+    }
     let tool = tool().ok_or_else(missing)?;
     command(&tool, fence, cwd, program, args)
 }
@@ -995,7 +999,22 @@ pub fn wrap(
 /// Makes the fence's paths ready and starts the sandbox once with nothing to run, so one that can't start says why
 /// before a session, not as a session that ends at once. It waits on a process: run it off the async runtime.
 pub fn check(fence: &Fence, cwd: &Path) -> Result<(), Refusal> {
+    if cfg!(target_os = "macos") {
+        return Err(on_mac());
+    }
     check_with(tool(), fence, cwd).map(drop)
+}
+
+/// Why a Mac runs no Navi (D299 mac.interim-lockdown): macOS's sandbox leaves ways out that no profile closes.
+pub fn on_mac() -> Refusal {
+    Refusal {
+        message: "Navis don't run on a Mac: macOS's sandbox leaves a Navi ways out (the keychain through its system \
+                  service, launchctl jobs, Apple Events)."
+            .into(),
+        fix: "Make a Navi on a Linux machine instead (Navi › New, then pick the machine). To keep this one's files, \
+              copy them over from its folder on the Mac, then archive it."
+            .into(),
+    }
 }
 
 /// The sandbox's program on this machine: bubblewrap on Linux, `sandbox-exec` on macOS.
@@ -1164,21 +1183,19 @@ pub fn describe() -> Option<NaviSandbox> {
     if !cfg!(any(target_os = "linux", target_os = "macos")) {
         return None;
     }
-    let Some(tool) = tool() else {
-        let refused = missing();
-        return Some(NaviSandbox {
+    let none = |refused: Refusal| {
+        Some(NaviSandbox {
             status: SandboxStatus::Missing,
             line: refused.message,
             fix: Some(refused.fix),
-        });
+        })
     };
     if cfg!(target_os = "macos") {
-        return Some(NaviSandbox {
-            status: SandboxStatus::Ready,
-            line: "Navis run in sandbox-exec.".into(),
-            fix: None,
-        });
+        return none(on_mac());
     }
+    let Some(tool) = tool() else {
+        return none(missing());
+    };
     let mut probe = std::process::Command::new(&tool);
     probe
         .args(["--ro-bind", "/", "/", "--unshare-all", "true"])
@@ -1260,7 +1277,7 @@ fn missing() -> Refusal {
         Refusal {
             message: "A Navi runs only inside a sandbox, and fleetd has none for this system."
                 .into(),
-            fix: "Run Navis on a Linux machine with bubblewrap, or on a Mac.".into(),
+            fix: "Run Navis on a Linux machine with bubblewrap.".into(),
         }
     }
 }

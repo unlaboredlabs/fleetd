@@ -28,6 +28,10 @@ pub trait LeadPorts: Send + Sync {
         message: String,
         client_request_id: String,
     ) -> BoxFuture<Result<bool, LeadError>>;
+    /// Whether the machine is a Mac, where Navis don't run (`NodeLinkServer::is_mac`).
+    fn is_mac(&self, _machine_id: &MachineId) -> bool {
+        false
+    }
     /// Open secret and approval requests, in one project or all, newest first.
     fn open_requests(
         &self,

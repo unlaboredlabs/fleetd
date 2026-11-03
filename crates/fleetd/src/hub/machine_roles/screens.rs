@@ -9,10 +9,10 @@
 //! A Navi's browser runs on the Navi's own machine, on the profile it keeps (D221): the hub's own `session_host` frame
 //! names the Navi (never the seal, which anyone can make), and the runner's node opens that profile for it. Only the Navi's owner reaches it (navi/owner.rs guards every tool).
 //!
-//! With a PR, an iOS or Android screen gets the PR's CI build first (builds.rs): the hub reads it, starts the screen,
-//! sends the file to the screen's machine and runs `agent-device install` there, as an agent's node does for its screen
-//! elsewhere (node/device/remote.rs): sealed with the relay key the hub sealed into the start, so only that machine
-//! opens them. Only then is the screen the person's. A PR with no build is refused before anything starts; a build that
+//! With a PR, an Android screen gets the PR's CI build first (builds.rs): the hub reads it, starts the screen, sends
+//! the file to the screen's machine and runs `agent-device install` there, sealed with the relay key the hub sealed
+//! into the start, so only that machine opens them. An iOS screen takes none until the shared Mac (D299): an app in the
+//! Mac's simulator runs as the Mac's own user. Only then is the screen the person's. A PR with no build is refused before anything starts; a build that
 //! doesn't install ends the screen.
 //!
 //! An open with a PR answers at once, its slot taken: a simulator's start and an install can take longer than a call
@@ -855,6 +855,15 @@ async fn find_build(
             "A PR's build goes into an iOS or Android screen.",
         )
         .with_fix("Pick iOS or Android, or leave the PR out."));
+    }
+    // D299 mac.interim-lockdown: an app installed in a simulator runs as the Mac's own user, outside the iOS sandbox.
+    if kind == SessionKind::Ios {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            "A PR's build doesn't go into an iOS screen for now: an app installed in the Mac's simulator runs as the \
+             Mac's own user, outside the iOS sandbox, so fleetd installs none until the shared Mac.",
+        )
+        .with_fix("Open the iOS screen without a PR, or put the build into an Android screen."));
     }
     let repos = project_repos(hub, r);
     if !repos

@@ -95,8 +95,8 @@ impl Leads {
         let _guard = self.lock.lock().await;
         // Its lead record stays with its history, but an archived project's lead is never handed out.
         refuse_archived(&self.ctx.db, r)?;
-        if let Some(archived) = self.archived(r) {
-            return Err(archived);
+        if let Some(held) = self.archived(r).or_else(|| self.on_mac(r)) {
+            return Err(held);
         }
         if let Some(existing) = self.records.lead_get(r)? {
             return Ok((self.with_state(existing)?, false));
@@ -113,8 +113,8 @@ impl Leads {
         if let Err(e) = refuse_archived(&self.ctx.db, r) {
             return AutoStart::Held(e);
         }
-        if let Some(archived) = self.archived(r) {
-            return AutoStart::Held(archived);
+        if let Some(held) = self.archived(r).or_else(|| self.on_mac(r)) {
+            return AutoStart::Held(held);
         }
         match self.get(r) {
             Ok(Some(lead)) => return AutoStart::Running(lead),
@@ -137,6 +137,19 @@ impl Leads {
             format!("{} is archived: its lead doesn't start.", project.title),
             "Bring it back with navi_archive (archived false) or in the app; a message waits until then.",
         ))
+    }
+
+    /// Why a Navi on a Mac doesn't start or take a message (D299 mac.interim-lockdown), with how to have it elsewhere;
+    /// none for any other project, or on another machine.
+    fn on_mac(&self, r: &ProjectRef) -> Option<LeadError> {
+        if !self.ctx.ports().is_mac(&r.machine_id) {
+            return None;
+        }
+        let project = self.ctx.store.project_get(r).ok().flatten()?;
+        (project.kind == Some(ProjectKind::Assistant)).then(|| {
+            let (message, fix) = crate::hub::navi::on_mac(&r.machine_id);
+            LeadError::new(ErrorCode::Invalid, message, fix)
+        })
     }
 
     /// Starts the lead of each project on `machine_id` that has orders waiting as drafts and no lead.
@@ -401,9 +414,10 @@ impl Leads {
         first: Option<&str>,
     ) -> Result<Lead, LeadError> {
         refuse_archived(&self.ctx.db, r)?;
-        // Every start comes here (a first start, a restart, a fresh start of a cold lead): an archived Navi gets none.
-        if let Some(archived) = self.archived(r) {
-            return Err(archived);
+        // Every start comes here (a first start, a restart, a fresh start of a cold lead): an archived Navi gets none,
+        // nor one on a Mac.
+        if let Some(held) = self.archived(r).or_else(|| self.on_mac(r)) {
+            return Err(held);
         }
         // M4 usage: no lead turn goes into a login fleetd knows is exhausted.
         if let Some(paused) = self.ctx.hooks.usage_gate(r) {

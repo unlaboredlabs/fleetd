@@ -1,8 +1,9 @@
 //! People's own screens (D239), over a real hub and a fake runner node: a person opens one on the machine they pick and
 //! has control from its start; only people who may use the project (a Navi: its owner) open one; a Navi's browser is
 //! sealed to run on the profile it keeps; a full machine refuses or takes the person in line, ahead of agents, without
-//! ending an agent's screen; and an idle one ends. With a PR, its CI build (from a fake `gh`) goes into an iOS or Android
-//! screen in steps sealed with the start's relay key before the person gets it; a PR with no build starts nothing.
+//! ending an agent's screen; and an idle one ends. With a PR, its CI build (from a fake `gh`) goes into an Android screen
+//! in steps sealed with the start's relay key before the person gets it; a PR with no build, or one for an iOS screen
+//! (D299), starts nothing.
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -729,6 +730,15 @@ fn with_pr(machine: &str, kind: &str) -> Value {
     input
 }
 
+/// mac1 hosts Android emulators too, so a PR's build goes into a screen there: an iOS one takes none (D299).
+fn android_on_mac1(hub: &Hub) {
+    report_hosts(
+        hub,
+        "mac1",
+        &[SessionHost::Browser, SessionHost::Ios, SessionHost::Android],
+    );
+}
+
 /// The device steps the runner saw next, as `put <name> <bytes>` and `run <args>`, until the person's control (the
 /// runner sees no more of those) or `n` of them.
 async fn steps(seen: &mut mpsc::UnboundedReceiver<Seen>, n: usize) -> Vec<String> {
@@ -810,41 +820,47 @@ async fn a_prs_build_goes_into_the_screen_before_the_person_has_it() {
         &hub,
         &[(41, "completed"), (40, "completed")],
         &[
-            (40, "fleetd-ios-simulator", true),
+            (40, "fleetd-android-apk", true),
             (41, "fleetd-android-apk", false),
             (41, "fleetd-ios-simulator", false),
         ],
         &app,
     );
+    // An iOS screen takes none until the shared Mac (D299): an app in the Mac's simulator runs as the Mac's own user.
+    let (code, message) = refusal(call(&hub, &desk, "screen_open", with_pr("mac1", "ios")).await);
+    assert_eq!(code, ErrorCode::Invalid);
+    assert!(message.contains("outside the iOS sandbox"), "{message}");
+    assert!(mac1.try_recv().is_err(), "nothing starts");
+    assert_eq!(live_on(&hub, "mac1"), 0);
     // It answers at once, its slot taken: the rest goes on in the hub, listed under the person's waits.
-    let out = call(&hub, &desk, "screen_open", with_pr("mac1", "ios"))
+    let out = call(&hub, &desk, "screen_open", with_pr("devbox", "android"))
         .await
         .unwrap();
     assert!(out["session"].is_null(), "{out}");
     let opening = &out["waiting"];
     assert_eq!(opening["stage"], "starting", "{out}");
+    assert_eq!(opening["kind"], "android", "{out}");
     assert_eq!(opening["pr"]["number"], 12);
     let thread = opening["threadId"].clone();
     assert!(thread.as_str().unwrap().starts_with("screen-"), "{out}");
     assert_eq!(
-        live_on(&hub, "mac1"),
+        live_on(&hub, "devbox"),
         1,
         "its slot is held from the answer on"
     );
-    let started = next(&mut mac1).await;
+    let started = next(&mut devbox).await;
     assert_eq!(started.op, "session_start");
     assert_eq!(
         started.purpose.as_deref(),
-        Some("iOS simulator opened by Ada, with PR #12")
+        Some("Android emulator opened by Ada, with PR #12")
     );
-    // A bare agent-device waits out the simulator's runner; the build goes in 4 MiB pieces, sealed, then installs.
+    // The .apk goes in 4 MiB pieces, sealed, then installs.
     assert_eq!(
-        steps(&mut mac1, 4).await,
+        steps(&mut devbox, 3).await,
         [
-            "run",
-            "put pr-12.zip 4194304",
-            "put pr-12.zip 1048576",
-            "run install in/pr-12.zip"
+            "put pr-12.apk 4194304",
+            "put pr-12.apk 1048576",
+            "run install in/pr-12.apk"
         ]
     );
     let downloads: Vec<String> = gh
@@ -856,12 +872,12 @@ async fn a_prs_build_goes_into_the_screen_before_the_person_has_it() {
         .cloned()
         .collect();
     assert!(
-        downloads[0].starts_with("run download 41 -n fleetd-ios-simulator -D "),
+        downloads[0].starts_with("run download 41 -n fleetd-android-apk -D "),
         "{downloads:?}"
     );
     // Then it is the person's: live in their control under the thread named, the row gone.
     let screen = yours(&hub, &desk, &thread).await;
-    assert_eq!(screen["kind"], "ios");
+    assert_eq!(screen["kind"], "android");
     let moves: Vec<String> = hub
         .db
         .with(|c| {
@@ -874,23 +890,6 @@ async fn a_prs_build_goes_into_the_screen_before_the_person_has_it() {
         })
         .unwrap();
     assert_eq!(moves, ["installing", "gone"]);
-
-    // Android: the .apk, and no runner to wait for.
-    let out = call(&hub, &desk, "screen_open", with_pr("devbox", "android"))
-        .await
-        .unwrap();
-    assert_eq!(out["waiting"]["kind"], "android", "{out}");
-    assert_eq!(next(&mut devbox).await.op, "session_start");
-    assert_eq!(
-        steps(&mut devbox, 3).await,
-        [
-            "put pr-12.apk 4194304",
-            "put pr-12.apk 1048576",
-            "run install in/pr-12.apk"
-        ]
-    );
-    let screen = yours(&hub, &desk, &out["waiting"]["threadId"]).await;
-    assert_eq!(screen["kind"], "android");
 }
 
 /// The slot is taken when the open answers, not after the build downloads: an agent asking meanwhile finds the
@@ -913,15 +912,16 @@ async fn a_pr_opens_slot_is_held_while_its_build_downloads() {
         })
         .unwrap();
     let (_, desk) = person(&hub, "Ada", "operate");
+    android_on_mac1(&hub);
     let gh = github(
         &hub,
         &[(41, "completed")],
-        &[(41, "fleetd-ios-simulator", false)],
+        &[(41, "fleetd-android-apk", false)],
         b"an app",
     );
     let gate = Arc::new(tokio::sync::Notify::new());
     *gh.gate.lock().unwrap() = Some(gate.clone());
-    let out = call(&hub, &desk, "screen_open", with_pr("mac1", "ios"))
+    let out = call(&hub, &desk, "screen_open", with_pr("mac1", "android"))
         .await
         .unwrap();
     let refused = route(&hub, "th-1", SessionHost::Ios, start())
@@ -945,7 +945,7 @@ async fn a_pr_opens_slot_is_held_while_its_build_downloads() {
     assert_eq!(code, ErrorCode::Invalid);
     gate.notify_one();
     assert_eq!(next(&mut mac1).await.op, "session_start");
-    steps(&mut mac1, 3).await;
+    steps(&mut mac1, 2).await;
     yours(&hub, &desk, &out["waiting"]["threadId"]).await;
     assert_eq!(live_on(&hub, "mac1"), 1);
 }
@@ -955,13 +955,14 @@ async fn a_pr_with_no_build_is_refused_plainly_and_starts_nothing() {
     let (hub, _home, _clock) = setup();
     let mut mac1 = runner(&hub, "mac1");
     let (_, desk) = person(&hub, "Ada", "operate");
+    android_on_mac1(&hub);
     let refused = |hub: &Arc<Hub>, input: Value| {
         let (hub, desk) = (hub.clone(), desk.clone());
         async move { refusal(call(&hub, &desk, "screen_open", input).await) }
     };
     // CI still running on the head.
     github(&hub, &[(41, "in_progress")], &[], b"app");
-    let (code, message) = refused(&hub, with_pr("mac1", "ios")).await;
+    let (code, message) = refused(&hub, with_pr("mac1", "android")).await;
     assert_eq!(code, ErrorCode::Failed);
     assert!(
         message.contains("CI is still running on its head (abc1234)"),
@@ -971,25 +972,22 @@ async fn a_pr_with_no_build_is_refused_plainly_and_starts_nothing() {
     github(
         &hub,
         &[(41, "completed")],
-        &[(41, "fleetd-ios-simulator", true)],
+        &[(41, "fleetd-android-apk", true)],
         b"app",
     );
-    let (_, message) = refused(&hub, with_pr("mac1", "ios")).await;
-    assert!(
-        message.contains("iOS simulator build has expired"),
-        "{message}"
-    );
-    // No run uploaded one: an Android build is no iOS build.
+    let (_, message) = refused(&hub, with_pr("mac1", "android")).await;
+    assert!(message.contains("Android build has expired"), "{message}");
+    // No run uploaded one: an iOS build is no Android build.
     github(
         &hub,
         &[(41, "completed")],
-        &[(41, "fleetd-android-apk", false)],
+        &[(41, "fleetd-ios-simulator", false)],
         b"app",
     );
-    let (_, message) = refused(&hub, with_pr("mac1", "ios")).await;
-    assert!(message.contains("has no iOS simulator build"), "{message}");
+    let (_, message) = refused(&hub, with_pr("mac1", "android")).await;
+    assert!(message.contains("has no Android build"), "{message}");
     // Only a PR of the project's own repositories, and only into a phone screen.
-    let mut elsewhere = with_pr("mac1", "ios");
+    let mut elsewhere = with_pr("mac1", "android");
     elsewhere["pr"]["repo"] = json!("stranger/app");
     let (code, message) = refused(&hub, elsewhere).await;
     assert_eq!(code, ErrorCode::Invalid);
@@ -1009,20 +1007,21 @@ async fn a_build_that_doesnt_install_closes_its_screen_and_says_why() {
     let (hub, _home, _clock) = setup();
     let mut mac1 = runner(&hub, "mac1");
     let (_, desk) = person(&hub, "Ada", "operate");
+    android_on_mac1(&hub);
     github(
         &hub,
         &[(41, "completed")],
-        &[(41, "fleetd-ios-simulator", false)],
+        &[(41, "fleetd-android-apk", false)],
         BROKEN,
     );
-    let out = call(&hub, &desk, "screen_open", with_pr("mac1", "ios"))
+    let out = call(&hub, &desk, "screen_open", with_pr("mac1", "android"))
         .await
         .unwrap();
     let id = out["waiting"]["waitId"].clone();
     assert_eq!(next(&mut mac1).await.op, "session_start");
     assert_eq!(
-        steps(&mut mac1, 3).await,
-        ["run", "put pr-12.zip 10", "run install in/pr-12.zip"]
+        steps(&mut mac1, 2).await,
+        ["put pr-12.apk 10", "run install in/pr-12.apk"]
     );
     assert_eq!(next(&mut mac1).await.op, "session_end");
     let failed = listed_until(&hub, &desk, |out| out["waits"][0]["stage"] == "failed").await;
@@ -1064,17 +1063,18 @@ async fn a_wait_with_a_pr_gets_its_build_when_its_slot_frees() {
         .unwrap();
     let (_, ada) = person(&hub, "Ada", "operate");
     let (_, bee) = person(&hub, "Bee", "operate");
+    android_on_mac1(&hub);
     github(
         &hub,
         &[(41, "completed")],
-        &[(41, "fleetd-ios-simulator", false)],
+        &[(41, "fleetd-android-apk", false)],
         b"an app",
     );
     let first = call(&hub, &ada, "screen_open", open("mac1", "ios"))
         .await
         .unwrap();
     next(&mut mac1).await;
-    let mut wait = with_pr("mac1", "ios");
+    let mut wait = with_pr("mac1", "android");
     wait["wait"] = json!(true);
     let waiting = call(&hub, &bee, "screen_open", wait).await.unwrap();
     assert_eq!(
@@ -1098,8 +1098,8 @@ async fn a_wait_with_a_pr_gets_its_build_when_its_slot_frees() {
     let thread = starting["waits"][0]["threadId"].clone();
     assert_eq!(next(&mut mac1).await.op, "session_start");
     assert_eq!(
-        steps(&mut mac1, 3).await,
-        ["run", "put pr-12.zip 6", "run install in/pr-12.zip"]
+        steps(&mut mac1, 2).await,
+        ["put pr-12.apk 6", "run install in/pr-12.apk"]
     );
     yours(&hub, &bee, &thread).await;
 }

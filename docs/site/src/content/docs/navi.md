@@ -61,7 +61,7 @@ Say hello in the app, or: fleetd chat devbox/3f2a… "hello" --key-file <your hu
 
 The Navi's lead starts with your first message. Its folder is `navi/<name>` under the machine's fleetd home, made
 on the spot. A second Navi with the same name gets `ada-2`. `--machine <id>` picks the machine; by default it's the
-least busy worker.
+least busy worker that isn't a Mac.
 
 | Command | Does |
 |---|---|
@@ -110,7 +110,14 @@ On Ubuntu 23.10 and later, AppArmor may also block the user namespaces bubblewra
 --unshare-all true` says so, and Ubuntu's `apparmor` package has a profile that allows them
 (`/etc/apparmor.d/bwrap-userns-restrict`). A setuid-root `bwrap` (`ls -l $(which bwrap)` shows `rws`) runs unprivileged
 for a Navi, so it needs unprivileged user namespaces too (on Debian before 11: `sudo sysctl
-kernel.unprivileged_userns_clone=1`). A Mac uses its built-in `sandbox-exec`.
+kernel.unprivileged_userns_clone=1`).
+
+**Navis don't run on a Mac** (decision `mac.interim-lockdown`, D299). macOS's sandbox leaves a Navi ways out that no
+profile closes: the keychain through its system service, launchctl jobs, and Apple Events. So the hub refuses to make
+a Navi on a Mac, and the Navi dialog shows a Mac greyed out with why. A Navi made on a Mac before this doesn't start
+there: its chat says why, and each message waits. A Navi can't move machines, so make a new one on a Linux machine
+(**New**, then pick the machine), copy what you need from the old one's folder on the Mac, and archive the old one.
+The Mac's node refuses a Navi's sandbox too, if the hub didn't.
 
 ### Approvals {#approvals}
 

@@ -211,8 +211,14 @@ export const slotLine = (h: HostChoice): string => {
 /** What the picker's button says for the machine picked. */
 export const openWord = (h: HostChoice | undefined): string => (h?.full === true ? "Wait for a slot" : "Open screen");
 
-/** Whether a PR's build can go into a screen of `kind`: an iOS simulator's or an Android emulator's. */
-export const takesBuild = (kind: ScreenKind): boolean => kind === "ios" || kind === "android";
+/**
+ * Whether a PR's build can go into a screen of `kind`: an Android emulator's. Not an iOS simulator's until the shared
+ * Mac (D299): an app there runs as the Mac's own user, so the hub refuses it, and the picker says why ({@link NO_IOS_BUILD}).
+ */
+export const takesBuild = (kind: ScreenKind): boolean => kind === "android";
+
+/** What an iOS screen's picker says in place of the PR build. */
+export const NO_IOS_BUILD = "PR builds go into Android screens for now: an app in the Mac’s simulator would run as the Mac’s own user.";
 
 /** A PR the picker offers, its build to install. */
 export interface PrChoice {

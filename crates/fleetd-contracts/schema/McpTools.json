@@ -8809,7 +8809,7 @@
         },
         "naviSandbox": {
           "$ref": "#/$defs/NaviSandbox",
-          "description": "The OS sandbox a Navi runs in there, as its node last reported it (`RunnerInfo.sandbox`). Absent until it\nreports, from a node before it, and on a system fleetd has no sandbox for."
+          "description": "The OS sandbox a Navi runs in there, as its node last reported it (`RunnerInfo.sandbox`); `missing` on a Mac,\nwhere Navis don't run (D299). Absent until it reports, from a node before it, and on a system fleetd has no\nsandbox for."
         },
         "nodeRestart": {
           "description": "The command that restarts its node, to run on that machine, while `screenSettings` is false: after an update,\na node that still runs its old build needs it.",
@@ -17599,7 +17599,7 @@
         },
         "pr": {
           "$ref": "#/$defs/ScreenPr",
-          "description": "A PR of the project's whose CI build is installed in the screen before it is yours (iOS, Android). Refused at\nonce when the PR's head has no such build."
+          "description": "A PR of the project's whose CI build is installed in the screen before it is yours (Android; iOS refuses it\nuntil the shared Mac). Refused at once when the PR's head has no such build."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"

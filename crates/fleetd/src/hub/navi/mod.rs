@@ -15,6 +15,9 @@
 //! Its browser keeps its sign-ins between sessions in a profile of its own on its node (D221, node/browser/chrome.rs);
 //! `navi_signins_forget` deletes it, and deleting the Navi (`project_remove`) does too.
 //!
+//! Navis never run on a Mac (D299 mac.interim-lockdown): `navi_create` refuses one, picks none by default, and a Navi
+//! already on a Mac doesn't start there ([`on_mac`]); the node on a Mac refuses its sandbox too.
+//!
 //! An archived Navi keeps its chat, memory and folder; its lead is stopped and doesn't start again until it is brought
 //! back, and a message to it waits until then. Its factory bridge (messages to other projects' leads, the factory's
 //! status, wakes when that work lands) is `bridge`; the app reads a Navi's asks with `navi_asks` (`tools`). A Navi
@@ -124,6 +127,20 @@ fn free_folders(hub: &Hub, m: &MachineId, slug: &str) -> Result<Vec<String>, Sto
         .collect())
 }
 
+/// Why a Navi doesn't run on Mac `m` (D299 mac.interim-lockdown), and how to have it elsewhere: macOS's sandbox leaves
+/// ways out. A Navi can't move machines, so one already there is made again on another machine.
+pub fn on_mac(m: &MachineId) -> (String, String) {
+    (
+        format!(
+            "Navis don't run on a Mac, and {m} is one: macOS's sandbox leaves a Navi ways out (the keychain through its \
+             system service, launchctl jobs, Apple Events)."
+        ),
+        "Make a Navi on a Linux machine instead (Navi › New, then pick the machine). To keep this one's files, copy \
+         them over from its folder on the Mac, then archive it."
+            .to_owned(),
+    )
+}
+
 fn too_old(m: &MachineId) -> ToolError {
     error(
         ErrorCode::Invalid,
@@ -176,8 +193,16 @@ pub async fn create(
     if let Some(m) = &input.machine_id {
         require(caller, Role::Operate, Some(m))?;
     }
-    let m = crate::hub::projects::target_machine(hub, input.machine_id.as_ref())?;
+    let m = crate::hub::projects::navi_machine(hub, input.machine_id.as_ref())?;
     require(caller, Role::Operate, Some(&m))?;
+    if hub.link.is_mac(&m) {
+        let (message, _) = on_mac(&m);
+        return Err(error(
+            ErrorCode::Invalid,
+            message,
+            "Pass the machineId of a Linux machine.",
+        ));
+    }
     if !hub.link.node_can(&m, CAP_ASSISTANT) {
         return Err(too_old(&m));
     }

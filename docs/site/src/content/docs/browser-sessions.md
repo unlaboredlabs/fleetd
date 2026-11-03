@@ -81,8 +81,9 @@ or Navi's ⓘ page ([Phone app](/docs/mobile#screens)).
    Settings › Hub › Machines that fixes it; anyone else is told whom to ask.
 2. **Pick the machine.** The list has only the machines that can host that kind (the sessions role, the kind set up,
    and a current fleetd), each with its screens in use: `1 of 2 screens in use`.
-3. **Pick a PR** (optional, iOS and Android): one of the project's open PRs, whose CI build is installed before you get
-   it ([below](#yours-pr)). If the PRs can't be read, the picker says why, with Retry.
+3. **Pick a PR** (optional, Android): one of the project's open PRs, whose CI build is installed before you get
+   it ([below](#yours-pr)). If the PRs can't be read, the picker says why, with Retry. An iOS screen takes no PR build
+   for now, and the picker says why.
 4. **Open screen.** It opens in the panel's live view with you in control from the start, and lists under Screens as
    yours. **End screen** closes it. It also ends after the machine's idle timeout without your input: 30 minutes
    unless set in [Settings](#settings). The picker says the machine's own.
@@ -104,13 +105,16 @@ many people wait. An agent's running screen is never ended to make room. A wait 
 
 ### A PR's build {#yours-pr}
 
-An iOS simulator or Android emulator can open with a PR's build installed. The hub takes the newest artifact of a CI
-run on the PR's head whose name says what it's for: `ios` for a zipped simulator `.app` (fleetd's own Mobile workflow
-uploads `fleetd-ios-simulator`), `android` or `apk` for an `.apk` (`fleetd-android-apk`). It downloads it with its
+An Android emulator can open with a PR's build installed. The hub takes the newest artifact of a CI run on the PR's
+head whose name says what it's for: `android` or `apk` for an `.apk` (`fleetd-android-apk`).
+
+An iOS simulator takes none until the shared Mac (decision `mac.interim-lockdown`, D299): an app installed in the
+Mac's simulator runs as the Mac's own user, outside the iOS sandbox ([why](#ios-elsewhere)). `screen_open` with a PR
+for an iOS screen is refused at once, and nothing starts. It downloads it with its
 `gh` (as the [GitHub App](/docs/github/) where it's installed), starts the screen, sends the file to the screen's
 machine sealed with that screen's key, and runs `agent-device install` there. Then the screen is yours.
 
-That can take minutes (a simulator's runner starting first), so it goes on in the hub. **Open screen** takes the slot at
+That can take minutes (an emulator starting first), so it goes on in the hub. **Open screen** takes the slot at
 once, and no agent or other person can take it while the build downloads. The picker then shows how far it is: reading
 the build and starting, then installing. It lands in the live view once the screen is yours. If you close the picker,
 the screen still opens: it shows at the top of Screens until then, and then lists as yours.
@@ -120,8 +124,6 @@ the screen still opens: it shows at the top of Screens until then, and then list
 - A build that doesn't install closes the screen. Its row in Screens says why, in agent-device's words, until you clear
   it.
 - A build can be at most 64 MiB, as an agent's install into a screen elsewhere.
-- On a Mac with `"remoteInstall": false` the install is refused, as an agent's is: a simulator app runs as the Mac's
-  user ([why](#ios-elsewhere)).
 - A wait with a PR gets its build when its slot frees.
 
 MCP clients use `screen_open` and `screen_end`. `browser_sessions` lists your screens on their way beside the screens,
@@ -406,15 +408,14 @@ agent-device on the screen's clone and sends back its output and exit code. The 
 takeover, the idle timeout and `session_end` work as on the Mac: the hub sends a person's watch, takeover and taps
 straight to the Mac, and only the Mac's frames reach them.
 
-- **Files go both ways, inside the worktree.** A file a command reads (`install build/fleetd.zip`, a `push` payload)
-  goes from the agent's worktree to the Mac first, 4 MiB at a time, up to 64 MiB per command. A folder doesn't go:
-  zip an `.app` first (`ditto -c -k --keepParent fleetd.app fleetd.zip`). A file a command writes (`screenshot
+- **Files go both ways, inside the worktree.** A file a command reads (a `push` payload) goes from the agent's
+  worktree to the Mac first, 4 MiB at a time, up to 64 MiB per command. A folder doesn't go. A file a command writes (`screenshot
   shots/home.png`, or `record start run.mp4` then `record stop`) comes back to that path in the worktree.
   `screenshot` and `record start` need a file name. So does `logs path`: the app log agent-device keeps on the Mac
   comes back to that path (`logs path logs/app.log`), its last 64 MiB if it's longer. A path outside the worktree is
   refused on the agent's machine.
 - **Only commands that drive the screen run.** The Mac runs agent-device commands from a fixed list, each with its
-  own flags: `open`, `close`, `install`, `reinstall`, `uninstall`, `apps`, `appstate`, `snapshot`, `screenshot`,
+  own flags: `open`, `close`, `uninstall`, `apps`, `appstate`, `snapshot`, `screenshot`,
   `record`, `press`, `click`, `fill`, `type`, `scroll`, `swipe`, `longpress`, `gesture`, `wait`, `get`, `is`, `find`,
   `back`, `home`, `app-switcher`, `alert`, `keyboard`, `settings`, `push`, `orientation`, `focus`, `action-button`,
   `hardware-button`, `logs` (`path`, `start`, `stop`, `clear`, `doctor`, `mark`), `capabilities` and `help`. They run in a folder of the screen's own, which goes with it. There's
@@ -424,9 +425,11 @@ straight to the Mac, and only the Mac's frames reach them.
 - **Sealed between the two machines.** Each command and file goes sealed with the key the agent's node sealed to the
   Mac at the start, and numbered. The hub carries only ciphertext, and the Mac runs nothing the hub made up or sent
   twice.
-- **An app an agent installs runs as the Mac's user.** A simulator doesn't keep an app away from the Mac the way a
-  phone does: the app can read and change what the Mac's user can, and reach the network. Installs from other
-  machines are on by default; `"remoteInstall": false` turns them off on a Mac.
+- **No app goes in from another machine.** A simulator doesn't keep an app away from the Mac the way a phone does:
+  the app runs as the Mac's user, so it can read and change what that user can, and reach the network. Until the
+  shared Mac (decision `mac.interim-lockdown`, D299), `install` and `reinstall` are refused: on the agent's machine
+  before anything is sent, and again on the Mac. People's [PR builds](#yours-pr) don't go into an iOS screen either.
+  An agent on the Mac itself installs into its own screen as before.
 
 An Android screen the hub would place on another machine is refused for now: agent-device drives an emulator over adb
 from the emulator's own machine.
@@ -454,7 +457,6 @@ Settings go under `ios` in [node.json](/docs/config-and-files#node-json):
 | `pool` | Clones kept booted for the next screens. Absent: 1. Each takes 1–2 GB of memory. |
 | `idleMinutes` | End a screen after this many minutes without an `agent-device` command. Absent: 30. |
 | `deviceType` | The simulator's device type by name, such as `iPhone 17 Pro`. Absent: the newest plain iPhone of the newest iOS runtime. A change takes effect when the golden is made again (delete `device/ios/golden.json`). |
-| `remoteInstall` | `false` refuses `agent-device install` and `reinstall` from agents on other machines, and people's [PR builds](#yours-pr): an app installed in a simulator runs as this Mac's user ([why](#ios-elsewhere)). Absent or `true`: allowed. |
 
 ## Linux desktop screens {#desktop}
 

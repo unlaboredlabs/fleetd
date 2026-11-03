@@ -520,3 +520,86 @@ async fn a_link_the_person_writes_allows_its_site_and_an_agents_doesnt() {
         .unwrap();
     assert_eq!(sites, 1);
 }
+
+/// devbox's node says what it hosts: an iOS simulator it could turn on (a Mac), or one it can't (Linux).
+fn hosts_ios(hub: &Hub, mac: bool) {
+    use fleetd_contracts::machine_roles::{HostCheck, HostOff, SessionHost};
+    use fleetd_contracts::prim::{Line, List};
+    let mut load = crate::hub::link::guard::tests::load(500, 1.0);
+    load.hosts = Some(List::unchecked(vec![HostCheck {
+        host: SessionHost::Ios,
+        ready: false,
+        detail: Line::unchecked(if mac {
+            "iOS screens are off in node.json"
+        } else {
+            "iOS simulators need macOS"
+        }),
+        off: Some(if mac {
+            HostOff::Off
+        } else {
+            HostOff::Unsupported
+        }),
+        on: Some(false),
+        idle_minutes: None,
+        fix: None,
+    }]));
+    hub.link.observe_load(&devbox(), Some(load), AT);
+}
+
+/// D299: no Navi is made on a Mac, picked or by default; one made there before doesn't start, and says how to have it
+/// elsewhere; the Navi dialog shows the Mac's sandbox as missing, with why.
+#[tokio::test]
+async fn a_mac_gets_no_navi_and_one_already_there_doesnt_start() {
+    let (hub, _home) = hub();
+    let _calls = node(&hub, &[CAP_REPOS, CAP_ASSISTANT]).await;
+    hosts_ios(&hub, false);
+    assert!(!hub.link.is_mac(&devbox()), "a Linux machine");
+    let navi = ok(&hub, "navi_create", json!({ "name": "Ada" })).await["navi"].clone();
+    let r = ProjectRef {
+        machine_id: devbox(),
+        project_id: ProjectId::unchecked(navi["projectId"].as_str().unwrap()),
+    };
+
+    hosts_ios(&hub, true);
+    assert!(hub.link.is_mac(&devbox()));
+    for input in [
+        json!({ "name": "Grace", "machineId": "devbox" }),
+        json!({ "name": "Grace" }),
+    ] {
+        let Err(CallError::Tool(e)) = call(&hub, "navi_create", input.clone()).await else {
+            panic!("made a Navi on a Mac: {input}")
+        };
+        assert!(e.message.contains("Mac"), "{}", e.message);
+    }
+    assert_eq!(names(&ok(&hub, "navi_list", json!({})).await), ["Ada"]);
+
+    let crate::hub::leads::lead::AutoStart::Held(why) =
+        hub.leads.leads.auto_start(&r, Some("hi")).await
+    else {
+        panic!("a Navi's lead started on a Mac")
+    };
+    assert!(
+        why.message
+            .starts_with("Navis don't run on a Mac, and devbox is one"),
+        "{}",
+        why.message
+    );
+    assert!(
+        why.fix
+            .as_deref()
+            .unwrap()
+            .contains("Make a Navi on a Linux machine"),
+        "{why:?}"
+    );
+
+    let roles = ok(&hub, "machine_roles", json!({})).await;
+    let sandbox = &roles["machines"][0]["naviSandbox"];
+    assert_eq!(sandbox["status"], "missing", "{roles}");
+    assert!(
+        sandbox["line"]
+            .as_str()
+            .unwrap()
+            .contains("macOS's sandbox"),
+        "{sandbox}"
+    );
+}
