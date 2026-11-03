@@ -1,7 +1,8 @@
-// iOS's tap on the status bar, heard by a scroll view of its own a point in size. iOS sends the tap to the one scroll
-// view on screen that takes it and scrolls that to its top; a chat's thread is upside down, so its top would be the
-// newest end, and the thread says no (scrollsToTop false), as does any scroll view inside it. This one scrolls a point
-// to its top, says so, and is put back a point down for the next tap.
+// iOS's tap on the status bar, heard by a scroll view of its own, a point tall across the top of the screen, under the
+// status bar. iOS sends the tap to the one scroll view under where it was tapped that takes it, and scrolls that to its
+// top; a chat's thread is upside down, so its top would be the newest end, and the thread says no (scrollsToTop
+// false), as does any scroll view inside it. This one scrolls a point to its top, says so, and is put back a point
+// down for the next tap. It isn't pointerEvents "none": iOS looks for it by hit-testing.
 import { useRef, type ComponentRef } from "react";
 import { Platform, ScrollView, StyleSheet } from "react-native";
 
@@ -11,7 +12,6 @@ export function StatusBarTap({ onTap }: { onTap: () => void }) {
   return (
     <ScrollView
       ref={view}
-      pointerEvents="none"
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
       style={styles.tap}
@@ -28,6 +28,6 @@ export function StatusBarTap({ onTap }: { onTap: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  tap: { position: "absolute", top: 0, left: 0, width: 1, height: 1 },
+  tap: { position: "absolute", top: 0, left: 0, right: 0, height: 1 },
   content: { height: 3 },
 });

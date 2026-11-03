@@ -323,10 +323,13 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const send = (body: string, files: readonly AttachmentRef[] = [], quoting = false) => {
     const out = outgoing(body, files.length, quoting ? reply : undefined);
     if (out === null) return;
-    session.send(chatKey, out.text, { attachments: files, replyTo: out.replyTo });
     if (quoting) setReply(undefined);
     setAwayFrom(null);
-    toNewest();
+    // In a frame, once the hold above is off: on, the list would keep its place as your message went in under it.
+    requestAnimationFrame(() => {
+      session.send(chatKey, out.text, { attachments: files, replyTo: out.replyTo });
+      toNewest();
+    });
   };
 
   // What the actions read, as of the last draw.
