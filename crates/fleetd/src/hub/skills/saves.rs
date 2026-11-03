@@ -114,6 +114,7 @@ fn save(
         version: Int::unchecked(version),
         created,
         why: call.why.clone(),
+        installed: None,
     };
     hub.chat
         .add(

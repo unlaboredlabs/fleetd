@@ -98,6 +98,16 @@ pub(super) async fn node(
                 {
                     json!({ "ok": { "kind": "folder", "path": format!("{HOME}/{workspace_root}") } })
                 }
+                // A Navi's delete with its folder but not its worktrees, which the app never sends, stands for one whose answer
+                // never reached the hub.
+                SessionCall::ProjectRemove {
+                    erase: true,
+                    remove_worktrees: false,
+                    remove_folder: true,
+                    ..
+                } => {
+                    json!({ "err": { "code": "invalid", "message": "no answer within 80s" } })
+                }
                 // Every other path is a plain folder with no git.
                 SessionCall::RepoInspect { .. } => {
                     json!({ "ok": { "kind": "repo_facts", "exists": true, "isGit": false } })
@@ -519,4 +529,326 @@ async fn a_link_the_person_writes_allows_its_site_and_an_agents_doesnt() {
         })
         .unwrap();
     assert_eq!(sites, 1);
+}
+
+/// Deleting a Navi erases it (D287 navi.delete-erases): its node is asked to erase it, folder too when ticked, and the
+/// hub keeps none of its rows in any table (chat and its events, approvals and purchases, asks and decisions, orders
+/// and their attachments, automations, sessions' rows) nor its memory, skills, attachment files and recordings. A
+/// project of code beside it keeps everything; a project of code's folder is never deleted with it.
+#[tokio::test]
+async fn deleting_a_navi_erases_everything_it_had_and_its_folder_when_ticked() {
+    use crate::hub::chat::NewMessage;
+    use fleetd_contracts::chat::ChatAuthor;
+    use fleetd_contracts::node_link::{CAP_NAVI_ERASE, CAP_PROJECT_SETTINGS};
+    let (hub, home) = hub();
+    let mut calls = node(&hub, &[CAP_REPOS, CAP_ASSISTANT]).await;
+    let navi = ok(&hub, "navi_create", json!({ "name": "Ada" })).await["navi"].clone();
+    let id = navi["projectId"].as_str().unwrap().to_owned();
+    let r = ProjectRef {
+        machine_id: devbox(),
+        project_id: ProjectId::unchecked(&id),
+    };
+    let p1 = ProjectRef {
+        machine_id: devbox(),
+        project_id: ProjectId::unchecked("p1"),
+    };
+    // What a Navi and a project of code gather: chat, approvals, decisions, asks, an order with an attachment, a lead
+    // with a wake, an automation that ran, a screen recording, memory and a skill.
+    for (p, title) in [(&r, "Ada"), (&p1, "app")] {
+        let key = format!("devbox/{}", p.project_id);
+        let pid = p.project_id.as_str();
+        hub.chat
+            .add(
+                p,
+                NewMessage {
+                    author: Some(ChatAuthor::Human),
+                    text: format!("my passport number is in the drawer, {title}"),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let sha = format!("{:0>64}", pid.len());
+        hub.db
+            .with(|c| {
+                c.execute_batch(&format!(
+                    "INSERT INTO requests (project_key, kind, state, created_ms, data) VALUES ('{key}', 'purchase', 'done', 1, '{{}}');
+                     INSERT INTO decisions (key, scope_kind, scope_id, project_key, state, source, at_ms, data)
+                       VALUES ('dentist', 'project', '{key}', '{key}', 'active', 'human', 1, '{{}}');
+                     INSERT INTO legacy_asks (project_key, key, state, filed_by, created_ms, data)
+                       VALUES ('{key}', 'k', 'open', 'lead', 1, '{{}}');
+                     INSERT INTO navi_asks (from_machine_id, from_project_id, to_machine_id, to_project_id, text, at_ms)
+                       VALUES ('devbox', '{pid}', 'devbox', 'elsewhere', 'how is it going?', 1);
+                     INSERT INTO workstreams (machine_id, project_id, state, data) VALUES ('devbox', '{pid}', 'done', '{{}}');
+                     INSERT INTO attachments (sha256, name, mime, bytes, by, created_ms, workstream_id)
+                       VALUES ('{sha}', 'scan.png', 'image/png', 3, 'k1', 1, 'W' || last_insert_rowid());
+                     INSERT INTO attachments (sha256, name, mime, bytes, by, created_ms, project)
+                       VALUES ('{sha}', 'photo.png', 'image/png', 3, 'k1', 1, '{key}');
+                     INSERT INTO leads (machine_id, project_id, thread_id, started_at, session_generation)
+                       VALUES ('devbox', '{pid}', 'th-{pid}', '{AT}', 1);
+                     INSERT INTO wakes (wake_id, created_by, client_request_id, machine_id, thread_id, state, data)
+                       VALUES ('wk-{pid}', 'lead', 'c-{pid}', 'devbox', 'th-{pid}', 'active', '{{}}');
+                     INSERT INTO session_prompts (machine_id, thread_id, project_id, started_at, refs, text_sha, text)
+                       VALUES ('devbox', 'th-{pid}', '{pid}', '{AT}', '[]', 'x', 'You are {title}');
+                     INSERT INTO automations (automation_id, machine_id, project_id, created_by, data)
+                       VALUES ('au-{pid}', 'devbox', '{pid}', 'lead', '{{}}');
+                     INSERT INTO automation_runs (run_id, automation_id, at_ms, state, data)
+                       VALUES ('run-{pid}', 'au-{pid}', 1, 'done', '{{}}');
+                     INSERT INTO checklists (machine_id, project_id, next_id, items, updated_ms)
+                       VALUES ('devbox', '{pid}', 2, '[]', 1);
+                     INSERT INTO browser_sessions (session_id, machine_id, project_id, started_ms, state, data)
+                       VALUES ('bs-{pid}', 'devbox', '{pid}', 1, 'ended', '{{}}');
+                     INSERT INTO time_labels (hash, family, text) VALUES ('h-{pid}', 'bash', 'curl https://{pid}.example/q');
+                     INSERT INTO time_spans (src, src_key, kind, cat, start_ms, lane, status, machine_id, project_id,
+                       thread_id, label_id)
+                       VALUES ('node', 'a-{pid}', 'tool', 'tool', 1, 'lead', 'done', 'devbox', '{pid}', 'th-{pid}',
+                         (SELECT id FROM time_labels WHERE hash = 'h-{pid}'));
+                     INSERT INTO time_spans (src, src_key, kind, cat, start_ms, lane, status, machine_id, thread_id, label_id)
+                       VALUES ('node', 'b-{pid}', 'tool', 'tool', 2, 'lead', 'done', 'devbox', 'th-{pid}',
+                         (SELECT id FROM time_labels WHERE hash = 'h-{pid}'));
+                     INSERT INTO time_lead_runs (machine_id, thread_id, run_id, workstream_id, n, at_ms)
+                       VALUES ('devbox', 'th-{pid}', 'r1', 'W1', 1, 1);
+                     INSERT INTO time_wakes (machine_id, thread_id, at_ms, workstreams) VALUES ('devbox', 'th-{pid}', 1, '[]');"
+                ))?;
+                Ok(())
+            })
+            .unwrap();
+        let blob = crate::hub::intake::attachments::dir(&hub).join(&sha);
+        let recording = crate::hub::browser::dir(
+            &hub,
+            &fleetd_contracts::browser::BrowserSessionId::unchecked(format!("bs-{pid}")),
+        );
+        let memory = hub.db.memory().project_dir(p).unwrap();
+        for (file, text) in [
+            (blob, "png"),
+            (recording.join("video.webm"), "clip"),
+            (memory.join("MEMORY.md"), "- Sam's dentist is Dr Lee"),
+        ] {
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, text).unwrap();
+        }
+        hub.db
+            .skills()
+            .set(
+                fleetd_contracts::skills::SkillScope::Project,
+                Some(p),
+                &fleetd_contracts::skills::SkillName::new("invoices").unwrap(),
+                "---\nname: invoices\ndescription: Get the invoices.\n---\n\n# invoices\n",
+                false,
+                &crate::hub::skills::Who::agent(title, "learned it", 1),
+            )
+            .unwrap();
+    }
+    let at = json!({ "machineId": "devbox", "projectId": id, "removeWorktrees": true, "removeFolder": true });
+
+    // A node that can't erase is told to update first, and nothing goes.
+    hub.link
+        .set_capabilities(&devbox(), &[CAP_REPOS, CAP_ASSISTANT, CAP_PROJECT_SETTINGS]);
+    let old = call(&hub, "project_remove", at.clone()).await.unwrap_err();
+    assert!(format!("{old:?}").contains("too old to erase"), "{old:?}");
+    // A project of code's folder is never deleted with it.
+    let code = call(
+        &hub,
+        "project_remove",
+        json!({ "machineId": "devbox", "projectId": "p1", "removeFolder": true }),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        format!("{code:?}").contains("only a Navi's folder"),
+        "{code:?}"
+    );
+
+    hub.link.set_capabilities(
+        &devbox(),
+        &[
+            CAP_REPOS,
+            CAP_ASSISTANT,
+            CAP_PROJECT_SETTINGS,
+            CAP_NAVI_ERASE,
+        ],
+    );
+    while calls.try_recv().is_ok() {}
+    let out = ok(&hub, "project_remove", at).await;
+    assert!(out["next"].as_str().unwrap().contains("erased"), "{out}");
+    assert_eq!(
+        calls.recv().await.unwrap(),
+        SessionCall::ProjectRemove {
+            project_id: r.project_id.clone(),
+            remove_worktrees: true,
+            erase: true,
+            remove_folder: true,
+        }
+    );
+    // As the node's project_removed then does.
+    hub.store.project_remove(&r).unwrap();
+
+    // No table keeps a row of it; the project of code keeps its own.
+    let left = |p: &ProjectRef| -> Vec<String> {
+        let (m, pid) = (p.machine_id.as_str(), p.project_id.as_str());
+        let key = format!("{m}/{pid}");
+        hub.db
+            .with(|c| {
+                let tables: Vec<String> = c
+                    .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")?
+                    .query_map([], |row| row.get(0))?
+                    .collect::<rusqlite::Result<_>>()?;
+                let mut left = Vec::new();
+                for t in tables {
+                    let cols: Vec<String> = c
+                        .prepare(&format!("SELECT name FROM pragma_table_info('{t}')"))?
+                        .query_map([], |row| row.get(0))?
+                        .collect::<rusqlite::Result<_>>()?;
+                    let has = |n: &str| cols.iter().any(|c| c == n);
+                    let mut wheres = Vec::new();
+                    if has("machine_id") && has("project_id") {
+                        wheres.push(format!("(machine_id = '{m}' AND project_id = '{pid}')"));
+                    }
+                    if has("from_project_id") {
+                        wheres.push(format!(
+                            "from_project_id = '{pid}' OR to_project_id = '{pid}'"
+                        ));
+                    }
+                    for k in ["project_key", "project"] {
+                        if has(k) {
+                            wheres.push(format!("{k} = '{key}'"));
+                        }
+                    }
+                    if has("thread_id") && has("machine_id") {
+                        wheres.push(format!("(machine_id = '{m}' AND thread_id = 'th-{pid}')"));
+                    }
+                    if has("automation_id") {
+                        wheres.push(format!("automation_id = 'au-{pid}'"));
+                    }
+                    if t == "events" {
+                        wheres.push(format!("data LIKE '%{pid}%'"));
+                    }
+                    if wheres.is_empty() {
+                        continue;
+                    }
+                    let n: i64 = c.query_row(
+                        &format!("SELECT COUNT(*) FROM {t} WHERE {}", wheres.join(" OR ")),
+                        [],
+                        |row| row.get(0),
+                    )?;
+                    if n > 0 {
+                        left.push(t);
+                    }
+                }
+                Ok(left)
+            })
+            .unwrap()
+    };
+    assert_eq!(left(&r), Vec::<String>::new());
+    let kept = left(&p1);
+    for t in [
+        "chat_messages",
+        "requests",
+        "decisions",
+        "navi_asks",
+        "workstreams",
+        "attachments",
+        "leads",
+        "wakes",
+        "automations",
+        "automation_runs",
+        "browser_sessions",
+        "skill_versions",
+        "events",
+        "time_spans",
+        "time_lead_runs",
+        "time_wakes",
+    ] {
+        assert!(kept.iter().any(|k| k == t), "p1 lost its {t}: {kept:?}");
+    }
+    // Nor the time inspector's labels of its sessions (its commands, searches and pages); p1's stays.
+    let labels = |pid: &str| -> i64 {
+        hub.db
+            .with(|c| {
+                Ok(c.query_row(
+                    "SELECT COUNT(*) FROM time_labels WHERE text LIKE ?1",
+                    [format!("%{pid}.example%")],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap()
+    };
+    assert_eq!((labels(&id), labels("p1")), (0, 1));
+    // Nor any file of it: its memory, skills, attachment and recording; p1's stay.
+    let files = |p: &ProjectRef| {
+        let pid = p.project_id.as_str();
+        [
+            crate::hub::intake::attachments::dir(&hub).join(format!("{:0>64}", pid.len())),
+            crate::hub::browser::dir(
+                &hub,
+                &fleetd_contracts::browser::BrowserSessionId::unchecked(format!("bs-{pid}")),
+            ),
+            hub.db.memory().project_dir(p).unwrap(),
+            hub.db
+                .skills()
+                .scope_dir(fleetd_contracts::skills::SkillScope::Project, Some(p))
+                .unwrap(),
+        ]
+        .into_iter()
+        .filter(|f| f.exists())
+        .count()
+    };
+    assert_eq!(files(&r), 0);
+    assert_eq!(files(&p1), 4);
+    assert!(home.path().exists());
+}
+
+/// A delete whose answer never reached the hub (a timeout) is still finished: the hub keeps the Navi's data while its
+/// node still has it, and erases it once the node's `project_removed` says it is gone.
+#[tokio::test]
+async fn a_navi_removed_without_its_answer_is_still_erased_once_the_hub_sees_it_gone() {
+    use crate::hub::chat::NewMessage;
+    use fleetd_contracts::chat::ChatAuthor;
+    use fleetd_contracts::node_link::{CAP_NAVI_ERASE, CAP_PROJECT_SETTINGS};
+    let (hub, _home) = hub();
+    let _calls = node(
+        &hub,
+        &[
+            CAP_REPOS,
+            CAP_ASSISTANT,
+            CAP_PROJECT_SETTINGS,
+            CAP_NAVI_ERASE,
+        ],
+    )
+    .await;
+    let navi = ok(&hub, "navi_create", json!({ "name": "Ada" })).await["navi"].clone();
+    let r = ProjectRef {
+        machine_id: devbox(),
+        project_id: ProjectId::unchecked(navi["projectId"].as_str().unwrap()),
+    };
+    hub.chat
+        .add(
+            &r,
+            NewMessage {
+                author: Some(ChatAuthor::Human),
+                text: "my dentist is Dr Lee".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let memory = hub.db.memory().project_dir(&r).unwrap();
+    std::fs::create_dir_all(&memory).unwrap();
+    std::fs::write(memory.join("MEMORY.md"), "- dentist: Dr Lee").unwrap();
+    let chat = |hub: &Hub| hub.chat.page(&r, None, None, 10).unwrap().0.len();
+    let marks = |hub: &Hub| -> i64 {
+        hub.db
+            .with(|c| Ok(c.query_row("SELECT COUNT(*) FROM navi_erases", [], |row| row.get(0))?))
+            .unwrap()
+    };
+
+    let at = json!({ "machineId": "devbox", "projectId": r.project_id, "removeWorktrees": false, "removeFolder": true });
+    assert!(call(&hub, "project_remove", at).await.is_err());
+    // Its node still has it, as far as the hub knows: nothing is erased yet.
+    assert_eq!(crate::hub::navi::erase::finish_pending(&hub).unwrap(), 0);
+    assert_eq!((chat(&hub), marks(&hub)), (1, 1));
+    assert!(memory.exists());
+    // The node's project_removed: the hub finishes the erase.
+    hub.store.project_remove(&r).unwrap();
+    assert_eq!(crate::hub::navi::erase::finish_pending(&hub).unwrap(), 1);
+    assert_eq!((chat(&hub), marks(&hub)), (0, 0));
+    assert!(!memory.exists());
 }

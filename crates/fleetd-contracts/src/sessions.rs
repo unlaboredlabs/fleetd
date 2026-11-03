@@ -199,12 +199,18 @@ pub enum SessionCall {
     },
     /// Stop the project's sessions and forget it. `removeWorktrees` also force-removes every worktree its sessions
     /// made under the node home, once their processes have exited; no branch is deleted and the checkout itself is
-    /// left as it is. Only nodes listing [`crate::node_link::CAP_PROJECT_SETTINGS`] get it set.
+    /// left as it is. Only nodes listing [`crate::node_link::CAP_PROJECT_SETTINGS`] get it set. `erase` (a Navi's)
+    /// also deletes its sessions, Claude Code's transcripts of them and the attachments placed in its folder, and
+    /// `removeFolder` the folder itself; only nodes listing [`crate::node_link::CAP_NAVI_ERASE`] get them.
     #[serde(rename_all = "camelCase")]
     ProjectRemove {
         project_id: ProjectId,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         remove_worktrees: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        erase: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        remove_folder: bool,
     },
     /// Add or replace (`set`) and remove (`remove`) the project's environment variables, which the node adds to every
     /// claude it starts for the project from then on. A secret's value is opened with the node's box key and kept

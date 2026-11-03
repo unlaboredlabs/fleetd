@@ -267,6 +267,21 @@ pub const ENTRIES: &[Entry] = &[
         )]
     ),
     entry!(
+        "navi.voice",
+        Start,
+        Lead,
+        Lead,
+        "Navi's voice",
+        "after the Navi prompt, at every start of a Navi, instead of the lead's voice",
+        "",
+        &[(
+            "chat-only-voice",
+            "the casual voice stays out of what it drafts for the person",
+            r"in their voice, as they'd write it",
+            Prompt
+        )]
+    ),
+    entry!(
         "lead.profiles",
         Start,
         Lead,

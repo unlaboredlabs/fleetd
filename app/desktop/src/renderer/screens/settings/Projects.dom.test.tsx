@@ -363,7 +363,7 @@ describe("Settings → Projects", () => {
     expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true });
   });
 
-  it("says a plain folder's delete, a Navi's among them, keeps its folder, with no checkout, branches or pull requests", async () => {
+  it("says a plain folder's delete keeps its folder, with no checkout, branches or pull requests", async () => {
     // No repo of its own: a folder, not a git repo.
     const folder = "/home/w/.fleetd/node/navi/adri";
     answers = [{ ...settings, title: "Adri", workspaceRoot: folder, worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
@@ -380,6 +380,28 @@ describe("Settings → Projects", () => {
     await click(button("Delete project"));
     await settle();
     expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true });
+  });
+
+  it("erases a Navi, saying what goes, and deletes its folder only when that is ticked", async () => {
+    navi = true;
+    const folder = "/home/w/.fleetd/node/navi/adri";
+    answers = [{ ...settings, title: "Adri", workspaceRoot: folder, worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
+    await render();
+    await click(button("Delete Navi…"));
+    const text = dialog().textContent;
+    expect(text).toContain("Delete Adri?");
+    expect(text).toContain("Adri stops now, and everything it had is erased from fleetd and devbox: its chat, memory, skills, approvals and purchases");
+    expect(text).toContain("Also delete its folder, ~/.fleetd/node/navi/adri");
+    const field = dialog().querySelector("input");
+    if (field === null) throw new Error("no confirm field");
+    await type(field, "Adri");
+    const tick = dialog().querySelector<HTMLElement>('[role="checkbox"]');
+    if (tick === null) throw new Error("no folder tickbox");
+    expect(tick.getAttribute("aria-checked")).toBe("false");
+    await click(tick);
+    await click(button("Delete Navi"));
+    await settle();
+    expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true, removeFolder: true });
   });
 
   it("forgets a Navi's sign-ins after asking, and shows no sign-ins on a project of code", async () => {

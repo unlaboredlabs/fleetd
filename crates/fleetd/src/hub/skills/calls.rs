@@ -1,14 +1,19 @@
-//! The lead's `skill_install`, for its own project or every project. A task can't make it (`tasks::policy`).
+//! The lead's `skill_install`, for its own project or every project. A task can't make it (`tasks::policy`). A Navi's
+//! installs over https only, fetched with none of the hub's logins (`tools::Installer::Navi`), and posts one quiet chat
+//! line per skill naming where it came from, as its `skill_save` does.
 use std::sync::{Arc, Weak};
 
+use fleetd_contracts::chat::ChatAuthor;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
-use fleetd_contracts::prim::{Line, List};
-use fleetd_contracts::skills::{SkillInstallResult, SkillName, SkillScope};
+use fleetd_contracts::prim::{Int, Line, List};
+use fleetd_contracts::skills::{SkillInstallResult, SkillName, SkillSaved, SkillScope};
 
-use super::SkillError;
-use super::tools::{changed, install_from};
+use super::tools::{Installer, changed, install_from};
+use super::{Kept, SkillError};
 use crate::hub::api::Hub;
+use crate::hub::chat::NewMessage;
+use crate::hub::executor::shell_mapper::js_take;
 use crate::hub::link::lead_calls::{LeadCallFuture, op_of};
 use crate::hub::link::{LeadCaller, LeadCalls};
 
@@ -63,13 +68,19 @@ async fn answer(
         .with_fix("Install it with scope project, or ask the human to install it globally from Settings > Skills."));
     }
     let r = Some(&caller.project_ref);
+    let navi = crate::hub::navi::bridge::is_navi(&hub.db, &caller.project_ref, false)
+        .map_err(|e| McpToolError::new(ErrorCode::Failed, e.to_string()))?;
     let (kept, commit) = install_from(
         hub,
         call.scope,
         r,
         call.source.as_str(),
         call.skill.as_ref(),
-        false,
+        if navi {
+            Installer::Navi
+        } else {
+            Installer::Lead
+        },
         super::Who {
             author: fleetd_contracts::skills::SkillAuthor::Agent,
             by: title_of(hub, &caller.project_ref),
@@ -81,6 +92,12 @@ async fn answer(
     let names: Vec<SkillName> = kept.iter().map(|k| k.name.clone()).collect();
     changed(hub, r, &names, &caller.by)
         .map_err(|e| McpToolError::new(ErrorCode::Failed, e.to_string()))?;
+    if navi {
+        for k in &kept {
+            posted(hub, &caller.project_ref, k, call.source.as_str(), &commit)
+                .map_err(|e| McpToolError::new(ErrorCode::Failed, e.to_string()))?;
+        }
+    }
     let list = names
         .iter()
         .map(|n| format!("fleetd:{n}"))
@@ -94,6 +111,37 @@ async fn answer(
              from now get it (yours from its next start): name it in a brief and the agent uses it."
         )),
     }))
+}
+
+/// The quiet chat line of a skill a Navi installed: its name, linked, and `source@commit`.
+pub(super) fn posted(
+    hub: &Hub,
+    r: &fleetd_contracts::ids::ProjectRef,
+    kept: &Kept,
+    source: &str,
+    commit: &str,
+) -> Result<(), crate::hub::store::StoreError> {
+    let from = format!("{source}@{}", &commit[..12.min(commit.len())]);
+    // Room for "installed from " in `why`, under its cap.
+    let from = Line::new(js_take(&from, 280)).unwrap_or_else(|_| Line::unchecked("its source"));
+    let version = kept.changed.as_ref().map_or(1, |v| v.version.get());
+    let why = Line::unchecked(format!("installed from {from}"));
+    hub.chat.add(
+        r,
+        NewMessage {
+            author: Some(ChatAuthor::System),
+            text: format!("Installed the skill {} from {from}", kept.name),
+            skill_saved: Some(SkillSaved {
+                name: kept.name.clone(),
+                version: Int::unchecked(version),
+                created: version == 1,
+                why,
+                installed: Some(from),
+            }),
+            ..Default::default()
+        },
+    )?;
+    Ok(())
 }
 
 /// The project's title, as a version names its lead or Navi; its id when the hub has no title for it.

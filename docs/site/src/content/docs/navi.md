@@ -31,6 +31,12 @@ and it's called Navi. Its chat opens once it's ready.
   opens it), each with **Bring back**.
 - ⌘1–9 (Ctrl on Linux and Windows) number the Navis first, then the projects.
 
+**Delete Navi** is at the end of its settings (Settings › Projects), and of its info screen on the phone. Both ask the
+same way: deleting erases everything it had, on the hub and its machine: its chat, memory, skills, approvals and
+purchases, asks and decisions, attachments, screen recordings and Claude Code's transcripts. Type its name to confirm.
+Its folder stays unless you tick **Also delete its folder**, which deletes it with its drafts, downloads and notes.
+A delete can't be undone; **Archive** keeps everything.
+
 A Navi's chat is the project chat, framed for an assistant. The title is its name, and the box says *Message Ada*.
 The gear beside its name opens its settings, where its memory and automations are kept. A
 send or any other approval shows in the chat with **Approve** and **Deny**. The sidebar marks the Navi *approve*
@@ -78,8 +84,9 @@ least busy worker.
 A Navi searches the web freely, and reads what its [integrations](/docs/integrations) hold and the factory's status. It
 also writes drafts and notes in its folder, remembers and forgets, keeps its checklist, works screens and logs in with 1Password.
 
-- **Files:** it reads and writes what you can on the machine, except your keys and logins (`~/.ssh`, `~/.config`
-  and the rest), fleetd's own directory and other Navis'. What runs outside its sandbox later stays read-only, so it
+- **Files:** it reads and writes what you can on the machine, except your keys and logins (`~/.ssh`, `~/.config`,
+  other assistants' such as `~/.hermes`, `~/.openclaw` and `~/.codex`, and the rest), fleetd's own directory and
+  other Navis'. What runs outside its sandbox later stays read-only, so it
   can't plant code that reads your keys: your shell's startup files, your programs (`~/.local/bin`, `~/.cargo/bin`,
   Homebrew's and the rest), git's config and hooks and the `.claude`, `.fleetd`, `.mcp.json` and `CLAUDE.md` of every
   project's checkout, and its own settings in its folder. If a checkout is moved aside and replaced, no lead or agent
@@ -305,12 +312,19 @@ forget it. To delete the bot itself, send `/deletebot` to @BotFather.
 - **The Navi's replies** go to the app and to Telegram, formatted for Telegram and split when long. Its images go as
   photos, its files as documents. A table shows as monospace; a chart or diff says to open the app. A question with
   choices comes with buttons, and pressing one is your reply.
+- **Quiet lines**: what the Navi remembered or forgot, and a skill it saved or installed, come as one line each, as in
+  the app.
+- **A usage limit**: when the Navi stops at its Claude usage limit, one line says so, and when it resets if the
+  limit said. It picks up your message then. No second line comes until it has replied.
 - **Approvals** come as a card with exactly what approving runs (the command, or the tool and its full input; in a
   file just before the card when it's too long for one message), the checker's reason when it sent the card to you
   (as in the app), and **Approve** and **Deny** buttons. Answer in either
   place: the other updates, and the card says who answered and how. A secret is never entered in Telegram: the Navi
   points you to the app.
 - **Anyone else** who finds the bot gets nothing back, not even an error. Group chats are ignored.
+
+While you talk to the Navi on Telegram (your latest message came from there), its replies notify you on Telegram only,
+not in the [phone app](/docs/phone-notifications) as well. Write from the app again and the app notifies you again.
 
 ### How it works
 
@@ -396,6 +410,11 @@ Open them from the Navi's panel, **Skills**, or from its Settings › Projects p
 An installed skill stays yours: a Navi doesn't change it, and saves its own version under another name. The tool is
 `skill_save`, in [Agent tools](/docs/reference/agent-tools).
 
+A Navi installs a skill from a source with `skill_install`, as a lead does, over https only (`owner/repo`, a GitHub
+URL or an `https://` git URL; never `ssh://`, `git@` or a local path), fetched without the hub's git logins or SSH
+keys. Each skill it installs posts a quiet line in its chat naming the source and the commit it's pinned to, such as
+*Installed the skill pdf from acme/skills@0123456789ab*.
+
 ## For the app and other clients
 
 Navis are MCP tools on the hub: `navi_create {name, machineId?}`, `navi_list {archived?, machineId?}`,
@@ -426,5 +445,8 @@ names the `navi_skills` feature. `skills_list {projectRef}` gives each with `cha
 version?}` adds `versions`, newest first, without their texts; with `version`, its text is that version's.
 `skill_set {scope, projectRef, name, text, why?}` is the person's edit, `skill_revert {scope, projectRef, name,
 version}` puts a version back as a new one, `skill_off {projectRef, name, off}` turns one off in that project, and
-`skill_delete` removes it with its history. A chat message with `skillSaved {name, version, created, why}` is the line
-a save posts.
+`skill_delete` removes it with its history. A chat message with `skillSaved {name, version, created, why, installed?}` is
+the line a save posts; `installed` (`<source>@<commit>`) marks one a `skill_install` posted.
+
+`project_remove {machineId, projectId, removeWorktrees?, removeFolder?}` of a Navi erases it on the hub and its
+machine; `removeFolder` deletes its folder too. It needs its machine online and on a fleetd that can erase a Navi.

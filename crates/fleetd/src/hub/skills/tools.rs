@@ -324,19 +324,36 @@ async fn skill_delete(
     })
 }
 
-/// Fetches `given` and keeps its skills (or `want`) in the scope, pinned to the commit fetched. `local` lets a
-/// source on the hub's own disk through (a person's install, never a lead's).
+/// Who installs a skill, which decides the sources it may come from and how it is fetched.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Installer {
+    /// From any source, the hub's own disk too, fetched with the hub's git logins and SSH keys.
+    Person,
+    /// From a remote source, fetched as the hub.
+    Lead,
+    /// Over https only, fetched as no one: a Navi reads the web for its person, never with the hub's logins.
+    Navi,
+}
+
+/// Fetches `given` and keeps its skills (or `want`) in the scope, pinned to the commit fetched.
 pub async fn install_from(
     hub: &Hub,
     scope: SkillScope,
     r: Option<&ProjectRef>,
     given: &str,
     want: Option<&SkillName>,
-    local: bool,
+    by: Installer,
     who: Who,
 ) -> Result<(Vec<Kept>, String), SkillError> {
     let source = install::parse(given)?;
-    if install::is_local(&source) && !local {
+    if by == Installer::Navi && !source.url.starts_with("https://") {
+        return Err(SkillError::new(
+            ErrorCode::Forbidden,
+            format!("A Navi installs skills over https only, and {given} isn't an https source."),
+            Some("Give owner/repo, or the https:// URL of a public repo."),
+        ));
+    }
+    if install::is_local(&source) && by != Installer::Person {
         return Err(SkillError::new(
             ErrorCode::Forbidden,
             "A lead installs from a remote source only.",
@@ -346,7 +363,7 @@ pub async fn install_from(
         ));
     }
     let want = want.or(source.skill.as_ref());
-    let fetched = install::fetch(&source).await?;
+    let fetched = install::fetch(&source, by == Installer::Navi).await?;
     let found = install::find(fetched.tree.path(), &source, want)?;
     let at = iso_ms(now_ms(hub.clock.as_ref()));
     let folders: Vec<_> = found
@@ -380,7 +397,7 @@ async fn skill_install(
         r,
         input.source.as_str(),
         input.skill.as_ref(),
-        true,
+        Installer::Person,
         person(&hub, &caller, None),
     )
     .await?;
@@ -418,7 +435,7 @@ async fn skill_update(
         ));
     };
     let source = install::source_of(&pin);
-    let fetched = install::fetch(&source).await?;
+    let fetched = install::fetch(&source, false).await?;
     if fetched.commit == pin.commit.as_str() {
         return Ok(SkillUpdateOutput {
             skill: hub

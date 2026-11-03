@@ -653,7 +653,7 @@ Keep the project's checklist: the to-dos the human sees beside the chat, each to
 
 ### skill_install
 
-Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. Agents list it as fleetd:&lt;name> and run it with the Skill tool.
+Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. Agents list it as fleetd:&lt;name> and run it with the Skill tool. A Navi installs over https only, and its chat shows what it installed.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

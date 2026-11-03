@@ -1487,11 +1487,18 @@
       "type": "string"
     },
     "SkillSaved": {
-      "description": "A chat line's skill: a Navi saved or changed one (`skill_save`). The app links it to the skill's view.",
+      "description": "A chat line's skill: a Navi saved or changed one (`skill_save`), or installed one (`skill_install`). The app links\nit to the skill's view.",
       "properties": {
         "created": {
           "description": "Its first version.",
           "type": "boolean"
+        },
+        "installed": {
+          "description": "Installed: the source as the Navi gave it, at the commit it is pinned to (`owner/repo@<12 hex>`). `why` then\nsays the same, for an app that doesn't know this field.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
         },
         "name": {
           "$ref": "#/$defs/SkillName"

@@ -1,5 +1,5 @@
 //! What a lead starts with. Its system prompt holds its standing rules, which a compaction never summarizes: the
-//! `lead.start` prompt (a Navi's: `navi.start`), `lead.voice`, `lead.profiles` with each profile the project allows
+//! `lead.start` prompt (a Navi's: `navi.start`), `lead.voice` (a Navi's: `navi.voice`), `lead.profiles` with each profile the project allows
 //! and its note, while it allows more than the default (never for a Navi, which runs no code tasks), the human's custom
 //! instructions, then the memory (user memory per `You::for_lead`, and the project's `MEMORY.md`). Its first message
 //! holds the state it starts in: the digest, and, for a project with repos besides its own directory, those
@@ -82,9 +82,13 @@ pub fn render_lead_start(
         }
         _ => String::new(),
     };
-    let voice = set.render("lead.voice", &[]);
+    // A Navi talks as a personal assistant, and its prompt already says how it runs its own automations.
+    let (voice, automations) = match navi_folder {
+        Some(_) => (set.render("navi.voice", &[]), String::new()),
+        None => (set.render("lead.voice", &[]), format!("\n\n{AUTOMATIONS}")),
+    };
     let system = set.with_instructions(format!(
-        "{}\n\n{}{profiles}\n\n{AUTOMATIONS}",
+        "{}\n\n{}{profiles}{automations}",
         start.trim_end(),
         voice.trim_end()
     ));
@@ -257,7 +261,10 @@ mod tests {
         assert!(!text.contains("spawn_agent") && !text.contains("## Task profiles"));
         // The approvals it asks for, and what it never does even if approved.
         assert!(text.contains("Ask first, every time") && text.contains("even if they approve"));
-        assert!(text.contains("## Your voice") && text.contains("## Automations"));
+        // Its own voice, a personal assistant's, not the factory lead's, and its own automations' rules alone.
+        assert!(text.contains("## Your voice") && text.contains("looks after things for them"));
+        assert!(!text.contains("sharp engineer") && !text.contains("the train"));
+        assert!(!text.contains("## Automations") && text.contains("recurring work"));
     }
 
     /// The standing rules (start, voice, profiles, automations, memory) are the system prompt,
@@ -269,14 +276,17 @@ mod tests {
             project_id: ProjectId::unchecked("p1"),
         };
         let set = PromptSet::defaults();
-        let voice = set.render("lead.voice", &[]);
         for navi in [None, Some("/home/me/navi")] {
             let start = render_lead_start(set, &r, "Ada", &both(), "DIGEST", "MEMORY", "", navi);
             assert_eq!(start.first, "DIGEST");
             let system = &start.system;
             let starts = set.render(start_prompt(navi.is_some()), &[]);
             let head = starts.lines().nth(2).unwrap();
-            for part in [head, voice.trim_end(), AUTOMATIONS, "MEMORY"] {
+            let (voice, automations) = match navi {
+                Some(_) => (set.render("navi.voice", &[]), "From automation"),
+                None => (set.render("lead.voice", &[]), AUTOMATIONS),
+            };
+            for part in [head, voice.trim_end(), automations, "MEMORY"] {
                 assert!(system.contains(part), "missing {part:?} in\n{system}");
             }
             assert_eq!(navi.is_none(), system.contains("## Task profiles"));
