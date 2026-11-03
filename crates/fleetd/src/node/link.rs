@@ -107,6 +107,8 @@ pub struct RunNodeOptions {
     pub hosted: crate::node::session_route::Hosted,
     /// The agents' Mac (node/agents_mac): a tool, never a runner, and its setup checks for the heartbeat.
     pub agents_mac: Option<crate::node::agents_mac::AgentsMac>,
+    /// The agents' Mac's lending of its shell and simulators, while its tool is on (node/mac_tool).
+    pub mac_host: Option<Arc<crate::node::mac_tool::host::Host>>,
 }
 
 /// Everything one link needs, shared with the tasks it starts.
@@ -121,6 +123,7 @@ struct Shared {
     sessions: Option<Arc<crate::node::device::Router>>,
     hosted: crate::node::session_route::Hosted,
     agents_mac: Option<crate::node::agents_mac::AgentsMac>,
+    mac_host: Option<Arc<crate::node::mac_tool::host::Host>>,
 }
 
 impl Shared {
@@ -150,6 +153,7 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
         sessions: options.sessions,
         hosted: options.hosted,
         agents_mac: options.agents_mac,
+        mac_host: options.mac_host,
     });
     let mut enroll_token = options.enroll_token;
     let mut on_enrolled = options.on_enrolled;
@@ -247,6 +251,7 @@ fn tag(frame: &HubToNode) -> &'static str {
         HubToNode::RelayDial(_) => "relay_dial",
         HubToNode::SessionStep(_) => "session_step",
         HubToNode::SessionEnd(_) => "session_end",
+        HubToNode::MacCall(_) => "mac_call",
     }
 }
 
@@ -645,6 +650,29 @@ async fn run_link_once(
                     let _ = tx.send(to_json(&NodeToHub::GatedResult(result)));
                 });
             }
+            // The agents' Mac runs no claude: none is installed or logged in there.
+            HubToNode::NodeAction(action)
+                if shared.agents_mac.is_some()
+                    && matches!(
+                        action.action,
+                        super::wire::NodeActionKind::Claude
+                            | super::wire::NodeActionKind::ClaudeLogin
+                            | super::wire::NodeActionKind::ClaudeLoginCode
+                    ) =>
+            {
+                send(NodeToHub::NodeActionResult(
+                    fleetd_contracts::node_link::NodeActionResult {
+                        id: action.id,
+                        ok: false,
+                        message: Text::unchecked(crate::node::agents_mac::TOOL_ONLY),
+                        probe: None,
+                        stage: None,
+                        login_url: None,
+                        steps: None,
+                        hosts: None,
+                    },
+                ))
+            }
             HubToNode::NodeAction(action) => {
                 let tx = tx.clone();
                 let flush = flush.clone();
@@ -715,6 +743,14 @@ async fn run_link_once(
                     if let Some(result) = hosted.await {
                         let _ = tx.send(to_json(&NodeToHub::SessionHostResult(result)));
                     }
+                });
+            }
+            // A step of an agent's for this Mac (node/mac_tool): off the link's task set, as a run may take a while.
+            HubToNode::MacCall(call) => {
+                let (shared, tx) = (shared.clone(), tx.clone());
+                tokio::spawn(async move {
+                    let result = super::mac_tool::answer(&shared.mac_host, call).await;
+                    let _ = tx.send(to_json(&NodeToHub::MacResult(result)));
                 });
             }
             HubToNode::SpansAck(ack) => shared

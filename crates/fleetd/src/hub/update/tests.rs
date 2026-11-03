@@ -116,10 +116,25 @@ impl Fake {
             can_hold: can_update,
             claude: Some("2.1.310 (Claude Code)".into()),
             can_install_claude: can_update,
+            agents_mac: false,
             busy: None,
         });
         if let Some(answer) = answer {
             self.answers.insert(name.into(), answer);
+        }
+        self
+    }
+}
+
+impl Fake {
+    /// `name`'s node is the agents' Mac: it lists `agents_mac`, and no Claude Code install.
+    fn agents_mac(self, name: &str) -> Self {
+        for n in self.nodes.lock().unwrap().iter_mut() {
+            if n.machine_id.as_str() == name {
+                n.agents_mac = true;
+                n.can_install_claude = false;
+                n.claude = None;
+            }
         }
         self
     }
@@ -663,6 +678,42 @@ async fn each_machines_claude_follows_its_node_and_a_failed_install_stops_nothin
     let mut asked = fake.claude_asked.lock().unwrap().clone();
     asked.sort();
     assert_eq!(asked, ["brewbox", "builder", "mac", "pi"]);
+}
+
+/// The agents' Mac runs no Claude Code (D298): its fleetd updates, and its Claude Code step is skipped with the reason,
+/// never "install it by hand".
+#[tokio::test]
+async fn the_agents_macs_update_never_asks_for_claude_code_there() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Fake::new(home.path(), b"new")
+        .node("builder", OLD, true, true, Some(Answer::BackOn(NEW)))
+        .node("mac", OLD, true, true, Some(Answer::BackOn(NEW)))
+        .agents_mac("mac");
+    let fake = Arc::new(fake);
+    let updates = area(home.path(), &fake);
+    updates.start(None, false).unwrap();
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    *fake.running.lock().unwrap() = NEW.into();
+    let verdict = fake.plans.lock().unwrap()[0].verdict.clone();
+    fs::write(
+        &verdict,
+        json!({ "state": "done", "message": "runs it" }).to_string(),
+    )
+    .unwrap();
+    let after = Updates::new(home.path(), Arc::new(SystemClock), fast());
+    after.set_ports(fake.clone());
+    tokio::spawn(after.clone().resume());
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    assert_eq!(state(&run, Some("mac")).0, UpdateState::Done);
+    let mac = claude(&run, "mac");
+    assert_eq!((mac.state, mac.stage), (UpdateState::Skipped, None));
+    let said = mac.message.unwrap().as_str().to_owned();
+    assert_eq!(
+        said,
+        "the agents' Mac runs no Claude Code: nothing to install"
+    );
+    assert!(!said.contains("by hand"));
+    assert_eq!(fake.claude_asked.lock().unwrap().clone(), ["builder"]);
 }
 
 /// Ahead of any update the hub downloads the newest build, checks it and keeps it, and asks its nodes to fetch it; the

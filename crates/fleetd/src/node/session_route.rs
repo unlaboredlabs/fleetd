@@ -306,7 +306,21 @@ async fn ask(
     }
 }
 
+/// What an agent's `session_start` kind `ios` gets: iOS simulators are the agents' Mac's (`mac sim`). `ios` stays a value
+/// the contracts read, for old recordings and a person's own iPhone screens.
+pub const IOS_GONE: &str = "iOS screens are gone: start an iOS simulator of your own on the agents' Mac with `mac sim \
+                            start`, then drive it with agent-device as before.";
+
 async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> BrowserResultFrame {
+    if let BrowserCall::SessionStart(start) = &frame.call
+        && start.kind == Some(SessionKind::Ios)
+    {
+        return error_frame(
+            &frame.id,
+            McpToolError::new(ErrorCode::Invalid, IOS_GONE)
+                .with_fix("mac --help says the rest; fleetd docs: The agents' Mac"),
+        );
+    }
     if host_of(&frame) == SessionHost::Mac && !router.here().live(&thread) {
         return mac_start(&router, thread, frame).await;
     }
@@ -320,7 +334,7 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
                 ErrorCode::NotFound,
                 "No iOS screen of yours runs on another machine.",
             )
-            .with_fix("start one with session_start kind ios"),
+            .with_fix("start a simulator with mac sim start; agent-device then drives it"),
         );
     }
     if router.here().live(&thread) || !router.relay.hub_can(HUB_CAP_SESSION_ROUTE) {
@@ -787,7 +801,7 @@ async fn forward_device(
             ErrorCode::NotFound,
             "Your iOS screen on another machine has ended.",
         )
-        .with_fix("start another with session_start kind ios if you still need one"));
+        .with_fix("start a simulator with mac sim start if you still need one"));
     }
     routed.answer.ok_or_else(|| {
         McpToolError::new(ErrorCode::Failed, "the hub sent no answer for the screen")
@@ -1018,9 +1032,12 @@ impl SessionHooks for Router {
     /// forwarding agent-device while the session's iOS screen runs on another machine (and isn't there otherwise).
     fn env(&self, thread: &str, path: Option<&str>) -> Vec<(String, String)> {
         let mut env = self.here().env(thread, path);
-        let forwarder = remote_device::bin_dir(&self.home, thread)
-            .to_string_lossy()
-            .into_owned();
+        // `mac` (node/mac_tool), then the forwarder.
+        let forwarder = format!(
+            "{}:{}",
+            remote_device::bin_dir(&self.home, thread).to_string_lossy(),
+            super::mac_tool::client::bin_dir(&self.home).to_string_lossy()
+        );
         match env.iter_mut().find(|(k, _)| k == "PATH") {
             Some((_, value)) => *value = format!("{forwarder}:{value}"),
             None => env.push((
@@ -1568,6 +1585,20 @@ mod tests {
         }
         assert_eq!(host_of(&desktop), SessionHost::Desktop);
         assert_eq!(host_of(&start()), SessionHost::Browser);
+    }
+
+    /// iOS screens are gone for agents: a start says where simulators are now, and the hub isn't asked.
+    #[tokio::test]
+    async fn an_ios_start_says_to_use_the_agents_mac() {
+        let relay = LeadRelay::new();
+        let ios: BrowserCallFrame = serde_json::from_value(json!({
+            "id": "1", "cwd": "/w", "call": { "op": "session_start", "purpose": "Settings", "kind": "ios" },
+        }))
+        .unwrap();
+        let answer = route(router(relay, None), "th-1".into(), ios).await;
+        let error = answer.error.unwrap();
+        assert_eq!(error.message, IOS_GONE);
+        assert!(error.message.contains("mac sim start"));
     }
 
     /// Browser sessions off here: no proxy for the agent to drive one through, so the hub isn't even asked.

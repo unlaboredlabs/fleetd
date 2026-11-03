@@ -739,6 +739,7 @@ pub enum NodeToHub {
     /// A watched browser session's screen; only while the hub watches it.
     BrowserFrame(crate::browser::BrowserFrame),
     SessionHostResult(crate::machine_roles::SessionHostResult),
+    MacResult(crate::mac::MacResultFrame),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -762,6 +763,8 @@ pub enum HubToNode {
     BrowserControl(crate::browser::BrowserControlFrame),
     /// Only to nodes that list [`CAP_SESSION_HOST`].
     SessionHost(crate::machine_roles::SessionHostFrame),
+    /// Only to the node that lists [`CAP_MAC_TOOL`].
+    MacCall(crate::mac::MacCallFrame),
     /// Only to nodes that list [`CAP_SESSION_HOST`].
     RelayDial(crate::machine_roles::RelayDialFrame),
     /// Only to nodes that list [`CAP_SESSION_HOST`].

@@ -24,6 +24,7 @@ pub mod integrations;
 pub mod lead_calls;
 pub mod ledger;
 pub mod live;
+pub mod mac;
 pub mod machine_roles;
 pub mod machine_setup;
 pub mod mcp;

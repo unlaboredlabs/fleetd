@@ -145,6 +145,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         mac: args.mac.then_some(desktop::mac::MacConfig {
             enabled: Some(true),
             idle_minutes: None,
+            simulators: None,
         }),
         agents_mac: args.mac.then_some(true),
     };
@@ -326,6 +327,8 @@ async fn run_node(
         ),
         false => None,
     };
+    // The agents' Mac lends clones from the same warm pool (node/mac_tool `mac sim`).
+    let mac_simulators = ios.clone();
     let desktop_config = config.desktop.clone().unwrap_or_default();
     let mac_config = config.mac.clone().unwrap_or_default();
     // The agents' Mac hosts its own screen, never a Linux desktop.
@@ -407,6 +410,26 @@ async fn run_node(
         let sessions = node_sessions.clone();
         relay.set_hold(Arc::new(move || sessions.hold()));
     }
+    if let Err(e) = mac_tool::client::install_shim(home, &sessions::self_command()) {
+        tracing::warn!(error = %e, "the agents' `mac` command was not written");
+    }
+    {
+        let sessions = node_sessions.clone();
+        let client = mac_tool::client::Client::new(
+            relay.clone(),
+            {
+                let sessions = node_sessions.clone();
+                Arc::new(move |thread: &str| sessions.session_cwd(thread))
+            },
+            mask_for.clone(),
+            Arc::new(move |thread: &str, item| sessions.note_item(thread, item)),
+            home.to_path_buf(),
+        );
+        relay.set_mac(Arc::new(move |thread, call| {
+            let client = client.clone();
+            Box::pin(async move { client.call(&thread, call).await })
+        }));
+    }
     let _socket = lead::serve_lead_socket(
         lead::lead_socket_path(home),
         relay.clone(),
@@ -432,6 +455,18 @@ async fn run_node(
             let _ = enrolled_tx.send(());
         }) as Box<dyn FnOnce() + Send>
     });
+    // The agents' Mac, while its tool is on, opens what agents' nodes sealed to this machine's key.
+    let mac_host = match tool {
+        true => identity::load_or_create_box_key(home).ok().map(|key| {
+            mac_tool::host::Host::start(
+                config.mac.clone().unwrap_or_default(),
+                key,
+                util::home_dir().join("work"),
+                mac_simulators.map(|s| mac_tool::host::Sims::new(home.to_path_buf(), s)),
+            )
+        }),
+        false => None,
+    };
     let options = link::RunNodeOptions {
         settings: link::LinkSettings {
             hub: config.hub.clone(),
@@ -456,6 +491,7 @@ async fn run_node(
         sessions: sessions_router.clone(),
         hosted,
         agents_mac: mac.as_ref().map(|(mac, _)| mac.clone()),
+        mac_host,
     };
     let enrolled = async {
         if !exit_when_enrolled || enrolled_rx.await.is_err() {
