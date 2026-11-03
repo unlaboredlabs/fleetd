@@ -140,12 +140,19 @@ export class Session {
    * life and dialled again only without one (client.ts wake). A live link keeps what the screens show.
    */
   wake(): void {
-    if (this.#state.hub.phase !== "refused") this.#client.wake();
+    if (this.#state.hub.phase === "refused") return;
+    this.#client.wake();
+    // The open chat's streamed text and turn line again (a delta past what's held reads its latest page).
+    if (this.#open !== null) this.#client.chat(refOf(this.#open));
   }
 
-  /** The app went behind, where iOS may end it: what the cache keeps is written now. */
+  /**
+   * The app went behind, where iOS may end it: what the cache keeps is written now, and the open chat's streamed text
+   * and turn line stop, as nobody sees them; the link and its events stay.
+   */
   sleep(): void {
     this.#client.sleep();
+    if (this.#open !== null) this.#client.chat(null);
     this.#saveNow();
   }
 

@@ -16,11 +16,11 @@ export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 export const READY_TIMEOUT_MS = 15_000;
 /** How often a live link's silence is looked at. */
 export const PROBE_EVERY_MS = 5_000;
-/** Quiet this long, the link is probed: in front, and behind. */
-export const QUIET_FRONT_MS = 5_000;
+/** Quiet this long, the link is probed: in front (no sooner, so a cellular radio can still idle), and behind. */
+export const QUIET_FRONT_MS = 10_000;
 export const QUIET_BEHIND_MS = 15_000;
 /** Nothing heard for this long, the link is dead: in front, and behind. */
-export const SILENT_DEAD_FRONT_MS = 15_000;
+export const SILENT_DEAD_FRONT_MS = 25_000;
 export const SILENT_DEAD_MS = 35_000;
 /** Back in front, a live link answers a probe within this, or it is dialled again. */
 export const WAKE_PROBE_MS = 2_500;

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { backoff, FRONT_BACKOFF_CAP_MS, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, READY_TIMEOUT_MS, SILENT_DEAD_MS, WAKE_PROBE_MS, socketUrl, type HubFrame } from "./client";
+import { backoff, FRONT_BACKOFF_CAP_MS, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, QUIET_FRONT_MS, READY_TIMEOUT_MS, SILENT_DEAD_FRONT_MS, SILENT_DEAD_MS, WAKE_PROBE_MS, socketUrl, type HubFrame } from "./client";
 import { fakeHub } from "./fake";
 
 const HUB = "http://devbox:4790";
@@ -104,10 +104,15 @@ describe("HubClient", () => {
     client.start();
     const first = hub.ready();
     const probes = () => first.sent.filter((m) => m.t === "call" && m.tool === "hub_info");
-    vi.advanceTimersByTime(PROBE_EVERY_MS);
+    // In front, nothing goes before 10 s of quiet, so a cellular radio can idle between.
+    vi.advanceTimersByTime(QUIET_FRONT_MS - 1);
+    expect(probes()).toHaveLength(0);
+    vi.advanceTimersByTime(1);
     expect(probes()).toHaveLength(1);
-    // In front, probed every 5 s; at 15 s nothing was heard for SILENT_DEAD_FRONT_MS.
-    vi.advanceTimersByTime(2 * PROBE_EVERY_MS);
+    // Probed at 10, 15 and 20 s; at 25 s nothing was heard for SILENT_DEAD_FRONT_MS.
+    vi.advanceTimersByTime(SILENT_DEAD_FRONT_MS - QUIET_FRONT_MS - 1);
+    expect(first.closed).toBe(false);
+    vi.advanceTimersByTime(1);
     expect(first.closed).toBe(true);
     expect(states().at(-1)).toMatchObject({ phase: "retrying", reason: "The hub stopped answering" });
   });
