@@ -204,6 +204,20 @@ impl Doctor {
         let setup = config.machines.get(id);
         let fleet = &self.deps.fleet;
         let online = machine.status != "offline";
+        // The agents' Mac runs no claude and commits nothing: its own setup's checks stand in for those, from its
+        // heartbeat (none yet before its first, or while it is offline). Its node isn't asked about a runner.
+        if machine.agents_mac == Some(true) {
+            let mut out = vec![checks::machine_online(machine, setup, None)];
+            out.extend(checks::mac_setup(id, !online, fleet.mac(id).as_ref()));
+            out.push(checks::disk_space(
+                id,
+                !online,
+                fleet.guard(id).0.as_ref(),
+                None,
+            ));
+            out.extend(checks::ios_sessions(id, !online, fleet.ios(id).as_ref()));
+            return out;
+        }
         let (runner, usage, probe, claude) = tokio::join!(
             async {
                 if online {
@@ -226,19 +240,6 @@ impl Doctor {
             fleet.claude_setup()
         );
         let mut out = vec![checks::machine_online(machine, setup, runner.as_ref())];
-        // The agents' Mac runs no claude and commits nothing: its own setup's checks stand in for those.
-        let mac = fleet.mac(id);
-        if mac.is_some() {
-            out.extend(checks::mac_setup(id, !online, mac.as_ref()));
-            out.push(checks::disk_space(
-                id,
-                !online,
-                fleet.guard(id).0.as_ref(),
-                None,
-            ));
-            out.extend(checks::ios_sessions(id, !online, fleet.ios(id).as_ref()));
-            return out;
-        }
         if let Some(info) = &runner {
             out.extend(checks::runner_checks(id, info));
             let configured = claude.as_ref().is_some_and(|c| c.configured);

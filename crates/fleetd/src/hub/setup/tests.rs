@@ -347,3 +347,46 @@ async fn the_tools_are_an_admins() {
     assert_eq!(list["steps"][4]["status"], "done", "{}", list["steps"][4]);
     assert_eq!(list["steps"][4]["said"], "Alice has joined.");
 }
+
+/// The agents' Mac runs no claude: the doctor never asks its node about one, from its hello on, before its first
+/// heartbeat says how its own checks stand, and while it is offline.
+#[tokio::test]
+async fn the_agents_mac_never_gets_a_runners_checks() {
+    let (hub, _home) = hub();
+    for status in ["online", "offline"] {
+        let machine = serde_json::from_value(json!({
+            "machineId": "studio", "name": "studio", "tags": [], "status": status,
+            "lastSeenAt": "2026-10-26T10:00:00.000Z", "nodeVersion": "0.1.0", "agentsMac": true,
+        }))
+        .unwrap();
+        hub.store.machine_upsert(&machine, None).unwrap();
+        let step = call(
+            &hub,
+            &caller("admin"),
+            "setup_test",
+            json!({ "step": "mac" }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(step["step"]["id"], "mac");
+        let ids: Vec<String> = hub
+            .doctor
+            .list(false)
+            .await
+            .checks
+            .into_iter()
+            .filter(|c| c.machine_id.as_deref() == Some("studio"))
+            .map(|c| c.id)
+            .collect();
+        assert!(
+            ids.contains(&"studio/online".to_owned()),
+            "{status}: {ids:?}"
+        );
+        for id in &ids {
+            assert!(
+                !id.contains("claude") && !id.contains("commit") && !id.contains("usage"),
+                "{status}: {id}"
+            );
+        }
+    }
+}

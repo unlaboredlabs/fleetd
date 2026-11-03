@@ -364,8 +364,9 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                     "Two clicks at the Mac",
                     Some(
                         "Still logged in as fleetd agents: turn on fleetd in Accessibility and in Screen Recording, so \
-                         agents can drive the Mac's apps and you can watch them. macOS asks for the password of fleetd \
-                         agents, not yours. It asks again from time to time; the check says when.",
+                         agents can drive the Mac's apps and you can watch them. macOS may ask for an administrator's \
+                         name and password: type yours in that System Settings dialog at the Mac itself, never through \
+                         fleetd's view of its screen. It asks again from time to time; the check says when.",
                     ),
                     vec![],
                     vec![
@@ -386,8 +387,10 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 part(
                     "Moving a Mac that runs fleetd in your account",
                     Some(
-                        "Join it again from fleetd agents with the same name and --rejoin (Add machine offers the line), \
-                         so its projects and history stay. Then, in your own account, stop and remove its old node: \
+                        "First let the agents running on it finish (or stop them), and push any work they left: \
+                         removing the old node deletes its worktrees. Join it again from fleetd agents with the same \
+                         name and --rejoin (Add machine offers the line), so its history stays. Then, in your own \
+                         account, stop and remove its old node: \
                          your account runs no fleetd node after. The rejoin gave the Mac a new key, so the old node \
                          would be refused anyway.",
                     ),

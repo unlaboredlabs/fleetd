@@ -487,7 +487,7 @@ async fn run_link_once(
         .collect(),
     };
     send(NodeToHub::Hello(tool_only(
-        shared.agents_mac.is_some(),
+        shared.agents_mac.as_ref(),
         hello,
     )));
     let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {
@@ -732,9 +732,9 @@ async fn run_link_once(
 }
 
 /// The agents' Mac lists only a tool's calls (node/agents_mac); any other node, all it takes.
-fn tool_only(mac: bool, mut hello: NodeHello) -> NodeHello {
-    if mac {
-        hello.capabilities = crate::node::agents_mac::capabilities(hello.capabilities);
+fn tool_only(mac: Option<&crate::node::agents_mac::AgentsMac>, mut hello: NodeHello) -> NodeHello {
+    if let Some(mac) = mac {
+        hello.capabilities = crate::node::agents_mac::capabilities(hello.capabilities, mac.tool());
     }
     hello
 }

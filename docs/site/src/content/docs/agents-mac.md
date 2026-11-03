@@ -77,8 +77,9 @@ Nothing comes from your Homebrew, which agents can't write. The node also keeps 
 
 Still logged in as fleetd agents, open **System Settings › Privacy & Security** and turn on **fleetd** in
 **Accessibility** (agents click and type in the Mac's apps) and **Screen Recording** (you and agents see the screen).
-The node asked macOS for both when it started, so fleetd is in each list. macOS asks for the password of fleetd
-agents, not yours, and asks again from time to time: the check says when.
+The node asked macOS for both when it started, so fleetd is in each list. macOS may ask for an administrator's
+name and password: type yours in that System Settings dialog at the Mac itself, never through fleetd's view of its
+screen. It asks again from time to time: the check says when.
 
 Never grant Terminal, an editor or any app you use yourself in the agents' user: a grant reaches everything that app
 runs.
@@ -112,17 +113,20 @@ against a disk anyone holding the Mac can read. That's your call.
 ## Agents may use this Mac {#switch}
 
 **Settings › Hub › Machines › Machine roles** shows the agents' Mac with one switch, **Agents may use this Mac**, for
-every project's agents (Navis never). Off, agents' `mac` commands answer that the Mac is turned off. Under it, the row
+every project's agents (Navis never). Off, agents' `mac` commands (they come with the `mac` tool, in a later release)
+answer that the Mac is turned off. Under it, the row
 says why agents can't use the Mac now, when they can't: offline, or a node that doesn't offer the tool.
 
 ## Move a Mac that runs fleetd in your account {#move}
 
 A Mac already joined from your own account moves into the agents' user under the same name, so its history stays:
 
-1. Do [steps 1 and 3](#setup) as above.
-2. As fleetd agents, paste the line **Add machine › A Mac for agents** makes for its name: a machine of that name
+1. Let the agents running on it finish, or stop them, and push any work they left: removing the old node in step 4
+   deletes its worktrees, uncommitted and unpushed work included.
+2. Do [steps 1 and 3](#setup) as above.
+3. As fleetd agents, paste the line **Add machine › A Mac for agents** makes for its name: a machine of that name
    gets `--rejoin`, which enrolls it again with a new key.
-3. In your own account, stop and remove the old node:
+4. In your own account, stop and remove the old node:
 
    ```sh
    launchctl bootout gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node

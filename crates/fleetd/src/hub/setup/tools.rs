@@ -105,9 +105,11 @@ async fn setup_test(
     {
         tracing::warn!("setup: the GitHub App's test didn't run: {e}");
     }
-    // Machines and Claude read every machine's checks; the rest, the hub's own.
+    // Machines, Claude and the Mac read every machine's checks; the rest, the hub's own.
     let results = match input.step {
-        SetupStepId::Machines | SetupStepId::Claude => hub.doctor.list(true).await,
+        SetupStepId::Machines | SetupStepId::Claude | SetupStepId::Mac => {
+            hub.doctor.list(true).await
+        }
         _ => hub.doctor.rerun_hub().await,
     };
     let checks = with_fresh(&hub, results.checks).await;
