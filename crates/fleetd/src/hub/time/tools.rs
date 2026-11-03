@@ -444,7 +444,7 @@ fn by_profile(l: &Loaded, since: i64, until: i64) -> Vec<ProfileTotal> {
     totals
 }
 
-fn top_commands(rows: &[Row]) -> Vec<CommandStat> {
+fn top_commands(rows: &[&Row]) -> Vec<CommandStat> {
     let mut by: HashMap<&str, (String, Vec<i64>, i64)> = HashMap::new();
     for r in rows {
         if !matches!(r.kind, SpanKind::ToolBash | SpanKind::Git) {
@@ -489,9 +489,9 @@ fn top_commands(rows: &[Row]) -> Vec<CommandStat> {
     out
 }
 
-fn repeated(rows: &[Row]) -> Vec<RepeatStat> {
+fn repeated(rows: &[&Row]) -> Vec<RepeatStat> {
     let mut by_thread: BTreeMap<&str, Vec<&Row>> = BTreeMap::new();
-    for r in rows {
+    for &r in rows {
         if matches!(
             r.kind,
             SpanKind::ToolBash | SpanKind::Git | SpanKind::ToolEdit
@@ -539,7 +539,7 @@ fn repeated(rows: &[Row]) -> Vec<RepeatStat> {
     out
 }
 
-fn ci_checks(rows: &[Row], paths: &[(String, CriticalPath)]) -> Vec<CiCheckStat> {
+fn ci_checks(rows: &[&Row], paths: &[(String, CriticalPath)]) -> Vec<CiCheckStat> {
     let mut by: BTreeMap<String, Vec<i64>> = BTreeMap::new();
     for r in rows.iter().filter(|r| r.kind == SpanKind::CiCheck) {
         let name = r
@@ -556,6 +556,7 @@ fn ci_checks(rows: &[Row], paths: &[(String, CriticalPath)]) -> Vec<CiCheckStat>
         for seg in p.segments.iter().filter(|s| s.kind == SpanKind::ChangeCi) {
             let mut checks: Vec<&Row> = rows
                 .iter()
+                .copied()
                 .filter(|r| {
                     r.kind == SpanKind::CiCheck
                         && r.workstream_id.as_deref() == Some(w.as_str())
@@ -602,9 +603,10 @@ fn ci_checks(rows: &[Row], paths: &[(String, CriticalPath)]) -> Vec<CiCheckStat>
     out
 }
 
-fn human_wait(rows: &[Row]) -> HumanWait {
+fn human_wait(rows: &[&Row]) -> HumanWait {
     let waits: Vec<&Row> = rows
         .iter()
+        .copied()
         .filter(|r| {
             r.kind == SpanKind::WaitRequest
                 || (r.kind == SpanKind::WaitPermission
@@ -1009,7 +1011,14 @@ fn readable(caller: &Caller, l: Loaded) -> Loaded {
     }
 }
 
-fn rule_input(c: &Connection, l: &Loaded, since: i64, until: i64) -> Result<RuleInput, StoreError> {
+/// The rules' input over the period's spans of `l`, which it takes rather than copies; with those spans' metas, in
+/// the same order.
+fn rule_input(
+    c: &Connection,
+    l: Loaded,
+    since: i64,
+    until: i64,
+) -> Result<(RuleInput, Vec<Meta>), StoreError> {
     let mut titles = HashMap::new();
     let mut ids: Vec<&str> = l.rows.iter().filter_map(|r| r.task_id.as_deref()).collect();
     ids.sort_unstable();
@@ -1027,15 +1036,32 @@ fn rule_input(c: &Connection, l: &Loaded, since: i64, until: i64) -> Result<Rule
             titles.insert(t.to_owned(), title);
         }
     }
-    Ok(RuleInput {
-        rows: l
-            .rows
-            .iter()
-            .filter(|r| r.start_ms >= since && r.start_ms < until)
-            .cloned()
-            .collect(),
-        task_titles: titles,
-    })
+    let (rows, metas) = l
+        .rows
+        .into_iter()
+        .zip(l.metas)
+        .filter(|(r, _)| r.start_ms >= since && r.start_ms < until)
+        .unzip();
+    Ok((
+        RuleInput {
+            rows,
+            task_titles: titles,
+        },
+        metas,
+    ))
+}
+
+/// Runs `f` on the hub's read-only connection, off the async workers: a fleet read takes seconds, and on the main
+/// connection every other hub call waited behind it.
+async fn read<R: Send + 'static>(
+    hub: &Arc<Hub>,
+    f: impl FnOnce(&Connection) -> Result<Result<R, ToolError>, StoreError> + Send + 'static,
+) -> Result<R, ToolError> {
+    let hub = hub.clone();
+    match tokio::task::spawn_blocking(move || hub.db.read(f)).await {
+        Ok(r) => r?,
+        Err(e) => std::panic::resume_unwind(e.into_panic()),
+    }
 }
 
 async fn time_spans(
@@ -1046,7 +1072,7 @@ async fn time_spans(
     let now = hub.time.now_ms();
     let (since, until) = period(&input.since, input.until.as_ref(), now)?;
     let limit = input.limit.get() as usize;
-    let (rows, coverage) = hub.db.with(|c| {
+    let (rows, coverage) = read(&hub, move |c| {
         if let Err(e) = check(c, &caller, &input.scope) {
             return Ok(Err(e));
         }
@@ -1056,15 +1082,15 @@ async fn time_spans(
         let mut rows: Vec<(Row, Meta)> = match input.rule {
             Some(rule) => {
                 let l = readable(&caller, load(c, &input.scope, since, until, None)?);
-                let ri = rule_input(c, &l, since, until)?;
+                let (ri, metas) = rule_input(c, l, since, until)?;
                 let after = f.after_id.unwrap_or(0);
                 let wanted: std::collections::HashSet<i64> = rules::rule_spans(&ri, rule)
                     .into_iter()
                     .filter(|i| *i > after)
                     .collect();
-                l.rows
+                ri.rows
                     .into_iter()
-                    .zip(l.metas)
+                    .zip(metas)
                     .filter(|(r, _)| wanted.contains(&r.id))
                     .take(limit + 1)
                     .collect()
@@ -1084,7 +1110,8 @@ async fn time_spans(
         };
         let cov = coverage(c, &input.scope, &l, None, since, now)?;
         Ok(Ok((rows, cov)))
-    })??;
+    })
+    .await?;
     let mut rows = rows;
     let more = rows.len() > limit;
     rows.truncate(limit);
@@ -1139,28 +1166,12 @@ async fn time_breakdown(
             .unwrap_or_default()
     });
     let scope = narrow(&input.scope, &input.filters);
-    hub.db.with(|c| {
+    let time = hub.time.clone();
+    read(&hub, move |c| {
         if let Err(e) = check(c, &caller, &scope) {
             return Ok(Err(e));
         }
-        let (l, wall_ms, agent_ms, by_category) =
-            period_breakdown(c, &caller, &scope, since, until, role.clone())?;
-        let in_period: Vec<Row> = l
-            .rows
-            .iter()
-            .filter(|r| r.start_ms >= since && r.start_ms < until)
-            .cloned()
-            .collect();
-        let ps = paths(c, &scope, since, until, now, &hub.time.paths)?;
-        let critical_path = match &scope {
-            TimeScope::Order { workstream_id } => ps
-                .iter()
-                .find(|(w, _)| w == workstream_id.as_str())
-                .map(|(_, p)| p.clone()),
-            _ => None,
-        };
-        let coverage = coverage(c, &scope, &l, critical_path.as_ref(), since, now)?;
-        let critical_path = critical_path.as_ref().map(path::for_output);
+        // The compared period first, so its spans are gone before this period's load.
         let compare = match compare {
             Some((s, u)) => {
                 let (_, wall, agent, cats) =
@@ -1175,6 +1186,23 @@ async fn time_breakdown(
             }
             None => None,
         };
+        let (l, wall_ms, agent_ms, by_category) =
+            period_breakdown(c, &caller, &scope, since, until, role)?;
+        let in_period: Vec<&Row> = l
+            .rows
+            .iter()
+            .filter(|r| r.start_ms >= since && r.start_ms < until)
+            .collect();
+        let ps = paths(c, &scope, since, until, now, &time.paths)?;
+        let critical_path = match &scope {
+            TimeScope::Order { workstream_id } => ps
+                .iter()
+                .find(|(w, _)| w == workstream_id.as_str())
+                .map(|(_, p)| p.clone()),
+            _ => None,
+        };
+        let coverage = coverage(c, &scope, &l, critical_path.as_ref(), since, now)?;
+        let critical_path = critical_path.as_ref().map(path::for_output);
         Ok(Ok(TimeBreakdownOutput {
             wall_ms: count(wall_ms),
             agent_ms: count(agent_ms),
@@ -1189,7 +1217,7 @@ async fn time_breakdown(
             critical_path,
             retention_days: Int::try_from(store::retention_days(c)?)
                 .unwrap_or_else(|_| Int::try_from(30).unwrap()),
-            stored_bytes: count(store::stored_bytes(c)?),
+            stored_bytes: count(time.stored_bytes(c, now)?),
             coverage,
             compare,
             next: Some(
@@ -1197,7 +1225,8 @@ async fn time_breakdown(
             ),
             truncated: l.truncated.then_some(true),
         }))
-    })?
+    })
+    .await
 }
 
 /// Filters narrow a fleet scope to a project or a machine.
@@ -1225,21 +1254,22 @@ async fn time_insights(
         .as_ref()
         .map(|p| period(&p.since, Some(&p.until), now))
         .transpose()?;
-    let insights = hub.db.with(|c| {
+    let insights = read(&hub, move |c| {
         if let Err(e) = check(c, &caller, &input.scope) {
             return Ok(Err(e));
         }
         let l = readable(&caller, load(c, &input.scope, since, until, None)?);
-        let cur = rule_input(c, &l, since, until)?;
+        let (cur, _) = rule_input(c, l, since, until)?;
         Ok(Ok(match compare {
             Some((s, u)) => {
                 let lp = readable(&caller, load(c, &input.scope, s, u, None)?);
-                let prev = rule_input(c, &lp, s, u)?;
+                let (prev, _) = rule_input(c, lp, s, u)?;
                 rules::compare(&cur, &prev)
             }
             None => rules::insights(&cur),
         }))
-    })??;
+    })
+    .await?;
     Ok(TimeInsightsOutput {
         next: Some("time_spans with rule lists every span a finding links to.".into()),
         truncated: None,

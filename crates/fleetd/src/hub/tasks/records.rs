@@ -30,6 +30,29 @@ fn state_str(state: TaskState) -> String {
         .unwrap_or_default()
 }
 
+/// `TaskRecords::list`'s query, naming only the filters that are set so SQLite can use an index for them: the
+/// `?1 IS NULL OR col = ?1` form it replaces scanned the whole table on every board tick.
+fn list_sql(filter: &TaskFilter) -> (String, Vec<rusqlite::types::Value>) {
+    let mut sql = String::from("SELECT data FROM tasks WHERE 1");
+    let mut args: Vec<rusqlite::types::Value> = Vec::new();
+    if let Some(r) = &filter.project_ref {
+        sql.push_str(" AND machine_id = ? AND project_id = ?");
+        args.push(r.machine_id.as_str().to_owned().into());
+        args.push(r.project_id.as_str().to_owned().into());
+    }
+    if let Some(state) = filter.state {
+        sql.push_str(" AND state = ?");
+        args.push(state_str(state).into());
+    }
+    if let Some(w) = &filter.workstream_id {
+        sql.push_str(" AND workstream_id = ?");
+        args.push(w.as_str().to_owned().into());
+    }
+    sql.push_str(" ORDER BY n DESC LIMIT ?");
+    args.push((filter.limit as i64).into());
+    (sql, args)
+}
+
 /// A row with no `repoId` (every row an older hub stored, and a plain directory's) reads as the project's own repo,
 /// or none for a plain directory (W79).
 fn decode(db: &Connection, data: &str) -> rusqlite::Result<Task> {
@@ -272,29 +295,12 @@ impl TaskRecords {
 
     /// Newest first.
     pub fn list(db: &Connection, filter: &TaskFilter) -> rusqlite::Result<Vec<Task>> {
-        db.prepare_cached(
-            "SELECT data FROM tasks
-             WHERE (?1 IS NULL OR machine_id = ?1) AND (?2 IS NULL OR project_id = ?2)
-               AND (?3 IS NULL OR state = ?3) AND (?4 IS NULL OR workstream_id = ?4)
-             ORDER BY n DESC LIMIT ?5",
-        )?
-        .query_map(
-            params![
-                filter
-                    .project_ref
-                    .as_ref()
-                    .map(|r| r.machine_id.as_str().to_owned()),
-                filter
-                    .project_ref
-                    .as_ref()
-                    .map(|r| r.project_id.as_str().to_owned()),
-                filter.state.map(state_str),
-                filter.workstream_id.as_ref().map(|w| w.as_str().to_owned()),
-                filter.limit as i64,
-            ],
-            |row| decode(db, &row.get::<_, String>(0)?),
-        )?
-        .collect()
+        let (sql, args) = list_sql(filter);
+        db.prepare_cached(&sql)?
+            .query_map(rusqlite::params_from_iter(args), |row| {
+                decode(db, &row.get::<_, String>(0)?)
+            })?
+            .collect()
     }
 
     /// The digest's tasks: every queued, running or idle one, and those that ended after `since`. Newest first.
@@ -364,5 +370,94 @@ impl TaskRecords {
         )?
         .query_map(params![r.machine_id.as_str(), r.project_id.as_str()], |row| row.get(0))?
         .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use fleetd_contracts::ids::{MachineId, ProjectId};
+    use fleetd_contracts::ledger::WorkstreamId;
+    use serde_json::json;
+
+    use super::*;
+    use crate::hub::store::HubDb;
+
+    fn create(c: &Connection, project: &str, workstream: &str, state: &str) -> Task {
+        let task: Task = serde_json::from_value(json!({
+            "projectRef": { "machineId": "lab-a", "projectId": project }, "workstreamId": workstream,
+            "title": "do it", "prompt": "do it", "kind": "read", "state": state, "attempt": 1,
+            "createdAt": "2026-11-03T10:00:00.000Z",
+        }))
+        .unwrap();
+        TaskRecords::create(c, task).unwrap()
+    }
+
+    #[test]
+    fn a_list_names_only_its_filters_and_reads_by_index() {
+        let db = HubDb::open_memory().unwrap();
+        db.with(|c| {
+            let mut all = Vec::new();
+            for (i, state) in ["queued", "running", "idle", "done", "failed", "running"]
+                .iter()
+                .cycle()
+                .take(30)
+                .enumerate()
+            {
+                let project = ["p1", "p2"][i % 2];
+                let workstream = ["W1", "W2", "W3"][i % 3];
+                all.push(create(c, project, workstream, state));
+            }
+            all.reverse();
+            let p1 = ProjectRef {
+                machine_id: MachineId::unchecked("lab-a"),
+                project_id: ProjectId::unchecked("p1"),
+            };
+            for project_ref in [None, Some(p1)] {
+                for state in [None, Some(TaskState::Running), Some(TaskState::Done)] {
+                    for workstream_id in [None, Some(WorkstreamId::unchecked("W2"))] {
+                        for limit in [3, 500] {
+                            let filter = TaskFilter {
+                                project_ref: project_ref.clone(),
+                                state,
+                                workstream_id: workstream_id.clone(),
+                                limit,
+                            };
+                            let want: Vec<&TaskId> = all
+                                .iter()
+                                .filter(|t| {
+                                    project_ref.as_ref().is_none_or(|r| *r == t.project_ref)
+                                })
+                                .filter(|t| state.is_none_or(|s| s == t.state))
+                                .filter(|t| {
+                                    workstream_id.as_ref().is_none_or(|w| *w == t.workstream_id)
+                                })
+                                .take(limit)
+                                .map(|t| &t.task_id)
+                                .collect();
+                            let got = TaskRecords::list(c, &filter)?;
+                            assert_eq!(
+                                got.iter().map(|t| &t.task_id).collect::<Vec<_>>(),
+                                want,
+                                "{filter:?}"
+                            );
+                        }
+                    }
+                }
+            }
+            // The live board's lists, by state alone: an index, not a walk of every task.
+            let (sql, args) = list_sql(&TaskFilter {
+                project_ref: None,
+                state: Some(TaskState::Running),
+                workstream_id: None,
+                limit: 500,
+            });
+            let plan: Vec<String> = c
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))?
+                .query_map(rusqlite::params_from_iter(args), |r| r.get(3))?
+                .collect::<Result<_, _>>()?;
+            assert_eq!(plan, ["SEARCH tasks USING INDEX tasks_by_state (state=?)"]);
+            Ok(())
+        })
+        .unwrap();
     }
 }
