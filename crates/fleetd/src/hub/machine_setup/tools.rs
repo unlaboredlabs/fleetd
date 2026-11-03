@@ -95,6 +95,7 @@ fn resolve(
         git_identity: None,
         no_service: false,
         claude_config_dir: None,
+        mac: false,
     };
     machine::resolve(&args, &exe).map_err(stopped)
 }
@@ -323,13 +324,22 @@ async fn machine_join(
         &hub.auth,
         &input.machine_id,
         input.rejoin == Some(true),
+        input.mac == Some(true),
     )
     .map_err(|message| ToolError::new(ErrorCode::Failed, message))?;
-    Ok(MachineJoinOutput {
-        next: Some(format!(
+    let next = match input.mac == Some(true) {
+        true => format!(
+            "Paste the line on {} in its standard agents user, never an admin: it installs fleetd and joins as the \
+             agents' Mac. The code works once, until {}; the Mac must reach the hub at {}, and needs no claude.",
+            input.machine_id, join.expires_at, join.hub
+        ),
+        false => format!(
             "Run the line on {}: it installs fleetd and joins. The code works once, until {}; the machine needs claude and must reach the hub at {}.",
             input.machine_id, join.expires_at, join.hub
-        )),
+        ),
+    };
+    Ok(MachineJoinOutput {
+        next: Some(next),
         machine_id: input.machine_id,
         hub_url: join.hub,
         code: join.code,

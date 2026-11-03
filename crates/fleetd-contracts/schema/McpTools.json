@@ -8244,8 +8244,37 @@
       "pattern": "^http://127\\.0\\.0\\.1:[1-9][0-9]{0,4}(/[A-Za-z0-9/._-]*)?$",
       "type": "string"
     },
+    "MacTool": {
+      "description": "The agents' Mac's tool, as the hub routes agents' `mac` calls to it.",
+      "properties": {
+        "note": {
+          "description": "Why agents can't use it now, in plain words, while they can't.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "on": {
+          "description": "\"Agents may use this Mac\": the admin's switch, on unless set off.",
+          "type": "boolean"
+        },
+        "ready": {
+          "description": "Its node offers the tool now (`mac_tool`): online, a standard user, the tool on in its node.json.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "on",
+        "ready"
+      ],
+      "type": "object"
+    },
     "Machine": {
       "properties": {
+        "agentsMac": {
+          "description": "The agents' Mac (D298): a tool every project's agents use, never a runner. No agent, lead or Navi runs there,\nand clients seal no secret to it. Absent on every other machine.",
+          "type": "boolean"
+        },
         "boxPubKey": {
           "$ref": "#/$defs/BoxPublicKey",
           "description": "M8: the node's X25519 key from its hello; clients seal this machine's secrets to it. Absent: it takes no\nsecrets."
@@ -8611,6 +8640,10 @@
     },
     "MachineJoinInput": {
       "properties": {
+        "mac": {
+          "description": "The agents' Mac (`--mac`): the installer refuses an admin user, and the node runs as a tool, never a runner.",
+          "type": "boolean"
+        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
@@ -8782,6 +8815,10 @@
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
+        "mac": {
+          "$ref": "#/$defs/MacTool",
+          "description": "The agents' Mac only (D298): it runs no agents whatever its roles say, and this is its tool."
+        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
@@ -8893,6 +8930,10 @@
       "properties": {
         "autoSessions": {
           "description": "Drop the session cap: it hosts what it fits again.",
+          "type": "boolean"
+        },
+        "macTool": {
+          "description": "The agents' Mac only: \"Agents may use this Mac\", for every project's agents (Navis never).",
           "type": "boolean"
         },
         "machineId": {
@@ -18334,14 +18375,23 @@
     },
     "SetupStepId": {
       "description": "The steps, in the order they are listed.",
-      "enum": [
-        "address",
-        "machines",
-        "claude",
-        "github",
-        "people"
+      "oneOf": [
+        {
+          "enum": [
+            "address",
+            "machines",
+            "claude",
+            "github",
+            "people"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "mac",
+          "description": "A Mac for agents (D298): optional.",
+          "type": "string"
+        }
       ],
-      "type": "string",
       "x-open": true
     },
     "SetupStepState": {

@@ -420,6 +420,26 @@ impl Slots {
         Ok(self.state())
     }
 
+    /// The agents' Mac's hello (D298): its agents role goes off for good, whatever it was, so it runs no agent even
+    /// after the hub restarts.
+    pub fn keep_tool_only(&self, m: &MachineId) -> Result<SlotState, StoreError> {
+        self.db.transaction(|c| {
+            let roles = crate::hub::machine_roles::roles_on(c, m)?;
+            if roles.agents {
+                crate::hub::machine_roles::set_roles(
+                    c,
+                    m,
+                    &crate::hub::machine_roles::Roles {
+                        agents: false,
+                        ..roles
+                    },
+                )?;
+            }
+            Ok(())
+        })?;
+        self.set_runs_agents(m, false)
+    }
+
     /// A machine's agents role (`machine_roles_set`): off, it runs no agents and its projects' agents wait; on again,
     /// queued agents that now fit start before it returns.
     pub fn set_runs_agents(&self, m: &MachineId, on: bool) -> Result<SlotState, StoreError> {

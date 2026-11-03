@@ -94,6 +94,18 @@ fn host_of(hub: &str) -> String {
     host.split('.').next().unwrap_or("hub").to_owned()
 }
 
+/// What the person pastes in their own (admin) account on the agents' Mac: each line commented with why.
+pub const MAC_ADMIN_BLOCK: &str = "\
+# A standard (non-admin) user of its own for agents. You choose its password and keep it.
+sudo sysadminctl -addUser agents -fullName \"fleetd agents\" -password -
+# Simulators and debugging for that user, with no admin prompt.
+sudo dseditgroup -o edit -a agents -t user _developer
+sudo DevToolsSecurity -enable
+# Xcode's licence and its system components, which only an admin can accept and install.
+sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch
+# Your own home closed to every other user, agents included.
+chmod 700 ~";
+
 /// Every step in order, its values computed for `hub` (the URL devices reach it at), status still to read.
 pub fn guides(hub: &str) -> Vec<HubSetupStep> {
     let base = hub.trim_end_matches('/');
@@ -306,6 +318,105 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 SetupGroup::People,
                 "Invite people",
                 "Each person gets their own sign-in, chats and Navi; you choose who is an admin.",
+                SetupNeed::Optional,
+            )
+        },
+        // A Mac for agents (D298, docs: agents-mac.md): optional. The admin steps happen in the person's own account; the rest
+        // in the agents user, which the node then checks as itself.
+        HubSetupStep {
+            parts: vec![
+                part(
+                    "In your own account: make the agents' user",
+                    Some(
+                        "On the Mac, in your own (admin) account's Terminal: the only step that needs an admin. Paste it \
+                         as it is; sysadminctl asks for the new user's password, which you keep (agents never get it). \
+                         A Mac nobody else uses is best: then there's no Apple ID or browser login on it at all.",
+                    ),
+                    vec![],
+                    vec![command(
+                        "In your own account's Terminal",
+                        MAC_ADMIN_BLOCK,
+                        Some(
+                            "Each line says why. It never pipes anything from the network into sudo.",
+                        ),
+                    )],
+                ),
+                part(
+                    "Log in as fleetd agents and join",
+                    Some(
+                        "Log out (or switch user) and log in as fleetd agents, then paste the join line in its Terminal. \
+                         It refuses an admin user, installs fleetd for that user only, and joins as the agents' Mac: a \
+                         tool every project's agents use, which runs no claude and no Navi and takes no secret. \
+                         Settings › Hub › Machines › Add machine › A Mac for agents makes the line with its one-time code.",
+                    ),
+                    vec![],
+                    vec![command(
+                        "In fleetd agents' Terminal",
+                        format!(
+                            "curl -fsSL https://fleetd.sh | sh -s -- --join {base} --code <code> --machine-id mac --mac"
+                        ),
+                        Some(
+                            "Or on the hub: fleetd pair --worker mac, then add --mac to the line it prints.",
+                        ),
+                    )],
+                ),
+                part(
+                    "Two clicks at the Mac",
+                    Some(
+                        "Still logged in as fleetd agents: turn on fleetd in Accessibility and in Screen Recording, so \
+                         agents can drive the Mac's apps and you can watch them. macOS asks for the password of fleetd \
+                         agents, not yours. It asks again from time to time; the check says when.",
+                    ),
+                    vec![],
+                    vec![
+                        command(
+                            "Accessibility, at the Mac",
+                            "open \"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility\"",
+                            Some(
+                                "In fleetd agents' Terminal: it opens the pane. Turn on fleetd there.",
+                            ),
+                        ),
+                        command(
+                            "Screen Recording, at the Mac",
+                            "open \"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture\"",
+                            Some("The same for Screen Recording."),
+                        ),
+                    ],
+                ),
+                part(
+                    "Moving a Mac that runs fleetd in your account",
+                    Some(
+                        "Join it again from fleetd agents with the same name and --rejoin (Add machine offers the line), \
+                         so its projects and history stay. Then, in your own account, stop and remove its old node: \
+                         your account runs no fleetd node after. The rejoin gave the Mac a new key, so the old node \
+                         would be refused anyway.",
+                    ),
+                    vec![],
+                    vec![command(
+                        "Then, in your own account's Terminal",
+                        "launchctl bootout gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node",
+                        Some("The fleetd app can stay: it is a client, not a node."),
+                    )],
+                ),
+            ],
+            place: Some("machines".into()),
+            test: Some(
+                "Read the Mac's checks, which its node runs as fleetd agents every 30 seconds"
+                    .into(),
+            ),
+            ways: vec![SetupWay {
+                label: None,
+                checks: fleetd_contracts::node_link::MacCheckId::ALL
+                    .iter()
+                    .map(|id| format!("*/mac_{}", id.as_str()))
+                    .collect(),
+            }],
+            ..step(
+                SetupStepId::Mac,
+                SetupGroup::Hub,
+                "A Mac for agents",
+                "Agents on every machine build, test and drive iOS simulators on one Mac, in a standard user of its \
+                 own that holds none of your accounts or keys.",
                 SetupNeed::Optional,
             )
         },

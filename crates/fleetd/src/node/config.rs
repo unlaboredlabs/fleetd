@@ -54,6 +54,10 @@ pub struct NodeConfig {
     /// standard user set aside for agents.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mac: Option<super::desktop::mac::MacConfig>,
+    /// The agents' Mac (node/agents_mac, D298): set only by the installer's `--mac`, never by a screen's switch. The
+    /// node is a tool, never a runner, whatever else this file says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agents_mac: Option<bool>,
 }
 
 fn config_file(home: &Path) -> PathBuf {

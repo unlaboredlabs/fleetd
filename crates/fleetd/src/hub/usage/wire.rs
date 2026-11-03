@@ -275,6 +275,10 @@ impl OpsPorts {
         let m = machine(machine_id)?;
         self.hub().link.load(&m).and_then(|l| l.ios)
     }
+    pub fn mac(&self, machine_id: &str) -> Option<fleetd_contracts::node_link::MacHealth> {
+        let m = machine(machine_id)?;
+        self.hub().link.load(&m).and_then(|l| l.mac)
+    }
     pub fn desktop(&self, machine_id: &str) -> Option<fleetd_contracts::node_link::DesktopHealth> {
         let m = machine(machine_id)?;
         self.hub().link.load(&m).and_then(|l| l.desktop)

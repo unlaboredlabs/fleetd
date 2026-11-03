@@ -13,7 +13,8 @@ use fleetd_contracts::claude_accounts::{
     ClaudeHubApi, ClaudeSealedOn, ClaudeSubscription, ClaudeTest,
 };
 use fleetd_contracts::node_link::{
-    AndroidHealth, AndroidState, DesktopHealth, DesktopState, IosHealth, IosState, NodeDisk,
+    AndroidHealth, AndroidState, DesktopHealth, DesktopState, IosHealth, IosState, MacCheckState,
+    MacHealth, NodeDisk,
 };
 use fleetd_contracts::sessions::{
     BaseErrorKind, LoginStatus, RunnerInfo, SandboxStatus, WorktreeBase,
@@ -1182,6 +1183,39 @@ pub fn ios_sessions(machine_id: &str, offline: bool, health: Option<&IosHealth>)
         health.message.as_str(),
         fix,
     ))
+}
+
+/// The agents' Mac's setup checks (`mac_<check>`, docs: agents-mac.md), as its node ran them last as its own user, from its
+/// heartbeat; none on any other machine, or while it is offline.
+pub fn mac_setup(machine_id: &str, offline: bool, health: Option<&MacHealth>) -> Vec<Entry> {
+    let Some(health) = health.filter(|_| !offline) else {
+        return Vec::new();
+    };
+    health
+        .checks
+        .iter()
+        .map(|c| {
+            let status = match c.state {
+                MacCheckState::Ok => Pass,
+                MacCheckState::Warn => Warn,
+                MacCheckState::Fail => Fail,
+                _ => Unknown,
+            };
+            let fix = c.fix.as_ref().map(|label| {
+                manual(
+                    &format!("{label}; {machine_id} checks again within a minute"),
+                    c.command.as_ref().map(ToString::to_string),
+                )
+            });
+            machine_entry(
+                machine_id,
+                &format!("mac_{}", c.id.as_str()),
+                status,
+                c.message.as_str(),
+                fix,
+            )
+        })
+        .collect()
 }
 
 /// Whether the machine can host Linux desktop sessions, and in what (a container or Xvfb), from its heartbeat; None

@@ -245,6 +245,97 @@
         }
       ],
       "why": "Each person gets their own sign-in, chats and Navi; you choose who is an admin."
+    },
+    {
+      "fields": [],
+      "group": "hub",
+      "id": "mac",
+      "need": {
+        "kind": "optional"
+      },
+      "parts": [
+        {
+          "links": [],
+          "note": "On the Mac, in your own (admin) account's Terminal: the only step that needs an admin. Paste it as it is; sysadminctl asks for the new user's password, which you keep (agents never get it). A Mac nobody else uses is best: then there's no Apple ID or browser login on it at all.",
+          "title": "In your own account: make the agents' user",
+          "values": [
+            {
+              "command": true,
+              "label": "In your own account's Terminal",
+              "note": "Each line says why. It never pipes anything from the network into sudo.",
+              "value": "# A standard (non-admin) user of its own for agents. You choose its password and keep it.\nsudo sysadminctl -addUser agents -fullName \"fleetd agents\" -password -\n# Simulators and debugging for that user, with no admin prompt.\nsudo dseditgroup -o edit -a agents -t user _developer\nsudo DevToolsSecurity -enable\n# Xcode's licence and its system components, which only an admin can accept and install.\nsudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch\n# Your own home closed to every other user, agents included.\nchmod 700 ~"
+            }
+          ]
+        },
+        {
+          "links": [],
+          "note": "Log out (or switch user) and log in as fleetd agents, then paste the join line in its Terminal. It refuses an admin user, installs fleetd for that user only, and joins as the agents' Mac: a tool every project's agents use, which runs no claude and no Navi and takes no secret. Settings › Hub › Machines › Add machine › A Mac for agents makes the line with its one-time code.",
+          "title": "Log in as fleetd agents and join",
+          "values": [
+            {
+              "command": true,
+              "label": "In fleetd agents' Terminal",
+              "note": "Or on the hub: fleetd pair --worker mac, then add --mac to the line it prints.",
+              "value": "curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox:4790 --code <code> --machine-id mac --mac"
+            }
+          ]
+        },
+        {
+          "links": [],
+          "note": "Still logged in as fleetd agents: turn on fleetd in Accessibility and in Screen Recording, so agents can drive the Mac's apps and you can watch them. macOS asks for the password of fleetd agents, not yours. It asks again from time to time; the check says when.",
+          "title": "Two clicks at the Mac",
+          "values": [
+            {
+              "command": true,
+              "label": "Accessibility, at the Mac",
+              "note": "In fleetd agents' Terminal: it opens the pane. Turn on fleetd there.",
+              "value": "open \"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility\""
+            },
+            {
+              "command": true,
+              "label": "Screen Recording, at the Mac",
+              "note": "The same for Screen Recording.",
+              "value": "open \"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture\""
+            }
+          ]
+        },
+        {
+          "links": [],
+          "note": "Join it again from fleetd agents with the same name and --rejoin (Add machine offers the line), so its projects and history stay. Then, in your own account, stop and remove its old node: your account runs no fleetd node after. The rejoin gave the Mac a new key, so the old node would be refused anyway.",
+          "title": "Moving a Mac that runs fleetd in your account",
+          "values": [
+            {
+              "command": true,
+              "label": "Then, in your own account's Terminal",
+              "note": "The fleetd app can stay: it is a client, not a node.",
+              "value": "launchctl bootout gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node"
+            }
+          ]
+        }
+      ],
+      "place": "machines",
+      "status": "todo",
+      "test": "Read the Mac's checks, which its node runs as fleetd agents every 30 seconds",
+      "title": "A Mac for agents",
+      "ways": [
+        {
+          "checks": [
+            "*/mac_standard_user",
+            "*/mac_other_homes",
+            "*/mac_no_apple_id",
+            "*/mac_no_secure_token",
+            "*/mac_developer",
+            "*/mac_xcode",
+            "*/mac_ios_runtime",
+            "*/mac_accessibility",
+            "*/mac_screen_recording",
+            "*/mac_gui_session",
+            "*/mac_tools",
+            "*/mac_keep_awake"
+          ]
+        }
+      ],
+      "why": "Agents on every machine build, test and drive iOS simulators on one Mac, in a standard user of its own that holds none of your accounts or keys."
     }
   ],
   "hub": "http://devbox:4790",
@@ -268,6 +359,9 @@
             "on": "hub"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
+          "status": "todo"
+        },
+        "mac": {
           "status": "todo"
         },
         "machines": {
@@ -297,6 +391,9 @@
             "on": "hub"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
+          "status": "todo"
+        },
+        "mac": {
           "status": "todo"
         },
         "machines": {
@@ -324,6 +421,9 @@
           "status": "done",
           "way": "the hub's GitHub App"
         },
+        "mac": {
+          "status": "todo"
+        },
         "machines": {
           "said": "devbox is online.",
           "status": "done"
@@ -347,6 +447,9 @@
           "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
           "status": "done",
           "way": "the hub's GitHub App"
+        },
+        "mac": {
+          "status": "todo"
         },
         "machines": {
           "said": "devbox is online.",
@@ -379,6 +482,9 @@
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
           "status": "todo"
         },
+        "mac": {
+          "status": "todo"
+        },
         "machines": {
           "said": "devbox is online.",
           "status": "done"
@@ -407,6 +513,9 @@
             "on": "hub"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
+          "status": "todo"
+        },
+        "mac": {
           "status": "todo"
         },
         "machines": {
@@ -439,6 +548,9 @@
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
           "status": "todo"
         },
+        "mac": {
+          "status": "todo"
+        },
         "machines": {
           "said": "devbox is online.",
           "status": "done"
@@ -462,6 +574,9 @@
           "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
           "status": "done",
           "way": "the hub's GitHub App"
+        },
+        "mac": {
+          "status": "todo"
         },
         "machines": {
           "said": "devbox is online.",

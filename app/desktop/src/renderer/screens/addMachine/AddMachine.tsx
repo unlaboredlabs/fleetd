@@ -7,6 +7,9 @@
 //     shows `ssh-copy-id <host>` to run on the hub's machine, and Try again.
 //   - Any other machine: name it, and paste the one line machine_join makes (fleetd pair --worker's) in its terminal.
 //     "Waiting for <name>…" turns into "Joined" once its node is online; a code that expires first says so.
+//   - A Mac for agents (D298): the same line with --mac, between the hub's own guide for it (setup step "mac"): the
+//     admin block the person pastes in their own account first, and the two permission clicks at the Mac after. A
+//     machine of that name already moves into the agents' user (--rejoin). Its checks are on #/setup/mac.
 // Repair from the machine list opens the plan of a machine the hub reaches, or a line that enrolls it again.
 // A run goes on in the hub when the page closes; opening it again shows the run still going or the last one that
 // failed. Every step is a machine_add.step event, which reads machine_add_status again.
@@ -40,9 +43,14 @@ import {
   untilLine,
   type Here,
 } from "./model";
-import { RunOn } from "../setup/Guide";
+import { GuideParts, RunOn } from "../setup/Guide";
 import { toHash } from "../shell/routes";
 import s from "./addMachine.module.css";
+
+const MAC_LINE = "A dedicated Mac every project's agents use for builds and iOS simulators, in a standard user of its own: never a runner.";
+
+const MAC_HEAD =
+  "Its fleetd runs in a standard user of its own, fleetd agents, which holds none of your accounts or keys: it runs no claude and no Navi, and takes no secret. Paste the first part in your own account, then log in as fleetd agents.";
 
 export type View =
   | { readonly kind: "choose" }
@@ -50,8 +58,8 @@ export type View =
   | { readonly kind: "plan"; readonly host: MachineHost }
   | { readonly kind: "run"; readonly runId: string }
   | { readonly kind: "here" }
-  /** Any other machine; with a machine id, a repair's line for it (`rejoin`). */
-  | { readonly kind: "line"; readonly machineId?: string; readonly rejoin?: boolean };
+  /** Any other machine; with a machine id, a repair's line for it (`rejoin`); `mac`: the agents' Mac. */
+  | { readonly kind: "line"; readonly machineId?: string; readonly rejoin?: boolean; readonly mac?: boolean };
 
 const noInput = {};
 
@@ -180,7 +188,14 @@ export function AddMachine({ open }: { open?: { readonly view: View; readonly at
       {!live ? (
         <Text tone="quiet">Connect to the hub to add a machine.</Text>
       ) : shown.kind === "choose" ? (
-        <Choose here={here} busy={busy} onHere={addHere} onHosts={() => setView({ kind: "hosts" })} onLine={() => setView({ kind: "line" })} />
+        <Choose
+          here={here}
+          busy={busy}
+          onHere={addHere}
+          onHosts={() => setView({ kind: "hosts" })}
+          onLine={() => setView({ kind: "line" })}
+          onMac={() => setView({ kind: "line", mac: true })}
+        />
       ) : shown.kind === "hosts" ? (
         <Hosts read={hosts} hubMachine={hubMachine} onPick={(host) => setView({ kind: "plan", host })} onBack={() => setView({ kind: "choose" })} />
       ) : shown.kind === "plan" ? (
@@ -194,7 +209,13 @@ export function AddMachine({ open }: { open?: { readonly view: View; readonly at
           onDone={done}
         />
       ) : shown.kind === "line" ? (
-        <Line key={`${shown.machineId ?? ""}-${String(open?.at ?? 0)}`} machineId={shown.machineId} rejoin={shown.rejoin === true} onDone={done} />
+        <Line
+          key={`${shown.machineId ?? ""}-${String(shown.mac === true)}-${String(open?.at ?? 0)}`}
+          machineId={shown.machineId}
+          rejoin={shown.rejoin === true}
+          mac={shown.mac === true}
+          onDone={done}
+        />
       ) : (
         <JoinHereRun join={join} onRetry={() => here && addHere(here)} onDone={done} />
       )}
@@ -216,7 +237,7 @@ function Head(props: { title: string; line?: ReactNode }) {
   );
 }
 
-function Choose(props: { here: Here | undefined; busy: boolean; onHere: (h: Here) => void; onHosts: () => void; onLine: () => void }) {
+function Choose(props: { here: Here | undefined; busy: boolean; onHere: (h: Here) => void; onHosts: () => void; onLine: () => void; onMac: () => void }) {
   const { here } = props;
   return (
     <>
@@ -255,6 +276,17 @@ function Choose(props: { here: Here | undefined; busy: boolean; onHere: (h: Here
           </div>
           <Button className={s.rowAction} onClick={props.onLine}>
             Get the line…
+          </Button>
+        </li>
+        <li className={s.row}>
+          <div className={s.rowText}>
+            <Text>A Mac for agents</Text>
+            <Text size="xs" tone="quiet">
+              {MAC_LINE}
+            </Text>
+          </div>
+          <Button className={s.rowAction} onClick={props.onMac}>
+            Set up…
           </Button>
         </li>
       </ul>
@@ -509,11 +541,14 @@ const useNow = (): number => {
  * calm "Waiting for <name>…" that turns into "Joined" once the machine's node is online. A repair (`rejoin`) has its
  * name already, and makes its line at once.
  */
-function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: () => void }) {
+function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boolean; onDone: () => void }) {
   const call = useHubCall();
   const layer = useDataLayer();
   const machines = useData((d) => d.machines);
-  const [name, setName] = useState(props.machineId ?? "");
+  const mac = props.mac === true;
+  // The hub's own guide for the Mac: the admin block before the line, the two permission clicks after it.
+  const guide = useToolQuery("setup_list", noInput, { enabled: mac }).data?.steps.find((step) => step.id === "mac")?.parts;
+  const [name, setName] = useState(props.machineId ?? (mac ? "mac" : ""));
   const [tried, setTried] = useState(false);
   // A repair's line is being made as it opens.
   const [busy, setBusy] = useState(props.rejoin);
@@ -529,11 +564,14 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: (
   const online = useOnline(made === undefined ? undefined : machineId);
   // When the hub's link to its node last came up: a rejoin restarts the node, which moves it.
   const linked = useData((d) => d.live.machines[machineId]?.linkedSince);
-  // Once its line is made, the machine coming online is the point, not a clash.
-  const taken = !props.rejoin && made === undefined && machines[name.trim()] !== undefined;
+  // Once its line is made, the machine coming online is the point, not a clash. A Mac that is a machine already moves
+  // into the agents' user: its line enrolls it again.
+  const exists = machines[name.trim()] !== undefined;
+  const taken = !props.rejoin && !mac && made === undefined && exists;
+  const rejoin = props.rejoin || (mac && exists);
 
   const request = (id: string) =>
-    call("machine_join", props.rejoin ? { machineId: id, rejoin: true } : { machineId: id })
+    call("machine_join", { machineId: id, ...(rejoin ? { rejoin: true } : {}), ...(mac ? { mac: true } : {}) })
       .then(
         (join) => {
           setMade({ join, onlineAtStart: (machines[id]?.status ?? "offline") !== "offline" });
@@ -567,13 +605,16 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: (
   return (
     <>
       <Head
-        title={props.rejoin ? `Repair ${props.machineId ?? ""}` : "Any other machine"}
+        title={mac ? "A Mac for agents" : props.rejoin ? `Repair ${props.machineId ?? ""}` : "Any other machine"}
         line={
-          props.rejoin
-            ? "Run this line in a terminal on it: it installs this hub's fleetd again and enrolls the machine with a new code."
-            : "Run one line in a terminal on it: it installs this hub's fleetd and joins. The machine needs claude and must reach the hub."
+          mac
+            ? MAC_HEAD
+            : props.rejoin
+              ? "Run this line in a terminal on it: it installs this hub's fleetd again and enrolls the machine with a new code."
+              : "Run one line in a terminal on it: it installs this hub's fleetd and joins. The machine needs claude and must reach the hub."
         }
       />
+      {mac && guide?.[0] !== undefined ? <GuideParts parts={[guide[0]]} /> : null}
       {props.rejoin ? null : (
         <form
           className={s.lineForm}
@@ -583,7 +624,14 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: (
             make();
           }}
         >
-          <Field label="Name" description="Its machine id: lower-case letters, digits and dashes." error={tried ? (problem ?? (taken ? `${name.trim()} is a machine already: Repair it from the list.` : undefined)) : undefined}>
+          <Field
+            label="Name"
+            description={
+              mac && exists && made === undefined
+                ? `${name.trim()} is a machine already: its line moves it into the agents' user, keeping its name and history.`
+                : "Its machine id: lower-case letters, digits and dashes."
+            }
+            error={tried ? (problem ?? (taken ? `${name.trim()} is a machine already: Repair it from the list.` : undefined)) : undefined}>
             <Input value={name} placeholder="laptop" autoComplete="off" mono onChange={(e) => setName(e.target.value)} disabled={made !== undefined && state !== "expired"} />
           </Field>
           {made === undefined || state === "expired" ? (
@@ -607,7 +655,9 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: (
             </Button>
           </div>
           <Text size="xs" tone="quiet">
-            {`${untilLine(made.join.expiresAt)} It joins as ${made.join.machineId}${made.join.gitIdentity === undefined ? "" : `, committing as ${made.join.gitIdentity}`}.`}
+            {mac
+              ? `${untilLine(made.join.expiresAt)} Paste it in fleetd agents' Terminal, logged in as that user: it refuses an admin.`
+              : `${untilLine(made.join.expiresAt)} It joins as ${made.join.machineId}${made.join.gitIdentity === undefined ? "" : `, committing as ${made.join.gitIdentity}`}.`}
           </Text>
           {copied === false ? (
             <Text size="xs" tone="danger">
@@ -616,6 +666,7 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: (
           ) : null}
         </div>
       )}
+      {mac && made !== undefined ? <GuideParts parts={guide?.slice(2, rejoin ? 4 : 3) ?? []} from={2} /> : null}
       {state === undefined ? null : (
         <div className={s.wait} data-line={state}>
           <StateGlyph state={state === "joined" ? "done" : state === "expired" ? "failed" : "queued"} size="sm" />
@@ -625,7 +676,11 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: (
         </div>
       )}
       <div className={s.actions}>
-        {state === "joined" ? (
+        {state === "joined" && mac ? (
+          <Button variant="primary" onClick={() => (window.location.hash = "#/setup/mac")}>
+            {"Open the Mac's checks"}
+          </Button>
+        ) : state === "joined" ? (
           <Button variant="primary" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.machines", machine: machineId }))}>
             {`Open ${machineId}`}
           </Button>

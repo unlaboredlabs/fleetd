@@ -43,6 +43,8 @@ struct RelayState {
     hub_caps: Vec<String>,
     /// The node's hold of its agents ahead of `fleetd update`'s restart ([`LeadSocketFrame::Hold`]).
     hold: Option<Hold>,
+    /// The agents' Mac ([`LeadRelay::set_tool_only`]): no lead call leaves it.
+    tool_only: bool,
 }
 
 /// Holds the node's agents between steps, answering how many are still mid-step (node/hold.rs).
@@ -109,6 +111,13 @@ impl LeadRelay {
             state: Arc::default(),
             linked: watch::Sender::new(false),
         }
+    }
+
+    /// The agents' Mac (D298): every process of its user is some project's `mac run` job or simulator, so a call from
+    /// one would act under this machine's key for whoever reached the Mac. The relay refuses every lead call there,
+    /// a person's shell's too: people run fleetd from their own machine.
+    pub fn set_tool_only(&self, on: bool) {
+        self.lock().tool_only = on;
     }
 
     /// What answers [`LeadSocketFrame::Hold`]; without it, a hold is refused.
@@ -265,6 +274,20 @@ pub fn mask_call(
     }
 }
 
+/// What the agents' Mac answers every lead call: it relays none, whoever makes it.
+pub const TOOL_ONLY: &str =
+    "this Mac is a tool for agents elsewhere: run fleetd from your own machine";
+
+fn tool_only_refusal(id: &str) -> LeadResultFrame {
+    error_frame(
+        id,
+        McpToolError::new(ErrorCode::Forbidden, TOOL_ONLY).with_fix(
+            "agents reach this Mac with `mac run` and `mac sim` from their own machine; a person runs fleetd commands \
+             on theirs",
+        ),
+    )
+}
+
 /// Names the session a call comes from by where its process runs, never by what the frame claims: the hub tells a
 /// lead from a task by it. A frame naming another session than its process runs in, or naming one from outside every
 /// session, is refused; so is a call whose process can't be told.
@@ -408,6 +431,10 @@ async fn serve_connection(
             return;
         }
     };
+    if relay.lock().tool_only {
+        reply(&mut conn, &tool_only_refusal(frame.id.as_str())).await;
+        return;
+    }
     let op = fleetd_contracts::lead_calls::op_name(&frame.call);
     if NODE_OPS.contains(&op.as_str()) {
         let refused = error_frame(
@@ -634,6 +661,59 @@ mod attribution_tests {
             .is_err()
         );
         assert!(named(attribute(frame(None), None)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod tool_only_tests {
+    use super::*;
+
+    async fn call(peer: PeerSession, tool_only: bool) -> serde_json::Value {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("node.sock");
+        let relay = LeadRelay::new();
+        relay.set_tool_only(tool_only);
+        let _serving = serve_lead_socket(
+            path.clone(),
+            relay,
+            Arc::new(move |_| peer.clone()),
+            Arc::new(|_| Ok(Masker::default())),
+            None,
+        )
+        .await
+        .unwrap();
+        tokio::task::spawn_blocking(move || {
+            crate::cli::agent_mcp::send_to_node(
+                &path,
+                &serde_json::json!({
+                    "t": "lead_call", "id": "cli-1", "cwd": "/w",
+                    "call": { "op": "task_list" },
+                }),
+                Duration::from_secs(10),
+            )
+            .unwrap()
+        })
+        .await
+        .unwrap()
+    }
+
+    /// A `mac run` job is a process of the Mac's user, as a person's shell there is: neither gets a lead call out
+    /// under the Mac's key.
+    #[tokio::test]
+    async fn the_agents_mac_relays_no_lead_call_from_anyone() {
+        for peer in [
+            PeerSession::Outside,
+            PeerSession::Session("s1".into()),
+            PeerSession::Detached("s1".into()),
+        ] {
+            let answer = call(peer.clone(), true).await;
+            assert_eq!(answer["t"], "lead_result", "{answer}");
+            assert_eq!(answer["error"]["code"], "forbidden", "{peer:?}: {answer}");
+            assert_eq!(answer["error"]["message"], TOOL_ONLY, "{peer:?}");
+        }
+        // Any other node relays a person's call: with no link up it answers that the hub is unreachable, not a refusal.
+        let answer = call(PeerSession::Outside, false).await;
+        assert_ne!(answer["error"]["message"], TOOL_ONLY, "{answer}");
     }
 }
 

@@ -43,6 +43,14 @@ const mac1: MachineRolesEntry = {
   hosts: [{ host: "ios", ready: true, detail: "Xcode with 6 iOS simulators" }],
 };
 
+/** The agents' Mac: no roles to pick, its switch, and why agents can't use it now. */
+const agentsMac: MachineRolesEntry = {
+  ...mac1,
+  machineId: "studio",
+  name: "studio",
+  mac: { on: true, ready: false, note: "studio's node doesn't offer the tool: its user must be a standard user that can't sudo." },
+};
+
 const machine = (id: string) => ({ machineId: id, name: id, nodeVersion: "1", status: "online" as const, lastSeenAt: AT, tags: [] });
 
 let host: HTMLDivElement;
@@ -70,7 +78,7 @@ const render = async () => {
       calls.push({ tool, input });
       const output =
         tool === "machine_roles"
-          ? { machines: [devbox, mac1] }
+          ? { machines: [devbox, mac1, agentsMac] }
           : tool === "machine_roles_set"
             ? { machine: { ...devbox, roles: ["agents"] }, next: "devbox takes no new agents: those running finish their work, and its projects' agents wait." }
             : {};
@@ -120,4 +128,20 @@ it("sets a machine's roles with machine_roles_set and says what follows", async 
   await settle();
   expect(calls.find((c) => c.tool === "machine_roles_set")?.input).toEqual({ machineId: "devbox", roles: ["agents"] });
   expect(row("devbox")?.textContent).toContain("devbox takes no new agents");
+});
+
+it("gives the agents' Mac its switch instead of roles, and says why agents can't use it now", async () => {
+  await render();
+  const mac = row("studio");
+  expect(pressed(mac)).toBeUndefined();
+  expect(mac?.textContent).toContain("Agents may use this Mac");
+  expect(mac?.textContent).toContain("its user must be a standard user");
+  const toggle = mac?.querySelector<HTMLButtonElement>('button[role="switch"]');
+  expect(toggle?.getAttribute("aria-checked")).toBe("true");
+  await act(async () => {
+    toggle?.click();
+    await Promise.resolve();
+  });
+  await settle();
+  expect(calls.find((c) => c.tool === "machine_roles_set")?.input).toEqual({ machineId: "studio", macTool: false });
 });

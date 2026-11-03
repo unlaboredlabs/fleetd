@@ -12,6 +12,7 @@ import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { draftOf, emptyDraft, globalsFor, missingOn, nameProblem, rolesText, toRequest, transportText, valuesText, type Draft, type DraftValue, type TransportKind } from "./mcpModel";
 import { Setting } from "./parts";
 import s from "./settings.module.css";
+import { boxOf } from "./claudeModel";
 
 /** When a change reaches agents, said wherever one is saved. */
 export const TAKES_EFFECT = "Agents started from now on get it; one already running at its next start, after its next message.";
@@ -24,8 +25,11 @@ const scopeOf = (ref: Ref | null): McpScope => (ref === null ? { kind: "global" 
 function useBoxes(ref: Ref | null): McpServerRequest["boxes"] {
   const machines = useData((d) => d.machines);
   return Object.values(machines)
-    .filter((m) => (ref === null || m.machineId === ref.machineId) && typeof m.boxPubKey === "string")
-    .map((m) => ({ machineId: m.machineId, boxPubKey: m.boxPubKey as string }));
+    .filter((m) => ref === null || m.machineId === ref.machineId)
+    .flatMap((m) => {
+      const box = boxOf(m);
+      return box === undefined ? [] : [{ machineId: m.machineId, boxPubKey: box }];
+    });
 }
 
 function useMachineIds(): string[] {

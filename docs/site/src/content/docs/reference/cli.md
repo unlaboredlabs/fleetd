@@ -61,15 +61,15 @@ set up fleetd step by step in a terminal: the hub on this machine (home default 
 
 ```text
 fleetd init --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin]
-    [--claude-config-dir <dir>]
+    [--claude-config-dir <dir>] [--mac]
 ```
 
-make this machine a worker of that hub, without SSH from the hub: the command `fleetd pair --worker` prints on the hub. Run again, it keeps the node's enrolment and repairs the rest; `--rejoin` enrols again with a new code
+make this machine a worker of that hub, without SSH from the hub: the command `fleetd pair --worker` prints on the hub. Run again, it keeps the node's enrolment and repairs the rest; `--rejoin` enrols again with a new code; `--mac` joins the agents' Mac, from its standard agents user (no claude there)
 
 ### fleetd init {#init-step}
 
 ```text
-fleetd init --step <address|machines|claude|github|people>
+fleetd init --step <address|machines|claude|github|people|mac>
 ```
 
 open one of the hub's setup steps: why, the values to paste and the pages to open, then Test it, or put it off for later. The app's Settings › Hub › Setup has the same steps

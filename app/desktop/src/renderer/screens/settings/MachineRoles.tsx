@@ -1,11 +1,12 @@
 // Hub › Machines' machine roles: what each machine is for (agents, sessions or both) and how many browser and device
 // sessions it hosts at once; what it can host is under Screens (Screens.tsx), with a switch each. Hub-wide, so only its
 // owners and admins see it. Reads machine_roles; a change is a machine_roles_set call (an admin's), and the hub's
-// answer replaces the row.
+// answer replaces the row. The agents' Mac (D298) has no roles to pick: it never runs agents, and its row is the
+// "Agents may use this Mac" switch with why agents can't use it now, when they can't.
 import { useState } from "react";
 import type { MachineRolesEntry } from "../../../shared/contracts";
 import { useToolQuery } from "../../src/data/react";
-import { Segmented, Select, Text } from "../../ui";
+import { Segmented, Select, Switch, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { useReveal } from "./search";
 import { capChoices, choiceOf, hostsNote, ROLE_CHOICES, ROLE_HELP, rolesOf, sessionsLine, type RolesChoice } from "./machinesModel";
@@ -52,11 +53,16 @@ function MachineRow({ machine: m }: { machine: MachineRolesEntry }) {
   const choice = choiceOf(m.roles);
   const id = `machine-${m.machineId}`;
 
-  const set = (input: { roles?: RolesChoice; cap?: string }) => {
+  const set = (input: { roles?: RolesChoice; cap?: string; macTool?: boolean }) => {
     setBusy(true);
     setEcho(null);
     const cap = input.cap === undefined ? {} : input.cap === "auto" ? { autoSessions: true } : { maxSessions: Number(input.cap) };
-    call("machine_roles_set", { machineId: m.machineId, ...(input.roles === undefined ? {} : { roles: rolesOf(input.roles) }), ...cap })
+    call("machine_roles_set", {
+      machineId: m.machineId,
+      ...(input.roles === undefined ? {} : { roles: rolesOf(input.roles) }),
+      ...cap,
+      ...(input.macTool === undefined ? {} : { macTool: input.macTool }),
+    })
       .then(
         (out) => setEcho(out.next === undefined ? null : { ok: true, text: out.next }),
         (e: unknown) => setEcho({ ok: false, text: `Not changed: ${errorText(e)}` }),
@@ -79,12 +85,29 @@ function MachineRow({ machine: m }: { machine: MachineRolesEntry }) {
           {m.online ? "online" : "offline"}
         </Text>
       </div>
-      <div className={s.machineControls}>
-        <Segmented label={`What ${m.name} is for`} options={ROLE_CHOICES} value={choice} disabled={disabled} onChange={(roles) => roles !== choice && set({ roles })} />
-        <Text size="xs" tone="quiet">
-          {ROLE_HELP[choice]}
-        </Text>
-      </div>
+      {m.mac !== undefined ? (
+        <div className={s.machineControls}>
+          <Switch
+            label="Agents may use this Mac"
+            description="The agents' Mac: every project's agents build and run iOS simulators here with mac commands. It never runs agents, leads or Navis itself."
+            checked={m.mac.on}
+            disabled={disabled}
+            onCheckedChange={(macTool) => set({ macTool })}
+          />
+          {m.mac.note === undefined ? null : (
+            <Text size="xs" tone="quiet">
+              {m.mac.note}
+            </Text>
+          )}
+        </div>
+      ) : (
+        <div className={s.machineControls}>
+          <Segmented label={`What ${m.name} is for`} options={ROLE_CHOICES} value={choice} disabled={disabled} onChange={(roles) => roles !== choice && set({ roles })} />
+          <Text size="xs" tone="quiet">
+            {ROLE_HELP[choice]}
+          </Text>
+        </div>
+      )}
       {m.roles.includes("sessions") ? (
         <div className={s.machineControls}>
           <div className={s.inline}>

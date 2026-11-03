@@ -37,6 +37,9 @@ pub struct Machine {
     pub box_pub_key: Option<BoxPublicKey>,
     /// The machine's latest sleep its node reported on waking.
     pub last_slept: Option<SleptSpan>,
+    /// The agents' Mac (D298): a tool every project's agents use, never a runner. No agent, lead or Navi runs there,
+    /// and clients seal no secret to it. Absent on every other machine.
+    pub agents_mac: Option<bool>,
 }
 
 /// A span a machine spent asleep, epoch milliseconds; `machine.slept` carries the same fields as its data.
