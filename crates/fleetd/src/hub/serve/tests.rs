@@ -671,3 +671,94 @@ async fn a_dropped_hub_frees_its_parts() {
         "the database, executors, leads and tasks outlive the hub"
     );
 }
+
+/// A client that stops reading (a phone suspended with its socket open) while a lead streams into the chat it watches:
+/// the hub holds a bounded queue for it, then closes it, and a client that keeps reading gets every delta.
+#[tokio::test]
+async fn an_app_connection_that_stops_reading_is_closed_once_too_far_behind() {
+    use crate::hub::chat::NewMessage;
+    use fleetd_contracts::chat::ChatAuthor;
+    let t = start().await;
+    let reader = key(&t.hub, json!([{ "role": "read", "machines": "*" }]));
+    let project = json!({ "machineId": "devbox", "projectId": "p1" });
+    let r: fleetd_contracts::ids::ProjectRef = serde_json::from_value(project.clone()).unwrap();
+    let subscribe = || async {
+        let (mut app, _) = tokio_tungstenite::connect_async(format!("ws://{}/app", t.url))
+            .await
+            .unwrap();
+        app.send(Message::text(
+            json!({ "t": "auth", "key": reader }).to_string(),
+        ))
+        .await
+        .unwrap();
+        app.next().await.unwrap().unwrap();
+        app.send(Message::text(
+            json!({ "t": "chat", "project": project }).to_string(),
+        ))
+        .await
+        .unwrap();
+        app
+    };
+    let mut stalled = subscribe().await;
+    let mut reading = subscribe().await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let got = tokio::spawn(async move {
+        let mut deltas = 0;
+        while deltas < 4000 {
+            match reading.next().await {
+                Some(Ok(Message::Text(text))) if text.contains("chat_delta") => deltas += 1,
+                Some(Ok(_)) => {}
+                other => panic!("the reading client lost its connection: {other:?}"),
+            }
+        }
+        deltas
+    });
+
+    // 4000 deltas of 4000 characters: 16 MB, past the queue's 8 MiB and what the loopback buffers hold.
+    let part = "x".repeat(4000);
+    for _ in 0..200 {
+        let (mut m, _) = t
+            .hub
+            .chat
+            .add(
+                &r,
+                NewMessage {
+                    author: Some(ChatAuthor::Lead),
+                    streaming: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        for _ in 0..20 {
+            t.hub.chat.append(&mut m, &part).unwrap();
+            // Let both forwarders run, so the broadcast's 256 slots don't lag either.
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    }
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(30), got)
+            .await
+            .unwrap()
+            .unwrap(),
+        4000
+    );
+
+    // The stalled client finds what was already on its way, then the end of the connection.
+    let mut deltas = 0;
+    let ended = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match stalled.next().await {
+                Some(Ok(Message::Text(text))) if text.contains("chat_delta") => deltas += 1,
+                Some(Ok(Message::Close(frame))) => return frame.map(|f| u16::from(f.code)),
+                Some(Ok(_)) => {}
+                Some(Err(_)) | None => return None,
+            }
+        }
+    })
+    .await;
+    assert!(ended.is_ok(), "the hub kept the stalled connection open");
+    assert!(
+        deltas < 4000,
+        "the stalled client was sent everything ({deltas} deltas)"
+    );
+}

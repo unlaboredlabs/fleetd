@@ -2,8 +2,9 @@
 //! fleetd_status data, `events` to stream HubEvents after a cursor as they happen, `call` to run any MCP tool
 //! with the session's key, through the same registry, grants and limits as /mcp, and `live` for ephemeral lane
 //! frames (see `live`). `presence` is the app's once-a-minute focus and input, recorded as `app.presence` and
-//! never answered (see `metrics::presence`).
+//! never answered (see `metrics::presence`). What waits for the socket is bounded (see `outbox`).
 pub mod live;
+pub mod outbox;
 
 use crate::hub::api::{CallError, Caller, Hub, Registry, ToolError};
 use crate::hub::auth::AuthError;
@@ -14,9 +15,9 @@ use fleetd_contracts::app::{AppCallId, AppClientMessage};
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::hello::PROTOCOL_VERSION;
 use fleetd_contracts::mcp::ErrorCode;
+use outbox::{Behind, Outbox};
 use serde_json::{Value, json};
 use std::sync::Arc;
-use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
 /// Close code for a connection whose key was refused.
@@ -25,6 +26,10 @@ pub const CLOSE_UNAUTHORIZED: u16 = 4401;
 pub const MAX_CALLS_IN_FLIGHT: usize = 32;
 /// "Going away": the hub is shutting down.
 const CLOSE_GOING_AWAY: u16 = 1001;
+/// "Try again later": the connection fell too far behind (see `outbox`); the app reconnects and reads again.
+const CLOSE_TOO_FAR_BEHIND: u16 = 1013;
+/// How long a closing frame may take: a socket too far behind may never take it.
+const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
 fn error_frame(error: &ToolError, id: Option<&str>) -> Value {
     let mut frame = json!({ "t": "error" });
@@ -85,7 +90,7 @@ async fn stream_events(
     tools: Arc<Registry>,
     caller: Caller,
     from: i64,
-    out: mpsc::UnboundedSender<Value>,
+    out: Outbox,
 ) {
     let mut cursor = from;
     loop {
@@ -105,7 +110,7 @@ async fn stream_events(
                         if let (Value::Object(frame), Value::Object(event)) = (&mut frame, event) {
                             frame.extend(event.clone());
                         }
-                        if out.send(frame).is_err() {
+                        if !out.send(frame.to_string()).await {
                             return;
                         }
                     }
@@ -113,7 +118,7 @@ async fn stream_events(
                 cursor = page["cursor"].as_i64().unwrap_or(cursor);
             }
             Err(CallError::Tool(error)) => {
-                let _ = out.send(error_frame(&error, None));
+                out.push(error_frame(&error, None).to_string());
                 return;
             }
             Err(other) => {
@@ -127,7 +132,7 @@ async fn stream_events(
 struct Session {
     hub: Arc<Hub>,
     tools: Arc<Registry>,
-    out: mpsc::UnboundedSender<Value>,
+    out: Outbox,
     caller: Option<(String, Caller)>,
     stream: Option<tokio::task::JoinHandle<()>>,
     calls: JoinSet<()>,
@@ -153,7 +158,7 @@ enum After {
 
 impl Session {
     fn send(&self, frame: Value) {
-        let _ = self.out.send(frame);
+        self.out.push(frame.to_string());
     }
 
     async fn on_text(&mut self, text: &str) -> After {
@@ -271,7 +276,7 @@ impl Session {
                             Ok(delta) if delta.project_ref == project => {
                                 let mut frame = serde_json::to_value(&delta).unwrap_or_default();
                                 frame["t"] = json!("chat_delta");
-                                if out.send(frame).is_err() {
+                                if !out.push(frame.to_string()) {
                                     return;
                                 }
                             }
@@ -302,9 +307,10 @@ impl Session {
                         Ok(output) => json!({ "t": "result", "id": id.as_str(), "output": output }),
                         Err(error) => error_frame(&error, Some(id.as_str())),
                     };
+                    let frame = frame.to_string();
                     // Status answers share the live feed's per-connection budget: one over it waits for the next second.
                     if tool.as_str().starts_with("status_") {
-                        let bytes = frame.to_string().len();
+                        let bytes = frame.len();
                         loop {
                             let wait = budget.reserve(now_ms(hub.clock.as_ref()), bytes);
                             if wait == 0 {
@@ -315,7 +321,7 @@ impl Session {
                                 .await;
                         }
                     }
-                    let _ = out.send(frame);
+                    out.send(frame).await;
                 });
             }
             AppClientMessage::Presence {
@@ -395,7 +401,7 @@ impl Session {
 
 /// Runs one /app connection until the client closes it, its key is refused, or the hub shuts down.
 pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) {
-    let (out, mut frames) = mpsc::unbounded_channel::<Value>();
+    let (out, mut frames) = outbox::outbox();
     let shutdown = hub.shutdown.clone();
     let mut session = Session {
         hub,
@@ -414,26 +420,28 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
     };
     let live_slot = session.live_slot.clone();
     let browser_slot = session.browser_slot.clone();
+    let behind = frames.behind();
     let close = loop {
         tokio::select! {
             () = shutdown.wait() => break Some((CLOSE_GOING_AWAY, "hub shutting down")),
+            () = behind.wait() => break Some(too_far_behind(&behind)),
             Some(frame) = frames.recv() => {
-                if socket.send(Message::Text(frame.to_string().into())).await.is_err() {
-                    break None;
+                if !send(&mut socket, &behind, frame).await {
+                    break stopped(&behind);
                 }
             }
             () = live_slot.notify.notified() => {
                 if let Some(frame) = live_slot.take()
-                    && socket.send(Message::Text(frame.into())).await.is_err()
+                    && !send(&mut socket, &behind, frame).await
                 {
-                    break None;
+                    break stopped(&behind);
                 }
             }
             () = browser_slot.notify.notified() => {
                 if let Some(frame) = browser_slot.take()
-                    && socket.send(Message::Text(frame.into())).await.is_err()
+                    && !send(&mut socket, &behind, frame).await
                 {
-                    break None;
+                    break stopped(&behind);
                 }
             }
             incoming = socket.recv() => {
@@ -450,8 +458,10 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
                 };
                 if let After::Close(code, reason) = session.on_text(&text).await {
                     // Flush what this frame produced (the refusal) before closing.
-                    while let Ok(frame) = frames.try_recv() {
-                        let _ = socket.send(Message::Text(frame.to_string().into())).await;
+                    while let Some(frame) = frames.try_recv() {
+                        if !send(&mut socket, &behind, frame).await {
+                            break;
+                        }
                     }
                     break Some((code, reason));
                 }
@@ -472,11 +482,32 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
     }
     session.calls.abort_all();
     if let Some((code, reason)) = close {
-        let _ = socket
-            .send(Message::Close(Some(CloseFrame {
-                code,
-                reason: reason.into(),
-            })))
-            .await;
+        let closing = socket.send(Message::Close(Some(CloseFrame {
+            code,
+            reason: reason.into(),
+        })));
+        let _ = tokio::time::timeout(CLOSE_WAIT, closing).await;
     }
+}
+
+/// Sends one frame. False when the socket failed, or the connection fell too far behind while the frame was going
+/// out (a client that stopped reading never takes it).
+async fn send(socket: &mut WebSocket, behind: &Behind, text: String) -> bool {
+    tokio::select! {
+        sent = socket.send(Message::Text(text.into())) => sent.is_ok(),
+        () = behind.wait() => false,
+    }
+}
+
+/// How a connection whose send failed ends: closed with a reason when it fell behind, else just dropped.
+fn stopped(behind: &Behind) -> Option<(u16, &'static str)> {
+    behind.is().then(|| too_far_behind(behind))
+}
+
+fn too_far_behind(behind: &Behind) -> (u16, &'static str) {
+    tracing::warn!(
+        waiting_bytes = behind.waiting(),
+        "an app connection stopped reading: closed it, the app reconnects and reads again"
+    );
+    (CLOSE_TOO_FAR_BEHIND, "it stopped reading what the hub sent")
 }
