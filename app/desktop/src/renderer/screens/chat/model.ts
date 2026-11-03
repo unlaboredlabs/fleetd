@@ -115,6 +115,33 @@ const formatter = (kind: "day" | "label" | "labelYear", timeZone: string | undef
 
 const dayKey = (iso: string, nowMs: number, timeZone?: string): string => formatter("day", timeZone).format(msOf(iso, nowMs));
 
+/** A message's time in ms, its day and its clock. */
+interface Stamp {
+  readonly ms: number;
+  readonly day: string;
+  readonly clock: string;
+}
+
+/**
+ * Stamps by time zone and time, kept: chatRows reads every message's on each change to the chat, an arrival or a
+ * streamed delta, and formatting them anew was most of its cost. 1,500 messages arriving into a long chat kept the
+ * renderer busy past perf's streaming round on a slow runner. More than a few long chats' worth, then dropped.
+ */
+const stamps = new Map<string, Stamp>();
+const STAMPS_KEPT = 10_000;
+const stampOf = (iso: string, nowMs: number, timeZone?: string): Stamp => {
+  const key = `${timeZone ?? ""} ${iso}`;
+  const kept = stamps.get(key);
+  if (kept !== undefined) return kept;
+  const ms = msOf(iso, nowMs);
+  const stamp = { ms, day: formatter("day", timeZone).format(ms), clock: shortClock(iso, timeZone) };
+  // Unparseable: its day is now's, which moves.
+  if (Number.isNaN(Date.parse(iso))) return stamp;
+  if (stamps.size >= STAMPS_KEPT) stamps.clear();
+  stamps.set(key, stamp);
+  return stamp;
+};
+
 /** "Today", "Yesterday", or "Mon 19 Oct" (with the year when it isn't this year's). */
 export function dayLabel(iso: string, nowMs: number, timeZone?: string): string {
   const day = dayKey(iso, nowMs, timeZone);
@@ -175,13 +202,13 @@ export function chatRows(i: RowsInput): Row[] {
     replyAt !== undefined &&
     replyAt.state !== "streaming" &&
     Date.parse(replyAt.at) >= i.workedSince;
-  const day = (iso: string) => {
-    const d = dayKey(iso, i.nowMs, i.timeZone);
+  const day = (iso: string, d: string) => {
     if (d === lastDay) return;
     out.push({ kind: "day", key: `day:${d}`, label: dayLabel(iso, i.nowMs, i.timeZone) });
     lastDay = d;
     prev = undefined;
   };
+  let before: Stamp | undefined;
   // The first message from someone else after what you'd seen; only when the loaded pages reach back to what you saw.
   const seen = i.seenSeq;
   const unseen =
@@ -192,13 +219,13 @@ export function chatRows(i: RowsInput): Row[] {
     const history = isHistory(item);
     if (history && !inHistory) out.push({ kind: "history", key: `history:${item.id}` });
     inHistory = history;
-    const before = i.items[n - 1];
-    day(item.at);
-    const clock = shortClock(item.at, i.timeZone);
-    if (before !== undefined && clock !== "" && lastDay === dayKey(before.at, i.nowMs, i.timeZone) && msOf(item.at, i.nowMs) - msOf(before.at, i.nowMs) > PAUSE_MS) {
-      out.push({ kind: "time", key: `time:${rowKeyOf(item)}`, label: clock });
+    const at = stampOf(item.at, i.nowMs, i.timeZone);
+    day(item.at, at.day);
+    if (before !== undefined && at.clock !== "" && lastDay === before.day && at.ms - before.ms > PAUSE_MS) {
+      out.push({ kind: "time", key: `time:${rowKeyOf(item)}`, label: at.clock });
       prev = undefined;
     }
+    before = at;
     if (n === unseen) {
       out.push({ kind: "new", key: "new" });
       prev = undefined;

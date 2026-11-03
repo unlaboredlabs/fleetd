@@ -261,6 +261,29 @@ describe("the chat's rows", () => {
       spy.mockRestore();
     }
   });
+
+  it("format a message's time once, not again on each rebuild: 1,500 arrivals rebuild a long chat 1,500 times", () => {
+    const items = Array.from({ length: 100 }, (_, i) => item(`k${String(i)}`, i % 2 === 0 ? "lead" : "human", new Date(NOW - (100 - i) * 3_600_000).toISOString()));
+    const first = rows(items, { timeZone: "Europe/Berlin" });
+    // format is a getter (it hands out a bound function), which the lib types call a method.
+    const spy = vi.spyOn(Intl.DateTimeFormat.prototype as unknown as { readonly format: unknown }, "format", "get");
+    try {
+      expect(rows(items, { timeZone: "Europe/Berlin" })).toEqual(first);
+      // Only the day dividers' words, a handful for five days.
+      expect(spy.mock.calls.length).toBeLessThan(30);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("keep a message's day per time zone", () => {
+    // 23:30 UTC on the 18th is the 19th in Auckland.
+    const items = [item("a", "lead", at(18, 23, 30))];
+    const days = (timeZone: string) => rows(items, { timeZone }).flatMap((r) => (r.kind === "day" ? [r.key] : []));
+    expect(days("UTC")).toEqual(["day:2026-10-18"]);
+    expect(days("Pacific/Auckland")).toEqual(["day:2026-10-19"]);
+    expect(days("UTC")).toEqual(["day:2026-10-18"]);
+  });
 });
 
 describe("rows kept across a streamed word", () => {
