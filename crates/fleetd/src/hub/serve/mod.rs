@@ -436,6 +436,7 @@ pub fn build_on_with(
     crate::hub::memory::calls::register_lead_calls(&hub);
     crate::hub::chat::nudges::register_lead_calls(&hub);
     crate::hub::automations::calls::register_lead_calls(&hub);
+    crate::hub::mac_tool::register_lead_calls(&hub);
     crate::hub::checklist::calls::register_lead_calls(&hub);
     crate::hub::browser::calls::register_lead_calls(&hub);
     crate::hub::navi::purchases::register_lead_calls(&hub);

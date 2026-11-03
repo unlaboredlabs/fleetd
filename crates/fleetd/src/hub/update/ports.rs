@@ -86,6 +86,9 @@ impl UpdatePorts for HubPorts {
                 can_fetch: hub.link.node_can(&m.machine_id, CAP_UPDATE_FETCH),
                 can_hold: hub.link.node_can(&m.machine_id, CAP_UPDATE_HOLD),
                 can_install_claude: hub.link.node_can(&m.machine_id, CAP_CLAUDE_INSTALL),
+                agents_mac: hub
+                    .link
+                    .node_can(&m.machine_id, fleetd_contracts::node_link::CAP_AGENTS_MAC),
                 claude: hub
                     .executors
                     .cached_runner(&m.machine_id)

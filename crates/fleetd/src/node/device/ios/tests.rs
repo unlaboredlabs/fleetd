@@ -308,6 +308,13 @@ async fn a_mac_not_set_up_refuses_and_gives_agents_nothing() {
             .contains("isn't set up for iOS sessions"),
         "{refused}"
     );
+    // The agents' Mac's `mac sim start` says it in the Mac's words, never pointing at the iOS screen kind.
+    let lent = simulators.lend().err().unwrap();
+    assert!(
+        lent.message.contains("iOS simulators turned off"),
+        "{lent:?}"
+    );
+    assert!(lent.fix.unwrap().contains("The agents' Mac"));
     let takeover = call(&router, json!({ "op": "session_end" })).await;
     assert!(takeover["error"].is_object(), "no session: {takeover}");
     assert!(

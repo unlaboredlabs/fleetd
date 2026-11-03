@@ -128,6 +128,7 @@ fn reply_of(frame: &NodeToHub) -> Option<(&'static str, &str)> {
         NodeToHub::GatedResult(r) => Some(("gated_result", r.id.as_str())),
         NodeToHub::NodeActionResult(r) => Some(("node_action_result", r.id.as_str())),
         NodeToHub::SessionHostResult(r) => Some(("session_host_result", r.id.as_str())),
+        NodeToHub::MacResult(r) => Some(("mac_result", r.id.as_str())),
         _ => None,
     }
 }
@@ -505,6 +506,24 @@ impl NodeCommands {
             .await?
         {
             NodeToHub::SessionHostResult(r) => Ok(r.frame),
+            _ => unreachable!("resolve matches the reply tag"),
+        }
+    }
+
+    /// `mac_call` -> `mac_result`: one sealed step of an agent's for the agents' Mac (hub/mac.rs).
+    pub async fn mac_call(
+        &self,
+        machine_id: &MachineId,
+        caller: &fleetd_contracts::mac::MacCaller,
+        sealed: &fleetd_contracts::prim::NonEmpty,
+        wait: Duration,
+    ) -> Result<fleetd_contracts::mac::MacResultFrame, NodeCommandError> {
+        let request = json!({ "t": "mac_call", "caller": caller, "sealed": sealed });
+        match self
+            .request(machine_id, request, "mac_result", wait)
+            .await?
+        {
+            NodeToHub::MacResult(r) => Ok(r),
             _ => unreachable!("resolve matches the reply tag"),
         }
     }

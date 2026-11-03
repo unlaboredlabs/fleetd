@@ -648,7 +648,7 @@ impl Broker {
             BrowserCall::Device(_) => Err(refuse(
                 ErrorCode::NotFound,
                 "No iOS session is open.",
-                "start one with session_start kind ios",
+                "start a simulator with mac sim start; agent-device then drives it",
             )),
             BrowserCall::PurchaseRequest(call) => {
                 cards::purchase_request(self, &thread, call).await

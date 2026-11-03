@@ -8,6 +8,92 @@ to every agent at once. Its node runs as a standard macOS user of its own (`agen
 never in your account, and it runs no agents or [Navis](/docs/navi) itself. Agents stay on the machines their projects
 live on and reach the Mac with the `mac` command, through the hub.
 
+## How an agent uses it {#use}
+
+Every coding agent has `mac` on its PATH:
+
+| Command | What it does |
+|---|---|
+| `mac push` | The agent's worktree as it is now, its commits, uncommitted changes and new files that git doesn't ignore, becomes its folder on the Mac. Only what the Mac doesn't hold yet goes across. |
+| `mac run [--bg] [--env NAME]... [--] <command line>` | Runs the command line in that folder with the Mac's shell, as ssh would. It prints the output as it comes (stdout and stderr together) and exits with the command's exit code. `--bg` keeps it running and prints its job number. |
+| `mac logs <job> [-f]` | A job's output so far; `-f` follows it to its end. |
+| `mac ps` / `mac kill <job>` | The agent's jobs, and ending one (its whole process group). |
+| `mac pull <path> [to]` | A file or folder from the agent's folder on the Mac into its worktree, as `cp -R` would: to `to` (into it, when it's a folder), or the path's last part. Nothing there is deleted: files go over the files of their names. A relative path starts in the pushed worktree there. |
+| `mac sim start` / `mac sim end` | An [iOS simulator](#sim) of the agent's own on the Mac, and ending it. |
+
+A typical turn:
+
+```sh
+mac push
+mac run -- xcodebuild -scheme App -destination 'platform=iOS Simulator,name=iPhone 17' test
+mac pull ../DerivedData/Logs/Test out/test-logs
+```
+
+When `mac` can't reach a Mac (none joined, it's turned off, or it restarted and waits for its agents login), it says so
+in one line and exits with 69; the agent carries on without it and says so.
+
+## iOS simulators {#sim}
+
+`mac sim start` gives the agent an iOS simulator of its own: a booted clone of the Mac's golden simulator, from the
+same warm pool as [iOS screens](/docs/browser-sessions#ios), headless. From then on the agent drives it with
+[agent-device](https://github.com/callstack/agent-device), as it always has: an `agent-device` first on its PATH runs
+each command on the Mac, already pointed at that simulator (pass no `--udid` or `--platform`). `agent-device` inside
+`mac run` is pointed at it too.
+
+```sh
+mac sim start
+mac push && mac run -- xcodebuild -scheme App -sdk iphonesimulator build
+agent-device install ../DerivedData/Build/Products/Debug-iphonesimulator/App.app
+agent-device open com.example.app
+agent-device snapshot -i
+agent-device screenshot shot.png && mac pull shot.png
+mac sim end
+```
+
+agent-device runs in the agent's pushed worktree on the Mac (`repo/`, with its builds in `../DerivedData`), so the
+files it reads and writes are there: `mac push` what it installs, `mac pull` what it writes. An agent holds one
+simulator; asking again gives the same one. `mac sim end` deletes it with everything done in it, and so does 30
+minutes with no `mac` command from that agent.
+
+The Mac makes its golden simulator by itself once its tool is on (minutes, the first time: a boot to settle, then
+agent-device's runner built with `xcodebuild`); until then `mac sim start` says it's still being made. It needs an iOS
+runtime (the `mac_ios_runtime` check). `"ios": {"enabled": false}` in its node.json turns simulators off.
+
+The Mac boots at most as many simulators at once as its memory allows: one for every 3 GB past the 8 GB the Mac keeps
+for itself (2 on 16 GB, 8 on 32 GB), at least one. `"mac": {"simulators": N}` in its node.json sets another number. When all are
+taken, `mac sim start` says so; the agent tries again later or does without.
+
+## Each agent's folder {#folders}
+
+The Mac keeps a folder per agent, `~/work/<task>` in the `agents` user's home:
+
+- `repo/`: the worktree as the agent's last `mac push` left it. Files git ignores there (builds, `node_modules`, Pods)
+  stay between pushes.
+- `DerivedData/`: `xcodebuild`'s build folder for this agent alone. The `xcodebuild` on a job's PATH passes it to
+  build, test and archive unless the command names its own `-derivedDataPath`.
+- `tmp/` (a job's `TMPDIR`) and `jobs/` (each run's output).
+
+A job gets `$FLEETD_MAC_DIR`, `$FLEETD_MAC_REPO`, `$FLEETD_MAC_DERIVED_DATA` and `$FLEETD_MAC_CACHE`, a folder every
+agent shares (the `agents` user's own caches, such as Swift packages', are shared too). Homebrew belongs to you, not
+to `agents`: an agent that needs a tool installs it under its own home.
+
+A folder nothing touched for 3 days goes. Jobs end with the Mac's node: a restart or an update ends them.
+
+## What crosses {#security}
+
+- **Each step is sealed** by the agent's node to the Mac's key, with a fresh key for its answer: the hub sees who
+  calls, never a command, a file or an output. The Mac takes each step once, and only within 5 minutes of when it was
+  made.
+- **No secrets by default.** A job gets none of the agent's project or order secrets, and none of the Mac node's
+  environment beyond `HOME`, `PATH`, `USER` and the locale. `--env NAME` sends that one variable, for that command
+  only; its value is masked in the job's output.
+- **Files stay in their folders.** `push` reads only the agent's worktree, `pull` writes only into it (a folder comes
+  back with no links), and the Mac reads only the agent's own folder for it.
+- **Every `mac run` is in the agent's action log**, with its exit code once it ends. One whose `mac` stopped
+  following it (a timeout, Ctrl-C) ends on the Mac a minute later, and its line closes with what the Mac says.
+- **Agents share one macOS user** ([what stays shared](#shared)), which is why the Mac is a tool, never a
+  runner ([turn it on](#setup)).
+
 ## Turn it on {#setup}
 
 The agents' Mac is a tool, never a runner:
@@ -120,8 +206,7 @@ against a disk anyone holding the Mac can read. That's your call.
 ## Agents may use this Mac {#switch}
 
 **Settings › Hub › Machines › Machine roles** shows the agents' Mac with one switch, **Agents may use this Mac**, for
-every project's agents (Navis never). Off, agents' `mac` commands (they come with the `mac` tool, in a later release)
-answer that the Mac is turned off. Under it, the row
+every project's agents (Navis never). Off, agents' `mac` commands answer that the Mac is turned off. Under it, the row
 says why agents can't use the Mac now, when they can't: offline, or a node that doesn't offer the tool.
 
 ## Move a Mac that runs fleetd in your account {#move}
@@ -158,3 +243,4 @@ Mac is reachable from the agents' user.
 |---|---|
 | `"agentsMac": true` | This machine is the agents' Mac: a tool, never a runner. Only `--mac` sets it; no switch in the app turns it off. The node offers agents its tool only on macOS and while its user is a standard one (not in `admin`, and `sudo -n` fails); otherwise its `mac_standard_user` check says why. |
 | `"mac": {"enabled": true}` | Its own screen, which one agent at a time drives ([the Mac's screen](/docs/browser-sessions#mac)). Settings › Hub › Machines › Screens turns it off and on; the Mac stays a tool either way. |
+| `"mac": {"simulators": N}` | How many [iOS simulators](#sim) agents may have booted at once. Absent: from the Mac's memory. Not written by `--mac`. |

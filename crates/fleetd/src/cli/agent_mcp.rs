@@ -479,7 +479,7 @@ static TOOLS: &[Tool] = &[
          with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of \
          your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android \
          15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. \
-         kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. kind \
+         An iOS simulator isn't a session: start one on the agents' Mac with `mac sim start` (mac --help). kind \
          linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop \
          tool. kind mac lends you the agents' Mac's own screen, one agent at a time, driven with the desktop tool \
          and agent-desktop; while another holds it you only observe, and it ends after 5 idle minutes.",

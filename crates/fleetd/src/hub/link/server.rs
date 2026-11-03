@@ -1054,9 +1054,8 @@ impl NodeLinkServer {
                 | NodeToHub::SecretResult(_)
                 | NodeToHub::GatedResult(_)
                 | NodeToHub::NodeActionResult(_)
-                | NodeToHub::SessionHostResult(_)) => {
-                    self.deps.commands.resolve(&machine_id, reply)
-                }
+                | NodeToHub::SessionHostResult(_)
+                | NodeToHub::MacResult(_)) => self.deps.commands.resolve(&machine_id, reply),
                 frame @ (NodeToHub::SessionReply(_)
                 | NodeToHub::MachineEvent(_)
                 | NodeToHub::ThreadEvent(_)

@@ -67,6 +67,8 @@ pub struct NodeFacts {
     pub claude: Option<String>,
     /// Its node lists `claude_install`.
     pub can_install_claude: bool,
+    /// Its node lists `agents_mac`: the agents' Mac, which runs no Claude Code (D298).
+    pub agents_mac: bool,
     /// What runs on it that can't carry on through its node's restart (live sessions), in words; None when
     /// nothing does. Agents' runs aren't in it: they carry on by themselves.
     pub busy: Option<String>,
@@ -1357,6 +1359,16 @@ impl Updates {
                     "left as it is: its fleetd runs {}, newer than this update's",
                     crate::version_label(&n.version)
                 ),
+            );
+        }
+        // Never "install it by hand" there: the agents' Mac must hold no claude.
+        if facts.as_ref().is_some_and(|n| n.agents_mac) {
+            return self.set_claude(
+                machine_id,
+                None,
+                UpdateState::Skipped,
+                None,
+                "the agents' Mac runs no Claude Code: nothing to install",
             );
         }
         if !facts.as_ref().is_some_and(|n| n.can_install_claude) {

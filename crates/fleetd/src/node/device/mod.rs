@@ -886,7 +886,7 @@ impl Router {
             let error = refuse(
                 ErrorCode::NotFound,
                 "No iOS session is open.",
-                "start one with session_start kind ios",
+                "start a simulator with mac sim start; agent-device then drives it",
             );
             return result_frame(&frame, Err(error));
         }

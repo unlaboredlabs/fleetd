@@ -391,7 +391,7 @@ fn only_agents_mac_makes_the_node_the_agents_mac() {
         desktop: None,
         mac: mac.map(|on| crate::node::desktop::mac::MacConfig {
             enabled: Some(on),
-            idle_minutes: None,
+            ..Default::default()
         }),
         agents_mac,
     };
