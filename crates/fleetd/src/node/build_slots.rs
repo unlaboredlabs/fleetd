@@ -113,11 +113,17 @@ pub fn add_to_path(home: &Path, exe: &str, env: &mut Vec<(String, String)>) {
         return;
     }
     let bin = bin_dir(home).to_string_lossy().into_owned();
-    match env.iter_mut().find(|(k, _)| k == "PATH") {
-        Some((_, path)) if !path.is_empty() => *path = format!("{bin}:{path}"),
-        Some((_, path)) => *path = bin,
-        None => env.push(("PATH".to_owned(), bin)),
-    }
+    // None set: the node's own, which the session would otherwise have searched.
+    let path = match env.iter().position(|(k, _)| k == "PATH") {
+        Some(at) => env.remove(at).1,
+        None => std::env::var("PATH").unwrap_or_default(),
+    };
+    let path = if path.is_empty() {
+        bin
+    } else {
+        format!("{bin}:{path}")
+    };
+    env.push(("PATH".to_owned(), path));
 }
 
 /// What a worker's standing rules say about build turns.
@@ -469,7 +475,7 @@ mod tests {
             std::fs::write(
                 home.path().join("node.json"),
                 format!(
-                    r#"{{"hub":"http://devbox:4790","machineId":"m_devbox","name":"devbox","enrolled":true{slots}}}"#
+                    r#"{{"hub":"http://devbox:4790","machineId":"devbox","name":"devbox","enrolled":true{slots}}}"#
                 ),
             )
             .unwrap();
