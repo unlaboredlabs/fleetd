@@ -55,6 +55,10 @@ files it reads and writes are there: `mac push` what it installs, `mac pull` wha
 simulator; asking again gives the same one. `mac sim end` deletes it with everything done in it, and so does 30
 minutes with no `mac` command from that agent.
 
+The Mac makes its golden simulator by itself once its tool is on (minutes, the first time: a boot to settle, then
+agent-device's runner built with `xcodebuild`); until then `mac sim start` says it's still being made. It needs an iOS
+runtime (the `mac_ios_runtime` check). `"ios": {"enabled": false}` in its node.json turns simulators off.
+
 The Mac boots at most as many simulators at once as its memory allows: one for every 3 GB past the 8 GB the Mac keeps
 for itself (2 on 16 GB, 8 on 32 GB), at least one. `"mac": {"simulators": N}` in its node.json sets another number. When all are
 taken, `mac sim start` says so; the agent tries again later or does without.

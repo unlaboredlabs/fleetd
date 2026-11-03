@@ -313,7 +313,12 @@ async fn run_node(
         ),
         false => None,
     };
-    let ios_config = config.ios.clone().unwrap_or_default();
+    let mut ios_config = config.ios.clone().unwrap_or_default();
+    // The agents' Mac lends agents iOS simulators (`mac sim`): with its tool on, it makes its golden simulator unless
+    // node.json turns iOS off.
+    if tool && ios_config.enabled.is_none() {
+        ios_config.enabled = Some(true);
+    }
     let ios = match ios_config.enabled() {
         true => Some(
             device::ios::Simulators::start(

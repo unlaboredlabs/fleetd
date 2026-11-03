@@ -573,6 +573,14 @@ impl Simulators {
     /// it, and its device and runtime's names. Dropping it deletes the clone.
     pub fn lend(self: &Arc<Self>) -> Result<(pool::Lent, String), McpToolError> {
         let words = |mut e: McpToolError| {
+            if e.message.contains("isn't set up") {
+                return refuse(
+                    ErrorCode::Failed,
+                    "The agents' Mac has iOS simulators turned off (\"ios\": {\"enabled\": false} in its node.json).",
+                    "do without a simulator and say so in your result; an admin turns them on (fleetd docs: The \
+                     agents' Mac)",
+                );
+            }
             e.message = e.message.replace("iOS sessions", "iOS simulators");
             e.fix = e.fix.map(|f| f.replace("session_start", "mac sim start"));
             e
