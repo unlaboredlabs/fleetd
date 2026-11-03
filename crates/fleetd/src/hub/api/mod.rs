@@ -155,6 +155,8 @@ pub struct Hub {
     pub telegram: Arc<crate::hub::telegram::run::Bridges>,
     /// Cloud machines caught up since they linked (hub/cloud).
     pub cloud: Arc<crate::hub::cloud::Cloud>,
+    /// The cloud machines on boat.dev (hub/pool).
+    pub pool: Arc<crate::hub::pool::Pool>,
 }
 
 /// Every MCP tool the hub serves, from every area that registers. The one place that lists them.
@@ -178,6 +180,7 @@ pub fn registry() -> Registry {
     crate::hub::sidebar_order::register(&mut tools);
     crate::hub::chat_pins::register(&mut tools);
     crate::hub::github_app::tools::register(&mut tools);
+    crate::hub::pool::tools::register(&mut tools);
     crate::hub::hub_links::tools::register(&mut tools);
     crate::hub::train::tools::register(&mut tools);
     crate::hub::tasks::tools::register(&mut tools);

@@ -393,3 +393,35 @@ fn cloud_machines_need_the_hubs_public_https_address() {
     let why = super::setup::public_hub_url(&hub).unwrap_err();
     assert!(why.contains("fleetd init --url https://"), "{why}");
 }
+
+/// A catch-up whose Claude step failed (the only machine holding the hub's key is offline) leaves the cloud machine not
+/// ready, so no work goes there without the hub's Claude configuration; the next catch-up that brings it makes it ready.
+#[tokio::test]
+async fn a_failed_claude_step_leaves_the_cloud_machine_not_ready() {
+    let (hub, _home) = hub();
+    let current: Current = Arc::new(Mutex::new(OLD));
+    let devbox = Fake::default();
+    machine(&hub, "devbox", &box_key());
+    machine(&hub, "boat-1", &box_key());
+    enroll_pool(&hub, "boat-1");
+    link(&hub, "devbox", 1, &devbox, &current).await;
+    hub_api_on(&hub, &["devbox"]).await;
+    hub.executors.detach(&m("devbox")).await;
+    let boat = Fake::default();
+    link(&hub, "boat-1", 2, &boat, &current).await;
+    let report = super::catch_up::catch_up(&hub, &m("boat-1")).await;
+    assert!(!report.ready, "{report:?}");
+    assert!(
+        report
+            .problems
+            .iter()
+            .any(|p| p.starts_with("Claude not brought")),
+        "{report:?}"
+    );
+    assert!(!hub.cloud.ready(&hub, &m("boat-1")));
+    // devbox is back: the next catch-up brings the key, and boat-1 is ready.
+    link(&hub, "devbox", 3, &devbox, &current).await;
+    let report = super::catch_up::catch_up(&hub, &m("boat-1")).await;
+    assert!(report.ready, "{report:?}");
+    assert!(hub.cloud.ready(&hub, &m("boat-1")));
+}

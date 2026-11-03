@@ -379,6 +379,15 @@ pub fn build_on_with(
         crate::hub::update::Timing::default(),
     );
     let repos = crate::hub::repos::Repos::new(db.clone());
+    let fleet = Arc::new(crate::hub::pool::HubFleet::default());
+    let pool = crate::hub::pool::Pool::over_boat(
+        db.clone(),
+        config.home.clone(),
+        crate::hub::pool::boat::API,
+        fleet.clone(),
+        clock.clone(),
+        crate::hub::attention::hub_zone(),
+    );
     let hub = Arc::new(Hub {
         config,
         clock,
@@ -422,7 +431,9 @@ pub fn build_on_with(
         builds,
         telegram: Arc::default(),
         cloud: Arc::default(),
+        pool,
     });
+    fleet.bind(&hub);
     hub.updates
         .set_ports(Arc::new(crate::hub::update::ports::HubPorts(
             Arc::downgrade(&hub),
@@ -521,6 +532,10 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
         hub.clone(),
     )));
     loops.push(tokio::spawn(crate::hub::mcp_oauth::run_renew(hub.clone())));
+    loops.push(tokio::spawn(crate::hub::pool::run(
+        hub.pool.clone(),
+        hub.shutdown.clone(),
+    )));
     loops.push(tokio::spawn(crate::hub::hub_links::client::run(
         hub.clone(),
     )));

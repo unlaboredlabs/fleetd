@@ -301,8 +301,27 @@ pub async fn deliver(
     repo_id: Option<&RepoId>,
     writer: bool,
 ) -> Result<(), String> {
-    let Some((repo, checkout)) = repo_at(hub, r, repo_id) else {
+    deliver_on(hub, r, order, repo_id, writer, None).await
+}
+
+/// [`deliver`], for a task launched on `on` (the machine and the project there its sessions run in). When that is
+/// another machine than its repo's checkout (a cloud machine, hub/pool, with its own clone), the token goes to `on`,
+/// sealed to that machine's box key, and is kept under it, so the sweep renews it there and its catch-up at each wake
+/// delivers it again ([`redeliver_on`]).
+pub async fn deliver_on(
+    hub: &Hub,
+    r: &ProjectRef,
+    order: &WorkstreamId,
+    repo_id: Option<&RepoId>,
+    writer: bool,
+    on: Option<&ProjectRef>,
+) -> Result<(), String> {
+    let Some((repo, home)) = repo_at(hub, r, repo_id) else {
         return Ok(());
+    };
+    let checkout = match on {
+        Some(on) if on.machine_id != home.machine_id => on.clone(),
+        _ => home,
     };
     let Some(github) = github_as(hub, r, Some(order), &repo) else {
         withdraw_at(hub, &checkout, order).await;
@@ -654,7 +673,10 @@ pub async fn renew(hub: &Hub) {
         if !kept.blocked && kept.expires_ms - now >= kept.margin_ms {
             continue;
         }
-        if let Err(e) = deliver(hub, &kept.r, &kept.order, kept.repo_id.as_ref(), false).await {
+        let on = Some(&kept.checkout);
+        if let Err(e) =
+            deliver_on(hub, &kept.r, &kept.order, kept.repo_id.as_ref(), false, on).await
+        {
             tracing::warn!(
                 order = kept.order.as_str(),
                 "github: the order's token not renewed: {e}"
@@ -665,6 +687,30 @@ pub async fn renew(hub: &Hub) {
             }
         }
     }
+}
+
+/// A cloud machine's catch-up at its wake (hub/cloud): each open order's token kept there that ended, or is within
+/// its margin of its end, while the machine slept (the sweep can't reach a sleeping machine) is delivered again. Says
+/// how many went, and why each other didn't.
+pub async fn redeliver_on(
+    hub: &Hub,
+    machine_id: &fleetd_contracts::ids::MachineId,
+) -> (usize, Vec<String>) {
+    let now = now_ms(hub.clock.as_ref());
+    let mut done = 0;
+    let mut problems = Vec::new();
+    for k in kept(hub) {
+        let due = k.expires_ms - now < k.margin_ms;
+        if &k.checkout.machine_id != machine_id || k.blocked || !due {
+            continue;
+        }
+        let on = Some(&k.checkout);
+        match deliver_on(hub, &k.r, &k.order, k.repo_id.as_ref(), false, on).await {
+            Ok(()) => done += 1,
+            Err(e) => problems.push(format!("{}'s GitHub token not delivered: {e}", k.order)),
+        }
+    }
+    (done, problems)
 }
 
 /// Renews the orders' tokens on every sweep.

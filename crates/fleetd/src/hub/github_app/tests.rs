@@ -1744,3 +1744,54 @@ async fn a_token_that_ends_unrenewed_is_replaced_and_the_lead_told_never_the_mac
     assert!(held(&link, &nobody).starts_with("ghs_7_"));
     assert!(kept(&lab.hub).iter().all(|k| !k.blocked));
 }
+
+/// A task launched on a cloud machine (hub/pool) gets its order's token there, sealed to that machine's key and kept
+/// under its checkout there; the sweep renews it there, and its catch-up at a wake delivers it again once it ended
+/// while the machine slept.
+#[tokio::test]
+async fn a_task_on_a_cloud_machine_gets_its_orders_token_there() {
+    use super::sessions::{deliver_on, kept, redeliver_on};
+    let lab = lab().await;
+    created(&lab).await;
+    call(&lab.hub, &admin(&lab.hub), "github_app_test", json!({}))
+        .await
+        .unwrap();
+    let (r, order) = order_on_acme(&lab.hub, None);
+    let home = fake_link(&lab.hub, "devbox").await;
+    let boat = fake_link(&lab.hub, "boat-1").await;
+    let on: fleetd_contracts::ids::ProjectRef =
+        serde_json::from_value(json!({ "machineId": "boat-1", "projectId": "clone-of-web" }))
+            .unwrap();
+    deliver_on(&lab.hub, &r, &order, None, true, Some(&on))
+        .await
+        .unwrap();
+    assert!(tokens(&home).is_empty(), "not to the repo's own checkout");
+    let handed = boat.lock().unwrap().clone();
+    assert!(
+        matches!(&handed[..], [(sink, project, name, value)]
+            if sink == &format!("order:boat-1:{order}") && project == "clone-of-web" && name == "GH_TOKEN"
+                && value.starts_with("ghs_")),
+        "{handed:?}"
+    );
+    let k = kept(&lab.hub);
+    assert_eq!(k.len(), 1);
+    assert_eq!(k[0].checkout, on);
+    // Launched on the repo's own machine, it goes there, as before.
+    deliver_on(&lab.hub, &r, &order, None, true, Some(&r))
+        .await
+        .unwrap();
+    assert_eq!(tokens(&home).len(), 1);
+    // Fresh: a wake has nothing to deliver.
+    let boat_id = fleetd_contracts::ids::MachineId::unchecked("boat-1");
+    assert_eq!(redeliver_on(&lab.hub, &boat_id).await, (0, vec![]));
+    // It ended while boat-1 slept: its wake delivers it again, there.
+    lab.clock.advance(std::time::Duration::from_secs(2 * 3600));
+    let (done, problems) = redeliver_on(&lab.hub, &boat_id).await;
+    assert_eq!((done, problems), (1, vec![]));
+    assert_eq!(tokens(&boat).len(), 2);
+    assert_eq!(
+        tokens(&home).len(),
+        1,
+        "the home checkout's isn't the wake's to renew"
+    );
+}

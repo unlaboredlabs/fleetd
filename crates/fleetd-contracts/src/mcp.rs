@@ -3266,6 +3266,19 @@ output!(GithubAppRemoveOutput {
     settings_url: String,
 });
 
+// cloud_stop: the kill switch for cloud machines (hub/pool): turns them off, then stops every machine boat.dev itself
+// lists with this hub's label, not only those the hub's ledger knows.
+input!(CloudStopInput {});
+output!(CloudStopOutput {
+    /// The machines a stop went to: their machine ids (`boat-2`), or boat's ids for one the hub didn't know.
+    stopped: Vec<String>,
+    /// Those boat refused, each as "<machine>: <why>".
+    failed: Vec<String>,
+    /// Why boat's list couldn't be read, when it couldn't: the hub stopped the machines its ledger knows, and their
+    /// leases stop any other within 30 minutes.
+    unlisted: Option<String>,
+});
+
 // claude_accounts_get, claude_hub_api_set, claude_hub_api_remove, claude_settings_set, claude_subscription_set,
 // claude_subscription_remove, claude_choice_set, claude_account_test: which Claude account each person's work runs on
 // (teams step 8, D200; `claude_accounts.rs`). Keys and tokens are sealed in the app to each machine's boxPubKey; the
@@ -3587,6 +3600,8 @@ tools! {
     github_app_create => GithubAppCreate, Admin, GithubAppCreateInput, GithubAppCreateOutput;
     github_app_test => GithubAppTest, Admin, GithubAppTestInput, GithubAppTestOutput;
     github_app_remove => GithubAppRemove, Admin, GithubAppRemoveInput, GithubAppRemoveOutput;
+    // Admin keys: the cloud machines' kill switch.
+    cloud_stop => CloudStop, Admin, CloudStopInput, CloudStopOutput;
     // Human keys only (the handlers check): a person's own GitHub account.
     github_connect => GithubConnect, Operate, GithubConnectInput, GithubConnectOutput;
     github_disconnect => GithubDisconnect, Operate, GithubDisconnectInput, GithubDisconnectOutput;
