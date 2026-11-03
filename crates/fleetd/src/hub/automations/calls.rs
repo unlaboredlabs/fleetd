@@ -1,6 +1,10 @@
 //! The lead's automation tools: create, list, update, pause and resume, delete, run now and the runs, scoped to the
 //! caller's project by its session. The lead never sees a webhook secret: a person adds a webhook in the app, which
 //! shows its URL once. A task can make none of these (`tasks::policy`).
+//!
+//! `confirmed: true` marks an automation the person said yes to in the chat (`Automation.confirmed`), so a Navi's
+//! approval checker takes its prompt as their word on its runs. The hub takes it only when the person's last message
+//! answers the lead's last question; a changed prompt or schedule without it unsets the mark.
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::automations::{
@@ -38,7 +42,14 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
                 let hub = hub.ok_or_else(|| {
                     McpToolError::new(ErrorCode::Invalid, "The hub is shutting down.")
                 })?;
-                answer(&hub.automations, &caller, call).await
+                let confirms = match &call {
+                    LeadCall::AutomationCreate(c) => c.confirmed == Some(true),
+                    LeadCall::AutomationUpdate(c) => c.confirmed == Some(true),
+                    _ => false,
+                };
+                let yes =
+                    confirms && crate::hub::navi::checker::answered(&hub, &caller.project_ref);
+                answer(&hub.automations, &caller, call, yes).await
             })
         },
     );
@@ -48,10 +59,18 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
     }
 }
 
+/// Why a lead's `confirmed: true` wasn't taken.
+const NOT_CONFIRMED: &str = "Not marked as the person's go-ahead: confirmed counts only when their last message \
+                             answers your question about this automation. Ask them, with its prompt and schedule, and \
+                             pass confirmed: true to automation_update once they say yes.";
+
+/// The lead's call; `yes`: the person's last message in the chat answers the lead's last question, so a
+/// `confirmed: true` holds.
 pub async fn answer(
     automations: &Automations,
     caller: &LeadCaller,
     call: LeadCall,
+    yes: bool,
 ) -> Result<LeadCallResult, McpToolError> {
     let r = &caller.project_ref;
     let by = caller.by.as_str();
@@ -63,6 +82,7 @@ pub async fn answer(
     };
     Ok(match call {
         LeadCall::AutomationCreate(c) => {
+            let asked = c.confirmed == Some(true);
             let (automation, _) = automations.create(NewAutomation {
                 project_ref: r.clone(),
                 name: c.name,
@@ -70,6 +90,7 @@ pub async fn answer(
                 schedule: c.schedule.map(|s| from_call(s, person_zone)),
                 webhook: false,
                 by: by.to_owned(),
+                confirmed: asked && yes,
                 client_request_id: None,
             })?;
             let once = automation
@@ -88,6 +109,11 @@ pub async fn answer(
                 (None, _) => "It runs when you call automation_run or a person presses Run now; a schedule or a \
                          webhook makes it run by itself."
                     .to_owned(),
+            };
+            let next = if asked && !yes {
+                format!("{next} {NOT_CONFIRMED}")
+            } else {
+                next
             };
             LeadCallResult::AutomationCreate(AutomationResult {
                 automation,
@@ -111,6 +137,14 @@ pub async fn answer(
                 (Some(s), _) => Some(Some(from_call(s, person_zone))),
                 (None, _) => None,
             };
+            let asked = c.confirmed == Some(true);
+            // What it runs, or when, changed: the person's yes covers only what they saw.
+            let changed = c.prompt.is_some() || schedule.is_some();
+            let confirmed = match (asked && yes, changed) {
+                (true, _) => Some(true),
+                (false, true) => Some(false),
+                (false, false) => None,
+            };
             let (automation, _) = automations.update(
                 &c.automation_id,
                 Edit {
@@ -118,12 +152,13 @@ pub async fn answer(
                     prompt: c.prompt,
                     schedule,
                     webhook: None,
+                    confirmed,
                 },
                 by,
             )?;
             LeadCallResult::AutomationUpdate(AutomationResult {
                 automation,
-                next: None,
+                next: (asked && !yes).then(|| NOT_CONFIRMED.to_owned()),
             })
         }
         LeadCall::AutomationPause(c) => {

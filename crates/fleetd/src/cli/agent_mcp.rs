@@ -238,7 +238,9 @@ static TOOLS: &[Tool] = &[
          reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat \
          (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done \
          once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and \
-         approvals still apply. Only a person adds a webhook, in the app.",
+         approvals still apply. Only a person adds a webhook, in the app. A \
+         Navi: ask the person first with its prompt and schedule, and pass confirmed: true right after they say yes; \
+         its runs then count as their go-ahead for what the prompt names.",
         inline_schema::<AutomationCreateCall>,
     ),
     lead(
@@ -316,7 +318,8 @@ static TOOLS: &[Tool] = &[
          may open an order for it. Returns a handle (N<n>); a later wake says when an order opened for it opens, \
          closes, merges or fails. project is a title or project id from factory_status. With hub (a linked hub's \
          label, from factory_status's hubs), it goes to that project on the other hub, as the person via this Navi. \
-         Open an order this way only when the person asked for it in this conversation.",
+         It goes through your approval mode like a send, its exact text on the card. Open an order this way only \
+         when the person asked for it in this conversation.",
         inline_schema::<ProjectMessageCall>,
     ),
     lead(

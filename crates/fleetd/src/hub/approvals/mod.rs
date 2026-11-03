@@ -244,15 +244,15 @@ pub trait ApprovalHub: Send + Sync {
         &self,
         project: &ProjectRef,
     ) -> BoxFut<'_, Option<fleetd_contracts::navi::NaviApprovals>>;
-    /// The Navi's approval checker's verdict on one of its lead's actions (`hub/navi/checker.rs`): ask for anything
-    /// but a readable verdict.
+    /// The Navi's approval step on one of its lead's actions (`hub/navi/checker.rs`): a plain public read passes on
+    /// its rule; anything else gets the checker's verdict, ask for anything but a readable one.
     fn navi_check<'a>(
         &'a self,
         project: &'a ProjectRef,
         thread_id: &'a str,
         action: &'a crate::hub::navi::checker::Action,
         settings: &'a fleetd_contracts::navi::NaviApprovals,
-    ) -> BoxFut<'a, fleetd_contracts::ledger::CheckerNote>;
+    ) -> BoxFut<'a, crate::hub::navi::checker::Checked>;
     /// A Navi's action ran without asking: an entry in its auto-approved log, and a checker's go also one quiet line in
     /// its chat (YOLO posts none).
     fn navi_auto_approved<'a>(

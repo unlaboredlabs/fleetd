@@ -70,6 +70,8 @@ pub struct NewAutomation {
     pub webhook: bool,
     /// A keyId, "human" or "lead:<machineId>/<projectId>".
     pub by: String,
+    /// The person wrote it or said yes to it (`Automation.confirmed`).
+    pub confirmed: bool,
     /// Makes a retry return the automation the first call made.
     pub client_request_id: Option<String>,
 }
@@ -83,6 +85,8 @@ pub struct Edit {
     pub schedule: Option<Option<AutomationSchedule>>,
     /// true adds a webhook URL (an existing one stays), false removes it.
     pub webhook: Option<bool>,
+    /// Whether the person stands behind it after this edit (`Automation.confirmed`); None leaves it as it was.
+    pub confirmed: Option<bool>,
 }
 
 /// What starts a run.
@@ -670,6 +674,17 @@ impl Automations {
             .collect()
     }
 
+    /// The project's automations with a run whose order is open now.
+    pub fn running(&self, r: &ProjectRef) -> Result<Vec<Automation>, LeadError> {
+        let mut out = Vec::new();
+        for a in self.list(r)? {
+            if self.active(a.automation_id.as_str())?.is_some() {
+                out.push(a);
+            }
+        }
+        Ok(out)
+    }
+
     /// Newest first, at most `limit`.
     pub fn runs(&self, id: &str, limit: usize) -> Result<Vec<AutomationRun>, LeadError> {
         self.runs_of(id, limit)?
@@ -763,6 +778,7 @@ impl Automations {
             done_at: None,
             last_run: None,
             created_by: input.by.clone(),
+            confirmed: input.confirmed,
             created_at: at.clone().into(),
             updated_at: at.into(),
         };
@@ -808,6 +824,9 @@ impl Automations {
             // A new schedule starts over, a one-time one that has run included.
             a.schedule = schedule.map(kept).transpose()?;
             a.done_at = None;
+        }
+        if let Some(confirmed) = edit.confirmed {
+            a.confirmed = confirmed;
         }
         let now = self.now();
         let next = match (&a.schedule, a.paused, &a.done_at) {

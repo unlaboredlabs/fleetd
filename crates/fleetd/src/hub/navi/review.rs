@@ -49,6 +49,10 @@ pub struct Review {
     /// The Navi's last message to the person, when it asked something: Navi-written, never authority.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub navi_last_question: Option<String>,
+    /// The automations whose runs the Navi is doing now and whose prompt the person wrote or said yes to: the person's
+    /// standing word, as their messages are.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub standing_requests: Vec<Standing>,
     pub action: Value,
     #[serde(default)]
     pub provenance: Vec<Provenance>,
@@ -77,6 +81,23 @@ impl Review {
             .replace('<', "\\u003c")
             .replace('>', "\\u003e");
         format!("<action_review>\n{json}\n</action_review>")
+    }
+}
+
+/// An automation the person wrote or said yes to, whose run the Navi is doing: its name and its prompt.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Standing {
+    pub automation: String,
+    pub prompt: String,
+}
+
+impl Standing {
+    /// Its provenance label: `person (automation "Weekly report")`.
+    fn source(&self) -> String {
+        format!(
+            "person (automation \"{}\")",
+            self.automation.replace('"', "'")
+        )
     }
 }
 
@@ -246,12 +267,19 @@ struct Sources {
     /// What the person said, lower case: their own words, and what they pasted (quoted lines, code blocks).
     said: Vec<String>,
     pasted: Vec<String>,
+    /// The prompts of the automations the person stands behind, lower case, each with its source.
+    standing: Vec<(String, String)>,
     /// The accounts the Navi read the person's data as: each value of an [`ACTING_AS`] key in its reads' calls.
     accounts: Vec<String>,
 }
 
 impl Sources {
-    fn new(person: &[String], reads: &[Read], person_emails: &[String]) -> Self {
+    fn new(
+        person: &[String],
+        standing: &[Standing],
+        reads: &[Read],
+        person_emails: &[String],
+    ) -> Self {
         let (mut said, mut pasted) = (Vec::new(), Vec::new());
         for m in person {
             let mut fenced = false;
@@ -319,6 +347,10 @@ impl Sources {
             untrusted,
             said,
             pasted,
+            standing: standing
+                .iter()
+                .map(|s| (norm(&s.prompt), s.source()))
+                .collect(),
             accounts,
         }
     }
@@ -340,6 +372,11 @@ impl Sources {
         }
         if self.pasted.iter().any(|m| m.contains(&v)) {
             add(&mut out, "person (pasted text)");
+        }
+        for (prompt, source) in &self.standing {
+            if prompt.contains(&v) {
+                add(&mut out, source);
+            }
         }
         for (own, source) in &self.own {
             if *own == v || (v.len() >= 6 && own.contains(&v) && source == "person's files") {
@@ -367,7 +404,13 @@ impl Sources {
                 continue;
             }
             let n = norm(span);
-            if self.said.iter().chain(&self.pasted).any(|m| m.contains(&n)) {
+            if self
+                .said
+                .iter()
+                .chain(&self.pasted)
+                .chain(self.standing.iter().map(|(p, _)| p))
+                .any(|m| m.contains(&n))
+            {
                 said.push(clip(span, 300));
             } else if self.untrusted.iter().any(|(t, _)| t.contains(&n)) {
                 quoted.push(clip(span, 300));
@@ -508,7 +551,7 @@ pub fn known(person: &[String], reads: &[Read]) -> (Vec<String>, Vec<String>) {
     }
     mine.sort();
     mine.dedup();
-    let sources = Sources::new(person, reads, &mine);
+    let sources = Sources::new(person, &[], reads, &mine);
     let mut contacts: Vec<String> = sources
         .own
         .iter()
@@ -530,10 +573,11 @@ pub fn provenance(
     input: &Value,
     url: Option<&str>,
     person: &[String],
+    standing: &[Standing],
     reads: &[Read],
     allowed: &[String],
 ) -> Vec<Provenance> {
-    let sources = Sources::new(person, reads, &known(person, reads).0);
+    let sources = Sources::new(person, standing, reads, &known(person, reads).0);
     let mut out = Vec::new();
     if let Some(url) = url
         && let Ok(parsed) = url::Url::parse(url)
@@ -648,6 +692,71 @@ pub fn carries_data(url: &str, quoted: &[String]) -> bool {
         .join("&");
     let decoded = format!("{decoded} {}", url.replace("%40", "@"));
     EMAIL.is_match(&decoded) || blob(url) || !quoted.is_empty()
+}
+
+/// A path part or fragment this long, found in what the person said or in their own data the Navi read, is data.
+const PATH_DATA_MIN: usize = 8;
+
+/// Whether `url` is a plain public read (D286, `navi.public-reads-skip-checker`): an http or https link to a named public
+/// host (no IP address, no loopback, no local or tailnet name) with no query, carrying no data by [`carries_data`], and
+/// no part of its path or fragment that the person's messages or their own data the Navi read hold (mail, files,
+/// calendar, a tool's output: anything but a web page or a search, whose own links are anyone's to follow).
+pub fn plain_read(url: &str, person: &[String], reads: &[Read]) -> bool {
+    let Ok(parsed) = url::Url::parse(url) else {
+        return false;
+    };
+    let public = match parsed.host() {
+        Some(url::Host::Domain(host)) => {
+            let host = host.trim_end_matches('.').to_ascii_lowercase();
+            host.contains('.')
+                && ![
+                    ".local",
+                    ".localhost",
+                    ".internal",
+                    ".lan",
+                    ".home.arpa",
+                    ".ts.net",
+                ]
+                .iter()
+                .any(|end| host.ends_with(end))
+        }
+        _ => false,
+    };
+    if !matches!(parsed.scheme(), "http" | "https")
+        || !public
+        || parsed.port().is_some()
+        || parsed.query().is_some()
+        || carries_data(url, &[])
+        // A code in one part of the path, which a run across `/` can hide from [`blob`].
+        || parsed.path().split('/').any(blob)
+    {
+        return false;
+    }
+    // Words only: a path's `-`, `_`, `+` and `.` read as the spaces they stand for, in the link and in what it is matched against.
+    let words = |text: &str| norm(&text.replace(['-', '_', '+', '.', '/', '&', '='], " "));
+    let private: Vec<String> = person
+        .iter()
+        .map(|m| words(m))
+        .chain(
+            reads
+                .iter()
+                .filter(|r| kind(&r.source) != Kind::Web && !r.source.starts_with("WebSearch"))
+                .map(|r| words(&r.text)),
+        )
+        .collect();
+    let decoded = |part: &str| {
+        let text: Vec<String> = url::form_urlencoded::parse(part.as_bytes())
+            .map(|(k, v)| format!("{k} {v}"))
+            .collect();
+        words(&text.join(" "))
+    };
+    // Each part of the path, the whole path (data split over its parts), and the fragment.
+    let mut parts: Vec<String> = parsed.path().split('/').map(decoded).collect();
+    parts.push(decoded(parsed.path()));
+    parts.extend(parsed.fragment().map(decoded));
+    !parts.iter().any(|p| {
+        p.chars().count() >= PATH_DATA_MIN && private.iter().any(|m| m.contains(p.as_str()))
+    })
 }
 
 /// The name a part's key ends in: `to` for `to[0]`, `body` for `message.body`.

@@ -131,6 +131,11 @@ pub struct Automation {
     pub last_run: Option<AutomationRun>,
     /// Who made it: a keyId, "human" or "lead:<machineId>/<projectId>".
     pub created_by: String,
+    /// Whether the person wrote its prompt in the app or said yes to it in the chat: a Navi's approval checker then
+    /// takes the prompt as the person's own word on its runs. A lead's change to its prompt or schedule unsets it,
+    /// unless the person said yes to that too.
+    #[serde(default)]
+    pub confirmed: bool,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
@@ -186,6 +191,9 @@ pub struct AutomationCreateCall {
     pub prompt: AutomationPrompt,
     /// Absent: it runs only on Run now (and a webhook, once a person adds one).
     pub schedule: Option<AutomationScheduleCall>,
+    /// true: the person's last message said yes to this automation, its prompt and schedule, which you asked about.
+    /// Its runs then count as their go-ahead for what the prompt names.
+    pub confirmed: Option<bool>,
 }
 
 /// `automation_list`: the project's automations with their last run.
@@ -203,6 +211,9 @@ pub struct AutomationUpdateCall {
     pub schedule: Option<AutomationScheduleCall>,
     /// true: take its schedule off.
     pub remove_schedule: Option<bool>,
+    /// true: the person's last message said yes to this change, which you asked about. A changed prompt or schedule
+    /// without it no longer counts as their go-ahead.
+    pub confirmed: Option<bool>,
 }
 
 /// `automation_pause`: paused true stops its schedule and webhook; false resumes them.

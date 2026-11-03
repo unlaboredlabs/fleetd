@@ -23,8 +23,8 @@ use serde_json::Value;
 
 use crate::hub::integrations::policy::{self, Verdict};
 use crate::hub::navi::checker::{self, Action};
-use crate::hub::navi::confirm;
 use crate::hub::navi::sites::{self, Visit};
+use crate::hub::navi::{bridge, confirm};
 
 use super::store::{NewRequest, RequestFilter};
 use super::{Approvals, contract_project, project_of};
@@ -175,6 +175,17 @@ impl Approvals {
                 Some(why) => (deny(why), None),
                 None => (None, confirm::preview(&input).map(Box::new)),
             },
+            // A Navi's message to another project's lead, who may open full-access work for it: a send.
+            None if tool == bridge::TOOL => match bridge::preview(&input) {
+                _ if prompt.input.is_none() => (deny(UNSHOWN), None),
+                Some(preview) => (None, Some(Box::new(preview))),
+                None => (
+                    deny(
+                        "Blocked by fleetd: this project_message can't be read. Give project and text.",
+                    ),
+                    None,
+                ),
+            },
             None => (None, None),
         };
         // A Navi's fetch or browser visit: a site the person allowed before goes through; any other asks, and its
@@ -293,12 +304,12 @@ impl Approvals {
                 let settings = settings.unwrap();
                 // A checker turn takes seconds to minutes: the follower goes on with other prompts meanwhile.
                 tokio::spawn(async move {
-                    let note = me
+                    let checked = me
                         .deps
                         .hub
                         .navi_check(&project, &thread_id, &action, &settings)
                         .await;
-                    me.checked(&project, &thread_id, &prompt, action, note)
+                    me.checked(&project, &thread_id, &prompt, action, checked)
                         .await;
                     me.checking.lock().unwrap().remove(&key);
                     me.idle.notify_waiters();
@@ -418,16 +429,17 @@ impl Approvals {
             .await;
     }
 
-    /// The checker's verdict on a prompt, once it came: go runs it; ask files the card with its reason; block refuses
-    /// it on its node and files a card the person may approve anyway. A prompt gone meanwhile (answered elsewhere, its
-    /// run ended) is left alone.
+    /// The approval step's answer on a prompt, once it came: a plain public read runs on its rule, with no line, no
+    /// log entry and its site not remembered (D286); the checker's go runs it; ask files the card with its reason;
+    /// block refuses it on its node and files a card the person may approve anyway. A prompt gone meanwhile (answered
+    /// elsewhere, its run ended) is left alone.
     async fn checked(
         &self,
         project: &ProjectRef,
         thread_id: &str,
         prompt: &PendingPermission,
         action: Action,
-        note: CheckerNote,
+        checked: checker::Checked,
     ) {
         let still = self
             .deps
@@ -438,6 +450,17 @@ impl Approvals {
         if !still {
             return;
         }
+        let note = match checked {
+            checker::Checked::PublicRead => {
+                let allow = PermissionDecision::Allow {
+                    updated_input: None,
+                };
+                self.answer_by_rule(&project.machine_id, thread_id, prompt, allow)
+                    .await;
+                return;
+            }
+            checker::Checked::Note(note) => note,
+        };
         match note.verdict {
             CheckerVerdict::Go => {
                 self.go(

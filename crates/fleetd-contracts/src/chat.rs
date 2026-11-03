@@ -99,6 +99,10 @@ pub enum ChatClient {
     Cli,
     /// Telegram, through the Navi's own bot (`telegram.rs`).
     Telegram,
+    /// The phone's share sheet: what another app handed over.
+    Share,
+    /// A Shortcuts action or Siri on the phone.
+    Shortcuts,
 }
 
 /// How a human message reached the lead.

@@ -96,13 +96,19 @@ also writes drafts and notes in its folder, remembers and forgets, keeps its che
   guard. The one exception is a browser command that opens a site, which goes through the site rule below.
 - **Sites:** a link you write in your own chat message is allowed as you send it, so the Navi fetches or opens it
   without asking. A link it finds itself, or reads in an email or on a page, isn't. The first time it fetches a page or
-  opens a site in its browser, you're asked in its chat, with the site named. Approve once and it fetches and opens
-  that site unasked from then on. In a browser command the URL must stand alone, plain or in single quotes
+  opens a site in its browser, the Navi's [approval mode](#approvals) decides, with the site named. Approve once and
+  it fetches and opens that site unasked from then on. In a browser command the URL must stand alone, plain or in single quotes
   (`agent-browser open 'https://example.org/a?b=c'`). Double quotes, shell characters, an `agent-browser open` inside
   a longer command, or a flag that changes the browser (`--session`, `--cdp`) asks each time. `www.` is the same site,
   a subdomain is another, and `localhost` is a site per port (`localhost:3000`). Only `http` and `https` name a site:
   `file:`, `data:`, `about:` and other schemes ask every time. The MCP tools `navi_sites` and `navi_site_revoke` list
   a Navi's sites, those from your links included, and take one back; a revoked site asks again.
+- **Plain public reads** (decision `navi.public-reads-skip-checker`, D286): in **Checker decides**, a first fetch or
+  browser visit whose link carries no data runs on fleetd's own rule, with no checker call and no line in the chat,
+  since a `curl` of the same page already runs unasked. Its site isn't remembered. The link must be `http` or `https`
+  to a named public host (no IP address, `localhost`, `.local` or `.ts.net` name), with no query, no address or long
+  code, and no part of its path or `#` fragment that your messages or your own data the Navi read hold (mail, files,
+  calendar; a web page's or a search's own links don't count). Any other link goes to the checker.
 
 **When the sandbox can't start, the Navi doesn't run.** Its chat says why and how to fix it. On Linux a Navi needs
 bubblewrap: install it (`sudo apt install bubblewrap`, `sudo dnf install bubblewrap`, `sudo pacman -S bubblewrap`).
@@ -115,8 +121,9 @@ kernel.unprivileged_userns_clone=1`). A Mac uses its built-in `sandbox-exec`.
 ### Approvals {#approvals}
 
 A Navi's risky actions are the ones that reach outside: a send, reply, forward, share or invite through an
-integration, a site it opens on its own for the first time, and the final Confirm or Submit on a site
-(`confirm_step`). Its **Approvals** setting (Settings › Projects › the Navi) decides who approves them (decision
+integration, a site it opens on its own for the first time, the final Confirm or Submit on a site
+(`confirm_step`), and a message to another project's lead (`project_message`), who may open an order whose agents work
+with full access. Its card is headed "Message the lead of Shop" and shows the exact text. Its **Approvals** setting (Settings › Projects › the Navi) decides who approves them (decision
 `navi.approval-checker`, D263):
 
 | Mode | What happens |
@@ -136,7 +143,12 @@ same setting. It reads only:
   an email from …` / `a web page on …` for anything only content the Navi read says, else `navi`. In a list of
   several mails each one's headers count, up to the first quoted or forwarded mail: nothing in or after a quote does,
   so in your sent mail only each mail's own sender is you;
-- your recent messages to the Navi, and its last question to you, marked as the Navi's.
+- your recent messages to the Navi, and its last question to you, marked as the Navi's. A message that came through
+  the phone's share sheet or a Shortcuts action, or one forwarded on Telegram, isn't your go-ahead (decision
+  `navi.shortcuts-authority`): the checker reads it as content the Navi read, so a new recipient it names asks.
+  Messages you type in the app, on Telegram or in `fleetd chat` count;
+- the prompts of the [automations](#automations-go-ahead) whose run the Navi is doing now, when you wrote or
+  confirmed them.
 
 It never sees the mail, pages or files the Navi read, nor the Navi's own explanation of the action. When the node
 can't send the whole of one thing the Navi read, fleetd matches against the end of it that it already has, and keeps
@@ -158,6 +170,17 @@ fleetd's own rules hold whatever the checker says:
   one-time code or an encoded blob in the text.
 - **A checker that fails asks.** A timeout, an error or an answer fleetd can't read brings the card. A model that
   refuses to answer brings it too, saying "the checker flagged this as a likely attack".
+
+#### Automations you set up {#automations-go-ahead}
+
+An [automation](/docs/automations) you wrote in the app, or one the Navi proposed and you said yes to in the chat,
+counts as your go-ahead on its runs. While a run is open, the checker reads the automation's prompt as your own
+request (`person (automation "Weekly report")`), so a weekly "email the report to Dana" sends without a card on every
+run, with its quiet line in the chat. Only what the prompt names counts: a recipient, text or site it doesn't name goes
+to the checker as before, a webhook's body is never part of it, and a [purchase](#purchases) still always asks. An
+automation the Navi made without asking you counts for nothing. The Navi marks one you said yes to with `confirmed:
+true`, which the hub takes only when your last message answers its question about it; when the Navi changes the
+prompt or schedule without asking again, the mark goes. Editing an automation in the app makes it yours.
 
 **Approve anyway** on a blocked card tells the Navi it may run exactly that call once: when it asks again with the
 same input, it runs without the checker. **Keep it blocked** leaves it refused.

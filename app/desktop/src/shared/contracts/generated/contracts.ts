@@ -461,6 +461,12 @@ export type AutoApprovedBy = "checker" | "yolo";
 
 export type Automation = {
   automationId: AutomationId;
+  /**
+   * Whether the person wrote its prompt in the app or said yes to it in the chat: a Navi's approval checker then
+   * takes the prompt as the person's own word on its runs. A lead's change to its prompt or schedule unsets it,
+   * unless the person said yes to that too.
+   */
+  confirmed?: boolean;
   createdAt: Timestamp;
   /** Who made it: a keyId, "human" or "lead:<machineId>/<projectId>". */
   createdBy: string;
@@ -1038,7 +1044,7 @@ export type ChatBlock = (ChartBlock & {
 };
 
 /** Where a human message was written. */
-export type KnownChatClient = "app" | "cli" | "telegram";
+export type KnownChatClient = "app" | "cli" | "telegram" | "share" | "shortcuts";
 /** KnownChatClient, or a value from a newer hub. */
 export type ChatClient = KnownChatClient | (string & {});
 

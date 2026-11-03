@@ -87,7 +87,9 @@ wait per automation (each body is at most 16 KiB); one past that is skipped. Pau
 but calls kept before the pause still go once the open run ends.
 
 A [Navi](/docs/navi)'s run closes its order by itself once the Navi's turn for it ends, whether it replied, failed or
-was cut off, so one run it never closed can't hold up the next ones. A coding project's lead closes its runs' orders
+was cut off, so one run it never closed can't hold up the next ones. An automation you wrote in the app, or said yes
+to in the Navi's chat, counts as your go-ahead for what its prompt names on each run, so a weekly send doesn't ask
+every week ([Approvals](/docs/navi#automations-go-ahead)). A coding project's lead closes its runs' orders
 itself, as it does any order.
 
 A run's state follows its order: **Running** while the order is open, then **Done** or **Stopped**. **Queued** is a

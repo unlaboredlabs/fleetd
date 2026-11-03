@@ -48,6 +48,8 @@ struct Fake {
     /// The Navi's approval mode (ask by default here, so each prompt files its card) and the fake checker's verdict.
     mode: Mutex<NaviApprovalMode>,
     verdict: Mutex<CheckerNote>,
+    /// The fake approval step finds each action a plain public read.
+    public_read: Mutex<bool>,
     /// Each action the checker judged.
     checked: Mutex<Vec<crate::hub::navi::checker::Action>>,
     /// Each action that ran without asking: what, by whom, and the checker's reason.
@@ -80,6 +82,7 @@ impl Default for Fake {
             sites: Mutex::default(),
             mode: Mutex::new(NaviApprovalMode::Ask),
             verdict: Mutex::new(verdict(CheckerVerdict::Ask, "unsure")),
+            public_read: Mutex::default(),
             checked: Mutex::default(),
             auto: Mutex::default(),
         }
@@ -221,10 +224,15 @@ impl ApprovalHub for Fake {
         _: &'a str,
         action: &'a crate::hub::navi::checker::Action,
         _: &'a NaviApprovals,
-    ) -> BoxFut<'a, CheckerNote> {
-        self.checked.lock().unwrap().push(action.clone());
-        let note = self.verdict.lock().unwrap().clone();
-        Box::pin(async move { note })
+    ) -> BoxFut<'a, crate::hub::navi::checker::Checked> {
+        use crate::hub::navi::checker::Checked;
+        let checked = if *self.public_read.lock().unwrap() {
+            Checked::PublicRead
+        } else {
+            self.checked.lock().unwrap().push(action.clone());
+            Checked::Note(self.verdict.lock().unwrap().clone())
+        };
+        Box::pin(async move { checked })
     }
     fn navi_auto_approved<'a>(
         &'a self,
@@ -2401,5 +2409,93 @@ async fn a_secure_input_is_a_sealed_field_or_an_approval_only_a_person_answers()
     assert_eq!(
         fake.request(late.request_id.as_str()).state,
         RequestState::Failed
+    );
+}
+
+/// A Navi's message to another project's lead goes through its mode like a send: in Ask me about everything it is a
+/// card with the exact text, the checker judges it in checker mode, YOLO lets it through; an unreadable one is refused.
+#[tokio::test]
+async fn a_navis_project_message_goes_through_its_approval_mode_as_a_send() {
+    let tool = "mcp__fleetd__project_message";
+    let message =
+        json!({ "project": "Shop", "text": "Please add a dark mode to the checkout page." });
+
+    let fake = checker_navi(NaviApprovalMode::Ask);
+    let a = approvals(&fake);
+    send(&a, &fake, "q1", tool, message.clone()).await;
+    assert!(
+        fake.answers.lock().unwrap().is_empty(),
+        "it waits for the person"
+    );
+    assert!(
+        fake.checked.lock().unwrap().is_empty(),
+        "no checker in Ask mode"
+    );
+    let card = fake.request("Q1");
+    let p = card.permission.as_ref().unwrap();
+    let preview = p.preview.as_ref().unwrap();
+    assert_eq!(
+        preview.action,
+        fleetd_contracts::integrations::ToolAction::Send
+    );
+    assert_eq!(preview.title.as_str(), "Message the lead of Shop");
+    assert!(
+        preview
+            .input
+            .as_str()
+            .contains("Please add a dark mode to the checkout page."),
+        "the exact text is on the card"
+    );
+    assert_eq!(p.input.as_ref(), Some(&message));
+
+    let fake = checker_navi(NaviApprovalMode::Checker);
+    *fake.verdict.lock().unwrap() =
+        verdict(CheckerVerdict::Go, "you asked for a dark mode in Shop");
+    let a = approvals(&fake);
+    send(&a, &fake, "q1", tool, message.clone()).await;
+    assert_eq!(
+        fake.checked.lock().unwrap()[0].input,
+        message,
+        "the checker judged it"
+    );
+    assert!(allowed(&fake.answers.lock().unwrap()[0].3));
+    assert_eq!(
+        fake.auto.lock().unwrap()[0].0,
+        "`project_message` on `fleetd`"
+    );
+    assert_eq!(fake.auto.lock().unwrap()[0].1, AutoApprovedBy::Checker);
+
+    let fake = checker_navi(NaviApprovalMode::Yolo);
+    let a = approvals(&fake);
+    send(&a, &fake, "q1", tool, message.clone()).await;
+    assert!(allowed(&fake.answers.lock().unwrap()[0].3));
+    assert_eq!(fake.auto.lock().unwrap()[0].1, AutoApprovedBy::Yolo);
+
+    let fake = checker_navi(NaviApprovalMode::Checker);
+    let a = approvals(&fake);
+    send(&a, &fake, "q1", tool, json!({ "text": "no project" })).await;
+    assert!(matches!(
+        fake.answers.lock().unwrap()[0].3,
+        PermissionDecision::Deny { .. }
+    ));
+    assert!(requests(&fake).is_empty() && fake.checked.lock().unwrap().is_empty());
+}
+
+/// A plain public read the approval step passes on its rule runs with no card, no log entry and no line, and its site
+/// isn't remembered: the next link there is judged again.
+#[tokio::test]
+async fn a_plain_public_read_runs_with_no_card_line_or_log() {
+    let fake = checker_navi(NaviApprovalMode::Checker);
+    *fake.navi.lock().unwrap() = true;
+    *fake.public_read.lock().unwrap() = true;
+    let a = approvals(&fake);
+    prompted(&a, &fake, fetch("q1", "https://museum.example/visit")).await;
+    a.checks_done().await;
+    assert!(allowed(&fake.answers.lock().unwrap()[0].3));
+    assert!(requests(&fake).is_empty(), "no card");
+    assert!(fake.auto.lock().unwrap().is_empty(), "no line, no log");
+    assert!(
+        fake.sites.lock().unwrap().is_empty(),
+        "the site isn't remembered"
     );
 }
