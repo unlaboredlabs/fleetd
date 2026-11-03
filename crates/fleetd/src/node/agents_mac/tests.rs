@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use fleetd_contracts::node_link::{
-    CAP_AGENTS_MAC, CAP_CLAUDE_ACCOUNTS, CAP_MCP_SERVERS, CAP_ONEPASSWORD, CAP_SELF_UPDATE,
-    CAP_SESSION_IOS, CAP_TELEGRAM, MacCheckId, MacCheckState,
+    CAP_AGENTS_MAC, CAP_CLAUDE_ACCOUNTS, CAP_MAC_TOOL, CAP_MCP_SERVERS, CAP_ONEPASSWORD,
+    CAP_SELF_UPDATE, CAP_SESSION_IOS, CAP_TELEGRAM, MacCheckId, MacCheckState,
 };
 
 use super::checks::{self, Probe, Ran};
@@ -325,9 +325,36 @@ fn the_mac_lists_no_call_that_carries_a_secret_a_claude_or_a_navi() {
     ]
     .map(str::to_owned);
     assert_eq!(
-        super::capabilities(all),
+        super::capabilities(all, false),
         [CAP_AGENTS_MAC, CAP_SELF_UPDATE, CAP_SESSION_IOS]
     );
+}
+
+/// The Mac lists `mac_tool` while its tool is on (a standard user on macOS), once, and never while it's off, whatever
+/// the list it filters already holds.
+#[test]
+fn the_mac_lists_its_tool_only_while_it_is_on() {
+    let with_tool = [CAP_SELF_UPDATE, CAP_MAC_TOOL].map(str::to_owned);
+    assert_eq!(
+        super::capabilities(with_tool.clone(), true),
+        [CAP_AGENTS_MAC, CAP_SELF_UPDATE, CAP_MAC_TOOL]
+    );
+    assert_eq!(
+        super::capabilities([CAP_SELF_UPDATE.to_owned()], true),
+        [CAP_AGENTS_MAC, CAP_SELF_UPDATE, CAP_MAC_TOOL]
+    );
+    assert_eq!(
+        super::capabilities(with_tool, false),
+        [CAP_AGENTS_MAC, CAP_SELF_UPDATE]
+    );
+    // Off macOS the tool is never on, whatever node.json says.
+    let on = crate::node::mac_tool::MacToolConfig {
+        enabled: Some(true),
+        simulators: None,
+    };
+    if !cfg!(target_os = "macos") {
+        assert!(!on.on());
+    }
 }
 
 #[test]

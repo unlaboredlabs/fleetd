@@ -68,8 +68,9 @@ pub fn may_join() -> Result<(), String> {
 /// The calls the agents' Mac lists at its hello: updates, screens it hosts for agents elsewhere, and a project's
 /// removal (a project that lived on the Mac before it moved into the agents user goes cleanly). Nothing that carries a
 /// secret, a claude or a Navi, which the hub then never sends. `others` are the session kinds the node found it can
-/// host.
-pub fn capabilities(others: impl IntoIterator<Item = String>) -> Vec<String> {
+/// host. `tool`: the Mac's tool is on (node/mac_tool's `MacToolConfig::on`: macOS, a standard user that can't sudo),
+/// so it lists [`CAP_MAC_TOOL`] too, once.
+pub fn capabilities(others: impl IntoIterator<Item = String>, tool: bool) -> Vec<String> {
     const KEPT: [&str; 11] = [
         CAP_MAC_TOOL,
         CAP_SELF_UPDATE,
@@ -84,7 +85,14 @@ pub fn capabilities(others: impl IntoIterator<Item = String>) -> Vec<String> {
         CAP_SESSION_IOS,
     ];
     let mut caps = vec![CAP_AGENTS_MAC.to_owned()];
-    caps.extend(others.into_iter().filter(|c| KEPT.contains(&c.as_str())));
+    caps.extend(
+        others
+            .into_iter()
+            .filter(|c| KEPT.contains(&c.as_str()) && c != CAP_MAC_TOOL),
+    );
+    if tool {
+        caps.push(CAP_MAC_TOOL.to_owned());
+    }
     caps
 }
 
@@ -104,9 +112,15 @@ pub const CHECK_EVERY: Duration = Duration::from_secs(30);
 #[derive(Clone, Default)]
 pub struct AgentsMac {
     health: Arc<Mutex<Option<MacHealth>>>,
+    /// Its tool is on, as the node found at its start: its hello lists `mac_tool`.
+    tool: bool,
 }
 
 impl AgentsMac {
+    pub fn tool(&self) -> bool {
+        self.tool
+    }
+
     pub fn health(&self) -> Option<MacHealth> {
         self.health
             .lock()
@@ -123,8 +137,11 @@ impl AgentsMac {
 
     /// Holds the keep-awake assertion, installs the pinned tools, and checks the setup every [`CHECK_EVERY`] until
     /// dropped. Asks once for the two grants the person then turns on in System Settings, so fleetd is in their lists.
-    pub fn start(home: &Path) -> (Self, super::util::AbortOnDrop) {
-        let mac = Self::default();
+    pub fn start(home: &Path, tool: bool) -> (Self, super::util::AbortOnDrop) {
+        let mac = Self {
+            tool,
+            ..Self::default()
+        };
         let home = home.to_owned();
         let running = mac.clone();
         let task = tokio::spawn(async move {

@@ -410,6 +410,9 @@ pub struct MachineView {
     pub last_seen_at: String,
     #[serde(default)]
     pub degraded_reason: Option<String>,
+    /// The agents' Mac, as its last hello said: it runs no claude, so its own checks stand in for the runner's.
+    #[serde(default)]
+    pub agents_mac: Option<bool>,
 }
 
 /// The one fix for a machine whose runner is unusable, from the cause its probe reports: the runner missing, a
@@ -1652,6 +1655,7 @@ mod tests {
             status: "degraded".into(),
             last_seen_at: "now".into(),
             degraded_reason: Some("claude is not logged in. Fix: claude auth login".into()),
+            agents_mac: None,
         };
         let runner = |version: Option<&str>, login, proxy: Option<&str>| RunnerInfo {
             runner: fleetd_contracts::sessions::RunnerKind::Claude,

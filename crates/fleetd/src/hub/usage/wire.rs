@@ -341,10 +341,12 @@ impl OpsPorts {
                             setup.subscriptions.get(&p.person_id).cloned(),
                         )
                     });
+                // The agents' Mac holds no Claude account (D298): no check waits for one there.
                 let machines = hub
                     .store
                     .machines_list()?
                     .into_iter()
+                    .filter(|m| m.agents_mac != Some(true))
                     .map(|m| m.machine_id.as_str().to_owned())
                     .collect();
                 Ok(crate::hub::doctor::checks::ClaudeSetupView {

@@ -259,7 +259,14 @@ async fn run_node(
     // and it checks its own setup for the doctor.
     let agents_mac = agents_mac::is_agents_mac(&config);
     relay.set_tool_only(agents_mac);
-    let mac = agents_mac.then(|| agents_mac::AgentsMac::start(home));
+    // Its tool is on while its user is a standard one (mac_tool's admin check runs id and sudo, so off the async threads).
+    let tool = match config.mac.clone() {
+        Some(mac) if agents_mac => tokio::task::spawn_blocking(move || mac.on())
+            .await
+            .unwrap_or(false),
+        _ => false,
+    };
+    let mac = agents_mac.then(|| agents_mac::AgentsMac::start(home, tool));
     let identify: lead::Identify = {
         let sessions = node_sessions.clone();
         Arc::new(move |pid| sessions.peer_session(pid))
