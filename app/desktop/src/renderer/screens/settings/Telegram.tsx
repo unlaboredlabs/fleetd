@@ -16,6 +16,7 @@ import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { Setting } from "./parts";
 import { BOTFATHER, statusWords, stepOf, suggestedUsername, type StatusWords } from "./telegramModel";
 import s from "./settings.module.css";
+import { boxOf } from "./claudeModel";
 
 type Ref = { machineId: string; projectId: string };
 
@@ -69,10 +70,11 @@ export function TelegramSetting({ projectRef }: { projectRef: Ref }) {
 function useNavi(ref: Ref) {
   const title = useData((d) => d.projects[`${ref.machineId}/${ref.projectId}`]?.title) ?? "Navi";
   const machine = useData((d) => d.machines[ref.machineId]);
+  const box = boxOf(machine);
   return {
     title,
     machine: machine?.name ?? ref.machineId,
-    box: typeof machine?.boxPubKey === "string" ? { machineId: ref.machineId, boxPubKey: machine.boxPubKey } : undefined,
+    box: box === undefined ? undefined : { machineId: ref.machineId, boxPubKey: box },
   };
 }
 

@@ -853,6 +853,9 @@ impl NodeLinkServer {
             return;
         }
         let at = self.now_iso();
+        // The agents' Mac runs no claude: it is online whatever its runner says.
+        let problem = problem
+            .filter(|_| !self.node_can(machine_id, fleetd_contracts::node_link::CAP_AGENTS_MAC));
         match problem {
             None => {
                 self.write_status(machine_id, &at, MachineStatus::Online, None);
@@ -896,6 +899,14 @@ impl NodeLinkServer {
 
         let at = self.now_iso();
         let hello_reason = "checking the node's runner";
+        // The agents' Mac is a tool, never a runner: its agents role stays off, and clients seal nothing to it.
+        let agents_mac = hello
+            .capabilities
+            .iter()
+            .any(|c| c == fleetd_contracts::node_link::CAP_AGENTS_MAC);
+        if agents_mac && let Err(e) = self.deps.slots.keep_tool_only(&machine_id) {
+            tracing::error!(error = %e, "node link: the agents' Mac's agents role didn't go off");
+        }
         let last_slept = match self.deps.store.machine_get(&machine_id) {
             Ok(stored) => stored.and_then(|m| m.last_slept),
             Err(_) => None,
@@ -911,6 +922,7 @@ impl NodeLinkServer {
             "boxPubKey": hello.box_pub_key,
             "degradedReason": hello_reason,
             "lastSlept": last_slept,
+            "agentsMac": agents_mac.then_some(true),
         }))
         .map_err(|e| Refused {
             code: close::BAD_FRAME,

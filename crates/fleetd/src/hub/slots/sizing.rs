@@ -121,6 +121,7 @@ mod tests {
             android: None,
             ios: None,
             desktop: None,
+            mac: None,
             mem_total_bytes: mem_gib.map(|g| Count::unchecked(g * GIB)),
             mem_per_agent_bytes: None,
             disk_per_agent_bytes: None,

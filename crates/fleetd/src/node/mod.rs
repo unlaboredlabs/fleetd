@@ -3,6 +3,7 @@
 //! The CLI calls [`join`] for `fleetd node join` and [`run`] for `fleetd node run`. Both run until
 //! SIGINT or SIGTERM (`Ok`) or a failure the node cannot retry past (`Err`, exit 1 with `fleetd: <message>`).
 pub mod actions;
+pub mod agents_mac;
 pub mod browser;
 pub mod build_slots;
 pub mod checkouts;
@@ -19,6 +20,7 @@ pub mod landed;
 pub mod lead;
 pub mod link;
 pub mod load;
+pub mod mac_tool;
 pub mod mask;
 pub mod mcp_probe;
 pub mod mcp_servers;
@@ -78,6 +80,8 @@ pub struct JoinArgs {
     pub enroll_only: bool,
     /// `--claude-config-dir`: a dedicated claude profile for this machine's sessions instead of the user's own.
     pub claude_config_dir: Option<String>,
+    /// `--mac`: the agents' Mac (node/agents_mac), joined from its standard `agents` user, never an admin.
+    pub mac: bool,
 }
 
 /// `fleetd node run`.
@@ -118,6 +122,9 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
             args.machine
         )));
     }
+    if args.mac {
+        agents_mac::may_join().map_err(NodeError::Setup)?;
+    }
     let home = args.home.clone().unwrap_or_else(default_node_home);
     let config = NodeConfig {
         hub: args.hub,
@@ -135,7 +142,11 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         device: None,
         ios: None,
         desktop: None,
-        mac: None,
+        mac: args.mac.then_some(desktop::mac::MacConfig {
+            enabled: Some(true),
+            idle_minutes: None,
+        }),
+        agents_mac: args.mac.then_some(true),
     };
     write_config(&home, &config).map_err(|_| {
         NodeError::Setup(format!(
@@ -244,6 +255,17 @@ async fn run_node(
         wakes.clone(),
     )));
     let relay = lead::LeadRelay::new();
+    // The agents' Mac is a tool, never a runner: no lead call leaves it, it hosts no browser (so no fill reaches it),
+    // and it checks its own setup for the doctor.
+    let agents_mac = agents_mac::is_agents_mac(&config);
+    relay.set_tool_only(agents_mac);
+    // Its tool is on while its user is a standard one (mac_tool's admin check runs id and sudo, so off the async threads).
+    let tool = agents_mac
+        && cfg!(target_os = "macos")
+        && tokio::task::spawn_blocking(|| mac_tool::admin_check().is_ok())
+            .await
+            .unwrap_or(false);
+    let mac = agents_mac.then(|| agents_mac::AgentsMac::start(home, tool));
     let identify: lead::Identify = {
         let sessions = node_sessions.clone();
         Arc::new(move |pid| sessions.peer_session(pid))
@@ -264,7 +286,7 @@ async fn run_node(
         hosted.secrets_for(Arc::new(move |session| sessions.call_secrets(session)))
     };
     let browser_config = config.browser.clone().unwrap_or_default();
-    let broker = match browser_config.enabled() {
+    let broker = match browser_config.enabled() && !agents_mac {
         true => {
             let broker = browser::Broker::start(
                 home,
@@ -278,7 +300,7 @@ async fn run_node(
         false => None,
     };
     let device_config = config.device.clone().unwrap_or_default();
-    let devices = match device_config.enabled() {
+    let devices = match device_config.enabled() && !agents_mac {
         true => Some(
             device::Devices::start(
                 home,
@@ -306,7 +328,8 @@ async fn run_node(
     };
     let desktop_config = config.desktop.clone().unwrap_or_default();
     let mac_config = config.mac.clone().unwrap_or_default();
-    let desktops = match desktop_config.enabled() || mac_config.enabled() {
+    // The agents' Mac hosts its own screen, never a Linux desktop.
+    let desktops = match (desktop_config.enabled() && !agents_mac) || mac_config.enabled() {
         true => Some(
             desktop::Desktops::start(
                 home,
@@ -432,6 +455,7 @@ async fn run_node(
         }),
         sessions: sessions_router.clone(),
         hosted,
+        agents_mac: mac.as_ref().map(|(mac, _)| mac.clone()),
     };
     let enrolled = async {
         if !exit_when_enrolled || enrolled_rx.await.is_err() {

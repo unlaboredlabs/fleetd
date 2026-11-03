@@ -140,6 +140,7 @@ fn join_options_that_cannot_work_stop_before_anything_is_downloaded() {
         ("--join", "--join needs a value"),
         ("--join http://hub:4790 --code", "--code needs a value"),
         ("--machine-id laptop", "only go with --join and --code"),
+        ("--mac", "only go with --join and --code"),
         ("--no-init --join http://hub:4790 --code c", "contradict"),
         ("--joint x", "unknown option: --joint"),
     ] {
@@ -156,4 +157,20 @@ fn join_options_that_cannot_work_stop_before_anything_is_downloaded() {
             "{args}: installed anyway"
         );
     }
+}
+
+/// `--mac` joins the agents' Mac only from a standard user of its own on macOS: anywhere else, or from an admin (as CI's
+/// Mac runner's user is), it stops before anything is downloaded.
+#[test]
+fn the_agents_mac_join_refuses_any_other_os_and_an_admin() {
+    let release = Release::new();
+    let output = release.run("sh \"$INSTALLER\" --join http://hub:4790 --code c --mac");
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    let says = if cfg!(target_os = "macos") {
+        "is an administrator"
+    } else {
+        "run the join line on a Mac"
+    };
+    assert!(stderr(&output).contains(says), "{}", stderr(&output));
+    assert!(!release.home().join(".fleetd").exists(), "installed anyway");
 }

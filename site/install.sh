@@ -2,7 +2,7 @@
 # fleetd installer: curl -fsSL https://fleetd.sh | sh
 #
 #   sh -s -- [--no-app] [--app] [--no-init] [--uninstall]
-#   sh -s -- --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin]
+#   sh -s -- --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin] [--mac]
 #
 # Installs the fleetd CLI to ~/.fleetd/bin/fleetd (symlinked from ~/.local/bin/fleetd) and the desktop app to
 # ~/Applications/fleetd.app on macOS, or an AppImage in ~/.local/share/fleetd/app on Linux (only with a display, or
@@ -13,6 +13,8 @@
 # With a terminal it then runs `fleetd init` (the setup wizard) on it; --no-init, or no terminal, only installs.
 # With --join and --code (the command `fleetd pair --worker` prints) it runs `fleetd init --join` instead, which
 # makes this machine a worker of that hub without asking for its address or code, with or without a terminal.
+# --mac joins the agents' Mac (docs: agents-mac.md): run as its standard agents user, never an admin, which it checks
+# before it downloads anything; it installs no app there.
 #
 # FLEETD_CHANNEL=edge|stable picks the release (default edge, the newest build of main; nightly, its name until
 # D203, is edge too). FLEETD_BASE_URL points at another directory of release assets.
@@ -36,9 +38,10 @@ Usage: curl -fsSL https://fleetd.sh | sh -s -- [options]
   --no-app      install only the CLI
   --app         install the desktop app on Linux even without a display
   --no-init     don't start the setup wizard (fleetd init) after installing
-  --join <url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin]
+  --join <url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin] [--mac]
                 join that hub as a worker (fleetd init --join) after installing: the
-                command fleetd pair --worker prints on the hub
+                command fleetd pair --worker prints on the hub; --mac joins the agents'
+                Mac, as its standard (non-admin) agents user
   --uninstall   remove the CLI and the app (fleetd's data in ~/.fleetd stays)
 
 Environment: FLEETD_CHANNEL=edge|stable (default edge), FLEETD_BASE_URL=<asset directory>
@@ -183,6 +186,21 @@ uninstall() {
   say "removed the fleetd CLI and app. Your data in ~/.fleetd is still there; delete it yourself if you want it gone."
 }
 
+# agents_mac_user: --mac joins the agents' Mac only from a standard user of its own on macOS: agents act as that user,
+# so it must not be an admin or able to sudo. No app goes there.
+agents_mac_user() {
+  [ "$(uname -s)" = Darwin ] || die "--mac is for the agents' Mac: run the join line on a Mac, as its agents user"
+  if id -Gn | tr ' ' '\n' | grep -qx admin; then
+    die "$(id -un) is an administrator, and agents on this Mac would act as one. Log in as the standard user
+agents (see https://fleetd.sh/docs/agents-mac/#setup) and paste the join line there; nothing was changed."
+  fi
+  if sudo -n true 2>/dev/null; then
+    die "$(id -un) can run sudo without a password, and agents on this Mac would too. Take it out of the sudoers file
+in your own account, then paste the join line again as agents; nothing was changed."
+  fi
+  want_app=no
+}
+
 # join_hub: `fleetd init --join` with what `fleetd pair --worker` printed, so it doesn't ask for them. The terminal, when there
 # is one, is its stdin, as when the command is typed there.
 join_hub() {
@@ -190,6 +208,7 @@ join_hub() {
   [ -z "$machine_id" ] || set -- "$@" --machine-id "$machine_id"
   [ -z "$git_identity" ] || set -- "$@" --git-identity "$git_identity"
   [ "$rejoin" = 0 ] || set -- "$@" --rejoin
+  [ "$mac" = 0 ] || set -- "$@" --mac
   if (: </dev/tty) 2>/dev/null; then
     "$bin_dir/fleetd" "$@" </dev/tty
   else
@@ -206,6 +225,7 @@ main() {
   machine_id=""
   git_identity=""
   rejoin=0
+  mac=0
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --no-app) want_app=no ;;
@@ -213,6 +233,7 @@ main() {
       --uninstall) do_uninstall=1 ;;
       --no-init) run_init=0 ;;
       --rejoin) rejoin=1 ;;
+      --mac) mac=1 ;;
       --join | --code | --machine-id | --git-identity)
         [ "$#" -ge 2 ] || die "$1 needs a value"
         case "$1" in
@@ -238,9 +259,10 @@ main() {
     [ -n "$join" ] && [ -n "$code" ] ||
       die "--join and --code go together: both are in what fleetd pair --worker prints"
     [ "$run_init" = 1 ] || die "--no-init and --join contradict each other: --join runs fleetd init --join"
-  elif [ -n "$machine_id$git_identity" ] || [ "$rejoin" = 1 ]; then
-    die "--machine-id, --git-identity and --rejoin only go with --join and --code"
+  elif [ -n "$machine_id$git_identity" ] || [ "$rejoin" = 1 ] || [ "$mac" = 1 ]; then
+    die "--machine-id, --git-identity, --rejoin and --mac only go with --join and --code"
   fi
+  [ "$mac" = 0 ] || agents_mac_user
 
   [ -n "${HOME:-}" ] || die "HOME is not set"
   bin_dir="$HOME/.fleetd/bin"

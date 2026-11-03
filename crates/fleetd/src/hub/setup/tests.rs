@@ -88,6 +88,7 @@ fn a_step_is_todo_until_a_check_says_otherwise_and_skipping_is_only_kept_for_tod
             (Claude, Todo),
             (Github, Todo),
             (People, Todo),
+            (Mac, Todo),
         ]
     );
     let checks = [
@@ -108,6 +109,60 @@ fn a_step_is_todo_until_a_check_says_otherwise_and_skipping_is_only_kept_for_tod
     assert_eq!(get(Machines).status, Look);
     assert_eq!(get(Machines).said.as_deref(), Some("lab is offline."));
     assert_eq!(get(Github).status, Look);
+    // No agents' Mac: its optional step is to do, whatever other machines say.
+    assert_eq!(get(Mac).status, Todo);
+}
+
+#[test]
+fn the_macs_step_is_its_own_checks_and_a_failing_one_wants_a_look() {
+    let mac = |checks: &[DoctorCheck]| {
+        read(guides(HUB), checks)
+            .into_iter()
+            .find(|s| s.id == SetupStepId::Mac)
+            .unwrap()
+    };
+    let passing: Vec<_> = fleetd_contracts::node_link::MacCheckId::ALL
+        .iter()
+        .map(|id| {
+            check(
+                &format!("studio/mac_{}", id.as_str()),
+                DoctorStatus::Ok,
+                "fine",
+            )
+        })
+        .collect();
+    assert_eq!(mac(&passing).status, SetupStatus::Done);
+    let mut failing = passing.clone();
+    failing[5] = check(
+        "studio/mac_xcode",
+        DoctorStatus::Fail,
+        "Xcode's licence isn't accepted, so xcodebuild and simctl refuse to run.",
+    );
+    let step = mac(&failing);
+    assert_eq!((step.status, step.failing), (SetupStatus::Look, Some(true)));
+    assert_eq!(
+        step.said.as_deref(),
+        Some("Xcode's licence isn't accepted, so xcodebuild and simctl refuse to run.")
+    );
+    // The admin block is one paste in the person's own account, each line said why, and never curl into sudo.
+    let block = &step.parts[0].values[0].value;
+    assert_eq!(block, super::MAC_ADMIN_BLOCK);
+    for line in [
+        "sudo sysadminctl -addUser agents",
+        "sudo dseditgroup -o edit -a agents -t user _developer",
+        "sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch",
+        "chmod 700 ~",
+    ] {
+        assert!(block.contains(line), "{line}");
+    }
+    assert!(!block.contains("curl"));
+    // Each command has the comment saying why above it.
+    assert!(block.lines().next().unwrap().starts_with('#'));
+    assert!(
+        step.parts[1].values[0]
+            .value
+            .ends_with("--machine-id mac --mac")
+    );
 }
 
 #[test]
@@ -232,7 +287,7 @@ async fn the_tools_are_an_admins() {
 
     let list = call(&hub, &admin, "setup_list", json!({})).await.unwrap();
     let steps = list["steps"].as_array().unwrap();
-    assert_eq!(steps.len(), 5);
+    assert_eq!(steps.len(), 6);
     assert_eq!(steps[0]["parts"][0]["values"][0]["value"], HUB);
     // No machines yet, so machines and Claude are left at least.
     assert!(list["requiredLeft"].as_i64().unwrap() >= 2, "{list}");
@@ -291,4 +346,47 @@ async fn the_tools_are_an_admins() {
     let list = call(&hub, &admin, "setup_list", json!({})).await.unwrap();
     assert_eq!(list["steps"][4]["status"], "done", "{}", list["steps"][4]);
     assert_eq!(list["steps"][4]["said"], "Alice has joined.");
+}
+
+/// The agents' Mac runs no claude: the doctor never asks its node about one, from its hello on, before its first
+/// heartbeat says how its own checks stand, and while it is offline.
+#[tokio::test]
+async fn the_agents_mac_never_gets_a_runners_checks() {
+    let (hub, _home) = hub();
+    for status in ["online", "offline"] {
+        let machine = serde_json::from_value(json!({
+            "machineId": "studio", "name": "studio", "tags": [], "status": status,
+            "lastSeenAt": "2026-10-26T10:00:00.000Z", "nodeVersion": "0.1.0", "agentsMac": true,
+        }))
+        .unwrap();
+        hub.store.machine_upsert(&machine, None).unwrap();
+        let step = call(
+            &hub,
+            &caller("admin"),
+            "setup_test",
+            json!({ "step": "mac" }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(step["step"]["id"], "mac");
+        let ids: Vec<String> = hub
+            .doctor
+            .list(false)
+            .await
+            .checks
+            .into_iter()
+            .filter(|c| c.machine_id.as_deref() == Some("studio"))
+            .map(|c| c.id)
+            .collect();
+        assert!(
+            ids.contains(&"studio/online".to_owned()),
+            "{status}: {ids:?}"
+        );
+        for id in &ids {
+            assert!(
+                !id.contains("claude") && !id.contains("commit") && !id.contains("usage"),
+                "{status}: {id}"
+            );
+        }
+    }
 }

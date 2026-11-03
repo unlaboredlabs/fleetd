@@ -651,6 +651,8 @@ pub struct AddArgs {
     pub no_service: bool,
     /// `--claude-config-dir`: the node runs claude with this CLAUDE_CONFIG_DIR instead of the user's own.
     pub claude_config_dir: Option<String>,
+    /// `fleetd init --join … --mac`: this machine is the agents' Mac, joined from its own standard user.
+    pub mac: bool,
 }
 
 fn parse_add(argv: &[String]) -> Result<AddArgs, u8> {
@@ -691,6 +693,7 @@ fn parse_add(argv: &[String]) -> Result<AddArgs, u8> {
         git_identity: None,
         no_service: v.flag("no-service"),
         claude_config_dir: v.string("claude-config-dir"),
+        mac: false,
     })
 }
 
@@ -862,6 +865,7 @@ pub fn resolve(a: &AddArgs, exe: &Path) -> Result<Resolved, Stop> {
         hub_has_node_key: false,
         service: !a.no_service,
         claude_config_dir: a.claude_config_dir.clone(),
+        mac: a.mac,
     };
     let again = if joining {
         "fleetd init again".to_owned()
@@ -1181,17 +1185,21 @@ pub async fn execute(
         }
         progress.say(&format!("{machine_id} is online."));
     }
-    // A worker's claude with no login fails every session; say so now, not at the first order.
+    // A worker's claude with no login fails every session; say so now, not at the first order. The agents' Mac runs
+    // none.
     let claude = facts.claude.clone().unwrap_or_default();
     let config_dir = r.claude_config_dir.clone();
-    let status = runner
-        .run(
-            &r.target,
-            &login_status_command(&plan.layout, &claude, config_dir.as_deref()),
-            None,
-        )
-        .await;
-    let logged_in = logged_in(&status.stdout);
+    let logged_in = r.input.mac
+        || logged_in(
+            &runner
+                .run(
+                    &r.target,
+                    &login_status_command(&plan.layout, &claude, config_dir.as_deref()),
+                    None,
+                )
+                .await
+                .stdout,
+        );
     let mut notes = plan.notes.clone();
     if !logged_in {
         let login = login_command(&claude, config_dir.as_deref());
@@ -1419,6 +1427,7 @@ impl AddArgs {
             git_identity: None,
             no_service: !service,
             claude_config_dir: None,
+            mac: false,
         }
     }
 }

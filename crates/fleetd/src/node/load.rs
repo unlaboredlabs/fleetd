@@ -275,6 +275,8 @@ pub fn read(limits: Vec<LoginLimit>, home: &Path) -> Option<NodeLoad> {
                 .unwrap_or_default(),
         ),
         // The session service's, added by the heartbeat.
+        // The agents' Mac's checks, added by the heartbeat.
+        mac: None,
     })
 }
 

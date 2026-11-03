@@ -2130,11 +2130,17 @@ input!(
         max_sessions: Option<crate::machine_roles::MaxSessions>,
         /// Drop the session cap: it hosts what it fits again.
         auto_sessions: Option<bool>,
+        /// The agents' Mac only: "Agents may use this Mac", for every project's agents (Navis never).
+        mac_tool: Option<bool>,
     }
 );
 checked!(MachineRolesSetInput, |input| {
-    if input.roles.is_none() && input.max_sessions.is_none() && input.auto_sessions != Some(true) {
-        return Err("expected roles, maxSessions or autoSessions: true".into());
+    if input.roles.is_none()
+        && input.max_sessions.is_none()
+        && input.auto_sessions != Some(true)
+        && input.mac_tool.is_none()
+    {
+        return Err("expected roles, maxSessions, autoSessions: true or macTool".into());
     }
     if input.max_sessions.is_some() && input.auto_sessions == Some(true) {
         return Err("expected maxSessions or autoSessions: true, not both".into());
@@ -2254,6 +2260,8 @@ input!(MachineJoinInput {
     machine_id: MachineId,
     /// A machine that joined before: the line enrolls it again (`--rejoin`), which repairs it.
     rejoin: Option<bool>,
+    /// The agents' Mac (`--mac`): the installer refuses an admin user, and the node runs as a tool, never a runner.
+    mac: Option<bool>,
 });
 output!(MachineJoinOutput {
     machine_id: MachineId,

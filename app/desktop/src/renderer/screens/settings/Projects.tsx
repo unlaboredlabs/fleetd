@@ -42,13 +42,14 @@ import { RepoSetting } from "./RepoSetting";
 import { isOwn } from "./repoModel";
 import { replaceRoute, type SettingsRoute } from "./route";
 import s from "./settings.module.css";
+import { boxOf } from "./claudeModel";
 
 type Echo = { ok: boolean; text: string };
 type Ref = { machineId: string; projectId: string };
 
 /** Hands the changes to main, which seals each secret and calls project_env_set; throws the hub's error. */
 function useEnvSubmit(ref: Ref) {
-  const box = useData((d) => d.machines[ref.machineId]?.boxPubKey);
+  const box = useData((d) => boxOf(d.machines[ref.machineId]));
   const { hub } = useDataLayer();
   const refetch = useRefetch();
   return async (set: ProjectEnvRequest["set"], remove: ProjectEnvRequest["remove"]) => {

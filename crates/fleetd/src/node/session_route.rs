@@ -225,17 +225,22 @@ impl Drop for Seal {
     }
 }
 
-/// The session's secrets and a new relay key, sealed to `to` (the runner's box key), base64.
+/// The session's secrets and a new relay key, sealed to `to` (the runner's box key), base64. `relay_only`: the runner
+/// is the agents' Mac, which gets the relay key alone.
 async fn seal_for(
     router: &Router,
     thread: &str,
     to: &BoxPublicKey,
     relay_key: &[u8; 32],
+    relay_only: bool,
 ) -> Result<String, String> {
     let (secrets_for, session) = (router.secrets_for.clone(), thread.to_owned());
-    let secrets = tokio::task::spawn_blocking(move || secrets_for(&session))
-        .await
-        .map_err(|e| e.to_string())??;
+    let secrets = match relay_only {
+        true => super::mask::Secrets(Vec::new()),
+        false => tokio::task::spawn_blocking(move || secrets_for(&session))
+            .await
+            .map_err(|e| e.to_string())??,
+    };
     seal_with(
         secrets
             .0
@@ -374,10 +379,11 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
             answer: None,
             seal_to: Some(to),
             runner,
+            relay_only,
             ..
         }) => {
             let key = super::relay::new_key();
-            let data = match seal_for(&router, &thread, &to, &key).await {
+            let data = match seal_for(&router, &thread, &to, &key, relay_only == Some(true)).await {
                 Ok(data) => data,
                 Err(why) => {
                     return error_frame(
@@ -633,8 +639,11 @@ async fn device_start(
             answer: None,
             seal_to: Some(to),
             runner,
+            relay_only,
             ..
-        }) if kind == "iOS" => ios_start(router, thread, frame, &to, runner).await,
+        }) if kind == "iOS" => {
+            ios_start(router, thread, frame, &to, runner, relay_only == Some(true)).await
+        }
         // Placed elsewhere and already started there (a hub that doesn't ask for a seal first): end it there.
         Ok(routed) if routed.answer.is_some() => {
             let end: BrowserCallFrame = serde_json::from_value(json!({
@@ -657,9 +666,10 @@ async fn ios_start(
     frame: BrowserCallFrame,
     to: &BoxPublicKey,
     runner: MachineId,
+    relay_only: bool,
 ) -> BrowserResultFrame {
     let key = super::relay::new_key();
-    let data = match seal_for(router, &thread, to, &key).await {
+    let data = match seal_for(router, &thread, to, &key, relay_only).await {
         Ok(data) => data,
         Err(why) => {
             return error_frame(

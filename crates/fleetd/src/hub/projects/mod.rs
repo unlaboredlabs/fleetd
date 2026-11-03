@@ -185,8 +185,18 @@ pub(crate) fn target_machine(hub: &Hub, given: Option<&MachineId>) -> Result<Mac
             ))
         })?,
     };
-    if hub.store.machine_get(&m)?.is_none() {
-        return Err(crate::hub::api::unknown_machine(&m));
+    match hub.store.machine_get(&m)? {
+        None => return Err(crate::hub::api::unknown_machine(&m)),
+        Some(machine) if machine.agents_mac == Some(true) => {
+            return Err(error(
+                ErrorCode::Invalid,
+                format!(
+                    "{m} is the agents' Mac: a tool for every project's agents, where no project lives"
+                ),
+                "Add the project on another machine; its agents use the Mac with `mac run` and `mac sim`",
+            ));
+        }
+        Some(_) => {}
     }
     repo_node(hub, &m).map_err(|p| problem_error(&p))?;
     Ok(m)

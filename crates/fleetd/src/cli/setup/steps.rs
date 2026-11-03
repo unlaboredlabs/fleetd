@@ -280,6 +280,11 @@ mod tests {
                     "optional · fleetd init --step people".into(),
                     None
                 ),
+                (
+                    State::Skipped,
+                    "optional · fleetd init --step mac".into(),
+                    None
+                ),
             ]
         );
         // With no machine yet, the step says why it matters.

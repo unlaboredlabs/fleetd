@@ -13,10 +13,15 @@
 //! and those it hosts for others, and each machine's cap is a person's setting or what it fits ([`auto_sessions`]).
 pub mod builds;
 pub mod calls;
+pub mod mac;
 pub mod relay;
 pub mod screens;
 pub mod tools;
 
+pub use mac::mac_machine;
+
+#[cfg(test)]
+mod mac_tests;
 #[cfg(test)]
 mod screens_tests;
 #[cfg(test)]
@@ -488,6 +493,7 @@ pub fn entry(runner: Runner, roles: Roles, why: String) -> MachineRolesEntry {
         screen_settings: None,
         node_restart: None,
         operates: None,
+        mac: None,
     }
 }
 

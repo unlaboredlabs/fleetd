@@ -5,6 +5,10 @@
     },
     "Machine": {
       "properties": {
+        "agentsMac": {
+          "description": "The agents' Mac (D298): a tool every project's agents use, never a runner. No agent, lead or Navi runs there,\nand clients seal no secret to it. Absent on every other machine.",
+          "type": "boolean"
+        },
         "boxPubKey": {
           "$ref": "#/$defs/BoxPublicKey",
           "description": "M8: the node's X25519 key from its hello; clients seal this machine's secrets to it. Absent: it takes no\nsecrets."

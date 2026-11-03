@@ -509,6 +509,7 @@ async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u
         machine::AddArgs {
             git_identity: opts.identity.clone(),
             claude_config_dir: opts.claude_config_dir.clone(),
+            mac: opts.mac,
             ..machine::AddArgs::local(machine_id.clone(), opts.with_service)
         },
     )
@@ -518,6 +519,15 @@ async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u
         Ok(added) => {
             node_line(list, &title, &added, &format!("joined {}", hub.trim()));
             notes(list, &said);
+            if opts.mac {
+                // The agents' Mac runs no claude: what's left is the person's two clicks at the Mac.
+                list.note(
+                    "This is the agents' Mac now. At this Mac, as fleetd agents: System Settings › Privacy & \
+                     Security › Accessibility and › Screen Recording, turn on fleetd. Settings › Hub › Setup › A Mac \
+                     for agents in the app shows each check.",
+                );
+                return Ok(worker_end(list, "This Mac is the agents' Mac now."));
+            }
             worker_claude(ui, list, &added, None).await?;
         }
         Err(_) => failed_with_log(
@@ -1008,6 +1018,7 @@ async fn workers(
             git_identity: None,
             no_service: !opts.with_service,
             claude_config_dir: opts.claude_config_dir.clone(),
+            mac: false,
         })
         .await;
         let said = super::release();
