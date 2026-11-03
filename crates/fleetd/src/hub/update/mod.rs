@@ -74,6 +74,15 @@ pub struct NodeFacts {
     pub busy: Option<String>,
 }
 
+/// What a cloud machine's catch-up did about its build ([`Updates::catch_up`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NodeCatchUp {
+    /// It runs the hub's build, and the Claude Code that build was tested with.
+    Current,
+    /// Its node is updating to the hub's build, and restarts: the rest of its catch-up waits for its next hello.
+    Restarting,
+}
+
 /// What the update does to the hub's machine and its nodes; tests stand in fakes.
 pub trait UpdatePorts: Send + Sync {
     fn feed(&self, channel: Channel) -> Arc<dyn Feed>;
@@ -1324,6 +1333,54 @@ impl Updates {
     }
 
     /// Brings the machine's Claude Code to the version the hub's build was tested with, once its node runs that build.
+    /// A cloud machine's catch-up at its hello (hub/cloud): one that slept through an update gets it now. Its node is
+    /// brought to the hub's build, which restarts it (`Restarting`: the rest waits for its next hello); one on the hub's
+    /// build gets the Claude Code that build was tested with. Nothing while an update runs, which takes every node it
+    /// sees online itself, nor from a hub built by hand, which updates nobody.
+    pub async fn catch_up(&self, machine_id: &MachineId) -> Result<NodeCatchUp, String> {
+        let ports = self.ports().ok_or("the hub's updates aren't wired")?;
+        if !ports.release_build() || self.status().is_some_and(|r| self.going(&r)) {
+            return Ok(NodeCatchUp::Current);
+        }
+        let node = ports
+            .nodes()
+            .into_iter()
+            .find(|n| &n.machine_id == machine_id)
+            .ok_or_else(|| format!("{machine_id} isn't linked"))?;
+        let running = ports.running();
+        if !crate::at_least(&node.version, &running) {
+            if !node.can_update {
+                return Err(format!(
+                    "its fleetd {} can't update itself: run `fleetd update` on it",
+                    crate::version_label(&node.version)
+                ));
+            }
+            let channel = match Channel::of(&running, true) {
+                Channel::Edge => HubChannel::Edge,
+                Channel::Stable => HubChannel::Stable,
+            };
+            let update = NodeUpdate {
+                version: text(&running),
+                channel,
+            };
+            let (answer, _) = ports.update_node(machine_id, &update).await?;
+            if !answer.ok {
+                return Err(answer.message.to_string());
+            }
+            return Ok(NodeCatchUp::Restarting);
+        }
+        let target = ports.claude_target();
+        let have = node.claude.as_deref().map(install::number);
+        if node.agents_mac || !node.can_install_claude || have == Some(target.as_str()) {
+            return Ok(NodeCatchUp::Current);
+        }
+        let answer = ports.install_claude(machine_id, &target).await?;
+        if !answer.ok {
+            return Err(answer.message.to_string());
+        }
+        Ok(NodeCatchUp::Current)
+    }
+
     async fn update_claude(&self, ports: &dyn UpdatePorts, machine_id: &MachineId) {
         let Some(run) = self.status() else { return };
         let node = run

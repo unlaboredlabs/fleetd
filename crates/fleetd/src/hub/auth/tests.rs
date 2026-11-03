@@ -328,3 +328,75 @@ fn a_machine_id_belongs_to_one_computer() {
         Some("fp-laptop")
     );
 }
+
+/// A cloud machine's slot (hub/pool) enrolls with a pool token the hub minted, no person in the loop, and is a pool
+/// machine from then on. Its VM recreated is a new computer under the same id: only a fresh pool token enrolls it, and
+/// a pool token never moves a fixed machine's id to another computer.
+#[test]
+fn a_pool_token_enrolls_a_recreated_cloud_machine_and_nothing_else() {
+    let (auth, _, _) = setup();
+    let pool = |auth: &Auth, id: &str| auth.create_pool_enroll_token(&m(id)).unwrap().token;
+    auth.enroll_node(
+        &pool(&auth, "boat-1"),
+        &m("boat-1"),
+        "pub-vm-1",
+        Some("fp-vm-1"),
+    )
+    .unwrap();
+    assert!(auth.is_pool(&m("boat-1")).unwrap());
+
+    // The recreated VM, with an ordinary code: refused as another computer, as any machine's would be.
+    let ordinary = auth.create_enroll_token(&m("boat-1")).unwrap().token;
+    let refused =
+        unauthorized(auth.enroll_node(&ordinary, &m("boat-1"), "pub-vm-2", Some("fp-vm-2")));
+    assert_eq!(refused.message, "boat-1 is another computer's machine id");
+    // With a pool token: its new key and computer are recorded, and it stays a pool machine.
+    auth.enroll_node(
+        &pool(&auth, "boat-1"),
+        &m("boat-1"),
+        "pub-vm-2",
+        Some("fp-vm-2"),
+    )
+    .unwrap();
+    assert_eq!(
+        auth.node_pub_key(&m("boat-1")).unwrap().as_deref(),
+        Some("pub-vm-2")
+    );
+    assert_eq!(
+        auth.node_fingerprint(&m("boat-1")).unwrap().as_deref(),
+        Some("fp-vm-2")
+    );
+    assert!(auth.is_pool(&m("boat-1")).unwrap());
+
+    // A pool token is still single use, and for its own slot only.
+    let once = pool(&auth, "boat-1");
+    auth.enroll_node(&once, &m("boat-1"), "pub-vm-3", Some("fp-vm-3"))
+        .unwrap();
+    let used = unauthorized(auth.enroll_node(&once, &m("boat-1"), "pub-vm-4", Some("fp-vm-4")));
+    assert_eq!(used.message, "boat-1 is another computer's machine id");
+    let elsewhere = pool(&auth, "boat-2");
+    let wrong =
+        unauthorized(auth.enroll_node(&elsewhere, &m("boat-1"), "pub-vm-4", Some("fp-vm-4")));
+    assert_eq!(wrong.message, "boat-1 is another computer's machine id");
+
+    // A fixed machine: a pool token minted for its id doesn't move it to another computer.
+    auth.enroll_node(
+        &auth.create_enroll_token(&m("devbox")).unwrap().token,
+        &m("devbox"),
+        "pub-hub",
+        Some("fp-hub"),
+    )
+    .unwrap();
+    assert!(!auth.is_pool(&m("devbox")).unwrap());
+    let refused = unauthorized(auth.enroll_node(
+        &pool(&auth, "devbox"),
+        &m("devbox"),
+        "pub-vm",
+        Some("fp-vm"),
+    ));
+    assert_eq!(refused.message, "devbox is another computer's machine id");
+    assert_eq!(
+        auth.node_pub_key(&m("devbox")).unwrap().as_deref(),
+        Some("pub-hub")
+    );
+}

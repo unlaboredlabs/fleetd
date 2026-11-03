@@ -433,6 +433,14 @@ fleetd node trust <dir>
 
 start work again in a project's checkout fleetd refused as replaced, once you checked it
 
+### fleetd node flush {#node-flush}
+
+```text
+fleetd node flush [--home <dir>] [--wait <seconds>]
+```
+
+ahead of a cloud machine's stop: hold the agents between steps, wait up to `--wait` (default 50) for recordings to reach the hub, checkpoint the node's database and sync the disk
+
 ### fleetd prompts list {#prompts-list}
 
 ```text

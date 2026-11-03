@@ -6,6 +6,7 @@ pub mod actions;
 pub mod agents_mac;
 pub mod browser;
 pub mod build_slots;
+pub mod busy;
 pub mod checkouts;
 pub mod claude_accounts;
 pub mod claude_login;
@@ -13,6 +14,7 @@ pub mod cmd;
 pub mod config;
 pub mod desktop;
 pub mod device;
+pub mod flush;
 pub mod hold;
 pub mod hosts;
 pub mod identity;
@@ -67,6 +69,9 @@ pub const NODE_USAGE: &str = "  node join --hub <url> (--token <token> | --token
              keep the link up for a machine that has joined
   node trust <dir>
              start work again in a project's checkout fleetd refused as replaced, once you checked it
+  node flush [--home <dir>] [--wait <seconds>]
+             ahead of a cloud machine's stop: hold the agents between steps, wait up to --wait (default 50)
+             for recordings to reach the hub, checkpoint the node's database and sync the disk
 ";
 
 /// `fleetd node join`, after the CLI has parsed its flags (and read `--token-file`, see [`read_token_file`]).

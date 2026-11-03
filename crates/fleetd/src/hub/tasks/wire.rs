@@ -75,6 +75,13 @@ impl TaskPorts for HubTaskPorts {
         self.executors.live_since(machine_id)
     }
 
+    fn asleep(&self, machine_id: &MachineId) -> bool {
+        !self.executors.is_connected(machine_id)
+            && self
+                .hub()
+                .is_some_and(|hub| crate::hub::cloud::is_pool(&hub, machine_id))
+    }
+
     fn caught_up(&self, machine_id: &MachineId) -> Option<crate::hub::executor::CaughtUp> {
         self.executors.caught_up(machine_id)
     }

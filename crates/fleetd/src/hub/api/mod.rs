@@ -153,6 +153,8 @@ pub struct Hub {
     pub builds: Arc<crate::hub::machine_roles::builds::Builds>,
     /// Navis' Telegram bridges (hub/telegram).
     pub telegram: Arc<crate::hub::telegram::run::Bridges>,
+    /// Cloud machines caught up since they linked (hub/cloud).
+    pub cloud: Arc<crate::hub::cloud::Cloud>,
 }
 
 /// Every MCP tool the hub serves, from every area that registers. The one place that lists them.

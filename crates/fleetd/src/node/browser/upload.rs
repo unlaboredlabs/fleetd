@@ -216,6 +216,20 @@ pub fn waiting_in(root: &Path, live: &[String]) -> Vec<PathBuf> {
     out
 }
 
+/// How many recordings in `root` ended within `within` and are still here, waiting to reach the hub (a heartbeat's
+/// `busy.uploads`). Read only: nothing is ended or removed.
+pub fn ended_within(root: &Path, within: Duration) -> usize {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|dir| read_meta(dir).is_some_and(|m| m.ended_at.is_some()))
+        .filter(|dir| changed_within(dir, within))
+        .count()
+}
+
 /// Whether the folder or its session file changed this recently.
 fn changed_within(dir: &Path, within: Duration) -> bool {
     [dir.to_owned(), dir.join(super::record::META)]

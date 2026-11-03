@@ -1242,6 +1242,13 @@ impl SessionService {
                 .map_err(invalid)?;
                 Ok(SessionOutput::ClaudeAccountSaved { fingerprint })
             }
+            SessionCall::ClaudeAccountReseal { account, to } => {
+                let home = self.inner.config.home.clone();
+                let sealed = blocking(move || super::claude_accounts::reseal(&home, &account, &to))
+                    .await
+                    .map_err(invalid)?;
+                Ok(SessionOutput::ClaudeAccountResealed { sealed })
+            }
             SessionCall::OnePasswordToken { person_id, sealed } => {
                 let home = self.inner.config.home.clone();
                 let fingerprint = blocking(move || {

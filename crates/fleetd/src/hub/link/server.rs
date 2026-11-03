@@ -16,8 +16,8 @@ use fleetd_contracts::lead_calls::{LeadCall, LeadCallFrame, LeadResultFrame};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::{Machine, MachineStatus, SleptSpan, duration_text};
 use fleetd_contracts::node_link::{
-    HEARTBEAT_INTERVAL_SECS, HEARTBEAT_TIMEOUT_SECS, HubToNode, NodeHello, NodeLoad, NodeToHub,
-    close,
+    HEARTBEAT_INTERVAL_SECS, HEARTBEAT_TIMEOUT_SECS, HubToNode, NodeBusy, NodeHello, NodeLoad,
+    NodeToHub, close,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
@@ -76,6 +76,8 @@ struct State {
     next_link_id: u64,
     /// The latest load each node reported with its heartbeat; dropped when the machine goes offline.
     loads: HashMap<MachineId, NodeLoad>,
+    /// What keeps each machine busy, as its node's latest heartbeat said; dropped when the machine goes offline.
+    busy: HashMap<MachineId, NodeBusy>,
     /// Machines the guard or the usage soft brake pauses new agents on; dropped when the machine goes offline.
     paused: HashMap<MachineId, Paused>,
     /// What each live link's node said it understands in its hello.
@@ -95,6 +97,12 @@ impl NodeLinkServer {
     /// The load the machine's node last reported; None from older nodes, offline machines or a failed read.
     pub fn load(&self, machine_id: &MachineId) -> Option<NodeLoad> {
         self.state.lock().unwrap().loads.get(machine_id).cloned()
+    }
+
+    /// What keeps the machine busy, as its node's latest heartbeat said (hub/pool stops an idle cloud machine); None from
+    /// older nodes, before the first heartbeat, and while it is offline.
+    pub fn busy(&self, machine_id: &MachineId) -> Option<NodeBusy> {
+        self.state.lock().unwrap().busy.get(machine_id).copied()
     }
 
     /// Whether the machine is a Mac, as its node last said what it can host: only a Mac's node has an iOS simulator
@@ -126,6 +134,15 @@ impl NodeLinkServer {
     pub fn paused(&self, machine_id: &MachineId) -> Option<String> {
         let state = self.state.lock().unwrap();
         state.paused.get(machine_id).map(|p| p.text.clone())
+    }
+
+    /// Keeps a heartbeat's `busy`; one without it (an older node) forgets the last.
+    pub fn observe_busy(&self, machine_id: &MachineId, busy: Option<NodeBusy>) {
+        let mut state = self.state.lock().unwrap();
+        match busy {
+            Some(busy) => state.busy.insert(machine_id.clone(), busy),
+            None => state.busy.remove(machine_id),
+        };
     }
 
     /// Keeps a heartbeat's load, hands its facts to the slot board, and runs the guard and the usage soft brake over
@@ -596,6 +613,7 @@ impl NodeLinkServer {
             state.announced.remove(machine_id);
             state.watchdogs.remove(machine_id);
             state.loads.remove(machine_id);
+            state.busy.remove(machine_id);
             state.paused.remove(machine_id);
             state.links.remove(machine_id)
         };
@@ -1023,6 +1041,7 @@ impl NodeLinkServer {
                     self.deps
                         .time
                         .heartbeat(machine_id.as_str(), beat.at.as_str());
+                    self.observe_busy(&machine_id, beat.busy);
                     self.observe_load(&machine_id, beat.load, beat.at.as_str());
                     self.browser_live
                         .steps_reported(&machine_id, beat.steps.into_inner());
