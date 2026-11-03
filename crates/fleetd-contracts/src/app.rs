@@ -29,15 +29,18 @@ pub type AppCallId = Text<1, 64>;
 ///   and a skill list's `changed`, `off` and `lastUsedAt`: a Navi's Skills.
 /// - `browser_navigate`: `browser_input`'s `navigate`, `back`, `forward` and `reload`, so the apps show a browser's
 ///   address bar. A machine whose node is older drops them.
+/// - `screen_thumbs`: the Screens page's pictures: `screen_thumbs` is read, the hub sends `screen_thumb`s, and
+///   `browser_sessions` names each screen's machine and latest step.
 ///
 /// The desktop app's `features.test.ts` checks that every feature it gates on is named here.
-pub const APP_FEATURES: [&str; 6] = [
+pub const APP_FEATURES: [&str; 7] = [
     "presence",
     "browser_sessions",
     "navi_asks",
     "screen_open",
     "navi_skills",
     "browser_navigate",
+    "screen_thumbs",
 ];
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -103,6 +106,11 @@ pub enum AppClientMessage {
         session: crate::browser::BrowserSessionId,
         input: crate::browser::BrowserInput,
     },
+    /// Sent only to a hub whose `ready` names `screen_thumbs` in its features.
+    /// The Screens page is on show (`on`) or no more: while it is, a `screen_thumb` for each live screen the key may
+    /// watch, the ones the hub has at once, then a new one each [`THUMB_EVERY_SECS`](crate::browser::THUMB_EVERY_SECS).
+    /// Send it again after a reconnect.
+    ScreenThumbs { on: bool },
 }
 
 /// A `call` failed, or (without `id`) the session did.
@@ -144,6 +152,8 @@ pub enum AppServerMessage {
     ChatDelta(crate::chat::ChatDelta),
     /// On the browser watch only: the watched session's newest screen. Ephemeral: a slow link drops frames.
     BrowserFrame(crate::browser::BrowserFrame),
+    /// On `screen_thumbs` only: a live screen's picture, made small. Ephemeral: a slow link drops pictures.
+    ScreenThumb(crate::browser::ScreenThumb),
 }
 
 #[cfg(test)]

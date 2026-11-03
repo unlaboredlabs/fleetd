@@ -422,7 +422,11 @@ impl Scrub {
 pub fn append_line<T: Serialize>(path: &Path, item: &T, scrub: &Scrub) -> std::io::Result<()> {
     let mut value = serde_json::to_value(item).map_err(std::io::Error::other)?;
     scrub.value(&mut value);
-    let mut line = serde_json::to_vec(&value).map_err(std::io::Error::other)?;
+    write_line(path, &value)
+}
+
+fn write_line(path: &Path, value: &serde_json::Value) -> std::io::Result<()> {
+    let mut line = serde_json::to_vec(value).map_err(std::io::Error::other)?;
     line.push(b'\n');
     let mut file = std::fs::OpenOptions::new()
         .create(true)
@@ -431,8 +435,81 @@ pub fn append_line<T: Serialize>(path: &Path, item: &T, scrub: &Scrub) -> std::i
     file.write_all(&line)
 }
 
+/// Appends a step to the action log, scrubbed, and keeps it as its session's latest for the heartbeat.
 pub fn append_action(dir: &Path, action: &BrowserAction, scrub: &Scrub) -> std::io::Result<()> {
-    append_line(&dir.join(RecordingFile::Actions.file_name()), action, scrub)
+    let mut value = serde_json::to_value(action).map_err(std::io::Error::other)?;
+    scrub.value(&mut value);
+    if let (Some(id), Ok(step)) = (
+        dir.file_name().and_then(|n| n.to_str()),
+        serde_json::from_value::<BrowserAction>(value.clone()),
+    ) {
+        steps::note(dir, id, step);
+    }
+    write_line(&dir.join(RecordingFile::Actions.file_name()), &value)
+}
+
+/// Each session's latest step on this machine, for the heartbeat: the Screens page says what each live screen's agent
+/// did last. Kept by the session's id (its recording's folder name) with that folder; one whose folder is gone
+/// (uploaded, thrown away) or whose step is a day old is forgotten.
+pub mod steps {
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    use fleetd_contracts::browser::{
+        BrowserAction, BrowserSessionId, SCREEN_STEPS_MAX, STEP_ARGS_BYTES, STEP_RESULT_CHARS,
+        ScreenStep,
+    };
+
+    const KEEP: Duration = Duration::from_secs(24 * 3600);
+
+    type Steps = HashMap<String, (Instant, PathBuf, BrowserAction)>;
+
+    static STEPS: Mutex<Option<Steps>> = Mutex::new(None);
+
+    fn lock() -> std::sync::MutexGuard<'static, Option<Steps>> {
+        STEPS.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// The step, cut short for the heartbeat: a long command's args go as `{}`, a result to its start.
+    pub fn brief(mut step: BrowserAction) -> BrowserAction {
+        if serde_json::to_vec(&step.args).map_or(true, |a| a.len() > STEP_ARGS_BYTES) {
+            step.args = serde_json::json!({});
+        }
+        step.result = step
+            .result
+            .map(|r| r.chars().take(STEP_RESULT_CHARS).collect());
+        step
+    }
+
+    pub fn note(dir: &Path, session_id: &str, step: BrowserAction) {
+        if BrowserSessionId::new(session_id).is_err() {
+            return;
+        }
+        lock()
+            .get_or_insert_default()
+            .insert(session_id.to_owned(), (Instant::now(), dir.to_owned(), brief(step)));
+    }
+
+    /// The latest step of each session whose recording is still here, newest first, at most [`SCREEN_STEPS_MAX`]; the
+    /// rest are forgotten.
+    pub fn latest() -> Vec<ScreenStep> {
+        let mut guard = lock();
+        let Some(steps) = guard.as_mut() else {
+            return Vec::new();
+        };
+        steps.retain(|_, (at, dir, _)| at.elapsed() < KEEP && dir.is_dir());
+        let mut out: Vec<_> = steps.iter().collect();
+        out.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+        out.into_iter()
+            .take(SCREEN_STEPS_MAX)
+            .map(|(id, (_, _, step))| ScreenStep {
+                session_id: BrowserSessionId::unchecked(id),
+                step: step.clone(),
+            })
+            .collect()
+    }
 }
 
 pub fn append_dom(dir: &Path, snapshot: &DomSnapshot, scrub: &Scrub) -> std::io::Result<()> {
@@ -457,6 +534,40 @@ pub fn scrub_file(path: &Path, scrub: &Scrub) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_logged_step_is_its_sessions_latest_scrubbed_and_short_until_its_recording_goes() {
+        let root = tempfile::tempdir().unwrap();
+        let id = "B00000000000000000000000000000abc";
+        let dir = root.path().join(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        let scrub = Scrub::new(&[("TOKEN".to_owned(), "s3cr3t-value".to_owned())]);
+        let action = |seq: u64, args: serde_json::Value, result: &str| -> BrowserAction {
+            serde_json::from_value(serde_json::json!({
+                "seq": seq, "at": "2026-11-03T10:00:00.000Z", "offsetMs": 0, "tool": "agent-browser",
+                "args": args, "ok": true, "result": result, "durationMs": 1,
+            }))
+            .unwrap()
+        };
+        let mine = |steps: Vec<fleetd_contracts::browser::ScreenStep>| {
+            steps.into_iter().find(|s| s.session_id.as_str() == id)
+        };
+        append_action(&dir, &action(1, serde_json::json!({ "command": "open https://a.example" }), "ok"), &scrub).unwrap();
+        let typed = serde_json::json!({ "command": "fill @e2 s3cr3t-value" });
+        append_action(&dir, &action(2, typed, &"x".repeat(500)), &scrub).unwrap();
+        let latest = mine(steps::latest()).unwrap().step;
+        assert_eq!(latest.seq, 2);
+        let command = latest.args["command"].as_str().unwrap();
+        assert!(!command.contains("s3cr3t-value"), "scrubbed as logged: {command}");
+        assert_eq!(latest.result.unwrap().chars().count(), 200);
+        // A script's long args go as {}: the step's words need its command only.
+        let long = serde_json::json!({ "command": format!("eval {}", "a".repeat(900)) });
+        append_action(&dir, &action(3, long, "ok"), &scrub).unwrap();
+        assert_eq!(mine(steps::latest()).unwrap().step.args, serde_json::json!({}));
+        // Its recording uploaded and gone: forgotten.
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(mine(steps::latest()).is_none());
+    }
 
     #[test]
     fn sizes_are_shortest_ebml_numbers() {

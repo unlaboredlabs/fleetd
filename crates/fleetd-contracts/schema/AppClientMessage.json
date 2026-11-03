@@ -181,6 +181,23 @@
             "input"
           ],
           "type": "object"
+        },
+        {
+          "description": "Sent only to a hub whose `ready` names `screen_thumbs` in its features.\nThe Screens page is on show (`on`) or no more: while it is, a `screen_thumb` for each live screen the key may\nwatch, the ones the hub has at once, then a new one each [`THUMB_EVERY_SECS`](crate::browser::THUMB_EVERY_SECS).\nSend it again after a reconnect.",
+          "properties": {
+            "on": {
+              "type": "boolean"
+            },
+            "t": {
+              "const": "screen_thumbs",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t",
+            "on"
+          ],
+          "type": "object"
         }
       ]
     },

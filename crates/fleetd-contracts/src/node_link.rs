@@ -236,6 +236,9 @@ pub struct Heartbeat {
     pub at: Timestamp,
     /// Node -> hub only; absent from older nodes and when the machine's figures can't be read.
     pub load: Option<NodeLoad>,
+    /// Node -> hub only: the latest step of each session live here, newest first. Absent from older nodes.
+    #[serde(default, skip_serializing_if = "<[_]>::is_empty")]
+    pub steps: List<crate::browser::ScreenStep, 0, { crate::browser::SCREEN_STEPS_MAX }>,
 }
 
 /// What a machine reports about itself with each heartbeat.

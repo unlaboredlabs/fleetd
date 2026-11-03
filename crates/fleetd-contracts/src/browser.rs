@@ -199,7 +199,30 @@ pub struct BrowserSession {
     /// The person who opened it themselves (`screen_open`): a person's screen, theirs to drive from its start. Absent
     /// for an agent's.
     pub opened_by: Option<crate::people::PersonRef>,
+    /// The machine it runs on: the one hosting it for an agent elsewhere (the agents' Mac, another machine's
+    /// emulator), else its project's. `browser_sessions` fills it in; absent from older hubs.
+    pub machine_id: Option<crate::ids::MachineId>,
+    /// Its latest step while it is live: the newest line of its action log, as its node's heartbeat last said
+    /// ([`ScreenStep`], every 15 s). `browser_sessions` fills it in; absent before the first step, once it ended, and
+    /// from older hubs.
+    pub step: Option<BrowserAction>,
 }
+
+/// A live session's latest step, as its node's heartbeat carries it: the newest line of its action log, scrubbed as it
+/// was logged, its `args` and `result` cut short ([`STEP_ARGS_BYTES`]).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenStep {
+    pub session_id: BrowserSessionId,
+    pub step: BrowserAction,
+}
+
+/// The most live sessions' steps one heartbeat carries, newest first.
+pub const SCREEN_STEPS_MAX: usize = 64;
+/// A step's `args` as JSON past this many bytes go as `{}`: the words of a step need its command, not a script.
+pub const STEP_ARGS_BYTES: usize = 600;
+/// A step's `result` is cut to this many characters.
+pub const STEP_RESULT_CHARS: usize = 200;
 
 /// A person's `screen_open` waiting for a slot on a full machine: it takes the next one free there, ahead of every
 /// agent's start, and gives up after [`SCREEN_WAIT_MINUTES`].
@@ -806,6 +829,25 @@ pub struct BrowserFrame {
     pub url: Option<Text<0, 2000>>,
     pub control: BrowserControl,
 }
+
+/// A live session's picture for the Screens page (`screen_thumb`): one of its frames, made small (at most
+/// [`THUMB_SIDE`] pixels a side), a few a minute while an app shows the page (`screen_thumbs`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenThumb {
+    pub session_id: BrowserSessionId,
+    /// A JPEG, base64.
+    pub jpeg_b64: NonEmpty,
+    pub width: Int<1, 8192>,
+    pub height: Int<1, 8192>,
+    /// When the hub took the frame.
+    pub at: Timestamp,
+}
+
+/// A picture's longest side, in pixels.
+pub const THUMB_SIDE: u32 = 640;
+/// How often each live session's picture is taken while an app shows the Screens page.
+pub const THUMB_EVERY_SECS: u64 = 20;
 
 /// A mouse button, as CDP names it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
