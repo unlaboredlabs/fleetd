@@ -2075,9 +2075,16 @@ impl SessionService {
         let machine_note = match launch.role {
             SessionRole::Worker => {
                 let home = self.inner.config.home.clone();
-                let n = blocking(move || super::load::build_jobs_here(&home)).await;
+                let (n, slots) = blocking(move || {
+                    (
+                        super::load::build_jobs_here(&home),
+                        super::build_slots::slots_here(&home),
+                    )
+                })
+                .await;
                 let set = share::jobs_env(&self.inner.config.runner_env(), n);
-                Some(share::brief_note(&set, n))
+                let turns = slots.map(super::build_slots::brief_line);
+                Some(share::brief_note(&set, n) + turns.as_deref().unwrap_or_default())
             }
             _ => None,
         };
@@ -2757,6 +2764,10 @@ impl SessionService {
             &env,
             super::load::build_jobs_here(&config.home),
         ));
+        // Its cargo builds take turns for the machine's build slots; a Navi's sandbox keeps its own PATH.
+        if row.local.role != SessionRole::Assistant {
+            super::build_slots::add_to_path(&config.home, &self_command(), &mut env);
+        }
         let scratch = share::scratch_dir(&config.home, id);
         super::config::mkdir_private(&scratch)?;
         let scratch = share::scratch_env(&scratch);

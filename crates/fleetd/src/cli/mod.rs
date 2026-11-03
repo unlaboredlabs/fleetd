@@ -284,6 +284,10 @@ pub fn main() -> ExitCode {
     if argv.first().map(String::as_str) == Some("agent-device") {
         return ExitCode::from(agent_device::run(&argv[1..]));
     }
+    // An agent's cargo, which waits its turn for a build slot (node/build_slots.rs); not for people, so not in help.
+    if argv.first().map(String::as_str) == Some(crate::node::build_slots::COMMAND) {
+        return crate::node::build_slots::main(&argv[1..]);
+    }
     // A session's host, which the node starts for each session (node/runner/host.rs); not for people, so not in help.
     if argv.first().map(String::as_str) == Some(crate::node::runner::host::COMMAND) {
         return crate::node::runner::host::main(&argv[1..]);

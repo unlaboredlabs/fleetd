@@ -35,6 +35,10 @@ pub struct NodeConfig {
     /// Warm cargo builds each checkout keeps for its next readers and reviewers (node/warm). Absent: 2. 0 keeps none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warm_builds: Option<u64>,
+    /// Agents' cargo builds that run at once here; one past them waits its turn (node/build_slots). Absent: one per
+    /// 8 GB of memory left once a quarter of it (4 to 16 GB) is kept back, at least 1. 0: no turns, all run at once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_slots: Option<u64>,
     /// True once the hub has accepted this node's key.
     pub enrolled: bool,
     /// Browser sessions for agents (node/browser): on unless `enabled` is false.
