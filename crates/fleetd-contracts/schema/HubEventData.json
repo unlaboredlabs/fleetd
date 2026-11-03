@@ -616,6 +616,16 @@
           "const": "telegram",
           "description": "Telegram, through the Navi's own bot (`telegram.rs`).",
           "type": "string"
+        },
+        {
+          "const": "share",
+          "description": "The phone's share sheet: what another app handed over.",
+          "type": "string"
+        },
+        {
+          "const": "shortcuts",
+          "description": "A Shortcuts action or Siri on the phone.",
+          "type": "string"
         }
       ],
       "x-open": true

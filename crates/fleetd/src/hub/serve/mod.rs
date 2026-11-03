@@ -516,6 +516,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(tokio::spawn(crate::hub::mcp_servers::tools::run_forget(
         hub.clone(),
     )));
+    loops.push(tokio::spawn(crate::hub::mcp_oauth::run_renew(hub.clone())));
     loops.push(tokio::spawn(crate::hub::hub_links::client::run(
         hub.clone(),
     )));

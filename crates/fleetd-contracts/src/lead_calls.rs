@@ -8,9 +8,10 @@ use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 use crate::automations::{
-    AutomationCreateCall, AutomationDeleteCall, AutomationDeleteResult, AutomationListCall,
-    AutomationListResult, AutomationPauseCall, AutomationResult, AutomationRunCall,
-    AutomationRunResult, AutomationRunsCall, AutomationRunsResult, AutomationUpdateCall,
+    AutomationConfirmCall, AutomationCreateCall, AutomationDeleteCall, AutomationDeleteResult,
+    AutomationListCall, AutomationListResult, AutomationPauseCall, AutomationResult,
+    AutomationRunCall, AutomationRunResult, AutomationRunsCall, AutomationRunsResult,
+    AutomationUpdateCall,
 };
 use crate::browser::{
     BrowserCallFrame, BrowserRecordingPartCall, BrowserRecordingPartResult, BrowserResultFrame,
@@ -325,6 +326,7 @@ pub enum LeadCall {
     AutomationDelete(AutomationDeleteCall),
     AutomationRun(AutomationRunCall),
     AutomationRuns(AutomationRunsCall),
+    AutomationConfirm(AutomationConfirmCall),
     Checklist(ChecklistCall),
     SkillInstall(SkillInstallCall),
     UsageResume(UsageResumeCall),
@@ -543,6 +545,7 @@ pub enum LeadCallResult {
     AutomationDelete(AutomationDeleteResult),
     AutomationRun(AutomationRunResult),
     AutomationRuns(AutomationRunsResult),
+    AutomationConfirm(AutomationResult),
     Checklist(ChecklistResult),
     SkillInstall(SkillInstallResult),
     UsageResume(UsageResumeResult),

@@ -131,6 +131,11 @@ pub struct Automation {
     pub last_run: Option<AutomationRun>,
     /// Who made it: a keyId, "human" or "lead:<machineId>/<projectId>".
     pub created_by: String,
+    /// Whether the person stands behind its prompt: they made or edited it in the app, or approved it on the card
+    /// `automation_confirm` shows them ("Let it run on its own"). A Navi's approval checker then takes the prompt as
+    /// their own word on its runs. Only the person sets it; a lead's change to its prompt or schedule unsets it.
+    #[serde(default)]
+    pub confirmed: bool,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
@@ -216,6 +221,14 @@ pub struct AutomationPauseCall {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationDeleteCall {
+    pub automation_id: AutomationId,
+}
+
+/// `automation_confirm`: a Navi asks the person to let one of its automations run on its own. The person sees a card
+/// with its name, prompt and schedule; their approval marks it `confirmed`, which no lead call does itself.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationConfirmCall {
     pub automation_id: AutomationId,
 }
 

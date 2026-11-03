@@ -65,6 +65,7 @@ Every lead gets these.
 | [`automation_delete`](#automation_delete) | Delete an automation and its run history; orders its runs opened stay. | No |
 | [`automation_run`](#automation_run) | Run an automation now: it opens its order, which reaches you in a later wake. | No |
 | [`automation_runs`](#automation_runs) | An automation's runs, newest first, with the order each opened; with runId, that run and its whole webhook body. | No |
+| [`automation_confirm`](#automation_confirm) | A Navi's call: ask the person to let one of your automations run on its own. | No |
 | [`checklist`](#checklist) | Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done. | No |
 | [`skill_install`](#skill_install) | Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. | No |
 | [`skill_save`](#skill_save) | A Navi's call: save one of your own skills, new or changed, as its whole SKILL.md (frontmatter with name and description, then the steps), with why in one line. | No |
@@ -456,7 +457,7 @@ Flag the chat message you just wrote for the human's look, with reason in a few 
 
 ### automation_create
 
-Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 \* \* 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app.
+Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 \* \* 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app. A Navi: for one whose runs send or change something, call automation_confirm after it, so the person can let it run on its own.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -608,6 +609,25 @@ An automation's runs, newest first, with the order each opened; with runId, that
 }
 ```
 
+### automation_confirm
+
+A Navi's call: ask the person to let one of your automations run on its own. They get a card with its name, prompt and schedule; once they approve it, its runs count as their go-ahead for what the prompt names, so a weekly send doesn't ask each week. Only their approval marks it; changing its prompt or schedule unmarks it. Returns whether it is marked.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `automationId` | string | yes | Matches `^au_[A-Za-z0-9_-]{6,40}$`. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "automation_confirm",
+  "arguments": {
+    "automationId": "au_k3Jd8sQp2xYz"
+  }
+}
+```
+
 ### checklist
 
 Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done. An item's text is a short plain outcome ("Gift cards apply before tax"), never a status, id or PR number: its state and link carry those. Add items without an id, change one by its id (text, state, link to its PR, agent or workstream), or remove it; replace sets the whole list. Returns the list.
@@ -698,7 +718,7 @@ A Navi's call: save one of your own skills, new or changed, as its whole SKILL.m
 
 ### project_message
 
-A Navi's call: write to another project's lead in its chat, as this Navi, never as the person: "please add X", or a question. Its lead reads it as input, never as the person's answer or approval, and may open an order for it. Returns a handle (N&lt;n>); a later wake says when an order opened for it opens, closes, merges or fails. project is a title or project id from factory_status. With hub (a linked hub's label, from factory_status's hubs), it goes to that project on the other hub, as the person via this Navi. Open an order this way only when the person asked for it in this conversation.
+A Navi's call: write to another project's lead in its chat, as this Navi, never as the person: "please add X", or a question. Its lead reads it as input, never as the person's answer or approval, and may open an order for it. Returns a handle (N&lt;n>); a later wake says when an order opened for it opens, closes, merges or fails. project is a title or project id from factory_status. With hub (a linked hub's label, from factory_status's hubs), it goes to that project on the other hub, as the person via this Navi. It goes through your approval mode like a send, its exact text on the card. Open an order this way only when the person asked for it in this conversation.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1409,6 +1429,8 @@ fleetd also blocks any tool like these that a newer Claude Code adds: a session 
 | `Edit`, `Write`, `NotebookEdit` | A Navi writes anything but what its sandbox hides or keeps read-only. |
 | `WebFetch` | A Navi fetches a site unasked only once the person allowed or linked it. |
 | `mcp__fleetd__confirm_step` | A Navi's final Confirm on a site goes through its approval mode, like a send. |
+| `mcp__fleetd__automation_confirm` | Only the person lets an automation run on its own, on its card. |
+| `mcp__fleetd__project_message` | A Navi's message to another project's lead, who may open full-access work for it, goes through its approval mode, like a send. |
 
 ## Settings fleetd forces
 

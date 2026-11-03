@@ -1041,3 +1041,80 @@ async fn a_session_on_a_claude_account_runs_on_its_token_alone_and_masks_it() {
             .contains("holds no p_aaaaaaaa's subscription")
     );
 }
+
+/// The hub renews a signed-in MCP server's token (or the person replaces its key) while an agent's claude runs with
+/// the old one: its next turn starts a new claude with the new one, resumed in its conversation. A turn with the same
+/// key keeps the claude it has.
+#[tokio::test]
+async fn a_renewed_mcp_key_reaches_a_running_agents_next_turn() {
+    use fleetd_contracts::mcp_servers::{
+        McpAgentRole, McpField, McpSecretScope, McpSecretSet, McpServerName, McpValueName,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("node");
+    let mut node = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    node.project(dir.path()).await;
+    let key = crate::node::identity::load_or_create_box_key(&home).unwrap();
+    let token = |value: &str| {
+        crate::node::mcp_servers::apply(
+            &home,
+            &McpSecretScope::Global,
+            &McpServerName::unchecked("mail"),
+            &[McpSecretSet {
+                field: McpField::Header,
+                name: McpValueName::unchecked("Authorization"),
+                sealed: crate::node::project_env::seal(&home, value),
+            }],
+            &[],
+            Some(&key),
+        )
+        .unwrap();
+    };
+    token("Bearer at-1");
+    let SessionCall::Launch(mut l) = launch("s1", RuntimeMode::FullAccess, SessionWorkspace::Root)
+    else {
+        unreachable!()
+    };
+    l.mcp_role = Some(McpAgentRole::Lead);
+    l.mcp = Some(
+        serde_json::from_value(serde_json::json!({
+            "userServers": false,
+            "servers": [{ "name": "mail", "secrets": { "kind": "global" },
+                "roles": { "lead": true, "writers": false, "reviewers": false },
+                "transport": { "type": "http", "url": "https://mail.example.com/mcp" },
+                "headers": [{ "kind": "secret", "name": "Authorization" }] }]
+        }))
+        .unwrap(),
+    );
+    node.ok(SessionCall::Launch(l)).await;
+    node.settled("r1").await;
+    let header = |spec: &crate::node::runner::SessionSpec| {
+        let written: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(spec.mcp_config.as_ref().unwrap()).unwrap(),
+        )
+        .unwrap();
+        written["mcpServers"]["mail"]["headers"]["Authorization"].clone()
+    };
+    assert_eq!(header(&node.runner.spawned()[0]), "Bearer at-1");
+
+    node.ok(send_as("s1", "r2")).await;
+    node.settled("r2").await;
+    assert_eq!(
+        node.runner.spawned().len(),
+        1,
+        "the same key: the same claude"
+    );
+
+    token("Bearer at-2");
+    node.ok(send_as("s1", "r3")).await;
+    node.settled("r3").await;
+    let spawned = node.runner.spawned();
+    assert_eq!(spawned.len(), 2, "the new key: a new claude");
+    assert!(spawned[1].resume, "it resumes its conversation");
+    assert_eq!(header(&spawned[1]), "Bearer at-2");
+}

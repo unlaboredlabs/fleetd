@@ -103,6 +103,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // Only the open panel's project has its checklist mounted.
   if (type === "checklist.changed") out.push({ tool: "checklist_get" });
   if (type === "skills.changed") out.push({ tool: "skills_list" });
+  // An MCP server's sign-in started, finished, failed or ended: Integrations reads the server's sign-in again.
+  if (type === "mcp.oauth") out.push({ tool: "mcp_servers_get" });
   // Someone invited, joined, renamed, given a role or removed: the Hub group's lists, and whether this person still
   // administers (the sidebar's entry).
   // Setup's People step reads it too.

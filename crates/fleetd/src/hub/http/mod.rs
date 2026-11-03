@@ -1,5 +1,5 @@
-//! The hub's HTTP server: /healthz, /mcp, /app, /pair, /node/link, session relays, automations' /hooks and hub links'
-//! /link/v1 on one port, loopback by default.
+//! The hub's HTTP server: /healthz, /mcp, /app, /pair, /node/link, session relays, automations' /hooks, hub links'
+//! /link/v1 and MCP sign-ins' /oauth/callback on one port, loopback by default.
 use crate::hub::api::{Hub, Registry};
 use crate::hub::{app_ws, mcp, pair};
 
@@ -40,6 +40,7 @@ pub fn router(hub: Arc<Hub>, tools: Arc<Registry>) -> Router {
         .route("/relay/{token}", get(relay_route))
         .route("/hooks/{automation_id}/{secret}", post(hook_route))
         .route("/link/v1/{op}", any(hub_link_route))
+        .route("/oauth/callback", get(oauth_callback_route))
         .with_state(Server {
             hub,
             tools,
@@ -99,6 +100,13 @@ async fn hook_route(
         request.into_body(),
     )
     .await
+}
+
+async fn oauth_callback_route(
+    State(server): State<Server>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    crate::hub::mcp_oauth::callback::handle(server.hub, query).await
 }
 
 async fn hub_link_route(

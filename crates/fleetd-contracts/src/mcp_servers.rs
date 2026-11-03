@@ -175,7 +175,47 @@ pub struct McpServer {
     pub headers: Vec<McpValue>,
     /// The tools the person marked as only reading, for the hub's tool policy; none marks none.
     pub integration: Option<crate::integrations::McpIntegration>,
+    /// It signs in with OAuth (`mcp_oauth_start`): the hub keeps the tokens and puts the access token in its
+    /// `Authorization` header. None: a key or nothing.
+    pub oauth: Option<McpOauth>,
     pub updated_at: Timestamp,
+}
+
+/// The header an OAuth server's access token goes in, as `Bearer <token>`.
+pub const OAUTH_HEADER: &str = "Authorization";
+
+/// Whether a server signed in with OAuth has a token agents can use.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum McpOauthStatus {
+    /// Signed in: the hub renews the token before it ends.
+    Connected,
+    /// Not signed in yet, or the service ended the sign-in (revoked, expired with no way to renew): agents go
+    /// without it until the person signs in again.
+    SignedOut,
+}
+
+/// An OAuth server's sign-in as the app shows it; never a token.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpOauth {
+    pub status: McpOauthStatus,
+    /// Where the person signs in: the authorization server, e.g. `https://auth.example.com`.
+    pub issuer: String,
+    /// The person's own OAuth client, when the service doesn't let fleetd register itself.
+    pub client_id: Option<String>,
+    /// A sign-in waiting for the person to finish it in their browser.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub signing_in: bool,
+    /// When the person last signed in.
+    pub signed_in_at: Option<Timestamp>,
+    /// When the access token agents have now ends; the hub renews it before then.
+    pub expires_at: Option<Timestamp>,
+    /// What went wrong last, in words for the person: a sign-in that failed, or a token the service wouldn't renew.
+    /// None while it works.
+    pub problem: Option<String>,
 }
 
 impl McpServer {
@@ -350,6 +390,8 @@ pub struct McpTestResult {
     pub tools: Vec<McpToolInfo>,
     /// Why the test failed: what went wrong, the server's stderr tail for a command.
     pub error: Option<String>,
+    /// The server wants the person to sign in (OAuth), not a key: the app offers Sign in.
+    pub sign_in: Option<bool>,
 }
 
 #[cfg(test)]

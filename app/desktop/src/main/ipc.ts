@@ -11,7 +11,7 @@ import type { PairingService } from "./pairing/service";
 import type { PresenceSetting } from "./presence";
 import { cancelGithubApp, createGithubApp } from "./github";
 import { cancelGithubConnect, connectGithub } from "./githubConnect";
-import { submitClaudeAccount, submitHubLink, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret, submitTelegram } from "./secret";
+import { submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret, submitTelegram } from "./secret";
 import { applyMenuState } from "./menuState";
 import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
@@ -73,6 +73,7 @@ export const registerIpc = (
   handle(IPC.projectEnvSubmit, (_event, id, request) => submitProjectEnv(request, call(id)));
   handle(IPC.mcpServerSubmit, (_event, id, request) => submitMcpServer(request, call(id)));
   handle(IPC.hubLinkSubmit, (_event, id, request) => submitHubLink(request, call(id)));
+  handle(IPC.mcpOauthClientSubmit, (_event, id, request) => submitMcpOauthClient(request, call(id)));
   handle(IPC.githubAppCreate, (_event, id, request) =>
     createGithubApp(request, call(id), async (url) => {
       const checked = externalUrl(url);
