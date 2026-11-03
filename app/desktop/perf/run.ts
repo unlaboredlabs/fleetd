@@ -148,22 +148,24 @@ const streaming = async () => {
       const page = browser.contexts().flatMap((c) => c.pages()).find((p) => new URL(p.url()).pathname.endsWith("/index.html"));
       if (page === undefined) throw new Error("no app window over CDP");
       await openChat(page);
-      const once = async () => {
+      // The untimed first round takes a fresh runner's cold start, and its rate counts for nothing, so only timed rounds
+      // must fit the fixture's timeline: on main, a first round's renderer once stalled 12 s and it ended past the last delta.
+      const once = async (timed: boolean) => {
         const reloaded = Date.now();
         await page.reload();
         await openChat(page);
         const opened = Date.now() - reloaded;
-        if (opened > STREAM_IN_LONG_ARRIVE_MS) throw new Error(`the chat took ${opened} ms to open, past its messages' arrival; the measurement would not mean anything`);
+        if (timed && opened > STREAM_IN_LONG_ARRIVE_MS) throw new Error(`the chat took ${opened} ms to open, past its messages' arrival; the measurement would not mean anything`);
         await sleep(STREAM_IN_LONG_FROM_MS + 500 - opened);
         const stamps = await frames(page, () => sleep(STREAM_MS));
         const ended = Date.now() - reloaded;
-        if (ended > STREAM_IN_LONG_TO_MS) throw new Error(`the round ended ${ended} ms after the reload, past the reply's last delta; the measurement would not mean anything`);
+        if (timed && ended > STREAM_IN_LONG_TO_MS) throw new Error(`the round ended ${ended} ms after the reload, past the reply's last delta; the measurement would not mean anything`);
         const gaps = stamps.slice(1).map((t, i) => t - (stamps[i] ?? t));
         return { fps: (gaps.length * 1000) / ((stamps.at(-1) ?? 0) - (stamps[0] ?? 0)), worstMs: Math.max(...gaps) };
       };
-      await once();
+      await once(false);
       const rounds: Array<Awaited<ReturnType<typeof once>>> = [];
-      for (let i = 0; i < STREAM_ROUNDS; i++) rounds.push(await once());
+      for (let i = 0; i < STREAM_ROUNDS; i++) rounds.push(await once(true));
       return { fps: median(rounds.map((r) => r.fps)), rounds };
     } finally {
       await browser.close();
