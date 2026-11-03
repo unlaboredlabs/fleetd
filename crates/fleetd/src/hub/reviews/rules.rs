@@ -78,6 +78,14 @@ pub fn review_prompt(set: &PromptSet, change: &Change, reviewed: Option<&str>) -
     }
 }
 
+/// The follow-up to a reviewer whose turn ended without a verdict: finish in this turn and report.
+pub fn unreported_message(set: &PromptSet, change: &Change, head_sha: &str) -> String {
+    set.render(
+        "review.unreported",
+        &[("prUrl", &change.pr_url), ("headSha", &head_sha)],
+    )
+}
+
 /// A rebase's conflict resolution to review: the approved head and its base, the new head's base, and the files whose
 /// hunks changed.
 pub struct Conflicts<'a> {

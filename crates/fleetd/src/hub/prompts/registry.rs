@@ -447,6 +447,16 @@ pub const ENTRIES: &[Entry] = &[
         ]
     ),
     entry!(
+        "review.unreported",
+        Msg,
+        Messages,
+        Task,
+        "Reviewer: finish and report",
+        "to a train reviewer whose turn ended without a verdict, once, before a new reviewer starts",
+        "prUrl!=the PR; headSha!=the head reviewed",
+        &[]
+    ),
+    entry!(
         "pr.fix",
         Msg,
         Messages,

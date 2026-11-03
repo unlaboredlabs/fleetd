@@ -176,6 +176,11 @@ CI runs, alone or in a batch, and the merge waits for both. If the review finds 
 its author, and a batch it was in forms again without it, so its code never lands. If CI is green and the review is
 still at work after 15 minutes, the PR waits in review out of the train's way, and merges once the review is clean.
 
+A reviewer that ends its turn without recording a verdict, for example while its own build was still running, is
+asked once, in its own thread, to finish and report. No new reviewer starts while it does, and its verdict counts as
+any other. If that turn ends without a verdict too, or the reviewer failed, a fresh reviewer starts the review over,
+once per patch. A missing verdict never counts as approval.
+
 A reviewer that couldn't use fleetd's tools, so it couldn't record its verdict, is caught as soon as it ends. Its
 queue entry and the train's line say "review tools failed", and the lead hears once. A new reviewer starts by itself
 a minute later, then after longer waits up to 15 minutes. It starts at once when any other review records a verdict,
