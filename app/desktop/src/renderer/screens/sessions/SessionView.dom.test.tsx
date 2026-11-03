@@ -84,7 +84,7 @@ const mount = async (id: string, features: readonly string[] = ["browser_session
       if (tool === "browser_sessions") return Promise.resolve({ ok: true, output: { sessions: SESSIONS, retention: { retentionDays: 30, maxGbPerProject: 20 } } });
       if (tool === "browser_recording_get") {
         // A byte a piece, so every character past ASCII is split between two pieces.
-        const offset = Number((input as { offset?: number }).offset ?? 0);
+        const offset = (input as { offset?: number }).offset ?? 0;
         const piece = ACTION_BYTES.slice(offset, offset + 1);
         return Promise.resolve({ ok: true, output: { dataB64: btoa(String.fromCharCode(...piece)), done: offset + 1 >= ACTION_BYTES.length } });
       }
