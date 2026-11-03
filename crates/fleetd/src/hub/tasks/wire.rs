@@ -123,10 +123,19 @@ impl TaskPorts for HubTaskPorts {
                             })?,
                             from_session: w.from,
                         },
-                        None => SessionWorkspace::Detached {
-                            base_ref,
-                            pr: w.pr.and_then(|pr| NonEmpty::new(pr).ok()),
-                        },
+                        None => {
+                            let pr = w.pr.and_then(|pr| NonEmpty::new(pr).ok());
+                            // The head the merge train has for the PR: a node with that commit asks no remote.
+                            let head = pr
+                                .as_ref()
+                                .and_then(|pr| fleetd_contracts::train::parse_pr_url(pr.as_str()))
+                                .zip(self.hub())
+                                .and_then(|(p, hub)| {
+                                    hub.train.records().open_for(&p.repo, p.pr_number)
+                                })
+                                .and_then(|change| NonEmpty::new(change.head_sha.to_string()).ok());
+                            SessionWorkspace::Detached { base_ref, pr, head }
+                        }
                     })
                 }
             };

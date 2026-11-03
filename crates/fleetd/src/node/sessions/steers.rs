@@ -209,7 +209,7 @@ impl SessionService {
     }
 
     fn emit_steer(&self, receipt: SteerReceipt) {
-        let st = self.st();
+        let mut st = self.st();
         match self.store().steer_receipt(&receipt) {
             Ok(frame) => st.machine(frame),
             Err(e) => tracing::warn!(error = %e, "cannot log a steer receipt"),

@@ -4,14 +4,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use fleetd_contracts::effort::Effort;
-use fleetd_contracts::ids::{ProjectId, ThreadId};
+use fleetd_contracts::ids::{ProjectId, ThreadId, Timestamp};
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::{
     FailureClass, ItemKind, ItemStatus, MachineEvent, MessageRole, PermissionDecision, RunEnd,
     RunFailure, RunStatus, SendMode, SendNow, SessionCall, SessionCallFrame, SessionErrorCode,
     SessionLaunch, SessionOutput, SessionResult, SessionStatus, SessionSummary, SessionWorkspace,
-    ThreadEvent, WorktreeSource,
+    ThreadEvent, ThreadMessage, WorktreeSource,
 };
 use fleetd_contracts::steer::{DeliveredHow, SteerId, SteerReceipt, SteerStage, SteerTag};
 use tokio::sync::mpsc;
@@ -2208,6 +2208,7 @@ async fn readers_and_reviewers_each_get_a_worktree_of_their_own_and_the_humans_c
         let workspace = SessionWorkspace::Detached {
             base_ref: NonEmpty::unchecked("main"),
             pr: pr.map(NonEmpty::unchecked),
+            head: None,
         };
         hub.ok(launch(id, RuntimeMode::FullAccess, workspace)).await;
         let done = hub
@@ -2292,6 +2293,7 @@ async fn a_review_whose_host_publishes_no_pr_refs_reads_the_fresh_base() {
         pr: Some(NonEmpty::unchecked(
             "https://bitbucket.org/o/r/pull-requests/3",
         )),
+        head: None,
     };
     hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
         .await;
@@ -2371,6 +2373,7 @@ async fn a_review_in_a_fork_reads_the_head_from_the_remote_the_pr_belongs_to() {
         let workspace = SessionWorkspace::Detached {
             base_ref: NonEmpty::unchecked("main"),
             pr: Some(NonEmpty::unchecked(pr)),
+            head: None,
         };
         hub.ok(launch(id, RuntimeMode::FullAccess, workspace)).await;
         hub.summary(|s| s.session_id.as_str() == id && s.latest_run.is_some())
@@ -2430,6 +2433,7 @@ async fn a_message_as_a_readers_task_ends_never_resumes_in_a_worktree_being_remo
         let workspace = SessionWorkspace::Detached {
             base_ref: NonEmpty::unchecked("main"),
             pr: None,
+            head: None,
         };
         hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
             .await;
@@ -4911,4 +4915,70 @@ async fn an_isolated_turn_runs_in_an_empty_folder_of_the_nodes_with_user_setting
     let args = crate::node::runner::claude::ClaudeRunner::new("claude".into()).args(&spec);
     let at = args.iter().position(|a| a == "--setting-sources").unwrap();
     assert_eq!(args[at + 1], "user,project,local");
+}
+
+/// A summary whose only change is `updatedAt` (progress: an item or message came) goes out at most every
+/// `PROGRESS_EVERY` per session, the latest once the time is up; any other change goes at once, as ever.
+#[tokio::test]
+async fn progress_alone_goes_out_at_most_every_ten_seconds_and_the_latest_when_the_time_is_up() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&root).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.settled("r1").await;
+    let sent = |hub: &mut Hub| {
+        let mut summaries = Vec::new();
+        while let Ok(raw) = hub.rx.try_recv() {
+            if let NodeToHub::MachineEvent(f) = serde_json::from_str(&raw).unwrap()
+                && let MachineEvent::SessionUpdated(s) = f.event
+            {
+                summaries.push(s);
+            }
+        }
+        summaries
+    };
+    sent(&mut hub);
+    tokio::time::pause();
+    let message = |n: u32| {
+        ThreadEvent::Message(ThreadMessage {
+            id: NonEmpty::unchecked(format!("p{n}")),
+            run_id: None,
+            role: MessageRole::Assistant,
+            text: format!("step {n}"),
+            created_at: Timestamp::from("2026-10-17T10:00:00.000Z"),
+        })
+    };
+    // A summary just went out (the run settled): 50 steps right after it wait.
+    for n in 0..50 {
+        hub.service
+            .update("s1", |c| c.events.push(message(n)))
+            .unwrap();
+    }
+    assert!(sent(&mut hub).is_empty());
+    let stored = hub.service.session("s1").unwrap().summary;
+    tokio::time::sleep(super::PROGRESS_EVERY + Duration::from_millis(1)).await;
+    let late = sent(&mut hub);
+    assert_eq!(late.len(), 1, "{late:?}");
+    assert_eq!(late[0], stored);
+    // The next step waits again; a real change goes at once, with it.
+    hub.service
+        .update("s1", |c| c.events.push(message(50)))
+        .unwrap();
+    assert!(sent(&mut hub).is_empty());
+    hub.service.update("s1", |c| c.announce = true).unwrap();
+    assert_eq!(sent(&mut hub).len(), 1);
+    tokio::time::sleep(super::PROGRESS_EVERY + Duration::from_millis(1)).await;
+    assert!(sent(&mut hub).is_empty(), "nothing was left to send");
 }

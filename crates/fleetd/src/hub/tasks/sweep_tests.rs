@@ -548,3 +548,56 @@ async fn a_death_after_its_pr_merged_ends_the_task() {
     lab.retry_queue().await;
     assert!(lab.sends().await.is_empty(), "never resumed");
 }
+
+/// A reader's turn that ends keeps its worktree, and with it its $TMPDIR, for the lead's next message: both go only when
+/// the task is cancelled or with the nightly sweep. A review's goes as it ends.
+#[tokio::test]
+async fn a_readers_worktree_stays_between_turns_and_a_reviews_goes_as_it_ends() {
+    let mut lab = lab(2).await;
+    let mut review = lab.task(2);
+    review.kind = fleetd_contracts::tasks::TaskKind::Review;
+    lab.hub
+        .db
+        .with(|c| {
+            Ok(super::TaskRecords::put(
+                c,
+                &super::StoredTask {
+                    task: review,
+                    pending_message: None,
+                },
+            )?)
+        })
+        .unwrap();
+    for t in ["t1", "t2"] {
+        lab.session(t, "r1", "completed", json!({ "end": "completed" }));
+        lab.logged("thread.completed", t).await;
+    }
+    catch_up(&lab.hub.tasks).await;
+    lab.until(|| lab.task(1).state == TaskState::Done && lab.task(2).state == TaskState::Done)
+        .await;
+    let mut removed = Vec::new();
+    while !removed.contains(&"t2".to_owned()) {
+        let call = tokio::time::timeout(MIN, lab.calls.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        if let SessionCall::Stop {
+            session_id,
+            remove_worktree: true,
+        } = call
+        {
+            removed.push(session_id.to_string());
+        }
+    }
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    while let Ok(call) = lab.calls.try_recv() {
+        if let SessionCall::Stop {
+            session_id,
+            remove_worktree: true,
+        } = call
+        {
+            removed.push(session_id.to_string());
+        }
+    }
+    assert_eq!(removed, ["t2"]);
+}

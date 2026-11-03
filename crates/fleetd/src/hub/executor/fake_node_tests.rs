@@ -23,6 +23,7 @@ struct Node {
     machine: MachineId,
     rx: mpsc::UnboundedReceiver<HubToNode>,
     seq: u64,
+    clock: Arc<ManualClock>,
 }
 
 impl Node {
@@ -36,7 +37,7 @@ impl Node {
             store.cursor_set(&machine, c).unwrap();
         }
         let events = Arc::new(EventLog::new(db, clock.clone()).unwrap());
-        let executors = Executors::new(store.clone(), events.clone(), clock);
+        let executors = Executors::new(store.clone(), events.clone(), clock.clone());
         let (tx, rx) = mpsc::unbounded_channel();
         executors
             .attach(
@@ -54,6 +55,7 @@ impl Node {
             machine,
             rx,
             seq: 0,
+            clock,
         }
     }
 
@@ -886,4 +888,57 @@ async fn reads_keep_the_fetches_that_worked_when_one_fails() {
         "fetched whole"
     );
     assert_eq!(of("in:inbox"), Some("…inbox tail"), "its stored tail");
+}
+
+/// The watchdog's progress clock moves on every thread frame of a followed session, with no summary on the machine
+/// stream: a node sends a session's summary at most every 10 s while only its `updatedAt` moves, and the watchdog never
+/// mistakes a working agent for a stalled one.
+#[tokio::test]
+async fn thread_frames_alone_move_the_watchdogs_progress_clock() {
+    let mut node = Node::start(None).await;
+    let running = json!({ "status": "running", "activeRunId": "r1",
+        "latestRun": { "id": "r1", "status": "running", "ordinal": 1 } });
+    node.subscribe(json!([session("s1", running.clone())]))
+        .await;
+    let r = node.thread("s1");
+    let executors = node.executors.clone();
+    let target = r.clone();
+    let follow = tokio::spawn(async move { executors.follow(&target).await });
+    let (id, call) = node.call().await;
+    assert_eq!(
+        call,
+        SessionCall::Follow {
+            session_id: ThreadId::unchecked("s1")
+        }
+    );
+    node.reply(&id, json!({ "ok": { "kind": "done" } }));
+    let frame = |event: Value| -> ThreadEventFrame {
+        serde_json::from_value(
+            json!({ "sessionId": "s1", "at": "2026-10-17T10:03:00.000Z", "event": event }),
+        )
+        .unwrap()
+    };
+    let snapshot = frame(
+        json!({ "type": "snapshot", "summary": session("s1", running), "truncated": false,
+        "runs": [{ "id": "r1", "status": "running", "ordinal": 1 }], "messages": [], "items": [] }),
+    );
+    node.executors
+        .handle_frame(&node.machine, NodeToHub::ThreadEvent(snapshot));
+    follow.await.unwrap().unwrap();
+    assert_eq!(node.executors.progress(&r).unwrap().last_frame_ms, T0_MS);
+    for step in 1..=3u64 {
+        node.clock.advance(std::time::Duration::from_secs(30));
+        let item = frame(
+            json!({ "type": "item", "id": format!("i{step}"), "runId": "r1",
+            "status": "completed", "title": "", "startedAt": "2026-10-17T10:01:00.000Z",
+            "completedAt": "2026-10-17T10:01:30.000Z", "updatedAt": "2026-10-17T10:01:30.000Z",
+            "kind": { "type": "command", "command": "npm test", "output": "ok", "exitCode": 0 } }),
+        );
+        node.executors
+            .handle_frame(&node.machine, NodeToHub::ThreadEvent(item));
+        assert_eq!(
+            node.executors.progress(&r).unwrap().last_frame_ms,
+            T0_MS + step * 30_000
+        );
+    }
 }
