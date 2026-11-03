@@ -219,6 +219,9 @@ pub struct MachineAddInput {
     /// `--claude-config-dir`: the CLAUDE_CONFIG_DIR the node runs claude with (node.json `claudeConfigDir`); `None`
     /// keeps what the node has, which by default is the user's own (~/.claude).
     pub claude_config_dir: Option<String>,
+    /// `--mac`: the agents' Mac (node/agents_mac), which runs no claude: none is needed, and its pinned Node.js goes
+    /// first on the node's PATH.
+    pub mac: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -333,13 +336,20 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             facts.home
         ));
     }
-    let Some(claude) = &facts.claude else {
-        return Err(format!(
-            "claude is not installed on the machine; fleetd runs its agents through it. Fix: on the machine, run {CLAUDE_INSTALL}"
-        ));
+    let claude = match (&facts.claude, input.mac) {
+        (Some(claude), false) => Some(claude),
+        (_, true) => None,
+        (None, false) => {
+            return Err(format!(
+                "claude is not installed on the machine; fleetd runs its agents through it. Fix: on the machine, run {CLAUDE_INSTALL}"
+            ));
+        }
     };
     let printed = facts.claude_version.as_deref().unwrap_or("");
-    let claude_verdict = version::check(printed);
+    let claude_verdict = match claude {
+        Some(_) => version::check(printed),
+        None => VersionVerdict::Ok,
+    };
 
     let l = facts.layout();
     let dirs = Dirs {
@@ -348,8 +358,12 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
     };
     let unit_file = |role: Role| unit_path(platform, &dirs, role);
     let services = ServiceManager::new(platform, facts.uid, unit_file);
-    let claude_bin_dir = dirname(claude).to_owned();
-    let mut path_dirs = vec![l.bin_dir.clone(), claude_bin_dir.clone()];
+    let mut path_dirs = vec![l.bin_dir.clone()];
+    match claude {
+        Some(claude) => path_dirs.push(dirname(claude).to_owned()),
+        // The node's own Node.js, for agent-device and agents' commands (node/agents_mac/tools.rs).
+        None => path_dirs.push(format!("{}/mac/node/bin", l.node_home)),
+    }
     for dir in facts.path.split(':') {
         if !dir.is_empty() && !path_dirs.iter().any(|d| d == dir) {
             path_dirs.push(dir.to_owned());
@@ -469,6 +483,9 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         ];
         if let Some(dir) = desired["claudeConfigDir"].as_str() {
             argv.extend(["--claude-config-dir".to_owned(), dir.to_owned()]);
+        }
+        if input.mac {
+            argv.push("--mac".to_owned());
         }
         argv.extend([
             "--home".to_owned(),
@@ -711,6 +728,7 @@ mod tests {
             hub_has_node_key: false,
             service: true,
             claude_config_dir: None,
+            mac: false,
         }
     }
 

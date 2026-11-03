@@ -80,6 +80,25 @@ const FAILED = run({
   finishedAt: AT,
 });
 
+/** The hub's guide for the Mac (setup step "mac"), as setup_list answers it: its parts in order. */
+const macPart = (title: string, value: string) => ({ title, links: [], values: [{ label: title, value, command: true }] });
+const MAC_STEP = {
+  id: "mac",
+  group: "hub",
+  title: "A Mac for agents",
+  why: "why",
+  need: { kind: "optional" },
+  status: "todo",
+  parts: [
+    macPart("In your own account: make the agents' user", "sudo sysadminctl -addUser agents"),
+    macPart("Log in as fleetd agents and join", "curl …"),
+    macPart("Two clicks at the Mac", "open Privacy_Accessibility"),
+    macPart("Moving a Mac that runs fleetd in your account", "launchctl bootout gui/$(id -u)/sh.fleetd.node"),
+  ],
+  fields: [],
+  ways: [],
+};
+
 let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
@@ -152,7 +171,9 @@ const render = async (open?: { view: View; at: number }) => {
                       gitIdentity: "ada-lovelace <1+ada-lovelace@users.noreply.github.com>",
                       line: (input as { rejoin?: boolean }).rejoin ? `${LINE} --rejoin` : LINE,
                     }
-                  : {};
+                  : tool === "setup_list"
+                    ? { steps: [MAC_STEP], requiredLeft: 0 }
+                    : {};
       return Promise.resolve({ ok: true, output });
     },
     subscribe: (l) => ((listener = l), () => undefined),
@@ -474,4 +495,36 @@ it("waits on a repair of a machine still online until its node links again, then
   await live([devboxLive("2026-10-26T10:00:20.000Z")]);
   expect(waitLine()?.getAttribute("data-line")).toBe("joined");
   expect(button("Open devbox")).toBeDefined();
+});
+
+it("sets up a Mac for agents between the hub's own guide, and moves one that is a machine already", async () => {
+  await render();
+  expect(host.textContent).toContain("A Mac for agents");
+  await click("Set up…");
+  expect(state()).toBe("line");
+  // The admin block first, from the hub's guide; the name defaults to mac.
+  expect(host.textContent).toContain("sudo sysadminctl -addUser agents");
+  expect(host.textContent).not.toContain("open Privacy_Accessibility");
+  expect(host.querySelector<HTMLInputElement>("form[aria-label='Name the machine'] input")?.value).toBe("mac");
+  await click("Make the line");
+  expect(calls.filter((c) => c.tool === "machine_join").map((c) => c.input)).toEqual([{ machineId: "mac", mac: true }]);
+  expect(host.textContent).toContain("it refuses an admin");
+  // Then the two clicks at the Mac; a new Mac has nothing to move.
+  expect(host.textContent).toContain("open Privacy_Accessibility");
+  expect(host.textContent).not.toContain("launchctl bootout");
+  await snapshot([DEVBOX, { ...DEVBOX, machineId: "mac", name: "mac" }]);
+  await click("Open the Mac's checks");
+  expect(window.location.hash).toBe("#/setup/mac");
+
+  // A machine of that name already: its line moves it into the agents' user, and says how to retire the old node.
+  act(() => root.unmount());
+  root = createRoot(host);
+  calls = [];
+  await render();
+  await snapshot([DEVBOX, { ...DEVBOX, machineId: "mac", name: "mac" }]);
+  await click("Set up…");
+  expect(host.textContent).toContain("its line moves it into the agents' user");
+  await click("Make the line");
+  expect(calls.filter((c) => c.tool === "machine_join").map((c) => c.input)).toEqual([{ machineId: "mac", rejoin: true, mac: true }]);
+  expect(host.textContent).toContain("launchctl bootout");
 });

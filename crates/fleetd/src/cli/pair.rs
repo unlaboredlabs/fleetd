@@ -348,7 +348,7 @@ pub fn worker_command(home: Option<&str>, machine: &str) -> Result<String, Strin
         .map_err(|_| format!("'{machine}' is not a machine id ([a-z0-9-]{{1,32}})"))?;
     let home = super::hub_key::resolve_home(home)?;
     let hub = super::hub_key::open_hub(&home)?;
-    let join = worker_join(&home, &hub.auth, &machine_id, false)?;
+    let join = worker_join(&home, &hub.auth, &machine_id, false, false)?;
     Ok(format!(
         "On {machine}, run:\n\n  {}\n\nThe code works once, until {}. {machine} needs claude installed and must reach the hub at that address.\n",
         join.line, join.expires_at
@@ -368,12 +368,14 @@ pub struct WorkerJoin {
 }
 
 /// Mints the one-time code `fleetd pair --worker` prints, and the app's Add machine shows. `rejoin`: the line enrolls
-/// a machine that joined before again (`--rejoin`), repairing it.
+/// a machine that joined before again (`--rejoin`), repairing it. `mac`: the line joins the agents' Mac (`--mac`),
+/// pasted in its standard agents user.
 pub fn worker_join(
     home: &Path,
     auth: &crate::hub::auth::Auth,
     machine: &fleetd_contracts::ids::MachineId,
     rejoin: bool,
+    mac: bool,
 ) -> Result<WorkerJoin, String> {
     let setup = super::setup::state::read_setup(home)?;
     let urls = local_hub_urls(home)?;
@@ -389,7 +391,8 @@ pub fn worker_join(
             &token.token,
             machine.as_str(),
             git_identity.as_deref(),
-        ) + if rejoin { " --rejoin" } else { "" },
+        ) + if rejoin { " --rejoin" } else { "" }
+            + if mac { " --mac" } else { "" },
         hub: urls[0].clone(),
         code: token.token,
         expires_at: token.expires_at,

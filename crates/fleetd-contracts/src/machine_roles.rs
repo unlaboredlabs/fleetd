@@ -197,6 +197,21 @@ pub struct MachineRolesEntry {
     /// The command that restarts its node, to run on that machine, while `screenSettings` is false: after an update,
     /// a node that still runs its old build needs it.
     pub node_restart: Option<Line<1, 200>>,
+    /// The agents' Mac only (D298): it runs no agents whatever its roles say, and this is its tool.
+    pub mac: Option<MacTool>,
+}
+
+/// The agents' Mac's tool, as the hub routes agents' `mac` calls to it.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MacTool {
+    /// "Agents may use this Mac": the admin's switch, on unless set off.
+    pub on: bool,
+    /// Its node offers the tool now (`mac_tool`): online, a standard user, the tool on in its node.json.
+    pub ready: bool,
+    /// Why agents can't use it now, in plain words, while they can't.
+    pub note: Option<Line<1, 300>>,
 }
 
 brand!(
@@ -248,6 +263,9 @@ pub struct SessionRouteResult {
     /// The hub would place the session on `runner`: seal the session's secrets and relay key to this key and start
     /// it again with them (`sealed`). Nothing started yet.
     pub seal_to: Option<crate::secrets::BoxPublicKey>,
+    /// With `sealTo`: the runner is the agents' Mac (D298), which holds no secret of any project: seal the relay key
+    /// alone. Absent: seal the session's secrets too.
+    pub relay_only: Option<bool>,
 }
 
 brand!(

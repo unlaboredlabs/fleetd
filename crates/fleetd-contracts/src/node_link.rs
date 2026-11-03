@@ -203,6 +203,16 @@ pub const CAP_SCREEN_SETTINGS: &str = "screen_settings";
 /// them and the attachments in its folder, and the folder itself when asked (D287 navi.delete-erases).
 pub const CAP_NAVI_ERASE: &str = "navi_erase";
 
+/// `mac_tool`: the node is the agents' Mac (D298), a macOS node running as a standard user with the Mac turned on.
+/// It takes `mac_call`, and the hub sends agents' `fleetd mac` steps to the online node that lists it.
+pub const CAP_MAC_TOOL: &str = "mac_tool";
+
+/// The node is the agents' Mac (D298: node.json's `agentsMac`, which only the installer's `--mac` sets): a tool, never a
+/// runner. It runs no claude and no Navis, takes no sealed secret, and lists none of the calls that carry them; the hub
+/// keeps its agents role off whatever the setting. Listed whatever its checks say (`mac_tool` only while they pass), so
+/// the hub knows the machine even while its tool is off.
+pub const CAP_AGENTS_MAC: &str = "agents_mac";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -268,6 +278,111 @@ pub struct NodeLoad {
     /// Whether the machine can host Linux desktop sessions, and in what; absent where node.json turns them off and
     /// from older nodes.
     pub desktop: Option<DesktopHealth>,
+    /// The agents' Mac's setup checks, run by its node as its own user with no admin; absent on any other machine and
+    /// from older nodes.
+    pub mac: Option<MacHealth>,
+}
+
+/// One setup check of the agents' Mac (docs: agents-mac.md), named as the doctor shows it: `<machine>/mac_<id>`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum MacCheckId {
+    /// The node's user is a standard user: not in `admin`, and `sudo -n true` fails.
+    StandardUser,
+    /// No other user's home under /Users opens for it.
+    OtherHomes,
+    /// No Apple ID is signed in for it.
+    NoAppleId,
+    /// It holds no FileVault secure token, so its password can't unlock the disk.
+    NoSecureToken,
+    /// It is in `_developer`, so simulators and debugging need no admin prompt.
+    Developer,
+    /// A full Xcode is selected, its licence accepted and its first launch run.
+    Xcode,
+    /// An iOS simulator runtime is installed.
+    IosRuntime,
+    /// The node may control the computer (Accessibility).
+    Accessibility,
+    /// The node may record the screen (Screen Recording).
+    ScreenRecording,
+    /// Its GUI session is the one on the Mac's screen: "console", or "background" behind another user's.
+    GuiSession,
+    /// The node's pinned Node.js, agent-device and agent-desktop are installed.
+    Tools,
+    /// The node holds its keep-awake assertion.
+    KeepAwake,
+}
+
+impl MacCheckId {
+    pub const ALL: [MacCheckId; 12] = [
+        Self::StandardUser,
+        Self::OtherHomes,
+        Self::NoAppleId,
+        Self::NoSecureToken,
+        Self::Developer,
+        Self::Xcode,
+        Self::IosRuntime,
+        Self::Accessibility,
+        Self::ScreenRecording,
+        Self::GuiSession,
+        Self::Tools,
+        Self::KeepAwake,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::StandardUser => "standard_user",
+            Self::OtherHomes => "other_homes",
+            Self::NoAppleId => "no_apple_id",
+            Self::NoSecureToken => "no_secure_token",
+            Self::Developer => "developer",
+            Self::Xcode => "xcode",
+            Self::IosRuntime => "ios_runtime",
+            Self::Accessibility => "accessibility",
+            Self::ScreenRecording => "screen_recording",
+            Self::GuiSession => "gui_session",
+            Self::Tools => "tools",
+            Self::KeepAwake => "keep_awake",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum MacCheckState {
+    Ok,
+    /// Works, short of what's recommended (a GUI session in the background).
+    Warn,
+    Fail,
+    /// The node couldn't tell, or is still at it (installing its tools).
+    Unknown,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MacCheck {
+    pub id: MacCheckId,
+    pub state: MacCheckState,
+    /// Plain words: what the node found.
+    pub message: Text<0, 500>,
+    /// What the person does about it, and where: in their own (admin) account, or at the Mac as the agents user.
+    pub fix: Option<Text<0, 300>>,
+    /// The exact command `fix` runs, to paste where it says, when there is one.
+    pub command: Option<Text<0, 300>>,
+}
+
+/// The agents' Mac's setup, as its node checked it last (each heartbeat reads the quick checks again; the slow ones,
+/// such as Xcode's, every few minutes and on a Test).
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MacHealth {
+    /// The macOS user the node runs as.
+    pub user: Text<1, 64>,
+    pub checks: List<MacCheck, 0, 16>,
 }
 
 /// Where a node's iOS sessions stand, for the doctor.

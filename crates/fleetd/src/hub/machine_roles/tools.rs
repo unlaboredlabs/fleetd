@@ -56,6 +56,7 @@ fn for_caller(hub: &Hub, caller: &Caller, entry: MachineRolesEntry) -> MachineRo
     );
     let setup = old.then(|| crate::hub::doctor::config::read_hub_config(&hub.config.home).0);
     MachineRolesEntry {
+        mac: super::mac::tool(hub, m),
         screen_settings: (can || old).then_some(can),
         node_restart: setup.map(|s| Line::unchecked(node_restart(s.machines.get(m.as_str())))),
         // A Mac takes no Navi (D299), whatever its older node says of its sandbox: the dialog says why.
@@ -98,7 +99,32 @@ async fn machine_roles_set(
                 .with_fix("machine_roles lists the machines."),
         );
     }
+    let agents_mac = super::mac::is_agents_mac(&hub, m);
+    if input.mac_tool.is_some() && !agents_mac {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            format!("{m} isn't the agents' Mac, so it has no Mac tool to turn on or off."),
+        )
+        .with_fix("Settings › Hub › Setup › A Mac for agents joins one."));
+    }
+    if agents_mac
+        && input
+            .roles
+            .as_ref()
+            .is_some_and(|r| r.contains(&MachineRole::Agents))
+    {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            format!(
+                "{m} is the agents' Mac: a tool for agents on other machines, so it never runs agents, leads or Navis itself."
+            ),
+        )
+        .with_fix("Run agents on another machine; they use this Mac with `mac run` and `mac sim`."));
+    }
     let (before, after) = hub.db.transaction(|c| {
+        if let Some(on) = input.mac_tool {
+            super::mac::set_tool_on(c, on)?;
+        }
         let before = roles_on(c, m)?;
         let mut after = before;
         if let Some(roles) = &input.roles {
@@ -128,7 +154,10 @@ async fn machine_roles_set(
         (false, true) => Some(format!(
             "{m} runs agents again: queued ones start as slots free."
         )),
-        _ => None,
+        _ => input.mac_tool.map(|on| match on {
+            true => format!("Agents may use {m} again: their mac commands run there."),
+            false => format!("Agents' mac commands now answer that {m} is turned off."),
+        }),
     };
     Ok(MachineRolesSetOutput {
         machine: for_caller(&hub, &caller, entry(runner, roles, why)),

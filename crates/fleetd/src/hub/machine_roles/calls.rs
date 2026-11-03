@@ -77,6 +77,7 @@ fn here(machine: &MachineId) -> LeadCallResult {
         answer: None,
         relay: None,
         seal_to: None,
+        relay_only: None,
     })
 }
 
@@ -87,6 +88,7 @@ fn relayed(runner: &MachineId, answer: BrowserResultFrame) -> LeadCallResult {
         answer: Some(answer),
         relay: None,
         seal_to: None,
+        relay_only: None,
     })
 }
 
@@ -123,6 +125,21 @@ pub async fn route(
             return Ok(here(&origin));
         };
         let ending = matches!(call.frame.call, BrowserCall::SessionEnd(_));
+        // The agents' Mac never gets a 1Password value: it hosts no browser, and a fill is refused before it goes.
+        if matches!(call.frame.call, BrowserCall::FillCredential(_))
+            && super::mac::is_agents_mac(&hub, &open.runner)
+        {
+            return Err(McpToolError::new(
+                ErrorCode::Forbidden,
+                format!(
+                    "{} is the agents' Mac, which never gets a 1Password value.",
+                    open.runner
+                ),
+            )
+            .with_fix(
+                "Sign in on a browser session of your own machine, never on the agents' Mac.",
+            ));
+        }
         // A fill carries the value the agent's node read, sealed to this session's runner: passed on as it is.
         let sealed = call
             .sealed
@@ -207,12 +224,14 @@ pub async fn route(
                     format!("{runner} has no key to seal to."),
                 )
             })?;
+        let relay_only = super::mac::is_agents_mac(&hub, &runner).then_some(true);
         return Ok(LeadCallResult::SessionRoute(SessionRouteResult {
             runner,
             here: false,
             answer: None,
             relay: None,
             seal_to: Some(key),
+            relay_only,
         }));
     }
     let sealed = call.sealed.map(|s| s.data_b64);
