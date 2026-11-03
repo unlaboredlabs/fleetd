@@ -145,7 +145,9 @@ straight to the branch.
 ## Review {#review}
 
 Every PR gets one fresh reviewer, which reports blocking findings only. Its verdict is bound to the PR's current
-patch. Blocking findings go to the agent that wrote the PR, and the PR waits for its next commit.
+patch. Blocking findings go to the agent that wrote the PR, and the PR waits for its next commit. They go to it even
+when the train sent the PR back mid-review, and until a review of a newer commit lands, every later message about the
+PR (a conflict, red CI, a `wait_ci` wake) repeats them, so a rebase alone never leaves them behind.
 
 Before a reviewer starts, the train checks the PR doesn't undo work already on its base, as a commit made on a fresh
 main while its files were an older tree's does: a file the PR puts back, byte for byte, to a version main had before

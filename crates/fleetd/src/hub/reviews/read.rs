@@ -15,7 +15,8 @@ use crate::hub::api::{Hub, clip};
 use crate::hub::link::LeadCaller;
 use crate::hub::link::lead_calls::CallerAgent;
 use crate::hub::redact::redact;
-use crate::hub::store::iso_ms;
+use crate::hub::store::{HubDb, iso_ms};
+use crate::hub::train::service::short;
 
 pub fn review_read(
     hub: &Hub,
@@ -54,7 +55,7 @@ pub fn review_read(
     let prs = prs
         .into_iter()
         .map(|pr| PrReviews {
-            reviews: latest(hub, pr.as_str()),
+            reviews: latest(&hub.db, pr.as_str()),
             pr,
         })
         .collect();
@@ -131,9 +132,42 @@ fn names(wanted: &str, pr: &PrUrl) -> bool {
     }
 }
 
+/// The PR's still-open blocking findings, for a message about it: each blocking verdict of its latest review, under its
+/// reviewer and head. Empty when its latest review blocks nothing. A rebase since doesn't close them: only a review of a
+/// newer head does.
+pub fn open_blocking(db: &HubDb, pr: &str) -> String {
+    let open: Vec<String> = latest(db, pr)
+        .into_iter()
+        .filter(|r| r.blocking.get() > 0)
+        .map(|r| {
+            let at = r
+                .pr_head_sha
+                .as_ref()
+                .map(|s| s.as_str())
+                .unwrap_or_default();
+            format!(
+                "{} at {} ({} blocking, {} non-blocking):\n{}",
+                r.task_id,
+                short(at),
+                r.blocking.get(),
+                r.non_blocking.get(),
+                r.findings
+            )
+        })
+        .collect();
+    if open.is_empty() {
+        return String::new();
+    }
+    format!(
+        "Its latest review's blocking findings are still open: fix them too, unless your head already does \
+         (`review_read` reads them whole).\n\n{}",
+        open.join("\n\n")
+    )
+}
+
 /// The PR's latest reviews: each review task's newest verdict on the newest head reviewed, newest first.
-fn latest(hub: &Hub, pr: &str) -> Vec<ReviewFindings> {
-    let read = hub.db.with(|conn| {
+fn latest(db: &HubDb, pr: &str) -> Vec<ReviewFindings> {
+    let read = db.with(|conn| {
         let mut stmt = conn.prepare_cached(
             "SELECT task_id, sha, at_ms, data FROM review_verdicts WHERE pr_key = ?1 ORDER BY n DESC",
         )?;

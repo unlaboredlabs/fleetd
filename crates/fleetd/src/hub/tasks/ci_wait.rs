@@ -14,6 +14,7 @@ use rusqlite::params;
 use super::ports::TaskError;
 use super::{TaskCaller, Tasks, holds_pr, lead_error, store_error};
 use crate::hub::api::Hub;
+use crate::hub::reviews::read::open_blocking;
 use crate::hub::store::{now_ms, parse_ms};
 use crate::hub::work::BoxFut;
 
@@ -358,6 +359,15 @@ impl Tasks {
                 })
             }) else {
                 continue;
+            };
+            // A PR's wake carries its still-open blocking findings, so a writer back from a rebase still fixes them.
+            let open = match &target {
+                Target::Pr { .. } => open_blocking(&self.d.db, &target.url()),
+                Target::Run { .. } => String::new(),
+            };
+            let line = match open.as_str() {
+                "" => line,
+                open => format!("{line}\n\n{open}"),
             };
             let caller = TaskCaller {
                 project_ref: task.project_ref.clone(),

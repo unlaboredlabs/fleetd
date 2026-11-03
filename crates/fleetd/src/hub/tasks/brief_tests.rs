@@ -358,6 +358,61 @@ async fn an_author_reads_every_finding_of_its_prs_latest_reviews_but_no_other_pr
     }
 }
 
+/// W373 (#976): a review blocked the PR, then the train sent it back for a rebase and its writer pushed a new head that
+/// no review has seen yet. `review_read` still gives the latest review's findings, and the PR's open blocking findings
+/// still name them, until a review of a newer head lands.
+#[tokio::test]
+async fn an_author_reads_its_latest_reviews_findings_after_a_rebase() {
+    let (hub, _home) = hub();
+    let pr = "https://github.com/acme/app/pull/7";
+    insert(
+        &hub,
+        json!({ "taskId": "T1", "title": "write it", "kind": "write", "state": "running", "startedAt": AT, "pr": pr }),
+    );
+    verdict(
+        &hub,
+        "T9",
+        pr,
+        'a',
+        1,
+        "blocking: src/checker.rs:333 trusts any answer",
+    );
+    // The rebased head 'b' is known to the gate, but reviewed by no one yet.
+    hub.db
+        .with(|conn| {
+            conn.execute(
+                "INSERT INTO review_patch_ids (change_id, head_sha, patch_id) VALUES ('X1', ?1, 'p2')",
+                ["b".repeat(40)],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+    let Ok(LeadCallResult::ReviewRead(read)) = as_task(&hub, json!({ "op": "review_read" })) else {
+        panic!("review_read was not answered")
+    };
+    let reviews: Vec<_> = read.prs[0]
+        .reviews
+        .iter()
+        .map(|r| (r.task_id.as_str(), r.blocking.get(), r.findings.as_str()))
+        .collect();
+    assert_eq!(
+        reviews,
+        [("T9", 1, "blocking: src/checker.rs:333 trusts any answer")]
+    );
+    let open = crate::hub::reviews::read::open_blocking(&hub.db, pr);
+    assert!(
+        open.contains(
+            "T9 at aaaaaaaaaaaa (1 blocking, 1 non-blocking):\nblocking: src/checker.rs:333"
+        ),
+        "{open}"
+    );
+
+    // A clean review of the new head closes them.
+    verdict(&hub, "T10", pr, 'b', 0, "non-blocking: a clearer name");
+    assert_eq!(crate::hub::reviews::read::open_blocking(&hub.db, pr), "");
+}
+
 /// The lead's text may hold a `## Rules` of its own: the brief splits at the template's, so the task and its workstream
 /// stay whole in the first message and the system prompt starts at fleetd's rules.
 #[tokio::test]
