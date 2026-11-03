@@ -20,6 +20,7 @@ const SYMBOLS = {
   hidden: ["eye.slash", "visibility_off"],
   credential: ["key", "key"],
   error: ["exclamationmark.circle.fill", "error"],
+  denied: ["xmark.circle.fill", "cancel"],
   offline: ["wifi.slash", "cloud_off"],
   sparkles: ["sparkles", "auto_awesome"],
   folder: ["folder", "folder"],

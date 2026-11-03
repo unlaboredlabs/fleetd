@@ -63,3 +63,23 @@ describe("the accent", () => {
     expect(shareView).not.toContain("Color.accentColor");
   });
 });
+
+/** An rgba() or hex color laid over an opaque hex ground, as the screen shows it. */
+const over = (color: string, ground: string): string => {
+  const m = /^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/u.exec(color);
+  if (m === null) return color;
+  const alpha = Number(m[4]);
+  const mixed = [1, 2, 3].map((i, n) => Math.round(Number(m[i]) * alpha + (rgb(ground)[n] ?? 0) * (1 - alpha)));
+  return `#${mixed.map((c) => c.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+};
+
+describe("an approval's risk line", () => {
+  for (const s of ["light", "dark"] as const) {
+    it(`reads at WCAG AA on its orange pill in a card in ${s} mode`, () => {
+      scheme = s;
+      const t = useTheme();
+      // ApprovalCard draws the words in the label's ink on warningSoft, the card's surface under it.
+      expect(contrast(t.label, over(t.warningSoft, t.surface))).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+});

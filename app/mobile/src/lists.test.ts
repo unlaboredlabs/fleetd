@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HumanRequest, ProjectSummary, ToolPreview } from "./desktop";
-import { approvals, approvalView, chatList, fieldCopy, lists } from "./lists";
+import { approvalOutcome, approvals, approvalView, chatList, fieldCopy, lists } from "./lists";
 import { exactRuns } from "./exact";
 import { noPrefs } from "./prefs";
 
@@ -191,6 +191,29 @@ describe("approvals", () => {
       ["Total", "264.40 EUR", false],
       ["Card", "Visa (Personal)", false],
     ]);
+  });
+});
+
+describe("an answered approval's line", () => {
+  const ANSWERED = "2026-10-28T10:01:00Z";
+
+  it("says what this phone answered while its message still says open, never waiting", () => {
+    const decided = { ...gated("r1"), state: "approved", answeredBy: "human:ada", answeredAt: ANSWERED } as const;
+    expect(approvalOutcome({ state: "open" }, decided)).toEqual({ text: "Approved by ada", tone: "approved", at: ANSWERED });
+    expect(approvalOutcome({ state: "open" }, { ...gated("r1"), state: "denied" })).toEqual({ text: "Denied", tone: "denied", at: undefined });
+  });
+
+  it("waits only for an approval nobody answered here", () => {
+    expect(approvalOutcome({ state: "open" }, undefined)).toMatchObject({ text: "Waiting for approval", tone: "waiting" });
+  });
+
+  it("follows the message once it says how it went, as the hub's Telegram card does", () => {
+    const decided = { ...gated("r1"), state: "approved" } as const;
+    expect(approvalOutcome({ state: "ran", by: "human:ada", answeredAt: ANSWERED }, decided)).toEqual({ text: "Approved by ada", tone: "approved", at: ANSWERED });
+    expect(approvalOutcome({ state: "failed", by: "human:ada" }, decided).text).toBe("Approved by ada, but it failed");
+    expect(approvalOutcome({ state: "failed", note: "The machine is offline." }, undefined)).toMatchObject({ text: "Not run: The machine is offline.", tone: "failed" });
+    expect(approvalOutcome({ state: "denied", by: "human:ada", note: "Not now." }, undefined).text).toBe("Denied by ada");
+    expect(approvalOutcome({ state: "denied", note: "It timed out." }, undefined).text).toBe("Closed: It timed out.");
   });
 });
 

@@ -70,6 +70,8 @@ export interface State {
   readonly answering: Readonly<Record<string, true>>;
   /** Why an answer failed, by requestId, until the next try. */
   readonly answerErrors: Readonly<Record<string, HubError>>;
+  /** Requests answered from here, as the hub answered them: the chat says how each went before its message catches up. */
+  readonly decided: Readonly<Record<string, HumanRequest>>;
   /** What a lead does this moment, by live lane id: the open chat's, which the turn line says (turn.ts). */
   readonly leadActivity: Readonly<Record<string, Activity>>;
   /** When each working lead's turn began (hub epoch ms), from the event that said so; unknown for one already working. */
@@ -93,6 +95,7 @@ export const initial = (hub: HubState): State => ({
   requests: undefined,
   answering: {},
   answerErrors: {},
+  decided: {},
   leadActivity: {},
   turnSince: {},
   screens: {},
@@ -182,7 +185,11 @@ export const reduce = (s: State, a: Action): State => {
       const base = { ...s, answering: without(s.answering, a.requestId) };
       if (!a.result.ok) return { ...base, answerErrors: { ...s.answerErrors, [a.requestId]: a.result.error } };
       const answered = a.result.request;
-      return { ...base, requests: s.requests?.filter((r) => r.requestId !== answered.requestId || answered.state === "open") };
+      return {
+        ...base,
+        requests: s.requests?.filter((r) => r.requestId !== answered.requestId || answered.state === "open"),
+        decided: { ...s.decided, [answered.requestId]: answered },
+      };
     }
   }
 };

@@ -24,7 +24,7 @@ import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
 import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
-import { chatItems, emptyChat, isNavi, type AttachmentGetOutput, type AttachmentRef, type ChatItem } from "../desktop";
+import { chatItems, emptyChat, isNavi, type AttachmentGetOutput, type AttachmentRef, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
@@ -47,7 +47,7 @@ import { RevealArea, Revealed } from "../ui/Reveal";
 import type { MenuItem } from "../ui/Menu";
 import { bubbleIn, dur, ease, PRESSED_OPACITY, useReduceMotion } from "../ui/motion";
 import { SkeletonThread } from "../ui/Skeleton";
-import { ApprovalCard } from "./ApprovalCard";
+import { ApprovalCard, ApprovalOutcomeLine } from "./ApprovalCard";
 import { ScreenCards } from "./ScreenCards";
 import { Symbol } from "./manage/parts";
 import type { SkillSaved } from "./manage/skillsModel";
@@ -516,11 +516,11 @@ const RowView = memo(function RowView({ row, chatKey, title, canAnswer, actions,
 }, sameProps);
 
 /** An approval asked in the chat: its card while it's open, then a line saying how it went. */
-function InlineApproval({ chatKey, requestId, state: asked }: { chatKey: Key; requestId: string; state: string }) {
+function InlineApproval({ chatKey, item }: { chatKey: Key; item: CommandApprovalItem }) {
   // The hub's state, which a row reads only here: the rest of the thread doesn't draw again with it.
   const { state, session } = useHub();
-  const open = state.requests?.find((r) => r.requestId === requestId);
-  if (open === undefined) return <Event text={`Approval ${asked === "open" ? "waiting" : asked}`} icon="approvals" />;
+  const open = item.state === "open" ? state.requests?.find((r) => r.requestId === item.requestId) : undefined;
+  if (open === undefined) return <ApprovalOutcomeLine item={item} decided={state.decided[item.requestId]} />;
   const project = state.projects?.[chatKey];
   return (
     <View style={[styles.card, styles.groupGap]}>
@@ -531,7 +531,7 @@ function InlineApproval({ chatKey, requestId, state: asked }: { chatKey: Key; re
         picture={project}
         answering={state.answering[open.requestId] === true}
         error={state.answerErrors[open.requestId]}
-        onAnswer={(d) => void session.answer(open.requestId, d)}
+        onAnswer={(d) => session.answer(open.requestId, d)}
       />
     </View>
   );
@@ -562,7 +562,7 @@ function ItemView({
   const gap = first ? styles.groupGap : styles.tightGap;
   const when = fullTime(item.at, now);
   const inline = item.message?.item;
-  if (inline?.kind === "command_approval") return <InlineApproval chatKey={chatKey} requestId={inline.requestId} state={inline.state} />;
+  if (inline?.kind === "command_approval") return <InlineApproval chatKey={chatKey} item={inline} />;
   if (inline?.kind === "secret_request") {
     // A Navi's secure input says what it is and where it goes; either way the value is typed only where it is sealed.
     const input = inline.secureInput;

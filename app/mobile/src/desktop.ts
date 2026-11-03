@@ -19,6 +19,7 @@ export type {
   ChatHistoryOutput,
   ChatMessage,
   ChatMessageEventData,
+  CommandApprovalItem,
   FleetStatus,
   GatedRunSpec,
   HubEvent,

@@ -247,11 +247,13 @@ export class Session {
     return r;
   }
 
-  async answer(requestId: string, decision: ApprovalDecision): Promise<void> {
-    if (this.#state.answering[requestId] === true) return;
+  /** Whether the hub took the answer: false when it refused, the link failed, or an answer is already on its way. */
+  async answer(requestId: string, decision: ApprovalDecision): Promise<boolean> {
+    if (this.#state.answering[requestId] === true) return false;
     this.#dispatch({ t: "answer", requestId });
     const r = await this.#client.call("approval_answer", { requestId, decision });
     this.#dispatch({ t: "answered", requestId, result: r.ok ? { ok: true, request: r.output.request } : { ok: false, error: r.error } });
+    return r.ok;
   }
 
   async #send(key: Key, row: ChatSend): Promise<void> {
