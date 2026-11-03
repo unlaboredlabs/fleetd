@@ -61,7 +61,7 @@ pub struct DesktopConfig {
     /// The Xvfb to use instead of the one on the PATH.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub xvfb: Option<String>,
-    /// An ffmpeg to encode the video with (mjpeg in, libvpx-vp9 out). Absent: the browser's or the Android one's.
+    /// An ffmpeg to encode the video with (matroska and mjpeg in, libvpx-vp9 out). Absent: the browser's or the Android one's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ffmpeg: Option<String>,
     /// Displays kept started for the next sessions. Absent: 1.

@@ -289,7 +289,7 @@ Settings go under `browser` in [node.json](/docs/config-and-files#node-json) (`e
 |---|---|
 | `enabled` | `false` turns browser screens off on this machine. Absent or `true`: on, and the node installs the browser as it starts. |
 | `chrome` | A Chrome or headless shell to use instead of the pinned one. |
-| `ffmpeg` | An ffmpeg to use instead of the pinned one. It needs MJPEG in and `libvpx-vp9` out. |
+| `ffmpeg` | An ffmpeg to use instead of the pinned one. It needs Matroska and MJPEG in, and `libvpx-vp9` out. |
 | `pool` | Chromes kept launched for the next screens. Absent: 1. Each waiting Chrome takes about 0.5 GB of memory. |
 | `sandbox` | `true` requires Chrome's own sandbox: a machine that refuses it starts no browser. `false` turns it off. Absent: on wherever the machine allows it, else off. |
 | `idleMinutes` | End a screen after this many minutes without an `agent-browser` command. Absent: 30. |
@@ -307,6 +307,9 @@ its time. Each stage goes to the log as it ends, with its own time (`ms`) and th
   into `recorder`, `discover` and `page`;
 - **node desktop**: `prepare`, `warm display` or `cold display` (with **node display**'s `xvfb` or `container`),
   `connect`, `secrets` and `session open`.
+
+A browser screen's end goes the same way, as **node browser end**: `captures` (the page after the last steps),
+`screencast`, `video` (ffmpeg finishing it), `browser` and `scrub`.
 
 The log also has each screen's first frame on its machine, when the hub asked for its frames, and how long the hub
 waited for the first. `FLEETD_LOG` takes the filter `RUST_LOG` does; without it, the log has info and above.
@@ -508,6 +511,6 @@ Settings go under `desktop` in [node.json](/docs/config-and-files#node-json):
 | `runtime` | The docker or podman to use instead of the one on the `PATH`. |
 | `image` | An image to run instead of building the pinned one. It must start Xvfb on `:0` with `-auth /fleetd/xauth`. |
 | `xvfb` | The Xvfb to use instead of the one on the `PATH`. |
-| `ffmpeg` | An ffmpeg for the video. It needs MJPEG in and `libvpx-vp9` out. |
+| `ffmpeg` | An ffmpeg for the video. It needs Matroska and MJPEG in, and `libvpx-vp9` out. |
 | `pool` | Displays kept started for the next screens. Absent: 1. |
 | `idleMinutes` | End a screen after this many minutes without a `desktop` action. Absent: 30. |

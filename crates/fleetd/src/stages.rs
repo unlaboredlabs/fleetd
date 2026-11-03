@@ -1,5 +1,5 @@
-//! A screen's start, stage by stage (W245): each stage's time goes to the log at debug level as it ends, so
-//! `FLEETD_LOG=fleetd=debug` on a hub or node shows where a start spends its time (docs: Browser sessions).
+//! A screen's start, or its end, stage by stage (W245): each stage's time goes to the log at debug level as it ends,
+//! so `FLEETD_LOG=fleetd=debug` on a hub or node shows where a start spends its time (docs: Browser sessions).
 use std::time::Instant;
 
 /// One start's clock: `what` names it in the log (`hub screen_open`, `node browser`), `id` the screen once known.
