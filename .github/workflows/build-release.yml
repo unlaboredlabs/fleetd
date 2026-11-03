@@ -132,6 +132,10 @@ jobs:
           if "$objdump" -p dist/fleetd-linux-x64 | grep NEEDED; then
             echo "::error::fleetd-linux-x64 is not static"; exit 1
           fi
+          # zig's musl malloc keeps what the hub frees: the binary runs jemalloc, as .cargo/config.toml sets it up.
+          if ! grep -q 'narenas:4,dirty_decay_ms:0,muzzy_decay_ms:0' dist/fleetd-linux-x64; then
+            echo "::error::fleetd-linux-x64 doesn't run jemalloc with .cargo/config.toml's settings"; exit 1
+          fi
           for bin in dist/fleetd-darwin-*; do
             "$objdump" --macho --dylibs-used "$bin"
             if "$objdump" --macho --dylibs-used "$bin" | grep -F '.framework/'; then
