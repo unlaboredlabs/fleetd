@@ -46,9 +46,13 @@ pub fn secret_scope(scope: &McpScope) -> McpSecretScope {
 
 /// A server as a session on `machine_id` gets it: plain values as they are, a secret by name. `None` when that
 /// machine's node doesn't hold all of its secrets, so it would start without them, or when it signs in with OAuth and
-/// is signed out.
+/// is signed out or its token hasn't reached a machine yet.
 pub fn for_session(server: &McpServer, machine_id: &MachineId) -> Option<McpSessionServer> {
-    if !server.secrets_missing_on(machine_id).is_empty() || !signed_in(server) {
+    let tokenless = server.oauth.is_some()
+        && !server
+            .values()
+            .any(|(field, v)| is_oauth_token(server, field, v));
+    if !server.secrets_missing_on(machine_id).is_empty() || !signed_in(server) || tokenless {
         return None;
     }
     let values = |list: &[McpValue]| -> Vec<McpSessionValue> {

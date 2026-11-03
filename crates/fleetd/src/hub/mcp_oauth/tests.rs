@@ -1061,3 +1061,33 @@ async fn a_wrong_verifier_is_refused() {
     .unwrap();
     assert!(matches!(error, oauth::TokenError::Refused(_)), "{error:?}");
 }
+
+/// The token reaches the machine before the server reads as connected; one whose machine can't take it yet is
+/// connected but handed to no session until it can, and a later round gives it.
+#[tokio::test]
+async fn a_signed_in_server_reaches_sessions_only_with_its_token() {
+    let fake = service(true).await;
+    let lab = hub().await;
+    save(&lab, &fake).await;
+    let out = start(&lab, json!({})).await;
+    // The node can't take MCP secrets for now.
+    lab.hub.link.set_capabilities(&machine(), &[]);
+    let (status, page) = browse(&lab, out["authorizeUrl"].as_str().unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(page.contains("Its machine is offline"), "{page}");
+    assert_eq!(
+        server(&lab).oauth.unwrap().status,
+        McpOauthStatus::Connected
+    );
+    assert!(crate::hub::mcp_servers::for_session(&server(&lab), &machine()).is_none());
+    let config = lab.hub.db.mcp_servers().session_config(&project()).unwrap();
+    assert!(config.servers.is_empty());
+
+    lab.hub
+        .link
+        .set_capabilities(&machine(), &[CAP_MCP_SERVERS]);
+    super::renew_due(&lab.hub).await;
+    assert!(on_node(&lab).unwrap().starts_with("Bearer at-"));
+    let config = lab.hub.db.mcp_servers().session_config(&project()).unwrap();
+    assert!(config.servers.iter().any(|s| s.name.as_str() == "mail"));
+}

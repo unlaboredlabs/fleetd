@@ -599,6 +599,15 @@ async fn exchange(
     row.record.client = Some(pending.client);
     keep_tokens(hub, &mut row, &tokens, at)?;
     put(&hub.db, &row).map_err(|e| e.to_string())?;
+    // The token goes to the machine first: the app tests the server as soon as it reads Connected, and a session
+    // starting then gets it with its header.
+    let on_machine = match push(hub, &mut row).await {
+        Ok(()) => true,
+        Err(why) => {
+            tracing::info!(server = %row.name, "a signed-in MCP server's token waits for its machine: {why}");
+            false
+        }
+    };
     let expires_ms = row.record.expires_ms;
     show(hub, &row, |o| {
         o.status = McpOauthStatus::Connected;
@@ -608,13 +617,6 @@ async fn exchange(
         o.problem = None;
     })
     .map_err(|e| e.to_string())?;
-    let on_machine = match push(hub, &mut row).await {
-        Ok(()) => true,
-        Err(why) => {
-            tracing::info!(server = %row.name, "a signed-in MCP server's token waits for its machine: {why}");
-            false
-        }
-    };
     Ok(on_machine)
 }
 

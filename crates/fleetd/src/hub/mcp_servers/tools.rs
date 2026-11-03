@@ -620,11 +620,19 @@ async fn turned_away(
             .await
             .map_err(|why| ToolError::new(ErrorCode::Failed, why))?;
         return match renewed {
-            Renewed::Yes => Ok(hub
-                .executors
-                .mcp_test(machine_id, project_id, session)
-                .await
-                .map_err(from_executor)?),
+            // Tested again as the server is now: its header may have reached the machine since the first test.
+            Renewed::Yes => {
+                let now = hub.db.mcp_servers().get(&server.scope, &server.name)?;
+                let session = now
+                    .as_ref()
+                    .and_then(|s| super::for_session(s, machine_id))
+                    .unwrap_or(session);
+                Ok(hub
+                    .executors
+                    .mcp_test(machine_id, project_id, session)
+                    .await
+                    .map_err(from_executor)?)
+            }
             Renewed::SignedOut => {
                 let problem = hub
                     .db
