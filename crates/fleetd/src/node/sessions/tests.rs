@@ -4982,3 +4982,58 @@ async fn progress_alone_goes_out_at_most_every_ten_seconds_and_the_latest_when_t
     tokio::time::sleep(super::PROGRESS_EVERY + Duration::from_millis(1)).await;
     assert!(sent(&mut hub).is_empty(), "nothing was left to send");
 }
+
+/// What a task's session left running (a browser its probe script started, recorded by the session's host by pid and
+/// start time) runs on through the session's turns, and ends when the task does: its stop.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn what_a_tasks_session_left_running_lives_through_its_turns_and_ends_with_the_task() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&root).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.settled("r1").await;
+    let left = std::process::Command::new("sleep")
+        .arg("600")
+        .spawn()
+        .unwrap();
+    let pid = left.id() as i32;
+    let stat = |pid: i32| {
+        std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .ok()
+            .and_then(|s| crate::node::runner::process::parse_stat(pid, &s))
+    };
+    let start = stat(pid).unwrap().start.unwrap();
+    let hosts = dir.path().join("node/hosts");
+    std::fs::create_dir_all(&hosts).unwrap();
+    let record = crate::node::runner::host::left_file(&hosts.join("s1"));
+    std::fs::write(&record, format!("{pid} {start}\n")).unwrap();
+
+    hub.ok(send("s1", "r2")).await;
+    hub.settled("r2").await;
+    assert!(
+        stat(pid).is_some_and(|p| !p.zombie),
+        "a turn's end keeps it"
+    );
+
+    hub.ok(SessionCall::Stop {
+        session_id: ThreadId::unchecked("s1"),
+        remove_worktree: false,
+    })
+    .await;
+    assert!(stat(pid).is_none_or(|p| p.zombie), "the task's end ends it");
+    assert!(!record.exists());
+    drop(left);
+}
