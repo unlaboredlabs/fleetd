@@ -88,12 +88,47 @@ pub fn heavy(args: &[String]) -> bool {
     command_at(args).is_some_and(|at| HEAVY.contains(&args[at].as_str()))
 }
 
-/// For a `cargo run`, the `cargo build` of what it runs: its arguments up to `--`, `build` for `run`. It builds in a
-/// slot, which frees before the program starts.
+/// `cargo run`'s flags that take a value as the next argument: every one of them `cargo build` takes too.
+const RUN_VALUES: &[&str] = &[
+    "-p",
+    "--package",
+    "--bin",
+    "--example",
+    "-F",
+    "--features",
+    "-j",
+    "--jobs",
+    "--profile",
+    "--target",
+    "--target-dir",
+    "--manifest-path",
+    "--message-format",
+    "--color",
+    "--config",
+    "-Z",
+    "-C",
+    "--lockfile-path",
+];
+
+/// For a `cargo run`, the `cargo build` of what it runs: `build` for `run`, and its flags with their values up to
+/// `--`, never the program's own arguments (`cargo run -q a b` runs it with `a b`, which `cargo build` refuses). It
+/// builds in a slot, which frees before the program starts.
 pub fn build_first(args: &[String]) -> Option<Vec<String>> {
     let at = command_at(args).filter(|&at| ["run", "r"].contains(&args[at].as_str()))?;
-    let mut build: Vec<String> = args.iter().take_while(|a| *a != "--").cloned().collect();
-    build[at] = "build".to_owned();
+    let mut build = args[..at].to_vec();
+    build.push("build".to_owned());
+    let mut rest = args[at + 1..].iter().take_while(|a| *a != "--");
+    while let Some(arg) = rest.next() {
+        if !arg.starts_with('-') {
+            continue;
+        }
+        build.push(arg.clone());
+        if RUN_VALUES.contains(&arg.as_str())
+            && let Some(value) = rest.next()
+        {
+            build.push(value.clone());
+        }
+    }
     Some(build)
 }
 
@@ -146,9 +181,8 @@ pub fn add_to_path(home: &Path, exe: &str, env: &mut Vec<(String, String)>) {
 pub fn brief_line(slots: u64) -> String {
     format!(
         "- Cargo builds, tests, checks and clippy runs take turns: {slots} at once on this machine. One past that \
-         prints that it is queued for a build slot and starts by itself once one frees: run it in the background \
-         (`run_in_background`) rather than under a short timeout, since one stopped and started again goes to the \
-         back of the queue.\n"
+         prints that it is queued for a build slot and starts by itself once one frees, within the same command: \
+         give it Bash's longest timeout, since one stopped and started again goes to the back of the queue.\n"
     )
 }
 
@@ -484,6 +518,37 @@ mod tests {
         assert_eq!(
             build_first(&args(&["r", "--release"])),
             Some(args(&["build", "--release"]))
+        );
+        // The program's own arguments, even without `--`, are the program's: flags' values stay.
+        assert_eq!(
+            build_first(&args(&[
+                "run",
+                "-q",
+                "foo",
+                "--bin",
+                "x",
+                "-p",
+                "y",
+                "bar",
+                "--release",
+                "-j",
+                "2"
+            ])),
+            Some(args(&[
+                "build",
+                "-q",
+                "--bin",
+                "x",
+                "-p",
+                "y",
+                "--release",
+                "-j",
+                "2"
+            ]))
+        );
+        assert_eq!(
+            build_first(&args(&["run", "--features=a b", "-pdocsgen", "out.txt"])),
+            Some(args(&["build", "--features=a b", "-pdocsgen"]))
         );
         assert_eq!(build_first(&args(&["-C", "run", "test"])), None);
         assert_eq!(build_first(&args(&["build"])), None);
