@@ -26,6 +26,7 @@ pub mod link;
 pub mod machine_roles;
 pub mod machine_setup;
 pub mod mcp;
+pub mod mcp_oauth;
 pub mod mcp_servers;
 pub mod memory;
 pub mod metrics;

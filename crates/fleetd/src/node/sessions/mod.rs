@@ -2187,8 +2187,9 @@ impl SessionService {
     ) -> Result<bool, SessionError> {
         let workspace = self.workspace_lock(id);
         let _workspace = workspace.lock().await;
-        // A new turn of a session whose order's variables changed starts a new claude, which has them.
+        // A new turn of a session whose order's variables or MCP keys changed starts a new claude, which has them.
         self.renew_env(id).await;
+        self.renew_mcp(id).await;
         let queued = match self.record_run(id, run_id, text, steer)? {
             Ok(queued) => queued,
             Err(was_queued) => return Ok(was_queued),

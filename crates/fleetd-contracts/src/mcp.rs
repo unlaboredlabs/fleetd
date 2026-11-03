@@ -1528,6 +1528,43 @@ output!(McpServerTestOutput {
     machine_id: MachineId,
     result: crate::mcp_servers::McpTestResult,
 });
+input!(McpOauthStartInput {
+    scope: crate::mcp_servers::McpScope,
+    /// A saved HTTP or SSE server of a project.
+    name: crate::mcp_servers::McpServerName,
+    /// Where this app reaches the hub: the service sends the person's browser back to `<hubUrl>/oauth/callback`.
+    /// Absent: the hub's own URL.
+    hub_url: Option<Line<1, 2048>>,
+    /// The person's own OAuth client, for a service that doesn't let fleetd register itself.
+    client: Option<McpOauthClientSet>,
+});
+/// A person's own OAuth client: its id, and its secret sealed to the hub's own box key (`needsClient.boxPubKey`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpOauthClientSet {
+    pub client_id: Line<1, 512>,
+    /// None for a public client, which has no secret.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sealed_secret: Option<crate::secrets::SealedSecret>,
+}
+output!(McpOauthStartOutput {
+    /// Open this in the person's browser: the service's own sign-in page. Absent with `needsClient`.
+    authorize_url: Option<String>,
+    /// Where the service sends the browser back, a page the hub serves: what the person's own client must allow.
+    redirect_uri: String,
+    /// The service lets no app register itself: the person makes an OAuth client there that allows `redirectUri`,
+    /// then starts again with `client`.
+    needs_client: Option<McpOauthNeedsClient>,
+});
+/// What making one's own OAuth client takes.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpOauthNeedsClient {
+    /// The service's sign-in server, where the client is made.
+    pub issuer: String,
+    /// The hub's own box key, which the client secret is sealed to.
+    pub box_pub_key: String,
+}
 
 // prompt_get, prompt_set, session_prompt_get: every prompt fleetd sends a model.
 input!(PromptGetInput {
@@ -3298,6 +3335,8 @@ tools! {
     mcp_server_remove => McpServerRemove, Operate, McpServerRemoveInput, McpServerRemoveOutput;
     mcp_settings_set => McpSettingsSet, Operate, McpSettingsSetInput, McpSettingsSetOutput;
     mcp_server_test => McpServerTest, Operate, McpServerTestInput, McpServerTestOutput;
+    // Human keys only (the handler checks): a person signs in to a server with their own account.
+    mcp_oauth_start => McpOauthStart, Operate, McpOauthStartInput, McpOauthStartOutput;
     github_app_get => GithubAppGet, Read, GithubAppGetInput, GithubAppGetOutput;
     // Owners' and admins' human keys only (the handlers check): the hub's own GitHub App.
     github_app_manifest => GithubAppManifest, Admin, GithubAppManifestInput, GithubAppManifestOutput;

@@ -30,7 +30,7 @@ fn require_admin(caller: &Caller) -> Result<(), ToolError> {
 }
 
 /// Where devices reach the hub: its --url, else the one setup saved, else its listen address.
-fn hub_url(hub: &Hub) -> String {
+pub(crate) fn hub_url(hub: &Hub) -> String {
     hub.config
         .url
         .clone()

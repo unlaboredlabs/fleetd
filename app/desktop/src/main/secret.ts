@@ -3,7 +3,7 @@
 // only relays ciphertext and the renderer never gets the plaintext back. It is never logged.
 import { SECRET_MAX_BYTES, type EnvVarSet, type McpValueSet, type ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
-import type { ClaudeAccountRequest, HubLinkRequest, McpServerRequest, OnePasswordRequest, ProjectEnvRequest, SecretRequest, TelegramRequest } from "../shared/ipc";
+import type { ClaudeAccountRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, ProjectEnvRequest, SecretRequest, TelegramRequest } from "../shared/ipc";
 
 
 const refused = (message: string, fix?: string): { ok: false; error: HubError } => ({
@@ -60,6 +60,29 @@ export const submitHubLink = async (
   const sealed = await seal(request.boxPubKey, request.key);
   if (!sealed.ok) return sealed;
   return call("hub_link_add", { navi: request.navi, label: request.label, url: request.url, sealed: sealed.sealed });
+};
+
+/**
+ * The person's own OAuth client for an MCP server's sign-in: its secret, trimmed, sealed to the hub's own key
+ * (mcp_oauth_start's needsClient.boxPubKey), then mcp_oauth_start with the client. No secret: a public client.
+ */
+export const submitMcpOauthClient = async (
+  request: McpOauthClientRequest,
+  call: (tool: "mcp_oauth_start", input: ToolInput<"mcp_oauth_start">) => Promise<CallOutcome>,
+): Promise<CallOutcome> => {
+  const secret = request.clientSecret.trim();
+  let sealedSecret: string | undefined;
+  if (secret !== "") {
+    const sealed = await seal(request.boxPubKey, secret);
+    if (!sealed.ok) return sealed;
+    sealedSecret = sealed.sealed;
+  }
+  return call("mcp_oauth_start", {
+    scope: request.scope,
+    name: request.name,
+    ...(request.hubUrl === undefined ? {} : { hubUrl: request.hubUrl }),
+    client: { clientId: request.clientId.trim(), ...(sealedSecret === undefined ? {} : { sealedSecret }) },
+  });
 };
 
 /**

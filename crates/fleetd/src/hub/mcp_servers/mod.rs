@@ -15,8 +15,8 @@ use std::collections::BTreeMap;
 
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, Timestamp};
 use fleetd_contracts::mcp_servers::{
-    McpScope, McpSecretScope, McpServer, McpServerName, McpSessionConfig, McpSessionServer,
-    McpSessionValue, McpValue,
+    McpField, McpScope, McpSecretScope, McpServer, McpServerName, McpSessionConfig,
+    McpSessionServer, McpSessionValue, McpValue,
 };
 use fleetd_contracts::project_settings::EnvVarKind;
 use rusqlite::{OptionalExtension, params};
@@ -24,7 +24,7 @@ use rusqlite::{OptionalExtension, params};
 use crate::hub::store::{HubDb, StoreError};
 
 /// `(machine_id, project_id)` of a scope's rows: empty for a global server.
-fn scope_key(scope: &McpScope) -> (&str, &str) {
+pub(crate) fn scope_key(scope: &McpScope) -> (&str, &str) {
     match scope {
         McpScope::Global => ("", ""),
         McpScope::Project {
@@ -45,9 +45,10 @@ pub fn secret_scope(scope: &McpScope) -> McpSecretScope {
 }
 
 /// A server as a session on `machine_id` gets it: plain values as they are, a secret by name. `None` when that
-/// machine's node doesn't hold all of its secrets, so it would start without them.
+/// machine's node doesn't hold all of its secrets, so it would start without them, or when it signs in with OAuth and
+/// is signed out.
 pub fn for_session(server: &McpServer, machine_id: &MachineId) -> Option<McpSessionServer> {
-    if !server.secrets_missing_on(machine_id).is_empty() {
+    if !server.secrets_missing_on(machine_id).is_empty() || !signed_in(server) {
         return None;
     }
     let values = |list: &[McpValue]| -> Vec<McpSessionValue> {
@@ -71,6 +72,24 @@ pub fn for_session(server: &McpServer, machine_id: &MachineId) -> Option<McpSess
         env: values(&server.env),
         headers: values(&server.headers),
     })
+}
+
+/// A server that signs in with OAuth has a token; one that doesn't sign in always counts.
+pub fn signed_in(server: &McpServer) -> bool {
+    server
+        .oauth
+        .as_ref()
+        .is_none_or(|o| o.status == fleetd_contracts::mcp_servers::McpOauthStatus::Connected)
+}
+
+/// The value is an OAuth server's access token, which the hub replaces as it renews it.
+pub fn is_oauth_token(server: &McpServer, field: McpField, value: &McpValue) -> bool {
+    server.oauth.is_some()
+        && field == McpField::Header
+        && value
+            .name
+            .as_str()
+            .eq_ignore_ascii_case(fleetd_contracts::mcp_servers::OAUTH_HEADER)
 }
 
 pub struct McpServerStore<'a> {
@@ -269,9 +288,11 @@ impl McpServerStore<'_> {
             .filter(|s| s.enabled && s.roles.lead)
             .filter_map(|s| {
                 let session = for_session(s, &r.machine_id)?;
-                // A replaced key is a new value on the node: its fingerprint there changes.
+                // A replaced key is a new value on the node: its fingerprint there changes. A renewed OAuth token
+                // isn't a change: claude gets it at its next start.
                 let keys: Vec<_> = s
                     .values()
+                    .filter(|(f, v)| !is_oauth_token(s, *f, v))
                     .filter_map(|(_, v)| v.sealed_on.iter().find(|k| k.machine_id == r.machine_id))
                     .map(|k| &k.fingerprint)
                     .collect();

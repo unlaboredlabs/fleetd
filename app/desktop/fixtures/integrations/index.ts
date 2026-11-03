@@ -3,8 +3,10 @@
 // each key sealed on devbox, and Test connection answering with each tool by the hub's policy. integrations-approvals: its
 // approvals with the checker on, and what ran without asking (the checker's go with its reason, YOLO's run, a first
 // visit), each linking to its line. integrations-adding: nothing connected yet, and a test of xaq (a URL server with a
-// key) answering with four tools to pick from. The approval cards an integration raises are in inline-items (a
-// message to send, a page to delete).
+// key) answering with four tools to pick from. integrations-signin: servers that sign in with OAuth: mail signed in,
+// calendar signed out by its service (Reconnect, whose service takes only the person's own app), and adding notes,
+// whose test asks for sign-in. The approval cards an integration raises are in inline-items (a message to send, a page
+// to delete).
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { arr } from "../kit/stress.ts";
@@ -135,6 +137,61 @@ const adding = (base: Fixture): Fixture => {
   return f;
 };
 
+const MAIL_TOOLS = tools(["search_mail", "read_message", "list_labels"], ["send_message", "create_draft", "trash_message"]);
+
+const oauth = (ref: { machineId: string; projectId: string }, name: string, url: string, signIn: JsonObject): JsonObject => ({
+  scope: { kind: "project", ...ref },
+  name,
+  enabled: true,
+  roles: { lead: true, writers: false, reviewers: false },
+  transport: { type: "http", url },
+  headers: signIn["status"] === "connected" ? [{ name: "Authorization", kind: "secret", sealedOn: sealed(ref.machineId) }] : [],
+  integration: { readTools: [] },
+  oauth: signIn,
+  updatedAt: AT,
+});
+
+const signin = (base: Fixture): Fixture => {
+  const f = Fixture.from(
+    base,
+    "integrations-signin",
+    "A Navi's servers that sign in with OAuth: mail signed in, calendar signed out by its service with Reconnect, and notes being added, which asks for sign-in.",
+  );
+  const ref = navi(f);
+  const scope = { kind: "project", ...ref };
+  const mail = oauth(ref, "mail", "https://mcp.mail.example/mcp", {
+    status: "connected",
+    issuer: "https://auth.mail.example",
+    signedInAt: AT,
+    expiresAt: "2026-10-27T10:00:00.000Z",
+  });
+  const problem = "`login.calendar.example` ended the sign-in (Token has been expired or revoked.), so you need to sign in again.";
+  const calendar = oauth(ref, "calendar", "https://mcp.calendar.example/mcp", {
+    status: "signed_out",
+    issuer: "https://login.calendar.example",
+    clientId: "fleetd-at-home",
+    signedInAt: AT,
+    problem,
+  });
+  f.answer("mcp_servers_get", { project: ref }, { global: [], project: [calendar, custom(ref), mail], userServers: true });
+  f.answer("mcp_server_test", { scope, name: "mail" }, { machineId: ref.machineId, result: { server: "Mail MCP 1.2.0", tools: MAIL_TOOLS } });
+  f.answer("mcp_server_test", { scope, name: "calendar" }, {
+    machineId: ref.machineId,
+    result: { error: problem, signIn: true },
+  });
+  f.answer("mcp_oauth_start", { scope, name: "calendar" }, {
+    redirectUri: "http://devbox:4790/oauth/callback",
+    needsClient: { issuer: "https://login.calendar.example", boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" },
+  });
+  const { oauth: _none, ...notes } = oauth(ref, "notes", "https://mcp.notes.example/mcp", {});
+  f.answer("mcp_server_set", { scope, name: "notes" }, { server: notes });
+  f.answer("mcp_server_test", { scope, name: "notes" }, {
+    machineId: ref.machineId,
+    result: { error: "notes asks you to sign in with your own account, not a key.", signIn: true },
+  });
+  return f;
+};
+
 /** A Navi's Payments: the card it pays with, the Credit Card items the person's 1Password reads, and its purchases. */
 const payments = (base: Fixture): Fixture => {
   const f = Fixture.from(base, "integrations-payments", "A Navi's Payments: it pays with Visa from 1Password, and its purchases: a hotel waiting, a train ticket filled, a flight not bought.");
@@ -181,5 +238,12 @@ const approvals = (base: Fixture): Fixture => {
 };
 
 export default defineGroup({
-  fixtures: (base) => [empty(base("typical")), connected(base("typical")), adding(base("typical")), payments(base("typical")), approvals(base("typical"))],
+  fixtures: (base) => [
+    empty(base("typical")),
+    connected(base("typical")),
+    adding(base("typical")),
+    signin(base("typical")),
+    payments(base("typical")),
+    approvals(base("typical")),
+  ],
 });

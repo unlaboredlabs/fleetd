@@ -6780,6 +6780,11 @@
           "const": "machine_add.step",
           "description": "A machine_add started, moved a step or ended; `data` is `machine_setup::MachineAddStepData`.\nmachine_add_status reads the rest.",
           "type": "string"
+        },
+        {
+          "const": "mcp.oauth",
+          "description": "An MCP server's sign-in changed: one started, finished or failed, or its token couldn't be renewed\n(`data.projectRef`, `data.name`, `data.status`). mcp_servers_get reads the rest; never a token.",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -9021,6 +9026,149 @@
       },
       "type": "object"
     },
+    "McpOauth": {
+      "description": "An OAuth server's sign-in as the app shows it; never a token.",
+      "properties": {
+        "clientId": {
+          "description": "The person's own OAuth client, when the service doesn't let fleetd register itself.",
+          "type": "string"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the access token agents have now ends; the hub renews it before then."
+        },
+        "issuer": {
+          "description": "Where the person signs in: the authorization server, e.g. `https://auth.example.com`.",
+          "type": "string"
+        },
+        "problem": {
+          "description": "What went wrong last, in words for the person: a sign-in that failed, or a token the service wouldn't renew.\nNone while it works.",
+          "type": "string"
+        },
+        "signedInAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the person last signed in."
+        },
+        "signingIn": {
+          "description": "A sign-in waiting for the person to finish it in their browser.",
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/$defs/McpOauthStatus"
+        }
+      },
+      "required": [
+        "status",
+        "issuer"
+      ],
+      "type": "object"
+    },
+    "McpOauthClientSet": {
+      "description": "A person's own OAuth client: its id, and its secret sealed to the hub's own box key (`needsClient.boxPubKey`).",
+      "properties": {
+        "clientId": {
+          "maxLength": 512,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "sealedSecret": {
+          "$ref": "#/$defs/SealedSecret",
+          "description": "None for a public client, which has no secret."
+        }
+      },
+      "required": [
+        "clientId"
+      ],
+      "type": "object"
+    },
+    "McpOauthNeedsClient": {
+      "description": "What making one's own OAuth client takes.",
+      "properties": {
+        "boxPubKey": {
+          "description": "The hub's own box key, which the client secret is sealed to.",
+          "type": "string"
+        },
+        "issuer": {
+          "description": "The service's sign-in server, where the client is made.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issuer",
+        "boxPubKey"
+      ],
+      "type": "object"
+    },
+    "McpOauthStartInput": {
+      "properties": {
+        "client": {
+          "$ref": "#/$defs/McpOauthClientSet",
+          "description": "The person's own OAuth client, for a service that doesn't let fleetd register itself."
+        },
+        "hubUrl": {
+          "description": "Where this app reaches the hub: the service sends the person's browser back to `<hubUrl>/oauth/callback`.\nAbsent: the hub's own URL.",
+          "maxLength": 2048,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/McpServerName",
+          "description": "A saved HTTP or SSE server of a project."
+        },
+        "scope": {
+          "$ref": "#/$defs/McpScope"
+        }
+      },
+      "required": [
+        "scope",
+        "name"
+      ],
+      "type": "object"
+    },
+    "McpOauthStartOutput": {
+      "properties": {
+        "authorizeUrl": {
+          "description": "Open this in the person's browser: the service's own sign-in page. Absent with `needsClient`.",
+          "type": "string"
+        },
+        "needsClient": {
+          "$ref": "#/$defs/McpOauthNeedsClient",
+          "description": "The service lets no app register itself: the person makes an OAuth client there that allows `redirectUri`,\nthen starts again with `client`."
+        },
+        "next": {
+          "type": "string"
+        },
+        "redirectUri": {
+          "description": "Where the service sends the browser back, a page the hub serves: what the person's own client must allow.",
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "redirectUri"
+      ],
+      "type": "object"
+    },
+    "McpOauthStatus": {
+      "description": "Whether a server signed in with OAuth has a token agents can use.",
+      "oneOf": [
+        {
+          "const": "connected",
+          "description": "Signed in: the hub renews the token before it ends.",
+          "type": "string"
+        },
+        {
+          "const": "signed_out",
+          "description": "Not signed in yet, or the service ended the sign-in (revoked, expired with no way to renew): agents go\nwithout it until the person signs in again.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "McpRoles": {
       "description": "Which of fleetd's agents get a server. A plain thread a person starts gets none.",
       "properties": {
@@ -9144,6 +9292,10 @@
         },
         "name": {
           "$ref": "#/$defs/McpServerName"
+        },
+        "oauth": {
+          "$ref": "#/$defs/McpOauth",
+          "description": "It signs in with OAuth (`mcp_oauth_start`): the hub keeps the tokens and puts the access token in its\n`Authorization` header. None: a key or nothing."
         },
         "roles": {
           "$ref": "#/$defs/McpRoles"
@@ -9402,6 +9554,10 @@
         "server": {
           "description": "The name and version the server gave, e.g. `github-mcp 1.2.0`.",
           "type": "string"
+        },
+        "signIn": {
+          "description": "The server wants the person to sign in (OAuth), not a key: the app offers Sign in.",
+          "type": "boolean"
         },
         "tools": {
           "default": [],
@@ -9897,6 +10053,12 @@
         },
         "machine_screens_set.output": {
           "$ref": "#/$defs/MachineScreensSetOutput"
+        },
+        "mcp_oauth_start.input": {
+          "$ref": "#/$defs/McpOauthStartInput"
+        },
+        "mcp_oauth_start.output": {
+          "$ref": "#/$defs/McpOauthStartOutput"
         },
         "mcp_server_remove.input": {
           "$ref": "#/$defs/McpServerRemoveInput"
@@ -10724,6 +10886,8 @@
         "machine_roles_set.output",
         "machine_screens_set.input",
         "machine_screens_set.output",
+        "mcp_oauth_start.input",
+        "mcp_oauth_start.output",
         "mcp_server_remove.input",
         "mcp_server_remove.output",
         "mcp_server_set.input",

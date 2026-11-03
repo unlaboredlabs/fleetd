@@ -159,6 +159,8 @@ export const fixtures = [
   // (fixtures/integrations).
   "inline-checker",
   "integrations-approvals",
+  // A Navi's servers that sign in with OAuth (fixtures/integrations).
+  "integrations-signin",
   // A Navi's secure inputs: a passport number to type, a license number from 1Password (fixtures/inline/secure.json).
   "inline-secure",
   // Approvals whose fields hide or reorder text (fixtures/inline/hidden.json).
@@ -2333,6 +2335,47 @@ export const screens: readonly Screen[] = [
       await expect(part.getByRole("radio", { name: /Checker decides/u })).toBeChecked();
       await expect(page.getByRole("list", { name: "Ran without asking" }).getByRole("listitem")).toHaveCount(4);
       await part.scrollIntoViewIfNeeded();
+    },
+  },
+  // A Navi's servers that sign in with OAuth (W354): mail signed in, calendar signed out by its service with Reconnect.
+  {
+    id: "settings.projects",
+    variant: "integrations-signin",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["integrations-signin"],
+    open: async (page) => {
+      const list = page.getByRole("list", { name: "Integrations" });
+      await expect(list.getByRole("listitem", { name: "calendar" })).toContainText("Signed out");
+      await expect(list.getByRole("listitem", { name: "mail" })).toContainText("Signed in with auth.mail.example");
+      await list.scrollIntoViewIfNeeded();
+    },
+  },
+  // ...adding notes with no key: its test asks for sign-in, and the dialog offers it.
+  {
+    id: "settings.projects",
+    variant: "integrations-signin-add",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["integrations-signin"],
+    open: async (page) => {
+      await page.getByRole("button", { name: "Add an MCP server" }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("textbox", { name: "Name" }).fill("notes");
+      await dialog.getByRole("textbox", { name: "URL" }).fill("https://mcp.notes.example/mcp");
+      await dialog.getByRole("button", { name: "Connect and test" }).click();
+      await expect(dialog.getByText("Sign in to notes")).toBeVisible();
+    },
+  },
+  // ...Reconnect on calendar, whose service lets no app sign up: the person's own app, with the redirect URL to paste.
+  {
+    id: "settings.projects",
+    variant: "integrations-own-client",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["integrations-signin"],
+    open: async (page) => {
+      await page.getByRole("listitem", { name: "calendar" }).getByRole("button", { name: "Reconnect" }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("button", { name: "Sign in" }).click();
+      await expect(dialog.getByRole("region", { name: "Redirect URL" })).toContainText("http://devbox:4790/oauth/callback");
     },
   },
   // Import memory under it: a ChatGPT export pasted, then what Add to Memory added.

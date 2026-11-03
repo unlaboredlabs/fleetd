@@ -1,16 +1,34 @@
 // A Navi's Integrations (its Projects page, only for a project of kind assistant): the MCP servers the person connects
 // to it. Connecting seals the key in main to Navi's machine and saves it (mcp_server_set), then tests it at once
-// (mcp_server_test), which lists each tool by the hub's policy: runs without asking, asks each time, never.
-// Disconnect is mcp_server_remove, which also erases the key on the machine.
-import { useState, type ReactNode } from "react";
+// (mcp_server_test), which lists each tool by the hub's policy: runs without asking, asks each time, never. A server
+// that wants the person to sign in instead (OAuth) opens its own sign-in page in the browser (mcp_oauth_start), which
+// sends them back to the hub; the dialog follows the server's sign-in until it is done, then tests it. A signed-out
+// server shows why, with Reconnect. Disconnect is mcp_server_remove, which also erases the key on the machine.
+import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import { Button, Checkbox, Dialog, Field, Input, Radio, RadioGroup, Text, Textarea, Truncate } from "../../ui";
-import type { McpServer, McpTestResult } from "../../../shared/contracts";
+import type { McpOauthStartOutput, McpServer, McpTestResult } from "../../../shared/contracts";
 import type { McpServerRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { byPolicy, connectionsOf, customRequest, DOCS, emptyNote, policyLine, suggestedReads, testProblem } from "./integrationsModel";
+import {
+  byPolicy,
+  connectionsOf,
+  customRequest,
+  DOCS,
+  emptyNote,
+  hostOf,
+  markOf,
+  policyLine,
+  signInLine,
+  signInOutcome,
+  statusOf,
+  suggestedReads,
+  testProblem,
+  type SignInMark,
+} from "./integrationsModel";
 import { emptyDraft, nameProblem, type Draft } from "./mcpModel";
+import { CommandLine, Prose } from "../onboarding/Prose";
 import { Setting } from "./parts";
 import s from "./settings.module.css";
 
@@ -44,7 +62,216 @@ function useConnect() {
   };
 }
 
-type Dialogs = { kind: "custom" } | { kind: "disconnect"; server: McpServer };
+type Dialogs = { kind: "custom" } | { kind: "disconnect"; server: McpServer } | { kind: "signin"; server: McpServer };
+
+/** Whether a test says the server wants the person to sign in. */
+const wantsSignIn = (t: Tested | null | undefined): boolean => t !== null && t !== undefined && !("error" in t) && t.result.signIn === true;
+
+type SignInPhase =
+  | { readonly kind: "ready" }
+  | { readonly kind: "starting" }
+  /** The service lets no app register itself: the person's own OAuth app, allowing `redirectUri`. */
+  | { readonly kind: "client"; readonly redirectUri: string; readonly issuer: string; readonly boxPubKey: string }
+  /** Its sign-in page is open in the browser. */
+  | { readonly kind: "waiting"; readonly authorizeUrl: string; readonly mark: SignInMark }
+  /** The hub has the tokens: the server is tested next. */
+  | { readonly kind: "connected" };
+
+/**
+ * A sign-in to a saved server, from the button to its end: mcp_oauth_start (or the person's own app, sealed in main),
+ * the service's page opened in the browser, then the server's sign-in followed until the hub has the tokens.
+ */
+function useSignIn(projectRef: Ref, name: string, onSignedIn: () => void) {
+  const { hub } = useDataLayer();
+  const hubCall = useHubCall();
+  const refetch = useRefetch();
+  const live = useLive();
+  // Where this app reaches the hub: the service sends the browser back there.
+  const appUrl = useData((st) => (st.hub.phase === "unpaired" ? undefined : st.hub.hub));
+  const read = useToolQuery("mcp_servers_get", { project: projectRef }, { enabled: live });
+  const oauth = (read.data?.project ?? []).find((x) => x.name === name)?.oauth;
+  const [phase, setPhase] = useState<SignInPhase>({ kind: "ready" });
+  const [problem, setProblem] = useState<string | null>(null);
+  const scope = { kind: "project" as const, ...projectRef };
+  const hubUrl = appUrl === undefined ? {} : { hubUrl: appUrl.includes("://") ? appUrl : `http://${appUrl}` };
+  const opened = (out: McpOauthStartOutput) => {
+    if (out.authorizeUrl !== undefined) {
+      const url = out.authorizeUrl;
+      setPhase({ kind: "waiting", authorizeUrl: url, mark: markOf(oauth) });
+      refetch(["mcp_servers_get"]);
+      void window.fleetd.openExternal(url).then((o) => {
+        if (!o.ok) setProblem(o.message);
+      });
+    } else if (out.needsClient !== undefined) {
+      setPhase({ kind: "client", redirectUri: out.redirectUri, issuer: out.needsClient.issuer, boxPubKey: out.needsClient.boxPubKey });
+    }
+  };
+  const failed = (e: unknown, back: SignInPhase) => {
+    setPhase(back);
+    setProblem(errorText(e));
+  };
+  const begin = () => {
+    setPhase({ kind: "starting" });
+    setProblem(null);
+    hubCall("mcp_oauth_start", { scope, name, ...hubUrl }).then(opened, (e: unknown) => failed(e, { kind: "ready" }));
+  };
+  const withClient = (clientId: string, clientSecret: string) => {
+    if (phase.kind !== "client") return;
+    const back = phase;
+    setPhase({ kind: "starting" });
+    setProblem(null);
+    void window.fleetd.secret
+      .mcpOauthClient(hub, { scope, name, ...hubUrl, boxPubKey: back.boxPubKey, clientId, clientSecret })
+      .then((out) => (out.ok ? opened(out.output as McpOauthStartOutput) : failed(new CallError(out.error), back)), (e: unknown) => failed(e, back));
+  };
+  // The server's sign-in as the hub has it moves this one on, while rendering.
+  if (phase.kind === "waiting") {
+    const outcome = signInOutcome(oauth, phase.mark);
+    if (outcome.kind === "connected") setPhase({ kind: "connected" });
+    else if (outcome.kind === "failed") {
+      setPhase({ kind: "ready" });
+      setProblem(outcome.problem);
+    } else if (outcome.mark !== phase.mark) setPhase({ ...phase, mark: outcome.mark });
+  }
+  const signedIn = useEffectEvent(onSignedIn);
+  useEffect(() => {
+    if (phase.kind === "connected") signedIn();
+  }, [phase.kind]);
+  return { phase, problem, oauth, begin, withClient };
+}
+
+type SignIn = ReturnType<typeof useSignIn>;
+
+/** What the sign-in shows: why it signs in, the person's own app's fields, or that the browser is open. */
+function SignInBody({
+  signIn,
+  url,
+  why,
+  client,
+  setClient,
+}: {
+  signIn: SignIn;
+  url: string;
+  /** Why it is signed out, before it is signed in again. */
+  why?: string | undefined;
+  client: { id: string; secret: string };
+  setClient: (c: { id: string; secret: string }) => void;
+}) {
+  const { phase } = signIn;
+  if (phase.kind === "connected") {
+    return (
+      <div role="status">
+        <Text size="sm">Signed in. Testing the connection…</Text>
+      </div>
+    );
+  }
+  if (phase.kind === "waiting") {
+    return (
+      <div className={s.stack}>
+        <div role="status">
+          <Prose size="sm" text={`Finish signing in on ${hostOf(signIn.oauth?.issuer ?? url)}'s page in your browser. This moves on by itself once you're done.`} />
+        </div>
+        <div className={s.inline}>
+          <Button size="sm" variant="ghost" onClick={() => open(phase.authorizeUrl)}>
+            Open the sign-in page again
+          </Button>
+        </div>
+        <Problem text={signIn.problem} />
+      </div>
+    );
+  }
+  if (phase.kind === "client") {
+    const host = hostOf(phase.issuer);
+    return (
+      <div className={s.stack}>
+        <Prose
+          size="sm"
+          text={`${host} doesn't let apps sign up by themselves, so sign in through an OAuth app of your own. Make one in ${host}'s developer settings, allow the redirect URL below, then enter its client ID and secret.`}
+        />
+        <section className={s.stack} aria-label="Redirect URL">
+          <Text size="sm" strong>
+            Redirect URL
+          </Text>
+          <CommandLine command={phase.redirectUri} />
+          <Text size="xs" tone="quiet">
+            Paste it into your app exactly as it is.
+          </Text>
+        </section>
+        <Field label="Client ID">
+          <Input mono aria-label="Client ID" value={client.id} autoComplete="off" spellCheck={false} onChange={(e) => setClient({ ...client, id: e.target.value })} />
+        </Field>
+        <Field label="Client secret (optional)">
+          <Input mono aria-label="Client secret" className={s.secretValue} data-secret="" value={client.secret} autoComplete="off" spellCheck={false} onChange={(e) => setClient({ ...client, secret: e.target.value })} />
+        </Field>
+        <Text size="xs" tone="quiet">
+          The secret is encrypted on this computer so only the hub can read it. fleetd never shows it again, and Navi never sees it.
+        </Text>
+        <Problem text={signIn.problem} />
+      </div>
+    );
+  }
+  return (
+    <div className={s.stack}>
+      {why === undefined ? null : <Prose size="sm" tone="danger" text={why} />}
+      <Prose
+        size="sm"
+        text={`Your browser opens ${hostOf(url)}'s own sign-in page. Sign in with your account there and allow fleetd; you come back here once it's done. fleetd keeps the sign-in fresh by itself, and Navi never sees it.`}
+      />
+      <Problem text={signIn.problem} />
+    </div>
+  );
+}
+
+function SignInFooter({ signIn, client, onCancel }: { signIn: SignIn; client: { id: string; secret: string }; onCancel: () => void }) {
+  const { phase } = signIn;
+  const busy = phase.kind === "starting" || phase.kind === "connected";
+  return (
+    <>
+      <Button onClick={onCancel} disabled={busy}>
+        {phase.kind === "waiting" ? "Stop waiting" : "Not now"}
+      </Button>
+      {phase.kind === "waiting" ? null : phase.kind === "connected" ? (
+        <Button variant="primary" disabled>
+          Testing…
+        </Button>
+      ) : phase.kind === "client" ? (
+        <Button variant="primary" disabled={client.id.trim() === ""} onClick={() => signIn.withClient(client.id, client.secret)}>
+          Sign in
+        </Button>
+      ) : (
+        <Button variant="primary" disabled={busy} onClick={signIn.begin}>
+          {busy ? "Opening…" : "Sign in"}
+        </Button>
+      )}
+    </>
+  );
+}
+
+/** Reconnect (or a first sign-in) from the list: signs in, then tests the server and shows what it found in its row. */
+function SignInDialog(props: { projectRef: Ref; server: McpServer; onClose: () => void; onTested: (name: string, t: Tested) => void }) {
+  const hubCall = useHubCall();
+  const { server } = props;
+  const [client, setClient] = useState({ id: "", secret: "" });
+  const signIn = useSignIn(props.projectRef, server.name, () => {
+    hubCall("mcp_server_test", { scope: server.scope, name: server.name }).then(
+      (out) => props.onTested(server.name, { machineId: out.machineId, result: out.result }),
+      (e: unknown) => props.onTested(server.name, { error: errorText(e) }),
+    );
+    props.onClose();
+  });
+  const url = server.transport.type === "stdio" ? "" : server.transport.url;
+  const again = server.oauth?.signedInAt !== undefined;
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => !o && signIn.phase.kind !== "starting" && props.onClose()}
+      title={again ? `Reconnect ${server.name}` : `Sign in to ${server.name}`}
+      footer={<SignInFooter signIn={signIn} client={client} onCancel={props.onClose} />}
+    >
+      <SignInBody signIn={signIn} url={url} why={server.oauth?.problem} client={client} setClient={setClient} />
+    </Dialog>
+  );
+}
 
 export function IntegrationsSection({ projectRef }: { projectRef: Ref }) {
   const live = useLive();
@@ -82,6 +309,7 @@ export function IntegrationsSection({ projectRef }: { projectRef: Ref }) {
             tested={tests[server.name]}
             onTested={tested}
             onDisconnect={(s2) => setDialog({ kind: "disconnect", server: s2 })}
+            onSignIn={(s2) => setDialog({ kind: "signin", server: s2 })}
           />
         ))}
       </div>
@@ -95,6 +323,7 @@ export function IntegrationsSection({ projectRef }: { projectRef: Ref }) {
         <ConnectCustom projectRef={projectRef} taken={(read.data.project ?? []).map((x) => x.name)} onClose={() => setDialog(null)} onDone={(name, t) => done(name)(t)} />
       ) : null}
       {dialog?.kind === "disconnect" ? <Disconnect server={dialog.server} machine={machine.name} onClose={() => setDialog(null)} /> : null}
+      {dialog?.kind === "signin" ? <SignInDialog projectRef={projectRef} server={dialog.server} onClose={() => setDialog(null)} onTested={tested} /> : null}
     </Setting>
   );
 }
@@ -107,6 +336,7 @@ function Row(props: {
   tested: Tested | undefined;
   onTested: (name: string, t: Tested) => void;
   onDisconnect: (server: McpServer) => void;
+  onSignIn: (server: McpServer) => void;
 }) {
   const hubCall = useHubCall();
   const [testing, setTesting] = useState(false);
@@ -125,6 +355,10 @@ function Row(props: {
     );
   };
   const sealed = [...(server.env ?? []), ...(server.headers ?? [])].some((v) => v.kind === "secret" && (v.sealedOn ?? []).length > 0);
+  const status = statusOf(server);
+  const line = server.oauth === undefined ? null : signInLine(server.oauth);
+  // Signed out, or its test found it wants a sign-in: the way back is right on the row.
+  const signIn = (server.oauth?.status === "signed_out" && server.oauth.signingIn !== true) || wantsSignIn(props.tested);
   return (
     <div role="listitem" aria-label={props.title} className={s.integration} data-connected="">
       <div className={s.integrationHead}>
@@ -137,9 +371,14 @@ function Row(props: {
           </Truncate>
         </div>
         <div className={s.inline}>
-          <Text size="xs" tone="quiet">
-            {server.enabled ? "Connected" : "Off"}
+          <Text size="xs" tone={status.tone}>
+            {status.text}
           </Text>
+          {signIn ? (
+            <Button size="sm" variant="primary" onClick={() => props.onSignIn(server)}>
+              {server.oauth?.signedInAt === undefined ? "Sign in" : "Reconnect"}
+            </Button>
+          ) : null}
           <Button size="sm" variant="ghost" disabled={testing} onClick={() => test(server)}>
             {testing ? "Testing…" : "Test connection"}
           </Button>
@@ -148,7 +387,9 @@ function Row(props: {
           </Button>
         </div>
       </div>
-      {sealed ? (
+      {line !== null ? (
+        <Prose size="xs" tone={line.tone === "quiet" ? "quiet" : "danger"} text={line.text} />
+      ) : sealed ? (
         <Text size="xs" tone="quiet">
           Key sealed on {props.machine}. Navi never sees it.
         </Text>
@@ -165,9 +406,7 @@ function Found(props: { tested: Tested; machine: string; brief?: boolean }) {
     const error = "error" in tested ? tested.error : (tested.result.error ?? "");
     return (
       <div role="alert">
-        <Text size="sm" tone="danger">
-          {testProblem(error, props.machine)}
-        </Text>
+        <Prose size="sm" tone="danger" text={testProblem(error, props.machine, wantsSignIn(tested))} />
       </div>
     );
   }
@@ -244,6 +483,8 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
   const [problem, setProblem] = useState<string | null>(null);
   const [tested, setTested] = useState<Tested | null>(null);
   const [reads, setReads] = useState<ReadonlySet<string>>(new Set());
+  const [client, setClient] = useState({ id: "", secret: "" });
+  const hubCall = useHubCall();
   const set = (patch: Partial<Draft>) => setDraft({ ...draft, ...patch });
   const value = draft.values[0] ?? { name: "", secret: true, value: "", saved: false };
   const setValue = (patch: Partial<typeof value>) => set({ values: [{ ...value, ...patch }] });
@@ -281,6 +522,30 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
   const tools = tested !== null && !("error" in tested) ? (tested.result.tools ?? []) : [];
   const failed = tested !== null && ("error" in tested || tested.result.error !== undefined);
   const name = draft.name.trim();
+  // Signed in: test it now, and go on to its tools as a keyed server does.
+  const signIn = useSignIn(props.projectRef, name, () => {
+    hubCall("mcp_server_test", { scope, name }).then(
+      (t) => {
+        setTested({ machineId: t.machineId, result: t.result });
+        setReads(new Set(suggestedReads(t.result.tools ?? [])));
+      },
+      (e: unknown) => setTested({ error: errorText(e) }),
+    );
+  });
+  if (tested !== null && wantsSignIn(tested)) {
+    return (
+      <Dialog
+        open
+        wide
+        onOpenChange={(o) => !o && signIn.phase.kind !== "starting" && props.onDone(name, tested)}
+        title={`Sign in to ${name}`}
+        description={`${name} uses your own account with its service instead of a key.`}
+        footer={<SignInFooter signIn={signIn} client={client} onCancel={() => props.onDone(name, tested)} />}
+      >
+        <SignInBody signIn={signIn} url={draft.url} client={client} setClient={setClient} />
+      </Dialog>
+    );
+  }
   return (
     <Dialog
       open
@@ -350,6 +615,11 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
             </Field>
           </div>
           <SealedNote machine={machine.name} what="key" />
+          {stdio ? null : (
+            <Text size="xs" tone="quiet">
+              No key? Leave it empty for a service you sign in to with your account: fleetd opens its sign-in page next.
+            </Text>
+          )}
           {!built.ok && name !== "" && nameIssue === null ? (
             <Text size="sm" tone="quiet">
               {built.problem}
@@ -430,7 +700,7 @@ function Problem({ text }: { text: string | null }) {
   if (text === null) return null;
   return (
     <div role="alert">
-      <Text tone="danger">{text}</Text>
+      <Prose tone="danger" text={text} />
     </div>
   );
 }
