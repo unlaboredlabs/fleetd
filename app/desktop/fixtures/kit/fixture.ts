@@ -15,7 +15,7 @@ export interface HubErrorJson {
 }
 
 // "rows": not a frame the window sees, but rows later answers leave out or show again from then on (see Rows).
-type TimedKind = "event" | "live" | "snapshot" | "chat_delta" | "state" | "rows" | "browser_frame";
+type TimedKind = "event" | "live" | "snapshot" | "chat_delta" | "state" | "rows" | "browser_frame" | "screen_thumb";
 
 /** Rows of `tool`'s answers under `field` matching `where`, e.g. requests_list's requests with requestId Q1. */
 export interface Rows {
@@ -56,6 +56,17 @@ const timedFrame = (kind: TimedKind, payload: JsonObject, afterMs: number): Fixt
   if (kind === "chat_delta") {
     const delta = { ...payload, messageId: asText(payload["messageId"]), offset: num(payload["offset"]), append: asText(payload["append"]) };
     return { t: "chat_delta", delta, afterMs };
+  }
+  if (kind === "screen_thumb") {
+    const thumb = {
+      ...payload,
+      sessionId: asText(payload["sessionId"]),
+      jpegB64: asText(payload["jpegB64"]),
+      width: num(payload["width"]),
+      height: num(payload["height"]),
+      at: asText(payload["at"]),
+    };
+    return { t: "screen_thumb", thumb, afterMs };
   }
   if (kind === "browser_frame") {
     const frame = {
@@ -173,7 +184,7 @@ export class Fixture {
     for (const frame of file.frames) {
       ms += frame.afterMs ?? 0;
       // A streamed chat frame or a change of connection only makes sense on the timeline, after the first page.
-      if ((ms > 0 || frame.t === "chat_delta" || frame.t === "state" || frame.t === "rows" || frame.t === "browser_frame") && frame.t !== "error") {
+      if ((ms > 0 || frame.t === "chat_delta" || frame.t === "state" || frame.t === "rows" || frame.t === "browser_frame" || frame.t === "screen_thumb") && frame.t !== "error") {
         const payload =
           frame.t === "snapshot"
             ? frame.snapshot
@@ -185,7 +196,9 @@ export class Fixture {
                   ? frame.state
                   : frame.t === "rows"
                     ? { hide: frame.hide ?? [], show: frame.show ?? [] }
-                    : frame.frame;
+                    : frame.t === "screen_thumb"
+                      ? frame.thumb
+                      : frame.frame;
         f.timeline.push({ ms, kind: frame.t, payload: clone(payload as JsonObject) });
       } else if (frame.t === "snapshot") f.snapshot = clone(frame.snapshot as JsonObject);
       else if (frame.t === "event") f.events.push(clone(frame.event as JsonObject));

@@ -357,6 +357,35 @@ describe("HubClient", () => {
     expect(hub.sent.at(-1)).toEqual({ t: "browser_watch" });
   });
 
+  it("asks for the Screens page's pictures only from a hub that sends them, again on each connection, and drops them once off", () => {
+    const { hub, frames, client } = setup();
+    const asks = () => hub.sent.filter((m) => m["t"] === "screen_thumbs");
+    const thumb = { sessionId: "B68722f97b065412024c7cda6c636fd9a", jpegB64: "AA==", width: 640, height: 400, at: "2026-10-19T10:00:00.000Z" };
+    client.thumbs(true);
+    client.start();
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1, features: ["browser_sessions"] });
+    expect(asks()).toEqual([]);
+    hub.close(1006);
+    vi.advanceTimersByTime(500);
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1, features: ["browser_sessions", "screen_thumbs"] });
+    expect(asks()).toEqual([{ t: "screen_thumbs", on: true }]);
+    hub.frame({ t: "screen_thumb", ...thumb });
+    expect(frames.filter((f) => f.t === "screen_thumb")).toEqual([{ t: "screen_thumb", thumb }]);
+    // The page left: off, and a picture still on its way is dropped.
+    client.thumbs(false);
+    expect(hub.sent.at(-1)).toEqual({ t: "screen_thumbs", on: false });
+    hub.frame({ t: "screen_thumb", ...thumb });
+    expect(frames.filter((f) => f.t === "screen_thumb")).toHaveLength(1);
+    // Not asked again on the next connection.
+    hub.close(1006);
+    vi.advanceTimersByTime(500);
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1, features: ["browser_sessions", "screen_thumbs"] });
+    expect(asks()).toHaveLength(2);
+  });
+
   it("stops presence when the hub can't read a presence frame, without an error or a restarted stream, until the next connection", () => {
     const { hub, frames, client, states } = setup();
     const presences = () => hub.sent.filter((m) => m["t"] === "presence");

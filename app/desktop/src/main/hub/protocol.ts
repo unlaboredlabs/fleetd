@@ -15,7 +15,8 @@ export type ClientMessage =
   | { t: "chat"; project?: { machineId: string; projectId: string } }
   | { t: "presence"; id: string; focused: boolean; input: boolean; project?: { machineId: string; projectId: string } }
   | { t: "browser_watch"; session?: string }
-  | { t: "browser_input"; session: string; input: BrowserInput };
+  | { t: "browser_input"; session: string; input: BrowserInput }
+  | { t: "screen_thumbs"; on: boolean };
 
 const cursor = z.int().min(0);
 
@@ -47,6 +48,7 @@ export const ServerFrame = z.discriminatedUnion("t", [
     height: z.int().min(1),
     control: z.string(),
   }),
+  z.looseObject({ t: z.literal("screen_thumb"), sessionId: z.string(), jpegB64: z.string(), width: z.int().min(1), height: z.int().min(1) }),
 ]);
 /** Checked at the fields above; the rest is typed by the contracts the hub validated it against. */
 export type ServerFrame = AppServerMessage;

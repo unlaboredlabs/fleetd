@@ -339,6 +339,7 @@ export const REQUESTS = {
   [IPC.hubFocus]: z.tuple([HubId, OrderFocus.nullable()]),
   [IPC.hubWatch]: z.tuple([HubId, BrowserSessionId.nullable()]),
   [IPC.hubInput]: z.tuple([HubId, BrowserSessionId, BrowserInput]),
+  [IPC.hubThumbs]: z.tuple([HubId, z.boolean()]),
   [IPC.hubResync]: z.tuple([HubId]),
   [IPC.hubRetryNow]: z.tuple([HubId]),
   [IPC.hubCacheRead]: z.tuple([HubId]),

@@ -1,0 +1,332 @@
+/* Screens, a page of its own (D305, the wall). Pictures are the one thing allowed a frame: a screen stands apart
+   from what is around it. Everything else is type, space and hairlines, as in the panel's list (ui/DESIGN.md). */
+
+.screen {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-6) var(--space-8);
+}
+.viewWrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* Needs you, Live, Recent: a heading with room above it and its count beside it. */
+.heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-4) 0 var(--space-2);
+}
+section + section > .heading {
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--hairline);
+}
+
+/* ---- A screen's picture. ---- */
+.thumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--sidebar);
+  box-shadow: 0 0 0 1px var(--hairline);
+}
+.thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+/* A phone stands up in the middle of its frame, its own corners round, a hairline its edge. */
+.phoneThumb img {
+  width: auto;
+  height: calc(100% - 16px);
+  margin: 8px auto 0;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--hairline), 0 0 0 3px var(--sidebar), 0 0 0 4px var(--border);
+}
+.thumbEnded img {
+  opacity: 0.72;
+  filter: grayscale(0.6);
+}
+[data-theme="dark"] .thumbEnded img {
+  opacity: 0.55;
+}
+.noThumb {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* No picture (starting, saving, lost, expired): no frame, the kind's mark and a word, faint. */
+.blank {
+  box-shadow: none;
+  background: var(--hover);
+}
+.noThumb {
+  flex-direction: column;
+  gap: 6px;
+}
+.kindIcon {
+  width: 16px;
+  height: 16px;
+  color: var(--faint);
+  stroke-width: 1.5;
+}
+.small .kindIcon {
+  width: 14px;
+  height: 14px;
+}
+.small {
+  width: 64px;
+  flex: none;
+  border-radius: var(--radius-sm);
+}
+.small.phoneThumb img {
+  height: calc(100% - 6px);
+  margin-top: 3px;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px var(--border);
+}
+.small .noThumb > :not(svg) {
+  display: none;
+}
+
+/* ---- A screen in words. ---- */
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  white-space: nowrap;
+}
+.state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.who {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.where {
+  flex: none;
+}
+.where::before,
+.time::before {
+  content: "·";
+  margin-right: var(--space-2);
+  color: var(--faint);
+  font-size: var(--text-xs);
+}
+.time {
+  flex: none;
+  margin-left: auto;
+}
+.time::before {
+  content: none;
+}
+.purpose {
+  font-weight: 500;
+}
+.purposeEnded {
+  color: var(--quiet);
+}
+.doing {
+  display: flex;
+  min-width: 0;
+  min-height: var(--leading-xs);
+}
+.titleLink {
+  display: flex;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.titleLink:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-underline-offset: 3px;
+}
+
+/* ---- The wall. ---- */
+.asking {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+  max-width: 920px;
+  padding-bottom: var(--space-2);
+}
+.askingPic {
+  display: block;
+  border-radius: var(--radius-md);
+}
+.askingText {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 2px;
+}
+.reason {
+  display: flex;
+  max-width: 520px;
+}
+.askingActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-6) var(--space-4);
+  padding-top: var(--space-1);
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius-md);
+}
+.tile .thumb {
+  transition: box-shadow var(--dur-quick) var(--ease-snap);
+}
+.tile:hover .thumb {
+  box-shadow: 0 0 0 1px var(--border);
+}
+.tile:focus-visible {
+  outline: none;
+}
+.tile:focus-visible .thumb,
+.askingPic:focus-visible .thumb {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+/* Over each picture, like the label on a monitor: whose it is, and what and where it runs. */
+.label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-bottom: -4px;
+  padding: 0 2px;
+  white-space: nowrap;
+}
+.label > :last-child {
+  margin-left: auto;
+}
+.askingText .meta .time {
+  margin-left: 0;
+}
+.askingText .meta .time::before {
+  content: "·";
+}
+.tileText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.recent {
+  display: flex;
+  flex-direction: column;
+  max-width: 920px;
+}
+.recentRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0 calc(-1 * var(--space-2));
+  padding: 6px var(--space-2);
+  border-radius: var(--radius-md);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.recentRow:hover {
+  background: var(--hover);
+}
+.recentText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* New screen: one sentence under the title. */
+.openLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-1);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  max-width: 920px;
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+  box-shadow: var(--float-shadow);
+  animation: lineIn var(--dur-row-in) var(--ease-snap) backwards;
+}
+@keyframes lineIn {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--row-rise)));
+  }
+}
+.pick {
+  width: auto;
+  min-width: 0;
+}
+.openHint {
+  flex: 1;
+  min-width: 0;
+  padding-left: var(--space-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hostOpt {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+/* The picks read as words of the sentence: no field edge, a tone step under them. */
+.openLine .pick {
+  height: 26px;
+  border-color: transparent;
+  background: var(--hover);
+  font-weight: 500;
+}
+.openLine .pick:hover {
+  background: var(--selected);
+}

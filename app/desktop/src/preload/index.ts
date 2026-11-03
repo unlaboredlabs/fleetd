@@ -111,6 +111,7 @@ const api: FleetdApi = {
     focus: (hub, workstreamId) => ipcRenderer.invoke(IPC.hubFocus, hub, workstreamId) as Promise<void>,
     watch: (hub, session) => ipcRenderer.invoke(IPC.hubWatch, hub, session) as Promise<void>,
     input: (hub, session, input) => ipcRenderer.invoke(IPC.hubInput, hub, session, input) as Promise<void>,
+    thumbs: (hub, on) => ipcRenderer.invoke(IPC.hubThumbs, hub, on) as Promise<void>,
     resync: (hub) => ipcRenderer.invoke(IPC.hubResync, hub) as Promise<void>,
     retryNow: (hub) => ipcRenderer.invoke(IPC.hubRetryNow, hub) as Promise<void>,
     cache: {

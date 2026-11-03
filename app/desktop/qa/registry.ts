@@ -208,6 +208,8 @@ export const fixtures = [
   // W46's design preview: storefront's browser sessions, one agent driving and one asking you to take over
   // (fixtures/sessions).
   "sessions-preview",
+  // D305: the Screens page, across projects, a Navi and three machines (fixtures/sessions).
+  "sessions-page",
   // W96: what there is to look at, two of the lead's nudges, with nothing waiting (fixtures/look).
   "look-two",
   "stream-reply",
@@ -1658,6 +1660,38 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("application", { name: "The page: your clicks and keys go to it" })).toBeVisible();
       await expect(page.getByRole("button", { name: "End", exact: true })).toBeVisible();
     },
+  },
+  // D305: the Screens page, the wall: needs you on top with Take over, the live ones as pictures with their kind, machine
+  // and latest step, then the recent ones. A hub that serves no screens: the page says how they come.
+  {
+    id: "screens",
+    route: "#/screens",
+    fixtures: ["sessions-page"],
+    open: async (page) => {
+      await expect(page.getByRole("button", { name: "Take over" })).toBeVisible();
+      await expect(page.getByText("Android · buildbox")).toBeVisible();
+      await expect(page.getByText("Tapped “Add to cart”")).toBeVisible();
+      await expect(page.locator('section[aria-label="Live"] img')).toHaveCount(5);
+    },
+  },
+  { id: "screens", route: "#/screens", fixtures: ["typical"] },
+  // ...New screen, one sentence under the title.
+  {
+    id: "screens",
+    route: "#/screens",
+    fixtures: ["sessions-page"],
+    variant: "new",
+    open: async (page) => {
+      await page.getByRole("button", { name: "New screen", exact: true }).click();
+      await expect(page.getByRole("group", { name: "New screen" })).toBeVisible();
+    },
+  },
+  // ...and one open: D278's view takes the page, with a way back to the wall.
+  {
+    id: "screens",
+    route: `#/screens/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22/B7c1e5a9d3f7b1c5e9a3d7f1b5c9e3a7d`,
+    fixtures: ["sessions-page"],
+    variant: "view",
   },
   // D239: New screen at the top of Screens: the kind as four tiles, the machines that can host it with their slots; the
   // Mac, its two simulators in use, offers to wait, and the wait shows in the list until cancelled.

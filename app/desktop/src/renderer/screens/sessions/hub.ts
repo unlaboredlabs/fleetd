@@ -4,12 +4,12 @@
 // its video. Only from a hub that says it serves sessions (`browser_sessions` in its ready frame).
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import type { BrowserSession as HubSession, ProjectRef, ScreenWait } from "../../../shared/contracts";
+import type { BrowserAction, BrowserSession as HubSession, ProjectRef, ScreenWait } from "../../../shared/contracts";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { selectLiveAgents, type LiveAgent } from "../../src/data/selectors";
 import { parseMs } from "../live/format";
 import type { ProjectKey } from "../shell/routes";
-import type { BrowserSession, ScreenWaiting, SessionAction, SessionState } from "./model";
+import { actionLine, type BrowserSession, type ScreenWaiting, type SessionAction, type SessionState } from "./model";
 
 /** The hub feature that says it serves sessions (panel/tabs.ts gates the view on it too). */
 export const FEATURE = "browser_sessions";
@@ -72,6 +72,8 @@ export const fromHub = (row: HubSession, agent: SessionAgent): BrowserSession =>
     ...(row.credentialsFilled === undefined || row.credentialsFilled === 0 ? {} : { credentialsFilled: row.credentialsFilled }),
     ...(row.note === undefined ? {} : { note: row.note }),
     ...(row.openedBy === undefined ? {} : { openedBy: row.openedBy.name }),
+    // What its agent did last, while it is live (a hub that names it: screen_thumbs).
+    ...(row.state === "live" && row.step !== undefined ? { now: stepWords(row.step) } : {}),
   };
 };
 
@@ -270,6 +272,74 @@ const stepWithout = (a: HubAction): SessionAction => {
       return { ...base, by: "person", kind: "hand_back" };
     default:
       return { ...base, kind: "command", text: a.tool.replaceAll("_", " ") };
+  }
+};
+
+/** The desktop tool's actions, in words (contracts DesktopAction). */
+const DESKTOP_WORDS: Readonly<Record<string, string>> = {
+  screenshot: "Took a screenshot",
+  left_click: "Clicked",
+  right_click: "Right-clicked",
+  middle_click: "Middle-clicked",
+  double_click: "Double-clicked",
+  triple_click: "Triple-clicked",
+  mouse_move: "Moved the pointer",
+  left_click_drag: "Dragged",
+  scroll: "Scrolled",
+  wait: "Waited",
+  cursor_position: "Read the pointer’s place",
+};
+
+/** agent-device's verbs, in words; a quoted name after one goes in quotes (Tapped “Add to cart”). */
+const DEVICE_WORDS: Readonly<Record<string, string>> = {
+  tap: "Tapped",
+  click: "Tapped",
+  press: "Pressed",
+  fill: "Typed in",
+  type: "Typed",
+  swipe: "Swiped",
+  scroll: "Scrolled",
+  open: "Opened",
+  launch: "Opened",
+  install: "Installed",
+  back: "Went back",
+  home: "Went to the home screen",
+  screenshot: "Took a screenshot",
+  snapshot: "Read the screen",
+};
+
+/** An agent-device command line as a step in words. */
+const deviceWords = (command: string): string => {
+  const words = shellWords(command);
+  const at = words.findIndex((w) => w === "agent-device" || w.endsWith("/agent-device"));
+  const [verb = "", ...rest] = words.slice(at + 1).filter((w) => !w.startsWith("--"));
+  if (verb === "") return "Drove the device";
+  const said = DEVICE_WORDS[verb.toLowerCase()];
+  const what = rest.join(" ");
+  if (said === undefined) return `Ran ${[verb, what].filter((w) => w !== "").join(" ")}`;
+  if (what === "") return said;
+  return what.startsWith("@") || what.includes(".") ? `${said} ${what}` : `${said} “${what}”`;
+};
+
+/** A step of the agent's in one line: an agent-browser command as the replay words it, a device or desktop one too. */
+export const stepWords = (step: BrowserAction): string => {
+  const args = (typeof step.args === "object" && step.args !== null ? step.args : {}) as Record<string, unknown>;
+  const failed = step.ok ? "" : " · failed";
+  switch (step.tool) {
+    case "agent-device":
+      return `${deviceWords(str(args["command"]) ?? "")}${failed}`;
+    case "desktop": {
+      const action = str(args["action"]) ?? "";
+      const text = str(args["text"]);
+      if (action === "type" && text !== undefined) return `Typed “${text}”${failed}`;
+      if (action === "key" && text !== undefined) return `Pressed ${text}${failed}`;
+      if ((action === "launch" || action === "agent_desktop") && text !== undefined) return `Ran ${text}${failed}`;
+      return `${DESKTOP_WORDS[action] ?? "Used the desktop"}${failed}`;
+    }
+    default: {
+      const line = actionLine(stepOf({ ...(step as HubAction), ok: true }));
+      return `${line.machine === undefined ? line.words : `${line.words} ${line.machine}`}${failed}`;
+    }
   }
 };
 

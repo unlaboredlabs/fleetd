@@ -109,7 +109,9 @@ const payloads = (f: Fixture, problems: Array<string>): Array<Payload> => {
             ? validator("AppServerMessage.json", "#/$defs/ChatDelta")
             : t.kind === "browser_frame"
               ? validator("AppServerMessage.json", "#/$defs/BrowserFrame")
-              : validator("McpTools.json", "#/$defs/McpTools/properties/fleetd_status.output");
+              : t.kind === "screen_thumb"
+                ? validator("AppServerMessage.json", "#/$defs/ScreenThumb")
+                : validator("McpTools.json", "#/$defs/McpTools/properties/fleetd_status.output");
     out.push({ what: `${t.kind} at ${t.ms} ms`, fn, value: t.payload });
   }
   for (const c of f.calls) {

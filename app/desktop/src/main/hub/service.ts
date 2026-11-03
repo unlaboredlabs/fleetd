@@ -50,6 +50,8 @@ export class HubService {
   /** Each window's watched browser session: the hub watches the one asked for last (a pop-out over its main window). */
   readonly #watches = new Map<WebContents, string>();
   #watching: string | null = null;
+  /** The windows showing the Screens page: the hub sends its pictures while one does. */
+  readonly #thumbs = new Set<WebContents>();
 
   constructor(mode: HubMode) {
     this.id = mode.id;
@@ -101,6 +103,7 @@ export class HubService {
     this.#subscribers.delete(contents);
     this.#awaitingSnapshot.delete(contents);
     if (this.#watches.delete(contents)) this.#rewatch();
+    if (this.#thumbs.delete(contents)) this.#source?.thumbs(this.#thumbs.size > 0);
   }
 
   /** The browser session `contents` shows live, or null when it shows none. */
@@ -116,6 +119,14 @@ export class HubService {
     if (last === this.#watching) return;
     this.#watching = last;
     this.#source?.watch(last);
+  }
+
+  /** Whether `contents` shows the Screens page. */
+  thumbs(contents: WebContents, on: boolean): void {
+    const before = this.#thumbs.size > 0;
+    if (on) this.#thumbs.add(contents);
+    else this.#thumbs.delete(contents);
+    if (before !== this.#thumbs.size > 0) this.#source?.thumbs(!before);
   }
 
   input(session: string, input: BrowserInput): void {
@@ -220,6 +231,7 @@ export class HubService {
     client.focus(this.#focus);
     client.shown(this.#shown);
     client.watch(this.#watching);
+    client.thumbs(this.#thumbs.size > 0);
     client.start();
   }
 

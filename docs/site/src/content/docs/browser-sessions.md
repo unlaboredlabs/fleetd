@@ -11,8 +11,30 @@ app and take it over. The node records the screen and uploads the recording to t
 A screen is any of these an agent opens: a browser, an [Android emulator](#android), a
 [Linux desktop](#desktop), or the [agents' Mac's own screen](#mac), which agents take turns on. An agent's iOS
 simulator is on [the agents' Mac](/docs/agents-mac#sim), and a person opens [iOS screens](#ios) of their own. You can
-[open one yourself](#yours) too. The app lists them under **Agents › Screens**. The
-agent tools that open and close one keep their names, `session_start` and `session_end`.
+[open one yourself](#yours) too. The app shows every project's and Navi's on the [Screens page](#page), and each
+project's under **Agents › Screens**. The agent tools that open and close one keep their names, `session_start` and
+`session_end`.
+
+## The Screens page {#page}
+
+**Screens** in the sidebar shows every screen of the projects and Navis you can see, in three groups:
+
+- **Needs you**: screens whose agent asked you to take over, each with a large picture, its reason and **Take over**.
+- **Live**: a grid of pictures. Over each, its project and where it runs (`Browser · devbox`, `Android · buildbox`,
+  `Agents' Mac`); under it, what it's for, its state, who has it and the agent's latest step (`Typed "SAVE10" in @e12`,
+  `Tapped "Add to cart"`).
+- **Recent**: screens that ended, newest first, with how they ended and when.
+
+Opening a screen gives its live view or replay the whole page, with a back arrow to the wall. **New screen** at the top
+right opens a short sentence: the kind, the machine with its slots in use, and the project or Navi. A full machine
+gives you its next free slot. **All screens** at the top of a project's Screens tab opens the page too.
+
+The pictures are cheap by design. While the page is on screen, the hub takes one frame of each live screen every 20
+seconds, shrinks it to at most 640 pixels a side and sends it to each app showing the page. It takes no capture of its
+own: it watches each screen briefly, as the live view does, and the node answers a watch with the screen's newest frame
+at once. Nobody showing the page means no watch at all, and a hidden window counts as not showing it. The latest step
+comes from each node's heartbeat (every 15 seconds): the newest line of each live screen's action log, scrubbed as
+it was logged.
 
 ## How an agent uses one {#use}
 
@@ -72,8 +94,8 @@ its recording. MCP clients use `browser_control` to take over and hand back.
 
 ## Open one yourself {#yours}
 
-You can open a screen of your own: **New screen** at the top of a project's or a Navi's **Screens** tab, or
-**New screen…** in the command palette (⌘K) for the project on screen. On the phone, **New Screen** is on a project's
+You can open a screen of your own: **New screen** at the top of a project's or a Navi's **Screens** tab, on the
+[Screens page](#page), or **New screen…** in the command palette (⌘K) for the project on screen. On the phone, **New Screen** is on a project's
 or Navi's ⓘ page ([Phone app](/docs/mobile#screens)).
 
 1. **Pick the kind**: a browser, an iOS simulator, an Android emulator or a Linux desktop. A kind no machine can host

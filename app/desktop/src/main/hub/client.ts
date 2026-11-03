@@ -71,6 +71,10 @@ export class HubClient implements HubSource {
   #browser = false;
   /** The browser session whose frames to forward; sent again on each connection. */
   #watch: string | null = null;
+  /** The hub sends the Screens page's pictures (ready's `screen_thumbs`). */
+  #thumbsServed = false;
+  /** A window shows the Screens page; sent again on each connection. */
+  #thumbs = false;
   #nextPresenceId = 0;
 
   constructor(options: HubClientOptions) {
@@ -173,6 +177,12 @@ export class HubClient implements HubSource {
     if (this.#ready && this.#browser) this.#sendWatch();
   }
 
+  thumbs(on: boolean): void {
+    if (this.#thumbs === on) return;
+    this.#thumbs = on;
+    if (this.#ready && this.#thumbsServed) this.#send({ t: "screen_thumbs", on });
+  }
+
   input(session: string, input: BrowserInput): void {
     if (this.#ready && this.#browser) this.#send({ t: "browser_input", session, input });
   }
@@ -244,6 +254,7 @@ export class HubClient implements HubSource {
         this.#cursor = null;
         this.#presence = frame.features?.includes("presence") ?? false;
         this.#browser = frame.features?.includes("browser_sessions") ?? false;
+        this.#thumbsServed = frame.features?.includes("screen_thumbs") ?? false;
         if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
         this.#readyTimer = null;
         this.#startHeartbeat();
@@ -258,6 +269,7 @@ export class HubClient implements HubSource {
         this.#sendLive();
         if (this.#chat !== null) this.#sendChat();
         if (this.#browser && this.#watch !== null) this.#sendWatch();
+        if (this.#thumbsServed && this.#thumbs) this.#send({ t: "screen_thumbs", on: true });
         return;
       }
       case "snapshot": {
@@ -291,6 +303,12 @@ export class HubClient implements HubSource {
         const { t: _t, ...browser } = frame;
         // Only the watched session's: one that was watched before a change can still be on its way.
         if (browser.sessionId === this.#watch) this.#options.emit({ t: "browser_frame", frame: browser });
+        return;
+      }
+      case "screen_thumb": {
+        const { t: _t, ...thumb } = frame;
+        // One that was on its way as the page closed is dropped.
+        if (this.#thumbs) this.#options.emit({ t: "screen_thumb", thumb });
         return;
       }
       case "result": {

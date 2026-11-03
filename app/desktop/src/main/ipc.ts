@@ -62,6 +62,7 @@ export const registerIpc = (
   handle(IPC.hubChat, (_event, id, project) => hubs.get(id)?.chat(project));
   handle(IPC.hubFocus, (_event, id, workstreamId) => hubs.get(id)?.focus(workstreamId));
   handle(IPC.hubWatch, (event, id, session) => hubs.get(id)?.watch(event.sender, session));
+  handle(IPC.hubThumbs, (event, id, on) => hubs.get(id)?.thumbs(event.sender, on));
   // Checked against the contract's shape above; an absent field may arrive as undefined, which JSON leaves out.
   handle(IPC.hubInput, (_event, id, session, input) => hubs.get(id)?.input(session, input as BrowserInput));
   handle(IPC.hubResync, (_event, id) => hubs.get(id)?.resync());

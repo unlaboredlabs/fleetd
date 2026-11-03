@@ -2,13 +2,16 @@
 // first, then the live ones, then the recent ones that ended. One row each: what it is for, and under it its state in
 // words, its agent (or the person who opened it), the site it is on and how long it has run. A row opens the session in
 // the list's place, live while it runs (SessionView), its replay once it has ended. At the top, New screen opens one of
-// your own (NewScreen), and your waits for a slot on a full machine show until their screen opens.
+// your own (NewScreen), and your waits for a slot on a full machine show until their screen opens. All screens opens the
+// Screens page (D305): every project's and Navi's screens as a wall.
+import { LayoutGrid } from "lucide-react";
 import { useMemo } from "react";
 import { Button, EmptyState, StateGlyph, Text, Truncate, cx, toast, useArrivals, useArrived } from "../../ui";
 import { useData, useDataLayer } from "../../src/data/react";
 import { useNow } from "../live/clock";
 import { parseMs } from "../live/format";
 import { agoText } from "../projects/machineText";
+import { navigate } from "../shell/navigation";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
 import { durationOf, fmtDuration, glyphOf, isLive, sessionGroups, siteOf, STATE_TONE, STATE_WORD, waitLine, type BrowserSession, type ScreenWaiting } from "./model";
 import { useScreenWaits, useSessions } from "./hub";
@@ -34,6 +37,9 @@ function SessionList({ project }: { project: ProjectKey }) {
   return (
     <div className={s.pane} data-screen="sessions">
       <div className={s.top}>
+        <Button variant="quiet" size="sm" className={s.allScreens} icon={<LayoutGrid aria-hidden />} onClick={() => navigate({ id: "screens", open: null })}>
+          All screens
+        </Button>
         <NewScreenButton project={project} />
       </div>
       {waits.length === 0 ? null : (
