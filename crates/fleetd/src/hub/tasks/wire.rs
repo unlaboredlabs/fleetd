@@ -397,7 +397,9 @@ impl TaskPorts for HubTaskPorts {
                 match e.kind {
                     GhErrorKind::Auth => BranchPrError::Refused("gh not logged in".into()),
                     GhErrorKind::Missing => BranchPrError::Refused("gh not installed".into()),
-                    GhErrorKind::Failed => BranchPrError::Unread(e.message),
+                    GhErrorKind::Failed | GhErrorKind::Unavailable => {
+                        BranchPrError::Unread(e.message)
+                    }
                 }
             })?;
             let value = answer.map_err(|(status, message)| {

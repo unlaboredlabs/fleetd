@@ -262,7 +262,7 @@ async fn read_github(
         Ok(Err((status, message))) => answers
             .unread
             .push(format!("{r} (HTTP {status}: {message})")),
-        Err(e) if e.kind == GhErrorKind::Failed => {
+        Err(e) if matches!(e.kind, GhErrorKind::Failed | GhErrorKind::Unavailable) => {
             answers.unread.push(format!("{r} ({})", e.message))
         }
         Err(e) => {

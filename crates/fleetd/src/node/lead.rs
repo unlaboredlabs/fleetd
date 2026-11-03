@@ -45,10 +45,27 @@ struct RelayState {
     hold: Option<Hold>,
     /// The agents' Mac ([`LeadRelay::set_tool_only`]): no lead call leaves it.
     tool_only: bool,
+    /// What answers a session's `fleetd mac` (node/mac_tool); without it, `mac` is refused.
+    mac: Option<MacHandler>,
 }
 
 /// Holds the node's agents between steps, answering how many are still mid-step (node/hold.rs).
 pub type Hold = Arc<dyn Fn() -> u32 + Send + Sync>;
+
+/// Answers an agent session's `fleetd mac` step, by the session's id.
+pub type MacHandler = Arc<
+    dyn Fn(
+            String,
+            fleetd_contracts::mac::MacCall,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<fleetd_contracts::mac::MacDone, McpToolError>,
+                    > + Send,
+            >,
+        > + Send
+        + Sync,
+>;
 
 /// The node's half of lead-side calls: CLI frames in from the socket, out over whichever link is up.
 #[derive(Clone)]
@@ -123,6 +140,11 @@ impl LeadRelay {
     /// What answers [`LeadSocketFrame::Hold`]; without it, a hold is refused.
     pub fn set_hold(&self, hold: Hold) {
         self.lock().hold = Some(hold);
+    }
+
+    /// What answers [`LeadCall::Mac`](fleetd_contracts::lead_calls::LeadCall::Mac).
+    pub fn set_mac(&self, mac: MacHandler) {
+        self.lock().mac = Some(mac);
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, RelayState> {
@@ -435,6 +457,14 @@ async fn serve_connection(
         reply(&mut conn, &tool_only_refusal(frame.id.as_str())).await;
         return;
     }
+    // `fleetd mac` is the node's to answer, for the session its process runs in: the variables it names go sealed to
+    // the Mac, so the call is never masked or sent on as it is.
+    if let fleetd_contracts::lead_calls::LeadCall::Mac(_) = &frame.call {
+        let mac = relay.lock().mac.clone();
+        let answer = mac_call(frame, pid, identify, mac).await;
+        reply(&mut conn, &answer).await;
+        return;
+    }
     let op = fleetd_contracts::lead_calls::op_name(&frame.call);
     if NODE_OPS.contains(&op.as_str()) {
         let refused = error_frame(
@@ -487,6 +517,55 @@ async fn serve_connection(
         }
     };
     reply(&mut conn, &answer).await;
+}
+
+/// A session's `fleetd mac` step, answered by the node ([`MacHandler`]).
+async fn mac_call(
+    frame: LeadCallFrame,
+    pid: Option<i32>,
+    identify: Identify,
+    mac: Option<MacHandler>,
+) -> LeadResultFrame {
+    let id = frame.id.to_string();
+    let peer = match pid {
+        Some(pid) => tokio::task::spawn_blocking(move || identify(pid))
+            .await
+            .ok(),
+        None => None,
+    };
+    let frame = match attribute(frame, peer) {
+        Ok(frame) => frame,
+        Err(refused) => return *refused,
+    };
+    let (Some(thread), fleetd_contracts::lead_calls::LeadCall::Mac(call)) =
+        (frame.thread_id.map(|t| t.to_string()), frame.call)
+    else {
+        return error_frame(
+            &id,
+            McpToolError::new(
+                ErrorCode::Forbidden,
+                "the agents' Mac is for agents' sessions, and this call comes from none",
+            )
+            .with_fix("run fleetd mac from an agent's session"),
+        );
+    };
+    let Some(mac) = mac else {
+        return error_frame(
+            &id,
+            McpToolError::new(
+                ErrorCode::Invalid,
+                "this node doesn't reach the agents' Mac",
+            ),
+        );
+    };
+    match mac(thread, call).await {
+        Ok(done) => LeadResultFrame {
+            id: Text::unchecked(id),
+            result: Some(fleetd_contracts::lead_calls::LeadCallResult::Mac(done)),
+            error: None,
+        },
+        Err(error) => error_frame(&id, error),
+    }
 }
 
 /// A browser-mcp call, answered by the node's broker for the session its process runs in.

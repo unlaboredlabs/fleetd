@@ -8,8 +8,10 @@ screen. It gets a fresh Chrome on its machine that no other screen shares, drive
 [agent-browser](https://github.com/vercel-labs/agent-browser) CLI, and closes it when done. You can watch it live in the
 app and take it over. The node records the screen and uploads the recording to the hub.
 
-A screen is any of these an agent opens: a browser, an [Android emulator](#android), an [iOS simulator](#ios), a
-[Linux desktop](#desktop), or the [agents' Mac's own screen](#mac), which agents take turns on. You can [open one yourself](#yours) too. The app lists them under **Agents › Screens**. The
+A screen is any of these an agent opens: a browser, an [Android emulator](#android), a
+[Linux desktop](#desktop), or the [agents' Mac's own screen](#mac), which agents take turns on. An agent's iOS
+simulator is on [the agents' Mac](/docs/agents-mac#sim), and a person opens [iOS screens](#ios) of their own. You can
+[open one yourself](#yours) too. The app lists them under **Agents › Screens**. The
 agent tools that open and close one keep their names, `session_start` and `session_end`.
 
 ## How an agent uses one {#use}
@@ -109,7 +111,7 @@ An Android emulator can open with a PR's build installed. The hub takes the newe
 head whose name says what it's for: `android` or `apk` for an `.apk` (`fleetd-android-apk`).
 
 An iOS simulator takes none until the shared Mac (decision `mac.interim-lockdown`, D299): an app installed in the
-Mac's simulator runs as the Mac's own user, outside the iOS sandbox ([why](#ios-elsewhere)). `screen_open` with a PR
+Mac's simulator runs as the Mac's own user, outside the iOS sandbox. `screen_open` with a PR
 for an iOS screen is refused at once, and nothing starts. It downloads it with its
 `gh` (as the [GitHub App](/docs/github/) where it's installed), starts the screen, sends the file to the screen's
 machine sealed with that screen's key, and runs `agent-device install` there. Then the screen is yours.
@@ -123,7 +125,7 @@ the screen still opens: it shows at the top of Screens until then, and then list
   artifacts only so long: re-run its CI), or no run that uploaded one. Nothing starts.
 - A build that doesn't install closes the screen. Its row in Screens says why, in agent-device's words, until you clear
   it.
-- A build can be at most 64 MiB, as an agent's install into a screen elsewhere.
+- A build can be at most 64 MiB.
 - A wait with a PR gets its build when its slot frees.
 
 MCP clients use `screen_open` and `screen_end`. `browser_sessions` lists your screens on their way beside the screens,
@@ -372,71 +374,32 @@ Settings go under `device` in [node.json](/docs/config-and-files#node-json):
 |---|---|
 | `enabled` | `true` opts this machine in: the first Android screen installs the emulator. `false` turns Android screens off. Absent: on only where they are installed already; nothing is installed. |
 | `pool` | Emulators kept booted for the next screens. Absent: 1. Each takes about 2 GB of memory. |
-| `idleMinutes` | End a screen after this many minutes without an `agent-device` command. Absent: 30. |
+| `idleMinutes` | End a person's screen after this many minutes without a tap or key. Absent: 30. |
 
 ## iOS screens {#ios}
 
-On a Mac with Xcode, an agent opens an iOS screen with **`session_start`** and `kind` `ios`; an agent on any other
-machine gets one on a Mac that hosts them ([from another machine](#ios-elsewhere)). It gets a fresh iOS
-simulator and drives it with [agent-device](https://github.com/callstack/agent-device), as in an Android screen
-(`agent-device open com.apple.Preferences`, `snapshot -i`, `press @e3 --settle`). agent-device is already pointed at
-the screen's simulator by its udid. Only agent-device is told about the node's simulators: an agent's own `xcrun
-simctl` and Xcode stay as they were. The screen tools, the one-screen-at-a-time rule, the action log and the hub's
-storage work as for a browser screen.
+Agents don't open iOS screens any more: each one starts an iOS simulator of its own on
+[the agents' Mac](/docs/agents-mac#sim) with `mac sim start`, and drives it with
+[agent-device](https://github.com/callstack/agent-device) as before. `session_start` with `kind` `ios` answers with
+that, for one release; old iOS recordings still open.
+
+A person still opens an iOS screen of their own on a Mac, from [New screen](#yours). It gets a fresh iOS simulator,
+driven by the person through live view. No app goes into it from another machine: a simulator
+app runs as the Mac's user.
 
 - **A fresh simulator per screen.** The node keeps its simulators in a device set of its own
   (`~/.fleetd/node/device/ios/set`), apart from the ones in Xcode. It makes one golden simulator there: the newest iOS
   runtime on a plain iPhone. It boots the golden once, waits for its first-boot work to settle, has agent-device build
-  its XCTest runner for it, and shuts it down. Each screen gets a clone of the golden (`simctl clone`), which is
-  deleted at `session_end` along with everything done in it.
-- **Starts from a warm pool.** The node keeps one clone booted for the next screen, with agent-device's XCTest runner
-  already started in it, and clones, boots and starts another behind it. So `session_start` doesn't wait for a boot,
-  and the first agent-device command doesn't wait for the runner. Each clone's runner runs from an agent-device home
-  made for that clone alone, kept where no Navi's sandbox can see it, and deleted with the clone. A Navi's screen
-  stops that runner and starts its own in its session's folder, the one its sandbox lets it write. With no clone ready, `session_start` answers at once that
-  one is starting and about how long it takes, rather than wait out the boot. When boots keep failing, the pool waits
-  before the next one: a minute, doubling up to half an hour, and back to normal after a boot that works. If the pool
-  couldn't start a clone's runner, the screen starts it as it starts. An agent-device command sent before the runner
-  is up waits for it, so a screen only ever has one runner.
-- **Recorded by the simulator.** The video is `simctl io recordVideo`'s H.264 MP4 (`video_mp4`), at the screen's full
-  size. The action log is the same as an Android screen's, and there's no `dom` file.
+  its XCTest runner for it, and shuts it down. Each screen, and each agent's `mac sim start`, gets a clone of the golden
+  (`simctl clone`), which is deleted when it ends along with everything done in it.
+- **Starts from a warm pool.** The node keeps one clone booted for the next one, with agent-device's XCTest runner
+  already started in it, and clones, boots and starts another behind it. With no clone ready, the start answers at
+  once that one is starting and about how long it takes. When boots keep failing, the pool waits before the next one:
+  a minute, doubling up to half an hour, and back to normal after a boot that works.
+- **Recorded by the simulator.** A screen's video is `simctl io recordVideo`'s H.264 MP4 (`video_mp4`), at the
+  screen's full size.
 - **Live view and takeover.** `simctl` can't stream, so a person watching gets screenshots in a loop, which runs only
   while someone watches. Their taps, drags, scrolls and typing go through agent-device, one command at a time.
-
-### From an agent on another machine {#ios-elsewhere}
-
-An agent on a machine without iOS screens, such as a Linux devbox, gets one on a Mac that hosts them, placed by the
-hub as any [screen on another machine](/docs/machines#roles). It drives it the same way: while the screen is open, an
-`agent-device` first on its `PATH` sends each command through the hub to the Mac. The Mac's node runs the real
-agent-device on the screen's clone and sends back its output and exit code. The action log, the recording, live view,
-takeover, the idle timeout and `session_end` work as on the Mac: the hub sends a person's watch, takeover and taps
-straight to the Mac, and only the Mac's frames reach them.
-
-- **Files go both ways, inside the worktree.** A file a command reads (a `push` payload) goes from the agent's
-  worktree to the Mac first, 4 MiB at a time, up to 64 MiB per command. A folder doesn't go. A file a command writes (`screenshot
-  shots/home.png`, or `record start run.mp4` then `record stop`) comes back to that path in the worktree.
-  `screenshot` and `record start` need a file name. So does `logs path`: the app log agent-device keeps on the Mac
-  comes back to that path (`logs path logs/app.log`), its last 64 MiB if it's longer. A path outside the worktree is
-  refused on the agent's machine.
-- **Only commands that drive the screen run.** The Mac runs agent-device commands from a fixed list, each with its
-  own flags: `open`, `close`, `uninstall`, `apps`, `appstate`, `snapshot`, `screenshot`,
-  `record`, `press`, `click`, `fill`, `type`, `scroll`, `swipe`, `longpress`, `gesture`, `wait`, `get`, `is`, `find`,
-  `back`, `home`, `app-switcher`, `alert`, `keyboard`, `settings`, `push`, `orientation`, `focus`, `action-button`,
-  `hardware-button`, `logs` (`path`, `start`, `stop`, `clear`, `doctor`, `mark`), `capabilities` and `help`. They run in a folder of the screen's own, which goes with it. There's
-  no shell and no `xcrun simctl`: no scripts (`batch`, `replay`, `test`), no servers or remote state (`mcp`, `daemon`,
-  `proxy`, `connect`, `plugins`), no clipboard, and no flag that picks another device, platform, session or config
-  (`--udid`, `--device`, `--platform`, `--session`, `--config`). `open` takes an app or a URL, never a file on the Mac.
-- **Sealed between the two machines.** Each command and file goes sealed with the key the agent's node sealed to the
-  Mac at the start, and numbered. The hub carries only ciphertext, and the Mac runs nothing the hub made up or sent
-  twice.
-- **No app goes in from another machine.** A simulator doesn't keep an app away from the Mac the way a phone does:
-  the app runs as the Mac's user, so it can read and change what that user can, and reach the network. Until the
-  shared Mac (decision `mac.interim-lockdown`, D299), `install` and `reinstall` are refused: on the agent's machine
-  before anything is sent, and again on the Mac. People's [PR builds](#yours-pr) don't go into an iOS screen either.
-  An agent on the Mac itself installs into its own screen as before.
-
-An Android screen the hub would place on another machine is refused for now: agent-device drives an emulator over adb
-from the emulator's own machine.
 
 ### On each Mac {#ios-setup}
 
@@ -450,8 +413,7 @@ its golden simulator is made.
 Nothing is made until a person opts a Mac in: iOS's switch in [Settings](#settings), or `"ios": {"enabled": true}`
 in its node.json. The node then installs
 agent-device 0.21.31 (the same pin Android screens use) and makes the golden. That takes minutes: the boot that
-settles, and an `xcodebuild` of agent-device's runner. Until it's done, `session_start` says the Mac is still making
-it. The node deletes clones that a stopped node left behind each time it starts.
+settles, and an `xcodebuild` of agent-device's runner. Until it's done, a start says the Mac is still making it. The node deletes clones that a stopped node left behind each time it starts.
 
 Settings go under `ios` in [node.json](/docs/config-and-files#node-json):
 
@@ -459,7 +421,7 @@ Settings go under `ios` in [node.json](/docs/config-and-files#node-json):
 |---|---|
 | `enabled` | `true` opts this Mac in: the node makes its golden simulator and keeps clones booted. `false` turns iOS screens off. Absent: on only where the golden is made already. |
 | `pool` | Clones kept booted for the next screens. Absent: 1. Each takes 1–2 GB of memory. |
-| `idleMinutes` | End a screen after this many minutes without an `agent-device` command. Absent: 30. |
+| `idleMinutes` | End a person's screen after this many minutes without a tap or key. Absent: 30. |
 | `deviceType` | The simulator's device type by name, such as `iPhone 17 Pro`. Absent: the newest plain iPhone of the newest iOS runtime. A change takes effect when the golden is made again (delete `device/ios/golden.json`). |
 
 ## Linux desktop screens {#desktop}

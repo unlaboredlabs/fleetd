@@ -349,6 +349,11 @@ pub enum LeadCall {
     /// Made by the node for its agent's session tools (machine_roles.rs): placed by the hub, relayed when elsewhere.
     SessionRoute(crate::machine_roles::SessionRouteCall),
     SessionStep(crate::machine_roles::SessionStepCall),
+    /// `fleetd mac`'s step, answered by the agent's own node, which never sends it on (mac.rs).
+    Mac(crate::mac::MacCall),
+    /// Made by the node for its agent's `fleetd mac`: the agents' Mac, and one step sealed to it.
+    MacWhere(crate::mac::MacWhereCall),
+    MacSend(crate::mac::MacSendCall),
     /// Navi's factory bridge (navi.rs): only a Navi's lead makes them.
     ProjectMessage(ProjectMessageCall),
     FactoryStatus(FactoryStatusCall),
@@ -565,6 +570,9 @@ pub enum LeadCallResult {
     SecureInputFilled(RequestResult),
     SessionRoute(crate::machine_roles::SessionRouteResult),
     SessionStep(crate::machine_roles::SessionStepResult),
+    Mac(crate::mac::MacDone),
+    MacWhere(crate::mac::MacWhereResult),
+    MacSend(crate::mac::MacSendResult),
     ProjectMessage(ProjectMessageResult),
     FactoryStatus(FactoryStatusResult),
     ChatSearch(ChatSearchResult),

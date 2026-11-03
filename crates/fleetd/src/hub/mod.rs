@@ -23,6 +23,7 @@ pub mod integrations;
 pub mod leads;
 pub mod ledger;
 pub mod link;
+pub mod mac_tool;
 pub mod machine_roles;
 pub mod machine_setup;
 pub mod mcp;

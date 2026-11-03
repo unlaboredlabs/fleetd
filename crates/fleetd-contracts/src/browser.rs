@@ -542,16 +542,17 @@ pub struct DeviceFile {
     pub bytes: u64,
 }
 
-/// `session_start`: a fresh Chrome with an empty profile (or with `kind` android, a fresh Android emulator; `ios`, a
-/// fresh iOS simulator), for this agent only, recorded until `session_end`.
+/// `session_start`: a fresh Chrome with an empty profile (or with `kind` android, a fresh Android emulator), for this
+/// agent only, recorded until `session_end`. `ios` is a legacy value, answered with the way to `mac sim start` (the
+/// agents' Mac).
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SessionStartCall {
     /// What you need the browser for, in one line; the person replaying it sees it.
     pub purpose: BrowserPurpose,
-    /// `android` for an Android emulator, `ios` for an iOS simulator, each driven with agent-device; `linux_desktop`
-    /// for a Linux desktop, driven with the `desktop` tool; `mac` for the agents' Mac's screen, one agent at a time,
-    /// driven with the `desktop` tool and agent-desktop; absent for a browser.
+    /// `android` for an Android emulator, driven with agent-device; `linux_desktop` for a Linux desktop, driven with the
+    /// `desktop` tool; `mac` for the agents' Mac's screen, one agent at a time, driven with the `desktop` tool and
+    /// agent-desktop; absent for a browser. An iOS simulator is `mac sim start` on the agents' Mac.
     pub kind: Option<SessionKind>,
 }
 
