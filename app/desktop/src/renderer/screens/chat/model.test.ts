@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ChatItem } from "../../src/data/chat";
 import type { ChatMessage } from "../../src/data/chat-contract";
 import { arrivalsOf, authorLabel, chatRows, ENTER_MS, dayLabel, heldLabel, keepRows, latestLabel, newestKey, rowIndexOf, type Row } from "./model";
@@ -228,6 +228,38 @@ describe("the chat's rows", () => {
     expect(dayLabel(at(18, 1), NOW, "UTC")).toBe("Yesterday");
     expect(dayLabel(at(12, 1), NOW, "UTC")).toBe("Mon 12 Oct");
     expect(dayLabel(new Date(Date.UTC(2025, 2, 3)).toISOString(), NOW, "UTC")).toBe("Mon 3 Mar 2025");
+  });
+
+  it("word each day as a formatter made for it would, in each time zone", () => {
+    const made = (iso: string, timeZone?: string) => {
+      const zone = timeZone === undefined ? {} : { timeZone };
+      const key = (ms: number) => new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", ...zone }).format(ms);
+      const day = key(Date.parse(iso));
+      if (day === key(NOW)) return "Today";
+      if (day === key(NOW - 86_400_000)) return "Yesterday";
+      const year = day.slice(0, 4) === key(NOW).slice(0, 4) ? {} : { year: "numeric" as const };
+      return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", ...year, ...zone }).format(Date.parse(iso)).replace(",", "");
+    };
+    // Every 5 hours around today and yesterday, then every 34 back past last year.
+    const hours = [...Array.from({ length: 20 }, (_, i) => 24 - i * 5), ...Array.from({ length: 280 }, (_, i) => -76 - i * 34)];
+    for (const timeZone of [undefined, "UTC", "Pacific/Auckland", "America/Los_Angeles", "UTC", undefined]) {
+      for (const h of hours) {
+        const iso = new Date(NOW + h * 3_600_000).toISOString();
+        expect(dayLabel(iso, NOW, timeZone)).toBe(made(iso, timeZone));
+      }
+    }
+  });
+
+  it("make no date formatter per message: a streamed word rebuilds the rows of a long chat", () => {
+    const items = Array.from({ length: 100 }, (_, i) => item(`m${String(i)}`, i % 2 === 0 ? "lead" : "human", new Date(NOW - (100 - i) * 3_600_000).toISOString()));
+    rows(items, { timeZone: "Asia/Kolkata" });
+    const spy = vi.spyOn(Intl, "DateTimeFormat");
+    try {
+      rows(items, { timeZone: "Asia/Kolkata" });
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

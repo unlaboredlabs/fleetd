@@ -34,16 +34,22 @@ const SESSIONS = [
 // Its steps, as actions.jsonl has them.
 const ACTIONS = [
   { seq: 0, offsetMs: 0, tool: "session_start", args: { purpose: "x" }, ok: true },
-  { seq: 1, offsetMs: 2_000, tool: "agent-browser", args: { command: "agent-browser open https://staging.shop.example.com" }, ok: true },
+  { seq: 1, offsetMs: 2_000, tool: "agent-browser", args: { command: "agent-browser open https://shop.example/café" }, ok: true },
   { seq: 2, offsetMs: 9_000, tool: "session_end", ok: true },
 ]
   .map((a) => JSON.stringify(a))
   .join("\n");
+const ACTION_BYTES = new TextEncoder().encode(ACTIONS);
 
 let host: HTMLDivElement;
 let root: Root | undefined;
 let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
 let inputs: unknown[] = [];
+
+// The app's Electron has Uint8Array.fromBase64, which the recording is read with; Node 24 (these tests) doesn't yet.
+if (!("fromBase64" in Uint8Array)) {
+  Object.defineProperty(Uint8Array, "fromBase64", { value: (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)), configurable: true });
+}
 
 beforeEach(() => {
   inputs = [];
@@ -74,9 +80,14 @@ const settle = async () => {
 
 const mount = async (id: string, features: readonly string[] = ["browser_sessions", "browser_navigate"]) => {
   const hub: HubApi = {
-    call: (tool) => {
+    call: (tool, input) => {
       if (tool === "browser_sessions") return Promise.resolve({ ok: true, output: { sessions: SESSIONS, retention: { retentionDays: 30, maxGbPerProject: 20 } } });
-      if (tool === "browser_recording_get") return Promise.resolve({ ok: true, output: { dataB64: btoa(ACTIONS), done: true } });
+      if (tool === "browser_recording_get") {
+        // A byte a piece, so every character past ASCII is split between two pieces.
+        const offset = (input as { offset?: number }).offset ?? 0;
+        const piece = ACTION_BYTES.slice(offset, offset + 1);
+        return Promise.resolve({ ok: true, output: { dataB64: btoa(String.fromCharCode(...piece)), done: offset + 1 >= ACTION_BYTES.length } });
+      }
       return Promise.resolve({ ok: true, output: tool === "agents_list" ? { at: AT, agents: [] } : {} });
     },
     subscribe: (l) => ((send = l), () => undefined),
@@ -163,6 +174,8 @@ it("plays an ended screen's recording the full width, its steps behind Steps, cl
   const steps = [...(stepsList()?.querySelectorAll("li") ?? [])].map((li) => li.textContent);
   expect(steps).toHaveLength(3);
   expect(steps[0]).toContain("Started a fresh browser");
+  // Read whole across the pieces: a split é would come out as U+FFFD (%EF%BF%BD).
+  expect(steps[1]).toContain("shop.example/caf%C3%A9");
   expect(steps[2]).toContain("Ended the screen");
 
   act(() => stepsToggle()?.click());
