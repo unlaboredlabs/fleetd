@@ -469,7 +469,9 @@ pub mod steps {
     static STEPS: Mutex<Option<Steps>> = Mutex::new(None);
 
     fn lock() -> std::sync::MutexGuard<'static, Option<Steps>> {
-        STEPS.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        STEPS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// The step, cut short for the heartbeat: a long command's args go as `{}`, a result to its start.
@@ -487,9 +489,10 @@ pub mod steps {
         if BrowserSessionId::new(session_id).is_err() {
             return;
         }
-        lock()
-            .get_or_insert_default()
-            .insert(session_id.to_owned(), (Instant::now(), dir.to_owned(), brief(step)));
+        lock().get_or_insert_default().insert(
+            session_id.to_owned(),
+            (Instant::now(), dir.to_owned(), brief(step)),
+        );
     }
 
     /// The latest step of each session whose recording is still here, newest first, at most [`SCREEN_STEPS_MAX`]; the
@@ -501,7 +504,7 @@ pub mod steps {
         };
         steps.retain(|_, (at, dir, _)| at.elapsed() < KEEP && dir.is_dir());
         let mut out: Vec<_> = steps.iter().collect();
-        out.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+        out.sort_by_key(|a| std::cmp::Reverse(a.1.0));
         out.into_iter()
             .take(SCREEN_STEPS_MAX)
             .map(|(id, (_, _, step))| ScreenStep {
@@ -552,18 +555,33 @@ mod tests {
         let mine = |steps: Vec<fleetd_contracts::browser::ScreenStep>| {
             steps.into_iter().find(|s| s.session_id.as_str() == id)
         };
-        append_action(&dir, &action(1, serde_json::json!({ "command": "open https://a.example" }), "ok"), &scrub).unwrap();
+        append_action(
+            &dir,
+            &action(
+                1,
+                serde_json::json!({ "command": "open https://a.example" }),
+                "ok",
+            ),
+            &scrub,
+        )
+        .unwrap();
         let typed = serde_json::json!({ "command": "fill @e2 s3cr3t-value" });
         append_action(&dir, &action(2, typed, &"x".repeat(500)), &scrub).unwrap();
         let latest = mine(steps::latest()).unwrap().step;
         assert_eq!(latest.seq, 2);
         let command = latest.args["command"].as_str().unwrap();
-        assert!(!command.contains("s3cr3t-value"), "scrubbed as logged: {command}");
+        assert!(
+            !command.contains("s3cr3t-value"),
+            "scrubbed as logged: {command}"
+        );
         assert_eq!(latest.result.unwrap().chars().count(), 200);
         // A script's long args go as {}: the step's words need its command only.
         let long = serde_json::json!({ "command": format!("eval {}", "a".repeat(900)) });
         append_action(&dir, &action(3, long, "ok"), &scrub).unwrap();
-        assert_eq!(mine(steps::latest()).unwrap().step.args, serde_json::json!({}));
+        assert_eq!(
+            mine(steps::latest()).unwrap().step.args,
+            serde_json::json!({})
+        );
         // Its recording uploaded and gone: forgotten.
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(mine(steps::latest()).is_none());

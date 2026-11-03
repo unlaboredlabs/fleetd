@@ -416,7 +416,7 @@
         },
         {
           "$ref": "#/$defs/ScreenThumb",
-          "description": "On `screen_thumbs` only: a live screen's picture, made small. Ephemeral: a slow link drops pictures.",
+          "description": "On `screen_thumbs` only: a live screen's picture, made small. Ephemeral: never replayed.",
           "properties": {
             "t": {
               "const": "screen_thumb",

@@ -1030,7 +1030,10 @@ async fn the_list_names_where_each_screen_runs_and_a_live_ones_latest_step() {
     let live = &hub.link.browser_live;
     live.steps_reported(
         &MachineId::unchecked("devbox"),
-        vec![step(1, "open https://shop.example.com"), step(2, "click @e3")],
+        vec![
+            step(1, "open https://shop.example.com"),
+            step(2, "click @e3"),
+        ],
     );
     let list = |hub: Arc<Hub>| async move {
         let out = tool(
@@ -1066,16 +1069,26 @@ async fn the_list_names_where_each_screen_runs_and_a_live_ones_latest_step() {
     assert!(list(hub.clone()).await.0.get("step").is_none());
     // An ended screen has no step, whatever a heartbeat still says.
     live.steps_reported(&MachineId::unchecked("devbox"), vec![step(3, "click @e4")]);
-    node_call(&hub, &r, report(S1, "uploading", json!([])), "browser_session")
-        .await
-        .unwrap();
+    node_call(
+        &hub,
+        &r,
+        report(S1, "uploading", json!([])),
+        "browser_session",
+    )
+    .await
+    .unwrap();
     let (s1, _) = list(hub.clone()).await;
     assert!(s1.get("step").is_none());
     assert_eq!(s1["machineId"], "devbox");
 }
 
 /// A screen's frame as its node sends it: a JPEG of `width` × `height`.
-fn jpeg_frame(id: &str, seq: u64, width: u32, height: u32) -> fleetd_contracts::browser::BrowserFrame {
+fn jpeg_frame(
+    id: &str,
+    seq: u64,
+    width: u32,
+    height: u32,
+) -> fleetd_contracts::browser::BrowserFrame {
     let image = image::RgbImage::from_pixel(width, height, image::Rgb([200, 120, 40]));
     let mut jpeg = Vec::new();
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 80)
@@ -1093,7 +1106,8 @@ async fn watches_heard(
     node: &mut tokio::sync::mpsc::UnboundedReceiver<fleetd_contracts::node_link::HubToNode>,
 ) -> Vec<(String, bool)> {
     let mut said = Vec::new();
-    while let Ok(Some(frame)) = tokio::time::timeout(Duration::from_millis(200), node.recv()).await {
+    while let Ok(Some(frame)) = tokio::time::timeout(Duration::from_millis(200), node.recv()).await
+    {
         if let fleetd_contracts::node_link::HubToNode::BrowserWatch(w) = frame {
             said.push((w.session_id.to_string(), w.on));
         }
@@ -1125,27 +1139,42 @@ async fn a_round_takes_one_small_picture_of_each_live_screen_and_ends_each_watch
     let mut on = watches_heard(&mut node).await;
     on.sort();
     assert_eq!(on, [(S1.to_owned(), true), (S2.to_owned(), true)]);
-    hub.link.browser_live.frame(&devbox, jpeg_frame(S1, 7, 1280, 800));
+    hub.link
+        .browser_live
+        .frame(&devbox, jpeg_frame(S1, 7, 1280, 800));
     assert_eq!(watches_heard(&mut node).await, [(S1.to_owned(), false)]);
     // S2's never comes: its watch ends once the round gives up on it.
     clock.advance(Duration::from_secs(5));
     let made = round.await.unwrap();
     assert_eq!(made, 1);
     assert_eq!(watches_heard(&mut node).await, [(S2.to_owned(), false)]);
-    assert_eq!(hub.link.browser_live.watchers(&BrowserSessionId::unchecked(S1)), 0);
+    assert_eq!(
+        hub.link
+            .browser_live
+            .watchers(&BrowserSessionId::unchecked(S1)),
+        0
+    );
     // One picture, made small: 640 a side at most, its shape kept.
     let picture = viewer.pictures.try_recv().unwrap();
     assert!(viewer.pictures.try_recv().is_err());
     assert_eq!(picture.thumb.session_id.as_str(), S1);
-    assert_eq!((picture.thumb.width.get(), picture.thumb.height.get()), (640, 400));
+    assert_eq!(
+        (picture.thumb.width.get(), picture.thumb.height.get()),
+        (640, 400)
+    );
     let bytes = B64.decode(picture.thumb.jpeg_b64.as_str()).unwrap();
     let small = image::load_from_memory(&bytes).unwrap();
     assert_eq!((small.width(), small.height()), (640, 400));
     // A page shown later gets it at once; once S1 ends, the next round forgets it.
     assert_eq!(thumbs.view().1.len(), 1);
-    node_call(&hub, &r, report(S1, "uploading", json!([])), "browser_session")
-        .await
-        .unwrap();
+    node_call(
+        &hub,
+        &r,
+        report(S1, "uploading", json!([])),
+        "browser_session",
+    )
+    .await
+    .unwrap();
     let round = tokio::spawn({
         let hub = hub.clone();
         async move { super::thumbs::round(&hub).await.unwrap() }
@@ -1162,9 +1191,14 @@ async fn pictures_are_taken_only_while_an_app_shows_the_page_every_20_seconds() 
     let (hub, clock, _home) = hub();
     let devbox = MachineId::unchecked("devbox");
     let mut node = hub.link.test_link(&devbox, &[CAP_BROWSER]);
-    node_call(&hub, &project("storefront"), report(S1, "live", json!([])), "browser_session")
-        .await
-        .unwrap();
+    node_call(
+        &hub,
+        &project("storefront"),
+        report(S1, "live", json!([])),
+        "browser_session",
+    )
+    .await
+    .unwrap();
     let thumbs = hub.link.browser_live.thumbs.clone();
     let run = tokio::spawn(super::thumbs::run(hub.clone()));
     // Nobody shows the page: no watch, however long.
@@ -1175,13 +1209,17 @@ async fn pictures_are_taken_only_while_an_app_shows_the_page_every_20_seconds() 
     let (viewer, _) = thumbs.view();
     assert_eq!(thumbs.viewers(), 1);
     assert_eq!(watches_heard(&mut node).await, [(S1.to_owned(), true)]);
-    hub.link.browser_live.frame(&devbox, jpeg_frame(S1, 1, 320, 200));
+    hub.link
+        .browser_live
+        .frame(&devbox, jpeg_frame(S1, 1, 320, 200));
     assert_eq!(watches_heard(&mut node).await, [(S1.to_owned(), false)]);
     clock.advance(Duration::from_secs(19));
     assert!(watches_heard(&mut node).await.is_empty());
     clock.advance(Duration::from_secs(1));
     assert_eq!(watches_heard(&mut node).await, [(S1.to_owned(), true)]);
-    hub.link.browser_live.frame(&devbox, jpeg_frame(S1, 2, 320, 200));
+    hub.link
+        .browser_live
+        .frame(&devbox, jpeg_frame(S1, 2, 320, 200));
     assert_eq!(watches_heard(&mut node).await, [(S1.to_owned(), false)]);
     // The page is hidden: no round after that.
     drop(viewer);

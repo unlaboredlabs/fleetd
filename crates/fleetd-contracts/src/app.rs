@@ -110,7 +110,9 @@ pub enum AppClientMessage {
     /// The Screens page is on show (`on`) or no more: while it is, a `screen_thumb` for each live screen the key may
     /// watch, the ones the hub has at once, then a new one each [`THUMB_EVERY_SECS`](crate::browser::THUMB_EVERY_SECS).
     /// Send it again after a reconnect.
-    ScreenThumbs { on: bool },
+    ScreenThumbs {
+        on: bool,
+    },
 }
 
 /// A `call` failed, or (without `id`) the session did.
@@ -152,7 +154,7 @@ pub enum AppServerMessage {
     ChatDelta(crate::chat::ChatDelta),
     /// On the browser watch only: the watched session's newest screen. Ephemeral: a slow link drops frames.
     BrowserFrame(crate::browser::BrowserFrame),
-    /// On `screen_thumbs` only: a live screen's picture, made small. Ephemeral: a slow link drops pictures.
+    /// On `screen_thumbs` only: a live screen's picture, made small. Ephemeral: never replayed.
     ScreenThumb(crate::browser::ScreenThumb),
 }
 

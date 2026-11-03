@@ -21,8 +21,8 @@ use tokio::sync::{broadcast, oneshot, watch};
 
 use crate::hub::api::{Caller, Hub, allows};
 use crate::hub::app_ws::outbox::Outbox;
-use fleetd_contracts::auth::Role;
 use crate::hub::store::{StoreError, iso_ms, now_ms};
+use fleetd_contracts::auth::Role;
 
 /// How long a round waits for a screen's frame before it gives that screen up until the next.
 const FRAME_WAIT: Duration = Duration::from_secs(5);
