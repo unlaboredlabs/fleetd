@@ -94,6 +94,11 @@ impl Repos {
         self.db.with(|c| Ok(store::detach(c, project, name)?))
     }
 
+    /// [`store::with_key`]: the projects on `repo_key`.
+    pub fn projects_with(&self, repo_key: &str) -> Result<Vec<ProjectRef>, StoreError> {
+        self.db.with(|c| Ok(store::with_key(c, repo_key)?))
+    }
+
     /// [`store::holders`]: the other projects holding the checkout, each with that repo.
     pub fn holders(
         &self,

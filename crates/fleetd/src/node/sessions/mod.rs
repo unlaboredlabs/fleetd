@@ -396,6 +396,12 @@ fn error(code: SessionErrorCode, message: impl AsRef<str>) -> SessionError {
     }
 }
 
+/// The node's answer for a project it doesn't have. The hub's policy cache tells it from other read failures by it
+/// (`hub::policy`).
+pub fn no_project(project_id: &str) -> String {
+    format!("no project {project_id} on this machine")
+}
+
 fn not_found(message: impl AsRef<str>) -> SessionError {
     error(SessionErrorCode::NotFound, message)
 }
@@ -1715,7 +1721,7 @@ impl SessionService {
         let project = self
             .store()
             .project(project_id)?
-            .ok_or_else(|| not_found(format!("no project {project_id} on this machine")))?;
+            .ok_or_else(|| not_found(no_project(project_id)))?;
         Ok(PathBuf::from(project.workspace_root))
     }
 
@@ -4189,7 +4195,7 @@ impl SessionService {
         let frame = self
             .store()
             .remove_project(project_id)?
-            .ok_or_else(|| not_found(format!("no project {project_id} on this machine")))?;
+            .ok_or_else(|| not_found(no_project(project_id.as_str())))?;
         let home = self.inner.config.home.clone();
         let id = project_id.to_string();
         blocking(move || {
