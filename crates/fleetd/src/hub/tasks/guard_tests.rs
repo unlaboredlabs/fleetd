@@ -37,10 +37,13 @@ fn state(hub: &Hub, id: &str) -> Task {
     hub.tasks.get(&TaskId::unchecked(id)).unwrap().unwrap()
 }
 
-/// Applies the events the tasks area follows, as its follower would.
+/// Applies the events the tasks area follows, as its follower would, and waits for the starts they lead to.
 async fn catch_up(tasks: &Arc<super::Tasks>) {
-    let _guard = tasks.lock.lock().await;
-    tasks.catch_up().await;
+    {
+        let _guard = tasks.lock.lock().await;
+        tasks.catch_up().await;
+    }
+    tasks.starts_recorded().await;
 }
 
 /// Answers every call the hub sends the node (a file read finds nothing, the default branch is main; anything else is done) and hands each one

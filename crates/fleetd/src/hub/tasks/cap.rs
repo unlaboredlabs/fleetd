@@ -324,7 +324,8 @@ impl Tasks {
     /// a resume message. Its slot frees when that turn ends; the queue continues it in the same thread once one is
     /// free for it. One the node can't reach, or one waiting on its lead's answer, keeps running.
     async fn pause_extras(self: &Arc<Self>, r: &ProjectRef, max_agents: i64) -> Vec<TaskId> {
-        let _guard = self.lock.lock().await;
+        // Starts in flight are recorded first, so a task one starts is paused as it runs.
+        let _guard = self.lock_settled().await;
         let mut paused = Vec::new();
         for holder in self.d.slots.extras(r) {
             let Ok(Some(stored)) =
