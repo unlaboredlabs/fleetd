@@ -17,6 +17,9 @@ use fleetd_contracts::projects::CiInfo;
 
 pub const TRAIN_CONTEXT: &str = "fleetd/train";
 pub const GH_AUTH_FIX: &str = "run `gh auth login` on the hub machine";
+/// How often a read GitHub fails transiently is tried in all, the waits between doubling from `READ_RETRY_FIRST`.
+pub const READ_TRIES: u32 = 3;
+const READ_RETRY_FIRST: std::time::Duration = std::time::Duration::from_secs(1);
 
 pub struct GhOut {
     pub exit_code: i32,
@@ -66,6 +69,8 @@ pub enum GhErrorKind {
     Auth,
     Missing,
     Failed,
+    /// GitHub failed transiently (a 5xx, a timeout, a secondary rate limit) through each of `READ_TRIES` reads.
+    Unavailable,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -514,16 +519,32 @@ fn auth_hint(stderr: &str) -> bool {
         || s.contains("authentication required")
 }
 
-/// `(HTTP nnn)` in gh's stderr.
+/// `HTTP nnn` in gh's stderr: `(HTTP 404)` after GitHub's message, or `HTTP 503` alone when the answer has none.
 fn http_status(stderr: &str) -> u16 {
     stderr
-        .match_indices("(HTTP ")
+        .match_indices("HTTP ")
         .find_map(|(i, _)| {
-            let digits = stderr.get(i + 6..i + 9)?;
-            (stderr.get(i + 9..i + 10) == Some(")") && digits.bytes().all(|b| b.is_ascii_digit()))
-                .then(|| digits.parse().ok())?
+            let digits = stderr.get(i + 5..i + 8)?;
+            let after = stderr[i + 8..].bytes().next();
+            (digits.bytes().all(|b| b.is_ascii_digit())
+                && !after.is_some_and(|b| b.is_ascii_digit()))
+            .then(|| digits.parse().ok())?
         })
         .unwrap_or(0)
+}
+
+/// Whether a failed answer may well be different a moment later: a 5xx, a timeout, or a secondary rate limit. A 404,
+/// a 422 or a refused login is GitHub's answer, and asking again changes nothing.
+pub fn transient(status: u16, message: &str) -> bool {
+    let m = message.to_lowercase();
+    match status {
+        500.. | 429 => true,
+        403 => m.contains("secondary rate limit"),
+        0 => ["timed out", "timeout", "deadline exceeded"]
+            .iter()
+            .any(|t| m.contains(t)),
+        _ => false,
+    }
 }
 
 /// `owner/name` of a `repos/<owner>/<name>/...` path, lowercased: the `github:<repo>` freshness source.
@@ -615,17 +636,34 @@ impl TrainGitHub {
             args.push(if *k == "draft" { "-F" } else { "-f" }.into());
             args.push(format!("{k}={v}"));
         }
-        let reply = self.run(args).await.map(|out| {
-            if out.exit_code == 0 {
-                return Ok(out.stdout);
-            }
-            // gh prints GitHub's error body on stdout; its message is the plainest reason.
-            let message = serde_json::from_str::<Value>(&out.stdout)
-                .ok()
-                .and_then(|v| v["message"].as_str().map(String::from))
-                .unwrap_or_else(|| last_line(&out.stderr));
-            Err((http_status(&out.stderr), message))
-        });
+        // A read GitHub fails transiently is asked again, `READ_TRIES` times in all; a write could have landed.
+        let (mut tries, mut wait) = (1, READ_RETRY_FIRST);
+        let reply = loop {
+            let reply = self.run(args.clone()).await.map(|out| {
+                if out.exit_code == 0 {
+                    return Ok(out.stdout);
+                }
+                // gh prints GitHub's error body on stdout; its message is the plainest reason.
+                let message = serde_json::from_str::<Value>(&out.stdout)
+                    .ok()
+                    .and_then(|v| v["message"].as_str().map(String::from))
+                    .unwrap_or_else(|| last_line(&out.stderr));
+                Err((http_status(&out.stderr), message))
+            });
+            let failed = match &reply {
+                Ok(Err((status, message))) => transient(*status, message).then_some(message),
+                Err(e) if e.kind == GhErrorKind::Failed && transient(0, &e.message) => {
+                    Some(&e.message)
+                }
+                _ => None,
+            };
+            let Some(why) = failed.filter(|_| method == "GET" && tries < READ_TRIES) else {
+                break reply;
+            };
+            tracing::info!(path, tries, error = %why, "train: GitHub failed a read; asking again");
+            self.clock.sleep(wait).await;
+            (tries, wait) = (tries + 1, wait * 2);
+        };
         match &reply {
             Ok(Ok(_)) => self.reached(path),
             // GitHub answered, just not with what was asked for (404, 405, 409, 422): it was reached.
@@ -633,7 +671,25 @@ impl TrainGitHub {
             Ok(Err((_, message))) => self.missed(path, message),
             Err(e) => self.missed(path, &e.message),
         }
-        reply
+        reply.map_err(|e| match e.kind {
+            GhErrorKind::Failed if transient(0, &e.message) => GhError {
+                kind: GhErrorKind::Unavailable,
+                ..e
+            },
+            _ => e,
+        })
+    }
+
+    /// `gh api {path} failed: {message}`, Unavailable when GitHub failed transiently.
+    fn failed(path: &str, status: u16, message: &str) -> GhError {
+        GhError {
+            kind: if transient(status, message) {
+                GhErrorKind::Unavailable
+            } else {
+                GhErrorKind::Failed
+            },
+            message: format!("gh api {path} failed: {message}"),
+        }
     }
 
     async fn call(
@@ -663,9 +719,7 @@ impl TrainGitHub {
             Reply::Ok(v) => serde_json::from_value(v).map_err(|_| {
                 GhError::failed(format!("gh api {path} returned an unexpected shape"))
             }),
-            Reply::Err { message, .. } => {
-                Err(GhError::failed(format!("gh api {path} failed: {message}")))
-            }
+            Reply::Err { status, message } => Err(Self::failed(path, status, &message)),
         }
     }
 
@@ -688,9 +742,7 @@ impl TrainGitHub {
                 "gh api graphql failed: {}",
                 v["errors"][0]["message"].as_str().unwrap_or("an error")
             ))),
-            Reply::Err { message, .. } => {
-                Err(GhError::failed(format!("gh api graphql failed: {message}")))
-            }
+            Reply::Err { status, message } => Err(Self::failed("graphql", status, &message)),
         }
     }
 
@@ -1574,6 +1626,32 @@ mod tests {
             encode_url(".github/workflows/c i.yml", true),
             ".github/workflows/c%20i.yml"
         );
+    }
+
+    #[test]
+    fn a_5xx_a_timeout_or_a_secondary_rate_limit_is_transient_and_a_404_or_a_bad_login_is_not() {
+        assert_eq!(http_status("gh: Not Found (HTTP 404)\n"), 404);
+        assert_eq!(http_status("gh: HTTP 503\n"), 503);
+        assert_eq!(http_status("gh: HTTP 5033\n"), 0);
+        for (status, message) in [
+            (503, "HTTP 503"),
+            (502, "Bad Gateway"),
+            (429, "Too Many Requests"),
+            (403, "You have exceeded a secondary rate limit."),
+            (0, "gh timed out after 30 s"),
+            (0, "net/http: TLS handshake timeout"),
+        ] {
+            assert!(transient(status, message), "{status} {message}");
+        }
+        for (status, message) in [
+            (404, "Not Found"),
+            (401, "Bad credentials"),
+            (403, "Resource not accessible by integration"),
+            (422, "Validation Failed"),
+            (0, "connect: network is unreachable"),
+        ] {
+            assert!(!transient(status, message), "{status} {message}");
+        }
     }
 
     #[tokio::test]

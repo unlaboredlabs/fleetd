@@ -15,10 +15,10 @@ pub fn register(tools: &mut Registry) {
 
 /// The train's `{ code, message, fix }` as a tool error.
 pub fn tool_error(e: TrainError) -> ToolError {
-    let code = if e.code == "not_found" {
-        ErrorCode::NotFound
-    } else {
-        ErrorCode::Invalid
+    let code = match e.code {
+        "not_found" => ErrorCode::NotFound,
+        "unavailable" => ErrorCode::Failed,
+        _ => ErrorCode::Invalid,
     };
     let error = ToolError::new(code, e.message);
     match e.fix {

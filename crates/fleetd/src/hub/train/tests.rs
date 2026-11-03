@@ -149,6 +149,8 @@ struct FakeGh {
     merges: Mutex<Vec<(i64, String)>>,
     /// Scripted answers to the next merge calls, before the fake merges for real.
     merge_replies: Mutex<Vec<GhOut>>,
+    /// Scripted answers to the next reads of a PR, by number, before the fake reads it for real.
+    pull_replies: Mutex<HashMap<i64, Vec<GhOut>>>,
     /// Check-run reads so far, the clock of `FakeCi::Workflow`.
     polls: Mutex<u32>,
     /// What happened on GitHub, in order: `merge #<n>`, `status <context> <state> <sha>`, `close #<n>`.
@@ -656,6 +658,17 @@ impl FakeGh {
                     }
                     None => http_error(409, "Merge conflict"),
                 }
+            }
+            (["pulls", n], "GET")
+                if self
+                    .pull_replies
+                    .lock()
+                    .unwrap()
+                    .get(&number(Some(n)))
+                    .is_some_and(|r| !r.is_empty()) =>
+            {
+                let mut scripted = self.pull_replies.lock().unwrap();
+                scripted.get_mut(&number(Some(n))).unwrap().remove(0)
             }
             (["pulls", n], "GET") => match self.pulls.lock().unwrap().get(&number(Some(n))) {
                 Some(p) => {
@@ -1551,6 +1564,7 @@ impl Kit {
             statuses: Mutex::default(),
             merges: Mutex::default(),
             merge_replies: Mutex::default(),
+            pull_replies: Mutex::default(),
             polls: Mutex::default(),
             log: Arc::default(),
             push_during_ci: Mutex::default(),
@@ -3601,6 +3615,111 @@ async fn a_head_in_ci_is_read_soon_then_at_the_idle_rate() {
         first_minute <= 24,
         "{first_minute} reads in CI's first minute"
     );
+}
+
+/// GitHub's 503 with no message, as `gh` prints it.
+fn unavailable() -> GhOut {
+    GhOut {
+        exit_code: 1,
+        stdout: String::new(),
+        stderr: "gh: HTTP 503\n".into(),
+    }
+}
+
+/// A one-off 503 while the train reads a writer's PR: it reads it again a second later, and the PR goes on the train
+/// with nothing said to the lead.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_read_github_fails_with_a_503_is_read_again_and_goes_on_the_train() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Actions, clock.clone());
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    kit.gh
+        .pull_replies
+        .lock()
+        .unwrap()
+        .insert(7, vec![unavailable()]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    assert_eq!(kit.get(&change_id).state, ChangeState::Ready);
+    assert_eq!(clock.taken()[..1], [Duration::from_secs(1)]);
+    assert!(kit.host.events_of("change.refused").is_empty());
+    let wakes = kit.host.wakes.lock().unwrap().clone();
+    assert!(wakes.is_empty(), "{wakes:?}");
+}
+
+/// A PR GitHub doesn't have is refused on the first read, with the message it always had.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_github_answers_404_for_is_refused_at_once() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Actions, clock.clone());
+    let pr = format!("https://github.com/{REPO}/pull/404");
+    let e = kit
+        .train
+        .enqueue(&project(), enqueue_call(pr.clone()))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        (e.code, e.message, e.fix.as_deref()),
+        (
+            "invalid",
+            format!(
+                "Could not read {pr} from GitHub: gh api repos/{REPO}/pulls/404 failed: Not Found"
+            ),
+            Some("Check the URL; the hub reads PRs with its own `gh` login.")
+        )
+    );
+    assert!(clock.taken().is_empty(), "{:?}", clock.taken());
+}
+
+/// GitHub unavailable through every read: the refusal says so, and the train's next pass puts the PR on once GitHub
+/// answers.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_github_stays_unavailable_for_goes_on_the_train_on_a_later_pass() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Actions, clock.clone());
+    kit.enqueue_held(kit.open_pr(7, "a", &[add("b.txt", "b\n")]))
+        .await;
+    let pr = kit.open_pr(8, "c", &[add("c.txt", "c\n")]);
+    kit.gh
+        .pull_replies
+        .lock()
+        .unwrap()
+        .insert(8, vec![unavailable(), unavailable(), unavailable()]);
+    let e = kit
+        .train
+        .enqueue(&project(), enqueue_call(pr.clone()))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        (e.code, e.message, e.fix.as_deref()),
+        (
+            "unavailable",
+            format!(
+                "GitHub was unavailable for {pr} through 3 reads: gh api repos/{REPO}/pulls/8 failed: HTTP 503. \
+                 Nothing is wrong with the PR."
+            ),
+            Some("nothing: the train reads it again on its next pass")
+        )
+    );
+    assert_eq!(
+        clock.taken(),
+        [Duration::from_secs(1), Duration::from_secs(2)]
+    );
+    let of_8 = || {
+        let all = ListFilter {
+            limit: 100,
+            ..ListFilter::default()
+        };
+        kit.train
+            .list(&all)
+            .into_iter()
+            .find(|c| c.pr_number.get() == 8)
+    };
+    assert!(of_8().is_none());
+
+    kit.train.step(REPO).await;
+    let change = of_8().expect("on the train");
+    assert_ne!(change.state, ChangeState::Refused);
+    assert!(kit.host.events_of("change.refused").is_empty());
 }
 
 /// GitHub shows a rebased head within a second or two: the train reads the PR again after 1 s, not after an idle pass.
