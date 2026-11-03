@@ -614,7 +614,7 @@ async fn call(
     use crate::cli::agent_mcp::{Role, call_of};
     let frame = call_of(Role::Lead, tool, args).unwrap();
     let call: LeadCall = serde_json::from_value(frame).unwrap();
-    calls::answer(autos, caller, call, false).await
+    calls::answer(autos, caller, call).await
 }
 
 use fleetd_contracts::mcp::McpToolError;
@@ -1953,78 +1953,84 @@ async fn a_one_time_run_due_while_another_run_is_open_waits_and_runs_once_that_e
     autos.stop();
 }
 
-/// A lead's `confirmed: true` marks an automation the person said yes to only when their last message answers the
-/// lead's question; a changed prompt or schedule without it unsets the mark, and a rename keeps it.
+/// No lead marks an automation as the person's go-ahead: a `confirmed: true` it passes is ignored, and
+/// `automation_confirm` only reports. The person's approval of its card marks it, while it still runs what the card
+/// showed; a lead's change to its prompt or schedule unmarks it, a rename doesn't.
 #[tokio::test(flavor = "current_thread")]
-async fn a_leads_confirmed_holds_only_on_the_persons_answer_and_a_change_unsets_it() {
-    use crate::cli::agent_mcp::{Role, call_of};
+async fn only_the_person_marks_an_automation_as_their_go_ahead() {
     let h = lead_hub(true);
     let autos = over(&h);
     let me = lead(&h.project);
-    let ask = |tool: &str, args: serde_json::Value| -> LeadCall {
-        serde_json::from_value(call_of(Role::Lead, tool, args).unwrap()).unwrap()
-    };
-    let make = json!({ "name": "Weekly report", "prompt": "Every Friday, email the report to dana@northwind.example.",
-        "schedule": { "cron": "0 9 * * 5", "tz": "Europe/Berlin" }, "confirmed": true });
-
-    // No answer from the person: made, but unmarked, and the lead is told why.
-    let LeadCallResult::AutomationCreate(unasked) =
-        calls::answer(&autos, &me, ask("automation_create", make.clone()), false)
-            .await
-            .unwrap()
-    else {
+    let LeadCallResult::AutomationCreate(made) = call(
+        &autos,
+        &me,
+        "automation_create",
+        json!({ "name": "Weekly report", "prompt": "Every Friday, email the report to dana@northwind.example.",
+            "schedule": { "cron": "0 9 * * 5", "tz": "Europe/Berlin" }, "confirmed": true }),
+    )
+    .await
+    .unwrap() else {
         panic!()
     };
-    assert!(!unasked.automation.confirmed);
     assert!(
-        unasked
-            .next
-            .unwrap()
-            .contains("Not marked as the person's go-ahead")
+        !made.automation.confirmed,
+        "a lead's confirmed: true is ignored"
     );
-
-    let LeadCallResult::AutomationCreate(made) =
-        calls::answer(&autos, &me, ask("automation_create", make), true)
-            .await
-            .unwrap()
-    else {
-        panic!()
-    };
-    assert!(made.automation.confirmed, "the person said yes");
     let id = made.automation.automation_id.to_string();
-
-    let update = |args: serde_json::Value, yes: bool| {
-        let call = ask("automation_update", args);
+    let update = |args: serde_json::Value| {
         let autos = autos.clone();
         let me = me.clone();
         async move {
-            match calls::answer(&autos, &me, call, yes).await.unwrap() {
+            match call(&autos, &me, "automation_update", args).await.unwrap() {
                 LeadCallResult::AutomationUpdate(r) => r.automation.confirmed,
                 _ => panic!(),
             }
         }
     };
+    assert!(!update(json!({ "automationId": id, "confirmed": true })).await);
+    let LeadCallResult::AutomationConfirm(asked) = call(
+        &autos,
+        &me,
+        "automation_confirm",
+        json!({ "automationId": id }),
+    )
+    .await
+    .unwrap() else {
+        panic!()
+    };
+    assert!(!asked.automation.confirmed, "the call alone marks nothing");
+    assert!(asked.next.unwrap().contains("only the person confirms it"));
+
+    // The card shows it as it is; the person's approval marks it.
+    let card = calls::confirm_preview(&asked.automation).unwrap();
+    assert_eq!(
+        card.title.as_str(),
+        "Let \u{201c}Weekly report\u{201d} run on its own"
+    );
+    let shown: serde_json::Value = serde_json::from_str(card.input.as_str()).unwrap();
+    assert!(autos.confirm(&id, &shown, "human:desk").unwrap());
+    let LeadCallResult::AutomationConfirm(marked) = call(
+        &autos,
+        &me,
+        "automation_confirm",
+        json!({ "automationId": id }),
+    )
+    .await
+    .unwrap() else {
+        panic!()
+    };
+    assert!(marked.automation.confirmed);
     assert!(
-        update(
-            json!({ "automationId": id, "name": "Friday report" }),
-            false
-        )
-        .await,
+        update(json!({ "automationId": id, "name": "Friday report" })).await,
         "a rename keeps it"
     );
     assert!(
-        !update(json!({ "automationId": id, "prompt": "Every Friday, email the report to ben@team.example." }), false)
-            .await,
-        "a new prompt the person never saw unsets it"
+        !update(json!({ "automationId": id, "prompt": "Every Friday, email the report to ben@team.example." })).await,
+        "a new prompt the person never saw unmarks it"
     );
-    assert!(
-        update(json!({ "automationId": id, "confirmed": true }), true).await,
-        "until they say yes to it"
-    );
-    assert!(
-        !update(json!({ "automationId": id, "removeSchedule": true }), false).await,
-        "a schedule change unsets it too"
-    );
+    // A card approved after the prompt changed under it marks nothing.
+    assert!(!autos.confirm(&id, &shown, "human:desk").unwrap());
+    assert!(!autos.get(&id).unwrap().unwrap().confirmed);
     // An automation the person wrote in the app is theirs.
     let (app, _) = autos.create(new(&h.project, None, false)).unwrap();
     assert!(app.confirmed);

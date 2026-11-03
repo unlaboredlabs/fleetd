@@ -1008,7 +1008,7 @@
         },
         "confirmed": {
           "default": false,
-          "description": "Whether the person wrote its prompt in the app or said yes to it in the chat: a Navi's approval checker then\ntakes the prompt as the person's own word on its runs. A lead's change to its prompt or schedule unsets it,\nunless the person said yes to that too.",
+          "description": "Whether the person stands behind its prompt: they made or edited it in the app, or approved it on the card\n`automation_confirm` shows them (\"Let it run on its own\"). A Navi's approval checker then takes the prompt as\ntheir own word on its runs. Only the person sets it; a lead's change to its prompt or schedule unsets it.",
           "type": "boolean"
         },
         "createdAt": {

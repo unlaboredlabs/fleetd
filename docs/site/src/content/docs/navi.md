@@ -173,14 +173,18 @@ fleetd's own rules hold whatever the checker says:
 
 #### Automations you set up {#automations-go-ahead}
 
-An [automation](/docs/automations) you wrote in the app, or one the Navi proposed and you said yes to in the chat,
-counts as your go-ahead on its runs. While a run is open, the checker reads the automation's prompt as your own
-request (`person (automation "Weekly report")`), so a weekly "email the report to Dana" sends without a card on every
-run, with its quiet line in the chat. Only what the prompt names counts: a recipient, text or site it doesn't name goes
-to the checker as before, a webhook's body is never part of it, and a [purchase](#purchases) still always asks. An
-automation the Navi made without asking you counts for nothing. The Navi marks one you said yes to with `confirmed:
-true`, which the hub takes only when your last message answers its question about it; when the Navi changes the
-prompt or schedule without asking again, the mark goes. Editing an automation in the app makes it yours.
+An [automation](/docs/automations) you wrote or edited in the app counts as your go-ahead on its runs, and so does one
+the Navi made once you let it run on its own. While a run is open, the checker reads the automation's prompt as your
+own request (`person (automation "Weekly report")`), so a weekly "email the report to Dana" sends without a card on
+every run, with its quiet line in the chat. Only what the prompt names counts: a recipient, text or site it doesn't
+name goes to the checker as before, a webhook's body is never part of it, and a [purchase](#purchases) still always
+asks.
+
+An automation the Navi made counts for nothing until you say so. The Navi calls `automation_confirm`, and you get a
+card in its chat, "Let "Weekly report" run on its own", with the automation's name, prompt and schedule as the hub
+has them. Approving it is the only way a Navi's automation gets the mark: no checker or YOLO answers that card, and
+nothing the Navi writes or passes sets it. If the prompt or schedule changed after the card was shown, approving it
+marks nothing. When the Navi later changes the prompt or schedule, the mark goes and it asks again.
 
 **Approve anyway** on a blocked card tells the Navi it may run exactly that call once: when it asks again with the
 same input, it runs without the checker. **Keep it blocked** leaves it refused.

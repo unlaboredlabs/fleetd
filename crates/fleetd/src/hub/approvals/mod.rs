@@ -233,6 +233,20 @@ pub trait ApprovalHub: Send + Sync {
     fn navi_site(&self, project: &ProjectRef, site: Option<&str>) -> BoxFut<'_, Option<bool>>;
     /// A person approved a Navi's first visit to `site`: from now on it fetches and opens it without asking.
     fn navi_site_allow(&self, project: &ProjectRef, site: &str, by: &str) -> BoxFut<'_, ()>;
+    /// The project's own automation `id`, for `automation_confirm`'s card; None for another project's or none.
+    fn navi_automation<'a>(
+        &'a self,
+        project: &'a ProjectRef,
+        id: &'a str,
+    ) -> BoxFut<'a, Option<fleetd_contracts::automations::Automation>>;
+    /// The person approved `automation_confirm`'s card, which showed `shown`: the automation is marked `confirmed` if
+    /// it still runs what the card showed. Whether it is marked.
+    fn navi_automation_confirm<'a>(
+        &'a self,
+        project: &'a ProjectRef,
+        shown: &'a Value,
+        by: &'a str,
+    ) -> BoxFut<'a, bool>;
     /// Whether `id` is an image of the Navi's own (`chat_image`); if so it becomes the project's, for its card.
     fn navi_image<'a>(
         &'a self,
@@ -973,7 +987,26 @@ impl Approvals {
                 r.answered_by_person = person;
             })
             .await?;
-        if answered.permission.is_some() {
+        if let Some(p) = answered.permission.as_ref() {
+            // Letting an automation run on its own is the person's alone: their approval marks it here, before the
+            // Navi's call returns, and never through anything the Navi sends.
+            if approve && p.tool_name.as_str() == crate::hub::automations::calls::CONFIRM_TOOL {
+                let shown: Option<Value> = p
+                    .preview
+                    .as_ref()
+                    .and_then(|v| serde_json::from_str(v.input.as_str()).ok());
+                if let Some(shown) = shown {
+                    let project = project_of(&answered);
+                    self.deps
+                        .hub
+                        .navi_automation_confirm(
+                            &project,
+                            &shown,
+                            &format!("human:{}", caller.name),
+                        )
+                        .await;
+                }
+            }
             self.answer_prompt(&answered, reason.as_deref()).await;
             return Ok(self.get(request_id).unwrap_or(answered));
         }

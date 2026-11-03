@@ -328,12 +328,6 @@ pub fn relayed(hub: &Hub, r: &ProjectRef) -> Result<Vec<Read>, StoreError> {
     Ok(out)
 }
 
-/// Whether the person's last message in the chat answers the lead's last question (asked after their message before
-/// it): what a lead's `confirmed: true` on an automation needs.
-pub fn answered(hub: &Hub, r: &ProjectRef) -> bool {
-    person_messages(hub, r).is_ok_and(|(_, question)| question.is_some())
-}
-
 /// What the Navi's lead read lately: its recent tool calls' whole output, each with its call (the tool's name first,
 /// which says what kind of content it is).
 pub async fn reads(hub: &Arc<Hub>, thread: &ThreadRef) -> Vec<Read> {

@@ -462,9 +462,9 @@ export type AutoApprovedBy = "checker" | "yolo";
 export type Automation = {
   automationId: AutomationId;
   /**
-   * Whether the person wrote its prompt in the app or said yes to it in the chat: a Navi's approval checker then
-   * takes the prompt as the person's own word on its runs. A lead's change to its prompt or schedule unsets it,
-   * unless the person said yes to that too.
+   * Whether the person stands behind its prompt: they made or edited it in the app, or approved it on the card
+   * `automation_confirm` shows them ("Let it run on its own"). A Navi's approval checker then takes the prompt as
+   * their own word on its runs. Only the person sets it; a lead's change to its prompt or schedule unsets it.
    */
   confirmed?: boolean;
   createdAt: Timestamp;

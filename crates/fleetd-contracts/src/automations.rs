@@ -131,9 +131,9 @@ pub struct Automation {
     pub last_run: Option<AutomationRun>,
     /// Who made it: a keyId, "human" or "lead:<machineId>/<projectId>".
     pub created_by: String,
-    /// Whether the person wrote its prompt in the app or said yes to it in the chat: a Navi's approval checker then
-    /// takes the prompt as the person's own word on its runs. A lead's change to its prompt or schedule unsets it,
-    /// unless the person said yes to that too.
+    /// Whether the person stands behind its prompt: they made or edited it in the app, or approved it on the card
+    /// `automation_confirm` shows them ("Let it run on its own"). A Navi's approval checker then takes the prompt as
+    /// their own word on its runs. Only the person sets it; a lead's change to its prompt or schedule unsets it.
     #[serde(default)]
     pub confirmed: bool,
     pub created_at: Timestamp,
@@ -191,9 +191,6 @@ pub struct AutomationCreateCall {
     pub prompt: AutomationPrompt,
     /// Absent: it runs only on Run now (and a webhook, once a person adds one).
     pub schedule: Option<AutomationScheduleCall>,
-    /// true: the person's last message said yes to this automation, its prompt and schedule, which you asked about.
-    /// Its runs then count as their go-ahead for what the prompt names.
-    pub confirmed: Option<bool>,
 }
 
 /// `automation_list`: the project's automations with their last run.
@@ -211,9 +208,6 @@ pub struct AutomationUpdateCall {
     pub schedule: Option<AutomationScheduleCall>,
     /// true: take its schedule off.
     pub remove_schedule: Option<bool>,
-    /// true: the person's last message said yes to this change, which you asked about. A changed prompt or schedule
-    /// without it no longer counts as their go-ahead.
-    pub confirmed: Option<bool>,
 }
 
 /// `automation_pause`: paused true stops its schedule and webhook; false resumes them.
@@ -227,6 +221,14 @@ pub struct AutomationPauseCall {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationDeleteCall {
+    pub automation_id: AutomationId,
+}
+
+/// `automation_confirm`: a Navi asks the person to let one of its automations run on its own. The person sees a card
+/// with its name, prompt and schedule; their approval marks it `confirmed`, which no lead call does itself.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationConfirmCall {
     pub automation_id: AutomationId,
 }
 

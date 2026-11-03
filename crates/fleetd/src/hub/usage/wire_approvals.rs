@@ -254,6 +254,41 @@ impl ApprovalHub for OpsPorts {
         })
     }
 
+    fn navi_automation<'a>(
+        &'a self,
+        project: &'a ports::ProjectRef,
+        id: &'a str,
+    ) -> BoxFut<'a, Option<fleetd_contracts::automations::Automation>> {
+        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
+        Box::pin(async move {
+            let r = r?;
+            self.hub().automations.own(&r, id).ok()
+        })
+    }
+
+    fn navi_automation_confirm<'a>(
+        &'a self,
+        project: &'a ports::ProjectRef,
+        shown: &'a serde_json::Value,
+        by: &'a str,
+    ) -> BoxFut<'a, bool> {
+        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
+        Box::pin(async move {
+            let (Some(r), Some(id)) = (r, shown.get("automationId").and_then(|v| v.as_str()))
+            else {
+                return false;
+            };
+            let hub = self.hub();
+            if hub.automations.own(&r, id).is_err() {
+                return false;
+            }
+            hub.automations.confirm(id, shown, by).unwrap_or_else(|e| {
+                tracing::warn!(error = %e.message, "approvals: an automation the person let run was not marked");
+                false
+            })
+        })
+    }
+
     fn navi_image<'a>(
         &'a self,
         project: &'a ports::ProjectRef,

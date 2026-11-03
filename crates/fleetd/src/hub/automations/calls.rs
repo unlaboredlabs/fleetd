@@ -2,25 +2,27 @@
 //! caller's project by its session. The lead never sees a webhook secret: a person adds a webhook in the app, which
 //! shows its URL once. A task can make none of these (`tasks::policy`).
 //!
-//! `confirmed: true` marks an automation the person said yes to in the chat (`Automation.confirmed`), so a Navi's
-//! approval checker takes its prompt as their word on its runs. The hub takes it only when the person's last message
-//! answers the lead's last question; a changed prompt or schedule without it unsets the mark.
+//! No lead call marks an automation `confirmed` (the person's go-ahead on its runs): only the person does, in the app or
+//! on the card `automation_confirm` brings them, which the approvals relay files and settles
+//! (`approvals/permissions.rs`). A lead's change to what it runs or when unsets the mark.
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::automations::{
-    AutomationDeleteResult, AutomationListResult, AutomationResult, AutomationRunResult,
-    AutomationRunsResult,
+    Automation, AutomationDeleteResult, AutomationListResult, AutomationResult,
+    AutomationRunResult, AutomationRunsResult,
 };
+use fleetd_contracts::integrations::{McpToolName, ToolAction, ToolPreview};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
-use fleetd_contracts::prim::List;
+use fleetd_contracts::mcp_servers::McpServerName;
+use fleetd_contracts::prim::{Line, List, Text};
 
 use super::{Automations, Edit, NewAutomation, Start, from_call, text_of};
 use crate::hub::api::Hub;
 use crate::hub::link::lead_calls::{LeadCallFuture, op_of};
 use crate::hub::link::{LeadCaller, LeadCalls};
 
-pub const OPS: [&str; 7] = [
+pub const OPS: [&str; 8] = [
     "automation_create",
     "automation_list",
     "automation_update",
@@ -28,7 +30,33 @@ pub const OPS: [&str; 7] = [
     "automation_delete",
     "automation_run",
     "automation_runs",
+    "automation_confirm",
 ];
+
+/// `automation_confirm` as a Navi's session asks for it: always a card for the person (the node's `ASSISTANT_ASK`, and
+/// the relay's person-only rule), never the checker's or YOLO's to answer.
+pub const CONFIRM_TOOL: &str = "mcp__fleetd__automation_confirm";
+
+/// The card `automation_confirm` brings: the automation as it is now, its name, prompt and schedule, which the person's
+/// approval marks `confirmed` only while they stay the same ([`Automations::confirm`]).
+pub fn confirm_preview(a: &Automation) -> Option<ToolPreview> {
+    let title = format!("Let \u{201c}{}\u{201d} run on its own", a.name);
+    let (title, _) = crate::hub::integrations::policy::clip_utf16(&title, 200);
+    let shown = serde_json::json!({
+        "automationId": a.automation_id,
+        "name": a.name,
+        "prompt": a.prompt,
+        "schedule": a.schedule,
+        "what": "Its runs count as your go-ahead for what this prompt names, without asking you each time.",
+    });
+    Some(ToolPreview {
+        server: McpServerName::new("fleetd").ok()?,
+        tool: McpToolName::new("automation_confirm").ok()?,
+        action: ToolAction::Write,
+        title: Line::new(title).ok()?,
+        input: Text::new(serde_json::to_string_pretty(&shown).ok()?).ok()?,
+    })
+}
 
 /// How many runs `automation_runs` lists without a runId.
 const RUNS_LISTED: usize = 20;
@@ -42,14 +70,7 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
                 let hub = hub.ok_or_else(|| {
                     McpToolError::new(ErrorCode::Invalid, "The hub is shutting down.")
                 })?;
-                let confirms = match &call {
-                    LeadCall::AutomationCreate(c) => c.confirmed == Some(true),
-                    LeadCall::AutomationUpdate(c) => c.confirmed == Some(true),
-                    _ => false,
-                };
-                let yes =
-                    confirms && crate::hub::navi::checker::answered(&hub, &caller.project_ref);
-                answer(&hub.automations, &caller, call, yes).await
+                answer(&hub.automations, &caller, call).await
             })
         },
     );
@@ -59,18 +80,10 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
     }
 }
 
-/// Why a lead's `confirmed: true` wasn't taken.
-const NOT_CONFIRMED: &str = "Not marked as the person's go-ahead: confirmed counts only when their last message \
-                             answers your question about this automation. Ask them, with its prompt and schedule, and \
-                             pass confirmed: true to automation_update once they say yes.";
-
-/// The lead's call; `yes`: the person's last message in the chat answers the lead's last question, so a
-/// `confirmed: true` holds.
 pub async fn answer(
     automations: &Automations,
     caller: &LeadCaller,
     call: LeadCall,
-    yes: bool,
 ) -> Result<LeadCallResult, McpToolError> {
     let r = &caller.project_ref;
     let by = caller.by.as_str();
@@ -82,7 +95,6 @@ pub async fn answer(
     };
     Ok(match call {
         LeadCall::AutomationCreate(c) => {
-            let asked = c.confirmed == Some(true);
             let (automation, _) = automations.create(NewAutomation {
                 project_ref: r.clone(),
                 name: c.name,
@@ -90,7 +102,7 @@ pub async fn answer(
                 schedule: c.schedule.map(|s| from_call(s, person_zone)),
                 webhook: false,
                 by: by.to_owned(),
-                confirmed: asked && yes,
+                confirmed: false,
                 client_request_id: None,
             })?;
             let once = automation
@@ -109,11 +121,6 @@ pub async fn answer(
                 (None, _) => "It runs when you call automation_run or a person presses Run now; a schedule or a \
                          webhook makes it run by itself."
                     .to_owned(),
-            };
-            let next = if asked && !yes {
-                format!("{next} {NOT_CONFIRMED}")
-            } else {
-                next
             };
             LeadCallResult::AutomationCreate(AutomationResult {
                 automation,
@@ -137,14 +144,8 @@ pub async fn answer(
                 (Some(s), _) => Some(Some(from_call(s, person_zone))),
                 (None, _) => None,
             };
-            let asked = c.confirmed == Some(true);
-            // What it runs, or when, changed: the person's yes covers only what they saw.
-            let changed = c.prompt.is_some() || schedule.is_some();
-            let confirmed = match (asked && yes, changed) {
-                (true, _) => Some(true),
-                (false, true) => Some(false),
-                (false, false) => None,
-            };
+            // What it runs, or when, changed: the person's go-ahead covers only what they saw.
+            let confirmed = (c.prompt.is_some() || schedule.is_some()).then_some(false);
             let (automation, _) = automations.update(
                 &c.automation_id,
                 Edit {
@@ -158,7 +159,21 @@ pub async fn answer(
             )?;
             LeadCallResult::AutomationUpdate(AutomationResult {
                 automation,
-                next: (asked && !yes).then(|| NOT_CONFIRMED.to_owned()),
+                next: None,
+            })
+        }
+        // Its card, if the person approved it, already marked it: this call only says how it stands.
+        LeadCall::AutomationConfirm(c) => {
+            let automation = automations.own(r, &c.automation_id)?;
+            let next = if automation.confirmed {
+                "The person lets it run on its own: its runs count as their go-ahead for what its prompt names."
+            } else {
+                "Not confirmed: only the person confirms it, on the card this call shows them in a Navi's chat, or by \
+                 editing it in the app. Its runs still ask as any other action does."
+            };
+            LeadCallResult::AutomationConfirm(AutomationResult {
+                automation,
+                next: Some(next.into()),
             })
         }
         LeadCall::AutomationPause(c) => {

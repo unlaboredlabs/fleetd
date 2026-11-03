@@ -21,6 +21,7 @@ use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
 use fleetd_contracts::time::DecidedBy;
 use serde_json::Value;
 
+use crate::hub::automations::calls as automation_calls;
 use crate::hub::integrations::policy::{self, Verdict};
 use crate::hub::navi::checker::{self, Action};
 use crate::hub::navi::sites::{self, Visit};
@@ -159,6 +160,12 @@ impl Approvals {
                 message: fleetd_contracts::prim::Text::unchecked(clip(why, 2000)),
             })
         };
+        // Letting an automation run on its own: its card shows the automation as the hub has it, never the Navi's words.
+        let confirming = tool == automation_calls::CONFIRM_TOOL;
+        let automation = match input.get("automationId").and_then(Value::as_str) {
+            Some(id) if confirming => self.deps.hub.navi_automation(project, id).await,
+            _ => None,
+        };
         let (decided, preview) = match policy::verdict(tool, &input, &servers) {
             Some(Verdict::Allow) => (
                 Some(PermissionDecision::Allow {
@@ -174,6 +181,19 @@ impl Approvals {
                 _ if prompt.input.is_none() => (deny(UNSHOWN), None),
                 Some(why) => (deny(why), None),
                 None => (None, confirm::preview(&input).map(Box::new)),
+            },
+            None if confirming => match automation
+                .as_ref()
+                .and_then(automation_calls::confirm_preview)
+            {
+                _ if prompt.input.is_none() => (deny(UNSHOWN), None),
+                Some(preview) => (None, Some(Box::new(preview))),
+                None => (
+                    deny(
+                        "Blocked by fleetd: this project has no such automation. automation_list names them.",
+                    ),
+                    None,
+                ),
             },
             // A Navi's message to another project's lead, who may open full-access work for it: a send.
             None if tool == bridge::TOOL => match bridge::preview(&input) {
@@ -252,6 +272,7 @@ impl Approvals {
         // A purchase, a spend and a payment command are the person's alone (`purchases::person_only`): no checker and
         // no YOLO answers them.
         let person_only = checker::always_asks(&action)
+            || confirming
             || super::purchases::person_only(&self.prospect(project, thread_id, prompt, &action));
         match settings.as_ref().map(|s| s.mode) {
             _ if person_only => {}

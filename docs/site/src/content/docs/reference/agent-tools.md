@@ -65,6 +65,7 @@ Every lead gets these.
 | [`automation_delete`](#automation_delete) | Delete an automation and its run history; orders its runs opened stay. | No |
 | [`automation_run`](#automation_run) | Run an automation now: it opens its order, which reaches you in a later wake. | No |
 | [`automation_runs`](#automation_runs) | An automation's runs, newest first, with the order each opened; with runId, that run and its whole webhook body. | No |
+| [`automation_confirm`](#automation_confirm) | A Navi's call: ask the person to let one of your automations run on its own. | No |
 | [`checklist`](#checklist) | Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done. | No |
 | [`skill_install`](#skill_install) | Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. | No |
 | [`skill_save`](#skill_save) | A Navi's call: save one of your own skills, new or changed, as its whole SKILL.md (frontmatter with name and description, then the steps), with why in one line. | No |
@@ -456,11 +457,10 @@ Flag the chat message you just wrote for the human's look, with reason in a few 
 
 ### automation_create
 
-Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 \* \* 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app. A Navi: ask the person first with its prompt and schedule, and pass confirmed: true right after they say yes; its runs then count as their go-ahead for what the prompt names.
+Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 \* \* 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app. A Navi: for one whose runs send or change something, call automation_confirm after it, so the person can let it run on its own.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `confirmed` | boolean | no | True: the person's last message said yes to this automation, its prompt and schedule, which you asked about. Its runs then count as their go-ahead for what the prompt names. |
 | `name` | string | yes | One line. At most 80 characters. |
 | `prompt` | string | yes | At most 2000 characters. |
 | `schedule` | object | no | Absent: it runs only on Run now (and a webhook, once a person adds one). |
@@ -506,7 +506,6 @@ Change an automation's name, prompt or schedule (removeSchedule: true takes it o
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `automationId` | string | yes | Matches `^au_[A-Za-z0-9_-]{6,40}$`. |
-| `confirmed` | boolean | no | True: the person's last message said yes to this change, which you asked about. A changed prompt or schedule without it no longer counts as their go-ahead. |
 | `name` | string | no | One line. At most 80 characters. |
 | `prompt` | string | no | At most 2000 characters. |
 | `removeSchedule` | boolean | no | True: take its schedule off. |
@@ -606,6 +605,25 @@ An automation's runs, newest first, with the order each opened; with runId, that
   "arguments": {
     "automationId": "au_k3Jd8sQp2xYz",
     "runId": "ar_Qm7tZr1vBn4w"
+  }
+}
+```
+
+### automation_confirm
+
+A Navi's call: ask the person to let one of your automations run on its own. They get a card with its name, prompt and schedule; once they approve it, its runs count as their go-ahead for what the prompt names, so a weekly send doesn't ask each week. Only their approval marks it; changing its prompt or schedule unmarks it. Returns whether it is marked.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `automationId` | string | yes | Matches `^au_[A-Za-z0-9_-]{6,40}$`. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "automation_confirm",
+  "arguments": {
+    "automationId": "au_k3Jd8sQp2xYz"
   }
 }
 ```
@@ -1411,6 +1429,7 @@ fleetd also blocks any tool like these that a newer Claude Code adds: a session 
 | `Edit`, `Write`, `NotebookEdit` | A Navi writes anything but what its sandbox hides or keeps read-only. |
 | `WebFetch` | A Navi fetches a site unasked only once the person allowed or linked it. |
 | `mcp__fleetd__confirm_step` | A Navi's final Confirm on a site goes through its approval mode, like a send. |
+| `mcp__fleetd__automation_confirm` | Only the person lets an automation run on its own, on its card. |
 | `mcp__fleetd__project_message` | A Navi's message to another project's lead, who may open full-access work for it, goes through its approval mode, like a send. |
 
 ## Settings fleetd forces

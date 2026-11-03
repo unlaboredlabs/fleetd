@@ -861,6 +861,32 @@ impl Automations {
         })
     }
 
+    /// The person let it run on its own (`automation_confirm`'s card): marked `confirmed`, unless what it runs or when
+    /// changed since the card showed it (`shown`: its `prompt` and `schedule` as the card's JSON has them). Whether it
+    /// is marked now.
+    pub fn confirm(
+        &self,
+        id: &str,
+        shown: &serde_json::Value,
+        by: &str,
+    ) -> Result<bool, LeadError> {
+        let mut a = self.row(id)?.ok_or_else(|| not_found(id))?;
+        let same = shown.get("prompt").and_then(serde_json::Value::as_str)
+            == Some(a.prompt.as_str())
+            && shown.get("schedule").cloned().unwrap_or_default()
+                == serde_json::to_value(&a.schedule).unwrap_or_default();
+        if !same {
+            return Ok(a.confirmed);
+        }
+        if !a.confirmed {
+            a.confirmed = true;
+            a.updated_at = iso_ms(self.now()).into();
+            self.put(&a)?;
+            self.changed_event(&a, "was let run on its own", by);
+        }
+        Ok(true)
+    }
+
     /// Paused: its schedule and webhook start nothing. Resumed: the schedule goes on from now; what it missed
     /// while paused doesn't run, and a one-time schedule whose time passed meanwhile is refused until it has a new one.
     pub fn pause(&self, id: &str, paused: bool, by: &str) -> Result<Automation, LeadError> {

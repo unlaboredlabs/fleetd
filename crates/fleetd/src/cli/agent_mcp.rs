@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use fleetd_contracts::automations::{
-    AutomationCreateCall, AutomationDeleteCall, AutomationListCall, AutomationPauseCall,
-    AutomationRunCall, AutomationRunsCall, AutomationUpdateCall,
+    AutomationConfirmCall, AutomationCreateCall, AutomationDeleteCall, AutomationListCall,
+    AutomationPauseCall, AutomationRunCall, AutomationRunsCall, AutomationUpdateCall,
 };
 use fleetd_contracts::browser::{
     BrowserCall, DesktopCall, FillCredentialCall, RequestTakeoverCall, SessionEndCall,
@@ -239,8 +239,8 @@ static TOOLS: &[Tool] = &[
          (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done \
          once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and \
          approvals still apply. Only a person adds a webhook, in the app. A \
-         Navi: ask the person first with its prompt and schedule, and pass confirmed: true right after they say yes; \
-         its runs then count as their go-ahead for what the prompt names.",
+         Navi: for one whose runs send or change something, call automation_confirm after it, so the person can let \
+         it run on its own.",
         inline_schema::<AutomationCreateCall>,
     ),
     lead(
@@ -282,6 +282,15 @@ static TOOLS: &[Tool] = &[
         "An automation's runs, newest first, with the order each opened; with runId, that run and its whole webhook \
          body.",
         inline_schema::<AutomationRunsCall>,
+    ),
+    lead(
+        "automation_confirm",
+        "automation_confirm",
+        "A Navi's call: ask the person to let one of your automations run on its own. They get a card with its name, \
+         prompt and schedule; once they approve it, its runs count as their go-ahead for what the prompt names, so a \
+         weekly send doesn't ask each week. Only their approval marks it; changing its prompt or schedule unmarks \
+         it. Returns whether it is marked.",
+        inline_schema::<AutomationConfirmCall>,
     ),
     lead(
         "checklist",
