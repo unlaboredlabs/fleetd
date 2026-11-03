@@ -131,7 +131,8 @@ over HTTPS only.
 
 ## What is sent, and to whom {#what}
 
-- A Navi's messages and approvals go to its owner only.
+- A Navi's messages and approvals go to its owner only. While they talk to it on [Telegram](/docs/navi#telegram)
+  (their latest message came from there), its replies reach them there, and the phone isn't notified of them too.
 - A project lead's messages go to the person who last wrote in that project's chat, else the hub's owner.
 - Approvals, failed fetches, machines down under running work and usage limits: what the hub already marks as
   needing you. Money and irreversible commands are urgent.

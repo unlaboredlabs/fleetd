@@ -3,8 +3,9 @@
 // then what runs there now (agents_list), its open orders (orders_board), its checklist and its recent merges with
 // their PRs, read-only; a Navi's Skills (Skills.tsx); then its name, the profiles its agents may run on and where it
 // lives, and for a Navi Forget Sign-ins; New Screen, a screen of your own for it, where the hub opens them. Delete
-// last, red, asking first: in an action sheet, or, when uncommitted changes would be lost, in a sheet
-// that names them and wants its name typed (TypedDelete). What the person's role doesn't allow isn't offered.
+// last, red, asking first: in an action sheet, or, for a Navi (erased, with a tickbox for its folder, as the desktop's
+// dialog) or when uncommitted changes would be lost, in a sheet that wants its name typed (TypedDelete). What the
+// person's role doesn't allow isn't offered.
 import { StackActions, useFocusEffect } from "@react-navigation/native";
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -78,17 +79,18 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
     const blocked = deleteBlocked(read.value);
     if (blocked !== undefined) return Alert.alert(`Can't delete ${p.title} now`, blocked);
     const words = deleteWords(p, read.value, machine);
-    // Uncommitted changes would be lost: their names and the project's typed, as on the desktop. Else the action sheet.
-    if (words.unsaved.length > 0) return setTyping(words);
-    confirmDestructive({ ...words, onConfirm: doDelete });
+    // A Navi, erased, or uncommitted changes that would be lost: the sheet with its name typed, as on the desktop (a
+    // Navi's with the tickbox for its folder). Else the action sheet.
+    if (words.unsaved.length > 0 || words.folder !== undefined) return setTyping(words);
+    confirmDestructive({ ...words, onConfirm: () => doDelete(false) });
   };
 
   // Back to Chats first, then the delete: its row then goes from a list on screen, never in the same commit as these
   // screens (the list's rows slide with a LayoutAnimation, which must not land on a screen's removal).
-  const doDelete = () => {
+  const doDelete = (folderToo: boolean) => {
     setTyping(null);
     navigation.getParent()?.dispatch(StackActions.popToTop());
-    void deleteProject(session, p).then((r) => {
+    void deleteProject(session, p, folderToo).then((r) => {
       if (!r.ok) return Alert.alert(`Couldn't delete ${p.title}`, errorWords(r.error));
       haptics.success();
     });
@@ -220,7 +222,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
       ) : null}
 
       {can.delete ? (
-        <ListSection footer={navi ? "Its folder stays on its machine." : "Its files, branches and pull requests stay."}>
+        <ListSection footer={navi ? "Erases it and everything it had. Its folder stays unless you tick it." : "Its files, branches and pull requests stay."}>
           <ListRow title={navi ? "Delete Navi" : "Delete Project"} destructive chevron={false} {...(busy === null && live ? { onPress: () => void remove() } : {})} {...(busy === "delete" ? { accessory: spinner } : {})} />
         </ListSection>
       ) : null}

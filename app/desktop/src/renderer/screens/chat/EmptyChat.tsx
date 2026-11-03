@@ -13,10 +13,10 @@ export const STARTERS = [
   "Explain how this project is put together.",
 ] as const;
 
-/** A Navi's: an assistant's first asks, not a codebase's. */
+/** A Navi's: an assistant's first asks, not a codebase's, each one a new Navi can do with nothing connected yet. */
 export const NAVI_STARTERS = [
   "Tell me what you can do, and what you’ll ask me before doing.",
-  "What’s on my calendar this week?",
+  "Remind me every Friday at 5pm to plan next week.",
   "Ask each project’s lead how its work is going, and sum it up for me.",
 ] as const;
 

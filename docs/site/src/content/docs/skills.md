@@ -92,7 +92,8 @@ Settings › [Hub](/docs/desktop-app#hub) › Every project › Tools & skills, 
 
 A lead can install skills too, with its `skill_install` tool, when you ask it to ("install
 vercel-labs/agent-skills@web-design-guidelines for this project"). It installs into its own project only, from GitHub
-or other remote sources.
+or other remote sources. A [Navi](/docs/navi#skills) installs over https only, without the hub's git logins or SSH
+keys, and says so in its chat.
 
 Every change to a project or global skill's `SKILL.md` is kept as a version: who made it, when and why. A
 [Navi](/docs/navi#skills) also saves skills of its own, and its Skills show each version with a diff and Restore.

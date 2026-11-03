@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use fleetd_contracts::auth::{Grant, KeyKind};
 use fleetd_contracts::mcp::ErrorCode;
-use fleetd_contracts::node_link::{CAP_ASSISTANT, CAP_REPOS};
+use fleetd_contracts::node_link::{CAP_ASSISTANT, CAP_NAVI_ERASE, CAP_REPOS};
 use fleetd_contracts::people::{HubRole, PersonId, PersonName};
 use serde_json::{Value, json};
 
@@ -110,7 +110,7 @@ fn tool_calls(navi: &Value) -> Vec<(&'static str, Value)> {
 #[tokio::test]
 async fn only_its_owner_sees_and_uses_a_navi_and_an_admin_deletes_a_removed_persons() {
     let (hub, _home) = hub();
-    let _calls = node(&hub, &[CAP_REPOS, CAP_ASSISTANT]).await;
+    let _calls = node(&hub, &[CAP_REPOS, CAP_ASSISTANT, CAP_NAVI_ERASE]).await;
     let ann = people(&hub).ensure_owner().unwrap().person_id;
     let bob = people(&hub)
         .create(&PersonName::unchecked("Bob"), HubRole::Member)

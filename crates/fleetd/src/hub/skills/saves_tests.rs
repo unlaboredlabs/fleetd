@@ -193,6 +193,74 @@ async fn a_navi_saves_and_improves_its_own_skill_each_save_a_version_with_a_quie
     );
 }
 
+/// A Navi installs over https only: SSH, `git@`, local and plain-http sources are refused before anything is fetched
+/// (and its fetch takes https alone, `tests::an_anonymous_fetch_takes_https_alone`). Each skill it installs posts one
+/// quiet line, as a save does, naming the source at its commit.
+#[tokio::test]
+async fn a_navi_installs_over_https_only_and_each_install_posts_a_quiet_line() {
+    let (hub, _home) = hub();
+    let r = project("navi");
+    let caller = LeadCaller {
+        project_ref: r.clone(),
+        by: lead_by(&r),
+        agent: CallerAgent::Lead,
+    };
+    let handler = hub.lead_calls.handler("skill_install").unwrap();
+    for source in [
+        "ssh://git@github.com/acme/skills.git",
+        "git@github.com:acme/skills.git",
+        "file:///srv/skills",
+        "http://git.example.com/skills.git",
+    ] {
+        let call = LeadCall::SkillInstall(
+            serde_json::from_value(json!({ "source": source, "scope": "project" })).unwrap(),
+        );
+        let e = handler.handle(caller.clone(), call).await.unwrap_err();
+        assert_eq!(e.code, ErrorCode::Forbidden, "{source}");
+        assert!(e.message.contains("https only"), "{source}: {}", e.message);
+    }
+    assert!(
+        hub.db
+            .skills()
+            .list(SkillScope::Project, Some(&r))
+            .is_empty()
+    );
+
+    let kept = hub
+        .db
+        .skills()
+        .set(
+            SkillScope::Project,
+            Some(&r),
+            &name("pdf"),
+            &md("pdf", "Fill PDF forms."),
+            false,
+            &super::Who::agent("Home", "installed", 1_792_000_000_000),
+        )
+        .unwrap();
+    super::calls::posted(&hub, &r, &kept, "acme/skills", "0123456789abcdef0123").unwrap();
+    let (messages, ..) = hub.chat.page(&r, None, None, 50).unwrap();
+    let line = messages.iter().find(|m| m.skill_saved.is_some()).unwrap();
+    assert_eq!(line.author, ChatAuthor::System);
+    assert_eq!(
+        line.text,
+        "Installed the skill pdf from acme/skills@0123456789ab"
+    );
+    let saved = line.skill_saved.as_ref().unwrap();
+    assert_eq!(
+        (
+            saved.name.as_str(),
+            saved.installed.as_ref().map(|l| l.as_str())
+        ),
+        ("pdf", Some("acme/skills@0123456789ab"))
+    );
+    // An app that doesn't know `installed` still says where it came from.
+    assert_eq!(
+        saved.why.as_str(),
+        "installed from acme/skills@0123456789ab"
+    );
+}
+
 #[tokio::test]
 async fn only_a_navis_own_lead_saves_and_never_over_an_installed_skill() {
     let (hub, _home) = hub();
