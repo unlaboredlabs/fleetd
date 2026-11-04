@@ -71,6 +71,198 @@ async fn a_download_is_checked_against_the_releases_sums() {
     assert_eq!(offline.stage, UpdateStage::Download);
 }
 
+/// A feed that hands builds out only as a stream of small chunks, and breaks off after `breaks_after` of them when set.
+struct Chunked {
+    feed: FakeFeed,
+    breaks_after: Option<usize>,
+}
+
+impl Feed for Chunked {
+    fn get<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<Vec<u8>, String>> {
+        Box::pin(async move {
+            match name {
+                "SHA256SUMS" | "release.json" => self.feed.get(name).await,
+                _ => Err(format!("`{name}` was asked for whole")),
+            }
+        })
+    }
+
+    fn stream<'a>(
+        &'a self,
+        name: &'a str,
+        sink: &'a mut Sink<'_>,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            let bytes = self.feed.get(name).await?;
+            for (n, chunk) in bytes.chunks(3).enumerate() {
+                if self.breaks_after == Some(n) {
+                    return Err("connection reset".into());
+                }
+                sink(chunk)?;
+            }
+            Ok(())
+        })
+    }
+}
+
+fn chunked(build: &[u8]) -> Chunked {
+    Chunked {
+        feed: FakeFeed::with(&[("fleetd-linux-x64", build)], "{}"),
+        breaks_after: None,
+    }
+}
+
+/// The files in `dir`, sorted.
+fn names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+#[tokio::test]
+async fn a_build_streams_into_its_file_hashed_on_the_way() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("update/fleetd.next");
+    let feed = chunked(b"a new build, in many pieces");
+    verified_to(&feed, "fleetd-linux-x64", &path).await.unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"a new build, in many pieces");
+    assert_eq!(
+        fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o755
+    );
+    assert_eq!(names(path.parent().unwrap()), ["fleetd.next"]);
+
+    let sums = sums(&feed).await.unwrap();
+    assert!(is_build(&path, &sums, "fleetd-linux-x64"));
+    assert_eq!(
+        file_sha256_hex(&path).unwrap(),
+        sha256_hex(b"a new build, in many pieces")
+    );
+
+    fs::write(&path, b"stale").unwrap();
+    assert!(!is_build(&path, &sums, "fleetd-linux-x64"));
+    assert!(!is_build(
+        &dir.path().join("absent"),
+        &sums,
+        "fleetd-linux-x64"
+    ));
+    checked_to(&feed, &sums, "fleetd-linux-x64", &path)
+        .await
+        .unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"a new build, in many pieces");
+}
+
+#[tokio::test]
+async fn a_streamed_build_that_doesnt_match_the_sums_is_deleted_and_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fleetd");
+    fs::write(&path, b"old").unwrap();
+    let feed = chunked(b"new build");
+    feed.feed
+        .files
+        .lock()
+        .unwrap()
+        .insert("fleetd-linux-x64".into(), b"tampered build".to_vec());
+
+    let mismatch = verified_to(&feed, "fleetd-linux-x64", &path)
+        .await
+        .unwrap_err();
+    assert_eq!(mismatch.stage, UpdateStage::Checksum);
+    assert!(
+        mismatch.message.ends_with("nothing was changed"),
+        "{mismatch}"
+    );
+    assert_eq!(fs::read(&path).unwrap(), b"old");
+    assert_eq!(names(dir.path()), ["fleetd"], "the partial file is gone");
+
+    let sums = sums(&feed).await.unwrap();
+    let mismatch = checked_to(&feed, &sums, "fleetd-linux-x64", &path)
+        .await
+        .unwrap_err();
+    assert_eq!(mismatch.stage, UpdateStage::Checksum);
+    assert_eq!(names(dir.path()), ["fleetd"]);
+
+    let missing = verified_to(&feed, "fleetd-darwin-arm64", &path)
+        .await
+        .unwrap_err();
+    assert_eq!(missing.stage, UpdateStage::Download);
+    assert_eq!(names(dir.path()), ["fleetd"]);
+}
+
+#[tokio::test]
+async fn a_download_cut_off_midway_leaves_nothing_behind() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fleetd");
+    fs::write(&path, b"old").unwrap();
+    let mut feed = chunked(b"a new build, in many pieces");
+    feed.breaks_after = Some(2);
+    let cut = verified_to(&feed, "fleetd-linux-x64", &path)
+        .await
+        .unwrap_err();
+    assert_eq!(cut.stage, UpdateStage::Download);
+    assert!(cut.message.contains("connection reset"), "{cut}");
+    assert_eq!(fs::read(&path).unwrap(), b"old");
+    assert_eq!(names(dir.path()), ["fleetd"]);
+
+    // A feed with only the whole-file read still streams, in one piece.
+    let whole = FakeFeed::with(&[("fleetd-linux-x64", b"new")], "{}");
+    verified_to(&whole, "fleetd-linux-x64", &path)
+        .await
+        .unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"new");
+}
+
+/// The real feed hands a large asset on in the pieces the server sends, never as one buffer.
+#[tokio::test]
+async fn the_http_feed_streams_an_asset_in_pieces() {
+    let build: Vec<u8> = (0..1_000_000u32).map(|n| (n % 251) as u8).collect();
+    let served = build.clone();
+    let sums = format!("{}  fleetd-linux-x64\n", sha256_hex(&build));
+    let app = axum::Router::new()
+        .route(
+            "/fleetd-linux-x64",
+            axum::routing::get(move || {
+                let chunks: Vec<Result<Vec<u8>, std::io::Error>> =
+                    served.chunks(64 * 1024).map(|c| Ok(c.to_vec())).collect();
+                async move { axum::body::Body::from_stream(futures_util::stream::iter(chunks)) }
+            }),
+        )
+        .route(
+            "/SHA256SUMS",
+            axum::routing::get(move || async move { sums }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await });
+    let feed = HttpFeed::new(base);
+
+    let mut pieces = 0;
+    let mut got = Vec::new();
+    feed.stream("fleetd-linux-x64", &mut |chunk| {
+        pieces += 1;
+        got.extend_from_slice(chunk);
+        Ok(())
+    })
+    .await
+    .unwrap();
+    assert_eq!(got, build);
+    assert!(pieces > 1, "{pieces} piece");
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fleetd.next");
+    verified_to(&feed, "fleetd-linux-x64", &path).await.unwrap();
+    assert_eq!(fs::read(&path).unwrap(), build);
+
+    let missing = feed
+        .stream("fleetd-darwin-arm64", &mut |_| Ok(()))
+        .await
+        .unwrap_err();
+    assert!(missing.contains("404"), "{missing}");
+}
+
 #[tokio::test]
 async fn reads_the_channels_newest_cli() {
     let feed = FakeFeed::with(&[], r#"{"cliVersion":"0.6.0-edge.202610261056+1b563d7"}"#);
@@ -90,8 +282,10 @@ fn a_swap_keeps_the_previous_binary_and_restore_puts_it_back() {
     let dir = tempfile::tempdir().unwrap();
     let exe = dir.path().join("fleetd");
     let prev = dir.path().join("update/fleetd.prev");
+    let new = dir.path().join("fleetd.next");
     fs::write(&exe, b"old").unwrap();
-    swap(&exe, b"new", b"old", &prev).unwrap();
+    fs::write(&new, b"new").unwrap();
+    swap(&exe, &new, b"old", &prev).unwrap();
     assert_eq!(fs::read(&exe).unwrap(), b"new");
     assert_eq!(fs::read(&prev).unwrap(), b"old");
     restore(&exe, &prev).unwrap();
@@ -100,7 +294,7 @@ fn a_swap_keeps_the_previous_binary_and_restore_puts_it_back() {
     // Nowhere to keep the previous binary: the installed one stays.
     let blocked = dir.path().join("file");
     fs::write(&blocked, b"").unwrap();
-    let failed = swap(&exe, b"new", b"old", &blocked.join("prev")).unwrap_err();
+    let failed = swap(&exe, &new, b"old", &blocked.join("prev")).unwrap_err();
     assert_eq!(failed.stage, UpdateStage::Install);
     assert_eq!(fs::read(&exe).unwrap(), b"old");
 }
@@ -244,8 +438,10 @@ const NEW: &str = "0.0.0-edge.202610261056+1b563d7";
 fn plan(dir: &Path) -> Plan {
     let exe = dir.join("fleetd");
     let prev = dir.join("update/fleetd.prev");
+    let new = dir.join("fleetd.next");
     fs::write(&exe, b"old").unwrap();
-    swap(&exe, b"new", b"old", &prev).unwrap();
+    fs::write(&new, b"new").unwrap();
+    swap(&exe, &new, b"old", &prev).unwrap();
     Plan {
         exe,
         prev,
