@@ -156,11 +156,11 @@ The hub dials out; nothing dials in to it:
 3. The machine's node uses `http://127.0.0.1:47900` as its hub address. A new machine's setup waits for the tunnel,
    then joins through it.
 4. If the connection drops while the machine is awake, the hub redials, waiting 1 second and doubling up to 30. The
-   hub sends keepalives every 15 seconds, and the machine's SSH server drops a hub silent for 45 seconds (setup
-   configures it, again at every wake), so after the hub's network drops uncleanly the old session frees the tunnel's
-   port and a redial gets it back. A
-   machine whose tunnel never comes up counts as a failed wake: its node says no hello, so the hub stops it, and two
-   such wakes in a row make it broken.
+   hub sends keepalives every 15 seconds, and the machine's SSH server drops a hub silent for 45 seconds, so after
+   the hub's network drops uncleanly the old session frees the tunnel's port and a redial gets it back. Setup
+   configures this again at every wake, then ends the SSH sessions opened before it, so the hub redials into it at
+   once. A machine whose tunnel never comes up counts as a failed wake: its node says no hello, so the hub stops it,
+   and two such wakes in a row make it broken.
 5. When the machine sleeps or is deleted, the hub closes the tunnel. Each wake opens a new one: every resume is a new
    machine, with a new address and host key, so nothing about it is kept across a sleep.
 

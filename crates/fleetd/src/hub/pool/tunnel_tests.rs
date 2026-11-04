@@ -152,26 +152,29 @@ impl server::Handler for Sshd {
 
 /// The machine's SSH server, with `host` as its host key, letting in only `allowed`.
 async fn sshd(host: PrivateKey, allowed: PublicKey) -> (SocketAddr, Arc<Mutex<Seen>>) {
-    sshd_alive(host, allowed, None).await
+    sshd_alive(host, allowed, Arc::default()).await
 }
 
-/// The same, dropping a client silent for 3 of `alive` when set: the ClientAliveInterval setup.sh gives sshd.
+/// The same, dropping a client silent for 3 of `alive` when set: the ClientAliveInterval setup.sh gives sshd. As with
+/// OpenSSH's reload, a change to `alive` reaches only the connections that begin after it.
 async fn sshd_alive(
     host: PrivateKey,
     allowed: PublicKey,
-    alive: Option<Duration>,
+    alive: Arc<Mutex<Option<Duration>>>,
 ) -> (SocketAddr, Arc<Mutex<Seen>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let at = listener.local_addr().unwrap();
     let seen = Arc::new(Mutex::new(Seen::default()));
-    let config = Arc::new(server::Config {
-        keys: vec![host],
-        auth_rejection_time: Duration::from_millis(10),
-        auth_rejection_time_initial: Some(Duration::ZERO),
-        keepalive_interval: alive,
-        keepalive_max: 3,
-        ..Default::default()
-    });
+    let config = move || {
+        Arc::new(server::Config {
+            keys: vec![host.clone()],
+            auth_rejection_time: Duration::from_millis(10),
+            auth_rejection_time_initial: Some(Duration::ZERO),
+            keepalive_interval: *alive.lock().unwrap(),
+            keepalive_max: 3,
+            ..Default::default()
+        })
+    };
     let handler = Sshd {
         allowed,
         seen: seen.clone(),
@@ -182,7 +185,7 @@ async fn sshd_alive(
         loop {
             id += 1;
             let (tcp, _) = listener.accept().await.unwrap();
-            let config = config.clone();
+            let config = config();
             let handler = Sshd {
                 id,
                 ..handler.clone()
@@ -399,19 +402,17 @@ async fn the_tunnel_comes_up_carries_the_node_to_the_hub_redials_after_a_drop_an
 }
 
 /// An unclean drop (the hub's network gone: no FIN either way) leaves the machine's old session alive, holding the
-/// forward's port, so the hub's redial gets in but its forward is refused. The hub's keepalives find its side dead and
-/// it keeps redialling; once the machine's sshd drops the silent session (the ClientAliveInterval setup.sh gives it),
-/// the port is free, the next redial takes it, and the node reaches the hub again.
+/// forward's port, so the hub's redial gets in but its forward is refused, until the machine's sshd drops the silent
+/// session (the ClientAliveInterval setup.sh gives it) and the next redial takes the port. In the order a wake brings:
+/// the hub's first tunnel opens while sshd still runs boat's config (no client checks), then setup.sh's unit sets it
+/// (for new sessions only, as a reload does) and ends the sessions already open, so the hub redials into it; only then
+/// does the network drop.
 #[tokio::test]
 async fn after_an_unclean_drop_the_redial_takes_the_port_once_sshd_drops_the_silent_session() {
     let host = key(1);
     let ours = Arc::new(key(7));
-    let (machine, seen) = sshd_alive(
-        host.clone(),
-        ours.public_key().clone(),
-        Some(Duration::from_millis(300)),
-    )
-    .await;
+    let alive = Arc::new(Mutex::new(None));
+    let (machine, seen) = sshd_alive(host.clone(), ours.public_key().clone(), alive.clone()).await;
     let (at, lines) = network(machine).await;
     let boat = Arc::new(SshBoat {
         at,
@@ -426,20 +427,36 @@ async fn after_an_unclean_drop_the_redial_takes_the_port_once_sshd_drops_the_sil
     );
     tunnels.open("boat-1", "bx_1");
     until("up", || tunnels.status("boat-1") == Some(Tunnel::Up)).await;
-    lines.lock().unwrap()[0].store(true, Ordering::SeqCst);
+
+    // The unit runs: sshd checks its clients from now on, and the session opened before is ended.
+    *alive.lock().unwrap() = Some(Duration::from_millis(300));
+    let first = seen.lock().unwrap().handles[0].clone();
+    first
+        .disconnect(Disconnect::ByApplication, "".into(), "en".into())
+        .await
+        .unwrap();
+    until("redialled into the new config", || {
+        seen.lock().unwrap().handles.len() == 2
+    })
+    .await;
+    until("up", || tunnels.status("boat-1") == Some(Tunnel::Up)).await;
+
+    // The network goes, uncleanly.
+    let lost = lines.lock().unwrap().len() - 1;
+    lines.lock().unwrap()[lost].store(true, Ordering::SeqCst);
     until("a redial refused the held port", || {
         seen.lock().unwrap().denied >= 1
     })
     .await;
     assert_ne!(tunnels.status("boat-1"), Some(Tunnel::Up));
     until("the port taken again", || {
-        seen.lock().unwrap().handles.len() == 2
+        seen.lock().unwrap().handles.len() == 3
     })
     .await;
     until("up again", || tunnels.status("boat-1") == Some(Tunnel::Up)).await;
-    let second = seen.lock().unwrap().handles[1].clone();
+    let third = seen.lock().unwrap().handles[2].clone();
     assert_eq!(
-        call_hub(&second, MACHINE_PORT.into(), b"back")
+        call_hub(&third, MACHINE_PORT.into(), b"back")
             .await
             .unwrap(),
         b"hub:back"

@@ -470,6 +470,7 @@ fn a_private_hub_gives_its_cloud_machines_the_tunnels_address() {
         "Type=oneshot",
         "ExecStart=/bin/sh -c 'f=/etc/ssh/sshd_config.d/00-00-fleetd-client-alive.conf; echo ClientAliveInterval 15 > $$f; echo ClientAliveCountMax 3 >> $$f'",
         "ExecStart=-/usr/bin/systemctl try-reload-or-restart ssh.service",
+        "ExecStart=-/usr/bin/pkill -u user -x 'sshd|sshd-session'",
         "WantedBy=multi-user.target",
     ] {
         assert!(unit.lines().any(|l| l == line), "no {line} in\n{unit}");

@@ -16,10 +16,11 @@
 //! - **Its life**: opened at the wake or create, before the node needs it; redialled with backoff (1 s doubling to
 //!   30 s) for as long as the machine should be up; closed when it sleeps or is deleted. After an unclean drop (the
 //!   hub's network gone, no FIN) the machine's old session would hold the forward's port, and each redial's forward
-//!   would be refused; the machine's sshd drops a client silent for 45 s (hub/cloud/setup.sh sets it at every wake),
-//!   which frees the port, and the next redial takes it. A tunnel that can't come up
-//!   leaves the node silent, and the wake's own timeout ([`super::HELLO_MS`]) counts it as a failed wake, with the
-//!   tunnel's last error as the slot's note.
+//!   would be refused; the machine's sshd drops a client silent for 45 s, which frees the port, and the next redial
+//!   takes it. hub/cloud/setup.sh sets that at every wake, then ends the sessions opened before it (an open session
+//!   keeps the config it began with, and the first tunnel of a wake is usually open by then), so the hub redials into
+//!   it at once. A tunnel that can't come up leaves the node silent, and the wake's own timeout
+//!   ([`super::HELLO_MS`]) counts it as a failed wake, with the tunnel's last error as the slot's note.
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
