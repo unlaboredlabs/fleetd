@@ -560,9 +560,9 @@ async fn the_lease_is_renewed_every_10_minutes_and_boat_stops_a_machine_whose_hu
             renewed.push(w.now());
         }
     }
-    // At once to 30 minutes (the create's setup lease was 45), then every 10 minutes.
+    // Every 10 minutes from the create, whose setup lease was 30 minutes too.
     let t = |m: u64| (T0 + 20_000 + m * 60_000) as i64;
-    assert_eq!(renewed, [t(5), t(15), t(25)]);
+    assert_eq!(renewed, [t(10), t(20), t(30)]);
     assert!(
         w.boat
             .calls_like("ttl")
@@ -572,9 +572,9 @@ async fn the_lease_is_renewed_every_10_minutes_and_boat_stops_a_machine_whose_hu
     let deadline = w.boat.s.lock().unwrap().machines[&id]
         .archive_after_ms()
         .unwrap();
-    assert_eq!(deadline, t(55));
+    assert_eq!(deadline, t(60));
     // The hub goes quiet: no more ticks. boat stops it at the deadline, by itself.
-    w.advance(24 * MIN);
+    w.advance(29 * MIN);
     w.boat.expire();
     assert_eq!(w.boat.state(&id).as_deref(), Some("running"));
     w.advance(MIN);
