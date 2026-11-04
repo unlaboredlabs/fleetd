@@ -2,10 +2,10 @@
 // avatar, or Edit under it, opens its icon's sheet: a built-in face and color, or a photo: IconPicker.tsx), then what
 // runs there now (Agents: agents_list), its open orders (orders_board), its To-do (its checklist) and its recent
 // merges with their PRs, read-only; then its name, the profiles its agents may run on and where it lives, and Only
-// me. Then the desktop's sections, each pushed: Approvals, Payments, Telegram, Linked hubs and Skills; Forget Sign-ins;
-// New Screen, a screen of your own for it, where the hub opens them; Archive. Delete last, red, in a sheet that erases
-// everything fleetd keeps for it, with a tickbox for its folder, once its name is typed (TypedDelete). What the person
-// may not do isn't offered.
+// me. Then the desktop's sections, each pushed: Approvals, Payments, Telegram, Linked hubs, Skills and the chat's
+// Artifacts (screens/artifacts); Forget Sign-ins; New Screen, a screen of your own for it, where the hub opens them;
+// Archive. Delete last, red, in a sheet that erases everything fleetd keeps for it, with a tickbox for its folder,
+// once its name is typed (TypedDelete). What the person may not do isn't offered.
 import { StackActions, useFocusEffect } from "@react-navigation/native";
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
@@ -24,6 +24,7 @@ import { deleteProject, forgetSignins, readForDelete, readInfo, setArchived, set
 import { agentLines, checklist, deleteBlocked, deleteWords, machineName, manages, merges, orderLines, profilesValue, subtitle, type DeleteWords, type Tone } from "./model";
 import { confirmDestructive, errorWords, Problem, useRead } from "./parts";
 import { skillsShown } from "./skillsModel";
+import { artifactsShown } from "../artifacts/model";
 import { TypedDelete } from "./TypedDelete";
 
 const toneColor = (t: Palette, tone: Tone): string => (tone === "accent" ? t.accent : tone === "warning" ? t.warning : tone === "danger" ? t.danger : t.secondary);
@@ -233,6 +234,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
         {can ? <ListRow title="Telegram" icon="paperplane" tint={t.tints[5]} {...(live ? { onPress: () => navigation.navigate("Telegram", { key }) } : {})} /> : null}
         {can ? <ListRow title="Linked Hubs" icon="link" tint={t.tints[6]} {...(live ? { onPress: () => navigation.navigate("LinkedHubs", { key }) } : {})} /> : null}
         {skills ? <ListRow title="Skills" icon="sparkles" tint={t.tints[1]} {...(v?.skills === undefined ? {} : { value: String(v.skills.length) })} onPress={() => navigation.navigate("Skills", { key })} /> : null}
+        {artifactsShown(state.hub) ? <ListRow title="Artifacts" icon="fileDoc" tint={t.tints[2]} onPress={() => navigation.navigate("Artifacts", { key })} /> : null}
       </ListSection>
 
       {can ? (

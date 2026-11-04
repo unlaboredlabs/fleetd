@@ -100,7 +100,7 @@ export function ImageBubble({
 }
 
 /** Each kind's glyph, and the system color its tile takes: red for a PDF, green for a sheet, as Files tints them. */
-const GLYPHS: Readonly<Record<FileGlyph, { readonly icon: IconName; readonly tint: (t: Palette) => string }>> = {
+export const GLYPHS: Readonly<Record<FileGlyph, { readonly icon: IconName; readonly tint: (t: Palette) => string }>> = {
   pdf: { icon: "pdf", tint: (t) => t.danger },
   doc: { icon: "fileDoc", tint: (t) => t.blue },
   sheet: { icon: "fileSheet", tint: (t) => t.success },

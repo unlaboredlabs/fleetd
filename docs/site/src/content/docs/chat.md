@@ -194,6 +194,9 @@ key or another artifact, keep cookies or storage, or open a window or frame (its
 page can only show what it carries. A link you click in it opens in your browser; the page itself can't open one. On
 Telegram a link to an artifact shows as its title.
 
+On the phone, a chat's Info has **Artifacts**, with the files sent in the chat under the reports; a card or a link opens
+one the same way. HTML artifacts there need an app build from this release on.
+
 Agents publish with the [`publish_artifact`](/docs/reference/agent-tools#publish_artifact) tool and link with
 `[Title](artifact:name)`.
 
