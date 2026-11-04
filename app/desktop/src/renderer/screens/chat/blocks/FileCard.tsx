@@ -10,7 +10,7 @@ import { fmtBytes } from "../attachments";
 import type { ProjectRef } from "../slots";
 import b from "./blocks.module.css";
 
-const GLYPHS: Record<FileGlyph, LucideIcon> = {
+export const GLYPHS: Record<FileGlyph, LucideIcon> = {
   pdf: FileText,
   doc: FileText,
   text: FileText,

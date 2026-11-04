@@ -398,12 +398,12 @@ const pointer = (el: Element | null, type: string, clientX: number) =>
     el?.dispatchEvent(new PointerEvent(type, { clientX, button: 0, pointerId: 1, bubbles: true, cancelable: true }));
   });
 
-it("shows four sections as tabs, each view a route of its own under its section, two-view sections with tabs inside", async () => {
-  // A hub that serves every view, browser sessions too.
-  await mount({ features: ["browser_sessions"] });
+it("shows its sections as tabs, each view a route of its own under its section, two-view sections with tabs inside", async () => {
+  // A hub that serves every view, browser sessions and artifacts too.
+  await mount({ features: ["browser_sessions", "artifacts"] });
   const outer = () => [...(panel()?.querySelectorAll<HTMLElement>("[role='tab'][data-section]") ?? [])];
   expect(outer().map((tab) => tab.dataset["section"])).toEqual(SECTIONS.map((g) => g.id));
-  expect(outer().map((tab) => tab.textContent.replace(/[0-9]+$/u, ""))).toEqual(["Agents", "Shipping", "Plan", "History"]);
+  expect(outer().map((tab) => tab.textContent.replace(/[0-9]+$/u, ""))).toEqual(["Agents", "Shipping", "Plan", "Artifacts", "History"]);
   // A Navi's own views (Asked work) aren't a project of code's.
   for (const tab of PANEL_TABS.filter((t) => inSections(t.id, SECTIONS))) {
     await go(`${CHAT}/${tab.id}`);

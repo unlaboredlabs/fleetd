@@ -2,6 +2,7 @@ import { pathToFileURL } from "node:url";
 import { app, protocol, session, shell, type WebContents } from "electron";
 import { DEV_BUILD } from "./build";
 import { externalUrl } from "./external";
+import { ARTIFACT_SCHEME, artifactFrames } from "./artifactFrames";
 import { APP_INDEX, APP_ORIGIN, APP_SCHEME, assetPath, originOf } from "./origin";
 
 /** The dev server under `electron-vite dev`; a built app never loads one, however it's launched. */
@@ -33,7 +34,11 @@ const isDevSocket = (url: string): boolean => {
  * app ready.
  */
 export const harden = (): void => {
-  protocol.registerSchemesAsPrivileged([{ scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
+  protocol.registerSchemesAsPrivileged([
+    { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+    // An HTML artifact's frame (artifactFrames.ts): its own origin, with no fetch or CORS.
+    { scheme: ARTIFACT_SCHEME, privileges: { standard: true, secure: true } },
+  ]);
   app.enableSandbox();
   app.on("web-contents-created", (_event, contents: WebContents) => {
     // A plain <a target=_blank> follows the same rule as window.fleetd.openExternal.
@@ -65,6 +70,7 @@ export const appFile = (url: string, rendererDir: string): Promise<Response> | R
 /** Run once the app is ready (sessions exist then). `rendererDir` holds the built index.html. */
 export const lockSession = (rendererDir: string): void => {
   protocol.handle(APP_SCHEME, (request) => appFile(request.url, rendererDir));
+  protocol.handle(ARTIFACT_SCHEME, (request) => artifactFrames.response(request.url));
   const ses = session.defaultSession;
   // No permission at all, the clipboard included: Electron asks for "clipboard-read" on writeText too, so writes go
   // through window.fleetd.copy instead.
@@ -72,10 +78,10 @@ export const lockSession = (rendererDir: string): void => {
   ses.setPermissionCheckHandler(() => false);
   // The page session reaches its own origin and nothing else: no local files, no network. This holds for every request
   // in it, whether or not it names a webContents (workers and keepalive requests may not); main's own requests use
-  // other sessions (the file reads above, electron-updater's partition).
+  // other sessions (the file reads above, electron-updater's partition). An artifact's frame loads from main too.
   ses.webRequest.onBeforeRequest((details, callback) => {
     const { url } = details;
-    const allowed = isOwnPage(url) || isDevSocket(url) || url.startsWith("devtools://") || url.startsWith("data:");
+    const allowed = isOwnPage(url) || isDevSocket(url) || url.startsWith("devtools://") || url.startsWith("data:") || url.startsWith(`${ARTIFACT_SCHEME}://`);
     callback({ cancel: !allowed });
   });
 };

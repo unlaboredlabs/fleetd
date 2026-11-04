@@ -19,6 +19,9 @@ describe("routes", () => {
       panelRoute(storefront, { tab: "sessions", session: "bs-checkout" }),
       { id: "session", project: storefront, session: "bs-checkout" },
       panelRoute(storefront, { tab: "checklist" }),
+      panelRoute(storefront, { tab: "artifacts", artifact: null }),
+      panelRoute(storefront, { tab: "artifacts", artifact: "dependency-sweep" }),
+      panelRoute(storefront, { tab: "artifacts", artifact: "dependency-sweep", version: 2 }),
       { id: "project", project: storefront, message: "m-42", panel: { tab: "agents", agent: "T1" } },
       { id: "status" },
       { id: "factory", project: null },
@@ -125,5 +128,7 @@ describe("routes", () => {
     expect(hasItem({ tab: "prs", pr: { repo: null, number: 3 } })).toBe(true);
     expect(hasItem({ tab: "agents", agent: "T1" })).toBe(true);
     expect(hasItem({ tab: "sessions", session: "bs-checkout" })).toBe(true);
+    expect(hasItem({ tab: "artifacts", artifact: "dependency-sweep" })).toBe(true);
+    expect(toHash(panelRoute(storefront, { tab: "artifacts", artifact: "dependency-sweep", version: 2 }))).toBe("#/project/devbox/storefront/artifacts/dependency-sweep/2");
   });
 });

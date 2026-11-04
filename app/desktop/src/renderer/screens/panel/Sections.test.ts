@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SECTIONS, servedSection } from "./Sections";
+import { SECTIONS, sectionsFor, servedSection } from "./Sections";
 
 const agents = SECTIONS[0];
 
@@ -17,5 +17,15 @@ describe("a section the hub serves in part", () => {
 
   it("leaves a section of views that need nothing as it is", () => {
     for (const section of SECTIONS.slice(1)) expect(servedSection(section, [])).toBe(section);
+  });
+});
+
+describe("a section the hub doesn't serve at all", () => {
+  it("isn't there until the hub serves its view", () => {
+    for (const navi of [false, true]) {
+      expect(sectionsFor(navi, []).map((g) => g.id)).not.toContain("artifacts");
+      expect(sectionsFor(navi, ["artifacts"]).map((g) => g.id)).toContain("artifacts");
+    }
+    expect(sectionsFor(false, []).map((g) => g.id)).toEqual(["agents", "shipping", "plan", "history"]);
   });
 });

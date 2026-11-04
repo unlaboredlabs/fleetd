@@ -261,6 +261,10 @@ pub enum HubEventType {
     /// scope), `data.names`, `data.by`. skills_list reads them.
     #[serde(rename = "skills.changed")]
     SkillsChanged,
+    /// An artifact was published (`artifact_publish`): `data.projectRef`, `data.name`, `data.version`. artifacts_list
+    /// reads it.
+    #[serde(rename = "artifacts.changed")]
+    ArtifactsChanged,
     /// A browser session started, changed hands, ended, or its recording landed or was lost; `data` is
     /// `browser::BrowserSessionEventData`. browser_sessions reads the rest.
     #[serde(rename = "browser.session")]
@@ -374,6 +378,7 @@ impl HubEventType {
             Self::AutomationRun => "automation.run",
             Self::ChecklistChanged => "checklist.changed",
             Self::SkillsChanged => "skills.changed",
+            Self::ArtifactsChanged => "artifacts.changed",
             Self::BrowserSession => "browser.session",
             Self::ScreenWait => "screen.wait",
             Self::PeopleChanged => "people.changed",

@@ -31,6 +31,9 @@ pub fn escape(text: &str) -> String {
 static CODE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"`([^`\n]+)`").unwrap());
 static LINK: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[([^\]\n]+)\]\((https?://[^\s)]+)\)").unwrap());
+/// A link to an artifact (`[Title](artifact:<name>)`): Telegram can't open one, so it shows the title alone.
+static ARTIFACT_LINK: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\[([^\]\n]+)\]\(artifact:[^\s)]*\)").unwrap());
 static BOLD: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\*\*(\S(?:[^\n]*?\S)?)\*\*|__(\S(?:[^\n]*?\S)?)__").unwrap());
 static ITALIC: LazyLock<Regex> = LazyLock::new(|| {
@@ -62,7 +65,8 @@ pub fn inline(text: &str) -> String {
 
 fn styled(text: &str) -> String {
     let escaped = escape(text);
-    let linked = LINK.replace_all(&escaped, r#"<a href="$2">$1</a>"#);
+    let titled = ARTIFACT_LINK.replace_all(&escaped, "$1");
+    let linked = LINK.replace_all(&titled, r#"<a href="$2">$1</a>"#);
     let bold = BOLD.replace_all(&linked, "<b>$1$2</b>");
     let strike = STRIKE.replace_all(&bold, "<s>$1</s>");
     ITALIC
@@ -521,6 +525,17 @@ mod tests {
             "{line}"
         );
         assert!(line.contains("Open fleetd to enter it"), "{line}");
+    }
+
+    #[test]
+    fn an_artifact_link_is_its_title_alone() {
+        let out = messages(
+            "The [sweep & fixes](artifact:sweep-report@2) are in, and [docs](https://x.dev).",
+        );
+        assert_eq!(
+            out,
+            [r#"The sweep &amp; fixes are in, and <a href="https://x.dev">docs</a>."#]
+        );
     }
 
     #[test]

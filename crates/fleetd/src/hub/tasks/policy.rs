@@ -19,8 +19,8 @@ pub fn max_open_tasks(max_agents: i64) -> usize {
 }
 
 /// The calls a task's agent makes: its review verdict (`report`), a question for its lead, reading its brief, its
-/// project's decisions and its PRs' reviews, an image or file for its lead to show, and a wait on CI that wakes it. Only a
-/// lead closes work.
+/// project's decisions and its PRs' reviews, an image or file for its lead to show, a report published in its project's
+/// chat, and a wait on CI that wakes it. Only a lead closes work.
 pub const WORKER_OPS: &[&str] = &[
     "review_verdict",
     "ask_lead",
@@ -30,6 +30,7 @@ pub const WORKER_OPS: &[&str] = &[
     "wait_ci",
     "chat_image",
     "chat_file",
+    "artifact_publish",
 ];
 /// The calls a task's node makes for it: its browser sessions (node/browser), and a Navi's purchases in them.
 pub const NODE_OPS: &[&str] = &[
@@ -100,8 +101,8 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
                 .with_fix(
                     "A task reports its review verdict (report), asks its lead (ask_lead), reads its brief \
                      (brief_read), decisions (decisions_search) and its PRs' reviews (review_read), and may upload an \
-                     image or file for your lead to show (chat_image, chat_file) or wait on CI (wait_ci). Put \
-                     anything else in your result or ask your lead.",
+                     image or file for your lead to show (chat_image, chat_file), publish a report \
+                     (publish_artifact) or wait on CI (wait_ci). Put anything else in your result or ask your lead.",
                 ));
             }
             Ok(())

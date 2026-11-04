@@ -164,9 +164,33 @@ Everything shows up in the chat, quietly:
 | One-line events | A pull request opened, merged, or sent back. |
 | Cards in the lead's messages | Charts, tables, a diff, a pull request or an agent with its live state, a checklist, an image, a file. Click Open on a pull request or an agent to see it in the panel. |
 | Three dots | The lead is writing; its message shows when it's done. |
+| A report's card | The lead or an agent published a report. Click it to read it in the panel's [Artifacts](#artifacts). |
 
 For a project's work at a glance, see [Status](/docs/status). For where the time went, see
 [Where time went](/docs/time-inspector).
+
+## Reports in Artifacts {#artifacts}
+
+A report too long for a chat message, such as a dependency sweep's findings or a chart of build times, comes as an
+**artifact**: the lead, one of its agents or a Navi publishes it, the chat shows a small card for it, and the panel's
+**Artifacts** tab lists every one published in that chat, the newest first. Click a card or a row to read it; the panel
+widens while you do. A message can link to one too: the link opens it in the same place. Under the reports, **Files**
+lists every file sent in the chat, yours and the agents': click one to open it, or Save.
+
+| An artifact is | Shows as |
+|---|---|
+| Markdown | Formatted text in the app's own style. |
+| An HTML page | The page itself, its charts and scripts working, in a frame of its own. |
+
+Publishing a report again under the same name makes a new version; the older ones stay. The version picker above it
+opens any of them, and **Show the newest** goes back.
+
+An HTML artifact runs sandboxed: its scripts run, but it can't reach the network, the app, your hub key or another
+artifact, keep cookies or storage, or open a window, so a page can only show what it carries. On Telegram a link to an
+artifact shows as its title.
+
+Agents publish with the [`publish_artifact`](/docs/reference/agent-tools#publish_artifact) tool and link with
+`[Title](artifact:name)`.
 
 ## Read a pull request {#prs}
 
