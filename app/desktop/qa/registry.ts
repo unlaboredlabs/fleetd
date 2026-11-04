@@ -1487,7 +1487,7 @@ export const screens: readonly Screen[] = [
   { id: "setup.welcome", route: "#/setup/welcome", fixtures: ["setup-fresh"] },
   { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"], variant: "claude" },
   { id: "setup", route: "#/setup/github", fixtures: ["setup-github"], variant: "github" },
-  // The optional cloud step: its parts, then the key's sealed field and the hub's address inline.
+  // The optional cloud step: its parts, then the key's sealed field and the way to the hub inline (nothing to set up).
   {
     id: "setup",
     route: "#/setup/cloud",
@@ -1495,7 +1495,7 @@ export const screens: readonly Screen[] = [
     variant: "cloud",
     open: async (page) => {
       await page.getByRole("textbox", { name: "boat.dev API key" }).waitFor();
-      await page.locator('[data-address="missing"]').waitFor();
+      await page.locator('[data-way="untested"]').waitFor();
     },
   },
   { id: "setup.done", route: "#/setup/done", fixtures: ["setup-done"] },

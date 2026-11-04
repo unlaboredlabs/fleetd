@@ -2087,7 +2087,7 @@ mod tests {
             }),
             ..fresh.clone()
         };
-        let failed = "boat-1: no hello within 5 minutes of its wake: the hub's tunnel to it didn't come up (refused)";
+        let failed = "boat-1: no hello within 2 minutes of its wake: the hub's tunnel to it didn't come up (refused)";
         let network = cloud_checks(&test(Some(false), failed));
         assert_eq!(
             (network[1].check.status, network[1].check.message.as_str()),

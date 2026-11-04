@@ -45,7 +45,7 @@ export default defineGroup({
         requiredLeft: sc.requiredLeft,
       });
       for (const [id, read] of Object.entries(sc.tests)) f.answer("setup_test", { step: id }, { step: step(id, read) }, 600);
-      // The cloud step's panel: no boat.dev key yet, on a hub with no public HTTPS address.
+      // The cloud step's panel: no boat.dev key yet, on a hub only its tailnet reaches (nothing to set up for it).
       f.answer("cloud_get", undefined, { cloud: cloudNew() });
       return f;
     }),
