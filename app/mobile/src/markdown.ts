@@ -113,7 +113,8 @@ export const parseMarkdown = (source: string): Block[] => {
   return blocks;
 };
 
-const SAFE_URL = /^(https?:\/\/|mailto:)/iu;
+// An artifact link (`[Title](artifact:<name>)`) opens it in the chat's Artifacts (ui/Markdown's ArtifactLinks).
+const SAFE_URL = /^(https?:\/\/|mailto:|artifact:[a-z0-9])/u;
 const BARE_URL = /^https?:\/\/[^\s<>]+/iu;
 /** Trailing punctuation that ends a sentence, not the URL; a ")" stays when the URL opened one. */
 const trimUrl = (url: string): string => {

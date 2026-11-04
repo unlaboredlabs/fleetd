@@ -31,6 +31,13 @@ describe("parseInline", () => {
     ]);
   });
 
+  it("links an artifact, which the chat opens in its Artifacts", () => {
+    expect(parseInline("see [Build times](artifact:build-times@2)")).toEqual([
+      { t: "text", text: "see " },
+      { t: "link", url: "artifact:build-times@2", children: [{ t: "text", text: "Build times" }] },
+    ]);
+  });
+
   it("keeps a link of another scheme as its text", () => {
     expect(parseInline("[tap](javascript:alert(1))")).toEqual([
       { t: "text", text: "tap" },
