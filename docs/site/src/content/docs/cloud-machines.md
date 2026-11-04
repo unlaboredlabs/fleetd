@@ -26,6 +26,8 @@ boat.dev bills machine time by the second, only while a machine runs:
 | `large` (the default) | 8, 16 GB, 111 GB | $0.072 | $1.73 |
 | `xlarge` (boat.dev's $100 plan) | 16, 32 GB, 251 GB | $0.200 | $4.80 |
 
+Measured on a real `large`: $0.072 for each hour awake, and nothing while asleep.
+
 boat.dev's $20 plan includes $20 of machine time and 200 starts a day. Past the plan, with auto top-up off, starts
 are refused rather than billed.
 
@@ -53,6 +55,19 @@ What stops a machine, so a bill can't run on:
 
 Today's spend shows on [Status](/docs/status) and in Settings › Hub › Machines: "Cloud today: $0.41 of $3.00 · 2
 awake".
+
+## Waking up {#wake}
+
+Measured on `large` machines:
+
+- **A wake takes seconds.** A sleeping machine runs again 2–3 seconds after the hub wakes it, and its node says hello
+  3–6 seconds after that.
+- **The first builds after a wake are slower.** The machine's disk loads in the background after a wake: about
+  5 minutes for 30 GB in use, 13 minutes for 47 GB. Until it's done, builds run up to 5 times slower (a 70-second
+  rebuild took 6 minutes). This is why a machine stays awake 15 minutes after its work ends.
+- **3 agents a machine.** A `large` machine runs 3 agents with 2 build jobs each: more jobs didn't build any faster.
+- **Keep tailnet routes off 10.77.0.0/16.** boat.dev reaches each machine on its own network there, so a subnet route
+  your tailnet advertises must not cover it.
 
 ## What boat.dev can see {#what-boat-sees}
 

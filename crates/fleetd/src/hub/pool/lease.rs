@@ -3,19 +3,19 @@
 //! the deadline by itself.
 //!
 //! Every ttl the hub sends (create, resume, PATCH) is a [`Ttl`], and [`clamp`] is the only way to make one: at most
-//! 30 minutes (45 for a create's setup), and no longer than what is left under the budget at the pool's burn rate.
+//! 30 minutes, and no longer than what is left under the budget at the pool's burn rate.
 //! A [`Ttl`] is a plain number of seconds above 60, so boat's `null` ("never stop") can't be sent; at 60 s or less
 //! there is no lease to send and the machine is stopped instead.
 use serde::Serialize;
 
 /// The lease an awake machine gets at each renewal.
 pub const LEASE_S: u32 = 30 * 60;
-/// A create's: long enough for its setup script and first hello.
-pub const SETUP_S: u32 = 45 * 60;
+/// A create's: its setup script and first hello take about a minute, so the same as a renewal's.
+pub const SETUP_S: u32 = 30 * 60;
 /// At or under this, the machine is stopped rather than leased (boat's least ttl is 1 s).
 pub const STOP_AT_S: u32 = 60;
 
-/// Seconds until boat stops the machine: always a number, 61 to 2,700.
+/// Seconds until boat stops the machine: always a number, 61 to 1,800.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct Ttl(u32);

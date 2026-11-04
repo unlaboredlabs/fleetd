@@ -2,10 +2,13 @@
 //! and B2): `setup.sh`, rendered here for one slot. hub/pool creates the VM with it as boat's `setupScript`, and with
 //! the slot's pool enroll token (`Auth::create_pool_enroll_token`) as a 0600 file at [`TOKEN_FILE`]: under `/tmp`,
 //! which boat never snapshots, read once and deleted. The script:
-//! - makes a fresh `/etc/machine-id`, so a VM copied from boat's image enrolls as a computer of its own;
-//! - makes the agents' user ([`AGENT_USER`], no sudo, lingering), whose node and agents never get root;
+//! - makes a fresh `/etc/machine-id`, so a VM copied from boat's image enrolls as a computer of its own (boat makes
+//!   another at every wake, which no hello compares);
+//! - makes the agents' user ([`AGENT_USER`], no sudo), whose node and agents never get root, lingering through a system
+//!   unit that sets it again at every wake: boat boots a wake before it attaches the VM's disk, so logind misses it;
 //! - installs pinned `gh` and sccache (checked against their release checksums), Xvfb, the Claude Code this fleetd was
-//!   tested with in the agents' home (boat's own, which floats, is removed), and Rust in the agents' home;
+//!   tested with in the agents' home (first on the node's PATH, before boat's own, which floats), and Rust with its
+//!   `RUSTUP_HOME` and `CARGO_HOME` in the agents' home (boat's point at a directory the agents can't write);
 //! - joins the hub at its public HTTPS address with the ordinary join line, on the hub's release channel (a stable hub
 //!   pins its exact release; an edge machine starts on the newest edge build, never older than the hub, and its
 //!   catch-up evens it out);
@@ -26,9 +29,10 @@ const TEMPLATE: &str = include_str!("setup.sh");
 pub const TOKEN_FILE: &str = "/tmp/fleetd-enroll-token";
 /// The user the node and its agents run as on a cloud machine, with no sudo.
 pub const AGENT_USER: &str = "fleetd";
-/// Memory per agent on a cloud machine: on `large` (8 vCPUs, 16 GB) that is 2 agents with 4 build jobs each, sized
-/// for builds rather than agents (review S1). The spike's numbers may change it.
-pub const MEM_PER_AGENT_GB: u64 = 5;
+/// Memory per agent on a cloud machine: on `large` (8 vCPUs, 16 GB) that is 3 agents with 2 build jobs each. Measured
+/// on `large`: one build of fleetd peaks at 7.3 GB, so 3 agents and a build fit, and 2, 4 and 8 jobs build it equally
+/// fast.
+pub const MEM_PER_AGENT_GB: u64 = 4;
 /// Warm builds per checkout on a cloud machine: one, so its `target/`s and the sccache fit its disk (review S8).
 pub const WARM_BUILDS: u64 = 1;
 /// `gh`, pinned with its release's checksum (linux amd64: boat machines are x86_64 Ubuntu).

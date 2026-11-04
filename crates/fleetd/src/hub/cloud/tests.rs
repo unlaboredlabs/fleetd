@@ -387,6 +387,66 @@ fn the_setup_script_joins_the_public_hub_on_its_channel_with_every_value_quoted(
     assert!(edge.lines().any(|l| l == "IDENTITY=''"));
 }
 
+/// A wake boots boat's base image before the VM's disk is attached, so logind misses the agents' linger and the node's
+/// user unit never starts (spike): an enabled system unit, which boat starts at every wake, sets it again. Rust goes
+/// to the agents' home, not boat's `/usr/local/rustup`, and boat's own Claude stays where it is.
+#[test]
+fn the_setup_script_lingers_again_at_every_wake_and_keeps_rust_in_the_agents_home() {
+    let script = render(&SetupScript {
+        hub_url: "https://devbox.example.net".into(),
+        machine_id: m("boat-1"),
+        version: "0.4.0".into(),
+        release_build: true,
+        git_identity: None,
+        claude: "2.1.314".into(),
+    });
+    let unit = script
+        .split("/etc/systemd/system/fleetd-linger.service >/dev/null <<EOF\n")
+        .nth(1)
+        .and_then(|rest| rest.split("\nEOF\n").next())
+        .expect("the linger unit");
+    for line in [
+        "After=systemd-logind.service",
+        "Type=oneshot",
+        "ExecStart=/usr/bin/loginctl enable-linger $AGENT",
+        "WantedBy=multi-user.target",
+    ] {
+        assert!(unit.lines().any(|l| l == line), "no {line} in\n{unit}");
+    }
+    assert!(
+        script
+            .lines()
+            .any(|l| l == "sudo systemctl enable --now fleetd-linger.service")
+    );
+    assert!(script.contains("export RUSTUP_HOME=\\$HOME/.rustup CARGO_HOME=\\$HOME/.cargo"));
+    assert!(
+        script.contains("'Environment=RUSTUP_HOME=%h/.rustup' 'Environment=CARGO_HOME=%h/.cargo'")
+    );
+    assert!(!script.contains("command -v -a"), "no Claude removal");
+    if let Ok(out) = std::process::Command::new("bash")
+        .args(["-n", "-c", &script])
+        .output()
+    {
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
+/// A `large` cloud machine (8 vCPUs, 15,991 MiB as measured) runs 3 agents with 2 build jobs each.
+#[test]
+fn a_large_cloud_machine_runs_three_agents_with_two_build_jobs() {
+    use crate::node::load::{agents_fit, build_jobs};
+    let agents = agents_fit(
+        8,
+        Some(15_991 << 20),
+        super::setup::MEM_PER_AGENT_GB * 1_000_000_000,
+    );
+    assert_eq!((agents, build_jobs(8, agents)), (3, 2));
+}
+
 #[test]
 fn cloud_machines_need_the_hubs_public_https_address() {
     let (hub, _home) = hub();

@@ -151,7 +151,7 @@ async fn a_create_goes_out_as_the_sealed_bytes_under_its_idempotency_key() {
         "large",
         "fleetd-3f9a1c2e-boat-1".into(),
         labels,
-        ttl(2700.0),
+        ttl(1800.0),
     );
     body.setup_script = Some("#!/bin/bash\necho hi\n".into());
     body.files = vec![super::boat::File {
@@ -178,7 +178,7 @@ async fn a_create_goes_out_as_the_sealed_bytes_under_its_idempotency_key() {
     assert_eq!(sent["noEnv"], true);
     assert_eq!(sent["monitoring"], false);
     assert_eq!(sent["failFast"], true);
-    assert_eq!(sent["ttlSeconds"], 2700);
+    assert_eq!(sent["ttlSeconds"], 1800);
     assert_eq!(sent["labels"]["fleetd.attempt"], "0123");
     assert_eq!(sent["files"][0]["path"], "/tmp/fleetd-enroll");
     assert!(sent.get("environment").is_none());

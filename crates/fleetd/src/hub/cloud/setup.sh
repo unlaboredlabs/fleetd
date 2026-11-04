@@ -25,10 +25,12 @@ step() {
   STEP=$1
   echo "fleetd cloud setup: $1"
 }
-# A command as the agents' user, with its own tools first on the PATH, which the node's unit keeps.
+# A command as the agents' user, with its own tools first on the PATH, which the node's unit keeps. Rust lives in its
+# home too: boat's /etc/environment points RUSTUP_HOME at /usr/local/rustup, which the agents' user can't write.
 as_agent() {
   sudo -u "$AGENT" -H env XDG_RUNTIME_DIR="/run/user/$AGENT_UID" \
-    bash -c "cd ~ && export PATH=\$HOME/.local/bin:\$HOME/.cargo/bin:\$PATH && $1"
+    bash -c "cd ~ && export RUSTUP_HOME=\$HOME/.rustup CARGO_HOME=\$HOME/.cargo \
+      PATH=\$HOME/.local/bin:\$HOME/.cargo/bin:\$PATH && $1"
 }
 
 step "the enroll token"
@@ -38,6 +40,7 @@ CODE=$(cat "$TOKEN_FILE")
 
 step "a fresh machine id"
 # A VM copied from boat's image may share its machine id with every other copy, and the hub enrolls one computer per id.
+# boat gives the VM a new one at every wake as well; only an enroll compares it, never a hello.
 sudo rm -f /etc/machine-id /var/lib/dbus/machine-id
 sudo systemd-machine-id-setup >/dev/null
 
@@ -45,7 +48,22 @@ step "the agents' user"
 # The agents run as a user of their own with no sudo: root on the VM stays out of their reach.
 id "$AGENT" >/dev/null 2>&1 || sudo useradd -m -s /bin/bash "$AGENT"
 sudo gpasswd -d "$AGENT" sudo >/dev/null 2>&1 || true
-sudo loginctl enable-linger "$AGENT"
+# Lingering starts the node's user unit at boot. boat boots a wake from its base image before it attaches this disk, so
+# logind never sees the linger set here: a system unit, which boat starts at every wake, sets it again.
+sudo tee /etc/systemd/system/fleetd-linger.service >/dev/null <<EOF
+[Unit]
+Description=fleetd: start the node of the agents' user at every wake
+After=systemd-logind.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/loginctl enable-linger $AGENT
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now fleetd-linger.service
 AGENT_UID=$(id -u "$AGENT")
 for _ in $(seq 1 60); do
   [ -S "/run/user/$AGENT_UID/bus" ] && break
@@ -72,11 +90,8 @@ sudo install -m 0755 "$tmp/sccache-v$SCCACHE_VERSION-x86_64-unknown-linux-musl/s
 rm -rf "$tmp"
 
 step "Claude Code $CLAUDE"
-# boat's own claude in /usr/local is updated whenever boat prepares a machine and would come first on the PATH: fleetd
-# runs the one it was tested with, in the agents' home.
-for c in $(command -v -a claude 2>/dev/null || true); do
-  case "$c" in /home/*) ;; *) sudo rm -f "$c" ;; esac
-done
+# fleetd runs the one it was tested with, in the agents' home: the node's PATH puts it before boat's own in /usr/local,
+# which floats and comes back at every wake.
 as_agent "curl -fsSL https://claude.ai/install.sh | bash -s $CLAUDE >/dev/null"
 as_agent "\$HOME/.local/bin/claude --version >/dev/null"
 
@@ -84,12 +99,14 @@ step "Rust"
 # The toolchain lives in the agents' home, so boat's base image moving doesn't make every build cold; a repo's own
 # rust-toolchain.toml picks its version.
 as_agent "command -v ~/.cargo/bin/rustup >/dev/null || curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path --profile minimal >/dev/null"
+as_agent "rustup default stable >/dev/null 2>&1 && [ \"\$(rustup show home)\" = \"\$HOME/.rustup\" ]"
 
 step "the node's environment"
 # Kept on the disk, so builds stay warm across sleeps; `gh` pushes with the order's GH_TOKEN.
 as_agent "mkdir -p ~/fleetd-cache/sccache ~/.config/systemd/user/fleetd-node.service.d"
 as_agent "printf '%s\n' '[Service]' 'Environment=RUSTC_WRAPPER=/usr/local/bin/sccache' \
   'Environment=SCCACHE_DIR=%h/fleetd-cache/sccache' 'Environment=SCCACHE_CACHE_SIZE=15G' \
+  'Environment=RUSTUP_HOME=%h/.rustup' 'Environment=CARGO_HOME=%h/.cargo' \
   'Environment=DISABLE_AUTOUPDATER=1' > ~/.config/systemd/user/fleetd-node.service.d/cloud.conf"
 as_agent "gh auth setup-git"
 
