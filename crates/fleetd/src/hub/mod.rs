@@ -3,6 +3,7 @@ pub mod agents;
 pub mod api;
 pub mod app_ws;
 pub mod approvals;
+pub mod artifacts;
 pub mod attention;
 pub mod auth;
 pub mod automations;

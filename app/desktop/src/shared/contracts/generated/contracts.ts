@@ -361,6 +361,70 @@ export type ApprovalAnswerOutput = {
 /** The human's answer to a `command_approval`. */
 export type ApprovalDecision = "approve" | "deny";
 
+export type KnownArtifactFormat = "md" | "html";
+/** KnownArtifactFormat, or a value from a newer hub. */
+export type ArtifactFormat = KnownArtifactFormat | (string & {});
+
+export type ArtifactGetInput = {
+  name: ArtifactName;
+  projectRef: ProjectRef;
+  version?: number;
+};
+
+export type ArtifactGetOutput = {
+  /** The version read. */
+  artifact: ArtifactVersion;
+  content: string;
+  name: ArtifactName;
+  next?: string;
+  truncated?: boolean;
+  /** Newest first. */
+  versions: ArtifactVersion[];
+};
+
+/** Lowercase letters, digits and single hyphens, at most 64 characters */
+export type ArtifactName = string;
+
+/** A chat line's artifact: one was published (`artifact_publish`). The app shows it as a card that opens it. */
+export type ArtifactPublished = {
+  by: string;
+  format: ArtifactFormat;
+  name: ArtifactName;
+  title: string;
+  version: number;
+};
+
+/** One artifact as the tab lists it: its name and its newest version. */
+export type ArtifactSummary = {
+  name: ArtifactName;
+  newest: ArtifactVersion;
+};
+
+/** One kept version of an artifact, without its content. */
+export type ArtifactVersion = {
+  at: Timestamp;
+  /** Who published it: the lead, a task's title, or a Navi's name. */
+  by: string;
+  /** Its content's size in bytes. */
+  bytes: number;
+  format: ArtifactFormat;
+  title: string;
+  /** 1 for its first, one more for each publish after. */
+  version: number;
+};
+
+export type ArtifactsListInput = {
+  projectRef: ProjectRef;
+};
+
+export type ArtifactsListOutput = {
+  artifacts: ArtifactSummary[];
+  /** Newest first. */
+  files: ChatFile[];
+  next?: string;
+  truncated?: boolean;
+};
+
 /**
  * A question for the human, as buttons: Approve and Deny without `options`, one of `options` with them. The
  * answer is the human's chat reply (`chat_send` with the button's label as its text), so only the human answers
@@ -1139,6 +1203,19 @@ export type ChatDelta = {
   seq: number;
 };
 
+/**
+ * A file sent in the chat, as the Artifacts tab lists it beside the artifacts: one a person attached, or one its lead
+ * or agents showed (`chat_image`, `chat_file`). Its bytes come from `attachment_get`.
+ */
+export type ChatFile = {
+  /** When it was uploaded. */
+  at: Timestamp;
+  attachmentId: AttachmentId;
+  bytes: number;
+  mime: AttachmentMime;
+  name: string;
+};
+
 export type ChatHistoryInput = {
   after?: number;
   before?: number;
@@ -1173,6 +1250,11 @@ export type ChatItem = SecretRequestItem & {
 };
 
 export type ChatMessage = {
+  /**
+   * A system line "Published …": a lead, task or Navi published an artifact (`artifact_publish`); the app shows a
+   * card that opens it.
+   */
+  artifact?: ArtifactPublished;
   attachments?: AttachmentRef[];
   author: ChatAuthor;
   /** The name of the key that wrote it: a person's device for a human message, the agent for an agent's. */
@@ -2780,6 +2862,7 @@ export type KnownHubEventType =
   | "automation.run"
   | "checklist.changed"
   | "skills.changed"
+  | "artifacts.changed"
   | "browser.session"
   | "screen.wait"
   | "people.changed"
@@ -8798,6 +8881,8 @@ export interface ToolMap {
   agent_work: { input: AgentWorkInput; output: AgentWorkOutput };
   agents_list: { input: AgentsListInput; output: AgentsListOutput };
   approval_answer: { input: ApprovalAnswerInput; output: ApprovalAnswerOutput };
+  artifact_get: { input: ArtifactGetInput; output: ArtifactGetOutput };
+  artifacts_list: { input: ArtifactsListInput; output: ArtifactsListOutput };
   attachment_get: { input: AttachmentGetInput; output: AttachmentGetOutput };
   attachment_part: { input: AttachmentPartInput; output: AttachmentPartOutput };
   attachment_put: { input: AttachmentPutInput; output: AttachmentPutOutput };

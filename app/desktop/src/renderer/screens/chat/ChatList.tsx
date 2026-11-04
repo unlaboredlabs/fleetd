@@ -20,6 +20,7 @@ import { KeptWorktrees } from "./KeptWorktrees";
 import { SkillSavedLine } from "./SkillSaved";
 import { useNow, useOnScreen } from "../live";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
+import { ArtifactCard } from "../artifacts/ArtifactCard";
 import { InlineChatItem } from "../inline";
 import { isNavi } from "../settings/integrationsModel";
 import type { ProjectRef } from "./slots";
@@ -227,6 +228,14 @@ const RowView = memo(function RowView(props: {
           <div className={cx(s.quietRow, s.event)} data-entry="event">
             <SkillSavedLine project={project} saved={r.item.message.skillSaved} />
             <span className={s.eventTime}>{shortClock(r.item.at)}</span>
+          </div>
+        );
+      }
+      // A report published in the chat: its card, which opens it in the panel's Artifacts.
+      if (r.item.message?.artifact !== undefined) {
+        return (
+          <div className={s.quietRow} data-entry="event">
+            <ArtifactCard project={project} published={r.item.message.artifact} at={shortClock(r.item.at)} />
           </div>
         );
       }

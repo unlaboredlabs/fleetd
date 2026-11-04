@@ -323,6 +323,8 @@ pub enum LeadCall {
     ChatImage(ChatImageCall),
     /// A lead's or task's file for the chat, read the same way: any type the hub takes.
     ChatFile(ChatFileCall),
+    /// A lead's, task's or Navi's report for its project's chat (hub/artifacts).
+    ArtifactPublish(crate::artifacts::ArtifactPublishCall),
     AutomationCreate(AutomationCreateCall),
     AutomationList(AutomationListCall),
     AutomationUpdate(AutomationUpdateCall),
@@ -548,6 +550,7 @@ pub enum LeadCallResult {
     Nudge(NudgeResult),
     ChatImage(ChatImageResult),
     ChatFile(ChatImageResult),
+    ArtifactPublish(crate::artifacts::ArtifactPublishResult),
     AutomationCreate(AutomationResult),
     AutomationList(AutomationListResult),
     AutomationUpdate(AutomationResult),

@@ -2,6 +2,8 @@
 // its native traffic lights (a page screenshot leaves them out).
 
 import { execFileSync } from "node:child_process";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
@@ -178,5 +180,78 @@ test("the panel's toggle closes the panel it sits over", async () => {
     await expect(page.getByRole("button", { name: "Show the panel" })).toBeVisible();
   } finally {
     await close();
+  }
+});
+
+// An HTML artifact (W367) runs its own scripts and nothing else: in the real app, a page framed as the Artifacts tab
+// frames it (main's fleetd-artifact:// address, sandbox allow-scripts) tries every way out it has: fetch, XHR, an
+// image, a stylesheet, a WebSocket, a beacon, a popup, its own navigation, the app's page, the bridge and storage.
+// A server on this machine counts what reaches it: nothing may. The real chart artifact draws itself meanwhile.
+test("an HTML artifact runs its scripts with no network and no reach into the app", async () => {
+  const hits: string[] = [];
+  const server = createServer((req, res) => {
+    hits.push(req.url ?? "");
+    res.end("ok");
+  });
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  const port = (server.address() as AddressInfo).port;
+  const { page, settled, close } = await launch("artifacts-published");
+  try {
+    await settled();
+    await show(page, "shell", "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22/artifacts/build-times");
+    const chart = page.frameLocator('iframe[sandbox="allow-scripts"]');
+    await expect(chart.locator("rect.bar")).toHaveCount(6);
+
+    const out = `http://127.0.0.1:${String(port)}`;
+    const probe = `<!doctype html><script>
+      const tried = {};
+      const attempt = async (name, fn) => { try { const v = await fn(); tried[name] = v === undefined ? "ran" : String(v); } catch (e) { tried[name] = "refused"; } };
+      (async () => {
+        await attempt("fetch", () => fetch("${out}/fetch").then(() => "reached"));
+        await attempt("xhr", () => new Promise((ok, no) => { const x = new XMLHttpRequest(); x.onload = () => ok("reached"); x.onerror = no; x.open("GET", "${out}/xhr"); x.send(); }));
+        await attempt("image", () => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok("reached"); i.onerror = no; i.src = "${out}/img"; }));
+        await attempt("socket", () => new Promise((ok, no) => { const w = new WebSocket("ws://127.0.0.1:${String(port)}/ws"); w.onopen = () => ok("reached"); w.onerror = no; }));
+        await attempt("beacon", () => navigator.sendBeacon("${out}/beacon", "x") ? "queued" : "refused");
+        await attempt("popup", () => window.open("${out}/popup") === null ? "refused" : "opened");
+        await attempt("parent", () => window.parent.document.title);
+        await attempt("bridge", () => typeof window.fleetd + "/" + typeof window.parent.fleetd);
+        await attempt("storage", () => localStorage.length);
+        await attempt("cookie", () => document.cookie = "a=1");
+        const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "${out}/css"; document.head.appendChild(css);
+        await new Promise((r) => setTimeout(r, 500));
+        parent.postMessage({ probe: tried }, "*");
+        location.href = "${out}/navigate";
+      })();
+    </script>`;
+    const tried = await page.evaluate(async (html) => {
+      // The app's own bridge, as its page uses it (the QA specs don't see the renderer's types).
+      const bridge = (window as unknown as { fleetd: { artifactFrame: (page: string) => Promise<string> } }).fleetd;
+      const url = await bridge.artifactFrame(html);
+      const got = new Promise<Record<string, string>>((done) => window.addEventListener("message", (e: MessageEvent<{ probe?: Record<string, string> }>) => e.data.probe && done(e.data.probe)));
+      const frame = document.createElement("iframe");
+      frame.setAttribute("sandbox", "allow-scripts");
+      frame.src = url;
+      document.body.appendChild(frame);
+      return got;
+    }, probe);
+    // Its scripts ran, and every way out was refused (a beacon queues before the CSP drops it: the server's count says).
+    expect({ ...tried, beacon: "refused" }).toEqual({
+      fetch: "refused",
+      xhr: "refused",
+      image: "refused",
+      socket: "refused",
+      beacon: "refused",
+      popup: "refused",
+      parent: "refused",
+      bridge: "refused",
+      storage: "refused",
+      cookie: "refused",
+    });
+    // Its own navigation away, last, never left either.
+    await page.waitForTimeout(1_000);
+    expect(hits, "requests that reached the network from an artifact").toEqual([]);
+  } finally {
+    await close();
+    server.close();
   }
 });

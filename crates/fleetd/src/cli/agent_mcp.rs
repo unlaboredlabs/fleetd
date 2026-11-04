@@ -8,6 +8,7 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use fleetd_contracts::artifacts::{ARTIFACT_TEXT_CAP, ArtifactFormat, ArtifactPublishCall};
 use fleetd_contracts::automations::{
     AutomationConfirmCall, AutomationCreateCall, AutomationDeleteCall, AutomationListCall,
     AutomationPauseCall, AutomationRunCall, AutomationRunsCall, AutomationUpdateCall,
@@ -471,6 +472,22 @@ static TOOLS: &[Tool] = &[
             inline_schema::<ChatFileCall>,
         )
     },
+    Tool {
+        worker: true,
+        ..lead(
+            "publish_artifact",
+            "artifact_publish",
+            "Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich \
+             for a chat message, such as a sweep's findings or a chart. name is its name in this project (lowercase \
+             words with hyphens: sweep-report); title what the human reads. Give content, or path to a file (relative \
+             to your working directory, or absolute; .html and .htm are html unless format says otherwise). The \
+             chat shows a card that opens it in the Artifacts tab beside it. Publishing the same name again keeps a \
+             new version, older ones stay. Link to it in any chat text as [Title](artifact:name), or to one version \
+             as artifact:name@2. HTML runs sandboxed: its scripts run, but it has no network, so inline any script, \
+             style, font and image (data: URLs).",
+            inline_schema::<ArtifactPublishCall>,
+        )
+    },
     browser(
         "session_start",
         "Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a \
@@ -620,6 +637,33 @@ pub fn call_of(role: Role, name: &str, arguments: Value) -> Result<Value, String
     };
     checked.map_err(|e| format!("Invalid arguments for {name}: {e}."))?;
     Ok(call)
+}
+
+/// A publish with `path` sends the file's text as `content`, read here, in the agent's own session: relative to its
+/// working directory, or absolute. Its format follows the file's extension unless the call names one.
+pub fn read_artifact_path(call: &mut Value, cwd: &Path) -> Result<(), String> {
+    if call["op"] != "artifact_publish" || call["content"].is_string() {
+        return Ok(());
+    }
+    let Some(path) = call["path"].as_str().map(str::to_owned) else {
+        return Err("Give content or path for the artifact.".into());
+    };
+    let file = cwd.join(&path);
+    let bytes = std::fs::read(&file).map_err(|e| format!("Can't read {path}: {e}."))?;
+    let text = String::from_utf8(bytes).map_err(|_| format!("{path} isn't UTF-8 text."))?;
+    if text.is_empty() {
+        return Err(format!("{path} is empty."));
+    }
+    if text.encode_utf16().count() > ARTIFACT_TEXT_CAP {
+        return Err(format!(
+            "{path} is longer than {ARTIFACT_TEXT_CAP} characters: split it, or link large data out."
+        ));
+    }
+    if call["format"].is_null() {
+        call["format"] = serde_json::to_value(ArtifactFormat::of_path(&path)).unwrap_or_default();
+    }
+    call["content"] = text.into();
+    Ok(())
 }
 
 /// A browser call's answer, in words that tell the agent what to do next.
@@ -961,7 +1005,11 @@ pub fn handle(role: Role, message: &Value, deps: &LeadDeps) -> Option<Value> {
         "tools/call" => {
             let name = message["params"]["name"].as_str().unwrap_or_default();
             let arguments = message["params"]["arguments"].clone();
-            match call_of(role, name, arguments) {
+            let call = call_of(role, name, arguments).and_then(|mut call| {
+                let cwd = PathBuf::from(caller_cwd(deps.pwd.as_deref(), &deps.cwd));
+                read_artifact_path(&mut call, &cwd).map(|()| call)
+            });
+            match call {
                 Err(why) => error_result(&why),
                 Ok(call) => match send_call(call, deps) {
                     Ok(answer) if answer.get("result").is_some_and(|r| r.get("op").is_some()) => {
@@ -1091,7 +1139,8 @@ mod tests {
     }
 
     #[test]
-    fn a_worker_sees_only_report_ask_lead_its_brief_ci_decisions_reviews_images_and_browser() {
+    fn a_worker_sees_only_report_ask_lead_its_brief_ci_decisions_reviews_images_artifacts_and_browser()
+     {
         assert_eq!(
             names(Role::Worker),
             [
@@ -1103,6 +1152,7 @@ mod tests {
                 "review_read",
                 "chat_image",
                 "chat_file",
+                "publish_artifact",
                 "session_start",
                 "desktop",
                 "session_end",
@@ -1136,6 +1186,7 @@ mod tests {
             "review_read",
             "chat_image",
             "chat_file",
+            "publish_artifact",
         ] {
             assert!(lead.contains(&tool.to_owned()), "{tool}");
         }
@@ -1145,6 +1196,35 @@ mod tests {
             call_of(Role::Worker, "spawn_agent", json!({})).unwrap_err(),
             "No tool spawn_agent here."
         );
+    }
+
+    #[test]
+    fn a_publish_with_a_path_sends_the_files_text_in_its_format() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("out")).unwrap();
+        std::fs::write(dir.path().join("out/sweep.html"), "<h1>Sweep</h1>").unwrap();
+        let mut call = call_of(
+            Role::Worker,
+            "publish_artifact",
+            json!({ "name": "sweep-report", "title": "Sweep", "path": "out/sweep.html" }),
+        )
+        .unwrap();
+        read_artifact_path(&mut call, dir.path()).unwrap();
+        assert_eq!(call["content"], "<h1>Sweep</h1>");
+        assert_eq!(call["format"], "html");
+        assert!(serde_json::from_value::<LeadCall>(call).is_ok());
+        // A format the call names wins over the extension.
+        let mut md = json!({ "op": "artifact_publish", "name": "a", "title": "A", "format": "md", "path": "out/sweep.html" });
+        read_artifact_path(&mut md, dir.path()).unwrap();
+        assert_eq!(md["format"], "md");
+        let mut missing =
+            json!({ "op": "artifact_publish", "name": "a", "title": "A", "path": "nope.md" });
+        let why = read_artifact_path(&mut missing, dir.path()).unwrap_err();
+        assert!(why.starts_with("Can't read nope.md"), "{why}");
+        // Other calls pass through untouched.
+        let mut other = json!({ "op": "chat_image", "path": "nope.png" });
+        read_artifact_path(&mut other, dir.path()).unwrap();
+        assert_eq!(other, json!({ "op": "chat_image", "path": "nope.png" }));
     }
 
     #[test]
