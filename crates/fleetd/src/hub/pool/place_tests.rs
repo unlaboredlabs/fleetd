@@ -113,3 +113,50 @@ async fn only_an_opted_in_projects_reviews_and_readers_may_go_to_a_cloud_machine
         ))
     );
 }
+
+/// A clone's token comes from the hub's App only for a github.com repo.
+#[test]
+fn only_a_github_repo_asks_the_app_for_a_clone_token() {
+    use super::place::github_repo;
+    assert_eq!(github_repo("github.com/acme/shop"), Some("acme/shop"));
+    assert_eq!(github_repo("gitlab.example.com/acme/shop"), None);
+    assert_eq!(github_repo("github.com/acme"), None);
+}
+
+/// A clone that fails on a machine isn't tried there again until its backoff is over (10 minutes, doubling up to 6
+/// hours), and says why meanwhile; it clears once one goes through. So a repo that can't clone never loops.
+#[test]
+fn a_failed_clone_backs_off_and_says_why() {
+    use super::place::{CLONE_BACKOFF_MS, Cloning};
+    let cloning = Cloning::default();
+    let (boat, app) = (MachineId::unchecked("boat-1"), project("app"));
+    let t0 = 1_793_786_400_000; // 10:00 UTC
+    assert!(cloning.due(&boat, &app, t0));
+    let refused = Err("git clone failed: Repository not found".to_owned());
+    cloning.settled(&boat, &app, &refused, t0);
+    assert!(!cloning.due(&boat, &app, t0 + CLONE_BACKOFF_MS - 1));
+    assert!(
+        cloning.due(&MachineId::unchecked("boat-2"), &app, t0),
+        "another machine may try"
+    );
+    assert_eq!(
+        cloning.failed_anywhere(&app, t0).as_deref(),
+        Some(
+            "its repo didn't clone on boat-1, a cloud machine (git clone failed: Repository not found); tried again \
+             at 10:10 UTC"
+        )
+    );
+    assert_eq!(cloning.failed_anywhere(&project("other"), t0), None);
+    let later = t0 + CLONE_BACKOFF_MS;
+    assert!(cloning.due(&boat, &app, later));
+    assert_eq!(cloning.failed_anywhere(&app, later), None);
+    cloning.settled(&boat, &app, &refused, later);
+    assert!(
+        !cloning.due(&boat, &app, later + 2 * CLONE_BACKOFF_MS - 1),
+        "doubled"
+    );
+    assert!(cloning.due(&boat, &app, later + 2 * CLONE_BACKOFF_MS));
+    cloning.settled(&boat, &app, &Ok(()), later + 2 * CLONE_BACKOFF_MS);
+    assert!(cloning.due(&boat, &app, later + 2 * CLONE_BACKOFF_MS));
+    assert_eq!(cloning.failed_anywhere(&app, later), None);
+}

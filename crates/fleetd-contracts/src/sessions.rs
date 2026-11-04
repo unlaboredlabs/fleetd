@@ -461,6 +461,11 @@ pub enum SessionCall {
         add_id: NonEmpty,
         url: NonEmpty,
         dest: NonEmpty,
+        /// A GitHub token for the clone, sealed to this node's `boxPubKey`: a cloud machine's clone of a private repo
+        /// (D306). The clone is then marked so its later fetches use the newest token an order's launch there
+        /// brings. Never written to the repo's config.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token: Option<crate::secrets::SealedSecret>,
     },
     /// Make the folder at `path` for a new project: absolute, or `~/x` under the user's home. Missing folders are
     /// made, an empty one is taken as it is, and one holding anything is refused ([`FOLDER_NOT_EMPTY`]). `gitInit` runs

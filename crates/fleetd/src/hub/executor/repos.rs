@@ -147,13 +147,15 @@ impl Executors {
         CloneRun { add_id, progress }
     }
 
-    /// Clones on the node; its progress frames go to the run's receiver until this returns.
+    /// Clones on the node; its progress frames go to the run's receiver until this returns. `token`: a GitHub token
+    /// sealed to the node's box key, for a cloud machine's clone of a private repo.
     pub async fn repo_clone(
         &self,
         machine_id: &MachineId,
         add_id: &str,
         url: &str,
         dest: &str,
+        token: Option<fleetd_contracts::secrets::SealedSecret>,
     ) -> Result<RepoFacts, ExecutorError> {
         let op = NodeOperation::Project;
         let call = (|| {
@@ -161,6 +163,7 @@ impl Executors {
                 add_id: non_empty(machine_id, op, "add id", add_id)?,
                 url: non_empty(machine_id, op, "url", url)?,
                 dest: non_empty(machine_id, op, "destination", dest)?,
+                token,
             })
         })();
         let result = match call {

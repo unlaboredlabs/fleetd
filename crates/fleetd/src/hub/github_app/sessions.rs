@@ -23,7 +23,7 @@ use std::sync::Arc;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::github_app::{GITHUB_CONNECT_REFUSAL, GITHUB_TOKEN_ENV};
-use fleetd_contracts::ids::{ProjectRef, Timestamp};
+use fleetd_contracts::ids::{MachineId, ProjectRef, Timestamp};
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::node_link::{CAP_ORDER_ENV, SecretDeliver};
 use fleetd_contracts::people::PersonId;
@@ -565,18 +565,8 @@ pub async fn withdraw_all(hub: &Hub) {
 }
 
 /// Seals `token` to the checkout machine's box key and has its node keep it as the order's `GH_TOKEN` there.
-async fn put(
-    hub: &Hub,
-    r: &ProjectRef,
-    order: &WorkstreamId,
-    token: &Zeroizing<String>,
-) -> Result<(), String> {
-    let m = &r.machine_id;
-    if !hub.link.node_can(m, CAP_ORDER_ENV) {
-        return Err(format!(
-            "{m}'s node is too old to hand agents a GitHub token: update fleetd there"
-        ));
-    }
+/// `token` sealed to machine `m`'s box key, standard base64: only its node opens it.
+pub fn sealed_to(hub: &Hub, m: &MachineId, token: &str) -> Result<String, String> {
     let key = hub
         .store
         .machine_get(m)
@@ -591,10 +581,25 @@ async fn put(
     let sealed = crypto_box::PublicKey::from(public)
         .seal(&mut crypto_box::aead::OsRng, token.as_bytes())
         .map_err(|_| "sealing failed".to_owned())?;
+    Ok(B64.encode(sealed))
+}
+
+async fn put(
+    hub: &Hub,
+    r: &ProjectRef,
+    order: &WorkstreamId,
+    token: &Zeroizing<String>,
+) -> Result<(), String> {
+    let m = &r.machine_id;
+    if !hub.link.node_can(m, CAP_ORDER_ENV) {
+        return Err(format!(
+            "{m}'s node is too old to hand agents a GitHub token: update fleetd there"
+        ));
+    }
     let frame: SecretDeliver = serde_json::from_value(serde_json::json!({
         "id": "github",
         "sink": format!("order:{m}:{order}"),
-        "sealed": B64.encode(sealed),
+        "sealed": sealed_to(hub, m, token)?,
         "secretKey": "github.token",
         "envName": GITHUB_TOKEN_ENV,
         "projectId": r.project_id,

@@ -1131,13 +1131,15 @@ impl Tasks {
                 }
             }
             Placed::Full(reason) => {
-                let why = match (room.eligible, room.closed, room.cloning) {
-                    (Err(why), _, _) => why,
-                    (Ok(()), Some(closed), _) => Some(closed),
-                    (Ok(()), None, Some(m)) => {
+                let why = match (room.eligible, room.closed, room.cloning, room.clone_failed) {
+                    (Err(why), _, _, _) => why,
+                    (Ok(()), Some(closed), _, _) => Some(closed),
+                    (Ok(()), None, Some(m), _) => {
                         Some(format!("cloning its repo on {m}, a cloud machine"))
                     }
-                    (Ok(()), None, None) => Some(match self.d.ports.cloud_wake(None) {
+                    // No machine wakes for a repo that can't clone, until its backoff is over.
+                    (Ok(()), None, None, Some(failed)) => Some(failed),
+                    (Ok(()), None, None, None) => Some(match self.d.ports.cloud_wake(None) {
                         Ok(m) => {
                             if !self.d.ports.is_connected(&m) {
                                 self.retry_when_live(&m);
@@ -5260,6 +5262,7 @@ mod tests {
             eligible: Ok(()),
             awake: awake.iter().map(|n| boat(*n)).collect(),
             cloning: None,
+            clone_failed: None,
             closed: None,
         }
     }
@@ -5504,5 +5507,27 @@ mod tests {
             tasks.get(&cloud.task_id).unwrap().unwrap().state,
             TaskState::Queued
         );
+    }
+
+    /// A repo that didn't clone on a cloud machine waits out its backoff: the line says so, and no machine wakes for it.
+    #[tokio::test]
+    async fn a_repo_that_didnt_clone_wakes_no_machine_and_says_why() {
+        let failed = "its repo didn't clone on boat-1, a cloud machine (git clone failed: Repository not found); \
+                      tried again at 10:10 UTC";
+        let (tasks, node) = cloud_tasks(crate::hub::pool::place::Room {
+            clone_failed: Some(failed.into()),
+            ..room(&[])
+        });
+        *node.wake_answer.lock().unwrap() = Some(Ok("boat-2".into()));
+        tasks.spawn(&lead(), reader(0)).await.unwrap();
+        let waiting = tasks.spawn(&lead(), reader(1)).await.unwrap();
+        assert_eq!(
+            waiting.queued_reason.unwrap().as_str(),
+            js_prefix(
+                &format!("machine cap: 1 of 1 running on lab-a (set); {failed}"),
+                200
+            )
+        );
+        assert!(node.wakes_asked.lock().unwrap().is_empty());
     }
 }
