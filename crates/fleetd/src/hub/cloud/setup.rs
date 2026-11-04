@@ -9,6 +9,8 @@
 //! - installs pinned `gh` and sccache (checked against their release checksums), Xvfb, the Claude Code this fleetd was
 //!   tested with in the agents' home (first on the node's PATH, before boat's own, which floats), and Rust with its
 //!   `RUSTUP_HOME` and `CARGO_HOME` in the agents' home (boat's point at a directory the agents can't write);
+//! - has sshd drop a client silent for 45 s, again at every wake through a system unit, so an unclean drop of the hub's
+//!   tunnel frees its port for the hub's redial;
 //! - waits for the hub's tunnel (hub/pool/tunnel: the hub dials the machine and forwards its loopback port to itself),
 //!   then joins the hub through it with the ordinary join line, on the hub's release channel (a stable hub pins its
 //!   exact release; an edge machine starts on the newest edge build, never older than the hub, and its catch-up evens

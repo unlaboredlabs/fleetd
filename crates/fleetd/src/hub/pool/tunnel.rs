@@ -14,7 +14,10 @@
 //! - **What it carries**: only connections to the forward the hub asked for, each to the hub's listen address whatever
 //!   the machine names. It never asks for a shell, a command, agent or X11 forwarding, and refuses every other channel.
 //! - **Its life**: opened at the wake or create, before the node needs it; redialled with backoff (1 s doubling to
-//!   30 s) for as long as the machine should be up; closed when it sleeps or is deleted. A tunnel that can't come up
+//!   30 s) for as long as the machine should be up; closed when it sleeps or is deleted. After an unclean drop (the
+//!   hub's network gone, no FIN) the machine's old session would hold the forward's port, and each redial's forward
+//!   would be refused; the machine's sshd drops a client silent for 45 s (hub/cloud/setup.sh sets it at every wake),
+//!   which frees the port, and the next redial takes it. A tunnel that can't come up
 //!   leaves the node silent, and the wake's own timeout ([`super::HELLO_MS`]) counts it as a failed wake, with the
 //!   tunnel's last error as the slot's note.
 use std::collections::HashMap;
@@ -36,9 +39,26 @@ use super::ledger::Ledger;
 pub const MACHINE_PORT: u16 = 47900;
 /// Each step of a dial: the TCP connect and handshake, the key, the forward.
 const STEP: Duration = Duration::from_secs(20);
-/// A silent connection is found dead after 3 keepalives unanswered, 15 s apart. boat's sshd sends none of its own
-/// (`ClientAliveInterval 0`), so the hub's are what find a drop.
-const KEEPALIVE: Duration = Duration::from_secs(15);
+/// How long a tunnel waits and listens.
+#[derive(Clone, Copy, Debug)]
+pub struct Timing {
+    /// The first wait after a drop, doubled up to `longest`.
+    pub shortest: Duration,
+    pub longest: Duration,
+    /// A silent connection is found dead after 3 keepalives unanswered this far apart. boat's own sshd sends none
+    /// (`ClientAliveInterval 0`), so the hub's are what find a drop.
+    pub keepalive: Duration,
+}
+
+impl Default for Timing {
+    fn default() -> Timing {
+        Timing {
+            shortest: Duration::from_secs(1),
+            longest: Duration::from_secs(30),
+            keepalive: Duration::from_secs(15),
+        }
+    }
+}
 /// A tunnel that held this long redials from the shortest wait again.
 const HELD_LONG: Duration = Duration::from_secs(60);
 
@@ -118,9 +138,7 @@ struct Dial {
     key: KeySource,
     /// The hub's listen address: where every forwarded connection goes.
     hub: (String, u16),
-    /// The first wait after a drop, doubled up to `longest`.
-    shortest: Duration,
-    longest: Duration,
+    timing: Timing,
 }
 
 struct Held {
@@ -142,29 +160,21 @@ pub fn hub_target(listen: &crate::hub::api::Listen) -> (String, u16) {
 
 impl SshTunnels {
     pub fn new(boat: Arc<dyn Boat>, key: KeySource, hub: (String, u16)) -> SshTunnels {
-        SshTunnels::with_backoff(
-            boat,
-            key,
-            hub,
-            Duration::from_secs(1),
-            Duration::from_secs(30),
-        )
+        SshTunnels::with_timing(boat, key, hub, Timing::default())
     }
 
-    pub fn with_backoff(
+    pub fn with_timing(
         boat: Arc<dyn Boat>,
         key: KeySource,
         hub: (String, u16),
-        shortest: Duration,
-        longest: Duration,
+        timing: Timing,
     ) -> SshTunnels {
         SshTunnels {
             dial: Arc::new(Dial {
                 boat,
                 key,
                 hub,
-                shortest,
-                longest,
+                timing,
             }),
             held: Mutex::default(),
         }
@@ -219,7 +229,7 @@ async fn hold(
     status: Arc<Mutex<Tunnel>>,
     mut stop: oneshot::Receiver<()>,
 ) {
-    let mut wait = dial.shortest;
+    let mut wait = dial.timing.shortest;
     loop {
         let began = Instant::now();
         let why = match dial.session(&sandbox, &status, &mut stop).await {
@@ -237,13 +247,13 @@ async fn hold(
         }
         *status.lock().unwrap() = Tunnel::Down(why);
         if began.elapsed() >= HELD_LONG {
-            wait = dial.shortest;
+            wait = dial.timing.shortest;
         }
         tokio::select! {
             () = tokio::time::sleep(wait) => {}
             _ = &mut stop => return,
         }
-        wait = (wait * 2).min(dial.longest);
+        wait = (wait * 2).min(dial.timing.longest);
     }
 }
 
@@ -297,7 +307,7 @@ impl Dial {
             _alive: alive,
         };
         let config = Arc::new(client::Config {
-            keepalive_interval: Some(KEEPALIVE),
+            keepalive_interval: Some(self.timing.keepalive),
             keepalive_max: 3,
             nodelay: true,
             ..Default::default()
