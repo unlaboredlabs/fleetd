@@ -174,11 +174,14 @@ fn has_gh() -> bool {
 }
 
 /// Clones `url` into `dest` with git, through gh's credentials when gh is installed (so private repos work wherever
-/// `gh auth login` was run). Never prompts. The error is git's own last line.
+/// `gh auth login` was run), or with `token` when given (a cloud machine's clone, D306): the clone is then marked so
+/// its later fetches use the newest token an order's launch brings (`worktree::TOKEN_MARK`). Never prompts. The error
+/// is git's own last line.
 pub async fn clone(
     url: &str,
     dest: &Path,
     add_id: &str,
+    token: Option<&str>,
     progress: impl FnMut(Progress) + Send,
 ) -> Result<(), String> {
     if dest.exists() {
@@ -197,11 +200,21 @@ pub async fn clone(
         .collect();
     let partial = PathBuf::from(format!("{}{PARTIAL}{id}", dest.display()));
     let _ = std::fs::remove_dir_all(&partial);
-    let result = git_clone(url, &partial, progress).await;
+    let result = git_clone(url, &partial, token, progress).await;
     let result = result.and_then(|()| {
+        if token.is_some() {
+            crate::node::worktree::git(
+                &partial,
+                &["config", crate::node::worktree::TOKEN_MARK, "true"],
+            )
+            .map_err(|e| format!("cannot mark the clone: {e}"))?;
+        }
         std::fs::rename(&partial, dest)
             .map_err(|e| format!("cannot move the clone into {}: {e}", dest.display()))
     });
+    if let (Ok(()), Some(token)) = (&result, token) {
+        crate::node::worktree::use_token(dest, token);
+    }
     if result.is_err() {
         let _ = std::fs::remove_dir_all(&partial);
     }
@@ -243,10 +256,13 @@ pub fn remove_partials(home: &Path) -> usize {
 async fn git_clone(
     url: &str,
     dest: &Path,
+    token: Option<&str>,
     mut progress: impl FnMut(Progress) + Send,
 ) -> Result<(), String> {
     let mut cmd = tokio::process::Command::new("git");
-    if has_gh() {
+    if let Some(token) = token {
+        crate::node::worktree::with_token(&mut cmd, token);
+    } else if has_gh() {
         cmd.args([
             "-c",
             "credential.https://github.com.helper=!gh auth git-credential",
@@ -478,16 +494,42 @@ mod tests {
         crate::node::worktree::tests::run(&origin, &["commit", "-q", "-m", "ci"]);
         let dest = dir.path().join("src/storefront");
         let url = format!("file://{}", origin.display());
-        clone(&url, &dest, "a1", |_| {}).await.unwrap();
+        clone(&url, &dest, "a1", None, |_| {}).await.unwrap();
         assert!(!dir.path().join("src/storefront.fleetd-partial-a1").exists());
         let facts = inspect(&dest);
         assert!(facts.is_git);
         assert_eq!(facts.remote.as_deref(), Some(url.as_str()));
         assert_eq!(facts.workflow_files, vec!["ci.yml".to_owned()]);
         assert!(facts.default_branch.is_some());
-        let again = clone(&url, &dest, "a2", |_| {}).await.unwrap_err();
+        let again = clone(&url, &dest, "a2", None, |_| {}).await.unwrap_err();
         assert!(again.contains("already exists"), "{again}");
         assert!(!inspect(&dir.path().join("missing")).exists);
+    }
+
+    /// A clone made with a token (a cloud machine's, D306) is marked, so its later fetches use its orders' tokens;
+    /// one without stays on the machine's own login. The token is never written into it.
+    #[tokio::test]
+    async fn a_clone_with_a_token_is_marked_and_keeps_no_token() {
+        use crate::node::worktree::{TOKEN_MARK, git};
+        let dir = tempfile::tempdir().unwrap();
+        let origin = crate::node::worktree::tests::repo(dir.path());
+        let url = format!("file://{}", origin.display());
+        let with = dir.path().join("src/with");
+        clone(&url, &with, "t1", Some("ghs_clone"), |_| {})
+            .await
+            .unwrap();
+        assert_eq!(
+            git(&with, &["config", "--get", TOKEN_MARK]).unwrap().trim(),
+            "true"
+        );
+        let config = std::fs::read_to_string(with.join(".git/config")).unwrap();
+        assert!(
+            !config.contains("ghs_clone") && !config.contains("extraheader"),
+            "{config}"
+        );
+        let without = dir.path().join("src/without");
+        clone(&url, &without, "t2", None, |_| {}).await.unwrap();
+        assert!(git(&without, &["config", "--get", TOKEN_MARK]).is_err());
     }
 
     #[tokio::test]
@@ -496,7 +538,7 @@ mod tests {
         let dest = home.path().join("src/storefront");
         // A failed clone leaves neither the destination nor its partial behind.
         let bad = format!("file://{}/nope", home.path().display());
-        assert!(clone(&bad, &dest, "b1", |_| {}).await.is_err());
+        assert!(clone(&bad, &dest, "b1", None, |_| {}).await.is_err());
         assert!(!dest.exists());
         assert!(
             !home

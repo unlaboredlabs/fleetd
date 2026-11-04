@@ -68,6 +68,7 @@ fn acquire(hub: &Hub, task: &Task) -> bool {
             holder: task.task_id.as_str(),
             project_ref: &task.project_ref,
             priority: SlotPriority::Work,
+            on: None,
         })
         .unwrap()
         .granted()
@@ -799,6 +800,7 @@ async fn idle_minutes_count_from_the_last_slot_taken_or_freed() {
                 ..project()
             },
             priority: SlotPriority::Work,
+            on: None,
         })
         .unwrap();
     assert_eq!(idle(), 11, "another project's start");

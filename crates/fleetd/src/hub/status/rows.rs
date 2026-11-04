@@ -485,6 +485,7 @@ mod tests {
                     holder: &holder,
                     project_ref: &r,
                     priority,
+                    on: None,
                 })
                 .unwrap();
             assert!(grant.granted());

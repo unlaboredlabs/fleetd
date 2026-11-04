@@ -211,6 +211,19 @@ pub async fn route(
         }
         None => place(&origin, call.host, &all, remote)?,
     };
+    // A cloud machine is claimed before anything starts there, so its idle stop never cuts in (D306).
+    if runner != origin
+        && all
+            .iter()
+            .any(|r| r.machine_id == runner && r.cloud.is_some())
+        && !hub.pool.claim(runner.as_str())
+    {
+        return Err(McpToolError::new(
+            ErrorCode::Failed,
+            format!("{runner} can't take this session any more."),
+        )
+        .with_fix("call session_start again"));
+    }
     if runner != origin && call.sealed.is_none() {
         // The first step: nothing starts until the agent's node seals the session's secrets to the runner.
         let key = hub

@@ -87,6 +87,7 @@ fn acquire(hub: &Hub, n: i64) -> Grant {
             holder: &format!("T{n}"),
             project_ref: &project(),
             priority: SlotPriority::Work,
+            on: None,
         })
         .unwrap()
 }

@@ -1316,3 +1316,110 @@ async fn the_machines_at_once_hold_lifts_when_boat_has_room() {
     assert_eq!(w.pool.start_held(), None);
     w.pool.wake("boat-1", Why::Need).await.unwrap();
 }
+
+/// Waits for the wakes placement spawned to come back from boat.
+async fn wakes_back(w: &World) {
+    for _ in 0..200 {
+        if w.pool.waking.lock().unwrap().is_empty() {
+            return;
+        }
+        tokio::task::yield_now().await;
+    }
+    panic!("a wake for work never came back");
+}
+
+/// Placement's wakes (D306): one machine at a time, the first asleep in slot order, and another only once that one is
+/// awake (and so, when placement asks, full); a follow-up wakes its own machine whatever else is waking.
+#[tokio::test]
+async fn placement_wakes_one_machine_at_a_time_and_a_follow_up_its_own() {
+    let w = World::new().await;
+    for slot in ["boat-1", "boat-2", "boat-3"] {
+        w.asleep(slot).await;
+    }
+    w.advance(MIN);
+    assert_eq!(
+        w.pool.closed().as_deref(),
+        Some("cloud machines wait for the hub's first check of boat.dev")
+    );
+    w.pool
+        .ready
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(w.pool.closed(), None);
+    assert!(w.pool.awake().is_empty());
+    assert_eq!(w.pool.wake_for_work(None).unwrap(), "boat-1");
+    assert_eq!(
+        w.pool.wake_for_work(None).unwrap(),
+        "boat-1",
+        "one at a time"
+    );
+    wakes_back(&w).await;
+    assert_eq!(w.state("boat-1"), State::Waking);
+    assert_eq!(w.pool.wake_for_work(None).unwrap(), "boat-1");
+    assert_eq!(w.boat.calls_like("resume").len(), 1);
+    assert_eq!(w.pool.wake_for_work(Some("boat-3")).unwrap(), "boat-3");
+    wakes_back(&w).await;
+    assert_eq!(w.state("boat-3"), State::Waking);
+    w.advance(MIN);
+    w.hello("boat-1", Some(true));
+    w.hello("boat-3", Some(true));
+    w.tick().await;
+    assert_eq!(w.pool.awake(), ["boat-1", "boat-3"]);
+    assert_eq!(w.pool.wake_for_work(None).unwrap(), "boat-2");
+    wakes_back(&w).await;
+    assert_eq!(w.boat.calls_like("resume").len(), 3);
+    // An awake machine is its follow-ups' at once; a broken one never wakes.
+    assert_eq!(w.pool.wake_for_work(Some("boat-1")).unwrap(), "boat-1");
+    assert_eq!(w.boat.calls_like("resume").len(), 3);
+    let mut row = w.pool.ledger.slot("boat-2").unwrap().unwrap();
+    row.state = State::Broken;
+    w.pool.ledger.put(&row).unwrap();
+    assert_eq!(
+        w.pool.wake_for_work(Some("boat-2")).unwrap_err(),
+        "boat-2 doesn't come back: Reset it in Settings › Cloud"
+    );
+}
+
+/// No machine wakes for work past fleetd's start budget or the money budget, each with its one line; a spent budget
+/// also keeps new work off a machine that is awake.
+#[tokio::test]
+async fn no_machine_wakes_for_work_past_the_start_budget_or_the_money_budget() {
+    let w = World::new().await;
+    w.boat.s.lock().unwrap().limits.start_limits = Some(StartLimits {
+        per_minute: 4,
+        per_hour: 60,
+        per_day: 200,
+    });
+    w.asleep("boat-1").await;
+    w.awake("boat-2").await; // 2 starts: the minute's 2 are used
+    w.pool
+        .ready
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(w.pool.awake(), ["boat-2"]);
+    let held = w.pool.wake_for_work(None).unwrap_err();
+    assert!(
+        held.starts_with("fleetd's boat.dev start budget is used (2 of 2 this minute)"),
+        "{held}"
+    );
+    assert_eq!(w.pool.closed(), None, "an awake machine still takes work");
+    w.pool
+        .ledger
+        .change_settings(&SettingsChange {
+            enabled: true,
+            pool_size: 3,
+            machine_type: "large".into(),
+            day_budget: 0.0,
+            month_budget: None,
+            projects: Vec::new(),
+            environment: None,
+        })
+        .unwrap();
+    w.advance(MIN);
+    let spent = w.pool.wake_for_work(None).unwrap_err();
+    assert!(
+        spent.starts_with("cloud paused: today's boat.dev budget ($0.00) is spent"),
+        "{spent}"
+    );
+    assert_eq!(w.pool.closed(), Some(spent));
+    wakes_back(&w).await;
+    assert!(w.boat.calls_like("resume").is_empty());
+}

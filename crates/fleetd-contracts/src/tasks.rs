@@ -115,6 +115,10 @@ pub struct Task {
     /// Why it is queued, e.g. "fleet cap: 40 of 40 running".
     pub queued_reason: Option<Text<1, 200>>,
     pub thread_ref: Option<ThreadRef>,
+    /// The cloud machine it runs on (D306): placed there because its project's own machine was at its agent limit.
+    /// Every later turn of it runs there too, where its worktree is. Absent for a task on its project's own machine.
+    #[serde(default)]
+    pub ran_on: Option<MachineId>,
     /// The threads it ran in before `threadRef`, oldest first: fleetd restarted it fresh (its context filled up, or its
     /// thread could not resume), on the same branch and worktree.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

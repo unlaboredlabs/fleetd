@@ -102,10 +102,32 @@ impl ClaimState {
 pub struct Claim {
     pub holder: String,
     pub project_ref: ProjectRef,
+    /// The cloud machine it runs on (D306); None: its project's own machine.
+    pub on: Option<MachineId>,
     pub priority: SlotPriority,
     pub thread_id: Option<ThreadId>,
     pub state: ClaimState,
     pub order: i64,
+}
+
+impl Claim {
+    /// The machine whose cap it counts against: where it runs.
+    pub fn machine(&self) -> &MachineId {
+        self.on.as_ref().unwrap_or(&self.project_ref.machine_id)
+    }
+}
+
+/// Where [`Board::place`] put a new task (D306).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Placed {
+    /// A slot: on its project's own machine (None), or on that cloud machine.
+    Granted(Option<MachineId>),
+    /// Its own machine is at its agent limit (its cap, or no disk room) and no cloud machine it may use has room; the
+    /// reason is its own machine's.
+    Full(String),
+    /// Something else holds it back (the fleet cap, its project's max agents, a machine that runs no agents): no cloud
+    /// machine would help.
+    Queued(String),
 }
 
 /// A write the service persists, in order.
@@ -173,6 +195,16 @@ pub enum MaxSource {
 enum Limit {
     Fleet,
     Machine,
+    Project,
+}
+
+/// What holds a task back from a machine, in the order [`Board::blocker`] checks.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Block {
+    Fleet,
+    NoAgents,
+    Machine,
+    Disk,
     Project,
 }
 
@@ -426,57 +458,85 @@ impl Board {
         }
     }
 
-    /// Slots held fleet-wide, on the project's machine, and by the project's agents.
-    fn held(&self, r: &ProjectRef) -> (i64, i64, i64) {
+    /// Slots held fleet-wide, on machine `m`, and by the project's agents toward its max agents there
+    /// ([`Board::counted`]).
+    fn held(&self, r: &ProjectRef, m: &MachineId) -> (i64, i64, i64) {
         let held = self.claims.iter().filter(|c| c.state == ClaimState::Held);
         held.fold((0, 0, 0), |(used, machine, mine), c| {
             (
                 used + 1,
-                machine + i64::from(c.project_ref.machine_id == r.machine_id),
-                mine + i64::from(same(&c.project_ref, r)),
+                machine + i64::from(c.machine() == m),
+                mine + i64::from(self.counted(r, m, c)),
             )
         })
     }
 
-    /// Why a task of the project cannot take a slot now, or `None` if it can. `fresh`: it would start a new agent
-    /// (no thread yet), which disk room limits; a paused agent continues in the worktree it has.
-    fn blocker(&self, r: &ProjectRef, fresh: bool) -> Option<String> {
-        let (used, on_machine, running) = self.held(r);
-        let m = &r.machine_id;
-        let (machine_cap, max) = (self.machine_cap(m), self.max_agents_of(r));
-        let name = self.machine(m).map_or(m.as_str(), |x| x.name.as_str());
-        if let Some(cap) = self.cap
-            && used >= cap
-        {
-            Some(format!("fleet cap: {used} of {cap} running"))
+    /// Whether claim `c` counts toward the project's max agents for a slot on machine `m`: a max a person set counts
+    /// its agents on every machine, cloud machines too; the default (its own machine's cap) only those on the machine
+    /// the slot is on, so a cloud machine adds to it and never takes from it (D306).
+    fn counted(&self, r: &ProjectRef, m: &MachineId, c: &Claim) -> bool {
+        same(&c.project_ref, r) && (self.own_max(r).is_some() || c.machine() == m)
+    }
+
+    /// The project's max agents for a slot on machine `m`: its own if a person set one, else its own machine's
+    /// default there and the cloud machine's cap on a cloud machine.
+    fn max_on(&self, r: &ProjectRef, m: &MachineId) -> i64 {
+        match self.own_max(r) {
+            Some(n) => n,
+            None if *m == r.machine_id => self.default_max(m),
+            None => self.machine_cap(m),
+        }
+    }
+
+    /// What holds a task of the project back from a slot on machine `m` now, if anything. `fresh`: it would start a
+    /// new agent (no thread yet), which disk room limits; a paused agent continues in the worktree it has.
+    fn block(&self, r: &ProjectRef, m: &MachineId, fresh: bool) -> Option<Block> {
+        let (used, on_machine, running) = self.held(r, m);
+        if self.cap.is_some_and(|cap| used >= cap) {
+            Some(Block::Fleet)
         } else if !self.runs_agents(m) {
-            Some(format!(
-                "{name} runs no agents: its role is screens only (a hub admin changes it in Settings › Hub › Machines)"
-            ))
-        } else if on_machine >= machine_cap {
-            let why = self.machine(m).map_or(sizing::UNMEASURED_WHY, Machine::why);
-            Some(format!(
-                "machine cap: {on_machine} of {machine_cap} running on {name} ({why})"
-            ))
+            Some(Block::NoAgents)
+        } else if on_machine >= self.machine_cap(m) {
+            Some(Block::Machine)
         } else if fresh && self.disk_room(m) == Some(0) {
-            Some(format!(
-                "disk: no room for another agent on {name} until the new worktrees settle or space frees"
-            ))
-        } else if running >= max {
-            Some(format!("Max agents: {running} of {max} running"))
+            Some(Block::Disk)
+        } else if running >= self.max_on(r, m) {
+            Some(Block::Project)
         } else {
             None
         }
     }
 
-    /// The narrowest limit the project's tasks wait behind now, if any.
-    fn limit(&self, r: &ProjectRef) -> Option<Limit> {
-        let (used, on_machine, running) = self.held(r);
-        if running >= self.max_agents_of(r) {
+    /// Why a task of the project cannot take a slot on machine `m` now, or `None` if it can.
+    fn blocker(&self, r: &ProjectRef, m: &MachineId, fresh: bool) -> Option<String> {
+        let block = self.block(r, m, fresh)?;
+        let (used, on_machine, running) = self.held(r, m);
+        let name = self.machine(m).map_or(m.as_str(), |x| x.name.as_str());
+        Some(match block {
+            Block::Fleet => format!("fleet cap: {used} of {} running", self.cap.unwrap_or(0)),
+            Block::NoAgents => format!(
+                "{name} runs no agents: its role is screens only (a hub admin changes it in Settings › Hub › Machines)"
+            ),
+            Block::Machine => {
+                let why = self.machine(m).map_or(sizing::UNMEASURED_WHY, Machine::why);
+                format!(
+                    "machine cap: {on_machine} of {} running on {name} ({why})",
+                    self.machine_cap(m)
+                )
+            }
+            Block::Disk => format!(
+                "disk: no room for another agent on {name} until the new worktrees settle or space frees"
+            ),
+            Block::Project => format!("Max agents: {running} of {} running", self.max_on(r, m)),
+        })
+    }
+
+    /// The narrowest limit the project's tasks on machine `m` wait behind now, if any.
+    fn limit(&self, r: &ProjectRef, m: &MachineId) -> Option<Limit> {
+        let (used, on_machine, running) = self.held(r, m);
+        if running >= self.max_on(r, m) {
             Some(Limit::Project)
-        } else if on_machine >= self.machine_cap(&r.machine_id)
-            || self.disk_room(&r.machine_id) == Some(0)
-        {
+        } else if on_machine >= self.machine_cap(m) || self.disk_room(m) == Some(0) {
             Some(Limit::Machine)
         } else if self.cap.is_some_and(|cap| used >= cap) {
             Some(Limit::Fleet)
@@ -485,16 +545,17 @@ impl Board {
         }
     }
 
-    /// How many more of the project's tasks could start now: under the fleet cap if set, its machine's cap and disk
-    /// room, and its max agents.
+    /// How many more of the project's tasks could start now on its own machine: under the fleet cap if set, its
+    /// machine's cap and disk room, and its max agents.
     pub fn room(&self, r: &ProjectRef) -> i64 {
-        let (used, on_machine, running) = self.held(r);
+        let m = &r.machine_id;
+        let (used, on_machine, running) = self.held(r, m);
         let fleet = self.cap.map_or(i64::MAX, |cap| cap - used);
-        let disk = self.disk_room(&r.machine_id).unwrap_or(i64::MAX);
+        let disk = self.disk_room(m).unwrap_or(i64::MAX);
         fleet
-            .min(self.machine_cap(&r.machine_id) - on_machine)
+            .min(self.machine_cap(m) - on_machine)
             .min(disk)
-            .min(self.max_agents_of(r) - running)
+            .min(self.max_on(r, m) - running)
             .max(0)
     }
 
@@ -505,7 +566,7 @@ impl Board {
         if c.state != ClaimState::Queued {
             return None;
         }
-        let limit = self.limit(&c.project_ref);
+        let limit = self.limit(&c.project_ref, c.machine());
         let key = |x: &Claim| (x.priority, x.order);
         let ahead = self
             .claims
@@ -513,7 +574,7 @@ impl Board {
             .filter(|x| x.state == ClaimState::Queued && key(x) < key(c))
             .filter(|x| match limit {
                 Some(Limit::Project) => same(&x.project_ref, &c.project_ref),
-                Some(Limit::Machine) => x.project_ref.machine_id == c.project_ref.machine_id,
+                Some(Limit::Machine) => x.machine() == c.machine(),
                 Some(Limit::Fleet) | None => true,
             })
             .count() as i64;
@@ -540,36 +601,41 @@ impl Board {
             .collect();
         queue.sort_by_key(|&i| (self.claims[i].priority, self.claims[i].order));
         for i in queue {
-            let fresh = self.claims[i].thread_id.is_none();
-            if self.blocker(&self.claims[i].project_ref, fresh).is_none() {
-                self.claims[i].state = ClaimState::Held;
-                if fresh {
-                    let c = &self.claims[i];
-                    let start = (
-                        c.holder.clone(),
-                        c.project_ref.machine_id.clone(),
-                        self.now_ms,
-                    );
-                    self.starts.push(start);
-                }
-                self.save(i);
+            let c = &self.claims[i];
+            let fresh = c.thread_id.is_none();
+            if self.block(&c.project_ref, c.machine(), fresh).is_none() {
+                self.grant(i);
             }
         }
     }
 
+    /// Holds claim `i`'s slot; a new agent's start counts against its machine's disk room until it settles.
+    fn grant(&mut self, i: usize) {
+        self.claims[i].state = ClaimState::Held;
+        let c = &self.claims[i];
+        if c.thread_id.is_none() {
+            let start = (c.holder.clone(), c.machine().clone(), self.now_ms);
+            self.starts.push(start);
+        }
+        self.save(i);
+    }
+
     /// Asking again for a holder that already has a slot returns granted; for one already queued, its current
-    /// reason. An idle holder (its thread stopped) joins the back of the queue.
+    /// reason. An idle holder (its thread stopped) joins the back of the queue. `on`: the cloud machine it runs on
+    /// (D306), None for its project's own machine.
     pub fn acquire(
         &mut self,
         holder: &str,
         project_ref: &ProjectRef,
         priority: SlotPriority,
+        on: Option<&MachineId>,
     ) -> Grant {
         let i = match self.idx(holder) {
             Some(i) if self.claims[i].state == ClaimState::Held => return Grant::Granted,
             Some(i) => {
                 let c = &mut self.claims[i];
                 c.project_ref = project_ref.clone();
+                c.on = on.cloned();
                 c.priority = priority;
                 if c.state == ClaimState::Idle {
                     c.state = ClaimState::Queued;
@@ -582,6 +648,7 @@ impl Board {
                 self.claims.push(Claim {
                     holder: holder.to_owned(),
                     project_ref: project_ref.clone(),
+                    on: on.cloned(),
                     priority,
                     thread_id: None,
                     state: ClaimState::Queued,
@@ -593,17 +660,61 @@ impl Board {
         };
         self.save(i);
         self.evaluate();
-        if self.claims[i].state == ClaimState::Held {
+        let c = &self.claims[i];
+        if c.state == ClaimState::Held {
             return Grant::Granted;
         }
-        self.blocker(project_ref, self.claims[i].thread_id.is_none())
+        self.blocker(project_ref, c.machine(), c.thread_id.is_none())
             .map_or(Grant::Granted, Grant::Queued)
+    }
+
+    /// A new task's slot (D306), deterministically: on its project's own machine while that has room; else, only when
+    /// what holds it back there is that machine's agent limit (its cap, or no disk room for another agent), on the
+    /// cloud machine in `cloud` with room that runs the most agents, the first listed among equals, so work packs and
+    /// the others go idle. Never past the fleet cap or the project's max agents, which count every machine.
+    pub fn place(
+        &mut self,
+        holder: &str,
+        project_ref: &ProjectRef,
+        priority: SlotPriority,
+        cloud: &[MachineId],
+    ) -> Placed {
+        let reason = match self.acquire(holder, project_ref, priority, None) {
+            Grant::Granted => return Placed::Granted(None),
+            Grant::Queued(reason) => reason,
+        };
+        let Some(i) = self.idx(holder) else {
+            return Placed::Queued(reason);
+        };
+        let fresh = self.claims[i].thread_id.is_none();
+        let home = &project_ref.machine_id;
+        if !matches!(
+            self.block(project_ref, home, fresh),
+            Some(Block::Machine | Block::Disk)
+        ) || self
+            .own_max(project_ref)
+            .is_some_and(|max| self.held(project_ref, home).2 >= max)
+        {
+            return Placed::Queued(reason);
+        }
+        let best = cloud
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| *m != home && self.block(project_ref, m, fresh).is_none())
+            .max_by_key(|(k, m)| (self.held(project_ref, m).1, std::cmp::Reverse(*k)))
+            .map(|(_, m)| m.clone());
+        let Some(m) = best else {
+            return Placed::Full(reason);
+        };
+        self.claims[i].on = Some(m.clone());
+        self.grant(i);
+        Placed::Granted(Some(m))
     }
 
     /// The holder's slot follows the thread from now on.
     pub fn bind(&mut self, holder: &str, machine_id: &MachineId, thread_id: &ThreadId) {
         if let Some(i) = self.idx(holder)
-            && self.claims[i].project_ref.machine_id == *machine_id
+            && self.claims[i].machine() == machine_id
         {
             self.claims[i].thread_id = Some(thread_id.clone());
             self.save(i);
@@ -628,8 +739,7 @@ impl Board {
     /// was freed.
     pub fn observe(&mut self, machine_id: &str, thread_id: &ThreadId, running: bool) -> bool {
         let Some(i) = self.claims.iter().position(|c| {
-            c.thread_id.as_ref() == Some(thread_id)
-                && c.project_ref.machine_id.as_str() == machine_id
+            c.thread_id.as_ref() == Some(thread_id) && c.machine().as_str() == machine_id
         }) else {
             return false;
         };
@@ -705,16 +815,15 @@ impl Board {
     /// The project's agents running beyond its max agents, newest first, writers and readers only: a review gates a
     /// merge, so it is never paused.
     pub fn extras(&self, r: &ProjectRef) -> Vec<String> {
-        let (running, _) = self.agents(r);
+        let home = &r.machine_id;
+        let counted = |c: &&Claim| c.state == ClaimState::Held && self.counted(r, home, c);
+        let running = self.claims.iter().filter(counted).count() as i64;
         let over = (running - self.max_agents_of(r)).max(0) as usize;
         let mut work: Vec<&Claim> = self
             .claims
             .iter()
-            .filter(|c| {
-                c.state == ClaimState::Held
-                    && c.priority == SlotPriority::Work
-                    && same(&c.project_ref, r)
-            })
+            .filter(counted)
+            .filter(|c| c.priority == SlotPriority::Work)
             .collect();
         work.sort_by_key(|c| std::cmp::Reverse(c.order));
         work.into_iter()
@@ -775,9 +884,7 @@ impl Board {
                 running: self
                     .claims
                     .iter()
-                    .filter(|c| {
-                        c.state == ClaimState::Held && c.project_ref.machine_id == m.machine_id
-                    })
+                    .filter(|c| c.state == ClaimState::Held && *c.machine() == m.machine_id)
                     .count() as i64,
                 disk_room: self.disk_room(&m.machine_id),
             })
@@ -869,7 +976,7 @@ mod tests {
             }
         }
         fn acquire(&mut self, holder: &str, r: &ProjectRef, p: SlotPriority) -> Grant {
-            let g = self.board.acquire(holder, r, p);
+            let g = self.board.acquire(holder, r, p, None);
             if g.granted() && !self.seen.iter().any(|s| s == holder) {
                 self.seen.push(holder.to_owned());
             }
@@ -1299,5 +1406,147 @@ mod tests {
             k.board.take_ops().is_empty(),
             "an unchanged measure isn't saved again"
         );
+    }
+
+    /// devbox fits 2; cloud machines boat-1 and boat-2 fit 3 each.
+    fn cloud_kit(cap: Option<i64>) -> (Kit, ProjectRef, Vec<MachineId>) {
+        let k = Kit::on(
+            cap,
+            vec![
+                machine("devbox", 2, None),
+                machine("boat-1", 3, None),
+                machine("boat-2", 3, None),
+            ],
+        );
+        (
+            k,
+            on_machine("devbox", "app"),
+            vec![mid("boat-1"), mid("boat-2")],
+        )
+    }
+
+    fn place(k: &mut Kit, holder: &str, r: &ProjectRef, cloud: &[MachineId]) -> Placed {
+        k.board.place(holder, r, SlotPriority::Work, cloud)
+    }
+
+    /// D306's order, deterministic: its own machine while it has room; then the busiest cloud machine with room (the
+    /// first listed among equals), so boat-1 fills before boat-2 takes any; the claim counts on the machine it runs
+    /// on, and a slot freeing on devbox takes the next one home again.
+    #[test]
+    fn a_new_task_bursts_only_at_its_machines_agent_limit_and_packs_the_busiest_cloud_machine() {
+        let (mut k, app, cloud) = cloud_kit(None);
+        let placed: Vec<Placed> = (1..=9)
+            .map(|n| place(&mut k, &format!("T{n}"), &app, &cloud))
+            .collect();
+        let (home, b1, b2) = (
+            Placed::Granted(None),
+            Placed::Granted(Some(mid("boat-1"))),
+            Placed::Granted(Some(mid("boat-2"))),
+        );
+        assert_eq!(
+            placed[..8],
+            [
+                home.clone(),
+                home,
+                b1.clone(),
+                b1.clone(),
+                b1,
+                b2.clone(),
+                b2.clone(),
+                b2
+            ]
+        );
+        assert_eq!(
+            placed[8],
+            Placed::Full("machine cap: 2 of 2 running on devbox-box (memory 18 GB)".into())
+        );
+        let running: Vec<i64> = k
+            .board
+            .state()
+            .per_machine
+            .iter()
+            .map(|m| m.running)
+            .collect();
+        assert_eq!(running, [2, 3, 3]);
+        k.board.release("T9");
+        // A thread on boat-1 stopping frees boat-1's slot, not devbox's.
+        k.board.bind("T3", &mid("boat-1"), &tid("t3"));
+        assert!(k.board.observe("boat-1", &tid("t3"), false));
+        assert_eq!(k.board.room(&app), 0);
+        assert_eq!(
+            place(&mut k, "T10", &app, &cloud),
+            Placed::Granted(Some(mid("boat-1")))
+        );
+        // devbox frees: the next is home.
+        k.release("T1");
+        assert_eq!(place(&mut k, "T11", &app, &cloud), Placed::Granted(None));
+    }
+
+    /// Bursting never goes past a limit a person set: the fleet cap, or the project's own max agents, which counts its
+    /// agents on every machine. Nor does it help a machine that runs no agents. The default max counts only its own
+    /// machine, so cloud machines add to it.
+    #[test]
+    fn a_person_set_limit_holds_bursting_too() {
+        let (mut k, app, cloud) = cloud_kit(Some(4));
+        for n in 1..=4 {
+            assert!(matches!(
+                place(&mut k, &format!("T{n}"), &app, &cloud),
+                Placed::Granted(_)
+            ));
+        }
+        assert_eq!(
+            place(&mut k, "T5", &app, &cloud),
+            Placed::Queued("fleet cap: 4 of 4 running".into())
+        );
+
+        let (mut k, app, cloud) = cloud_kit(None);
+        k.board.set_cap(None, Some((app.clone(), Some(3))));
+        for n in 1..=3 {
+            assert!(matches!(
+                place(&mut k, &format!("T{n}"), &app, &cloud),
+                Placed::Granted(_)
+            ));
+        }
+        assert_eq!(
+            place(&mut k, "T4", &app, &cloud),
+            Placed::Queued("machine cap: 2 of 2 running on devbox-box (memory 18 GB)".into()),
+            "3 of its own max 3 run, one on boat-1: no more anywhere"
+        );
+        assert_eq!(k.board.agents(&app), (3, 1));
+
+        let (mut k, app, cloud) = cloud_kit(None);
+        k.board.set_runs_agents(&mid("devbox"), false);
+        assert!(matches!(
+            place(&mut k, "T1", &app, &cloud),
+            Placed::Queued(_)
+        ));
+        // Nor with no cloud machine to go to: full, so placement may wake one.
+        let (mut k, app, _) = cloud_kit(None);
+        for n in 1..=2 {
+            place(&mut k, &format!("T{n}"), &app, &[]);
+        }
+        assert!(matches!(place(&mut k, "T3", &app, &[]), Placed::Full(_)));
+    }
+
+    /// A follow-up asks for its own machine: it waits there when that is full, even with room at home.
+    #[test]
+    fn a_follow_up_counts_on_the_cloud_machine_it_runs_on() {
+        let (mut k, app, _) = cloud_kit(None);
+        for n in 1..=3 {
+            k.board.acquire(
+                &format!("T{n}"),
+                &app,
+                SlotPriority::Work,
+                Some(&mid("boat-1")),
+            );
+        }
+        assert_eq!(
+            k.board
+                .acquire("T4", &app, SlotPriority::Work, Some(&mid("boat-1"))),
+            queued("machine cap: 3 of 3 running on boat-1-box (memory 18 GB)")
+        );
+        assert_eq!(k.board.room(&app), 2, "devbox's slots are untouched");
+        k.release("T1");
+        assert_eq!(k.board.agents(&app), (3, 0), "T4 took boat-1's freed slot");
     }
 }

@@ -57,7 +57,9 @@ async fn step(pool: &Pool, row: Slot) -> Result<(), String> {
             row.idle_since = None;
             row.create_body = None;
             row.note = None;
-            pool.ledger.put(&row).map_err(|e| e.to_string())
+            pool.ledger.put(&row).map_err(|e| e.to_string())?;
+            pool.fleet.woke(&row.slot);
+            Ok(())
         }
         State::Creating => {
             if row.wake_at.is_some_and(|at| now - at > CREATE_HELLO_MS) {

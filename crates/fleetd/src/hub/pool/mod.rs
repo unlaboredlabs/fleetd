@@ -17,17 +17,21 @@
 //! - **The kill switch** ([`Pool::kill`], `cloud_stop`, `fleetd cloud stop`): lists boat by label, not the ledger.
 //! - **The keepalive**: a slot asleep 12 days is woken briefly, so boat never expires its disk (14 days).
 //!
-//! The pool is off until the admin turns it on; placement asks [`Pool::ready`] and [`Pool::start_held`] first.
+//! The pool is off until the admin turns it on; placement ([`place`]) asks [`Pool::ready`] and [`Pool::start_held`]
+//! first.
 pub mod boat;
 pub mod lease;
 pub mod ledger;
 pub mod life;
+pub mod place;
 pub mod starts;
 pub mod sweep;
 pub mod tools;
 
 #[cfg(test)]
 mod boat_tests;
+#[cfg(test)]
+mod place_tests;
 #[cfg(test)]
 mod tests;
 
@@ -86,6 +90,8 @@ pub trait Fleet: Send + Sync + 'static {
     /// Whether the hub hears its other machines normally: a stalled hub sees every node silent, and must not stop
     /// cloud machines for it. `besides` are the pool's own.
     fn others_heard(&self, besides: &[String], now: i64) -> bool;
+    /// The machine is awake for work now: placement runs the tasks queue again.
+    fn woke(&self, _machine: &str) {}
 }
 
 /// Why a machine is woken.
@@ -172,6 +178,8 @@ pub struct Pool {
     ready: AtomicBool,
     /// Warnings given once per hub process (a machine past its deadline).
     warned: Mutex<HashSet<String>>,
+    /// Slots placement asked to wake whose wake hasn't returned yet ([`Pool::wake_for_work`]).
+    waking: Mutex<HashSet<String>>,
 }
 
 impl Pool {
@@ -194,6 +202,7 @@ impl Pool {
             claims: Mutex::default(),
             ready: AtomicBool::new(false),
             warned: Mutex::default(),
+            waking: Mutex::default(),
         })
     }
 
@@ -850,6 +859,12 @@ impl Fleet for HubFleet {
             return false;
         };
         hub.cloud.ready(&hub, &id)
+    }
+
+    fn woke(&self, _machine: &str) {
+        if let Some(hub) = self.hub() {
+            hub.tasks.retry_soon();
+        }
     }
 
     fn others_heard(&self, besides: &[String], now: i64) -> bool {

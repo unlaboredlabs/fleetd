@@ -701,6 +701,7 @@ fn runner(m: &str, sessions: bool, ready: bool, live: i64, max: i64) -> Runner {
         live,
         max,
         held: 0,
+        cloud: None,
     }
 }
 
@@ -1512,4 +1513,55 @@ async fn screen_settings_go_to_the_machines_node_and_its_answer_shows_at_once() 
     assert_eq!(out["machine"]["screenSettings"], true);
     assert_eq!(out["machine"]["hosts"][0]["off"], "restarting");
     assert_eq!(out["machine"]["hosts"][0]["on"], true);
+}
+
+/// A cloud machine (D306) takes another machine's agents' screens only when every other machine is full, the busiest
+/// awake one first, and a screen never wakes one: one asleep, or awake but not for work (catching up, stopping, or
+/// the budget spent), is passed over. An agent running on a cloud machine gets its screen there first, as anywhere.
+#[test]
+fn a_screen_goes_to_an_awake_cloud_machine_only_when_every_other_machine_is_full() {
+    let cloud = |m: &str, awake: bool, live: i64| Runner {
+        online: awake,
+        cloud: Some(awake),
+        ..runner(m, true, true, live, 4)
+    };
+    let full_own = runner("devbox", true, true, 2, 2);
+    let lab = runner("lab-a", true, true, 3, 4);
+    let browser = |all: &[Runner]| place(&mid("devbox"), SessionHost::Browser, all, true);
+    // lab-a has a slot, though boat-1 has more: lab-a.
+    let all = [full_own.clone(), lab, cloud("boat-1", true, 0)];
+    assert_eq!(browser(&all).unwrap(), mid("lab-a"));
+    // Every other machine full: the busiest awake cloud machine with room.
+    let lab_full = runner("lab-a", true, true, 4, 4);
+    let all = [
+        full_own.clone(),
+        lab_full.clone(),
+        cloud("boat-1", true, 1),
+        cloud("boat-2", true, 3),
+    ];
+    assert_eq!(browser(&all).unwrap(), mid("boat-2"));
+    // Asleep, or linked but not awake for work: never woken, never used.
+    let linked_not_ready = Runner {
+        online: true,
+        ..cloud("boat-2", false, 0)
+    };
+    let all = [
+        full_own.clone(),
+        lab_full,
+        cloud("boat-1", false, 0),
+        linked_not_ready,
+    ];
+    let refused = browser(&all).unwrap_err();
+    assert!(
+        refused.message.starts_with("Every machine that can host"),
+        "{}",
+        refused.message
+    );
+    assert!(!refused.message.contains("boat-2"), "{}", refused.message);
+    // An agent on boat-1 gets its own machine's slot.
+    let on_boat = [cloud("boat-1", true, 2), full_own];
+    assert_eq!(
+        place(&mid("boat-1"), SessionHost::Browser, &on_boat, true).unwrap(),
+        mid("boat-1")
+    );
 }

@@ -1024,6 +1024,7 @@ async fn a_cancel_the_node_cannot_carry_out_keeps_the_task_and_its_slot() {
             holder: "T1",
             project_ref: &task.project_ref,
             priority: crate::hub::slots::priority_of(task.kind),
+            on: None,
         })
         .unwrap();
     let used = lab.hub.slots.state().used.get();

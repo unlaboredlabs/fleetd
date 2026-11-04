@@ -1045,7 +1045,7 @@ async fn clone_and_register(
     };
     progress(ClonePhase::Starting, None, None);
     let url = format!("https://github.com/{repo}");
-    let clone = hub.executors.repo_clone(&m, &run.add_id, &url, &path);
+    let clone = hub.executors.repo_clone(&m, &run.add_id, &url, &path, None);
     tokio::pin!(clone);
     let mut last: Option<(Instant, ClonePhase, u8)> =
         Some((Instant::now(), ClonePhase::Starting, 0));

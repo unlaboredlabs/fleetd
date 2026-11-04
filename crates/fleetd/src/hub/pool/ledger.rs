@@ -32,6 +32,8 @@ pub struct Settings {
     pub starts: Option<StartLimits>,
     pub plan_dollars: Option<f64>,
     pub strangers_warned: bool,
+    /// Writers may run on cloud machines too; off until the admin turns it on (reviews and readers go first).
+    pub writers: bool,
 }
 
 /// The included dollars of boat's $20 plan, the month budget before /limits was ever read.
@@ -239,7 +241,7 @@ impl Ledger {
             c.query_row(
                 "SELECT hub_id, enabled, pool_size, machine_type, day_budget, month_budget, projects, environment,
                         sealed_key IS NOT NULL, paused_kind, paused_reason, hold_until, hold_reason, backoff_step, full,
-                        starts_minute, starts_hour, starts_day, plan_dollars, strangers_warned
+                        starts_minute, starts_hour, starts_day, plan_dollars, strangers_warned, writers
                  FROM pool_settings WHERE id = 1",
                 [],
                 |r| {
@@ -272,6 +274,7 @@ impl Ledger {
                         starts,
                         plan_dollars: r.get(18)?,
                         strangers_warned: r.get(19)?,
+                        writers: r.get(20)?,
                     })
                 },
             )
@@ -297,6 +300,14 @@ impl Ledger {
             )?;
             Ok(())
         })
+    }
+
+    /// Whether writers may run on cloud machines.
+    pub fn set_writers(&self, on: bool) -> Result<(), StoreError> {
+        self.exec(
+            "UPDATE pool_settings SET writers = ?1 WHERE id = 1",
+            params![on],
+        )
     }
 
     pub fn set_enabled(&self, enabled: bool) -> Result<(), StoreError> {

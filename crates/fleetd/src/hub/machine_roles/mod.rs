@@ -6,7 +6,8 @@
 //! refusal that says why. A session placed on its agent's machine runs there as before.
 //!
 //! A session the agent's machine can't take goes to the online machine that can with the most free slots ([`remote_on`]
-//! turns that off), and the agent drives it through the hub's relay (relay.rs). That machine's node hosts it under a key the hub mints, the agent's later session calls go to
+//! turns that off), and the agent drives it through the hub's relay (relay.rs). A cloud machine (D306) takes one only
+//! when every other machine is full, only while it is awake for work, and is never woken for one. That machine's node hosts it under a key the hub mints, the agent's later session calls go to
 //! it through the hub, and the runner reports the session in the agent's name ([`Callers`]).
 //!
 //! Session slots are separate from agent slots: a machine's live sessions are its own agents' (`browser_sessions`)
@@ -244,6 +245,9 @@ pub struct Runner {
     pub max: i64,
     /// People waiting for a slot here (screens.rs): the next ones free are theirs, before any agent's.
     pub held: i64,
+    /// A cloud machine (D306): Some(true) while it is awake for work and cloud machines take work. Another machine's
+    /// agents' screens go to one only when no other machine has room, and never wake one.
+    pub cloud: Option<bool>,
 }
 
 impl Runner {
@@ -307,11 +311,24 @@ pub fn place(
         .iter()
         .filter(|r| &r.machine_id != origin && r.able(host, origin))
         .collect();
-    let online: Vec<&Runner> = able.iter().copied().filter(|r| r.online).collect();
+    // A cloud machine that isn't awake for work is as good as offline: a screen never wakes one.
+    let online: Vec<&Runner> = able
+        .iter()
+        .copied()
+        .filter(|r| r.online && r.cloud != Some(false))
+        .collect();
     if let Some(best) = online
         .iter()
-        .filter(|r| r.free() > 0)
+        .filter(|r| r.free() > 0 && r.cloud.is_none())
         .max_by(|a, b| a.free().cmp(&b.free()).then(b.name.cmp(&a.name)))
+    {
+        return Ok(best.machine_id.clone());
+    }
+    // Every other machine is full: an awake cloud machine with room, the busiest first, so screens pack like agents.
+    if let Some(best) = online
+        .iter()
+        .filter(|r| r.free() > 0 && r.cloud == Some(true))
+        .max_by(|a, b| a.live.cmp(&b.live).then(b.name.cmp(&a.name)))
     {
         return Ok(best.machine_id.clone());
     }
@@ -427,9 +444,21 @@ pub fn runners(hub: &Hub) -> Result<Vec<(Runner, Roles, String)>, StoreError> {
         let leads = hub.store.projects_shown(Some(&m.machine_id), None)?.len() as i64;
         agents.push(hub.slots.machine_cap(&m.machine_id) + leads);
     }
+    // Cloud machines awake for work, while cloud machines take work at all.
+    let awake = match hub.pool.closed() {
+        None => hub.pool.awake(),
+        Some(_) => Vec::new(),
+    };
+    let cloud: Vec<Option<bool>> = machines
+        .iter()
+        .map(|m| {
+            crate::hub::cloud::is_pool(hub, &m.machine_id)
+                .then(|| awake.iter().any(|a| a == m.machine_id.as_str()))
+        })
+        .collect();
     hub.db.with(|c| {
         let mut out = Vec::new();
-        for (m, agents) in machines.into_iter().zip(agents) {
+        for ((m, agents), cloud) in machines.into_iter().zip(agents).zip(cloud.iter().copied()) {
             let roles = roles_on(c, &m.machine_id)?;
             let load = hub.link.load(&m.machine_id);
             let agents = if roles.agents { agents } else { 0 };
@@ -462,6 +491,7 @@ pub fn runners(hub: &Hub) -> Result<Vec<(Runner, Roles, String)>, StoreError> {
                     live: live_on(c, &m.machine_id, now)?,
                     max,
                     held: screens::held_on(c, &m.machine_id, now)?,
+                    cloud,
                     name: m.name,
                     machine_id: m.machine_id,
                 },

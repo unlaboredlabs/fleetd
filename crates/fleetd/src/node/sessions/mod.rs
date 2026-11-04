@@ -1570,9 +1570,12 @@ impl SessionService {
                     blocking(move || super::repos::inspect(&path)).await,
                 ))
             }
-            SessionCall::RepoClone { add_id, url, dest } => {
-                self.repo_clone(add_id, &url, &dest).await
-            }
+            SessionCall::RepoClone {
+                add_id,
+                url,
+                dest,
+                token,
+            } => self.repo_clone(add_id, &url, &dest, token).await,
             SessionCall::GhRepoList => {
                 Ok(SessionOutput::GhRepos(super::repos::gh_repo_list().await))
             }
@@ -2036,6 +2039,21 @@ impl SessionService {
         }
         let root = self.project_root(&launch.project_id)?;
         self.checkout_unchanged(launch.role, &root)?;
+        // A checkout fleetd cloned with a token (a cloud machine's) fetches with its order's, which the hub delivered
+        // before this launch.
+        if let Some(order) = &launch.order_id {
+            let (vars, _) = super::order_env::for_spawn(
+                &self.inner.config.home,
+                launch.project_id.as_str(),
+                order.as_str(),
+            );
+            let token = vars
+                .iter()
+                .find(|(name, _)| name == fleetd_contracts::github_app::GITHUB_TOKEN_ENV);
+            if let Some((_, token)) = token {
+                worktree::use_token(&root, token);
+            }
+        }
         // A session taking over an earlier one of the same branch (a task restarted fresh) works in that one's
         // worktree as it was left, uncommitted changes included; a worktree that is gone comes back first.
         let taken = match &launch.workspace {
@@ -4179,7 +4197,13 @@ impl SessionService {
 
     /// Stops the project's claude processes (their active runs close as interrupted), waits up to [`REMOVE_WAIT`]
     /// for them to exit, then forgets the project.
-    async fn repo_clone(&self, add_id: NonEmpty, url: &str, dest: &str) -> Reply {
+    async fn repo_clone(
+        &self,
+        add_id: NonEmpty,
+        url: &str,
+        dest: &str,
+        token: Option<fleetd_contracts::secrets::SealedSecret>,
+    ) -> Reply {
         let dest = PathBuf::from(dest);
         if !dest.is_absolute() {
             return Err(invalid(format!(
@@ -4187,21 +4211,47 @@ impl SessionService {
                 dest.display()
             )));
         }
+        let token = match token {
+            None => None,
+            Some(sealed) => {
+                use base64::Engine;
+                let home = self.inner.config.home.clone();
+                let boxed = zeroize::Zeroizing::new(
+                    base64::engine::general_purpose::STANDARD
+                        .decode(sealed.as_str())
+                        .unwrap_or_default(),
+                );
+                let plain = super::identity::load_or_create_box_key(&home)
+                    .ok()
+                    .and_then(|key| key.open(&boxed))
+                    .and_then(|p| String::from_utf8(p.to_vec()).ok())
+                    .ok_or_else(|| {
+                        invalid("the clone's GitHub token was not sealed to this machine's box key")
+                    })?;
+                Some(zeroize::Zeroizing::new(plain))
+            }
+        };
         let service = self.clone();
         let id = add_id.to_string();
-        super::repos::clone(url, &dest, &id, move |p| {
-            let percent = p
-                .percent
-                .map(|n| fleetd_contracts::prim::Int::unchecked(i64::from(n)));
-            service
-                .st()
-                .send(NodeToHub::CloneProgress(CloneProgressFrame {
-                    add_id: add_id.clone(),
-                    phase: p.phase,
-                    percent,
-                    detail: p.detail,
-                }));
-        })
+        super::repos::clone(
+            url,
+            &dest,
+            &id,
+            token.as_deref().map(|t| t.as_str()),
+            move |p| {
+                let percent = p
+                    .percent
+                    .map(|n| fleetd_contracts::prim::Int::unchecked(i64::from(n)));
+                service
+                    .st()
+                    .send(NodeToHub::CloneProgress(CloneProgressFrame {
+                        add_id: add_id.clone(),
+                        phase: p.phase,
+                        percent,
+                        detail: p.detail,
+                    }));
+            },
+        )
         .await
         .map_err(|message| SessionError {
             code: SessionErrorCode::Git,

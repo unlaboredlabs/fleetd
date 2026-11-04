@@ -46,6 +46,72 @@ fn command(dir: &Path, args: &[&str]) -> Command {
     cmd
 }
 
+/// The git config key a checkout fleetd cloned with a GitHub token carries (a cloud machine's, D306): its remote calls
+/// authenticate with the latest token an order's launch brought ([`use_token`]). Every other checkout uses the
+/// machine's own git login, as before.
+pub const TOKEN_MARK: &str = "fleetd.githubToken";
+
+/// Per checkout root, the GitHub token its remote calls use: the newest an order's launch there brought.
+static TOKENS: LazyLock<Mutex<HashMap<PathBuf, zeroize::Zeroizing<String>>>> =
+    LazyLock::new(Default::default);
+
+/// Has the checkout at `root`'s remote calls use `token` from now on, when fleetd cloned it with one
+/// ([`TOKEN_MARK`]). A placeholder the hub hands agents in place of a token taken back (`fleetd-github-…`) is never
+/// used: the last real one goes on until it ends.
+pub fn use_token(root: &Path, token: &str) {
+    if token.is_empty() || token.starts_with("fleetd-") {
+        return;
+    }
+    let marked =
+        git(root, &["config", "--bool", "--get", TOKEN_MARK]).is_ok_and(|v| v.trim() == "true");
+    if marked {
+        TOKENS.lock().unwrap().insert(
+            root.to_path_buf(),
+            zeroize::Zeroizing::new(token.to_owned()),
+        );
+    }
+}
+
+/// Has `cmd` authenticate to github.com with `token`, through the environment only: never in its arguments, where
+/// the process list shows it, nor in the repo's config, where agents and boat's snapshots would keep it. As
+/// actions/checkout does: an `http.extraheader` for `https://github.com/`.
+pub fn with_token<C: EnvSet>(cmd: &mut C, token: &str) {
+    use base64::Engine;
+    let basic = base64::engine::general_purpose::STANDARD.encode(format!("x-access-token:{token}"));
+    cmd.set("GIT_CONFIG_COUNT", "1");
+    cmd.set("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader");
+    cmd.set(
+        "GIT_CONFIG_VALUE_0",
+        &format!("AUTHORIZATION: basic {basic}"),
+    );
+}
+
+/// A command whose environment [`with_token`] sets: std's and tokio's.
+pub trait EnvSet {
+    fn set(&mut self, key: &str, value: &str);
+}
+
+impl EnvSet for Command {
+    fn set(&mut self, key: &str, value: &str) {
+        self.env(key, value);
+    }
+}
+
+impl EnvSet for tokio::process::Command {
+    fn set(&mut self, key: &str, value: &str) {
+        self.env(key, value);
+    }
+}
+
+/// `git -C dir <args>` for a call to the remote: with the checkout's token when it has one ([`use_token`]).
+fn remote_command(dir: &Path, args: &[&str]) -> Command {
+    let mut cmd = command(dir, args);
+    if let Some(token) = TOKENS.lock().unwrap().get(dir) {
+        with_token(&mut cmd, token);
+    }
+    cmd
+}
+
 fn failed(args: &[&str], stderr: &[u8]) -> GitError {
     GitError(format!(
         "git {} failed: {}",
@@ -54,7 +120,7 @@ fn failed(args: &[&str], stderr: &[u8]) -> GitError {
     ))
 }
 
-pub(super) fn git(dir: &Path, args: &[&str]) -> Result<String, GitError> {
+pub(crate) fn git(dir: &Path, args: &[&str]) -> Result<String, GitError> {
     let out = command(dir, args)
         .output()
         .map_err(|e| GitError(format!("cannot run git: {e}")))?;
@@ -68,7 +134,7 @@ pub(super) fn git(dir: &Path, args: &[&str]) -> Result<String, GitError> {
 /// `git` that talks to a remote: never waits on ssh for a passphrase or a host key, and is killed with whatever it
 /// started (ssh, a credential helper) at `timeout`.
 pub(super) fn git_remote(dir: &Path, args: &[&str], timeout: Duration) -> Result<String, GitError> {
-    let mut cmd = command(dir, args);
+    let mut cmd = remote_command(dir, args);
     let ssh_set = std::env::var_os("GIT_SSH_COMMAND").is_some()
         || std::env::var_os("GIT_SSH").is_some()
         || git(dir, &["config", "--get", "core.sshCommand"]).is_ok_and(|c| !c.trim().is_empty());
@@ -2112,6 +2178,59 @@ pub(crate) mod tests {
         ] {
             assert_eq!(remote_repo(url).as_deref(), repo, "{url}");
         }
+    }
+
+    /// A checkout fleetd cloned with a token (a cloud machine's, D306) authenticates its remote calls with the newest
+    /// real token an order's launch brought, and git sees it only for github.com, only through the environment;
+    /// any other checkout keeps the machine's own login.
+    #[test]
+    fn only_a_checkout_cloned_with_a_token_fetches_with_its_orders_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let plain = repo(&dir.path().join("plain"));
+        let cloud = repo(&dir.path().join("cloud"));
+        run(&cloud, &["config", TOKEN_MARK, "true"]);
+        use_token(&plain, "ghs_one");
+        use_token(&cloud, "ghs_one");
+        // A placeholder for a token taken back never replaces the last real one.
+        use_token(&cloud, "fleetd-github-not-connected-connect-it-in-settings");
+        let header = |root: &Path, url: &str| {
+            let out = remote_command(root, &["config", "--get-urlmatch", "http.extraheader", url])
+                .output()
+                .unwrap();
+            String::from_utf8(out.stdout).unwrap().trim().to_owned()
+        };
+        use base64::Engine;
+        let basic = base64::engine::general_purpose::STANDARD.encode("x-access-token:ghs_one");
+        assert_eq!(
+            header(&cloud, "https://github.com/acme/shop"),
+            format!("AUTHORIZATION: basic {basic}")
+        );
+        assert_eq!(header(&cloud, "https://gitlab.example.com/acme/shop"), "");
+        assert_eq!(header(&plain, "https://github.com/acme/shop"), "");
+        // Never in the checkout's own config.
+        assert!(
+            git(
+                &cloud,
+                &[
+                    "config",
+                    "--get-all",
+                    "http.https://github.com/.extraheader"
+                ]
+            )
+            .is_err()
+        );
+        let args: Vec<String> = remote_command(&cloud, &["fetch", "origin"])
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(args.iter().all(|a| !a.contains("ghs_one")), "{args:?}");
+        // A newer token replaces it.
+        use_token(&cloud, "ghs_two");
+        let basic = base64::engine::general_purpose::STANDARD.encode("x-access-token:ghs_two");
+        assert_eq!(
+            header(&cloud, "https://github.com/acme/shop"),
+            format!("AUTHORIZATION: basic {basic}")
+        );
     }
 
     #[test]

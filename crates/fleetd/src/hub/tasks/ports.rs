@@ -133,6 +133,25 @@ pub trait TaskPorts: Send + Sync {
     fn asleep(&self, _machine_id: &MachineId) -> bool {
         false
     }
+    /// The cloud machines a new task working in `checkout` may run on now (hub/pool/place.rs, D306): none unless
+    /// cloud machines are on and its project opted in.
+    fn cloud_room(
+        &self,
+        _task: &fleetd_contracts::tasks::Task,
+        _checkout: &ProjectRef,
+    ) -> crate::hub::pool::place::Room {
+        crate::hub::pool::place::Room::default()
+    }
+    /// Wakes a cloud machine for work (`Pool::wake_for_work`): `machine`, a task's own, else whichever comes first.
+    /// Ok names the machine coming; Err is the one line why none does.
+    fn cloud_wake(&self, _machine: Option<&MachineId>) -> Result<MachineId, String> {
+        Err("cloud machines are off".into())
+    }
+    /// Placement's claim on an awake cloud machine before a launch there (`Pool::claim`): false once it isn't awake
+    /// and caught up.
+    fn cloud_claim(&self, _machine: &MachineId) -> bool {
+        true
+    }
     /// Executors.caughtUp: when the node of the machine's live link said it had reported every run its restart cut
     /// off; None before that, and from a node too old to say.
     fn caught_up(&self, _machine_id: &MachineId) -> Option<crate::hub::executor::CaughtUp> {
