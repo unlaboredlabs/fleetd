@@ -35,6 +35,15 @@ fn failed(e: impl std::fmt::Display) -> ToolError {
     ToolError::new(ErrorCode::Failed, e.to_string())
 }
 
+/// The environment the setup step has the admin make: `fleetd-<hub>`, named as the step names it.
+pub fn environment_default(hub: &Hub) -> String {
+    let url = crate::hub::setup::tools::hub_url(hub);
+    format!(
+        "fleetd-{}",
+        crate::hub::setup::host_of(url.trim_end_matches('/'))
+    )
+}
+
 /// The pool as the app shows it.
 pub fn cloud_view(hub: &Hub) -> Result<CloudView, ToolError> {
     let pool = &hub.pool;
@@ -62,6 +71,7 @@ pub fn cloud_view(hub: &Hub) -> Result<CloudView, ToolError> {
         month_budget: budget.month_budget,
         month_is_plan: s.month_budget.is_none(),
         environment: s.environment.clone(),
+        environment_default: environment_default(hub),
         projects: s.projects.clone(),
         today: budget.day_spent,
         month: budget.month_spent,
@@ -199,6 +209,17 @@ async fn create(
     _: CloudCreateInput,
 ) -> Result<CloudCreateOutput, ToolError> {
     require(&caller, Role::Admin, None)?;
+    // The key is scoped to the environment: a create outside it is refused, and would count against the starts.
+    if hub.pool.ledger().settings()?.environment.is_none() {
+        return Err(error(
+            ErrorCode::Invalid,
+            "No boat.dev environment is saved, and the hub's key is scoped to one.",
+            format!(
+                "Save the environment you made in Settings › Hub › Machines › Cloud machines ({}), then create them.",
+                environment_default(&hub)
+            ),
+        ));
+    }
     if let Err(why) = crate::hub::cloud::setup::public_hub_url(&hub) {
         return Err(ToolError::new(ErrorCode::Invalid, why));
     }

@@ -196,6 +196,7 @@ function StepPane({
   const data = useDataLayer();
   const hub = useHub();
   const keep = useKeep();
+  const refetch = useRefetch();
   const [busy, setBusy] = useState<"test" | null>(null);
   const [tested, setTested] = useState<{ ok: boolean; text: string } | null>(null);
   const index = steps.indexOf(step);
@@ -210,6 +211,8 @@ function StepPane({
       return;
     }
     keep(out.output.step);
+    // The cloud step's Test asked boat.dev with the key: its panel reads what boat.dev said.
+    if (step.id === "cloud") refetch(["cloud_get"]);
     setTested({ ok: out.output.step.status === "done", text: out.output.step.said ?? "Nothing answered for this step yet." });
   };
   const places = placesOf(step);

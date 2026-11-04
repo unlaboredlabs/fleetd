@@ -481,6 +481,11 @@
           "title": "Choose the pool, the budgets and the projects",
           "values": [
             {
+              "label": "boat.dev environment",
+              "note": "The one you made in part 2: machines are made in it, where the key reaches.",
+              "value": "fleetd-devbox"
+            },
+            {
               "label": "Machines",
               "plain": true,
               "value": "3 × large (8 vCPUs, 16 GB, $0.072 an hour each)"

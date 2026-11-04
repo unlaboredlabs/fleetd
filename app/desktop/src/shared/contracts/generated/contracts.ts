@@ -1912,6 +1912,8 @@ export type CloudView = {
   enabled: boolean;
   /** The boat environment machines are created in. */
   environment?: string;
+  /** The environment the setup step has the admin make, `fleetd-<hub>`: what the field starts with. */
+  environmentDefault: string;
   /** A boat.dev key is saved, sealed to the hub. It is never shown. */
   hasKey: boolean;
   /** Why no machine may start now, in one line: the pool off, a budget spent, boat's backoff. Absent: it may. */

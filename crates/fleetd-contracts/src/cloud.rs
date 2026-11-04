@@ -84,6 +84,8 @@ pub struct CloudView {
     pub month_is_plan: bool,
     /// The boat environment machines are created in.
     pub environment: Option<String>,
+    /// The environment the setup step has the admin make, `fleetd-<hub>`: what the field starts with.
+    pub environment_default: String,
     /// The projects whose work may run on cloud machines.
     pub projects: Vec<ProjectRef>,
     /// Dollars spent today and this month, in the hub's time zone.

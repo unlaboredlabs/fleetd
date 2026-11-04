@@ -108,8 +108,9 @@ Setup is the optional **Cloud machines (boat.dev)** step: in `fleetd init`, the 
 5. **In the app**, in the step itself or in Settings › Hub › Machines › Cloud machines: paste the key and press
    **Save and test**. Test asks boat.dev for the key's plan and limits and this hub's machines, and says, for example,
    "Key works · $20 plan · 200 starts a day (12 a minute) · 0 of 100 machines running · large allowed". It starts
-   nothing. Then pick the pool, the budgets and the projects, check what it can cost, turn it on and press **Create
-   cloud machines** (one start each). Each machine sets itself up and joins in a few minutes, then sleeps.
+   nothing. Then pick the pool, the budgets and the projects, and keep the boat.dev environment from part 2 (it starts
+   as `fleetd-<hub>`; Create waits until one is saved, since the key reaches only that environment). Check what it can
+   cost, turn it on and press **Create cloud machines** (one start each). Each machine sets itself up and joins in a few minutes, then sleeps.
 
 Claude needs nothing more: each cloud machine gets the hub's Claude configuration (its API key or the owner's
 subscription) sealed to it when it joins, and again whenever it changes. Nobody pastes it.

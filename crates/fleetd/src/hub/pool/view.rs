@@ -225,8 +225,12 @@ impl Pool {
                 "{e} isn't a boat.dev environment name: letters, digits, - and _."
             ));
         }
-        let mut projects = c.projects.clone();
-        projects.dedup();
+        let mut projects: Vec<_> = Vec::new();
+        for p in &c.projects {
+            if !projects.contains(p) {
+                projects.push(p.clone());
+            }
+        }
         self.ledger
             .change_settings(&SettingsChange {
                 enabled: c.enabled,

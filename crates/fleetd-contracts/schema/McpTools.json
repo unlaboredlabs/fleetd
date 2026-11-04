@@ -4849,6 +4849,10 @@
           "description": "The boat environment machines are created in.",
           "type": "string"
         },
+        "environmentDefault": {
+          "description": "The environment the setup step has the admin make, `fleetd-<hub>`: what the field starts with.",
+          "type": "string"
+        },
         "hasKey": {
           "description": "A boat.dev key is saved, sealed to the hub. It is never shown.",
           "type": "boolean"
@@ -4931,6 +4935,7 @@
         "dayBudget",
         "monthBudget",
         "monthIsPlan",
+        "environmentDefault",
         "projects",
         "today",
         "month",

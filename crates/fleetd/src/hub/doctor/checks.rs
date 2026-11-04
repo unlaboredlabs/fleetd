@@ -331,7 +331,9 @@ pub fn cloud_checks(f: &CloudFacts) -> Vec<Entry> {
         Ok(url) => hub_entry(
             "cloud_network",
             Pass,
-            &format!("Cloud machines reach the hub at {url}."),
+            &format!(
+                "Cloud machines dial in to the hub's HTTPS address {url}; the first one's hello shows boat.dev reaches it."
+            ),
             None,
         ),
         Err(why) => hub_entry(
@@ -2012,7 +2014,8 @@ mod tests {
                 (
                     "hub/cloud_network".into(),
                     Pass,
-                    "Cloud machines reach the hub at https://devbox.your-tailnet.ts.net.".into()
+                    "Cloud machines dial in to the hub's HTTPS address https://devbox.your-tailnet.ts.net; the first one's hello shows boat.dev reaches it."
+                        .into()
                 ),
                 (
                     "hub/cloud_machines".into(),

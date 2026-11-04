@@ -27,6 +27,7 @@ const BASE: JsonObject = {
   machines: [],
   sizes: SIZES,
   boxPubKey: BOX,
+  environmentDefault: "fleetd-devbox",
 };
 
 /** No key yet, on a hub with no public HTTPS address: what the setup step finds first. */

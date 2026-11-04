@@ -152,7 +152,8 @@ function ResetDialog({ machineId, onClose }: { machineId: string; onClose: () =>
         (out) => {
           keep(out.cloud);
           onClose();
-          toast({ title: `Reset ${machineId}`, description: out.said, tone: "success" });
+          // Deleted, but making it again may wait (cloud machines off, a budget spent): the hub says so.
+          toast({ title: `Reset ${machineId}`, description: out.said, tone: out.said.includes("waits") ? "warning" : "success" });
         },
         (e: unknown) => setError(errorText(e)),
       )
@@ -249,6 +250,9 @@ function KeySetting({ cloud }: { cloud: CloudView }) {
       setProblem(fix === undefined ? out.error.message : `${out.error.message} ${fix}`);
       return;
     }
+    // The pool as the hub has it now, key saved, whatever the Test after it does.
+    const saved = (out.output as { cloud?: CloudView } | null)?.cloud;
+    if (saved !== undefined) keep(saved);
     setKey("");
     setEditing(false);
     await test();
@@ -336,7 +340,8 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
   const [day, setDay] = useState(cloud.dayBudget.toFixed(2));
   const [month, setMonth] = useState(cloud.monthIsPlan ? "" : cloud.monthBudget.toFixed(2));
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set(cloud.projects.map((r) => `${r.machineId}/${r.projectId}`)));
-  const [environment, setEnvironment] = useState(cloud.environment ?? "");
+  // The environment the setup step had them make, until one is saved: Create refuses without one.
+  const [environment, setEnvironment] = useState(cloud.environment ?? cloud.environmentDefault);
   const [busy, setBusy] = useState<"save" | "create" | "resume" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [lines, setLines] = useState<ReadonlyArray<string>>([]);
@@ -452,7 +457,7 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
         )}
       </Setting>
       <Setting reveal="hub.cloud.environment" label="boat.dev environment" help="The environment you made for fleetd, marked safe for third parties. The key is scoped to it.">
-        <Input aria-label="boat.dev environment" mono className={a.environment} value={environment} placeholder="fleetd-devbox" disabled={busy !== null} onChange={(e) => setEnvironment(e.target.value)} />
+        <Input aria-label="boat.dev environment" mono className={a.environment} value={environment} placeholder={cloud.environmentDefault} disabled={busy !== null} onChange={(e) => setEnvironment(e.target.value)} />
       </Setting>
       <Setting reveal="hub.cloud.cost" label="What it can cost" help="Before you turn it on. Work goes to cloud only when every machine here is at its agent limit, so most days cost far less than the ceiling.">
         <dl className={a.cost} data-cost="">

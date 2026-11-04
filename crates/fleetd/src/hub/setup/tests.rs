@@ -427,6 +427,8 @@ fn the_cloud_step_gives_the_exact_values_and_is_done_only_when_every_check_passe
         assert!(!value("Actions").contains(forbidden), "{forbidden}");
     }
     assert_eq!(value("Scope: environment"), "fleetd-devbox");
+    // Part 5 names the same environment, where the pool's machines are made.
+    assert_eq!(value("boat.dev environment"), "fleetd-devbox");
     assert_eq!(value("Billing › Auto top-up"), "Off");
     assert_eq!(value("Billing › Extra starts on invoice"), "Off");
     assert_eq!(
@@ -473,4 +475,41 @@ fn the_cloud_step_gives_the_exact_values_and_is_done_only_when_every_check_passe
         step.said.as_deref(),
         Some("boat.dev says the key has expired")
     );
+}
+
+/// The cloud tools over a real hub: anyone reads the pool, with the environment the step names as its default; only an
+/// admin changes it; Create refuses while no environment is saved, before any start, since the key is scoped to one.
+#[tokio::test]
+async fn cloud_create_waits_for_the_environment_the_key_is_scoped_to() {
+    let (hub, _home) = hub();
+    let got = call(&hub, &caller("operate"), "cloud_get", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(got["cloud"]["environmentDefault"], "fleetd-devbox");
+    assert!(got["cloud"].get("environment").is_none(), "{got}");
+    let settings =
+        json!({ "enabled": false, "poolSize": 3, "machineType": "large", "dayBudget": 3.0 });
+    assert!(
+        call(&hub, &caller("operate"), "cloud_set", settings.clone())
+            .await
+            .is_err()
+    );
+    let why = format!(
+        "{:?}",
+        call(&hub, &caller("admin"), "cloud_create", json!({}))
+            .await
+            .unwrap_err()
+    );
+    assert!(why.contains("No boat.dev environment is saved"), "{why}");
+    assert!(why.contains("fleetd-devbox"), "{why}");
+    // Saved, it is what the pool creates in.
+    let saved = call(
+        &hub,
+        &caller("admin"),
+        "cloud_set",
+        json!({ "enabled": false, "poolSize": 3, "machineType": "large", "dayBudget": 3.0, "environment": "fleetd-devbox" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved["cloud"]["environment"], "fleetd-devbox");
 }

@@ -79,7 +79,7 @@ fn way(label: Option<&str>, checks: &[&str]) -> SetupWay {
 }
 
 /// The host's first label, which names this hub at each provider: `fleetd on devbox`.
-fn host_of(hub: &str) -> String {
+pub(crate) fn host_of(hub: &str) -> String {
     let rest = hub.split_once("://").map_or(hub, |(_, r)| r);
     let authority = rest.split('/').next().unwrap_or_default();
     let host = match authority.rsplit_once(':') {
@@ -567,6 +567,11 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                     ),
                     vec![],
                     vec![
+                        noted(
+                            "boat.dev environment",
+                            format!("fleetd-{host}"),
+                            "The one you made in part 2: machines are made in it, where the key reaches.",
+                        ),
                         plain("Machines", "3 × large (8 vCPUs, 16 GB, $0.072 an hour each)"),
                         plain("Day budget", "$3"),
                         plain("Month budget", "your plan's included dollars ($20)"),
