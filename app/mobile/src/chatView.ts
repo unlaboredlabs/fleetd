@@ -108,18 +108,16 @@ export const replyOf = (text: string): { readonly quote: string; readonly body: 
 };
 
 /**
- * What a row of the person's own says about where it is, or undefined once the hub has it. Nothing while it goes, as
- * in Messages: a line that came and went under each send would bounce the thread. A failed one's ! offers Try Again
- * and Delete.
+ * The line under a row of the person's own, for what stays: a send that didn't go (its ! offers Try Again and Delete),
+ * or a lead that can't take it yet. Nothing while it goes, as in Messages: a line that came and went under each send
+ * would bounce the thread. A slow one has its mark beside the bubble instead (sendWait).
  */
 export const sendNote = (item: Pick<ChatItem, "state" | "error" | "leadWaiting">): string | undefined => {
   switch (item.state) {
     case "pending":
-      return undefined;
     case "queued":
-      return "Not connected: it goes when the hub is back.";
     case "reconnecting":
-      return "The link dropped: it goes again when the hub is back.";
+      return undefined;
     case "unanswered":
       return "Not sent: the hub didn't answer.";
     case "failed":
@@ -127,6 +125,26 @@ export const sendNote = (item: Pick<ChatItem, "state" | "error" | "leadWaiting">
     default:
       return item.leadWaiting;
   }
+};
+
+/** How long a send goes before it says so: one the hub takes sooner shows nothing at all. */
+export const SLOW_SEND_MS = 1_000;
+
+/**
+ * A send still on its way: what its mark beside the bubble says (VoiceOver reads it), and how long until it shows, 0
+ * once it has gone SLOW_SEND_MS. Undefined once the hub has it, or it failed. The mark sits out of the row's layout, so
+ * neither its coming nor its going moves the thread; the bar under the chat's name says when the link is down.
+ */
+export const sendWait = (item: Pick<ChatItem, "state" | "at">, nowMs: number): { readonly words: string; readonly inMs: number } | undefined => {
+  const words =
+    item.state === "pending"
+      ? "Sending…"
+      : item.state === "queued"
+        ? "Not connected: it goes when the hub is back."
+        : item.state === "reconnecting"
+          ? "The link dropped: it goes again when the hub is back."
+          : undefined;
+  return words === undefined ? undefined : { words, inMs: Math.max(0, msOf(item.at) + SLOW_SEND_MS - nowMs) };
 };
 
 /** A message as the chats list's one line: its text without markdown, or what its card is. */

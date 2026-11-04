@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyDelta, applyHistory, chatItems, emptyChat, type Chat, type ChatItem, type ChatMessage } from "./desktop";
-import { attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, streamingAt, threadRows, timeLine, viewOffsetOf, type ThreadRow } from "./chatView";
+import { attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, sendWait, SLOW_SEND_MS, streamingAt, threadRows, timeLine, viewOffsetOf, type ThreadRow } from "./chatView";
 
 const message = (text: string, parts?: ChatMessage["parts"]): ChatMessage => ({
   messageId: "m1",
@@ -61,12 +61,44 @@ describe("bubbles", () => {
 });
 
 describe("sendNote", () => {
-  it("says where a send is, and nothing once sent", () => {
-    expect(sendNote({ state: "queued" })).toBe("Not connected: it goes when the hub is back.");
+  it("puts a line under a send only for what stays: a failure, or a lead that can't take it yet", () => {
     expect(sendNote({ state: "failed", error: { code: "invalid", message: "Too long." } })).toBe("Not sent: Too long.");
-    // Nothing while it goes: no line that comes and goes under each send.
+    expect(sendNote({ state: "unanswered" })).toBe("Not sent: the hub didn't answer.");
+    expect(sendNote({ state: "sent", leadWaiting: "devbox is offline." })).toBe("devbox is offline.");
+    // Nothing while it goes, linked or not: no line that comes and goes under each send.
     expect(sendNote({ state: "pending" })).toBeUndefined();
+    expect(sendNote({ state: "queued" })).toBeUndefined();
+    expect(sendNote({ state: "reconnecting" })).toBeUndefined();
     expect(sendNote({ state: "sent" })).toBeUndefined();
+  });
+});
+
+describe("sendWait", () => {
+  const at = "2026-11-04T10:00:00.000Z";
+  const t0 = Date.parse(at);
+  // What a send's row holds at each moment: the line in its layout, and the mark out of it.
+  const shown = (state: ChatItem["state"], ms: number) => {
+    const wait = sendWait({ state, at }, t0 + ms);
+    return { note: sendNote({ state }), wait: wait?.inMs === 0 ? wait.words : undefined };
+  };
+
+  it("shows nothing for a send the hub takes quickly, and its row never changes height", () => {
+    // Sent, then the hub answers 300 ms later; or the link was a moment behind (queued, then sent).
+    for (const path of [["pending", "sent"], ["queued", "pending", "sent"], ["reconnecting", "sent"]] as const) {
+      const frames = path.flatMap((state, i) => [0, 100, 250].map((ms) => shown(state, i * 300 + ms)));
+      expect(frames.every((f) => f.note === undefined && f.wait === undefined)).toBe(true);
+    }
+  });
+
+  it("marks a slow send beside its bubble after a second, never in a line under it", () => {
+    expect(sendWait({ state: "pending", at }, t0 + 999)).toEqual({ words: "Sending…", inMs: 1 });
+    expect(shown("pending", SLOW_SEND_MS)).toEqual({ note: undefined, wait: "Sending…" });
+    expect(shown("queued", 5_000)).toEqual({ note: undefined, wait: "Not connected: it goes when the hub is back." });
+    expect(shown("reconnecting", 5_000)).toEqual({ note: undefined, wait: "The link dropped: it goes again when the hub is back." });
+    // Once the hub has it, or it failed, the mark goes; a failure says so in its line.
+    expect(shown("sent", 5_000)).toEqual({ note: undefined, wait: undefined });
+    expect(shown("failed", 5_000).wait).toBeUndefined();
+    expect(shown("failed", 5_000).note).toBe("Not sent: the hub refused it.");
   });
 });
 
