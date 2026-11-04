@@ -4725,6 +4725,10 @@
             "$ref": "#/$defs/ProjectRef"
           },
           "type": "array"
+        },
+        "writers": {
+          "description": "Writers may run there too; absent keeps what is set.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -4925,6 +4929,10 @@
           "description": "Dollars spent today and this month, in the hub's time zone.",
           "format": "double",
           "type": "number"
+        },
+        "writers": {
+          "description": "Writers may run there too; reviews and readers always may.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -4937,6 +4945,7 @@
         "monthIsPlan",
         "environmentDefault",
         "projects",
+        "writers",
         "today",
         "month",
         "machines",

@@ -7,6 +7,7 @@ const machine = (machineId: string, state: CloudMachine["state"], more: Partial<
 const view = (more: Partial<CloudView> = {}): CloudView => ({
   boxPubKey: "A".repeat(43) + "=",
   environmentDefault: "fleetd-devbox",
+  writers: false,
   hasKey: true,
   enabled: true,
   poolSize: 3,

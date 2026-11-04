@@ -117,7 +117,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.cloud.address", label: "Hub address for cloud machines", tab: "hub.machines", keywords: ["cloud", "https", "public", "funnel", "reverse proxy"] },
   { key: "hub.cloud.pool", label: "Cloud pool", tab: "hub.machines", keywords: ["cloud", "boat", "pool", "size", "large", "machines"] },
   { key: "hub.cloud.budgets", label: "Cloud budgets", tab: "hub.machines", keywords: ["cloud", "budget", "cost", "spend", "dollars", "day", "month"] },
-  { key: "hub.cloud.projects", label: "Projects on cloud machines", tab: "hub.machines", keywords: ["cloud", "projects", "opt in"] },
+  { key: "hub.cloud.projects", label: "Projects on cloud machines", tab: "hub.machines", keywords: ["cloud", "projects", "opt in", "writers", "reviews", "readers"] },
   { key: "hub.cloud.environment", label: "boat.dev environment", tab: "hub.machines", keywords: ["cloud", "boat", "environment"] },
   { key: "hub.cloud.cost", label: "What cloud machines can cost", tab: "hub.machines", keywords: ["cloud", "cost", "ceiling", "price", "typical day"] },
   { key: "hub.cloud.on", label: "Turn cloud machines on", tab: "hub.machines", keywords: ["cloud", "on", "off", "create", "resume"] },

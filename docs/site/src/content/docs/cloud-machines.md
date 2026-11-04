@@ -10,8 +10,8 @@ uses its owner's boat.dev key, sealed to the hub.
 The hub keeps a small fixed pool (3 `large` machines by default, `boat-1`…`boat-3`). Each one is made once, joins as
 an ordinary [machine](/docs/machines), and then sleeps. Work wakes it, and it goes back to sleep 15 minutes after it
 is idle. Asleep, it costs nothing and keeps its disk: worktrees, caches, transcripts and the secrets sealed to it. A
-follow-up turn wakes the machine its task ran on. Which work goes to the cloud, and when, is on
-[Machines](/docs/machines) under "When work goes to a cloud machine".
+follow-up turn wakes the machine its task ran on. Which work goes to the cloud, and when, is in
+[When work goes to a cloud machine](/docs/machines#cloud).
 
 Cloud machines are off until an admin sets them up and turns them on.
 
@@ -166,7 +166,8 @@ then makes it again with one start. Work pushed to GitHub is safe. An awake mach
 - Every cloud machine is x86_64 Ubuntu: no macOS and no iOS simulators. Those stay on [the agents' Mac](/docs/agents-mac).
 - A pool holds 1 to 10 machines of one size. Grow it with more `large` machines rather than `xlarge`, which costs more
   per vCPU.
-- Reviews and readers go to cloud machines first; writers follow once wake catch-up and disk handling have proved out.
+- Reviews and readers of the projects you opt in may go to cloud machines; writers only once an admin turns on
+  **Writers too** in Settings › Hub › Machines › Cloud machines.
 - Cloud machines reach the hub only over public HTTPS; there is no Tailscale path for them.
 - One boat.dev account can serve several hubs: each touches only machines with its own label, and they share the
   account's starts.

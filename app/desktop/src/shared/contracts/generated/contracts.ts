@@ -1863,6 +1863,8 @@ export type CloudSetInput = {
   /** 1 to [`POOL_MAX`]. */
   poolSize: number;
   projects?: ProjectRef[];
+  /** Writers may run there too; absent keeps what is set. */
+  writers?: boolean;
 };
 
 export type CloudSetOutput = {
@@ -1940,6 +1942,8 @@ export type CloudView = {
   sizes: CloudSize[];
   /** Dollars spent today and this month, in the hub's time zone. */
   today: number;
+  /** Writers may run there too; reviews and readers always may. */
+  writers: boolean;
 };
 
 /**

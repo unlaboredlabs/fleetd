@@ -342,6 +342,7 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set(cloud.projects.map((r) => `${r.machineId}/${r.projectId}`)));
   // The environment the setup step had them make, until one is saved: Create refuses without one.
   const [environment, setEnvironment] = useState(cloud.environment ?? cloud.environmentDefault);
+  const [writers, setWriters] = useState(cloud.writers);
   const [busy, setBusy] = useState<"save" | "create" | "resume" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [lines, setLines] = useState<ReadonlyArray<string>>([]);
@@ -365,6 +366,7 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
         dayBudget,
         ...(monthBudget === undefined ? {} : { monthBudget }),
         projects: refs,
+        writers,
         ...(environment.trim() === "" ? {} : { environment: environment.trim() }),
       });
       keep(out.cloud);
@@ -404,6 +406,7 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
     dayBudget !== cloud.dayBudget ||
     (monthBudget ?? null) !== (cloud.monthIsPlan ? null : cloud.monthBudget) ||
     environment.trim() !== (cloud.environment ?? "") ||
+    writers !== cloud.writers ||
     refs.length !== cloud.projects.length ||
     refs.some((r) => !cloud.projects.some((p) => p.machineId === r.machineId && p.projectId === r.projectId));
   const toggle = (key: string, on: boolean) =>
@@ -442,7 +445,7 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
         </div>
         <Text size="xs" tone="quiet">{`Today ${money(cloud.today)} of ${money(cloud.dayBudget)} · this month ${money(cloud.month)} of ${money(cloud.monthBudget)}`}</Text>
       </Setting>
-      <Setting reveal="hub.cloud.projects" label="Projects" help="Only the projects you tick run on cloud machines: their code, transcripts and the secrets sealed there go to boat.dev. Reviews and readers go first.">
+      <Setting reveal="hub.cloud.projects" label="Projects" help="Only the projects you tick run on cloud machines: their code, transcripts and the secrets sealed there go to boat.dev. Their reviews and readers may go there; writers only once you allow them.">
         {projects.length === 0 ? (
           <Text size="sm" tone="quiet">
             No projects yet.
@@ -455,6 +458,13 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
             })}
           </div>
         )}
+        <Switch
+          label="Writers too"
+          description="Off: only reviews and readers go to cloud machines. On: a writer's follow-ups wake the machine it ran on."
+          checked={writers}
+          disabled={busy !== null}
+          onCheckedChange={setWriters}
+        />
       </Setting>
       <Setting reveal="hub.cloud.environment" label="boat.dev environment" help="The environment you made for fleetd, marked safe for third parties. The key is scoped to it.">
         <Input aria-label="boat.dev environment" mono className={a.environment} value={environment} placeholder={cloud.environmentDefault} disabled={busy !== null} onChange={(e) => setEnvironment(e.target.value)} />

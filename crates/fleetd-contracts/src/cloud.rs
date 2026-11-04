@@ -88,6 +88,8 @@ pub struct CloudView {
     pub environment_default: String,
     /// The projects whose work may run on cloud machines.
     pub projects: Vec<ProjectRef>,
+    /// Writers may run there too; reviews and readers always may.
+    pub writers: bool,
     /// Dollars spent today and this month, in the hub's time zone.
     pub today: f64,
     pub month: f64,
@@ -124,6 +126,8 @@ pub struct CloudSettings {
     #[serde(default)]
     pub projects: Vec<ProjectRef>,
     pub environment: Option<String>,
+    /// Writers may run there too; absent keeps what is set.
+    pub writers: Option<bool>,
 }
 
 /// The most machines a pool holds.

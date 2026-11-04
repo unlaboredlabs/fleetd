@@ -241,7 +241,11 @@ impl Pool {
                 projects,
                 environment: environment.map(str::to_owned),
             })
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        if let Some(on) = c.writers {
+            self.ledger.set_writers(on).map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 
     /// The slots of the pool's size that need a create: none made yet, or one that failed or boat no longer has.

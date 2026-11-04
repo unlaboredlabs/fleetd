@@ -1510,12 +1510,14 @@ async fn settings_are_checked_before_they_are_saved() {
             project_id: ProjectId::new("shop").unwrap(),
         }],
         environment: Some(" fleetd-devbox ".into()),
+        writers: Some(true),
     };
     w.pool.apply(&ok).unwrap();
     let s = w.pool.ledger.settings().unwrap();
     assert_eq!((s.pool_size, s.day_budget), (2, 5.0));
     assert_eq!(s.environment.as_deref(), Some("fleetd-devbox"));
     assert_eq!(s.projects.len(), 1);
+    assert!(s.writers);
     assert_eq!(
         s.month_budget(),
         20.0,

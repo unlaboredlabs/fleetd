@@ -72,6 +72,7 @@ pub fn cloud_view(hub: &Hub) -> Result<CloudView, ToolError> {
         month_is_plan: s.month_budget.is_none(),
         environment: s.environment.clone(),
         environment_default: environment_default(hub),
+        writers: s.writers,
         projects: s.projects.clone(),
         today: budget.day_spent,
         month: budget.month_spent,
