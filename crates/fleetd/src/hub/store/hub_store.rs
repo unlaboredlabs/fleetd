@@ -201,7 +201,8 @@ impl HubStore {
     }
 
     /// [`Self::projects_list`] as people and leads see it: a checkout another project holds as one of its repos is
-    /// that project's, not a project of its own, so it is left out (`project_get` still reads it).
+    /// that project's, not a project of its own, so it is left out (`project_get` still reads it), and so is a cloud
+    /// machine's clone of a project's checkout (D306), which hosts no project of its own.
     pub fn projects_shown(
         &self,
         machine_id: Option<&MachineId>,
@@ -227,6 +228,7 @@ impl HubStore {
          AND NOT ($shown AND EXISTS (SELECT 1 FROM repos r WHERE r.checkout_machine_id = projects.machine_id
            AND r.checkout_project_id = projects.project_id
            AND NOT (r.machine_id = projects.machine_id AND r.project_id = projects.project_id)))
+         AND NOT ($shown AND EXISTS (SELECT 1 FROM node_keys k WHERE k.machine_id = projects.machine_id AND k.pool = 1))
        ORDER BY last_activity_at DESC",
                 named_params! {
                     "$machine": machine_id.map(MachineId::as_str), "$query": query, "$shown": shown

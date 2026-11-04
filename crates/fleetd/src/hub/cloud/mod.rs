@@ -39,6 +39,8 @@ pub fn is_pool(hub: &Hub, machine_id: &MachineId) -> bool {
 #[derive(Default)]
 pub struct Cloud {
     caught_up: Mutex<HashMap<MachineId, i64>>,
+    /// The pool checkouts being cloned (hub/pool/place.rs).
+    pub cloning: crate::hub::pool::place::Cloning,
 }
 
 impl Cloud {

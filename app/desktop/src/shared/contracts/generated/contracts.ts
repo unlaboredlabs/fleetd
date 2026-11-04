@@ -7441,6 +7441,11 @@ export type Task = {
   qa?: boolean;
   /** Why it is queued, e.g. "fleet cap: 40 of 40 running". */
   queuedReason?: string;
+  /**
+   * The cloud machine it runs on (D306): placed there because its project's own machine was at its agent limit.
+   * Every later turn of it runs there too, where its worktree is. Absent for a task on its project's own machine.
+   */
+  ranOn?: MachineId;
   /** Set once a run of it died (its node stopped, its process was killed, a stall) and fleetd resumed it or will. */
   recovery?: TaskRecovery;
   /** The project's repo it works in; absent for the project's own directory, and on rows an older hub stored. */

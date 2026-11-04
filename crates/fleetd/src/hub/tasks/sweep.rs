@@ -25,6 +25,7 @@ use serde_json::{Value, json};
 use super::breaker::{Opened, Paused};
 use super::ports::WakeKind;
 use super::recovery::Kind;
+use super::render;
 use super::{TaskFilter, TaskRecords, TaskResultStatus, Tasks};
 use crate::hub::store::{NewEvent, StoreError, iso_ms, now_ms, parse_ms};
 
@@ -322,7 +323,7 @@ impl Tasks {
         self.breakers
             .lock()
             .unwrap()
-            .death(&task.project_ref.machine_id, &task.task_id, now)
+            .death(render::runs_on(task), &task.task_id, now)
     }
 
     /// Whether the task waits on its machine's breaker.
@@ -330,7 +331,7 @@ impl Tasks {
         self.breakers
             .lock()
             .unwrap()
-            .holds(&task.project_ref.machine_id, &task.task_id)
+            .holds(render::runs_on(task), &task.task_id)
     }
 
     /// A dead task about to resume waits instead while its machine's breaker is open, and says so.
@@ -374,7 +375,7 @@ impl Tasks {
         opened: &Opened,
     ) -> Result<(), StoreError> {
         for stored in self.db(TaskRecords::queued)? {
-            if &stored.task.project_ref.machine_id == machine {
+            if render::runs_on(&stored.task) == machine {
                 self.hold_if_paused(&stored.task.task_id, machine)?;
             }
         }
@@ -559,7 +560,7 @@ impl Tasks {
             };
             self.breakers.lock().unwrap().restore(&machine, opened, at);
             for stored in self.db(TaskRecords::queued).unwrap_or_default() {
-                if stored.task.project_ref.machine_id == machine {
+                if render::runs_on(&stored.task) == &machine {
                     let _ = self.hold_if_paused(&stored.task.task_id, &machine);
                 }
             }

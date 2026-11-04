@@ -63,7 +63,7 @@ use serde_json::{Map, Value, json};
 use crate::clock::Clock;
 use crate::hub::api::Shutdown;
 use crate::hub::policy::Policies;
-use crate::hub::slots::{SlotRequest, Slots, priority_of};
+use crate::hub::slots::{Grant, Placed, SlotRequest, Slots, priority_of};
 use crate::hub::store::parse_ms;
 use crate::hub::store::{
     EventLog, HubDb, HubStore, NewEvent, StoreError, WaitInput, iso_ms, now_ms,
@@ -361,6 +361,9 @@ pub struct Tasks {
     /// Running tasks whose lead was told their machine is away, with the machine and the start of that offline spell:
     /// once per spell. Not kept across a hub restart, after which a spell may be told once more.
     unreachable: Mutex<HashMap<TaskId, (MachineId, String)>>,
+    /// Tasks waiting for their cloud machine while none may wake (the budget, the start budget) whose lead was told:
+    /// once per wait. Not kept across a hub restart, after which a wait may be told once more.
+    cloud_told: Mutex<HashSet<TaskId>>,
     /// Tasks fleetd resumed whose new run hasn't started yet: what the dead run was doing, and what the node had last
     /// rebuilt their worktree from before the resume. Their lead's line goes once the run starts, when the node has
     /// said whether it rebuilt the worktree for it. Not kept across a hub restart.
@@ -403,6 +406,7 @@ impl Tasks {
             stopping: Mutex::new(HashSet::new()),
             binding: Arc::new(Mutex::new(HashSet::new())),
             unreachable: Mutex::new(HashMap::new()),
+            cloud_told: Mutex::new(HashSet::new()),
             resumed: Mutex::new(HashMap::new()),
             handoffs: Mutex::new(HashMap::new()),
             breakers: Mutex::default(),
@@ -551,7 +555,13 @@ impl Tasks {
         let r = &task.project_ref;
         // Its worktree, branch and setup are its repo's: the work runs in the repo's checkout (W79).
         let repo = self.repo_of(task)?;
-        let checkout = repo.as_ref().map_or(r, |repo| &repo.checkout);
+        let home = repo.as_ref().map_or(r, |repo| &repo.checkout);
+        // On a cloud machine (D306), in its twin of that checkout: the clone registered there under the same id.
+        let twin = task
+            .ran_on
+            .as_ref()
+            .map(|m| crate::hub::pool::place::twin(m, home));
+        let checkout = twin.as_ref().unwrap_or(home);
         let gone = |p: &ProjectRef| {
             StartError::Other(format!(
                 "No project {} on machine {}.",
@@ -570,7 +580,8 @@ impl Tasks {
                 None => return Err(gone(checkout)),
             }
         };
-        let policy = self.d.policies.get(checkout).await?;
+        // Its rules are the home checkout's, wherever it runs.
+        let policy = self.d.policies.get(home).await?;
         stages.done("policy");
         let brief = self.workstream(&task.workstream_id).and_then(|w| w.brief);
         let write = task.kind == TaskKind::Write;
@@ -765,6 +776,11 @@ impl Tasks {
             tasks.catch_up().await;
             tasks.retry_queue().await;
         });
+    }
+
+    /// Runs the queue again soon, off the caller: a cloud machine woke, caught up or finished a clone (hub/pool).
+    pub fn retry_soon(self: &Arc<Self>) {
+        self.retry_later();
     }
 
     fn retry_later(self: &Arc<Self>) {
@@ -963,10 +979,13 @@ impl Tasks {
         }
         let task = &stored.task;
         let r = &task.project_ref;
-        // The machine it runs on: its repo checkout's. One whose repo is gone fails at its launch.
-        let machine = &self
-            .checkout_of(task)
-            .map_or_else(|_| r.machine_id.clone(), |checkout| checkout.machine_id);
+        let machine = &self.runs_on(task);
+        // A cloud machine's task waits for that machine, where its worktree is, and wakes it (D306).
+        if task.ran_on.is_some()
+            && !(self.d.ports.is_connected(machine) && self.d.ports.cloud_claim(machine))
+        {
+            return self.wait_cloud(stored, machine).map(Reserved::Now);
+        }
         // Checked before the slot: taking and releasing one would run the queue again at once.
         let offline = format!("machine {} is offline", machine.as_str());
         if !self.d.ports.is_connected(machine) {
@@ -1027,14 +1046,23 @@ impl Tasks {
         } else {
             None
         };
-        let slot = self.d.slots.acquire(SlotRequest {
+        let request = SlotRequest {
             holder: task.task_id.as_str(),
             project_ref: r,
             priority: priority_of(task.kind),
-        })?;
-        if let crate::hub::slots::Grant::Queued(reason) = slot {
-            return self.queue(stored, "slot", &reason).map(Reserved::Now);
+            on: task.ran_on.as_ref(),
+        };
+        // A new task goes to a cloud machine only when its own machine is at its agent limit (D306).
+        let mut stored = stored.clone();
+        if task.thread_ref.is_none() && task.ran_on.is_none() {
+            match self.place(&stored, request)? {
+                Ok(on) => stored.task.ran_on = on,
+                Err(queued) => return Ok(Reserved::Now(queued)),
+            }
+        } else if let crate::hub::slots::Grant::Queued(reason) = self.d.slots.acquire(request)? {
+            return self.queue(&stored, "slot", &reason).map(Reserved::Now);
         }
+        let (stored, task) = (&stored, &stored.task);
 
         // A paused agent's thread is still pushing its work: it continues once that turn ended, when its stop frees
         // the slot and runs the queue again. One that asked its lead meanwhile continues with the answer.
@@ -1061,6 +1089,96 @@ impl Tasks {
             compact,
             continuing,
         }))
+    }
+
+    /// The machine the task runs on: the cloud machine it was placed on (D306), else its repo checkout's. One whose
+    /// repo is gone fails at its launch.
+    fn runs_on(&self, task: &Task) -> MachineId {
+        match &task.ran_on {
+            Some(m) => m.clone(),
+            None => self
+                .checkout_of(task)
+                .map_or_else(|_| task.project_ref.machine_id.clone(), |c| c.machine_id),
+        }
+    }
+
+    /// A new task's slot (D306): on its own machine while that has room; else, once that is at its agent limit, on
+    /// an awake cloud machine with room, the most loaded first; else a cloud machine wakes for it and it waits, its
+    /// line saying why. Ok: where it goes (None: its own machine); Err: the task as it queued.
+    fn place(
+        self: &Arc<Self>,
+        stored: &StoredTask,
+        request: SlotRequest<'_>,
+    ) -> Result<Result<Option<MachineId>, Task>, StoreError> {
+        let task = &stored.task;
+        let checkout = self
+            .checkout_of(task)
+            .unwrap_or_else(|_| task.project_ref.clone());
+        let room = self.d.ports.cloud_room(task, &checkout);
+        let cloud = match (&room.eligible, &room.closed) {
+            (Ok(()), None) => room.awake.clone(),
+            _ => Vec::new(),
+        };
+        let reason = match self.d.slots.place(request, &cloud)? {
+            Placed::Granted(None) => return Ok(Ok(None)),
+            Placed::Granted(Some(m)) if self.d.ports.cloud_claim(&m) => return Ok(Ok(Some(m))),
+            // It stopped being awake meanwhile: back in line on its own machine.
+            Placed::Granted(Some(_)) => {
+                self.d.slots.release(request.holder)?;
+                match self.d.slots.acquire(request)? {
+                    Grant::Granted => return Ok(Ok(None)),
+                    Grant::Queued(reason) => reason,
+                }
+            }
+            Placed::Full(reason) => {
+                let why = match (room.eligible, room.closed, room.cloning) {
+                    (Err(why), _, _) => why,
+                    (Ok(()), Some(closed), _) => Some(closed),
+                    (Ok(()), None, Some(m)) => {
+                        Some(format!("cloning its repo on {m}, a cloud machine"))
+                    }
+                    (Ok(()), None, None) => Some(match self.d.ports.cloud_wake(None) {
+                        Ok(m) => {
+                            if !self.d.ports.is_connected(&m) {
+                                self.retry_when_live(&m);
+                            }
+                            format!("waking {m}, a cloud machine, about 30 s")
+                        }
+                        Err(why) => why,
+                    }),
+                };
+                why.map_or_else(|| reason.clone(), |why| format!("{reason}; {why}"))
+            }
+            Placed::Queued(reason) => reason,
+        };
+        self.queue(stored, "slot", &reason).map(Err)
+    }
+
+    /// A task placed on a cloud machine waits for that machine, where its worktree is, and wakes it (D306). While it
+    /// can't wake (the budget, the start budget, boat's backoff), the task waits and its lead is told once.
+    fn wait_cloud(
+        self: &Arc<Self>,
+        stored: &StoredTask,
+        machine: &MachineId,
+    ) -> Result<Task, StoreError> {
+        let task = &stored.task;
+        // A machine linked but still catching up runs the queue again once it is ready (hub/pool's `woke`).
+        if !self.d.ports.is_connected(machine) {
+            self.retry_when_live(machine);
+        }
+        let reason = match self.d.ports.cloud_wake(Some(machine)) {
+            Ok(_) => format!("waiting for {machine} to wake: its work is there"),
+            Err(why) => {
+                if self.cloud_told.lock().unwrap().insert(task.task_id.clone()) {
+                    let line = render::task_cloud_waits_lines(task, machine, &why);
+                    self.d
+                        .ports
+                        .wake(&task.project_ref, WakeKind::Recovery, line);
+                }
+                format!("waiting for {machine} to wake: {why}")
+            }
+        };
+        self.queue(stored, "cloud", &reason)
     }
 
     /// A reserved start's node call, off the lock, then its record under the lock. Thread events held back for it
@@ -1175,15 +1293,19 @@ impl Tasks {
             doing,
             rebuilt_before,
         } = sent;
-        let machine = &self
-            .checkout_of(task)
-            .map_or_else(|_| r.machine_id.clone(), |checkout| checkout.machine_id);
+        let machine = &self.runs_on(task);
         let (thread_ref, branch, base) = match started {
             Ok(started) => started,
             Err(StartError::Offline) => {
                 self.d.slots.release(task.task_id.as_str())?;
                 self.retry_when_live(machine);
                 let offline = format!("machine {} is offline", machine.as_str());
+                // A new task placed on a cloud machine that went away before it ran there is placed again.
+                if task.thread_ref.is_none() && task.ran_on.is_some() {
+                    let mut again = stored.clone();
+                    again.task.ran_on = None;
+                    return self.queue(&again, "offline", &offline);
+                }
                 return self.queue(stored, "offline", &offline);
             }
             // Its thread can't go on (claude's conversation is gone, or its config dir changed): a new one takes over.
@@ -1206,6 +1328,7 @@ impl Tasks {
             self.handoffs.lock().unwrap().remove(&task.task_id);
         }
         next.thread_ref = Some(thread_ref.clone());
+        self.cloud_told.lock().unwrap().remove(&task.task_id);
         if let Some(branch) = branch {
             next.branch = Some(NonEmpty::unchecked(branch));
         }
@@ -1425,11 +1548,11 @@ impl Tasks {
         let Some(recovery) = task.recovery.as_ref() else {
             return Ok(());
         };
-        let Some(back) = self.d.ports.live_since(&task.project_ref.machine_id) else {
+        let machine_id = &self.runs_on(task);
+        let Some(back) = self.d.ports.live_since(machine_id) else {
             // Offline: its start queues it until the node is back, and this runs again then.
             return Ok(());
         };
-        let machine_id = &task.project_ref.machine_id;
         let caught_up = match self.d.ports.caught_up(machine_id) {
             Some(c) if recovery::cut_by_node(recovery) && self.cut_off_at(task)? <= c.head => {
                 Some(c.at_ms)
@@ -2302,6 +2425,7 @@ impl Tasks {
                     holder: task.task_id.as_str(),
                     project_ref: &task.project_ref,
                     priority: priority_of(task.kind),
+                    on: task.ran_on.as_ref(),
                 };
                 self.d.slots.acquire(request)?;
                 self.d.slots.bind(task.task_id.as_str(), &thread_ref)?;
@@ -2679,6 +2803,7 @@ impl Tasks {
             state: TaskState::Queued,
             queued_reason: None,
             thread_ref: None,
+            ran_on: None,
             previous_threads: Vec::new(),
             branch: None,
             base: None,
@@ -3561,6 +3686,12 @@ mod tests {
         delay: Mutex<std::time::Duration>,
         /// Set: each launch waits for a permit, as a node still fetching.
         gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
+        /// Cloud machines (D306): what `cloud_room` answers (none: not eligible), each `cloud_wake` asked for (None:
+        /// any machine) and what it answers, and the machines whose node is down.
+        cloud: Mutex<Option<crate::hub::pool::place::Room>>,
+        wakes_asked: Mutex<Vec<Option<String>>>,
+        wake_answer: Mutex<Option<Result<String, String>>>,
+        down: Mutex<HashSet<String>>,
     }
 
     impl Node {
@@ -3570,8 +3701,21 @@ mod tests {
     }
 
     impl TaskPorts for Node {
-        fn is_connected(&self, _: &MachineId) -> bool {
-            !self.offline()
+        fn is_connected(&self, m: &MachineId) -> bool {
+            !self.offline() && !self.down.lock().unwrap().contains(m.as_str())
+        }
+        fn cloud_room(&self, _: &Task, _: &ProjectRef) -> crate::hub::pool::place::Room {
+            self.cloud.lock().unwrap().clone().unwrap_or_default()
+        }
+        fn cloud_wake(&self, m: Option<&MachineId>) -> Result<MachineId, String> {
+            self.wakes_asked
+                .lock()
+                .unwrap()
+                .push(m.map(|m| m.to_string()));
+            let answer = self.wake_answer.lock().unwrap().clone();
+            answer
+                .unwrap_or_else(|| Err("cloud machines are off".into()))
+                .map(MachineId::unchecked)
         }
         fn await_live<'a>(&'a self, _: &'a MachineId) -> BoxFut<'a, ()> {
             // The test runs the queue itself once it brings the node back.
@@ -5070,5 +5214,295 @@ mod tests {
         .unwrap();
         assert_eq!(messaged.state, TaskState::Running);
         assert!(tasks.starting.lock().unwrap().is_empty());
+    }
+
+    fn boat(n: u32) -> MachineId {
+        MachineId::unchecked(format!("boat-{n}"))
+    }
+
+    /// lab-a takes one agent; cloud machines boat-1 and boat-2 take two each and hold p1's twin. The node answers
+    /// `room` for every new task.
+    fn cloud_tasks(room: crate::hub::pool::place::Room) -> (Arc<Tasks>, Arc<Node>) {
+        let (tasks, node) = tasks();
+        let max = |m: MachineId, n: i64| {
+            tasks
+                .d
+                .slots
+                .set_cap(crate::hub::slots::CapInput {
+                    machine: Some((m, Some(n))),
+                    ..Default::default()
+                })
+                .unwrap();
+        };
+        max(MachineId::unchecked("lab-a"), 1);
+        for n in 1..=2 {
+            max(boat(n), 2);
+            tasks
+                .d
+                .store
+                .projects_upsert_many(
+                    &boat(n),
+                    &[serde_json::from_value(json!({
+                        "machineId": format!("boat-{n}"), "projectId": "p1", "title": "storefront",
+                        "workspaceRoot": "/home/fleetd/src/acme/shop",
+                        "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+                    }))
+                    .unwrap()],
+                )
+                .unwrap();
+        }
+        *node.cloud.lock().unwrap() = Some(room);
+        (tasks, node)
+    }
+
+    fn room(awake: &[u32]) -> crate::hub::pool::place::Room {
+        crate::hub::pool::place::Room {
+            eligible: Ok(()),
+            awake: awake.iter().map(|n| boat(*n)).collect(),
+            cloning: None,
+            closed: None,
+        }
+    }
+
+    async fn run_queue(tasks: &Arc<Tasks>) {
+        {
+            let _guard = tasks.lock.lock().await;
+            tasks.retry_queue().await;
+        }
+        tasks.starts_recorded().await;
+    }
+
+    fn launched_on(node: &Node) -> Vec<(String, String)> {
+        node.checkouts
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(m, p, _)| (m.clone(), p.clone()))
+            .collect()
+    }
+
+    /// D306's order: its own machine while it has room; then an awake cloud machine with room, the busiest first, so
+    /// work packs onto boat-1 before boat-2 gets any; it runs there in p1's twin, and records where it ran.
+    #[tokio::test]
+    async fn a_new_task_goes_to_a_cloud_machine_only_once_its_own_is_full_and_packs_the_busiest() {
+        let (tasks, node) = cloud_tasks(room(&[1, 2]));
+        let mut spawned = Vec::new();
+        for n in 0..5 {
+            spawned.push(tasks.spawn(&lead(), reader(n)).await.unwrap());
+        }
+        assert!(spawned.iter().all(|t| t.state == TaskState::Running));
+        assert_eq!(
+            launched_on(&node),
+            [
+                ("lab-a", "p1"),
+                ("boat-1", "p1"),
+                ("boat-1", "p1"),
+                ("boat-2", "p1"),
+                ("boat-2", "p1")
+            ]
+            .map(|(m, p)| (m.to_owned(), p.to_owned()))
+        );
+        let ran_on: Vec<_> = spawned.iter().map(|t| t.ran_on.clone()).collect();
+        assert_eq!(
+            ran_on,
+            [
+                None,
+                Some(boat(1)),
+                Some(boat(1)),
+                Some(boat(2)),
+                Some(boat(2))
+            ]
+        );
+        assert_eq!(spawned[1].thread_ref.as_ref().unwrap().machine_id, boat(1));
+        // Its worktree's base is read in the twin, its rules in the home checkout.
+        assert_eq!(
+            node.branch_dirs.lock().unwrap()[1],
+            "/home/fleetd/src/acme/shop"
+        );
+        let state = tasks.d.slots.state();
+        let running = |m: &str| {
+            state
+                .per_machine
+                .iter()
+                .find(|r| r.machine_id.as_str() == m)
+                .map(|r| r.running.get())
+        };
+        assert_eq!(
+            (running("lab-a"), running("boat-1"), running("boat-2")),
+            (Some(1), Some(2), Some(2))
+        );
+        // Every machine full: it queues with its own machine's line, and the pool's.
+        *node.wake_answer.lock().unwrap() =
+            Some(Err("the cloud machines are busy (2 of 2 awake)".into()));
+        let fifth = tasks.spawn(&lead(), reader(5)).await.unwrap();
+        assert_eq!(fifth.state, TaskState::Queued);
+        assert_eq!(
+            fifth.queued_reason.unwrap().as_str(),
+            "machine cap: 1 of 1 running on lab-a (set); the cloud machines are busy (2 of 2 awake)"
+        );
+        // lab-a frees first: the queued one runs there, not on a cloud machine.
+        complete(&tasks, &spawned[0]).await;
+        run_queue(&tasks).await;
+        let fifth = tasks.get(&fifth.task_id).unwrap().unwrap();
+        assert_eq!((fifth.state, fifth.ran_on), (TaskState::Running, None));
+        assert_eq!(launched_on(&node).last().unwrap().0, "lab-a");
+    }
+
+    /// No awake cloud machine has room: one wakes (fleetd asks for any, and the pool picks), the task waits saying so,
+    /// and runs there once it is awake. While a wake can't go, the line says why and nothing wakes.
+    #[tokio::test]
+    async fn with_no_awake_room_a_cloud_machine_wakes_and_the_task_waits_for_it() {
+        let (tasks, node) = cloud_tasks(room(&[]));
+        *node.wake_answer.lock().unwrap() = Some(Ok("boat-1".into()));
+        tasks.spawn(&lead(), reader(0)).await.unwrap();
+        let waiting = tasks.spawn(&lead(), reader(1)).await.unwrap();
+        assert_eq!(waiting.state, TaskState::Queued);
+        assert_eq!(
+            waiting.queued_reason.unwrap().as_str(),
+            "machine cap: 1 of 1 running on lab-a (set); waking boat-1, a cloud machine, about 30 s"
+        );
+        assert_eq!(*node.wakes_asked.lock().unwrap(), [None]);
+        *node.cloud.lock().unwrap() = Some(room(&[1]));
+        run_queue(&tasks).await;
+        let ran = tasks.get(&waiting.task_id).unwrap().unwrap();
+        assert_eq!((ran.state, ran.ran_on), (TaskState::Running, Some(boat(1))));
+
+        // The start budget, boat's backoff: its line, as the pool gives it.
+        let (tasks, node) = cloud_tasks(room(&[]));
+        let held =
+            "fleetd's boat.dev start budget is used (6 of 6 this minute): next start at 10:01";
+        *node.wake_answer.lock().unwrap() = Some(Err(held.into()));
+        tasks.spawn(&lead(), reader(0)).await.unwrap();
+        let waiting = tasks.spawn(&lead(), reader(1)).await.unwrap();
+        assert_eq!(
+            waiting.queued_reason.unwrap().as_str(),
+            format!("machine cap: 1 of 1 running on lab-a (set); {held}")
+        );
+    }
+
+    /// The budget spent closes the cloud even to awake machines: the line says so, and nothing is woken.
+    #[tokio::test]
+    async fn a_spent_budget_keeps_new_work_off_cloud_machines_with_one_plain_line() {
+        let spent = "cloud paused: today's boat.dev budget ($3.00) is spent; work runs on your own machines when there's room";
+        let (tasks, node) = cloud_tasks(crate::hub::pool::place::Room {
+            closed: Some(spent.into()),
+            ..room(&[1])
+        });
+        tasks.spawn(&lead(), reader(0)).await.unwrap();
+        let waiting = tasks.spawn(&lead(), reader(1)).await.unwrap();
+        assert_eq!(
+            waiting.queued_reason.unwrap().as_str(),
+            js_prefix(
+                &format!("machine cap: 1 of 1 running on lab-a (set); {spent}"),
+                200
+            )
+        );
+        assert!(node.wakes_asked.lock().unwrap().is_empty());
+        assert_eq!(launched_on(&node).len(), 1);
+    }
+
+    /// Only an eligible task bursts: a writer while writers may not says why; a project that didn't opt in says
+    /// nothing more than its machine's line. Neither wakes anything.
+    #[tokio::test]
+    async fn a_task_that_may_not_burst_waits_for_its_own_machine() {
+        let why = "writers don't run on cloud machines unless a hub admin turns them on in Settings › Cloud";
+        let (tasks, node) = cloud_tasks(crate::hub::pool::place::Room {
+            eligible: Err(Some(why.into())),
+            ..room(&[1])
+        });
+        tasks.spawn(&lead(), writer("one")).await.unwrap();
+        let second = tasks.spawn(&lead(), writer("two")).await.unwrap();
+        assert_eq!(
+            second.queued_reason.unwrap().as_str(),
+            format!("machine cap: 1 of 1 running on lab-a (set); {why}")
+        );
+        let (tasks, node2) = cloud_tasks(crate::hub::pool::place::Room {
+            eligible: Err(None),
+            ..room(&[1])
+        });
+        tasks.spawn(&lead(), reader(0)).await.unwrap();
+        let second = tasks.spawn(&lead(), reader(1)).await.unwrap();
+        assert_eq!(
+            second.queued_reason.unwrap().as_str(),
+            "machine cap: 1 of 1 running on lab-a (set)"
+        );
+        for node in [node, node2] {
+            assert!(node.wakes_asked.lock().unwrap().is_empty());
+            assert!(launched_on(&node).iter().all(|(m, _)| m == "lab-a"));
+        }
+    }
+
+    /// A follow-up runs where its task's work is: it wakes that machine and waits for it, even with room on lab-a.
+    #[tokio::test]
+    async fn a_follow_up_wakes_the_machine_its_task_ran_on() {
+        let (tasks, node) = cloud_tasks(room(&[1]));
+        let local = tasks.spawn(&lead(), reader(0)).await.unwrap();
+        let cloud = tasks.spawn(&lead(), reader(1)).await.unwrap();
+        assert_eq!(cloud.ran_on, Some(boat(1)));
+        complete(&tasks, &local).await;
+        complete(&tasks, &cloud).await;
+        // boat-1 went to sleep.
+        node.down.lock().unwrap().insert("boat-1".into());
+        *node.wake_answer.lock().unwrap() = Some(Ok("boat-1".into()));
+        let waiting = tasks
+            .message(&lead(), &cloud.task_id, "fix the review's findings")
+            .await
+            .unwrap();
+        assert_eq!(waiting.state, TaskState::Queued);
+        assert_eq!(
+            waiting.queued_reason.unwrap().as_str(),
+            "waiting for boat-1 to wake: its work is there"
+        );
+        assert_eq!(
+            *node.wakes_asked.lock().unwrap(),
+            [Some("boat-1".to_owned())]
+        );
+        node.down.lock().unwrap().clear();
+        run_queue(&tasks).await;
+        let ran = tasks.get(&cloud.task_id).unwrap().unwrap();
+        assert_eq!(ran.state, TaskState::Running);
+        assert_eq!(ran.thread_ref.unwrap().machine_id, boat(1));
+        assert_eq!(
+            launched_on(&node).len(),
+            2,
+            "continued in its thread, not launched again"
+        );
+    }
+
+    /// A follow-up whose machine can't wake (the budget paused) waits there, and its lead is told once.
+    #[tokio::test]
+    async fn a_follow_up_waits_while_its_machine_cant_wake_and_the_lead_is_told_once() {
+        let (tasks, node) = cloud_tasks(room(&[1]));
+        tasks.spawn(&lead(), reader(0)).await.unwrap();
+        let cloud = tasks.spawn(&lead(), reader(1)).await.unwrap();
+        complete(&tasks, &cloud).await;
+        node.down.lock().unwrap().insert("boat-1".into());
+        let spent = "cloud paused: today's boat.dev budget ($3.00) is spent; work runs on your own machines when there's room";
+        *node.wake_answer.lock().unwrap() = Some(Err(spent.into()));
+        let waiting = tasks
+            .message(&lead(), &cloud.task_id, "go on")
+            .await
+            .unwrap();
+        assert_eq!(
+            waiting.queued_reason.unwrap().as_str(),
+            js_prefix(&format!("waiting for boat-1 to wake: {spent}"), 200)
+        );
+        run_queue(&tasks).await;
+        run_queue(&tasks).await;
+        let told: Vec<_> = node
+            .wakes
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, text)| text.contains("waits for boat-1"))
+            .cloned()
+            .collect();
+        assert_eq!(told.len(), 1, "{told:?}");
+        assert_eq!(told[0].0, WakeKind::Recovery);
+        assert!(told[0].1.contains(spent), "{}", told[0].1);
+        assert_eq!(
+            tasks.get(&cloud.task_id).unwrap().unwrap().state,
+            TaskState::Queued
+        );
     }
 }

@@ -16,7 +16,7 @@ use fleetd_contracts::tasks::{SlotState, SlotStatePerMachine, SlotStatePerProjec
 use rusqlite::{OptionalExtension, params};
 
 use board::{Board, BoardState, Claim, ClaimState, Machine, Op};
-pub use board::{Grant, MaxSource, SlotPriority};
+pub use board::{Grant, MaxSource, Placed, SlotPriority};
 
 use crate::clock::Clock;
 use crate::hub::api::Shutdown;
@@ -65,11 +65,14 @@ pub struct Agents {
     pub moved_ms: i64,
 }
 
+#[derive(Clone, Copy)]
 pub struct SlotRequest<'a> {
     /// The TaskId.
     pub holder: &'a str,
     pub project_ref: &'a ProjectRef,
     pub priority: SlotPriority,
+    /// The cloud machine it runs on (D306, `Task.ranOn`); None: its project's own machine.
+    pub on: Option<&'a MachineId>,
 }
 
 pub struct Slots {
@@ -97,14 +100,16 @@ fn persist(db: &HubDb, ops: Vec<Op>) -> Result<(), StoreError> {
             match op {
                 Op::Save(c) => {
                     db.prepare_cached(
-                        "INSERT INTO slot_claims (holder, machine_id, project_id, priority, thread_id, state, order_n) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        "INSERT INTO slot_claims (holder, machine_id, project_id, on_machine, priority, thread_id, state, order_n) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                          ON CONFLICT (holder) DO UPDATE SET machine_id = excluded.machine_id, project_id = excluded.project_id,
-                           priority = excluded.priority, thread_id = excluded.thread_id, state = excluded.state, order_n = excluded.order_n",
+                           on_machine = excluded.on_machine, priority = excluded.priority, thread_id = excluded.thread_id,
+                           state = excluded.state, order_n = excluded.order_n",
                     )?
                     .execute(params![
                         c.holder,
                         c.project_ref.machine_id.as_str(),
                         c.project_ref.project_id.as_str(),
+                        c.on.as_ref().map(MachineId::as_str),
                         c.priority.as_str(),
                         c.thread_id.as_ref().map(|t| t.as_str()),
                         c.state.as_str(),
@@ -176,11 +181,12 @@ fn load(db: &HubDb) -> Result<Board, StoreError> {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         let claims = db
-            .prepare("SELECT holder, machine_id, project_id, priority, thread_id, state, order_n FROM slot_claims")?
+            .prepare("SELECT holder, machine_id, project_id, priority, thread_id, state, order_n, on_machine FROM slot_claims")?
             .query_map([], |r| {
                 Ok(Claim {
                     holder: r.get(0)?,
                     project_ref: project_ref(r.get(1)?, r.get(2)?),
+                    on: r.get::<_, Option<String>>(7)?.map(MachineId::unchecked),
                     priority: SlotPriority::parse(&r.get::<_, String>(3)?),
                     thread_id: r.get::<_, Option<String>>(4)?.map(ThreadId::unchecked),
                     state: ClaimState::parse(&r.get::<_, String>(5)?),
@@ -258,7 +264,7 @@ impl Slots {
                     (
                         c.holder.clone(),
                         ThreadRef {
-                            machine_id: c.project_ref.machine_id.clone(),
+                            machine_id: c.machine().clone(),
                             thread_id: t,
                         },
                     )
@@ -376,7 +382,27 @@ impl Slots {
     pub fn acquire(&self, request: SlotRequest<'_>) -> Result<Grant, StoreError> {
         self.locked(|b| {
             (
-                b.acquire(request.holder, request.project_ref, request.priority),
+                b.acquire(
+                    request.holder,
+                    request.project_ref,
+                    request.priority,
+                    request.on,
+                ),
+                false,
+            )
+        })
+    }
+
+    /// A new task's slot on its project's own machine, else, only once that is at its agent limit, on the cloud
+    /// machine in `cloud` with room that runs the most agents ([`Board::place`]).
+    pub fn place(
+        &self,
+        request: SlotRequest<'_>,
+        cloud: &[MachineId],
+    ) -> Result<Placed, StoreError> {
+        self.locked(|b| {
+            (
+                b.place(request.holder, request.project_ref, request.priority, cloud),
                 false,
             )
         })
@@ -575,6 +601,7 @@ mod tests {
                             holder: &holder,
                             project_ref: r,
                             priority: SlotPriority::Work,
+                            on: None,
                         });
                         usize::from(grant.unwrap().granted())
                     })
@@ -596,6 +623,55 @@ mod tests {
                 moved_ms: 0,
             }
         );
+    }
+
+    /// A claim on a cloud machine (D306) counts there after a restart too.
+    #[test]
+    fn a_claim_on_a_cloud_machine_outlives_a_restart() {
+        let db = HubDb::open_memory().unwrap();
+        let store = HubStore::new(db.clone());
+        let clock = ManualClock::at(1_792_000_000_000);
+        let events = EventLog::new(db.clone(), clock.clone()).unwrap();
+        let open = || Slots::new(db.clone(), clock.clone(), &store, &events).unwrap();
+        let r = ProjectRef {
+            machine_id: MachineId::unchecked("devbox"),
+            project_id: ProjectId::unchecked("app"),
+        };
+        let slots = open();
+        for (m, n) in [("devbox", 1), ("boat-1", 2)] {
+            slots
+                .set_cap(CapInput {
+                    machine: Some((MachineId::unchecked(m), Some(n))),
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+        let request = |holder| SlotRequest {
+            holder,
+            project_ref: &r,
+            priority: SlotPriority::Work,
+            on: None,
+        };
+        let boat = [MachineId::unchecked("boat-1")];
+        assert_eq!(
+            slots.place(request("T1"), &boat).unwrap(),
+            Placed::Granted(None)
+        );
+        assert_eq!(
+            slots.place(request("T2"), &boat).unwrap(),
+            Placed::Granted(Some(boat[0].clone()))
+        );
+        let running = |slots: &Slots| -> Vec<(String, i64)> {
+            slots
+                .state()
+                .per_machine
+                .iter()
+                .map(|m| (m.machine_id.to_string(), m.running.get()))
+                .collect()
+        };
+        let before = running(&slots);
+        assert_eq!(before, [("devbox".to_owned(), 1), ("boat-1".to_owned(), 1)]);
+        assert_eq!(running(&open()), before);
     }
 
     /// A project's own max, and going back to the default, both outlive a restart.
@@ -665,6 +741,7 @@ mod tests {
                     holder,
                     project_ref: &r,
                     priority: SlotPriority::Work,
+                    on: None,
                 })
                 .unwrap()
         };

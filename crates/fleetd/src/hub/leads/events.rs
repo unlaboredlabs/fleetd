@@ -98,6 +98,15 @@ pub enum Event<'a> {
         machine: &'a str,
         minutes: i64,
     },
+    /// A task's cloud machine is asleep and can't wake now (`why`: the budget, the start budget); it waits there,
+    /// where its work is. Quiet, once per wait.
+    AgentCloudWaits {
+        task: &'a str,
+        title: &'a str,
+        place: &'a str,
+        machine: &'a str,
+        why: &'a str,
+    },
     /// A message for a task, held while it waited to resume, that could not be sent to the run a person started.
     MessageNotSent {
         task: &'a str,
@@ -283,6 +292,22 @@ impl Event<'_> {
             } => (
                 format!(
                     "- {task} waits for {machine}, offline for {minutes} min: {}{place}; it resumes on its own when {machine} is back",
+                    one_line(title, 80)
+                ),
+                vec![format!(
+                    "  > Its worktree and session are on {machine}, so it stays there. To have it done elsewhere, cancel it and start a new task."
+                )],
+            ),
+            Event::AgentCloudWaits {
+                task,
+                title,
+                place,
+                machine,
+                why,
+            } => (
+                format!(
+                    "- {task} waits for {machine}, a cloud machine that can't wake now ({}): {}{place}; it goes on there once {machine} can wake",
+                    one_line(why, 160),
                     one_line(title, 80)
                 ),
                 vec![format!(
@@ -532,6 +557,23 @@ mod tests {
             "- T23 waits for devbox, offline for 30 min: B: progress bar; it resumes on its own when devbox is back\n  > \
              Its worktree and session are on devbox, so it stays there. To have it done elsewhere, cancel it and start \
              a new task."
+        );
+    }
+
+    #[test]
+    fn a_task_waiting_for_its_cloud_machine_says_why_and_that_it_stays() {
+        assert_eq!(
+            r(Event::AgentCloudWaits {
+                task: "T23",
+                title: "B: progress bar",
+                place: " [fleetd/T23-b-progress-bar]",
+                machine: "boat-2",
+                why: "cloud paused: today's boat.dev budget ($3.00) is spent; work runs on your own machines when there's room",
+            }),
+            "- T23 waits for boat-2, a cloud machine that can't wake now (cloud paused: today's boat.dev budget ($3.00) \
+             is spent; work runs on your own machines when there's room): B: progress bar [fleetd/T23-b-progress-bar]; \
+             it goes on there once boat-2 can wake\n  > Its worktree and session are on boat-2, so it stays there. To \
+             have it done elsewhere, cancel it and start a new task."
         );
     }
 

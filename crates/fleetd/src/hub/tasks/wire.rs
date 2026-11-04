@@ -86,6 +86,28 @@ impl TaskPorts for HubTaskPorts {
         self.executors.caught_up(machine_id)
     }
 
+    fn cloud_room(
+        &self,
+        task: &fleetd_contracts::tasks::Task,
+        checkout: &ProjectRef,
+    ) -> crate::hub::pool::place::Room {
+        match self.hub() {
+            Some(hub) => crate::hub::pool::place::room(&hub, task, checkout),
+            None => crate::hub::pool::place::Room::default(),
+        }
+    }
+
+    fn cloud_wake(&self, machine: Option<&MachineId>) -> Result<MachineId, String> {
+        let hub = self.hub().ok_or("the hub is stopping")?;
+        let slot = hub.pool.wake_for_work(machine.map(MachineId::as_str))?;
+        MachineId::new(&slot).map_err(|_| format!("{slot} is no machine id"))
+    }
+
+    fn cloud_claim(&self, machine: &MachineId) -> bool {
+        self.hub()
+            .is_some_and(|hub| hub.pool.claim(machine.as_str()))
+    }
+
     fn launch<'a>(
         &'a self,
         machine_id: &'a MachineId,

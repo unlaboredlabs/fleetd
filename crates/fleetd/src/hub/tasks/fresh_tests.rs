@@ -123,6 +123,7 @@ async fn running_writer(
             holder: task.task_id.as_str(),
             project_ref: &task.project_ref,
             priority: SlotPriority::Work,
+            on: None,
         })
         .unwrap();
     (hub, clock, calls, home)

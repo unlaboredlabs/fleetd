@@ -10,6 +10,9 @@
 //! 5. its orders' `GH_TOKEN`s, delivered again: one handed over before it slept may have ended meanwhile
 //!    (`sessions::redeliver_on`).
 //!
+//! Once ready, its pool checkouts are cloned where missing and given their home checkouts' plain variables
+//! (`pool::place::ensure_checkouts`, off the catch-up), and the tasks queue runs again: work waiting for it goes on.
+//!
 //! An order's variables to drop need nothing here: the hub keeps them until their machine is back
 //! (projects/order_env.rs). A step that fails is logged; the others still run. Only a catch-up whose update and Claude
 //! steps went through makes the machine ready for work, so nothing runs on an old fleetd, an old Claude or without the
@@ -123,6 +126,8 @@ pub async fn catch_up(hub: &Arc<Hub>, machine_id: &MachineId) -> Report {
     report.problems.extend(problems);
     if ready {
         hub.cloud.set_caught_up(machine_id, live_since);
+        hub.cloud.cloning.ensure(hub, machine_id);
+        hub.tasks.retry_soon();
     }
     report.ready = ready;
     report

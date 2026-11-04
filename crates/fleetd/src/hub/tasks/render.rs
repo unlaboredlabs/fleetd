@@ -2,6 +2,7 @@
 //! event lines in the lead's wake. Pure. Lengths count UTF-16 units, as older hubs' did.
 use std::sync::LazyLock;
 
+use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::ledger::{Brief, Decision, DecisionState};
 use fleetd_contracts::sessions::WorktreeSource;
 use fleetd_contracts::tasks::{
@@ -477,10 +478,27 @@ pub fn task_unreachable_lines(task: &Task, minutes: i64) -> String {
         task: task.task_id.as_str(),
         title: task.title.as_str(),
         place: &branch_place(task),
-        machine: task.project_ref.machine_id.as_str(),
+        machine: runs_on(task).as_str(),
         minutes,
     }
     .render()
+}
+
+/// The lead's quiet line for a task whose cloud machine can't wake now, and why.
+pub fn task_cloud_waits_lines(task: &Task, machine: &MachineId, why: &str) -> String {
+    Event::AgentCloudWaits {
+        task: task.task_id.as_str(),
+        title: task.title.as_str(),
+        place: &branch_place(task),
+        machine: machine.as_str(),
+        why,
+    }
+    .render()
+}
+
+/// The machine a task runs on, as its lead reads it: its cloud machine (D306), else its project's.
+pub fn runs_on(task: &Task) -> &MachineId {
+    task.ran_on.as_ref().unwrap_or(&task.project_ref.machine_id)
 }
 
 /// The lead's quiet line for a finished writer whose PR lookup the host refused.
@@ -550,14 +568,18 @@ pub fn task_digest_lines(
                 )
             });
         // Its machine is away: it resumes when that is back, so the lead needn't continue it either.
-        let machine = t.project_ref.machine_id.as_str();
+        let machine = runs_on(t).as_str();
         let away = offline(machine)
             .filter(|_| t.state == TaskState::Running)
             .map_or_else(String::new, |at| {
                 format!("; {machine} offline since {at} UTC, it resumes when {machine} is back")
             });
+        let cloud = t
+            .ran_on
+            .as_ref()
+            .map_or_else(String::new, |m| format!("; on {m}, a cloud machine"));
         out.push(format!(
-            "- {} {state} ({}, {}): {}{branch}{recovered}{away}",
+            "- {} {state} ({}, {}): {}{branch}{cloud}{recovered}{away}",
             t.task_id,
             kind_str(t.kind),
             t.profile.as_str(),

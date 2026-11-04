@@ -450,7 +450,9 @@ pub async fn tick(hub: &Arc<Hub>, launcher: &dyn Launcher) -> Result<(), StoreEr
     let Some(night) = night_due(now, tz, at) else {
         return Ok(());
     };
-    for project in hub.store.projects_list(None, None)? {
+    // A cloud machine's checkouts are its projects' twins (D306): their memory is their home checkout's.
+    let projects = hub.store.projects_list(None, None)?.into_iter();
+    for project in projects.filter(|p| !crate::hub::cloud::is_pool(hub, &p.machine_id)) {
         let r = ProjectRef {
             machine_id: project.machine_id.clone(),
             project_id: project.project_id.clone(),
