@@ -112,7 +112,32 @@ as_agent "gh auth setup-git"
 
 step "the hub's tunnel"
 # The hub dials this machine over SSH and forwards $HUB on its loopback to itself, so the hub needs no public address.
-# It opens the tunnel as soon as boat.dev says the machine runs; wait for it (the hub stops a machine that never joins).
+# boat's sshd never checks that a client is still there (ClientAliveInterval 0): after an unclean drop of the hub's
+# network its old session would hold the tunnel's port for hours, refusing every redial's forward. A system unit, which
+# boat starts at every wake (sshd's config comes from boat's image each time), has sshd drop a client silent for 45 s;
+# its drop-in sorts before boat's own, so it is the value sshd takes. An open sshd session keeps the config it began
+# with, and a wake's sshd runs from before the resume, so the hub's first tunnel is usually open before this unit runs:
+# the unit then ends the sessions of boat's `user` (the hub's tunnel logs in as it), and the hub redials within a
+# second into the new config.
+sudo tee /etc/systemd/system/fleetd-sshd-alive.service >/dev/null <<'EOF'
+[Unit]
+Description=fleetd: sshd drops a silent client, so the hub's tunnel port frees after an unclean drop
+After=ssh.service
+
+[Service]
+Type=oneshot
+# $$ is systemd's escape for the shell's own $.
+ExecStart=/bin/sh -c 'f=/etc/ssh/sshd_config.d/00-00-fleetd-client-alive.conf; echo ClientAliveInterval 15 > $$f; echo ClientAliveCountMax 3 >> $$f'
+ExecStart=-/usr/bin/systemctl try-reload-or-restart ssh.service
+ExecStart=-/usr/bin/pkill -u user -x 'sshd|sshd-session'
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now fleetd-sshd-alive.service
+# The hub opens the tunnel as soon as boat.dev says the machine runs; wait for it (the hub stops a machine that never
+# joins).
 for _ in $(seq 1 300); do
   curl -fsS -o /dev/null --max-time 5 "$HUB/healthz" && break
   sleep 2

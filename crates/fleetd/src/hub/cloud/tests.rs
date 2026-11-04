@@ -459,6 +459,26 @@ fn a_private_hub_gives_its_cloud_machines_the_tunnels_address() {
     let join = script.find("step \"fleetd\"").unwrap();
     assert!(tunnel < join, "the tunnel is waited for before the join");
     assert!(script.contains("\"$HUB/healthz\""));
+    // sshd drops a silent client, set at every wake by a system unit, so the hub's redial after an unclean drop gets
+    // the tunnel's port back.
+    let unit = script
+        .split("/etc/systemd/system/fleetd-sshd-alive.service >/dev/null <<'EOF'\n")
+        .nth(1)
+        .and_then(|rest| rest.split("\nEOF\n").next())
+        .expect("the sshd unit");
+    for line in [
+        "Type=oneshot",
+        "ExecStart=/bin/sh -c 'f=/etc/ssh/sshd_config.d/00-00-fleetd-client-alive.conf; echo ClientAliveInterval 15 > $$f; echo ClientAliveCountMax 3 >> $$f'",
+        "ExecStart=-/usr/bin/systemctl try-reload-or-restart ssh.service",
+        "ExecStart=-/usr/bin/pkill -u user -x 'sshd|sshd-session'",
+        "WantedBy=multi-user.target",
+    ] {
+        assert!(unit.lines().any(|l| l == line), "no {line} in\n{unit}");
+    }
+    let alive = script
+        .find("enable --now fleetd-sshd-alive.service")
+        .unwrap();
+    assert!(alive < join, "set before the join");
 }
 
 /// A catch-up whose Claude step failed (the only machine holding the hub's key is offline) leaves the cloud machine not
