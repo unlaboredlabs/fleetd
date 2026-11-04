@@ -384,6 +384,7 @@ pub fn build_on_with(
         db.clone(),
         config.home.clone(),
         crate::hub::pool::boat::API,
+        crate::hub::pool::tunnel::hub_target(&config.listen),
         fleet.clone(),
         clock.clone(),
         crate::hub::attention::hub_zone(),

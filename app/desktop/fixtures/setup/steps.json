@@ -419,7 +419,7 @@
               "url": "https://docs.boat.dev/api-keys/scopes"
             }
           ],
-          "note": "Only what the hub needs to make, wake, stop and delete its machines. No exec, ssh, file or snapshot actions: the hub never runs anything on a cloud machine; its node dials in.",
+          "note": "Only what the hub needs to make, wake, stop and delete its machines, and ssh for its tunnel: the hub dials each machine it wakes and holds an SSH tunnel its node reaches the hub through, so the hub needs no public address. No exec, file or snapshot actions: the hub never runs anything on a cloud machine.",
           "title": "Make the hub's API key",
           "values": [
             {
@@ -429,7 +429,7 @@
             {
               "label": "Actions",
               "note": "Not the presets: ci and admin give far more.",
-              "value": "sandbox.create sandbox.read sandbox.update sandbox.stop sandbox.resume sandbox.delete account.read"
+              "value": "sandbox.create sandbox.read sandbox.update sandbox.stop sandbox.resume sandbox.delete ssh account.read"
             },
             {
               "label": "Scope: environment",
@@ -439,39 +439,6 @@
               "label": "Expires",
               "plain": true,
               "value": "365 days"
-            }
-          ]
-        },
-        {
-          "links": [
-            {
-              "label": "Tailscale Funnel",
-              "url": "https://tailscale.com/kb/1223/funnel"
-            },
-            {
-              "label": "Tailscale admin › Access controls",
-              "url": "https://login.tailscale.com/admin/acls/file"
-            }
-          ],
-          "note": "Cloud machines run on the internet, outside your tailnet, and dial in to the hub: it needs an HTTPS address they can reach. Only the hub's port is published, and every call to it needs a key.",
-          "title": "Give the hub a public HTTPS address",
-          "values": [
-            {
-              "command": true,
-              "label": "On the hub, with Tailscale Funnel",
-              "note": "It prints the public HTTPS address it serves, on your tailnet's own domain. Funnel needs the funnel attribute in your tailnet's policy; Tailscale offers to add it.",
-              "value": "tailscale funnel --bg http://devbox:4790"
-            },
-            {
-              "label": "Or another reverse proxy, such as Caddy",
-              "note": "Any HTTPS proxy in front of http://devbox:4790 works; use your own domain.",
-              "value": "fleetd.example.com {\n  reverse_proxy devbox:4790\n}"
-            },
-            {
-              "command": true,
-              "label": "Then, on the hub, save the address",
-              "note": "Your devices may keep the address they use now.",
-              "value": "fleetd init --url https://<the address>"
             }
           ]
         },
@@ -510,7 +477,7 @@
       ],
       "place": "cloud",
       "status": "todo",
-      "test": "Ask boat.dev what the key may read: its plan, its limits and this hub's machines",
+      "test": "Ask boat.dev what the key may read, then wake (or make) a cloud machine and check the hub's tunnel to it and its node's hello",
       "title": "Cloud machines (boat.dev)",
       "ways": [
         {

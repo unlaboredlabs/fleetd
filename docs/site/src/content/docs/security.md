@@ -246,8 +246,9 @@ The [agents' Mac](/docs/browser-sessions#mac) lends its `agents` user's desktop 
 
 | Rule | Detail |
 |---|---|
-| The boat.dev key stays on the hub | Sealed in the app to the hub's own key, scoped to fleetd's boat.dev environment, with no `exec`, `ssh`, `file` or `snapshot` actions. No cloud machine or agent gets it. |
-| The hub never runs commands there | The machine's node dials in over the hub's public HTTPS address, like any worker's. |
+| The boat.dev key stays on the hub | Sealed in the app to the hub's own key, scoped to fleetd's boat.dev environment, with no `exec`, `file` or `snapshot` actions; its `ssh` action only lets the hub's own SSH key in. No cloud machine or agent gets it. |
+| The hub stays private | The hub dials each machine it wakes over SSH, pins the host key boat.dev names, and holds one reverse forward its node reaches the hub through. The hub needs no public address, and boat.dev learns none of your network's. |
+| The hub never runs commands there | The tunnel asks for no shell or command, and refuses every channel but its own forward. The hub's SSH key is made by the hub, sealed to its box key, and never leaves it. |
 | boat.dev can see what runs there | As any host can, including the disk it keeps while a machine sleeps. Only projects an admin opts in run there; Reset deletes a machine with its disk and keys. |
 | Agents have no sudo | The node and its agents run as a user of their own on each cloud machine. |
 | A bill can't run on | Each awake machine has boat.dev's own 30-minute lease; budgets, the idle stop and a sweep every 10 minutes stop the rest, and `fleetd cloud stop` stops all. |

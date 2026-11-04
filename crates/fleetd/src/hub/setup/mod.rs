@@ -106,67 +106,9 @@ sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch
 # Your own home closed to every other user, agents included.
 chmod 700 ~";
 
-/// The actions the hub's boat.dev key needs, and no more: it never runs a command on a cloud machine (`exec`, `ssh`,
-/// `file.*`), because the machine's node dials in.
-pub const BOAT_KEY_ACTIONS: &str = "sandbox.create sandbox.read sandbox.update sandbox.stop sandbox.resume sandbox.delete account.read";
-
-/// The public HTTPS part of the cloud step: the address in use when it is one, else Tailscale Funnel or a reverse
-/// proxy to the address devices reach the hub at now.
-fn public_https(base: &str) -> SetupPart {
-    let note = "Cloud machines run on the internet, outside your tailnet, and dial in to the hub: it needs an HTTPS \
-                address they can reach. Only the hub's port is published, and every call to it needs a key.";
-    if base.starts_with("https://") {
-        return part(
-            "Give the hub a public HTTPS address",
-            Some(note),
-            vec![],
-            vec![noted(
-                "The hub's HTTPS address",
-                base,
-                "If only your tailnet reaches it (Tailscale Serve), turn on Funnel for it: tailscale funnel --bg 443.",
-            )],
-        );
-    }
-    let target = if base.is_empty() {
-        "http://127.0.0.1:4790"
-    } else {
-        base
-    };
-    part(
-        "Give the hub a public HTTPS address",
-        Some(note),
-        vec![
-            link("Tailscale Funnel", "https://tailscale.com/kb/1223/funnel"),
-            link(
-                "Tailscale admin › Access controls",
-                "https://login.tailscale.com/admin/acls/file",
-            ),
-        ],
-        vec![
-            command(
-                "On the hub, with Tailscale Funnel",
-                format!("tailscale funnel --bg {target}"),
-                Some(
-                    "It prints the public HTTPS address it serves, on your tailnet's own domain. Funnel needs the \
-                     funnel attribute in your tailnet's policy; Tailscale offers to add it.",
-                ),
-            ),
-            noted(
-                "Or another reverse proxy, such as Caddy",
-                format!(
-                    "fleetd.example.com {{\n  reverse_proxy {}\n}}",
-                    target.split_once("://").map_or(target, |(_, r)| r)
-                ),
-                format!("Any HTTPS proxy in front of {target} works; use your own domain."),
-            ),
-            command(
-                "Then, on the hub, save the address",
-                "fleetd init --url https://<the address>",
-                Some("Your devices may keep the address they use now."),
-            ),
-        ],
-    )
-}
+/// The actions the hub's boat.dev key needs, and no more: `ssh` lets the hub's own SSH key in on each machine it wakes,
+/// for the tunnel its node reaches the hub through; it never runs a command there (`exec`, `file.*`).
+pub const BOAT_KEY_ACTIONS: &str = "sandbox.create sandbox.read sandbox.update sandbox.stop sandbox.resume sandbox.delete ssh account.read";
 
 /// Every step in order, its values computed for `hub` (the URL devices reach it at), status still to read.
 pub fn guides(hub: &str) -> Vec<HubSetupStep> {
@@ -542,8 +484,10 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 part(
                     "Make the hub's API key",
                     Some(
-                        "Only what the hub needs to make, wake, stop and delete its machines. No exec, ssh, file or \
-                         snapshot actions: the hub never runs anything on a cloud machine; its node dials in.",
+                        "Only what the hub needs to make, wake, stop and delete its machines, and ssh for its tunnel: \
+                         the hub dials each machine it wakes and holds an SSH tunnel its node reaches the hub through, \
+                         so the hub needs no public address. No exec, file or snapshot actions: the hub never runs \
+                         anything on a cloud machine.",
                     ),
                     vec![link("API key scopes", "https://docs.boat.dev/api-keys/scopes")],
                     vec![
@@ -557,7 +501,6 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                         plain("Expires", "365 days"),
                     ],
                 ),
-                public_https(base),
                 part(
                     "Choose the pool, the budgets and the projects",
                     Some(
@@ -588,7 +531,11 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                     .into(),
             ),
             place: Some("cloud".into()),
-            test: Some("Ask boat.dev what the key may read: its plan, its limits and this hub's machines".into()),
+            test: Some(
+                "Ask boat.dev what the key may read, then wake (or make) a cloud machine and check the hub's tunnel to \
+                 it and its node's hello"
+                    .into(),
+            ),
             ways: vec![way(
                 None,
                 &[

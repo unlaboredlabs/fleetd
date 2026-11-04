@@ -1831,6 +1831,19 @@ export type KnownCloudMachineState = "awake" | "asleep" | "creating" | "waking" 
 /** KnownCloudMachineState, or a value from a newer hub. */
 export type CloudMachineState = KnownCloudMachineState | (string & {});
 
+/**
+ * The admin's Test of the whole way from a cloud machine to the hub: a wake (or a create), the hub's SSH tunnel to it,
+ * and its node's hello through the tunnel.
+ */
+export type CloudPathTest = {
+  /** The machine it woke, made or found awake. */
+  machineId: MachineId;
+  /** Absent while it runs. */
+  ok?: boolean;
+  /** Where it is, what passed, or the step that failed and why, in one line. */
+  said: string;
+};
+
 export type CloudResetInput = {
   machineId: MachineId;
 };
@@ -1920,8 +1933,6 @@ export type CloudView = {
   hasKey: boolean;
   /** Why no machine may start now, in one line: the pool off, a budget spent, boat's backoff. Absent: it may. */
   held?: string;
-  /** The address cloud machines reach the hub at: its public HTTPS address. */
-  hubUrl?: string;
   keyTest?: CloudKeyTest;
   machineType: string;
   machines: CloudMachine[];
@@ -1930,8 +1941,8 @@ export type CloudView = {
   monthBudget: number;
   /** The month budget follows the plan's included dollars (none set). */
   monthIsPlan: boolean;
-  /** Why cloud machines can't reach the hub, when they can't: no HTTPS address. */
-  network?: string;
+  /** The admin's last Test of the whole way to the hub, since the hub started. */
+  pathTest?: CloudPathTest;
   /** A billing or key pause that only boat's next "can start" or an admin's Resume lifts. */
   paused?: string;
   /** What the plan includes a month, as boat.dev last said. */
@@ -1940,6 +1951,11 @@ export type CloudView = {
   /** The projects whose work may run on cloud machines. */
   projects: ProjectRef[];
   sizes: CloudSize[];
+  /**
+   * The public half of the hub's own SSH key (OpenSSH format), which boat.dev puts on each cloud machine so the
+   * hub can hold its tunnel there. The hub makes it; its private half never leaves the hub.
+   */
+  sshKey?: string;
   /** Dollars spent today and this month, in the hub's time zone. */
   today: number;
   /** Writers may run there too; reviews and readers always may. */

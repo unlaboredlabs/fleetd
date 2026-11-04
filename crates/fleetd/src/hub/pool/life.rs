@@ -1,12 +1,16 @@
 //! The life loop, every 30 s: each slot one step, under its lock.
 //! - **Hello**: a creating or waking machine whose node has spoken since the call, and caught up since it linked
 //!   (hub/cloud's catch-up: the hub's fleetd and Claude Code, and the hub's Claude configuration), is `awake`.
-//! - **Wake timeout**: no hello and catch-up 5 minutes after a resume (15 after a create): stopped, and a wake failure counted;
-//!   two in a row make the slot `broken`. A create that never said hello is deleted and `failed`.
+//! - **The tunnel**: held while the machine should be up and closed otherwise ([`Pool::sync_tunnel`]), so a hub restart
+//!   opens its awake machines' tunnels again at its first tick.
+//! - **Wake timeout**: no hello and catch-up 2 minutes after a resume (15 after a create): stopped, and a wake failure counted;
+//!   two in a row make the slot `broken`. A create that never said hello is deleted and `failed`. A tunnel that never
+//!   came up is one of these, with its last error in the slot's note.
 //! - **Lease**: an awake machine's deadline is renewed every 10 minutes through [`lease::clamp`], and at once when the
 //!   budget shortened it; when the clamp says stop, it is stopped.
-//! - **Idle**: the node says not busy, and no placement claimed it, for 15 minutes (5 after a keepalive wake):
+//! - **Idle**: the node says not busy, and no placement claimed it, for 15 minutes (5 after a keepalive or Test wake):
 //!   stopped.
+//! - **Hydration**: an awake machine's GET says when its disk is whole after a wake; placement prefers those.
 //! - **Node vanished**: boat runs it but its node has been silent 10 minutes while the hub hears other machines:
 //!   stopped. Its tasks take the node-lost path and resume at the next wake.
 //! - **The pool off**: an awake machine is stopped (the kill switch's sweep does it too).
@@ -34,9 +38,24 @@ pub async fn tick(pool: &Pool) {
         let Ok(Some(row)) = pool.ledger.slot(&row.slot) else {
             continue;
         };
+        pool.sync_tunnel(&row);
+        let slot = row.slot.clone();
         if let Err(e) = step(pool, row).await {
             tracing::warn!(error = %e, "pool: life step");
         }
+        if let Ok(Some(row)) = pool.ledger.slot(&slot) {
+            pool.path_step(&row);
+        }
+    }
+}
+
+/// Why a machine never said hello: the timeout, and the tunnel's last error when it never came up.
+fn no_hello(pool: &Pool, slot: &str, within: &str) -> String {
+    match pool.tunnel_down(slot) {
+        Some(why) => {
+            format!("no hello within {within}: the hub's tunnel to it didn't come up ({why})")
+        }
+        None => format!("no hello within {within}"),
     }
 }
 
@@ -76,12 +95,22 @@ async fn step(pool: &Pool, row: Slot) -> Result<(), String> {
                 let (to, why) = if failures >= BROKEN_AFTER {
                     (
                         State::Broken,
-                        format!("{} doesn't come back: Reset it?", row.slot),
+                        match pool.tunnel_down(&row.slot) {
+                            Some(t) => format!(
+                                "{} doesn't come back: Reset it? (the hub's tunnel to it didn't come up: {t})",
+                                row.slot
+                            ),
+                            None => format!("{} doesn't come back: Reset it?", row.slot),
+                        },
                     )
                 } else {
                     (
                         State::Stopping,
-                        "no hello within 5 minutes of its wake".to_owned(),
+                        no_hello(
+                            pool,
+                            &row.slot,
+                            &format!("{} minutes of its wake", HELLO_MS / 60_000),
+                        ),
                     )
                 };
                 return pool.stop(&row.slot, to, &why).await;
@@ -130,7 +159,7 @@ async fn awake(pool: &Pool, s: &Settings, mut row: Slot, now: i64) -> Result<(),
         let claims = pool.claims.lock().unwrap();
         let claimed = claims.get(&slot).is_some_and(|at| now - at < CLAIM_MS);
         let busy = pool.fleet.busy(&slot).unwrap_or(true);
-        let grace = if row.wake_why.as_deref() == Some("keepalive") {
+        let grace = if matches!(row.wake_why.as_deref(), Some("keepalive" | "test")) {
             KEEPALIVE_GRACE_MS
         } else {
             IDLE_GRACE_MS
@@ -155,6 +184,14 @@ async fn awake(pool: &Pool, s: &Settings, mut row: Slot, now: i64) -> Result<(),
     };
     if idle {
         return pool.stop(&slot, State::Stopping, "idle").await;
+    }
+    // Hydration: asked of boat until it says the disk is whole, so placement can prefer machines that build at speed.
+    if !pool.hydrated(&slot)
+        && let Some(id) = row.sandbox_id.as_deref()
+        && let Ok(sb) = pool.boat.get(id).await
+        && sb.hydrated == Some(true)
+    {
+        pool.hydrated.lock().unwrap().insert(slot.clone());
     }
     renew(pool, s, row, now).await
 }
@@ -233,7 +270,7 @@ async fn settle(pool: &Pool, row: Slot) -> Result<(), String> {
 /// A create whose node never said hello within the enroll token's life: deleted (billing ends at once), `failed`,
 /// with boat's setup error as its note.
 async fn never_joined(pool: &Pool, mut row: Slot) -> Result<(), String> {
-    let mut note = "no hello within 15 minutes of its create".to_owned();
+    let mut note = no_hello(pool, &row.slot, "15 minutes of its create");
     if let Some(id) = row.sandbox_id.clone() {
         if let Ok(sb) = pool.boat.get(&id).await
             && let Some(err) = sb.setup_error.filter(|e| !e.is_empty())
@@ -257,5 +294,7 @@ async fn never_joined(pool: &Pool, mut row: Slot) -> Result<(), String> {
     row.state = State::Failed;
     row.create_body = None;
     row.note = Some(note);
-    pool.ledger.put(&row).map_err(|e| e.to_string())
+    pool.ledger.put(&row).map_err(|e| e.to_string())?;
+    pool.sync_tunnel(&row);
+    Ok(())
 }

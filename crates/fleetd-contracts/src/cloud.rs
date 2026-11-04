@@ -66,6 +66,20 @@ pub struct CloudKeyTest {
     pub said: String,
 }
 
+/// The admin's Test of the whole way from a cloud machine to the hub: a wake (or a create), the hub's SSH tunnel to it,
+/// and its node's hello through the tunnel.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudPathTest {
+    /// The machine it woke, made or found awake.
+    pub machine_id: MachineId,
+    /// Absent while it runs.
+    pub ok: Option<bool>,
+    /// Where it is, what passed, or the step that failed and why, in one line.
+    pub said: String,
+}
+
 /// The hub's pool: its settings, its machines and what they cost.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -102,10 +116,11 @@ pub struct CloudView {
     pub sizes: Vec<CloudSize>,
     /// What the plan includes a month, as boat.dev last said.
     pub plan_dollars: Option<f64>,
-    /// The address cloud machines reach the hub at: its public HTTPS address.
-    pub hub_url: Option<String>,
-    /// Why cloud machines can't reach the hub, when they can't: no HTTPS address.
-    pub network: Option<String>,
+    /// The admin's last Test of the whole way to the hub, since the hub started.
+    pub path_test: Option<CloudPathTest>,
+    /// The public half of the hub's own SSH key (OpenSSH format), which boat.dev puts on each cloud machine so the
+    /// hub can hold its tunnel there. The hub makes it; its private half never leaves the hub.
+    pub ssh_key: Option<String>,
     /// This hub's X25519 key, standard base64: what the boat key is sealed to (`crypto_box_seal`) for cloud_key_set.
     pub box_pub_key: String,
 }

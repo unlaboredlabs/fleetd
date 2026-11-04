@@ -35,6 +35,8 @@ reqwest = { workspace = true, features = ["http2"] }
 sha2 = { workspace = true }
 # GitHub App and FCM: signing a JWT (RS256)
 ring = "0.17"
+# cloud machines: the hub holds an SSH reverse tunnel to each awake boat machine, its key never on disk
+russh = { version = "0.65", default-features = false, features = ["ring"] }
 # browser sessions: the shapes of the scripts a sealed session lets through
 oxc_allocator = "0.155"
 oxc_ast = "0.155"

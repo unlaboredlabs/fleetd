@@ -1,10 +1,11 @@
 // Cloud machines on boat.dev (D306), in Settings › Hub › Machines and the setup step: the boat.dev group beside the
 // person's own machines (each machine's state, what runs there and its spend today, Reset for a broken one, and the
 // kill switch), then the settings, in the same rows as the page's other settings: the hub's boat.dev key (sealed in main
-// to the hub's own key, never shown again) with Test, the public address cloud machines reach the hub at, the pool,
-// the budgets, the projects that may use it, and what it can cost, shown before it is turned on. The hub's pool
+// to the hub's own key, never shown again) with Test, the way cloud machines reach the hub (the hub's own SSH tunnel to
+// each, so the hub stays private, and the Test of that whole way), the pool, the budgets, the projects that may use it,
+// and what it can cost, shown before it is turned on. The hub's pool
 // (cloud_get) is the only source; a hub without it shows nothing here. Status's line is CloudStatus.tsx.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CloudView, ToolOutput } from "../../../shared/contracts";
 import { callKey } from "../../src/data/queries";
 import { useDataLayer, useHub } from "../../src/data/react";
@@ -213,7 +214,7 @@ export function CloudSettings({ cloud }: { cloud: CloudView }) {
         </button>
       </Text>
       <KeySetting cloud={cloud} />
-      <AddressSetting cloud={cloud} />
+      <WaySetting cloud={cloud} />
       {cloud.hasKey ? <PoolSettings cloud={cloud} /> : null}
     </>
   );
@@ -311,16 +312,43 @@ function KeySetting({ cloud }: { cloud: CloudView }) {
   );
 }
 
-function AddressSetting({ cloud }: { cloud: CloudView }) {
+/** How cloud machines reach the hub: through the SSH tunnel the hub holds to each, so nothing is set up on the network.
+ * The Test of the whole way shows here, refreshed while it runs, with the public half of the hub's own SSH key. */
+function WaySetting({ cloud }: { cloud: CloudView }) {
+  const refetch = useRefetch();
+  const test = cloud.pathTest;
+  const running = test !== undefined && test.ok === undefined;
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => refetch(["cloud_get"]), 5_000);
+    return () => clearInterval(timer);
+  }, [running, refetch]);
+  const untested = !cloud.hasKey
+    ? "Nothing to set up: a hub only your tailnet or LAN reaches works."
+    : cloud.enabled
+      ? "Not tested yet: Test wakes (or makes) a cloud machine and checks the hub's tunnel to it and its node's hello."
+      : "Turn cloud machines on, then Test checks the whole way to the hub.";
   return (
-    <Setting reveal="hub.cloud.address" label="Hub address" help="Cloud machines run on the internet and dial in to the hub, so it needs a public HTTPS address: Tailscale Funnel or a reverse proxy.">
-      {cloud.hubUrl !== undefined ? (
-        <Text size="sm" data-address="ok">
-          {`Cloud machines reach the hub at ${cloud.hubUrl}.`}
+    <Setting
+      reveal="hub.cloud.way"
+      label="Way to the hub"
+      help="The hub dials each cloud machine it wakes and holds an SSH tunnel to it, which the machine's node reaches the hub through. The hub stays private: no public address, port or proxy to set up."
+    >
+      {test === undefined ? (
+        <Text size="sm" tone="quiet" data-way="untested">
+          {untested}
         </Text>
       ) : (
-        <Text size="sm" tone="danger" data-address="missing">
-          <HubText>{cloud.network ?? "The hub has no public HTTPS address."}</HubText>
+        <Text size="sm" tone={test.ok === true ? "success" : test.ok === false ? "danger" : "default"} data-way={test.ok === true ? "ok" : test.ok === false ? "failed" : "testing"}>
+          <HubText>{test.said}</HubText>
+        </Text>
+      )}
+      {cloud.sshKey === undefined ? null : (
+        <Text size="sm" tone="quiet">
+          {"The hub's own SSH key, which boat.dev puts on each cloud machine (its private half never leaves the hub): "}
+          <Text size="sm" mono>
+            {cloud.sshKey}
+          </Text>
         </Text>
       )}
     </Setting>

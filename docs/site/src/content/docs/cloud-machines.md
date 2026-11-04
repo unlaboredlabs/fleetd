@@ -13,6 +13,10 @@ is idle. Asleep, it costs nothing and keeps its disk: worktrees, caches, transcr
 follow-up turn wakes the machine its task ran on. Which work goes to the cloud, and when, is in
 [When work goes to a cloud machine](/docs/machines#cloud).
 
+The hub stays private: it needs no public address, domain, port or proxy, so a hub only your tailnet or LAN reaches
+works. The hub dials each machine it wakes and holds an SSH tunnel to it, and the machine's node reaches the hub
+through that tunnel ([how](#tunnel)).
+
 Cloud machines are off until an admin sets them up and turns them on.
 
 ## What it costs {#cost}
@@ -87,8 +91,13 @@ disk, and snapshots of it that may be stored outside the EU.
   account's secrets, AI logins or in-machine boat.dev key.
 - **No sudo for agents.** The node and its agents run as a user of their own with no sudo.
 - **Your key stays on the hub.** The boat.dev key is sealed in the app to the hub's own key, and scoped to fleetd's
-  environment with only the actions below. It has no `exec`, `ssh`, `file` or `snapshot` actions: the hub never runs
-  anything on a cloud machine. The machine's node dials in.
+  environment with only the actions below. It has no `exec`, `file` or `snapshot` actions: the hub never runs
+  anything on a cloud machine. Its `ssh` action only lets the hub's own SSH key in, for the tunnel.
+- **The hub's SSH key.** The hub makes its own SSH key for the tunnels and keeps it sealed to its box key; nobody
+  pastes it, and its private half never leaves the hub. boat.dev puts the public half on each machine the hub wakes.
+  Settings › Hub › Machines › Cloud machines shows it.
+- **Your network stays closed.** boat.dev never gets an address of your hub, your tailnet or your LAN. A tunnel
+  carries only the node's connections to the hub, and every call through it needs the node's key, as on any machine.
 - **Reset is the wipe.** Stopping keeps the disk; [Reset](#reset) deletes it, with every key on it.
 
 ## Set it up {#setup}
@@ -105,27 +114,23 @@ Setup is the optional **Cloud machines (boat.dev)** step: in `fleetd init`, the 
    actions:
 
    ```
-   sandbox.create sandbox.read sandbox.update sandbox.stop sandbox.resume sandbox.delete account.read
+   sandbox.create sandbox.read sandbox.update sandbox.stop sandbox.resume sandbox.delete ssh account.read
    ```
 
    Not a preset: `ci` and `admin` give far more.
-4. **A public HTTPS address for the hub.** Cloud machines run on the internet, outside your tailnet, so they reach the
-   hub over HTTPS. With Tailscale Funnel, on the hub (with the address your devices use now):
-
-   ```sh
-   tailscale funnel --bg http://devbox:4790
-   fleetd init --url https://<the address it prints>
-   ```
-
-   Or put any HTTPS reverse proxy in front of the hub, such as Caddy's
-   `fleetd.example.com { reverse_proxy devbox:4790 }`, and save that address the same way. Only the hub's port is
-   published, and every call to it needs a key.
-5. **In the app**, in the step itself or in Settings › Hub › Machines › Cloud machines: paste the key and press
+4. **In the app**, in the step itself or in Settings › Hub › Machines › Cloud machines: paste the key and press
    **Save and test**. Test asks boat.dev for the key's plan and limits and this hub's machines, and says, for example,
-   "Key works · $20 plan · 200 starts a day (12 a minute) · 0 of 100 machines running · large allowed". It starts
-   nothing. Then pick the pool, the budgets and the projects, and keep the boat.dev environment from part 2 (it starts
-   as `fleetd-<hub>`; Create waits until one is saved, since the key reaches only that environment). Check what it can
-   cost, turn it on and press **Create cloud machines** (one start each). Each machine sets itself up and joins in a few minutes, then sleeps.
+   "Key works · $20 plan · 200 starts a day (12 a minute) · 0 of 100 machines running · large allowed". Then pick the
+   pool, the budgets and the projects, and keep the boat.dev environment from part 2 (it starts as `fleetd-<hub>`;
+   Create waits until one is saved, since the key reaches only that environment). Check what it can cost, turn it on
+   and press **Create cloud machines** (one start each). Each machine sets itself up and joins in a few minutes, then
+   sleeps.
+
+There is nothing to set up on your network. Once cloud machines are on, **Test** also tries the whole way: it wakes
+an asleep machine (one start), or follows one already waking, or makes the first one, and passes once the hub's tunnel
+to it is up and its node said hello through it. If a step fails, it says which and why, for example "boat-1: no hello
+within 2 minutes of its wake: the hub's tunnel to it didn't come up (…: connection refused)". A Test wake goes back to
+sleep after 5 idle minutes.
 
 Claude needs nothing more: each cloud machine gets the hub's Claude configuration (its API key or the owner's
 subscription) sealed to it when it joins, and again whenever it changes. Nobody pastes it.
@@ -135,9 +140,29 @@ The step is done when the doctor's cloud checks pass:
 | Check | Passes when |
 |---|---|
 | `hub/cloud_key` | boat.dev answered the key at the last Test or sweep. |
-| `hub/cloud_network` | The hub has a public HTTPS address. |
+| `hub/cloud_network` | A cloud machine reached the hub through the hub's tunnel: at the last Test, or by joining. |
 | `hub/cloud_machines` | Every machine of the pool is made, none is broken, and cloud machines are on. |
 | `hub/cloud_budget` | No budget is spent and boat.dev wants no billing attention. |
+
+## How cloud machines reach the hub {#tunnel}
+
+The hub dials out; nothing dials in to it:
+
+1. When the hub wakes or makes a machine, it asks boat.dev to put the hub's SSH public key on it. boat.dev answers
+   with the machine's SSH host key, which the hub pins: a server with another key is refused, and if boat.dev names
+   none, the hub doesn't connect. The machine's SSH address comes from boat.dev too, read again at every connect.
+2. The hub connects to the machine's public SSH port and asks for one reverse forward: the machine's
+   `127.0.0.1:47900` goes to the hub's own listen address. It never opens a shell or runs a command there.
+3. The machine's node uses `http://127.0.0.1:47900` as its hub address. A new machine's setup waits for the tunnel,
+   then joins through it.
+4. If the connection drops while the machine is awake, the hub redials, waiting 1 second and doubling up to 30. A
+   machine whose tunnel never comes up counts as a failed wake: its node says no hello, so the hub stops it, and two
+   such wakes in a row make it broken.
+5. When the machine sleeps or is deleted, the hub closes the tunnel. Each wake opens a new one: every resume is a new
+   machine, with a new address and host key, so nothing about it is kept across a sleep.
+
+The hub needs outbound access to boat.dev's API and its machines' SSH ports (TCP), which any network with internet
+access has.
 
 ## The machines list {#list}
 
@@ -183,6 +208,6 @@ then makes it again with one start. Work pushed to GitHub is safe. An awake mach
   per vCPU.
 - Reviews and readers of the projects you opt in may go to cloud machines; writers only once an admin turns on
   **Writers too** in Settings › Hub › Machines › Cloud machines.
-- Cloud machines reach the hub only over public HTTPS; there is no Tailscale path for them.
+- Cloud machines reach the hub only through the hub's own tunnel; they never join your tailnet.
 - One boat.dev account can serve several hubs: each touches only machines with its own label, and they share the
   account's starts.

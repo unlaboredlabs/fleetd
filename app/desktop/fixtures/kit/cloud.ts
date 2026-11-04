@@ -31,11 +31,12 @@ const BASE: JsonObject = {
   writers: false,
 };
 
-/** No key yet, on a hub with no public HTTPS address: what the setup step finds first. */
+/** The public half of the hub's own SSH key, as cloud_get shows it. */
+const SSH_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEZpeHR1cmVIdWJTc2hQdWJsaWNLZXkwMDAwMDAw fleetd-hub";
+
+/** No key yet, on a hub only its tailnet reaches: what the setup step finds first. */
 export const cloudNew = (over: JsonObject = {}): JsonObject => ({
   ...BASE,
-  network:
-    "Cloud machines reach the hub over the internet, and its address http://devbox:4790 isn't HTTPS: give it a public HTTPS address (e.g. `tailscale funnel` or a reverse proxy), then save it with `fleetd init --url https://…`.",
   ...over,
 });
 
@@ -49,7 +50,8 @@ export const cloudAtWork = (now: string, projects: JsonObject[], over: JsonObjec
   today: 0.41,
   month: 6.1,
   planDollars: 20,
-  hubUrl: "https://hub.devbox.example",
+  sshKey: SSH_KEY,
+  pathTest: { machineId: "boat-1", ok: true, said: "boat-1: boat.dev ran it, the hub's tunnel to it came up and its node said hello through it." },
   keyTest: { ok: true, said: "Key works · $20 plan · 200 starts a day (12 a minute) · 1 of 100 machines running · large allowed" },
   machines: [
     { machineId: "boat-1", state: "awake", agents: 2, screens: 1, today: 0.29, sinceMs: Date.parse(at(now, -40 * 60_000)) },

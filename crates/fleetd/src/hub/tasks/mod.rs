@@ -1119,7 +1119,7 @@ impl Tasks {
             (Ok(()), None) => room.awake.clone(),
             _ => Vec::new(),
         };
-        let reason = match self.d.slots.place(request, &cloud)? {
+        let reason = match self.d.slots.place(request, &cloud, room.warm)? {
             Placed::Granted(None) => return Ok(Ok(None)),
             Placed::Granted(Some(m)) if self.d.ports.cloud_claim(&m) => return Ok(Ok(Some(m))),
             // It stopped being awake meanwhile: back in line on its own machine.
@@ -5261,6 +5261,7 @@ mod tests {
         crate::hub::pool::place::Room {
             eligible: Ok(()),
             awake: awake.iter().map(|n| boat(*n)).collect(),
+            warm: 0,
             cloning: None,
             clone_failed: None,
             closed: None,

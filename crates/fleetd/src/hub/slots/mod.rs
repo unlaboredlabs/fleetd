@@ -394,15 +394,23 @@ impl Slots {
     }
 
     /// A new task's slot on its project's own machine, else, only once that is at its agent limit, on the cloud
-    /// machine in `cloud` with room that runs the most agents ([`Board::place`]).
+    /// machine in `cloud` with room, the first `warm` (hydrated) before the rest, then the one that runs the most
+    /// agents ([`Board::place`]).
     pub fn place(
         &self,
         request: SlotRequest<'_>,
         cloud: &[MachineId],
+        warm: usize,
     ) -> Result<Placed, StoreError> {
         self.locked(|b| {
             (
-                b.place(request.holder, request.project_ref, request.priority, cloud),
+                b.place(
+                    request.holder,
+                    request.project_ref,
+                    request.priority,
+                    cloud,
+                    warm,
+                ),
                 false,
             )
         })
@@ -654,11 +662,11 @@ mod tests {
         };
         let boat = [MachineId::unchecked("boat-1")];
         assert_eq!(
-            slots.place(request("T1"), &boat).unwrap(),
+            slots.place(request("T1"), &boat, 0).unwrap(),
             Placed::Granted(None)
         );
         assert_eq!(
-            slots.place(request("T2"), &boat).unwrap(),
+            slots.place(request("T2"), &boat, 0).unwrap(),
             Placed::Granted(Some(boat[0].clone()))
         );
         let running = |slots: &Slots| -> Vec<(String, i64)> {

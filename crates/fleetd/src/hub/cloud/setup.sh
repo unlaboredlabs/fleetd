@@ -110,6 +110,15 @@ as_agent "printf '%s\n' '[Service]' 'Environment=RUSTC_WRAPPER=/usr/local/bin/sc
   'Environment=DISABLE_AUTOUPDATER=1' > ~/.config/systemd/user/fleetd-node.service.d/cloud.conf"
 as_agent "gh auth setup-git"
 
+step "the hub's tunnel"
+# The hub dials this machine over SSH and forwards $HUB on its loopback to itself, so the hub needs no public address.
+# It opens the tunnel as soon as boat.dev says the machine runs; wait for it (the hub stops a machine that never joins).
+for _ in $(seq 1 300); do
+  curl -fsS -o /dev/null --max-time 5 "$HUB/healthz" && break
+  sleep 2
+done
+curl -fsS -o /dev/null --max-time 5 "$HUB/healthz"
+
 step "fleetd"
 join=(--no-app --join "$HUB" --code "$CODE" --machine-id "$MACHINE")
 [ -z "$IDENTITY" ] || join+=(--git-identity "$IDENTITY")

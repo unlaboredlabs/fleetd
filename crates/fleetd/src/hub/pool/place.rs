@@ -1,8 +1,8 @@
 //! Placement on cloud machines (D306), deterministic: a task goes to a cloud machine only when its project's own
 //! machine is at its agent limit (its cap, or no disk room for another agent), never for memory, PSI or load. In order:
 //! 1. its project's own machine, while it has room (the slot board, `Board::place`);
-//! 2. an awake cloud machine, caught up, with room: the one running the most agents, so work packs and the rest go
-//!    idle and stop;
+//! 2. an awake cloud machine, caught up, with room: one whose disk is hydrated first (builds run about 5 times slower
+//!    on one just woken until it is), then the one running the most agents, so work packs and the rest go idle and stop;
 //! 3. waking a sleeping one ([`Pool::wake_for_work`]), within the start budget and the money budget, one at a time;
 //! 4. else it queues, its line saying why ("…; cloud paused: today's boat.dev budget ($3.00) is spent").
 //!
@@ -36,8 +36,10 @@ use crate::hub::executor::shell_mapper::js_take;
 pub struct Room {
     /// Whether it may run on one at all; when it may not and the pool is on, why (for its queued line).
     pub eligible: Result<(), Option<String>>,
-    /// Awake, caught up and holding its checkout, in slot order.
+    /// Awake, caught up and holding its checkout: the hydrated ones first, each part in slot order.
     pub awake: Vec<MachineId>,
+    /// How many of `awake`, from the front, have their disk hydrated.
+    pub warm: usize,
     /// An awake one still cloning its checkout: the task waits for it rather than waking another.
     pub cloning: Option<MachineId>,
     /// Its checkout's clone failed on a cloud machine and waits out its backoff ([`Cloning`]): why, for its queued
@@ -53,6 +55,7 @@ impl Default for Room {
         Room {
             eligible: Err(None),
             awake: Vec::new(),
+            warm: 0,
             cloning: None,
             clone_failed: None,
             closed: None,
@@ -79,15 +82,18 @@ impl Pool {
         }
     }
 
-    /// The awake cloud machines caught up for work, in slot order.
+    /// The awake cloud machines caught up for work: those whose disk is hydrated first, each part in slot order.
     pub fn awake(&self) -> Vec<String> {
-        self.ledger
+        let mut awake: Vec<String> = self
+            .ledger
             .slots()
             .unwrap_or_default()
             .into_iter()
             .filter(|r| r.state == State::Awake && self.fleet.ready(&r.slot))
             .map(|r| r.slot)
-            .collect()
+            .collect();
+        awake.sort_by_key(|slot| !self.hydrated(slot));
+        awake
     }
 
     /// Wakes a cloud machine for work, off the caller's lock: `slot`, a task's own; else none while one is waking
@@ -204,6 +210,9 @@ pub fn room(hub: &Arc<Hub>, task: &Task, checkout: &ProjectRef) -> Room {
             .flatten()
             .is_some()
         {
+            if hub.pool.hydrated(m.as_str()) {
+                room.warm += 1;
+            }
             room.awake.push(m);
         } else if room.cloning.is_none() && cloning.due(&m, checkout, now) {
             // Opted in while it was awake: cloned now, and the task waits for that.

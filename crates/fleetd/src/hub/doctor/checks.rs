@@ -263,8 +263,8 @@ pub struct CloudFacts {
     pub key_test: Option<fleetd_contracts::cloud::CloudKeyTest>,
     /// A billing or key pause: its kind and line.
     pub paused: Option<(String, String)>,
-    /// The hub's public HTTPS address, or why it has none.
-    pub hub_url: Result<String, String>,
+    /// The admin's last Test of the whole way from a cloud machine to the hub.
+    pub path_test: Option<fleetd_contracts::cloud::CloudPathTest>,
     /// Each slot made: its id, state and note.
     pub machines: Vec<(
         String,
@@ -327,23 +327,32 @@ pub fn cloud_checks(f: &CloudFacts) -> Vec<Entry> {
             fix("Test it in Settings › Hub › Machines › Cloud machines"),
         ),
     };
-    let network = match &f.hub_url {
-        Ok(url) => hub_entry(
-            "cloud_network",
-            Pass,
-            &format!(
-                "Cloud machines dial in to the hub's HTTPS address {url}; the first one's hello shows boat.dev reaches it."
-            ),
-            None,
-        ),
-        Err(why) => hub_entry(
+    // The hub dials each machine and holds an SSH tunnel its node reaches the hub through: no address to set up, so
+    // this says whether the whole way worked, from the Test or from a machine that joined.
+    let joined = f
+        .machines
+        .iter()
+        .any(|(_, s, _)| matches!(s, S::Awake | S::Asleep | S::Stopping));
+    let network = match &f.path_test {
+        Some(t) if t.ok == Some(false) => hub_entry(
             "cloud_network",
             Fail,
-            why,
-            Some(manual(
-                "Give the hub a public HTTPS address, then save it",
-                Some("fleetd init --url https://<the address>".into()),
-            )),
+            &t.said,
+            fix("Fix what it names, then Test again in Settings › Hub › Machines › Cloud machines"),
+        ),
+        Some(t) if t.ok.is_none() => hub_entry("cloud_network", Unknown, &t.said, None),
+        Some(t) => hub_entry("cloud_network", Pass, &t.said, None),
+        None if joined => hub_entry(
+            "cloud_network",
+            Pass,
+            "Cloud machines reach the hub through the SSH tunnel the hub opens to each: the hub needs no public address.",
+            None,
+        ),
+        None => hub_entry(
+            "cloud_network",
+            Unknown,
+            "Not tried yet: Test wakes (or makes) a cloud machine and checks the hub's tunnel to it and its node's hello.",
+            fix("Turn cloud machines on, then Test in Settings › Hub › Machines › Cloud machines"),
         ),
     };
     let made: Vec<_> = f
@@ -1979,12 +1988,13 @@ mod tests {
         );
     }
 
-    /// The cloud step's checks: a saved key waits for Test and then says what boat said; no HTTPS address fails with
-    /// the command that saves one; a broken machine fails, none made is to do, all made and on passes; a spent
-    /// budget warns and a billing pause fails.
+    /// The cloud step's checks: a saved key waits for Test and then says what boat said; the way to the hub passes
+    /// once a machine joined or the Test got through, and fails with the step the Test stopped at, with no address to
+    /// set up for a private hub; a broken machine fails, none made is to do, all made and on passes; a spent budget
+    /// warns and a billing pause fails.
     #[test]
-    fn the_cloud_checks_read_the_key_the_address_the_machines_and_the_budget() {
-        use fleetd_contracts::cloud::{CloudKeyTest, CloudMachineState as S};
+    fn the_cloud_checks_read_the_key_the_way_the_machines_and_the_budget() {
+        use fleetd_contracts::cloud::{CloudKeyTest, CloudMachineState as S, CloudPathTest};
         let base = CloudFacts {
             enabled: true,
             pool_size: 2,
@@ -1993,7 +2003,7 @@ mod tests {
                 said: "Key works · $20 plan".into(),
             }),
             paused: None,
-            hub_url: Ok("https://devbox.your-tailnet.ts.net".into()),
+            path_test: None,
             machines: vec![
                 ("boat-1".into(), S::Awake, None),
                 ("boat-2".into(), S::Asleep, None),
@@ -2014,7 +2024,7 @@ mod tests {
                 (
                     "hub/cloud_network".into(),
                     Pass,
-                    "Cloud machines dial in to the hub's HTTPS address https://devbox.your-tailnet.ts.net; the first one's hello shows boat.dev reaches it."
+                    "Cloud machines reach the hub through the SSH tunnel the hub opens to each: the hub needs no public address."
                         .into()
                 ),
                 (
@@ -2063,18 +2073,38 @@ mod tests {
                 "boat.dev key refused: Settings › Hub › Machines".into()
             )
         );
-        let no_https = cloud_checks(&CloudFacts {
-            hub_url: Err("Cloud machines reach the hub over the internet…".into()),
+        // None joined yet: the Test is what tells, and it names the step it stopped at.
+        let fresh = CloudFacts {
+            machines: vec![("boat-1".into(), S::Creating, None)],
             ..base.clone()
-        });
-        assert_eq!(no_https[1].check.status, Fail);
+        };
+        assert_eq!(one(fresh.clone(), "cloud_network").0, Unknown);
+        let test = |ok: Option<bool>, said: &str| CloudFacts {
+            path_test: Some(CloudPathTest {
+                machine_id: fleetd_contracts::ids::MachineId::new("boat-1").unwrap(),
+                ok,
+                said: said.into(),
+            }),
+            ..fresh.clone()
+        };
+        let failed = "boat-1: no hello within 5 minutes of its wake: the hub's tunnel to it didn't come up (refused)";
+        let network = cloud_checks(&test(Some(false), failed));
         assert_eq!(
-            no_https[1]
-                .check
-                .fix
-                .as_ref()
-                .and_then(|f| f.command.as_deref()),
-            Some("fleetd init --url https://<the address>")
+            (network[1].check.status, network[1].check.message.as_str()),
+            (Fail, failed)
+        );
+        assert!(network[1].check.fix.as_ref().unwrap().command.is_none());
+        assert_eq!(
+            one(test(None, "boat-1: waking"), "cloud_network"),
+            (Unknown, "boat-1: waking".into())
+        );
+        assert_eq!(
+            one(
+                test(Some(true), "boat-1: its node said hello"),
+                "cloud_network"
+            )
+            .0,
+            Pass
         );
         assert_eq!(
             one(

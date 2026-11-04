@@ -4638,6 +4638,28 @@
       ],
       "x-open": true
     },
+    "CloudPathTest": {
+      "description": "The admin's Test of the whole way from a cloud machine to the hub: a wake (or a create), the hub's SSH tunnel to it,\nand its node's hello through the tunnel.",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "The machine it woke, made or found awake."
+        },
+        "ok": {
+          "description": "Absent while it runs.",
+          "type": "boolean"
+        },
+        "said": {
+          "description": "Where it is, what passed, or the step that failed and why, in one line.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "said"
+      ],
+      "type": "object"
+    },
     "CloudResetInput": {
       "properties": {
         "machineId": {
@@ -4865,10 +4887,6 @@
           "description": "Why no machine may start now, in one line: the pool off, a budget spent, boat's backoff. Absent: it may.",
           "type": "string"
         },
-        "hubUrl": {
-          "description": "The address cloud machines reach the hub at: its public HTTPS address.",
-          "type": "string"
-        },
         "keyTest": {
           "$ref": "#/$defs/CloudKeyTest"
         },
@@ -4894,9 +4912,9 @@
           "description": "The month budget follows the plan's included dollars (none set).",
           "type": "boolean"
         },
-        "network": {
-          "description": "Why cloud machines can't reach the hub, when they can't: no HTTPS address.",
-          "type": "string"
+        "pathTest": {
+          "$ref": "#/$defs/CloudPathTest",
+          "description": "The admin's last Test of the whole way to the hub, since the hub started."
         },
         "paused": {
           "description": "A billing or key pause that only boat's next \"can start\" or an admin's Resume lifts.",
@@ -4924,6 +4942,10 @@
             "$ref": "#/$defs/CloudSize"
           },
           "type": "array"
+        },
+        "sshKey": {
+          "description": "The public half of the hub's own SSH key (OpenSSH format), which boat.dev puts on each cloud machine so the\nhub can hold its tunnel there. The hub makes it; its private half never leaves the hub.",
+          "type": "string"
         },
         "today": {
           "description": "Dollars spent today and this month, in the hub's time zone.",

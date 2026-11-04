@@ -38,6 +38,14 @@ pub struct Sandbox {
     pub setup_error: Option<String>,
     pub data_expired_at: Option<String>,
     pub error: Option<String>,
+    /// Its disk is fully attached: until then, after a wake, builds run about 5 times slower (W407's spike).
+    pub hydrated: Option<bool>,
+    /// `host:port` (IPv4) that forwards to its SSH server: new at every wake, so read at every dial.
+    pub ssh_endpoint: Option<String>,
+    /// A resume found it running already (boat answers 200, `status: "running"`): no start was counted, and its
+    /// deadline didn't move. Not boat's field.
+    #[serde(skip)]
+    pub already_running: bool,
 }
 
 /// Where a sandbox is in its life, from boat's states.
@@ -108,6 +116,40 @@ pub struct Limits {
     /// The plan's price a month, which is also the machine time it includes.
     pub sandbox_plan_dollars: Option<f64>,
     pub machine_types: Vec<MachineType>,
+}
+
+/// `POST /sandboxes/{id}/sshkey`'s answer: where the running machine's SSH server is, as whom, and its host key.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SshAccess {
+    /// Its own address: IPv6, which the hub may have no route to, so never dialled.
+    pub machine_ip: Option<String>,
+    /// `host:port` that forwards to its SSH server, set only for a machine with no public IPv4 of its own.
+    pub ssh_endpoint: Option<String>,
+    pub ssh_user: Option<String>,
+    /// The SSH server's public host key, OpenSSH format: what the hub pins. A new one at every resume.
+    pub host_key: Option<String>,
+}
+
+impl SshAccess {
+    /// Where to dial: the IPv4 `sshEndpoint` boat forwards to the machine's SSH server, `seen`'s (a GET of the machine
+    /// just now) first, else this answer's. Never the machine's own address, which is IPv6 (W407's spike).
+    pub fn target(&self, seen: Option<&Sandbox>) -> Option<(String, u16)> {
+        let endpoint = seen
+            .and_then(|sb| sb.ssh_endpoint.as_deref())
+            .into_iter()
+            .chain(self.ssh_endpoint.as_deref())
+            .find(|e| !e.is_empty())?;
+        let (host, port) = endpoint.rsplit_once(':')?;
+        Some((host.trim_matches(['[', ']']).to_owned(), port.parse().ok()?))
+    }
+
+    pub fn user(&self) -> &str {
+        self.ssh_user
+            .as_deref()
+            .filter(|u| !u.is_empty())
+            .unwrap_or("user")
+    }
 }
 
 /// A create's file: under /tmp, which boat never snapshots, for anything secret.
@@ -255,6 +297,13 @@ pub trait Boat: Send + Sync + 'static {
     /// `DELETE` with its confirm header: the disk, its snapshots and every key on it go.
     fn delete<'a>(&'a self, id: &'a str) -> BoxFut<'a, Result<(), BoatError>>;
     fn limits(&self) -> BoxFut<'_, Result<Limits, BoatError>>;
+    /// `POST /sshkey`: lets `public_key` (OpenSSH format) in as boat's `user` on the running machine, for the hub's
+    /// tunnel. The key's `ssh` action.
+    fn ssh_key<'a>(
+        &'a self,
+        id: &'a str,
+        public_key: &'a str,
+    ) -> BoxFut<'a, Result<SshAccess, BoatError>>;
     /// Dollars of machine time the sandbox used since `since_ms`, at list price.
     fn usage<'a>(&'a self, id: &'a str, since_ms: i64) -> BoxFut<'a, Result<f64, BoatError>>;
 }
@@ -521,8 +570,10 @@ impl Boat for RestBoat {
                     Some(body),
                 )
                 .await?;
+            let already_running = body.get("status").and_then(Value::as_str) == Some("running");
             // The answer's sandbox can be null; the id is the one resumed.
             let mut sandbox = Self::sandbox(body).unwrap_or_default();
+            sandbox.already_running = already_running;
             if sandbox.id.is_empty() {
                 sandbox.id = id.to_owned();
             }
@@ -555,6 +606,27 @@ impl Boat for RestBoat {
                 .await?;
             serde_json::from_value(body)
                 .map_err(|e| BoatError::Network(format!("boat's limits: {e}")))
+        })
+    }
+
+    fn ssh_key<'a>(
+        &'a self,
+        id: &'a str,
+        public_key: &'a str,
+    ) -> BoxFut<'a, Result<SshAccess, BoatError>> {
+        Box::pin(async move {
+            let body = serde_json::to_vec(&json!({ "key": public_key })).unwrap_or_default();
+            let body = self
+                .call(
+                    reqwest::Method::POST,
+                    &format!("/sandboxes/{id}/sshkey"),
+                    &[],
+                    &[],
+                    Some(body),
+                )
+                .await?;
+            serde_json::from_value(body)
+                .map_err(|e| BoatError::Network(format!("boat's SSH answer: {e}")))
         })
     }
 

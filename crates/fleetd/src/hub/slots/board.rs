@@ -670,14 +670,16 @@ impl Board {
 
     /// A new task's slot (D306), deterministically: on its project's own machine while that has room; else, only when
     /// what holds it back there is that machine's agent limit (its cap, or no disk room for another agent), on the
-    /// cloud machine in `cloud` with room that runs the most agents, the first listed among equals, so work packs and
-    /// the others go idle. Never past the fleet cap or the project's max agents, which count every machine.
+    /// cloud machine in `cloud` with room: one of the first `warm` (their disk hydrated) before the rest, then the one
+    /// that runs the most agents, the first listed among equals, so work packs and the others go idle. Never past the
+    /// fleet cap or the project's max agents, which count every machine.
     pub fn place(
         &mut self,
         holder: &str,
         project_ref: &ProjectRef,
         priority: SlotPriority,
         cloud: &[MachineId],
+        warm: usize,
     ) -> Placed {
         let reason = match self.acquire(holder, project_ref, priority, None) {
             Grant::Granted => return Placed::Granted(None),
@@ -701,7 +703,13 @@ impl Board {
             .iter()
             .enumerate()
             .filter(|(_, m)| *m != home && self.block(project_ref, m, fresh).is_none())
-            .max_by_key(|(k, m)| (self.held(project_ref, m).1, std::cmp::Reverse(*k)))
+            .max_by_key(|(k, m)| {
+                (
+                    *k < warm,
+                    self.held(project_ref, m).1,
+                    std::cmp::Reverse(*k),
+                )
+            })
             .map(|(_, m)| m.clone());
         let Some(m) = best else {
             return Placed::Full(reason);
@@ -1426,7 +1434,7 @@ mod tests {
     }
 
     fn place(k: &mut Kit, holder: &str, r: &ProjectRef, cloud: &[MachineId]) -> Placed {
-        k.board.place(holder, r, SlotPriority::Work, cloud)
+        k.board.place(holder, r, SlotPriority::Work, cloud, 0)
     }
 
     /// D306's order, deterministic: its own machine while it has room; then the busiest cloud machine with room (the
@@ -1480,6 +1488,33 @@ mod tests {
         // devbox frees: the next is home.
         k.release("T1");
         assert_eq!(place(&mut k, "T11", &app, &cloud), Placed::Granted(None));
+    }
+
+    /// A cloud machine whose disk is hydrated goes before one just woken, even one running more agents (builds run
+    /// about 5 times slower there until it is); among the hydrated, the busiest still goes first.
+    #[test]
+    fn a_hydrated_cloud_machine_goes_before_one_just_woken() {
+        let (mut k, app, _) = cloud_kit(None);
+        for n in 1..=2 {
+            assert_eq!(
+                place(&mut k, &format!("T{n}"), &app, &[]),
+                Placed::Granted(None)
+            );
+        }
+        // boat-1 just woke, listed after boat-2, which is hydrated.
+        let cloud = [mid("boat-2"), mid("boat-1")];
+        assert_eq!(
+            k.board
+                .place("T3", &app, SlotPriority::Work, &[mid("boat-1")], 0),
+            Placed::Granted(Some(mid("boat-1")))
+        );
+        let warm =
+            |k: &mut Kit, holder: &str| k.board.place(holder, &app, SlotPriority::Work, &cloud, 1);
+        assert_eq!(warm(&mut k, "T4"), Placed::Granted(Some(mid("boat-2"))));
+        assert_eq!(warm(&mut k, "T5"), Placed::Granted(Some(mid("boat-2"))));
+        assert_eq!(warm(&mut k, "T6"), Placed::Granted(Some(mid("boat-2"))));
+        // boat-2 full: the one still hydrating takes the next.
+        assert_eq!(warm(&mut k, "T7"), Placed::Granted(Some(mid("boat-1"))));
     }
 
     /// Bursting never goes past a limit a person set: the fleet cap, or the project's own max agents, which counts its
