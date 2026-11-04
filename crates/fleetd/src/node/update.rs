@@ -16,7 +16,7 @@ use fleetd_contracts::node_link::NodeUpdate;
 
 use crate::update::finish::{self, HEALTH_WAIT_SECS, Health, Plan};
 use crate::update::service::{self, Service};
-use crate::update::{Channel, Failure, Feed};
+use crate::update::{Channel, Failure, Feed, is_build};
 
 /// What the update did before the restart.
 #[derive(Debug, PartialEq)]
@@ -95,17 +95,6 @@ async fn release_of(
     sums
 }
 
-/// The file at `path` when it is the build the sums name for `asset`.
-fn matching(
-    path: &Path,
-    sums: &std::collections::HashMap<String, String>,
-    asset: &str,
-) -> Option<Vec<u8>> {
-    fs::read(path)
-        .ok()
-        .filter(|b| sums.get(asset) == Some(&crate::update::sha256_hex(b)))
-}
-
 /// Downloads `update.version` ahead of the update, checked against the release's SHA256SUMS, and keeps it beside the
 /// node's binary. Installs nothing and restarts nothing; the update that follows uses it.
 pub async fn fetch(update: &NodeUpdate, place: &Place, feed: &dyn Feed) -> Result<(), Failure> {
@@ -121,20 +110,11 @@ pub async fn fetch(update: &NodeUpdate, place: &Place, feed: &dyn Feed) -> Resul
         return Ok(());
     }
     let sums = release_of(to, feed).await?;
-    if matching(&place.exe, &sums, &place.asset).is_some()
-        || matching(&place.fetched(), &sums, &place.asset).is_some()
+    if is_build(&place.exe, &sums, &place.asset) || is_build(&place.fetched(), &sums, &place.asset)
     {
         return Ok(());
     }
-    let bytes = crate::update::checked(feed, &sums, &place.asset).await?;
-    fs::create_dir_all(place.dir())
-        .and_then(|()| crate::update::replace_file(&place.fetched(), &bytes))
-        .map_err(|e| {
-            Failure::new(
-                UpdateStage::Install,
-                format!("couldn't keep the downloaded build: {e}"),
-            )
-        })
+    crate::update::checked_to(feed, &sums, &place.asset, &place.fetched()).await
 }
 
 /// Puts `update.version` in place, checked, keeping `previous` (the running binary) for a rollback.
@@ -165,7 +145,7 @@ pub async fn stage(
     let _fetching = FETCHING.lock().await;
     let sums = release_of(to, feed).await?;
     // On the hub's machine the hub's update already put this build at the shared path.
-    let in_place = matching(&place.exe, &sums, &place.asset).is_some();
+    let in_place = is_build(&place.exe, &sums, &place.asset);
     let prev = place.dir().join("fleetd.prev");
     let previous = previous().map_err(|e| {
         Failure::new(
@@ -185,11 +165,10 @@ pub async fn stage(
                 )
             })?;
     } else {
-        let bytes = match matching(&place.fetched(), &sums, &place.asset) {
-            Some(fetched) => fetched,
-            None => crate::update::checked(feed, &sums, &place.asset).await?,
-        };
-        crate::update::swap(&place.exe, &bytes, &previous, &prev)?;
+        if !is_build(&place.fetched(), &sums, &place.asset) {
+            crate::update::checked_to(feed, &sums, &place.asset, &place.fetched()).await?;
+        }
+        crate::update::swap(&place.exe, &place.fetched(), &previous, &prev)?;
     }
     let _ = fs::remove_file(place.fetched());
     Ok(Staged::Restarting(Box::new(Plan {
@@ -397,9 +376,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let place = place(dir.path());
         let running = crate::update::Kept::open(&place.exe).unwrap();
+        let new = dir.path().join("hub/update/fleetd.next");
+        fs::create_dir_all(new.parent().unwrap()).unwrap();
+        fs::write(&new, b"new").unwrap();
         crate::update::swap(
             &place.exe,
-            b"new",
+            &new,
             b"old",
             &dir.path().join("hub/update/fleetd.prev"),
         )

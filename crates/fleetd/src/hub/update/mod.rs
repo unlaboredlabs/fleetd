@@ -187,6 +187,9 @@ pub struct Updates {
     tasks: Mutex<Vec<tokio::task::AbortHandle>>,
     /// Wakes the nodes waiting for their agents when Update now is pressed.
     hurry: tokio::sync::Notify,
+    /// Held while a build downloads to [`Self::kept`] and while Update installs it: Update waits for a download ahead
+    /// rather than writing the same file alongside it.
+    fetching: tokio::sync::Mutex<()>,
 }
 
 /// How long a node waits for its agents to finish their step by default.
@@ -265,6 +268,7 @@ impl Updates {
             drivers: AtomicUsize::new(0),
             tasks: Mutex::default(),
             hurry: tokio::sync::Notify::new(),
+            fetching: tokio::sync::Mutex::const_new(()),
         })
     }
 
@@ -441,21 +445,14 @@ impl Updates {
         let (Ok(asset), Ok(sums)) = (ports.asset(), crate::update::sums(&*feed).await) else {
             return;
         };
-        let have = fs::read(self.kept())
-            .ok()
-            .is_some_and(|b| sums.get(&asset) == Some(&crate::update::sha256_hex(&b)));
-        if !have {
-            let kept = match crate::update::checked(&*feed, &sums, &asset).await {
-                Ok(bytes) => fs::create_dir_all(&self.dir)
-                    .and_then(|()| crate::update::replace_file(&self.kept(), &bytes))
-                    .map_err(|e| e.to_string()),
-                Err(f) => Err(f.message),
-            };
-            if let Err(e) = kept {
-                tracing::info!("update: couldn't download {to} ahead: {e}");
-                return;
-            }
+        let fetching = self.fetching.lock().await;
+        if !crate::update::is_build(&self.kept(), &sums, &asset)
+            && let Err(e) = crate::update::checked_to(&*feed, &sums, &asset, &self.kept()).await
+        {
+            tracing::info!("update: couldn't download {to} ahead: {e}");
+            return;
         }
+        drop(fetching);
         let update = NodeUpdate {
             version: text(&to),
             channel: match channel {
@@ -942,28 +939,31 @@ impl Updates {
             .map_err(|e| Failure::new(UpdateStage::Download, e))?;
         self.fetch_ahead(ports, &to);
         // Downloaded ahead: checked against the sums again, else downloaded now.
-        let bytes = match fs::read(self.kept()) {
-            Ok(kept) => {
-                let sums = crate::update::sums(&*feed).await?;
-                match sums.get(&asset) == Some(&crate::update::sha256_hex(&kept)) {
-                    true => kept,
-                    false => crate::update::checked(&*feed, &sums, &asset).await?,
-                }
+        let kept = self.kept();
+        let _fetching = self.fetching.lock().await;
+        if kept.exists() {
+            let sums = crate::update::sums(&*feed).await?;
+            if !crate::update::is_build(&kept, &sums, &asset) {
+                crate::update::checked_to(&*feed, &sums, &asset, &kept).await?;
             }
-            Err(_) => crate::update::verified(&*feed, &asset).await?,
-        };
-        let _ = fs::remove_file(self.kept());
+        } else {
+            crate::update::verified_to(&*feed, &asset, &kept).await?;
+        }
         *self.ready.lock().unwrap() = None;
-        let previous = ports.previous().map_err(|e| {
-            Failure::new(
-                UpdateStage::Install,
-                format!(
-                    "couldn't keep the running binary for a rollback: {e}; nothing was changed"
-                ),
-            )
-        })?;
         let prev = self.dir.join("fleetd.prev");
-        crate::update::swap(&exe, &bytes, &previous, &prev)?;
+        let swapped = ports
+            .previous()
+            .map_err(|e| {
+                Failure::new(
+                    UpdateStage::Install,
+                    format!(
+                        "couldn't keep the running binary for a rollback: {e}; nothing was changed"
+                    ),
+                )
+            })
+            .and_then(|previous| crate::update::swap(&exe, &kept, &previous, &prev));
+        let _ = fs::remove_file(&kept);
+        swapped?;
         Ok(Some(Plan {
             exe,
             prev,

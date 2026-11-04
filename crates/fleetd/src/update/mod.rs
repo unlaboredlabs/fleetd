@@ -98,10 +98,22 @@ impl std::fmt::Display for Failure {
 
 impl std::error::Error for Failure {}
 
+/// Where a streamed asset's chunks go, in order; an error stops the download with it.
+pub type Sink<'a> = dyn FnMut(&[u8]) -> Result<(), String> + Send + 'a;
+
 /// A channel's asset directory; tests stand in a fake release feed.
 pub trait Feed: Send + Sync {
-    /// The asset's bytes, or why not in plain words.
+    /// The asset's bytes, or why not in plain words: for the small files, `release.json` and `SHA256SUMS`.
     fn get<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<Vec<u8>, String>>;
+
+    /// The asset's chunks to `sink` as they arrive, so a build is never held in memory whole.
+    fn stream<'a>(
+        &'a self,
+        name: &'a str,
+        sink: &'a mut Sink<'_>,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move { sink(&self.get(name).await?) })
+    }
 }
 
 /// The real feed: plain GETs under `base`.
@@ -122,24 +134,51 @@ impl HttpFeed {
     }
 }
 
+impl HttpFeed {
+    async fn send(&self, url: &str) -> Result<reqwest::Response, String> {
+        let response = self
+            .http
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| format!("GET `{url}`: {e}"))?;
+        if !response.status().is_success() {
+            return Err(format!("GET `{url}`: {}", response.status()));
+        }
+        Ok(response)
+    }
+}
+
 impl Feed for HttpFeed {
     fn get<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<Vec<u8>, String>> {
         Box::pin(async move {
             let url = format!("{}/{name}", self.base);
-            let response = self
-                .http
-                .get(&url)
-                .send()
-                .await
-                .map_err(|e| format!("GET `{url}`: {e}"))?;
-            if !response.status().is_success() {
-                return Err(format!("GET `{url}`: {}", response.status()));
-            }
-            Ok(response
+            Ok(self
+                .send(&url)
+                .await?
                 .bytes()
                 .await
                 .map_err(|e| format!("GET `{url}`: {e}"))?
                 .to_vec())
+        })
+    }
+
+    fn stream<'a>(
+        &'a self,
+        name: &'a str,
+        sink: &'a mut Sink<'_>,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            let url = format!("{}/{name}", self.base);
+            let mut response = self.send(&url).await?;
+            while let Some(chunk) = response
+                .chunk()
+                .await
+                .map_err(|e| format!("GET `{url}`: {e}"))?
+            {
+                sink(&chunk)?;
+            }
+            Ok(())
         })
     }
 }
@@ -179,26 +218,47 @@ pub async fn sums(feed: &dyn Feed) -> Result<HashMap<String, String>, Failure> {
 }
 
 /// A checked download: the release's SHA256SUMS line for `name`, and the asset's bytes that match it. Both are
-/// downloaded at once; nothing is kept unless they match.
+/// downloaded at once; nothing is kept unless they match. For a build that lands in a file, [`verified_to`].
 pub async fn verified(feed: &dyn Feed, name: &str) -> Result<Vec<u8>, Failure> {
     let (sums, bytes) = tokio::join!(sums(feed), download(feed, name));
     let sums = sums?;
     if !sums.contains_key(name) {
         return Err(not_in_release(name));
     }
-    match_sums(&sums, name, bytes?)
+    let bytes = bytes?;
+    match_sums(&sums, name, &sha256_hex(&bytes)).map(|()| bytes)
 }
 
-/// [`verified`] against sums already read.
-pub async fn checked(
+/// [`verified`] straight into `path`: the asset streams into a file beside it while it is hashed, and lands at `path`
+/// only when it matches; otherwise that file is deleted and `path` is as it was.
+pub async fn verified_to(feed: &dyn Feed, name: &str, path: &Path) -> Result<(), Failure> {
+    let part = staging(path);
+    let (sums, actual) = tokio::join!(sums(feed), download_to(feed, name, &part));
+    let landed = sums.and_then(|sums| {
+        if !sums.contains_key(name) {
+            return Err(not_in_release(name));
+        }
+        land(&sums, name, &actual?, &part, path)
+    });
+    landed.inspect_err(|_| _ = fs::remove_file(&part))
+}
+
+/// [`verified_to`] against sums already read.
+pub async fn checked_to(
     feed: &dyn Feed,
     sums: &HashMap<String, String>,
     name: &str,
-) -> Result<Vec<u8>, Failure> {
+    path: &Path,
+) -> Result<(), Failure> {
     if !sums.contains_key(name) {
         return Err(not_in_release(name));
     }
-    match_sums(sums, name, download(feed, name).await?)
+    let part = staging(path);
+    let landed = match download_to(feed, name, &part).await {
+        Ok(actual) => land(sums, name, &actual, &part, path),
+        Err(f) => Err(f),
+    };
+    landed.inspect_err(|_| _ = fs::remove_file(&part))
 }
 
 fn not_in_release(name: &str) -> Failure {
@@ -208,24 +268,63 @@ fn not_in_release(name: &str) -> Failure {
     )
 }
 
-async fn download(feed: &dyn Feed, name: &str) -> Result<Vec<u8>, Failure> {
-    feed.get(name).await.map_err(|e| {
-        Failure::new(
-            UpdateStage::Download,
-            format!("couldn't download `{name}`: {e}"),
-        )
-    })
+fn download_failed(name: &str, e: &str) -> Failure {
+    Failure::new(
+        UpdateStage::Download,
+        format!("couldn't download `{name}`: {e}"),
+    )
 }
 
-/// `bytes` when they are what the sums name for `name`.
-fn match_sums(
+fn not_kept(path: &Path, e: &std::io::Error) -> Failure {
+    Failure::new(
+        UpdateStage::Install,
+        format!(
+            "couldn't keep the downloaded build at `{}`: {e}",
+            path.display()
+        ),
+    )
+}
+
+async fn download(feed: &dyn Feed, name: &str) -> Result<Vec<u8>, Failure> {
+    feed.get(name).await.map_err(|e| download_failed(name, &e))
+}
+
+/// Streams `name` into a new file at `part`, hashing it on the way: its SHA-256.
+async fn download_to(feed: &dyn Feed, name: &str, part: &Path) -> Result<String, Failure> {
+    if let Some(dir) = part.parent() {
+        fs::create_dir_all(dir).map_err(|e| not_kept(part, &e))?;
+    }
+    let mut file = fs::File::create(part).map_err(|e| not_kept(part, &e))?;
+    let mut sha = Sha256::new();
+    feed.stream(name, &mut |chunk| {
+        sha.update(chunk);
+        file.write_all(chunk)
+            .map_err(|e| format!("couldn't write `{}`: {e}", part.display()))
+    })
+    .await
+    .map_err(|e| download_failed(name, &e))?;
+    file.set_permissions(fs::Permissions::from_mode(0o755))
+        .and_then(|()| file.sync_all())
+        .map_err(|e| not_kept(part, &e))?;
+    Ok(hex(&sha.finalize()))
+}
+
+/// Moves the download at `part` to `path` when `actual` is what the sums name for `name`.
+fn land(
     sums: &HashMap<String, String>,
     name: &str,
-    bytes: Vec<u8>,
-) -> Result<Vec<u8>, Failure> {
+    actual: &str,
+    part: &Path,
+    path: &Path,
+) -> Result<(), Failure> {
+    match_sums(sums, name, actual)?;
+    fs::rename(part, path).map_err(|e| not_kept(path, &e))
+}
+
+/// Ok when `actual` is the SHA-256 the sums name for `name`.
+fn match_sums(sums: &HashMap<String, String>, name: &str, actual: &str) -> Result<(), Failure> {
     let expected = sums.get(name).ok_or_else(|| not_in_release(name))?;
-    let actual = sha256_hex(&bytes);
-    if &actual != expected {
+    if actual != expected {
         return Err(Failure::new(
             UpdateStage::Checksum,
             format!(
@@ -233,7 +332,13 @@ fn match_sums(
             ),
         ));
     }
-    Ok(bytes)
+    Ok(())
+}
+
+/// Whether the file at `path` is the build the sums name for `asset`, read in pieces rather than whole.
+pub fn is_build(path: &Path, sums: &HashMap<String, String>, asset: &str) -> bool {
+    sums.get(asset)
+        .is_some_and(|want| file_sha256_hex(path).is_ok_and(|have| &have == want))
 }
 
 /// `sha256sum` output: `<hex>  <name>` per line (`*<name>` in binary mode).
@@ -250,10 +355,18 @@ pub fn parse_sums(text: &str) -> HashMap<String, String> {
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    hex(&Sha256::digest(bytes))
+}
+
+/// [`sha256_hex`] of a file, read in pieces.
+pub fn file_sha256_hex(path: &Path) -> std::io::Result<String> {
+    let mut sha = Sha256::new();
+    std::io::copy(&mut fs::File::open(path)?, &mut sha)?;
+    Ok(hex(&sha.finalize()))
+}
+
+fn hex(digest: &[u8]) -> String {
+    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// This platform's CLI asset: `fleetd-<os>-<arch>`.
@@ -324,14 +437,32 @@ pub fn running_binary() -> std::io::Result<Vec<u8>> {
 /// Writes a sibling file and renames it over `path`. Never writes into the old file: a running fleetd keeps its
 /// inode, and macOS kills a process whose signed binary is modified in place.
 pub fn replace_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    replace_with(path, |file| file.write_all(bytes))
+}
+
+/// [`replace_file`] with a copy of the file at `from`, never held in memory whole.
+pub fn replace_file_from(path: &Path, from: &Path) -> std::io::Result<()> {
+    let mut from = fs::File::open(from)?;
+    replace_with(path, |file| std::io::copy(&mut from, file).map(drop))
+}
+
+/// The file beside `path` that a new one is written to before it is renamed over `path`.
+fn staging(path: &Path) -> PathBuf {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let tmp = path.with_file_name(format!(".{name}.new"));
+    path.with_file_name(format!(".{name}.new"))
+}
+
+fn replace_with(
+    path: &Path,
+    fill: impl FnOnce(&mut fs::File) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let tmp = staging(path);
     let write = || -> std::io::Result<()> {
         let mut file = fs::File::create(&tmp)?;
-        file.write_all(bytes)?;
+        fill(&mut file)?;
         file.set_permissions(fs::Permissions::from_mode(0o755))?;
         file.sync_all()?;
         fs::rename(&tmp, path)
@@ -339,8 +470,9 @@ pub fn replace_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     write().inspect_err(|_| _ = fs::remove_file(&tmp))
 }
 
-/// Keeps `previous` at `prev`, then puts `bytes` at `exe`. Either step failing leaves `exe` as it was.
-pub fn swap(exe: &Path, bytes: &[u8], previous: &[u8], prev: &Path) -> Result<(), Failure> {
+/// Keeps `previous` at `prev`, then puts a copy of the build at `new` at `exe`. Either step failing leaves `exe` as it
+/// was.
+pub fn swap(exe: &Path, new: &Path, previous: &[u8], prev: &Path) -> Result<(), Failure> {
     let install = |what: &str, e: std::io::Error| {
         Failure::new(
             UpdateStage::Install,
@@ -351,10 +483,10 @@ pub fn swap(exe: &Path, bytes: &[u8], previous: &[u8], prev: &Path) -> Result<()
         fs::create_dir_all(dir).map_err(|e| install("keep the previous binary", e))?;
     }
     replace_file(prev, previous).map_err(|e| install("keep the previous binary", e))?;
-    replace_file(exe, bytes).map_err(|e| install(&format!("replace {}", exe.display()), e))
+    replace_file_from(exe, new).map_err(|e| install(&format!("replace {}", exe.display()), e))
 }
 
 /// Puts the binary `swap` kept back at `exe`.
 pub fn restore(exe: &Path, prev: &Path) -> std::io::Result<()> {
-    replace_file(exe, &fs::read(prev)?)
+    replace_file_from(exe, prev)
 }

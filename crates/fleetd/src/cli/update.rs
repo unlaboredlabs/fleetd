@@ -109,8 +109,9 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
             );
         }
         let asset = crate::update::cli_asset().map_err(|e| anyhow!(e))?;
-        let bytes = crate::update::verified(&feed, &asset).await?;
-        replace_file(&exe, &bytes).with_context(|| format!("replacing {}", exe.display()))?;
+        crate::update::verified_to(&feed, &asset, &exe)
+            .await
+            .with_context(|| format!("replacing {}", exe.display()))?;
         println!("updated {}", exe.display());
     }
     if restart_due {
