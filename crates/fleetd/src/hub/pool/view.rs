@@ -1,13 +1,17 @@
 //! The pool as Settings › Hub › Machines and the setup step see it: the admin's Test (boat's answer to the hub's key, in
-//! one line), each machine's state and spend today, the settings an admin may set, and Reset for a broken slot.
+//! one line, then the whole way from a cloud machine to the hub), each machine's state and spend today, the settings an
+//! admin may set, and Reset for a broken slot.
 use fleetd_contracts::cloud::{
-    BUDGET_MAX, CloudKeyTest, CloudMachine, CloudMachineState, CloudSettings, CloudSize, POOL_MAX,
+    BUDGET_MAX, CloudKeyTest, CloudMachine, CloudMachineState, CloudPathTest, CloudSettings,
+    CloudSize, POOL_MAX,
 };
+use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::node_link::NodeBusy;
 
 use super::boat::{BoatError, Limits};
-use super::ledger::{MACHINE_TYPES, SettingsChange, State};
-use super::{LABEL_HUB, Pool, day_start, price_per_hour};
+use super::ledger::{MACHINE_TYPES, SettingsChange, Slot, State};
+use super::tunnel::Tunnel;
+use super::{LABEL_HUB, MINUTE, PathTest, Pool, day_start, price_per_hour};
 use crate::hub::store::StoreError;
 
 /// The slots of a pool of `n`: `boat-1`…`boat-n`.
@@ -117,6 +121,89 @@ impl Pool {
 
     pub(super) fn heard(&self, test: Option<CloudKeyTest>) {
         *self.key_test.lock().unwrap() = test;
+    }
+
+    /// The admin's last Test of the whole way: passed, failed with the step and why, or where it is now.
+    pub fn path_test(&self) -> Option<CloudPathTest> {
+        let test = self.path.lock().unwrap().clone()?;
+        let machine_id = MachineId::new(&test.slot).ok()?;
+        let (ok, said) = match test.result {
+            Some(Ok(line)) => (Some(true), line),
+            Some(Err(why)) => (Some(false), why),
+            None => (None, self.path_progress(&test.slot)),
+        };
+        Some(CloudPathTest {
+            machine_id,
+            ok,
+            said,
+        })
+    }
+
+    fn path_progress(&self, slot: &str) -> String {
+        let what = match self.ledger.slot(slot).ok().flatten().map(|r| r.state) {
+            Some(State::Creating) => "being made, its setup takes a few minutes",
+            Some(State::Waking) => "waking",
+            _ => "awake",
+        };
+        let tunnel = match self.tunnels.status(slot) {
+            Some(Tunnel::Up) => {
+                "the hub's tunnel to it is up, waiting for its node's hello".to_owned()
+            }
+            Some(Tunnel::Down(why)) if why == "opening" => {
+                "the hub is opening its tunnel to it".to_owned()
+            }
+            Some(Tunnel::Down(why)) => format!("the hub's tunnel to it isn't up yet ({why})"),
+            None => "the hub opens its tunnel once boat.dev runs it".to_owned(),
+        };
+        format!("{slot}: {what}; {tunnel}.")
+    }
+
+    /// A Test of the whole way begins, on `slot`.
+    pub(super) fn path_begin(&self, slot: &str) {
+        *self.path.lock().unwrap() = Some(PathTest {
+            slot: slot.to_owned(),
+            since: self.now(),
+            result: None,
+        });
+    }
+
+    /// The Test ends here: passed, or failed at a step the life loop never sees (a start refused).
+    pub(super) fn path_end(&self, result: Result<String, String>) {
+        if let Some(test) = self.path.lock().unwrap().as_mut() {
+            test.result = Some(result);
+        }
+    }
+
+    /// The life loop's look at the Test after each step of its slot: passed once the machine is awake, its tunnel up
+    /// and its node heard since the Test began; failed once it stopped or broke first, with the slot's note (the
+    /// timeout, and why the tunnel didn't come up).
+    pub(super) fn path_step(&self, row: &Slot) {
+        let mut path = self.path.lock().unwrap();
+        let Some(test) = path
+            .as_mut()
+            .filter(|t| t.slot == row.slot && t.result.is_none())
+        else {
+            return;
+        };
+        let up = self.tunnels.status(&row.slot) == Some(Tunnel::Up);
+        let heard = self
+            .fleet
+            .last_seen(&row.slot)
+            .is_some_and(|at| at >= test.since - MINUTE);
+        test.result = match row.state {
+            State::Awake if up && heard && self.fleet.ready(&row.slot) => Some(Ok(format!(
+                "{}: boat.dev ran it, the hub's tunnel to it came up and its node said hello through it.",
+                row.slot
+            ))),
+            State::Creating | State::Waking | State::Awake => None,
+            _ => Some(Err(format!(
+                "{}: {}",
+                row.slot,
+                row.note
+                    .clone()
+                    .unwrap_or_else(|| "it stopped before its node said hello".into())
+            ))),
+        };
     }
 
     /// A sweep's `/limits`: the key works.
@@ -297,6 +384,7 @@ impl Pool {
         row.idle_since = None;
         row.wake_failures = 0;
         row.note = Some("reset: deleted at boat.dev".into());
+        self.tunnels.close(slot);
         self.ledger.put(&row).map_err(|e| e.to_string())
     }
 
@@ -363,7 +451,7 @@ pub fn facts(hub: &crate::hub::api::Hub) -> Option<crate::hub::doctor::checks::C
         pool_size: s.pool_size,
         key_test: pool.key_test(),
         paused: s.paused.clone(),
-        hub_url: crate::hub::cloud::setup::public_hub_url(hub),
+        path_test: pool.path_test(),
         machines,
         spend: spend_line(
             budget.day_spent,

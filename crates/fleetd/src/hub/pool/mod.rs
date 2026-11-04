@@ -17,6 +17,9 @@
 //! - **The kill switch** ([`Pool::kill`], `cloud_stop`, `fleetd cloud stop`): lists boat by label, not the ledger.
 //! - **The keepalive**: a slot asleep 12 days is woken briefly, so boat never expires its disk (14 days).
 //!
+//! The hub never needs a public address (D307): it dials each machine it wakes over SSH and holds a reverse tunnel
+//! that the machine's node reaches it through ([`tunnel`]), from the wake until the machine sleeps.
+//!
 //! The pool is off until the admin turns it on; placement ([`place`]) asks [`Pool::ready`] and [`Pool::start_held`]
 //! first.
 pub mod boat;
@@ -27,6 +30,7 @@ pub mod place;
 pub mod starts;
 pub mod sweep;
 pub mod tools;
+pub mod tunnel;
 pub mod view;
 
 #[cfg(test)]
@@ -35,6 +39,8 @@ mod boat_tests;
 mod place_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tunnel_tests;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
@@ -48,6 +54,7 @@ use zeroize::Zeroizing;
 use boat::{Boat, BoatError, CreateBody, File, Phase, RestBoat};
 use lease::{LEASE_S, Lease, SETUP_S};
 use ledger::{Ledger, Settings, Slot, State, Window, price_per_hour};
+use tunnel::{SshTunnels, Tunnel, Tunnels};
 
 use crate::clock::Clock;
 use crate::hub::store::{HubDb, StoreError, now_ms};
@@ -61,8 +68,10 @@ const MINUTE: i64 = 60_000;
 pub const IDLE_GRACE_MS: i64 = 15 * MINUTE;
 /// A keepalive wake stops sooner: it only had to keep the disk.
 pub const KEEPALIVE_GRACE_MS: i64 = 5 * MINUTE;
-/// A resumed machine whose node hasn't said hello by then is stopped and counts a wake failure; two make it broken.
-pub const HELLO_MS: i64 = 5 * MINUTE;
+/// A resumed machine whose node hasn't said hello by then is stopped and counts a wake failure; two make it broken. The
+/// spike's node said hello 3 to 6 s after a resume: 2 minutes leaves 20 times that for a node starved by the disk's
+/// hydration, and catches a failed wake soon.
+pub const HELLO_MS: i64 = 2 * MINUTE;
 pub const BROKEN_AFTER: u32 = 2;
 /// A created machine's setup and first hello: the enroll token's life.
 pub const CREATE_HELLO_MS: i64 = 15 * MINUTE;
@@ -102,6 +111,8 @@ pub enum Why {
     Need,
     /// It slept 12 days: wake it so boat keeps its disk.
     Keepalive,
+    /// The admin's Test of the whole way to the hub.
+    Test,
 }
 
 impl Why {
@@ -109,6 +120,7 @@ impl Why {
         match self {
             Why::Need => "need",
             Why::Keepalive => "keepalive",
+            Why::Test => "test",
         }
     }
 }
@@ -163,9 +175,19 @@ pub struct Kill {
     pub unlisted: Option<String>,
 }
 
+/// The admin's Test of the whole way, from a wake or create through the tunnel to the node's hello, as far as it got.
+#[derive(Clone, Debug, PartialEq)]
+struct PathTest {
+    slot: String,
+    since: i64,
+    /// Passed with its line, or failed with the step and why; None while it runs.
+    result: Option<Result<String, String>>,
+}
+
 pub struct Pool {
     ledger: Ledger,
     boat: Arc<dyn Boat>,
+    tunnels: Arc<dyn Tunnels>,
     fleet: Arc<dyn Fleet>,
     clock: Arc<dyn Clock>,
     zone: Tz,
@@ -183,6 +205,11 @@ pub struct Pool {
     waking: Mutex<HashSet<String>>,
     /// What boat last said to the hub's key: the admin's Test, or a sweep. The doctor's `hub/cloud_key` reads it.
     key_test: Mutex<Option<fleetd_contracts::cloud::CloudKeyTest>>,
+    /// The admin's last Test of the whole way ([`Pool::path_test`]).
+    path: Mutex<Option<PathTest>>,
+    /// Awake slots whose disk boat says is hydrated since they woke: placement prefers them, since builds run about 5
+    /// times slower until it is (W407's spike).
+    hydrated: Mutex<HashSet<String>>,
 }
 
 impl Pool {
@@ -190,6 +217,7 @@ impl Pool {
         db: Arc<HubDb>,
         home: PathBuf,
         boat: Arc<dyn Boat>,
+        tunnels: Arc<dyn Tunnels>,
         fleet: Arc<dyn Fleet>,
         clock: Arc<dyn Clock>,
         zone: Tz,
@@ -197,6 +225,7 @@ impl Pool {
         Arc::new(Pool {
             ledger: Ledger::new(db),
             boat,
+            tunnels,
             fleet,
             clock,
             zone,
@@ -207,14 +236,18 @@ impl Pool {
             warned: Mutex::default(),
             waking: Mutex::default(),
             key_test: Mutex::default(),
+            path: Mutex::default(),
+            hydrated: Mutex::default(),
         })
     }
 
-    /// The hub's pool: boat itself at `api`, with the key the ledger holds sealed to the hub's box key.
+    /// The hub's pool: boat itself at `api`, with the key the ledger holds sealed to the hub's box key, and the hub's
+    /// tunnels to its machines, which carry their nodes to `hub` (its listen address).
     pub fn over_boat(
         db: Arc<HubDb>,
         home: PathBuf,
         api: &str,
+        hub: (String, u16),
         fleet: Arc<dyn Fleet>,
         clock: Arc<dyn Clock>,
         zone: Tz,
@@ -222,14 +255,42 @@ impl Pool {
         let ledger = Ledger::new(db.clone());
         let key_home = home.clone();
         let key: boat::KeySource = Arc::new(move || open_key(&ledger, &key_home));
-        Pool::new(
-            db,
-            home,
-            Arc::new(RestBoat::new(api, key)),
-            fleet,
-            clock,
-            zone,
-        )
+        let boat: Arc<dyn Boat> = Arc::new(RestBoat::new(api, key));
+        let ledger = Ledger::new(db.clone());
+        let ssh_home = home.clone();
+        let ssh_key: tunnel::KeySource =
+            Arc::new(move || tunnel::hub_key(&ledger, &ssh_home).map(Arc::new));
+        let tunnels = Arc::new(SshTunnels::new(boat.clone(), ssh_key, hub));
+        Pool::new(db, home, boat, tunnels, fleet, clock, zone)
+    }
+
+    /// The public half of the hub's SSH key, made now if it isn't yet: what boat puts on each machine.
+    pub fn ssh_public_key(&self) -> Result<String, String> {
+        tunnel::public_line(&tunnel::hub_key(&self.ledger, &self.home)?)
+    }
+
+    /// The slot's tunnel: held while its machine should be up (creating, waking, awake, and stopping, so the node's
+    /// pre-stop flush still reaches the hub), closed otherwise.
+    fn sync_tunnel(&self, row: &Slot) {
+        match (&row.sandbox_id, row.state) {
+            (Some(id), State::Creating | State::Waking | State::Awake | State::Stopping) => {
+                self.tunnels.open(&row.slot, id)
+            }
+            _ => self.tunnels.close(&row.slot),
+        }
+    }
+
+    /// Whether the slot's disk is hydrated since it woke, as boat last said.
+    pub fn hydrated(&self, slot: &str) -> bool {
+        self.hydrated.lock().unwrap().contains(slot)
+    }
+
+    /// Why the slot's tunnel isn't up, when one is held and isn't.
+    fn tunnel_down(&self, slot: &str) -> Option<String> {
+        match self.tunnels.status(slot)? {
+            Tunnel::Up => None,
+            Tunnel::Down(why) => Some(why),
+        }
     }
 
     pub fn ledger(&self) -> &Ledger {
@@ -372,6 +433,7 @@ impl Pool {
         row.idle_since = None;
         row.note = Some(why.to_owned());
         self.ledger.put(&row).map_err(|e| e.to_string())?;
+        self.sync_tunnel(&row);
         tracing::info!(slot, why, "pool: stopping");
         let Some(id) = row.sandbox_id.clone() else {
             return Ok(());
@@ -408,6 +470,8 @@ impl Pool {
             row.note = Some(why.to_owned());
             self.ledger.put(&row)?;
         }
+        self.tunnels.close(slot);
+        self.hydrated.lock().unwrap().remove(slot);
         Ok(())
     }
 
@@ -424,6 +488,8 @@ impl Pool {
         row.renewed_at = None;
         row.idle_since = None;
         self.ledger.put(&row)?;
+        self.sync_tunnel(&row);
+        self.hydrated.lock().unwrap().remove(&row.slot);
         self.ledger.set_full(false)
     }
 
@@ -551,6 +617,7 @@ impl Pool {
                     .open_spend(slot, Some(&id), now, price_per_hour(&s.machine_type))
                     .map_err(|e| e.to_string())?;
             }
+            self.sync_tunnel(&row);
             return Ok(());
         }
         row.lease_until = Some(now + ttl.ms());
@@ -565,8 +632,30 @@ impl Pool {
             .open_spend(slot, Some(&id), now, price_per_hour(&s.machine_type))
             .map_err(|e| e.to_string())?;
         match self.boat.resume(&id, ttl).await {
+            Ok(sb) if sb.already_running => {
+                // It ran already (a stop raced this wake): boat counted no start and kept its old deadline, which only
+                // a PATCH moves. The same machine, so its tunnel stays as it is.
+                let _ = self.ledger.uncount_start(start);
+                self.started();
+                match self.boat.set_ttl(&id, ttl).await {
+                    Ok(()) => row.renewed_at = Some(self.now()),
+                    Err(e) => {
+                        tracing::warn!(slot, error = %e.line(), "pool: lease of a running machine not renewed");
+                        row.lease_until = sb.archive_after_ms();
+                        row.renewed_at = None;
+                    }
+                }
+                self.ledger.put(&row).map_err(|e| e.to_string())?;
+                self.sync_tunnel(&row);
+                Ok(())
+            }
             Ok(_) => {
                 self.started();
+                // A resume is a new machine, its disk attached lazily, with a new host key: a fresh tunnel, opened
+                // before its node needs it.
+                self.hydrated.lock().unwrap().remove(slot);
+                self.tunnels.close(slot);
+                self.sync_tunnel(&row);
                 Ok(())
             }
             Err(e) => {
@@ -688,6 +777,8 @@ impl Pool {
                 self.ledger
                     .name_spend(slot, &sb.id)
                     .map_err(|e| e.to_string())?;
+                // Its setup waits for the tunnel before it joins.
+                self.sync_tunnel(&row);
                 Ok(())
             }
             // No answer, or boat still at it: leave it creating for the sweep.

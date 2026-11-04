@@ -353,9 +353,9 @@ async fn the_hub_keeps_each_machines_busy_from_its_heartbeat() {
 }
 
 #[test]
-fn the_setup_script_joins_the_public_hub_on_its_channel_with_every_value_quoted() {
+fn the_setup_script_joins_the_hub_through_its_tunnel_on_its_channel_with_every_value_quoted() {
     let slot = SetupScript {
-        hub_url: "https://devbox.example.net".into(),
+        hub_url: "http://127.0.0.1:47900".into(),
         machine_id: m("boat-2"),
         version: "0.4.0".into(),
         release_build: true,
@@ -364,7 +364,7 @@ fn the_setup_script_joins_the_public_hub_on_its_channel_with_every_value_quoted(
     };
     let script = render(&slot);
     for line in [
-        "HUB=https://devbox.example.net",
+        "HUB=http://127.0.0.1:47900",
         "MACHINE=boat-2",
         "CHANNEL=stable",
         "BASE_URL=https://github.com/unlaboredlabs/fleetd/releases/download/v0.4.0",
@@ -393,7 +393,7 @@ fn the_setup_script_joins_the_public_hub_on_its_channel_with_every_value_quoted(
 #[test]
 fn the_setup_script_lingers_again_at_every_wake_and_keeps_rust_in_the_agents_home() {
     let script = render(&SetupScript {
-        hub_url: "https://devbox.example.net".into(),
+        hub_url: "http://127.0.0.1:47900".into(),
         machine_id: m("boat-1"),
         version: "0.4.0".into(),
         release_build: true,
@@ -447,11 +447,18 @@ fn a_large_cloud_machine_runs_three_agents_with_two_build_jobs() {
     assert_eq!((agents, build_jobs(8, agents)), (3, 2));
 }
 
+/// A hub only its tailnet or LAN reaches makes cloud machines all the same: they join it on their own loopback, which
+/// the hub's tunnel forwards to it, and wait for the tunnel first.
 #[test]
-fn cloud_machines_need_the_hubs_public_https_address() {
+fn a_private_hub_gives_its_cloud_machines_the_tunnels_address() {
     let (hub, _home) = hub();
-    let why = super::setup::public_hub_url(&hub).unwrap_err();
-    assert!(why.contains("fleetd init --url https://"), "{why}");
+    assert!(!hub.config.url().starts_with("https://"));
+    let script = super::setup::for_slot(&hub, &m("boat-1")).unwrap();
+    assert!(script.lines().any(|l| l == "HUB=http://127.0.0.1:47900"));
+    let tunnel = script.find("step \"the hub's tunnel\"").unwrap();
+    let join = script.find("step \"fleetd\"").unwrap();
+    assert!(tunnel < join, "the tunnel is waited for before the join");
+    assert!(script.contains("\"$HUB/healthz\""));
 }
 
 /// A catch-up whose Claude step failed (the only machine holding the hub's key is offline) leaves the cloud machine not

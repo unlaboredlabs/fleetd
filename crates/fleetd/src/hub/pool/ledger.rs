@@ -335,6 +335,32 @@ impl Ledger {
         })
     }
 
+    /// The hub's SSH key for its tunnels, sealed to its box key: `sealed` is kept only if none is yet, and the one kept
+    /// is returned, so two first uses at once agree on one key.
+    pub fn ssh_key_or(&self, sealed: &[u8]) -> Result<Vec<u8>, StoreError> {
+        self.exec(
+            "UPDATE pool_settings SET ssh_key = ?1 WHERE id = 1 AND ssh_key IS NULL",
+            params![sealed],
+        )?;
+        self.db.with(|c| {
+            Ok(
+                c.query_row("SELECT ssh_key FROM pool_settings WHERE id = 1", [], |r| {
+                    r.get(0)
+                })?,
+            )
+        })
+    }
+
+    pub fn sealed_ssh_key(&self) -> Result<Option<Vec<u8>>, StoreError> {
+        self.db.with(|c| {
+            Ok(
+                c.query_row("SELECT ssh_key FROM pool_settings WHERE id = 1", [], |r| {
+                    r.get(0)
+                })?,
+            )
+        })
+    }
+
     pub fn set_paused(&self, paused: Option<(&str, &str)>) -> Result<(), StoreError> {
         self.exec(
             "UPDATE pool_settings SET paused_kind = ?1, paused_reason = ?2 WHERE id = 1",

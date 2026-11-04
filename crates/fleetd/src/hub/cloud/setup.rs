@@ -9,9 +9,10 @@
 //! - installs pinned `gh` and sccache (checked against their release checksums), Xvfb, the Claude Code this fleetd was
 //!   tested with in the agents' home (first on the node's PATH, before boat's own, which floats), and Rust with its
 //!   `RUSTUP_HOME` and `CARGO_HOME` in the agents' home (boat's point at a directory the agents can't write);
-//! - joins the hub at its public HTTPS address with the ordinary join line, on the hub's release channel (a stable hub
-//!   pins its exact release; an edge machine starts on the newest edge build, never older than the hub, and its
-//!   catch-up evens it out);
+//! - waits for the hub's tunnel (hub/pool/tunnel: the hub dials the machine and forwards its loopback port to itself),
+//!   then joins the hub through it with the ordinary join line, on the hub's release channel (a stable hub pins its
+//!   exact release; an edge machine starts on the newest edge build, never older than the hub, and its catch-up evens
+//!   it out);
 //! - sizes the node for builds (`memPerAgentGb`, `warmBuilds`, desktops in Xvfb), puts sccache on the disk that
 //!   survives a stop, runs `gh auth setup-git` so `git push` uses the order's `GH_TOKEN`, and writes boat's pre-stop
 //!   hook (`fleetd node flush`).
@@ -21,6 +22,7 @@ use fleetd_contracts::ids::MachineId;
 
 use crate::cli::setup::units::q;
 use crate::hub::api::Hub;
+use crate::hub::pool::tunnel::machine_hub_url;
 use crate::update::Channel;
 
 const TEMPLATE: &str = include_str!("setup.sh");
@@ -50,7 +52,7 @@ const REPO: &str = "unlaboredlabs/fleetd";
 /// One slot's script, as [`render`] fills it in.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SetupScript {
-    /// The hub's public HTTPS address ([`public_hub_url`]).
+    /// The hub as the machine reaches it: its own loopback, through the hub's tunnel ([`machine_hub_url`]).
     pub hub_url: String,
     pub machine_id: MachineId,
     /// The hub's own build: its channel, and for a stable hub its exact release.
@@ -63,30 +65,13 @@ pub struct SetupScript {
     pub claude: String,
 }
 
-/// The address cloud machines reach the hub at: its public HTTPS address, the one `fleetd init --url` set (Settings ›
-/// Hub). A cloud machine runs on the internet, outside any tailnet, so a hub with none gets the fix.
-pub fn public_hub_url(hub: &Hub) -> Result<String, String> {
-    match hub.config.url.as_deref() {
-        Some(url) if url.starts_with("https://") => Ok(url.trim_end_matches('/').to_owned()),
-        Some(url) => Err(format!(
-            "Cloud machines reach the hub over the internet, and its address {url} isn't HTTPS: give it a public HTTPS \
-             address (e.g. `tailscale funnel` or a reverse proxy), then save it with `fleetd init --url https://…`."
-        )),
-        None => Err(
-            "Cloud machines reach the hub over the internet, and it has no address set: give it a public HTTPS \
-             address (e.g. `tailscale funnel` or a reverse proxy), then save it with `fleetd init --url https://…`."
-                .into(),
-        ),
-    }
-}
-
-/// The script for one slot of this hub: its public address, its build and its git identity.
+/// The script for one slot of this hub: the tunnel's address, the hub's build and its git identity.
 pub fn for_slot(hub: &Hub, machine_id: &MachineId) -> Result<String, String> {
     let git_identity = crate::cli::setup::state::read_setup(&hub.config.home)?
         .and_then(|s| s.git_identity)
         .map(|id| format!("{} <{}>", id.name, id.email));
     Ok(render(&SetupScript {
-        hub_url: public_hub_url(hub)?,
+        hub_url: machine_hub_url(),
         machine_id: machine_id.clone(),
         version: crate::version().to_owned(),
         release_build: option_env!("FLEETD_VERSION").is_some(),

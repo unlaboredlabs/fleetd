@@ -1,15 +1,17 @@
 //! The pool against a fake boat that keeps its machines in memory and stops them at their lease, on a test clock:
 //! every stop path (idle, lease expiry, budget, kill switch, node vanished, wake timeout, hub restart, orphan sweep),
-//! the start budget and its backoff, the keepalive, and the ledger written before every call.
+//! the start budget and its backoff, the keepalive, the ledger written before every call, and the hub's tunnel to each
+//! machine held exactly while it should be up (a fake here; tunnel_tests holds the real one to an SSH server).
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::Value;
 
-use super::boat::{Boat, BoatError, Limits, Sandbox, StartLimits};
+use super::boat::{Boat, BoatError, Limits, Sandbox, SshAccess, StartLimits};
 use super::lease::Ttl;
 use super::ledger::{SettingsChange, State};
+use super::tunnel::{Tunnel, Tunnels};
 use super::{CreateSpec, Fleet, LABEL_ATTEMPT, LABEL_HUB, LABEL_SLOT, Pool, Why, life, sweep};
 use crate::hub::store::HubDb;
 use crate::hub::store::test_clock::ManualClock;
@@ -32,6 +34,8 @@ struct Boatish {
     /// boat's list can't be read.
     list_down: bool,
     usage: HashMap<String, f64>,
+    /// Machines that start running between the wake's GET and its resume: the resume finds them running.
+    races: std::collections::HashSet<String>,
     /// What the ledger said at each call that starts or stops a machine.
     probes: Vec<String>,
 }
@@ -245,7 +249,15 @@ impl Boat for FakeBoat {
             self.call(format!("resume {id} {}", ttl.seconds()))?;
             let now = self.now();
             let mut s = self.s.lock().unwrap();
+            let raced = s.races.remove(id);
             let m = s.machines.get_mut(id).ok_or(BoatError::NotFound)?;
+            if raced {
+                // boat's 200 `status: "running"`: no start, and the deadline stays where it was.
+                m.state = "running".into();
+                let mut sb = m.clone();
+                sb.already_running = true;
+                return Ok(sb);
+            }
             assert_ne!(
                 m.state, "running",
                 "a resume only after a GET saw it stopped"
@@ -280,6 +292,68 @@ impl Boat for FakeBoat {
             Ok(self.s.lock().unwrap().usage.get(id).copied().unwrap_or(0.0))
         })
     }
+
+    fn ssh_key<'a>(
+        &'a self,
+        id: &'a str,
+        _public_key: &'a str,
+    ) -> BoxFut<'a, Result<SshAccess, BoatError>> {
+        Box::pin(async move {
+            self.call(format!("sshkey {id}"))?;
+            Ok(SshAccess::default())
+        })
+    }
+}
+
+/// The hub's tunnels, as the pool holds them: each comes up at once unless `down` names its slot.
+#[derive(Default)]
+struct FakeTunnels {
+    held: Mutex<HashMap<String, (String, Tunnel)>>,
+    /// Every open and close that changed something, in order: "open boat-1 bx_00000001", "close boat-1".
+    log: Mutex<Vec<String>>,
+    /// Tunnels to these slots don't come up, with why.
+    down: Mutex<HashMap<String, String>>,
+}
+
+impl FakeTunnels {
+    fn log(&self) -> Vec<String> {
+        self.log.lock().unwrap().clone()
+    }
+
+    /// The held tunnel drops (Some(why)) or comes back (None), as the real one's redial would.
+    fn set(&self, slot: &str, down: Option<&str>) {
+        if let Some((_, status)) = self.held.lock().unwrap().get_mut(slot) {
+            *status = down.map_or(Tunnel::Up, |why| Tunnel::Down(why.into()));
+        }
+    }
+}
+
+impl Tunnels for FakeTunnels {
+    fn open(&self, slot: &str, sandbox: &str) {
+        let mut held = self.held.lock().unwrap();
+        if held.get(slot).is_some_and(|(sb, _)| sb == sandbox) {
+            return;
+        }
+        let status = match self.down.lock().unwrap().get(slot) {
+            Some(why) => Tunnel::Down(why.clone()),
+            None => Tunnel::Up,
+        };
+        held.insert(slot.into(), (sandbox.into(), status));
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("open {slot} {sandbox}"));
+    }
+
+    fn close(&self, slot: &str) {
+        if self.held.lock().unwrap().remove(slot).is_some() {
+            self.log.lock().unwrap().push(format!("close {slot}"));
+        }
+    }
+
+    fn status(&self, slot: &str) -> Option<Tunnel> {
+        self.held.lock().unwrap().get(slot).map(|(_, s)| s.clone())
+    }
 }
 
 #[derive(Default)]
@@ -310,6 +384,7 @@ impl Fleet for FakeFleet {
 struct World {
     pool: Arc<Pool>,
     boat: Arc<FakeBoat>,
+    tunnels: Arc<FakeTunnels>,
     fleet: Arc<FakeFleet>,
     clock: Arc<ManualClock>,
     db: Arc<HubDb>,
@@ -324,10 +399,12 @@ impl World {
         let boat = FakeBoat::new(clock.clone());
         let fleet = Arc::new(FakeFleet::default());
         *fleet.others.lock().unwrap() = true;
+        let tunnels = Arc::new(FakeTunnels::default());
         let pool = Pool::new(
             db.clone(),
             home.path().into(),
             boat.clone(),
+            tunnels.clone(),
             fleet.clone(),
             clock.clone(),
             chrono_tz::UTC,
@@ -347,6 +424,7 @@ impl World {
         World {
             pool,
             boat,
+            tunnels,
             fleet,
             clock,
             db,
@@ -354,12 +432,17 @@ impl World {
         }
     }
 
-    /// The pool again over the same ledger and boat: a hub restart.
+    /// The pool again over the same ledger and boat: a hub restart (its tunnels went with the old process).
     fn restart(&self) -> Arc<Pool> {
+        self.restart_with(Arc::new(FakeTunnels::default()))
+    }
+
+    fn restart_with(&self, tunnels: Arc<FakeTunnels>) -> Arc<Pool> {
         Pool::new(
             self.db.clone(),
             self.home.path().into(),
             self.boat.clone(),
+            tunnels,
             self.fleet.clone(),
             self.clock.clone(),
             chrono_tz::UTC,
@@ -695,7 +778,7 @@ async fn a_machine_whose_node_vanished_is_stopped_unless_the_hub_hears_nobody() 
     assert_eq!(row.wake_failures, 0, "a vanished node is no wake failure");
 }
 
-/// A wake with no hello in 5 minutes is stopped and counted; two in a row make the slot broken, never woken again.
+/// A wake with no hello in 2 minutes is stopped and counted; two in a row make the slot broken, never woken again.
 #[tokio::test]
 async fn two_wakes_without_a_hello_make_the_slot_broken() {
     let w = World::new().await;
@@ -703,10 +786,10 @@ async fn two_wakes_without_a_hello_make_the_slot_broken() {
     for round in 1..=2 {
         w.pool.wake("boat-1", Why::Need).await.unwrap();
         assert_eq!(w.state("boat-1"), State::Waking);
-        w.advance(4 * MIN);
+        w.advance(MIN + MIN / 2);
         w.tick().await;
         assert_eq!(w.state("boat-1"), State::Waking);
-        w.advance(2 * MIN);
+        w.advance(MIN);
         w.tick().await;
         let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
         assert_eq!(row.wake_failures, round);
@@ -730,7 +813,7 @@ async fn a_hello_clears_the_wake_failures() {
     let w = World::new().await;
     w.asleep("boat-1").await;
     w.pool.wake("boat-1", Why::Need).await.unwrap();
-    w.advance(6 * MIN);
+    w.advance(3 * MIN);
     w.tick().await;
     w.tick().await;
     assert_eq!(w.state("boat-1"), State::Asleep);
@@ -1601,4 +1684,264 @@ async fn reset_deletes_a_broken_machine_and_the_view_shows_each_one() {
     assert!(!w.open_spend("boat-2"));
     // A slot the ledger doesn't know isn't reset.
     assert!(w.pool.retire("boat-9").await.is_err());
+}
+
+/// The hub's tunnel to a machine opens as soon as boat took its create or resume, before its node needs it (its setup
+/// and its node wait for it), stays through the stop so the pre-stop flush reaches the hub, and closes once boat says
+/// the machine sleeps. Every wake opens a fresh one: a resume is a new machine with a new host key.
+#[tokio::test]
+async fn the_tunnel_opens_at_the_wake_before_the_hello_and_closes_when_the_machine_sleeps() {
+    let w = World::new().await;
+    w.create("boat-1").await;
+    let id = w.sandbox("boat-1");
+    assert_eq!(w.tunnels.log(), [format!("open boat-1 {id}")]);
+    assert_eq!(w.tunnels.status("boat-1"), Some(Tunnel::Up));
+    w.advance(Duration::from_secs(20));
+    w.hello("boat-1", Some(false));
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Awake);
+    w.pool
+        .stop("boat-1", State::Stopping, "idle")
+        .await
+        .unwrap();
+    assert_eq!(
+        w.tunnels.status("boat-1"),
+        Some(Tunnel::Up),
+        "held while it stops"
+    );
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Asleep);
+    assert_eq!(w.tunnels.status("boat-1"), None);
+    // Each wake: a fresh tunnel at once, no tick needed.
+    for _ in 0..2 {
+        w.pool.wake("boat-1", Why::Need).await.unwrap();
+        assert_eq!(w.tunnels.status("boat-1"), Some(Tunnel::Up));
+        w.advance(Duration::from_secs(30));
+        w.hello("boat-1", Some(false));
+        w.tick().await;
+        assert_eq!(w.state("boat-1"), State::Awake);
+        w.pool
+            .stop("boat-1", State::Stopping, "idle")
+            .await
+            .unwrap();
+        w.tick().await;
+        assert_eq!(w.tunnels.status("boat-1"), None);
+    }
+    assert_eq!(
+        w.tunnels.log(),
+        [
+            format!("open boat-1 {id}"),
+            "close boat-1".into(),
+            format!("open boat-1 {id}"),
+            "close boat-1".into(),
+            format!("open boat-1 {id}"),
+            "close boat-1".into(),
+        ]
+    );
+    // Deleted (Reset): no tunnel either.
+    w.pool.wake("boat-1", Why::Need).await.unwrap();
+    w.pool
+        .stop("boat-1", State::Stopping, "test")
+        .await
+        .unwrap();
+    w.tick().await;
+    w.pool.retire("boat-1").await.unwrap();
+    assert_eq!(w.tunnels.status("boat-1"), None);
+}
+
+/// A tunnel that never comes up leaves the node silent: the wake's own timeout stops the machine and counts a failed
+/// wake, naming the tunnel's error, and two make the slot broken; a create's never-joined delete names it too. No
+/// endless retry: nothing wakes a broken slot.
+#[tokio::test]
+async fn a_tunnel_that_never_comes_up_is_a_failed_wake() {
+    let w = World::new().await;
+    w.asleep("boat-1").await;
+    w.tunnels.down.lock().unwrap().insert(
+        "boat-1".into(),
+        "its SSH server at 203.0.113.10:22: connection refused".into(),
+    );
+    w.pool.wake("boat-1", Why::Need).await.unwrap();
+    w.advance(3 * MIN);
+    w.tick().await;
+    let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
+    assert_eq!(row.state, State::Stopping);
+    assert_eq!(row.wake_failures, 1);
+    assert_eq!(
+        row.note.as_deref(),
+        Some(
+            "no hello within 2 minutes of its wake: the hub's tunnel to it didn't come up (its SSH server at \
+             203.0.113.10:22: connection refused)"
+        )
+    );
+    w.tick().await;
+    assert_eq!(w.tunnels.status("boat-1"), None, "closed once asleep");
+    w.pool.wake("boat-1", Why::Need).await.unwrap();
+    w.advance(3 * MIN);
+    w.tick().await;
+    let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
+    assert_eq!(row.state, State::Broken);
+    assert!(row.note.unwrap().contains("connection refused"));
+    w.tick().await;
+    assert_eq!(w.tunnels.status("boat-1"), None);
+    assert!(w.pool.wake("boat-1", Why::Need).await.is_err());
+    assert_eq!(w.boat.calls_like("resume").len(), 2);
+
+    // A create whose tunnel never came up is deleted, and says so.
+    w.tunnels.down.lock().unwrap().insert(
+        "boat-2".into(),
+        "boat.dev names no address for its SSH server yet".into(),
+    );
+    w.create("boat-2").await;
+    w.advance(16 * MIN);
+    w.tick().await;
+    let row = w.pool.ledger.slot("boat-2").unwrap().unwrap();
+    assert_eq!(row.state, State::Failed);
+    assert!(
+        row.note
+            .as_deref()
+            .unwrap()
+            .ends_with("didn't come up (boat.dev names no address for its SSH server yet)"),
+        "{:?}",
+        row.note
+    );
+    assert_eq!(w.tunnels.status("boat-2"), None);
+}
+
+/// A tunnel that drops while its machine is awake stays held (the real one redials with backoff); the node heard again
+/// once it is back keeps the machine awake. One that stays down leaves the node silent, and the node-vanished stop
+/// sends it to sleep, which closes it.
+#[tokio::test]
+async fn a_dropped_tunnel_is_held_until_it_is_back_or_the_machine_stops() {
+    let w = World::new().await;
+    w.awake("boat-1").await;
+    w.tunnels.set(
+        "boat-1",
+        Some("its SSH server at 203.0.113.10:22: the connection dropped"),
+    );
+    w.advance(3 * MIN);
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Awake);
+    assert!(matches!(w.tunnels.status("boat-1"), Some(Tunnel::Down(_))));
+    w.tunnels.set("boat-1", None);
+    w.hello("boat-1", Some(true));
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Awake);
+    assert_eq!(
+        w.tunnels.log().len(),
+        1,
+        "never closed or reopened for a drop"
+    );
+    // Down for good: silent 10 minutes, stopped, closed once asleep.
+    w.tunnels.set("boat-1", Some("the connection dropped"));
+    w.advance(11 * MIN);
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Stopping);
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Asleep);
+    assert_eq!(w.tunnels.status("boat-1"), None);
+}
+
+/// After a hub restart the first tick opens the tunnels of the machines boat still runs for it; asleep ones get none.
+#[tokio::test]
+async fn a_hub_restart_opens_the_awake_machines_tunnels_again() {
+    let w = World::new().await;
+    w.awake("boat-1").await;
+    w.asleep("boat-2").await;
+    let tunnels = Arc::new(FakeTunnels::default());
+    let pool = w.restart_with(tunnels.clone());
+    sweep::sweep(&pool).await.unwrap();
+    w.hello("boat-1", Some(true));
+    life::tick(&pool).await;
+    assert_eq!(
+        tunnels.log(),
+        [format!("open boat-1 {}", w.sandbox("boat-1"))]
+    );
+    assert_eq!(tunnels.status("boat-2"), None);
+}
+
+/// The admin's Test of the whole way, on a private hub: it wakes a sleeping machine, and passes once the tunnel is up
+/// and the node said hello through it; one whose tunnel doesn't come up fails with that step. A Test wake idles off
+/// after 5 minutes.
+#[tokio::test]
+async fn the_test_follows_a_wake_through_the_tunnel_to_the_hello() {
+    let w = World::new().await;
+    w.asleep("boat-1").await;
+    w.pool.path_begin("boat-1");
+    w.pool.wake("boat-1", Why::Test).await.unwrap();
+    let running = w.pool.path_test().unwrap();
+    assert_eq!(running.ok, None);
+    assert_eq!(
+        running.said,
+        "boat-1: waking; the hub's tunnel to it is up, waiting for its node's hello."
+    );
+    w.advance(Duration::from_secs(40));
+    w.hello("boat-1", Some(false));
+    w.tick().await;
+    let passed = w.pool.path_test().unwrap();
+    assert_eq!(passed.ok, Some(true), "{}", passed.said);
+    assert_eq!(
+        passed.said,
+        "boat-1: boat.dev ran it, the hub's tunnel to it came up and its node said hello through it."
+    );
+    // It stays passed as the Test's machine goes back to sleep, 5 minutes idle.
+    w.hello("boat-1", Some(false));
+    w.tick().await;
+    w.advance(5 * MIN);
+    w.hello("boat-1", Some(false));
+    w.tick().await;
+    assert_eq!(w.state("boat-1"), State::Stopping);
+    assert_eq!(w.pool.path_test().unwrap().ok, Some(true));
+    w.tick().await;
+
+    w.tunnels.down.lock().unwrap().insert(
+        "boat-1".into(),
+        "its SSH server at 203.0.113.10:22: no answer within 20 s".into(),
+    );
+    w.pool.path_begin("boat-1");
+    w.pool.wake("boat-1", Why::Test).await.unwrap();
+    assert!(
+        w.pool
+            .path_test()
+            .unwrap()
+            .said
+            .ends_with("isn't up yet (its SSH server at 203.0.113.10:22: no answer within 20 s).")
+    );
+    w.advance(3 * MIN);
+    w.tick().await;
+    let failed = w.pool.path_test().unwrap();
+    assert_eq!(failed.ok, Some(false));
+    assert_eq!(
+        failed.said,
+        "boat-1: no hello within 2 minutes of its wake: the hub's tunnel to it didn't come up (its SSH server at \
+         203.0.113.10:22: no answer within 20 s)"
+    );
+}
+
+/// A resume that finds the machine running already (it raced the wake's GET): boat counted no start and kept its old
+/// deadline, so the hub uncounts its start and renews the lease at once with a PATCH.
+#[tokio::test]
+async fn a_resume_that_finds_the_machine_running_costs_no_start_and_renews_the_lease() {
+    let w = World::new().await;
+    w.asleep("boat-1").await;
+    let id = w.sandbox("boat-1");
+    let day = |w: &World| {
+        w.pool
+            .ledger
+            .starts_in(super::ledger::Window::Day, w.now())
+            .unwrap()
+            .0
+    };
+    let before = day(&w);
+    w.advance(MIN);
+    w.boat.s.lock().unwrap().races.insert(id.clone());
+    w.pool.wake("boat-1", Why::Need).await.unwrap();
+    assert_eq!(day(&w), before, "no start counted");
+    let calls = w.boat.calls();
+    let resume = calls.iter().position(|c| c.starts_with("resume")).unwrap();
+    assert_eq!(calls[resume + 1], format!("ttl {id} 1800"));
+    let sb = w.boat.s.lock().unwrap().machines[&id].clone();
+    assert_eq!(sb.archive_after_ms(), Some(w.now() + 1_800_000));
+    let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
+    assert_eq!(row.state, State::Waking);
+    assert_eq!(row.renewed_at, Some(w.now()));
 }

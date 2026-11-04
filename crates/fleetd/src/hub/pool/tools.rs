@@ -1,6 +1,7 @@
 //! The cloud machines' tools: `cloud_get` for anyone signed in (Settings › Hub › Machines, Status), and for admin keys
-//! the settings, the boat key (sealed in the app to the hub's own box key), Test, Create, Reset, Resume and
-//! `cloud_stop`, the kill switch (`fleetd cloud stop`, and "Stop all cloud machines"). No key or secret comes back.
+//! the settings, the boat key (sealed in the app to the hub's own box key), Test (the key, then the whole way from a
+//! cloud machine to the hub), Create, Reset, Resume and `cloud_stop`, the kill switch (`fleetd cloud stop`, and "Stop
+//! all cloud machines"). No key or secret comes back; the hub's SSH key shows only its public half.
 use std::sync::Arc;
 
 use base64::Engine;
@@ -17,7 +18,7 @@ use fleetd_contracts::mcp::{
 
 use super::boat::File;
 use super::view;
-use super::{CreateSpec, ledger::State};
+use super::{CreateSpec, Why, ledger::State};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, error, internal_error, require};
 
 pub fn register(tools: &mut Registry) {
@@ -52,9 +53,13 @@ pub fn cloud_view(hub: &Hub) -> Result<CloudView, ToolError> {
     let budget = pool.budget(&s, now)?;
     let machines =
         pool.machines(|slot| MachineId::new(slot).ok().and_then(|id| hub.link.busy(&id)))?;
-    let (hub_url, network) = match crate::hub::cloud::setup::public_hub_url(hub) {
-        Ok(url) => (Some(url), None),
-        Err(why) => (None, Some(why)),
+    // Made with the boat key, so a hub that never uses cloud machines never makes one.
+    let ssh_key = if s.has_key {
+        pool.ssh_public_key()
+            .inspect_err(|e| tracing::error!(error = %e, "cloud: the hub's SSH key"))
+            .ok()
+    } else {
+        None
     };
     let box_pub_key = crate::hub::hub_links::box_key(hub)
         .map_err(|e| {
@@ -82,8 +87,8 @@ pub fn cloud_view(hub: &Hub) -> Result<CloudView, ToolError> {
         machines,
         sizes: view::sizes(),
         plan_dollars: s.plan_dollars,
-        hub_url,
-        network,
+        path_test: pool.path_test(),
+        ssh_key,
         box_pub_key,
     })
 }
@@ -170,12 +175,65 @@ async fn test(
 ) -> Result<CloudTestOutput, ToolError> {
     require(&caller, Role::Admin, None)?;
     let test = hub.pool.test().await;
+    if test.ok {
+        test_path(&hub).await;
+    }
     Ok(CloudTestOutput {
         test,
         cloud: cloud_view(&hub)?,
         next: None,
         truncated: None,
     })
+}
+
+/// The Test of the whole way, once the key works and cloud machines are on: a machine awake already is checked as it
+/// is, else one waking or being made is followed, else one asleep is woken (one boat start), else the first slot not
+/// made yet is created. The life loop follows it from there ([`super::Pool::path_test`]); a start refused ends it here.
+pub async fn test_path(hub: &Hub) {
+    let pool = &hub.pool;
+    let (Ok(s), Ok(rows)) = (pool.ledger().settings(), pool.ledger().slots()) else {
+        return;
+    };
+    if !s.enabled {
+        return;
+    }
+    let first = |states: &[State]| {
+        rows.iter()
+            .find(|r| states.contains(&r.state) && r.sandbox_id.is_some())
+            .map(|r| r.slot.clone())
+    };
+    if let Some(slot) = first(&[State::Awake, State::Waking, State::Creating]) {
+        pool.path_begin(&slot);
+        if let Ok(Some(row)) = pool.ledger().slot(&slot) {
+            pool.path_step(&row);
+        }
+        return;
+    }
+    if let Some(slot) = first(&[State::Asleep, State::Stopping]) {
+        pool.path_begin(&slot);
+        if let Err(why) = pool.wake(&slot, Why::Test).await {
+            pool.path_end(Err(format!("{slot}: the wake didn't start: {why}")));
+        }
+        return;
+    }
+    match pool.missing().ok().and_then(|m| m.into_iter().next()) {
+        Some(slot) if s.environment.is_some() => {
+            pool.path_begin(&slot);
+            if let Err(why) = create_slot(hub, &slot).await {
+                pool.path_end(Err(format!("{slot}: the create didn't start: {why}")));
+            }
+        }
+        _ => {
+            if let Some(row) = rows.first() {
+                pool.path_begin(&row.slot);
+                pool.path_end(Err(format!(
+                    "{}: {}: Reset it in Settings › Hub › Machines › Cloud machines, then Test again",
+                    row.slot,
+                    row.note.as_deref().unwrap_or("it can't be woken")
+                )));
+            }
+        }
+    }
 }
 
 /// Creates `slot`'s machine: the setup script for this hub, and a one-time pool enroll token in a file under /tmp,
@@ -220,9 +278,6 @@ async fn create(
                 environment_default(&hub)
             ),
         ));
-    }
-    if let Err(why) = crate::hub::cloud::setup::public_hub_url(&hub) {
-        return Err(ToolError::new(ErrorCode::Invalid, why));
     }
     let missing = hub.pool.missing()?;
     let mut lines = Vec::new();

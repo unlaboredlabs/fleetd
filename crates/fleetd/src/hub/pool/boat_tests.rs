@@ -95,7 +95,9 @@ async fn any(
         ("GET", _) => answer(200, "get-running", None),
         ("PATCH", _) => answer(200, "update", None),
         ("POST", p) if p.ends_with("/stop") => answer(202, "stopping", None),
+        ("POST", "/sandboxes/bx_3456789a/resume") => answer(200, "resume-running", None),
         ("POST", p) if p.ends_with("/resume") => answer(202, "resuming", None),
+        ("POST", p) if p.ends_with("/sshkey") => answer(200, "sshkey", None),
         ("DELETE", p) => {
             let id = p.trim_start_matches("/sandboxes/");
             if headers
@@ -184,6 +186,42 @@ async fn a_create_goes_out_as_the_sealed_bytes_under_its_idempotency_key() {
     assert!(sent.get("environment").is_none());
 }
 
+/// The hub's tunnel key goes to boat as `{key}`, public half only; the answer says where to dial and the host key to pin.
+#[tokio::test]
+async fn an_ssh_key_lets_the_hub_in_and_names_the_host_key() {
+    let (boat, fake) = fake_boat().await;
+    let public = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPub fleetd-hub";
+    let access = boat.ssh_key("bx_23456789", public).await.unwrap();
+    let seen = last(&fake);
+    assert_eq!(
+        (seen.method.as_str(), seen.path.as_str()),
+        ("POST", "/sandboxes/bx_23456789/sshkey")
+    );
+    let sent: Value = serde_json::from_slice(&seen.body).unwrap();
+    assert_eq!(sent, serde_json::json!({ "key": public }));
+    // A machine with no public IPv4 of its own is dialled at its endpoint, not port 22; a GET's endpoint, read at the
+    // dial, goes first (every wake brings a new one).
+    assert_eq!(access.target(None), Some(("203.0.113.10".into(), 22001)));
+    let seen = boat.get("bx_23456789").await.unwrap();
+    assert_eq!(seen.hydrated, Some(true));
+    let fresh = super::boat::Sandbox {
+        ssh_endpoint: Some("198.51.100.7:22017".into()),
+        ..seen
+    };
+    assert_eq!(
+        access.target(Some(&fresh)),
+        Some(("198.51.100.7".into(), 22017))
+    );
+    assert_eq!(access.user(), "user");
+    assert!(access.host_key.unwrap().starts_with("ssh-ed25519 "));
+    let own = super::boat::SshAccess {
+        machine_ip: Some("2a01:4f8::10".into()),
+        ..Default::default()
+    };
+    assert_eq!(own.target(None), None, "its IPv6 address is never dialled");
+    assert_eq!(super::boat::SshAccess::default().target(None), None);
+}
+
 #[tokio::test]
 async fn a_list_follows_every_cursor_page_with_its_labels() {
     let (boat, fake) = fake_boat().await;
@@ -236,6 +274,10 @@ async fn get_patch_stop_resume_delete_limits_and_usage() {
 
     let resumed = boat.resume("bx_23456789", ttl(1800.0)).await.unwrap();
     assert_eq!(resumed.id, "bx_23456789");
+    assert!(!resumed.already_running);
+    // A resume of a machine running already (the spike's 200, `status: "running"`) says so: no start, no new deadline.
+    let running = boat.resume("bx_3456789a", ttl(1800.0)).await.unwrap();
+    assert!(running.already_running);
     let sent: Value = serde_json::from_slice(&last(&fake).body).unwrap();
     assert_eq!(
         sent,

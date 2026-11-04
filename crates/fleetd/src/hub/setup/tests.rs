@@ -392,9 +392,9 @@ async fn the_agents_mac_never_gets_a_runners_checks() {
     }
 }
 
-/// The cloud step: the boat key's exact actions, scoped to an environment named for this hub; the public HTTPS
-/// address with Tailscale Funnel pointed at where the hub listens; done only once the key, the address, the machines
-/// and the budget all pass.
+/// The cloud step: the boat key's exact actions (ssh for the hub's tunnel), scoped to an environment named for this hub;
+/// nothing to set up on the network, whatever address the hub has; done only once the key, the way to the hub, the
+/// machines and the budget all pass.
 #[test]
 fn the_cloud_step_gives_the_exact_values_and_is_done_only_when_every_check_passes() {
     let cloud = |hub: &str, checks: &[DoctorCheck]| {
@@ -421,9 +421,9 @@ fn the_cloud_step_gives_the_exact_values_and_is_done_only_when_every_check_passe
     };
     assert_eq!(
         value("Actions"),
-        "sandbox.create sandbox.read sandbox.update sandbox.stop sandbox.resume sandbox.delete account.read"
+        "sandbox.create sandbox.read sandbox.update sandbox.stop sandbox.resume sandbox.delete ssh account.read"
     );
-    for forbidden in ["exec", "ssh", "file.", "snapshot", "admin", "delete-own"] {
+    for forbidden in ["exec", "file.", "snapshot", "admin", "delete-own"] {
         assert!(!value("Actions").contains(forbidden), "{forbidden}");
     }
     assert_eq!(value("Scope: environment"), "fleetd-devbox");
@@ -431,20 +431,34 @@ fn the_cloud_step_gives_the_exact_values_and_is_done_only_when_every_check_passe
     assert_eq!(value("boat.dev environment"), "fleetd-devbox");
     assert_eq!(value("Billing › Auto top-up"), "Off");
     assert_eq!(value("Billing › Extra starts on invoice"), "Off");
-    assert_eq!(
-        value("On the hub, with Tailscale Funnel"),
-        format!("tailscale funnel --bg {HUB}")
-    );
-    // A hub already on HTTPS is shown its address instead.
-    let https = cloud("https://devbox.your-tailnet.ts.net", &[]);
-    let shown: Vec<_> = https
-        .parts
-        .iter()
-        .flat_map(|p| &p.values)
-        .map(|v| v.value.as_str())
-        .collect();
-    assert!(shown.contains(&"https://devbox.your-tailnet.ts.net"));
-    assert!(!shown.iter().any(|v| v.starts_with("tailscale funnel")));
+    // A hub only its tailnet or LAN reaches needs nothing more: no public address, Funnel or proxy to set up.
+    for hub in [
+        HUB,
+        "http://192.168.1.20:4790",
+        "https://devbox.your-tailnet.ts.net",
+    ] {
+        let step = cloud(hub, &[]);
+        let text: Vec<String> = step
+            .parts
+            .iter()
+            .flat_map(|p| {
+                p.values
+                    .iter()
+                    .flat_map(|v| [v.label.clone(), v.value.clone()])
+                    .chain(p.note.clone())
+                    .chain([p.title.clone()])
+            })
+            .collect();
+        for word in [
+            "funnel",
+            "Funnel",
+            "public HTTPS",
+            "reverse proxy",
+            "fleetd init --url",
+        ] {
+            assert!(!text.iter().any(|t| t.contains(word)), "{hub}: {word}");
+        }
+    }
 
     let ok = |name: &str| check(&format!("hub/{name}"), DoctorStatus::Ok, "fine");
     let all = [
