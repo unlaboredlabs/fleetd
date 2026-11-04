@@ -166,6 +166,7 @@ fn place_words(place: &str) -> String {
         "github" => "Hub accounts › GitHub",
         "invites" | "people" => "Hub › People",
         "machines" => "Hub › Machines",
+        "cloud" => "Hub › Machines › Cloud machines",
         other => other,
     };
     format!("Settings › {name}")
@@ -283,6 +284,11 @@ mod tests {
                 (
                     State::Skipped,
                     "optional · fleetd init --step mac".into(),
+                    None
+                ),
+                (
+                    State::Skipped,
+                    "optional · fleetd init --step cloud".into(),
                     None
                 ),
             ]

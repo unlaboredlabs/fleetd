@@ -253,6 +253,16 @@ export const TelegramRequest = z.strictObject({
 });
 export type TelegramRequest = z.infer<typeof TelegramRequest>;
 
+/**
+ * The hub's boat.dev API key (Settings › Hub › Machines › Cloud machines): main seals it to `boxPubKey`, the hub's own
+ * key from cloud_get, and calls cloud_key_set. The hub gets the box, never the key, and nothing returns it.
+ */
+export const CloudKeyRequest = z.strictObject({
+  boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),
+  key: z.string().trim().min(1).max(500),
+});
+export type CloudKeyRequest = z.infer<typeof CloudKeyRequest>;
+
 /** An error the page caught, for the app log: what failed, the error's own text and the route. Main scrubs it. */
 export const ErrorReport = z.strictObject({
   /** The part whose card is up ("the conversation"), or "uncaught error" / "unhandled rejection". */
@@ -365,6 +375,7 @@ export const REQUESTS = {
   [IPC.claudeAccountSubmit]: z.tuple([HubId, ClaudeAccountRequest]),
   [IPC.onePasswordSubmit]: z.tuple([HubId, OnePasswordRequest]),
   [IPC.telegramSubmit]: z.tuple([HubId, TelegramRequest]),
+  [IPC.cloudKeySubmit]: z.tuple([HubId, CloudKeyRequest]),
   [IPC.systemHostName]: none,
   [IPC.machinesJoinHere]: z.tuple([HubId, z.string().regex(/^[a-z0-9-]{1,32}$/u)]),
   [IPC.machinesJoinHereState]: z.tuple([HubId]),

@@ -40,6 +40,9 @@ pub struct Machine {
     /// The agents' Mac (D298): a tool every project's agents use, never a runner. No agent, lead or Navi runs there,
     /// and clients seal no secret to it. Absent on every other machine.
     pub agents_mac: Option<bool>,
+    /// One of the hub's cloud machines on boat.dev (D306): the hub wakes it for work and puts it to sleep, so offline
+    /// is its rest, not a fault. Absent on every other machine.
+    pub cloud: Option<bool>,
 }
 
 /// A span a machine spent asleep, epoch milliseconds; `machine.slept` carries the same fields as its data.

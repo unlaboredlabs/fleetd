@@ -6,7 +6,8 @@
 // It cannot be stale: the rows come from the data layer (status_get, refetched on events), which drops every
 // answer on a reconnect, so the view is a skeleton until this connection has answered; a row whose source went
 // quiet says so. With several hubs each hub is a section under its name, with its own rows and
-// its own connection, and each row opens on its hub.
+// its own connection, and each row opens on its hub. Under the rows, a hub with cloud machines says what they cost
+// today and how many are awake (admin/Cloud.tsx); a member is told who to ask about them.
 
 import { useMemo } from "react";
 import type { ProjectStatusRow } from "../../../shared/contracts";
@@ -20,6 +21,7 @@ import { countsLine, GROUP_WORDS, groupsOf, itemHref, itemRefs, orderRows, STATE
 import { fullWhen, staleWords, weekLine, when } from "./view";
 import { HubText } from "../projects/HubText";
 import { ResumeButton } from "./Resume";
+import { CloudStatus } from "../admin/CloudStatus";
 import s from "./status.module.css";
 
 const ALL = {} as const;
@@ -99,6 +101,7 @@ function HubStatusView({ title, section = false }: { title: string; section?: bo
           {liveness}
         </div>
         <StatusRows rows={rows} now={now} />
+        <CloudStatus />
       </div>
     );
   }
@@ -122,6 +125,7 @@ function HubStatusView({ title, section = false }: { title: string; section?: bo
       </FrameTitle>
       <div className={cx(s.body)}>
         <StatusRows rows={rows} now={now} />
+        <CloudStatus />
       </div>
     </div>
   );

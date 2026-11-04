@@ -380,12 +380,17 @@ async fn each_refusal_is_its_own_typed_error() {
 #[tokio::test]
 async fn no_key_makes_no_call() {
     let fake: Shared = Arc::default();
-    let key: super::boat::KeySource =
-        Arc::new(|| Err(BoatError::NoKey("no boat.dev key: Settings › Cloud".into())));
+    let key: super::boat::KeySource = Arc::new(|| {
+        Err(BoatError::NoKey(
+            "no boat.dev key: Settings › Hub › Machines".into(),
+        ))
+    });
     let boat = RestBoat::new("http://127.0.0.1:9/api/v1", key);
     assert_eq!(
         boat.limits().await,
-        Err(BoatError::NoKey("no boat.dev key: Settings › Cloud".into()))
+        Err(BoatError::NoKey(
+            "no boat.dev key: Settings › Hub › Machines".into()
+        ))
     );
     assert!(fake.lock().unwrap().seen.is_empty());
 }

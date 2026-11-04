@@ -85,6 +85,7 @@ export default defineConfig({
             "skills",
             "browser-sessions",
             "agents-mac",
+            "cloud-machines",
             "mcp-clients",
           ],
         },

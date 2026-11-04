@@ -3279,6 +3279,51 @@ output!(CloudStopOutput {
     unlisted: Option<String>,
 });
 
+// cloud_get, cloud_set, cloud_key_set, cloud_test, cloud_create, cloud_reset, cloud_resume: the hub's cloud machines
+// (hub/pool) as Settings › Hub › Machines and the setup step show and change them. Anyone signed in reads them; the
+// rest are an admin's. The boat key is sealed in the app to the hub's own box key: nothing returns it.
+input!(CloudGetInput {});
+output!(CloudGetOutput {
+    cloud: crate::cloud::CloudView,
+});
+input!(CloudSetInput {
+    #[serde(flatten)]
+    settings: crate::cloud::CloudSettings,
+});
+output!(CloudSetOutput {
+    cloud: crate::cloud::CloudView,
+});
+input!(CloudKeySetInput {
+    /// The admin's boat.dev key, sealed to the hub's boxPubKey (cloud_get).
+    sealed: crate::secrets::SealedSecret,
+});
+output!(CloudKeySetOutput {
+    cloud: crate::cloud::CloudView,
+});
+input!(CloudTestInput {});
+output!(CloudTestOutput {
+    test: crate::cloud::CloudKeyTest,
+    cloud: crate::cloud::CloudView,
+});
+input!(CloudCreateInput {});
+output!(CloudCreateOutput {
+    /// One line a machine: "boat-1: creating", or why boat or fleetd refused it.
+    lines: Vec<String>,
+    cloud: crate::cloud::CloudView,
+});
+input!(CloudResetInput {
+    machine_id: MachineId,
+});
+output!(CloudResetOutput {
+    /// What happened, in one line.
+    said: String,
+    cloud: crate::cloud::CloudView,
+});
+input!(CloudResumeInput {});
+output!(CloudResumeOutput {
+    cloud: crate::cloud::CloudView,
+});
+
 // claude_accounts_get, claude_hub_api_set, claude_hub_api_remove, claude_settings_set, claude_subscription_set,
 // claude_subscription_remove, claude_choice_set, claude_account_test: which Claude account each person's work runs on
 // (teams step 8, D200; `claude_accounts.rs`). Keys and tokens are sealed in the app to each machine's boxPubKey; the
@@ -3602,6 +3647,14 @@ tools! {
     github_app_remove => GithubAppRemove, Admin, GithubAppRemoveInput, GithubAppRemoveOutput;
     // Admin keys: the cloud machines' kill switch.
     cloud_stop => CloudStop, Admin, CloudStopInput, CloudStopOutput;
+    cloud_get => CloudGet, Read, CloudGetInput, CloudGetOutput;
+    // Owners' and admins' keys (the handlers check): the hub's own boat.dev account.
+    cloud_set => CloudSet, Admin, CloudSetInput, CloudSetOutput;
+    cloud_key_set => CloudKeySet, Admin, CloudKeySetInput, CloudKeySetOutput;
+    cloud_test => CloudTest, Admin, CloudTestInput, CloudTestOutput;
+    cloud_create => CloudCreate, Admin, CloudCreateInput, CloudCreateOutput;
+    cloud_reset => CloudReset, Admin, CloudResetInput, CloudResetOutput;
+    cloud_resume => CloudResume, Admin, CloudResumeInput, CloudResumeOutput;
     // Human keys only (the handlers check): a person's own GitHub account.
     github_connect => GithubConnect, Operate, GithubConnectInput, GithubConnectOutput;
     github_disconnect => GithubDisconnect, Operate, GithubDisconnectInput, GithubDisconnectOutput;

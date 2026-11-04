@@ -48,7 +48,7 @@ impl Settings {
     }
 }
 
-/// What the admin may change (Settings › Cloud, the setup step).
+/// What the admin may change (Settings › Hub › Machines, the setup step).
 #[derive(Clone, Debug, PartialEq)]
 pub struct SettingsChange {
     pub enabled: bool,

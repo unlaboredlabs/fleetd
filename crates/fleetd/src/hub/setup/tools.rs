@@ -105,6 +105,10 @@ async fn setup_test(
     {
         tracing::warn!("setup: the GitHub App's test didn't run: {e}");
     }
+    // The cloud step's Test asks boat.dev with the hub's key; the hub_cloud checks read what it said.
+    if input.step == SetupStepId::Cloud {
+        hub.pool.test().await;
+    }
     // Machines, Claude and the Mac read every machine's checks; the rest, the hub's own.
     let results = match input.step {
         SetupStepId::Machines | SetupStepId::Claude | SetupStepId::Mac => {

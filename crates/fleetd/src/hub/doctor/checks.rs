@@ -250,6 +250,31 @@ pub struct SetupFacts {
     pub joined: Vec<String>,
     /// The hub's own GitHub App (D190), as the hub keeps it: where it is installed and its last Test.
     pub github_app: Option<fleetd_contracts::github_app::GithubApp>,
+    /// Cloud machines (D306), once a boat.dev key is saved.
+    pub cloud: Option<CloudFacts>,
+}
+
+/// What the hub's pool says of itself, for the `hub/cloud_*` checks.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CloudFacts {
+    pub enabled: bool,
+    pub pool_size: u32,
+    /// What boat last said to the key: the admin's Test or a sweep.
+    pub key_test: Option<fleetd_contracts::cloud::CloudKeyTest>,
+    /// A billing or key pause: its kind and line.
+    pub paused: Option<(String, String)>,
+    /// The hub's public HTTPS address, or why it has none.
+    pub hub_url: Result<String, String>,
+    /// Each slot made: its id, state and note.
+    pub machines: Vec<(
+        String,
+        fleetd_contracts::cloud::CloudMachineState,
+        Option<String>,
+    )>,
+    /// "Today $0.41 of $3.00 · this month $6.10 of $20.00".
+    pub spend: String,
+    /// Why a budget holds starts back, when one does.
+    pub over: Option<String>,
 }
 
 /// The setup checks the hub reads from its own state: someone else joined, the GitHub App. A step not set up has no
@@ -268,7 +293,162 @@ pub fn setup_checks(facts: &SetupFacts) -> Vec<Entry> {
     if let Some(app) = &facts.github_app {
         out.push(github_app(app));
     }
+    if let Some(cloud) = &facts.cloud {
+        out.extend(cloud_checks(cloud));
+    }
     out
+}
+
+/// `hub/cloud_key`, `hub/cloud_network`, `hub/cloud_machines` and `hub/cloud_budget`: the cloud step's checks, there
+/// once a boat.dev key is saved.
+pub fn cloud_checks(f: &CloudFacts) -> Vec<Entry> {
+    use fleetd_contracts::cloud::CloudMachineState as S;
+    let fix = |what: &str| Some(manual(what, None));
+    let key = match (&f.paused, &f.key_test) {
+        (Some((kind, why)), _) if kind == "key" => hub_entry(
+            "cloud_key",
+            Fail,
+            why,
+            fix(
+                "Paste a new boat.dev key in Settings › Hub › Machines › Cloud machines, then Test",
+            ),
+        ),
+        (_, Some(t)) if !t.ok => hub_entry(
+            "cloud_key",
+            Fail,
+            &t.said,
+            fix("Check the key's actions and scope on boat.dev, then Test"),
+        ),
+        (_, Some(t)) => hub_entry("cloud_key", Pass, &t.said, None),
+        (_, None) => hub_entry(
+            "cloud_key",
+            Unknown,
+            "A boat.dev key is saved. Test asks boat.dev what it may read.",
+            fix("Test it in Settings › Hub › Machines › Cloud machines"),
+        ),
+    };
+    let network = match &f.hub_url {
+        Ok(url) => hub_entry(
+            "cloud_network",
+            Pass,
+            &format!(
+                "Cloud machines dial in to the hub's HTTPS address {url}; the first one's hello shows boat.dev reaches it."
+            ),
+            None,
+        ),
+        Err(why) => hub_entry(
+            "cloud_network",
+            Fail,
+            why,
+            Some(manual(
+                "Give the hub a public HTTPS address, then save it",
+                Some("fleetd init --url https://<the address>".into()),
+            )),
+        ),
+    };
+    let made: Vec<_> = f
+        .machines
+        .iter()
+        .filter(|(_, state, _)| !matches!(state, S::Gone))
+        .collect();
+    let named = |states: &[S]| -> Vec<String> {
+        f.machines
+            .iter()
+            .filter(|(_, s, _)| states.contains(s))
+            .map(|(id, _, note)| match note {
+                Some(n) if !n.is_empty() => format!("{id} ({n})"),
+                _ => id.clone(),
+            })
+            .collect()
+    };
+    let broken = named(&[S::Broken]);
+    let failed = named(&[S::Failed, S::Gone]);
+    let creating = named(&[S::Creating]);
+    let count = |s: S| f.machines.iter().filter(|(_, st, _)| *st == s).count();
+    let machines = if !broken.is_empty() {
+        hub_entry(
+            "cloud_machines",
+            Fail,
+            &format!(
+                "{} didn't come back from two wakes in a row, so the hub won't wake it again.",
+                broken.join(", ")
+            ),
+            fix("Reset it in Settings › Hub › Machines › Cloud machines"),
+        )
+    } else if !failed.is_empty() {
+        hub_entry(
+            "cloud_machines",
+            Warn,
+            &format!("Not made: {}.", failed.join(", ")),
+            fix("Create cloud machines again in Settings › Hub › Machines"),
+        )
+    } else if made.is_empty() {
+        hub_entry(
+            "cloud_machines",
+            Unknown,
+            "No cloud machines yet.",
+            fix("Turn them on and create them in Settings › Hub › Machines › Cloud machines"),
+        )
+    } else if !creating.is_empty() {
+        hub_entry(
+            "cloud_machines",
+            Unknown,
+            &format!(
+                "Setting up: {}. Each joins in a few minutes.",
+                creating.join(", ")
+            ),
+            None,
+        )
+    } else if (made.len() as u32) < f.pool_size {
+        hub_entry(
+            "cloud_machines",
+            Unknown,
+            &format!("{} of {} cloud machines made.", made.len(), f.pool_size),
+            fix("Create the rest in Settings › Hub › Machines › Cloud machines"),
+        )
+    } else if !f.enabled {
+        hub_entry(
+            "cloud_machines",
+            Warn,
+            "Cloud machines are off: no work goes to them.",
+            fix("Turn them on in Settings › Hub › Machines › Cloud machines"),
+        )
+    } else {
+        let awake = count(S::Awake) + count(S::Waking);
+        hub_entry(
+            "cloud_machines",
+            Pass,
+            &format!(
+                "{} cloud {}: {awake} awake, {} asleep.",
+                made.len(),
+                if made.len() == 1 {
+                    "machine"
+                } else {
+                    "machines"
+                },
+                made.len() - awake
+            ),
+            None,
+        )
+    };
+    let budget = match (&f.paused, &f.over) {
+        (Some((kind, why)), _) if kind == "billing" => hub_entry(
+            "cloud_budget",
+            Fail,
+            why,
+            fix("Settle billing on boat.dev, then Resume in Settings › Hub › Machines"),
+        ),
+        (_, Some(over)) => hub_entry(
+            "cloud_budget",
+            Warn,
+            &format!("{over}. {}.", f.spend),
+            fix(
+                "Raise the budget in Settings › Hub › Machines › Cloud machines, or wait for the next day",
+            ),
+        ),
+        _ => hub_entry("cloud_budget", Pass, &format!("{}.", f.spend), None),
+    };
+    vec![key, network, machines, budget]
 }
 
 /// `hub/github_app`: the hub's own GitHub App, installed somewhere, and what its last Test said.
@@ -1599,6 +1779,7 @@ mod tests {
         let facts = SetupFacts {
             joined: vec!["Alice".into(), "Bo".into(), "Cy".into()],
             github_app: None,
+            cloud: None,
         };
         let got: Vec<_> = setup_checks(&facts)
             .into_iter()
@@ -1795,6 +1976,196 @@ mod tests {
         assert_eq!(
             at(github_app(&app(true, None))).2,
             "The hub's GitHub App \"fleetd on devbox\" is installed on acme."
+        );
+    }
+
+    /// The cloud step's checks: a saved key waits for Test and then says what boat said; no HTTPS address fails with
+    /// the command that saves one; a broken machine fails, none made is to do, all made and on passes; a spent
+    /// budget warns and a billing pause fails.
+    #[test]
+    fn the_cloud_checks_read_the_key_the_address_the_machines_and_the_budget() {
+        use fleetd_contracts::cloud::{CloudKeyTest, CloudMachineState as S};
+        let base = CloudFacts {
+            enabled: true,
+            pool_size: 2,
+            key_test: Some(CloudKeyTest {
+                ok: true,
+                said: "Key works · $20 plan".into(),
+            }),
+            paused: None,
+            hub_url: Ok("https://devbox.your-tailnet.ts.net".into()),
+            machines: vec![
+                ("boat-1".into(), S::Awake, None),
+                ("boat-2".into(), S::Asleep, None),
+            ],
+            spend: "Today $0.41 of $3.00 · this month $6.10 of $20.00".into(),
+            over: None,
+        };
+        let got = |f: &CloudFacts| -> Vec<(String, DoctorStatus, String)> {
+            cloud_checks(f)
+                .into_iter()
+                .map(|e| (e.check.id, e.check.status, e.check.message))
+                .collect()
+        };
+        assert_eq!(
+            got(&base),
+            [
+                ("hub/cloud_key".into(), Pass, "Key works · $20 plan".into()),
+                (
+                    "hub/cloud_network".into(),
+                    Pass,
+                    "Cloud machines dial in to the hub's HTTPS address https://devbox.your-tailnet.ts.net; the first one's hello shows boat.dev reaches it."
+                        .into()
+                ),
+                (
+                    "hub/cloud_machines".into(),
+                    Pass,
+                    "2 cloud machines: 1 awake, 1 asleep.".into()
+                ),
+                (
+                    "hub/cloud_budget".into(),
+                    Pass,
+                    "Today $0.41 of $3.00 · this month $6.10 of $20.00.".into()
+                ),
+            ]
+        );
+        let one = |f: CloudFacts, id: &str| {
+            got(&f)
+                .into_iter()
+                .find(|c| c.0 == format!("hub/{id}"))
+                .map(|c| (c.1, c.2))
+                .unwrap()
+        };
+        assert_eq!(
+            one(
+                CloudFacts {
+                    key_test: None,
+                    ..base.clone()
+                },
+                "cloud_key"
+            )
+            .0,
+            Unknown
+        );
+        assert_eq!(
+            one(
+                CloudFacts {
+                    paused: Some((
+                        "key".into(),
+                        "boat.dev key refused: Settings › Hub › Machines".into()
+                    )),
+                    ..base.clone()
+                },
+                "cloud_key"
+            ),
+            (
+                Fail,
+                "boat.dev key refused: Settings › Hub › Machines".into()
+            )
+        );
+        let no_https = cloud_checks(&CloudFacts {
+            hub_url: Err("Cloud machines reach the hub over the internet…".into()),
+            ..base.clone()
+        });
+        assert_eq!(no_https[1].check.status, Fail);
+        assert_eq!(
+            no_https[1]
+                .check
+                .fix
+                .as_ref()
+                .and_then(|f| f.command.as_deref()),
+            Some("fleetd init --url https://<the address>")
+        );
+        assert_eq!(
+            one(
+                CloudFacts {
+                    machines: vec![
+                        ("boat-1".into(), S::Broken, None),
+                        ("boat-2".into(), S::Asleep, None)
+                    ],
+                    ..base.clone()
+                },
+                "cloud_machines"
+            ),
+            (
+                Fail,
+                "boat-1 didn't come back from two wakes in a row, so the hub won't wake it again."
+                    .into()
+            )
+        );
+        assert_eq!(
+            one(
+                CloudFacts {
+                    machines: vec![],
+                    ..base.clone()
+                },
+                "cloud_machines"
+            )
+            .0,
+            Unknown
+        );
+        assert_eq!(
+            one(
+                CloudFacts {
+                    machines: vec![("boat-1".into(), S::Asleep, None)],
+                    ..base.clone()
+                },
+                "cloud_machines"
+            ),
+            (Unknown, "1 of 2 cloud machines made.".into())
+        );
+        assert_eq!(
+            one(
+                CloudFacts {
+                    machines: vec![
+                        ("boat-1".into(), S::Asleep, None),
+                        (
+                            "boat-2".into(),
+                            S::Failed,
+                            Some("its setup failed: claude".into())
+                        )
+                    ],
+                    ..base.clone()
+                },
+                "cloud_machines"
+            ),
+            (Warn, "Not made: boat-2 (its setup failed: claude).".into())
+        );
+        assert_eq!(
+            one(
+                CloudFacts {
+                    enabled: false,
+                    ..base.clone()
+                },
+                "cloud_machines"
+            )
+            .0,
+            Warn
+        );
+        assert_eq!(
+            one(
+                CloudFacts {
+                    over: Some("Cloud paused: today's boat.dev budget ($3.00) is spent".into()),
+                    ..base.clone()
+                },
+                "cloud_budget"
+            ),
+            (
+                Warn,
+                "Cloud paused: today's boat.dev budget ($3.00) is spent. Today $0.41 of $3.00 · this month $6.10 of $20.00."
+                    .into()
+            )
+        );
+        assert_eq!(
+            one(
+                CloudFacts {
+                    paused: Some(("billing".into(), "boat.dev needs billing attention".into())),
+                    ..base
+                },
+                "cloud_budget"
+            )
+            .0,
+            Fail
         );
     }
 
