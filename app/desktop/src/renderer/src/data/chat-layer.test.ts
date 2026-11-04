@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HubError, HubFrame } from "../../../shared/hub";
 import type { ChatMessage } from "./chat-contract";
 import { live, snapshot } from "./fixtures.test-util";
-import { createDataLayer, type HubApi } from "./queries";
+import { createDataLayer, type Batch, type HubApi } from "./queries";
 import { selectCanStop, selectChat, selectLeadWorking, selectNeedsYou } from "./selectors";
 
 type Answer = { ok: true; output: unknown } | { ok: false; error: HubError };
@@ -46,9 +46,9 @@ const page = (messages: ChatMessage[], { moreBefore = false, needsYou = false } 
   ok: true,
   output: { messages, moreBefore, moreAfter: false, state: { projectRef: ref, needsYou, leadWorking: false, lastSeq: messages.at(-1)?.seq ?? 0 } },
 });
-const delta = (messageId: string, offset: number, append: string): HubFrame => ({
+const delta = (messageId: string, offset: number, append: string, seq = 3): HubFrame => ({
   t: "chat_delta",
-  delta: { projectRef: ref, messageId, seq: 3, offset, append },
+  delta: { projectRef: ref, messageId, seq, offset, append },
 });
 const messageEvent = (seq: number, m: ChatMessage, carry = true): HubFrame =>
   chatEvent(seq, "chat.message", {
@@ -61,9 +61,9 @@ const messageEvent = (seq: number, m: ChatMessage, carry = true): HubFrame =>
   });
 const err = (code: string): Answer => ({ ok: false, error: { code, message: code } });
 
-const connected = async () => {
+const connected = async (batch?: Batch) => {
   const fake = fakeHub();
-  const layer = createDataLayer(fake.hub);
+  const layer = createDataLayer(fake.hub, Date.now, undefined, batch);
   layer.start();
   fake.send(live());
   fake.send(snapshot(1));
@@ -450,5 +450,143 @@ describe("stopping the lead", () => {
     fake.of("chat_stop")[1]?.answer(err("forbidden"));
     expect(await refused).toMatchObject({ t: "failed" });
     expect(selectCanStop(layer.store.getState())).toBe(false);
+  });
+});
+
+/** A batch that waits for `paint()`, as the app's waits for the next frame. */
+const frames = () => {
+  const waiting = new Set<() => void>();
+  const batch: Batch = (flush) => {
+    waiting.add(flush);
+    return () => waiting.delete(flush);
+  };
+  const paint = () => {
+    const due = [...waiting];
+    waiting.clear();
+    for (const flush of due) flush();
+  };
+  return { batch, paint, waiting: () => waiting.size };
+};
+
+/** Every store change, as what it shows: the chat's rows, the unread seq, the events kept, the phase. */
+const changes = (layer: Awaited<ReturnType<typeof connected>>["layer"]) => {
+  const seen: unknown[] = [];
+  layer.store.subscribe(() => seen.push(look(layer)));
+  return seen;
+};
+const look = (layer: Awaited<ReturnType<typeof connected>>["layer"]) => {
+  const s = layer.store.getState();
+  return {
+    rows: selectChat(KEY)(s)?.items.map((i) => [i.id, i.state, i.text]),
+    lastSeq: s.chatStates[KEY]?.lastSeq,
+    needsYou: selectNeedsYou(KEY)(s),
+    working: selectLeadWorking(KEY)(s),
+    events: s.events.map((e) => e.seq),
+    cursor: s.cursor,
+    phase: s.hub.phase,
+  };
+};
+
+describe("a burst of arrivals", () => {
+  const burst: HubFrame[] = [
+    chatEvent(2, "chat.waiting", { projectRef: ref, needsYou: false, leadWorking: true, lastSeq: 2 }),
+    messageEvent(3, msg(3, { author: "human", text: "ship it" })),
+    messageEvent(4, msg(4, { state: "streaming", text: "" })),
+    delta("m4", 0, "Reading", 4),
+    delta("m4", 0, "Reading", 4),
+    delta("m4", 7, " the diff", 4),
+    // The stream resumed past it: a repeat.
+    messageEvent(3, msg(3, { author: "human", text: "ship it" })),
+    messageEvent(5, msg(5, { text: "Merged." })),
+  ];
+
+  it("lands in one store change per frame, the same as one at a time: order, repeats, streamed text, unread and read state", async () => {
+    const one = await connected();
+    for (const f of burst) one.fake.send(f);
+
+    const { batch, paint } = frames();
+    const framed = await connected(batch);
+    const before = look(framed.layer);
+    const seen = changes(framed.layer);
+    for (const f of burst) framed.fake.send(f);
+    // Nothing shows before the frame.
+    expect(seen).toEqual([]);
+    expect(look(framed.layer)).toEqual(before);
+    paint();
+    expect(seen).toHaveLength(1);
+    expect(look(framed.layer)).toEqual(look(one.layer));
+    expect(look(framed.layer)).toMatchObject({
+      rows: [
+        ["m1", "sent", "message 1"],
+        ["m2", "sent", "message 2"],
+        ["m3", "sent", "ship it"],
+        ["m4", "streaming", "Reading the diff"],
+        ["m5", "sent", "Merged."],
+      ],
+      lastSeq: 5,
+      needsYou: false,
+      working: true,
+      cursor: 5,
+    });
+  });
+
+  it("a state frame goes at once, after the frames before it, and a reconnect still reads the chat again", async () => {
+    const { batch, paint, waiting } = frames();
+    const { fake, layer } = await connected(batch);
+    const seen = changes(layer);
+    fake.send(messageEvent(2, msg(3)));
+    fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } });
+    expect(seen).toMatchObject([{ phase: "live", cursor: 2 }, { phase: "retrying", cursor: 2 }]);
+    expect(waiting()).toBe(0);
+    paint();
+    expect(seen).toHaveLength(2);
+    fake.send(live());
+    fake.send(snapshot(5));
+    await Promise.resolve();
+    expect(fake.of("chat_history")).toHaveLength(2);
+  });
+
+  it("a burst past a batch's size goes in several, so what reads events as they come misses none", async () => {
+    const { batch, paint } = frames();
+    const { fake, layer } = await connected(batch);
+    let last = 1;
+    const read: number[] = [];
+    layer.store.subscribe((s) => {
+      for (const e of s.events) if (e.seq > last) read.push((last = e.seq));
+    });
+    const seen = changes(layer);
+    for (let seq = 2; seq <= 301; seq++) fake.send(messageEvent(seq, msg(seq + 1)));
+    paint();
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen.length).toBeLessThan(10);
+    expect(read).toEqual(Array.from({ length: 300 }, (_, i) => i + 2));
+    expect(items(layer)).toHaveLength(302);
+  });
+
+  it("a message too big for its event is still read by seq when its batch lands", async () => {
+    const { batch, paint } = frames();
+    const { fake, layer } = await connected(batch);
+    fake.send(messageEvent(2, msg(3, { text: "x".repeat(3000) }), false));
+    await Promise.resolve();
+    expect(fake.of("chat_history")).toHaveLength(1);
+    paint();
+    await Promise.resolve();
+    expect(fake.of("chat_history")[1]?.input).toMatchObject({ after: 2, limit: 1 });
+    fake.of("chat_history")[1]?.answer(page([msg(3, { text: "x".repeat(3000) })]));
+    await vi.waitFor(() => expect(items(layer)?.at(-1)).toEqual(["m3", "sent"]));
+  });
+
+  it("stopping the layer drops what waits for the frame", () => {
+    const { batch, waiting } = frames();
+    const fake = fakeHub();
+    const layer = createDataLayer(fake.hub, Date.now, undefined, batch);
+    const stop = layer.start();
+    fake.send(live());
+    fake.send(snapshot(1));
+    fake.send(messageEvent(2, msg(3)));
+    expect(waiting()).toBe(1);
+    stop();
+    expect(waiting()).toBe(0);
+    expect(layer.store.getState().cursor).toBe(1);
   });
 });

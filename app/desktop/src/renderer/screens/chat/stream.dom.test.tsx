@@ -5,7 +5,7 @@ import { renders } from "../../ui/lib/renders.test-util";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import type { HubApi } from "../../src/data/queries";
+import type { Batch, HubApi } from "../../src/data/queries";
 import { createDataLayer } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, live, liveLane, project, snapshot } from "../../src/data/fixtures.test-util";
@@ -42,7 +42,7 @@ const layout = () => {
 };
 
 /** The chat of a project whose lead is at work, with a few messages either way. */
-const mount = async (nudges: boolean) => {
+const mount = async (nudges: boolean, batch?: Batch) => {
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const messages = Array.from({ length: 8 }, (_, i) => ({
     messageId: `m${i + 1}`,
@@ -69,7 +69,7 @@ const mount = async (nudges: boolean) => {
     focus: () => Promise.resolve(),
     chat: () => Promise.resolve(),
   };
-  const layer = createDataLayer(hub);
+  const layer = createDataLayer(hub, Date.now, undefined, batch);
   layer.chat.open(projectKey(project));
   document.body.appendChild(host);
   root = createRoot(host);
@@ -114,3 +114,56 @@ for (const nudges of [false, true]) {
     expect(renders.counts.get("Markdown")).toBeUndefined();
   });
 }
+
+it("renders a burst of arrivals once a frame, and keeps the end in view", async () => {
+  layout();
+  // The list's content as tall as the virtualizer lays it out, and its pin run on demand.
+  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLElement) {
+    return this.getAttribute("role") === "list" ? Number.parseFloat((this.firstElementChild as HTMLElement | null)?.style.height ?? "0") : 0;
+  });
+  const resized: ResizeObserverCallback[] = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(cb: ResizeObserverCallback) {
+        resized.push(cb);
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const waiting: (() => void)[] = [];
+  const send = await mount(false, (flush) => {
+    waiting.push(flush);
+    return () => undefined;
+  });
+  act(() => waiting.splice(0).forEach((flush) => flush()));
+  const list = host.querySelector<HTMLElement>("[role=list]");
+  const end = () => {
+    for (const cb of resized) cb([], {} as ResizeObserver);
+    return list === null ? undefined : [list.scrollTop, list.scrollHeight];
+  };
+  const before = end();
+  renders.reset();
+  for (let seq = 10; seq < 50; seq++) {
+    const message = { messageId: `m${seq}`, projectRef: project, seq, author: "lead", state: "final", text: `Step ${seq} landed.`, createdAt: AT };
+    act(() => send({ t: "event", event: { seq: seq + 1, at: AT, type: "chat.message", summary: "", data: { projectRef: project, messageId: message.messageId, seq, author: "lead", state: "final", message } } }));
+  }
+  // Nothing renders until the frame; then the chat draws once for all forty, not once each.
+  expect(renders.commits).toBe(0);
+  act(() => waiting.splice(0).forEach((flush) => flush()));
+  for (let i = 0; i < 5; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
+  expect(renders.counts.get("ChatScreen") ?? 0).toBeLessThanOrEqual(3);
+  // Still pinned: the end in view, the newest arrival on screen.
+  const [top, height] = end() ?? [];
+  expect(height).toBeGreaterThan(before?.[1] ?? 0);
+  expect(top).toBe(height);
+  act(() => {
+    list?.dispatchEvent(new Event("scroll"));
+  });
+  for (let i = 0; i < 5; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
+  expect(host.textContent).toContain("Step 49 landed.");
+  vi.unstubAllGlobals();
+  vi.stubGlobal("fleetd", { platform: "darwin", fixture: null });
+});

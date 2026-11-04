@@ -3,7 +3,7 @@
 // making a layer for a hub that comes and stopping the layer of one that goes.
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { HubEntry, HubId } from "../../../shared/hubs";
-import { bindHub, createDataLayer, type DataLayer } from "./queries";
+import { bindHub, createDataLayer, nextFrame, type DataLayer } from "./queries";
 
 export interface HubView extends HubEntry {
   readonly layer: DataLayer;
@@ -20,7 +20,7 @@ export type HubSetStore = StoreApi<HubSet> & { readonly start: () => () => void 
 export const createHubSet = (
   api: Pick<Window["fleetd"], "hub" | "hubs">,
   first: readonly HubEntry[],
-  makeLayer: (id: HubId) => DataLayer = (id) => createDataLayer(bindHub(api.hub, id), Date.now, id),
+  makeLayer: (id: HubId) => DataLayer = (id) => createDataLayer(bindHub(api.hub, id), Date.now, id, nextFrame),
 ): HubSetStore => {
   const stops = new Map<HubId, () => void>();
   let running = false;
