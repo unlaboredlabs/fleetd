@@ -89,6 +89,7 @@ fn a_step_is_todo_until_a_check_says_otherwise_and_skipping_is_only_kept_for_tod
             (Github, Todo),
             (People, Todo),
             (Mac, Todo),
+            (Cloud, Todo),
         ]
     );
     let checks = [
@@ -287,7 +288,7 @@ async fn the_tools_are_an_admins() {
 
     let list = call(&hub, &admin, "setup_list", json!({})).await.unwrap();
     let steps = list["steps"].as_array().unwrap();
-    assert_eq!(steps.len(), 6);
+    assert_eq!(steps.len(), 7);
     assert_eq!(steps[0]["parts"][0]["values"][0]["value"], HUB);
     // No machines yet, so machines and Claude are left at least.
     assert!(list["requiredLeft"].as_i64().unwrap() >= 2, "{list}");
@@ -389,4 +390,87 @@ async fn the_agents_mac_never_gets_a_runners_checks() {
             );
         }
     }
+}
+
+/// The cloud step: the boat key's exact actions, scoped to an environment named for this hub; the public HTTPS
+/// address with Tailscale Funnel pointed at where the hub listens; done only once the key, the address, the machines
+/// and the budget all pass.
+#[test]
+fn the_cloud_step_gives_the_exact_values_and_is_done_only_when_every_check_passes() {
+    let cloud = |hub: &str, checks: &[DoctorCheck]| {
+        read(guides(hub), checks)
+            .into_iter()
+            .find(|s| s.id == SetupStepId::Cloud)
+            .unwrap()
+    };
+    let step = cloud(HUB, &[]);
+    assert_eq!(step.need, fleetd_contracts::setup::SetupNeed::Optional);
+    assert_eq!(step.place.as_deref(), Some("cloud"));
+    let values: Vec<(&str, &str)> = step
+        .parts
+        .iter()
+        .flat_map(|p| &p.values)
+        .map(|v| (v.label.as_str(), v.value.as_str()))
+        .collect();
+    let value = |label: &str| {
+        values
+            .iter()
+            .find(|(l, _)| *l == label)
+            .map(|(_, v)| *v)
+            .unwrap_or_else(|| panic!("no value {label}: {values:?}"))
+    };
+    assert_eq!(
+        value("Actions"),
+        "sandbox.create sandbox.read sandbox.update sandbox.stop sandbox.resume sandbox.delete account.read"
+    );
+    for forbidden in ["exec", "ssh", "file.", "snapshot", "admin", "delete-own"] {
+        assert!(!value("Actions").contains(forbidden), "{forbidden}");
+    }
+    assert_eq!(value("Scope: environment"), "fleetd-devbox");
+    assert_eq!(value("Billing › Auto top-up"), "Off");
+    assert_eq!(value("Billing › Extra starts on invoice"), "Off");
+    assert_eq!(
+        value("On the hub, with Tailscale Funnel"),
+        format!("tailscale funnel --bg {HUB}")
+    );
+    // A hub already on HTTPS is shown its address instead.
+    let https = cloud("https://devbox.your-tailnet.ts.net", &[]);
+    let shown: Vec<_> = https
+        .parts
+        .iter()
+        .flat_map(|p| &p.values)
+        .map(|v| v.value.as_str())
+        .collect();
+    assert!(shown.contains(&"https://devbox.your-tailnet.ts.net"));
+    assert!(!shown.iter().any(|v| v.starts_with("tailscale funnel")));
+
+    let ok = |name: &str| check(&format!("hub/{name}"), DoctorStatus::Ok, "fine");
+    let all = [
+        ok("cloud_key"),
+        ok("cloud_network"),
+        ok("cloud_machines"),
+        ok("cloud_budget"),
+    ];
+    assert_eq!(cloud(HUB, &all).status, SetupStatus::Done);
+    // No machines made yet: still to do.
+    let mut none_made = all.clone();
+    none_made[2] = check(
+        "hub/cloud_machines",
+        DoctorStatus::Unknown,
+        "No cloud machines yet.",
+    );
+    assert_eq!(cloud(HUB, &none_made).status, SetupStatus::Todo);
+    // A refused key fails, and says why.
+    let mut refused = all.clone();
+    refused[0] = check(
+        "hub/cloud_key",
+        DoctorStatus::Fail,
+        "boat.dev says the key has expired",
+    );
+    let step = cloud(HUB, &refused);
+    assert_eq!((step.status, step.failing), (SetupStatus::Look, Some(true)));
+    assert_eq!(
+        step.said.as_deref(),
+        Some("boat.dev says the key has expired")
+    );
 }

@@ -17,6 +17,7 @@ import { errorText, useRefetch } from "../settings/hub";
 import { revealNext } from "../settings/search";
 import { navigate } from "../shell/navigation";
 import { GuideParts, Part } from "./Guide";
+import { CloudSettings, useCloud } from "../admin/Cloud";
 import { groupWords, isRequiredLeft, needWords, placesOf, requiredLeft, statusWords, type SetupStep } from "./steps";
 import s from "./setup.module.css";
 
@@ -228,7 +229,11 @@ function StepPane({
 
       <GuideParts parts={step.parts} />
 
-      {places.length === 0 && step.fieldsNote === undefined ? null : (
+      {step.place === "cloud" ? (
+        <Part n={step.parts.length + 1} title="Save it in fleetd">
+          <CloudInline />
+        </Part>
+      ) : places.length === 0 && step.fieldsNote === undefined ? null : (
         <Part n={step.parts.length + 1} title="Save it in fleetd">
           {step.fieldsNote === undefined ? null : (
             <Text as="p" size="sm" tone="quiet">
@@ -278,6 +283,18 @@ function StepPane({
         )}
       </footer>
     </article>
+  );
+}
+
+/** The cloud step's own settings, here rather than a page away: the key's sealed field and Test, the address, the pool. */
+function CloudInline() {
+  const cloud = useCloud();
+  if (cloud === null) return <Text size="sm" tone="quiet">This hub is too old for cloud machines. Update fleetd on the hub first.</Text>;
+  if (cloud === undefined) return <Text size="sm" tone="quiet">Loading…</Text>;
+  return (
+    <div className={s.inlineSettings}>
+      <CloudSettings cloud={cloud} />
+    </div>
   );
 }
 

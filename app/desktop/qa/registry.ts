@@ -72,6 +72,8 @@ export const fixtures = [
   // logged out.
   "machines-joined",
   "machines-checklist",
+  // ...and cloud machines on boat.dev beside the hub's own: one awake, one asleep, one broken (W407).
+  "machines-cloud",
   // F2: the lead chat's live strip with 0, 3 and 20 agents at work (fixtures/live).
   "live-0",
   "live-3",
@@ -663,6 +665,16 @@ export const screens: readonly Screen[] = [
   // Several hubs: each hub's projects under its name, Status a section per hub, and each hub's connection on its own
   // row; Acme offline waits on its own while Personal works on.
   { id: "status.fleet", route: "#/status", fixtures: ["sidebar-hubs", "sidebar-hubs-offline"], variant: "hubs" },
+  // Cloud machines' line under the projects: the day's spend against its budget and how many are awake (W407).
+  {
+    id: "status.fleet",
+    route: "#/status",
+    fixtures: ["machines-cloud"],
+    variant: "cloud",
+    open: async (page) => {
+      await page.locator("[data-cloud-status]").waitFor();
+    },
+  },
   {
     id: "shell",
     route: "#/status",
@@ -1475,6 +1487,17 @@ export const screens: readonly Screen[] = [
   { id: "setup.welcome", route: "#/setup/welcome", fixtures: ["setup-fresh"] },
   { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"], variant: "claude" },
   { id: "setup", route: "#/setup/github", fixtures: ["setup-github"], variant: "github" },
+  // The optional cloud step: its parts, then the key's sealed field and the hub's address inline.
+  {
+    id: "setup",
+    route: "#/setup/cloud",
+    fixtures: ["setup-fresh"],
+    variant: "cloud",
+    open: async (page) => {
+      await page.getByRole("textbox", { name: "boat.dev API key" }).waitFor();
+      await page.locator('[data-address="missing"]').waitFor();
+    },
+  },
   { id: "setup.done", route: "#/setup/done", fixtures: ["setup-done"] },
   // F8: Add project (the pick list, its empty and loading states, gh and machine problems).
   { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },
@@ -2076,6 +2099,43 @@ export const screens: readonly Screen[] = [
   },
   // Machines: Add machine's three ways in; a host the hub can reach and its plan; a run going; a failed step with Retry.
   { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-add", "machines-running", "machines-failed"] },
+  // Cloud machines: the boat.dev group under the hub's own, then its settings with what the pool can cost.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-cloud"],
+    variant: "cloud",
+    open: async (page) => {
+      await page.getByRole("list", { name: "Cloud machines" }).waitFor();
+      await page.locator('[data-cloud-machine="boat-3"]').getByRole("button", { name: "Reset" }).waitFor();
+      await page.locator("[data-cost]").waitFor();
+    },
+  },
+  // ...and its settings: the key with what boat.dev said to it, the address, the pool, the budgets, the projects and
+  // what it can cost.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-cloud"],
+    variant: "cloud-settings",
+    open: async (page) => {
+      const part = page.locator('[data-part="hub.cloud"]');
+      await part.waitFor();
+      await page.locator("[data-key-test]").waitFor();
+      await part.evaluate((el) => el.scrollIntoView({ block: "start" }));
+    },
+  },
+  // The kill switch asks first, naming the machines awake.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-cloud"],
+    variant: "cloud-stop",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Stop all cloud machines" }).click();
+      await page.getByText("boat-1 is awake now").waitFor();
+    },
+  },
   {
     id: "settings.hub.machines",
     route: "#/settings/hub/machines",

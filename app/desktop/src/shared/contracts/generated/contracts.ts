@@ -1770,6 +1770,114 @@ export type CloneTarget = {
   sameRemote: boolean;
 };
 
+export type CloudCreateInput = { [key: string]: unknown };
+
+export type CloudCreateOutput = {
+  cloud: CloudView;
+  /** One line a machine: "boat-1: creating", or why boat or fleetd refused it. */
+  lines: string[];
+  next?: string;
+  truncated?: boolean;
+};
+
+export type CloudGetInput = { [key: string]: unknown };
+
+export type CloudGetOutput = {
+  cloud: CloudView;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type CloudKeySetInput = {
+  /** The admin's boat.dev key, sealed to the hub's boxPubKey (cloud_get). */
+  sealed: SealedSecret;
+};
+
+export type CloudKeySetOutput = {
+  cloud: CloudView;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** What the last Test (or sweep) heard from boat.dev with the hub's key. */
+export type CloudKeyTest = {
+  ok: boolean;
+  /**
+   * "Key works: $20 plan · 200 starts a day (12 a minute) · 0 of 100 machines running", or boat's refusal in plain
+   * words.
+   */
+  said: string;
+};
+
+/** One machine of the pool. */
+export type CloudMachine = {
+  /** Agent runs going there now, from its node's last heartbeat. */
+  agents: number;
+  /** Also its slot: `boat-1`. */
+  machineId: MachineId;
+  /** Why it is in its state, in one line: boat's setup error, the stop's reason. */
+  note?: string;
+  /** Screens live there now. */
+  screens: number;
+  /** Since when it is in its state (ms): awake since, asleep since. */
+  sinceMs?: number;
+  state: CloudMachineState;
+  /** Dollars of machine time today, in the hub's time zone. */
+  today: number;
+};
+
+/** Where a cloud machine is in its life, as the hub's ledger has it. */
+export type KnownCloudMachineState = "awake" | "asleep" | "creating" | "waking" | "stopping" | "broken" | "failed" | "gone";
+/** KnownCloudMachineState, or a value from a newer hub. */
+export type CloudMachineState = KnownCloudMachineState | (string & {});
+
+export type CloudResetInput = {
+  machineId: MachineId;
+};
+
+export type CloudResetOutput = {
+  cloud: CloudView;
+  next?: string;
+  /** What happened, in one line. */
+  said: string;
+  truncated?: boolean;
+};
+
+export type CloudResumeInput = { [key: string]: unknown };
+
+export type CloudResumeOutput = {
+  cloud: CloudView;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** The settings an admin changes (Settings › Hub › Machines › Cloud machines, the setup step). */
+export type CloudSetInput = {
+  /** Dollars a day, above 0. */
+  dayBudget: number;
+  enabled: boolean;
+  environment?: string;
+  machineType: string;
+  /** Dollars a month; absent: the plan's included dollars. */
+  monthBudget?: number;
+  /** 1 to [`POOL_MAX`]. */
+  poolSize: number;
+  projects?: ProjectRef[];
+};
+
+export type CloudSetOutput = {
+  cloud: CloudView;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** A size boat.dev offers, with its list price. */
+export type CloudSize = {
+  /** boat's `type`: `small`, `default`, `large`, `xlarge`. */
+  kind: string;
+  perHour: number;
+};
+
 export type CloudStopInput = { [key: string]: unknown };
 
 export type CloudStopOutput = {
@@ -1784,6 +1892,52 @@ export type CloudStopOutput = {
    * leases stop any other within 30 minutes.
    */
   unlisted?: string;
+};
+
+export type CloudTestInput = { [key: string]: unknown };
+
+export type CloudTestOutput = {
+  cloud: CloudView;
+  next?: string;
+  test: CloudKeyTest;
+  truncated?: boolean;
+};
+
+/** The hub's pool: its settings, its machines and what they cost. */
+export type CloudView = {
+  /** This hub's X25519 key, standard base64: what the boat key is sealed to (`crypto_box_seal`) for cloud_key_set. */
+  boxPubKey: string;
+  dayBudget: number;
+  /** Work may go to cloud machines. The kill switch turns it off. */
+  enabled: boolean;
+  /** The boat environment machines are created in. */
+  environment?: string;
+  /** A boat.dev key is saved, sealed to the hub. It is never shown. */
+  hasKey: boolean;
+  /** Why no machine may start now, in one line: the pool off, a budget spent, boat's backoff. Absent: it may. */
+  held?: string;
+  /** The address cloud machines reach the hub at: its public HTTPS address. */
+  hubUrl?: string;
+  keyTest?: CloudKeyTest;
+  machineType: string;
+  machines: CloudMachine[];
+  month: number;
+  /** The month budget in effect: the admin's, else the plan's included dollars. */
+  monthBudget: number;
+  /** The month budget follows the plan's included dollars (none set). */
+  monthIsPlan: boolean;
+  /** Why cloud machines can't reach the hub, when they can't: no HTTPS address. */
+  network?: string;
+  /** A billing or key pause that only boat's next "can start" or an admin's Resume lifts. */
+  paused?: string;
+  /** What the plan includes a month, as boat.dev last said. */
+  planDollars?: number;
+  poolSize: number;
+  /** The projects whose work may run on cloud machines. */
+  projects: ProjectRef[];
+  sizes: CloudSize[];
+  /** Dollars spent today and this month, in the hub's time zone. */
+  today: number;
 };
 
 /**
@@ -3282,6 +3436,11 @@ export type Machine = {
    * secrets.
    */
   boxPubKey?: BoxPublicKey;
+  /**
+   * One of the hub's cloud machines on boat.dev (D306): the hub wakes it for work and puts it to sleep, so offline
+   * is its rest, not a fault. Absent on every other machine.
+   */
+  cloud?: boolean;
   /** Plain language, set while status is "degraded". */
   degradedReason?: string;
   lastSeenAt: Timestamp;
@@ -6644,7 +6803,7 @@ export type SetupStep = {
 };
 
 /** The steps, in the order they are listed. */
-export type KnownSetupStepId = "address" | "machines" | "claude" | "github" | "people" | "mac";
+export type KnownSetupStepId = "address" | "machines" | "claude" | "github" | "people" | "mac" | "cloud";
 /** KnownSetupStepId, or a value from a newer hub. */
 export type SetupStepId = KnownSetupStepId | (string & {});
 
@@ -8650,7 +8809,14 @@ export interface ToolMap {
   claude_settings_set: { input: ClaudeSettingsSetInput; output: ClaudeSettingsSetOutput };
   claude_subscription_remove: { input: ClaudeSubscriptionRemoveInput; output: ClaudeSubscriptionRemoveOutput };
   claude_subscription_set: { input: ClaudeSubscriptionSetInput; output: ClaudeSubscriptionSetOutput };
+  cloud_create: { input: CloudCreateInput; output: CloudCreateOutput };
+  cloud_get: { input: CloudGetInput; output: CloudGetOutput };
+  cloud_key_set: { input: CloudKeySetInput; output: CloudKeySetOutput };
+  cloud_reset: { input: CloudResetInput; output: CloudResetOutput };
+  cloud_resume: { input: CloudResumeInput; output: CloudResumeOutput };
+  cloud_set: { input: CloudSetInput; output: CloudSetOutput };
   cloud_stop: { input: CloudStopInput; output: CloudStopOutput };
+  cloud_test: { input: CloudTestInput; output: CloudTestOutput };
   decisions_list: { input: DecisionsListInput; output: DecisionsListOutput };
   decisions_overturn: { input: DecisionsOverturnInput; output: DecisionsOverturnOutput };
   decisions_record: { input: DecisionsRecordInput; output: DecisionsRecordOutput };

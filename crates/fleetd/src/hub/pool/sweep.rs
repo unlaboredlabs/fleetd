@@ -38,9 +38,11 @@ pub async fn sweep(pool: &Pool) -> Result<(), String> {
             if matches!(e, BoatError::KeyRefused { .. } | BoatError::NoKey(_)) {
                 pool.back_off(&e);
             }
+            pool.heard_refusal(&e);
             return Err(e.line());
         }
     };
+    pool.heard_limits(&limits, &s.machine_type);
     pool.ledger
         .set_plan(limits.start_limits, limits.sandbox_plan_dollars)
         .map_err(|e| e.to_string())?;

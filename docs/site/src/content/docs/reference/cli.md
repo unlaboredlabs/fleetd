@@ -571,7 +571,7 @@ lift the machine's usage pause now and send every parked agent "continue", like 
 fleetd cloud stop [--json] [--hub <url> --key-file <path>]
 ```
 
-the kill switch: turn cloud machines (boat.dev) off and stop every machine boat.dev lists with this hub's label, whether the hub's ledger knows it or not. They stay off until turned on again in Settings › Cloud. On the hub machine it needs neither `--hub` nor `--key-file`
+the kill switch: turn cloud machines (boat.dev) off and stop every machine boat.dev lists with this hub's label, whether the hub's ledger knows it or not. They stay off until turned on again in Settings › Hub › Machines. On the hub machine it needs neither `--hub` nor `--key-file`
 
 ### fleetd steer {#steer}
 

@@ -4455,6 +4455,321 @@
       ],
       "type": "object"
     },
+    "CloudCreateInput": {
+      "type": "object"
+    },
+    "CloudCreateOutput": {
+      "properties": {
+        "cloud": {
+          "$ref": "#/$defs/CloudView"
+        },
+        "lines": {
+          "description": "One line a machine: \"boat-1: creating\", or why boat or fleetd refused it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "lines",
+        "cloud"
+      ],
+      "type": "object"
+    },
+    "CloudGetInput": {
+      "type": "object"
+    },
+    "CloudGetOutput": {
+      "properties": {
+        "cloud": {
+          "$ref": "#/$defs/CloudView"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cloud"
+      ],
+      "type": "object"
+    },
+    "CloudKeySetInput": {
+      "properties": {
+        "sealed": {
+          "$ref": "#/$defs/SealedSecret",
+          "description": "The admin's boat.dev key, sealed to the hub's boxPubKey (cloud_get)."
+        }
+      },
+      "required": [
+        "sealed"
+      ],
+      "type": "object"
+    },
+    "CloudKeySetOutput": {
+      "properties": {
+        "cloud": {
+          "$ref": "#/$defs/CloudView"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cloud"
+      ],
+      "type": "object"
+    },
+    "CloudKeyTest": {
+      "description": "What the last Test (or sweep) heard from boat.dev with the hub's key.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "said": {
+          "description": "\"Key works: $20 plan · 200 starts a day (12 a minute) · 0 of 100 machines running\", or boat's refusal in plain\nwords.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "said"
+      ],
+      "type": "object"
+    },
+    "CloudMachine": {
+      "description": "One machine of the pool.",
+      "properties": {
+        "agents": {
+          "description": "Agent runs going there now, from its node's last heartbeat.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Also its slot: `boat-1`."
+        },
+        "note": {
+          "description": "Why it is in its state, in one line: boat's setup error, the stop's reason.",
+          "type": "string"
+        },
+        "screens": {
+          "description": "Screens live there now.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sinceMs": {
+          "description": "Since when it is in its state (ms): awake since, asleep since.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/CloudMachineState"
+        },
+        "today": {
+          "description": "Dollars of machine time today, in the hub's time zone.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "machineId",
+        "state",
+        "agents",
+        "screens",
+        "today"
+      ],
+      "type": "object"
+    },
+    "CloudMachineState": {
+      "description": "Where a cloud machine is in its life, as the hub's ledger has it.",
+      "oneOf": [
+        {
+          "enum": [
+            "awake",
+            "asleep"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "creating",
+          "description": "Created, setting up; not yet heard from.",
+          "type": "string"
+        },
+        {
+          "const": "waking",
+          "description": "Resumed; not yet heard from.",
+          "type": "string"
+        },
+        {
+          "const": "stopping",
+          "description": "A stop was sent; asleep once boat.dev says so.",
+          "type": "string"
+        },
+        {
+          "const": "broken",
+          "description": "Two wakes in a row brought no hello: never woken again until an admin resets it.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Its create failed, or it never joined.",
+          "type": "string"
+        },
+        {
+          "const": "gone",
+          "description": "boat.dev no longer has it: it needs a new create.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "CloudResetInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        }
+      },
+      "required": [
+        "machineId"
+      ],
+      "type": "object"
+    },
+    "CloudResetOutput": {
+      "properties": {
+        "cloud": {
+          "$ref": "#/$defs/CloudView"
+        },
+        "next": {
+          "type": "string"
+        },
+        "said": {
+          "description": "What happened, in one line.",
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "said",
+        "cloud"
+      ],
+      "type": "object"
+    },
+    "CloudResumeInput": {
+      "type": "object"
+    },
+    "CloudResumeOutput": {
+      "properties": {
+        "cloud": {
+          "$ref": "#/$defs/CloudView"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cloud"
+      ],
+      "type": "object"
+    },
+    "CloudSetInput": {
+      "description": "The settings an admin changes (Settings › Hub › Machines › Cloud machines, the setup step).",
+      "properties": {
+        "dayBudget": {
+          "description": "Dollars a day, above 0.",
+          "format": "double",
+          "type": "number"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "environment": {
+          "type": "string"
+        },
+        "machineType": {
+          "type": "string"
+        },
+        "monthBudget": {
+          "description": "Dollars a month; absent: the plan's included dollars.",
+          "format": "double",
+          "type": "number"
+        },
+        "poolSize": {
+          "description": "1 to [`POOL_MAX`].",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "projects": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "enabled",
+        "poolSize",
+        "machineType",
+        "dayBudget"
+      ],
+      "type": "object"
+    },
+    "CloudSetOutput": {
+      "properties": {
+        "cloud": {
+          "$ref": "#/$defs/CloudView"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cloud"
+      ],
+      "type": "object"
+    },
+    "CloudSize": {
+      "description": "A size boat.dev offers, with its list price.",
+      "properties": {
+        "kind": {
+          "description": "boat's `type`: `small`, `default`, `large`, `xlarge`.",
+          "type": "string"
+        },
+        "perHour": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "perHour"
+      ],
+      "type": "object"
+    },
     "CloudStopInput": {
       "type": "object"
     },
@@ -4488,6 +4803,140 @@
       "required": [
         "stopped",
         "failed"
+      ],
+      "type": "object"
+    },
+    "CloudTestInput": {
+      "type": "object"
+    },
+    "CloudTestOutput": {
+      "properties": {
+        "cloud": {
+          "$ref": "#/$defs/CloudView"
+        },
+        "next": {
+          "type": "string"
+        },
+        "test": {
+          "$ref": "#/$defs/CloudKeyTest"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "test",
+        "cloud"
+      ],
+      "type": "object"
+    },
+    "CloudView": {
+      "description": "The hub's pool: its settings, its machines and what they cost.",
+      "properties": {
+        "boxPubKey": {
+          "description": "This hub's X25519 key, standard base64: what the boat key is sealed to (`crypto_box_seal`) for cloud_key_set.",
+          "type": "string"
+        },
+        "dayBudget": {
+          "format": "double",
+          "type": "number"
+        },
+        "enabled": {
+          "description": "Work may go to cloud machines. The kill switch turns it off.",
+          "type": "boolean"
+        },
+        "environment": {
+          "description": "The boat environment machines are created in.",
+          "type": "string"
+        },
+        "hasKey": {
+          "description": "A boat.dev key is saved, sealed to the hub. It is never shown.",
+          "type": "boolean"
+        },
+        "held": {
+          "description": "Why no machine may start now, in one line: the pool off, a budget spent, boat's backoff. Absent: it may.",
+          "type": "string"
+        },
+        "hubUrl": {
+          "description": "The address cloud machines reach the hub at: its public HTTPS address.",
+          "type": "string"
+        },
+        "keyTest": {
+          "$ref": "#/$defs/CloudKeyTest"
+        },
+        "machineType": {
+          "type": "string"
+        },
+        "machines": {
+          "items": {
+            "$ref": "#/$defs/CloudMachine"
+          },
+          "type": "array"
+        },
+        "month": {
+          "format": "double",
+          "type": "number"
+        },
+        "monthBudget": {
+          "description": "The month budget in effect: the admin's, else the plan's included dollars.",
+          "format": "double",
+          "type": "number"
+        },
+        "monthIsPlan": {
+          "description": "The month budget follows the plan's included dollars (none set).",
+          "type": "boolean"
+        },
+        "network": {
+          "description": "Why cloud machines can't reach the hub, when they can't: no HTTPS address.",
+          "type": "string"
+        },
+        "paused": {
+          "description": "A billing or key pause that only boat's next \"can start\" or an admin's Resume lifts.",
+          "type": "string"
+        },
+        "planDollars": {
+          "description": "What the plan includes a month, as boat.dev last said.",
+          "format": "double",
+          "type": "number"
+        },
+        "poolSize": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "projects": {
+          "description": "The projects whose work may run on cloud machines.",
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "type": "array"
+        },
+        "sizes": {
+          "items": {
+            "$ref": "#/$defs/CloudSize"
+          },
+          "type": "array"
+        },
+        "today": {
+          "description": "Dollars spent today and this month, in the hub's time zone.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "hasKey",
+        "enabled",
+        "poolSize",
+        "machineType",
+        "dayBudget",
+        "monthBudget",
+        "monthIsPlan",
+        "projects",
+        "today",
+        "month",
+        "machines",
+        "sizes",
+        "boxPubKey"
       ],
       "type": "object"
     },
@@ -8464,6 +8913,10 @@
           "$ref": "#/$defs/BoxPublicKey",
           "description": "M8: the node's X25519 key from its hello; clients seal this machine's secrets to it. Absent: it takes no\nsecrets."
         },
+        "cloud": {
+          "description": "One of the hub's cloud machines on boat.dev (D306): the hub wakes it for work and puts it to sleep, so offline\nis its rest, not a fault. Absent on every other machine.",
+          "type": "boolean"
+        },
         "degradedReason": {
           "description": "Plain language, set while status is \"degraded\".",
           "type": "string"
@@ -10041,11 +10494,53 @@
         "claude_subscription_set.output": {
           "$ref": "#/$defs/ClaudeSubscriptionSetOutput"
         },
+        "cloud_create.input": {
+          "$ref": "#/$defs/CloudCreateInput"
+        },
+        "cloud_create.output": {
+          "$ref": "#/$defs/CloudCreateOutput"
+        },
+        "cloud_get.input": {
+          "$ref": "#/$defs/CloudGetInput"
+        },
+        "cloud_get.output": {
+          "$ref": "#/$defs/CloudGetOutput"
+        },
+        "cloud_key_set.input": {
+          "$ref": "#/$defs/CloudKeySetInput"
+        },
+        "cloud_key_set.output": {
+          "$ref": "#/$defs/CloudKeySetOutput"
+        },
+        "cloud_reset.input": {
+          "$ref": "#/$defs/CloudResetInput"
+        },
+        "cloud_reset.output": {
+          "$ref": "#/$defs/CloudResetOutput"
+        },
+        "cloud_resume.input": {
+          "$ref": "#/$defs/CloudResumeInput"
+        },
+        "cloud_resume.output": {
+          "$ref": "#/$defs/CloudResumeOutput"
+        },
+        "cloud_set.input": {
+          "$ref": "#/$defs/CloudSetInput"
+        },
+        "cloud_set.output": {
+          "$ref": "#/$defs/CloudSetOutput"
+        },
         "cloud_stop.input": {
           "$ref": "#/$defs/CloudStopInput"
         },
         "cloud_stop.output": {
           "$ref": "#/$defs/CloudStopOutput"
+        },
+        "cloud_test.input": {
+          "$ref": "#/$defs/CloudTestInput"
+        },
+        "cloud_test.output": {
+          "$ref": "#/$defs/CloudTestOutput"
         },
         "decisions_list.input": {
           "$ref": "#/$defs/DecisionsListInput"
@@ -11041,8 +11536,22 @@
         "claude_subscription_remove.output",
         "claude_subscription_set.input",
         "claude_subscription_set.output",
+        "cloud_create.input",
+        "cloud_create.output",
+        "cloud_get.input",
+        "cloud_get.output",
+        "cloud_key_set.input",
+        "cloud_key_set.output",
+        "cloud_reset.input",
+        "cloud_reset.output",
+        "cloud_resume.input",
+        "cloud_resume.output",
+        "cloud_set.input",
+        "cloud_set.output",
         "cloud_stop.input",
         "cloud_stop.output",
+        "cloud_test.input",
+        "cloud_test.output",
         "decisions_list.input",
         "decisions_list.output",
         "decisions_overturn.input",
@@ -18796,6 +19305,11 @@
         {
           "const": "mac",
           "description": "A Mac for agents (D298): optional.",
+          "type": "string"
+        },
+        {
+          "const": "cloud",
+          "description": "Cloud machines on boat.dev (D306): optional.",
           "type": "string"
         }
       ],

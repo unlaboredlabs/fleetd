@@ -240,6 +240,18 @@ The [agents' Mac](/docs/browser-sessions#mac) lends its `agents` user's desktop 
 | DevTools stay on the Mac | An app agent-desktop launches with `--cdp` listens on the Mac's loopback only, and is closed when its session ends. |
 | Only while it can be seen | The node checks at every start that the agents session is on the Mac's screen and unlocked, so an agent never drives a screen nobody could watch. |
 
+## Cloud machines {#cloud}
+
+[Cloud machines](/docs/cloud-machines) run on the hub owner's own boat.dev account; fleetd runs no service.
+
+| Rule | Detail |
+|---|---|
+| The boat.dev key stays on the hub | Sealed in the app to the hub's own key, scoped to fleetd's boat.dev environment, with no `exec`, `ssh`, `file` or `snapshot` actions. No cloud machine or agent gets it. |
+| The hub never runs commands there | The machine's node dials in over the hub's public HTTPS address, like any worker's. |
+| boat.dev can see what runs there | As any host can, including the disk it keeps while a machine sleeps. Only projects an admin opts in run there; Reset deletes a machine with its disk and keys. |
+| Agents have no sudo | The node and its agents run as a user of their own on each cloud machine. |
+| A bill can't run on | Each awake machine has boat.dev's own 30-minute lease; budgets, the idle stop and a sweep every 10 minutes stop the rest, and `fleetd cloud stop` stops all. |
+
 ## Hub links {#hub-links}
 
 A hub link lets a Navi on one hub open and follow work in projects on another hub, for example from a personal hub

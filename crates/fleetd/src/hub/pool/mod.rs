@@ -27,6 +27,7 @@ pub mod place;
 pub mod starts;
 pub mod sweep;
 pub mod tools;
+pub mod view;
 
 #[cfg(test)]
 mod boat_tests;
@@ -180,6 +181,8 @@ pub struct Pool {
     warned: Mutex<HashSet<String>>,
     /// Slots placement asked to wake whose wake hasn't returned yet ([`Pool::wake_for_work`]).
     waking: Mutex<HashSet<String>>,
+    /// What boat last said to the hub's key: the admin's Test, or a sweep. The doctor's `hub/cloud_key` reads it.
+    key_test: Mutex<Option<fleetd_contracts::cloud::CloudKeyTest>>,
 }
 
 impl Pool {
@@ -203,6 +206,7 @@ impl Pool {
             ready: AtomicBool::new(false),
             warned: Mutex::default(),
             waking: Mutex::default(),
+            key_test: Mutex::default(),
         })
     }
 
@@ -271,7 +275,10 @@ impl Pool {
             .ok_or("sealing the key failed")?;
         self.ledger
             .set_sealed_key(Some(&sealed))
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        // A new key is untested.
+        self.heard(None);
+        Ok(())
     }
 
     /// Day and month spend against their budgets, the day and the month in the hub's time zone.
@@ -495,7 +502,7 @@ impl Pool {
             State::Awake | State::Waking | State::Creating => return Ok(()),
             State::Broken => {
                 return Err(format!(
-                    "{slot} doesn't come back: Reset it in Settings › Cloud"
+                    "{slot} doesn't come back: Reset it in Settings › Hub › Machines"
                 ));
             }
             State::Asleep | State::Stopping => {}
@@ -786,12 +793,12 @@ fn open_key(ledger: &Ledger, home: &std::path::Path) -> Result<Zeroizing<String>
     let sealed = ledger
         .sealed_key()
         .map_err(|e| BoatError::NoKey(format!("the pool's ledger can't be read: {e}")))?
-        .ok_or_else(|| BoatError::NoKey("no boat.dev key: Settings › Cloud".into()))?;
+        .ok_or_else(|| BoatError::NoKey("no boat.dev key: Settings › Hub › Machines".into()))?;
     let key = crate::node::identity::load_or_create_box_key(home)
         .map_err(|_| BoatError::NoKey("the hub can't read its box key".into()))?;
     let plain = key.open(&sealed).ok_or_else(|| {
         BoatError::NoKey(
-            "the boat.dev key was sealed to another box key: paste it again in Settings › Cloud"
+            "the boat.dev key was sealed to another box key: paste it again in Settings › Hub › Machines"
                 .into(),
         )
     })?;

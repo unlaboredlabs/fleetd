@@ -106,6 +106,68 @@ sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch
 # Your own home closed to every other user, agents included.
 chmod 700 ~";
 
+/// The actions the hub's boat.dev key needs, and no more: it never runs a command on a cloud machine (`exec`, `ssh`,
+/// `file.*`), because the machine's node dials in.
+pub const BOAT_KEY_ACTIONS: &str = "sandbox.create sandbox.read sandbox.update sandbox.stop sandbox.resume sandbox.delete account.read";
+
+/// The public HTTPS part of the cloud step: the address in use when it is one, else Tailscale Funnel or a reverse
+/// proxy to the address devices reach the hub at now.
+fn public_https(base: &str) -> SetupPart {
+    let note = "Cloud machines run on the internet, outside your tailnet, and dial in to the hub: it needs an HTTPS \
+                address they can reach. Only the hub's port is published, and every call to it needs a key.";
+    if base.starts_with("https://") {
+        return part(
+            "Give the hub a public HTTPS address",
+            Some(note),
+            vec![],
+            vec![noted(
+                "The hub's HTTPS address",
+                base,
+                "If only your tailnet reaches it (Tailscale Serve), turn on Funnel for it: tailscale funnel --bg 443.",
+            )],
+        );
+    }
+    let target = if base.is_empty() {
+        "http://127.0.0.1:4790"
+    } else {
+        base
+    };
+    part(
+        "Give the hub a public HTTPS address",
+        Some(note),
+        vec![
+            link("Tailscale Funnel", "https://tailscale.com/kb/1223/funnel"),
+            link(
+                "Tailscale admin › Access controls",
+                "https://login.tailscale.com/admin/acls/file",
+            ),
+        ],
+        vec![
+            command(
+                "On the hub, with Tailscale Funnel",
+                format!("tailscale funnel --bg {target}"),
+                Some(
+                    "It prints the public HTTPS address it serves, on your tailnet's own domain. Funnel needs the \
+                     funnel attribute in your tailnet's policy; Tailscale offers to add it.",
+                ),
+            ),
+            noted(
+                "Or another reverse proxy, such as Caddy",
+                format!(
+                    "fleetd.example.com {{\n  reverse_proxy {}\n}}",
+                    target.split_once("://").map_or(target, |(_, r)| r)
+                ),
+                format!("Any HTTPS proxy in front of {target} works; use your own domain."),
+            ),
+            command(
+                "Then, on the hub, save the address",
+                "fleetd init --url https://<the address>",
+                Some("Your devices may keep the address they use now."),
+            ),
+        ],
+    )
+}
+
 /// Every step in order, its values computed for `hub` (the URL devices reach it at), status still to read.
 pub fn guides(hub: &str) -> Vec<HubSetupStep> {
     let base = hub.trim_end_matches('/');
@@ -422,6 +484,121 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 "A Mac for agents",
                 "Agents on every machine build, test and drive iOS simulators on one Mac, in a standard user of its \
                  own that holds none of your accounts or keys.",
+                SetupNeed::Optional,
+            )
+        },
+        // Cloud machines on boat.dev (D306, docs: cloud-machines.md): optional, on the owner's own boat account.
+        HubSetupStep {
+            parts: vec![
+                part(
+                    "Make a boat.dev organization with one seat",
+                    Some(
+                        "It costs the same as a personal plan, and its owner can cap their own seat, so boat.dev itself \
+                         stops everything at your cap whatever fleetd does. Leave auto top-up and extra starts off: \
+                         past the plan, starts are refused rather than billed.",
+                    ),
+                    vec![
+                        link("boat.dev", "https://boat.dev"),
+                        link(
+                            "Seats and limits",
+                            "https://docs.boat.dev/organizations/seats-and-limits",
+                        ),
+                        link(
+                            "Control your spend",
+                            "https://docs.boat.dev/billing#control-your-spend",
+                        ),
+                    ],
+                    vec![
+                        plain(
+                            "Plan",
+                            "$20 a month: it includes $20 of machine time and 200 starts a day",
+                        ),
+                        plain("Billing › Auto top-up", "Off"),
+                        plain("Billing › Extra starts on invoice", "Off"),
+                        noted(
+                            "Members › you › Machine time cap",
+                            "300 hours a month",
+                            "Recommended: boat.dev stops your machines within a minute of it.",
+                        ),
+                        noted(
+                            "Members › you › Machines at once",
+                            "3",
+                            "Your pool size: 3 unless you change it below.",
+                        ),
+                    ],
+                ),
+                part(
+                    "Make an environment for fleetd",
+                    Some(
+                        "Cloud machines are made in it, with none of your account's secrets, AI logins or in-machine \
+                         boat.dev key.",
+                    ),
+                    vec![link("Environments", "https://docs.boat.dev/environments")],
+                    vec![
+                        value("Name", format!("fleetd-{host}")),
+                        plain("Safe for third parties", "On"),
+                    ],
+                ),
+                part(
+                    "Make the hub's API key",
+                    Some(
+                        "Only what the hub needs to make, wake, stop and delete its machines. No exec, ssh, file or \
+                         snapshot actions: the hub never runs anything on a cloud machine; its node dials in.",
+                    ),
+                    vec![link("API key scopes", "https://docs.boat.dev/api-keys/scopes")],
+                    vec![
+                        value("Name", format!("fleetd-{host}")),
+                        noted(
+                            "Actions",
+                            BOAT_KEY_ACTIONS,
+                            "Not the presets: ci and admin give far more.",
+                        ),
+                        value("Scope: environment", format!("fleetd-{host}")),
+                        plain("Expires", "365 days"),
+                    ],
+                ),
+                public_https(base),
+                part(
+                    "Choose the pool, the budgets and the projects",
+                    Some(
+                        "Paste the key, Test it, then pick these and turn cloud machines on. Before you do, fleetd \
+                         shows the most the pool can cost a day and a typical day. Work goes to a cloud machine only \
+                         when every machine of yours is at its agent limit.",
+                    ),
+                    vec![],
+                    vec![
+                        plain("Machines", "3 × large (8 vCPUs, 16 GB, $0.072 an hour each)"),
+                        plain("Day budget", "$3"),
+                        plain("Month budget", "your plan's included dollars ($20)"),
+                        plain(
+                            "Projects",
+                            "the ones you tick: their code, transcripts and the secrets sealed there go to boat.dev",
+                        ),
+                    ],
+                ),
+            ],
+            fields_note: Some(
+                "Cloud machines run on boat.dev: boat.dev can see what runs on them, as any host can. Paste the key, \
+                 set the pool and turn it on in Settings › Hub › Machines › Cloud machines."
+                    .into(),
+            ),
+            place: Some("cloud".into()),
+            test: Some("Ask boat.dev what the key may read: its plan, its limits and this hub's machines".into()),
+            ways: vec![way(
+                None,
+                &[
+                    "hub/cloud_key",
+                    "hub/cloud_network",
+                    "hub/cloud_machines",
+                    "hub/cloud_budget",
+                ],
+            )],
+            ..step(
+                SetupStepId::Cloud,
+                SetupGroup::Hub,
+                "Cloud machines (boat.dev)",
+                "When every machine of yours is at its agent limit, work runs on a few sleeping boat.dev machines of \
+                 your own account, within budgets you set.",
                 SetupNeed::Optional,
             )
         },
