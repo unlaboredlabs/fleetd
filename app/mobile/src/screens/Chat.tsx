@@ -23,7 +23,7 @@ import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimat
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
-import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, quoteOf, replyOf, replyText, sameRow, sendNote, sendWait, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, emptyChat, isNavi, type AttachmentGetOutput, type AttachmentRef, type ChatItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
@@ -47,6 +47,7 @@ import { RevealArea, Revealed } from "../ui/Reveal";
 import type { MenuItem } from "../ui/Menu";
 import { bubbleIn, dur, ease, PRESSED_OPACITY, useReduceMotion } from "../ui/motion";
 import { SkeletonThread } from "../ui/Skeleton";
+import { StateGlyph } from "../ui/StateGlyph";
 import { ApprovalCard } from "./ApprovalCard";
 import { ScreenCards } from "./ScreenCards";
 import { Symbol } from "./manage/parts";
@@ -588,7 +589,8 @@ function ItemView({
       <View style={[styles.me, gap]}>
         {words.trim() === "" ? null : (
           <View style={styles.mineRow}>
-            <View style={[styles.mineBubble, item.state === "pending" && styles.pending]}>
+            {/* Held still while it goes: no dimming that lifts when the hub has it. */}
+            <View style={styles.mineBubble}>
               <HeldBubble
                 actions={actions}
                 mine
@@ -614,12 +616,17 @@ function ItemView({
                   )
                 }
               />
+              {files.length === 0 ? <SendWait state={item.state} at={item.at} /> : null}
             </View>
             {retry ? <NotSent chatKey={chatKey} id={item.id} note={note} /> : null}
           </View>
         )}
         {files.map((b, i) => (
-          <MediaView key={i} bubble={b} chatKey={chatKey} mine actions={actions} when={when} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} tail={last && i === files.length - 1} />
+          // Each in a view of its own, the last's holding the mark of a slow send: one tree from sending to sent.
+          <View key={i}>
+            <MediaView bubble={b} chatKey={chatKey} mine actions={actions} when={when} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} tail={last && i === files.length - 1} />
+            {i === files.length - 1 ? <SendWait state={item.state} at={item.at} /> : null}
+          </View>
         ))}
         {note === undefined ? null : (
           <View style={styles.noteRow}>
@@ -656,6 +663,30 @@ function ItemView({
         <MediaView key={`f${String(i)}`} bubble={b} chatKey={chatKey} mine={false} actions={actions} when={when} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} tail={last && i === files.length - 1} />
       ))}
     </View>
+  );
+}
+
+/**
+ * A send still on its way, once it's slow (sendWait): the desktop's waiting mark, an open ring of cells, beside the
+ * bubble's foot, fading in on the desktop's curve. Out of the row's layout, so the bubble and the thread hold still as it
+ * comes and goes; a send the hub takes within SLOW_SEND_MS never shows it.
+ */
+function SendWait({ state, at }: Pick<ChatItem, "state" | "at">) {
+  const reduce = useReduceMotion();
+  const [nowMs, setNow] = useState(Date.now);
+  const wait = sendWait({ state, at }, nowMs);
+  const inMs = wait?.inMs;
+  useEffect(() => {
+    if (inMs === undefined || inMs === 0) return;
+    const timer = setTimeout(() => setNow(Date.now()), inMs);
+    return () => clearTimeout(timer);
+  }, [inMs]);
+  if (wait === undefined || wait.inMs > 0) return null;
+  const fade = reduce ? 0 : dur.quick;
+  return (
+    <Animated.View entering={FadeIn.duration(fade).easing(ease.snap)} exiting={FadeOut.duration(fade).easing(ease.snap)} style={styles.wait}>
+      <StateGlyph state="queued" label={wait.words} />
+    </Animated.View>
   );
 }
 
@@ -1012,7 +1043,8 @@ const styles = StyleSheet.create({
   me: { alignItems: "flex-end", paddingLeft: 56, gap: metrics.gap },
   mineRow: { flexDirection: "row", alignItems: "center", gap: space.sm, maxWidth: "100%" },
   mineBubble: { flexShrink: 1 },
-  pending: { opacity: 0.7 },
+  // Beside the bubble's foot, in the row's left margin: out of the layout.
+  wait: { position: "absolute", right: "100%", bottom: 5, paddingRight: space.sm },
   note: { marginTop: 3, marginRight: 4, textAlign: "right", flexShrink: 1 },
   noteRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: space.sm, maxWidth: "100%" },
   them: { alignItems: "flex-start", paddingRight: 56, gap: metrics.gap },
