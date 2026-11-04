@@ -292,6 +292,7 @@ impl OpsPorts {
         crate::hub::doctor::checks::SetupFacts {
             joined: people.joined().unwrap_or_default(),
             github_app: hub.github_app.get().ok().flatten(),
+            cloud: crate::hub::pool::view::facts(&hub),
         }
     }
     pub fn bases(

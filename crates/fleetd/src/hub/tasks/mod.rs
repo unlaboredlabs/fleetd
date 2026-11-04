@@ -5408,7 +5408,7 @@ mod tests {
     /// nothing more than its machine's line. Neither wakes anything.
     #[tokio::test]
     async fn a_task_that_may_not_burst_waits_for_its_own_machine() {
-        let why = "writers don't run on cloud machines unless a hub admin turns them on in Settings › Cloud";
+        let why = "writers don't run on cloud machines unless a hub admin turns them on in Settings › Hub › Machines";
         let (tasks, node) = cloud_tasks(crate::hub::pool::place::Room {
             eligible: Err(Some(why.into())),
             ..room(&[1])

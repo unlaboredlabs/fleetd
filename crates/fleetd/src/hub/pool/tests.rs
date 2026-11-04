@@ -717,7 +717,10 @@ async fn two_wakes_without_a_hello_make_the_slot_broken() {
     assert!(w.boat.running().is_empty());
     assert!(!w.open_spend("boat-1"));
     let e = w.pool.wake("boat-1", Why::Need).await.unwrap_err();
-    assert_eq!(e, "boat-1 doesn't come back: Reset it in Settings › Cloud");
+    assert_eq!(
+        e,
+        "boat-1 doesn't come back: Reset it in Settings › Hub › Machines"
+    );
     assert_eq!(w.boat.calls_like("resume").len(), 2);
 }
 
@@ -1103,7 +1106,7 @@ async fn starts_back_off_on_every_boat_code() {
     w.pool.wake("boat-1", Why::Need).await.unwrap_err();
     assert_eq!(
         w.pool.start_held().as_deref(),
-        Some("boat.dev needs billing attention: Settings › Cloud")
+        Some("boat.dev needs billing attention: Settings › Hub › Machines")
     );
     w.boat.s.lock().unwrap().limits.can_start = false;
     sweep::sweep(&w.pool).await.unwrap();
@@ -1121,7 +1124,7 @@ async fn starts_back_off_on_every_boat_code() {
     w.pool.wake("boat-1", Why::Need).await.unwrap_err();
     assert_eq!(
         w.pool.start_held().as_deref(),
-        Some("boat.dev key refused: Settings › Cloud")
+        Some("boat.dev key refused: Settings › Hub › Machines")
     );
     w.pool.resume_bursting().unwrap();
     w.pool.wake("boat-1", Why::Need).await.unwrap();
@@ -1375,7 +1378,7 @@ async fn placement_wakes_one_machine_at_a_time_and_a_follow_up_its_own() {
     w.pool.ledger.put(&row).unwrap();
     assert_eq!(
         w.pool.wake_for_work(Some("boat-2")).unwrap_err(),
-        "boat-2 doesn't come back: Reset it in Settings › Cloud"
+        "boat-2 doesn't come back: Reset it in Settings › Hub › Machines"
     );
 }
 
@@ -1422,4 +1425,180 @@ async fn no_machine_wakes_for_work_past_the_start_budget_or_the_money_budget() {
     assert_eq!(w.pool.closed(), Some(spent));
     wakes_back(&w).await;
     assert!(w.boat.calls_like("resume").is_empty());
+}
+
+/// The admin's Test asks boat for its limits and this hub's machines, says it in one line, and starts nothing; a
+/// refused key says why in plain words, and a new key is untested again.
+#[tokio::test]
+async fn test_reads_limits_and_the_list_and_starts_nothing() {
+    use super::boat::MachineType;
+    let w = World::new().await;
+    w.boat.s.lock().unwrap().limits.machine_types = vec![MachineType {
+        kind: "large".into(),
+        available: true,
+        reason: None,
+    }];
+    assert_eq!(w.pool.key_test(), None);
+    let t = w.pool.test().await;
+    assert!(t.ok, "{t:?}");
+    assert_eq!(
+        t.said,
+        "Key works · $20 plan · 200 starts a day (12 a minute) · 0 of 100 machines running · large allowed"
+    );
+    assert_eq!(w.boat.calls(), ["limits", "list"]);
+    assert_eq!(w.pool.key_test(), Some(t));
+
+    w.boat.refuse(
+        "list",
+        BoatError::KeyRefused {
+            code: "api_key_action_forbidden".into(),
+        },
+    );
+    let t = w.pool.test().await;
+    assert!(!t.ok);
+    assert!(
+        t.said.contains("account.read and sandbox.read"),
+        "{}",
+        t.said
+    );
+    assert_eq!(w.pool.key_test().map(|t| t.ok), Some(false));
+
+    w.pool.set_key("boat_other").unwrap();
+    assert_eq!(w.pool.key_test(), None);
+    assert!(
+        w.boat.calls_like("create").is_empty() && w.boat.calls_like("resume").is_empty(),
+        "Test never starts a machine"
+    );
+}
+
+/// The sweep's /limits keeps the key's line fresh; boat being down says nothing about the key.
+#[tokio::test]
+async fn the_sweep_keeps_what_boat_said_to_the_key() {
+    let w = World::new().await;
+    sweep::sweep(&w.pool).await.unwrap();
+    assert_eq!(w.pool.key_test().map(|t| t.ok), Some(true));
+    w.boat.refuse("limits", BoatError::Network("reset".into()));
+    sweep::sweep(&w.pool).await.unwrap_err();
+    assert_eq!(w.pool.key_test().map(|t| t.ok), Some(true));
+    w.boat.refuse(
+        "limits",
+        BoatError::KeyRefused {
+            code: "api_key_expired".into(),
+        },
+    );
+    sweep::sweep(&w.pool).await.unwrap_err();
+    let t = w.pool.key_test().unwrap();
+    assert!(!t.ok);
+    assert!(t.said.contains("expired"), "{}", t.said);
+}
+
+/// The settings an admin may save: a pool of 1 to 10 of a size boat sells, budgets above 0 within the guard, and an
+/// environment name boat takes.
+#[tokio::test]
+async fn settings_are_checked_before_they_are_saved() {
+    use fleetd_contracts::cloud::CloudSettings;
+    use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
+    let w = World::new().await;
+    let ok = CloudSettings {
+        enabled: true,
+        pool_size: 2,
+        machine_type: "large".into(),
+        day_budget: 5.0,
+        month_budget: None,
+        projects: vec![ProjectRef {
+            machine_id: MachineId::new("devbox").unwrap(),
+            project_id: ProjectId::new("shop").unwrap(),
+        }],
+        environment: Some(" fleetd-devbox ".into()),
+        writers: Some(true),
+    };
+    w.pool.apply(&ok).unwrap();
+    let s = w.pool.ledger.settings().unwrap();
+    assert_eq!((s.pool_size, s.day_budget), (2, 5.0));
+    assert_eq!(s.environment.as_deref(), Some("fleetd-devbox"));
+    assert_eq!(s.projects.len(), 1);
+    assert!(s.writers);
+    assert_eq!(
+        s.month_budget(),
+        20.0,
+        "the plan's dollars when none is set"
+    );
+
+    let bad = |change: &dyn Fn(&mut CloudSettings)| {
+        let mut c = ok.clone();
+        change(&mut c);
+        w.pool.apply(&c).unwrap_err()
+    };
+    assert_eq!(bad(&|c| c.pool_size = 0), "A pool holds 1 to 10 machines.");
+    assert_eq!(bad(&|c| c.pool_size = 11), "A pool holds 1 to 10 machines.");
+    assert!(bad(&|c| c.machine_type = "huge".into()).starts_with("boat.dev has no size huge"));
+    assert!(bad(&|c| c.day_budget = 0.0).starts_with("The day budget"));
+    assert!(bad(&|c| c.day_budget = f64::NAN).starts_with("The day budget"));
+    assert!(bad(&|c| c.month_budget = Some(5000.0)).starts_with("The month budget"));
+    assert!(bad(&|c| c.environment = Some("fleetd devbox".into())).contains("environment name"));
+    // Nothing bad was saved.
+    assert_eq!(w.pool.ledger.settings().unwrap().pool_size, 2);
+}
+
+/// Create makes the slots the pool's size wants that have no machine; Reset deletes a broken one at boat and leaves
+/// it to be made again; the view shows each machine's state, what runs there and its spend today.
+#[tokio::test]
+async fn reset_deletes_a_broken_machine_and_the_view_shows_each_one() {
+    use fleetd_contracts::cloud::CloudMachineState;
+    use fleetd_contracts::node_link::NodeBusy;
+    let w = World::new().await;
+    assert_eq!(w.pool.missing().unwrap(), ["boat-1", "boat-2", "boat-3"]);
+    w.awake("boat-1").await;
+    w.asleep("boat-2").await;
+    assert_eq!(w.pool.missing().unwrap(), ["boat-3"]);
+
+    w.advance(10 * MIN);
+    let machines = w
+        .pool
+        .machines(|slot| {
+            (slot == "boat-1").then_some(NodeBusy {
+                threads: 2,
+                screens: 1,
+                ..Default::default()
+            })
+        })
+        .unwrap();
+    let got: Vec<_> = machines
+        .iter()
+        .map(|m| {
+            (
+                m.machine_id.as_str().to_owned(),
+                m.state,
+                m.agents,
+                m.screens,
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("boat-1".into(), CloudMachineState::Awake, 2, 1),
+            ("boat-2".into(), CloudMachineState::Asleep, 0, 0),
+        ]
+    );
+    // boat-1 has run about 10 minutes at $0.072 an hour.
+    assert!(
+        (machines[0].today - 0.072 / 6.0).abs() < 0.002,
+        "{}",
+        machines[0].today
+    );
+
+    // A broken machine: Reset deletes it at boat, and it needs a create again.
+    w.pool
+        .stop("boat-2", State::Broken, "no hello after two wakes")
+        .await
+        .unwrap();
+    let id = w.sandbox("boat-2");
+    w.pool.retire("boat-2").await.unwrap();
+    assert_eq!(w.boat.state(&id), None, "deleted at boat");
+    assert_eq!(w.state("boat-2"), State::Gone);
+    assert_eq!(w.pool.missing().unwrap(), ["boat-2", "boat-3"]);
+    assert!(!w.open_spend("boat-2"));
+    // A slot the ledger doesn't know isn't reset.
+    assert!(w.pool.retire("boat-9").await.is_err());
 }

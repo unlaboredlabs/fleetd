@@ -107,12 +107,12 @@ impl Pool {
                     State::Awake | State::Waking | State::Creating => return Ok(slot.to_owned()),
                     State::Broken => {
                         return Err(format!(
-                            "{slot} doesn't come back: Reset it in Settings › Cloud"
+                            "{slot} doesn't come back: Reset it in Settings › Hub › Machines"
                         ));
                     }
                     State::Failed | State::Gone => {
                         return Err(format!(
-                            "{slot} has no machine: Reset it in Settings › Cloud"
+                            "{slot} has no machine: Reset it in Settings › Hub › Machines"
                         ));
                     }
                     State::Asleep | State::Stopping => slot.to_owned(),
@@ -226,7 +226,7 @@ fn eligible(hub: &Hub, task: &Task, checkout: &ProjectRef) -> Result<(), Option<
     }
     if !kind_may(task.kind, s.writers) {
         return Err(Some(
-            "writers don't run on cloud machines unless a hub admin turns them on in Settings › Cloud".into(),
+            "writers don't run on cloud machines unless a hub admin turns them on in Settings › Hub › Machines".into(),
         ));
     }
     let secrets = hub

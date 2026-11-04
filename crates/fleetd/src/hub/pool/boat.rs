@@ -209,14 +209,14 @@ impl BoatError {
                 "boat.dev: your organization's machines-at-once cap is reached".into()
             }
             BoatError::Billing { code, .. } => {
-                format!("boat.dev needs billing attention ({code}): Settings › Cloud")
+                format!("boat.dev needs billing attention ({code}): Settings › Hub › Machines")
             }
             BoatError::NoReadyMachine | BoatError::OutOfCapacity { .. } => {
                 "boat.dev is short of machines, retrying".into()
             }
             BoatError::IpRateLimited { .. } => "boat.dev rate limit, retrying".into(),
             BoatError::KeyRefused { code } => {
-                format!("boat.dev key refused ({code}): Settings › Cloud")
+                format!("boat.dev key refused ({code}): Settings › Hub › Machines")
             }
             BoatError::NotFound => "boat.dev has no such machine".into(),
             BoatError::DataExpired => "boat.dev deleted the stopped machine's disk".into(),

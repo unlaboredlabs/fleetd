@@ -23,16 +23,19 @@ pub enum SetupStepId {
     People,
     /// A Mac for agents (D298): optional.
     Mac,
+    /// Cloud machines on boat.dev (D306): optional.
+    Cloud,
 }
 
 impl SetupStepId {
-    pub const ALL: [SetupStepId; 6] = [
+    pub const ALL: [SetupStepId; 7] = [
         Self::Address,
         Self::Machines,
         Self::Claude,
         Self::Github,
         Self::People,
         Self::Mac,
+        Self::Cloud,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -43,6 +46,7 @@ impl SetupStepId {
             Self::Github => "github",
             Self::People => "people",
             Self::Mac => "mac",
+            Self::Cloud => "cloud",
         }
     }
 

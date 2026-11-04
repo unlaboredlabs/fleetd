@@ -5,7 +5,7 @@
 // Hubs, not #/onboarding: that page sends a connected app straight back to the board. With several hubs there is one
 // row per hub, each under its name and with its own state: one offline never hides another. While any of the hub's
 // machines is down the row says how many ("1 down"), which opens Machines, as the popover's Machines line always does:
-// the sidebar has no Machines entry.
+// the sidebar has no Machines entry. A cloud machine asleep is at rest, not down.
 import { useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import { versionLabel } from "../../../shared/updates";
@@ -44,7 +44,9 @@ export function HubStatus({ hub }: { hub: HubState }) {
   // The state's own word even under a fixture, whose chip otherwise only says it is sample data.
   const aside = several && hub.phase !== "live" ? connLine(hub, false, asOf).label : null;
   const machines = useData(selectMachines);
-  const down = machines?.filter((m) => m.machine.status !== "online").length ?? 0;
+  const own = machines?.filter((m) => m.machine.cloud !== true);
+  const cloud = (machines?.length ?? 0) - (own?.length ?? 0);
+  const down = own?.filter((m) => m.machine.status !== "online").length ?? 0;
   const [open, setOpen] = useState(false);
   // Controlled, so its content never changes (an empty one would drop the Tooltip and remount the chip): it just
   // stays shut while the popover is open.
@@ -105,7 +107,7 @@ export function HubStatus({ hub }: { hub: HubState }) {
                         navigate({ id: "settings", tab: "hub.machines", at: self.id });
                       }}
                     >
-                      {`${String(machines.length - down)} of ${String(machines.length)} online`}
+                      {`${String((own?.length ?? 0) - down)} of ${String(own?.length ?? 0)} online${cloud === 0 ? "" : ` · ${String(cloud)} cloud`}`}
                     </button>
                   </dd>
                 </>

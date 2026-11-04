@@ -122,13 +122,15 @@ pub fn backoff(error: &BoatError, step: u32, now: i64, jitter: f64, zone: Tz) ->
         BoatError::Billing { url, .. } => Backoff::Pause {
             kind: "billing",
             reason: match url {
-                Some(url) => format!("boat.dev needs billing attention: Settings › Cloud ({url})"),
-                None => "boat.dev needs billing attention: Settings › Cloud".into(),
+                Some(url) => {
+                    format!("boat.dev needs billing attention: Settings › Hub › Machines ({url})")
+                }
+                None => "boat.dev needs billing attention: Settings › Hub › Machines".into(),
             },
         },
         BoatError::KeyRefused { .. } | BoatError::NoKey(_) => Backoff::Pause {
             kind: "key",
-            reason: "boat.dev key refused: Settings › Cloud".into(),
+            reason: "boat.dev key refused: Settings › Hub › Machines".into(),
         },
         BoatError::NoReadyMachine => {
             let i = (step as usize).min(NO_READY_S.len() - 1);
@@ -162,7 +164,7 @@ pub fn held(s: &Settings, now: i64) -> Option<String> {
         return Some("cloud machines are off".into());
     }
     if !s.has_key {
-        return Some("no boat.dev key: Settings › Cloud".into());
+        return Some("no boat.dev key: Settings › Hub › Machines".into());
     }
     if let Some((_, reason)) = &s.paused {
         return Some(reason.clone());

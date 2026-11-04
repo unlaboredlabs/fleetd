@@ -34,6 +34,7 @@ import { setUpdatesOpen } from "../updates/state";
 import { HubSection } from "../updates/UpdatesSheet";
 import type { HubTab } from "../shell/routes";
 import { ClaudeAdmin } from "./Claude";
+import { CloudPart } from "./Cloud";
 import { MachineList } from "./MachineList";
 import { MachinePage } from "./MachinePage";
 import { People } from "./People";
@@ -132,7 +133,7 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
 /**
  * Adding machines to the hub (this computer, one the hub reaches over SSH, or any other), then its machines, each with
  * Repair (which opens in Add machine) and Remove, and a page of its own with its checklist; then their roles, the
- * screens each opens, and how many agents each machine and all of them together run at once.
+ * screens each opens, how many agents each machine and all of them together run at once, and cloud machines on boat.dev.
  */
 function Machines() {
   const [open, setOpen] = useState<{ view: View; at: number }>();
@@ -156,6 +157,7 @@ function Machines() {
         <PagePart title="Max agents" reveal="hub.caps" intro="Every project's agents together: on each machine, and on all of them.">
           <HubCaps />
         </PagePart>
+        <CloudPart />
         <Updates />
       </div>
     </div>

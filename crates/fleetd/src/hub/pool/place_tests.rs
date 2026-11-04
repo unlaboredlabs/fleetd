@@ -80,7 +80,7 @@ async fn only_an_opted_in_projects_reviews_and_readers_may_go_to_a_cloud_machine
     assert_eq!(
         room(&hub, &task("write", "app"), &app).eligible,
         Err(Some(
-            "writers don't run on cloud machines unless a hub admin turns them on in Settings › Cloud".into()
+            "writers don't run on cloud machines unless a hub admin turns them on in Settings › Hub › Machines".into()
         ))
     );
     hub.pool.ledger().set_writers(true).unwrap();

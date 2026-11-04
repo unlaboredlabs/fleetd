@@ -2,7 +2,7 @@
 // it needs), a link to its page (the checklist), Repair and Remove. Repair goes again over SSH when the hub reaches
 // the machine, else it makes a line that enrolls it again (machine_join with rejoin); Remove asks first, then runs
 // machine_remove. The hub sends no event when it forgets a machine, so a removed one leaves the list here at once and
-// the store's next snapshot.
+// the store's next snapshot. Cloud machines (boat.dev) are listed apart, as their own group under these (Cloud.tsx).
 import { useState } from "react";
 import type { Machine } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
@@ -12,6 +12,8 @@ import { machineOrder } from "../projects/machineText";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { toHash } from "../shell/routes";
 import { MACHINE_WAIT_MS, removeLine, repairOf, statusLine, type Repair } from "./machines";
+import { ownMachines } from "./cloudModel";
+import { CloudGroup, useCloud } from "./Cloud";
 import a from "./admin.module.css";
 
 const noInput = {};
@@ -23,11 +25,11 @@ export function MachineList({ onRepair }: { onRepair: (r: Repair) => void }) {
   const hosts = useToolQuery("machine_hosts", noInput).data?.hosts;
   const [removed, setRemoved] = useState<ReadonlySet<string>>(() => new Set());
   const [removing, setRemoving] = useState<Machine | null>(null);
-  const machines = views
-    ?.map((v) => v.machine)
-    .filter((m) => !removed.has(m.machineId))
-    .sort(machineOrder);
+  const cloud = useCloud();
+  const all = views?.map((v) => v.machine).filter((m) => !removed.has(m.machineId));
+  const machines = all === undefined ? undefined : ownMachines(all, cloud ?? undefined).sort(machineOrder);
   return (
+    <>
     <section className={`${a.section} ${a.machines}`} aria-labelledby="machines-list">
       <Text strong id="machines-list">
         This hub's machines
@@ -81,6 +83,8 @@ export function MachineList({ onRepair }: { onRepair: (r: Repair) => void }) {
         />
       )}
     </section>
+    <CloudGroup />
+    </>
   );
 }
 

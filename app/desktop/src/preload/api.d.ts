@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, TelegramRequest } from "../shared/ipc";
+import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, TelegramRequest, CloudKeyRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
@@ -57,6 +57,11 @@ export interface FleetdApi {
      * fingerprint only; nothing returns the value.
      */
     telegram(hub: HubId, request: TelegramRequest): Promise<CallOutcome>;
+    /**
+     * The hub's boat.dev API key: main seals it to the hub's own key and calls cloud_key_set. The output has the pool
+     * as the hub keeps it; nothing returns the key.
+     */
+    cloudKey(hub: HubId, request: CloudKeyRequest): Promise<CallOutcome>;
   };
   readonly github: {
     /**

@@ -15,7 +15,7 @@ import type { ChatScope, OrderFocus } from "../../../shared/ipc";
 import { keepCache, type CacheIo } from "./cache";
 import { createChatActions, refOf, type ChatActions } from "./chat-layer";
 import { effectsOf, matches, type Invalidation } from "./effects";
-import { applyFrame, applySlots, createDataStore, ingest, type DataStore } from "./store";
+import { applyFrame, applySlots, createDataStore, ingest, type DataState, type DataStore, type Effects } from "./store";
 
 export class CallError extends Error {
   constructor(readonly error: HubError) {
@@ -91,7 +91,57 @@ export const bindHub = (api: Window["fleetd"]["hub"], id: HubId): HubApi => ({
   cache: { read: () => api.cache.read(id), write: (text) => api.cache.write(id, text) },
 });
 
-export const createDataLayer = (hub: HubApi, now: () => number = Date.now, id: HubId = FIRST_HUB): DataLayer => {
+/**
+ * Runs `flush` once, later; returns its cancel. The app's is `nextFrame`; tests and anything without frames apply
+ * each frame at once (`atOnce`).
+ */
+export type Batch = (flush: () => void) => () => void;
+
+export const atOnce: Batch = (flush) => {
+  flush();
+  return () => undefined;
+};
+
+/** How long a batch waits for its frame before it goes anyway (a window whose frames stopped mid-wait). */
+const FRAME_FALLBACK_MS = 100;
+
+/**
+ * The next painted frame, so a burst of arrivals renders once a frame and not once each. A hidden window paints no
+ * frames: there it goes at once, as does a batch waiting when the window hides, so notifications never wait.
+ */
+export const nextFrame: Batch = (flush) => {
+  if (document.visibilityState === "hidden") return atOnce(flush);
+  let done = false;
+  const run = () => {
+    if (done) return;
+    done = true;
+    cancel();
+    flush();
+  };
+  const frame = requestAnimationFrame(run);
+  const timer = setTimeout(run, FRAME_FALLBACK_MS);
+  document.addEventListener("visibilitychange", run);
+  const cancel = () => {
+    done = true;
+    cancelAnimationFrame(frame);
+    clearTimeout(timer);
+    document.removeEventListener("visibilitychange", run);
+  };
+  return cancel;
+};
+
+/**
+ * The most frames one batch holds: the store keeps the newest 200 events (store.ts), and what reads them as they come
+ * (the notifications) must see every one.
+ */
+const BATCH_MAX = 100;
+
+export const createDataLayer = (
+  hub: HubApi,
+  now: () => number = Date.now,
+  id: HubId = FIRST_HUB,
+  batch: Batch = atOnce,
+): DataLayer => {
   const store = createDataStore();
   const typed = typedCall(hub.call);
   const chat = createChatActions(store, typed, (key) => void hub.chat(key === null ? null : refOf(key)), now);
@@ -201,12 +251,8 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now, id: H
     return outcome;
   };
 
-  const onFrame = (frame: HubFrame) => {
-    const prev = store.getState();
-    const [next, effects] = applyFrame(prev, frame, now());
-    // A repeated event (the stream resumed past it) changes nothing and refetches nothing.
-    if (next === prev) return;
-    store.setState(next, true);
+  /** What a frame that changed the store asks besides: refetches, a resync, or dropping every cached answer. */
+  const afterFrame = (frame: HubFrame, prev: DataState, next: DataState, effects: Effects): void => {
     // A resync on a link that stayed up (an event changed the fleet's shape: a project's settings saved, a project
     // added): what the reads hold is still this connection's, so they run again in place and screens keep showing
     // it meanwhile, never a page dropping to Loading… and remounting on every saved setting.
@@ -229,7 +275,50 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now, id: H
       const every = SLOW_EVERY_MS[i.tool] ?? INVALIDATE_EVERY_MS;
       slow.set(every, [...(slow.get(every) ?? []), i]);
     }
-    for (const [every, batch] of slow) later(every, batch);
+    for (const [every, group] of slow) later(every, group);
+  };
+
+  /** Frames in order, each with when it came, folded into one store change. */
+  const apply = (frames: readonly (readonly [HubFrame, number])[]): void => {
+    const first = store.getState();
+    let s = first;
+    const changed: [HubFrame, DataState, DataState, Effects][] = [];
+    for (const [frame, at] of frames) {
+      const [next, effects] = applyFrame(s, frame, at);
+      // A repeated event (the stream resumed past it) changes nothing and refetches nothing.
+      if (next === s) continue;
+      changed.push([frame, s, next, effects]);
+      s = next;
+    }
+    if (s === first) return;
+    store.setState(s, true);
+    for (const [frame, prev, next, effects] of changed) afterFrame(frame, prev, next, effects);
+  };
+
+  // Frames waiting for the next batch. A state or a snapshot goes at once, after those before it: every change of
+  // phase or connection reaches what watches the store (chat-layer.ts's resends) as a change of its own.
+  let queued: (readonly [HubFrame, number])[] = [];
+  let cancelBatch: (() => void) | undefined;
+  const flush = (): void => {
+    cancelBatch = undefined;
+    const frames = queued;
+    queued = [];
+    apply(frames);
+  };
+  const flushNow = (): void => {
+    if (queued.length === 0) return;
+    cancelBatch?.();
+    flush();
+  };
+  const onFrame = (frame: HubFrame) => {
+    if (frame.t === "state" || frame.t === "snapshot") {
+      flushNow();
+      apply([[frame, now()]]);
+      return;
+    }
+    queued.push([frame, now()]);
+    if (queued.length >= BATCH_MAX) flushNow();
+    else if (queued.length === 1) cancelBatch = batch(flush);
   };
 
   return {
@@ -250,6 +339,8 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now, id: H
       const stopCache = queryClient.getQueryCache().subscribe(onCache);
       const stop = hub.subscribe(onFrame);
       return () => {
+        cancelBatch?.();
+        queued = [];
         stopChat();
         stopKeep();
         stop();

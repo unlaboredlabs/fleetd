@@ -8,7 +8,7 @@ use super::time::Hub;
 pub const CLOUD_USAGE: &str = r#"  cloud stop [--json] [--hub <url> --key-file <path>]
              the kill switch: turn cloud machines (boat.dev) off and stop every machine boat.dev
              lists with this hub's label, whether the hub's ledger knows it or not. They stay off
-             until turned on again in Settings › Cloud. On the hub machine it needs neither --hub
+             until turned on again in Settings › Hub › Machines. On the hub machine it needs neither --hub
              nor --key-file
 "#;
 

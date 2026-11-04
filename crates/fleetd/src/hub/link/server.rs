@@ -925,6 +925,8 @@ impl NodeLinkServer {
         if agents_mac && let Err(e) = self.deps.slots.keep_tool_only(&machine_id) {
             tracing::error!(error = %e, "node link: the agents' Mac's agents role didn't go off");
         }
+        // A cloud machine (hub/pool) enrolled with a pool enroll token: asleep is its rest, not a fault.
+        let cloud = self.deps.auth.is_pool(&machine_id).unwrap_or(false);
         let last_slept = match self.deps.store.machine_get(&machine_id) {
             Ok(stored) => stored.and_then(|m| m.last_slept),
             Err(_) => None,
@@ -941,6 +943,7 @@ impl NodeLinkServer {
             "degradedReason": hello_reason,
             "lastSlept": last_slept,
             "agentsMac": agents_mac.then_some(true),
+            "cloud": cloud.then_some(true),
         }))
         .map_err(|e| Refused {
             code: close::BAD_FRAME,
