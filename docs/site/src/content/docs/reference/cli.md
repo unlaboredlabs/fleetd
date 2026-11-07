@@ -140,6 +140,22 @@ fleetd pair --worker <machine-id>
 
 print the one command that makes another machine a worker of this hub, with a one-time code (15 min): for a machine the hub can't reach over SSH
 
+### fleetd pair {#pair-worker-codes}
+
+```text
+fleetd pair --worker-codes
+```
+
+list the worker codes that can still be used: each one's id, machine, when it was made and until when it works, never the code itself
+
+### fleetd pair {#pair-worker-revoke}
+
+```text
+fleetd pair --worker-revoke <id>
+```
+
+take back the open worker code with that id (from `--worker-codes`): a machine that tries it is refused. Used and expired codes are dropped a day later
+
 ### fleetd invite {#invite}
 
 ```text
