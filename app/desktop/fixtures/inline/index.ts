@@ -5,10 +5,9 @@
 // inline-failures fails them and the secret save, for the one-line failure with Retry; inline-reopened reopens two
 // approvals after Approve, as a hub does when the node is offline; inline-offline is that chat from the disk cache
 // with no hub. inline-integrations is a chat of a project's integration cards (fixtures/inline/integrations.json): a
-// message to send, a page to delete, and a send already approved. inline-purchases is a project's purchases
-// (fixtures/inline/purchases.json): a hotel waiting for Pay, a train ticket approved and filled. inline-checker is a
-// project's chat with its approval checker at work (fixtures/inline/checker.json). inline-secure is a project's secure
-// inputs (fixtures/inline/secure.json): one to type in a sealed field, one from 1Password. inline-hidden holds
+// message to send, a page to delete, and a send already approved. inline-checker is a project's chat with its
+// approval checker at work (fixtures/inline/checker.json). inline-secure is a project's secure input
+// (fixtures/inline/secure.json): one to type in a sealed field. inline-hidden holds
 // approvals whose fields hide or reorder text (fixtures/inline/hidden.json), each character shown as its mark, and an
 // email in several languages shown as written.
 import fs from "node:fs";
@@ -20,7 +19,6 @@ import { heldCache } from "../offline/held.ts";
 import data from "./items.json" with { type: "json" };
 import hidden from "./hidden.json" with { type: "json" };
 import integrations from "./integrations.json" with { type: "json" };
-import purchases from "./purchases.json" with { type: "json" };
 import checker from "./checker.json" with { type: "json" };
 import secure from "./secure.json" with { type: "json" };
 
@@ -184,7 +182,6 @@ export default defineGroup({
     // A project's integration cards in a chat of their own (fixtures/inline/integrations.json), so the chat above keeps
     // every state of the two inline items in view.
     const cards = inlineItems(base("typical"), "inline-integrations", "A chat with a project's integration approvals: a message to send, a page to delete, and an answered send.", integrations.items);
-    const bought = inlineItems(base("typical"), "inline-purchases", "A chat with a project's purchases: a hotel booking waiting for Pay, and a train ticket approved and filled.", purchases.items);
     // A project's checker: a quiet line for what it let through, a card it asks with, a blocked forward and a final
     // Confirm on a site with its screenshot (fixtures/inline/checker.json, booking.png).
     const checked = inlineItems(base("typical"), "inline-checker", "A project's chat with its approval checker at work: a line for what it let through, a send it asks about, a forward it blocked and a final Confirm with the page's screenshot.", checker.items);
@@ -194,8 +191,8 @@ export default defineGroup({
     const shotRef = { machineId: id(first?.["machineId"], "devbox"), projectId: id(first?.["projectId"], "storefront") };
     const png = fs.readFileSync(new URL("./booking.png", import.meta.url));
     checked.answer("attachment_get", { projectRef: shotRef, attachmentId: "F7" }, { attachmentId: "F7", name: "lupa-confirm.png", mime: "image/png", bytes: png.length, dataB64: png.toString("base64") });
-    const sealed = inlineItems(base("typical"), "inline-secure", "A chat with a project's secure inputs: a passport number to type in a sealed field, and a license number from 1Password to approve.", secure.items);
+    const sealed = inlineItems(base("typical"), "inline-secure", "A chat with a project's secure input: a passport number to type in a sealed field.", secure.items);
     const marked = inlineItems(base("typical"), "inline-hidden", "A chat with approvals whose fields hide or reorder text, each shown as its mark, and an email in several languages shown as written.", hidden.items);
-    return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards, bought, checked, sealed, marked];
+    return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards, checked, sealed, marked];
   },
 });

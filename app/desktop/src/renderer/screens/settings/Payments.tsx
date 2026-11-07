@@ -1,14 +1,13 @@
 // A project's Payments (its Projects page; D265): the card its lead pays with, a Credit Card item from the person's own
 // 1Password (onepassword_cards lists them; project_card_set keeps only its op:// reference), and every purchase it
-// asked for (project_purchases), with what the person said. Each purchase asks the person in the project's chat;
-// approved, its card is filled into that checkout once, and the lead never sees it. One section on its own, so it can
-// go without touching the rest.
+// made (project_purchases). A purchase fills the card in at its checkout without asking (D312), and the chat says what
+// was paid. One section on its own, so it can go without touching the rest.
 import { useState } from "react";
 import type { OnePasswordCardsOutput } from "../../../shared/contracts";
 import { Button, InlineCode, Select, Text } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
-import { cardLabel, NO_CARD, cardOptions, purchaseLine, purchaseState } from "../projects/payments";
+import { cardLabel, NO_CARD, cardOptions, PAYMENTS_HELP, purchaseLine, purchaseState } from "../projects/payments";
 import { PROJECT_TOOLS } from "../projects/model";
 import { when } from "../status/view";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
@@ -64,7 +63,7 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
     <Setting
       reveal="projects.payments"
       label="Payments"
-      help="The card the lead pays with at a checkout, from your 1Password. Every purchase asks you first, with the shop, the total and what's in the basket; fleetd fills the card in, and the lead never sees it."
+      help={PAYMENTS_HELP}
     >
       {read.isLoadingError ? (
         <Text size="sm" tone="danger">

@@ -13,7 +13,7 @@ export const STARTERS = [
   "Explain how this project is put together.",
 ] as const;
 
-/** A project with no repo: everyday first asks, not a codebase's, each one it can do with nothing connected yet. */
+/** Your own project with no repo: everyday first asks, not a codebase's, each one it can do with nothing connected yet. */
 export const PLAIN_STARTERS = [
   "Tell me what you can do, and what you’ll ask me before doing.",
   "Remind me every Friday at 5pm to plan next week.",
