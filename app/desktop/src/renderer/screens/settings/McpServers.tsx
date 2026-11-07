@@ -1,5 +1,6 @@
 // MCP servers: HubMcpServers, the ones every project's agents get and whether they also get their own (Settings ›
-// Hub › Every project › Tools & skills, owners and admins only, D209); and McpSection, a project's own servers on its Projects page. Reads
+// Hub › Every project › Tools & skills, owners and admins only, D209); and the editor and remove dialogs a project's
+// own servers use on its Project page (Integrations.tsx), where its one MCP servers list is. Reads
 // mcp_servers_get; saves through main (mcp_server_set, each secret sealed there to each machine's key), removes with
 // mcp_server_remove and tests with mcp_server_test. A secret's value is write-only: typed here once, sealed in main, never shown again.
 import { useState } from "react";
@@ -9,7 +10,7 @@ import type { McpServerRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { draftOf, emptyDraft, globalsFor, missingOn, nameProblem, rolesText, toRequest, transportText, valuesText, type Draft, type DraftValue, type TransportKind } from "./mcpModel";
+import { draftOf, emptyDraft, missingOn, nameProblem, rolesText, toRequest, transportText, valuesText, type Draft, type DraftValue, type TransportKind } from "./mcpModel";
 import { Setting } from "./parts";
 import s from "./settings.module.css";
 import { boxOf } from "./claudeModel";
@@ -102,60 +103,9 @@ function UserServers({ on }: { on: boolean }) {
   );
 }
 
-/** A project's MCP section: its own servers, and the global ones it gets unless it replaces them. */
-export function McpSection({ projectRef }: { projectRef: Ref }) {
-  const live = useLive();
-  const read = useToolQuery("mcp_servers_get", { project: projectRef }, { enabled: live });
-  if (read.isLoadingError) {
-    return (
-      <Setting reveal="projects.mcp" label="MCP servers" help="Tools this project's agents get.">
-        <Text tone="danger">{errorText(read.error)}</Text>
-      </Setting>
-    );
-  }
-  const data = read.data;
-  if (!data) return null;
-  // A project's integrations are kept on its Integrations section, where saving keeps what each is to the tool policy.
-  const all = data.project ?? [];
-  const own = all.filter((x) => x.integration === undefined);
-  const integrations = all.length - own.length;
-  const globals = globalsFor(data.global, all);
-  return (
-    <ServersSetting
-      reveal="projects.mcp"
-      label="MCP servers"
-      help="This project's own, for the roles you pick; one replaces a global server of the same name here."
-      scope={projectRef}
-      servers={own}
-      taken={all.map((x) => x.name)}
-    >
-      {integrations > 0 ? (
-        <Text size="xs" tone="quiet">
-          {integrations === 1 ? "1 more is" : `${String(integrations)} more are`} under Integrations, on its Project page.
-        </Text>
-      ) : null}
-      {globals.length > 0 ? (
-        <div className={s.stack}>
-          <Text size="xs" tone="quiet">
-            For every project, from Hub › Every project › Tools &amp; skills:
-          </Text>
-          {globals.map(({ server, replaced }) => (
-            <Text key={server.name} size="sm" tone="quiet">
-              <Text as="span" mono size="sm">
-                {server.name}
-              </Text>{" "}
-              {replaced ? "· replaced by this project's" : server.enabled ? `· ${rolesText(server.roles)}` : "· off"}
-            </Text>
-          ))}
-        </div>
-      ) : null}
-    </ServersSetting>
-  );
-}
-
 type Editing = { kind: "new" } | { kind: "edit"; server: McpServer } | { kind: "remove"; server: McpServer };
 
-function ServersSetting(props: { reveal: string; label: string; help: string; scope: Ref | null; servers: ReadonlyArray<McpServer>; taken?: ReadonlyArray<string>; children?: React.ReactNode }) {
+function ServersSetting(props: { reveal: string; label: string; help: string; scope: Ref | null; servers: ReadonlyArray<McpServer> }) {
   const [editing, setEditing] = useState<Editing | null>(null);
   const [echo, setEcho] = useState<{ ok: boolean; text: string } | null>(null);
   const machines = useMachineIds();
@@ -177,7 +127,6 @@ function ServersSetting(props: { reveal: string; label: string; help: string; sc
           ))}
         </div>
       )}
-      {props.children}
       <div className={s.inline}>
         <Button onClick={() => setEditing({ kind: "new" })}>Add server</Button>
       </div>
@@ -186,7 +135,7 @@ function ServersSetting(props: { reveal: string; label: string; help: string; sc
         <ServerEditor
           scope={props.scope}
           editing={editing.kind === "edit" ? editing.server : null}
-          taken={props.taken ?? props.servers.map((x) => x.name)}
+          taken={props.servers.map((x) => x.name)}
           onClose={() => setEditing(null)}
           onSaved={(name, missing) =>
             done(`Saved ${name}. ${TAKES_EFFECT}${missing.length > 0 ? ` Its secrets aren't on ${missing.join(", ")} yet: save it again while they're online.` : ""}`)
@@ -303,7 +252,7 @@ const ROLES: ReadonlyArray<{ key: keyof McpRoles; label: string; description: st
   { key: "reviewers", label: "Reviewers", description: "Agents of review and read tasks." },
 ];
 
-function ServerEditor(props: { scope: Ref | null; editing: McpServer | null; taken: ReadonlyArray<string>; onClose: () => void; onSaved: (name: string, missing: string[]) => void }) {
+export function ServerEditor(props: { scope: Ref | null; editing: McpServer | null; taken: ReadonlyArray<string>; onClose: () => void; onSaved: (name: string, missing: string[]) => void }) {
   const { hub } = useDataLayer();
   const [draft, setDraft] = useState<Draft>(() => (props.editing ? draftOf(props.editing) : emptyDraft()));
   const [busy, setBusy] = useState(false);
@@ -427,7 +376,7 @@ function ServerEditor(props: { scope: Ref | null; editing: McpServer | null; tak
   );
 }
 
-function ConfirmRemove(props: { server: McpServer; onClose: () => void; onRemoved: () => void }) {
+export function ConfirmRemove(props: { server: McpServer; onClose: () => void; onRemoved: () => void }) {
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);

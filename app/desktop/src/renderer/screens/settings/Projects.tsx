@@ -1,6 +1,6 @@
 // Settings › Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
 // picture (Picture.tsx), its name, Only me, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx),
-// its worktrees, its agents' environment variables, its Telegram (Telegram.tsx), linked hubs (LinkedHubs.tsx),
+// its agents' environment variables, its Telegram (Telegram.tsx), linked hubs (LinkedHubs.tsx),
 // approvals (Approvals.tsx) and integrations (its MCP servers), its browser's sign-ins and a way to its skills
 // (Signins.tsx), its card and purchases (Payments.tsx), archiving it and deleting it. Its memory refresh is on its
 // Instructions & memory. Reads project_settings_get; writes project_settings_set, project_env_set (through main, which
@@ -8,7 +8,8 @@
 // sealed in main, and only its fingerprint ever comes back.
 import { useEffect, useState } from "react";
 import { Button, Dialog, Field, Input, Radio, RadioGroup, Separator, Switch, Text, Textarea, Truncate } from "../../ui";
-import type { ProjectEnvVar, ProjectSettings as Settings, ToolInput } from "../../../shared/contracts";
+import type { MemoryRefreshJob, ProjectEnvVar, ProjectSettings as Settings, ToolInput } from "../../../shared/contracts";
+import { refreshRuns, refreshSchedule } from "../automations/model";
 import type { ProjectEnvRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
@@ -21,7 +22,7 @@ import { when } from "../status/view";
 import { navigate } from "../shell/navigation";
 import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { IntegrationsSection } from "./Integrations";
+import { McpServersSection } from "./Integrations";
 import { ApprovalsSetting } from "./Approvals";
 import { PaymentsSetting } from "./Payments";
 import { SigninsSetting, SkillsSetting } from "./Signins";
@@ -88,7 +89,7 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
   return (
     <div className={s.scroll} data-screen="settings.projects">
       <div className={s.column}>
-        <PageHead title="Project">Its icon and name, who sees it, its repos and worktrees, its agents&apos; environment, and what its lead reaches and may do.</PageHead>
+        <PageHead title="Project" />
         {ref === undefined ? <NoProject /> : null}
         {read.isLoadingError ? (
           <div className={s.inline}>
@@ -151,8 +152,6 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <Separator />
       <RepoSetting settings={settings} />
       <Separator />
-      <WorktreeSetting settings={settings} />
-      <Separator />
       <EnvSetting env={settings.env} projectRef={ref} />
       <Separator />
       <TelegramSetting projectRef={ref} />
@@ -161,7 +160,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <Separator />
       <ApprovalsSetting projectRef={ref} />
       <Separator />
-      <IntegrationsSection projectRef={ref} />
+      <McpServersSection projectRef={ref} />
       <Separator />
       <SigninsSetting projectRef={ref} />
       <Separator />
@@ -174,7 +173,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <Setting
         reveal="projects.delete"
         label="Delete project"
-        help="Stops it and erases everything fleetd keeps for it: its chat, memory, skills, approvals, purchases, automations, sign-ins and its Telegram link, and its fleetd worktrees."
+        help="Stops it and erases everything fleetd keeps for it, its worktrees too."
       >
         <Text size="sm" tone="quiet">
           {gone
@@ -318,55 +317,53 @@ function ArchiveSetting({ projectRef, title, archivedAt }: { projectRef: Ref; ti
   );
 }
 
-function WorktreeSetting({ settings }: { settings: Settings }) {
-  const w = settings.worktrees;
-  const unsaved = unsavedWorktrees(settings).length;
-  return (
-    <Setting reveal="projects.worktrees" label="Worktrees" help="Every agent works in a git worktree of its own, never in your checkout.">
-      {w ? (
-        <>
-          <Text size="sm" tone="quiet">
-            New ones go in <code>{w.dir}</code>
-            {w.baseBranch ? (
-              <>
-                , each on a fresh fetch of <code>{w.baseBranch}</code>, the repo's default branch
-              </>
-            ) : null}
-            .
-          </Text>
-          <Text size="sm" tone="quiet">
-            {w.worktrees.length === 0
-              ? "None there now."
-              : `${w.worktrees.length} there now${unsaved > 0 ? `, ${unsaved} with uncommitted changes` : ""}.`}
-          </Text>
-        </>
-      ) : (
-        <Text size="sm" tone="quiet">
-          {settings.worktreesUnknown ?? "Its machine hasn't said where they are."}
-        </Text>
-      )}
-    </Setting>
-  );
-}
-
-/** The nightly memory refresh's switch: on the project's Instructions & memory, beside the memory it tidies. */
-export function MemoryRefreshSetting({ settings }: { settings: Settings }) {
+/**
+ * The nightly memory refresh: on the project's Instructions & memory, beside the memory it tidies, with its hour and
+ * runs (automation_list's job, when the hub lists it) and Run now.
+ */
+export function MemoryRefreshSetting({ settings, job }: { settings: Settings; job: MemoryRefreshJob | undefined }) {
   const { busy, echo, save } = useSave();
+  const hubCall = useHubCall();
+  const refetch = useRefetch();
+  const [ran, setRan] = useState<Echo | null>(null);
+  const on = settings.memoryRefresh ?? true;
+  const running = job?.lastRun?.state === "running";
+  const run = () => {
+    setRan(null);
+    hubCall("memory_refresh_run", { projectRef: { machineId: settings.machineId, projectId: settings.projectId } }).then(
+      (out) => {
+        setRan({ ok: true, text: out.why ? `Not run: ${out.why}` : "Refreshing: a line in the chat lists what it changed." });
+        refetch(["automation_list"]);
+      },
+      (e: unknown) => setRan({ ok: false, text: errorText(e) }),
+    );
+  };
   return (
     <Setting reveal="projects.memory" label="Refresh every night" help="The lead tidies this project's memory overnight.">
       <Switch
         label="Refresh memory every night"
-        description="Around 4:00, on a day with chat or orders, the lead tidies the project's memory: it adds what it missed, merges overlaps and removes what no longer holds. One line in the chat lists the changes, each with Undo."
-        checked={settings.memoryRefresh ?? true}
+        description="On a day with chat or orders, the lead adds what it missed, merges overlaps and removes what no longer holds. One line in the chat lists the changes, each with Undo."
+        checked={on}
         disabled={busy}
-        onCheckedChange={(on) =>
+        onCheckedChange={(next) =>
           save(
-            { machineId: settings.machineId, projectId: settings.projectId, memoryRefresh: on },
-            on ? "Memory is refreshed every night." : "The nightly memory refresh is off.",
+            { machineId: settings.machineId, projectId: settings.projectId, memoryRefresh: next },
+            next ? "Memory is refreshed every night." : "The nightly memory refresh is off.",
           )
         }
       />
+      {job ? (
+        <Text size="xs" tone="quiet">
+          {`${refreshSchedule(job)} · ${refreshRuns(job)}`}
+        </Text>
+      ) : null}
+      <div className={s.inline}>
+        <Button size="sm" disabled={!on || running} onClick={run}>
+          {running ? "Refreshing…" : "Run now"}
+        </Button>
+      </div>
       <EchoLine echo={echo} />
+      <EchoLine echo={ran} />
     </Setting>
   );
 }
@@ -385,7 +382,7 @@ function EnvSetting({ env, projectRef }: { env: ReadonlyArray<ProjectEnvVar>; pr
     <Setting
       reveal="projects.env"
       label="Environment variables"
-      help="Given to every agent the project starts from now on. A secret's value is never shown again, only its fingerprint."
+      help="Given to every agent the project starts. Secrets are never shown again."
     >
       {env.length === 0 ? (
         <Text size="sm" tone="quiet">
@@ -496,7 +493,7 @@ function EnvEditor(props: {
       open
       onOpenChange={(open) => !open && !busy && props.onClose()}
       title={was ? `Edit ${was.name}` : "Add a variable"}
-      description={kind === "secret" ? "Sealed on this computer to the project's machine. fleetd shows only its fingerprint from now on." : "Shown here and kept by the hub."}
+      description={kind === "secret" ? "Kept encrypted on the hub's machines. Never shown again." : "Shown here and kept by the hub."}
       footer={
         <>
           <Button onClick={props.onClose} disabled={busy}>

@@ -30,6 +30,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 /** A hub that keeps automations and their runs in memory, as automation_* answer them. */
@@ -166,6 +167,8 @@ const editor = () => host.querySelector("section[aria-label='New automation'], s
 const card = (name: string) => host.querySelector<HTMLElement>(`section[aria-label='${name}']`);
 
 it("makes, edits, pauses, runs and deletes an automation and shows its runs with their orders", async () => {
+  // Its zone is this computer's, named in the preview.
+  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({ ...new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Berlin" }).resolvedOptions() });
   const hub = await mount();
   expect(host.querySelector("[data-screen]")?.getAttribute("data-screen")).toBe("settings.automations");
   expect(host.textContent).toContain("storefront has no automations yet.");
@@ -173,11 +176,10 @@ it("makes, edits, pauses, runs and deletes an automation and shows its runs with
   // Create: the editor previews the schedule in words, and the new webhook's URL is shown once.
   await click(button("New automation", host));
   const form = editor();
-  const [name, cron, tz] = [...form.querySelectorAll("input")] as HTMLInputElement[];
+  const [name, cron] = [...form.querySelectorAll("input")] as HTMLInputElement[];
   fill(name as HTMLInputElement, "Dependency check");
   fill(form.querySelector("textarea") as HTMLTextAreaElement, "Check the dependencies for updates.");
   fill(cron as HTMLInputElement, "0 9 * * 1-5");
-  fill(tz as HTMLInputElement, "Europe/Berlin");
   expect(form.textContent).toContain("At 09:00, Monday to Friday (Europe/Berlin)");
   act(() => (form.querySelectorAll("button[role='switch']")[1] as HTMLElement).click());
   await click(button("Create", form));
@@ -197,7 +199,7 @@ it("makes, edits, pauses, runs and deletes an automation and shows its runs with
 
   // Run now: the run opens an order, and Runs lists it linked to the order's page.
   await click(button("Run now", c));
-  expect(c.textContent).toContain("Running: it opened W7 for the lead.");
+  expect(c.textContent).toContain("Running. Follow it in the chat.");
   const after = card("Dependency check") as HTMLElement;
   await click(button("Runs", after));
   const link = after.querySelector("ul[aria-label='Runs'] a") as HTMLAnchorElement;
@@ -237,37 +239,11 @@ it("says what is wrong before it saves", async () => {
   expect(hub.calls.some((c) => c.tool === "automation_create")).toBe(false);
 });
 
-it("lists the nightly memory refresh as a built-in row with its hour, last run, switch and Run now", async () => {
-  const hub = await mount((h) => {
-    h.refresh.job = { ...h.refresh.job, lastRun: { at: "2026-10-17T02:00:00.000Z", trigger: "schedule", state: "done", added: 2, replaced: 1, removed: 1 } };
-    h.refresh.why = "Nothing new in the chat or its orders since the last refresh.";
-  });
-  const row = card("Nightly memory refresh") as HTMLElement;
-  expect(row.getAttribute("data-builtin")).toBe("memory-refresh");
-  expect(row.textContent).toContain("Built-in");
-  expect(row.textContent).toContain("Every night at 04:00 (Europe/Berlin)");
-  expect(row.textContent).toContain("Next run");
-  expect(row.textContent).toContain(": done, 2 added, 1 updated, 1 removed");
-  // A hub job: no prompt to edit, no webhook, no delete.
-  for (const label of ["Edit", "Delete", "Rotate webhook URL", "Pause"]) expect(() => button(label, row)).toThrow();
-
-  // Run now, held by the refresh's rules: the hub says why it didn't start.
-  await click(button("Run now", row));
-  expect(hub.calls.find((c) => c.tool === "memory_refresh_run")?.input).toEqual({ projectRef: project });
-  expect(row.textContent).toContain("Not run: Nothing new in the chat or its orders since the last refresh.");
-  delete hub.refresh.why;
-  await click(button("Run now", card("Nightly memory refresh") as HTMLElement));
-  const started = card("Nightly memory refresh") as HTMLElement;
-  expect(started.textContent).toContain("Refreshing: a line in the chat lists what it changed.");
-  expect(started.textContent).toContain("Running");
-  expect(started.textContent).toContain("(Run now): running, no changes");
-  expect(button("Run now", started).disabled).toBe(true);
-
-  // The switch is the project's own setting.
-  act(() => (started.querySelector("button[role='switch']") as HTMLElement).click());
-  await flush();
-  expect(hub.calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ ...project, memoryRefresh: false });
-  const off = card("Nightly memory refresh") as HTMLElement;
-  expect(off.textContent).toContain("Off");
-  expect(off.textContent).not.toContain("Next run");
+it("leaves the nightly memory refresh to Instructions & memory, and the time zone to this computer", async () => {
+  await mount();
+  expect(card("Nightly memory refresh")).toBeNull();
+  expect(host.querySelector("[data-builtin]")).toBeNull();
+  await click(button("New automation", host));
+  expect(editor().textContent).not.toContain("Time zone");
+  expect(editor().querySelector("[aria-label='Schedule preview']")?.textContent).toMatch(/\(.+\)$/u);
 });

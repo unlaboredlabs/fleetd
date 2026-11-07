@@ -27,7 +27,6 @@ import {
 import { errorText, useHubCall, useLive } from "./hub";
 import { useFocusProjectSlider } from "./focusProject";
 import { parseScope, projectRefOf } from "./editor";
-import { McpSection } from "./McpServers";
 import { AllowedProfiles } from "./Profiles";
 import { NoProject, PageHead, scopeName, Setting, useProjects } from "./parts";
 import { replaceRoute, type SettingsRoute } from "./route";
@@ -363,11 +362,10 @@ export function HubCaps() {
 }
 
 /**
- * Settings → Projects › Agents: one project's max agents, the task profiles it allows, its own MCP servers and its skills.
+ * Settings → Projects › Agents: one project's max agents, the task profiles it allows and its skills (its MCP servers are on its Project page).
  */
 export function AgentsSettings({ route }: { route: SettingsRoute }) {
   const slots = useSlots();
-  const projects = useProjects();
   const live = useLive();
   const scope = route.for ? parseScope(route.for) : null;
   const ref = scope ? projectRefOf(scope) : undefined;
@@ -376,11 +374,10 @@ export function AgentsSettings({ route }: { route: SettingsRoute }) {
   useEffect(() => {
     replaceRoute({ tab: "agents", for: route.for });
   }, [route.for]);
-  const name = scope ? scopeName(scope, projects) : "a project";
   return (
     <div className={s.scroll} data-screen="settings.agents">
       <div className={s.column}>
-        <PageHead title="Agents">{`How many of ${name}'s agents run at once, what they run on, and the tools and skills they get.`}</PageHead>
+        <PageHead title="Agents" />
         {!live ? (
           <Text tone="quiet">Connect to a hub to see and change this.</Text>
         ) : ref === undefined || scope === null ? (
@@ -398,8 +395,6 @@ export function AgentsSettings({ route }: { route: SettingsRoute }) {
             >
               <AllowedProfiles projectRef={ref} />
             </Setting>
-            <Separator />
-            <McpSection projectRef={ref} />
             <Separator />
             <ProjectSkills scope={scope} />
           </>

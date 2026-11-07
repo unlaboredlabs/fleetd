@@ -148,6 +148,8 @@ const render = async (page: "project" | "instructions" = "project") => {
       }
       const now = (tool === "project_settings_get" && answers.length > 1 ? answers.shift() : answers[0]) ?? settings;
       if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
+      if (tool === "automation_list") return Promise.resolve({ ok: true, output: { automations: [], memoryRefresh: { on: true, at: "04:00", tz: "Europe/Berlin", lastRun: { at: AT, trigger: "schedule", state: "done", added: 2, replaced: 0, removed: 1 } } } });
+      if (tool === "memory_refresh_run") return Promise.resolve({ ok: true, output: { memoryRefresh: { on: true, at: "04:00", tz: "Europe/Berlin" }, why: "Nothing new since the last refresh." } });
       if (tool === PROJECT_TOOLS.approvals && approvalsFail > 0) {
         approvalsFail -= 1;
         return Promise.resolve({ ok: false, error: { code: "not_found", message: `${PROJECT_TOOLS.approvals}: no approvals row for project p1 on devbox` } });
@@ -250,13 +252,13 @@ const dialog = () => {
 };
 
 describe("Settings → Projects", () => {
-  it("shows a secret by its fingerprint only, and where worktrees go", async () => {
+  it("shows a secret by its fingerprint only, and no read-only Worktrees row", async () => {
     await render();
     const text = document.body.textContent;
     expect(text).toContain("https://staging.example");
     expect(text).toContain("secret · 5ec2e7a1");
-    expect(text).toContain("/home/w/.fleetd/node/worktrees/p1");
-    expect(text).toContain("2 there now, 1 with uncommitted changes");
+    expect(text).not.toContain("2 there now");
+    expect(document.querySelector('[aria-label="Worktrees"]')).toBeNull();
   });
 
   it("sends a new secret only through main's sealing, never as a hub call", async () => {
@@ -314,6 +316,12 @@ describe("Settings → Projects", () => {
     const toggle = [...document.querySelectorAll<HTMLElement>('[role="switch"]')].find((x) => x.closest("label, div")?.textContent.includes("Refresh memory every night"));
     if (toggle === undefined) throw new Error("no memory switch");
     expect(toggle.getAttribute("aria-checked")).toBe("true");
+    // Its hour and last run, and Run now, are here too: Automations no longer lists it.
+    expect(document.body.textContent).toContain("Every night at 04:00 (Europe/Berlin)");
+    expect(document.body.textContent).toContain("done, 2 added, 1 removed");
+    await click(button("Run now"));
+    expect(calls.find((c) => c.tool === "memory_refresh_run")?.input).toEqual({ projectRef: { machineId: "devbox", projectId: "p1" } });
+    expect(document.body.textContent).toContain("Not run: Nothing new since the last refresh.");
     await click(toggle);
     await settle();
     expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", memoryRefresh: false });
