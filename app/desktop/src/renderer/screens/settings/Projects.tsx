@@ -174,7 +174,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <Setting
         reveal="projects.delete"
         label="Delete project"
-        help="Stops it and erases everything fleetd keeps for it: its chat, memory, skills, approvals, purchases, automations and sign-ins, and its fleetd worktrees."
+        help="Stops it and erases everything fleetd keeps for it: its chat, memory, skills, approvals, purchases, automations, sign-ins and its Telegram link, and its fleetd worktrees."
       >
         <Text size="sm" tone="quiet">
           {gone

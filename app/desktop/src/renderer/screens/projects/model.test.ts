@@ -66,7 +66,7 @@ describe("where a new project lives", () => {
 describe("a project's delete", () => {
   it("names what is erased and the folder the tickbox deletes", () => {
     const w = deleteWords("Ada", "devbox", "~/fleetd/ada");
-    expect(w.message).toMatch(/^Ada stops now.*chat, memory, skills, approvals, purchases, automations and sign-ins/u);
+    expect(w.message).toMatch(/^Ada stops now.*chat, memory, skills, approvals, purchases, automations, sign-ins and its Telegram link\. The files in its folder stay unless you tick below\./u);
     expect(w.folder).toBe("Also delete its folder, ~/fleetd/ada");
   });
 });

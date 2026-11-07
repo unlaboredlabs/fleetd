@@ -396,7 +396,7 @@ describe("Settings → Projects", () => {
     await click(button("Delete project…"));
     const text = dialog().textContent;
     expect(text).toContain("Delete Adri?");
-    expect(text).toContain("Adri stops now, and everything fleetd keeps for it is erased from fleetd and devbox: its chat, memory, skills, approvals, purchases, automations and sign-ins");
+    expect(text).toContain("Adri stops now, and everything fleetd keeps for it is erased from fleetd and devbox: its chat, memory, skills, approvals, purchases, automations, sign-ins and its Telegram link");
     expect(text).toContain("Also delete its folder, ~/.fleetd/node/projects/adri");
     const field = dialog().querySelector("input");
     if (field === null) throw new Error("no confirm field");
