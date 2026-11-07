@@ -95,8 +95,20 @@ Most of this is also enforced by the hub, which refuses a call that breaks it an
 Writers are told to run the repo's quick pre-push checks after their final rebase. When the repo names its check in
 [`.fleetd/pre-push.json`](/docs/config-and-files#pre-push), fleetd enforces it: a writer's push of a tree the check
 hasn't passed on is refused with what to do, and `git push --no-verify` is denied to task agents. A check too long for
-one command is started in the background and waited on with Claude's Monitor tool, never a sleep loop. Your own pushes
-aren't gated.
+one command is started in the background and waited on with Claude's Monitor tool ([below](#waiting)), never a sleep
+loop. Your own pushes aren't gated.
+
+### Agents wait without polling {#waiting}
+
+An agent never sleeps or polls. To wait on CI, it calls `wait_ci` and ends its turn, and the hub wakes it when the run
+ends. To wait on a job of its own that's too long for one command (a `mac run --bg` build, `scripts/check.sh
+--background`), it arms Claude's Monitor tool and ends its turn. The Monitor's filter prints only the job's end: success
+and every failure. Each line the Monitor prints starts a new turn for the agent. The task shows as working again, and
+its lead gets the result when that turn ends, as after a message.
+
+A Monitor stops at its timeout (30 minutes at most) and sends one last notice. Until then, the node keeps the idle
+agent's claude running instead of closing it after 10 idle minutes, so the notice still has an agent to wake. A review
+ends with its turn, so a reviewer waits for its builds and tests to finish before it reports.
 
 ### Claude's auto memory is off {#auto-memory}
 

@@ -5223,3 +5223,131 @@ async fn a_span_outbox_that_cannot_be_read_backs_off_and_warns_once() {
     assert!(due <= Instant::now() + RETRY_FIRST);
     assert_eq!(logs.count("cannot read the span outbox"), 2);
 }
+
+/// T1918 ended its turn "waiting on the build monitor". The Monitor fired a minute later and its claude ran a turn of
+/// its own for the notice, but fleetd saw no run in it: the task read as done, and its lead heard nothing for half an
+/// hour. claude's own turn is a run of the session's, so the hub reads the session as working again, then gets its end
+/// and its reply, as when a message continues it.
+#[tokio::test]
+async fn a_turn_claude_runs_for_a_monitors_notice_is_a_run_of_its_own() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.settled("r1").await;
+
+    hub.runner.notice();
+    let said = "The build passed; pushing now.";
+    let working = hub
+        .summary(|s| s.latest_assistant_tail.as_deref() == Some(said))
+        .await;
+    let woken = working
+        .active_run_id
+        .clone()
+        .expect("the notice's turn runs as a run of the session's");
+    assert_ne!(woken.as_str(), "r1");
+    assert_eq!(working.status, SessionStatus::Running);
+    let done = hub.settled(woken.as_str()).await;
+    let run = done.latest_run.unwrap();
+    assert_eq!(run.status, RunStatus::Completed);
+    assert_eq!(run.ordinal, 2);
+    hub.ok(SessionCall::Follow {
+        session_id: ThreadId::unchecked("s1"),
+    })
+    .await;
+    let snapshot = hub
+        .until(|f| match f {
+            NodeToHub::ThreadEvent(t) => match t.event {
+                ThreadEvent::Snapshot(s) => Some(s),
+                _ => None,
+            },
+            _ => None,
+        })
+        .await;
+    assert!(
+        snapshot
+            .messages
+            .iter()
+            .any(|m| m.text == said && m.run_id.as_ref() == Some(&woken)),
+        "{:?}",
+        snapshot.messages
+    );
+
+    // The lead's next message is a run of its own after it, in the same claude.
+    hub.ok(send("s1", "r2")).await;
+    let next = hub.settled("r2").await;
+    assert_eq!(next.latest_run.unwrap().ordinal, 3);
+    assert_eq!(hub.runner.spawned().len(), 1);
+}
+
+/// A turn that arms a Monitor and ends, as T1918's did: a recorded-shape transcript, one turn.
+fn monitor_turn(timeout_ms: u64) -> String {
+    let lines = [
+        serde_json::json!({"dir": "in", "ms": 0, "msg": {"type": "user", "uuid": "u1",
+            "message": {"role": "user", "content": "Build it on the devbox."}}}),
+        serde_json::json!({"dir": "out", "ms": 1, "msg": {"type": "command_lifecycle", "command_uuid": "u1",
+            "state": "started"}}),
+        serde_json::json!({"dir": "out", "ms": 2, "msg": {"type": "assistant", "parent_tool_use_id": null,
+            "message": {"id": "msg_1", "role": "assistant", "content": [{"type": "tool_use", "id": "toolu_mon",
+                "name": "Monitor", "input": {"command": "scripts/check.sh --wait", "description": "build on the devbox",
+                    "timeout_ms": timeout_ms}}]}}}),
+        serde_json::json!({"dir": "out", "ms": 3, "msg": {"type": "user", "parent_tool_use_id": null,
+            "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_mon",
+                "content": "Monitor started (task bmon1).", "is_error": false}]}}}),
+        serde_json::json!({"dir": "out", "ms": 4, "msg": {"type": "assistant", "parent_tool_use_id": null,
+            "message": {"id": "msg_2", "role": "assistant",
+                "content": [{"type": "text", "text": "Waiting on the build monitor."}]}}}),
+        serde_json::json!({"dir": "out", "ms": 5, "msg": {"type": "result", "subtype": "success", "is_error": false,
+            "result": "Waiting on the build monitor.", "user_message_uuid": "u1"}}),
+        serde_json::json!({"dir": "out", "ms": 6, "msg": {"type": "command_lifecycle", "command_uuid": "u1",
+            "state": "completed"}}),
+    ];
+    lines.iter().map(|l| format!("{l}\n")).collect()
+}
+
+/// The reaper closed T1918's idle claude, and with it the Monitor its turn was waiting on: a Monitor's events, and the
+/// notice at its deadline, only wake a claude that is still there. An idle session holding a Monitor keeps its claude
+/// until the Monitor's own deadline (claude kills it by then), and is reaped as before after it.
+#[tokio::test]
+async fn an_idle_session_waiting_on_a_monitor_is_not_reaped_before_its_deadline() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = hub_with(
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::from_lines(&monitor_turn(3_600_000)),
+        SessionConfig {
+            idle_reap: Duration::ZERO,
+            ..config(dir.path())
+        },
+    )
+    .await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.settled("r1").await;
+    let reaped = |hub: &Hub| hub.service.st().live.get("s1").is_none_or(|l| l.closing);
+
+    tokio::time::pause();
+    hub.service.reap().await;
+    assert!(!reaped(&hub), "reaped with its Monitor armed");
+    // Past claude's longest Monitor (30 minutes, whatever the call asked), its notice's turn has had its minute.
+    tokio::time::advance(Duration::from_secs(30 * 60)).await;
+    hub.service.reap().await;
+    assert!(!reaped(&hub), "reaped before the notice's turn could start");
+    tokio::time::advance(Duration::from_secs(2 * 60)).await;
+    hub.service.reap().await;
+    assert!(reaped(&hub), "not reaped after its Monitor's deadline");
+}

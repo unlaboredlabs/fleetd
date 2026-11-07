@@ -165,7 +165,8 @@ pub enum RunnerEvent {
         /// list held, `None` when the init lists no tools, so none could be checked.
         agent_tools: Option<Vec<String>>,
     },
-    /// `command_lifecycle` started.
+    /// `command_lifecycle` started, or a turn claude started by itself for a background task's notice: its id is the
+    /// mapper's own, and the session records the run as it starts.
     RunStarted {
         run_id: String,
     },

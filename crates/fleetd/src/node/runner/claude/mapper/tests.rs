@@ -837,6 +837,10 @@ fn several_text_blocks_of_one_message_keep_distinct_ids_shared_with_their_deltas
 #[test]
 fn summarized_thinking_becomes_a_finished_item_and_never_the_reply() {
     let mut mapper = StreamMapper::new("s", recorder());
+    mapper.feed(
+        line(json!({"type":"command_lifecycle","command_uuid":"r1","state":"started"})),
+        &now(),
+    );
     let assistant = json!({"type":"assistant","parent_tool_use_id":null,"message":{"id":"m1","content":[
         {"type":"thinking","thinking":"Weighing a rebase against a merge.\nA rebase keeps the history linear."},
         {"type":"thinking","thinking":""},
@@ -867,12 +871,6 @@ fn streamed_usage_adds_up_over_the_run_s_messages() {
     let mut mapper = StreamMapper::new("s", recorder());
     let stream =
         |event: Value| line(json!({"type":"stream_event","event":event,"parent_tool_use_id":null}));
-    // Usage before any run started is not reported.
-    let early = mapper.feed(
-        stream(json!({"type":"message_start","message":{"id":"m0","usage":{"input_tokens":1}}})),
-        &now(),
-    );
-    assert!(early.events.is_empty());
     mapper.feed(
         line(json!({"type":"command_lifecycle","command_uuid":"r1","state":"started"})),
         &now(),
@@ -1372,6 +1370,75 @@ fn a_notice_turn_on_resume_ends_no_run_of_fleetds() {
                 "ended chat: {:?}",
                 RunOutcome::Completed {
                     text: "W8 is closed.".into()
+                }
+            ),
+        ]
+    );
+    assert!(!mapper.has_open_run());
+}
+
+/// A Monitor fired after the agent's turn ended: claude runs a turn of its own for the notice, with no run of fleetd's
+/// open. It runs as a run of the mapper's, which its `result` ends, and a message sent meanwhile waits for it and runs
+/// as its own run after.
+#[test]
+fn a_turn_claude_starts_for_a_notice_while_idle_is_a_run_of_its_own() {
+    let classify: Classify = Arc::new(|_: &FailureEvidence| None);
+    let mut mapper = StreamMapper::new("s", classify);
+    let mut runs = Vec::new();
+    let mut feed = |mapper: &mut StreamMapper, line: Value| {
+        let events = mapper
+            .feed(serde_json::from_value(line).unwrap(), &now())
+            .events;
+        runs.extend(events.into_iter().filter_map(|e| match e {
+            RunnerEvent::RunStarted { run_id } => Some(format!("started {run_id}")),
+            RunnerEvent::RunEnded {
+                run_id, outcome, ..
+            } => Some(format!("ended {run_id}: {outcome:?}")),
+            RunnerEvent::AssistantText { text, .. } => Some(format!("said {text}")),
+            _ => None,
+        }));
+    };
+    feed(
+        &mut mapper,
+        json!({"type": "system", "subtype": "task_notification", "task_id": "b1", "status": "completed",
+            "summary": "Monitor \"build\" stream ended"}),
+    );
+    assert!(!mapper.has_open_run(), "a notice alone starts nothing");
+    feed(
+        &mut mapper,
+        json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "m1", "role": "assistant",
+            "content": [{"type": "text", "text": "The build passed."}]}}),
+    );
+    assert!(mapper.has_open_run());
+    mapper.send("lead", "Push it.", SendMode::Plain);
+    for line in [
+        json!({"type": "command_lifecycle", "command_uuid": "lead", "state": "queued"}),
+        json!({"type": "result", "subtype": "success", "is_error": false, "result": "The build passed.",
+            "num_turns": 1, "origin": {"kind": "task-notification"}}),
+        json!({"type": "command_lifecycle", "command_uuid": "lead", "state": "started"}),
+        json!({"type": "result", "subtype": "success", "is_error": false, "result": "Pushed.",
+            "user_message_uuid": "lead"}),
+    ] {
+        feed(&mut mapper, line);
+    }
+    let woke = runs[0].strip_prefix("started ").unwrap().to_owned();
+    assert!(woke.starts_with("s-woke-"), "{woke}");
+    assert_eq!(
+        runs,
+        [
+            format!("started {woke}"),
+            "said The build passed.".to_owned(),
+            format!(
+                "ended {woke}: {:?}",
+                RunOutcome::Completed {
+                    text: "The build passed.".into()
+                }
+            ),
+            "started lead".to_owned(),
+            format!(
+                "ended lead: {:?}",
+                RunOutcome::Completed {
+                    text: "Pushed.".into()
                 }
             ),
         ]
