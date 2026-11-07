@@ -494,22 +494,54 @@ impl Refusal {
     }
 }
 
+/// What a machine's node said of Claude accounts in its hello.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NodeAccounts {
+    /// It lists them.
+    Runs,
+    /// It is linked, and its hello doesn't list them.
+    TooOld,
+    /// It isn't linked: it has said nothing yet (offline, or restarting after an update).
+    Offline,
+}
+
+/// What `machine`'s live node said of Claude accounts: too old only from a hello that leaves them out.
+pub fn node_accounts(link: &crate::hub::link::NodeLinkServer, machine: &MachineId) -> NodeAccounts {
+    let cap = fleetd_contracts::node_link::CAP_CLAUDE_ACCOUNTS;
+    if link.node_can(machine, cap) {
+        NodeAccounts::Runs
+    } else if link.node_lacks(machine, cap) {
+        NodeAccounts::TooOld
+    } else {
+        NodeAccounts::Offline
+    }
+}
+
 /// What `whose` work launched on `machine` runs on: `None` for the machine's own login. Refused when nothing it may
-/// use is on the machine, or when the node is too old to run an account (it would run the work on its own login).
+/// use is on the machine, or when the node is too old to run an account (it would run the work on its own login) or
+/// offline.
 pub fn launch_account(
     setup: &Setup,
     whose: &Whose,
     machine: &MachineId,
-    node_can: impl FnOnce() -> bool,
+    node: impl FnOnce() -> NodeAccounts,
 ) -> Result<Option<ClaudeAccount>, Refusal> {
     match setup.runs_on(whose, Some(machine)) {
         ClaudeRunsOn::MachineLogin => Ok(None),
         ClaudeRunsOn::Refused { message, fix } => Err(Refusal { message, fix }),
-        ClaudeRunsOn::Account { .. } if !node_can() => Err(Refusal {
-            message: format!("{machine}'s node is too old to run work on a Claude account."),
-            fix: format!("Run fleetd update on {machine}."),
-        }),
-        ClaudeRunsOn::Account { account } => Ok(Some(account)),
+        ClaudeRunsOn::Account { account } => match node() {
+            NodeAccounts::Runs => Ok(Some(account)),
+            NodeAccounts::TooOld => Err(Refusal {
+                message: format!("{machine}'s node is too old to run work on a Claude account."),
+                fix: format!("Run fleetd update on {machine}."),
+            }),
+            NodeAccounts::Offline => Err(Refusal {
+                message: format!("{machine}'s node is offline, so no work starts there."),
+                fix: format!(
+                    "It starts once {machine}'s node links again: check that fleetd's node runs there."
+                ),
+            }),
+        },
     }
 }
 
@@ -523,7 +555,7 @@ pub fn for_task(
 ) -> Result<Option<ClaudeAccount>, Refusal> {
     let setup = db.claude_accounts().setup().map_err(Refusal::unread)?;
     let whose = whose_for_task(db, &setup, r, order).map_err(Refusal::unread)?;
-    launch_account(&setup, &whose, machine, || node_can(link, machine))
+    launch_account(&setup, &whose, machine, || node_accounts(link, machine))
 }
 
 /// [`launch_account`] for the lead of project `r` on its machine.
@@ -535,7 +567,7 @@ pub fn for_lead(
     let setup = db.claude_accounts().setup().map_err(Refusal::unread)?;
     let whose = whose_for_lead(db, &setup, r).map_err(Refusal::unread)?;
     launch_account(&setup, &whose, &r.machine_id, || {
-        node_can(link, &r.machine_id)
+        node_accounts(link, &r.machine_id)
     })
 }
 
@@ -554,10 +586,6 @@ pub fn order_refusal(db: &HubDb, r: &ProjectRef, order: &WorkstreamId) -> Option
         ClaudeRunsOn::Refused { message, fix } => Some(Refusal { message, fix }),
         _ => None,
     }
-}
-
-fn node_can(link: &crate::hub::link::NodeLinkServer, machine: &MachineId) -> bool {
-    link.node_can(machine, fleetd_contracts::node_link::CAP_CLAUDE_ACCOUNTS)
 }
 
 /// The key of the account a task of `order` would run on, on `machine`: whose usage pause holds it. None for the

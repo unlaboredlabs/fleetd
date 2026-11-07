@@ -36,7 +36,7 @@ use std::sync::LazyLock;
 
 use super::review::{self, Answer, Read, Review, Standing};
 use crate::hub::api::Hub;
-use crate::hub::claude_accounts::{Whose, launch_account};
+use crate::hub::claude_accounts::{Whose, launch_account, node_accounts};
 use crate::hub::executor::turn::Turn;
 use crate::hub::executor::{LaunchInput, LaunchOptions};
 use crate::hub::store::{StoreError, iso_ms, now_ms};
@@ -543,10 +543,7 @@ fn launch(
         .map_err(|e| format!("it couldn't start: {e}"))?;
     let whose = owner.cloned().map_or(Whose::Hub, Whose::Person);
     let claude_account = launch_account(&setup, &whose, &r.machine_id, || {
-        hub.link.node_can(
-            &r.machine_id,
-            fleetd_contracts::node_link::CAP_CLAUDE_ACCOUNTS,
-        )
+        node_accounts(&hub.link, &r.machine_id)
     })
     .map_err(|refused| format!("it couldn't start: {}", refused.message))?;
     let input = LaunchInput {
