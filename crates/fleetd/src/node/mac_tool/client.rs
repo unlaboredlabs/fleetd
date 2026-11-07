@@ -17,13 +17,19 @@ use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::{ItemKind, ItemStatus, ThreadItem};
 
 use super::{
-    Answer, Done, Envelope, PIECE, PULL_MAX, PUSH_MAX, Step, now_ms, open_answer, seal_to,
+    Answer, Done, Envelope, PIECE, PULL_MAX, PUSH_MAX, Step, now_ms, open_answer, seal_step,
 };
 use crate::node::desktop::WorktreeFor;
 use crate::node::lead::{LeadRelay, MaskFor};
 
 /// How long the node waits for one sealed step: past the hub's own wait (hub/mac_tool.rs `SEND_WAIT`).
 pub const SEND_WAIT: Duration = Duration::from_secs(180);
+
+/// How long a push or pull keeps sending a step again while the hub or the Mac is out of reach (a dropped link): past
+/// it, the call fails as before. The waits between tries double from [`RESEND_FIRST`] up to [`RESEND_MOST`].
+pub const RESEND_FOR: Duration = Duration::from_secs(300);
+pub const RESEND_FIRST: Duration = Duration::from_secs(1);
+pub const RESEND_MOST: Duration = Duration::from_secs(15);
 
 /// Puts an item in the agent session's action log, under its run now.
 pub type ActionLog = Arc<dyn Fn(&str, ThreadItem) + Send + Sync>;
@@ -143,6 +149,43 @@ impl Client {
         mac: &Mac,
         step: Step,
     ) -> Result<Done, McpToolError> {
+        self.send_with(thread, cwd, mac, step, &[])
+            .await
+            .map(|(done, _)| done)
+    }
+
+    /// [`Self::send`] with `raw` after the step, sent again while the hub or the Mac can't be reached (for
+    /// [`RESEND_FOR`]): only for steps that do the same twice (`have`, `put`, `checkout`, `get`). The answer comes
+    /// with the raw bytes after it.
+    async fn send_again(
+        &self,
+        thread: &str,
+        cwd: &Path,
+        mac: &Mac,
+        step: Step,
+        raw: &[u8],
+    ) -> Result<(Done, Vec<u8>), McpToolError> {
+        let started = tokio::time::Instant::now();
+        let mut wait = RESEND_FIRST;
+        loop {
+            match self.send_with(thread, cwd, mac, step.clone(), raw).await {
+                Err(e) if e.code == ErrorCode::MachineOffline && started.elapsed() < RESEND_FOR => {
+                    tokio::time::sleep(wait).await;
+                    wait = (wait * 2).min(RESEND_MOST);
+                }
+                done => return done,
+            }
+        }
+    }
+
+    async fn send_with(
+        &self,
+        thread: &str,
+        cwd: &Path,
+        mac: &Mac,
+        step: Step,
+        raw: &[u8],
+    ) -> Result<(Done, Vec<u8>), McpToolError> {
         let answer_key = zeroize::Zeroizing::new(rand::random::<[u8; 32]>());
         let envelope = Envelope {
             thread: thread.to_owned(),
@@ -151,9 +194,8 @@ impl Client {
             answer_key: B64.encode(answer_key.as_slice()),
             step,
         };
-        let plain =
-            zeroize::Zeroizing::new(serde_json::to_vec(&envelope).expect("a step serializes"));
-        let sealed = seal_to(&mac.key, &plain).ok_or_else(|| failed("the step didn't seal"))?;
+        let sealed =
+            seal_step(&mac.key, &envelope, raw).ok_or_else(|| failed("the step didn't seal"))?;
         let call = LeadCall::MacSend(MacSendCall {
             machine_id: mac.machine_id.clone(),
             thread_id: ThreadId::unchecked(thread),
@@ -168,12 +210,18 @@ impl Client {
             }
         };
         match open_answer(&answer_key, sealed.as_str()) {
-            Some(Answer {
-                done: Some(done), ..
-            }) => Ok(done),
-            Some(Answer {
-                error: Some(error), ..
-            }) => Err(error),
+            Some((
+                Answer {
+                    done: Some(done), ..
+                },
+                raw,
+            )) => Ok((done, raw)),
+            Some((
+                Answer {
+                    error: Some(error), ..
+                },
+                _,
+            )) => Err(error),
             _ => Err(failed("the Mac's answer did not open").with_fix("run the command again")),
         }
     }
@@ -272,8 +320,11 @@ impl Client {
         let scratch = self.home.join("tmp").join(format!("mac-{}", short(thread)));
         std::fs::create_dir_all(&scratch)
             .map_err(|e| failed(format!("the node's scratch folder wasn't made: {e}")))?;
-        let haves = match self.send(thread, worktree, mac, Step::Have).await? {
-            Done::Have { snapshots } => snapshots,
+        let (haves, raw) = match self
+            .send_again(thread, worktree, mac, Step::Have, &[])
+            .await?
+        {
+            (Done::Have { snapshots, raw }, _) => (snapshots, raw),
             _ => return Err(failed("the Mac answered have with another step's")),
         };
         let (dir, tmp) = (worktree.to_path_buf(), scratch.clone());
@@ -294,16 +345,22 @@ impl Client {
                     .await
                     .map_err(|e| failed(e.to_string()))?
                     .map_err(|e| failed(format!("the push's pack wasn't made: {e}")))?;
-            let sending = self.put(thread, worktree, mac, &path).await;
+            let sending = self.put(thread, worktree, mac, &path, raw).await;
             let _ = std::fs::remove_file(&path);
             sent = sending?;
             Some("push.pack".to_owned())
         };
         match self
-            .send(thread, worktree, mac, Step::Checkout { snapshot, pack })
+            .send_again(
+                thread,
+                worktree,
+                mac,
+                Step::Checkout { snapshot, pack },
+                &[],
+            )
             .await?
         {
-            Done::Checkout { folder } => Ok(MacDone::Push {
+            (Done::Checkout { folder }, _) => Ok(MacDone::Push {
                 folder,
                 sent_bytes: sent,
             }),
@@ -311,13 +368,14 @@ impl Client {
         }
     }
 
-    /// The pack, a piece at a time.
+    /// The pack, a piece at a time: `raw` after each step where the Mac takes that, else in base64.
     async fn put(
         &self,
         thread: &str,
         worktree: &Path,
         mac: &Mac,
         path: &Path,
+        raw: bool,
     ) -> Result<u64, McpToolError> {
         use std::io::Read;
         let mut file = std::fs::File::open(path)
@@ -344,10 +402,15 @@ impl Client {
             let step = Step::Put {
                 name: "push.pack".into(),
                 offset,
-                data_b64: B64.encode(&piece),
+                data_b64: if raw {
+                    String::new()
+                } else {
+                    B64.encode(&piece)
+                },
             };
-            match self.send(thread, worktree, mac, step).await? {
-                Done::Put { bytes } => offset = bytes,
+            let after: &[u8] = if raw { &piece } else { &[] };
+            match self.send_again(thread, worktree, mac, step, after).await? {
+                (Done::Put { bytes }, _) => offset = bytes,
                 _ => return Err(failed("the Mac answered put with another step's")),
             }
             if last {
@@ -372,25 +435,53 @@ impl Client {
         let mut file = std::fs::File::create(&piece_path)
             .map_err(|e| failed(format!("the pull wasn't started: {e}")))?;
         let mut offset = 0u64;
-        let mut folder;
+        let mut folder = false;
+        let mut restarted = false;
         loop {
-            use std::io::Write;
+            use std::io::{Seek, Write};
             let step = Step::Get {
                 path: path.to_owned(),
                 offset,
+                raw: true,
             };
-            let Done::Get {
-                data_b64,
-                total,
-                folder: is_folder,
-            } = self.send(thread, worktree, mac, step).await?
-            else {
-                return Err(failed("the Mac answered get with another step's"));
+            let (data_b64, raw, total) =
+                match self.send_again(thread, worktree, mac, step, &[]).await {
+                    Ok((
+                        Done::Get {
+                            data_b64,
+                            total,
+                            folder: is_folder,
+                        },
+                        raw,
+                    )) => {
+                        folder = is_folder;
+                        (data_b64, raw, total)
+                    }
+                    Ok(_) => return Err(failed("the Mac answered get with another step's")),
+                    // A folder's last piece asked for again (its answer was lost): the Mac let its tar.gz go once it sent
+                    // it, so the folder comes again from the start, once.
+                    Err(e)
+                        if e.code != ErrorCode::MachineOffline
+                            && folder
+                            && offset > 0
+                            && !restarted =>
+                    {
+                        restarted = true;
+                        offset = 0;
+                        file.set_len(0)
+                            .and_then(|_| file.rewind())
+                            .map_err(|e| failed(format!("the pull wasn't started: {e}")))?;
+                        continue;
+                    }
+                    Err(e) => return Err(e),
+                };
+            // An older Mac sends the piece in base64.
+            let data = if data_b64.is_empty() {
+                raw
+            } else {
+                B64.decode(data_b64)
+                    .map_err(|_| failed("the piece is not base64"))?
             };
-            folder = is_folder;
-            let data = B64
-                .decode(data_b64)
-                .map_err(|_| failed("the piece is not base64"))?;
             if total > PULL_MAX || offset + data.len() as u64 > PULL_MAX {
                 return Err(refuse("the pull is larger than the node takes"));
             }
