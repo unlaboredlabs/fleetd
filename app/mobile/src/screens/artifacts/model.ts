@@ -5,7 +5,8 @@
 // DNS prefetching off, then a first script that takes WebRTC away (no CSP sees its STUN and TURN) and hands a person's
 // click on a link to the app with the page's key, which only that script holds. The WebView keeps no storage, cookies
 // or files, and loads nothing past the page itself; the only message the app takes from it is such a link, which
-// opens in the browser as a Markdown link does.
+// opens in the browser as a Markdown link does. On iOS its own data store sends every connection to a proxy that goes
+// nowhere (patches/react-native-webview), as the desktop's does: no CSP covers a preconnect.
 import { fileSize } from "../../chatView";
 import { kindOf, type ArtifactFormat, type ArtifactPublished, type ArtifactSummary, type ArtifactVersion, type ChatFile, type HubState } from "../../desktop";
 
@@ -138,7 +139,10 @@ export const FENCE = {
   geolocationEnabled: false,
   mediaCapturePermissionGrantType: "deny",
   allowsAirPlayForMediaPlayback: false,
-  originWhitelist: ["about:blank"] as string[],
+  // Every address passes the library's own list, so every navigation reaches loadsOnly: one that fails the list is
+  // opened in the browser by react-native-webview itself (Linking.openURL), whatever onShouldStartLoadWithRequest says,
+  // which would let a page's script send anything anywhere.
+  originWhitelist: ["*"] as string[],
   mixedContentMode: "never",
   textInteractionEnabled: true,
 } as const;

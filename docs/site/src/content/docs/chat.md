@@ -195,7 +195,9 @@ page can only show what it carries. A link you click in it opens in your browser
 Telegram a link to an artifact shows as its title.
 
 On the phone, a chat's Info has **Artifacts**, with the files sent in the chat under the reports; a card or a link opens
-one the same way. HTML artifacts there need an app build from this release on.
+one the same way, and **Versions** at the top picks an older one. An HTML artifact there is fenced the same way (on
+iPhone; Android's fence against preconnects comes next), and a link you tap in it opens in Safari. HTML artifacts need
+an app build from this release on: an over-the-air update doesn't bring them.
 
 Agents publish with the [`publish_artifact`](/docs/reference/agent-tools#publish_artifact) tool and link with
 `[Title](artifact:name)`.

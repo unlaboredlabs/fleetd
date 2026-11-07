@@ -1,22 +1,22 @@
 // One artifact, pushed from the chat's Artifacts, its card or a link in a message: its newest version, or the one they
 // named. Markdown reads as the chat's own formatted text, raw HTML dropped; an HTML page runs in its fenced WebView
-// (ArtifactFrame). With more than one version, the bar's Versions menu picks one, and an older one says so over the
+// (ArtifactFrame), and a link to another of the chat's artifacts opens that one. With more than one version, the bar's Versions menu picks one, and an older one says so over the
 // page with the way back to the newest.
-import { useLayoutEffect } from "react";
+import { useCallback, useLayoutEffect } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { listTime } from "../../chatView";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { space, type, useTheme } from "../../theme";
 import { Button } from "../../ui/Button";
 import { haptics } from "../../ui/haptics";
-import { Markdown } from "../../ui/Markdown";
+import { ArtifactLinks, Markdown } from "../../ui/Markdown";
 import { EmptyState } from "../../ui/States";
 import { errorWords, Problem, Symbol, useRead } from "../manage/parts";
 import { useNow } from "../time";
 import { readArtifact } from "./api";
 import { ArtifactFrame } from "./ArtifactFrame";
 import { useArtifactsChanged } from "./Artifacts";
-import { rowLine, type ArtifactVersion } from "./model";
+import { linkTarget, rowLine, type ArtifactVersion } from "./model";
 
 export function Artifact({ navigation, route }: ChatInfoProps<"Artifact">) {
   const t = useTheme();
@@ -74,6 +74,19 @@ export function Artifact({ navigation, route }: ChatInfoProps<"Artifact">) {
     });
   }, [navigation, t, v?.artifact.title, versions, shown, now]);
 
+  // A link in a report to another of the chat's artifacts opens it over this one.
+  const openLink = useCallback(
+    (url: string) => {
+      const to = linkTarget(url);
+      if (to !== undefined) {
+        haptics.tap();
+        navigation.push("Artifact", { key, name: to.name, version: to.version });
+      }
+      return to !== undefined;
+    },
+    [navigation, key],
+  );
+
   if (p === undefined) return <EmptyState icon="folder" title="Not Here" body="The hub doesn't list it any more." />;
   if (r === undefined) return <ActivityIndicator style={styles.loading} color={t.secondary} />;
   if (!r.ok) {
@@ -110,7 +123,9 @@ export function Artifact({ navigation, route }: ChatInfoProps<"Artifact">) {
     >
       {older}
       <Text style={[type.footnote, { color: t.secondary }]}>{rowLine(a, listTime(a.at, now))}</Text>
-      <Markdown text={r.value.content} ink={t.label} holdsBlocks={false} />
+      <ArtifactLinks.Provider value={openLink}>
+        <Markdown text={r.value.content} ink={t.label} holdsBlocks={false} />
+      </ArtifactLinks.Provider>
     </ScrollView>
   );
 }

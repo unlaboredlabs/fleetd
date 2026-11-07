@@ -12,6 +12,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "postinstall": "patch-package",
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
     "native": "expo prebuild --clean --no-install",
@@ -60,6 +61,7 @@
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^24.19.2",
     "@types/react": "~19.3.0",
+    "patch-package": "8.0.1",
     "structured-headers": "^0.4.1",
     "typescript": "~6.0.3",
     "vitest": "5.0.5"

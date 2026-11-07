@@ -1,7 +1,8 @@
 // An HTML artifact in a WebView fenced as model.ts says: the page with the CSP and its first script ahead of it, its
-// scripts on, no storage, cookies or files, and nothing loaded past the page itself. Nothing is injected; the one
-// message taken from it is a person's tap on a link, carrying the key only the first script holds, which opens in the
-// browser as a Markdown link does. White behind it unless the page paints its own, as a browser would.
+// scripts on, no storage, cookies or files, nothing loaded past the page itself, and on iOS every connection sent to a
+// proxy that goes nowhere (incognito's data store, patches/). Nothing is injected; the one message taken from it is a
+// person's tap on a link, carrying the key only the first script holds, which opens in the browser as a Markdown link
+// does. White behind it unless the page paints its own, as a browser would.
 import { getRandomBytes } from "expo-crypto";
 import { useMemo } from "react";
 import { Linking, StyleSheet } from "react-native";

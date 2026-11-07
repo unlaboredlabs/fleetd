@@ -62,7 +62,7 @@ describe("an HTML artifact on the phone", () => {
       allowUniversalAccessFromFileURLs: false,
       javaScriptCanOpenWindowsAutomatically: false,
       setSupportMultipleWindows: false,
-      originWhitelist: ["about:blank"],
+      originWhitelist: ["*"],
       mediaCapturePermissionGrantType: "deny",
     });
     for (const bridge of ["injectedJavaScript", "injectedJavaScriptBeforeContentLoaded", "injectedJavaScriptObject"]) expect(FENCE).not.toHaveProperty(bridge);

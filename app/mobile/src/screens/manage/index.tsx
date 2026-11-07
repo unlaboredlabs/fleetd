@@ -126,7 +126,7 @@ function ChatInfo() {
       <InfoStack.Screen name="SkillHistory" component={SkillHistory} options={pushed(t, "History")} />
       <InfoStack.Screen name="SkillVersion" component={SkillVersion} options={({ route }) => pushed(t, `Version ${String(route.params.version)}`)} />
       <InfoStack.Screen name="Artifacts" component={Artifacts} options={pushed(t, "Artifacts")} />
-      <InfoStack.Screen name="Artifact" component={Artifact} options={pushed(t, "")} />
+      <InfoStack.Screen name="Artifact" component={Artifact} options={{ ...pushed(t, ""), headerStyle: { backgroundColor: t.bg }, contentStyle: { backgroundColor: t.bg } }} />
     </InfoStack.Navigator>
   );
 }

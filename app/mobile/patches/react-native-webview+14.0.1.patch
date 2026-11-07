@@ -1,0 +1,28 @@
+diff --git a/node_modules/react-native-webview/apple/RNCWebViewImpl.m b/node_modules/react-native-webview/apple/RNCWebViewImpl.m
+index 3890426..e1bc7a8 100644
+--- a/node_modules/react-native-webview/apple/RNCWebViewImpl.m
++++ b/node_modules/react-native-webview/apple/RNCWebViewImpl.m
+@@ -9,6 +9,7 @@
+ #import <React/RCTConvert.h>
+ #import <React/RCTAutoInsetsProtocol.h>
+ #import "RNCWKProcessPoolManager.h"
++#import <Network/Network.h>
+ #if !TARGET_OS_OSX
+ #import <UIKit/UIKit.h>
+ #else
+@@ -461,6 +462,15 @@ RCTAutoInsetsProtocol>
+   }
+   if (_incognito) {
+     wkWebViewConfig.websiteDataStore = [WKWebsiteDataStore nonPersistentDataStore];
++    // fleetd: only the app's HTML artifact view is incognito (app/mobile/src/screens/artifacts). Its own data store
++    // sends every connection through a SOCKS proxy that goes nowhere, with no direct fallback, as the desktop's
++    // artifact session does: a preconnect or anything else no CSP covers reaches no host, and resolves no name.
++    if (@available(iOS 17.0, macOS 14.0, *)) {
++      nw_endpoint_t nowhere = nw_endpoint_create_host("0.0.0.0", "9");
++      nw_proxy_config_t proxy = nw_proxy_config_create_socksv5(nowhere);
++      nw_proxy_config_set_failover_allowed(proxy, false);
++      wkWebViewConfig.websiteDataStore.proxyConfigurations = @[proxy];
++    }
+   } else if (_cacheEnabled) {
+     wkWebViewConfig.websiteDataStore = [WKWebsiteDataStore defaultDataStore];
+   }
