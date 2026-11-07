@@ -145,11 +145,12 @@ export const fixtures = [
   // UX-1 [23]: a long lead reply streaming in, in small deltas (fixtures/stream).
   "stream-long",
   // The chat as a messaging app (fixtures/bubbles): split bubbles with a reply, charts and a table, a PR card with its
-  // diff, and the lead asking.
+  // diff, the lead asking, and messages from Shortcuts, the Share Sheet and Telegram.
   "bubbles-casual",
   "bubbles-charts",
   "bubbles-pr",
   "bubbles-ask",
+  "bubbles-sources",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline), with every answer failing, and with
   // two approvals the hub reopens after Approve.
   "inline-items",
