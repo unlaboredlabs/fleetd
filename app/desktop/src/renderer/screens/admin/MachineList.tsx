@@ -3,12 +3,15 @@
 // the machine, else it makes a line that enrolls it again (machine_join with rejoin); Remove asks first, then runs
 // machine_remove, and offers Remove anyway when the hub refuses one that runs projects' leads or is being added. The hub sends no event when it forgets a machine, so a removed one leaves the list here at once and
 // the store's next snapshot. Cloud machines (boat.dev) are listed apart, as their own group under these (Cloud.tsx).
+// Projects the hub still lists from a machine it no longer has (removed before its rows were forgotten) are listed
+// under them, each with Remove, which only forgets the project in fleetd (RemoveProjectDialog).
 import { useState } from "react";
 import type { Machine } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
-import { selectMachines } from "../../src/data/selectors";
+import { selectMachines, selectOrphanProjects } from "../../src/data/selectors";
 import { Button, Dialog, Text, toast } from "../../ui";
 import { machineOrder } from "../projects/machineText";
+import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
 import { CallError } from "../../src/data/queries";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { toHash } from "../shell/routes";
@@ -84,8 +87,47 @@ export function MachineList({ onRepair }: { onRepair: (r: Repair) => void }) {
         />
       )}
     </section>
+    <LeftoverProjects />
     <CloudGroup />
     </>
+  );
+}
+
+/** Projects whose machine was removed: shown only while there are some, each with Remove. */
+function LeftoverProjects() {
+  const projects = useData(selectOrphanProjects);
+  const [removing, setRemoving] = useState<RemoveTarget | null>(null);
+  if (projects.length === 0 && removing === null) return null;
+  return (
+    <section className={`${a.section} ${a.machines}`} aria-labelledby="machines-leftovers">
+      <Text strong id="machines-leftovers">
+        Left from removed machines
+      </Text>
+      <Text size="sm" tone="quiet">
+        These projects' machines are no longer in this hub, so no machine holds their files. Removing one forgets it in
+        fleetd.
+      </Text>
+      <div className={a.list} role="list" aria-label="Projects left from removed machines">
+        {projects.map((p) => (
+          <div key={`${p.machineId}/${p.projectId}`} className={a.row} role="listitem" aria-label={p.title}>
+            <div className={a.who}>
+              <Text strong>{p.title}</Text>
+              <Text size="xs" tone="quiet">{`${p.machineId} · ${p.workspaceRoot}`}</Text>
+            </div>
+            <div className={a.controls}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setRemoving({ machineId: p.machineId, projectId: p.projectId, title: p.title, path: p.workspaceRoot })}
+              >
+                Remove
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <RemoveProjectDialog project={removing} onClose={() => setRemoving(null)} />
+    </section>
   );
 }
 

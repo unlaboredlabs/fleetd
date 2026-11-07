@@ -1,5 +1,5 @@
 use super::Hub;
-use super::grants::{internal_error, require};
+use super::grants::{internal_error, is_human, require};
 use crate::hub::store::StoreError;
 use fleetd_contracts::auth::{AgentKeyInfo, Role};
 use fleetd_contracts::mcp::{McpToolError, McpToolName};
@@ -142,7 +142,8 @@ impl Registry {
 
     /// Runs one call for an already verified caller. `null` input (MCP `arguments` absent) decodes as `{}`. The
     /// handler runs on its own task so a panic becomes the generic `failed` instead of dropping the connection;
-    /// dropping the returned future (the client went away) aborts it.
+    /// dropping the returned future (the client went away) aborts it. A person's device gets an error's
+    /// person-facing fix where it has one (`McpToolError::for_person`).
     pub async fn call(
         &self,
         hub: &Arc<Hub>,
@@ -164,6 +165,9 @@ impl Registry {
             input,
         )));
         match task.join().await {
+            Ok(Err(CallError::Tool(error))) if is_human(caller) => {
+                Err(CallError::Tool(error.for_person()))
+            }
             Ok(result) => result,
             Err(error) => {
                 tracing::error!(tool, %error, "tool call failed");

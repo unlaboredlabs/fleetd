@@ -1388,6 +1388,58 @@ fn machine_tables(c: &rusqlite::Connection) -> Vec<(String, Vec<Column>)> {
         .collect()
 }
 
+/// A row of `machine`'s in each of `tables`, under project `p-shared` and thread `t-shared`.
+fn seed_machine(c: &rusqlite::Connection, tables: &[(String, Vec<Column>)], machine: &str, n: i64) {
+    for (t, columns) in tables {
+        let values: Vec<String> = columns
+            .iter()
+            .map(|(name, ty, nullable)| match name.as_str() {
+                "project_id" | "checkout_project_id" | "from_project_id" | "to_project_id" => {
+                    "'p-shared'".to_owned()
+                }
+                "thread_id" | "origin_thread" => "'t-shared'".to_owned(),
+                n_ if n_.contains("machine") => format!("'{machine}'"),
+                _ if *nullable => "NULL".to_owned(),
+                "kind" if ty.contains("TEXT") => "'plain'".to_owned(),
+                "data" | "items" | "refs" | "projects" | "workstreams" => "'{}'".to_owned(),
+                _ if ty.contains("INT") || ty.contains("REAL") => n.to_string(),
+                _ => format!("'{machine}-{name}'"),
+            })
+            .collect();
+        let names: Vec<&str> = columns.iter().map(|(name, ..)| name.as_str()).collect();
+        c.execute(
+            &format!(
+                "INSERT INTO {t} ({}) VALUES ({})",
+                names.join(", "),
+                values.join(", ")
+            ),
+            [],
+        )
+        .unwrap_or_else(|e| panic!("seeding {t}: {e}"));
+    }
+}
+
+/// `machine`'s rows in `t`, by the column that names its machine.
+fn machine_rows(db: &HubDb, tables: &[(String, Vec<Column>)], t: &str, machine: &str) -> i64 {
+    let column = tables
+        .iter()
+        .find(|(name, _)| name == t)
+        .and_then(|(_, columns)| {
+            ["machine_id", "from_machine_id", "origin_machine"]
+                .into_iter()
+                .find(|c| columns.iter().any(|(name, ..)| name == c))
+        })
+        .unwrap();
+    db.with(|c| {
+        Ok(c.query_row(
+            &format!("SELECT COUNT(*) FROM {t} WHERE {column} = ?"),
+            [machine],
+            |r| r.get(0),
+        )?)
+    })
+    .unwrap()
+}
+
 #[test]
 fn removing_a_machine_forgets_its_rows_and_leaves_anothers_with_the_same_project_ids() {
     use super::hub_store::{MACHINE_KEEPS, MACHINE_TABLES};
@@ -1411,60 +1463,13 @@ fn removing_a_machine_forgets_its_rows_and_leaves_anothers_with_the_same_project
     }
     // A row of devbox's and one of worker's in each, under the same project and thread ids (worker once mirrored
     // devbox's projects).
-    let seed = |c: &rusqlite::Connection, machine: &str, n: i64| {
-        for (t, columns) in &tables {
-            let values: Vec<String> = columns
-                .iter()
-                .map(|(name, ty, nullable)| match name.as_str() {
-                    "project_id" | "checkout_project_id" | "from_project_id" | "to_project_id" => {
-                        "'p-shared'".to_owned()
-                    }
-                    "thread_id" | "origin_thread" => "'t-shared'".to_owned(),
-                    n_ if n_.contains("machine") => format!("'{machine}'"),
-                    _ if *nullable => "NULL".to_owned(),
-                    "kind" if ty.contains("TEXT") => "'plain'".to_owned(),
-                    "data" | "items" | "refs" | "projects" | "workstreams" => "'{}'".to_owned(),
-                    _ if ty.contains("INT") || ty.contains("REAL") => n.to_string(),
-                    _ => format!("'{machine}-{name}'"),
-                })
-                .collect();
-            let names: Vec<&str> = columns.iter().map(|(name, ..)| name.as_str()).collect();
-            c.execute(
-                &format!(
-                    "INSERT INTO {t} ({}) VALUES ({})",
-                    names.join(", "),
-                    values.join(", ")
-                ),
-                [],
-            )
-            .unwrap_or_else(|e| panic!("seeding {t}: {e}"));
-        }
-    };
     db.with(|c| {
-        seed(c, "devbox", 1);
-        seed(c, "worker", 2);
+        seed_machine(c, &tables, "devbox", 1);
+        seed_machine(c, &tables, "worker", 2);
         Ok(())
     })
     .unwrap();
-    let count = |t: &str, machine: &str| -> i64 {
-        let column = tables
-            .iter()
-            .find(|(name, _)| name == t)
-            .and_then(|(_, columns)| {
-                ["machine_id", "from_machine_id", "origin_machine"]
-                    .into_iter()
-                    .find(|c| columns.iter().any(|(name, ..)| name == c))
-            })
-            .unwrap();
-        db.with(|c| {
-            Ok(c.query_row(
-                &format!("SELECT COUNT(*) FROM {t} WHERE {column} = ?"),
-                [machine],
-                |r| r.get(0),
-            )?)
-        })
-        .unwrap()
-    };
+    let count = |t: &str, machine: &str| machine_rows(&db, &tables, t, machine);
 
     assert!(store.machine_remove(&m("worker")).unwrap() > 0);
     for (t, _) in &tables {
@@ -1474,4 +1479,54 @@ fn removing_a_machine_forgets_its_rows_and_leaves_anothers_with_the_same_project
     }
     // Run again, as over what an older remove left behind, it finds nothing more.
     assert_eq!(store.machine_remove(&m("worker")).unwrap(), 0);
+}
+
+/// project_remove on a machine the hub no longer has: worker's rows for the project go, by the project or its
+/// threads, and nothing else does: not devbox's rows under the same ids, not worker's other project.
+#[test]
+fn forgetting_a_removed_machines_project_leaves_its_other_project_and_anothers_with_the_same_id() {
+    use super::hub_store::{MACHINE_KEEPS, MACHINE_TABLES};
+    use fleetd_contracts::ids::{ProjectId, ProjectRef};
+    let db = HubDb::open_memory().unwrap();
+    let store = HubStore::new(db.clone());
+    let tables = db.with(|c| Ok(machine_tables(c))).unwrap();
+    db.with(|c| {
+        seed_machine(c, &tables, "devbox", 1);
+        seed_machine(c, &tables, "worker", 2);
+        c.execute_batch(
+            "INSERT INTO projects (machine_id, project_id, search, last_activity_at, data)
+               VALUES ('worker', 'p-other', '', '', '{}');
+             INSERT INTO threads (machine_id, thread_id, project_id, last_progress_at, data)
+               VALUES ('worker', 't-other', 'p-other', '', '{}');
+             INSERT INTO thread_accounts (machine_id, thread_id, account) VALUES ('worker', 't-other', 'a');",
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    let r = ProjectRef {
+        machine_id: m("worker"),
+        project_id: ProjectId::unchecked("p-shared"),
+    };
+
+    assert!(store.machine_project_forget(&r).unwrap() > 0);
+    for (t, columns) in &tables {
+        let has = |c: &str| columns.iter().any(|(name, ..)| name == c);
+        assert_eq!(
+            machine_rows(&db, &tables, t, "devbox"),
+            1,
+            "devbox's row in {t} stays"
+        );
+        let own_rule = ["repos", "navi_asks", "session_places"].contains(&t.as_str());
+        let forgot = !MACHINE_KEEPS.contains(&t.as_str())
+            && (own_rule
+                || (MACHINE_TABLES.contains(&t.as_str())
+                    && (has("project_id") || has("thread_id"))));
+        let other = i64::from(["projects", "threads", "thread_accounts"].contains(&t.as_str()));
+        assert_eq!(
+            machine_rows(&db, &tables, t, "worker"),
+            i64::from(!forgot) + other,
+            "worker's rows in {t}"
+        );
+    }
+    assert_eq!(store.machine_project_forget(&r).unwrap(), 0);
 }

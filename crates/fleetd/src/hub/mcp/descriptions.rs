@@ -54,7 +54,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_remove",
-        "Stop the project's agent processes and erase it, with the checkouts of its repos that no other project holds: one rule for every project (D310). On the hub and its machine its chat, approvals and purchases, asks and decisions, orders and tasks, memory, skills, automations, kept browser sign-ins, Telegram link, transcripts, attachments and screen recordings go. Its files and branches stay on the machine unless removeFolder (default false), which deletes its folder with everything in it, refused for a home folder, fleetd's own or one holding another project. removeWorktrees also force-removes the fleetd worktrees its agents worked in (uncommitted changes in them are lost), once its agents have stopped.",
+        "Stop the project's agent processes and erase it, with the checkouts of its repos that no other project holds: one rule for every project (D310). On the hub and its machine its chat, approvals and purchases, asks and decisions, orders and tasks, memory, skills, automations, kept browser sign-ins, Telegram link, transcripts, attachments and screen recordings go. Its files and branches stay on the machine unless removeFolder (default false), which deletes its folder with everything in it, refused for a home folder, fleetd's own or one holding another project. removeWorktrees also force-removes the fleetd worktrees its agents worked in (uncommitted changes in them are lost), once its agents have stopped. A project of a machine the hub no longer has is only forgotten on the hub, since no machine holds its files.",
     ),
     (
         "project_repo_add",

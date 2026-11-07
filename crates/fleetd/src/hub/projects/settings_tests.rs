@@ -633,3 +633,112 @@ async fn a_repos_setup_is_its_own_and_falls_back_to_the_projects() {
     .unwrap();
     assert_eq!(web_setup(), json!(["npm ci"]));
 }
+
+/// A project left over from a machine the hub no longer has (`worker`, removed before its rows were forgotten): there
+/// is no node to ask, so project_remove forgets it in the hub alone, with project.removed, and `lab`'s project under
+/// the same id stays. A person reads a fix for people where an agent reads one naming a tool.
+#[tokio::test]
+async fn a_project_whose_machine_was_removed_is_forgotten_in_the_hub_alone() {
+    let (hub, _home) = hub();
+    let worker = MachineId::unchecked("worker");
+    for m in [&lab(), &worker] {
+        hub.store
+            .projects_upsert_many(
+                m,
+                &[serde_json::from_value(json!({
+                    "machineId": m, "projectId": "p1", "title": "app", "workspaceRoot": "/work/app",
+                    "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+                }))
+                .unwrap()],
+            )
+            .unwrap();
+        hub.db
+            .with(|c| {
+                c.execute(
+                    "INSERT INTO chat_projects (machine_id, project_id, history_ms) VALUES (?, 'p1', 0)",
+                    [m.as_str()],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+    }
+    let on = |m: &str| json!({ "machineId": m, "projectId": "p1" });
+    // Its settings say its machine was removed, not that it is offline.
+    let settings = call(&hub, &person(), "project_settings_get", on("worker"))
+        .await
+        .unwrap();
+    assert_eq!(
+        settings["settings"]["worktreesUnknown"],
+        "worker was removed from this hub."
+    );
+
+    let removed = call(&hub, &person(), "project_remove", on("worker"))
+        .await
+        .unwrap();
+    assert!(
+        removed["next"]
+            .as_str()
+            .unwrap()
+            .contains("no machine held its files"),
+        "{removed}"
+    );
+    let gone = |m: &MachineId| ProjectRef {
+        machine_id: m.clone(),
+        project_id: ProjectId::unchecked("p1"),
+    };
+    assert!(hub.store.project_get(&gone(&worker)).unwrap().is_none());
+    assert!(hub.store.project_get(&gone(&lab())).unwrap().is_some());
+    let chats = |m: &MachineId| -> i64 {
+        hub.db
+            .with(|c| {
+                Ok(c.query_row(
+                    "SELECT COUNT(*) FROM chat_projects WHERE machine_id = ?",
+                    [m.as_str()],
+                    |r| r.get(0),
+                )?)
+            })
+            .unwrap()
+    };
+    assert_eq!((chats(&worker), chats(&lab())), (0, 1));
+    let page = futures_util::FutureExt::now_or_never(hub.events.wait(WaitInput {
+        cursor: Some(0),
+        types: Some(vec![HubEventType::ProjectRemoved]),
+        machine_id: None,
+        timeout_sec: 0,
+    }))
+    .unwrap()
+    .unwrap();
+    let removals: Vec<_> = page
+        .events
+        .iter()
+        .map(|e| (e.machine_id.as_ref().map(MachineId::as_str), e.data.clone()))
+        .collect();
+    assert_eq!(
+        removals,
+        [(Some("worker"), Some(json!({ "title": "app" })))]
+    );
+
+    // Asked again, it is gone: a person's fix says so, an agent's names the tool.
+    let fix = |out: Result<Value, CallError>| match out {
+        Err(CallError::Tool(e)) => e.fix.unwrap(),
+        other => panic!("{other:?}"),
+    };
+    let to_person = fix(call(&hub, &person(), "project_remove", on("worker")).await);
+    assert!(!to_person.contains("project_get"), "{to_person}");
+    assert!(to_person.contains("projects list"), "{to_person}");
+    let to_agent = fix(call(&hub, &agent(), "project_remove", on("worker")).await);
+    assert!(to_agent.contains("Call project_get"), "{to_agent}");
+}
+
+/// The fix for a machine the hub doesn't have: a person is pointed at the hub's machines, an agent at fleetd_status.
+#[test]
+fn an_unknown_machines_fix_is_worded_for_whoever_reads_it() {
+    let e = crate::hub::api::unknown_machine(&MachineId::unchecked("worker"));
+    assert_eq!(
+        e.fix.as_deref(),
+        Some("Call fleetd_status to list machines.")
+    );
+    let fix = e.for_person().fix.unwrap();
+    assert!(fix.contains("Settings › Hub › Machines"), "{fix}");
+    assert!(!fix.contains("fleetd_status"), "{fix}");
+}

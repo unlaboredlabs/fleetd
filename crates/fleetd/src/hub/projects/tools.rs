@@ -1,6 +1,6 @@
 //! project_discover, project_add and project_remove: thin over the projects service. A project's settings are in
 //! settings.rs, its repos in repos.rs; project_remove removes the checkouts of its repos with it, and erases a Navi
-//! (`navi::erase`).
+//! (`navi::erase`). A project whose machine the hub no longer has is only forgotten in the hub.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
@@ -13,8 +13,10 @@ use fleetd_contracts::mcp::{
 use fleetd_contracts::node_link::{CAP_NAVI_ERASE, CAP_PROJECT_ERASE, CAP_PROJECT_SETTINGS};
 use serde_json::{Value, json};
 
-use crate::hub::api::{Caller, Hub, Registry, ToolError, error, offline, require, unknown_machine};
+use crate::hub::api::{Caller, Hub, Registry, ToolError, error, offline, require, unknown_project};
 use crate::hub::executor::tools::from_executor;
+use crate::hub::store::{NewEvent, iso_ms, now_ms};
+use fleetd_contracts::events::HubEventType;
 
 pub fn register(tools: &mut Registry) {
     tools.add("project_discover", discover);
@@ -50,8 +52,12 @@ async fn remove(
 ) -> Result<Value, ToolError> {
     let m = &input.machine_id;
     require(&caller, Role::Operate, Some(m))?;
+    let r = ProjectRef {
+        machine_id: m.clone(),
+        project_id: input.project_id.clone(),
+    };
     if hub.store.machine_get(m)?.is_none() {
-        return Err(unknown_machine(m));
+        return forget_gone(&hub, &r);
     }
     if !hub.executors.is_connected(m) {
         return Err(offline(m));
@@ -63,10 +69,6 @@ async fn remove(
     // The checkouts of its other repos go with it, the same way: each is a node project of its own, hidden only while
     // a project holds it, so one left on the node would show as a project once this one is gone. One another project
     // also holds stays.
-    let r = ProjectRef {
-        machine_id: m.clone(),
-        project_id: input.project_id.clone(),
-    };
     // Every project is erased (D287, one rule since D310), on its node too, which must know how; its folder goes only
     // if asked. A node before that erases a Navi alone.
     let navi = crate::hub::navi::of(&hub.db, &r)?.is_some();
@@ -107,4 +109,35 @@ async fn remove(
         format!("{ERASED}. Its folder, files and branches stay on the machine.")
     };
     Ok(json!({ "ok": true, "next": next }))
+}
+
+/// A project of a machine the hub no longer has (removed before `machine remove` forgot its rows): no node holds its
+/// files to stop or remove, so the hub erases what it holds of it (`navi::erase`, as for every project) and forgets
+/// its rows (`machine_project_forget`), and says so with project.removed. Another machine's project under the same id stays.
+fn forget_gone(hub: &Hub, r: &ProjectRef) -> Result<Value, ToolError> {
+    let Some(project) = hub.store.project_get(r)? else {
+        return Err(unknown_project(r));
+    };
+    crate::hub::navi::erase::erase(hub, r)?;
+    hub.store.machine_project_forget(r)?;
+    hub.events.append(NewEvent {
+        at: iso_ms(now_ms(hub.clock.as_ref())).into(),
+        r#type: HubEventType::ProjectRemoved,
+        machine_id: Some(r.machine_id.clone()),
+        project_id: Some(r.project_id.clone()),
+        thread_id: None,
+        summary: format!(
+            "Project \"{}\" on {} was forgotten: its machine was removed",
+            project.title, r.machine_id
+        ),
+        data: Some(json!({ "title": project.title })),
+        attention: None,
+    })?;
+    Ok(json!({
+        "ok": true,
+        "next": format!(
+            "{} is no longer in the hub, so no machine held its files: fleetd forgot the project, its chat and its settings.",
+            r.machine_id
+        ),
+    }))
 }

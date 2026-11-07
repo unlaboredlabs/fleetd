@@ -97,6 +97,7 @@ impl From<LeadError> for McpToolError {
             code: e.code,
             message: e.message,
             fix: e.fix,
+            person_fix: None,
         }
     }
 }

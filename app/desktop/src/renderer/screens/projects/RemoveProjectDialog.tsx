@@ -3,6 +3,8 @@
 // plain folder has none of those: its delete says only that its agents stop, fleetd forgets it, and its folder stays.
 // A Navi's delete erases it (D287 navi.delete-erases), with a tickbox naming its folder that deletes the folder too
 // (`removeFolder`); the phone's sheet says the same words (`naviDeleteWords`).
+// A project whose machine the hub no longer has (a fresh snapshot lacks it) has no files on any machine to keep or
+// remove: its dialog only forgets it in fleetd, which the hub does without a node.
 
 import { useState } from "react";
 import { Button, Checkbox, Dialog, Field, Input, Text, toast } from "../../ui";
@@ -43,7 +45,8 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
   const [folderToo, setFolderToo] = useState(false);
   const [error, setError] = useState<{ message: string; fix?: string } | null>(null);
   const machine = useData((d) => (project ? (d.machines[project.machineId]?.name ?? project.machineId) : ""));
-  const deleting = project?.deleting;
+  const gone = useData((d) => project !== null && d.fresh && d.machines[project.machineId] === undefined);
+  const deleting = gone ? undefined : project?.deleting;
 
   const close = () => {
     setBusy(false);
@@ -56,10 +59,15 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
   const remove = async (p: RemoveTarget) => {
     setBusy(true);
     setError(null);
-    const navi = p.deleting?.navi === true;
+    const navi = !gone && p.deleting?.navi === true;
     const out = await data.call(
       "project_remove",
-      { machineId: p.machineId, projectId: p.projectId, ...(p.deleting ? { removeWorktrees: true } : {}), ...(navi && folderToo ? { removeFolder: true } : {}) },
+      {
+        machineId: p.machineId,
+        projectId: p.projectId,
+        ...(p.deleting && !gone ? { removeWorktrees: true } : {}),
+        ...(navi && folderToo ? { removeFolder: true } : {}),
+      },
       { timeoutMs: REMOVE_MS },
     );
     setBusy(false);
@@ -69,6 +77,10 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
     }
     close();
     onRemoved?.();
+    if (gone) {
+      toast({ title: `${p.title} forgotten`, description: `${machine} is no longer in this hub, so fleetd no longer lists it.` });
+      return;
+    }
     if (navi) {
       toast({ title: `${p.title} deleted`, description: folderToo ? `Its folder is gone from ${machine} too.` : `Its folder stays on ${machine}.` });
       return;
@@ -92,9 +104,11 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
       onOpenChange={(open) => {
         if (!open && !busy) close();
       }}
-      title={project ? (deleting ? `Delete ${project.title}?` : `Remove ${project.title} from ${machine}?`) : ""}
+      title={project ? (gone ? `Forget ${project.title}?` : deleting ? `Delete ${project.title}?` : `Remove ${project.title} from ${machine}?`) : ""}
       description={
-        deleting
+        gone
+          ? `${machine} is no longer in this hub, so no machine holds its files. This only forgets the project, its chat and its settings in fleetd.`
+          : deleting && project
           ? deleting.navi
             ? naviDeleteWords(project.title, machine, tilde(project.path)).message
             : deleting.plain
@@ -108,12 +122,24 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
             Cancel
           </Button>
           <Button variant="danger" disabled={busy || !ready} onClick={() => project && void remove(project)}>
-            {busy ? (deleting ? "Deleting…" : "Removing…") : deleting ? (deleting.navi ? "Delete Navi" : "Delete project") : "Remove project"}
+            {busy
+              ? gone
+                ? "Forgetting…"
+                : deleting
+                  ? "Deleting…"
+                  : "Removing…"
+              : gone
+                ? "Forget project"
+                : deleting
+                  ? deleting.navi
+                    ? "Delete Navi"
+                    : "Delete project"
+                  : "Remove project"}
           </Button>
         </>
       }
     >
-      {deleting ? (
+      {deleting && project ? (
         <>
           {deleting.unsaved.length > 0 ? (
             <div role="alert">

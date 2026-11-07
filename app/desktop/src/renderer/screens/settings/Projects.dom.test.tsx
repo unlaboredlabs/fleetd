@@ -480,6 +480,27 @@ describe("Settings → Projects", () => {
     expect(document.body.textContent).toContain("devbox's node did not answer.");
     expect(calls.some((c) => c.tool === "project_remove")).toBe(false);
   });
+
+  it("deletes a project whose machine was removed: it is only forgotten in fleetd", async () => {
+    const { worktrees: _, ...gone } = settings;
+    answers = [{ ...gone, worktreesUnknown: "devbox was removed from this hub." }];
+    await render();
+    // The hub's snapshot no longer lists devbox, only its project.
+    const left = snapshotWith([]);
+    await act(async () => {
+      if (left.t === "snapshot") send({ ...left, snapshot: { ...left.snapshot, cursor: 2, machines: [] } });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(button("Delete project…").disabled).toBe(false);
+    expect(document.body.textContent).toContain("devbox was removed from this hub, so no machine holds its files");
+    expect(document.body.textContent).not.toContain("offline");
+    await click(button("Delete project…"));
+    await settle();
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Forget storefront?");
+    await click(button("Forget project"));
+    await settle();
+    expect(calls.filter((c) => c.tool === "project_remove").map((c) => c.input)).toEqual([{ machineId: "devbox", projectId: "p1" }]);
+  });
 });
 
 describe("Settings → Projects → Repos", () => {

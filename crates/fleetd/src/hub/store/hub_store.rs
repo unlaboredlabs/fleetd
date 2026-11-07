@@ -99,6 +99,30 @@ pub(super) const MACHINE_KEEPS: &[&str] = &[
     "pair_codes",
 ];
 
+/// [`HubStore::machine_remove`]'s deletes, in the caller's transaction. How many rows went.
+fn forget_machine(conn: &rusqlite::Connection, m: &str) -> rusqlite::Result<usize> {
+    let mut n = conn
+        .prepare_cached(
+            "DELETE FROM automation_runs WHERE automation_id IN
+               (SELECT automation_id FROM automations WHERE machine_id = ?)",
+        )?
+        .execute([m])?;
+    for table in MACHINE_TABLES {
+        n += conn
+            .prepare_cached(&format!("DELETE FROM {table} WHERE machine_id = ?"))?
+            .execute([m])?;
+    }
+    // As `project_remove` does for each project: a repo whose checkout was on it goes too.
+    for sql in [
+        "DELETE FROM repos WHERE machine_id = ?1 OR checkout_machine_id = ?1",
+        "DELETE FROM navi_asks WHERE from_machine_id = ?",
+        "DELETE FROM session_places WHERE origin_machine = ?",
+    ] {
+        n += conn.prepare_cached(sql)?.execute([m])?;
+    }
+    Ok(n)
+}
+
 /// Caches of what the hub has seen of each machine. Reads return what was written; staleness is the reader's call.
 pub struct HubStore {
     db: Arc<HubDb>,
@@ -240,26 +264,54 @@ impl HubStore {
     /// another machine's rows under the same project ids stay. What `MACHINE_KEEPS` holds is history and stays.
     /// Safe to run again: it clears what an older remove left behind. How many rows went.
     pub fn machine_remove(&self, machine_id: &MachineId) -> Result<usize, StoreError> {
-        let m = machine_id.as_str();
+        self.db
+            .transaction(|conn| Ok(forget_machine(conn, machine_id.as_str())?))
+    }
+
+    /// Forgets one project of a machine the hub no longer has, where no node is left to remove it: its rows in
+    /// [`MACHINE_TABLES`] that name it or one of its threads, as [`Self::machine_remove`] does for the whole machine.
+    /// Another machine's rows under the same project id stay. How many rows went.
+    pub fn machine_project_forget(&self, r: &ProjectRef) -> Result<usize, StoreError> {
+        let (m, p) = (r.machine_id.as_str(), r.project_id.as_str());
         self.db.transaction(|conn| {
             let mut n = conn
                 .prepare_cached(
                     "DELETE FROM automation_runs WHERE automation_id IN
-                       (SELECT automation_id FROM automations WHERE machine_id = ?)",
+                       (SELECT automation_id FROM automations WHERE machine_id = ? AND project_id = ?)",
                 )?
-                .execute([m])?;
+                .execute([m, p])?;
+            let mut by_project = Vec::new();
             for table in MACHINE_TABLES {
-                n += conn
-                    .prepare_cached(&format!("DELETE FROM {table} WHERE machine_id = ?"))?
-                    .execute([m])?;
+                let columns: Vec<String> = conn
+                    .prepare_cached("SELECT name FROM pragma_table_info(?)")?
+                    .query_map([table], |row| row.get(0))?
+                    .collect::<rusqlite::Result<_>>()?;
+                if columns.iter().any(|c| c == "project_id") {
+                    by_project.push(table);
+                } else if columns.iter().any(|c| c == "thread_id") {
+                    // Before `threads` goes: it says which threads are the project's.
+                    n += conn
+                        .prepare_cached(&format!(
+                            "DELETE FROM {table} WHERE machine_id = ?1 AND thread_id IN
+                               (SELECT thread_id FROM threads WHERE machine_id = ?1 AND project_id = ?2)"
+                        ))?
+                        .execute([m, p])?;
+                }
             }
-            // As `project_remove` does for each project: a repo whose checkout was on it goes too.
+            for table in by_project {
+                n += conn
+                    .prepare_cached(&format!(
+                        "DELETE FROM {table} WHERE machine_id = ? AND project_id = ?"
+                    ))?
+                    .execute([m, p])?;
+            }
             for sql in [
-                "DELETE FROM repos WHERE machine_id = ?1 OR checkout_machine_id = ?1",
-                "DELETE FROM navi_asks WHERE from_machine_id = ?",
-                "DELETE FROM session_places WHERE origin_machine = ?",
+                "DELETE FROM repos WHERE (machine_id = ?1 AND project_id = ?2)
+                   OR (checkout_machine_id = ?1 AND checkout_project_id = ?2)",
+                "DELETE FROM navi_asks WHERE from_machine_id = ? AND from_project_id = ?",
+                "DELETE FROM session_places WHERE origin_machine = ? AND project_id = ?",
             ] {
-                n += conn.prepare_cached(sql)?.execute([m])?;
+                n += conn.prepare_cached(sql)?.execute([m, p])?;
             }
             Ok(n)
         })
