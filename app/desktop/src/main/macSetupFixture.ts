@@ -28,7 +28,7 @@ const CHECKS = [
   ["standard_user", "ada is an administrator: allowed, as the Mac stays a tool."],
   ["other_homes", "No other user's home opens for ada."],
   ["no_apple_id", "No Apple ID is signed in."],
-  ["developer", "ada is in _developer."],
+  ["developer", "ada is in _developer and Developer Mode is on."],
   ["xcode", "Xcode 26.1 is selected, its licence accepted."],
   ["ios_runtime", "iOS 26.1 is installed."],
   ["gui_session", "ada is at the Mac's screen."],

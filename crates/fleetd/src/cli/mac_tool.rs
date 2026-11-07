@@ -34,7 +34,9 @@ mac: the agents' Mac, from wherever you run (fleetd's shared Mac for builds and 
   mac kill <job>                   ends a job
   mac pull <path> [to]             a file or folder from your folder on the Mac into your worktree
   mac sim start                    an iOS simulator of your own on the Mac, booted; from then on agent-device drives
-                                   it, running on the Mac (its files land in your folder there: mac pull them)
+                                   it, running on the Mac (its files land in your folder there: mac pull them). In
+                                   mac run, $FLEETD_MAC_SIM is its udid and $FLEETD_MAC_SIM_SET the device set plain
+                                   simctl needs: xcrun simctl --set \"$FLEETD_MAC_SIM_SET\" <command> \"$FLEETD_MAC_SIM\"
   mac sim end                      ends it (30 minutes with no mac command ends it too)
 
 Your folder there is $FLEETD_MAC_DIR, the pushed worktree $FLEETD_MAC_REPO; xcodebuild builds into your own
@@ -224,7 +226,9 @@ pub fn shown(result: &Value) -> String {
         ),
         Some("run") => format!("job {}\n", result["job"]),
         Some("sim_start") => format!(
-            "your simulator: {} ({}). Drive it with agent-device, which runs on the Mac now; end it with mac sim end\n",
+            "your simulator: {} ({}). Drive it with agent-device, which runs on the Mac now; end it with mac sim end. \
+             Plain simctl there needs fleetd's device set: mac run -- 'xcrun simctl --set \"$FLEETD_MAC_SIM_SET\" \
+             install \"$FLEETD_MAC_SIM\" <app>'\n",
             result["device"].as_str().unwrap_or("?"),
             result["udid"].as_str().unwrap_or("?")
         ),

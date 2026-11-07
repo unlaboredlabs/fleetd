@@ -78,13 +78,20 @@ pub fn shell_line(args: &[String]) -> (String, Vec<String>) {
     }
 }
 
+/// The simulator an agent holds, for its jobs: the node's home, its key in agent-device's wrapper, and its udid.
+pub struct SimEnv {
+    pub home: PathBuf,
+    pub key: String,
+    pub udid: String,
+}
+
 /// A job's environment: [`KEPT`] from the node's, the agent's folders, and the variables it named.
 pub fn job_env(
     agent: &Agent,
     cache: &Path,
     named: &[MacEnv],
     node: impl Iterator<Item = (String, String)>,
-    device: Option<&(PathBuf, String)>,
+    device: Option<&SimEnv>,
 ) -> Vec<(String, String)> {
     let mut env: Vec<(String, String)> = node.filter(|(k, _)| KEPT.contains(&k.as_str())).collect();
     let path = env
@@ -120,8 +127,9 @@ pub fn job_env(
         // Manners, not a fence: the Mac's node takes no calls from its jobs.
         ("FLEETD_NODE_SOCK".to_owned(), "/dev/null".to_owned()),
     ]);
-    // The agent's simulator: agent-device's wrapper first on the PATH, pointed at it.
-    if let Some((home, key)) = device {
+    // The agent's simulator: agent-device's wrapper first on the PATH, pointed at it, and for plain simctl its udid
+    // and the node's device set (`xcrun simctl --set "$FLEETD_MAC_SIM_SET" install "$FLEETD_MAC_SIM" <app>`).
+    if let Some(SimEnv { home, key, udid }) = device {
         let path = env
             .iter()
             .find(|(k, _)| k == "PATH")
@@ -129,6 +137,15 @@ pub fn job_env(
         let wrapper = crate::node::device::ios::wrapper::env(home, key, path.as_deref());
         env.retain(|(k, _)| !wrapper.iter().any(|(w, _)| w == k));
         env.extend(wrapper);
+        env.extend([
+            ("FLEETD_MAC_SIM".to_owned(), udid.clone()),
+            (
+                "FLEETD_MAC_SIM_SET".to_owned(),
+                crate::node::device::ios::set_dir(home)
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        ]);
     }
     for MacEnv { name, value } in named {
         env.retain(|(k, _)| k != name);
@@ -155,7 +172,7 @@ impl Jobs {
         args: &[String],
         named: &[MacEnv],
         background: bool,
-        device: Option<(PathBuf, String)>,
+        device: Option<SimEnv>,
     ) -> Result<Done, McpToolError> {
         if args.iter().all(|a| a.trim().is_empty()) {
             return Err(

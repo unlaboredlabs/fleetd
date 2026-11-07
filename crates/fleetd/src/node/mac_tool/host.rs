@@ -181,6 +181,19 @@ impl Host {
             )
             .with_fix("do without a simulator and say so; an admin finishes the Mac's setup in Settings › Hub › Machines")
         })?;
+        // Developer Mode off: the clone's XCTest runner would wait on a password prompt at the Mac's screen, and the
+        // agent's installs and launches hang behind it.
+        if let Some(check) = crate::node::agents_mac::checks::blocks_simulators(&sims.home) {
+            let command = check.command.as_ref().map_or("", |c| c.as_str());
+            return Err(McpToolError::new(
+                ErrorCode::Failed,
+                format!("The agents' Mac can't run iOS simulators yet: {}", check.message.as_str()),
+            )
+            .with_fix(format!(
+                "do without a simulator and tell your lead: an admin runs `{command}` in Terminal at the Mac, \
+                 then mac sim start works"
+            )));
+        }
         let mut held = sims.held.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(h) = held.get_mut(&agent.name) {
             h.used = Instant::now();
@@ -246,14 +259,13 @@ impl Host {
         }
     }
 
-    /// What points a job's agent-device at the agent's simulator, while it holds one.
-    fn sim_env(&self, agent: &str) -> Option<(PathBuf, String)> {
-        let held = self.held()?.contains_key(agent);
-        held.then(|| {
-            (
-                self.sims.as_ref().expect("held").home.clone(),
-                sim_key(agent),
-            )
+    /// What points a job's agent-device (and plain simctl) at the agent's simulator, while it holds one.
+    fn sim_env(&self, agent: &str) -> Option<super::jobs::SimEnv> {
+        let udid = self.held()?.get(agent)?.lent.udid.clone();
+        Some(super::jobs::SimEnv {
+            home: self.sims.as_ref().expect("held").home.clone(),
+            key: sim_key(agent),
+            udid,
         })
     }
 

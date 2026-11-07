@@ -90,6 +90,7 @@ pub fn run(probe: &dyn Probe) -> MacHealth {
                 "dseditgroup",
                 &["-o", "checkmember", "-m", &user, "_developer"],
             ),
+            &probe.run("DevToolsSecurity", &["-status"]),
         ),
         xcode.clone(),
         if xcode.state == Pass {
@@ -143,33 +144,72 @@ fn yours(command: impl Into<String>) -> Option<Fix> {
     })
 }
 
-/// `dseditgroup -o checkmember`: "yes <user> is a member of _developer", or "no ...".
-pub fn developer(user: &str, ran: &Ran) -> MacCheck {
-    let fix = || {
-        yours(format!(
-            "sudo dseditgroup -o edit -a {user} -t user _developer"
-        ))
+/// `dseditgroup -o checkmember` ("yes <user> is a member of _developer", or "no ...") and `DevToolsSecurity -status`
+/// ("Developer mode is currently enabled.", or "... disabled."). Both are needed: with Developer Mode off, each
+/// simulator's XCTest runner waits on a "Developer Tools Access" password prompt at the Mac's screen, and that
+/// simulator's installs and launches hang behind it.
+pub fn developer(user: &str, member: &Ran, devtools: &Ran) -> MacCheck {
+    let join = format!("sudo dseditgroup -o edit -a {user} -t user _developer");
+    let enable = "sudo DevToolsSecurity -enable";
+    let member = member.out.split_whitespace().next();
+    let mode = if devtools.out.contains("disabled") {
+        Some(false)
+    } else if devtools.out.contains("enabled") {
+        Some(true)
+    } else {
+        None
     };
-    match ran.out.split_whitespace().next() {
-        Some("yes") => check(
+    match (member, mode) {
+        (Some("yes"), Some(true)) => check(
             MacCheckId::Developer,
             Pass,
-            &format!("{user} is in _developer: simulators and debugging ask for no admin."),
+            &format!(
+                "{user} is in _developer and Developer Mode is on: simulators and debugging ask for no password."
+            ),
             None,
         ),
-        Some("no") => check(
+        (Some("yes"), Some(false)) => check(
+            MacCheckId::Developer,
+            Fail,
+            "Developer Mode is off, so each iOS simulator's test runner waits on a password prompt at the Mac's \
+             screen, and installs into that simulator hang.",
+            yours(enable),
+        ),
+        (Some("no"), Some(true)) => check(
             MacCheckId::Developer,
             Fail,
             &format!("{user} isn't in _developer, so Xcode would ask for an admin's password."),
-            fix(),
+            yours(join),
+        ),
+        (Some("no"), Some(false)) => check(
+            MacCheckId::Developer,
+            Fail,
+            &format!(
+                "{user} isn't in _developer and Developer Mode is off, so Xcode asks for an admin's password and \
+                 installs into iOS simulators hang."
+            ),
+            yours(format!("{enable} && {join}")),
         ),
         _ => check(
             MacCheckId::Developer,
             Unknown,
-            &format!("dseditgroup didn't say whether {user} is in _developer."),
-            fix(),
+            &format!(
+                "dseditgroup and DevToolsSecurity didn't say whether {user} is in _developer with Developer Mode on."
+            ),
+            yours(format!("{enable} && {join}")),
         ),
     }
+}
+
+/// The developer check, when it fails: iOS simulators would hang on its password prompt, so `mac sim start` refuses
+/// with its fix instead. From the node's last checks at `home` ([`super::read_health`]).
+pub fn blocks_simulators(home: &std::path::Path) -> Option<MacCheck> {
+    let (health, _) = super::read_health(home)?;
+    health
+        .checks
+        .iter()
+        .find(|c| c.id == MacCheckId::Developer && c.state == Fail)
+        .cloned()
 }
 
 /// Xcode isn't usable yet: not installed, or not the one selected. Only iOS simulators and builds wait for it, so it

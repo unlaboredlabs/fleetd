@@ -55,6 +55,20 @@ files it reads and writes are there: `mac push` what it installs, `mac pull` wha
 simulator; asking again gives the same one. `mac sim end` deletes it with everything done in it, and so does 30
 minutes with no `mac` command from that agent.
 
+Each agent's simulator is its own clone with its own agent-device daemon, so two agents install, launch and drive
+their apps at the same time. For plain `simctl`, which doesn't know the node's device set (it says "Invalid device"
+without it), a `mac run` job gets the simulator's udid as `$FLEETD_MAC_SIM` and the set as `$FLEETD_MAC_SIM_SET`:
+
+```sh
+mac run -- 'xcrun simctl --set "$FLEETD_MAC_SIM_SET" launch "$FLEETD_MAC_SIM" com.example.app'
+```
+
+Simulators need Developer Mode on (`sudo DevToolsSecurity -enable`, in [the Xcode step](#xcode)). With it off, each
+simulator's agent-device runner waits on a "Developer Tools Access" password prompt at the Mac's screen, and every
+install and launch into that simulator hangs behind it. The `mac_developer` check fails then, and `mac sim start`
+refuses with that command instead of lending a simulator that hangs. Turning it on (and cancelling a prompt still on
+the screen) frees simulators already stuck: an install tried again goes through.
+
 The Mac makes its golden simulator by itself once its tool is on (minutes, the first time: a boot to settle, then
 agent-device's runner built with `xcodebuild`); until then `mac sim start` says it's still being made. It needs an iOS
 runtime (the `mac_ios_runtime` check), and the doctor's `ios` check says where the golden stands. The simulators live
@@ -297,7 +311,7 @@ with no check still in progress (its tools installing), and lists one still in p
 
 | Check | Passes when | Fix |
 |---|---|---|
-| `mac_developer` | The account is in `_developer`. | `sudo dseditgroup -o edit -a "$(id -un)" -t user _developer` |
+| `mac_developer` | The account is in `_developer`, and Developer Mode is on (`DevToolsSecurity -status`). While it fails, `mac sim start` refuses: [simulators would hang](#sim). | `sudo DevToolsSecurity -enable`, `sudo dseditgroup -o edit -a "$(id -un)" -t user _developer`: the ones it names |
 | `mac_xcode` | A full Xcode is selected, its licence accepted and its first launch run. Otherwise it warns: setup still ends, and only simulators wait. | The one command for [what it found](#no-xcode): the App Store, `sudo xcode-select -s` to the Xcode in /Applications, or the licence |
 | `mac_ios_runtime` | `xcrun simctl list runtimes` has an available iOS runtime. While Xcode isn't usable it warns that it waits for it. | `xcodebuild -downloadPlatform iOS` |
 | `mac_accessibility`, `mac_screen_recording` | macOS has given fleetd's node each grant (asked of a fresh process, `fleetd node grants`; reading never prompts). One an update took away [says so](#grants-updates). | `fleetd node grants --ask <grant>` at the Mac, then turn on fleetd in the pane it opens; the node restarts itself to take it up. |

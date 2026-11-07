@@ -389,8 +389,13 @@ fn a_job_gets_its_folders_and_the_named_variables_and_nothing_else_of_the_nodes(
     assert_eq!(get("FLEETD_HUB_KEY"), None);
     assert_eq!(get("SSH_AUTH_SOCK"), None);
     assert_eq!(get("AGENT_DEVICE_HOME"), None);
-    // Holding a simulator: agent-device's wrapper comes first, pointed at it.
-    let device = ("/n".into(), host::sim_key("T1"));
+    assert_eq!(get("FLEETD_MAC_SIM"), None);
+    // Holding a simulator: agent-device's wrapper comes first, pointed at it, and plain simctl gets its udid and set.
+    let device = jobs::SimEnv {
+        home: "/n".into(),
+        key: host::sim_key("T1"),
+        udid: "8A1B2C3D-0000-4000-8000-000000000002".into(),
+    };
     let env = jobs::job_env(
         &agent,
         Path::new("/w/.cache"),
@@ -407,6 +412,11 @@ fn a_job_gets_its_folders_and_the_named_variables_and_nothing_else_of_the_nodes(
         get("AGENT_DEVICE_HOME"),
         Some("/n/sessions/mac-T1/agent-device")
     );
+    assert_eq!(
+        get("FLEETD_MAC_SIM"),
+        Some("8A1B2C3D-0000-4000-8000-000000000002")
+    );
+    assert_eq!(get("FLEETD_MAC_SIM_SET"), Some("/n/device/ios/set"));
     // A node whose PATH has Homebrew already, and a LANG of its own: neither twice, nor changed.
     let node = [
         ("PATH", "/opt/homebrew/bin:/usr/bin"),
