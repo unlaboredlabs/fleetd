@@ -136,7 +136,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
 
   const newMachine = type.startsWith("machine.") && (event.machineId === undefined || !(event.machineId in machines));
   // A repo removed from a project (project.settings) can bring its checkout back as a project of its own.
-  const resync = newMachine || type === "project.added" || type === "project.removed" || type === "project.settings";
+  // A removed machine goes with its projects (the hub erased them): the snapshot no longer has any of them.
+  const resync = newMachine || type === "machine.removed" || type === "project.added" || type === "project.removed" || type === "project.settings";
   // Add project's list marks which repos are already projects.
   if (type === "project.added" || type === "project.removed") out.push({ tool: "project_discover" });
   return { invalidate: out, resync };

@@ -2856,6 +2856,7 @@ export type KnownHubEventType =
   | "machine.linked"
   | "machine.guard"
   | "machine.recovery_paused"
+  | "machine.removed"
   | "thread.orphaned"
   | "project.removed"
   | "project.added"

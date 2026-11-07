@@ -79,7 +79,8 @@ pub(super) const MACHINE_TABLES: &[&str] = &[
 
 /// Tables with a `machine_id` that [`HubStore::machine_remove`] keeps. The event log, the time inspector and the
 /// factory metrics are the record of work done, which each prunes by its own retention; its orders and their train
-/// changes and reviews are what the metrics and the train name by id. `navi_erases` is a Navi's delete still to
+/// changes and reviews are what the metrics and the train name by id (`machine remove` erases those of the projects
+/// the hub lists for it first, as deleting each project would: `navi::erase`). `navi_erases` is a Navi's delete still to
 /// finish (`navi::erase`), which also removes its files. `pair_codes` names the machine an agents' Mac setup code
 /// joins (hub/pair/mac.rs): the code outlives the old Mac's removal, which is how a new Mac replaces it, and the sweep
 /// prunes it with the other codes. A test holds every table to one list or the other.

@@ -10,6 +10,7 @@
 //! never reaches the hub (a timeout), [`run`] finishes the erase once the hub's cache no longer has the Navi, at the
 //! node's `project_removed` or the first snapshot after, and at the hub's start.
 use std::collections::BTreeSet;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,7 +24,7 @@ use rusqlite::{Connection, params};
 
 use crate::hub::api::Hub;
 use crate::hub::ledger::project_key;
-use crate::hub::store::{StoreError, now_ms};
+use crate::hub::store::{HubDb, StoreError, now_ms};
 
 /// Tables with the Navi's rows by `machine_id` and `project_id`.
 const BY_PROJECT: &[&str] = &[
@@ -138,17 +139,23 @@ pub async fn run(hub: Arc<Hub>) {
 /// Erases what the hub keeps of the Navi `r`, its rows and its files, and its mark ([`asked`]). Run once its node has
 /// forgotten it.
 pub fn erase(hub: &Hub, r: &ProjectRef) -> Result<(), StoreError> {
-    let (recordings, blobs) = hub.db.transaction(|c| rows(c, r))?;
+    erase_in(&hub.db, &hub.config.home, r)
+}
+
+/// [`erase`] in the hub database `db` whose home is `home`: `fleetd machine remove` erases a machine's projects
+/// with it, from outside the hub's process too.
+pub fn erase_in(db: &HubDb, home: &Path, r: &ProjectRef) -> Result<(), StoreError> {
+    let (recordings, blobs) = db.transaction(|c| rows(c, r))?;
     for id in &recordings {
-        gone(&crate::hub::browser::dir(
-            hub,
+        gone(&crate::hub::browser::dir_in(
+            home,
             &BrowserSessionId::unchecked(id),
         ));
     }
-    let attachments = crate::hub::intake::attachments::dir(hub);
+    let attachments = crate::hub::intake::attachments::dir_in(home);
     for sha in &blobs {
         // A file another chat or order holds too stays.
-        let held = hub.db.with(|c| {
+        let held = db.with(|c| {
             Ok(
                 c.prepare_cached("SELECT 1 FROM attachments WHERE sha256 = ? LIMIT 1")?
                     .exists([sha])?,
@@ -158,13 +165,13 @@ pub fn erase(hub: &Hub, r: &ProjectRef) -> Result<(), StoreError> {
             gone(&attachments.join(sha));
         }
     }
-    if let Some(dir) = hub.db.memory().project_dir(r) {
+    if let Some(dir) = db.memory().project_dir(r) {
         gone(&dir);
     }
-    if let Some(dir) = hub.db.skills().scope_dir(SkillScope::Project, Some(r)) {
+    if let Some(dir) = db.skills().scope_dir(SkillScope::Project, Some(r)) {
         gone(&dir);
     }
-    hub.db.with(|c| {
+    db.with(|c| {
         c.execute(
             "DELETE FROM navi_erases WHERE machine_id = ? AND project_id = ?",
             params![r.machine_id.as_str(), r.project_id.as_str()],
