@@ -123,7 +123,7 @@ describe("Add project's new project", () => {
     await render();
     expect(options()[0]).toContain("New project");
     expect(options()[0]).toContain("no repo needed");
-    await type(field("GitHub URL, folder path, or filter"), "Field notes");
+    await type(field("New project name, GitHub URL, folder path, or filter"), "Field notes");
     expect(options()).toEqual([expect.stringContaining("New project Field notes")]);
     expect(field("Folder").value).toBe(`${ROOT}/field-notes`);
     expect(button("Create project")?.disabled).toBe(false);
@@ -137,7 +137,7 @@ describe("Add project's new project", () => {
 
   it("creates it where the folder says, git init only when ticked, and opens it once the hub lists it", async () => {
     const send = await render();
-    await type(field("GitHub URL, folder path, or filter"), "Field notes");
+    await type(field("New project name, GitHub URL, folder path, or filter"), "Field notes");
     await act(async () => {
       document.querySelector<HTMLButtonElement>('[role="checkbox"]')?.click();
       await Promise.resolve();
@@ -148,7 +148,7 @@ describe("Add project's new project", () => {
     });
     await settle();
     const add = calls.find((c) => c.tool === "project_add");
-    expect(add?.input).toEqual({ machineId: "devbox", path: `${ROOT}/field-notes`, title: "Field notes", create: true, gitInit: true });
+    expect(add?.input).toEqual({ machineId: "devbox", path: `${ROOT}/field-notes`, title: "Field notes", create: true, gitInit: true, onlyMe: true });
     // Not before the hub's snapshot has it, so its chat never shows as missing.
     expect(window.location.hash).toBe("#/projects/add");
     const made = { machineId: "devbox", projectId: "p9", title: "Field notes", workspaceRoot: `${ROOT}/field-notes`, threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, lastActivityAt: AT };
@@ -161,7 +161,7 @@ describe("Add project's new project", () => {
 
   it("resets an edited folder to the next machine's default, unless it is outside any home folder", async () => {
     await render();
-    await type(field("GitHub URL, folder path, or filter"), "Field notes");
+    await type(field("New project name, GitHub URL, folder path, or filter"), "Field notes");
     await type(field("Folder"), "/home/w/notes");
     await act(async () => {
       machine("buildbox")?.click();
@@ -178,7 +178,7 @@ describe("Add project's new project", () => {
 
   it("offers to open the project an empty folder already is, never a second one", async () => {
     await render();
-    await type(field("GitHub URL, folder path, or filter"), "Old notes");
+    await type(field("New project name, GitHub URL, folder path, or filter"), "Old notes");
     await act(async () => {
       button("Create project")?.click();
       await Promise.resolve();
@@ -195,7 +195,7 @@ describe("Add project's new project", () => {
   it("says to update a node too old to make the folder, and creates nothing", async () => {
     projectsRoot = undefined;
     await render();
-    await type(field("GitHub URL, folder path, or filter"), "Field notes");
+    await type(field("New project name, GitHub URL, folder path, or filter"), "Field notes");
     expect(document.body.textContent).toContain("Update fleetd on devbox to create a project there.");
     expect(document.querySelector('input[aria-label="Folder"]')).toBeNull();
     expect(button("Create project")?.disabled).toBe(true);

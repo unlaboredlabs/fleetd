@@ -1,5 +1,5 @@
-// A Navi's Integrations and Approvals (Settings → Projects → the Navi). integrations-none: the typical hub's first
-// project marked as a Navi (kind assistant), nothing connected yet. integrations-connected: two MCP servers connected,
+// A project's Integrations and Approvals (Settings → Projects). integrations-none: the typical hub's first project,
+// Home, Only me, nothing connected yet. integrations-connected: two MCP servers connected,
 // each key sealed on devbox, and Test connection answering with each tool by the hub's policy. integrations-approvals: its
 // approvals with the checker on, and what ran without asking (the checker's go with its reason, YOLO's run, a first
 // visit), each linking to its line. integrations-adding: nothing connected yet, and a test of xaq (a URL server with a
@@ -12,36 +12,40 @@ import { defineGroup } from "../kit/group.ts";
 import { arr } from "../kit/stress.ts";
 import { asText, isObject, type JsonObject } from "../kit/json.ts";
 import { profilesList } from "../settings/profiles.ts";
+import { projectSections } from "../kit/sections.ts";
+import { PROJECT_TOOLS } from "../../src/renderer/screens/projects/model.ts";
 
 const AT = "2026-10-27T09:00:00.000Z";
 
-/** Marks the first project a Navi and returns its ref. */
-const navi = (f: Fixture): { machineId: string; projectId: string } => {
+/** Makes the first project Home, Only me with no repo, and returns its ref. */
+const home = (f: Fixture): { machineId: string; projectId: string } => {
   const projects = arr(f.snapshot?.["projects"]).filter(isObject);
   const first = projects[0];
-  if (first === undefined) throw new Error("navi fixtures: the base has no project");
-  first["kind"] = "assistant";
+  if (first === undefined) throw new Error("integrations fixtures: the base has no project");
+  first["onlyMe"] = true;
   first["title"] = "Home";
+  delete first["repos"];
   const ref = { machineId: asText(first["machineId"]), projectId: asText(first["projectId"]) };
-  f.answer("navi_purchases", ref, { purchases: [] });
+  f.answer(PROJECT_TOOLS.purchases, ref, { purchases: [] });
   f.answer("project_settings_get", ref, {
     settings: {
       ...ref,
       title: "Home",
-      workspaceRoot: "/home/dev/navi/home",
+      workspaceRoot: "/home/dev/projects/home",
       setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] },
       env: [],
       worktrees: { dir: `/home/dev/.fleetd/node/worktrees/${ref.projectId}`, baseBranch: "main", worktrees: [] },
     },
   });
-  f.answer("navi_approvals", ref, { approvals: CHECKER, log: [] });
+  f.answer(PROJECT_TOOLS.approvals, ref, { approvals: CHECKER, log: [] });
   f.answer("profiles_list", {}, profilesList());
+  projectSections(f, ref);
   return ref;
 };
 
 const CHECKER = { mode: "checker", model: "claude-sonnet-5-5", effort: "medium", defaults: true };
 
-/** What ran without asking, newest first, as navi_approvals answers it. */
+/** What ran without asking, newest first, as the approvals read answers it. */
 const LOG: JsonObject[] = [
   {
     at: "2026-10-31T16:42:00.000Z",
@@ -106,15 +110,15 @@ const LINEAR_TOOLS = [...tools(["list_issues", "get_issue"], ["create_issue", "u
 const DOCS_TOOLS = tools(["search_pages", "get_page"], ["create_page", "update_page", "delete_page"]);
 
 const empty = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "integrations-none", "A Navi's Integrations with nothing connected yet: Add an MCP server.");
-  const ref = navi(f);
+  const f = Fixture.from(base, "integrations-none", "A project's Integrations with nothing connected yet: Add an MCP server.");
+  const ref = home(f);
   f.answer("mcp_servers_get", { project: ref }, { global: [], project: [], userServers: true });
   return f;
 };
 
 const connected = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "integrations-connected", "A Navi with two MCP servers connected, each key sealed on its machine; Test connection lists each tool by policy.");
-  const ref = navi(f);
+  const f = Fixture.from(base, "integrations-connected", "A project with two MCP servers connected, each key sealed on its machine; Test connection lists each tool by policy.");
+  const ref = home(f);
   f.answer("mcp_servers_get", { project: ref }, { global: [], project: [docs(ref), custom(ref)], userServers: true });
   const scope = { kind: "project", ...ref };
   f.answer("mcp_server_test", { scope, name: "linear" }, { machineId: ref.machineId, result: { server: "Linear 1.4.0", tools: LINEAR_TOOLS } });
@@ -130,8 +134,8 @@ const XAQ_TOOLS = [
 ];
 
 const adding = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "integrations-adding", "A Navi adding a URL MCP server with a key (xaq): its test lists four tools to pick from.");
-  const ref = navi(f);
+  const f = Fixture.from(base, "integrations-adding", "A project adding a URL MCP server with a key (xaq): its test lists four tools to pick from.");
+  const ref = home(f);
   f.answer("mcp_servers_get", { project: ref }, { global: [], project: [], userServers: true });
   f.answer("mcp_server_test", { scope: { kind: "project", ...ref }, name: "xaq" }, { machineId: ref.machineId, result: { server: "xaq 0.3.0", tools: XAQ_TOOLS } });
   return f;
@@ -155,9 +159,9 @@ const signin = (base: Fixture): Fixture => {
   const f = Fixture.from(
     base,
     "integrations-signin",
-    "A Navi's servers that sign in with OAuth: mail signed in, calendar signed out by its service with Reconnect, and notes being added, which asks for sign-in.",
+    "A project's servers that sign in with OAuth: mail signed in, calendar signed out by its service with Reconnect, and notes being added, which asks for sign-in.",
   );
-  const ref = navi(f);
+  const ref = home(f);
   const scope = { kind: "project", ...ref };
   const mail = oauth(ref, "mail", "https://mcp.mail.example/mcp", {
     status: "connected",
@@ -192,10 +196,10 @@ const signin = (base: Fixture): Fixture => {
   return f;
 };
 
-/** A Navi's Payments: the card it pays with, the Credit Card items the person's 1Password reads, and its purchases. */
+/** A project's Payments: the card it pays with, the Credit Card items the person's 1Password reads, and its purchases. */
 const payments = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "integrations-payments", "A Navi's Payments: it pays with Visa from 1Password, and its purchases: a hotel waiting, a train ticket filled, a flight not bought.");
-  const ref = navi(f);
+  const f = Fixture.from(base, "integrations-payments", "A project's Payments: it pays with Visa from 1Password, and its purchases: a hotel waiting, a train ticket filled, a flight not bought.");
+  const ref = home(f);
   f.answer("mcp_servers_get", { project: ref }, { global: [], project: [], userServers: true });
   const card = { ref: "op://Personal/Visa" };
   const entry = (requestId: string, state: string, shop: [string, string], amount: string, asked: string, extra: JsonObject = {}): JsonObject => ({
@@ -211,7 +215,7 @@ const payments = (base: Fixture): Fixture => {
     },
     ...extra,
   });
-  f.answer("navi_purchases", ref, {
+  f.answer(PROJECT_TOOLS.purchases, ref, {
     card,
     purchases: [
       entry("Q22", "open", ["Hotel Devbox", "hotel-devbox.example"], "264.40", "2026-10-31T08:58:00.000Z"),
@@ -230,10 +234,10 @@ const payments = (base: Fixture): Fixture => {
 };
 
 const approvals = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "integrations-approvals", "A Navi's approvals with the checker on, and four actions that ran without asking.");
-  const ref = navi(f);
+  const f = Fixture.from(base, "integrations-approvals", "A project's approvals with the checker on, and four actions that ran without asking.");
+  const ref = home(f);
   f.answer("mcp_servers_get", { project: ref }, { global: [], project: [docs(ref)], userServers: true });
-  f.answer("navi_approvals", ref, { approvals: CHECKER, log: LOG });
+  f.answer(PROJECT_TOOLS.approvals, ref, { approvals: CHECKER, log: LOG });
   return f;
 };
 

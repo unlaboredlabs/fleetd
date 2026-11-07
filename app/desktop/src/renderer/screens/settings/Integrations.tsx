@@ -478,6 +478,8 @@ function SealedNote({ machine, what }: { machine: string; what: string }) {
 /** An MCP server: its details, then, once tested, which of its tools only read and may run unasked. */
 function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; onClose: () => void; onDone: (name: string, t: Tested) => void }) {
   const machine = useMachine(props.projectRef);
+  // The project by its name, as the person calls it: "Which of mail's tools may Ada use without asking?"
+  const who = useData((d) => d.projects[`${props.projectRef.machineId}/${props.projectRef.projectId}`]?.title) ?? "Its lead";
   const connect = useConnect();
   const scope = { kind: "project" as const, ...props.projectRef };
   const [draft, setDraft] = useState<Draft>(() => ({ ...emptyDraft(), kind: "http", values: [{ name: "Authorization", secret: true, value: "", saved: false }] }));
@@ -553,13 +555,13 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
       open
       wide
       onOpenChange={(o) => !o && !busy && (tested === null ? props.onClose() : props.onDone(name, tested))}
-      title={tested === null ? "Add an MCP server" : failed ? `${name} is added, but its test failed` : `Which of ${name}'s tools may the lead use without asking?`}
+      title={tested === null ? "Add an MCP server" : failed ? `${name} is added, but its test failed` : `Which of ${name}'s tools may ${who} use without asking?`}
       description={
         tested === null
-          ? `Any MCP server, by its URL or a command run on ${machine.name}. The lead asks you before it uses any of its tools, until you pick the ones it may use freely.`
+          ? `Any MCP server, by its URL or a command run on ${machine.name}. ${who} asks you before it uses any of its tools, until you pick the ones it may use freely.`
           : failed
-            ? `The lead can't use it until it works. Test it again from the list; to change its URL or key, disconnect it and add it again.`
-            : "Tick the ones that only look things up. Leave anything that changes, sends or deletes unticked, so the lead asks you each time. Moving money, trading and creating accounts are always blocked."
+            ? `${who} can't use it until it works. Test it again from the list; to change its URL or key, disconnect it and add it again.`
+            : `Tick the ones that only look things up. Leave anything that changes, sends or deletes unticked, so ${who} asks you each time. Moving money, trading and creating accounts are always blocked.`
       }
       footer={
         tested === null ? (
@@ -582,14 +584,14 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
     >
       {tested === null ? (
         <div className={s.stack}>
-          <Field label="Name" error={nameIssue} description="Short: the lead sees its tools as mcp__<name>__<tool>.">
+          <Field label="Name" error={nameIssue} description={`Short: ${who} sees its tools as mcp__<name>__<tool>.`}>
             <Input mono aria-label="Name" value={draft.name} disabled={busy} autoComplete="off" spellCheck={false} placeholder="linear" onChange={(e) => set({ name: e.target.value })} />
           </Field>
           <RadioGroup
             className={s.radios}
             value={draft.kind}
             onValueChange={(v) => set({ kind: v === "stdio" ? "stdio" : "http", values: [{ name: v === "stdio" ? "API_KEY" : "Authorization", secret: true, value: "", saved: false }] })}
-            aria-label="How the lead reaches it"
+            aria-label={`How ${who} reaches it`}
           >
             <Radio value="http" label="URL" />
             <Radio value="stdio" label="Command" />

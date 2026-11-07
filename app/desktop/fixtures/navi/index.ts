@@ -1,11 +1,10 @@
-// Navi in the app (screens/navi). navi-none: a hub with projects and no Navi yet (the sidebar's Meet Navi, and
-// #/navi's first run). navi-two: two Navis, Ada and Home, pinned above the projects, and Taxes archived; Ada asks to
-// book a table through its MCP server (the approval card, with its preview) and has asked storefront and billing for
-// work (Asked work, navi_asks), and keeps skills it learned (Skills, with weekly-invoices' history). navi-old-hub: the
-// same on a hub that doesn't serve Asked work or a Navi's skills to the app yet.
-// navi-links: Ada's Linked hubs and Sam's links to this hub (hubLinks/); navi-links-none: neither yet.
-// navi-files: files both ways in Home's chat: the person sends a lease (.docx) and a bank export (.csv), and Home sends
-// back the trip as a PDF and the receipts as a CSV, each a card that opens or saves.
+// Only-me projects in the app: a chat with a lead and no repo, first in the sidebar, as former Navis are. only-me-chats: Ada
+// and Home, Only me, above the projects, and Taxes archived; Ada asks to book a table through its MCP server (the
+// approval card, with its preview), has asked storefront and billing for work (Asked work, project_asks) and keeps
+// skills it learned (Skills, with weekly-invoices' history). only-me-links: Ada's Linked hubs and Sam's links to this
+// hub (hubLinks/); only-me-links-none: neither yet. only-me-files: files both ways in Home's chat: the person sends a
+// lease (.docx) and a bank export (.csv), and Home sends back the trip as a PDF and the receipts as a CSV, each a card
+// that opens or saves.
 import { writeChat, type Ref } from "../kit/chat.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -13,19 +12,21 @@ import { at, uuid } from "../kit/ids.ts";
 import { ADA, HOME, TAXES } from "./ids.ts";
 import { asText, isObject, type JsonObject } from "../kit/json.ts";
 import { arr } from "../kit/stress.ts";
+import { PROJECT_TOOLS } from "../../src/renderer/screens/projects/model.ts";
+import { projectSections } from "../kit/sections.ts";
 
 
 const CREATOR = { keyId: "k-laptop", name: "laptop" };
 
-/** A Navi as the snapshot lists it beside the projects (the showcase's too). */
-export const navi = (f: Fixture, ref: Ref, title: string, folder: string, archivedAgoMs?: number): JsonObject => ({
+/** An Only-me project with no repo, as the snapshot lists it beside the others (the showcase's too). */
+export const ownProject = (f: Fixture, ref: Ref, title: string, folder: string, archivedAgoMs?: number): JsonObject => ({
   machineId: ref.machineId,
   projectId: ref.projectId,
   title,
-  workspaceRoot: `/home/dev/.fleetd/navi/${folder}`,
+  workspaceRoot: `/home/dev/projects/${folder}`,
   lastActivityAt: at(f.now, -600_000),
   threads: { failed: 0, idle: 1, running: 0, waiting: 0 },
-  kind: "assistant",
+  onlyMe: true,
   createdBy: CREATOR,
   ...(archivedAgoMs === undefined ? {} : { archivedAt: at(f.now, -archivedAgoMs) }),
 });
@@ -37,7 +38,7 @@ const refOf = (f: Fixture, title: string): Ref => {
   return { machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) };
 };
 
-/** A call a Navi makes through one of its MCP servers: the server, the tool, what it says it does, and its input. */
+/** A call a lead makes through one of its MCP servers: the server, the tool, what it says it does, and its input. */
 export interface ToolCall {
   readonly server: string;
   readonly tool: string;
@@ -55,12 +56,12 @@ const BOOKING: ToolCall = {
 };
 
 /**
- * A Navi's ask through one of its MCP servers, as the hub files it: the tool's input, and the card the integrations
+ * A lead's ask through one of its MCP servers, as the hub files it: the tool's input, and the card the integrations
  * policy makes of it. Ada's table for lunch here; the showcase's lease renewal.
  */
-export const toolApproval = (navi: Ref, name: string, call: ToolCall = BOOKING): JsonObject => ({
+export const toolApproval = (project: Ref, name: string, call: ToolCall = BOOKING): JsonObject => ({
   kind: "command_approval",
-  machineId: navi.machineId,
+  machineId: project.machineId,
   state: "open",
   permission: {
     requestId: `perm-${name}-1`,
@@ -79,9 +80,9 @@ export const toolApproval = (navi: Ref, name: string, call: ToolCall = BOOKING):
 });
 
 const two = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "navi-two", "Navi: Ada and Home above the projects, Taxes archived; Ada asks to book a table and follows work it asked for.");
-  if (f.snapshot === undefined) throw new Error("navi-two needs a snapshot");
-  f.snapshot["projects"] = [...arr(f.snapshot["projects"]), navi(f, ADA, "Ada", "ada"), navi(f, HOME, "Home", "home"), navi(f, TAXES, "Taxes", "taxes", 3 * 86_400_000)];
+  const f = Fixture.from(base, "only-me-chats", "Only me: Ada and Home above the projects, Taxes archived; Ada asks to book a table and follows work it asked for.");
+  if (f.snapshot === undefined) throw new Error("only-me-chats needs a snapshot");
+  f.snapshot["projects"] = [...arr(f.snapshot["projects"]), ownProject(f, ADA, "Ada", "ada"), ownProject(f, HOME, "Home", "home"), ownProject(f, TAXES, "Taxes", "taxes", 3 * 86_400_000)];
   const storefront = refOf(f, "storefront");
   const billing = refOf(f, "billing");
   writeChat(
@@ -110,7 +111,7 @@ const two = (base: Fixture): Fixture => {
     { author: "human", text: "File the quarterly estimate before the 15th." },
     { author: "lead", text: "Paid on the 12th; the receipt is in my folder." },
   ]);
-  f.answer("navi_asks", { navi: { ...TAXES } }, { navi: { ...TAXES }, asks: [], next: "This Navi has asked no other project for anything yet." });
+  f.answer(PROJECT_TOOLS.asks, { navi: { ...TAXES } }, { navi: { ...TAXES }, asks: [], next: "This project has asked no other project for anything yet." });
   // Ada's to-do list, its panel's Plan.
   f.answer("checklist_get", { projectRef: { ...ADA } }, {
     projectRef: { ...ADA },
@@ -124,9 +125,8 @@ const two = (base: Fixture): Fixture => {
   f.answer("requests_list", { limit: 100 }, {
     requests: [{ requestId: "Q1", projectRef: { ...ADA }, kind: "approval", state: "open", text: "Book a table for two on Tuesday at 12:30", createdAt: at(f.now, -120_000) }],
   });
-  // Asked work: the hub serves navi_asks to the app (#649).
-  if (f.state.phase === "live") f.state = { ...f.state, features: [...(f.state.features ?? []), "navi_asks"] };
-  f.answer("navi_asks", { navi: { ...ADA } }, {
+  // Asked work (#649).
+  f.answer(PROJECT_TOOLS.asks, { navi: { ...ADA } }, {
     navi: { ...ADA },
     asks: [
       {
@@ -142,7 +142,7 @@ const two = (base: Fixture): Fixture => {
         handle: "N7",
         to: storefront,
         toTitle: "storefront",
-        text: 'From the person, relayed by their Navi (their words: "machines setup is not good ux enough. user doesnt know what to do, so make it automatic or provide commands. also it keeps saying its fleetd is too old right after i updated.") Two things on the Machines setup page in the app:\n\n1. UX: a user doesn\'t know what to do next during machine setup. Make the steps automatic where possible, and where a step needs the person, show the exact command to run (copyable), not a vague instruction.\n2. Bug: the page keeps saying "Its fleetd is too old to change these from here" right after the person updated. Verify the cause from the code and logs rather than assuming, fix the real cause, and make the message clear about what to do if it is ever genuinely stale.',
+        text: 'From the person, relayed by their lead (their words: "machines setup is not good ux enough. user doesnt know what to do, so make it automatic or provide commands. also it keeps saying its fleetd is too old right after i updated.") Two things on the Machines setup page in the app:\n\n1. UX: a user doesn\'t know what to do next during machine setup. Make the steps automatic where possible, and where a step needs the person, show the exact command to run (copyable), not a vague instruction.\n2. Bug: the page keeps saying "Its fleetd is too old to change these from here" right after the person updated. Verify the cause from the code and logs rather than assuming, fix the real cause, and make the message clear about what to do if it is ever genuinely stale.',
         at: at(f.now, -1_200_000),
         orders: [{ workstreamId: "W14", title: "Machines setup gives exact commands, and the update notice clears", state: "open", headline: "A writer is on the copyable commands; the stale version is next." }],
       },
@@ -182,9 +182,8 @@ const INVOICES_WHY = "The supplier moved the PDF download under Billing › Docu
 const invoices = (step: string, folder: string) =>
   `---\nname: weekly-invoices\ndescription: Download the week's supplier invoices as PDFs. Use on Mondays, or when Sam asks for invoices.\n---\n\n# Weekly invoices\n\n1. Open the supplier portal; the login is in 1Password as *Acme Supplies*.\n2. ${step}\n3. Filter to the last 7 days and download each invoice as a PDF.\n4. Save them in \`${folder}\`, named by date and number: \`2026-10-27 INV-4471.pdf\`.\n5. Tell Sam the count and the total; flag any over 500.\n`;
 
-/** Ada's skills (navi/SkillsPane): what it learned, one of them off, one installed, and weekly-invoices' history. */
+/** Ada's skills (skills/SkillsPane): what it learned, one of them off, one installed, and weekly-invoices' history. */
 const adaSkills = (f: Fixture): void => {
-  if (f.state.phase === "live") f.state = { ...f.state, features: [...(f.state.features ?? []), "navi_skills"] };
   const projectRef = { ...ADA };
   const hour = 3_600_000;
   const newest = { version: 3, author: "agent", by: "Ada", at: at(f.now, -2 * hour), why: INVOICES_WHY };
@@ -239,18 +238,10 @@ const adaSkills = (f: Fixture): void => {
   texts.forEach((text, i) => f.answer("skill_get", { ...base, version: i + 1 }, { skill: summary, text, versions }));
 };
 
-const oldHub = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "navi-old-hub", "Navi: navi-two on a hub that doesn't share a Navi's asks or skills with the app yet.");
-  if (f.state.phase === "live") f.state = { ...f.state, features: (f.state.features ?? []).filter((x) => x !== "navi_asks" && x !== "navi_skills") };
-  f.drop("navi_asks", { navi: { ...ADA } });
-  f.drop("navi_asks", { navi: { ...TAXES } });
-  return f;
-};
-
-/** Ada's settings page, as Settings › Projects reads it for a Navi. */
+/** Ada's settings page, as Settings › Projects reads it. */
 const adaSettings = (f: Fixture): void => {
   f.answer("project_settings_get", { ...ADA }, {
-    settings: { ...ADA, title: "Ada", workspaceRoot: "/home/dev/.fleetd/navi/ada", env: [], setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] } },
+    settings: { ...ADA, title: "Ada", workspaceRoot: "/home/dev/projects/ada", env: [], setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] } },
   });
   f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
 };
@@ -264,8 +255,9 @@ const SAM = { personId: "p_aaaaaaaa", name: "Sam" };
  * revoked a third. A new key Sam makes is answered too.
  */
 const links = (from: Fixture): Fixture => {
-  const f = Fixture.from(from, "navi-links", "Hub links: Ada's Linked hubs (working, can't reach, revoked there), and Sam's links to this hub.");
+  const f = Fixture.from(from, "only-me-links", "Hub links: Ada's Linked hubs (working, can't reach, revoked there), and Sam's links to this hub.");
   adaSettings(f);
+  projectSections(f, ADA);
   const storefront = refOf(f, "storefront");
   f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: false, url: "https://hub.devbox.example", me: { ...SAM, role: "member", createdAt: at(f.now, -30 * 86_400_000) } });
   const kept = (label: string, url: string, extra: JsonObject): JsonObject => ({
@@ -321,7 +313,7 @@ const links = (from: Fixture): Fixture => {
 };
 
 const linksNone = (from: Fixture): Fixture => {
-  const f = Fixture.from(from, "navi-links-none", "Hub links: no linked hubs for Ada and no links to this hub yet.");
+  const f = Fixture.from(from, "only-me-links-none", "Hub links: no linked hubs for Ada and no links to this hub yet.");
   for (const input of [{ navi: { ...ADA } }, undefined]) f.answer("hub_links_get", input, { boxPubKey: BOX, links: [], issued: [] });
   return f;
 };
@@ -333,7 +325,7 @@ const madeFile = (f: Fixture, ref: Ref, attachmentId: string, name: string, mime
 };
 
 const files = (from: Fixture): Fixture => {
-  const f = Fixture.from(from, "navi-files", "Navi: files both ways in Home's chat, a lease and a bank export in, a trip PDF and a receipts CSV out as cards.");
+  const f = Fixture.from(from, "only-me-files", "Only me: files both ways in Home's chat, a lease and a bank export in, a trip PDF and a receipts CSV out as cards.");
   const docx = { name: "lease-2027.docx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data: Buffer.alloc(48_640, "PK") };
   const csv = { name: "bank-october.csv", mime: "text/csv", data: Buffer.from("date,description,amount\n2026-10-01,Rent,-1450.00\n".repeat(120)) };
   const blocks = [
@@ -359,17 +351,15 @@ const files = (from: Fixture): Fixture => {
     { author: "human", text: "Can you put the Lisbon trip together as a PDF I can keep offline? And the receipts as a spreadsheet.", minutesAgo: 6 },
     { author: "lead", text, parts, minutesAgo: 1 },
   ]);
-  f.answer("navi_asks", { navi: { ...HOME } }, { navi: { ...HOME }, asks: [], next: "This Navi has asked no other project for anything yet." });
+  f.answer(PROJECT_TOOLS.asks, { navi: { ...HOME } }, { navi: { ...HOME }, asks: [], next: "This project has asked no other project for anything yet." });
   return f;
 };
-
-const none = (base: Fixture): Fixture => Fixture.from(base, "navi-none", "Navi: projects and no Navi yet, so the sidebar offers to meet it and #/navi is its first run.");
 
 export default defineGroup({
   fixtures: (base) => {
     const made = two(base("chat-waiting"));
     const linked = links(made);
-    return [none(base("chat-waiting")), made, oldHub(made), linked, linksNone(linked), files(made)];
+    return [made, linked, linksNone(linked), files(made)];
   },
 });
 

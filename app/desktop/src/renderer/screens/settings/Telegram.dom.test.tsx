@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// A Navi's Telegram: the guided steps open @BotFather with the exact messages to send it, the pasted token goes to main
-// to seal to the Navi's machine and is tested at once (the bot's name), Pair opens the bot's one-time link and waits for
+// A project's Telegram: the guided steps open @BotFather with the exact messages to send it, the pasted token goes to
+// main to seal to the project's machine and is tested at once (the bot's name), Pair opens the bot's one-time link and waits for
 // the Start, and once paired the bridge's status, Pause, Unpair and Remove.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -22,7 +22,7 @@ vi.hoisted(() => {
 const AT = "2026-10-31T10:00:00.000Z";
 const BOX = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
 const TOKEN = "123456789:AAHdevboxBotTokenFromBotFather0123456";
-const navi = { machineId: "devbox", projectId: "ada" };
+const ada = { machineId: "devbox", projectId: "ada" };
 const saved: TelegramBridge = { fingerprint: "7e1e9a00", savedAt: AT };
 const bot = { id: 7001, username: "ada_fleetd_bot", name: "Ada" };
 const status = { state: "connected", since: AT };
@@ -94,7 +94,7 @@ const render = async (output: TelegramGetOutput) => {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <TelegramSetting projectRef={navi} />
+          <TelegramSetting projectRef={ada} />
         </DataProvider>
       </UiProvider>,
     );
@@ -107,7 +107,7 @@ const render = async (output: TelegramGetOutput) => {
       snapshot: {
         cursor: 1,
         attention: [],
-        projects: [{ machineId: "devbox", projectId: "ada", title: "Ada", kind: "assistant", workspaceRoot: "/home/devbox/navi/ada", updatedAt: AT }],
+        projects: [{ machineId: "devbox", projectId: "ada", title: "Ada", onlyMe: true, workspaceRoot: "/home/devbox/ada", updatedAt: AT }],
         machines: [{ machineId: "devbox", name: "devbox", nodeVersion: "1", status: "online", lastSeenAt: AT, tags: [], boxPubKey: BOX }],
       },
     } as unknown as HubFrame);
@@ -146,18 +146,18 @@ it("walks a person from @BotFather to a sealed, tested token and a one-tap pairi
   expect(opened).toEqual([BOTFATHER]);
   expect(host.textContent).toContain("/newbot");
   expect(host.textContent).toContain("ada_fleetd_bot");
-  // Step 2: the token goes to main to seal to the Navi's machine, then Test at once.
+  // Step 2: the token goes to main to seal to the project's machine, then Test at once.
   await type("Bot token", TOKEN);
   await click(button("Save and test"));
-  expect(sealed).toEqual([{ navi, token: TOKEN, box: { machineId: "devbox", boxPubKey: BOX } }]);
-  expect(sent("telegram_test")).toEqual([{ navi }]);
+  expect(sealed).toEqual([{ project: ada, token: TOKEN, box: { machineId: "devbox", boxPubKey: BOX } }]);
+  expect(sent("telegram_test")).toEqual([{ navi: ada }]);
   for (let i = 0; i < 2; i++) await settle();
   expect(host.querySelector("[data-step='3'] [data-telegram-bot='ada_fleetd_bot']")?.textContent).toBe("Ada@ada_fleetd_bot");
   expect(host.textContent).not.toContain(TOKEN);
   expect([...host.querySelectorAll("input")].map((i) => i.value)).not.toContain(TOKEN);
   // Step 4: Pair opens the bot's one-time link, and the page waits for the Start.
   await click(button("Pair with Telegram"));
-  expect(sent("telegram_pair")).toEqual([{ navi }]);
+  expect(sent("telegram_pair")).toEqual([{ navi: ada }]);
   expect(opened).toContain("https://t.me/ada_fleetd_bot?start=Pa1rC0de");
   expect(host.querySelector("[role='status']")?.textContent).toContain("Waiting for your Start in Telegram");
 });
@@ -177,7 +177,7 @@ it("lets a token Telegram refuses be replaced or removed before pairing", async 
   refusing = false;
   await type("Bot token", TOKEN);
   await click(button("Save and test"));
-  expect(sealed).toEqual([{ navi, token: TOKEN, box: { machineId: "devbox", boxPubKey: BOX } }]);
+  expect(sealed).toEqual([{ project: ada, token: TOKEN, box: { machineId: "devbox", boxPubKey: BOX } }]);
   for (let i = 0; i < 2; i++) await settle();
   expect(host.querySelector("[data-step='3'] [data-telegram-bot='ada_fleetd_bot']")).not.toBeNull();
   // Or removed outright.
@@ -185,7 +185,7 @@ it("lets a token Telegram refuses be replaced or removed before pairing", async 
   const dialog = document.querySelector("[role='dialog']");
   if (dialog === null) throw new Error("no dialog");
   await click(button("Remove", dialog));
-  expect(sent("telegram_remove")).toEqual([{ navi }]);
+  expect(sent("telegram_remove")).toEqual([{ navi: ada }]);
 });
 
 it("goes back from Replace token to the paired view with Cancel", async () => {
@@ -201,7 +201,7 @@ it("shows who it answers and how it stands, and pauses and removes it", async ()
   expect(host.textContent).toContain("Answers Sam Rivera (@samrivera) only.");
   expect(host.querySelector("[data-telegram-status]")?.textContent).toBe("Connected");
   await click(button("Pause"));
-  expect(sent("telegram_pause")).toEqual([{ navi, paused: true }]);
+  expect(sent("telegram_pause")).toEqual([{ navi: ada, paused: true }]);
   for (let i = 0; i < 2; i++) await settle();
   expect(host.querySelector("[data-telegram-status]")?.textContent).toBe("Paused");
   expect(button("Resume")).toBeDefined();
@@ -210,7 +210,7 @@ it("shows who it answers and how it stands, and pauses and removes it", async ()
   if (dialog === null) throw new Error("no dialog");
   expect(dialog.textContent).toContain("devbox forgets the bot's token");
   await click(button("Remove", dialog));
-  expect(sent("telegram_remove")).toEqual([{ navi }]);
+  expect(sent("telegram_remove")).toEqual([{ navi: ada }]);
   for (let i = 0; i < 2; i++) await settle();
   expect(host.textContent).toContain("Open @BotFather");
 });
@@ -221,7 +221,7 @@ it("names the step, the username to ask for, and what is wrong in words", () => 
   expect(stepOf({ ...saved, bot })).toBe(4);
   expect(suggestedUsername("Ada")).toBe("ada_fleetd_bot");
   expect(suggestedUsername("Zoë's Helper!")).toBe("zoe_s_helper_fleetd_bot");
-  expect(suggestedUsername("42")).toBe("navi_fleetd_bot");
+  expect(suggestedUsername("42")).toBe("project_fleetd_bot");
   const retrying = statusWords({ ...saved, status: { state: "retrying", since: AT, error: "Telegram asked to slow down for 30 s.", retryAt: AT } }, "devbox");
   expect(retrying.tone).toBe("warning");
   expect(retrying.line).toContain("Telegram asked to slow down for 30 s. Trying again at");

@@ -102,6 +102,9 @@ describe("routes", () => {
       expect(parseHash(hash)).toEqual(HOME);
     }
     expect(parseHash("#/status/project/devbox/storefront")).toEqual({ id: "status" });
+    // The old Navi page: what it offered, a new one, is New project's.
+    expect(parseHash("#/navi")).toEqual({ id: "projects.add" });
+    expect(parseHash("#/navi?at=a1b2")).toEqual({ id: "projects.add", at: "a1b2" });
     expect(parseHash("#/settings/nope")).toEqual({ id: "settings", tab: "general" });
     // A PR path that isn't one opens the project's list; an unknown panel, the chat alone.
     for (const tail of ["/0", "/x", "/acme/11", "/acme/storefront/x/11", ""]) {

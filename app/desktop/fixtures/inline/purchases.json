@@ -1,5 +1,5 @@
 {
-  "note": "A Navi's purchases (D265): a hotel booking waiting for Pay, with its basket, total and card; and a train ticket already approved and filled, folded. devbox; no personal data.",
+  "note": "A project's purchases (D265): a hotel booking waiting for Pay, with its basket, total and card; and a train ticket already approved and filled, folded. devbox; no personal data.",
   "items": [
     {
       "kind": "command_approval",

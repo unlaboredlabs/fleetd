@@ -99,12 +99,12 @@ const project = (machineId: string, projectId: string): HubFrame => {
   };
 };
 
-/** A hub with a project and a Navi (a project of kind "assistant"), each its own. */
-const withNavi = (machineId: string, projectId: string, navi: string): HubFrame => {
+/** A hub with a project and an Only-me one of its own. */
+const withOwn = (machineId: string, projectId: string, own: string): HubFrame => {
   const frame = project(machineId, projectId);
   if (frame.t !== "snapshot") throw new Error("not a snapshot");
-  const assistant = { machineId, projectId: navi, title: navi, kind: "assistant" as const, workspaceRoot: `/srv/${navi}`, lastActivityAt: AT, threads: { running: 0, waiting: 0, idle: 0, failed: 0 } };
-  return { t: "snapshot", snapshot: { ...frame.snapshot, projects: [...frame.snapshot.projects, assistant] } };
+  const mine = { machineId, projectId: own, title: own, onlyMe: true as const, workspaceRoot: `/srv/${own}`, lastActivityAt: AT, threads: { running: 0, waiting: 0, idle: 0, failed: 0 } };
+  return { t: "snapshot", snapshot: { ...frame.snapshot, projects: [...frame.snapshot.projects, mine] } };
 };
 
 const offline: HubFrame = { t: "state", state: { phase: "retrying", hub: "http://acme-hub:4790", reason: "connection refused", retryAt: Date.parse(AT) + 60_000 } };
@@ -272,35 +272,35 @@ it("⌘1–9 open the rows on show, as the sidebar numbers them, a collapsed hub
   expect(window.location.hash).toBe("#/project/laptop/billing?at=a1b2");
 });
 
-it("pins every hub's Navis on top, each saying its hub, and a collapsed hub keeps its Navi in sight", async () => {
+it("keeps each hub's Only-me projects in its own group, first among its new ones, and numbers the rows on show", async () => {
   await mount([
     { id: "hub", label: "Personal" },
     { id: "a1b2", label: "Acme" },
   ]);
   act(() => {
     hub("hub").send(live());
-    hub("hub").send(withNavi("devbox", "storefront", "Navi"));
+    hub("hub").send(withOwn("devbox", "storefront", "Ada"));
     hub("a1b2").send(live());
-    hub("a1b2").send(withNavi("laptop", "billing", "Acme Navi"));
+    hub("a1b2").send(withOwn("laptop", "billing", "Bee"));
   });
   await settle();
-  const navi = host.querySelector('section[aria-label="Navi"]') ?? [...host.querySelectorAll("section")].find((x) => x.textContent.startsWith("Navi"));
-  expect(navi?.textContent).toContain("NaviPersonal");
-  expect(navi?.textContent).toContain("Acme NaviAcme");
-  // The hub groups hold only their projects.
-  expect(host.querySelector('section[aria-label="Acme"]')?.textContent).not.toContain("Acme Navi");
-  // ⌘1 and ⌘2 are the Navis, then each hub's projects.
-  act(() => {
-    runCommand("project.open.2");
-  });
-  expect(window.location.hash).toBe("#/project/laptop/Acme%20Navi?at=a1b2");
-  act(() => host.querySelector<HTMLButtonElement>('[data-hub-group="a1b2"]')?.click());
-  await settle();
-  expect(navi?.textContent).toContain("Acme Navi");
+  const group = (label: string) => host.querySelector(`section[aria-label="${label}"]`)?.textContent ?? "";
+  expect(host.textContent).not.toMatch(/Navi/u);
+  expect(group("Personal")).toMatch(/Ada.*storefront/u);
+  expect(group("Acme")).toMatch(/Bee.*billing/u);
+  expect(group("Personal")).not.toContain("Bee");
+  // ⌘1 and ⌘2 are the first hub's rows, then the next hub's.
   act(() => {
     runCommand("project.open.3");
   });
-  expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
+  expect(window.location.hash).toBe("#/project/laptop/Bee?at=a1b2");
+  act(() => host.querySelector<HTMLButtonElement>('[data-hub-group="a1b2"]')?.click());
+  await settle();
+  expect(group("Acme")).not.toContain("Bee");
+  act(() => {
+    runCommand("project.open.1");
+  });
+  expect(window.location.hash).toBe("#/project/devbox/Ada?at=hub");
 });
 
 /**
