@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use fleetd_contracts::chat::{ChatAuthor, ChatClient};
-use fleetd_contracts::effort::{Effort, ModelName, ProfileName};
+use fleetd_contracts::effort::{ModelName, ProfileName};
 use fleetd_contracts::ids::{ProjectRef, ThreadRef};
 use fleetd_contracts::integrations::{ToolAction, ToolPreview};
 use fleetd_contracts::ledger::{CheckerNote, CheckerVerdict};
@@ -134,7 +134,11 @@ pub fn approvals(c: &Connection, r: &ProjectRef) -> rusqlite::Result<NaviApprova
     })
 }
 
-pub fn set_approvals(c: &Connection, r: &ProjectRef, mode: NaviApprovalMode) -> rusqlite::Result<()> {
+pub fn set_approvals(
+    c: &Connection,
+    r: &ProjectRef,
+    mode: NaviApprovalMode,
+) -> rusqlite::Result<()> {
     c.prepare_cached(
         "INSERT INTO navi_approvals (machine_id, project_id, mode) VALUES (?, ?, ?)
          ON CONFLICT (machine_id, project_id) DO UPDATE SET mode = excluded.mode",
