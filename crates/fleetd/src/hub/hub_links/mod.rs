@@ -5,7 +5,7 @@
 //! of their hub role and the device's grants when it was minted, never above operate ([`link_grants`]), limited to
 //! chosen projects or not, and only through `/link/v1` ([`serve`]): read the projects, ask a lead for work, read its
 //! status, follow its news.
-//! Asks go into chats as "<person> via <label> Navi" (`navi::bridge`, `Asker::Link`). Its person or an admin revokes
+//! Asks go into chats as "<person> via <label>" (`navi::bridge`, `Asker::Link`). Its person or an admin revokes
 //! it (`hub_link_revoke`), and it stops when they leave the hub. A link minted before people acts at its device's
 //! grants and stops with its device.
 //!
@@ -73,9 +73,9 @@ impl Issued {
         self.projects.as_ref().is_none_or(|only| only.contains(p))
     }
 
-    /// Who its asks are from, in the chats here: its person, through their Navi on the hub the link is for.
+    /// Who its asks are from, in the chats here: its person, through their project on the hub the link is for.
     pub fn author(&self) -> String {
-        format!("{} via {} Navi", self.who, self.label)
+        format!("{} via {}", self.who, self.label)
     }
 }
 
@@ -238,7 +238,7 @@ pub fn revoke_issued(hub: &Hub, link_id: &str) -> Result<bool, StoreError> {
 /// Why a link key can't be used: the request goes no further.
 pub fn dead(message: impl Into<String>) -> McpToolError {
     McpToolError::new(ErrorCode::Forbidden, message).with_fix(
-        "Ask the person to make a new link on this hub and add it to their Navi's Linked hubs.",
+        "Ask the person to make a new link on this hub and add it to their project's Linked hubs.",
     )
 }
 

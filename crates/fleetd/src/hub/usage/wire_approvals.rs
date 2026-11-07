@@ -348,7 +348,7 @@ impl ApprovalHub for OpsPorts {
                 })
             };
             let Some(r) = r else {
-                return failed("the checker couldn't find the Navi");
+                return failed("the checker couldn't find the project");
             };
             let owner = crate::hub::navi::of(&hub.db, &r)
                 .ok()
@@ -358,7 +358,7 @@ impl ApprovalHub for OpsPorts {
                 machine_id: r.machine_id.clone(),
                 thread_id: fleetd_contracts::ids::ThreadId::unchecked(thread_id),
             };
-            let (person_messages, navi_last_question) =
+            let (person_messages, lead_last_question) =
                 checker::person_messages(&hub, &r).unwrap_or_default();
             let name = owner
                 .as_ref()
@@ -380,7 +380,7 @@ impl ApprovalHub for OpsPorts {
             let context = checker::Context {
                 person: serde_json::json!({ "name": name }),
                 person_messages,
-                navi_last_question,
+                lead_last_question,
                 standing: checker::standing(&hub, &r),
                 reads: checker::reads(&hub, &thread)
                     .await

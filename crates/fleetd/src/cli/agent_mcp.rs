@@ -145,8 +145,8 @@ static TOOLS: &[Tool] = &[
         "Open and start work. Without workstreamId it opens a new order from text (the human's words) and this \
          brief, and starts it: new work from the chat starts this way, even when every order is closed. With \
          workstreamId it sets that workstream's brief (goal, why, pointers, constraints, doneWhen lines) and starts \
-         it, or edits it later. An order opened for a Navi's message gives asked, its N<n> handle, so the Navi hears \
-         when it lands; a later Navi message folded into an open order gives asked with that workstreamId.",
+         it, or edits it later. An order opened for another project's message gives asked, its N<n> handle, so the asker hears \
+         when it lands; a later one folded into an open order gives asked with that workstreamId.",
         inline_schema::<BriefCreateCall>,
     ),
     lead(
@@ -239,8 +239,8 @@ static TOOLS: &[Tool] = &[
          reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat \
          (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done \
          once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and \
-         approvals still apply. Only a person adds a webhook, in the app. A \
-         Navi: for one whose runs send or change something, call automation_confirm after it, so the person can let \
+         approvals still apply. Only a person adds a webhook, in the app. For \
+         one whose runs send or change something, call automation_confirm after it, so the person can let \
          it run on its own.",
         inline_schema::<AutomationCreateCall>,
     ),
@@ -323,11 +323,11 @@ static TOOLS: &[Tool] = &[
     lead(
         "project_message",
         "project_message",
-        "A lead's call: write to another project's lead in its chat, as this Navi, never as the person: \
+        "A lead's call: write to another project's lead in its chat, as this project, never as the person: \
          \"please add X\", or a question. Its lead reads it as input, never as the person's answer or approval, and \
          may open an order for it. Returns a handle (N<n>); a later wake says when an order opened for it opens, \
          closes, merges or fails. project is a title or project id from factory_status. With hub (a linked hub's \
-         label, from factory_status's hubs), it goes to that project on the other hub, as the person via this Navi. \
+         label, from factory_status's hubs), it goes to that project on the other hub, as the person via this project. \
          It goes through your approval mode like a send, its exact text on the card. Open an order this way only \
          when the person asked for it in this conversation.",
         inline_schema::<ProjectMessageCall>,
@@ -337,7 +337,7 @@ static TOOLS: &[Tool] = &[
         "factory_status",
         "A lead's call: the other projects in one read, or the one named: each one's state (working, waiting on the \
          person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and \
-         merges over 7 days, and this Navi's asks to it with the orders opened for them, plus the hubs this Navi is \
+         merges over 7 days, and this project's asks to it with the orders opened for them, plus the hubs this project is \
          linked to. With hub, the projects the link reaches on that hub instead. Read-only.",
         inline_schema::<FactoryStatusCall>,
     ),
@@ -491,7 +491,7 @@ static TOOLS: &[Tool] = &[
     browser(
         "session_start",
         "Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a \
-         Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). It is recorded \
+         project's lead with no repo keeps its project's profile instead, so the sites it signed into stay signed in). It is recorded \
          (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it \
          with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of \
          your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android \
@@ -518,7 +518,7 @@ static TOOLS: &[Tool] = &[
     ),
     browser(
         "session_end",
-        "Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its \
+        "Close your browser session: the browser and its profile are thrown away (a kept project profile stays, with its \
          sign-ins), and its recording goes to the hub.",
         inline_schema::<SessionEndCall>,
     ),

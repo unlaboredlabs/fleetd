@@ -14,11 +14,11 @@ use super::api::Api;
 use super::store::{self, State};
 
 pub const PAIRED: &str =
-    "Paired. Messages you send here now reach your Navi, and its replies come back here.";
+    "Paired. Messages you send here now reach your project, and its replies come back here.";
 pub const VOICE: &str =
     "Voice notes aren't supported yet. Type your message, or send a photo or a file.";
 pub const UNSUPPORTED: &str =
-    "Your Navi reads text, photos and files here. This kind of message isn't supported yet.";
+    "Your project reads text, photos and files here. This kind of message isn't supported yet.";
 
 /// A message from the paired account, before its file is fetched.
 pub struct Incoming {
@@ -227,7 +227,7 @@ pub async fn fetch(
                             });
                         } else {
                             said = Some(
-                                "That file couldn't be kept on your Navi's machine. Try it again.",
+                                "That file couldn't be kept on your project's machine. Try it again.",
                             );
                         }
                     }

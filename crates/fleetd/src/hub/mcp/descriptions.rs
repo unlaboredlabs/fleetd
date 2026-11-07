@@ -70,59 +70,91 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "navi_create",
-        "Make a Navi: a personal assistant with its own chat, memory, nightly memory refresh, automations, screens, checklist and approvals. It is an Only me project (onlyMe) in a new plain folder under its machine's fleetd home (navi/<name>); machineId defaults to the best worker, a Mac included. Its lead starts with the first chat message and runs like any lead with no repo, with full access: it runs commands, reads and writes files and searches the web unasked, can start agents, fetches or opens a site unasked once a person allowed that site at its first visit (navi_sites), and asks a person in the chat before an integration's send. Make as many as you like; the key that made it is recorded as createdBy.",
+        "Old way, kept for one release (D310; project_add with create and onlyMe is the new one): make a Navi, a personal assistant with its own chat, memory, nightly memory refresh, automations, screens, checklist and approvals. It is an Only me project (onlyMe) in a new plain folder under its machine's fleetd home (navi/<name>); machineId defaults to the best worker, a Mac included. Its lead starts with the first chat message and runs like any lead with no repo, with full access: it runs commands, reads and writes files and searches the web unasked, can start agents, fetches or opens a site unasked once a person allowed that site at its first visit (navi_sites), and asks a person in the chat before an integration's send. Make as many as you like; the key that made it is recorded as createdBy.",
     ),
     (
         "navi_list",
-        "The Navis, oldest first, each a project summary with onlyMe, its owner, createdBy and, once archived, archivedAt. archived: true includes the archived ones.",
+        "Old way, kept for one release (D310): the Only me projects, oldest first, each a project summary with onlyMe, its owner, createdBy and, once archived, archivedAt. archived: true includes the archived ones.",
     ),
     (
         "navi_rename",
-        "Rename a Navi. Its folder keeps the name it was made with.",
+        "Old way, kept for one release (D310; project_settings_set with title is the new one): rename a project. Its folder keeps the name it was made with.",
+    ),
+    (
+        "project_sites",
+        "The sites a project fetches and opens in its browser without asking, each with when and by whom it was allowed. A project's first fetch or visit to a site asks the person in its chat; approving it allows the site from then on.",
     ),
     (
         "navi_sites",
-        "The sites a Navi fetches and opens in its browser without asking, each with when and by whom it was allowed. A Navi's first fetch or visit to a site asks the person in its chat; approving it allows the site from then on.",
+        "Old name of project_sites, kept for one release (D310).",
+    ),
+    (
+        "project_site_revoke",
+        "Take back a site a project may fetch and open without asking: its next fetch or visit there asks the person again. Answers the sites it still may.",
     ),
     (
         "navi_site_revoke",
-        "Take back a site a Navi may fetch and open without asking: its next fetch or visit there asks the person again. Answers the sites it still may.",
+        "Old name of project_site_revoke, kept for one release (D310).",
+    ),
+    (
+        "project_purchases",
+        "A project's card and its purchase log: the Credit Card item in its person's 1Password it pays with (kept as an op:// reference only, never the card's details), and every purchase it asked for, newest first, with its shop, total, items, state, when it was asked and answered, and by whom. A purchase always asks the person; approved, the project's node fills the card into that checkout once.",
     ),
     (
         "navi_purchases",
-        "A Navi's card and its purchase log: the Credit Card item in its person's 1Password it pays with (kept as an op:// reference only, never the card's details), and every purchase it asked for, newest first, with its shop, total, items, state, when it was asked and answered, and by whom. A purchase always asks the person; approved, the Navi's node fills the card into that checkout once.",
+        "Old name of project_purchases, kept for one release (D310).",
+    ),
+    (
+        "project_card_set",
+        "A person's own device only, for their own project. Pick the card a project pays with: card is a Credit Card item, op://<vault>/<item>, as onepassword_cards lists it; absent, the project has no card and can't pay. Only the reference is kept.",
     ),
     (
         "navi_card_set",
-        "A person's own device only, for their own Navi. Pick the card a Navi pays with: card is a Credit Card item, op://<vault>/<item>, as onepassword_cards lists it; absent, the Navi has no card and can't pay. Only the reference is kept.",
+        "Old name of project_card_set, kept for one release (D310).",
+    ),
+    (
+        "project_approvals",
+        "How a project's risky actions (sends, replies, shares, invites, a site it opens on its own the first time) are approved: mode ask (a card for every one), checker (default: a fresh tool-less model on the owner's Claude judges each first; go runs it with a quiet chat line, ask brings the card with its reason, block refuses it and the person may approve it anyway) or yolo (nothing asks); the checker's model and effort; and the log of actions that ran without asking, newest first, each with the checker's reason and its chat line. Money, trading and credentials in outgoing content stay refused in every mode, and spending always asks.",
     ),
     (
         "navi_approvals",
-        "How a Navi's risky actions (sends, replies, shares, invites, a site it opens on its own the first time) are approved: mode ask (a card for every one), checker (default: a fresh tool-less model on the owner's Claude judges each first; go runs it with a quiet chat line, ask brings the card with its reason, block refuses it and the person may approve it anyway) or yolo (nothing asks); the checker's model and effort; and the log of actions that ran without asking, newest first, each with the checker's reason and its chat line. Money, trading and credentials in outgoing content stay refused in every mode, and spending always asks.",
+        "Old name of project_approvals, kept for one release (D310).",
+    ),
+    (
+        "project_approvals_set",
+        "Set how a project's risky actions are approved: mode ask, checker or yolo, and the checker's model and effort (absent: the hub's defaults). A person's key only, never an agent's.",
     ),
     (
         "navi_approvals_set",
-        "Set how a Navi's risky actions are approved: mode ask, checker or yolo, and the checker's model and effort (absent: the hub's defaults). A person's key only, never an agent's.",
+        "Old name of project_approvals_set, kept for one release (D310).",
+    ),
+    (
+        "project_signins_forget",
+        "Forget a project's sign-ins: its browser keeps the sites it signed into (cookies and site storage, in a browser profile of its own on its machine) between sessions; this ends its open browser session, if any, and deletes that profile, so its next visit to each site starts signed out. Deleting the project deletes it too.",
     ),
     (
         "navi_signins_forget",
-        "Forget a Navi's sign-ins: its browser keeps the sites it signed into (cookies and site storage, in a browser profile of its own on its machine) between sessions; this ends its open browser session, if any, and deletes that profile, so its next visit to each site starts signed out. Deleting the Navi deletes it too.",
+        "Old name of project_signins_forget, kept for one release (D310).",
+    ),
+    (
+        "project_archive",
+        "Archive any project (D310): its lead stops and doesn't start again, and its summary says archivedAt (navi_list, the old way, leaves an archived one out); its chat, memory and folder stay. archived: false brings it back.",
     ),
     (
         "navi_archive",
-        "Archive any project (D310), a Navi too: its lead stops and doesn't start again, and its summary says archivedAt (navi_list leaves an archived Navi out); its chat, memory and folder stay. archived: false brings it back.",
+        "Old name of project_archive, kept for one release (D310).",
     ),
     (
         "project_avatar_set",
-        "Give a project or Navi the picture its chat shows in place of its letters: attachmentId is the picture as picked (png, jpeg or webp, from attachment_put), crop the square to keep in its pixels as it shows (absent: the largest one in its middle). The hub keeps only that square, at most 512 px a side, re-encoded as JPEG without the original's metadata (EXIF, location), and forgets the upload. No attachmentId removes the picture. Every open app sees it at once (project.settings). Anyone who may change the project's settings; a Navi's, its owner.",
+        "Give a project the picture its chat shows in place of its letters: attachmentId is the picture as picked (png, jpeg or webp, from attachment_put), crop the square to keep in its pixels as it shows (absent: the largest one in its middle). The hub keeps only that square, at most 512 px a side, re-encoded as JPEG without the original's metadata (EXIF, location), and forgets the upload. No attachmentId removes the picture. Every open app sees it at once (project.settings). Anyone who may change the project's settings; a project's, its owner.",
     ),
     (
         "project_avatar_get",
-        "A project's or Navi's picture, base64 JPEG, with its id: the one its summary names in avatar. NotFound when it has none (its letters show).",
+        "A project's picture, base64 JPEG, with its id: the one its summary names in avatar. NotFound when it has none (its letters show).",
     ),
     (
         "project_icon_set",
-        "Give a project or Navi the built-in icon its chat shows: icon is a face (a glass being: mo, wee, peep, nap, cy, wink, joy, huh, wow) and the color of its round field. It takes the place of its picture, if it had one. One never picked is derived from its id; every summary's icon says which it wears. Every open app sees it at once (project.settings). Anyone who may change the project's settings; a Navi's, its owner.",
+        "Give a project the built-in icon its chat shows: icon is a face (a glass being: mo, wee, peep, nap, cy, wink, joy, huh, wow) and the color of its round field. It takes the place of its picture, if it had one. One never picked is derived from its id; every summary's icon says which it wears. Every open app sees it at once (project.settings). Anyone who may change the project's settings; a project's, its owner.",
     ),
     (
         "project_settings_get",
@@ -162,7 +194,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "claude_accounts_get",
-        "Which Claude account each person's work runs on (teams step 8). hubApi: the hub's API configuration (endpoint, the machines holding the key with each node's fingerprint, the last Test), never the key. settings.membersUseHubApi: members may run on it (on by default; owners and admins always may). leadsRunOn: what projects' leads and work nobody started (automations, train fixes) run on: the hub's API, else the hub owner's subscription, else each machine's own login (machine_login) when nothing is set up. me: the caller's own choice, subscription (machines and fingerprints, never the token) and runsOn, what the orders they start and their Navi run on, or refused with the fix. people: everyone's, for an owner's or admin's device.",
+        "Which Claude account each person's work runs on (teams step 8). hubApi: the hub's API configuration (endpoint, the machines holding the key with each node's fingerprint, the last Test), never the key. settings.membersUseHubApi: members may run on it (on by default; owners and admins always may). leadsRunOn: what projects' leads and work nobody started (automations, train fixes) run on: the hub's API, else the hub owner's subscription, else each machine's own login (machine_login) when nothing is set up. me: the caller's own choice, subscription (machines and fingerprints, never the token) and runsOn, what the orders they start and their Only me projects run on, or refused with the fix. people: everyone's, for an owner's or admin's device.",
     ),
     (
         "github_app_get",
@@ -238,7 +270,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "claude_subscription_set",
-        "A person's own device only. Connect the caller's Claude subscription: sealed, the long-lived token `claude setup-token` prints, sealed on the client with crypto_box_seal to each machine's boxPubKey. The hub relays each box to its node and keeps the fingerprint, never the token. The orders the caller starts and their Navi run on it (unless they chose the hub's API), and nobody else's work ever does. Replaces a subscription connected before; missingOn names machines that don't hold it.",
+        "A person's own device only. Connect the caller's Claude subscription: sealed, the long-lived token `claude setup-token` prints, sealed on the client with crypto_box_seal to each machine's boxPubKey. The hub relays each box to its node and keeps the fingerprint, never the token. The orders the caller starts and their Only me projects run on it (unless they chose the hub's API), and nobody else's work ever does. Replaces a subscription connected before; missingOn names machines that don't hold it.",
     ),
     (
         "claude_subscription_remove",
@@ -250,31 +282,31 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "telegram_get",
-        "A Navi's owner only, from their own device. The Navi's Telegram bridge (navi: its ref): the token's fingerprint (never the token), the bot from the last Test, the paired account, whether a pairing link waits, paused, and the node's status (connected, paused, retrying, stopped, with its last error); offline when the node can't say now. Absent until a token is saved.",
+        "A person's own device only (another person's Only me project is refused). The project's Telegram bridge (project: its ref; navi, its old name, still works): the token's fingerprint (never the token), the bot from the last Test, the paired account, whether a pairing link waits, paused, and the node's status (connected, paused, retrying, stopped, with its last error); offline when the node can't say now. Absent until a token is saved.",
     ),
     (
         "telegram_set",
-        "Any project's, from a person's own device (another person's Only me project is refused). Save the project's Telegram bot token from @BotFather: sealed, the token sealed on the client with crypto_box_seal to the Navi's machine's boxPubKey. The hub relays the box to its node and keeps the fingerprint, never the token. A new token starts afresh: no paired account. Then telegram_test, then telegram_pair.",
+        "Any project's, from a person's own device (another person's Only me project is refused). Save the project's Telegram bot token from @BotFather: sealed, the token sealed on the client with crypto_box_seal to the project's machine's boxPubKey. The hub relays the box to its node and keeps the fingerprint, never the token. A new token starts afresh: no paired account. Then telegram_test, then telegram_pair.",
     ),
     (
         "telegram_test",
-        "A Navi's owner only. Ask Telegram who the saved token is (getMe): bot (its name, @username and photo), else error in Telegram's words with the token masked.",
+        "A person's own device only. Ask Telegram who the saved token is (getMe): bot (its name, @username and photo), else error in Telegram's words with the token masked.",
     ),
     (
         "telegram_pair",
-        "A Navi's owner only. A one-time link, https://t.me/<bot>?start=<code>, good for 15 minutes: the account that presses Start there becomes the only one the Navi answers on Telegram, replacing any before.",
+        "A person's own device only. A one-time link, https://t.me/<bot>?start=<code>, good for 15 minutes: the account that presses Start there becomes the only one the project answers on Telegram, replacing any before.",
     ),
     (
         "telegram_unpair",
-        "A Navi's owner only. The paired Telegram account no longer reaches the Navi; telegram_pair connects one again.",
+        "A person's own device only. The paired Telegram account no longer reaches the project; telegram_pair connects one again.",
     ),
     (
         "telegram_pause",
-        "A Navi's owner only. paused true: the node stops reading and sending Telegram until paused false. What the Navi says meanwhile stays in the app.",
+        "A person's own device only. paused true: the node stops reading and sending Telegram until paused false. What the lead says meanwhile stays in the app.",
     ),
     (
         "telegram_remove",
-        "A Navi's owner only. The Navi's node forgets the bot token and the bridge ends. Needs the node online.",
+        "A person's own device only. The project's node forgets the bot token and the bridge ends. Needs the node online.",
     ),
     (
         "onepassword_get",
@@ -282,7 +314,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "onepassword_set",
-        "A person's own device only. Save the caller's 1Password service account token: sealed, the token sealed on the client with crypto_box_seal to each machine's boxPubKey. The hub relays each box to its node and keeps the fingerprint, never the token; no agent, setup command or MCP server gets it. fill_credential in the orders the caller starts and in their Navi uses it when the project or order has no OP_SERVICE_ACCOUNT_TOKEN of its own, which wins. Replaces a token saved before; missingOn names machines that don't hold it.",
+        "A person's own device only. Save the caller's 1Password service account token: sealed, the token sealed on the client with crypto_box_seal to each machine's boxPubKey. The hub relays each box to its node and keeps the fingerprint, never the token; no agent, setup command or MCP server gets it. fill_credential in the orders the caller starts and in their Only me projects uses it when the project or order has no OP_SERVICE_ACCOUNT_TOKEN of its own, which wins. Replaces a token saved before; missingOn names machines that don't hold it.",
     ),
     (
         "onepassword_remove",
@@ -290,7 +322,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "onepassword_cards",
-        "A person's own device only. List the Credit Card items the caller's 1Password token reads, for a Navi's card picker: each item's op:// reference, title and vault, never its number, expiry or code (machineId, default the first online machine holding the token). error says why none could be listed, the token masked.",
+        "A person's own device only. List the Credit Card items the caller's 1Password token reads, for a project's card picker: each item's op:// reference, title and vault, never its number, expiry or code (machineId, default the first online machine holding the token). error says why none could be listed, the token masked.",
     ),
     (
         "onepassword_test",
@@ -306,11 +338,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "sidebar_order_get",
-        "The caller's own order of the projects and Navis in their sidebar, by ref; empty until they move one, and for a key with no person. A project or Navi it doesn't name goes after the ones it does.",
+        "The caller's own order of the projects in their sidebar, by ref; empty until they move one, and for a key with no person. A project it doesn't name goes after the ones it does.",
     ),
     (
         "sidebar_order_set",
-        "A person's own device only. order: the caller's projects and Navis in their new order, replacing the one before. Their other devices follow (sidebar.order, which only they see); nobody else's sidebar changes.",
+        "A person's own device only. order: the caller's projects in their new order, replacing the one before. Their other devices follow (sidebar.order, which only they see); nobody else's sidebar changes.",
     ),
     (
         "claude_account_test",
@@ -346,7 +378,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "lead_start",
-        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one; with fresh, starts a new lead thread from the current digest instead (sessionGeneration goes up), for a lead that is stuck or whose context is full, and the old thread stays on the node. A project's first order starts its lead by itself; call this to start it earlier. The lead (a Navi's too) runs on the profile picked for leads (lead: true in profiles_list), else the hub's default.",
+        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one; with fresh, starts a new lead thread from the current digest instead (sessionGeneration goes up), for a lead that is stuck or whose context is full, and the old thread stays on the node. A project's first order starts its lead by itself; call this to start it earlier. The lead (a project's too) runs on the profile picked for leads (lead: true in profiles_list), else the hub's default.",
     ),
     (
         "project_set",
@@ -598,7 +630,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "screen_open",
-        "Open a screen of your own for a project or Navi: kind browser (default), android, ios, linux_desktop or mac (the agents' Mac's own screen: opening it takes it from any agent holding it), on machineId, a machine that can host that kind (machine_roles lists them). It opens with you in control, records as an agent's screen does, and ends with screen_end or after 30 minutes without your input. A Navi's browser runs on its own machine, on the profile it keeps, so sites you sign in to stay signed in for it; only its owner opens one. pr (repo and number, a PR of the project's) installs that PR's CI build in an ios or android screen before it is yours: the newest artifact of a CI run on its head named for ios (a zipped simulator .app) or android/apk (an .apk); a PR without one is refused at once. With a PR it answers at once with its slot taken: waiting stage starting, then installing, listed by browser_sessions under waits with the screen's threadId until it is yours (its row gone), or failed with why (screen_end with its waitId clears it); screen.wait events follow each move. A full machine refuses; with wait true the request takes its next free slot, ahead of agents' starts, for up to 30 minutes. A person's device with operate on the project's machine only.",
+        "Open a screen of your own for a project: kind browser (default), android, ios, linux_desktop or mac (the agents' Mac's own screen: opening it takes it from any agent holding it), on machineId, a machine that can host that kind (machine_roles lists them). It opens with you in control, records as an agent's screen does, and ends with screen_end or after 30 minutes without your input. A project's browser runs on its own machine, on the profile it keeps, so sites you sign in to stay signed in for it; only its owner opens one. pr (repo and number, a PR of the project's) installs that PR's CI build in an ios or android screen before it is yours: the newest artifact of a CI run on its head named for ios (a zipped simulator .app) or android/apk (an .apk); a PR without one is refused at once. With a PR it answers at once with its slot taken: waiting stage starting, then installing, listed by browser_sessions under waits with the screen's threadId until it is yours (its row gone), or failed with why (screen_end with its waitId clears it); screen.wait events follow each move. A full machine refuses; with wait true the request takes its next free slot, ahead of agents' starts, for up to 30 minutes. A person's device with operate on the project's machine only.",
     ),
     (
         "screen_end",
@@ -606,7 +638,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "screens_count",
-        "How many screens are live across every project and Navi you can see, and how many of those ask for a person to take over. Read-only.",
+        "How many screens are live across every project you can see, and how many of those ask for a person to take over. Read-only.",
     ),
     (
         "browser_retention_set",
@@ -625,8 +657,12 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Set what a machine is for: roles [agents, sessions] (one or both), and the most sessions it hosts at once (maxSessions 1 to 64, or autoSessions: true for what it fits). A session an agent starts runs on its own machine when it can host it, else on another that can, driven through the hub's relay. Turning agents off stops nothing: running agents finish, new ones wait. Admin on the machine.",
     ),
     (
+        "project_asks",
+        "What a project (any, D310) asked other projects for with project_message, newest first: each ask's handle (N<n>), the project it went to, its words and when, and the orders that project's lead opened for it, each with its state and headline. Read on the project's machine. A hub that names the project_asks feature in its ready frame has it.",
+    ),
+    (
         "navi_asks",
-        "What a project (any, D310) asked other projects for with project_message, newest first: each ask's handle (N<n>), the project it went to, its words and when, and the orders that project's lead opened for it, each with its state and headline. Read on the Navi's machine. A hub that names the navi_asks feature in its ready frame has it.",
+        "Old name of project_asks, kept for one release (D310).",
     ),
     (
         "machine_add_plan",

@@ -1131,7 +1131,7 @@ async fn a_navis_run_closes_once_its_turn_ends_and_the_next_scheduled_run_starts
         done[0]
             .summary
             .as_str()
-            .contains("the Navi's turn for this run ended"),
+            .contains("the lead's turn for this run ended"),
         "{}",
         done[0].summary.as_str()
     );

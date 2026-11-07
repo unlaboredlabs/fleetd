@@ -1586,7 +1586,7 @@ impl Automations {
             if let Err(error) = self
                 .leads
                 .workstreams
-                .close(r, &w, "the Navi's turn for this run ended", &by)
+                .close(r, &w, "the lead's turn for this run ended", &by)
                 .await
             {
                 tracing::info!(workstream = %w, error = %error.message, "Navi automation run left open");
@@ -1595,7 +1595,7 @@ impl Automations {
             match self.settle(run) {
                 Ok(run) => {
                     if let Ok(Some(a)) = self.row(run.automation_id.as_str()) {
-                        self.run_event(&a, &run, format!("closed {w} once the Navi's turn ended"));
+                        self.run_event(&a, &run, format!("closed {w} once the lead's turn ended"));
                     }
                 }
                 Err(error) => {

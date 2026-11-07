@@ -89,9 +89,9 @@ impl LeadPorts for HubPorts {
             if too_old {
                 return Err(LeadError::new(
                     ErrorCode::Invalid,
-                    format!("{machine_id}'s node is too old to run a Navi."),
+                    format!("{machine_id}'s node is too old to run a project."),
                     format!(
-                        "Run fleetd update on {machine_id}; the Navi's message waits until then."
+                        "Run fleetd update on {machine_id}; the project's message waits until then."
                     ),
                 ));
             }

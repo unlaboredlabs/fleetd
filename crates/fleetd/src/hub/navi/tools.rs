@@ -22,16 +22,31 @@ use crate::hub::api::{Caller, Hub, Registry, ToolError, readable, require, unkno
 use crate::hub::store::iso_ms;
 
 pub fn register(tools: &mut Registry) {
+    // Each under its project name (D310), and its old navi_* name for one release.
     tools.add("navi_create", create);
     tools.add("navi_list", list);
     tools.add("navi_rename", rename);
-    tools.add("navi_archive", archive);
-    tools.add("navi_sites", sites);
-    tools.add("navi_site_revoke", revoke_site);
-    tools.add("navi_approvals", approvals);
-    tools.add("navi_approvals_set", set_approvals);
-    tools.add("navi_signins_forget", forget_signins);
-    tools.add("navi_asks", navi_asks);
+    for name in ["project_archive", "navi_archive"] {
+        tools.add(name, archive);
+    }
+    for name in ["project_sites", "navi_sites"] {
+        tools.add(name, sites);
+    }
+    for name in ["project_site_revoke", "navi_site_revoke"] {
+        tools.add(name, revoke_site);
+    }
+    for name in ["project_approvals", "navi_approvals"] {
+        tools.add(name, approvals);
+    }
+    for name in ["project_approvals_set", "navi_approvals_set"] {
+        tools.add(name, set_approvals);
+    }
+    for name in ["project_signins_forget", "navi_signins_forget"] {
+        tools.add(name, forget_signins);
+    }
+    for name in ["project_asks", "navi_asks"] {
+        tools.add(name, navi_asks);
+    }
     super::purchases::register(tools);
 }
 
@@ -40,7 +55,7 @@ async fn navi_asks(
     caller: Caller,
     input: NaviAsksInput,
 ) -> Result<NaviAsksOutput, ToolError> {
-    let r = input.navi;
+    let r = input.project_ref().clone();
     require(&caller, Role::Read, Some(&r.machine_id))?;
     if hub.store.project_get(&r)?.is_none() {
         return Err(unknown_project(&r));
@@ -87,7 +102,7 @@ async fn navi_asks(
         });
     }
     let next = if asks.is_empty() {
-        Some("This Navi has asked no other project for anything yet.".to_owned())
+        Some("This project has asked no other project for anything yet.".to_owned())
     } else {
         truncated.map(|_| {
             format!("These are its newest {NAVI_ASKS_MAX} asks; older ones aren't listed.")

@@ -289,7 +289,7 @@ pub async fn deliver(
         .cloned();
     let Some(session) = session else {
         return fail(
-            "that browser session has ended: ask the Navi to open the page and ask again".into(),
+            "that browser session has ended: ask the lead to open the page and ask again".into(),
         );
     };
     let Some(request) = frame.request_id.as_ref() else {
@@ -326,7 +326,7 @@ pub async fn deliver(
     if let Err(why) = on_site(&session, &waiting.domain).await {
         give_back(waiting);
         return fail(format!(
-            "not filled: {why}; enter it again once the Navi is back on that page"
+            "not filled: {why}; enter it again once the lead is back on that page"
         ));
     }
     seal(

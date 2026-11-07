@@ -45,7 +45,10 @@ async fn ok(hub: &Arc<Hub>, who: &Caller, tool: &str, input: Value) -> Value {
 async fn refused(hub: &Arc<Hub>, who: &Caller, tool: &str, input: Value) {
     match call(hub, who, tool, input).await {
         Err(CallError::Tool(e)) if e.code == ErrorCode::Forbidden => {
-            assert!(e.message.contains("another person's Navi"), "{tool}: {e:?}");
+            assert!(
+                e.message.contains("another person's Only me project"),
+                "{tool}: {e:?}"
+            );
         }
         other => panic!("{tool}: not refused: {other:?}"),
     }
@@ -694,7 +697,7 @@ async fn only_its_owner_watches_takes_over_or_replays_a_navis_screen() {
     let sid = BrowserSessionId::unchecked(id);
     let watch = crate::hub::browser::live::start_watch(&hub, &bob_d, &sid);
     assert!(
-        watch.is_err_and(|e| e.message.contains("another person's Navi")),
+        watch.is_err_and(|e| e.message.contains("another person's Only me project")),
         "watch"
     );
     let click: BrowserInput =
@@ -702,13 +705,13 @@ async fn only_its_owner_watches_takes_over_or_replays_a_navis_screen() {
             .unwrap();
     let input = crate::hub::browser::live::input(&hub, &bob_d, &sid, click.clone());
     assert!(
-        input.is_err_and(|e| e.message.contains("another person's Navi")),
+        input.is_err_and(|e| e.message.contains("another person's Only me project")),
         "input"
     );
     // Its owner gets past the owner check (here, to the node, which has no browser).
     let watch = crate::hub::browser::live::start_watch(&hub, &ann_d, &sid);
     assert!(
-        watch.is_err_and(|e| !e.message.contains("another person's Navi")),
+        watch.is_err_and(|e| !e.message.contains("another person's Only me project")),
         "owner's watch"
     );
 }

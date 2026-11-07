@@ -613,8 +613,8 @@ impl Approvals {
         if sink.fill.is_some() {
             return Err(refuse(
                 "invalid",
-                "A fill: sink is a Navi's secure input, which its browser session asks for.",
-                Some("A Navi calls request_secure_input on the page with the field instead."),
+                "A fill: sink is a project's secure input, which its browser session asks for.",
+                Some("The lead calls request_secure_input on the page with the field instead."),
             ));
         }
         if self.deps.hub.box_key(&sink.machine_id).await.is_none() {
@@ -882,7 +882,7 @@ impl Approvals {
             return Ok(json!({
                 "requestId": id,
                 "fingerprint": fingerprint,
-                "next": format!("Filled into {} on {}; the Navi never sees it.", input.label, input.site.domain),
+                "next": format!("Filled into {} on {}; the lead never sees it.", input.label, input.site.domain),
             }));
         }
         Ok(json!({

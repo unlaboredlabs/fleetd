@@ -7932,7 +7932,12 @@
           "type": "string"
         },
         "navi": {
-          "$ref": "#/$defs/ProjectRef"
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Old name of `project`, accepted for one release."
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The project (D310); one of `project` and `navi`, its old name for one release."
         },
         "sealed": {
           "$ref": "#/$defs/SealedSecret",
@@ -7947,7 +7952,6 @@
         }
       },
       "required": [
-        "navi",
         "label",
         "url",
         "sealed"
@@ -8108,7 +8112,11 @@
       "properties": {
         "navi": {
           "$ref": "#/$defs/ProjectRef",
-          "description": "A Navi: the links this hub keeps for it. Absent: none."
+          "description": "Old name of `project`, accepted for one release."
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The project (D310); `navi` is its old name, accepted for one release."
         }
       },
       "type": "object"
@@ -11571,6 +11579,30 @@
         "project_add.output": {
           "$ref": "#/$defs/ProjectAddOutput"
         },
+        "project_approvals.input": {
+          "$ref": "#/$defs/NaviApprovalsInput"
+        },
+        "project_approvals.output": {
+          "$ref": "#/$defs/NaviApprovalsOutput"
+        },
+        "project_approvals_set.input": {
+          "$ref": "#/$defs/NaviApprovalsSetInput"
+        },
+        "project_approvals_set.output": {
+          "$ref": "#/$defs/NaviApprovalsSetOutput"
+        },
+        "project_archive.input": {
+          "$ref": "#/$defs/NaviArchiveInput"
+        },
+        "project_archive.output": {
+          "$ref": "#/$defs/NaviArchiveOutput"
+        },
+        "project_asks.input": {
+          "$ref": "#/$defs/NaviAsksInput"
+        },
+        "project_asks.output": {
+          "$ref": "#/$defs/NaviAsksOutput"
+        },
         "project_avatar_get.input": {
           "$ref": "#/$defs/ProjectAvatarGetInput"
         },
@@ -11582,6 +11614,12 @@
         },
         "project_avatar_set.output": {
           "$ref": "#/$defs/ProjectAvatarSetOutput"
+        },
+        "project_card_set.input": {
+          "$ref": "#/$defs/NaviCardSetInput"
+        },
+        "project_card_set.output": {
+          "$ref": "#/$defs/NaviCardSetOutput"
         },
         "project_discover.input": {
           "$ref": "#/$defs/ProjectDiscoverInput"
@@ -11612,6 +11650,12 @@
         },
         "project_icon_set.output": {
           "$ref": "#/$defs/ProjectIconSetOutput"
+        },
+        "project_purchases.input": {
+          "$ref": "#/$defs/NaviPurchasesInput"
+        },
+        "project_purchases.output": {
+          "$ref": "#/$defs/NaviPurchasesOutput"
         },
         "project_remove.input": {
           "$ref": "#/$defs/ProjectRemoveInput"
@@ -11654,6 +11698,24 @@
         },
         "project_settings_set.output": {
           "$ref": "#/$defs/ProjectSettingsSetOutput"
+        },
+        "project_signins_forget.input": {
+          "$ref": "#/$defs/NaviSigninsForgetInput"
+        },
+        "project_signins_forget.output": {
+          "$ref": "#/$defs/NaviSigninsForgetOutput"
+        },
+        "project_site_revoke.input": {
+          "$ref": "#/$defs/NaviSiteRevokeInput"
+        },
+        "project_site_revoke.output": {
+          "$ref": "#/$defs/NaviSiteRevokeOutput"
+        },
+        "project_sites.input": {
+          "$ref": "#/$defs/NaviSitesInput"
+        },
+        "project_sites.output": {
+          "$ref": "#/$defs/NaviSitesOutput"
         },
         "project_stop.input": {
           "$ref": "#/$defs/ProjectStopInput"
@@ -12247,10 +12309,20 @@
         "profiles_list.output",
         "project_add.input",
         "project_add.output",
+        "project_approvals.input",
+        "project_approvals.output",
+        "project_approvals_set.input",
+        "project_approvals_set.output",
+        "project_archive.input",
+        "project_archive.output",
+        "project_asks.input",
+        "project_asks.output",
         "project_avatar_get.input",
         "project_avatar_get.output",
         "project_avatar_set.input",
         "project_avatar_set.output",
+        "project_card_set.input",
+        "project_card_set.output",
         "project_discover.input",
         "project_discover.output",
         "project_env_set.input",
@@ -12261,6 +12333,8 @@
         "project_get.output",
         "project_icon_set.input",
         "project_icon_set.output",
+        "project_purchases.input",
+        "project_purchases.output",
         "project_remove.input",
         "project_remove.output",
         "project_repo_add.input",
@@ -12275,6 +12349,12 @@
         "project_settings_get.output",
         "project_settings_set.input",
         "project_settings_set.output",
+        "project_signins_forget.input",
+        "project_signins_forget.output",
+        "project_site_revoke.input",
+        "project_site_revoke.output",
+        "project_sites.input",
+        "project_sites.output",
         "project_stop.input",
         "project_stop.output",
         "prompt_get.input",
@@ -13877,12 +13957,14 @@
     "NaviAsksInput": {
       "properties": {
         "navi": {
-          "$ref": "#/$defs/ProjectRef"
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Old name of `project`, accepted for one release."
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The project (D310); one of `project` and `navi`, its old name for one release."
         }
       },
-      "required": [
-        "navi"
-      ],
       "type": "object"
     },
     "NaviAsksOutput": {
@@ -14315,7 +14397,11 @@
         },
         "navi": {
           "$ref": "#/$defs/ProjectRef",
-          "description": "The Navi the card is for: listed on its machine with the token its fills use (its own\nOP_SERVICE_ACCOUNT_TOKEN variable, else the caller's)."
+          "description": "Old name of `project`, accepted for one release."
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The project (D310); `navi` is its old name, accepted for one release."
         }
       },
       "type": "object"
@@ -22493,12 +22579,14 @@
     "TelegramGetInput": {
       "properties": {
         "navi": {
-          "$ref": "#/$defs/ProjectRef"
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Old name of `project`, accepted for one release."
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The project (D310); one of `project` and `navi`, its old name for one release."
         }
       },
-      "required": [
-        "navi"
-      ],
       "type": "object"
     },
     "TelegramGetOutput": {
@@ -22519,12 +22607,14 @@
     "TelegramPairInput": {
       "properties": {
         "navi": {
-          "$ref": "#/$defs/ProjectRef"
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Old name of `project`, accepted for one release."
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The project (D310); one of `project` and `navi`, its old name for one release."
         }
       },
-      "required": [
-        "navi"
-      ],
       "type": "object"
     },
     "TelegramPairOutput": {
@@ -22555,14 +22645,18 @@
     "TelegramPauseInput": {
       "properties": {
         "navi": {
-          "$ref": "#/$defs/ProjectRef"
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Old name of `project`, accepted for one release."
         },
         "paused": {
           "type": "boolean"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The project (D310); one of `project` and `navi`, its old name for one release."
         }
       },
       "required": [
-        "navi",
         "paused"
       ],
       "type": "object"
@@ -22620,12 +22714,14 @@
     "TelegramRemoveInput": {
       "properties": {
         "navi": {
-          "$ref": "#/$defs/ProjectRef"
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Old name of `project`, accepted for one release."
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The project (D310); one of `project` and `navi`, its old name for one release."
         }
       },
-      "required": [
-        "navi"
-      ],
       "type": "object"
     },
     "TelegramRemoveOutput": {
@@ -22651,7 +22747,12 @@
     "TelegramSetInput": {
       "properties": {
         "navi": {
-          "$ref": "#/$defs/ProjectRef"
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Old name of `project`, accepted for one release."
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The project (D310); one of `project` and `navi`, its old name for one release."
         },
         "sealed": {
           "$ref": "#/$defs/SealedSecret",
@@ -22659,7 +22760,6 @@
         }
       },
       "required": [
-        "navi",
         "sealed"
       ],
       "type": "object"
@@ -22741,12 +22841,14 @@
     "TelegramTestInput": {
       "properties": {
         "navi": {
-          "$ref": "#/$defs/ProjectRef"
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Old name of `project`, accepted for one release."
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The project (D310); one of `project` and `navi`, its old name for one release."
         }
       },
-      "required": [
-        "navi"
-      ],
       "type": "object"
     },
     "TelegramTestOutput": {
@@ -22772,12 +22874,14 @@
     "TelegramUnpairInput": {
       "properties": {
         "navi": {
-          "$ref": "#/$defs/ProjectRef"
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Old name of `project`, accepted for one release."
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The project (D310); one of `project` and `navi`, its old name for one release."
         }
       },
-      "required": [
-        "navi"
-      ],
       "type": "object"
     },
     "TelegramUnpairOutput": {

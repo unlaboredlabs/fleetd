@@ -212,7 +212,7 @@ async fn cards_are_listed_for_a_navi_only() {
     .await
     .unwrap_err();
     assert!(
-        format!("{refused:?}").contains("is not a Navi"),
+        format!("{refused:?}").contains("is not an Only me project"),
         "{refused:?}"
     );
     // A key without operate on the machine is refused first.

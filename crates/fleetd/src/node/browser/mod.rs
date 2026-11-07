@@ -187,6 +187,9 @@ pub trait SessionHooks: Send + Sync + 'static {
     /// The agent session is the lead of project `navi`, in `folder`: its browser sessions run on that project's kept
     /// profile.
     fn navi(&self, _thread: &str, _navi: &str, _folder: &Path) {}
+    /// The agent session is the lead of project `project`, which has repos: its browser, wherever the hub places it,
+    /// runs on that project's kept profile when the place is this machine (D310: every project keeps its sign-ins).
+    fn lead_profile(&self, _thread: &str, _project: &str) {}
     /// Forgets Navi `navi`'s sign-ins: its browser session here ends, and its kept profile goes. None: no broker here
     /// to ask, and the node deletes the profile itself.
     fn forget_signins(&self, _navi: &str) -> Option<Forgetting> {
@@ -198,8 +201,12 @@ pub trait SessionHooks: Send + Sync + 'static {
 #[derive(Clone)]
 struct Navi {
     name: String,
-    /// A person's screen: with the kept profile busy, it opens on a fresh one rather than not at all.
+    /// A person's screen, or a lead with repos: with the kept profile busy, it opens on a fresh one rather than not
+    /// at all.
     fresh_if_busy: bool,
+    /// Its browser runs on this machine, never one the hub would pick: a lead that does its own work. A lead with repos
+    /// is placed by the hub, and keeps its sign-ins when that place is here.
+    stays_here: bool,
 }
 
 pub struct Broker {
@@ -1015,8 +1022,15 @@ impl Broker {
             Navi {
                 name: project.to_owned(),
                 fresh_if_busy: true,
+                stays_here: true,
             },
         );
+    }
+
+    /// Whether the agent session's browser runs on this machine whatever the hub would pick: a lead that does its own
+    /// work, whose kept profile is here.
+    pub fn stays_here(&self, thread: &str) -> bool {
+        lock(&self.navis).get(thread).is_some_and(|n| n.stays_here)
     }
 
     /// The agent session ended: it is no Navi's any more.
@@ -1082,6 +1096,18 @@ impl SessionHooks for Broker {
             Navi {
                 name: navi.to_owned(),
                 fresh_if_busy: false,
+                stays_here: true,
+            },
+        );
+    }
+
+    fn lead_profile(&self, thread: &str, project: &str) {
+        lock(&self.navis).insert(
+            thread.to_owned(),
+            Navi {
+                name: project.to_owned(),
+                fresh_if_busy: true,
+                stays_here: false,
             },
         );
     }

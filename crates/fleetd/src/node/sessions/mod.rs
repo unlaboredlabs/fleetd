@@ -3035,13 +3035,18 @@ impl SessionService {
             env.extend(browser_env);
             plugin_dirs.extend(browser.plugin_dirs());
         }
-        // A lead that does its own work (a project with no repo, as a Navi's did) keeps its browser's sign-ins between
-        // sessions, on the profile its project keeps, on this machine (D221). A lead with repos has its browser placed
-        // by the hub, as any agent's, within the machines' screen roles and caps.
-        if row.local.role == SessionRole::Assistant
-            && let Some(browser) = self.inner.browser.get()
-        {
-            browser.navi(id, row.summary.project_id.as_str(), &row.local.cwd);
+        // Every project's lead keeps its browser's sign-ins between sessions, on the profile its project keeps (D221,
+        // D310). One that does its own work (no repo, as a Navi's did) runs its browser on this machine; one with
+        // repos has it placed by the hub, as any agent's, within the machines' screen roles and caps, and on its
+        // kept profile when that place is here.
+        if let Some(browser) = self.inner.browser.get() {
+            match row.local.role {
+                SessionRole::Assistant => {
+                    browser.navi(id, row.summary.project_id.as_str(), &row.local.cwd)
+                }
+                SessionRole::Lead => browser.lead_profile(id, row.summary.project_id.as_str()),
+                _ => {}
+            }
         }
         let spec = SessionSpec {
             session_id: id.to_owned(),

@@ -879,7 +879,10 @@ async fn a_service_that_is_down_is_retried_and_the_chat_hears_once() {
     lab.clock.advance(Duration::from_secs(3 * 60));
     super::renew_due(&lab.hub).await;
     let lines = chat(&lab);
-    assert_eq!(lines.last().unwrap(), "mail works again: Navi can use it.");
+    assert_eq!(
+        lines.last().unwrap(),
+        "mail works again: the lead can use it."
+    );
     assert!(server(&lab).oauth.unwrap().problem.is_none());
 }
 

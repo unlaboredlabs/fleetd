@@ -258,11 +258,27 @@ fleetd project add --new <name> [--machine <id>] [--dest <dir>] [--git-init] [--
 
 start a new, empty project: the machine makes its folder (`~/fleetd/projects/<name>` by default, or `--dest`; one that holds files is refused). A plain folder with no repo, unless `--git-init`; add a repo later with project repo add
 
+### fleetd project add {#project-add-only-me|--no-only-me}
+
+```text
+fleetd project add ... --only-me|--no-only-me
+```
+
+Only me: only you see and use it. Without either, on for a new project with no repo, off for a clone or a repo folder
+
 ### fleetd project list {#project-list}
 
 ```text
-fleetd project list [--machine <id>] [--hub <url>]
+fleetd project list [--archived] [--machine <id>] [--hub <url>]
 ```
+
+### fleetd project {#project}
+
+```text
+fleetd project archive|unarchive <machine>/<project> [--hub <url>]
+```
+
+archived, its lead stops and its chat, memory and folder stay
 
 ### fleetd project stop {#project-stop}
 
@@ -343,6 +359,14 @@ fleetd project profile <name> [--model <model>] [--effort low|medium|high|xhigh|
 
 create or change a task profile (owner or admin), or delete one. A new one needs `--model` and `--effort`. `--default` makes it the one every review, helper call and task naming no profile runs on; `--lead` the one leads start on (on the default: leads follow the default), from each lead's next start. Deleting the lead's puts leads back on the default
 
+### fleetd navi {#navi}
+
+```text
+fleetd navi ...
+```
+
+the old name of `fleetd project` (project add `--new` \<name\> `--only-me`, project list, project archive\|unarchive), kept for one release
+
 ### fleetd navi create {#navi-create}
 
 ```text
@@ -363,7 +387,7 @@ fleetd navi list [--archived] [--machine <id>] [--hub <url>]
 fleetd navi rename <machine>/<navi> <name> [--hub <url>]
 ```
 
-### fleetd navi {#navi}
+### fleetd navi {#navi-hub}
 
 ```text
 fleetd navi archive|unarchive <machine>/<navi> [--hub <url>]

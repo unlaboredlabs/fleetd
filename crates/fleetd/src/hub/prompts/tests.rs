@@ -578,3 +578,40 @@ fn the_lead_nudges_only_for_a_showcase_something_to_try_or_a_risk() {
         assert!(line.contains(words), "{words}");
     }
 }
+
+/// D310: a renamed prompt keeps its edit: an override saved under its old id still applies, the old id still finds
+/// it, an edit under the new id wins, and a reset clears both.
+#[test]
+fn a_renamed_prompts_edit_under_its_old_id_still_applies_until_reset() {
+    let home = tempfile::tempdir().unwrap();
+    let db = crate::hub::store::HubDb::open(home.path()).unwrap();
+    let dir = db.prompts_dir().unwrap().to_owned();
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("navi.start.md"),
+        "---\nbase: navi.start@0123456789\n---\nYou are {{project}}, mine.",
+    )
+    .unwrap();
+    let e = entry("navi.start").unwrap();
+    assert_eq!(e.id, "assistant.start");
+    let prompts = db.prompts();
+    let shown = |prompts: &super::store::Prompts| {
+        prompts
+            .current(None)
+            .render("assistant.start", &[("project", &"Ada")])
+    };
+    assert!(shown(&prompts).starts_with("You are Ada, mine."));
+    prompts
+        .save(
+            e,
+            PromptScope::Global,
+            None,
+            "You are {{project}}, newer.",
+            None,
+        )
+        .unwrap();
+    assert!(shown(&prompts).starts_with("You are Ada, newer."));
+    prompts.reset(e, PromptScope::Global, None).unwrap();
+    assert!(!dir.join("navi.start.md").exists());
+    assert!(shown(&prompts).starts_with("You are Ada, a personal assistant"));
+}

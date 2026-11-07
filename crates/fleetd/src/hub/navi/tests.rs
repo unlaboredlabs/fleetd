@@ -165,7 +165,7 @@ async fn a_person_makes_several_navis_each_a_plain_folder_and_an_assistant_proje
     let mut calls = node(&hub, &[CAP_REPOS, CAP_ASSISTANT]).await;
     assert_eq!(
         ok(&hub, "navi_list", json!({})).await["next"],
-        "No Navis yet: navi_create makes one."
+        "No Only me projects yet: project_add with onlyMe makes one."
     );
     let mut made = vec![];
     for name in ["Ada", "Home & family", "Ada"] {

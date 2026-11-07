@@ -32,9 +32,9 @@ pub async fn handle(hub: Arc<Hub>, query: HashMap<String, String>) -> Response {
     match super::finish(&hub, state, code, error).await {
         Finished::Connected { name, on_machine } => {
             let rest = if on_machine {
-                "Go back to fleetd: it tests the connection and asks which tools Navi may use without asking."
+                "Go back to fleetd: it tests the connection and asks which tools its lead may use without asking."
             } else {
-                "Its machine is offline: Navi gets it once the machine is back. You can go back to fleetd."
+                "Its machine is offline: the lead gets it once the machine is back. You can go back to fleetd."
             };
             page(
                 StatusCode::OK,
