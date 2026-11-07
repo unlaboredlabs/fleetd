@@ -1,16 +1,18 @@
 // One open approval as one calm card: who asks and what, every field that decides it in full (what runs, who it
 // reaches, as whom, what it says: the card is what the person approves), context such as where a command runs behind
-// Details, and Approve and Deny. Money, irreversible and secret-using asks say so in a quiet line. A character that
-// hides or reorders text shows as its mark (⟨U+202E⟩), each field isolated, under a line saying so. Shown inline in
-// its chat, where it is answered.
+// Details, and Approve and Deny. Money, irreversible and secret-using asks say so in a quiet line, its words in the
+// label's ink beside the orange symbol, as iOS draws a warning. A character that hides or reorders text shows as its
+// mark (⟨U+202E⟩), each field isolated, under a line saying so. Shown inline in its chat, where it is answered; once
+// answered, one line says how it went (ApprovalOutcomeLine). A press taps; the success buzz waits for the hub's yes.
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { listTime } from "../chatView";
 import { HIDDEN_WARNING, marked, type HubError, type HumanRequest } from "../desktop";
 import { exactRuns, FSI, markRuns, PDI, type Run } from "../exact";
-import { approvalView, fieldCopy, type ApprovalField, type ApprovalView } from "../lists";
+import { approvalOutcome, approvalView, fieldCopy, type ApprovalField, type ApprovalOutcome, type ApprovalView } from "../lists";
 import { mono, space, type, useTheme } from "../theme";
+import { useAnnounce, useAnnounceChange } from "../ui/announce";
 import { Avatar, type Pictured } from "../ui/Avatar";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
@@ -39,7 +41,8 @@ export function ApprovalCard({
   picture?: Pictured | undefined;
   answering: boolean;
   error: HubError | undefined;
-  onAnswer: (decision: "approve" | "deny") => void;
+  /** Whether the hub took it. */
+  onAnswer: (decision: "approve" | "deny") => Promise<boolean>;
 }) {
   const t = useTheme();
   const now = useNow();
@@ -48,6 +51,15 @@ export function ApprovalCard({
   const risk = view.risk === undefined ? undefined : RISK[view.risk];
   const shown = view.fields.filter((f) => open || f.more !== true);
   const hidden = view.fields.some((f) => f.more === true);
+  useAnnounce(error?.message);
+  const answer = (decision: "approve" | "deny") => {
+    haptics.tap();
+    void onAnswer(decision).then((ok) => {
+      if (!ok) haptics.warning();
+      else if (decision === "approve") haptics.success();
+      else haptics.firm();
+    });
+  };
   return (
     <Card>
       <View style={styles.head} accessible accessibilityLabel={`${marked(view.title)}${risk === undefined ? "" : `. ${risk.text}`}`}>
@@ -67,13 +79,13 @@ export function ApprovalCard({
       {risk === undefined ? null : (
         <View style={[styles.risk, { backgroundColor: t.warningSoft }]}>
           <Icon name={risk.icon} size={14} color={t.warning} weight="semibold" />
-          <Text style={[type.footnote, styles.riskText, { color: t.warning }]}>{risk.text}</Text>
+          <Text style={[type.footnote, styles.riskText, { color: t.label }]}>{risk.text}</Text>
         </View>
       )}
       {!view.hidden ? null : (
         <View style={[styles.risk, { backgroundColor: t.warningSoft }]}>
           <Icon name="hidden" size={14} color={t.warning} weight="semibold" />
-          <Text style={[type.footnote, styles.riskText, { color: t.warning }]}>{HIDDEN_WARNING}</Text>
+          <Text style={[type.footnote, styles.riskText, { color: t.label }]}>{HIDDEN_WARNING}</Text>
         </View>
       )}
       {shown.length === 0 ? null : (
@@ -111,23 +123,54 @@ export function ApprovalCard({
           size="large"
           grow
           disabled={answering}
-          onPress={() => {
-            haptics.firm();
-            onAnswer("deny");
-          }}
+          onPress={() => answer("deny")}
         />
         <Button
           label="Approve"
           size="large"
           grow
           busy={answering}
-          onPress={() => {
-            haptics.success();
-            onAnswer("approve");
-          }}
+          onPress={() => answer("approve")}
         />
       </View>
     </Card>
+  );
+}
+
+const OUTCOME: Record<ApprovalOutcome["tone"], { icon: IconName; ink: "success" | "secondary" | "warning" }> = {
+  approved: { icon: "check", ink: "success" },
+  denied: { icon: "denied", ink: "secondary" },
+  failed: { icon: "error", ink: "warning" },
+  waiting: { icon: "approvals", ink: "secondary" },
+};
+
+/**
+ * An approval in its chat once its card is gone: "Approved by ada · 9:41". VoiceOver hears it as it changes while
+ * shown, and as it first shows when `justAnswered` (its card was on screen a moment ago), so the person who answered
+ * hears that it went through; never for history as a chat opens or a row comes back into view.
+ */
+export function ApprovalOutcomeLine({
+  item,
+  decided,
+  justAnswered = false,
+}: {
+  item: Parameters<typeof approvalOutcome>[0];
+  decided: HumanRequest | undefined;
+  justAnswered?: boolean;
+}) {
+  const t = useTheme();
+  const now = useNow();
+  const outcome = approvalOutcome(item, decided);
+  const look = OUTCOME[outcome.tone];
+  const text = outcome.at === undefined ? outcome.text : `${outcome.text} · ${listTime(outcome.at, now)}`;
+  useAnnounceChange(outcome.tone === "waiting" ? undefined : outcome.text, justAnswered);
+  return (
+    <View style={styles.outcome} accessible accessibilityLabel={text}>
+      <View style={styles.outcomeIcon}>
+        <Icon name={look.icon} size={13} color={t[look.ink]} />
+      </View>
+      <Text style={[type.footnote, styles.outcomeText, { color: t.secondary }]}>{text}</Text>
+    </View>
   );
 }
 
@@ -206,7 +249,7 @@ function Runs({ runs }: { runs: readonly Run[] }) {
   const t = useTheme();
   return runs.map((r, i) =>
     r.mark ? (
-      <Text key={i} style={[styles.mark, { color: t.warning, backgroundColor: t.warningSoft }]}>
+      <Text key={i} style={[styles.mark, { color: t.label, backgroundColor: t.warningSoft }]}>
         {r.text}
       </Text>
     ) : (
@@ -230,4 +273,8 @@ const styles = StyleSheet.create({
   details: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", minHeight: 28 },
   flip: { transform: [{ rotate: "180deg" }] },
   actions: { flexDirection: "row", gap: space.md, marginTop: space.xs },
+  // Centered on one line; a longer one wraps beside its symbol, which stays on the first line.
+  outcome: { flexDirection: "row", alignItems: "flex-start", justifyContent: "center", gap: 5, marginVertical: space.sm, paddingHorizontal: space.xl },
+  outcomeIcon: { marginTop: 2.5 },
+  outcomeText: { flexShrink: 1 },
 });

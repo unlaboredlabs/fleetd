@@ -1,9 +1,11 @@
 // The app's look, as iOS draws it: Apple's system colors for light and dark (the scheme follows the phone's), its type
 // scale for the system font (SF on iOS), and one accent, the desktop app's calmer blue rather than system blue (its
 // --accent and --accent-fill in app/desktop/src/renderer/ui/tokens.css). Text scales with Dynamic Type, as React
-// Native's Text does by default.
+// Native's Text does by default. With Increase Contrast on (iOS), each scheme takes its stronger variant: darker greys
+// and separators, and Apple's accessible system colors, as its own apps do.
 import { DarkTheme, DefaultTheme, type Theme as NavigationTheme } from "@react-navigation/native";
-import { Platform, useColorScheme, type TextStyle } from "react-native";
+import { useSyncExternalStore } from "react";
+import { AccessibilityInfo, Platform, useColorScheme, type TextStyle } from "react-native";
 
 export interface Palette {
   readonly dark: boolean;
@@ -118,21 +120,84 @@ const dark: Palette = {
   indigo: "#6D7CFF",
 };
 
-export const useTheme = (): Palette => (useColorScheme() === "dark" ? dark : light);
+/** Increase Contrast's variants: Apple's accessible system colors, and stronger greys, fills and separators. */
+const lightContrast: Palette = {
+  ...light,
+  secondary: "rgba(60,60,67,0.8)",
+  tertiary: "rgba(60,60,67,0.55)",
+  separator: "rgba(60,60,67,0.55)",
+  fill: "rgba(120,120,128,0.3)",
+  fillQuiet: "rgba(118,118,128,0.2)",
+  accent: "#1A4A9E",
+  accentFill: "#1A4A9E",
+  accentSoft: "rgba(26,74,158,0.14)",
+  bubble: "#DCDCE0",
+  surface: "#EBEBF0",
+  danger: "#D70015",
+  dangerSoft: "rgba(215,0,21,0.12)",
+  warning: "#C93400",
+  warningSoft: "rgba(201,52,0,0.14)",
+  success: "#248A3D",
+  muted: "#8E8E93",
+};
 
-/** Apple's type scale at the default size (Large), with its tracking. */
+const darkContrast: Palette = {
+  ...dark,
+  secondary: "rgba(235,235,245,0.8)",
+  tertiary: "rgba(235,235,245,0.55)",
+  separator: "rgba(110,110,115,0.9)",
+  fill: "rgba(120,120,128,0.5)",
+  fillQuiet: "rgba(118,118,128,0.36)",
+  accent: "#A3C6FA",
+  accentFill: "#245BB8",
+  accentSoft: "rgba(163,198,250,0.22)",
+  bubble: "#3A3A3C",
+  surface: "#2C2C2E",
+  danger: "#FF6961",
+  dangerSoft: "rgba(255,105,97,0.22)",
+  warning: "#FFB340",
+  warningSoft: "rgba(255,179,64,0.22)",
+  success: "#30DB5B",
+  muted: "#8E8E93",
+};
+
+/** Whether Increase Contrast is on: read once, then kept as iOS says it changes. Android has no such setting. */
+let contrast = false;
+const heard = new Set<() => void>();
+if (Platform.OS === "ios") {
+  const set = (on: boolean) => {
+    contrast = on;
+    for (const f of heard) f();
+  };
+  void AccessibilityInfo.isDarkerSystemColorsEnabled().then(set);
+  AccessibilityInfo.addEventListener("darkerSystemColorsChanged", set);
+}
+const listen = (f: () => void) => {
+  heard.add(f);
+  return () => void heard.delete(f);
+};
+
+export const useTheme = (): Palette => {
+  const strong = useSyncExternalStore(listen, () => contrast);
+  return useColorScheme() === "dark" ? (strong ? darkContrast : dark) : strong ? lightContrast : light;
+};
+
+/**
+ * Apple's type scale at the default size (Large). No letter spacing: SF tracks itself at every size, and a letterSpacing
+ * of ours would be added on top of it (Android's Roboto needs none).
+ */
 export const type = {
-  largeTitle: { fontSize: 34, lineHeight: 41, fontWeight: "700", letterSpacing: 0.4 },
-  title1: { fontSize: 28, lineHeight: 34, fontWeight: "700", letterSpacing: 0.38 },
-  title2: { fontSize: 22, lineHeight: 28, fontWeight: "700", letterSpacing: -0.26 },
-  title3: { fontSize: 20, lineHeight: 25, fontWeight: "600", letterSpacing: -0.45 },
-  headline: { fontSize: 17, lineHeight: 22, fontWeight: "600", letterSpacing: -0.43 },
-  body: { fontSize: 17, lineHeight: 22, letterSpacing: -0.43 },
-  callout: { fontSize: 16, lineHeight: 21, letterSpacing: -0.31 },
-  subhead: { fontSize: 15, lineHeight: 20, letterSpacing: -0.23 },
-  footnote: { fontSize: 13, lineHeight: 18, letterSpacing: -0.08 },
+  largeTitle: { fontSize: 34, lineHeight: 41, fontWeight: "700" },
+  title1: { fontSize: 28, lineHeight: 34, fontWeight: "700" },
+  title2: { fontSize: 22, lineHeight: 28, fontWeight: "700" },
+  title3: { fontSize: 20, lineHeight: 25, fontWeight: "600" },
+  headline: { fontSize: 17, lineHeight: 22, fontWeight: "600" },
+  body: { fontSize: 17, lineHeight: 22 },
+  callout: { fontSize: 16, lineHeight: 21 },
+  subhead: { fontSize: 15, lineHeight: 20 },
+  footnote: { fontSize: 13, lineHeight: 18 },
   caption: { fontSize: 12, lineHeight: 16 },
-  caption2: { fontSize: 11, lineHeight: 13, letterSpacing: 0.06 },
+  caption2: { fontSize: 11, lineHeight: 13 },
 } as const satisfies Record<string, TextStyle>;
 
 /** The 4-point grid; 16 is a row's and a screen's inset. */

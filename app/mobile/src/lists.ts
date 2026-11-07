@@ -245,3 +245,38 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
   const hidden = hasHidden(who) || hasHidden(wants) || fields.some((f) => (f.words ?? [f.value]).some((v) => hasHidden(v, f.lines === true)));
   return { title: `${who} ${wants}`, who, wants, risk, fields, hidden };
 };
+
+/** An approval in a chat once its card is gone: how it went, said as the hub's Telegram card says it. */
+export interface ApprovalOutcome {
+  readonly text: string;
+  readonly tone: "approved" | "denied" | "failed" | "waiting";
+  /** When it was answered, when known. */
+  readonly at: string | undefined;
+}
+
+/**
+ * The line for an approval with no open card: its message's state, or, while that still says open, the answer this
+ * phone just gave (`decided`, as the hub took it), so it never reads "waiting" after you answered it.
+ */
+export const approvalOutcome = (
+  item: { readonly state: string; readonly by?: string; readonly note?: string; readonly answeredAt?: string },
+  decided: HumanRequest | undefined,
+): ApprovalOutcome => {
+  const [state, by, note, at] =
+    item.state === "open" && decided !== undefined ? [decided.state, decided.answeredBy, undefined, decided.answeredAt] : [item.state, item.by, item.note, item.answeredAt];
+  const who = by === undefined ? "" : ` by ${by.replace(/^human:/u, "")}`;
+  switch (state) {
+    case "open":
+      return { text: "Waiting for approval", tone: "waiting", at: undefined };
+    case "approved":
+    case "ran":
+      return { text: `Approved${who}`, tone: "approved", at };
+    case "failed":
+      // The hub's note may say "not run" itself ("not run on devbox: …"): said once.
+      return { text: note === undefined ? `Approved${who}, but it failed` : /^not run\b/iu.test(note) ? `N${note.slice(1)}` : `Not run: ${note}`, tone: "failed", at };
+    case "denied":
+      return { text: note !== undefined && by === undefined ? `Closed: ${note}` : `Denied${who}`, tone: "denied", at };
+    default:
+      return { text: `${state.charAt(0).toUpperCase()}${state.slice(1)}`, tone: "denied", at };
+  }
+};

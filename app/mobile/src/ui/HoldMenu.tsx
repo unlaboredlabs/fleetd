@@ -30,6 +30,7 @@ export function HoldMenu({
   accessibilityRole,
   accessibilityLabel,
   accessibilityHint,
+  voiceActions = [],
   style,
   preview,
   children,
@@ -46,6 +47,8 @@ export function HoldMenu({
   accessibilityRole?: "button" | undefined;
   accessibilityLabel?: string | undefined;
   accessibilityHint?: string | undefined;
+  /** What VoiceOver can do inside the view, a finger's taps there (a link, a code block's Copy): after the menu's actions. */
+  voiceActions?: ReadonlyArray<{ label: string; onPress: () => void }>;
   style?: PressableProps["style"];
   /** What the drawn menu lifts, when not the view as it is (a bubble without its tail). */
   preview?: ReactNode;
@@ -53,7 +56,7 @@ export function HoldMenu({
 }) {
   const ref = useRef<ComponentRef<typeof View>>(null);
   const [at, setAt] = useState<Rect | null>(null);
-  const run = (label: string) => items.find((m) => m.label === label)?.onPress();
+  const run = (label: string) => [...items, ...voiceActions].find((m) => m.label === label)?.onPress();
   const face = (
     <Pressable
       ref={ref}
@@ -63,7 +66,7 @@ export function HoldMenu({
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
-      accessibilityActions={items.map((m) => ({ name: m.label, label: m.label }))}
+      accessibilityActions={[...items, ...voiceActions].map((m) => ({ name: m.label, label: m.label }))}
       onAccessibilityAction={(e) => run(e.nativeEvent.actionName)}
       style={style}
     >

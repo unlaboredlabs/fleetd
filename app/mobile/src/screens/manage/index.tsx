@@ -29,10 +29,11 @@ type RootStack = ReturnType<typeof createNativeStackNavigator<RootParams>>;
 const sheet = (t: Palette, title: string): NativeStackNavigationOptions => ({
   title,
   presentation: "modal",
-  headerTintColor: t.accent,
+  headerTintColor: t.label,
   headerTitleStyle: { color: t.label },
   headerShadowVisible: false,
-  headerStyle: { backgroundColor: t.grouped },
+  // iOS 26's bar is glass over the page, its glyphs in the label's ink; elsewhere, the page's ground.
+  ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.grouped } }),
   contentStyle: { backgroundColor: t.grouped },
 });
 
@@ -40,10 +41,11 @@ const sheet = (t: Palette, title: string): NativeStackNavigationOptions => ({
 export const pushed = (t: Palette, title: string): NativeStackNavigationOptions => ({
   title,
   headerBackButtonDisplayMode: "minimal",
-  headerTintColor: t.accent,
+  headerTintColor: t.label,
   headerTitleStyle: { color: t.label },
   headerShadowVisible: false,
-  headerStyle: { backgroundColor: t.grouped },
+  // iOS 26's bar is glass over the page, its glyphs in the label's ink; elsewhere, the page's ground.
+  ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.grouped } }),
   contentStyle: { backgroundColor: t.grouped },
 });
 

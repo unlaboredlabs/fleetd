@@ -3,7 +3,20 @@ import { describe, expect, it, vi } from "vitest";
 
 // theme.ts reads the phone's scheme from React Native, which doesn't load in node: the palettes are what's tested.
 let scheme: "light" | "dark" = "light";
-vi.mock("react-native", () => ({ Platform: { OS: "ios", Version: "26.0", select: (o: { ios?: unknown }) => o.ios }, useColorScheme: () => scheme }));
+// Increase Contrast, as iOS reports it: its listener, to turn it on and off.
+let darker: ((on: boolean) => void) | undefined;
+vi.mock("react-native", () => ({
+  Platform: { OS: "ios", Version: "26.0", select: (o: { ios?: unknown }) => o.ios },
+  useColorScheme: () => scheme,
+  AccessibilityInfo: {
+    isDarkerSystemColorsEnabled: () => Promise.resolve(false),
+    addEventListener: (_: string, f: (on: boolean) => void) => {
+      darker = f;
+    },
+  },
+}));
+// The palettes are read outside a render: the store's value as it is.
+vi.mock("react", async (actual) => ({ ...(await actual<typeof import("react")>()), useSyncExternalStore: (_: unknown, get: () => unknown) => get() }));
 vi.mock("@react-navigation/native", () => ({ DarkTheme: { colors: {} }, DefaultTheme: { colors: {} } }));
 const { useTheme } = await import("./theme");
 
@@ -62,4 +75,52 @@ describe("the accent", () => {
     expect(swift("accentFill")).toEqual([desktop("dark", "accent-fill"), desktop("light", "accent-fill")]);
     expect(shareView).not.toContain("Color.accentColor");
   });
+});
+
+/** An rgba() or hex color laid over an opaque hex ground, as the screen shows it. */
+const over = (color: string, ground: string): string => {
+  const m = /^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/u.exec(color);
+  if (m === null) return color;
+  const alpha = Number(m[4]);
+  const mixed = [1, 2, 3].map((i, n) => Math.round(Number(m[i]) * alpha + (rgb(ground)[n] ?? 0) * (1 - alpha)));
+  return `#${mixed.map((c) => c.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+};
+
+describe("an approval's risk line", () => {
+  for (const s of ["light", "dark"] as const) {
+    it(`reads at WCAG AA on its orange pill in a card in ${s} mode`, () => {
+      scheme = s;
+      const t = useTheme();
+      // ApprovalCard draws the words in the label's ink on warningSoft, the card's surface under it.
+      expect(contrast(t.label, over(t.warningSoft, t.surface))).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+});
+
+describe("the type scale", () => {
+  it("leaves tracking to the system font, which would add ours on top of its own", async () => {
+    const { type } = await import("./theme");
+    for (const style of Object.values(type)) expect(style).not.toHaveProperty("letterSpacing");
+  });
+});
+
+describe("Increase Contrast", () => {
+  for (const s of ["light", "dark"] as const) {
+    it(`strengthens the greys and keeps every pairing legible in ${s} mode`, () => {
+      scheme = s;
+      const normal = useTheme();
+      darker?.(true);
+      const strong = useTheme();
+      darker?.(false);
+      expect(useTheme()).toBe(normal);
+      expect(strong).not.toBe(normal);
+      const ground = s === "light" ? "#FFFFFF" : "#000000";
+      // Secondary text reaches AA where the normal one doesn't have to; white on the accent's fill stays AA.
+      expect(contrast(over(strong.secondary, ground), ground)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(over(strong.secondary, ground), ground)).toBeGreaterThan(contrast(over(normal.secondary, ground), ground));
+      expect(contrast(strong.onAccent, strong.accentFill)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(strong.accent, ground)).toBeGreaterThan(contrast(normal.accent, ground));
+      expect(contrast(strong.label, over(strong.warningSoft, strong.surface))).toBeGreaterThanOrEqual(4.5);
+    });
+  }
 });

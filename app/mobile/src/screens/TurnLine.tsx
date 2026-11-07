@@ -11,6 +11,7 @@ import { useHub } from "../hubContext";
 import type { Key } from "../store";
 import { mono, space, type, useTheme } from "../theme";
 import { codeRuns, leadActivityOf, SWEEP, SWEEP_WIDTH, turnView } from "../turn";
+import { useAnnounceChange } from "../ui/announce";
 import { useBeat, useReduceMotion } from "../ui/motion";
 import { GLYPH_SIZE, StateGlyph } from "../ui/StateGlyph";
 
@@ -45,6 +46,8 @@ export function TurnLine({ chatKey, still }: { chatKey: Key; still: boolean }) {
     return () => clearInterval(timer);
   }, [counting]);
   const line = turnView(shown, since, nowMs);
+  // Said as it turns from thinking to working and back, not at each step or second, nor as the chat opens.
+  useAnnounceChange(line.glyph === "thinking" ? "Thinking" : "Working");
   return (
     <View style={styles.turn} accessible accessibilityRole="text" accessibilityLabel={line.now} accessibilityLiveRegion="polite">
       <View style={styles.glyph}>

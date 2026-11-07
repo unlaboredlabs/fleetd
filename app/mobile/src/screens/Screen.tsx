@@ -16,18 +16,18 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } 
 import { ActionSheetIOS, ActivityIndicator, Alert, Image, Platform, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent } from "react-native";
 import { GestureDetector, usePanGesture, usePinchGesture, useSimultaneousGestures } from "react-native-gesture-handler";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
-import Animated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 import { zoomAbout, isNavi, type BrowserFrame } from "../desktop";
 import { useHub, type RootParams } from "../hubContext";
 import { addressable, addressOf, BACKSPACE, cardOf, clampView, controlLine, controlOf, ENTER, FramePacer, hostOf, KIND_WORD, MAX_ZOOM, NAVIGATE, PageTouches, pixelsPerPoint, toFrame, typed, type Navigation, type Size } from "../screen";
 import { space, type, useTheme } from "../theme";
+import { useAnnounce } from "../ui/announce";
 import { Avatar } from "../ui/Avatar";
 import { Glass, GlassGroup } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
-import { dur, ease, useReduceMotion } from "../ui/motion";
 
 const SETTLE = { damping: 26, stiffness: 260, mass: 1 } as const;
 /** How far past its bounds a pinch goes before it springs back. */
@@ -39,7 +39,6 @@ const HINT_MS = 4000;
 
 export function Screen({ navigation, route }: NativeStackScreenProps<RootParams, "Screen">) {
   const t = useTheme();
-  const reduce = useReduceMotion();
   const insets = useSafeAreaInsets();
   const { state, session } = useHub();
   const { key, sessionId } = route.params;
@@ -265,6 +264,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   // A touch, typing or page move the hub refused (a hub or node without page moves, a screen no longer yours): said,
   // never dropped.
   const [refused, setRefused] = useState<string | null>(null);
+  useAnnounce(refused === null ? undefined : `The page didn't take that. ${refused}`);
   useEffect(
     () =>
       session.onInputError((e) => {
@@ -305,6 +305,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   }, [canGo]);
   const kind = card === undefined ? "screen" : KIND_WORD[card.kind];
   const status = ended ? "Ended" : control === "agent" && card?.reason === undefined && newest === undefined ? "Connecting…" : controlLine(control, who, own);
+  useAnnounce(status);
   const ground = t.dark ? "#000000" : t.grouped;
   const navi = project !== undefined && isNavi(project);
 
@@ -350,26 +351,26 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
             </View>
           </GestureDetector>
           {ended ? (
-            <Animated.View entering={FadeIn.duration(reduce ? 0 : dur.quick).easing(ease.snap)} style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">
-              <Glass style={styles.endedGlass}>
+            <View style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">
+              <Glass appear style={styles.endedGlass}>
                 <Text style={[type.headline, { color: t.label }]}>This screen has ended</Text>
                 <Text style={[type.footnote, styles.centerText, { color: t.secondary }]}>Its recording is in the desktop app, under Screens.</Text>
               </Glass>
-            </Animated.View>
+            </View>
           ) : null}
         </View>
 
         {/* What it asks of you, under the bar, while it waits for you. */}
         {card?.reason !== undefined && !ended ? (
-          <Animated.View entering={FadeIn.duration(reduce ? 0 : dur.quick).easing(ease.snap)} exiting={FadeOut.duration(reduce ? 0 : dur.quick)} style={[styles.ask, { top: insets.top + BAR + space.md }]}>
-            <Glass style={styles.askGlass}>
+          <View style={[styles.ask, { top: insets.top + BAR + space.md }]}>
+            <Glass appear style={styles.askGlass}>
               <Icon name="hand" size={18} color={t.warning} />
               <View style={styles.askText}>
                 <Text style={[type.subhead, styles.strong, { color: t.label }]}>{`${who} needs you`}</Text>
                 <Text style={[type.subhead, { color: t.label }]}>{card.reason}</Text>
               </View>
             </Glass>
-          </Animated.View>
+          </View>
         ) : null}
 
         {/* The bar: close, and who it is and who drives. */}
@@ -443,24 +444,24 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
 
         {/* An input the hub refused. */}
         {refused === null ? null : (
-          <Animated.View entering={FadeIn.duration(reduce ? 0 : dur.quick).easing(ease.snap)} exiting={FadeOut.duration(reduce ? 0 : dur.quick)} style={[styles.ask, { top: insets.top + BAR + space.md }]} accessibilityLiveRegion="assertive">
-            <Glass style={styles.askGlass}>
+          <View style={[styles.ask, { top: insets.top + BAR + space.md }]} accessibilityLiveRegion="assertive">
+            <Glass appear style={styles.askGlass}>
               <Icon name="error" size={18} color={t.danger} />
               <View style={styles.askText}>
                 <Text style={[type.subhead, styles.strong, { color: t.label }]}>The page didn't take that</Text>
                 <Text style={[type.subhead, { color: t.label }]}>{refused}</Text>
               </View>
             </Glass>
-          </Animated.View>
+          </View>
         )}
 
         {/* The touch hint, a moment after it's yours. */}
         {hint && !typing ? (
-          <Animated.View entering={FadeIn.duration(reduce ? 0 : dur.base).easing(ease.out)} exiting={FadeOut.duration(reduce ? 0 : dur.base)} style={[styles.hint, { bottom: insets.bottom + TOOLBAR + space.lg }]} pointerEvents="none">
-            <Glass style={styles.hintGlass}>
+          <View style={[styles.hint, { bottom: insets.bottom + TOOLBAR + space.lg }]} pointerEvents="none">
+            <Glass appear style={styles.hintGlass}>
               <Text style={[type.footnote, { color: t.label }]}>Tap to click · drag to scroll · hold to drag</Text>
             </Glass>
-          </Animated.View>
+          </View>
         ) : null}
 
         {/* The one control, and the keyboard while it's yours. */}
