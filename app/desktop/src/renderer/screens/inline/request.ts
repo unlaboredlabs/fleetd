@@ -4,7 +4,8 @@ import type { ChatItem, CommandApprovalItem, GatedClass, GatedRunSpec, HumanRequ
 import { shellWord } from "../../../shared/hidden";
 import type { HubError } from "../../../shared/hub";
 import { shortElapsed } from "../chat/format";
-import { purchaseOutcome, purchaseTitle } from "./purchase";
+import { purchaseTitle } from "../projects/payments";
+import { purchaseOutcome } from "./purchase";
 import { answeredWords, previewNeedsConfirm, previewOutcome } from "./toolPreview";
 
 /**
