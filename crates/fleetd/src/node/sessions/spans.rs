@@ -1,7 +1,8 @@
 //! The span outbox's delivery: spans wait in the node's `spans` table until the hub acks them. The hub asks for them
 //! with `subscribe { spansAfter }` and acks after its commit; on a reconnect it asks again from its own cursor, so
 //! nothing is lost and a resend is a no-op on the hub. No polling: the flusher sleeps until a span is pending, then
-//! sends when a run ended, when [`FLUSH_AT`] spans wait, or [`FLUSH_AFTER`] after the oldest one.
+//! sends when a run ended, when [`FLUSH_AT`] spans wait, or [`FLUSH_AFTER`] after the oldest one. A failed read of the
+//! outbox waits [`RETRY_FIRST`], doubling up to [`RETRY_MAX`], before the next try.
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -24,6 +25,9 @@ pub const FLUSH_AFTER: Duration = Duration::from_secs(5);
 pub const FRAME_SPANS: usize = 256;
 /// Rows sent and not acked yet; past this the node waits for an ack.
 const IN_FLIGHT: u64 = 16 * FRAME_SPANS as u64;
+/// The pause after the first failed read of the outbox, and the most it grows to while reads keep failing.
+pub const RETRY_FIRST: Duration = Duration::from_secs(1);
+pub const RETRY_MAX: Duration = Duration::from_secs(60);
 
 #[derive(Default)]
 pub struct Outbox {
@@ -35,6 +39,9 @@ pub struct Outbox {
     pub pending: u64,
     pub since: Option<Instant>,
     pub urgent: bool,
+    /// Reads of the outbox that failed in a row, and when the next try is due.
+    pub failures: u32,
+    pub retry_at: Option<Instant>,
 }
 
 impl Outbox {
@@ -45,10 +52,21 @@ impl Outbox {
         if self.sent.saturating_sub(self.acked) >= IN_FLIGHT {
             return None;
         }
-        if self.urgent || self.pending >= FLUSH_AT {
-            return Some(Instant::now());
-        }
-        self.since.map(|s| s + FLUSH_AFTER)
+        let at = if self.urgent || self.pending >= FLUSH_AT {
+            Instant::now()
+        } else {
+            self.since? + FLUSH_AFTER
+        };
+        Some(self.retry_at.map_or(at, |r| r.max(at)))
+    }
+
+    /// A read of the outbox failed: the next try waits, twice as long as the last up to [`RETRY_MAX`]. Returns the
+    /// failures in a row, this one included.
+    pub fn failed(&mut self) -> u32 {
+        self.failures += 1;
+        let pause = (RETRY_FIRST * (1 << (self.failures - 1).min(6))).min(RETRY_MAX);
+        self.retry_at = Some(Instant::now() + pause);
+        self.failures
     }
 
     /// An ack, or a rewind: the hub stored rows only up to `upto`, so everything after it goes again, once
@@ -121,11 +139,18 @@ impl SessionService {
             let rows = match self.store().spans_after(after, FRAME_SPANS) {
                 Ok(rows) => rows,
                 Err(e) => {
-                    tracing::warn!(error = %e, "cannot read the span outbox");
-                    st.outbox.urgent = false;
+                    // Once per streak: a store that stays broken would otherwise log on every retry.
+                    if st.outbox.failed() == 1 {
+                        tracing::warn!(error = %e, "cannot read the span outbox; retrying with a growing pause");
+                    }
                     return;
                 }
             };
+            if st.outbox.failures > 0 {
+                tracing::info!(failures = st.outbox.failures, "the span outbox reads again");
+                st.outbox.failures = 0;
+                st.outbox.retry_at = None;
+            }
             let Some(&(to_rid, _)) = rows.last() else {
                 st.outbox.pending = 0;
                 st.outbox.since = None;
