@@ -51,7 +51,15 @@ On, the hub installs a new build by itself, at most once an hour: an hour after 
 own), it updates to the channel's newest build, so builds that came out in between install once, as the newest. It waits
 for agents as **Update** does; **Update now** works on it too. A build the hub didn't come up healthy on, and put back,
 isn't tried again by itself: the switch says it skips that build, a newer one installs as usual, and **Update** still
-installs it. `fleetd update` on a machine waits the same way for its own node's agents, 10 minutes at most;
+installs it. A machine an update left behind the hub (offline then, or failed) is brought to the hub's build the same
+way, at the next hour, even with nothing newer out. Beside the switch, the hub says how its last automatic update went,
+when it looks at the channel next (every 10 minutes), and why it holds back, if it does: a build it put back, a local
+build of fleetd, or a channel it couldn't read.
+
+A machine installs the build it downloaded and checked when the update started, even if the channel has a newer one
+by the time its agents let it restart: edge often does. The next update brings everything to that newer build.
+
+`fleetd update` on a machine waits the same way for its own node's agents, 10 minutes at most;
 `fleetd update --now` doesn't wait.
 
 The update sheet has one overall state at the top and one line per part: the hub, each machine, Claude Code and the app.

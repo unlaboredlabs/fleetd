@@ -26,11 +26,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "hub_update_settings",
-        "Changes how the hub updates; a field left out stays as it is. auto: updates install by themselves, at most once an hour (the channel's newest build an hour after the last update started, whatever came out in between), each node once its agents finish their step, as hub_update does; off by default. drainMinutes (0-240, default 10): how long a node waits for its agents. A build the hub didn't come up healthy on and put back isn't tried again by itself until a newer one is out (autoSkips names it). Answers as hub_update_status does, with settings, autoAt and autoSkips. A person's key with Admin on every machine only.",
+        "Changes how the hub updates; a field left out stays as it is. auto: updates install by themselves, at most once an hour (the channel's newest build an hour after the last update started, whatever came out in between), each node once its agents finish their step, as hub_update does; off by default. drainMinutes (0-240, default 10): how long a node waits for its agents. A machine an update left behind the hub is brought to the hub's build the same way. A build the hub didn't come up healthy on and put back isn't tried again by itself until a newer one is out (autoSkips names it). Answers as hub_update_status does. A person's key with Admin on every machine only.",
     ),
     (
         "hub_update_status",
-        "The hub's update going now, or the last one: the build it updates to, and each part (the hub, then each machine's node) with its state (waiting, downloading, restarting, done, current, failed, rolled_back, skipped), where it failed, and one plain sentence; leftOver when nothing in the hub drives an unfinished run any more.",
+        "The hub's update going now, or the last one: the build it updates to, and each part (the hub, then each machine's node) with its state (waiting, downloading, restarting, done, current, failed, rolled_back, skipped), where it failed, and one plain sentence; leftOver when nothing in the hub drives an unfinished run any more. With automatic updates on: autoAt (when the next one starts), nextCheck (when the hub looks at the channel next), skipReason (why they hold back), and lastAuto (how the last automatic update went: done, partial or failed, and why).",
     ),
     (
         "attachment_get",

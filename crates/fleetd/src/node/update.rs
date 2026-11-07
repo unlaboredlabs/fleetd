@@ -6,7 +6,8 @@
 //!
 //! `node_action` `fetch` comes first, while the hub fetches its own build: the node downloads the build its hub is
 //! about to run and keeps it ([`fetch`]), so its update, once the hub runs it, needn't download it again. What it kept
-//! is checked against the release's SHA256SUMS again before it is installed.
+//! is checked against the release's SHA256SUMS again before it is installed: the sums read then, as the rolling edge
+//! channel may offer a newer build than the hub's by the time the node's agents let it update.
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -68,6 +69,51 @@ impl Place {
     fn fetched(&self) -> PathBuf {
         self.dir().join("fleetd.next")
     }
+
+    /// The SHA256SUMS of the build [`fetch`] was asked for, read while the channel still offered it.
+    fn kept_sums(&self) -> PathBuf {
+        self.dir().join("fleetd.next.sums.json")
+    }
+}
+
+/// [`Place::kept_sums`]: the build they are of, and the sums.
+#[derive(serde::Deserialize, serde::Serialize)]
+struct KeptSums {
+    version: String,
+    sums: std::collections::HashMap<String, String>,
+}
+
+fn keep_sums(
+    place: &Place,
+    to: &str,
+    sums: &std::collections::HashMap<String, String>,
+) -> Result<(), Failure> {
+    let kept = KeptSums {
+        version: to.to_owned(),
+        sums: sums.clone(),
+    };
+    fs::create_dir_all(place.dir())
+        .and_then(|()| {
+            crate::update::replace_file(
+                &place.kept_sums(),
+                &serde_json::to_vec(&kept).unwrap_or_default(),
+            )
+        })
+        .map_err(|e| {
+            Failure::new(
+                UpdateStage::Download,
+                format!("couldn't keep the release's checksums: {e}"),
+            )
+        })
+}
+
+/// The sums kept for `to`, if any.
+fn kept_sums(place: &Place, to: &str) -> Option<std::collections::HashMap<String, String>> {
+    fs::read(place.kept_sums())
+        .ok()
+        .and_then(|b| serde_json::from_slice::<KeptSums>(&b).ok())
+        .filter(|k| k.version == to)
+        .map(|k| k.sums)
 }
 
 /// Held while a fetch downloads: the update waits for it rather than downloading the same build alongside.
@@ -96,21 +142,21 @@ async fn release_of(
 }
 
 /// Downloads `update.version` ahead of the update, checked against the release's SHA256SUMS, and keeps it beside the
-/// node's binary. Installs nothing and restarts nothing; the update that follows uses it.
+/// node's binary, with the sums. Installs nothing and restarts nothing; the update that follows uses it, also once the
+/// rolling channel offers a newer build than the hub's (edge does, often, while a node waits for its agents).
 pub async fn fetch(update: &NodeUpdate, place: &Place, feed: &dyn Feed) -> Result<(), Failure> {
     let _fetching = FETCHING.lock().await;
     let to = update.version.as_str();
-    // Nothing the update that follows could install; or this binary is the hub's too, which the hub, downloading it
-    // now, puts in place itself.
-    if to == place.running
-        || !place.release_build
-        || !place.services.iter().any(|s| !s.hub())
-        || place.services.iter().any(Service::hub)
-    {
+    // Nothing the update that follows could install.
+    if to == place.running || !place.release_build || !place.services.iter().any(|s| !s.hub()) {
         return Ok(());
     }
     let sums = release_of(to, feed).await?;
-    if is_build(&place.exe, &sums, &place.asset) || is_build(&place.fetched(), &sums, &place.asset)
+    keep_sums(place, to, &sums)?;
+    // This binary is the hub's too, which the hub, downloading it now, puts in place itself: the sums check it then.
+    if place.services.iter().any(Service::hub)
+        || is_build(&place.exe, &sums, &place.asset)
+        || is_build(&place.fetched(), &sums, &place.asset)
     {
         return Ok(());
     }
@@ -143,7 +189,16 @@ pub async fn stage(
     }
     // A fetch still downloading this build finishes first.
     let _fetching = FETCHING.lock().await;
-    let sums = release_of(to, feed).await?;
+    // What the fetch kept, checked by the sums it kept: the channel may offer a newer build by now.
+    let sums = match kept_sums(place, to) {
+        Some(sums)
+            if is_build(&place.exe, &sums, &place.asset)
+                || is_build(&place.fetched(), &sums, &place.asset) =>
+        {
+            sums
+        }
+        _ => release_of(to, feed).await?,
+    };
     // On the hub's machine the hub's update already put this build at the shared path.
     let in_place = is_build(&place.exe, &sums, &place.asset);
     let prev = place.dir().join("fleetd.prev");
@@ -171,6 +226,7 @@ pub async fn stage(
         crate::update::swap(&place.exe, &place.fetched(), &previous, &prev)?;
     }
     let _ = fs::remove_file(place.fetched());
+    let _ = fs::remove_file(place.kept_sums());
     Ok(Staged::Restarting(Box::new(Plan {
         exe: place.exe.clone(),
         prev,
@@ -474,6 +530,60 @@ mod tests {
         let failed = fetch(&to(NEW), &place, &tampered).await.unwrap_err();
         assert_eq!(failed.stage, UpdateStage::Checksum);
         assert!(!place.fetched().exists());
+    }
+
+    /// The channel, `newer` out since the hub took its build: the feed now serves only that one.
+    fn moved_on(newer: &str) -> FakeFeed {
+        FakeFeed::with(
+            &[("fleetd-linux-x64", b"newer")],
+            &format!(r#"{{"cliVersion":"{newer}"}}"#),
+        )
+    }
+
+    /// The devbox, 7 Nov: the hub moved to its build, its nodes waited up to 10 minutes for their agents, and a newer
+    /// edge build came out meanwhile. The node installs the build it fetched and checked when the hub took it, rather
+    /// than refusing it because the rolling feed now names another.
+    #[tokio::test]
+    async fn the_hubs_build_fetched_ahead_installs_after_the_channel_moved_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let place = place(dir.path());
+        fetch(&to(NEW), &place, &feed(b"new")).await.unwrap();
+        let newer = "0.0.0-edge.202610261200+2222222";
+        let Staged::Restarting(plan) =
+            stage(&to(NEW), &place, &moved_on(newer), || Ok(b"old".to_vec()))
+                .await
+                .unwrap()
+        else {
+            panic!("not staged");
+        };
+        assert_eq!(fs::read(&place.exe).unwrap(), b"new");
+        assert_eq!(plan.to, NEW);
+    }
+
+    /// On the hub's machine the hub put its build at the shared path: what the fetch kept is the sums to check it with.
+    #[tokio::test]
+    async fn on_the_hubs_machine_the_hubs_build_installs_after_the_channel_moved_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut place = place(dir.path());
+        place.services.insert(
+            0,
+            Service {
+                name: "fleetd-hub.service".into(),
+                unit: "hub".into(),
+            },
+        );
+        fetch(&to(NEW), &place, &feed(b"new")).await.unwrap();
+        assert!(!place.fetched().exists(), "the hub downloads its binary");
+        fs::write(&place.exe, b"new").unwrap();
+        let newer = "0.0.0-edge.202610261200+2222222";
+        let staged = stage(&to(NEW), &place, &moved_on(newer), || Ok(b"old".to_vec())).await;
+        assert!(matches!(staged, Ok(Staged::Restarting(_))), "{staged:?}");
+        assert_eq!(fs::read(&place.exe).unwrap(), b"new");
+
+        // Kept sums never vouch for a binary they don't name.
+        fs::write(&place.exe, b"evil").unwrap();
+        let refused = stage(&to(NEW), &place, &moved_on(newer), || Ok(b"old".to_vec())).await;
+        assert!(refused.is_err());
     }
 
     #[tokio::test]

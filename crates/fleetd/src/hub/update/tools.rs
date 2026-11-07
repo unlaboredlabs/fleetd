@@ -38,6 +38,15 @@ fn output(hub: &Hub, run: Option<UpdateRun>) -> HubUpdateOutput {
             .then(|| hub.updates.auto_skips())
             .flatten()
             .map(|v| crate::node::wire::head_text(&v)),
+        last_auto: hub.updates.last_auto(),
+        next_check: hub
+            .updates
+            .next_check()
+            .map(|at| crate::hub::store::iso_ms(at).into()),
+        skip_reason: hub
+            .updates
+            .skip_reason()
+            .map(|why| crate::node::wire::head_text(&why)),
         truncated: None,
     }
 }

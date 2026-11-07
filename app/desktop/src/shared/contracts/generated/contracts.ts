@@ -557,6 +557,10 @@ export type AutoApproved = {
 /** What let an action run without asking the person. */
 export type AutoApprovedBy = "checker" | "yolo";
 
+export type KnownAutoUpdateResult = "done" | "partial" | "failed";
+/** KnownAutoUpdateResult, or a value from a newer hub. */
+export type AutoUpdateResult = KnownAutoUpdateResult | (string & {});
+
 export type Automation = {
   automationId: AutomationId;
   /**
@@ -3080,11 +3084,18 @@ export type HubUpdateOutput = {
    */
   autoSkips?: string;
   /**
+   * The last automatic update that finished, kept apart from `run`: a person's update after it doesn't hide it.
+   * Absent until one has finished.
+   */
+  lastAuto?: LastAutoUpdate;
+  /**
    * True when the run isn't finished but nothing in the hub drives it any more: it won't change again, and Update
    * starts a new one. Absent otherwise.
    */
   leftOver?: boolean;
   next?: string;
+  /** With `settings.auto`: when the hub next looks at the channel for a newer build (every 10 minutes). */
+  nextCheck?: Timestamp;
   /**
    * The channel's newest build, already downloaded and checked on the hub (and fetched by its nodes), so an update
    * only swaps and restarts: what "fleetd <version> is ready" names. Absent when there is none newer.
@@ -3094,6 +3105,11 @@ export type HubUpdateOutput = {
   run?: UpdateRun;
   /** The hub's update settings. */
   settings?: UpdateSettings;
+  /**
+   * With `settings.auto`: why automatic updates hold back now, in one sentence (the hub runs a local build, the
+   * build ready was put back, the last look at the channel failed). Absent while nothing holds them back.
+   */
+  skipReason?: string;
   truncated?: boolean;
 };
 
@@ -3369,6 +3385,17 @@ export type LaneStatus =
   | "cancelled"
   | "waiting"
   | "parked";
+
+/** How an automatic update went. */
+export type LastAutoUpdate = {
+  /** When it started. */
+  at: Timestamp;
+  /** What didn't go, in one sentence: the hub's failure, or the first machine that didn't update and why. */
+  message?: string;
+  result: AutoUpdateResult;
+  /** The build it moved to; absent when it never got that far. */
+  to?: string;
+};
 
 /** The project's latest merge, as the train recorded it. */
 export type LastMerged = {
