@@ -504,10 +504,7 @@ async fn run_link_once(
     let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {
         Ok(HubToNode::Welcome(welcome)) if welcome.protocol.get() != PROTOCOL_VERSION => {
             return LinkEnd::Fatal(LinkFatal {
-                reason: format!(
-                    "hub speaks protocol {}, node speaks {PROTOCOL_VERSION}: install matching fleetd versions",
-                    welcome.protocol.get()
-                ),
+                reason: crate::protocol_behind(welcome.protocol.get(), PROTOCOL_VERSION).into(),
             });
         }
         Ok(HubToNode::Welcome(welcome)) => {

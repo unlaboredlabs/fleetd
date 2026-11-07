@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MacJoin } from "../shared/macSetup";
-import { cliFailure, findHubs, hubOrigin, joinMac, MacSetup, PANE_URLS, readHealth, redeemMac, tailnetPeers, type MacSetupPorts } from "./macSetup";
+import type { CallOutcome } from "../shared/hub";
+import { APP_BEHIND, cliFailure, findHubs, hubOrigin, joinMac, MacSetup, PANE_URLS, readHealth, redeemMac, signedInPorts, tailnetPeers, type MacSetupPorts } from "./macSetup";
 
 const BUILD = new TextEncoder().encode("#!/bin/sh\necho fleetd\n");
 const SUM = createHash("sha256").update(BUILD).digest("hex");
@@ -28,7 +29,21 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
  * A temp fleetd dir, hubs that answer at `hubs` (each with what its /pair/mac says), a tailnet, release files, and a
  * CLI that exits as `exit` says.
  */
-function ports(over: { hubs?: Record<string, (body: { code: string; fingerprint?: string }) => Response>; known?: string[]; tailnet?: string; exit?: number; output?: string; node?: object } = {}) {
+function ports(
+  over: {
+    hubs?: Record<string, (body: { code: string; fingerprint?: string }) => Response>;
+    known?: string[];
+    tailnet?: string;
+    exit?: number;
+    output?: string;
+    node?: object;
+    /** What the hub's /healthz says it runs. */
+    hubVersion?: string;
+    /** What the edge release's release.json says it holds. */
+    edgeHolds?: string;
+    role?: "admin" | "member" | "unknown";
+  } = {},
+) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-mac-"));
   homes.push(dir);
   if (over.node !== undefined) {
@@ -39,16 +54,23 @@ function ports(over: { hubs?: Record<string, (body: { code: string; fingerprint?
   const ran: Array<{ file: string; args: ReadonlyArray<string> }> = [];
   const traded: string[] = [];
   const opened: string[] = [];
+  const fetched: string[] = [];
+  const updates: string[] = [];
+  const roles: string[] = [];
   const p: MacSetupPorts = {
     fetch: (url, init) => {
       const origin = new URL(url).origin;
       const answer = hubs[origin];
       if (answer === undefined) return Promise.reject(new TypeError("fetch failed"));
-      if (url.endsWith("/healthz")) return Promise.resolve(json(200, { ok: true, version: "0.9.0", protocol: 1 }));
+      if (url.endsWith("/healthz")) return Promise.resolve(json(200, { ok: true, version: over.hubVersion ?? "0.9.0", protocol: 1 }));
       traded.push(origin);
       return Promise.resolve(answer(JSON.parse(init.body as string) as { code: string }));
     },
-    download: (url) => Promise.resolve(url.endsWith("/SHA256SUMS") ? new TextEncoder().encode(`${SUM}  fleetd-darwin-arm64\n`) : BUILD),
+    download: (url) => {
+      fetched.push(url);
+      if (url.endsWith("/release.json")) return Promise.resolve(new TextEncoder().encode(JSON.stringify({ channel: "edge", cliVersion: over.edgeHolds })));
+      return Promise.resolve(url.endsWith("/SHA256SUMS") ? new TextEncoder().encode(`${SUM}  fleetd-darwin-arm64\n`) : BUILD);
+    },
     run: (file, args) => {
       ran.push({ file, args });
       return Promise.resolve({ code: over.exit ?? 0, output: over.output ?? "joined\n" });
@@ -67,8 +89,16 @@ function ports(over: { hubs?: Record<string, (body: { code: string; fingerprint?
       return Promise.resolve();
     },
     now: () => Date.now(),
+    hubRole: (hub) => {
+      roles.push(hub);
+      return Promise.resolve(over.role ?? "unknown");
+    },
+    updateHub: (hub) => {
+      updates.push(hub);
+      return Promise.resolve({ ok: true });
+    },
   };
-  return { p, dir, ran, traded, opened };
+  return { p, dir, ran, traded, opened, fetched, updates, roles };
 }
 
 describe("finding the hub", () => {
@@ -256,5 +286,106 @@ describe("the checks", () => {
     expect(opened[1]).toContain("Privacy_ScreenCapture");
     expect(await setup.restart()).toEqual({ ok: true });
     expect(ran).toEqual([{ file: path.join(dir, "bin", "fleetd"), args: ["node", "restart"] }]);
+  });
+});
+
+/** A difference of versions between this app, this Mac's fleetd and the hub never stops setup: it resolves itself or
+ * shows one plain fix. The hub ran 0.0.0-edge.202611071720+6d5a250 while the edge release already held a newer build. */
+describe("a version difference", () => {
+  const OLD = "0.0.0-edge.202611071720+6d5a250";
+  const NEW = "0.0.0-edge.202611071744+f893086";
+  const edgePending = { found: { hubUrl: ANSWER.hubUrl, hubName: "devbox", machineId: "mac", existing: false, here: { kind: "none" as const } }, token: "fle_token", version: OLD, expiresAt: ANSWER.expiresAt };
+  const words = (value: unknown) => JSON.stringify(value).toLowerCase();
+
+  it("an older app and a newer hub: an answer this app can't read says to update the app, with its button", async () => {
+    const { p } = ports({ hubs: { [ANSWER.hubUrl]: () => json(200, { setup: 2, hub: { url: ANSWER.hubUrl } }) } });
+    const { outcome } = await redeemMac(p, { code: "123456" });
+    expect(outcome).toEqual({ ok: false, failure: APP_BEHIND });
+    expect(APP_BEHIND.updateApp).toBe(true);
+    expect(APP_BEHIND.message).toBe("This app is older than your hub, so it can't set up this Mac.");
+    expect(words(outcome)).not.toContain("mismatch");
+  });
+
+  it("a newer app and an older hub: an answer with fields this app doesn't know is read, and the hub's own build installed", async () => {
+    const { p, fetched } = ports({ hubs: { [ANSWER.hubUrl]: () => json(200, { ...ANSWER, version: "0.8.0", someday: true }) } });
+    const { outcome, pending } = await redeemMac(p, { code: "123456" });
+    expect(outcome.ok).toBe(true);
+    if (pending === undefined) throw new Error("no pending join");
+    expect((await joinMac(p, pending, () => undefined)).state).toBe("done");
+    expect(fetched).toEqual(["https://github.com/unlaboredlabs/fleetd/releases/download/v0.8.0/SHA256SUMS", "https://github.com/unlaboredlabs/fleetd/releases/download/v0.8.0/fleetd-darwin-arm64"]);
+  });
+
+  it("a hub older than Mac setup codes says to update the hub, and where", async () => {
+    const { p } = ports({ hubs: { [ANSWER.hubUrl]: () => json(404, {}) } });
+    const { outcome } = await redeemMac(p, { code: "123456" });
+    expect(outcome).toMatchObject({ ok: false, failure: { message: `The hub at ${ANSWER.hubUrl} runs an older fleetd that doesn't take Mac setup codes yet.` } });
+    expect(outcome.ok ? "" : outcome.failure.fix).toContain("Settings › Hub › Machines › Updates");
+  });
+
+  it("an edge release that moved on past the hub's build: the Mac joins on the newer build, and says so in its first step", async () => {
+    const { p, ran, fetched } = ports({ edgeHolds: NEW });
+    const end = await joinMac(p, edgePending, () => undefined);
+    expect(end.state).toBe("done");
+    expect(end.steps[0]?.title).toBe("download the newest edge fleetd, newer than the hub's");
+    expect(fetched[0]).toBe("https://github.com/unlaboredlabs/fleetd/releases/download/edge/release.json");
+    expect(ran).toHaveLength(1);
+    // While the release is still the hub's own, the step says so.
+    const same = await joinMac(ports({ edgeHolds: OLD }).p, edgePending, () => undefined);
+    expect(same.steps[0]?.title).toBe("download the hub's own fleetd, an edge build");
+  });
+
+  it("then says the hub is behind, with who can update it, until it runs this Mac's build", async () => {
+    const { p, dir } = ports({ hubVersion: OLD, role: "admin" });
+    fs.mkdirSync(path.join(dir, "node", "update"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "node", "update", "up"), NEW);
+    const setup = new MacSetup(p, () => undefined);
+    expect((await setup.health(ANSWER.hubUrl)).hubBehind).toEqual({ hubVersion: OLD, macVersion: NEW, who: "admin" });
+    expect(await setup.updateHub(ANSWER.hubUrl)).toEqual({ ok: true });
+    // The hub's version caught up: nothing to say.
+    const level = ports({ hubVersion: NEW });
+    fs.mkdirSync(path.join(level.dir, "node", "update"), { recursive: true });
+    fs.writeFileSync(path.join(level.dir, "node", "update", "up"), NEW);
+    expect((await readHealth(level.p, ANSWER.hubUrl)).hubBehind).toBeNull();
+    // A hub newer than the node (the Mac updates with it), or a node that hasn't linked yet: nothing either.
+    expect((await readHealth(ports({ hubVersion: NEW }).p, ANSWER.hubUrl)).hubBehind).toBeNull();
+  });
+
+  it("asks who this app is on the hub once, not on every read", async () => {
+    const { p, dir, roles } = ports({ hubVersion: OLD, role: "member" });
+    fs.mkdirSync(path.join(dir, "node", "update"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "node", "update", "up"), NEW);
+    const setup = new MacSetup(p, () => undefined);
+    for (let i = 0; i < 3; i++) expect((await setup.health(ANSWER.hubUrl)).hubBehind?.who).toBe("member");
+    expect(roles).toEqual([ANSWER.hubUrl]);
+  });
+
+  it("a hub on an older link protocol: refused before the code is spent, in words, and the same code tries again", async () => {
+    const output = "fleetd: the hub runs an older fleetd than this machine. Fix: update the hub (Updates in the app on your main machine, or fleetd update on the hub), then run fleetd init again\n";
+    const { p } = ports({ exit: 1, output });
+    const end = await joinMac(p, edgePending, () => undefined);
+    expect(end).toMatchObject({ state: "failed", retry: true, failure: { message: "Your hub runs an older fleetd than this Mac, so this Mac can't join it yet." } });
+    expect(end.failure?.fix).toContain("Settings › Hub › Machines › Updates");
+    expect(words(end.failure)).not.toMatch(/mismatch|protocol/u);
+  });
+
+  it("updates the hub with the key of the hub this app is signed in to at that address, and tells an admin from a member", async () => {
+    const calls: string[] = [];
+    const hub = (output: unknown) => ({
+      url: "http://devbox.example.ts.net:4790/",
+      call: (tool: "hub_info" | "hub_update"): Promise<CallOutcome> => {
+        calls.push(tool);
+        return Promise.resolve(tool === "hub_info" ? { ok: true, output } : { ok: true, output: { run: {} } });
+      },
+    });
+    const admin = signedInPorts(() => [hub({ admin: true, me: { role: "admin" } })]);
+    expect(await admin.hubRole(ANSWER.hubUrl)).toBe("admin");
+    expect(await admin.updateHub(ANSWER.hubUrl)).toEqual({ ok: true });
+    expect(calls).toEqual(["hub_info", "hub_update"]);
+    expect(await signedInPorts(() => [hub({ admin: true, me: { role: "member" } })]).hubRole(ANSWER.hubUrl)).toBe("member");
+    // Signed in to another hub, or none: where to press Update instead.
+    const elsewhere = signedInPorts(() => [{ ...hub({}), url: "http://other:4790" }]);
+    expect(await elsewhere.hubRole(ANSWER.hubUrl)).toBe("unknown");
+    const refused = await elsewhere.updateHub(ANSWER.hubUrl);
+    expect(refused.ok ? "" : refused.failure.fix).toContain("Settings › Hub › Machines › Updates");
   });
 });

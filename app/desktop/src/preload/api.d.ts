@@ -5,7 +5,7 @@ import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, Secr
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
 import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, TelegramRequest, CloudKeyRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
-import type { MacHealthRead, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
+import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
 
@@ -185,6 +185,8 @@ export interface FleetdApi {
     status(): Promise<MacSetupStatus>;
     /** Declines replacing a node after the hub took the code: it is spent, and nothing joins. */
     cancel(): Promise<void>;
+    /** Starts the hub's own Update with this app's key for it, when that is an admin's. Never rejects. */
+    updateHub(hub: string): Promise<MacHubUpdateOutcome>;
   };
   readonly projects: {
     /** A native folder picker; null when cancelled. */

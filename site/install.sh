@@ -3,6 +3,7 @@
 #
 #   sh -s -- [--no-app] [--app] [--no-init] [--uninstall]
 #   sh -s -- --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin] [--mac]
+#            [--version <hub's version>]
 #
 # Installs the fleetd CLI to ~/.fleetd/bin/fleetd (symlinked from ~/.local/bin/fleetd) and the desktop app to
 # ~/Applications/fleetd.app on macOS, or an AppImage in ~/.local/share/fleetd/app on Linux (only with a display, or
@@ -15,6 +16,9 @@
 # makes this machine a worker of that hub without asking for its address or code, with or without a terminal.
 # --mac joins the agents' Mac (docs: agents-mac.md): run in Terminal logged in at the Mac's screen (an admin's account
 # is fine), which it checks before it downloads anything; it installs no app there.
+# --version (in the agents' Mac's join line) installs the hub's own build and channel: a tagged version from its own
+# release, an edge one from the edge release, which holds the hub's build until main moves on and a newer one after;
+# the hub's Update then brings the hub level with it. FLEETD_CHANNEL is then not read.
 #
 # FLEETD_CHANNEL=edge|stable picks the release (default edge, the newest build of main; nightly, its name until
 # D203, is edge too). FLEETD_BASE_URL points at another directory of release assets.
@@ -39,9 +43,11 @@ Usage: curl -fsSL https://fleetd.sh | sh -s -- [options]
   --app         install the desktop app on Linux even without a display
   --no-init     don't start the setup wizard (fleetd init) after installing
   --join <url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin] [--mac]
+         [--version <version>]
                 join that hub as a worker (fleetd init --join) after installing: the
                 command fleetd pair --worker prints on the hub; --mac joins the agents'
-                Mac, from Terminal logged in at its screen
+                Mac, from Terminal logged in at its screen; --version installs the
+                hub's own build
   --uninstall   remove the CLI and the app (fleetd's data in ~/.fleetd stays)
 
 Environment: FLEETD_CHANNEL=edge|stable (default edge), FLEETD_BASE_URL=<asset directory>
@@ -224,6 +230,7 @@ main() {
   git_identity=""
   rejoin=0
   mac=0
+  hub_version=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --no-app) want_app=no ;;
@@ -232,13 +239,14 @@ main() {
       --no-init) run_init=0 ;;
       --rejoin) rejoin=1 ;;
       --mac) mac=1 ;;
-      --join | --code | --machine-id | --git-identity)
+      --join | --code | --machine-id | --git-identity | --version)
         [ "$#" -ge 2 ] || die "$1 needs a value"
         case "$1" in
           --join) join="$2" ;;
           --code) code="$2" ;;
           --machine-id) machine_id="$2" ;;
           --git-identity) git_identity="$2" ;;
+          --version) hub_version="$2" ;;
         esac
         shift
         ;;
@@ -257,8 +265,8 @@ main() {
     [ -n "$join" ] && [ -n "$code" ] ||
       die "--join and --code go together: both are in what fleetd pair --worker prints"
     [ "$run_init" = 1 ] || die "--no-init and --join contradict each other: --join runs fleetd init --join"
-  elif [ -n "$machine_id$git_identity" ] || [ "$rejoin" = 1 ] || [ "$mac" = 1 ]; then
-    die "--machine-id, --git-identity, --rejoin and --mac only go with --join and --code"
+  elif [ -n "$machine_id$git_identity$hub_version" ] || [ "$rejoin" = 1 ] || [ "$mac" = 1 ]; then
+    die "--machine-id, --git-identity, --rejoin, --mac and --version only go with --join and --code"
   fi
   [ "$mac" = 0 ] || agents_mac_user
 
@@ -290,12 +298,21 @@ main() {
   fi
 
   channel="${FLEETD_CHANNEL:-edge}"
+  # The hub's own channel, from its version.
+  case "$hub_version" in
+    "") ;;
+    *-edge.* | *-nightly.*) channel=edge ;;
+    *) channel=stable ;;
+  esac
   case "$channel" in
     edge | nightly)
       channel=edge
       default_base="https://github.com/$REPO/releases/download/edge"
       ;;
-    stable | latest) default_base="https://github.com/$REPO/releases/latest/download" ;;
+    stable | latest)
+      default_base="https://github.com/$REPO/releases/latest/download"
+      [ -z "$hub_version" ] || default_base="https://github.com/$REPO/releases/download/v${hub_version#v}"
+      ;;
     *) die "FLEETD_CHANNEL must be edge or stable, not $channel" ;;
   esac
   base="${FLEETD_BASE_URL:-$default_base}"
@@ -318,8 +335,21 @@ An earlier fleetd app you have keeps working. To install or update only the CLI:
     if [ "$base" = "https://github.com/$REPO/releases/download/edge" ]; then
       base="https://github.com/$REPO/releases/download/nightly"
     fi
+    # A hub built from source runs a version no release was made for: the newest stable build joins it.
+    if [ "$base" = "https://github.com/$REPO/releases/download/v${hub_version#v}" ]; then
+      warn "there is no release of fleetd $hub_version, the hub's version, so this machine gets the newest stable one"
+      base="https://github.com/$REPO/releases/latest/download"
+    fi
     curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" ||
       die "could not download $base/SHA256SUMS (is there a $channel release yet?)"
+  fi
+
+  # The edge release holds the hub's build until main moves on: then this machine gets the newer one, and says so.
+  if [ "$channel" = edge ] && [ -n "$hub_version" ]; then
+    edge_now="$(curl -fsSL --retry 3 "$base/release.json" 2>/dev/null | tr -d '\n' | sed -n 's/.*"cliVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' || true)"
+    if [ -n "$edge_now" ] && [ "$edge_now" != "$hub_version" ]; then
+      say "your hub runs an older edge build ($hub_version) than the newest ($edge_now), which this machine gets. To bring the hub level, press Update in the app on your main machine (or run fleetd update on the hub)."
+    fi
   fi
 
   # The install_* functions set installed=1. They are never called as an `if` condition, where `set -e` is off.

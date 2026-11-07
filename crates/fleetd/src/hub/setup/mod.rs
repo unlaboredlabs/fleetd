@@ -437,7 +437,8 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                     vec![command(
                         "In Terminal, logged in at the Mac's screen",
                         format!(
-                            "curl -fsSL https://fleetd.sh | sh -s -- --join {base} --code <code> --machine-id mac --mac"
+                            "curl -fsSL https://fleetd.sh | sh -s -- --join {base} --code <code> --machine-id mac{}",
+                            crate::cli::pair::mac_flags(crate::version())
                         ),
                         Some("Or on the hub: fleetd pair --worker mac, then add --mac to the line it prints."),
                     )],

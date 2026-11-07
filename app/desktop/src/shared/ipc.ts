@@ -388,6 +388,7 @@ export const REQUESTS = {
   [IPC.macSetupRestart]: none,
   [IPC.macSetupStatus]: none,
   [IPC.macSetupCancel]: none,
+  [IPC.macSetupUpdateHub]: z.tuple([z.string().max(2048)]),
   [IPC.projectsPickFolder]: none,
   [IPC.projectsReadDrop]: z.tuple([DropPath]),
   [IPC.copy]: z.tuple([z.string().max(1_000_000)]),

@@ -4,7 +4,7 @@ import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubEntry, HubId } from "../shared/hubs";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
-import type { MacHealthRead, MacJoin, MacRedeemOutcome, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
+import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacRedeemOutcome, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
 import type { KeyStore, PairOutcome, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
 import type { FleetdApi } from "./api";
@@ -153,6 +153,7 @@ const api: FleetdApi = {
     restart: () => ipcRenderer.invoke(IPC.macSetupRestart) as Promise<MacRestartOutcome>,
     status: () => ipcRenderer.invoke(IPC.macSetupStatus) as Promise<MacSetupStatus>,
     cancel: () => ipcRenderer.invoke(IPC.macSetupCancel) as Promise<void>,
+    updateHub: (hub) => ipcRenderer.invoke(IPC.macSetupUpdateHub, hub) as Promise<MacHubUpdateOutcome>,
   },
   machines: {
     joinHere: (hub, machineId) => ipcRenderer.invoke(IPC.machinesJoinHere, hub, machineId) as Promise<JoinHere>,

@@ -11,12 +11,18 @@
 //   6. then the page reads the node's checks from <fleetd dir>/node/mac-health.json, which the node rewrites after
 //      each run of every check (touching mac-health.checked) and after each read of the grants (every 2 s while one is
 //      off), opens the two System Settings panes, and can restart the node.
+// A version difference never stops it: the Mac installs the hub's own build and channel, or once the edge release has
+// moved on past the hub's build, the newer one it holds. The page then says the hub is behind, with its Update right
+// there for an admin signed in on this Mac (hubRole, updateHub). An app too old for the hub's answer says so, with
+// its own Update.
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { MacHealth } from "../shared/contracts";
 import type { JoinStep, ThisComputer } from "../shared/joinHere";
-import type { MacFound, MacHealthRead, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupFailure, MacSetupStatus } from "../shared/macSetup";
+import type { CallOutcome } from "../shared/hub";
+import { HUB_UPDATE_WHERE, type HubBehind, type MacFound, type MacHealthRead, type MacHubUpdateOutcome, type MacJoin, type MacPane, type MacRedeemOutcome, type MacRedeemRequest, type MacRestartOutcome, type MacSetupFailure, type MacSetupStatus } from "../shared/macSetup";
+import { compareVersions, isEdge } from "../shared/pairing";
 import { assetFor, installBuild, thisComputer, type JoinPorts } from "./joinHere";
 import { probe, type Fetch } from "./pairing/hubHttp";
 
@@ -42,6 +48,10 @@ export interface MacSetupPorts extends Pick<JoinPorts, "download" | "run" | "fle
   readFile(file: string): Promise<{ readonly text: string; readonly writtenAt: number } | undefined>;
   openPane(url: string): Promise<void>;
   now(): number;
+  /** Who this app is on the hub at `hubUrl`: signed in as an admin (or owner), as a member, or not signed in there. */
+  hubRole(hubUrl: string): Promise<HubBehind["who"]>;
+  /** Starts the hub's own update (hub_update) with this app's key for it: an admin's only. */
+  updateHub(hubUrl: string): Promise<MacHubUpdateOutcome>;
 }
 
 const TRADE_ANSWER = z.object({
@@ -125,9 +135,12 @@ async function trade(ports: MacSetupPorts, origin: string, code: string, fingerp
   if (response.ok) {
     const answer = TRADE_ANSWER.safeParse(body);
     if (answer.success) return { ok: true, answer: answer.data };
+    // The hub took the code, in words this app doesn't know yet: a newer hub's. The code is spent; a new one works once
+    // the app is updated.
+    return { ok: false, status: response.status, failure: APP_BEHIND };
   }
   if (response.status === 404) {
-    return { ok: false, status: 404, failure: { message: `The hub at ${origin} doesn't take Mac setup codes yet.`, fix: "Update fleetd on your main machine (Updates in the app), then get a new code.", field: "hub" } };
+    return { ok: false, status: 404, failure: { message: `The hub at ${origin} runs an older fleetd that doesn't take Mac setup codes yet.`, fix: `${HUB_UPDATE_WHERE} Then get a new code.`, field: "hub" } };
   }
   const failure = HUB_FAILURE.safeParse(body);
   if (!failure.success) {
@@ -137,6 +150,13 @@ async function trade(ports: MacSetupPorts, origin: string, code: string, fingerp
   const sentence = message.charAt(0).toUpperCase() + message.slice(1) + (/[.!?]$/u.test(message) ? "" : ".");
   return { ok: false, status: response.status, failure: { message: sentence, ...(fix === undefined ? {} : { fix }), ...(response.status === 401 ? { field: "code" as const } : {}) } };
 }
+
+/** This app is older than the hub: its own update is the fix, offered on the page. */
+export const APP_BEHIND: MacSetupFailure = {
+  message: "This app is older than your hub, so it can't set up this Mac.",
+  fix: "Update the app, then type a new code from Add machine › A Mac for agents.",
+  updateApp: true,
+};
 
 /** The six digits of a code as typed, or undefined. */
 export const macCode = (typed: string): string | undefined => {
@@ -213,7 +233,16 @@ export const cliFailure = (output: string): MacSetupFailure => {
   return at < 0 ? { message: sentence } : { message: sentence, fix: text.slice(at + " Fix: ".length) };
 };
 
-const STEP_TITLES = (version: string) => [`download fleetd ${version}, the hub's own`, "check it against the release's checksums", "put it in place", "join the hub and start the node in this login"];
+const STEP_TITLES = (version: string) => [
+  isEdge(version) ? "download the hub's own fleetd, an edge build" : `download fleetd ${version}, the hub's own`,
+  "check it against the release's checksums",
+  "put it in place",
+  "join the hub and start the node in this login",
+];
+/** The first step once the edge release had moved on past the hub's build. */
+const NEWER_TITLE = "download the newest edge fleetd, newer than the hub's";
+/** How `fleetd init --join` begins its refusal of a hub on an older link protocol (crate::protocol_behind). */
+const HUB_PROTOCOL_BEHIND = "The hub runs an older fleetd than this machine";
 
 /** Installs the hub's build and joins as the agents' Mac, reporting every change; resolves with how it ended. Never rejects. */
 export async function joinMac(ports: MacSetupPorts, pending: Pending, report: (join: MacJoin) => void): Promise<MacJoin> {
@@ -245,6 +274,7 @@ export async function joinMac(ports: MacSetupPorts, pending: Pending, report: (j
   const installed = await installBuild(ports, pending.version, asset, { next, done });
   // The token is unspent: the same code tries again.
   if (!installed.ok) return fail({ message: installed.message }, true);
+  if (installed.version !== pending.version) steps = steps.map((s, i) => (i === 0 ? { ...s, title: NEWER_TITLE } : s));
 
   next();
   const { found } = pending;
@@ -253,6 +283,10 @@ export async function joinMac(ports: MacSetupPorts, pending: Pending, report: (j
   if (ran.code !== 0) {
     const said = cliFailure(ran.output);
     const lines = ran.output.trim().split("\n");
+    // Refused before it enrolled, so the token is unspent: once the hub is updated, the same code joins.
+    if (said.message.startsWith(HUB_PROTOCOL_BEHIND)) {
+      return fail({ message: "Your hub runs an older fleetd than this Mac, so this Mac can't join it yet.", fix: `${HUB_UPDATE_WHERE} Then press Try again: the same code still works.` }, true);
+    }
     return fail({ ...said, fix: `${said.fix ?? "Fix that"}, then start again with a new code from your main machine.` }, false, lines.slice(-12).join("\n"));
   }
   done();
@@ -262,14 +296,25 @@ export async function joinMac(ports: MacSetupPorts, pending: Pending, report: (j
 const CHECK = z.object({ id: z.string(), state: z.string(), message: z.string(), fix: z.string().nullish(), command: z.string().nullish() });
 const HEALTH = z.object({ user: z.string(), checks: z.array(CHECK) });
 
-/** The node's checks, as it last wrote them, when it last ran them all, and whether the hub answers. */
-export async function readHealth(ports: MacSetupPorts, hubUrl: string | undefined): Promise<MacHealthRead> {
+/**
+ * The node's checks, as it last wrote them, when it last ran them all, whether the hub answers, and whether it runs an
+ * older fleetd than the node: the build the node last linked with, as it writes it on each welcome (node/update/up).
+ * `role` says who this app is on that hub.
+ */
+export async function readHealth(ports: MacSetupPorts, hubUrl: string | undefined, role: (hubUrl: string) => Promise<HubBehind["who"]> = (hub) => ports.hubRole(hub)): Promise<MacHealthRead> {
   const node = path.join(ports.fleetdDir, "node");
-  const [file, checked, answers] = await Promise.all([
+  const [file, checked, hub, up] = await Promise.all([
     ports.readFile(path.join(node, "mac-health.json")),
     ports.readFile(path.join(node, "mac-health.checked")),
-    hubUrl === undefined ? Promise.resolve(false) : probe(ports.fetch, hubUrl, FIND_TIMEOUT_MS).then((p) => p.answers),
+    hubUrl === undefined ? Promise.resolve(undefined) : probe(ports.fetch, hubUrl, FIND_TIMEOUT_MS),
+    ports.readFile(path.join(node, "update", "up")),
   ]);
+  const answers = hub?.answers === true;
+  const macVersion = up?.text.trim() ?? "";
+  let hubBehind: HubBehind | null = null;
+  if (hub?.answers === true && hubUrl !== undefined && compareVersions(macVersion, "0.0.0") !== 0 && compareVersions(macVersion, hub.version) === 1) {
+    hubBehind = { hubVersion: hub.version, macVersion, who: await role(hubUrl) };
+  }
   let health: MacHealth | null = null;
   if (file !== undefined) {
     try {
@@ -279,7 +324,7 @@ export async function readHealth(ports: MacSetupPorts, hubUrl: string | undefine
       // Half-written: the next read has it.
     }
   }
-  return { health, writtenAt: file?.writtenAt ?? null, checkedAt: checked?.writtenAt ?? null, now: ports.now(), hubAnswers: answers };
+  return { health, writtenAt: file?.writtenAt ?? null, checkedAt: checked?.writtenAt ?? null, now: ports.now(), hubAnswers: answers, hubBehind };
 }
 
 /** `fleetd node restart`: launchd starts the node again in this login. */
@@ -329,6 +374,8 @@ export class MacSetup {
   #ended: MacSetupFailure | undefined;
   readonly #ports: MacSetupPorts;
   readonly #report: (join: MacJoin) => void;
+  /** Who this app is on each hub, asked once per hub while the hub is behind: health is read every second. */
+  readonly #roles = new Map<string, Promise<HubBehind["who"]>>();
 
   constructor(ports: MacSetupPorts, report: (join: MacJoin) => void) {
     this.#ports = ports;
@@ -381,7 +428,19 @@ export class MacSetup {
   }
 
   health(hubUrl: string | undefined): Promise<MacHealthRead> {
-    return readHealth(this.#ports, hubUrl);
+    return readHealth(this.#ports, hubUrl, (hub) => {
+      let role = this.#roles.get(hub);
+      if (role === undefined) {
+        role = this.#ports.hubRole(hub).catch(() => "unknown" as const);
+        this.#roles.set(hub, role);
+      }
+      return role;
+    });
+  }
+
+  /** The hub's Update, from this Mac: with the key of an admin this app is signed in as. */
+  updateHub(hubUrl: string): Promise<MacHubUpdateOutcome> {
+    return this.#ports.updateHub(hubUrl);
   }
 
   openPane(pane: MacPane): Promise<void> {
@@ -393,14 +452,50 @@ export class MacSetup {
   }
 }
 
+/** A hub this app is signed in to: its address, and a call with its key. */
+export interface SignedIn {
+  readonly url: string;
+  call(tool: "hub_info" | "hub_update", input: Record<string, never>): Promise<CallOutcome>;
+}
+
+/** hubRole and updateHub with the key of the hub this app is signed in to at the Mac's hub's address, if any. */
+export const signedInPorts = (signedIn: () => ReadonlyArray<SignedIn>): Pick<MacSetupPorts, "hubRole" | "updateHub"> => {
+  const at = (hubUrl: string): SignedIn | undefined => {
+    const origin = hubOrigin(hubUrl);
+    return origin === undefined ? undefined : signedIn().find((h) => hubOrigin(h.url) === origin);
+  };
+  return {
+    hubRole: async (hubUrl) => {
+      const info = await at(hubUrl)?.call("hub_info", {});
+      if (info?.ok !== true) return "unknown";
+      // As Settings decides it (screens/admin/model.ts administers): an owner or admin whose key isn't capped below.
+      const { admin, me } = (info.output ?? {}) as { admin?: unknown; me?: { role?: unknown } };
+      return admin !== false && (me === undefined || me.role === "owner" || me.role === "admin") ? "admin" : "member";
+    },
+    updateHub: async (hubUrl) => {
+      const hub = at(hubUrl);
+      if (hub === undefined) return { ok: false, failure: { message: "This app isn't signed in to your hub on this Mac.", fix: HUB_UPDATE_WHERE } };
+      const out = await hub.call("hub_update", {});
+      if (out.ok) return { ok: true };
+      const { message, fix } = out.error;
+      return { ok: false, failure: { message, ...(fix === undefined ? {} : { fix }) } };
+    },
+  };
+};
+
 /** Where the Tailscale CLI is on a Mac: on PATH, or inside the App Store app. */
 const TAILSCALE = ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale", "/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale"];
 
-export const realMacPorts = (join: Pick<JoinPorts, "download" | "run" | "fleetdDir" | "fingerprint" | "baseOverride" | "platform" | "arch">, extra: { knownHubs: () => ReadonlyArray<string>; openPane: (url: string) => Promise<void> }): MacSetupPorts => ({
+export const realMacPorts = (
+  join: Pick<JoinPorts, "download" | "run" | "fleetdDir" | "fingerprint" | "baseOverride" | "platform" | "arch">,
+  extra: Pick<MacSetupPorts, "knownHubs" | "openPane" | "hubRole" | "updateHub">,
+): MacSetupPorts => ({
   ...join,
   fetch: (url, init) => fetch(url, init),
   knownHubs: extra.knownHubs,
   openPane: extra.openPane,
+  hubRole: extra.hubRole,
+  updateHub: extra.updateHub,
   tailscaleStatus: async () => {
     for (const cli of TAILSCALE) {
       const ran = await join.run(cli, ["status", "--json"]);

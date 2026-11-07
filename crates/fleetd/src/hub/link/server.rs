@@ -788,10 +788,7 @@ impl NodeLinkServer {
         if hello.protocol.get() != PROTOCOL_VERSION {
             return refuse(
                 close::PROTOCOL_MISMATCH,
-                format!(
-                    "hub speaks protocol {PROTOCOL_VERSION}, node speaks {}: install matching fleetd versions",
-                    hello.protocol.get()
-                ),
+                crate::protocol_behind(PROTOCOL_VERSION, hello.protocol.get()),
             );
         }
         let machine_id = hello.machine_id.clone();

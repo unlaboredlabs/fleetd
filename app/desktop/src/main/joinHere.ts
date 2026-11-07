@@ -4,8 +4,9 @@
 //      a hub, or a node already enrolled (under any id) is never touched, as its bin/fleetd is the one that hub or
 //      node runs and the hub sets up its own machine itself (thisComputer);
 //   1. machine_join: a one-time code from the hub, asked by main, so the code never reaches the page;
-//   2. the build of the hub's own version for this OS and CPU (its v<version> release; an Edge hub, the edge release
-//      only while that is its version), and SHA256SUMS;
+//   2. the build of the hub's own version for this OS and CPU (its v<version> release; an Edge hub, the edge release,
+//      which holds the hub's build until main moves on and its newest after: the hub's Update brings it level), and
+//      SHA256SUMS;
 //   3. the build checked against SHA256SUMS: a mismatch installs nothing;
 //   4. put in place as <fleetd dir>/bin/fleetd by renaming, never by writing into a running binary;
 //   5. `fleetd init --join <hub> --code <code> --machine-id <id>`: it enrolls the node and runs it as a user service.
@@ -176,11 +177,14 @@ export const expectedSum = (sums: string, asset: string): string | undefined => 
 
 const lastLines = (text: string, n = 15): string => text.trim().split("\n").slice(-n).join("\n");
 
-export type Installed = { readonly ok: true; readonly bin: string } | { readonly ok: false; readonly message: string };
+/** Installed: where, and which version, the hub's own or, once the edge release moved on, the newer one it holds. */
+export type Installed = { readonly ok: true; readonly bin: string; readonly version: string } | { readonly ok: false; readonly message: string };
 
 /**
  * Steps 2–4 of a join: the hub's own `version` built for this computer (`asset`), downloaded with SHA256SUMS, checked
- * against them, and put in place as <fleetd dir>/bin/fleetd by renaming. `step.next` starts each of the three steps
+ * against them, and put in place as <fleetd dir>/bin/fleetd by renaming. The edge release keeps only its newest
+ * build: once main moved on past an Edge hub's, that newer one is installed (same channel, same link protocol), and
+ * the hub's own Update then brings the hub level, so a hub behind never stops a join. `step.next` starts each of the three steps
  * and `step.done` ends it; a failure ends the step it is in, with what to do. Never rejects.
  */
 export async function installBuild(
@@ -195,15 +199,11 @@ export async function installBuild(
   const { base, edge } = releaseFor(version, ports.baseOverride);
   let sums: string;
   let build: Uint8Array;
+  let installs = version;
   try {
     if (edge) {
-      // The edge release moves on; a node must run the hub's own build.
-      const now = parseCli(JSON.parse(new TextDecoder().decode(await ports.download(`${base}/release.json`))));
-      if (now !== version) {
-        return fail(
-          `The hub runs ${version}, and the edge release is now ${now ?? "another build"}. Update the hub first (Updates in the app, or fleetd update on the hub), then add this computer: both then run the same build.`,
-        );
-      }
+      // The edge release moves on: past the hub's build, its newest is what there is.
+      installs = parseCli(JSON.parse(new TextDecoder().decode(await ports.download(`${base}/release.json`)))) ?? version;
     }
     try {
       sums = new TextDecoder().decode(await ports.download(`${base}/SHA256SUMS`));
@@ -238,7 +238,7 @@ export async function installBuild(
     return fail(`Couldn't put fleetd in ${binDir}: ${error instanceof Error ? error.message : String(error)}`);
   }
   done(bin);
-  return { ok: true, bin };
+  return { ok: true, bin, version: installs };
 }
 
 /** Joins this computer to the hub as `machineId`, reporting every change; resolves with how it ended. Never rejects. */

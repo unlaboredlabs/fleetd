@@ -141,6 +141,7 @@ fn join_options_that_cannot_work_stop_before_anything_is_downloaded() {
         ("--join http://hub:4790 --code", "--code needs a value"),
         ("--machine-id laptop", "only go with --join and --code"),
         ("--mac", "only go with --join and --code"),
+        ("--version 0.9.2", "only go with --join and --code"),
         ("--no-init --join http://hub:4790 --code c", "contradict"),
         ("--joint x", "unknown option: --joint"),
     ] {
@@ -156,6 +157,40 @@ fn join_options_that_cannot_work_stop_before_anything_is_downloaded() {
             !release.home().join(".fleetd").exists(),
             "{args}: installed anyway"
         );
+    }
+}
+
+/// The agents' Mac's line carries the hub's version: it is the installer's, never `fleetd init`'s. On Edge, a release
+/// that moved on past the hub's build installs the newer one, and says how to bring the hub level; while it is the
+/// hub's own, it says nothing.
+#[test]
+fn the_hubs_version_picks_its_build_and_says_when_edge_moved_on() {
+    let hub = "0.0.0-edge.202611071720+6d5a250";
+    for (edge, says) in [("0.0.0-edge.202611071744+f893086", true), (hub, false)] {
+        let release = Release::new();
+        std::fs::write(
+            release.dir.path().join("assets/release.json"),
+            format!("{{\n  \"channel\": \"edge\",\n  \"cliVersion\": \"{edge}\"\n}}\n"),
+        )
+        .unwrap();
+        let output = release.run(&format!(
+            "sh \"$INSTALLER\" --join http://hub:4790 --code c --version {hub}"
+        ));
+        assert!(output.status.success(), "{}", stderr(&output));
+        assert_eq!(
+            release.fleetd_args().unwrap(),
+            ["init", "--join", "http://hub:4790", "--code", "c"]
+        );
+        let out = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(
+            out.contains("your hub runs an older edge build"),
+            says,
+            "{out}"
+        );
+        if says {
+            assert!(out.contains("press Update in the app on your main machine"), "{out}");
+            assert!(!out.contains("mismatch"), "{out}");
+        }
     }
 }
 

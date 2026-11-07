@@ -2,11 +2,14 @@
 // time (model.ts): the 6-digit code, a replace to confirm when there is one, the join as main runs it, then the node's
 // own checks read every second: the two privacy grants, each opening its pane of System Settings, and the Test, every
 // check green. The page holds no hub key and no token: main trades the code and runs the CLI (src/main/macSetup.ts).
+// A version difference is one line and one fix: an app too old for the hub gets its Update button; a hub older than
+// the build this Mac got gets Update right there for an admin signed in here, and where to press it for anyone else.
 import { useEffect, useReducer, useRef, useState } from "react";
-import type { MacSetupFailure } from "../../../shared/macSetup";
+import { HUB_UPDATE_WHERE, type HubBehind, type MacSetupFailure } from "../../../shared/macSetup";
 import { Check, CircleDashed } from "lucide-react";
 import { Button, copyText, Field, Input, StateGlyph, Text } from "../../ui";
 import { Mark } from "../onboarding/Mark";
+import { UpdateAppButton } from "../updates/UpdateAppButton";
 import { checkTitle, checkView, digitsOf, passes, initial, READ_EVERY_MS, reduce, spaced, stepOf, STEPS, type CheckRow, type State } from "./model";
 import s from "./macSetup.module.css";
 
@@ -133,6 +136,50 @@ function Failure({ failure }: { failure: MacSetupFailure }) {
     <div className={s.failure} role="alert">
       <Text tone="danger">{failure.message}</Text>
       {failure.fix === undefined ? null : <Text tone="quiet">{failure.fix}</Text>}
+      {failure.updateApp === true ? (
+        <div className={s.actions}>
+          <UpdateAppButton />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** The hub runs an older fleetd than this Mac: both work, and the hub's Update brings it level. */
+function HubBehindLine({ behind, hubUrl }: { behind: HubBehind; hubUrl: string }) {
+  const [asked, setAsked] = useState<"no" | "asking" | "started">("no");
+  const [failure, setFailure] = useState<MacSetupFailure>();
+  const update = () => {
+    setAsked("asking");
+    setFailure(undefined);
+    void window.fleetd.macSetup.updateHub(hubUrl).then((outcome) => {
+      setAsked(outcome.ok ? "started" : "no");
+      if (!outcome.ok) setFailure(outcome.failure);
+    });
+  };
+  const line =
+    asked === "started"
+      ? "Your hub is updating. It restarts in a moment, then runs the same build as this Mac."
+      : behind.who === "admin"
+        ? "Your hub runs an older fleetd than this Mac. Agents can use the Mac already; Update brings the hub level."
+        : behind.who === "member"
+          ? "Your hub runs an older fleetd than this Mac. Agents can use the Mac already; ask an admin of the hub to press Update in Settings › Hub › Machines › Updates."
+          : `Your hub runs an older fleetd than this Mac. Agents can use the Mac already. ${HUB_UPDATE_WHERE}`;
+  return (
+    <div className={s.notice} role="status" data-hub-behind={behind.who}>
+      <Text size="sm">{line}</Text>
+      {failure === undefined ? null : (
+        <Text size="sm" tone="danger">
+          {failure.fix === undefined ? failure.message : `${failure.message} ${failure.fix}`}
+        </Text>
+      )}
+      {behind.who === "admin" && asked !== "started" ? (
+        <div className={s.actions}>
+          <Button variant="secondary" size="md" disabled={asked === "asking"} onClick={update}>
+            {asked === "asking" ? "Starting the update…" : "Update the hub"}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -259,16 +306,19 @@ function CodeStep({ state, dispatch }: { state: Extract<State, { step: "code" }>
           ))}
         </ul>
       )}
-      <div className={s.actions}>
-        <Button type="submit" variant="primary" size="md" disabled={state.busy || state.code.length !== 6}>
-          {state.busy ? (state.askHub && state.hub.trim() !== "" ? "Asking the hub…" : "Finding your hub…") : "Continue"}
-        </Button>
-        {state.askHub ? null : (
-          <Button type="button" variant="ghost" size="md" disabled={state.busy} onClick={() => dispatch({ type: "askHub" })}>
-            Type the hub's address
+      {/* An app too old for the hub has one thing to do: its Update. A new code typed brings Continue back. */}
+      {state.failure?.updateApp === true ? null : (
+        <div className={s.actions}>
+          <Button type="submit" variant="primary" size="md" disabled={state.busy || state.code.length !== 6}>
+            {state.busy ? (state.askHub && state.hub.trim() !== "" ? "Asking the hub…" : "Finding your hub…") : "Continue"}
           </Button>
-        )}
-      </div>
+          {state.askHub ? null : (
+            <Button type="button" variant="ghost" size="md" disabled={state.busy} onClick={() => dispatch({ type: "askHub" })}>
+              Type the hub's address
+            </Button>
+          )}
+        </div>
+      )}
       <Text size="xs" tone="quiet" className={s.footnote}>
         Rather use Terminal? Add machine › A Mac for agents on your main machine also has a line to paste here.
       </Text>
@@ -453,6 +503,7 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
         ))}
       </ul>
       {state.restartFailure === undefined ? null : <Failure failure={state.restartFailure} />}
+      {state.read === undefined || state.read.hubBehind === null ? null : <HubBehindLine behind={state.read.hubBehind} hubUrl={state.found.hubUrl} />}
       <div className={s.actions}>
         {view.green ? (
           <Button variant="primary" size="md" onClick={() => window.close()}>

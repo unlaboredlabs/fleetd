@@ -11,19 +11,29 @@ import { MacSetup } from "./MacSetup";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const { listeners, joins, status, health } = vi.hoisted(() => {
+const { listeners, joins, status, health, redeem, updateHub, appCheck } = vi.hoisted(() => {
   const listeners = new Set<(join: MacJoin) => void>();
   const joins: Array<(join: MacJoin) => void> = [];
   const status = vi.fn((): Promise<MacSetupStatus> => Promise.resolve({ kind: "fresh" }));
-  const health = vi.fn((): Promise<MacHealthRead> => Promise.resolve({ health: null, writtenAt: null, checkedAt: null, now: Date.now(), hubAnswers: true }));
+  const health = vi.fn((): Promise<MacHealthRead> => Promise.resolve({ health: null, writtenAt: null, checkedAt: null, now: Date.now(), hubAnswers: true, hubBehind: null }));
   const found: MacRedeemOutcome = {
     ok: true,
     found: { hubUrl: "http://devbox.example.ts.net:4790", hubName: "devbox", machineId: "mac", existing: false, here: { kind: "none" } },
   };
+  const redeem = vi.fn((): Promise<MacRedeemOutcome> => Promise.resolve(found));
+  const updateHub = vi.fn(() => Promise.resolve({ ok: true as const }));
+  const appCheck = vi.fn(() => Promise.resolve());
   vi.stubGlobal("fleetd", {
     platform: "darwin",
+    updates: {
+      state: () => Promise.resolve({ app: { kind: "idle" } }),
+      subscribe: () => () => undefined,
+      check: appCheck,
+      install: () => Promise.resolve(),
+      keep: () => Promise.resolve(),
+    },
     macSetup: {
-      redeem: () => Promise.resolve(found),
+      redeem,
       join: () => new Promise<MacJoin>((done) => joins.push(done)),
       onJoin: (listener: (join: MacJoin) => void) => {
         listeners.add(listener);
@@ -34,9 +44,10 @@ const { listeners, joins, status, health } = vi.hoisted(() => {
       restart: () => Promise.resolve({ ok: true }),
       status,
       cancel: () => Promise.resolve(),
+      updateHub,
     },
   });
-  return { listeners, joins, status, health };
+  return { listeners, joins, status, health, redeem, updateHub, appCheck };
 });
 
 let host: HTMLDivElement;
@@ -50,6 +61,9 @@ beforeEach(() => {
   joins.length = 0;
   status.mockImplementation(() => Promise.resolve({ kind: "fresh" }));
   health.mockClear();
+  redeem.mockClear();
+  updateHub.mockClear();
+  appCheck.mockClear();
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -162,7 +176,7 @@ it("opened again on a joined Mac, reads its checks one at a time: a read still o
   });
   expect(health).toHaveBeenCalledTimes(1);
   await act(async () => {
-    answer({ health: null, writtenAt: null, checkedAt: null, now: Date.now(), hubAnswers: false });
+    answer({ health: null, writtenAt: null, checkedAt: null, now: Date.now(), hubAnswers: false, hubBehind: null });
     await Promise.resolve();
   });
   await settle();
@@ -171,4 +185,67 @@ it("opened again on a joined Mac, reads its checks one at a time: a read still o
     await Promise.resolve();
   });
   expect(health).toHaveBeenCalledTimes(2);
+});
+
+const button = (label: string) => [...host.querySelectorAll("button")].find((b) => b.textContent === label);
+
+it("an app older than the hub says so in one line, with its Update button", async () => {
+  redeem.mockImplementationOnce(() =>
+    Promise.resolve({
+      ok: false,
+      failure: { message: "This app is older than your hub, so it can't set up this Mac.", fix: "Update the app, then type a new code from Add machine › A Mac for agents.", updateApp: true },
+    }),
+  );
+  await open();
+  await typeCode();
+  const alert = host.querySelector("[role='alert']");
+  expect(alert?.textContent).toContain("This app is older than your hub");
+  expect(host.textContent.toLowerCase()).not.toContain("mismatch");
+  await act(async () => {
+    button("Update the app")?.click();
+    await Promise.resolve();
+  });
+  expect(appCheck).toHaveBeenCalledTimes(1);
+});
+
+const behindOn = async (who: "admin" | "member" | "unknown") => {
+  const found = { hubUrl: "http://devbox.example.ts.net:4790", hubName: "devbox", machineId: "mac", existing: true, here: { kind: "none" as const } };
+  status.mockImplementation(() => Promise.resolve({ kind: "joined", found }));
+  health.mockImplementation(() =>
+    Promise.resolve({
+      health: { user: "ada", checks: [{ id: "accessibility", state: "ok", message: "ok" }, { id: "screen_recording", state: "ok", message: "ok" }] },
+      writtenAt: Date.now(),
+      checkedAt: Date.now(),
+      now: Date.now(),
+      hubAnswers: true,
+      hubBehind: { hubVersion: "0.0.0-edge.202611071720+6d5a250", macVersion: "0.0.0-edge.202611071744+f893086", who },
+    }),
+  );
+  await open();
+  await settle();
+};
+
+it("a hub older than this Mac's build: an admin signed in here updates it from the window", async () => {
+  await behindOn("admin");
+  const line = host.querySelector("[data-hub-behind]");
+  expect(line?.textContent).toContain("Your hub runs an older fleetd than this Mac.");
+  expect(line?.textContent).not.toMatch(/mismatch|0\.0\.0/u);
+  await act(async () => {
+    button("Update the hub")?.click();
+    await Promise.resolve();
+  });
+  await settle();
+  expect(updateHub).toHaveBeenCalledWith("http://devbox.example.ts.net:4790");
+  expect(host.querySelector("[data-hub-behind]")?.textContent).toContain("Your hub is updating.");
+  expect(button("Update the hub")).toBeUndefined();
+});
+
+it("a hub older than this Mac's build: anyone else is told who updates it, and where", async () => {
+  await behindOn("member");
+  expect(host.querySelector("[data-hub-behind]")?.textContent).toContain("ask an admin of the hub to press Update in Settings › Hub › Machines › Updates");
+  expect(button("Update the hub")).toBeUndefined();
+  act(() => root.unmount());
+  root = createRoot(host);
+  await behindOn("unknown");
+  expect(host.querySelector("[data-hub-behind]")?.textContent).toContain("On your main machine, open Settings › Hub › Machines › Updates and press Update.");
 });

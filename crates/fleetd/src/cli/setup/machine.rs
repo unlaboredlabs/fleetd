@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use fleetd_contracts::hello::PROTOCOL_VERSION;
 use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::model::MachineStatus;
 use sha2::{Digest, Sha256};
@@ -736,6 +737,17 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         }
         Some(open_hub(&r.home).map_err(|message| fail(&message))?)
     };
+    // A hub on another link protocol would refuse the node's hello: said now, before the code is spent.
+    if r.joining
+        && let Some(theirs) = hub_protocol(&r.input.hub_url).await
+        && theirs != PROTOCOL_VERSION
+    {
+        return Err(fail(&format!(
+            "{}, then run {}",
+            crate::protocol_behind(theirs, PROTOCOL_VERSION),
+            r.again
+        )));
+    }
     let side = hub.as_ref().map(HubAccess::side);
     let prepared = prepare(&r, side, &Ssh, &Releases, true, &Print)
         .await
@@ -744,6 +756,18 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         .await
         .map(Some)
         .map_err(Stop::print)
+}
+
+/// The link protocol the hub at `hub_url` speaks, from its `/healthz`; None when it doesn't answer or says none (the
+/// node's own link says why, later).
+async fn hub_protocol(hub_url: &str) -> Option<i64> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .ok()?;
+    let url = format!("{}/healthz", hub_url.trim_end_matches('/'));
+    let body: serde_json::Value = client.get(url).send().await.ok()?.json().await.ok()?;
+    body.get("protocol")?.as_i64()
 }
 
 /// `machine add`'s arguments, checked and resolved against the hub's setup, before anything touches the machine.
