@@ -26,6 +26,8 @@ const RUNNER_START_MAX: Duration = Duration::from_secs(super::session::RUNNER_ST
 pub const WARM_MAX: Duration = Duration::from_secs(
     super::simctl::CALL.as_secs() + BOOT_TIMEOUT.as_secs() + RUNNER_START_MAX.as_secs(),
 );
+/// A simulator of a type the agent named boots from nothing (a first boot), within the agent's wait for `mac`'s answer.
+pub const OWN_BOOT: Duration = Duration::from_secs(150);
 /// The golden's first boot: it migrates data and builds caches.
 const FIRST_BOOT: Duration = Duration::from_secs(600);
 /// agent-device's runner builds with xcodebuild: minutes on a laptop.
@@ -96,13 +98,20 @@ pub fn golden_path(home: &Path) -> PathBuf {
 }
 
 /// The golden, when it was made for the pinned agent-device and its runner is there: without the runner every session's
-/// agent-device fails to start, so the golden is made again. A wrapper an older node wrote is written again, keeping the
-/// golden.
-pub fn find(home: &Path) -> Option<Golden> {
+/// agent-device fails to start, so the golden is made again. So is one of another device type than node.json's
+/// `ios.deviceType` (`wanted`), or, with none set, than a plain iPhone ([`super::simctl::pick`]): an older node took a
+/// runtime's last iPhone, the multi-display "iPhone Duo" on one Mac. A wrapper an older node wrote is written again,
+/// keeping the golden.
+pub fn find(home: &Path, wanted: Option<&str>) -> Option<Golden> {
     let golden: Golden = serde_json::from_slice(&std::fs::read(golden_path(home)).ok()?).ok()?;
+    let its_type = match wanted {
+        Some(wanted) => golden.device_type_name == wanted || golden.device_type == wanted,
+        None => super::simctl::is_plain_iphone(&golden.device_type_name),
+    };
     if golden.agent_device != agent_device::VERSION
         || agent_device::find(home).is_none()
         || !golden.xctestrun.is_file()
+        || !its_type
     {
         return None;
     }
@@ -644,6 +653,27 @@ impl Pool {
         Ok(lent)
     }
 
+    /// A simulator of the device type `wanted` for one agent (`mac sim start --device`), on the newest runtime that has
+    /// it, and its device and runtime's names: made and booted from nothing, since a clone keeps the golden's type,
+    /// within [`OWN_BOOT`]. Its agent-device starts its runner on the first command.
+    pub async fn make(&self, wanted: &str) -> Result<(Lent, String), String> {
+        let runtimes = self.simctl.runtimes().await?;
+        let (runtime, device_type) = super::simctl::pick(&runtimes, Some(wanted))?;
+        let name = format!("fleetd-{}", super::short_id());
+        let udid = self
+            .simctl
+            .create(&name, &device_type.identifier, &runtime.identifier)
+            .await?;
+        let lent = Lent {
+            home: clone_home(&self.home, &udid),
+            udid,
+            runner: false,
+            simctl: self.simctl.clone(),
+        };
+        self.simctl.boot(&lent.udid, OWN_BOOT).await?;
+        Ok((lent, format!("{} on {}", device_type.name, runtime.name)))
+    }
+
     /// A booted clone; the pool refills behind it. With none warm, a boot starts (unless one is under way or the
     /// pool is backing off), and the answer says about how long it takes: a boot can outlast the agent's wait for its
     /// tool call, so session_start doesn't wait for it.
@@ -870,7 +900,11 @@ mod tests {
             serde_json::to_vec(&golden).unwrap(),
         )
         .unwrap();
-        assert_eq!(find(home.path()), None, "agent-device isn't installed");
+        assert_eq!(
+            find(home.path(), None),
+            None,
+            "agent-device isn't installed"
+        );
     }
 
     #[test]
@@ -903,10 +937,26 @@ mod tests {
             serde_json::to_vec(&golden).unwrap(),
         )
         .unwrap();
-        assert_eq!(find(home.path()), Some(golden));
+        assert_eq!(find(home.path(), None), Some(golden.clone()));
+        assert_eq!(find(home.path(), Some("iPhone 17")), Some(golden.clone()));
+        assert_eq!(
+            find(home.path(), Some("iPad Air 11-inch")),
+            None,
+            "node.json names another device type"
+        );
+        // An older node's golden of a runtime's last iPhone, the multi-display "iPhone Duo": made again as a plain one,
+        // unless node.json names it.
+        let duo = Golden {
+            device_type: "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo".into(),
+            device_type_name: "iPhone Duo".into(),
+            ..golden
+        };
+        std::fs::write(golden_path(home.path()), serde_json::to_vec(&duo).unwrap()).unwrap();
+        assert_eq!(find(home.path(), None), None);
+        assert_eq!(find(home.path(), Some("iPhone Duo")), Some(duo));
         std::fs::remove_file(&xctestrun).unwrap();
         assert_eq!(
-            find(home.path()),
+            find(home.path(), Some("iPhone Duo")),
             None,
             "every session would fail to start the runner"
         );

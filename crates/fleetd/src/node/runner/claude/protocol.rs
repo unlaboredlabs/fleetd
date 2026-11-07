@@ -49,6 +49,8 @@ pub struct System {
     pub retry_delay_ms: Option<u64>,
     pub error_status: Option<u16>,
     pub error: Option<String>,
+    // task_started, task_notification: the tool call whose background job (a Monitor) it is
+    pub tool_use_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]

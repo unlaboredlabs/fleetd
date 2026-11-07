@@ -78,35 +78,41 @@ pub fn devices(json: &str) -> Result<Vec<Device>, String> {
     Ok(list.devices.into_values().flatten().collect())
 }
 
-/// The runtime and device type sessions use: the newest iOS runtime, and on it the device type named `wanted`, else
-/// the plain iPhone with the highest number ("iPhone 17", not a Pro, Plus, Max, mini or e; simctl doesn't list them in
-/// order), else its last iPhone.
+/// The runtime and device type sessions use, chosen on purpose across every available iOS runtime: the device type
+/// named `wanted` on the newest runtime that has it, else the plain iPhone with the highest number ("iPhone 17", not a
+/// Pro, Plus, Max, mini or e; simctl doesn't list them in order) on the newest runtime that runs one. Never whatever
+/// type a runtime lists last: Xcode can install a runtime made for one device beside the general one of the same
+/// version (`iOS-27-2-iPhone19-4`, which runs only the multi-display "iPhone Duo", where input, alerts and
+/// screenshots don't work), and that runtime has no plain iPhone, so it's never picked.
 pub fn pick(runtimes: &[Runtime], wanted: Option<&str>) -> Result<(Runtime, DeviceType), String> {
-    let runtime = runtimes
+    if runtimes.is_empty() {
+        return Err("Xcode has no iOS runtime installed".into());
+    }
+    let pairs = runtimes
         .iter()
-        .max_by(|a, b| version_key(&a.version).cmp(&version_key(&b.version)))
-        .ok_or("Xcode has no iOS runtime installed")?;
-    let iphones: Vec<&DeviceType> = runtime
-        .supported_device_types
-        .iter()
-        .filter(|t| t.product_family.as_deref() == Some("iPhone") || t.name.starts_with("iPhone"))
-        .collect();
-    let device_type = match wanted {
-        Some(wanted) => runtime
-            .supported_device_types
-            .iter()
-            .find(|t| t.name == wanted || t.identifier == wanted)
-            .ok_or_else(|| format!("{} has no device type {wanted}", runtime.name))?,
-        None => iphones
-            .iter()
-            .filter_map(|t| plain_iphone(&t.name).map(|model| (model, t)))
-            .max_by_key(|(model, _)| *model)
-            .map(|(_, t)| t)
-            .or(iphones.last())
-            .copied()
-            .ok_or_else(|| format!("{} runs no iPhone", runtime.name))?,
+        .flat_map(|r| r.supported_device_types.iter().map(move |t| (r, t)));
+    let picked = match wanted {
+        Some(wanted) => pairs
+            .filter(|(_, t)| t.name == wanted || t.identifier == wanted)
+            .max_by(|(a, _), (b, _)| version_key(&a.version).cmp(&version_key(&b.version)))
+            .ok_or_else(|| {
+                format!(
+                    "no iOS runtime has the device type {wanted} (xcrun simctl list devicetypes lists them)"
+                )
+            })?,
+        None => pairs
+            .filter_map(|(r, t)| plain_iphone(&t.name).map(|model| ((version_key(&r.version), model), (r, t))))
+            .max_by(|(a, _), (b, _)| a.cmp(b))
+            .map(|(_, pair)| pair)
+            .ok_or("no iOS runtime runs a plain iPhone (\"iPhone 17\"): name a device type in node.json's \
+                    \"ios\": {\"deviceType\": ...}")?,
     };
-    Ok((runtime.clone(), device_type.clone()))
+    Ok((picked.0.clone(), picked.1.clone()))
+}
+
+/// Whether `name` is the device type [`pick`] chooses when none is named: a plain iPhone.
+pub fn is_plain_iphone(name: &str) -> bool {
+    plain_iphone(name).is_some()
 }
 
 /// A plain iPhone's model number: "iPhone 17" is 17.
@@ -317,9 +323,58 @@ mod tests {
         assert!(
             pick(&runtimes, Some("Pixel 9"))
                 .unwrap_err()
-                .contains("no device type Pixel 9")
+                .contains("no iOS runtime has the device type Pixel 9")
+        );
+        // A type only an older runtime has: on that one.
+        let (runtime, ipad) = pick(&runtimes, Some("iPad Air 11-inch")).unwrap();
+        assert_eq!(
+            (runtime.name.as_str(), ipad.name.as_str()),
+            ("iOS 27.0", "iPad Air 11-inch")
         );
         assert!(pick(&[], None).unwrap_err().contains("no iOS runtime"));
+    }
+
+    /// The agents' Mac had iOS 27.2 twice: the general runtime and one made for the "iPhone Duo" alone, listed last.
+    /// Taking the newest runtime's last iPhone gave every agent a multi-display Duo, where input didn't land.
+    #[test]
+    fn a_runtime_made_for_one_device_never_gives_the_golden_its_device() {
+        let runtimes = ios_runtimes(
+            r#"{ "runtimes": [
+            { "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-2", "name": "iOS 27.2", "version": "27.2",
+              "isAvailable": true, "platform": "iOS",
+              "supportedDeviceTypes": [
+                { "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17", "name": "iPhone 17", "productFamily": "iPhone" },
+                { "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro", "name": "iPhone 17 Pro", "productFamily": "iPhone" }
+              ] },
+            { "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4", "name": "iOS 27.2", "version": "27.2",
+              "isAvailable": true, "platform": "iOS",
+              "supportedDeviceTypes": [
+                { "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo", "name": "iPhone Duo", "productFamily": "iPhone" }
+              ] }
+        ] }"#,
+        )
+        .unwrap();
+        let (runtime, device_type) = pick(&runtimes, None).unwrap();
+        assert_eq!(
+            runtime.identifier,
+            "com.apple.CoreSimulator.SimRuntime.iOS-27-2"
+        );
+        assert_eq!(device_type.name, "iPhone 17");
+        // Asked for by name, it's there.
+        let (runtime, duo) = pick(&runtimes, Some("iPhone Duo")).unwrap();
+        assert_eq!(
+            (runtime.identifier.as_str(), duo.name.as_str()),
+            (
+                "com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4",
+                "iPhone Duo"
+            )
+        );
+        // Only the Duo's runtime: no plain iPhone, and it says how to name one rather than taking the Duo.
+        assert!(
+            pick(&runtimes[1..], None)
+                .unwrap_err()
+                .contains("no iOS runtime runs a plain iPhone")
+        );
     }
 
     #[test]

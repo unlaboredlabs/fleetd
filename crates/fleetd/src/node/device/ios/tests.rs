@@ -709,7 +709,7 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         return;
     }
     let home = install_home();
-    if pool::find(&home).is_none() {
+    if pool::find(&home, None).is_none() {
         let t = Instant::now();
         let golden = pool::prepare(&home, None).await.unwrap();
         eprintln!(
@@ -792,7 +792,7 @@ async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simu
 
     // The golden stays shut down once made: its agent-device daemon stopped the XCTest runner on its way out. A runner
     // left running relaunched itself, booted the golden again, and every refill's clone was refused (wrapper.rs).
-    let golden = pool::find(&home).unwrap();
+    let golden = pool::find(&home, None).unwrap();
     let devices = set_devices(&home).await;
     assert!(
         devices.contains(&format!("{} Shutdown", golden.udid)),
@@ -1036,7 +1036,7 @@ async fn a_screen_hosted_for_an_agent_elsewhere_runs_its_agent_device_commands()
         return;
     }
     let home = install_home();
-    if pool::find(&home).is_none() {
+    if pool::find(&home, None).is_none() {
         pool::prepare(&home, None).await.unwrap();
     }
     let hub_home = tempfile::tempdir().unwrap();
@@ -1115,7 +1115,7 @@ async fn hosted_screen(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simulat
         .unwrap();
     assert_eq!(png.get(..4), Some(&b"\x89PNG"[..]));
 
-    let golden = pool::find(&home).unwrap();
+    let golden = pool::find(&home, None).unwrap();
     let elsewhere = device(&["snapshot", "--udid", &golden.udid]).await;
     assert_eq!(elsewhere["error"]["code"], "invalid", "{elsewhere}");
 

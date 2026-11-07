@@ -37,6 +37,10 @@ impl Default for Fake {
                 "dseditgroup -o checkmember -m agents _developer",
                 ran(0, "yes agents is a member of _developer\n"),
             ),
+            (
+                "DevToolsSecurity -status",
+                ran(0, "Developer mode is currently enabled.\n"),
+            ),
             ("xcode-select -p", ran(0, "/Applications/Xcode.app/Contents/Developer\n")),
             ("xcodebuild -license check", ran(0, "")),
             ("xcodebuild -checkFirstLaunchStatus", ran(0, "")),
@@ -138,6 +142,86 @@ fn a_mac_set_up_as_the_guide_says_passes_every_check() {
         );
         assert!(c.fix.is_none() && c.command.is_none(), "{:?}", c.id);
     }
+}
+
+/// Developer Mode off passed setup once and left every simulator's installs hanging behind a password prompt at the
+/// Mac's screen: the check fails on it, with the command that turns it on, and on `_developer` too.
+#[test]
+fn the_developer_check_needs_developer_mode_on_and_the_group() {
+    let off = ran(0, "Developer mode is currently disabled.\n");
+    let not_member = ran(0, "no agents is NOT a member of _developer\n");
+    let mut fake = Fake::default();
+    fake.runs
+        .insert("DevToolsSecurity -status".into(), off.clone());
+    let (state, message, fix) = verdict(&fake, MacCheckId::Developer);
+    assert_eq!(state, MacCheckState::Fail);
+    assert!(message.starts_with("Developer Mode is off"), "{message}");
+    assert_eq!(
+        fix.as_deref(),
+        Some("In your own (admin) account's Terminal: sudo DevToolsSecurity -enable")
+    );
+
+    let member = "dseditgroup -o checkmember -m agents _developer";
+    let mut fake = Fake::default();
+    fake.runs.insert(member.into(), not_member.clone());
+    let (state, _, fix) = verdict(&fake, MacCheckId::Developer);
+    assert_eq!(state, MacCheckState::Fail);
+    assert!(
+        fix.as_deref()
+            .unwrap()
+            .ends_with(": sudo dseditgroup -o edit -a agents -t user _developer"),
+        "{fix:?}"
+    );
+
+    fake.runs.insert("DevToolsSecurity -status".into(), off);
+    let (state, _, fix) = verdict(&fake, MacCheckId::Developer);
+    assert_eq!(state, MacCheckState::Fail);
+    assert!(
+        fix.as_deref().unwrap().ends_with(
+            ": sudo DevToolsSecurity -enable && sudo dseditgroup -o edit -a agents -t user _developer"
+        ),
+        "{fix:?}"
+    );
+
+    // Neither said: unknown, with both commands.
+    let fake = Fake {
+        runs: HashMap::new(),
+        ..Fake::default()
+    };
+    assert_eq!(
+        verdict(&fake, MacCheckId::Developer).0,
+        MacCheckState::Unknown
+    );
+}
+
+/// `mac sim start` refuses while the node's last checks have the developer check failing, and only then.
+#[test]
+fn a_failing_developer_check_blocks_simulators() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(
+        checks::blocks_simulators(dir.path()).is_none(),
+        "no checks yet"
+    );
+    let write = |fake: &Fake| {
+        std::fs::write(
+            super::health_file(dir.path()),
+            serde_json::to_vec(&checks::run(fake)).unwrap(),
+        )
+        .unwrap();
+    };
+    write(&Fake::default());
+    assert!(checks::blocks_simulators(dir.path()).is_none());
+    let mut fake = Fake::default();
+    fake.runs.insert(
+        "DevToolsSecurity -status".into(),
+        ran(0, "Developer mode is currently disabled.\n"),
+    );
+    write(&fake);
+    let check = checks::blocks_simulators(dir.path()).expect("blocked");
+    assert_eq!(
+        check.command.as_ref().map(|c| c.as_str()),
+        Some("sudo DevToolsSecurity -enable")
+    );
 }
 
 /// The Xcode check and the simulator one, with the Xcode check's fix and command.

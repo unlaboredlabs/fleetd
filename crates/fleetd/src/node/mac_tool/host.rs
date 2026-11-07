@@ -172,8 +172,9 @@ impl Host {
             .map(|s| s.held.lock().unwrap_or_else(|e| e.into_inner()))
     }
 
-    /// The agent's simulator: its own again while it holds one, else a clone from the warm pool, within the budget.
-    fn sim_start(&self, agent: &Agent) -> Result<Done, McpToolError> {
+    /// The agent's simulator: its own again while it holds one, else within the budget a clone from the warm pool, or
+    /// with `device` a simulator of that device type (`mac sim start --device`).
+    async fn sim_start(&self, agent: &Agent, device: Option<&str>) -> Result<Done, McpToolError> {
         let sims = self.sims.as_ref().ok_or_else(|| {
             McpToolError::new(
                 ErrorCode::Failed,
@@ -181,23 +182,42 @@ impl Host {
             )
             .with_fix("do without a simulator and say so; an admin finishes the Mac's setup in Settings › Hub › Machines")
         })?;
-        let mut held = sims.held.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(h) = held.get_mut(&agent.name) {
-            h.used = Instant::now();
-            return Ok(Done::SimStart {
-                udid: h.lent.udid.clone(),
-                device: h.device.clone(),
-            });
-        }
-        let budget = self.sim_budget();
-        if held.len() >= budget as usize {
+        // Developer Mode off: the clone's XCTest runner would wait on a password prompt at the Mac's screen, and the
+        // agent's installs and launches hang behind it.
+        if let Some(check) = crate::node::agents_mac::checks::blocks_simulators(&sims.home) {
+            let command = check.command.as_ref().map_or("", |c| c.as_str());
             return Err(McpToolError::new(
                 ErrorCode::Failed,
-                format!("All {budget} of the Mac's iOS simulators are in use by other agents."),
+                format!("The agents' Mac can't run iOS simulators yet: {}", check.message.as_str()),
             )
-            .with_fix("try mac sim start again in a few minutes, or carry on without one"));
+            .with_fix(format!(
+                "do without a simulator and tell your lead: an admin runs `{command}` in Terminal at the Mac, \
+                 then mac sim start works"
+            )));
         }
-        let (lent, device) = sims.simulators.lend()?;
+        {
+            let mut held = sims.held.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(h) = held.get_mut(&agent.name) {
+                return held_again(h, device);
+            }
+            let budget = self.sim_budget();
+            if held.len() >= budget as usize {
+                return Err(McpToolError::new(
+                    ErrorCode::Failed,
+                    format!("All {budget} of the Mac's iOS simulators are in use by other agents."),
+                )
+                .with_fix("try mac sim start again in a few minutes, or carry on without one"));
+            }
+        }
+        let (lent, device) = match device {
+            Some(wanted) => sims.simulators.lend_type(wanted).await?,
+            None => sims.simulators.lend()?,
+        };
+        let mut held = sims.held.lock().unwrap_or_else(|e| e.into_inner());
+        // Another `mac sim start` of the agent's got one meanwhile: that one stays, this goes (dropped: deleted).
+        if let Some(h) = held.get_mut(&agent.name) {
+            return held_again(h, None);
+        }
         let key = sim_key(&agent.name);
         let own = lent.home.join("config.json").is_file();
         crate::node::device::ios::wrapper::write_config(
@@ -208,7 +228,7 @@ impl Host {
         )
         .map_err(|e| failed("agent-device wasn't pointed at the simulator", e))?;
         let udid = lent.udid.clone();
-        tracing::info!(agent = %agent.name, %udid, "a simulator lent to an agent");
+        tracing::info!(agent = %agent.name, %udid, %device, "a simulator lent to an agent");
         held.insert(
             agent.name.clone(),
             Held {
@@ -246,14 +266,13 @@ impl Host {
         }
     }
 
-    /// What points a job's agent-device at the agent's simulator, while it holds one.
-    fn sim_env(&self, agent: &str) -> Option<(PathBuf, String)> {
-        let held = self.held()?.contains_key(agent);
-        held.then(|| {
-            (
-                self.sims.as_ref().expect("held").home.clone(),
-                sim_key(agent),
-            )
+    /// What points a job's agent-device (and plain simctl) at the agent's simulator, while it holds one.
+    fn sim_env(&self, agent: &str) -> Option<super::jobs::SimEnv> {
+        let udid = self.held()?.get(agent)?.lent.udid.clone();
+        Some(super::jobs::SimEnv {
+            home: self.sims.as_ref().expect("held").home.clone(),
+            key: sim_key(agent),
+            udid,
         })
     }
 
@@ -420,12 +439,32 @@ impl Host {
                 let repo = agent.repo();
                 blocking(move || get(&dir, &repo, &path, offset)).await
             }
-            Step::SimStart => self.sim_start(agent),
+            Step::SimStart { device } => self.sim_start(agent, device.as_deref()).await,
             Step::SimEnd => Ok(Done::SimEnd {
                 ended: self.sim_end(&agent.name),
             }),
         }
     }
+}
+
+/// The simulator the agent holds, asked for again: the same one, unless it named another device type.
+fn held_again(h: &mut Held, device: Option<&str>) -> Result<Done, McpToolError> {
+    if let Some(wanted) = device
+        && !h.device.starts_with(&format!("{wanted} on "))
+    {
+        return Err(McpToolError::new(
+            ErrorCode::Invalid,
+            format!("You hold a {} simulator already.", h.device),
+        )
+        .with_fix(format!(
+            "mac sim end, then mac sim start --device \"{wanted}\""
+        )));
+    }
+    h.used = Instant::now();
+    Ok(Done::SimStart {
+        udid: h.lent.udid.clone(),
+        device: h.device.clone(),
+    })
 }
 
 async fn blocking<T: Send + 'static>(
