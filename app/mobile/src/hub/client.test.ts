@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { backoff, FRONT_BACKOFF_CAP_MS, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, QUIET_FRONT_MS, READY_TIMEOUT_MS, SILENT_DEAD_FRONT_MS, SILENT_DEAD_MS, WAKE_PROBE_MS, socketUrl, type HubFrame } from "./client";
 import { fakeHub } from "./fake";
+import { Deflate, Z_SYNC_FLUSH } from "pako";
 
 const HUB = "http://devbox:4790";
 
@@ -30,7 +31,8 @@ describe("HubClient", () => {
     client.start();
     expect(hub.link.url).toBe("ws://devbox:4790/app");
     hub.link.open();
-    expect(hub.sentOf("auth")).toEqual([{ t: "auth", key: "key_abc" }]);
+    // The snapshot goes with the auth, not a round trip after it: the hub reads them in order.
+    expect(hub.link.sent).toEqual([{ t: "auth", key: "key_abc", features: ["deflate"] }, { t: "snapshot" }]);
     hub.link.frame({ t: "ready", protocol: 1, version: "0.1.0" });
     expect(states().at(-1)).toMatchObject({ phase: "live", protocol: 1, version: "0.1.0" });
     expect(hub.sentOf("snapshot")).toHaveLength(1);
@@ -113,8 +115,10 @@ describe("HubClient", () => {
     expect(probes()).toHaveLength(0);
     vi.advanceTimersByTime(1);
     expect(probes()).toHaveLength(1);
-    // Probed at 10, 15 and 20 s; at 25 s nothing was heard for SILENT_DEAD_FRONT_MS.
+    // Probed at 10 s; unanswered for a whole tick, at 15 s, the link is dead, rather than shown live 10 s longer.
+    expect(SILENT_DEAD_FRONT_MS).toBe(15_000);
     vi.advanceTimersByTime(SILENT_DEAD_FRONT_MS - QUIET_FRONT_MS - 1);
+    expect(probes()).toHaveLength(1);
     expect(first.closed).toBe(false);
     vi.advanceTimersByTime(1);
     expect(first.closed).toBe(true);
@@ -231,6 +235,62 @@ describe("HubClient", () => {
     expect(frames.at(-1)).toMatchObject({ t: "error" });
     vi.advanceTimersByTime(backoff(0));
     expect(hub.sentOf("events").at(-1)).toEqual({ t: "events", cursor: 9 });
+  });
+});
+
+/** A hub's compressing side of one connection (RFC 7692): each message sync-flushed, its 00 00 ff ff tail cut. */
+const deflater = () => {
+  const z = new Deflate({ raw: true, windowBits: 15 });
+  let got: Uint8Array[] = [];
+  z.onData = (chunk) => got.push(chunk);
+  return (frame: Record<string, unknown>): Uint8Array => {
+    got = [];
+    z.push(JSON.stringify(frame), Z_SYNC_FLUSH);
+    const all = new Uint8Array(got.reduce((n, c) => n + c.length, 0));
+    let at = 0;
+    for (const c of got) {
+      all.set(c, at);
+      at += c.length;
+    }
+    return all.subarray(0, all.length - 4);
+  };
+};
+
+describe("compressed frames", () => {
+  it("reads a hub's Binary frames, in order, with Text ones between", () => {
+    const { hub, client, frames } = setup();
+    client.start();
+    hub.ready(["deflate"]);
+    const deflate = deflater();
+    hub.link.binary(deflate(snapshot));
+    hub.link.frame({ t: "event", seq: 8, type: "x", at: "2026-10-28T10:00:00Z" });
+    hub.link.binary(deflate({ t: "event", seq: 9, type: "x", at: "2026-10-28T10:00:01Z" }));
+    expect(frames.filter((f) => f.t !== "state").map((f) => (f.t === "event" ? f.event.seq : f.t))).toEqual(["snapshot", 8, 9]);
+    expect(hub.sentOf("events")).toEqual([{ t: "events", cursor: 7 }]);
+  });
+
+  it("each connection's frames are a stream of their own", () => {
+    const { hub, client, frames } = setup();
+    client.start();
+    hub.ready(["deflate"]);
+    hub.link.binary(deflater()(snapshot));
+    hub.link.close(1006);
+    vi.advanceTimersByTime(FRONT_BACKOFF_CAP_MS);
+    hub.ready(["deflate"]);
+    hub.link.binary(deflater()({ ...snapshot, cursor: 9 }));
+    expect(frames.flatMap((f) => (f.t === "snapshot" ? [f.snapshot.cursor] : []))).toEqual([7, 9]);
+  });
+
+  it("drops a link whose frame won't inflate, and asks the next for plain text", () => {
+    const { hub, client, states } = setup();
+    client.start();
+    const first = hub.ready(["deflate"]);
+    hub.link.binary(new Uint8Array([0xff, 0xff, 0xff, 0x00]));
+    expect(first.closed).toBe(true);
+    expect(states().at(-1)).toMatchObject({ phase: "retrying", reason: "A frame from the hub didn't inflate" });
+    vi.advanceTimersByTime(backoff(0));
+    hub.link.open();
+    expect(hub.sentOf("auth")).toEqual([{ t: "auth", key: "key_abc" }]);
   });
 });
 
