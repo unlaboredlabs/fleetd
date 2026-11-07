@@ -1,7 +1,5 @@
-// The delete's confirm when uncommitted changes would be lost, as the desktop's: a sheet that names each worktree
-// holding them, and Delete enabled only once the project's name is typed. A Navi's always asks here, as the desktop's
-// dialog does: what is erased, a tickbox that deletes its folder too, and its name typed. Otherwise the action sheet
-// asks.
+// The delete's confirm, as the desktop's dialog: what is erased, each worktree whose uncommitted changes would be
+// lost, a tickbox that deletes its folder too, and Delete enabled only once the project's name is typed.
 import { useState } from "react";
 import { Modal, Platform, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { space, type, useTheme } from "../../theme";
@@ -12,7 +10,7 @@ import { FieldRow, Symbol } from "./parts";
 
 /**
  * `words` null: closed. On iOS `onDelete` runs once the sheet has gone (onDismiss), so the screens it pops never go
- * in the same commit as the sheet. `folderToo`: a Navi's folder is ticked to go too.
+ * in the same commit as the sheet. `folderToo`: its folder is ticked to go too.
  */
 export function TypedDelete({ words, name, onCancel, onDelete }: { words: DeleteWords | null; name: string; onCancel: () => void; onDelete: (folderToo: boolean) => void }) {
   const t = useTheme();
@@ -57,11 +55,9 @@ export function TypedDelete({ words, name, onCancel, onDelete }: { words: Delete
               ))}
             </ListSection>
           ) : null}
-          {words.folder === undefined ? null : (
-            <ListSection footer={words.folder.note}>
-              <ListRow title={words.folder.label} accessory={<Switch value={folderToo} onValueChange={setFolderToo} accessibilityLabel={words.folder.label} />} />
-            </ListSection>
-          )}
+          <ListSection footer={words.folder.note}>
+            <ListRow title={words.folder.label} accessory={<Switch value={folderToo} onValueChange={setFolderToo} accessibilityLabel={words.folder.label} />} />
+          </ListSection>
           {/* A footnote, not a header: headers are capitals, and the name is typed as it is. */}
           <ListSection footer={`Type “${name}” to delete it.`}>
             <FieldRow value={typed} onChangeText={setTyped} placeholder={name} autoCapitalize="none" autoFocus accessibilityLabel={`Type ${name} to confirm`} />

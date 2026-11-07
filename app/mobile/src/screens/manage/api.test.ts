@@ -1,22 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addStep, initialAdd, type AddMsg, type AddState, type HubEvent, type ProfilesListOutput } from "../../desktop";
+import { addStep, initialAdd, PROJECT_TOOLS, type AddMsg, type AddState, type HubEvent, type ProfilesListOutput } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { addCall, createNavi, deleteProject, discover, FORGET_MS, forgetSignins, naviHomes, readForDelete, readInfo, REMOVE_MS, removePicture, rename, setIcon, setPicture, setProfile } from "./api";
+import { addCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readForDelete, readInfo, readLinks, readTelegram, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setIcon, setOnlyMe, setPicture, setProfile, telegramAct } from "./api";
 
 const AT = "2026-10-28T10:00:00Z";
 const NOW = Date.parse(AT);
 
-const summary = (projectId: string, title: string, kind?: "assistant") => ({
+const summary = (projectId: string, title: string, onlyMe?: true) => ({
   machineId: "devbox",
   projectId,
   title,
   workspaceRoot: `/home/ada/${projectId}`,
   lastActivityAt: AT,
   threads: { running: 0, waiting: 0, failed: 0, idle: 0 },
-  ...(kind === undefined ? {} : { kind }),
+  ...(onlyMe === undefined ? {} : { onlyMe }),
 });
-const NAVI = summary("ada", "Ada", "assistant");
+const ADA = summary("ada", "Ada", true);
 const SHOP = summary("shop", "storefront");
 const REF = { machineId: "devbox", projectId: "shop" };
 
@@ -25,7 +25,7 @@ const setup = () => {
   const session = new Session({ hub: "http://devbox:4791", key: "key_abc", transport: hub.transport, now: () => NOW });
   session.start();
   hub.ready();
-  hub.link.frame({ t: "snapshot", cursor: 1, attention: [], machines: [], projects: [NAVI, SHOP], chats: [] });
+  hub.link.frame({ t: "snapshot", cursor: 1, attention: [], machines: [], projects: [ADA, SHOP], chats: [] });
   const calls = (tool: string) => hub.sentOf("call").filter((c) => c.tool === tool);
   return { hub, session, calls };
 };
@@ -37,54 +37,40 @@ const flush = async () => {
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-describe("New Navi", () => {
-  it("makes it on the machine picked, or leaves the pick to the hub", async () => {
+describe("Rename, Only me and Archive", () => {
+  it("renames any project by its settings' title", async () => {
     const { hub, session, calls } = setup();
-    const made = createNavi(session, "Ada", "devbox");
-    expect(calls("navi_create").at(-1)?.input).toEqual({ name: "Ada", machineId: "devbox" });
-    hub.answer("navi_create", { navi: NAVI });
-    await expect(made).resolves.toEqual({ ok: true, value: NAVI });
-
-    void createNavi(session, "Home", undefined);
-    expect(calls("navi_create").at(-1)?.input).toEqual({ name: "Home" });
-  });
-
-  it("says the hub's refusal", async () => {
-    const { hub, session } = setup();
-    const made = createNavi(session, "Ada", undefined);
-    hub.fail("navi_create", "forbidden", "This key can't operate devbox.");
-    await expect(made).resolves.toMatchObject({ ok: false, error: { code: "forbidden", message: "This key can't operate devbox." } });
-  });
-
-  it("lists where it may live, and nothing from a hub without machine_roles", async () => {
-    const { hub, session } = setup();
-    const homes = naviHomes(session);
-    hub.answer("machine_roles", { best: "devbox", machines: [{ machineId: "devbox", name: "devbox", online: true }] });
-    await expect(homes).resolves.toMatchObject({ best: "devbox", machines: [{ machineId: "devbox" }] });
-    const old = naviHomes(session);
-    hub.fail("machine_roles", "unknown_tool", "No such tool.");
-    await expect(old).resolves.toEqual({ machines: [] });
-  });
-});
-
-describe("Rename", () => {
-  it("renames a Navi with navi_rename and a project with its settings' title", async () => {
-    const { hub, session, calls } = setup();
-    const navi = rename(session, NAVI, "Ada Lovelace");
-    expect(calls("navi_rename").at(-1)?.input).toEqual({ machineId: "devbox", projectId: "ada", name: "Ada Lovelace" });
-    hub.answer("navi_rename", { navi: NAVI });
-    await expect(navi).resolves.toEqual({ ok: true, value: null });
-
-    const project = rename(session, SHOP, "Shop");
-    expect(calls("project_settings_set").at(-1)?.input).toEqual({ machineId: "devbox", projectId: "shop", title: "Shop" });
+    const renamed = rename(session, ADA, "Ada Lovelace");
+    expect(calls("project_settings_set").at(-1)?.input).toEqual({ machineId: "devbox", projectId: "ada", title: "Ada Lovelace" });
     hub.answer("project_settings_set", { settings: {} });
-    await expect(project).resolves.toEqual({ ok: true, value: null });
-    expect(calls("navi_rename")).toHaveLength(1);
+    await expect(renamed).resolves.toEqual({ ok: true, value: null });
+  });
+
+  it("turns Only me on or off by its settings", async () => {
+    const { hub, session, calls } = setup();
+    const on = setOnlyMe(session, SHOP, true);
+    expect(calls("project_settings_set").at(-1)?.input).toEqual({ ...REF, onlyMe: true });
+    hub.answer("project_settings_set", { settings: {} });
+    await expect(on).resolves.toEqual({ ok: true, value: null });
+    const off = setOnlyMe(session, ADA, false);
+    expect(calls("project_settings_set").at(-1)?.input).toEqual({ machineId: "devbox", projectId: "ada", onlyMe: false });
+    hub.fail("project_settings_set", "forbidden", "Only its owner can share it.");
+    await expect(off).resolves.toMatchObject({ ok: false, error: { code: "forbidden" } });
+  });
+
+  it("archives any project and brings it back, by the project's archive tool", async () => {
+    const { hub, session, calls } = setup();
+    const archived = setArchived(session, SHOP, true);
+    expect(calls(PROJECT_TOOLS.archive).at(-1)?.input).toEqual({ ...REF, archived: true });
+    hub.answer(PROJECT_TOOLS.archive, { navi: SHOP });
+    await expect(archived).resolves.toEqual({ ok: true, value: null });
+    void setArchived(session, SHOP, false);
+    expect(calls(PROJECT_TOOLS.archive).at(-1)?.input).toEqual({ ...REF, archived: false });
   });
 });
 
 describe("A project's screen", () => {
-  it("reads what runs, its orders, checklist, last two weeks' merges and profiles side by side", async () => {
+  it("reads what runs, its orders, checklist, last two weeks' merges, profiles and skills side by side", async () => {
     const { hub, session, calls } = setup();
     const info = readInfo(session, SHOP, NOW);
     const projectRef = REF;
@@ -93,36 +79,20 @@ describe("A project's screen", () => {
     expect(calls("orders_board").at(-1)?.input).toEqual({ projectRef });
     expect(calls("pr_list").at(-1)?.input).toEqual({ projectRef, closedSince: "2026-10-14T10:00:00.000Z" });
     expect(calls("profiles_list").at(-1)?.input).toEqual({ projectRef });
+    expect(calls("skills_list").at(-1)?.input).toEqual({ projectRef });
     hub.answer("agents_list", { agents: [{ laneId: "l1", role: "lead", status: "working", title: "Lead", projectRef, projectTitle: "storefront" }], at: AT });
     hub.answer("checklist_get", { items: [{ id: 1, state: "todo", text: "Ship it", updatedAt: AT }], projectRef });
     hub.answer("orders_board", { orders: [], trains: [], at: AT });
     hub.fail("pr_list", "github", "GitHub didn't answer.");
     hub.answer("profiles_list", { profiles: [], models: [], efforts: [], modelsFrom: "builtin" });
+    hub.answer("skills_list", { skills: [{ name: "weekly-invoices", description: "", origin: "project" }] });
     const got = await info;
     expect(got.agents).toHaveLength(1);
     expect(got.checklist).toHaveLength(1);
     expect(got.orders).toEqual([]);
     expect(got.prs).toBeUndefined();
+    expect(got.skills).toMatchObject([{ name: "weekly-invoices" }]);
     expect(got.error).toMatchObject({ message: "GitHub didn't answer." });
-  });
-
-  it("reads a Navi's agents, checklist and skills only", async () => {
-    const { hub, session, calls } = setup();
-    const info = readInfo(session, NAVI, NOW);
-    expect(calls("agents_list")).toHaveLength(1);
-    expect(calls("checklist_get")).toHaveLength(1);
-    expect(calls("skills_list").at(-1)?.input).toEqual({ projectRef: { machineId: "devbox", projectId: "ada" } });
-    expect([...calls("orders_board"), ...calls("pr_list"), ...calls("profiles_list")]).toEqual([]);
-    hub.answer("agents_list", { agents: [], at: AT });
-    hub.answer("checklist_get", { items: [], projectRef: { machineId: "devbox", projectId: "ada" } });
-    hub.answer("skills_list", { skills: [{ name: "weekly-invoices", description: "", origin: "project" }] });
-    await expect(info).resolves.toMatchObject({ skills: [{ name: "weekly-invoices" }] });
-  });
-
-  it("leaves a project's skills to the desktop", () => {
-    const { session, calls } = setup();
-    void readInfo(session, SHOP, NOW);
-    expect(calls("skills_list")).toEqual([]);
   });
 
   it("checks a profile for its agents, keeping the others and leaving the default out", async () => {
@@ -148,13 +118,13 @@ describe("A project's screen", () => {
 });
 
 describe("Forget sign-ins and Delete", () => {
-  it("forgets a Navi's sign-ins, waiting as long as ending its browser takes", async () => {
+  it("forgets its sign-ins, waiting as long as ending its browser takes", async () => {
     const { hub, session, calls } = setup();
     const call = vi.spyOn(session, "call");
-    const forgot = forgetSignins(session, NAVI);
-    expect(calls("navi_signins_forget").at(-1)?.input).toEqual({ machineId: "devbox", projectId: "ada" });
-    expect(call).toHaveBeenLastCalledWith("navi_signins_forget", { machineId: "devbox", projectId: "ada" }, FORGET_MS);
-    hub.answer("navi_signins_forget", { ok: true });
+    const forgot = forgetSignins(session, SHOP);
+    expect(calls(PROJECT_TOOLS.signinsForget).at(-1)?.input).toEqual(REF);
+    expect(call).toHaveBeenLastCalledWith(PROJECT_TOOLS.signinsForget, REF, FORGET_MS);
+    hub.answer(PROJECT_TOOLS.signinsForget, { ok: true });
     await expect(forgot).resolves.toEqual({ ok: true, value: null });
   });
 
@@ -171,7 +141,7 @@ describe("Forget sign-ins and Delete", () => {
     expect(call).toHaveBeenLastCalledWith("project_remove", { ...REF, removeWorktrees: true }, REMOVE_MS);
     hub.answer("project_remove", { ok: true });
     await expect(gone).resolves.toEqual({ ok: true, value: null });
-    // A Navi's folder, ticked, goes too.
+    // Its folder, ticked, goes too.
     void deleteProject(session, SHOP, true);
     expect(calls("project_remove").at(-1)?.input).toEqual({ ...REF, removeWorktrees: true, removeFolder: true });
   });
@@ -204,7 +174,7 @@ describe("New Project", () => {
     const send = (msg: AddMsg) => {
       const [next, out] = addStep(s, msg, (id) => id);
       s = next;
-      for (const call of out) void addCall(session, call, "Web").then((outcome) => send({ t: "answer", call, outcome }));
+      for (const call of out) void addCall(session, call, "Web", false).then((outcome) => send({ t: "answer", call, outcome }));
     };
     const off = session.onEvent((event: HubEvent) => send({ t: "event", event }));
     send({ t: "start", request: { kind: "clone", repo: "acme/web", machineId: "devbox", useExisting: false }, path: "" });
@@ -233,16 +203,47 @@ describe("New Project", () => {
 
   it("adds a folder as it is, unnamed when no name is typed", () => {
     const { session, calls } = setup();
-    void addCall(session, { purpose: "add", gen: 1, input: { machineId: "devbox", path: "~/src/api" } }, "");
+    void addCall(session, { purpose: "add", gen: 1, input: { machineId: "devbox", path: "~/src/api" } }, "", false);
     expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", path: "~/src/api" });
-    // A dry run that inspects a clone's folder is never named.
-    void addCall(session, { purpose: "inspect", gen: 1, input: { machineId: "devbox", url: "acme/web", dryRun: true } }, "Web");
+    // A dry run that inspects a clone's folder is never named, nor Only me.
+    void addCall(session, { purpose: "inspect", gen: 1, input: { machineId: "devbox", url: "acme/web", dryRun: true } }, "Web", true);
     expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", url: "acme/web", dryRun: true });
+  });
+
+  it("makes a new folder of its own, Only me as left on", async () => {
+    const { hub, session, calls } = setup();
+    let s: AddState = { ...initialAdd, live: true };
+    const send = (msg: AddMsg) => {
+      const [next, out] = addStep(s, msg, (id) => id);
+      s = next;
+      for (const call of out) void addCall(session, call, "Ada", true).then((outcome) => send({ t: "answer", call, outcome }));
+    };
+    const off = session.onEvent((event: HubEvent) => send({ t: "event", event }));
+    send({ t: "start", request: { kind: "new", machineId: "devbox", name: "Ada", path: "/home/ada/projects/ada", gitInit: false }, path: "/home/ada/projects/ada" });
+    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", path: "/home/ada/projects/ada", title: "Ada", create: true, onlyMe: true });
+    hub.answer("project_add", { addId: "a2", created: true, machineId: "devbox", path: "/home/ada/projects/ada" });
+    await flush();
+    hub.link.frame({
+      t: "event",
+      seq: 2,
+      type: "project.added",
+      at: AT,
+      machineId: "devbox",
+      projectId: "ada2",
+      data: {
+        addId: "a2",
+        title: "Ada",
+        path: "/home/ada/projects/ada",
+        inspect: { defaultBranch: "main", ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [], squashAllowed: false }, leadNeeds: "", notes: [] },
+      },
+    });
+    expect(s.phase).toMatchObject({ kind: "ready", ready: { project: { machineId: "devbox", projectId: "ada2" } } });
+    off();
   });
 });
 
 describe("Session", () => {
-  it("reads who this phone's person is, whose Navis are theirs", async () => {
+  it("reads who this phone's person is, whose Only-me projects are theirs", async () => {
     const { hub, session } = setup();
     hub.answer("hub_info", { busy: [], protocol: 1, version: "0.9.0", me: { personId: "p_ada", name: "Ada", role: "member", createdAt: AT } });
     await flush();
@@ -267,7 +268,7 @@ describe("Its picture", () => {
 
   it("says why the hub wouldn't take it, and removes it with no attachment", async () => {
     const { hub, session, calls } = setup();
-    const set = setPicture(session, NAVI, new Uint8Array([1]), "image/png", { x: 0, y: 0, size: 1 });
+    const set = setPicture(session, ADA, new Uint8Array([1]), "image/png", { x: 0, y: 0, size: 1 });
     hub.fail("attachment_put", "invalid", "The file is too big.");
     await expect(set).resolves.toMatchObject({ ok: false, error: { message: "The file is too big." } });
     expect(calls("project_avatar_set")).toEqual([]);
@@ -281,14 +282,64 @@ describe("Its picture", () => {
   it("sends a face and color picked, and says why the hub wouldn't take it", async () => {
     const { hub, session, calls } = setup();
     const icon = { face: "wink", color: "sun" } as const;
-    const set = setIcon(session, NAVI, icon);
-    expect(calls("project_icon_set").at(-1)?.input).toEqual({ machineId: NAVI.machineId, projectId: NAVI.projectId, icon });
-    const shown = { ...NAVI, icon };
+    const set = setIcon(session, ADA, icon);
+    expect(calls("project_icon_set").at(-1)?.input).toEqual({ machineId: ADA.machineId, projectId: ADA.projectId, icon });
+    const shown = { ...ADA, icon };
     hub.answer("project_icon_set", { project: shown });
     await expect(set).resolves.toEqual({ ok: true, value: shown });
 
     const refused = setIcon(session, SHOP, icon);
     hub.fail("project_icon_set", "forbidden", "Only its owner can change it.");
     await expect(refused).resolves.toMatchObject({ ok: false, error: { message: "Only its owner can change it." } });
+  });
+});
+
+describe("Approvals, Telegram and Linked hubs", () => {
+  const approvals = { mode: "checker" as const, model: "claude-opus-5-5", effort: "high" as const, defaults: false };
+
+  it("reads its approvals and the models the checker may run on", async () => {
+    const { hub, session, calls } = setup();
+    const read = readApprovals(session, SHOP);
+    expect(calls(PROJECT_TOOLS.approvals).at(-1)?.input).toEqual(REF);
+    hub.answer(PROJECT_TOOLS.approvals, { approvals, log: [] });
+    hub.answer("profiles_list", { profiles: [], models: [{ id: "claude-opus-5-5", displayName: "Opus 5.5", fast: false }], efforts: [], modelsFrom: "builtin" });
+    await expect(read).resolves.toMatchObject({ ok: true, value: { approvals: { mode: "checker" }, log: [], models: [{ displayName: "Opus 5.5" }] } });
+  });
+
+  it("picks a mode, keeping the checker as the person set it, or the hub's default", () => {
+    const { session, calls } = setup();
+    void setApprovalMode(session, SHOP, "ask", approvals);
+    expect(calls(PROJECT_TOOLS.approvalsSet).at(-1)?.input).toEqual({ ...REF, mode: "ask", model: "claude-opus-5-5", effort: "high" });
+    void setApprovalMode(session, SHOP, "yolo", { ...approvals, defaults: true });
+    expect(calls(PROJECT_TOOLS.approvalsSet).at(-1)?.input).toEqual({ ...REF, mode: "yolo" });
+  });
+
+  it("reads its Telegram bot, and pauses, unpairs or removes it", async () => {
+    const { hub, session, calls } = setup();
+    const read = readTelegram(session, SHOP);
+    expect(calls("telegram_get").at(-1)?.input).toEqual({ navi: REF });
+    hub.answer("telegram_get", {});
+    await expect(read).resolves.toEqual({ ok: true, value: undefined });
+    void telegramAct(session, SHOP, { t: "pause", paused: true });
+    expect(calls("telegram_pause").at(-1)?.input).toEqual({ navi: REF, paused: true });
+    void telegramAct(session, SHOP, { t: "unpair" });
+    expect(calls("telegram_unpair").at(-1)?.input).toEqual({ navi: REF });
+    const removed = telegramAct(session, SHOP, { t: "remove" });
+    expect(calls("telegram_remove").at(-1)?.input).toEqual({ navi: REF });
+    hub.fail("telegram_remove", "machine_offline", "devbox is offline.");
+    await expect(removed).resolves.toMatchObject({ ok: false, error: { code: "machine_offline" } });
+  });
+
+  it("lists only its own hub links, and removes one", async () => {
+    const { hub, session, calls } = setup();
+    const read = readLinks(session, SHOP);
+    expect(calls("hub_links_get").at(-1)?.input).toEqual({ navi: REF });
+    const link = (linkId: string, navi: typeof REF) => ({ linkId, label: "Acme", url: "https://acme.example", state: "ok", createdAt: AT, navi });
+    hub.answer("hub_links_get", { boxPubKey: "k", issued: [], links: [link("hl_1", REF), link("hl_2", { machineId: "devbox", projectId: "ada" })] });
+    await expect(read).resolves.toMatchObject({ ok: true, value: [{ linkId: "hl_1" }] });
+    const removed = removeLink(session, "hl_1");
+    expect(calls("hub_link_remove").at(-1)?.input).toEqual({ linkId: "hl_1" });
+    hub.answer("hub_link_remove", { revokedThere: true });
+    await expect(removed).resolves.toEqual({ ok: true, value: { revokedThere: true } });
   });
 });

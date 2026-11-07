@@ -3,7 +3,7 @@
 // and when, and a count of what you haven't read (grey when muted). Its bars are Messages' on iOS 26: a compact top
 // with the person's avatar on the left, which opens Settings and shows the link to the hub as a dot, and + on the
 // right; at the bottom, a round button whose menu narrows the list to the unread, the chats that need you, the pinned,
-// the Navis or the projects, beside the search field (ui/Toolbar.tsx). A build without that bar keeps search on top
+// or the archived, beside the search field (ui/Toolbar.tsx). A build without that bar keeps search on top
 // and the filters in the header (Android: a row of chips over the list). Swipe a row right to mark it read or unread or to pin it, left to mute
 // it, as a chat swipes in Messages (ui/SwipeRow.tsx); hold it or a pinned avatar for the same in iOS's own menu
 // (ui/HoldMenu.tsx). A filter or a search shows the pinned chats as rows. Pins are kept per person on the hub
@@ -40,7 +40,7 @@ import { SwipeRow, useSwipes, type SwipeAction } from "../ui/SwipeRow";
 import { Toolbar, bottomBar } from "../ui/Toolbar";
 import { unreachable } from "../link";
 import { useLinkDown, useLinkHeader } from "./linkHeader";
-import { newChatItems } from "./manage";
+import { newChatItem } from "./manage";
 import { PinnedGrid } from "./Pinned";
 import { useRefreshing } from "./refresh";
 import { useNow } from "./time";
@@ -159,7 +159,7 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
     };
     const avatar = <MeButton initial={me.initial} tone={me.tone} label={me.label} onPress={openSettings} />;
     const filters = filterMenu(choices, filter, pick);
-    const add = newChatItems((name) => root.navigate(name));
+    const add = newChatItem(() => root.navigate("NewProject"));
     const options: Partial<NativeStackNavigationOptions> =
       Platform.OS === "ios"
         ? {
@@ -196,9 +196,9 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
     ) : filter === "unread" ? (
       <EmptyState icon="doneAll" title="All Caught Up" body="Nothing you haven't read." />
     ) : filter === "needsYou" ? (
-      <EmptyState icon="doneAll" title="All Caught Up" body="When a Navi or a lead asks before it acts, its chat shows up here." />
+      <EmptyState icon="doneAll" title="All Caught Up" body="When a project asks before it acts, its chat shows up here." />
     ) : (
-      <EmptyState icon="bubble" title="No Chats Yet" body="Make a Navi or add a project in the desktop app, and its chat shows up here." />
+      <EmptyState icon="bubble" title="No Chats Yet" body="Tap + to start a project, and its chat shows up here." />
     );
 
   return (
@@ -239,7 +239,7 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
                   {line.title}
                 </Text>
               ) : line.t === "hit" ? (
-                <HitRow hit={line.hit} picture={state.projects?.[line.hit.key]} title={state.projects?.[line.hit.key]?.title ?? ""} navi={all?.find((r) => r.key === line.hit.key)?.navi ?? false} separator={separator} onPress={() => open(line.hit.key, line.hit.messageId)} />
+                <HitRow hit={line.hit} picture={state.projects?.[line.hit.key]} title={state.projects?.[line.hit.key]?.title ?? ""} separator={separator} onPress={() => open(line.hit.key, line.hit.messageId)} />
               ) : (
                 <SwipingChat row={line.row} separator={separator} onPress={() => open(line.row.key)} onPin={pin} />
               )}
@@ -283,7 +283,7 @@ function MeButton({ initial, tone, label, onPress }: { initial: string; tone: Li
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} hitSlop={6} style={styles.me}>
       <View style={styles.meFace}>
-        <Avatar name={initial} navi size={ME} />
+        <Avatar name={initial} size={ME} />
         <View style={[styles.meDot, { backgroundColor: t[DOT[tone]], borderColor: t.bg }]} />
       </View>
     </Pressable>
@@ -407,7 +407,7 @@ function ChatRowFace({ row, separator, lifted }: { row: ChatRow; separator: bool
   const mine = !accentLine && text.startsWith("You: ");
   return (
     <View style={styles.row}>
-      <Avatar name={row.project.title} navi={row.navi} size={AVATAR} picture={row.project} />
+      <Avatar name={row.project.title} size={AVATAR} picture={row.project} />
       <View style={styles.body}>
         <View style={styles.top}>
           <View style={styles.name}>
@@ -450,7 +450,7 @@ function ChatRowFace({ row, separator, lifted }: { row: ChatRow; separator: bool
 }
 
 /** A message that says what was searched for: its chat, when, and its words with the match in bold. */
-function HitRow({ hit, picture, title, navi, separator, onPress }: { hit: MessageHit; picture: Pictured | undefined; title: string; navi: boolean; separator: boolean; onPress: () => void }) {
+function HitRow({ hit, picture, title, separator, onPress }: { hit: MessageHit; picture: Pictured | undefined; title: string; separator: boolean; onPress: () => void }) {
   const t = useTheme();
   const now = useNow();
   const [from, to] = hit.match;
@@ -459,7 +459,7 @@ function HitRow({ hit, picture, title, navi, separator, onPress }: { hit: Messag
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${title}, ${who}${hit.snippet}`}>
       {({ pressed }) => (
         <View style={[styles.row, styles.hitRow, pressed && { backgroundColor: t.fillQuiet }]}>
-          <Avatar name={title} navi={navi} size={44} picture={picture} />
+          <Avatar name={title} size={44} picture={picture} />
           <View style={[styles.body, styles.hitBody]}>
             <View style={styles.top}>
               <Text style={[type.headline, styles.nameText, { color: t.label }]} numberOfLines={1}>

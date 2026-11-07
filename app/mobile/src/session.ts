@@ -1,7 +1,7 @@
 // One paired hub at work: the client, the state the screens read, and the calls behind them. A snapshot (on every
 // connection) reads the open requests again, reloads the open chat's latest page and sends again what the link cut
 // off; events re-read what they changed (store.ts effectsOf). Screens subscribe and dispatch nothing themselves. The
-// person's pinned chats sync with the hub on each snapshot (pins.ts). A Navi's or agent's live screen is watched one
+// person's pinned chats sync with the hub on each snapshot (pins.ts). A project's or agent's live screen is watched one
 // at a time: its frames go to the live view's listener alone (onFrame), never through the state, which would draw the
 // whole app again with each.
 import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
@@ -119,7 +119,7 @@ export class Session {
     app: { state: () => null, check: () => undefined, install: () => undefined },
   };
 
-  /** One hub call of a screen's own (a project's or Navi's, screens/manage): answered, or the hub's or the link's error. */
+  /** One hub call of a screen's own (a project's, screens/manage): answered, or the hub's or the link's error. */
   call<T extends ToolName>(tool: T, input: ToolInput<T>, timeoutMs?: number): Promise<Typed<T>> {
     return this.#client.call(tool, input, timeoutMs);
   }
@@ -221,7 +221,7 @@ export class Session {
   readonly #pictures = new Map<string, Promise<string | null>>();
 
   /**
-   * A project's or Navi's picture by its id (its summary's `avatar`), base64 JPEG, read once (project_avatar_get) and
+   * A project's picture by its id (its summary's `avatar`), base64 JPEG, read once (project_avatar_get) and
    * kept while the app runs; null when the hub can't give it.
    */
   picture(ref: ProjectRef, avatar: string): Promise<string | null> {

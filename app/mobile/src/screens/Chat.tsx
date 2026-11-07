@@ -1,8 +1,8 @@
-// One Navi's or project's chat, as iOS 26's Messages and Telegram draw one: the thread runs under a glass title and a
+// One project's chat, as iOS 26's Messages and Telegram draw one: the thread runs under a glass title and a
 // floating glass composer, with soft edges where it meets them. Newest at the bottom, older pages as you scroll up;
 // the person's bubbles on the right and the lead's on the left, grouped by burst with time chips between; pictures
 // and files inline; the lead's text as it streams and the desktop's turn line while it works; blocks and approvals as
-// cards; a skill the Navi saved as one quiet line that opens it; a live screen as a card at the newest end
+// cards; a skill its lead saved as one quiet line that opens it; a live screen as a card at the newest end
 // (ScreenCards.tsx), which opens its live view.
 //
 // Opening it lands on the first message you haven't read, under an "Unread Messages" bar; what you scroll past is read,
@@ -26,7 +26,7 @@ import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
 import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, olderOffset, outgoing, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, threadRows, viewOffsetOf, type Bubble as BubbleData, type ThreadRow } from "../chatView";
-import { chatItems, emptyChat, isNavi, type AttachmentGetOutput, type AttachmentRef, type ChatItem, type CommandApprovalItem } from "../desktop";
+import { chatItems, emptyChat, type AttachmentGetOutput, type AttachmentRef, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
 import { useCanStop } from "../stopProbe";
@@ -60,6 +60,7 @@ import { arrivedReplies, bubbleActions, bubbleLabel, spokenText } from "../spoke
 import { ApprovalCard, ApprovalOutcomeLine } from "./ApprovalCard";
 import { ScreenCards } from "./ScreenCards";
 import { Symbol } from "./manage/parts";
+import { machineName } from "./manage/model";
 import type { SkillSaved } from "./manage/skillsModel";
 import { TurnLine } from "./TurnLine";
 import { useNow } from "./time";
@@ -92,7 +93,7 @@ interface ThreadActions {
   /** Whose the message is, as a reply's quote names them: "You", or the chat's lead. */
   readonly whoWrote: (messageId: string) => string;
   readonly answer: (text: string) => void;
-  /** A skill the Navi saved, opened over its Info screen. */
+  /** A skill its lead saved, opened over its Info screen. */
   readonly openSkill: (name: string) => void;
 }
 
@@ -123,7 +124,6 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // An ask's buttons answer only while nothing of yours came after it.
   const lastHuman = items.findLastIndex((i) => i.author === "human");
   const index = useMemo(() => new Map(items.map((i, n) => [i.id, n])), [items]);
-  const navi = project !== undefined && isNavi(project);
   const title = project?.title ?? "Chat";
 
   // Which bubbles enter with motion: what arrives while the chat is open and live (arrivals.ts).
@@ -159,18 +159,18 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
 
   const link = linkStatus(state.hub);
   // Always a line under the name, as Telegram's "online": the title never jumps when the lead starts or stops.
-  const quiet = project === undefined ? undefined : navi ? "Navi" : `on ${project.machineId}`;
+  const quiet = project === undefined ? undefined : `on ${machineName(state.machines, project.machineId)}`;
   const status = link?.busy === true ? "Connecting…" : link !== undefined ? "Offline" : working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : quiet;
   const openInfo = useCallback(() => navigation.navigate("ChatInfo", { screen: "Info", params: { key: chatKey } }), [navigation, chatKey]);
   // Android's stack draws the bar.
   useEffect(() => {
     if (Platform.OS === "ios") return;
     navigation.setOptions({
-      headerTitle: () => <ChatTitle picture={project} title={title} navi={navi} status={status} busy={working && link === undefined} onPress={openInfo} />,
+      headerTitle: () => <ChatTitle picture={project} title={title} status={status} busy={working && link === undefined} onPress={openInfo} />,
       title,
     });
     // A picture or icon set or removed (here or on another device) draws the header again: its id or names are all that change.
-  }, [navigation, title, navi, status, working, link, project?.avatar, project?.icon?.face, project?.icon?.color, openInfo]);
+  }, [navigation, title, status, working, link, project?.avatar, project?.icon?.face, project?.icon?.color, openInfo]);
 
   const list = useRef<FlatList<ThreadRow>>(null);
   // The list's native tag, for the bars' scroll edge effect: it is mounted once the screen is.
@@ -459,7 +459,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
                 <View style={{ height: composerHeight + space.xs }} />
               </View>
             }
-            {...(loading ? {} : { ListEmptyComponent: <EmptyThread picture={project} title={title} navi={navi} onPick={(s) => send(s)} /> })}
+            {...(loading ? {} : { ListEmptyComponent: <EmptyThread picture={project} title={title} code={(project?.repos?.length ?? 0) > 0} onPick={(s) => send(s)} /> })}
             // The list is upside down: its footer is the top, under the clear header.
             ListFooterComponent={
               <View style={{ paddingTop: top + space.sm }}>
@@ -478,7 +478,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
             fallback={<LinearGradient pointerEvents="none" colors={[t.thread, withOpacity(t.thread, 0.85), withOpacity(t.thread, 0)]} locations={[0, 0.55, 1]} style={[styles.topFade, { height: top + space.lg }]} />}
           >
             <ChatBar top={insets.top} onBack={() => navigation.goBack()} onInfo={openInfo}>
-              <ChatTitle picture={project} title={title} navi={navi} status={status} busy={working && link === undefined} onPress={openInfo} />
+              <ChatTitle picture={project} title={title} status={status} busy={working && link === undefined} onPress={openInfo} />
             </ChatBar>
           </EdgeEffect>
         ) : null}
@@ -545,15 +545,15 @@ const withOpacity = (hex: string, alpha: number): string => {
 };
 
 /** A chat with nothing in it yet: who it is, and a few things to say to start. Turned upright: the list is upside down. */
-function EmptyThread({ picture, title, navi, onPick }: { picture: Pictured | undefined; title: string; navi: boolean; onPick: (text: string) => void }) {
+function EmptyThread({ picture, title, code, onPick }: { picture: Pictured | undefined; title: string; code: boolean; onPick: (text: string) => void }) {
   const t = useTheme();
-  // A Navi's work with nothing connected yet, as the desktop's.
-  const starters = navi ? ["What can you do for me?", "Remind me every Friday to plan my week", "How are my projects going?"] : ["What are you working on?", "Show me the open pull requests", "What failed in CI?"];
+  // A project with no repo yet starts on what it can do for you; one with repos, on its code.
+  const starters = code ? ["What are you working on?", "Show me the open pull requests", "What failed in CI?"] : ["What can you do for me?", "Remind me every Friday to plan my week", "How are my projects going?"];
   return (
     <View style={styles.emptyThread}>
-      <Avatar name={title} navi={navi} size={88} picture={picture} />
+      <Avatar name={title} size={88} picture={picture} />
       <Text style={[type.title2, { color: t.label }]}>{title}</Text>
-      <Text style={[type.subhead, styles.center, { color: t.secondary }]}>{navi ? "Your Navi. Ask it anything, or start with one of these." : "Tell the lead what to work on, or start with one of these."}</Text>
+      <Text style={[type.subhead, styles.center, { color: t.secondary }]}>{code ? "Tell the lead what to work on, or start with one of these." : "Ask it anything, or start with one of these."}</Text>
       <View style={styles.starters}>
         {starters.map((s) => (
           <Pressable
@@ -593,14 +593,14 @@ function ChatBar({ top, onBack, onInfo, children }: { top: number; onBack: () =>
 }
 
 /** The chat's name and how it is, in a glass capsule over the thread, as iOS 26's Telegram. Tapped, its Info, as Messages'. */
-function ChatTitle({ picture, title, navi, status, busy, onPress }: { picture: Pictured | undefined; title: string; navi: boolean; status: string | undefined; busy: boolean; onPress: () => void }) {
+function ChatTitle({ picture, title, status, busy, onPress }: { picture: Pictured | undefined; title: string; status: string | undefined; busy: boolean; onPress: () => void }) {
   const t = useTheme();
   return (
     // The glass gives the press its own response: no dimming, which glass doesn't draw under.
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={status === undefined ? title : `${title}, ${status}`} accessibilityHint="Shows the chat's info">
       <Glass interactive style={styles.titleGlass}>
         <View style={styles.title}>
-          <Avatar name={title} navi={navi} size={30} picture={picture} />
+          <Avatar name={title} size={30} picture={picture} />
           <View style={styles.titleText}>
             <Text style={[type.headline, { color: t.label }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
               {title}
@@ -702,7 +702,6 @@ function InlineApproval({ chatKey, item }: { chatKey: Key; item: CommandApproval
       <ApprovalCard
         request={open}
         projectTitle={project?.title}
-        navi={project !== undefined && isNavi(project)}
         picture={project}
         answering={state.answering[open.requestId] === true}
         error={state.answerErrors[open.requestId]}
@@ -739,7 +738,7 @@ function ItemView({
   const inline = item.message?.item;
   if (inline?.kind === "command_approval") return <InlineApproval chatKey={chatKey} item={inline} />;
   if (inline?.kind === "secret_request") {
-    // A Navi's secure input says what it is and where it goes; either way the value is typed only where it is sealed.
+    // A secure input says what it is and where it goes; either way the value is typed only where it is sealed.
     const input = inline.secureInput;
     const text = input === undefined ? "Asks for a secret: enter it in the desktop app." : `Asks for ${input.label} for ${input.site.name}: enter it in the desktop app.`;
     return <Event text={text} icon="lock" />;
@@ -1183,7 +1182,7 @@ function Event({ text, icon }: { text: string; icon?: "approvals" | "lock" }) {
   );
 }
 
-/** A Navi saved or changed one of its skills: one quiet line, the skill's name in the accent, that opens it. */
+/** Its lead saved or changed one of its skills: one quiet line, the skill's name in the accent, that opens it. */
 function SkillLine({ saved, onPress }: { saved: SkillSaved; onPress: () => void }) {
   const t = useTheme();
   const what = saved.installed !== undefined ? "Installed a skill" : saved.created ? "Saved a skill" : "Updated a skill";

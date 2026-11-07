@@ -10,7 +10,7 @@ import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboa
 import Animated, { FadeIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHub, type SettingsProps } from "../hubContext";
-import { addedWords, canAdd, IMPORT_MAX, importClient, importStep, initialImport, lostAnswer, needsNavi, oldHub } from "../memoryImport";
+import { addedWords, canAdd, IMPORT_MAX, importClient, importStep, initialImport, lostAnswer, needsOwnProject, oldHub } from "../memoryImport";
 import { shape, space, type, useTheme } from "../theme";
 import { useAnnounce } from "../ui/announce";
 import { Button } from "../ui/Button";
@@ -142,19 +142,20 @@ export function ImportMemory({ navigation }: SettingsProps<"ImportMemory">) {
             <Text style={[type.subhead, styles.center, { color: t.secondary }]}>{done.detail}</Text>
           </Animated.View>
         )}
-        {s.phase.t === "failed" && needsNavi(s.phase.error) ? (
-          // No Navi of their own yet: the hub's words, plainly, and New Navi, which comes back here with the paste.
-          <Animated.View entering={rowIn(reduce)} style={styles.noNavi}>
+        {s.phase.t === "failed" && needsOwnProject(s.phase.error) ? (
+          // No project of their own yet: the hub's words, plainly, and New Project (Only me, as one with no repo starts),
+          // which comes back here with the paste.
+          <Animated.View entering={rowIn(reduce)} style={styles.noProject}>
             <Text style={[type.footnote, { color: t.secondary }]} accessibilityRole="alert">
               {s.phase.error.message}
             </Text>
-            <View style={styles.noNaviButton}>
-              <Button label="New Navi" kind="tinted" size="small" icon="sparkles" onPress={() => navigation.navigate("NewNavi", { back: true })} />
+            <View style={styles.noProjectButton}>
+              <Button label="New Project" kind="tinted" size="small" icon="plus" onPress={() => navigation.navigate("NewProject", { back: true })} />
             </View>
           </Animated.View>
         ) : s.phase.t === "failed" && lostAnswer(s.phase.error) ? (
           // The answer never came, but the hub may have written the entries: not "Not added".
-          <Text style={[type.footnote, styles.noNavi, { color: t.secondary }]} accessibilityRole="alert">
+          <Text style={[type.footnote, styles.noProject, { color: t.secondary }]} accessibilityRole="alert">
             The link to the hub dropped before it answered, so it may still have added these. Check your memory in the desktop app; adding again skips what's already there.
           </Text>
         ) : (
@@ -230,8 +231,8 @@ const styles = StyleSheet.create({
   result: { alignItems: "center", gap: space.xs, paddingHorizontal: space.xl, paddingVertical: space.xl },
   center: { textAlign: "center" },
   note: { paddingBottom: space.sm + 2 },
-  noNavi: { marginHorizontal: space.lg * 2, paddingTop: 7, gap: space.sm },
-  noNaviButton: { alignItems: "flex-start" },
+  noProject: { marginHorizontal: space.lg * 2, paddingTop: 7, gap: space.sm },
+  noProjectButton: { alignItems: "flex-start" },
   dock: { position: "absolute", left: 0, right: 0, bottom: 0 },
   dockRow: { paddingHorizontal: space.xl, paddingTop: space.lg },
 });

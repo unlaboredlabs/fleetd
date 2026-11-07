@@ -50,7 +50,7 @@ export function Welcome({ navigation, note }: NativeStackScreenProps<PairParams,
         <Text style={[type.largeTitle, { color: t.label }]} accessibilityRole="header">
           fleetd
         </Text>
-        <Text style={[type.body, styles.center, { color: t.secondary }]}>Your Navis, projects and approvals, from your own hub.</Text>
+        <Text style={[type.body, styles.center, { color: t.secondary }]}>Your projects and approvals, from your own hub.</Text>
         {note === undefined ? null : <Text style={[type.subhead, styles.center, { color: t.warning }]}>{note}</Text>}
       </View>
       <View style={styles.actions}>

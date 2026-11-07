@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeHub } from "./hub/fake";
-import { addedWords, canAdd, IMPORT_MS, importClient, importedOf, importStep, initialImport, lostAnswer, needsNavi, NO_NAVI_FIX, oldHub, OLD_HUB, type ImportMsg, type ImportState } from "./memoryImport";
+import { addedWords, canAdd, IMPORT_MS, importClient, importedOf, importStep, initialImport, lostAnswer, needsOwnProject, NO_ONLY_ME_PROJECT, OLD_NO_NAVI_FIX, oldHub, OLD_HUB, type ImportMsg, type ImportState } from "./memoryImport";
 import { Session } from "./session";
 
 const run = (...msgs: ImportMsg[]): ImportState => msgs.reduce(importStep, initialImport);
@@ -66,9 +66,9 @@ describe("Add to Memory", () => {
   });
 
   it("says how many it added, and what it left out: secrets and a full memory", () => {
-    expect(addedWords({ added: 12, secrets: 0, full: 0 })).toEqual({ title: "Added 12 to Memory", detail: "Your Navis and every lead read them from now on." });
+    expect(addedWords({ added: 12, secrets: 0, full: 0 })).toEqual({ title: "Added 12 to Memory", detail: "Every lead reads them from now on." });
     expect(addedWords({ added: 1, secrets: 2, full: 3 }).detail).toBe(
-      "Your Navis and every lead read it from now on. Left out 2 lines that looked like keys or passwords. 3 more didn't fit: your memory is full.",
+      "Every lead reads it from now on. Left out 2 lines that looked like keys or passwords. 3 more didn't fit: your memory is full.",
     );
     expect(addedWords({ added: 0, secrets: 1, full: 0 })).toEqual({ title: "Nothing New", detail: "Your memory already has all of it. Left out 1 line that looked like a key or password." });
     expect(addedWords({ added: 0, secrets: 0, full: 4 }).title).toBe("Memory Full");
@@ -76,16 +76,18 @@ describe("Add to Memory", () => {
 });
 
 describe("when the hub can't import", () => {
-  const NO_NAVI = { code: "invalid", message: "Import memory runs in your own Navi, so nobody else can read what you paste, and you have no Navi yet.", fix: NO_NAVI_FIX };
+  const NONE = { code: NO_ONLY_ME_PROJECT, message: "Import memory runs in a project that's only yours, so nobody else can read what you paste, and you have none yet.", fix: "Make a project with Only me on, then import again." };
 
-  it("offers New Navi without one, and keeps the paste for after", () => {
-    const s = run({ t: "typed", text: "Ada, Berlin" }, { t: "add" }, { t: "added", result: { ok: false, error: NO_NAVI } });
-    expect(s.phase.t === "failed" && needsNavi(s.phase.error)).toBe(true);
+  it("offers New Project without one of your own, and keeps the paste for after", () => {
+    const s = run({ t: "typed", text: "Ada, Berlin" }, { t: "add" }, { t: "added", result: { ok: false, error: NONE } });
+    expect(s.phase.t === "failed" && needsOwnProject(s.phase.error)).toBe(true);
     expect(s.text).toBe("Ada, Berlin");
     expect(canAdd(s)).toBe(true);
-    // Another refusal, or a Navi's machine offline, is said as it is.
-    expect(needsNavi({ code: "invalid", message: "Too long." })).toBe(false);
-    expect(needsNavi({ code: "machine_offline", message: "devbox is offline." })).toBe(false);
+    // An older hub says it by its fix.
+    expect(needsOwnProject({ code: "invalid", message: "Import memory runs in your own Navi.", fix: OLD_NO_NAVI_FIX })).toBe(true);
+    // Another refusal, or its machine offline, is said as it is.
+    expect(needsOwnProject({ code: "invalid", message: "Too long." })).toBe(false);
+    expect(needsOwnProject({ code: "machine_offline", message: "devbox is offline." })).toBe(false);
   });
 
   it("says a hub from before memory_import needs an update, and adds nothing until it is", () => {
