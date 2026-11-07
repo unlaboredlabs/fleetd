@@ -224,7 +224,6 @@ fn tilde(path: &Path) -> String {
 /// The end of a `--mac` join at the Mac: each grant's pane opened and waited for, then the node's checks, each a line.
 async fn mac_grants_and_checks(list: &mut Checklist, node_home: &Path) {
     use super::mac_finish::{self, CHECKS_WAIT, GRANT_WAIT};
-    let since = std::time::SystemTime::now();
     for grant in mac_finish::grants(node_home) {
         let title = grant.name.to_lowercase();
         if grant.granted != Some(true) {
@@ -238,32 +237,51 @@ async fn mac_grants_and_checks(list: &mut Checklist, node_home: &Path) {
         }
         list.done(&title, "fleetd has it");
     }
+    // Both grants on: the node restarts to take them up, and only its checks from then on count.
+    let since = std::time::SystemTime::now();
     list.start("the node takes up its grants and checks the Mac");
-    match mac_finish::wait_for_checks(node_home, since, CHECKS_WAIT).await {
-        None => list.failed(
+    let test = "Test in Settings › Hub › Setup › A Mac for agents";
+    let Some(checked) = mac_finish::wait_for_checks(node_home, since, CHECKS_WAIT).await else {
+        list.failed(
             "checks",
             "the node wrote none",
-            "fleetd node restart, then Test in Settings › Hub › Setup › A Mac for agents",
-        ),
-        Some(health) => {
-            let open = mac_finish::open_checks(&health);
-            if open.is_empty() {
-                list.done("checks", "every check passes");
-            }
-            for check in open {
-                let fix = match (&check.fix, &check.command) {
-                    (Some(fix), Some(command)) => format!("{fix}: {command}"),
-                    (Some(fix), None) => fix.to_string(),
-                    (None, Some(command)) => command.to_string(),
-                    (None, None) => "Test in Settings › Hub › Setup › A Mac for agents".into(),
-                };
-                list.failed(
-                    &format!("mac_{}", check.id.as_str()),
-                    check.message.as_str(),
-                    &fix,
-                );
-            }
+            &format!("fleetd node restart, then {test}"),
+        );
+        return;
+    };
+    let open = mac_finish::open_checks(&checked.health);
+    let pending = mac_finish::pending_checks(&checked.health);
+    if open.is_empty() && pending.is_empty() {
+        if checked.settled {
+            list.done("checks", "every check passes");
+        } else {
+            list.warn(
+                "checks",
+                "the node hasn't checked the Mac again since the grants",
+                Some(&format!("fleetd node restart, then {test}")),
+            );
         }
+    }
+    for check in open {
+        let fix = match (&check.fix, &check.command) {
+            (Some(fix), Some(command)) => format!("{fix}: {command}"),
+            (Some(fix), None) => fix.to_string(),
+            (None, Some(command)) => command.to_string(),
+            (None, None) => test.into(),
+        };
+        list.failed(
+            &format!("mac_{}", check.id.as_str()),
+            check.message.as_str(),
+            &fix,
+        );
+    }
+    // Still at it (its tools installing): not a failure, and the setup step shows it once done.
+    for check in pending {
+        list.warn(
+            &format!("mac_{}", check.id.as_str()),
+            check.message.as_str(),
+            Some(&format!("nothing to do: it finishes by itself; {test}")),
+        );
     }
 }
 

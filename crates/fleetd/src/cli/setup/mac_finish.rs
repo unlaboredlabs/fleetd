@@ -7,15 +7,16 @@ use std::time::{Duration, SystemTime};
 
 use fleetd_contracts::node_link::{MacCheck, MacCheckId, MacCheckState, MacHealth};
 
-use crate::node::agents_mac::{checks, read_health};
+use crate::node::agents_mac::{checks, last_full_check, read_health};
 
 /// The two grants, in the order setup asks for them.
 pub const GRANTS: [MacCheckId; 2] = [MacCheckId::Accessibility, MacCheckId::ScreenRecording];
 
 /// How long setup waits for the person to turn a grant on.
 pub const GRANT_WAIT: Duration = Duration::from_secs(10 * 60);
-/// How long it waits for the node's checks once both grants are on: a restart, then its first checks.
-pub const CHECKS_WAIT: Duration = Duration::from_secs(90);
+/// How long it waits for the node's checks once both grants are on: a restart, its first checks, and the pinned tools
+/// it installs (a download) finished.
+pub const CHECKS_WAIT: Duration = Duration::from_secs(5 * 60);
 
 /// One grant: what it's called in System Settings, its pane, and whether the node has it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -104,18 +105,30 @@ pub async fn wait_for_grant(node_home: &Path, id: MacCheckId, wait: Duration) ->
     }
 }
 
-/// The node's checks, once it wrote them after `since` with both grants passing, for up to `wait`; else the last it
-/// wrote, if any.
+/// The node's checks as setup ends with them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Checked {
+    pub health: MacHealth,
+    /// From a run of every check after the grants, both passing and none still in progress; false: the last the node
+    /// wrote when the wait ran out.
+    pub settled: bool,
+}
+
+/// The node's checks, once it ran every check after `since` (a run of the node as it is now, not the grants alone
+/// republished: [`last_full_check`]) with both grants passing and none still in progress, for up to `wait`; else the
+/// last it wrote, if any. Setup calls it once both grants are on, so the run is the restarted node's.
 pub async fn wait_for_checks(
     node_home: &Path,
     since: SystemTime,
     wait: Duration,
-) -> Option<MacHealth> {
+) -> Option<Checked> {
     let until = tokio::time::Instant::now() + wait;
     loop {
         let read = read_health(node_home);
-        if let Some((health, written)) = &read
-            && *written >= since
+        let fresh = last_full_check(node_home).is_some_and(|at| at >= since);
+        if let Some((health, _)) = &read
+            && fresh
+            && pending_checks(health).is_empty()
             && GRANTS.iter().all(|id| {
                 health
                     .checks
@@ -123,21 +136,41 @@ pub async fn wait_for_checks(
                     .any(|c| c.id == *id && c.state == MacCheckState::Ok)
             })
         {
-            return Some(health.clone());
+            return Some(Checked {
+                health: health.clone(),
+                settled: true,
+            });
         }
         if tokio::time::Instant::now() >= until {
-            return read.map(|(health, _)| health);
+            return read.map(|(health, _)| Checked {
+                health,
+                settled: false,
+            });
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
 
-/// The checks that want something done: failing or unknown. A warning (a GUI session behind someone else's) passes.
+/// The checks that want something done: failing. A warning (a GUI session behind someone else's) passes.
 pub fn open_checks(health: &MacHealth) -> Vec<&MacCheck> {
     health
         .checks
         .iter()
-        .filter(|c| !matches!(c.state, MacCheckState::Ok | MacCheckState::Warn))
+        .filter(|c| c.state == MacCheckState::Fail)
+        .collect()
+}
+
+/// The checks the node is still at (installing its tools, making its golden simulator) or couldn't tell.
+pub fn pending_checks(health: &MacHealth) -> Vec<&MacCheck> {
+    health
+        .checks
+        .iter()
+        .filter(|c| {
+            !matches!(
+                c.state,
+                MacCheckState::Ok | MacCheckState::Warn | MacCheckState::Fail
+            )
+        })
         .collect()
 }
 
@@ -152,6 +185,10 @@ mod tests {
     }
 
     fn health(screen: MacCheckState) -> MacHealth {
+        with_tools(screen, MacCheckState::Ok)
+    }
+
+    fn with_tools(screen: MacCheckState, tools: MacCheckState) -> MacHealth {
         let check = |id, state| MacCheck {
             id,
             state,
@@ -166,8 +203,14 @@ mod tests {
                 check(MacCheckId::ScreenRecording, screen),
                 check(MacCheckId::GuiSession, MacCheckState::Warn),
                 check(MacCheckId::Xcode, MacCheckState::Fail),
+                check(MacCheckId::Tools, tools),
             ]),
         }
+    }
+
+    /// A run of every check, as the node marks it.
+    fn ran_every_check(home: &Path) {
+        std::fs::write(crate::node::agents_mac::checked_file(home), b"").unwrap();
     }
 
     #[test]
@@ -198,36 +241,62 @@ mod tests {
         assert!(!wait_for_grant(home.path(), MacCheckId::ScreenRecording, short).await);
     }
 
-    /// The checks count once the node wrote them after the grants, with both grants passing; until then the last ones.
+    /// The checks count only from a run of every check after the grants, with both grants passing and none still in
+    /// progress: the grants loop republishing the old node's checks with the new grants (its tools still installing)
+    /// isn't the end of setup.
     #[tokio::test]
-    async fn the_checks_count_once_the_restarted_node_has_both_grants() {
+    async fn the_checks_count_once_the_restarted_node_ran_them_all() {
         let home = tempfile::tempdir().unwrap();
+        let h = home.path();
         let short = Duration::from_millis(10);
         assert_eq!(
-            wait_for_checks(home.path(), SystemTime::UNIX_EPOCH, short).await,
+            wait_for_checks(h, SystemTime::UNIX_EPOCH, short).await,
             None
         );
-        let write = |h: &MacHealth| write(home.path(), h);
-        write(&health(MacCheckState::Fail));
-        let last = wait_for_checks(home.path(), SystemTime::UNIX_EPOCH, short)
+        // The grants republished over the old node's checks, before any full run: not settled.
+        write(h, &with_tools(MacCheckState::Ok, MacCheckState::Unknown));
+        let republished = wait_for_checks(h, SystemTime::UNIX_EPOCH, short)
+            .await
+            .unwrap();
+        assert!(!republished.settled);
+        // A full run, but the tools still installing: not settled either, and nothing failed for it.
+        ran_every_check(h);
+        let installing = wait_for_checks(h, SystemTime::UNIX_EPOCH, short)
+            .await
+            .unwrap();
+        assert!(!installing.settled);
+        let pending: Vec<_> = pending_checks(&installing.health)
+            .iter()
+            .map(|c| c.id)
+            .collect();
+        assert_eq!(pending, [MacCheckId::Tools]);
+        let open: Vec<_> = open_checks(&installing.health)
+            .iter()
+            .map(|c| c.id)
+            .collect();
+        assert_eq!(open, [MacCheckId::Xcode], "in progress isn't failing");
+        // Screen Recording still off: not settled.
+        write(h, &health(MacCheckState::Fail));
+        assert!(
+            !wait_for_checks(h, SystemTime::UNIX_EPOCH, short)
+                .await
+                .unwrap()
+                .settled
+        );
+        // Every check run, both grants on, nothing in progress: settled at once, the warning passing.
+        write(h, &health(MacCheckState::Ok));
+        let done = wait_for_checks(h, SystemTime::UNIX_EPOCH, Duration::from_secs(60))
             .await
             .unwrap();
         assert_eq!(
-            last,
-            health(MacCheckState::Fail),
-            "not yet: the last checks"
+            done,
+            Checked {
+                health: health(MacCheckState::Ok),
+                settled: true
+            }
         );
-        write(&health(MacCheckState::Ok));
-        let done = wait_for_checks(home.path(), SystemTime::UNIX_EPOCH, short)
-            .await
-            .unwrap();
-        assert_eq!(done, health(MacCheckState::Ok));
-        // Written before the grants: not counted, though they pass.
+        // A full run from before the grants doesn't count.
         let later = SystemTime::now() + Duration::from_secs(60);
-        let stale = wait_for_checks(home.path(), later, short).await.unwrap();
-        assert_eq!(stale, health(MacCheckState::Ok));
-        // Only the failing check wants anything; the warning passes.
-        let open: Vec<_> = open_checks(&done).iter().map(|c| c.id).collect();
-        assert_eq!(open, [MacCheckId::Xcode]);
+        assert!(!wait_for_checks(h, later, short).await.unwrap().settled);
     }
 }

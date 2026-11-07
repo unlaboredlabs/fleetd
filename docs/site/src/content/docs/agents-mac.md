@@ -197,7 +197,9 @@ agents at the Mac's screen (Apple menu › Lock Screen, then fleetd agents) and 
 
 The node checks the Mac every 30 seconds as its own account, and its grants every 2 seconds while one is off; the hub
 adds `mac_one_node`. The setup step and the doctor show them as `<machine>/mac_<check>`; Test reads them again. On the
-Mac itself the node writes its last checks to `~/.fleetd/node/mac-health.json`, which setup reads while it waits.
+Mac itself the node writes its last checks to `~/.fleetd/node/mac-health.json`, which setup reads while it waits, and
+touches `~/.fleetd/node/mac-health.checked` after each run of every check: setup ends on a run from after both grants,
+with no check still in progress (its tools installing), and lists one still in progress as a warning, not a failure.
 
 | Check | Passes when | Fix |
 |---|---|---|

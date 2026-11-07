@@ -218,6 +218,8 @@ impl AgentsMac {
                 };
                 if let Ok(health) = tokio::task::spawn_blocking(move || checks::run(&probe)).await {
                     running.publish(&home, health);
+                    // A run of every check, not the grants alone republished: setup counts only these.
+                    let _ = std::fs::write(checked_file(&home), b"");
                 }
                 tokio::time::sleep(CHECK_EVERY).await;
             }
@@ -238,6 +240,19 @@ fn write_health(home: &Path, health: &MacHealth) {
         let tmp = home.join("mac-health.json.tmp");
         let _ = std::fs::write(&tmp, json).and_then(|()| std::fs::rename(&tmp, health_file(home)));
     }
+}
+
+/// Touched after each run of every check (not when the grants loop republishes [`health_file`]), so setup can wait for
+/// one by the node as it runs now ([`last_full_check`]).
+pub fn checked_file(home: &Path) -> PathBuf {
+    home.join("mac-health.checked")
+}
+
+/// When the node at `home` last ran every check; None before its first.
+pub fn last_full_check(home: &Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(checked_file(home))
+        .and_then(|m| m.modified())
+        .ok()
 }
 
 /// The node's last checks at `home`, and when it wrote them; None before its first.
