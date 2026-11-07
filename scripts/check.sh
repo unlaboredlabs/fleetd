@@ -26,10 +26,10 @@
 # It runs them all, then names each one that failed, with its command, and exits 1. It fetches origin/main first, and
 # doesn't install toolchains: cargo, node 24 and pnpm, and cargo-nextest if it's there (else cargo test).
 #
-# A fleetd writer's push of a branch is refused unless its tree passed (.fleetd/pre-push.json): when all pass, it records
-# the tree it checked (the worktree's, committed or not) and the checks that passed on it in the git dir's
-# fleetd-checked, and the tree passes once every check the changes touch has passed on it, in one run or in several
-# (scripts/check.sh rust-lint, then rust-tests, ...). So run it after your final rebase onto origin/main, and commit
+# A fleetd writer's push of a branch is refused unless its tree passed (.fleetd/pre-push.json): it records the tree it
+# checked (the worktree's, committed or not) and each check that passed on it in the git dir's fleetd-checked, and the
+# tree passes once every check the changes touch has passed on it, in one run or in several (scripts/check.sh
+# rust-tests reruns only the one that failed). So run it after your final rebase onto origin/main, and commit
 # exactly what it checked. One too long for a command's time limit runs with --background: it records its pass when it
 # ends, and its log's last line says how it went.
 set -uo pipefail
@@ -273,25 +273,33 @@ elif [ ${#named[@]} -eq 0 ] && changed app/desktop .github/workflows/desktop-qa.
   echo "==> qa: app/desktop changed; if a screen shows something new, scripts/check.sh qa runs the screens CI runs"
 fi
 
-if [ ${#failed[@]} -gt 0 ]; then
-  echo
-  echo "check.sh: ${#failed[@]} failed:"
-  printf '  %s\n' "${failed[@]}"
-  exit 1
-fi
 # For fleetd's pre-push gate, newest last: "<tree> <check>" for each check that passed on the tree, and "<tree>" once
-# every check it needs has.
+# every check it needs has. A check run on every call (reverts, the identifier check) that fails records none.
 marks=$(git rev-parse --git-path fleetd-checked)
 ran=("${named[@]}")
 [ ${#named[@]} -gt 0 ] || ran=("${needed[@]}")
+passed=("${ran[@]}")
+for f in "${failed[@]}"; do
+  [[ " ${ran[*]} " == *" ${f%%:*} "* ]] || passed=()
+done
 {
   tail -n 199 "$marks" 2>/dev/null
-  for c in "${ran[@]}"; do echo "$checked_tree $c"; done
+  for c in "${passed[@]}"; do
+    printf '%s\n' "${failed[@]}" | grep -q "^$c:" || echo "$checked_tree $c"
+  done
 } >"$tmp/checked"
 whole=true
 for c in "${needed[@]}"; do grep -qxF "$checked_tree $c" "$tmp/checked" || { whole=false; missing+=" $c"; }; done
 $whole && echo "$checked_tree" >>"$tmp/checked"
 mv "$tmp/checked" "$marks"
+
+if [ ${#failed[@]} -gt 0 ]; then
+  echo
+  echo "check.sh: ${#failed[@]} failed:"
+  printf '  %s\n' "${failed[@]}"
+  $whole || echo "Still to pass on tree ${checked_tree:0:12} before a push:$missing (scripts/check.sh <check> runs one)"
+  exit 1
+fi
 echo
 if $whole; then
   echo "check.sh: all passed on tree ${checked_tree:0:12}: it can be pushed"

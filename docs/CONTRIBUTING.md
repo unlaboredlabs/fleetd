@@ -59,7 +59,7 @@ host name in a new file fails there instead of in CI.
 A fleetd writer can't push a tree it hasn't passed on (`.fleetd/pre-push.json`): a pass records the tree it checked,
 so commit exactly that. Too long for one command: `scripts/check.sh --background` runs it detached and records its
 pass when it ends, or run one check at a time (`scripts/check.sh rust-lint`, then the next): the tree passes once every
-check its changes touch has passed on it.
+check its changes touch has passed on it, so after a failure, rerun only that check.
 
 `crates/fleetd` must not link macOS frameworks, because the darwin binaries are cross-built on Linux. The
 `darwin-deps` CI job checks this: rusqlite takes only named features such as `bundled`, chrono has no `clock`, and
