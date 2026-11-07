@@ -1095,7 +1095,7 @@ export const screens: readonly Screen[] = [
   },
   // The chat as bubbles: a casual exchange the hub split into bubbles with your reply to one, charts and a table, a
   // PR card with its diff, and an ask waiting on you.
-  { id: "chat", route: CHAT, fixtures: ["bubbles-casual", "bubbles-charts", "bubbles-pr", "bubbles-ask"], variant: "bubbles" },
+  { id: "chat", route: CHAT, fixtures: ["bubbles-casual", "bubbles-charts", "bubbles-pr", "bubbles-ask", "bubbles-sources"], variant: "bubbles" },
   // A tapback put on one of the lead's bubbles, from the button its hover shows.
   {
     id: "chat",
