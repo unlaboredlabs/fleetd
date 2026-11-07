@@ -43,9 +43,12 @@ const subscribe = (l: () => void) => {
   return () => listeners.delete(l);
 };
 
+/** A chat's draft now: the same object until that chat's own changes, so only its composer draws again. */
+export const draftOf = (key: Key): Draft => drafts[key] ?? emptyDraft;
+
 /** A chat's draft, and how to change it: the change goes to that chat's, wherever the person has gone since. */
 export const useDraft = (key: Key): [Draft, (change: (d: Draft) => Draft) => void] => {
-  const draft = useSyncExternalStore(subscribe, () => drafts[key] ?? emptyDraft);
+  const draft = useSyncExternalStore(subscribe, () => draftOf(key));
   const change = useCallback((c: (d: Draft) => Draft) => changeDraft(key, c), [key]);
   return [draft, change];
 };
