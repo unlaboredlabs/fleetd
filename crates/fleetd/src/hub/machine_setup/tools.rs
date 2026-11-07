@@ -4,7 +4,9 @@ use std::sync::{Arc, Mutex};
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::{MachineId, Timestamp};
-use fleetd_contracts::machine_setup::{MachineHost, MachineHostSource, SetupStepState, SshHost};
+use fleetd_contracts::machine_setup::{
+    MachineAddState, MachineHost, MachineHostSource, SetupStepState, SshHost,
+};
 use fleetd_contracts::mcp::{
     ErrorCode, MachineAddInput, MachineAddOutput, MachineAddPlanInput, MachineAddPlanOutput,
     MachineAddStatusInput, MachineAddStatusOutput, MachineClaudeLoginInput,
@@ -283,6 +285,9 @@ async fn machine_remove(
     input: MachineRemoveInput,
 ) -> Result<MachineRemoveOutput, ToolError> {
     admin(&caller)?;
+    if input.force != Some(true) {
+        refuse_removal(&hub, &input.machine_id)?;
+    }
     let runner = hub.machine_setup.ports().runner();
     let collect = Collect::default();
     let removed = machine::remove(
@@ -311,6 +316,36 @@ async fn machine_remove(
         next: Some(next.join("\n")),
         truncated: None,
     })
+}
+
+/// A removal that would undo something: a machine_add run for the machine still going (the removal would undo it
+/// halfway), or the machine runs projects' leads (they would stop). Refused, with what it would undo and the way to
+/// repair instead; `force` removes it anyway (the app's Remove anyway).
+fn refuse_removal(hub: &Hub, machine_id: &MachineId) -> Result<(), ToolError> {
+    let mut why = Vec::new();
+    if let Some(run) = hub
+        .machine_setup
+        .runs()
+        .into_iter()
+        .find(|r| &r.machine_id == machine_id && r.state == MachineAddState::Running)
+    {
+        why.push(format!(
+            "{machine_id} is being added right now (run {}, since {}): removing it undoes that run halfway",
+            run.run_id, run.started_at
+        ));
+    }
+    if let Some(leads) = machine::leads_on(side(hub), machine_id).map_err(stopped)? {
+        why.push(leads);
+    }
+    if why.is_empty() {
+        return Ok(());
+    }
+    Err(
+        ToolError::new(ErrorCode::Invalid, format!("{}.", why.join("; "))).with_fix(format!(
+            "{}; to remove it anyway, call machine_remove again with force: true (Remove anyway in the app)",
+            machine::repair(machine_id)
+        )),
+    )
 }
 
 async fn machine_join(

@@ -200,6 +200,21 @@ impl HubStore {
             .with(|conn| decode_all(conn, "SELECT data FROM machines ORDER BY machine_id", []))
     }
 
+    /// The titles of the machine's projects that have a lead, by title: what removing the machine stops.
+    pub fn machine_lead_projects(&self, machine_id: &MachineId) -> Result<Vec<String>, StoreError> {
+        self.db.with(|conn| {
+            let titles = conn
+                .prepare_cached(
+                    "SELECT coalesce(json_extract(p.data, '$.title'), l.project_id) AS title FROM leads l
+                     LEFT JOIN projects p ON p.machine_id = l.machine_id AND p.project_id = l.project_id
+                     WHERE l.machine_id = ? ORDER BY title",
+                )?
+                .query_map([machine_id.as_str()], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(titles)
+        })
+    }
+
     /// Sets the status and `lastSeenAt = at`. A no-op for an unknown machine.
     pub fn machine_set_status(
         &self,

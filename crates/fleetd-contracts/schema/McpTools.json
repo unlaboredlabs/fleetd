@@ -9717,6 +9717,10 @@
     },
     "MachineRemoveInput": {
       "properties": {
+        "force": {
+          "description": "Remove it even while it runs projects' leads, or a machine_add run for it is going; refused without.",
+          "type": "boolean"
+        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },

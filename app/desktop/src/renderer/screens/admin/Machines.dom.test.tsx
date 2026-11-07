@@ -80,6 +80,16 @@ const render = async (ui: React.ReactNode) => {
     call: (tool, input, options) => {
       calls.push({ tool, input, timeoutMs: options?.timeoutMs });
       const code = (input as { code?: string }).code;
+      if (tool === "machine_remove" && (input as { machineId: string }).machineId === "devbox" && (input as { force?: boolean }).force !== true) {
+        return Promise.resolve({
+          ok: false,
+          error: {
+            code: "invalid",
+            message: "devbox runs the leads of 2 projects (app, site): removing it stops them, and their chats wait until it joins again.",
+            fix: "to repair devbox instead, run fleetd pair --worker devbox on the hub and the line it prints on devbox with --rejoin; to remove it anyway, call machine_remove again with force: true (Remove anyway in the app)",
+          },
+        });
+      }
       if (tool === "machine_claude_login" && code === "wrong") {
         return Promise.resolve({ ok: false, error: { code: "failed", message: "claude auth login failed: Invalid code", fix: "Start the login again: each sign-in page's code works once." } });
       }
@@ -179,6 +189,18 @@ it("asks before it removes a machine, then takes it off the list", async () => {
   expect(calls.find((c) => c.tool === "machine_remove")?.timeoutMs).toBe(100_000);
   expect(row("laptop")).toBeNull();
   expect(row("builder-1")).not.toBeNull();
+});
+
+it("says what removing a machine that runs leads stops, and removes it only on Remove anyway", async () => {
+  await render(<MachineList onRepair={() => undefined} />);
+  await click(rowButton("devbox", "Remove"));
+  await click(button("Remove devbox"));
+  const dialog = document.querySelector("[role='dialog']");
+  expect(dialog?.textContent).toContain("Not removed: devbox runs the leads of 2 projects (app, site)");
+  expect(row("devbox")).not.toBeNull();
+  await click(button("Remove anyway"));
+  expect(calls.filter((c) => c.tool === "machine_remove").map((c) => c.input)).toEqual([{ machineId: "devbox" }, { machineId: "devbox", force: true }]);
+  expect(row("devbox")).toBeNull();
 });
 
 it("says a machine the hub set up loses its service as well as its key", async () => {

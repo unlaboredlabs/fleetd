@@ -33,11 +33,11 @@ pub fn machine_usage() -> String {
              runs it as a user service, then waits until the machine is online; prints every command
              first, --dry-run only prints (for a fresh machine, without connecting); --no-service
              enrolls the node but writes no service and prints how to run it; safe to run again
-  machine remove <id> [--purge]
+  machine remove <id> [--purge] [--force]
              stop and remove the node's service on the machine, revoke its key on the hub and forget
              its rows there (run again, it clears what an older remove left); --purge also deletes
              ~/.fleetd/node and ~/.fleetd/claude.env there, and what an older fleetd installed for
-             T3 Code
+             T3 Code; refused while the machine runs projects' leads, unless --force
 {}",
         crate::cli::project::MACHINE_SET_USAGE
     )
@@ -1232,7 +1232,7 @@ async fn remove_command(argv: &[String]) -> u8 {
     let v = match args::parse(
         argv,
         &Spec {
-            options: &[("purge", Kind::Bool)],
+            options: &[("purge", Kind::Bool), ("force", Kind::Bool)],
             positionals: true,
         },
     ) {
@@ -1254,6 +1254,19 @@ async fn remove_command(argv: &[String]) -> u8 {
         Ok(hub) => hub,
         Err(message) => return fail(&message),
     };
+    if !v.flag("force") {
+        match leads_on(hub.side(), &machine) {
+            Ok(None) => {}
+            Ok(Some(leads)) => {
+                return Stop::fail(format!(
+                    "{leads}. Fix: {}; to remove it anyway, run fleetd machine remove {machine} --force",
+                    repair(&machine)
+                ))
+                .print();
+            }
+            Err(stop) => return stop.print(),
+        }
+    }
     match remove(&home, &machine, v.flag("purge"), hub.side(), &Ssh, &Print).await {
         Ok(removed) if removed.remote_ok => 0,
         Ok(_) => 1,
@@ -1396,6 +1409,40 @@ pub async fn remove(
         ));
     }
     Ok(Removed { revoked, remote_ok })
+}
+
+/// What removing the machine stops, when it runs projects' leads: "devbox runs the leads of 2 projects (app, site):
+/// removing it stops them, and their chats wait until it joins again". None when it runs none. `machine remove` and
+/// the app's Remove refuse it unless forced, so a misclick never takes every project's lead with it.
+pub fn leads_on(hub: HubSide<'_>, machine: &MachineId) -> Result<Option<String>, Stop> {
+    const NAMED: usize = 5;
+    let titles = hub
+        .store
+        .machine_lead_projects(machine)
+        .map_err(|error| Stop::fail(error.to_string()))?;
+    if titles.is_empty() {
+        return Ok(None);
+    }
+    let mut named = titles[..titles.len().min(NAMED)].join(", ");
+    if titles.len() > NAMED {
+        named += &format!(" and {} more", titles.len() - NAMED);
+    }
+    let projects = match titles.len() {
+        1 => "1 project".to_owned(),
+        n => format!("{n} projects"),
+    };
+    Ok(Some(format!(
+        "{machine} runs the leads of {projects} ({named}): removing it stops them, and their chats wait until it \
+         joins again"
+    )))
+}
+
+/// How to bring a machine back instead of removing it.
+pub fn repair(machine: &MachineId) -> String {
+    format!(
+        "to repair {machine} instead, run fleetd pair --worker {machine} on the hub and the line it prints on \
+         {machine} with --rejoin"
+    )
 }
 
 /// `fleetd machine …`.
