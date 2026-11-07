@@ -141,6 +141,7 @@ function hub(from: Fixture, name: string, note: string, runs: (f: Fixture) => Js
     hubUrl: HUB,
     next: "In the fleetd app on the Mac, choose Set up this Mac for agents and type the code.",
   });
+  f.answer("mac_code_status", undefined, { state: "open" });
   f.answer("machine_remove", undefined, { machineId: "mac-mini", steps: [], revoked: true, next: "revoked mac-mini's node key; the hub refuses that node from now on." });
   f.answer("machine_claude_login", undefined, {
     machineId: "laptop",

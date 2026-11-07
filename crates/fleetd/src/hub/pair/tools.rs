@@ -6,7 +6,8 @@ use std::sync::Arc;
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::mcp::{
-    ErrorCode, MacCodeCreateInput, MacCodeCreateOutput, PairCodeCreateInput, PairCodeCreateOutput,
+    ErrorCode, MacCodeCreateInput, MacCodeCreateOutput, MacCodeStatusInput, MacCodeStatusOutput,
+    PairCodeCreateInput, PairCodeCreateOutput,
 };
 
 use super::PairCodes;
@@ -16,6 +17,7 @@ use crate::hub::api::{Caller, Hub, Registry, ToolError, allows_everywhere, error
 pub fn register(tools: &mut Registry) {
     tools.add("pair_code_create", pair_code_create);
     tools.add("mac_code_create", mac_code_create);
+    tools.add("mac_code_status", mac_code_status);
 }
 
 /// The most the caller's key may do on every machine: the paired device gets no more. None for a key limited to
@@ -98,13 +100,7 @@ async fn mac_code_create(
     caller: Caller,
     input: MacCodeCreateInput,
 ) -> Result<MacCodeCreateOutput, ToolError> {
-    if !is_human(&caller) || !allows_everywhere(&caller, Role::Admin) {
-        return Err(error(
-            ErrorCode::Forbidden,
-            "Setting up the agents' Mac is for the hub's owners and admins, from their own device.",
-            "Ask an owner or admin of the hub to open Add machine › A Mac for agents.",
-        ));
-    }
+    mac_admin(&caller)?;
     let machine_id = super::mac::mac_machine_id(&hub)?;
     let minted = PairCodes::new(hub.db.clone(), hub.clock.clone()).create_mac(&machine_id)?;
     let hub_url = phone_hub_url(&hub, input.hub_url.as_ref().map(|url| url.as_str()));
@@ -124,6 +120,32 @@ async fn mac_code_create(
         machine_id,
         hub_url,
         next: Some(next),
+        truncated: None,
+    })
+}
+
+/// Setting up the agents' Mac is an owner's or admin's, from their own device, as Add machine is.
+fn mac_admin(caller: &Caller) -> Result<(), ToolError> {
+    if is_human(caller) && allows_everywhere(caller, Role::Admin) {
+        return Ok(());
+    }
+    Err(error(
+        ErrorCode::Forbidden,
+        "Setting up the agents' Mac is for the hub's owners and admins, from their own device.",
+        "Ask an owner or admin of the hub to open Add machine › A Mac for agents.",
+    ))
+}
+
+async fn mac_code_status(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: MacCodeStatusInput,
+) -> Result<MacCodeStatusOutput, ToolError> {
+    mac_admin(&caller)?;
+    let state = PairCodes::new(hub.db.clone(), hub.clock.clone()).mac_state(input.code.as_str())?;
+    Ok(MacCodeStatusOutput {
+        state,
+        next: None,
         truncated: None,
     })
 }

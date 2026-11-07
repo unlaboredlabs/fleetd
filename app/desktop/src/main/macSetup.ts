@@ -1,6 +1,7 @@
 // "Set up this Mac for agents" (D309, shared/macSetup.ts): main does everything that reaches past the page.
-//   1. find the hub: the hubs this app is signed in to, then the tailnet's peers that answer /healthz on fleetd's
-//      port; the address the person types, should neither find it;
+//   1. find the hub, without the code: the hubs this app is signed in to and the tailnet's peers that answer /healthz
+//      on fleetd's port. One found is the hub; several, the person picks theirs; none, they type its address. The code
+//      goes to that one hub only;
 //   2. this Mac first: a fleetd dir that holds a hub is never touched (nothing is traded for it);
 //   3. POST <hub>/pair/mac with the code and this Mac's fingerprint, for a one-time enroll token kept here;
 //   4. the hub's own build, checked and put in place, as Add machine's "This computer" does (joinHere installBuild);
@@ -15,7 +16,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { MacHealth } from "../shared/contracts";
 import type { JoinStep, ThisComputer } from "../shared/joinHere";
-import type { MacFound, MacHealthRead, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupFailure } from "../shared/macSetup";
+import type { MacFound, MacHealthRead, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupFailure, MacSetupStatus } from "../shared/macSetup";
 import { assetFor, installBuild, thisComputer, type JoinPorts } from "./joinHere";
 import { probe, type Fetch } from "./pairing/hubHttp";
 
@@ -148,11 +149,14 @@ export interface Pending {
   readonly found: MacFound;
   readonly token: string;
   readonly version: string;
+  /** When the token stops working (RFC 3339). */
+  readonly expiresAt: string;
 }
 
 /**
- * Trades the code with the hub the person typed, or else with each hub this Mac finds until one takes it. A Mac that
- * holds a hub trades nothing.
+ * Trades the code with the hub the person typed or picked, or else the one hub this Mac finds. It never sends the code
+ * to more than one: found several, it lists them for the person to pick, sending none. A Mac that holds a hub trades
+ * nothing.
  */
 export async function redeemMac(ports: MacSetupPorts, request: MacRedeemRequest): Promise<{ outcome: MacRedeemOutcome; pending?: Pending }> {
   const failed = (failure: MacSetupFailure) => ({ outcome: { ok: false as const, failure } });
@@ -162,33 +166,33 @@ export async function redeemMac(ports: MacSetupPorts, request: MacRedeemRequest)
   const fingerprint = await ports.fingerprint();
   const here: ThisComputer = await thisComputer(ports.fleetdDir, fingerprint);
   if (here.kind === "hub") return failed({ message: "This Mac runs a fleetd hub, so it can't be another hub's agents' Mac.", fix: "Set up the agents' Mac on another Mac, or remove this hub first (fleetd uninstall)." });
-  let hubs: string[];
+  // The code goes to one hub only: the one typed, or the one this Mac found. Found several, it asks which, sending none.
+  let hub: string;
   if (request.hub !== undefined && request.hub.trim() !== "") {
     const origin = hubOrigin(request.hub);
     if (origin === undefined) return failed({ message: `${request.hub.trim()} isn't an address.`, fix: "Type the hub's address as Add machine › A Mac for agents shows it, e.g. http://devbox:4790.", field: "hub" });
-    hubs = [origin];
+    hub = origin;
   } else {
-    hubs = await findHubs(ports);
-    if (hubs.length === 0) {
+    const hubs = await findHubs(ports);
+    const [only] = hubs;
+    if (only === undefined) {
       return failed({ message: "This Mac didn't find your hub by itself.", fix: "Type its address: Add machine › A Mac for agents shows it under the code.", field: "hub" });
     }
-  }
-  let first: MacSetupFailure | undefined;
-  for (const origin of hubs) {
-    const traded = await trade(ports, origin, code, fingerprint);
-    if (traded.ok) {
-      const { answer } = traded;
-      const found: MacFound = { hubUrl: answer.hubUrl, hubName: answer.hubName, machineId: answer.machineId, existing: answer.existing, here };
-      return { outcome: { ok: true, found }, pending: { found, token: answer.token, version: answer.version } };
+    if (hubs.length > 1) {
+      return failed({
+        message: `This Mac found ${String(hubs.length)} hubs. Which is yours?`,
+        fix: "Its address is under the code on your main machine. The code goes to that hub only.",
+        field: "hub",
+        choices: hubs,
+      });
     }
-    // A hub that knows the code but refuses it (another computer's Mac, too many tries) has the last word.
-    if (traded.status !== 401 && traded.status !== 0 && traded.status !== 404) return failed(traded.failure);
-    first ??= traded.failure;
+    hub = only;
   }
-  if (hubs.length > 1) {
-    return failed({ message: `That code isn't open on any hub this Mac found (${hubs.join(", ")}).`, fix: "Check the six digits, or get a new code from Add machine › A Mac for agents on your main machine.", field: "code" });
-  }
-  return failed(first ?? { message: "The hub didn't take the code.", field: "code" });
+  const traded = await trade(ports, hub, code, fingerprint);
+  if (!traded.ok) return failed(traded.failure);
+  const { answer } = traded;
+  const found: MacFound = { hubUrl: answer.hubUrl, hubName: answer.hubName, machineId: answer.machineId, existing: answer.existing, here };
+  return { outcome: { ok: true, found }, pending: { found, token: answer.token, version: answer.version, expiresAt: answer.expiresAt } };
 }
 
 /** A node already enrolled here, other than the one this code joins: joining replaces it. */
@@ -284,10 +288,45 @@ export async function restartNode(ports: MacSetupPorts): Promise<MacRestartOutco
   return ran.code === 0 ? { ok: true } : { ok: false, failure: cliFailure(ran.output) };
 }
 
-/** One setup at a time, as there is one fleetd dir here: the traded code, and the join running or last ended. */
+/** This Mac's node as node.json has it, when it is enrolled as the agents' Mac: what the window reopens on. */
+export async function joinedHere(ports: MacSetupPorts): Promise<MacFound | undefined> {
+  const file = await ports.readFile(path.join(ports.fleetdDir, "node", "node.json"));
+  let node: unknown;
+  try {
+    node = JSON.parse(file?.text ?? "null");
+  } catch {
+    return undefined;
+  }
+  if (typeof node !== "object" || node === null) return undefined;
+  const { enrolled, agentsMac, machineId, hub } = node as Record<string, unknown>;
+  if (enrolled !== true || agentsMac !== true || typeof machineId !== "string" || typeof hub !== "string") return undefined;
+  let hubName = hub;
+  try {
+    hubName = new URL(hub).hostname.split(".")[0] ?? hub;
+  } catch {
+    // An address with no scheme: shown as it is.
+  }
+  return { hubUrl: hub, hubName, machineId, existing: true, here: { kind: "node", machineId, hub } };
+}
+
+const CANCELLED: MacSetupFailure = {
+  message: "Cancelled: nothing changed on this Mac.",
+  fix: "The code you typed is spent. For a new one, open Add machine › A Mac for agents on your main machine.",
+};
+const TOKEN_EXPIRED: MacSetupFailure = {
+  message: "Your hub took the code, but this Mac didn't join within 15 minutes, so it can't any more.",
+  fix: "For a new code, open Add machine › A Mac for agents on your main machine.",
+};
+
+/**
+ * One setup at a time, as there is one fleetd dir here: the traded code, the join running, and how the last one ended,
+ * kept for as long as the app runs so the window, closed and opened again, says what happened.
+ */
 export class MacSetup {
   #pending: Pending | undefined;
   #join: Promise<MacJoin> | undefined;
+  /** The code was spent and nothing joined: cancelled, or a join that failed past the point of trying again. */
+  #ended: MacSetupFailure | undefined;
   readonly #ports: MacSetupPorts;
   readonly #report: (join: MacJoin) => void;
 
@@ -300,6 +339,7 @@ export class MacSetup {
     if (this.#join !== undefined) return { ok: false, failure: { message: "This Mac is joining already." } };
     const { outcome, pending } = await redeemMac(this.#ports, request);
     this.#pending = pending;
+    if (pending !== undefined) this.#ended = undefined;
     return outcome;
   }
 
@@ -312,10 +352,32 @@ export class MacSetup {
       this.#join = undefined;
       // Spent, or on to a new code: only a failure before the join keeps it.
       if (join.state === "done" || join.retry !== true) this.#pending = undefined;
+      if (join.state === "failed" && join.retry !== true) this.#ended = join.failure ?? { message: "Joining stopped before this Mac joined." };
       return join;
     });
     this.#join = run;
     return run;
+  }
+
+  /** The person said no to replacing a node after the hub took the code: the code is spent, and nothing changed. */
+  cancel(): void {
+    if (this.#join !== undefined || this.#pending === undefined) return;
+    this.#pending = undefined;
+    this.#ended = CANCELLED;
+  }
+
+  /** Where this Mac's setup stands, for a window opening. */
+  async status(): Promise<MacSetupStatus> {
+    const pending = this.#pending;
+    if (this.#join !== undefined && pending !== undefined) return { kind: "joining", found: pending.found };
+    const joined = await joinedHere(this.#ports);
+    if (joined !== undefined) return { kind: "joined", found: joined };
+    if (pending !== undefined) {
+      if (Date.parse(pending.expiresAt) > this.#ports.now()) return { kind: "traded", found: pending.found };
+      this.#pending = undefined;
+      this.#ended = TOKEN_EXPIRED;
+    }
+    return this.#ended === undefined ? { kind: "fresh" } : { kind: "spent", failure: this.#ended };
   }
 
   health(hubUrl: string | undefined): Promise<MacHealthRead> {

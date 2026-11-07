@@ -3566,6 +3566,22 @@ export type MacCodeCreateOutput = {
   truncated?: boolean;
 };
 
+/** Where a Mac setup code stands. */
+export type KnownMacCodeState = "open" | "expired" | "used" | "revoked" | "closed";
+/** KnownMacCodeState, or a value from a newer hub. */
+export type MacCodeState = KnownMacCodeState | (string & {});
+
+export type MacCodeStatusInput = {
+  code: string;
+};
+
+export type MacCodeStatusOutput = {
+  next?: string;
+  /** Absent: the hub has no such code (pruned a day after it ended). */
+  state?: MacCodeState;
+  truncated?: boolean;
+};
+
 /**
  * The agents' Mac's setup, as its node checked it last (each heartbeat reads the quick checks again; the slow ones,
  * such as Xcode's, every few minutes and on a Test).
@@ -9018,6 +9034,7 @@ export interface ToolMap {
   invite_revoke: { input: InviteRevokeInput; output: InviteRevokeOutput };
   lead_start: { input: LeadStartInput; output: LeadStartOutput };
   mac_code_create: { input: MacCodeCreateInput; output: MacCodeCreateOutput };
+  mac_code_status: { input: MacCodeStatusInput; output: MacCodeStatusOutput };
   machine_add: { input: MachineAddInput; output: MachineAddOutput };
   machine_add_plan: { input: MachineAddPlanInput; output: MachineAddPlanOutput };
   machine_add_status: { input: MachineAddStatusInput; output: MachineAddStatusOutput };

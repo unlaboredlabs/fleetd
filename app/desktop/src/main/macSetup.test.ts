@@ -2,13 +2,13 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MacJoin } from "../shared/macSetup";
 import { cliFailure, findHubs, hubOrigin, joinMac, MacSetup, PANE_URLS, readHealth, redeemMac, tailnetPeers, type MacSetupPorts } from "./macSetup";
 
 const BUILD = new TextEncoder().encode("#!/bin/sh\necho fleetd\n");
 const SUM = createHash("sha256").update(BUILD).digest("hex");
-const ANSWER = { hubUrl: "http://devbox.example.ts.net:4790", hubName: "devbox", machineId: "mac", token: "fle_token", expiresAt: "x", version: "0.9.0", existing: false };
+const ANSWER = { hubUrl: "http://devbox.example.ts.net:4790", hubName: "devbox", machineId: "mac", token: "fle_token", expiresAt: "2099-01-01T00:00:00.000Z", version: "0.9.0", existing: false };
 const TAILSCALE = JSON.stringify({
   Peer: {
     a: { DNSName: "devbox.example.ts.net.", Online: true },
@@ -110,15 +110,21 @@ describe("trading the code", () => {
     expect(away.outcome).toMatchObject({ ok: false, failure: { field: "hub", hub: "http://nowhere:4790" } });
   });
 
-  it("tries every hub it finds, and says the code is open on none of them", async () => {
+  it("sends the code to one hub only: found several, it lists them for the person to pick, sending none", async () => {
     const wrong = () => json(401, { code: "pair_code_invalid", message: "that code isn't open on this hub", fix: "Get a new code." });
-    const { p, traded } = ports({ known: ["http://lan-hub:4790"], hubs: { "http://lan-hub:4790": wrong, "http://devbox.example.ts.net:4790": wrong } });
-    const { outcome } = await redeemMac(p, { code: "123456" });
-    expect(traded).toEqual(["http://lan-hub:4790", "http://devbox.example.ts.net:4790"]);
-    expect(outcome).toMatchObject({ ok: false, failure: { field: "code" } });
-    expect(JSON.stringify(outcome)).toContain("any hub this Mac found");
-    const one = await redeemMac(ports({ hubs: { "http://devbox.example.ts.net:4790": wrong } }).p, { code: "123456" });
-    expect(one.outcome).toEqual({ ok: false, failure: { message: "That code isn't open on this hub.", fix: "Get a new code.", field: "code" } });
+    const hubs = { "http://lan-hub:4790": () => json(200, ANSWER), "http://devbox.example.ts.net:4790": () => json(200, ANSWER) };
+    const { p, traded } = ports({ known: ["http://lan-hub:4790"], hubs });
+    const several = await redeemMac(p, { code: "123456" });
+    expect(several.outcome).toMatchObject({ ok: false, failure: { field: "hub", choices: ["http://lan-hub:4790", "http://devbox.example.ts.net:4790"] } });
+    expect(several.pending).toBeUndefined();
+    expect(traded).toEqual([]);
+    // The one picked gets it, and no other.
+    expect((await redeemMac(p, { code: "123456", hub: "http://devbox.example.ts.net:4790" })).outcome.ok).toBe(true);
+    expect(traded).toEqual(["http://devbox.example.ts.net:4790"]);
+    // One hub found is the hub: a wrong code there says so, and goes nowhere else.
+    const one = ports({ hubs: { "http://devbox.example.ts.net:4790": wrong } });
+    expect((await redeemMac(one.p, { code: "123456" })).outcome).toEqual({ ok: false, failure: { message: "That code isn't open on this hub.", fix: "Get a new code.", field: "code" } });
+    expect(one.traded).toEqual(["http://devbox.example.ts.net:4790"]);
   });
 
   it("passes on what a hub that refuses the code says to do", async () => {
@@ -138,7 +144,7 @@ describe("trading the code", () => {
 });
 
 describe("joining as the agents' Mac", () => {
-  const pending = (over: object = {}) => ({ found: { hubUrl: ANSWER.hubUrl, hubName: "devbox", machineId: "mac", existing: false, here: { kind: "none" as const }, ...over }, token: "fle_token", version: "0.9.0" });
+  const pending = (over: object = {}) => ({ found: { hubUrl: ANSWER.hubUrl, hubName: "devbox", machineId: "mac", existing: false, here: { kind: "none" as const }, ...over }, token: "fle_token", version: "0.9.0", expiresAt: ANSWER.expiresAt });
 
   it("installs the hub's build and runs the CLI's join with --mac, and --rejoin when it replaces a node", async () => {
     const { p, dir, ran } = ports();
@@ -180,6 +186,49 @@ describe("joining as the agents' Mac", () => {
     expect(setup.join()).toBe(first);
     expect(await first).toMatchObject({ state: "failed", retry: true });
     expect((await setup.join()).state).toBe("failed");
+  });
+});
+
+describe("opening the window again", () => {
+  it("says a join is running, a traded code not joined yet, and what a cancel spent", async () => {
+    const { p } = ports();
+    let finish: ((join: { code: number; output: string }) => void) | undefined;
+    const held = new MacSetup({ ...p, run: () => new Promise((done) => (finish = done)) }, () => undefined);
+    expect(await held.status()).toEqual({ kind: "fresh" });
+    expect((await held.redeem({ code: "123456" })).ok).toBe(true);
+    expect(await held.status()).toMatchObject({ kind: "traded", found: { machineId: "mac", hubName: "devbox" } });
+    const run = held.join();
+    expect(await held.status()).toMatchObject({ kind: "joining", found: { machineId: "mac" } });
+    // Held at the CLI's join, once the build is in place.
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    finish?.({ code: 1, output: "fleetd: no GUI login. Fix: log in at the Mac's screen" });
+    await run;
+    expect(await held.status()).toMatchObject({ kind: "spent", failure: { message: "No GUI login." } });
+
+    const declined = new MacSetup(p, () => undefined);
+    await declined.redeem({ code: "123456" });
+    declined.cancel();
+    const spent = await declined.status();
+    expect(spent).toMatchObject({ kind: "spent", failure: { message: "Cancelled: nothing changed on this Mac." } });
+    expect(JSON.stringify(spent)).toContain("The code you typed is spent");
+  });
+
+  it("says a traded code is spent once its token expired with nothing joined", async () => {
+    const { p } = ports({ hubs: { "http://devbox.example.ts.net:4790": () => json(200, { ...ANSWER, expiresAt: "2020-01-01T00:00:00.000Z" }) } });
+    const setup = new MacSetup(p, () => undefined);
+    await setup.redeem({ code: "123456" });
+    expect(await setup.status()).toMatchObject({ kind: "spent", failure: { message: expect.any(String) as string } });
+  });
+
+  it("opens on the checks of a node joined as the agents' Mac, whatever the app remembers", async () => {
+    const { p } = ports({ node: { enrolled: true, agentsMac: true, machineId: "mac", hub: "http://devbox.example.ts.net:4790" } });
+    expect(await new MacSetup(p, () => undefined).status()).toEqual({
+      kind: "joined",
+      found: { hubUrl: "http://devbox.example.ts.net:4790", hubName: "devbox", machineId: "mac", existing: true, here: { kind: "node", machineId: "mac", hub: "http://devbox.example.ts.net:4790" } },
+    });
+    // A node that isn't the agents' Mac is no joined Mac.
+    const worker = ports({ node: { enrolled: true, machineId: "laptop", hub: "http://devbox.example.ts.net:4790" } });
+    expect(await new MacSetup(worker.p, () => undefined).status()).toEqual({ kind: "fresh" });
   });
 });
 

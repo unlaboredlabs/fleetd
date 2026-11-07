@@ -27,8 +27,6 @@ struct Server {
     tools: Arc<Registry>,
     mcp: Arc<mcp::McpEndpoint>,
     pair_limiter: Arc<pair::Limiter>,
-    /// Every address's wrong agents' Mac setup codes together (hub/pair/mac.rs).
-    mac_limiter: Arc<pair::Limiter>,
 }
 
 pub fn router(hub: Arc<Hub>, tools: Arc<Registry>) -> Router {
@@ -49,7 +47,6 @@ pub fn router(hub: Arc<Hub>, tools: Arc<Registry>) -> Router {
             tools,
             mcp,
             pair_limiter: Arc::default(),
-            mac_limiter: Arc::default(),
         })
 }
 
@@ -98,14 +95,7 @@ async fn trade_code(server: Server, request: Request, mac: bool) -> Response {
         return (StatusCode::PAYLOAD_TOO_LARGE, "pairing request too large").into_response();
     };
     let (status, json) = match mac {
-        true => pair::mac::handle(
-            &server.hub,
-            &server.pair_limiter,
-            &server.mac_limiter,
-            remote,
-            host,
-            &body,
-        ),
+        true => pair::mac::handle(&server.hub, &server.pair_limiter, remote, host, &body),
         false => pair::handle(&server.hub, &server.pair_limiter, remote, host, &body),
     };
     (status, axum::Json(json)).into_response()

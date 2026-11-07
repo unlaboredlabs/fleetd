@@ -7,7 +7,7 @@ import type { MacCodeCreateOutput } from "../../../shared/contracts";
 import { useData, useDataLayer } from "../../src/data/react";
 import { Button, StateGlyph, Text } from "../../ui";
 import { errorText, useHubCall } from "../settings/hub";
-import { macCodeState, macCodeWords, spacedCode } from "./model";
+import { macCodeOver, macCodeState, macCodeWords, spacedCode } from "./model";
 import s from "./addMachine.module.css";
 
 /** A clock for the code's expiry: no ticking on screen. */
@@ -28,12 +28,16 @@ export function MacCode(props: { onLine: () => void; onDone: () => void }) {
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const now = useNow();
+  // What the hub says of the code, read again on the clock's tick while it may still change: used, closed after ten
+  // wrong codes, or revoked.
+  const [hubState, setHubState] = useState<string>();
   const machineId = made?.out.machineId;
   const online = useData((d) => (machineId === undefined ? false : (d.machines[machineId]?.status ?? "offline") !== "offline"));
   const linked = useData((d) => (machineId === undefined ? undefined : d.live.machines[machineId]?.linkedSince));
 
   const mint = () => {
     setBusy(true);
+    setHubState(undefined);
     setError(undefined);
     call("mac_code_create", appUrl === undefined ? {} : { hubUrl: appUrl })
       .then(
@@ -54,7 +58,22 @@ export function MacCode(props: { onLine: () => void; onDone: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const state = made === undefined ? undefined : macCodeState({ expiresAt: made.out.expiresAt, onlineAtMint: made.online, linkedAtMint: made.linked }, { online, linked }, now);
+  const code = made?.out.code;
+  const state = made === undefined ? undefined : macCodeState({ expiresAt: made.out.expiresAt, onlineAtMint: made.online, linkedAtMint: made.linked }, { online, linked }, now, hubState);
+  const watching = code !== undefined && (state === "waiting" || state === "used");
+  useEffect(() => {
+    if (!watching) return;
+    let live = true;
+    call("mac_code_status", { code }).then(
+      (out) => live && setHubState(out.state ?? undefined),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+    // Each tick of the clock, while the code may still change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watching, code, now]);
   return (
     <>
       <div className={s.head}>
@@ -76,7 +95,7 @@ export function MacCode(props: { onLine: () => void; onDone: () => void }) {
       ) : (
         <div className={s.macCode} aria-label="Setup code" data-state={state}>
           <span className={s.macDigits} aria-live="polite">
-            {state === "expired" ? "––– –––" : spacedCode(made.out.code)}
+            {state !== undefined && macCodeOver(state) ? "––– –––" : spacedCode(made.out.code)}
           </span>
           <Text size="xs" tone="quiet">
             {made.out.hubUrl === undefined
@@ -87,8 +106,8 @@ export function MacCode(props: { onLine: () => void; onDone: () => void }) {
       )}
       {state === undefined ? null : (
         <div className={s.wait} data-line={state}>
-          <StateGlyph state={state === "joined" ? "done" : state === "expired" ? "failed" : "queued"} size="sm" />
-          <Text size="sm" tone={state === "expired" ? "danger" : "default"}>
+          <StateGlyph state={state === "joined" ? "done" : macCodeOver(state) ? "failed" : state === "used" ? "working" : "queued"} size="sm" />
+          <Text size="sm" tone={macCodeOver(state) ? "danger" : "default"}>
             {macCodeWords(state, made?.out.machineId ?? "the Mac", made?.out.expiresAt ?? "")}
           </Text>
         </div>
@@ -100,7 +119,7 @@ export function MacCode(props: { onLine: () => void; onDone: () => void }) {
             {"Open the Mac's checks"}
           </Button>
         ) : null}
-        {state === "expired" || (made === undefined && error !== undefined) ? (
+        {(state !== undefined && macCodeOver(state)) || (made === undefined && error !== undefined) ? (
           <Button variant="primary" disabled={busy} onClick={mint}>
             {busy ? "Making…" : "New code"}
           </Button>

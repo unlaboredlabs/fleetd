@@ -9300,6 +9300,63 @@
       ],
       "type": "object"
     },
+    "MacCodeState": {
+      "description": "Where a Mac setup code stands.",
+      "oneOf": [
+        {
+          "enum": [
+            "open",
+            "expired"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "used",
+          "description": "The Mac traded it.",
+          "type": "string"
+        },
+        {
+          "const": "revoked",
+          "description": "A newer code took its place, or `fleetd pair --worker-revoke` took it back.",
+          "type": "string"
+        },
+        {
+          "const": "closed",
+          "description": "Ten wrong codes were tried while it was open.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "MacCodeStatusInput": {
+      "properties": {
+        "code": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "type": "object"
+    },
+    "MacCodeStatusOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/MacCodeState",
+          "description": "Absent: the hub has no such code (pruned a day after it ended)."
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "MacTool": {
       "description": "The agents' Mac's tool, as the hub routes agents' `mac` calls to it.",
       "properties": {
@@ -11166,6 +11223,12 @@
         "mac_code_create.output": {
           "$ref": "#/$defs/MacCodeCreateOutput"
         },
+        "mac_code_status.input": {
+          "$ref": "#/$defs/MacCodeStatusInput"
+        },
+        "mac_code_status.output": {
+          "$ref": "#/$defs/MacCodeStatusOutput"
+        },
         "machine_add.input": {
           "$ref": "#/$defs/MachineAddInput"
         },
@@ -12068,6 +12131,8 @@
         "lead_start.output",
         "mac_code_create.input",
         "mac_code_create.output",
+        "mac_code_status.input",
+        "mac_code_status.output",
         "machine_add.input",
         "machine_add.output",
         "machine_add_plan.input",

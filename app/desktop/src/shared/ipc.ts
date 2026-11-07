@@ -386,6 +386,8 @@ export const REQUESTS = {
   [IPC.macSetupHealth]: z.tuple([z.string().max(2048).nullable()]),
   [IPC.macSetupPane]: z.tuple([z.enum(["accessibility", "screen_recording"])]),
   [IPC.macSetupRestart]: none,
+  [IPC.macSetupStatus]: none,
+  [IPC.macSetupCancel]: none,
   [IPC.projectsPickFolder]: none,
   [IPC.projectsReadDrop]: z.tuple([DropPath]),
   [IPC.copy]: z.tuple([z.string().max(1_000_000)]),

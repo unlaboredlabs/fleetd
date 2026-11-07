@@ -74,6 +74,10 @@ export const IPC = {
   macSetupPane: "mac-setup:pane",
   /** invoke() → MacRestartOutcome. `fleetd node restart`. */
   macSetupRestart: "mac-setup:restart",
+  /** invoke() → MacSetupStatus. Where this Mac's setup stands, for a window opening on it. */
+  macSetupStatus: "mac-setup:status",
+  /** invoke() → void. The person declined to replace a node after the hub took the code: it is spent, nothing joins. */
+  macSetupCancel: "mac-setup:cancel",
   /** invoke() → string | null. A native folder picker; null when cancelled. */
   projectsPickFolder: "projects:pick-folder",
   /** invoke(path) → DropInfo. What a folder or file dropped on the window holds for Add project. */

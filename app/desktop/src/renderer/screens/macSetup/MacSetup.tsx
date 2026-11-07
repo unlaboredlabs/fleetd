@@ -23,6 +23,11 @@ export function MacSetup() {
   const [state, dispatch] = useReducer(reduce, initial);
   const now = useNow(1000);
 
+  // Opened again: on where the setup stands, as main knows it (a join running, a node joined, a code spent).
+  useEffect(() => {
+    void window.fleetd.macSetup.status().then((status) => dispatch({ type: "resume", status, at: Date.now() }));
+  }, []);
+
   // The code is traded once it is submitted; main finds the hub unless the person typed one.
   const submitting = state.step === "code" && state.busy;
   useEffect(() => {
@@ -47,15 +52,25 @@ export function MacSetup() {
     void window.fleetd.macSetup.join().then((join) => dispatch({ type: "join", join, at: Date.now() }));
   }, [joining]);
 
-  // The node's checks, read every second while the check step is open.
+  // The node's checks, read every second while the check step is open. A read still out (a hub slow to answer
+  // its /healthz) skips the tick, so reads never overlap or land out of order.
   const hubUrl = state.step === "check" ? state.found.hubUrl : undefined;
   useEffect(() => {
     if (hubUrl === undefined) return;
     let live = true;
-    const read = () =>
-      void window.fleetd.macSetup.health(hubUrl).then((r) => {
-        if (live) dispatch({ type: "health", read: r });
-      });
+    let reading = false;
+    const read = () => {
+      if (reading) return;
+      reading = true;
+      void window.fleetd.macSetup
+        .health(hubUrl)
+        .then((r) => {
+          if (live) dispatch({ type: "health", read: r });
+        })
+        .finally(() => {
+          reading = false;
+        });
+    };
     read();
     const timer = window.setInterval(read, READ_EVERY_MS);
     return () => {
@@ -130,18 +145,34 @@ function Body({ state, now, dispatch }: { state: State; now: number; dispatch: D
       return <CodeStep state={state} dispatch={dispatch} />;
     case "confirm": {
       const { found, replaces } = state;
-      const line =
-        found.here.kind === "node"
+      const replacing =
+        replaces === undefined
+          ? ""
+          : found.here.kind === "node"
+            ? ` This Mac's fleetd is ${found.here.machineId}${found.here.hub === "" ? "" : ` of ${found.here.hub}`} now: joining replaces that node.`
+            : ` ${found.machineId} is ${found.hubName}'s agents' Mac already: joining replaces it in place, keeping its name and history.`;
+      const line = state.resumed === true
+        ? `${found.hubName} took your code, but this Mac hasn't joined yet. Join now as ${found.machineId}, or cancel: the code is spent either way.${replacing}`
+        : found.here.kind === "node"
           ? `This Mac's fleetd is ${found.here.machineId}${found.here.hub === "" ? "" : ` of ${found.here.hub}`} now. Setting it up as the agents' Mac replaces that node: it joins ${found.hubName} as ${found.machineId}.`
           : `${found.machineId} is ${found.hubName}'s agents' Mac already. Setting it up again replaces it in place, keeping its name and history.`;
+      // The hub took the code: cancelling spends it, and the window says so (main's status).
+      const cancel = () =>
+        void window.fleetd.macSetup
+          .cancel()
+          .then(() => window.fleetd.macSetup.status())
+          .then((status) => {
+            dispatch({ type: "startOver" });
+            dispatch({ type: "resume", status, at: Date.now() });
+          });
       return (
         <>
-          <Head title={`Replace ${replaces}?`} line={line} />
+          <Head title={state.resumed === true ? `Finish joining ${found.hubName}?` : `Replace ${replaces ?? found.machineId}?`} line={line} />
           <div className={s.actions}>
             <Button variant="primary" size="md" autoFocus onClick={() => dispatch({ type: "confirm" })}>
-              Replace and continue
+              {state.resumed === true ? "Join now" : "Replace and continue"}
             </Button>
-            <Button variant="ghost" size="md" onClick={() => dispatch({ type: "startOver" })}>
+            <Button variant="ghost" size="md" onClick={cancel}>
               Cancel
             </Button>
           </div>
@@ -179,6 +210,18 @@ function CodeStep({ state, dispatch }: { state: Extract<State, { step: "code" }>
       }}
     >
       <Head face="mark" title="Set up this Mac for agents" line="Every project's agents use it for builds and iOS simulators. It's a tool: it runs no claude and holds none of your keys." />
+      {state.notice === undefined ? null : (
+        <div className={s.notice} role="status">
+          <Text size="sm" strong>
+            {state.notice.message}
+          </Text>
+          {state.notice.fix === undefined ? null : (
+            <Text size="sm" tone="quiet">
+              {state.notice.fix}
+            </Text>
+          )}
+        </div>
+      )}
       <div className={s.codeBlock}>
         <label className={s.codeLabel} htmlFor="mac-code">
           <Text size="sm" tone="quiet">
@@ -205,6 +248,17 @@ function CodeStep({ state, dispatch }: { state: Extract<State, { step: "code" }>
         </Field>
       ) : null}
       {state.failure === undefined ? null : <Failure failure={state.failure} />}
+      {state.choices === undefined ? null : (
+        <ul className={s.choices} aria-label="Hubs this Mac found">
+          {state.choices.map((hub) => (
+            <li key={hub}>
+              <Button variant="secondary" size="md" disabled={state.busy} onClick={() => dispatch({ type: "pick", hub })}>
+                {hub.replace(/^https?:\/\//u, "")}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className={s.actions}>
         <Button type="submit" variant="primary" size="md" disabled={state.busy || state.code.length !== 6}>
           {state.busy ? (state.askHub && state.hub.trim() !== "" ? "Asking the hub…" : "Finding your hub…") : "Continue"}
@@ -298,7 +352,16 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
   if (view.kind === "starting") {
     return (
       <>
-        <Head title="Starting the node" line={view.late ? "The node hasn't reported its checks yet. Restart it; if that doesn't help, log out of this Mac and back in." : "It checks this Mac as it starts: a few seconds."} />
+        <Head
+          title={state.resumed === true ? "Checking this Mac" : "Starting the node"}
+          line={
+            view.late
+              ? "The node hasn't reported its checks yet. Restart it; if that doesn't help, log out of this Mac and back in."
+              : state.resumed === true
+                ? `This Mac is ${state.found.machineId}, ${state.found.hubName}'s agents' Mac, already. Its node is running its checks.`
+                : "It checks this Mac as it starts: a few seconds."
+          }
+        />
         <div className={s.waiting}>
           <StateGlyph state="working" size="sm" />
           <Text size="sm" tone="quiet">
