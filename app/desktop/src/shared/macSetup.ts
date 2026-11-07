@@ -1,0 +1,58 @@
+// "Set up this Mac for agents" (D309): the fleetd app on a Mac makes that Mac the hub's agents' Mac, from a 6-digit
+// code Add machine › A Mac for agents shows on the person's main machine. Main finds the hub, trades the code at
+// POST /pair/mac for a one-time enroll token (which never reaches the page), installs the hub's own fleetd and runs
+// the CLI's join; the page then watches the node's checks (mac-health.json) until every one is green.
+import type { MacHealth } from "./contracts";
+import type { JoinStep, ThisComputer } from "./joinHere";
+
+/** A failure in words: what went wrong, what to do, and which field it is about. */
+export interface MacSetupFailure {
+  readonly message: string;
+  readonly fix?: string;
+  /** The field the person changes: the code, or the hub's address. */
+  readonly field?: "code" | "hub";
+  /** The address it was about, to show in the hub field. */
+  readonly hub?: string;
+}
+
+/** What the page sends to trade a code: `hub` only when the person typed an address. */
+export interface MacRedeemRequest {
+  readonly code: string;
+  readonly hub?: string | undefined;
+}
+
+/** The hub took the code: where it is, which machine this Mac joins as, and what this Mac holds now. */
+export interface MacFound {
+  readonly hubUrl: string;
+  readonly hubName: string;
+  readonly machineId: string;
+  /** The hub has this machine already: joining replaces it in place (`--rejoin`). */
+  readonly existing: boolean;
+  /** This Mac's fleetd dir: a node already enrolled here is replaced. */
+  readonly here: ThisComputer;
+}
+
+export type MacRedeemOutcome = { readonly ok: true; readonly found: MacFound } | { readonly ok: false; readonly failure: MacSetupFailure };
+
+export interface MacJoin {
+  readonly state: "running" | "done" | "failed";
+  readonly steps: ReadonlyArray<JoinStep>;
+  readonly failure?: MacSetupFailure;
+  /** Failed before the token was spent: the same code tries again. */
+  readonly retry?: boolean;
+}
+
+/** The node's checks as it last wrote them, and whether the hub answers this Mac. */
+export interface MacHealthRead {
+  readonly health: MacHealth | null;
+  /** When the node last wrote them (ms since the epoch); null when there is no file. */
+  readonly writtenAt: number | null;
+  readonly now: number;
+  /** The hub answered its /healthz from this Mac just now. */
+  readonly hubAnswers: boolean;
+}
+
+/** The System Settings panes setup opens. */
+export type MacPane = "accessibility" | "screen_recording";
+
+export type MacRestartOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: MacSetupFailure };

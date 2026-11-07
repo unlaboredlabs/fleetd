@@ -27,10 +27,15 @@ const item = (opener: Opener, id: MenuCommand, label: string): MenuItemConstruct
 });
 
 /**
- * The full app menu. Edit uses Chromium's own roles, so Undo/Cut/Copy/Paste/Select All act on whichever text field
+ * The full app menu; on a Mac, its app menu also opens Set up this Mac for agents. Edit uses Chromium's own roles, so Undo/Cut/Copy/Paste/Select All act on whichever text field
  * has focus, and macOS adds its dictation and emoji items to it.
  */
-export const installMenu = (opener: Opener, help: { readonly revealLogs: () => void; readonly copyDiagnostics: () => void }): void => {
+export const installMenu = (
+  opener: Opener,
+  help: { readonly revealLogs: () => void; readonly copyDiagnostics: () => void },
+  /** On a Mac: opens Set up this Mac for agents (main/macSetup.ts). */
+  macSetup?: () => void,
+): void => {
   const mac = process.platform === "darwin";
   app.setAboutPanelOptions(aboutVersions(app.getVersion(), mac));
   const separator = { type: "separator" } as const;
@@ -46,6 +51,7 @@ export const installMenu = (opener: Opener, help: { readonly revealLogs: () => v
               updates,
               separator,
               item(opener, "settings.open", "Settings…"),
+              ...(macSetup === undefined ? [] : [{ label: "Set Up This Mac for Agents…", click: macSetup }]),
               separator,
               { role: "services" },
               separator,

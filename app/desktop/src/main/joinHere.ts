@@ -176,6 +176,71 @@ export const expectedSum = (sums: string, asset: string): string | undefined => 
 
 const lastLines = (text: string, n = 15): string => text.trim().split("\n").slice(-n).join("\n");
 
+export type Installed = { readonly ok: true; readonly bin: string } | { readonly ok: false; readonly message: string };
+
+/**
+ * Steps 2–4 of a join: the hub's own `version` built for this computer (`asset`), downloaded with SHA256SUMS, checked
+ * against them, and put in place as <fleetd dir>/bin/fleetd by renaming. `step.next` starts each of the three steps
+ * and `step.done` ends it; a failure ends the step it is in, with what to do. Never rejects.
+ */
+export async function installBuild(
+  ports: Pick<JoinPorts, "download" | "fleetdDir" | "baseOverride">,
+  version: string,
+  asset: string,
+  step: { readonly next: () => void; readonly done: (output?: string) => void },
+): Promise<Installed> {
+  const fail = (message: string): Installed => ({ ok: false, message });
+  const { next, done } = step;
+  next();
+  const { base, edge } = releaseFor(version, ports.baseOverride);
+  let sums: string;
+  let build: Uint8Array;
+  try {
+    if (edge) {
+      // The edge release moves on; a node must run the hub's own build.
+      const now = parseCli(JSON.parse(new TextDecoder().decode(await ports.download(`${base}/release.json`))));
+      if (now !== version) {
+        return fail(
+          `The hub runs ${version}, and the edge release is now ${now ?? "another build"}. Update the hub first (Updates in the app, or fleetd update on the hub), then add this computer: both then run the same build.`,
+        );
+      }
+    }
+    try {
+      sums = new TextDecoder().decode(await ports.download(`${base}/SHA256SUMS`));
+    } catch (error) {
+      // A hub built from source runs a version no release was made for.
+      if (!edge && base.startsWith(RELEASES) && String(error).includes("answered 404")) {
+        return fail(`There is no release for v${version}, the version the hub runs (a build from source?), so there is no build to match it. Run a released fleetd on the hub, then try again.`);
+      }
+      throw error;
+    }
+    build = await ports.download(`${base}/${asset}`);
+  } catch (error) {
+    return fail(`Couldn't download fleetd: ${error instanceof Error ? error.message : String(error)}. Check this computer's connection, then try again.`);
+  }
+  done();
+
+  next();
+  const expected = expectedSum(sums, asset);
+  const actual = createHash("sha256").update(build).digest("hex");
+  if (expected === undefined) return fail(`The release lists no ${asset}, so there is nothing to check it against; nothing was installed.`);
+  if (expected !== actual) return fail(`${asset} doesn't match SHA256SUMS (expected ${expected}, got ${actual}); nothing was installed.`);
+  done();
+
+  next();
+  const binDir = path.join(ports.fleetdDir, "bin");
+  const bin = path.join(binDir, "fleetd");
+  try {
+    await fs.mkdir(binDir, { recursive: true });
+    await fs.writeFile(`${bin}.new`, build, { mode: 0o755 });
+    await fs.rename(`${bin}.new`, bin);
+  } catch (error) {
+    return fail(`Couldn't put fleetd in ${binDir}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  done(bin);
+  return { ok: true, bin };
+}
+
 /** Joins this computer to the hub as `machineId`, reporting every change; resolves with how it ended. Never rejects. */
 export async function joinHere(ports: JoinPorts, machineId: string, report: (state: JoinHere) => void): Promise<JoinHere> {
   const asset = assetFor(ports.platform, ports.arch);
@@ -225,53 +290,9 @@ export async function joinHere(ports: JoinPorts, machineId: string, report: (sta
   if (version === undefined) return fail("The hub didn't say which fleetd it runs, so there is no build to match it. Try again once it answers.");
   done();
 
-  next();
-  const { base, edge } = releaseFor(version, ports.baseOverride);
-  let sums: string;
-  let build: Uint8Array;
-  try {
-    if (edge) {
-      // The edge release moves on; a node must run the hub's own build.
-      const now = parseCli(JSON.parse(new TextDecoder().decode(await ports.download(`${base}/release.json`))));
-      if (now !== version) {
-        return fail(
-          `The hub runs ${version}, and the edge release is now ${now ?? "another build"}. Update the hub first (Updates in the app, or fleetd update on the hub), then add this computer: both then run the same build.`,
-        );
-      }
-    }
-    try {
-      sums = new TextDecoder().decode(await ports.download(`${base}/SHA256SUMS`));
-    } catch (error) {
-      // A hub built from source runs a version no release was made for.
-      if (!edge && base.startsWith(RELEASES) && String(error).includes("answered 404")) {
-        return fail(`There is no release for v${version}, the version the hub runs (a build from source?), so there is no build to match it. Run a released fleetd on the hub, then try again.`);
-      }
-      throw error;
-    }
-    build = await ports.download(`${base}/${asset}`);
-  } catch (error) {
-    return fail(`Couldn't download fleetd: ${error instanceof Error ? error.message : String(error)}. Check this computer's connection, then try again.`);
-  }
-  done();
-
-  next();
-  const expected = expectedSum(sums, asset);
-  const actual = createHash("sha256").update(build).digest("hex");
-  if (expected === undefined) return fail(`The release lists no ${asset}, so there is nothing to check it against; nothing was installed.`);
-  if (expected !== actual) return fail(`${asset} doesn't match SHA256SUMS (expected ${expected}, got ${actual}); nothing was installed.`);
-  done();
-
-  next();
-  const binDir = path.join(ports.fleetdDir, "bin");
-  const bin = path.join(binDir, "fleetd");
-  try {
-    await fs.mkdir(binDir, { recursive: true });
-    await fs.writeFile(`${bin}.new`, build, { mode: 0o755 });
-    await fs.rename(`${bin}.new`, bin);
-  } catch (error) {
-    return fail(`Couldn't put fleetd in ${binDir}: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  done(bin);
+  const installed = await installBuild(ports, version, asset, { next, done });
+  if (!installed.ok) return fail(installed.message);
+  const bin = installed.bin;
 
   next();
   const args = ["init", "--join", hub, "--code", code, "--machine-id", machineId, ...(identity ? ["--git-identity", identity] : [])];

@@ -184,3 +184,29 @@ export const lineWords = (state: LineState, machineId: string): string =>
       : state === "expired"
         ? "The code expired before the line ran. Make a new one."
         : `Waiting for ${machineId}…`;
+
+/** A Mac setup code as shown: `123 456`. */
+export const spacedCode = (code: string): string => (code.length === 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : code);
+
+export type MacCodeState = "waiting" | "expired" | "joined";
+
+/**
+ * Where A Mac for agents' code stands: joined once the Mac's node is online after being offline when the code was
+ * made, or, for a Mac online then (set up again), once its node links up anew; else expired once its 10 minutes are
+ * up, else waiting.
+ */
+export const macCodeState = (
+  code: { readonly expiresAt: string; readonly onlineAtMint: boolean; readonly linkedAtMint: string | undefined },
+  mac: { readonly online: boolean; readonly linked: string | undefined },
+  now: number,
+): MacCodeState => {
+  if (mac.online && (!code.onlineAtMint || (mac.linked !== undefined && mac.linked !== code.linkedAtMint))) return "joined";
+  return now >= Date.parse(code.expiresAt) ? "expired" : "waiting";
+};
+
+export const macCodeWords = (state: MacCodeState, machineId: string, expiresAt: string): string =>
+  state === "joined"
+    ? `${machineId} joined. The Mac's window finishes the setup: two permissions, then a Test.`
+    : state === "expired"
+      ? "This code expired before the Mac used it. Make a new one."
+      : `Waiting for the Mac… ${untilLine(expiresAt)}`;

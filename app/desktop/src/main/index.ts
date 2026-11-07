@@ -262,8 +262,37 @@ void app.whenReady().then(() => {
     void win.loadURL(`${pageUrl()}${hash}`);
     return win;
   });
-  registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog, updates: updater, presence, sessionWindows }, pairing);
-  installMenu(opener, help);
+  // Set up this Mac for agents: a small window of its own on the page's `#/mac-setup`, never the full interface.
+  let macWindow: BrowserWindow | undefined;
+  const macSetupWindow = {
+    show: () => {
+      if (macWindow !== undefined && !macWindow.isDestroyed()) {
+        if (macWindow.isMinimized()) macWindow.restore();
+        macWindow.focus();
+        return;
+      }
+      const win = new BrowserWindow({
+        width: 560,
+        height: 680,
+        minWidth: 480,
+        minHeight: 560,
+        show: false,
+        title: "Set up this Mac for agents",
+        backgroundColor: nativeTheme.shouldUseDarkColors ? "#111214" : "#ffffff",
+        titleBarStyle: "hiddenInset" as const,
+        trafficLightPosition: { x: 16, y: (TOP_BAR - TRAFFIC_LIGHT) / 2 },
+        webPreferences: pagePreferences(mode),
+      });
+      win.once("ready-to-show", () => win.show());
+      win.once("closed", () => {
+        if (macWindow === win) macWindow = undefined;
+      });
+      void win.loadURL(`${pageUrl()}#/mac-setup`);
+      macWindow = win;
+    },
+  };
+  registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog, updates: updater, presence, sessionWindows, macSetupWindow }, pairing);
+  installMenu(opener, help, process.platform === "darwin" ? macSetupWindow.show : undefined);
   claimOnFirstRun();
   // The hubs' live feeds only fill what windows show: paused while every window is hidden or minimized (or, on macOS,
   // closed with the app still running), and asked for again, in full, once one is about to show.

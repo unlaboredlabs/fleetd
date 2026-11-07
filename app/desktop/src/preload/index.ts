@@ -4,6 +4,7 @@ import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubEntry, HubId } from "../shared/hubs";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
+import type { MacHealthRead, MacJoin, MacRedeemOutcome, MacRestartOutcome } from "../shared/macSetup";
 import type { KeyStore, PairOutcome, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
 import type { FleetdApi } from "./api";
@@ -39,6 +40,11 @@ ipcRenderer.on(IPC.updatesChanged, (_event: IpcRendererEvent, state: UpdatesStat
 const joinListeners = new Set<{ readonly hub: HubId; readonly listener: (state: JoinHere) => void }>();
 ipcRenderer.on(IPC.machinesJoinHereChanged, (_event: IpcRendererEvent, hub: HubId, state: JoinHere) => {
   for (const l of joinListeners) if (l.hub === hub) l.listener(state);
+});
+
+const macJoinListeners = new Set<(join: MacJoin) => void>();
+ipcRenderer.on(IPC.macSetupJoinChanged, (_event: IpcRendererEvent, join: MacJoin) => {
+  for (const listener of macJoinListeners) listener(join);
 });
 
 const arg = (name: string): string | null => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
@@ -133,6 +139,18 @@ const api: FleetdApi = {
   },
   system: {
     hostName: () => ipcRenderer.invoke(IPC.systemHostName) as Promise<string>,
+  },
+  macSetup: {
+    open: () => ipcRenderer.invoke(IPC.macSetupOpen) as Promise<void>,
+    redeem: (request) => ipcRenderer.invoke(IPC.macSetupRedeem, request) as Promise<MacRedeemOutcome>,
+    join: () => ipcRenderer.invoke(IPC.macSetupJoin) as Promise<MacJoin>,
+    onJoin: (listener) => {
+      macJoinListeners.add(listener);
+      return () => macJoinListeners.delete(listener);
+    },
+    health: (hub) => ipcRenderer.invoke(IPC.macSetupHealth, hub) as Promise<MacHealthRead>,
+    openPane: (pane) => ipcRenderer.invoke(IPC.macSetupPane, pane) as Promise<void>,
+    restart: () => ipcRenderer.invoke(IPC.macSetupRestart) as Promise<MacRestartOutcome>,
   },
   machines: {
     joinHere: (hub, machineId) => ipcRenderer.invoke(IPC.machinesJoinHere, hub, machineId) as Promise<JoinHere>,

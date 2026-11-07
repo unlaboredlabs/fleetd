@@ -7,7 +7,8 @@
 //     shows `ssh-copy-id <host>` to run on the hub's machine, and Try again.
 //   - Any other machine: name it, and paste the one line machine_join makes (fleetd pair --worker's) in its terminal.
 //     "Waiting for <name>…" turns into "Joined" once its node is online; a code that expires first says so.
-//   - A Mac for agents (D298): the same line with --mac, between the hub's own guide for it (setup step "mac"): the
+//   - A Mac for agents (D298, D309): a 6-digit code the fleetd app on the Mac takes (MacCode.tsx), which sets it up
+//     with no terminal; Use Terminal instead shows the same line with --mac, between the hub's own guide for it (setup step "mac"): the
 //     admin block the person pastes in their own account first, and the two permission clicks at the Mac after. A
 //     machine of that name already moves into the agents' user (--rejoin). Its checks are on #/setup/mac.
 // Repair from the machine list opens the plan of a machine the hub reaches, or a line that enrolls it again.
@@ -44,10 +45,11 @@ import {
   type Here,
 } from "./model";
 import { GuideParts, RunOn } from "../setup/Guide";
+import { MacCode } from "./MacCode";
 import { toHash } from "../shell/routes";
 import s from "./addMachine.module.css";
 
-const MAC_LINE = "A Mac every project's agents use for builds and iOS simulators: a tool, never a runner.";
+const MAC_LINE = "A Mac every project's agents use for builds and iOS simulators, set up from the fleetd app on it with a 6-digit code: never a runner.";
 
 const MAC_HEAD =
   "Its fleetd runs in the account logged in at the Mac's screen, yours included: it runs no claude and no Navi, and takes no secret. Paste both parts in Terminal there.";
@@ -58,6 +60,8 @@ export type View =
   | { readonly kind: "plan"; readonly host: MachineHost }
   | { readonly kind: "run"; readonly runId: string }
   | { readonly kind: "here" }
+  /** A Mac for agents: its 6-digit code (MacCode.tsx). */
+  | { readonly kind: "mac" }
   /** Any other machine; with a machine id, a repair's line for it (`rejoin`); `mac`: the agents' Mac. */
   | { readonly kind: "line"; readonly machineId?: string; readonly rejoin?: boolean; readonly mac?: boolean };
 
@@ -194,7 +198,7 @@ export function AddMachine({ open }: { open?: { readonly view: View; readonly at
           onHere={addHere}
           onHosts={() => setView({ kind: "hosts" })}
           onLine={() => setView({ kind: "line" })}
-          onMac={() => setView({ kind: "line", mac: true })}
+          onMac={() => setView({ kind: "mac" })}
         />
       ) : shown.kind === "hosts" ? (
         <Hosts read={hosts} hubMachine={hubMachine} onPick={(host) => setView({ kind: "plan", host })} onBack={() => setView({ kind: "choose" })} />
@@ -208,6 +212,8 @@ export function AddMachine({ open }: { open?: { readonly view: View; readonly at
           onRetry={(r) => add(r.host === undefined ? { local: true } : { host: r.host })}
           onDone={done}
         />
+      ) : shown.kind === "mac" ? (
+        <MacCode onLine={() => setView({ kind: "line", mac: true })} onDone={done} />
       ) : shown.kind === "line" ? (
         <Line
           key={`${shown.machineId ?? ""}-${String(shown.mac === true)}-${String(open?.at ?? 0)}`}

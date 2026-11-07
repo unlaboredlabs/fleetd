@@ -60,6 +60,20 @@ export const IPC = {
   machinesJoinHereState: "machines:join-here-state",
   /** main → renderer: JoinHere, on every change. */
   machinesJoinHereChanged: "machines:join-here-changed",
+  /** invoke() → void. Opens Set up this Mac for agents, a window of its own (src/main/macSetup.ts); on macOS only. */
+  macSetupOpen: "mac-setup:open",
+  /** invoke(MacRedeemRequest) → MacRedeemOutcome. Finds the hub and trades the 6-digit code; its token stays in main. */
+  macSetupRedeem: "mac-setup:redeem",
+  /** invoke() → MacJoin. Installs the hub's fleetd and joins as the agents' Mac; each change comes as `macSetupJoinChanged`. */
+  macSetupJoin: "mac-setup:join",
+  /** main → renderer: MacJoin, on every change. */
+  macSetupJoinChanged: "mac-setup:join-changed",
+  /** invoke(hub address | null) → MacHealthRead. The node's checks as it last wrote them, and whether the hub answers. */
+  macSetupHealth: "mac-setup:health",
+  /** invoke(MacPane) → void. Opens that pane of System Settings › Privacy & Security. */
+  macSetupPane: "mac-setup:pane",
+  /** invoke() → MacRestartOutcome. `fleetd node restart`. */
+  macSetupRestart: "mac-setup:restart",
   /** invoke() → string | null. A native folder picker; null when cancelled. */
   projectsPickFolder: "projects:pick-folder",
   /** invoke(path) → DropInfo. What a folder or file dropped on the window holds for Add project. */
@@ -152,5 +166,6 @@ type PushChannel =
   | typeof IPC.menuCommand
   | typeof IPC.appOpen
   | typeof IPC.updatesChanged
-  | typeof IPC.machinesJoinHereChanged;
+  | typeof IPC.machinesJoinHereChanged
+  | typeof IPC.macSetupJoinChanged;
 export type InvokeChannel = Exclude<(typeof IPC)[keyof typeof IPC], PushChannel>;

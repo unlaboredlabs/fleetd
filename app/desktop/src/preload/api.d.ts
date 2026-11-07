@@ -5,6 +5,7 @@ import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, Secr
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
 import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, TelegramRequest, CloudKeyRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
+import type { MacHealthRead, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome } from "../shared/macSetup";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
 
@@ -165,6 +166,21 @@ export interface FleetdApi {
     joinHereState(hub: HubId): Promise<JoinHere | null>;
     /** Every change of `hub`'s join. Returns the unsubscribe. */
     onJoinHere(hub: HubId, listener: (state: JoinHere) => void): () => void;
+  };
+  /** Set up this Mac for agents (src/main/macSetup.ts): macOS only. */
+  readonly macSetup: {
+    /** Opens its window, or brings it forward. */
+    open(): Promise<void>;
+    /** Finds the hub (or uses `hub`) and trades the code. Never rejects. */
+    redeem(request: MacRedeemRequest): Promise<MacRedeemOutcome>;
+    /** Installs the hub's fleetd and joins with the traded code; resolves with how it ended. Never rejects. */
+    join(): Promise<MacJoin>;
+    /** Every change of the join. Returns the unsubscribe. */
+    onJoin(listener: (join: MacJoin) => void): () => void;
+    /** The node's checks as it last wrote them; with `hub`, whether it answers. */
+    health(hub: string | null): Promise<MacHealthRead>;
+    openPane(pane: MacPane): Promise<void>;
+    restart(): Promise<MacRestartOutcome>;
   };
   readonly projects: {
     /** A native folder picker; null when cancelled. */
