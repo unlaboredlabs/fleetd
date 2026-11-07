@@ -2,6 +2,7 @@
 // its native traffic lights (a page screenshot leaves them out).
 
 import { execFileSync } from "node:child_process";
+import { createSocket } from "node:dgram";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -185,16 +186,22 @@ test("the panel's toggle closes the panel it sits over", async () => {
 
 // An HTML artifact (W367) runs its own scripts and nothing else: in the real app, a page framed as the Artifacts tab
 // frames it (main's fleetd-artifact:// address, sandbox allow-scripts) tries every way out it has: fetch, XHR, an
-// image, a stylesheet, a WebSocket, a beacon, a popup, its own navigation, the app's page, the bridge and storage.
-// A server on this machine counts what reaches it: nothing may. The real chart artifact draws itself meanwhile.
+// image, a stylesheet, a WebSocket, a beacon, a popup, WebRTC (STUN over UDP, TURN over TCP, from its own window and
+// from a blank frame it makes), its own navigation, the app's page, the bridge and storage. A server on this machine
+// counts what reaches it, over TCP and UDP: nothing may. The real chart artifact draws itself meanwhile.
 test("an HTML artifact runs its scripts with no network and no reach into the app", async () => {
   const hits: string[] = [];
   const server = createServer((req, res) => {
     hits.push(req.url ?? "");
     res.end("ok");
   });
+  server.on("connection", () => hits.push("tcp"));
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   const port = (server.address() as AddressInfo).port;
+  const udp = createSocket("udp4");
+  udp.on("message", () => hits.push("udp"));
+  await new Promise<void>((done) => udp.bind(0, "127.0.0.1", done));
+  const udpPort = udp.address().port;
   const { page, settled, close } = await launch("artifacts-published");
   try {
     await settled();
@@ -212,6 +219,20 @@ test("an HTML artifact runs its scripts with no network and no reach into the ap
         await attempt("image", () => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok("reached"); i.onerror = no; i.src = "${out}/img"; }));
         await attempt("socket", () => new Promise((ok, no) => { const w = new WebSocket("ws://127.0.0.1:${String(port)}/ws"); w.onopen = () => ok("reached"); w.onerror = no; }));
         await attempt("beacon", () => navigator.sendBeacon("${out}/beacon", "x") ? "queued" : "refused");
+        const ice = { iceServers: [{ urls: "stun:127.0.0.1:${String(udpPort)}" }, { urls: "turn:127.0.0.1:${String(port)}?transport=tcp", username: "u", credential: "p" }] };
+        const rtc = async (Peer) => {
+          const pc = new Peer(ice);
+          pc.createDataChannel("out");
+          await pc.setLocalDescription(await pc.createOffer());
+          await new Promise((r) => setTimeout(r, 1500));
+          return "made";
+        };
+        await attempt("rtc", () => rtc(RTCPeerConnection));
+        await attempt("rtcFrame", () => {
+          const f = document.createElement("iframe");
+          document.body.appendChild(f);
+          return rtc(frames[frames.length - 1].RTCPeerConnection);
+        });
         await attempt("popup", () => window.open("${out}/popup") === null ? "refused" : "opened");
         await attempt("parent", () => window.parent.document.title);
         await attempt("bridge", () => typeof window.fleetd + "/" + typeof window.parent.fleetd);
@@ -225,8 +246,8 @@ test("an HTML artifact runs its scripts with no network and no reach into the ap
     </script>`;
     const tried = await page.evaluate(async (html) => {
       // The app's own bridge, as its page uses it (the QA specs don't see the renderer's types).
-      const bridge = (window as unknown as { fleetd: { artifactFrame: (page: string) => Promise<string> } }).fleetd;
-      const url = await bridge.artifactFrame(html);
+      const bridge = (window as unknown as { fleetd: { artifactFrame: (page: string) => Promise<{ url: string }> } }).fleetd;
+      const { url } = await bridge.artifactFrame(html);
       const got = new Promise<Record<string, string>>((done) => window.addEventListener("message", (e: MessageEvent<{ probe?: Record<string, string> }>) => e.data.probe && done(e.data.probe)));
       const frame = document.createElement("iframe");
       frame.setAttribute("sandbox", "allow-scripts");
@@ -241,6 +262,8 @@ test("an HTML artifact runs its scripts with no network and no reach into the ap
       image: "refused",
       socket: "refused",
       beacon: "refused",
+      rtc: "refused",
+      rtcFrame: "refused",
       popup: "refused",
       parent: "refused",
       bridge: "refused",
@@ -253,5 +276,34 @@ test("an HTML artifact runs its scripts with no network and no reach into the ap
   } finally {
     await close();
     server.close();
+    udp.close();
+  }
+});
+
+// A link in an HTML artifact opens in the browser, as a Markdown link does, and the report stays on screen; a link
+// its script posts without a click opens nothing.
+test("a link clicked in an HTML artifact opens in the browser and the report stays", async () => {
+  const { app, page, settled, close } = await launch("artifacts-published");
+  try {
+    await app.evaluate(({ shell }) => {
+      const opened: string[] = [];
+      (globalThis as { opened?: string[] }).opened = opened;
+      shell.openExternal = (url: string) => (opened.push(url), Promise.resolve());
+    });
+    await settled();
+    await show(page, "shell", "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22/artifacts/build-times");
+    const chart = page.frameLocator('iframe[sandbox="allow-scripts"]');
+    await expect(chart.locator("rect.bar")).toHaveCount(6);
+    // Unprompted, a script's message or click opens nothing, and its page never holds the key.
+    expect(await chart.locator("body").evaluate(() => document.documentElement.outerHTML.includes("key:"))).toBe(false);
+    await chart.locator("body").evaluate(() => parent.postMessage({ fleetdArtifactLink: "https://example.com/unasked" }, "*"));
+    await chart.locator("#source").evaluate((a: HTMLElement) => a.click());
+    await chart.locator("#source").click();
+    await page.waitForTimeout(500);
+    expect(await app.evaluate(() => (globalThis as { opened?: string[] }).opened)).toEqual(["https://github.com/acme/storefront/actions/workflows/release.yml"]);
+    // The frame never left its page.
+    await expect(chart.locator("rect.bar")).toHaveCount(6);
+  } finally {
+    await close();
   }
 });

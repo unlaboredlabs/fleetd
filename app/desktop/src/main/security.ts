@@ -55,6 +55,14 @@ export const harden = (): void => {
       if (!isOwnPage(url)) event.preventDefault();
     });
     contents.on("will-attach-webview", (event) => event.preventDefault());
+    // An artifact's frame stays on its page: a link or a script sends it nowhere (a link's click goes to the app's
+    // page instead, artifactFrames.ts), so the report stays on screen.
+    contents.on("will-frame-navigate", (event) => {
+      if (!event.isMainFrame && !event.url.startsWith(`${ARTIFACT_SCHEME}://`)) event.preventDefault();
+    });
+    // WebRTC traffic leaves only through the page session's proxy, which goes nowhere (lockSession): an artifact's STUN
+    // or TURN, which no CSP or request filter sees, reaches nothing. The app's own page makes none.
+    contents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
   });
 };
 
@@ -84,4 +92,8 @@ export const lockSession = (rendererDir: string): void => {
     const allowed = isOwnPage(url) || isDevSocket(url) || url.startsWith("devtools://") || url.startsWith("data:") || url.startsWith(`${ARTIFACT_SCHEME}://`);
     callback({ cancel: !allowed });
   });
+  // WebRTC's own sockets never pass that filter. With the IP policy set on every page (harden), WebRTC sends UDP only
+  // through a proxy and TCP (TURN) only through the session's: this one goes nowhere, loopback included, so an
+  // artifact's STUN or TURN reaches nothing. The dev server's socket, on loopback, still connects in a dev build.
+  void ses.setProxy({ proxyRules: "socks5://0.0.0.0:9", proxyBypassRules: devUrl() === null ? "<-loopback>" : "" });
 };

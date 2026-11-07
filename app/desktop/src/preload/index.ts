@@ -62,7 +62,7 @@ const api: FleetdApi = {
   version: arg("fleetd-version") ?? "unknown",
   platform: process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : "other",
   copy: (text) => ipcRenderer.invoke(IPC.copy, text) as Promise<void>,
-  artifactFrame: (html) => ipcRenderer.invoke(IPC.artifactFrame, html) as Promise<string>,
+  artifactFrame: (html) => ipcRenderer.invoke(IPC.artifactFrame, html) as Promise<{ url: string; key: string }>,
   secret: {
     submit: (hub, request) => ipcRenderer.invoke(IPC.secretSubmit, hub, request) as Promise<SecretOutcome>,
     projectEnv: (hub, request) => ipcRenderer.invoke(IPC.projectEnvSubmit, hub, request) as Promise<CallOutcome>,
