@@ -457,6 +457,7 @@ pub async fn follow(hub: Arc<Hub>, link_id: String, hello: bool) {
         if hub.shutdown.is_triggered() {
             return;
         }
+        let began = tokio::time::Instant::now();
         let pause = match follow_once(&hub, &link_id, FEED_WAIT_MAX_SEC).await {
             Ok(Followed::Stop) => return,
             Ok(Followed::Read(_)) => {
@@ -466,7 +467,7 @@ pub async fn follow(hub: Arc<Hub>, link_id: String, hello: bool) {
             Err(e) => {
                 tracing::debug!(link = %link_id, error = %e.message, "hub link feed");
                 let jitter: f64 = rand::Rng::gen_range(&mut rand::thread_rng(), 0.8..1.2);
-                attempt += 1;
+                attempt = failed_reads(attempt, began.elapsed());
                 Some(retry_delay(attempt - 1, jitter))
             }
         };
@@ -483,6 +484,12 @@ pub async fn follow(hub: Arc<Hub>, link_id: String, hello: bool) {
 pub fn retry_delay(attempt: u32, jitter: f64) -> Duration {
     let ms = 30_000f64.min(1_000.0 * 2f64.powi(attempt.min(16) as i32)) * jitter;
     Duration::from_millis(ms.round() as u64)
+}
+
+/// The failed reads in a row once one more, which took `took`, failed: one that failed only after waiting there found
+/// the other hub up (the connection died mid-wait), so the count starts again and the next try comes within a second.
+pub fn failed_reads(before: u32, took: Duration) -> u32 {
+    if took >= FEED_MARGIN { 1 } else { before + 1 }
 }
 
 /// Starts a follower for every kept link that still works.
