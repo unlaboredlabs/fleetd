@@ -228,6 +228,95 @@ fn enrollment_tokens_expire_after_15_minutes() {
 }
 
 #[test]
+fn spent_enrollment_tokens_are_kept_a_day_then_pruned_and_open_ones_stay() {
+    let (auth, db, clock) = setup();
+    let rows = || -> i64 {
+        db.with(|c| Ok(c.query_row("SELECT COUNT(*) FROM enroll_tokens", [], |r| r.get(0))?))
+            .unwrap()
+    };
+    let used = auth.create_enroll_token(&m("lab-a")).unwrap();
+    auth.create_enroll_token(&m("lab-b")).unwrap();
+    auth.consume_enroll_token(&used.token, &m("lab-a"), "pub")
+        .unwrap();
+    // Within the day, a node trying the used code again still hears it was used.
+    clock.advance(Duration::from_secs(23 * 3600));
+    assert_eq!(auth.prune_enroll_tokens().unwrap(), 0);
+    assert_eq!(
+        unauthorized(auth.consume_enroll_token(&used.token, &m("lab-a"), "pub")).message,
+        "enrollment token was already used"
+    );
+    // A day after the unused one expired (15 min in), both go; a code made a minute before stays.
+    clock.advance(Duration::from_secs(3600 + 15 * 60));
+    let open = auth.create_enroll_token(&m("lab-c")).unwrap();
+    clock.advance(Duration::from_secs(61));
+    assert_eq!(auth.prune_enroll_tokens().unwrap(), 2);
+    assert_eq!(rows(), 1);
+    auth.consume_enroll_token(&open.token, &m("lab-c"), "pub")
+        .unwrap();
+}
+
+#[test]
+fn open_enrollment_tokens_list_by_id_without_the_code_and_revoke_by_it() {
+    let (auth, _, clock) = setup();
+    let used = auth.create_enroll_token(&m("lab-a")).unwrap();
+    auth.consume_enroll_token(&used.token, &m("lab-a"), "pub")
+        .unwrap();
+    auth.create_enroll_token(&m("lab-gone")).unwrap();
+    clock.advance(Duration::from_secs(16 * 60));
+    let open = auth.create_enroll_token(&m("lab-b")).unwrap();
+    auth.create_pool_enroll_token(&m("cloud-1")).unwrap();
+    let mut codes = auth.open_enroll_tokens().unwrap();
+    codes.sort_by(|a, b| a.machine_id.as_str().cmp(b.machine_id.as_str()));
+    assert_eq!(
+        codes
+            .iter()
+            .map(|c| (
+                c.machine_id.as_str(),
+                c.created_at.as_str(),
+                c.expires_at.as_str(),
+                c.pool
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (
+                "cloud-1",
+                "1970-01-01T00:16:00.000Z",
+                "1970-01-01T00:31:00.000Z",
+                true
+            ),
+            (
+                "lab-b",
+                "1970-01-01T00:16:00.000Z",
+                "1970-01-01T00:31:00.000Z",
+                false
+            ),
+        ]
+    );
+    let b = codes
+        .iter()
+        .find(|c| c.machine_id.as_str() == "lab-b")
+        .unwrap();
+    assert_eq!(b.id, sha256(&open.token)[..ENROLL_CODE_ID_LEN]);
+    assert!(!open.token.contains(&b.id));
+
+    assert_eq!(auth.revoke_enroll_token(&b.id).unwrap(), Some(m("lab-b")));
+    assert_eq!(auth.revoke_enroll_token(&b.id).unwrap(), None);
+    assert_eq!(
+        unauthorized(auth.consume_enroll_token(&open.token, &m("lab-b"), "pub")).message,
+        "unknown enrollment token"
+    );
+    // A used code, or a prefix shorter than an id, revokes nothing.
+    assert_eq!(
+        auth.revoke_enroll_token(&sha256(&used.token)[..ENROLL_CODE_ID_LEN])
+            .unwrap(),
+        None
+    );
+    let cloud = auth.open_enroll_tokens().unwrap();
+    assert_eq!(cloud.len(), 1);
+    assert_eq!(auth.revoke_enroll_token(&cloud[0].id[..4]).unwrap(), None);
+}
+
+#[test]
 fn enrollment_tokens_only_enroll_their_machine_and_survive_a_wrong_machine_attempt() {
     let (auth, _, _) = setup();
     let EnrollToken { token, .. } = auth.create_enroll_token(&m("lab-a")).unwrap();

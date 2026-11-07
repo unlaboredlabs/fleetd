@@ -153,6 +153,10 @@ to repair the hub machine's node.
 
 The code works once, for 15 minutes. The new machine must reach the hub's address.
 
+To see the codes that still work, run `fleetd pair --worker-codes`. It lists each code's id, machine, when it was
+made and when it expires, but never the code itself. To take one back before it is used, run
+`fleetd pair --worker-revoke <id>`. The hub drops used and expired codes a day later.
+
 To repair the worker later, run the same command again. `--rejoin` enrolls it again with a new code.
 
 ## Log in Claude on a worker {#claude}

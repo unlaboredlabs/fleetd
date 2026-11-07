@@ -9,7 +9,7 @@ pub mod tools;
 
 use crate::clock::Clock;
 use crate::hub::api::{Hub, role_name};
-use crate::hub::auth::CreatedKey;
+use crate::hub::auth::{CreatedKey, SPENT_CODE_KEPT_MS};
 use crate::hub::store::{HubDb, NewEvent, StoreError, iso_ms, now_ms};
 use axum::http::StatusCode;
 use fleetd_contracts::auth::{Grant, GrantMachines, KeyKind, Role, Star};
@@ -236,6 +236,19 @@ impl PairCodes {
         })
     }
 
+    /// Drops codes and invites used, revoked or expired more than [`SPENT_CODE_KEPT_MS`] ago: nothing reads them
+    /// after that (only open invites are listed). How many went.
+    pub fn prune(&self) -> Result<usize, StoreError> {
+        let cutoff = now_ms(self.clock.as_ref()) - SPENT_CODE_KEPT_MS;
+        self.db.with(|conn| {
+            Ok(conn
+                .prepare_cached(
+                    "DELETE FROM pair_codes WHERE coalesce(used_ms, revoked_ms, expires_ms) < ?",
+                )?
+                .execute([cutoff])?)
+        })
+    }
+
     /// Burns the code; returns what it was minted with.
     pub fn redeem(&self, code: &str) -> Result<Redeemed, RedeemError> {
         let Some(canon) = normalize(code) else {
@@ -407,6 +420,23 @@ fn hub_url(hub: &Hub, host_header: Option<&str>) -> String {
         (None, Some(host)) if unspecified => format!("http://{host}"),
         _ => hub.config.url(),
     }
+}
+
+/// On every sweep, drops spent device pairing codes and invites ([`PairCodes::prune`]) and spent worker enroll codes
+/// ([`crate::hub::auth::Auth::prune_enroll_tokens`]), so neither table keeps every code ever minted.
+pub fn prune_on_sweep(hub: &Arc<Hub>) {
+    let hub2 = hub.clone();
+    hub.sweep.register(crate::hub::sweep::SweepCheck {
+        name: "spent-codes".into(),
+        run: Arc::new(move || {
+            let hub = hub2.clone();
+            Box::pin(async move {
+                let codes = PairCodes::new(hub.db.clone(), hub.clock.clone()).prune();
+                let enroll = hub.auth.prune_enroll_tokens();
+                codes.and(enroll).map(|_| ()).map_err(|e| e.to_string())
+            })
+        }),
+    });
 }
 
 /// `POST /pair`: the status and JSON body to answer with.

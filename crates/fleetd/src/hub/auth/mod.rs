@@ -26,6 +26,11 @@ const KEY_PREFIX: &str = "fld_";
 const ENROLL_PREFIX: &str = "fle_";
 const LAST_USED_EVERY_MS: i64 = 60_000;
 const ENROLL_TTL_MS: i64 = 15 * 60_000;
+/// How long a used or expired enroll code's row stays, so a node that tries one again still hears it was used or
+/// expired rather than unknown; past it, the sweep drops the row ([`Auth::prune_enroll_tokens`]).
+pub const SPENT_CODE_KEPT_MS: i64 = 24 * 60 * 60_000;
+/// Hex digits of an enroll code's hash that name it in `fleetd pair --worker-codes` and `--worker-revoke`.
+pub const ENROLL_CODE_ID_LEN: usize = 12;
 /// Where pre-release `fleetd steer`, `chat` and `project stop` kept the hub machine owner's human key ([`Auth::retire_owner_keys`]).
 pub const RETIRED_OWNER_KEY_FILE: &str = "owner.key";
 const BASE32: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
@@ -67,6 +72,20 @@ pub struct CreatedKey {
 pub struct EnrollToken {
     pub token: String,
     pub expires_at: String,
+}
+
+/// An enroll code that can still be used, as `fleetd pair --worker-codes` lists it: never the code itself.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OpenEnrollCode {
+    /// The start of the code's hash ([`ENROLL_CODE_ID_LEN`] hex digits): what `--worker-revoke` takes.
+    pub id: String,
+    pub machine_id: MachineId,
+    /// RFC 3339.
+    pub created_at: String,
+    /// RFC 3339.
+    pub expires_at: String,
+    /// Minted by the hub itself for one of its cloud machine slots.
+    pub pool: bool,
 }
 
 /// RFC 4648 base32, lowercase, unpadded.
@@ -474,6 +493,61 @@ impl Auth {
         Ok(EnrollToken {
             token,
             expires_at: iso_ms(expires),
+        })
+    }
+
+    /// Every enroll code that can still be used, oldest first.
+    pub fn open_enroll_tokens(&self) -> Result<Vec<OpenEnrollCode>, StoreError> {
+        let now = self.now();
+        self.db.with(|conn| {
+            let mut stmt = conn.prepare_cached(
+                "SELECT substr(hash, 1, ?1), machine_id, expires_ms, pool FROM enroll_tokens \
+                 WHERE used_ms IS NULL AND expires_ms > ?2 ORDER BY expires_ms, hash",
+            )?;
+            let codes = stmt
+                .query_map(params![ENROLL_CODE_ID_LEN as i64, now], |row| {
+                    let expires: i64 = row.get(2)?;
+                    Ok(OpenEnrollCode {
+                        id: row.get(0)?,
+                        machine_id: MachineId::unchecked(row.get::<_, String>(1)?),
+                        // Every code lives ENROLL_TTL_MS, so its row needs no time of its own.
+                        created_at: iso_ms(expires - ENROLL_TTL_MS),
+                        expires_at: iso_ms(expires),
+                        pool: row.get(3)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(codes)
+        })
+    }
+
+    /// Takes back the open enroll code `id` names ([`OpenEnrollCode::id`]): a node that tries it is refused from
+    /// now on. The machine it was for; None when no open code has that id.
+    pub fn revoke_enroll_token(&self, id: &str) -> Result<Option<MachineId>, StoreError> {
+        let now = self.now();
+        self.db.with(|conn| {
+            Ok(conn
+                .prepare_cached(
+                    "DELETE FROM enroll_tokens WHERE substr(hash, 1, ?1) = ?2 AND length(?2) = ?1 \
+                     AND used_ms IS NULL AND expires_ms > ?3 RETURNING machine_id",
+                )?
+                .query_row(params![ENROLL_CODE_ID_LEN as i64, id, now], |row| {
+                    row.get::<_, String>(0)
+                })
+                .optional()?
+                .map(MachineId::unchecked))
+        })
+    }
+
+    /// Drops enroll codes used or expired more than [`SPENT_CODE_KEPT_MS`] ago; how many went.
+    pub fn prune_enroll_tokens(&self) -> Result<usize, StoreError> {
+        let cutoff = self.now() - SPENT_CODE_KEPT_MS;
+        self.db.with(|conn| {
+            Ok(conn
+                .prepare_cached(
+                    "DELETE FROM enroll_tokens WHERE coalesce(used_ms, expires_ms) < ?",
+                )?
+                .execute([cutoff])?)
         })
     }
 

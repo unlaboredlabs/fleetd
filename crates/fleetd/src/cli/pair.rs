@@ -21,6 +21,12 @@ pub const PAIR_USAGE: &str = r#"  pair [--name <device>] [--role <read|operate|a
   pair --worker <machine-id>
              print the one command that makes another machine a worker of this hub, with
              a one-time code (15 min): for a machine the hub can't reach over SSH
+  pair --worker-codes
+             list the worker codes that can still be used: each one's id, machine, when it was
+             made and until when it works, never the code itself
+  pair --worker-revoke <id>
+             take back the open worker code with that id (from --worker-codes): a machine
+             that tries it is refused. Used and expired codes are dropped a day later
 "#;
 
 /// A minted pairing code and everything a device needs to redeem it.
@@ -304,6 +310,8 @@ pub fn pair_command(argv: &[String]) -> CliResult {
                 ("no-qr", Kind::Bool),
                 ("role", Kind::Str),
                 ("worker", Kind::Str),
+                ("worker-codes", Kind::Bool),
+                ("worker-revoke", Kind::Str),
             ],
             positionals: false,
         },
@@ -311,6 +319,23 @@ pub fn pair_command(argv: &[String]) -> CliResult {
         Ok(v) => v,
         Err(message) => return usage(&message),
     };
+    if v.has("worker-codes") || v.has("worker-revoke") {
+        if v.keys().count() > 1 {
+            return usage("--worker-codes and --worker-revoke take no other option");
+        }
+        let done = match v.str("worker-revoke") {
+            Some(id) => revoke_worker_code(None, id),
+            None => worker_codes(None),
+        };
+        return match done {
+            Ok(text) => CliResult {
+                code: 0,
+                stdout: text,
+                stderr: String::new(),
+            },
+            Err(message) => CliResult::err(1, format!("fleetd: {message}\n")),
+        };
+    }
     if let Some(machine) = v.str("worker") {
         if v.has("role") || v.flag("no-qr") {
             return usage("--worker joins a machine and takes no --role or --no-qr");
@@ -353,6 +378,61 @@ pub fn worker_command(home: Option<&str>, machine: &str) -> Result<String, Strin
         "On {machine}, run:\n\n  {}\n\nThe code works once, until {}. {machine} needs claude installed and must reach the hub at that address.\n",
         join.line, join.expires_at
     ))
+}
+
+/// `fleetd pair --worker-codes`: the worker codes that can still be used, by id, never the codes themselves.
+pub fn worker_codes(home: Option<&str>) -> Result<String, String> {
+    let home = super::hub_key::resolve_home(home)?;
+    let hub = super::hub_key::open_hub(&home)?;
+    let codes = hub
+        .auth
+        .open_enroll_tokens()
+        .map_err(|error| error.to_string())?;
+    if codes.is_empty() {
+        return Ok("No open worker codes. `fleetd pair --worker <machine-id>` makes one.\n".into());
+    }
+    let mut out = String::new();
+    for code in codes {
+        out += &format!(
+            "{}  {}  made {}  until {}{}\n",
+            code.id,
+            code.machine_id,
+            code.created_at,
+            code.expires_at,
+            if code.pool {
+                "  (the hub's own, for a cloud machine)"
+            } else {
+                ""
+            }
+        );
+    }
+    out += "Take one back with `fleetd pair --worker-revoke <id>`.\n";
+    Ok(out)
+}
+
+/// `fleetd pair --worker-revoke <id>`: takes back the open worker code `id` names.
+pub fn revoke_worker_code(home: Option<&str>, id: &str) -> Result<String, String> {
+    use crate::hub::auth::ENROLL_CODE_ID_LEN;
+    if id.len() != ENROLL_CODE_ID_LEN || !id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return Err(format!(
+            "'{id}' is not a worker code id ({ENROLL_CODE_ID_LEN} hex digits); `fleetd pair --worker-codes` lists them"
+        ));
+    }
+    let home = super::hub_key::resolve_home(home)?;
+    let hub = super::hub_key::open_hub(&home)?;
+    match hub
+        .auth
+        .revoke_enroll_token(id)
+        .map_err(|error| error.to_string())?
+    {
+        Some(machine) => Ok(format!(
+            "Revoked worker code {id} for {machine}: a machine that tries it is refused.\n"
+        )),
+        None => Err(format!(
+            "no open worker code {id}; `fleetd pair --worker-codes` lists them"
+        )),
+    }
 }
 
 /// What a worker needs to join the hub at `home` by itself: its address, a one-time code, the commit identity, and
@@ -569,6 +649,53 @@ mod tests {
         assert!(out.stderr.contains("takes no --role"), "{}", out.stderr);
         assert_eq!(hub_pair::parse_role("operate"), Some(Role::Operate));
         assert_eq!(hub_pair::DEFAULT_ROLE, Role::Admin);
+    }
+
+    /// `--worker-codes` lists open worker codes by id, machine and times, never the code; `--worker-revoke` takes one
+    /// back by that id.
+    #[test]
+    fn worker_codes_list_without_the_code_and_revoke_by_id() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path().to_str().unwrap();
+        assert_eq!(
+            worker_codes(Some(h)).unwrap(),
+            "No open worker codes. `fleetd pair --worker <machine-id>` makes one.\n"
+        );
+        let hub = super::super::hub_key::open_hub(home.path()).unwrap();
+        let laptop = fleetd_contracts::ids::MachineId::new("laptop").unwrap();
+        let minted = hub.auth.create_enroll_token(&laptop).unwrap();
+        let listed = worker_codes(Some(h)).unwrap();
+        let id = listed.split_whitespace().next().unwrap().to_owned();
+        assert_eq!(id.len(), crate::hub::auth::ENROLL_CODE_ID_LEN);
+        assert!(
+            listed.contains(&format!("{id}  laptop  made "))
+                && listed.contains(&format!("until {}", minted.expires_at)),
+            "{listed}"
+        );
+        assert!(!listed.contains(&minted.token[4..]), "{listed}");
+
+        let argv = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let out = pair_command(&argv(&["--worker-codes", "--worker", "laptop"]));
+        assert_eq!(out.code, 2, "{}", out.stderr);
+        assert!(
+            revoke_worker_code(Some(h), "nothex")
+                .unwrap_err()
+                .contains("not a worker code id")
+        );
+        assert_eq!(
+            revoke_worker_code(Some(h), &id).unwrap(),
+            format!("Revoked worker code {id} for laptop: a machine that tries it is refused.\n")
+        );
+        assert!(
+            revoke_worker_code(Some(h), &id)
+                .unwrap_err()
+                .starts_with("no open worker code")
+        );
+        assert!(
+            worker_codes(Some(h))
+                .unwrap()
+                .starts_with("No open worker codes.")
+        );
     }
 
     #[test]
