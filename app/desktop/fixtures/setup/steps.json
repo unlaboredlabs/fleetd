@@ -333,7 +333,7 @@
       "parts": [
         {
           "links": [],
-          "note": "In Terminal on the Mac, in the account it joins from (yours is fine). Xcode itself comes from the App Store, and an iOS simulator runtime with xcodebuild -downloadPlatform iOS. Without Xcode yet, the Mac still joins: only iOS simulators wait, and its Xcode check says what to do.",
+          "note": "In Terminal on the Mac, in the account it joins from (yours is fine). Xcode itself comes from the App Store, and an iOS simulator runtime with xcodebuild -downloadPlatform iOS. Without Xcode yet, the Mac still joins: only iOS simulators wait, and its Xcode check says what to do. CocoaPods (for pod install and expo prebuild) comes from Homebrew: brew install cocoapods; its tools check gives the exact line, Homebrew's own install first where there is none.",
           "title": "Xcode, once",
           "values": [
             {

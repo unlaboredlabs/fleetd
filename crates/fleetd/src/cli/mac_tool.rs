@@ -38,8 +38,8 @@ mac: the agents' Mac, from wherever you run (fleetd's shared Mac for builds and 
   mac sim end                      ends it (30 minutes with no mac command ends it too)
 
 Your folder there is $FLEETD_MAC_DIR, the pushed worktree $FLEETD_MAC_REPO; xcodebuild builds into your own
-$FLEETD_MAC_DERIVED_DATA, and $FLEETD_MAC_CACHE is shared by every agent. None of your secrets go to the Mac unless
-you name them with --env NAME. Every mac run lands in your action log.
+$FLEETD_MAC_DERIVED_DATA, and $FLEETD_MAC_CACHE is shared by every agent; pod (CocoaPods) and the Mac's other
+Homebrew commands are on the PATH there. None of your secrets go to the Mac unless you name them with --env NAME. Every mac run lands in your action log.
 ";
 
 pub fn run(args: &[String]) -> u8 {

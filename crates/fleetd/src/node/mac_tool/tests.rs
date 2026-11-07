@@ -376,7 +376,12 @@ fn a_job_gets_its_folders_and_the_named_variables_and_nothing_else_of_the_nodes(
         None,
     );
     let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
-    assert_eq!(get("PATH"), Some("/w/T1/bin:/usr/bin:/bin"));
+    // Homebrew's commands last (CocoaPods), and UTF-8 for CocoaPods where the node had no LANG.
+    assert_eq!(
+        get("PATH"),
+        Some("/w/T1/bin:/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin")
+    );
+    assert_eq!(get("LANG"), Some("en_US.UTF-8"));
     assert_eq!(get("FLEETD_MAC_DERIVED_DATA"), Some("/w/T1/DerivedData"));
     assert_eq!(get("FLEETD_MAC_CACHE"), Some("/w/.cache"));
     assert_eq!(get("TMPDIR"), Some("/w/T1/tmp"));
@@ -396,12 +401,26 @@ fn a_job_gets_its_folders_and_the_named_variables_and_nothing_else_of_the_nodes(
     let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
     assert_eq!(
         get("PATH"),
-        Some("/n/device/ios/bin:/w/T1/bin:/usr/bin:/bin")
+        Some("/n/device/ios/bin:/w/T1/bin:/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin")
     );
     assert_eq!(
         get("AGENT_DEVICE_HOME"),
         Some("/n/sessions/mac-T1/agent-device")
     );
+    // A node whose PATH has Homebrew already, and a LANG of its own: neither twice, nor changed.
+    let node = [
+        ("PATH", "/opt/homebrew/bin:/usr/bin"),
+        ("LANG", "fr_FR.UTF-8"),
+    ]
+    .map(|(k, v)| (k.to_owned(), v.to_owned()));
+    let env = jobs::job_env(&agent, Path::new("/w/.cache"), &[], node.into_iter(), None);
+    let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
+    assert_eq!(
+        get("PATH"),
+        Some("/w/T1/bin:/opt/homebrew/bin:/usr/bin:/usr/local/bin")
+    );
+    assert_eq!(get("LANG"), Some("fr_FR.UTF-8"));
+    assert_eq!(env.iter().filter(|(k, _)| k == "LANG").count(), 1);
 }
 
 #[test]
