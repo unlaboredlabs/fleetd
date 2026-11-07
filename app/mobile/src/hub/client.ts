@@ -80,7 +80,7 @@ type ServerFrame =
   | ({ t: "snapshot" } & FleetStatus)
   | ({ t: "event" } & HubEvent)
   | { t: "result"; id: string; output: unknown }
-  | { t: "error"; id?: string; code: string; message: string; fix?: string }
+  | { t: "error"; id?: string; code: string; message: string; fix?: string; reason?: string }
   | ({ t: "chat_delta" } & ChatDelta)
   | ({ t: "live" } & LiveFrame)
   | ({ t: "browser_frame" } & BrowserFrame);
@@ -317,7 +317,7 @@ export class HubClient {
         return;
       }
       case "error": {
-        const error: HubError = { code: frame.code, message: frame.message, fix: frame.fix };
+        const error: HubError = { code: frame.code, message: frame.message, fix: frame.fix, ...(frame.reason === undefined ? {} : { reason: frame.reason }) };
         if (frame.id?.startsWith(PROBE_ID) === true) return;
         if (frame.id !== undefined) this.#settle(frame.id, { ok: false, error });
         else if (!this.#ready) this.#refuse(frame.message);

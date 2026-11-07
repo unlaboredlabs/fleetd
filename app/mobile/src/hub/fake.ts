@@ -21,7 +21,7 @@ export interface FakeHub {
   sentOf(t: string): Array<Record<string, unknown>>;
   /** Answers the newest link's last `call` of `tool`. */
   answer(tool: string, output: unknown): void;
-  fail(tool: string, code: string, message: string): void;
+  fail(tool: string, code: string, message: string, more?: { fix?: string; reason?: string }): void;
 }
 
 export const fakeHub = (): FakeHub => {
@@ -71,6 +71,6 @@ export const fakeHub = (): FakeHub => {
     },
     sentOf: (t) => newest().sent.filter((m) => m.t === t),
     answer: (tool, output) => newest().frame({ t: "result", id: lastCall(tool).id, output }),
-    fail: (tool, code, message) => newest().frame({ t: "error", id: lastCall(tool).id, code, message }),
+    fail: (tool, code, message, more = {}) => newest().frame({ t: "error", id: lastCall(tool).id, code, message, ...more }),
   };
 };
