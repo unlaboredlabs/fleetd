@@ -304,6 +304,8 @@ export type AppError = {
   /** Present when this answers a `call`. */
   id?: string;
   message: string;
+  /** Which refusal it is, for an app that acts on one (`no_only_me_project`). */
+  reason?: string;
 };
 
 /**
