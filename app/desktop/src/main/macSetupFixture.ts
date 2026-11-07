@@ -1,7 +1,9 @@
 // Set up this Mac for agents under a fixture (FLEETD_FIXTURE): a Mac that isn't there, so the window's every step
 // runs on any computer, for QA and the docs' captures. The hub is devbox on the tailnet; the code 000000 is wrong,
 // any other is taken; the join takes a moment a step; each grant turns on a little after its pane is opened, and the
-// rest of the checks are green from the start.
+// rest of the checks are green from the start. Two codes play a version difference: 111111, an Edge hub the edge
+// release has moved on past, which this app is signed in to as an admin (Update brings it level a moment later); and
+// 222222, a hub newer than this app, whose answer it can't read.
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -10,6 +12,9 @@ import type { MacPane } from "../shared/macSetup";
 import { PANE_URLS, type MacSetupPorts } from "./macSetup";
 
 const HUB = "http://devbox.example.ts.net:4790";
+/** 111111's hub, and the newer build the edge release holds. */
+const OLD_EDGE = "0.0.0-edge.202611071720+6d5a250";
+const NEW_EDGE = "0.0.0-edge.202611071744+f893086";
 const BUILD = new TextEncoder().encode("#!/bin/sh\nexit 0\n");
 const SUM = createHash("sha256").update(BUILD).digest("hex");
 const STEP_MS = 700;
@@ -33,6 +38,9 @@ const CHECKS = [
 export const fixtureMacPorts = (): MacSetupPorts => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-mac-fixture-"));
   let joinedAt: number | undefined;
+  /** The hub runs an older edge build than the Mac: 111111, until Update. */
+  let behind = false;
+  let hubVersion = "0.9.0";
   const asked = new Map<MacPane, number>();
   const granted = (pane: MacPane) => {
     const at = asked.get(pane);
@@ -54,16 +62,29 @@ export const fixtureMacPorts = (): MacSetupPorts => {
   return {
     fetch: (url, init) => {
       if (!url.startsWith(HUB)) return Promise.reject(new TypeError("fetch failed"));
-      if (url.endsWith("/healthz")) return Promise.resolve(json(200, { ok: true, version: "0.9.0", protocol: 1 }));
+      if (url.endsWith("/healthz")) return Promise.resolve(json(200, { ok: true, version: hubVersion, protocol: 1 }));
       const { code } = JSON.parse(init.body as string) as { code: string };
+      behind = code === "111111";
+      hubVersion = behind ? OLD_EDGE : "0.9.0";
+      const answer = { hubUrl: HUB, hubName: "devbox", machineId: "mac", token: "fle_fixture", expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), version: hubVersion, existing: false };
       return later(
         600,
         code === "000000"
           ? json(401, { code: "pair_code_invalid", message: "that code isn't open on this hub", fix: "On your main machine, open Add machine › A Mac for agents for a new code, then type it here." })
-          : json(200, { hubUrl: HUB, hubName: "devbox", machineId: "mac", token: "fle_fixture", expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), version: "0.9.0", existing: false }),
+          : code === "222222"
+            ? json(200, { setup: 2, hub: { url: HUB } })
+            : json(200, answer),
       );
     },
-    download: (url) => later(STEP_MS, url.endsWith("/SHA256SUMS") ? new TextEncoder().encode(`${SUM}  fleetd-darwin-arm64\n`) : BUILD),
+    download: (url) =>
+      later(
+        STEP_MS,
+        url.endsWith("/SHA256SUMS")
+          ? new TextEncoder().encode(`${SUM}  fleetd-darwin-arm64\n`)
+          : url.endsWith("/release.json")
+            ? new TextEncoder().encode(JSON.stringify({ channel: "edge", cliVersion: NEW_EDGE }))
+            : BUILD,
+      ),
     run: async (_file, args) => {
       if (args[0] === "status") return { code: 0, output: JSON.stringify({ Peer: { a: { DNSName: "devbox.example.ts.net.", Online: true } } }) };
       await later(STEP_MS * 2, null);
@@ -84,6 +105,7 @@ export const fixtureMacPorts = (): MacSetupPorts => {
       const lastGrant = Math.max(...[...asked.values()].map((at) => at + GRANT_MS));
       const checkedAt = both && Date.now() - lastGrant > 1000 ? Date.now() : joinedAt + 1500;
       if (file.endsWith("mac-health.checked")) return Promise.resolve({ text: "", writtenAt: checkedAt });
+      if (file.endsWith(path.join("update", "up"))) return Promise.resolve({ text: behind ? NEW_EDGE : "0.9.0", writtenAt: joinedAt + 1500 });
       return Promise.resolve(file.endsWith("mac-health.json") ? { text: JSON.stringify(health()), writtenAt: Date.now() } : undefined);
     },
     openPane: (url) => {
@@ -92,5 +114,13 @@ export const fixtureMacPorts = (): MacSetupPorts => {
       return Promise.resolve();
     },
     now: () => Date.now(),
+    hubRole: () => Promise.resolve("admin"),
+    // The hub restarts on the newer build a few seconds later.
+    updateHub: () => {
+      setTimeout(() => {
+        hubVersion = NEW_EDGE;
+      }, 4000);
+      return later(400, { ok: true as const });
+    },
   };
 };

@@ -79,6 +79,17 @@ pub fn version_shown(version: &str) -> String {
     }
 }
 
+/// A hub and a node whose link protocols differ can't work together: which side is out of date and how to update it,
+/// as `<why>. Fix: <what>`, never the protocol numbers. The hub's refusal of a hello, the node's of a welcome and
+/// `fleetd init --join`'s check before it enrolls all say this.
+pub fn protocol_behind(hub: i64, node: i64) -> &'static str {
+    if hub < node {
+        "the hub runs an older fleetd than this machine. Fix: update the hub (Updates in the app on your main machine, or fleetd update on the hub)"
+    } else {
+        "this machine runs an older fleetd than the hub. Fix: update this machine (fleetd update on it)"
+    }
+}
+
 /// Orders two versions as semver does: dotted numbers (`0.10.0` after `0.9.3`), a pre-release before its release, and
 /// pre-releases by their dot-separated parts, numbers numerically, so a later nightly is newer. `nightly.<stamp>` and
 /// `edge.<stamp>` are one series, the channel's old name and its new (D203), ordered by stamp. Build metadata
@@ -156,6 +167,30 @@ pub fn at_least(have: &str, want: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_protocol_difference_names_the_side_out_of_date_in_words() {
+        let hub_behind = protocol_behind(1, 2);
+        assert!(
+            hub_behind.starts_with("the hub runs an older fleetd"),
+            "{hub_behind}"
+        );
+        assert!(
+            hub_behind.contains(". Fix: update the hub (Updates in the app"),
+            "{hub_behind}"
+        );
+        let node_behind = protocol_behind(2, 1);
+        assert!(
+            node_behind.starts_with("this machine runs an older fleetd"),
+            "{node_behind}"
+        );
+        for said in [hub_behind, node_behind] {
+            assert!(
+                !said.contains("protocol") && !said.contains("mismatch") && !said.contains('1'),
+                "{said}"
+            );
+        }
+    }
 
     #[test]
     fn versions_order_as_semver_does_within_a_channel() {

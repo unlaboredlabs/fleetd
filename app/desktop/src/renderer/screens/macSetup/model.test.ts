@@ -15,6 +15,7 @@ const read = (checks: MacCheck[], over: Partial<MacHealthRead> = {}): MacHealthR
   checkedAt: 10_000,
   now: 11_000,
   hubAnswers: true,
+  hubBehind: null,
   ...over,
 });
 const checking = (extra: Event[] = []): Extract<State, { step: "check" }> => {

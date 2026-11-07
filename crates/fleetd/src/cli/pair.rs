@@ -501,12 +501,26 @@ pub fn worker_join(
             machine.as_str(),
             git_identity.as_deref(),
         ) + if rejoin { " --rejoin" } else { "" }
-            + if mac { " --mac" } else { "" },
+            + &if mac {
+                mac_flags(crate::version())
+            } else {
+                String::new()
+            },
         hub: urls[0].clone(),
         code: token.token,
         expires_at: token.expires_at,
         git_identity,
     })
+}
+
+/// What makes a join line the agents' Mac's: `--mac`, and the hub's own `version`, which the installer installs (its
+/// release, or the edge release's newest once that moved on), so the Mac runs the hub's build and channel. A local
+/// build's `0.0.0` names no release: the installer's default channel then.
+pub fn mac_flags(version: &str) -> String {
+    if version == "0.0.0" {
+        return " --mac".into();
+    }
+    format!(" --mac --version {}", super::setup::units::q(version))
 }
 
 /// One line that installs fleetd and joins the hub, asking nothing: install.sh takes the join options and runs
@@ -586,6 +600,12 @@ mod tests {
             "curl -fsSL https://fleetd.sh | sh -s -- --join http://hub:4790 --code c --machine-id mac"
         );
         assert!(!line.contains("&&"));
+        // The agents' Mac's line names the hub's version, so the installer installs the hub's build and channel.
+        assert_eq!(
+            super::mac_flags("0.0.0-edge.202611071720+6d5a250"),
+            " --mac --version 0.0.0-edge.202611071720+6d5a250"
+        );
+        assert_eq!(super::mac_flags("0.0.0"), " --mac");
     }
 
     #[test]

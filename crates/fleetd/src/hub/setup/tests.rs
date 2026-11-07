@@ -159,11 +159,11 @@ fn the_macs_step_is_its_own_checks_and_a_failing_one_wants_a_look() {
     assert!(own.title.starts_with("Optional"), "{}", own.title);
     assert_eq!(own.values[0].value, super::MAC_USER_BLOCK);
     assert!(super::MAC_USER_BLOCK.contains("sudo sysadminctl -addUser agents"));
-    assert!(
-        step.parts[1].values[0]
-            .value
-            .ends_with("--machine-id mac --mac")
-    );
+    // The hub's own build and channel: the installer installs that version (cli::pair::mac_flags).
+    assert!(step.parts[1].values[0].value.ends_with(&format!(
+        "--machine-id mac{}",
+        crate::cli::pair::mac_flags(crate::version())
+    )));
 }
 
 #[test]

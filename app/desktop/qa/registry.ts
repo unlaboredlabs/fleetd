@@ -1594,6 +1594,35 @@ export const screens: readonly Screen[] = [
       await page.getByRole("heading", { name: "This Mac is ready" }).waitFor({ timeout: 20_000 });
     },
   },
+  // A version difference, one plain line each: a hub newer than this app (222222), and an Edge hub the edge release
+  // moved on past (111111), which this app is signed in to as an admin, so Update for the hub is right there.
+  {
+    id: "mac-setup",
+    route: "#/mac-setup",
+    fixtures: ["typical"],
+    sizes: ["narrow"],
+    realClock: true,
+    variant: "app-older",
+    open: async (page) => {
+      await page.getByRole("textbox").first().fill("222222");
+      await page.getByText("This app is older than your hub").waitFor({ timeout: 10_000 });
+    },
+  },
+  {
+    id: "mac-setup",
+    route: "#/mac-setup",
+    fixtures: ["typical"],
+    sizes: ["narrow"],
+    realClock: true,
+    variant: "hub-behind",
+    open: async (page) => {
+      await page.getByRole("textbox").first().fill("111111");
+      await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
+      for (const button of await page.getByRole("button", { name: "Open System Settings" }).all()) await button.click();
+      await page.getByRole("heading", { name: "This Mac is ready" }).waitFor({ timeout: 20_000 });
+      await page.getByRole("button", { name: "Update the hub" }).waitFor({ timeout: 10_000 });
+    },
+  },
   { id: "onboarding.key", route: "#/onboarding?key", fixtures: ["pairing-failed", "onboarding-file-store"] },
   {
     id: "onboarding",

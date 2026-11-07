@@ -22,7 +22,7 @@ import { RELEASE_BUILD } from "./build";
 import { fixtureRequest } from "./hub/fixture";
 import { fleetdDir, joinHere, machineFingerprint, realPorts, thisComputer } from "./joinHere";
 import type { JoinHere } from "../shared/joinHere";
-import { MacSetup, realMacPorts } from "./macSetup";
+import { MacSetup, realMacPorts, signedInPorts } from "./macSetup";
 import { fixtureMacPorts } from "./macSetupFixture";
 import { isOwnPage } from "./security";
 import type { SessionWindows } from "./sessionWindow";
@@ -145,6 +145,11 @@ export const registerIpc = (
         realMacPorts(realPorts(() => Promise.resolve(gone)), {
           knownHubs: () => hubs.list().flatMap((h) => hubs.get(h.id)?.url() ?? []),
           openPane: (url) => shell.openExternal(url),
+          // Only a hub this app is signed in to here: an admin's key updates it from the setup window.
+          ...signedInPorts(() => hubs.list().flatMap((h) => {
+            const url = hubs.get(h.id)?.url();
+            return url === null || url === undefined ? [] : [{ url, call: call(h.id) }];
+          })),
         }),
     (join) => {
       for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(IPC.macSetupJoinChanged, join);
@@ -160,6 +165,7 @@ export const registerIpc = (
   handle(IPC.macSetupRestart, () => macSetup.restart());
   handle(IPC.macSetupStatus, () => macSetup.status());
   handle(IPC.macSetupCancel, () => macSetup.cancel());
+  handle(IPC.macSetupUpdateHub, (_event, hub) => macSetup.updateHub(hub));
   handle(IPC.projectsPickFolder, (event) => pickFolder(event.sender));
   handle(IPC.projectsReadDrop, (_event, path) => readDrop(path));
   handle(IPC.copy, (_event, text) => clipboard.writeText(text));

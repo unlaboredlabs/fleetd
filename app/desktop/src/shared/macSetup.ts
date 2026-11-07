@@ -15,6 +15,8 @@ export interface MacSetupFailure {
   readonly hub?: string;
   /** The hubs this Mac found when there was more than one: the person picks theirs, and only it gets the code. */
   readonly choices?: ReadonlyArray<string>;
+  /** This app is older than the hub, and its own update is the fix: the page offers Update. */
+  readonly updateApp?: boolean;
 }
 
 /** What the page sends to trade a code: `hub` only when the person typed an address. */
@@ -54,7 +56,25 @@ export interface MacHealthRead {
   readonly now: number;
   /** The hub answered its /healthz from this Mac just now. */
   readonly hubAnswers: boolean;
+  /** The hub runs an older fleetd than this Mac's node; null when it doesn't, or either can't say. */
+  readonly hubBehind: HubBehind | null;
 }
+
+/**
+ * The hub runs an older fleetd than this Mac's node: the edge release had moved on past the hub's build when this Mac
+ * joined, so it got the newer one. Both work together; the hub's Update brings it level. `who`: this app is signed in
+ * to the hub as an admin, who updates it from here; as a member, who asks an admin; or not at all, told where.
+ */
+export interface HubBehind {
+  readonly hubVersion: string;
+  readonly macVersion: string;
+  readonly who: "admin" | "member" | "unknown";
+}
+
+/** Where an admin updates the hub, for when this app can't do it from the Mac. */
+export const HUB_UPDATE_WHERE = "On your main machine, open Settings › Hub › Machines › Updates and press Update.";
+
+export type MacHubUpdateOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: MacSetupFailure };
 
 /** The System Settings panes setup opens. */
 export type MacPane = "accessibility" | "screen_recording";

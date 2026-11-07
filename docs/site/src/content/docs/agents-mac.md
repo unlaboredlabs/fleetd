@@ -133,6 +133,11 @@ admin's Terminal; its checks say so when it's missing. Close the window partway 
 **fleetd** menu: it opens on where setup stands (still joining, the checks of a Mac joined already, or a code spent
 with nothing joined and what to do next).
 
+Versions never stop it. The Mac gets the hub's own build and channel. On Edge, once a newer build is out, the Mac gets
+that one, and the last screen says your hub is behind: **Update the hub** is right there when this app is signed in to
+the hub as an admin, and otherwise it says where to press Update. An app too old for your hub says so, with **Update
+the app**.
+
 The code works once, for 10 minutes, and a new one replaces the one before. Wrong codes are limited per address (5 a
 minute) and per code: ten wrong ones while it's open close it, and Add machine says so and makes a new one. Nothing
 is locked hub-wide. Neither the code nor its enroll token gives a key to the hub: the app on the Mac stays signed out
@@ -169,11 +174,13 @@ launchd runs the node only inside a login at the screen, and the installer says 
 there's none. Add machine › A Mac for agents makes the line, with a one-time code that works for 15 minutes:
 
 ```sh
-curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox.example.ts.net:4790 --code <code> --machine-id mac --mac
+curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox.example.ts.net:4790 --code <code> --machine-id mac --mac --version <hub version>
 ```
 
 If this Mac runs fleetd already, give the line that machine's name: it [becomes the agents' Mac](#move) with its
-history. `--mac` makes it the agents' Mac. It installs no app and needs no `claude`. The node runs as a LaunchAgent of
+history. `--mac` makes it the agents' Mac. `--version` is the hub's own: the Mac installs the hub's build and channel.
+On Edge, once a newer build is out, the Mac gets the newer one and says so; Update on your main machine brings the hub
+level with it. It installs no app and needs no `claude`. The node runs as a LaunchAgent of
 that account, and installs for itself, each pinned and checked by its digest:
 
 - Node.js 24 (for agent-device), first on the node's `PATH`;
