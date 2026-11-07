@@ -5,7 +5,7 @@ use fleetd_contracts::node_link::{
     CAP_SELF_UPDATE, CAP_SESSION_IOS, CAP_TELEGRAM, MacCheckId, MacCheckState,
 };
 
-use super::checks::{self, Probe, Ran};
+use super::checks::{self, Pods, Probe, Ran};
 use super::tools::ToolsState;
 
 /// A Mac set up as the guide says, unless a test changes it.
@@ -20,6 +20,7 @@ struct Fake {
     console: Option<String>,
     awake: Result<(), String>,
     tools: ToolsState,
+    pods: Pods,
 }
 
 fn ran(code: i32, out: &str) -> Ran {
@@ -60,6 +61,11 @@ impl Default for Fake {
             console: Some("agents".into()),
             awake: Ok(()),
             tools: ToolsState::Ready(super::tools::versions()),
+            pods: Pods {
+                pod: Some(ran(0, "1.16.2\n")),
+                brew: Some("/opt/homebrew/bin/brew".into()),
+                brew_at: "/opt/homebrew/bin/brew".into(),
+            },
         }
     }
 }
@@ -95,6 +101,9 @@ impl Probe for Fake {
     }
     fn tools(&self) -> ToolsState {
         self.tools.clone()
+    }
+    fn pods(&self) -> Pods {
+        self.pods.clone()
     }
 }
 
@@ -351,6 +360,71 @@ fn tools_still_installing_are_unknown_and_a_failed_assertion_fails() {
     };
     assert_eq!(verdict(&fake, MacCheckId::Tools).0, MacCheckState::Unknown);
     assert_eq!(verdict(&fake, MacCheckId::KeepAwake).0, MacCheckState::Fail);
+}
+
+/// CocoaPods comes from Homebrew (the Mac's own Ruby is too old for it): the tools check runs `pod --version`, and
+/// without it warns with the one command that installs it, Homebrew first where there is none. Setup still ends.
+#[test]
+fn the_tools_check_runs_pod_and_says_how_to_install_cocoapods() {
+    let (state, message, _) = verdict(&Fake::default(), MacCheckId::Tools);
+    assert_eq!(state, MacCheckState::Ok);
+    assert!(message.ends_with(" CocoaPods 1.16.2."), "{message}");
+    // Ruby's warnings before the version don't hide it.
+    let mut fake = Fake::default();
+    fake.pods.pod = Some(ran(
+        0,
+        "WARNING: CocoaPods requires your terminal to be using UTF-8 encoding.\n1.16.2\n",
+    ));
+    assert!(
+        verdict(&fake, MacCheckId::Tools)
+            .1
+            .ends_with(" CocoaPods 1.16.2.")
+    );
+
+    // Homebrew there, CocoaPods not.
+    fake.pods.pod = None;
+    let (state, message, fix) = verdict(&fake, MacCheckId::Tools);
+    assert_eq!(state, MacCheckState::Warn);
+    assert!(
+        message.ends_with(
+            "CocoaPods isn't installed, so pod install and expo prebuild --platform ios don't run; everything else works."
+        ),
+        "{message}"
+    );
+    assert_eq!(
+        fix.as_deref(),
+        Some("In your own (admin) account's Terminal: /opt/homebrew/bin/brew install cocoapods")
+    );
+
+    // No Homebrew either: its install line, then CocoaPods with the brew it puts on this Mac's chip.
+    fake.pods = Pods {
+        pod: None,
+        brew: None,
+        brew_at: "/usr/local/bin/brew".into(),
+    };
+    let fix = verdict(&fake, MacCheckId::Tools).2.unwrap();
+    assert!(
+        fix.ends_with(&format!(
+            ": {} && /usr/local/bin/brew install cocoapods",
+            checks::HOMEBREW_INSTALL
+        )),
+        "{fix}"
+    );
+
+    // A pod that doesn't run says its first line, and still only warns.
+    fake.pods.pod = Some(ran(1, "\n/opt/homebrew/bin/pod: bad interpreter\n"));
+    let (state, message, _) = verdict(&fake, MacCheckId::Tools);
+    assert_eq!(state, MacCheckState::Warn);
+    assert!(
+        message.contains("CocoaPods doesn't run (/opt/homebrew/bin/pod: bad interpreter)"),
+        "{message}"
+    );
+
+    // While the pinned tools install, or after they failed, that is what it says.
+    fake.tools = ToolsState::Installing;
+    assert_eq!(verdict(&fake, MacCheckId::Tools).0, MacCheckState::Unknown);
+    fake.tools = ToolsState::Failed("offline".into());
+    assert_eq!(verdict(&fake, MacCheckId::Tools).0, MacCheckState::Fail);
 }
 
 #[test]

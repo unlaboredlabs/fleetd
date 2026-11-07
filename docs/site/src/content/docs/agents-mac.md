@@ -81,7 +81,8 @@ The Mac keeps a folder per agent, `~/work/<task>` in the `agents` user's home:
 
 A job gets `$FLEETD_MAC_DIR`, `$FLEETD_MAC_REPO`, `$FLEETD_MAC_DERIVED_DATA` and `$FLEETD_MAC_CACHE`, a folder every
 agent shares (the `agents` user's own caches, such as Swift packages', are shared too). Homebrew belongs to you, not
-to `agents`: an agent that needs a tool installs it under its own home.
+to `agents`: a job finds its commands (`pod` among them) at the end of its `PATH`, and an agent that needs another
+tool installs it under its own home. A job runs in UTF-8 (`LANG=en_US.UTF-8`) unless the node has a `LANG` of its own.
 
 A folder nothing touched for 3 days goes. Jobs end with the Mac's node: a restart or an update ends them.
 
@@ -191,7 +192,21 @@ that account, and installs for itself, each pinned and checked by its digest:
 - [agent-device](https://github.com/callstack/agent-device), which drives iOS simulators;
 - [agent-desktop](https://github.com/vercel-labs/agent-desktop), which drives the Mac's own apps.
 
-Nothing comes from Homebrew. The node also keeps the Mac from sleeping while idle (an IOKit assertion, as `caffeinate`
+Nothing of these comes from Homebrew. CocoaPods, which `pod install` and `expo prebuild --platform ios` need, does:
+the Mac's own Ruby (2.6) is too old for any current CocoaPods. So in the account the Mac joins from, install it with
+Homebrew, once:
+
+```sh
+# Homebrew, if the Mac has none: its own install line, which asks for your password itself.
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# CocoaPods (on an Intel Mac, brew is /usr/local/bin/brew).
+/opt/homebrew/bin/brew install cocoapods
+```
+
+Without it, setup still ends: [`mac_tools`](#checks) warns with that command, and turns green once `pod --version`
+runs. Jobs get Homebrew's `bin` at the end of their `PATH`, so `pod` is there.
+
+The node also keeps the Mac from sleeping while idle (an IOKit assertion, as `caffeinate`
 takes); a closed laptop lid still sleeps.
 
 #### 3. Two clicks at the Mac {#permissions}
@@ -287,7 +302,7 @@ with no check still in progress (its tools installing), and lists one still in p
 | `mac_ios_runtime` | `xcrun simctl list runtimes` has an available iOS runtime. While Xcode isn't usable it warns that it waits for it. | `xcodebuild -downloadPlatform iOS` |
 | `mac_accessibility`, `mac_screen_recording` | macOS has given fleetd's node each grant (asked of a fresh process, `fleetd node grants`; reading never prompts). One an update took away [says so](#grants-updates). | `fleetd node grants --ask <grant>` at the Mac, then turn on fleetd in the pane it opens; the node restarts itself to take it up. |
 | `mac_gui_session` | The node's account is the one at the Mac's screen (`console`). Behind someone else's session (`background`) it warns: builds and simulators work, the Mac's own apps need that account at the screen. | Switch to that account at the Mac, or use a Mac nobody sits at. |
-| `mac_tools` | The pinned Node.js, agent-device and agent-desktop are installed. | The Mac must reach nodejs.org and registry.npmjs.org. |
+| `mac_tools` | The pinned Node.js, agent-device and agent-desktop are installed, and Homebrew's `pod --version` runs. Without CocoaPods it warns: setup still ends. | The Mac must reach nodejs.org and registry.npmjs.org. For CocoaPods, `brew install cocoapods`, after [Homebrew's install line](#join) if there is no `brew` yet. |
 | `mac_keep_awake` | The node holds its keep-awake assertion. | `sudo pmset -a sleep 0` |
 | `mac_one_node` | No other machine of the hub is enrolled from this Mac (the hub compares the computer each node says it runs on). One that is: an older node there, joined under another name. | `fleetd machine remove <name>` on the hub. Where it ran in another account on the Mac, stop it there too: `launchctl bootout gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node`. |
 

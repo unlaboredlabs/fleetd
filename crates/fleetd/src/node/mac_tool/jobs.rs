@@ -17,6 +17,7 @@ use tokio::sync::watch;
 
 use super::host::Agent;
 use super::{Done, LOGS_MAX, now_ms};
+use crate::node::agents_mac::checks::HOMEBREW_BINS;
 use crate::node::mask::Masker;
 
 /// A foreground job nobody asked for output of in this long ends.
@@ -92,9 +93,19 @@ pub fn job_env(
         .map(|(_, v)| v.clone())
         .unwrap_or_else(|| "/usr/bin:/bin:/usr/sbin:/sbin".into());
     env.retain(|(k, _)| k != "PATH");
+    // Homebrew's commands last, CocoaPods' among them (agents_mac/checks.rs): a launchd service's PATH has none.
+    let brew: String = HOMEBREW_BINS
+        .iter()
+        .filter(|bin| !path.split(':').any(|p| p == **bin))
+        .map(|bin| format!(":{bin}"))
+        .collect();
+    // CocoaPods refuses to run outside UTF-8, and a launchd service gets no LANG.
+    if !env.iter().any(|(k, _)| k == "LANG") {
+        env.push(("LANG".to_owned(), "en_US.UTF-8".to_owned()));
+    }
     let dir = |sub: &str| agent.dir.join(sub).to_string_lossy().into_owned();
     env.extend([
-        ("PATH".to_owned(), format!("{}:{path}", dir("bin"))),
+        ("PATH".to_owned(), format!("{}:{path}{brew}", dir("bin"))),
         ("TMPDIR".to_owned(), dir("tmp")),
         (
             "FLEETD_MAC_DIR".to_owned(),

@@ -1,7 +1,8 @@
 //! What the agents' Mac installs for itself, pinned and checked by digest: Node.js, which agent-device runs on, into
 //! `<node home>/mac`; agent-device, which drives iOS simulators, where the device sessions keep it; and agent-desktop,
 //! which drives the Mac's own apps, where its screen keeps it (node/desktop/mac/agent_desktop.rs). Nothing comes from
-//! the person's Homebrew, which agents can't write and must not plant binaries in.
+//! the person's Homebrew, which agents can't write and must not plant binaries in. CocoaPods alone does: the Mac's own
+//! Ruby is too old for it, so the person installs it with brew, and the tools check says how (checks.rs).
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};

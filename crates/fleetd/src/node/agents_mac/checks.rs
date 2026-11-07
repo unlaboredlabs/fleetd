@@ -42,6 +42,26 @@ pub trait Probe {
     /// The keep-awake assertion: held, or why not.
     fn awake(&self) -> Result<(), String>;
     fn tools(&self) -> ToolsState;
+    /// CocoaPods, from Homebrew ([`HOMEBREW_BINS`]).
+    fn pods(&self) -> Pods;
+}
+
+/// Where Homebrew puts its commands: Apple silicon's, then Intel's. Jobs get both on their PATH (mac_tool/jobs.rs).
+pub const HOMEBREW_BINS: [&str; 2] = ["/opt/homebrew/bin", "/usr/local/bin"];
+
+/// Homebrew's own install line, from brew.sh: it asks for the account's password itself.
+pub const HOMEBREW_INSTALL: &str = "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"";
+
+/// What the tools check reads of CocoaPods, which `pod install` and `expo prebuild --platform ios` need: the Mac's own
+/// Ruby is too old for any current CocoaPods, so it comes from Homebrew, the person's.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Pods {
+    /// `pod --version`, from the first of Homebrew's bins that has `pod`; None where none has.
+    pub pod: Option<Ran>,
+    /// `brew`, where it is; None before Homebrew is installed.
+    pub brew: Option<String>,
+    /// Where `brew` lands once installed, on this Mac's chip.
+    pub brew_at: String,
 }
 
 /// Every check, in the order the guide shows them.
@@ -80,7 +100,7 @@ pub fn run(probe: &dyn Probe) -> MacHealth {
         grant(MacCheckId::Accessibility, probe.accessibility()),
         grant(MacCheckId::ScreenRecording, probe.screen_recording()),
         gui_session(&user, probe.console_user().as_deref()),
-        tools(&probe.tools()),
+        tools(&probe.tools(), &probe.pods()),
         keep_awake(probe.awake()),
     ];
     super::health(&user, checks)
@@ -344,9 +364,9 @@ pub fn gui_session(user: &str, console: Option<&str>) -> MacCheck {
     }
 }
 
-pub fn tools(state: &ToolsState) -> MacCheck {
+pub fn tools(state: &ToolsState, pods: &Pods) -> MacCheck {
     match state {
-        ToolsState::Ready(versions) => check(MacCheckId::Tools, Pass, versions, None),
+        ToolsState::Ready(versions) => cocoapods(versions, pods),
         ToolsState::Installing => check(
             MacCheckId::Tools,
             Unknown,
@@ -362,6 +382,49 @@ pub fn tools(state: &ToolsState) -> MacCheck {
             ),
         ),
     }
+}
+
+/// The pinned tools are in, and CocoaPods runs or not. Without it only iOS builds with Pods wait, so it warns with the
+/// one command that installs it (Homebrew first where there is none), and setup ends; the check runs `pod` again
+/// every [`super::CHECK_EVERY`].
+fn cocoapods(versions: &str, pods: &Pods) -> MacCheck {
+    let version = pods.pod.as_ref().filter(|ran| ran.ok()).and_then(|ran| {
+        ran.out
+            .lines()
+            .map(str::trim)
+            .rfind(|l| l.starts_with(|c: char| c.is_ascii_digit()))
+    });
+    if let Some(version) = version {
+        return check(
+            MacCheckId::Tools,
+            Pass,
+            &format!("{versions} CocoaPods {version}."),
+            None,
+        );
+    }
+    let missing = match &pods.pod {
+        Some(ran) => format!(
+            "CocoaPods doesn't run ({})",
+            ran.out
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty())
+                .unwrap_or("no output")
+        ),
+        None => "CocoaPods isn't installed".to_owned(),
+    };
+    let command = match &pods.brew {
+        Some(brew) => format!("{brew} install cocoapods"),
+        None => format!("{HOMEBREW_INSTALL} && {} install cocoapods", pods.brew_at),
+    };
+    check(
+        MacCheckId::Tools,
+        Warn,
+        &format!(
+            "{versions} {missing}, so pod install and expo prebuild --platform ios don't run; everything else works."
+        ),
+        yours(command),
+    )
 }
 
 pub fn keep_awake(held: Result<(), String>) -> MacCheck {
@@ -381,6 +444,24 @@ pub fn keep_awake(held: Result<(), String>) -> MacCheck {
     }
 }
 
+/// A command's exit code and output, never through a shell.
+fn ran(command: &mut Command) -> Ran {
+    match command.stdin(Stdio::null()).output() {
+        Ok(out) => Ran {
+            code: out.status.code(),
+            out: format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            ),
+        },
+        Err(e) => Ran {
+            code: None,
+            out: e.to_string(),
+        },
+    }
+}
+
 /// The Mac itself.
 pub struct Live {
     pub home: PathBuf,
@@ -394,24 +475,7 @@ impl Probe for Live {
     }
 
     fn run(&self, program: &str, args: &[&str]) -> Ran {
-        match Command::new(program)
-            .args(args)
-            .stdin(Stdio::null())
-            .output()
-        {
-            Ok(out) => Ran {
-                code: out.status.code(),
-                out: format!(
-                    "{}{}",
-                    String::from_utf8_lossy(&out.stdout),
-                    String::from_utf8_lossy(&out.stderr)
-                ),
-            },
-            Err(e) => Ran {
-                code: None,
-                out: e.to_string(),
-            },
-        }
+        ran(Command::new(program).args(args))
     }
 
     fn xcodes(&self) -> Vec<String> {
@@ -441,5 +505,26 @@ impl Probe for Live {
 
     fn tools(&self) -> ToolsState {
         self.tools.clone()
+    }
+
+    fn pods(&self) -> Pods {
+        let has = |name: &str| {
+            HOMEBREW_BINS
+                .iter()
+                .map(|bin| format!("{bin}/{name}"))
+                .find(|path| std::path::Path::new(path).is_file())
+        };
+        // CocoaPods refuses to run outside UTF-8, and a launchd service gets no LANG.
+        let pod = has("pod").map(|pod| {
+            ran(Command::new(pod)
+                .arg("--version")
+                .env("LANG", "en_US.UTF-8"))
+        });
+        let ours = if cfg!(target_arch = "aarch64") { 0 } else { 1 };
+        Pods {
+            pod,
+            brew: has("brew"),
+            brew_at: format!("{}/brew", HOMEBREW_BINS[ours]),
+        }
     }
 }
