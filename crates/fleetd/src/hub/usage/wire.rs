@@ -316,6 +316,14 @@ impl OpsPorts {
             joined: people.joined().unwrap_or_default(),
             github_app: hub.github_app.get().ok().flatten(),
             cloud: crate::hub::pool::view::facts(&hub),
+            onepassword: crate::hub::people::active(&hub.db)
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|p| {
+                    let saved = crate::hub::onepassword::token(&hub.db, &p.person_id).ok()??;
+                    Some((p.name.as_str().to_owned(), saved.last_test))
+                })
+                .collect(),
         }
     }
     pub fn bases(

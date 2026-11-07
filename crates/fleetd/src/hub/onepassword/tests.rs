@@ -12,8 +12,8 @@ use serde_json::json;
 
 use crate::hub::api::Caller;
 use crate::hub::claude_accounts::tests::{
-    call, device, every_row, hub, lab, launched, member, node, order, owner, project, request,
-    sealed,
+    call, device, every_row, hub, lab, launched, member, node, node_reading, order, owner, project,
+    request, sealed,
 };
 use crate::hub::tasks::ports::TaskPorts;
 
@@ -228,4 +228,69 @@ async fn cards_are_listed_for_a_navi_only() {
         .is_err()
     );
     assert!(calls.try_recv().is_err(), "no node was asked");
+}
+
+/// The setup step's Test lists the caller's own token's vaults with the fake 1Password and reads every saved token's:
+/// two vaults want a look, with what to do; a token reading only fleetd's vault is done. No item is read.
+#[tokio::test]
+async fn the_setup_step_wants_one_vault_each() {
+    for (vaults, status) in [
+        (&["Agents", "Shared"][..], "look"),
+        (&["fleetd"][..], "done"),
+    ] {
+        let (hub, _home) = hub();
+        // The doctor reads the hub through its ops ports.
+        hub.ops.bind(&hub);
+        let ann = owner(&hub);
+        let mut calls = node_reading(&hub, &[CAP_ONEPASSWORD], vaults).await;
+        let admin = device(&hub, &ann, "admin");
+        let list = call(&hub, &admin, "setup_list", json!({})).await.unwrap();
+        let step = |list: &serde_json::Value| {
+            list["steps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|s| s["id"] == "onepassword")
+                .cloned()
+                .unwrap()
+        };
+        assert_eq!(step(&list)["status"], "todo", "no token saved yet");
+        let input = json!({ "sealed": [{ "machineId": "lab", "sealed": sealed(TOKEN) }] });
+        call(&hub, &admin, "onepassword_set", input).await.unwrap();
+        let tested = call(&hub, &admin, "setup_test", json!({ "step": "onepassword" }))
+            .await
+            .unwrap();
+        let tested = &tested["step"];
+        assert_eq!(tested["status"], status, "{tested}");
+        let mut asked = Vec::new();
+        while let Ok(c) = calls.try_recv() {
+            asked.push(c);
+        }
+        assert!(
+            asked.iter().any(
+                |c| matches!(c, SessionCall::OnePasswordTest { person_id } if *person_id == ann)
+            ),
+            "{asked:?}"
+        );
+        assert!(
+            !asked
+                .iter()
+                .any(|c| matches!(c, SessionCall::OnePasswordCards { .. })),
+            "only its vaults are listed, never an item: {asked:?}"
+        );
+        let said = tested["said"].as_str().unwrap();
+        if status == "look" {
+            assert!(said.contains("reads 2 vaults (Agents, Shared)"), "{said}");
+            assert!(
+                tested["fix"]["label"]
+                    .as_str()
+                    .unwrap()
+                    .contains("reads only fleetd's vault"),
+                "{tested}"
+            );
+        } else {
+            assert!(said.ends_with("reads one vault, fleetd."), "{said}");
+            assert!(tested.get("fix").is_none(), "{tested}");
+        }
+    }
 }

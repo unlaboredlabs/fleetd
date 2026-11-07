@@ -250,6 +250,11 @@ pub struct SetupFacts {
     pub github_app: Option<fleetd_contracts::github_app::GithubApp>,
     /// Cloud machines (D306), once a boat.dev key is saved.
     pub cloud: Option<CloudFacts>,
+    /// Each person's saved 1Password token (D235), by their name, with its last Test.
+    pub onepassword: Vec<(
+        String,
+        Option<fleetd_contracts::onepassword::OnePasswordTest>,
+    )>,
 }
 
 /// What the hub's pool says of itself, for the `hub/cloud_*` checks.
@@ -294,7 +299,99 @@ pub fn setup_checks(facts: &SetupFacts) -> Vec<Entry> {
     if let Some(cloud) = &facts.cloud {
         out.extend(cloud_checks(cloud));
     }
+    out.extend(onepassword_vault(&facts.onepassword));
     out
+}
+
+/// `hub/onepassword_vault`: each saved 1Password service account reads exactly one vault, kept for fleetd. Agents run
+/// as the person on their machine, so one could reach whatever a token held there reads: one vault with only the card
+/// and logins fleetd needs keeps that small. Read from each token's last Test, which names its vaults and never an
+/// item; there once someone saved a token. The worst token decides, and every token as bad is named.
+pub fn onepassword_vault(
+    tokens: &[(
+        String,
+        Option<fleetd_contracts::onepassword::OnePasswordTest>,
+    )],
+) -> Option<Entry> {
+    let rank = |s: DoctorStatus| match s {
+        Pass => 0,
+        Unknown => 1,
+        Warn => 2,
+        Fail => 3,
+    };
+    let page = "Settings › You › 1Password";
+    let one_vault = |name: &str| {
+        manual(
+            &format!(
+                "{name} makes a service account that reads only fleetd's vault (1Password › Developer › Service \
+                 accounts), pastes its token in {page} and revokes the old one"
+            ),
+            None,
+        )
+    };
+    let read: Vec<(DoctorStatus, String, Option<DoctorFix>)> = tokens
+        .iter()
+        .map(|(name, test)| match test {
+            None => (
+                Unknown,
+                format!("{name}'s 1Password token is saved but not tested yet."),
+                Some(manual(&format!("{name} presses Test in {page}"), None)),
+            ),
+            Some(t) if !t.ok => {
+                let said = t
+                    .error
+                    .as_deref()
+                    .unwrap_or("1Password said nothing")
+                    .trim_end_matches('.');
+                (
+                    Fail,
+                    format!(
+                        "{name}'s 1Password token failed its Test on {}: {said}.",
+                        t.machine_id
+                    ),
+                    Some(manual(
+                        &format!(
+                            "{name} checks the service account in 1Password, then pastes its token again in {page}"
+                        ),
+                        None,
+                    )),
+                )
+            }
+            Some(t) => match t.vaults.as_slice() {
+                [] => (
+                    Warn,
+                    format!("{name}'s 1Password token reads no vault, so agents fill nothing with it."),
+                    Some(one_vault(name)),
+                ),
+                [vault] => (
+                    Pass,
+                    format!("{name}'s 1Password token reads one vault, {vault}."),
+                    None,
+                ),
+                vaults => (
+                    Warn,
+                    format!(
+                        "{name}'s 1Password token reads {} vaults ({}): an agent on a machine holding it could read \
+                         every item in each. Keep it to one vault with only what fleetd needs.",
+                        vaults.len(),
+                        vaults.join(", ")
+                    ),
+                    Some(one_vault(name)),
+                ),
+            },
+        })
+        .collect();
+    let worst = read.iter().map(|(s, _, _)| *s).max_by_key(|s| rank(*s))?;
+    let said: Vec<&str> = read
+        .iter()
+        .filter(|(s, _, _)| *s == worst)
+        .map(|(_, line, _)| line.as_str())
+        .collect();
+    let fix = read
+        .iter()
+        .find(|(s, _, _)| *s == worst)
+        .and_then(|(_, _, f)| f.clone());
+    Some(hub_entry("onepassword_vault", worst, &said.join(" "), fix))
 }
 
 /// `hub/cloud_key`, `hub/cloud_network`, `hub/cloud_machines` and `hub/cloud_budget`: the cloud step's checks, there
@@ -1792,6 +1889,7 @@ mod tests {
             joined: vec!["Alice".into(), "Bo".into(), "Cy".into()],
             github_app: None,
             cloud: None,
+            onepassword: Vec::new(),
         };
         let got: Vec<_> = setup_checks(&facts)
             .into_iter()
@@ -2199,6 +2297,97 @@ mod tests {
             )
             .0,
             Fail
+        );
+    }
+
+    /// `hub/onepassword_vault` from each token's last Test: none saved has no check; exactly one vault passes; more
+    /// than one (or none) warns with what to do; a failed Test fails; untested waits for Test. The worst token decides,
+    /// and every one as bad is named; no item is ever read.
+    #[test]
+    fn the_onepassword_check_passes_on_one_vault_and_says_what_to_do_on_more() {
+        use fleetd_contracts::ids::{MachineId, Timestamp};
+        use fleetd_contracts::onepassword::OnePasswordTest;
+        let tested = |vaults: &[&str]| {
+            Some(OnePasswordTest {
+                at: Timestamp("2026-11-07T10:00:00.000Z".into()),
+                machine_id: MachineId::unchecked("devbox"),
+                ok: true,
+                vaults: vaults.iter().map(|v| (*v).to_owned()).collect(),
+                error: None,
+            })
+        };
+        let at = |tokens: &[(&str, Option<OnePasswordTest>)]| {
+            let tokens: Vec<_> = tokens
+                .iter()
+                .map(|(n, t)| ((*n).to_owned(), t.clone()))
+                .collect();
+            onepassword_vault(&tokens).map(|e| (e.check.status, e.check.message, e.check.fix))
+        };
+        assert_eq!(at(&[]), None);
+        assert_eq!(
+            at(&[("Ann", tested(&["fleetd"]))]),
+            Some((
+                Pass,
+                "Ann's 1Password token reads one vault, fleetd.".into(),
+                None
+            ))
+        );
+        let (status, said, fix) = at(&[
+            ("Ann", tested(&["fleetd"])),
+            ("Bob", tested(&["Private", "Shared", "fleetd"])),
+        ])
+        .unwrap();
+        assert_eq!(status, Warn);
+        assert_eq!(
+            said,
+            "Bob's 1Password token reads 3 vaults (Private, Shared, fleetd): an agent on a machine holding it could \
+             read every item in each. Keep it to one vault with only what fleetd needs."
+        );
+        let fix = fix.unwrap();
+        assert!(
+            fix.label
+                .starts_with("Bob makes a service account that reads only fleetd's vault"),
+            "{}",
+            fix.label
+        );
+        assert!(
+            fix.label.contains("Settings › You › 1Password"),
+            "{}",
+            fix.label
+        );
+        assert_eq!(
+            at(&[("Ann", tested(&[]))]).unwrap().0,
+            Warn,
+            "a token reading no vault fills nothing"
+        );
+        // Two as bad: both named.
+        let (_, said, _) =
+            at(&[("Ann", tested(&["A", "B"])), ("Bob", tested(&["C", "D"]))]).unwrap();
+        assert!(
+            said.starts_with("Ann's") && said.contains(" Bob's"),
+            "{said}"
+        );
+        // A failed Test outranks a token reading too much.
+        let failed = Some(OnePasswordTest {
+            ok: false,
+            error: Some("Invalid token: ***OP_SERVICE_ACCOUNT_TOKEN***.".into()),
+            vaults: Vec::new(),
+            ..tested(&[]).unwrap()
+        });
+        assert_eq!(
+            at(&[("Ann", failed), ("Bob", tested(&["A", "B"]))]).map(|(s, m, _)| (s, m)),
+            Some((
+                Fail,
+                "Ann's 1Password token failed its Test on devbox: Invalid token: ***OP_SERVICE_ACCOUNT_TOKEN***."
+                    .into()
+            ))
+        );
+        assert_eq!(
+            at(&[("Ann", None), ("Bob", tested(&["fleetd"]))]).map(|(s, m, _)| (s, m)),
+            Some((
+                Unknown,
+                "Ann's 1Password token is saved but not tested yet.".into()
+            ))
         );
     }
 

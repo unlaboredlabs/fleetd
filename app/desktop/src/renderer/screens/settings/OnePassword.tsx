@@ -1,6 +1,7 @@
 // Settings › Your accounts › 1Password (D235): the person's own 1Password service account token, which fill_credential
 // uses in the orders they start and in their Navi when the project has no OP_SERVICE_ACCOUNT_TOKEN of its own (that one
-// wins). Pasted once: main seals it to every machine, and the page never gets it back. Test lists the vaults it reads.
+// wins). Pasted once: main seals it to every machine, and the page never gets it back. Test lists the vaults it reads:
+// agents run as the person on their machine, so it should read one vault, kept for fleetd (D313).
 import { useState } from "react";
 import type { OnePasswordTest, OnePasswordToken } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
@@ -16,8 +17,8 @@ import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { PagePart, Setting } from "./parts";
 import s from "./settings.module.css";
 
-/** 1Password's guide to making a service account. */
-export const SERVICE_ACCOUNTS = "https://developer.1password.com/docs/service-accounts/get-started/";
+/** 1Password's page that makes a service account (hub/setup's ONEPASSWORD_NEW). */
+export const SERVICE_ACCOUNTS = "https://start.1password.com/developer-tools/infrastructure-secrets/serviceaccount/";
 /** The node may install the 1Password SDK on its first Test (up to 3 minutes), then asks 1Password. */
 const TEST_MS = 240_000;
 
@@ -25,7 +26,10 @@ const noInput = {};
 
 type Tried = { readonly test: OnePasswordTest } | { readonly error: string };
 
-/** A Test's verdict: "Reads Agents and Shared (on devbox, today 14:02)." or 1Password's words, the token masked. */
+/**
+ * A Test's verdict: "Reads fleetd (on devbox, today 14:02)." for one vault; more than one wants a look, as the hub's
+ * hub/onepassword_vault check says; or 1Password's words, the token masked.
+ */
 export function vaultsLine(test: OnePasswordTest, nowMs: number): { ok: boolean; text: string } {
   const at = `on ${test.machineId}, ${when(test.at, nowMs)}`;
   if (!test.ok) {
@@ -34,8 +38,12 @@ export function vaultsLine(test: OnePasswordTest, nowMs: number): { ok: boolean;
   }
   const names = test.vaults ?? [];
   if (names.length === 0) return { ok: false, text: `It reads no vault (${at}). Give the service account access to the vault with your logins.` };
-  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  return { ok: true, text: `Reads ${list ?? ""} (${at}).` };
+  if (names.length === 1) return { ok: true, text: `Reads ${names[0] ?? ""} (${at}).` };
+  const list = `${names.slice(0, -1).join(", ")} and ${names[names.length - 1] ?? ""}`;
+  return {
+    ok: false,
+    text: `Reads ${list} (${at}): an agent on a machine holding it could read every item in each. Make a service account that reads only fleetd's vault, paste its token here, and revoke this one in 1Password.`,
+  };
 }
 
 export function OnePasswordSettings() {
@@ -105,7 +113,16 @@ function ServiceAccount({ token }: { token: OnePasswordToken | undefined }) {
     <>
       <ol className={s.steps}>
         <li>
-          <Text size="sm">In 1Password, make a service account that can read the vault with your agents&apos; logins. Read access is enough.</Text>
+          <Text size="sm">
+            In 1Password, make a vault for fleetd with only the logins your agents sign in with and the card your Navi buys with. Agents run as you on their machine, so one could read whatever
+            this token reads.
+          </Text>
+        </li>
+        <li>
+          <Text size="sm">For the card, use a virtual card with a monthly limit or a low-limit card, never your main one.</Text>
+        </li>
+        <li>
+          <Text size="sm">Make a service account that reads only that vault. Read access is enough.</Text>
         </li>
         <li>
           <Text size="sm">Give each login item its website: agents fill a login only on that site.</Text>

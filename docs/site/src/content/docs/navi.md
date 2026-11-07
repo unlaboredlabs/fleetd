@@ -212,7 +212,9 @@ until you approve a [purchase](#purchases).
 ## Purchases {#purchases}
 
 A Navi can book a hotel or a flight, or buy something online, with a card you keep in 1Password. You approve each
-purchase; fleetd fills the card into the checkout, and the Navi never sees it.
+purchase; fleetd fills the card into the checkout, and the Navi never sees it. Keep the card in fleetd's own vault,
+and make it a virtual card with a monthly limit or a low-limit card: an agent on the machine could read what the
+token reads ([why](/docs/security#agent-reach)).
 
 1. **Pick a card.** In the Navi's settings, **Payments** lists the Credit Card items the Navi's 1Password token reads:
    its own `OP_SERVICE_ACCOUNT_TOKEN` variable if it has one, else yours (Settings › You › 1Password). Pick one. fleetd keeps only its `op://vault/item` reference.

@@ -39,19 +39,19 @@ const ADMIN: Readonly<Record<string, Place>> = {
   github: { label: "Open Hub accounts", screen: { id: "settings", tab: "hub.accounts" }, reveal: "admin.github" },
 };
 
-/** Beside the Hub page, each person's own side of a step. */
+/** Beside the Hub page, each person's own side of a step; 1Password is only a person's own. */
 const OWN: Readonly<Record<string, Place>> = {
   claude: { label: "Open Your accounts", screen: { id: "settings", tab: "accounts" }, reveal: "claude" },
   github: { label: "Open Your accounts", screen: { id: "settings", tab: "accounts" }, reveal: "github" },
+  onepassword: { label: "Open Your accounts › 1Password", screen: { id: "settings", tab: "accounts" }, reveal: "onepassword" },
 };
 
 /**
  * The step's `place` as the pages to open: a page of Settings' Hub group, and for Claude and GitHub also your own
- * account under You. A place this app doesn't know (a newer hub's step) opens nothing; the step's guide still says it.
+ * account under You; for 1Password, only yours. A place this app doesn't know (a newer hub's step) opens nothing; the
+ * step's guide still says it.
  */
 export const placesOf = (step: SetupStep): ReadonlyArray<Place> => {
-  const admin = step.place === undefined ? undefined : ADMIN[step.place];
-  if (admin === undefined) return [];
-  const own = step.place === undefined ? undefined : OWN[step.place];
-  return own === undefined ? [admin] : [admin, own];
+  if (step.place === undefined) return [];
+  return [ADMIN[step.place], OWN[step.place]].filter((p): p is Place => p !== undefined);
 };

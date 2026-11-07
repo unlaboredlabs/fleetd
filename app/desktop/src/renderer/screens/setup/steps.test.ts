@@ -42,6 +42,10 @@ describe("setup steps", () => {
     expect(placesOf(step("people")).map((p) => p.screen)).toEqual([{ id: "settings", tab: "hub.people" }]);
     expect(placesOf(step("github")).map((p) => p.label)).toEqual(["Open Hub accounts", "Open Your accounts"]);
     expect(placesOf(step("github"))[0]?.reveal).toBe("admin.github");
+    // 1Password is each person's own: only Your accounts.
+    expect(placesOf(step("onepassword"))).toEqual([
+      { label: "Open Your accounts › 1Password", screen: { id: "settings", tab: "accounts" }, reveal: "onepassword" },
+    ]);
     // A place this app doesn't know opens nothing.
     expect(placesOf(step("github", { place: "github_app" }))).toEqual([]);
   });

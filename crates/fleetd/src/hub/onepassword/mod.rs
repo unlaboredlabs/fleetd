@@ -389,7 +389,8 @@ async fn cards(
     })
 }
 
-async fn test(
+/// Also the setup step's Test (`setup_test`), of the caller's own token.
+pub(crate) async fn test(
     hub: Arc<Hub>,
     caller: Caller,
     input: OnePasswordTestInput,

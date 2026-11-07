@@ -167,6 +167,7 @@ fn place_words(place: &str) -> String {
         "invites" | "people" => "Hub › People",
         "machines" => "Hub › Machines",
         "cloud" => "Hub › Machines › Cloud machines",
+        "onepassword" => "You › 1Password",
         other => other,
     };
     format!("Settings › {name}")
@@ -274,6 +275,11 @@ mod tests {
                 (
                     State::Skipped,
                     "before the first PR · fleetd init --step github".into(),
+                    None
+                ),
+                (
+                    State::Skipped,
+                    "before the first login agents fill · fleetd init --step onepassword".into(),
                     None
                 ),
                 (
