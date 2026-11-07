@@ -49,8 +49,8 @@ describe("an ask in a line", () => {
     expect(askSummary("From the person, relayed by their Navi: two things on the Machines page.")).toBe("Two things on the Machines page.");
     // A quote of its own, without the preamble, is the ask's words as they are.
     expect(askSummary('"Saved carts" broke after the update.')).toBe('"Saved carts" broke after the update.');
-    expect(askSummary("Follow-up to my last message (the two Navi automation bugs): please check the logs.")).toBe(
-      "Follow-up to my last message (the two Navi automation bugs): please check the logs.",
+    expect(askSummary("Follow-up to my last message (the two automation bugs): please check the logs.")).toBe(
+      "Follow-up to my last message (the two automation bugs): please check the logs.",
     );
   });
 

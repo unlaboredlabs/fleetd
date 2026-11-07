@@ -23,7 +23,7 @@ describe("a pasted link", () => {
     expect(readPasted("fld_not_a_link")).toEqual({ key: undefined, url: undefined });
   });
 
-  it("asks for a label the hub takes and this Navi hasn't used, and an address", () => {
+  it("asks for a label the hub takes and this project hasn't used, and an address", () => {
     expect(labelProblem("")).toBeUndefined();
     expect(labelProblem("x".repeat(41))).toMatch(/40/u);
     expect(labelProblem("Acme", ["acme"])).toMatch(/already/u);

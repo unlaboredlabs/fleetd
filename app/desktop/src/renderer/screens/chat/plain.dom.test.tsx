@@ -29,7 +29,7 @@ const snapshot: HubFrame = {
     attention: [],
     machines: [{ machineId: "devbox", name: "devbox", nodeVersion: "1", status: "online", lastSeenAt: AT, tags: [] }],
     projects: [
-      { ...ADA, title: "Ada", workspaceRoot: "/home/dev/.fleetd/navi/ada", lastActivityAt: AT, threads: { running: 0, waiting: 0, idle: 1, failed: 0 }, onlyMe: true },
+      { ...ADA, title: "Ada", workspaceRoot: "/home/dev/projects/ada", lastActivityAt: AT, threads: { running: 0, waiting: 0, idle: 1, failed: 0 }, onlyMe: true },
       {
         ...SHOP,
         title: "shop",

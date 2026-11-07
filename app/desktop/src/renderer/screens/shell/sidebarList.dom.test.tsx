@@ -31,7 +31,7 @@ const row = (title: string, extra: Partial<ProjectSummary> = {}): SidebarProject
     machineId: "devbox",
     projectId: title.toLowerCase(),
     title,
-    workspaceRoot: `/home/dev/.fleetd/navi/${title.toLowerCase()}`,
+    workspaceRoot: `/home/dev/projects/${title.toLowerCase()}`,
     lastActivityAt: "2026-10-26T09:00:00.000Z",
     threads: { failed: 0, idle: 0, running: 0, waiting: 0 },
     ...extra,

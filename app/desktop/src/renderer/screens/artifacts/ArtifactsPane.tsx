@@ -1,4 +1,4 @@
-// A chat's Artifacts (W367, D292): the reports its lead, agents or Navi published with publish_artifact, the newest
+// A chat's Artifacts (W367, D292): the reports its lead or agents published with publish_artifact, the newest
 // first, each its title over who published it, when and its version; then the files sent in the chat, each opening in
 // this computer's app for its type or saved, as its chat card does (main/files.ts). One artifact (`artifacts/<name>[/<version>]`, the
 // wide panel) shows its newest version, or the one a card or link named, with a picker for every kept version:
