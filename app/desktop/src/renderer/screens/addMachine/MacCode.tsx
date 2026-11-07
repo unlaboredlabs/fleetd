@@ -119,8 +119,8 @@ export function MacCode(props: { onLine: () => void; onDone: () => void }) {
             {"Open the Mac's checks"}
           </Button>
         ) : null}
-        {(state !== undefined && macCodeOver(state)) || (made === undefined && error !== undefined) ? (
-          <Button variant="primary" disabled={busy} onClick={mint}>
+        {(state !== undefined && (macCodeOver(state) || state === "used")) || (made === undefined && error !== undefined) ? (
+          <Button variant={state === "used" ? "secondary" : "primary"} disabled={busy} onClick={mint}>
             {busy ? "Making…" : "New code"}
           </Button>
         ) : null}

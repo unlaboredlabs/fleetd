@@ -545,6 +545,12 @@ it("says when A Mac for agents' code closed after ten wrong codes, or the Mac to
   await render();
   await click("Set up…");
   expect(host.textContent).toContain("The Mac took the code and is joining as mac…");
+  // The Mac's join may stop short (a replace declined, a failed join): a new code is one click away meanwhile.
+  expect(host.textContent).toContain("Should its window say setup stopped, make a new code.");
+  macStatus = "open";
+  await click("New code");
+  expect(host.querySelector("[aria-label='Setup code']")?.textContent).toContain("107 355");
+  expect(host.textContent).toContain("Waiting for the Mac…");
 });
 
 it("says when A Mac for agents' code expired, and makes a new one only when asked", async () => {

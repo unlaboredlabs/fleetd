@@ -188,15 +188,19 @@ export const lineWords = (state: LineState, machineId: string): string =>
 /** A Mac setup code as shown: `123 456`. */
 export const spacedCode = (code: string): string => (code.length === 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : code);
 
-export type MacCodeState = "waiting" | "used" | "expired" | "closed" | "revoked" | "joined";
+export type MacCodeState = "waiting" | "used" | "stalled" | "expired" | "closed" | "revoked" | "joined";
 
 /** A code that can't join a Mac any more: a new one is the next step. */
-export const macCodeOver = (state: MacCodeState): boolean => state === "expired" || state === "closed" || state === "revoked";
+export const macCodeOver = (state: MacCodeState): boolean => state === "expired" || state === "closed" || state === "revoked" || state === "stalled";
+
+/** How long the enroll token the Mac gets for a code works (hub/auth's ENROLL_TTL_MS): a join not done by then stopped. */
+export const MAC_TOKEN_MS = 15 * 60_000;
 
 /**
  * Where A Mac for agents' code stands: joined once the Mac's node is online after being offline when the code was
  * made, or, for a Mac online then (set up again), once its node links up anew; else as the hub has it (`hub`,
- * mac_code_status): used by the Mac (joining), closed after ten wrong codes, revoked by a newer one; else expired once
+ * mac_code_status): used by the Mac (joining, or stopped once the token it got is past), closed after ten wrong codes,
+ * revoked by a newer one; else expired once
  * its 10 minutes are up, else waiting.
  */
 export const macCodeState = (
@@ -206,14 +210,18 @@ export const macCodeState = (
   hub?: string,
 ): MacCodeState => {
   if (mac.online && (!code.onlineAtMint || (mac.linked !== undefined && mac.linked !== code.linkedAtMint))) return "joined";
-  if (hub === "used" || hub === "closed" || hub === "revoked") return hub;
+  // A code the Mac took can still stop short of joining (a replace declined, a join that failed): past its token's
+  // lifetime it surely has.
+  if (hub === "used") return now >= Date.parse(code.expiresAt) + MAC_TOKEN_MS ? "stalled" : "used";
+  if (hub === "closed" || hub === "revoked") return hub;
   return hub === "expired" || now >= Date.parse(code.expiresAt) ? "expired" : "waiting";
 };
 
 export const macCodeWords = (state: MacCodeState, machineId: string, expiresAt: string): string =>
   ({
     joined: `${machineId} joined. The Mac's window finishes the setup: two permissions, then a Test.`,
-    used: `The Mac took the code and is joining as ${machineId}…`,
+    used: `The Mac took the code and is joining as ${machineId}… Should its window say setup stopped, make a new code.`,
+    stalled: `The Mac took the code but ${machineId} never joined, so setup stopped there. Make a new one.`,
     expired: "This code expired before the Mac used it. Make a new one.",
     closed: "Ten wrong codes were tried while this one was open, so it closed. Make a new one.",
     revoked: "A newer code replaced this one, or it was taken back. Make a new one.",
