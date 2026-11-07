@@ -661,8 +661,9 @@ struct Live {
     link: Option<host::Link>,
     /// Its tool calls running now, by tool_use id: while there is one, it is mid-step ([`SessionService::hold`]).
     tools: HashSet<String>,
-    /// Until when a Monitor it armed may still fire ([`SessionService::watching`]): it isn't reaped before.
-    watching: Option<Instant>,
+    /// Until when each Monitor it armed may still fire, by tool_use id ([`SessionService::watching`]): it isn't
+    /// reaped before the last of them, and one that ended goes.
+    watching: HashMap<String, Instant>,
 }
 
 #[derive(Default)]
@@ -1106,7 +1107,7 @@ impl SessionService {
                     spawned: secrets.clone(),
                     link: handle.link.clone(),
                     tools: HashSet::new(),
-                    watching: None,
+                    watching: HashMap::new(),
                 },
             );
             generation
@@ -2713,7 +2714,7 @@ impl SessionService {
                     spawned: secrets.clone(),
                     link: link.clone(),
                     tools: HashSet::new(),
-                    watching: None,
+                    watching: HashMap::new(),
                 },
             );
             generation
@@ -3378,6 +3379,12 @@ impl SessionService {
                     }
                 }
                 RunnerEvent::RateLimit(limit) => self.remember_limit(limit),
+                // Its notice has come, so nothing more of it can wake the session.
+                RunnerEvent::WatchEnded { tool_use_id } => {
+                    if let Some(live) = self.st().live.get_mut(&id) {
+                        live.watching.remove(&tool_use_id);
+                    }
+                }
                 RunnerEvent::Init { agent_tools, .. } => {
                     // A session started with no tools (`--tools ""`) lists none, so it offers none.
                     let agent_tools = agent_tools.or_else(|| {
@@ -3423,13 +3430,17 @@ impl SessionService {
         if tool_name != "Monitor" || item.status != ItemStatus::Completed {
             return;
         }
+        // claude takes any number of milliseconds, a fraction too.
         let deadline = input["timeout_ms"]
-            .as_u64()
-            .map_or(MONITOR_DEFAULT, Duration::from_millis)
+            .as_f64()
+            .filter(|ms| ms.is_finite() && *ms >= 0.0)
+            .map_or(MONITOR_DEFAULT, |ms| {
+                Duration::from_millis(ms.round() as u64)
+            })
             .min(MONITOR_MAX);
         if let Some(live) = self.st().live.get_mut(id) {
             let until = Instant::now() + deadline + MONITOR_GRACE;
-            live.watching = live.watching.max(Some(until));
+            live.watching.insert(item.id.to_string(), until);
         }
     }
 
@@ -4780,7 +4791,7 @@ impl SessionService {
             .live
             .iter()
             .filter(|(_, l)| !l.closing && l.last_active.elapsed() >= idle_reap)
-            .filter(|(_, l)| l.watching.is_none_or(|until| until <= now))
+            .filter(|(_, l)| l.watching.values().all(|until| *until <= now))
             .map(|(id, _)| id.clone())
             .collect();
         for id in candidates {

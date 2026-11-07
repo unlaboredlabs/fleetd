@@ -522,6 +522,18 @@ impl StreamMapper {
                     events.push(RunnerEvent::Compacting(compacting));
                 }
             }
+            // A Monitor's end (it exited, failed, was stopped or ran out its time); its events in between name no
+            // tool call and no status.
+            "task_notification"
+                if matches!(
+                    system.status.as_deref(),
+                    Some("completed" | "failed" | "stopped" | "killed")
+                ) =>
+            {
+                if let Some(tool_use_id) = system.tool_use_id {
+                    events.push(RunnerEvent::WatchEnded { tool_use_id });
+                }
+            }
             "compact_boundary" => {
                 self.spans.compacting(false, now.ms);
                 let meta = system.compact_metadata;

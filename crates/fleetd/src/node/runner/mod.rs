@@ -216,6 +216,10 @@ pub enum RunnerEvent {
         input: serde_json::Value,
         summary: String,
     },
+    /// A background job of claude's (a Monitor) ended: its tool call, from claude's last `task_notification` for it.
+    WatchEnded {
+        tool_use_id: String,
+    },
     /// `system/status` compacting / null.
     Compacting(bool),
     RateLimit(RateLimit),

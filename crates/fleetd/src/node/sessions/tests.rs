@@ -5291,7 +5291,7 @@ async fn a_turn_claude_runs_for_a_monitors_notice_is_a_run_of_its_own() {
 }
 
 /// A turn that arms a Monitor and ends, as T1918's did: a recorded-shape transcript, one turn.
-fn monitor_turn(timeout_ms: u64) -> String {
+fn monitor_turn(timeout_ms: serde_json::Value) -> String {
     let lines = [
         serde_json::json!({"dir": "in", "ms": 0, "msg": {"type": "user", "uuid": "u1",
             "message": {"role": "user", "content": "Build it on the devbox."}}}),
@@ -5323,7 +5323,7 @@ async fn an_idle_session_waiting_on_a_monitor_is_not_reaped_before_its_deadline(
     let dir = tempfile::tempdir().unwrap();
     let mut hub = hub_with(
         NodeStore::open_memory(10_000).unwrap(),
-        FakeRunner::from_lines(&monitor_turn(3_600_000)),
+        FakeRunner::from_lines(&monitor_turn(serde_json::json!(3_600_000))),
         SessionConfig {
             idle_reap: Duration::ZERO,
             ..config(dir.path())
@@ -5350,4 +5350,64 @@ async fn an_idle_session_waiting_on_a_monitor_is_not_reaped_before_its_deadline(
     tokio::time::advance(Duration::from_secs(2 * 60)).await;
     hub.service.reap().await;
     assert!(reaped(&hub), "not reaped after its Monitor's deadline");
+}
+
+/// An idle session's claude, launched on `turn` with nothing left to reap it but a Monitor, and its first run done.
+async fn monitored(dir: &Path, turn: &str) -> Hub {
+    let mut hub = hub_with(
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::from_lines(turn),
+        SessionConfig {
+            idle_reap: Duration::ZERO,
+            ..config(dir)
+        },
+    )
+    .await;
+    hub.project(dir).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.settled("r1").await;
+    hub
+}
+
+/// claude takes a Monitor's `timeout_ms` as any number: one written as a float (`1799999.6`) holds its claude for its
+/// 30 minutes too, never for the 5 of a call that names none.
+#[tokio::test]
+async fn a_monitors_float_deadline_keeps_its_claude_as_long() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = monitored(dir.path(), &monitor_turn(serde_json::json!(1_799_999.6))).await;
+    let reaped = |hub: &Hub| hub.service.st().live.get("s1").is_none_or(|l| l.closing);
+
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(30 * 60)).await;
+    hub.service.reap().await;
+    assert!(!reaped(&hub), "reaped at the default deadline");
+    tokio::time::advance(Duration::from_secs(2 * 60)).await;
+    hub.service.reap().await;
+    assert!(reaped(&hub), "not reaped after its deadline");
+}
+
+/// A Monitor that ends before its deadline (its build finished) sends its last notice, and nothing more of it can wake
+/// the session: once the turn for that notice is done, the idle claude is reaped as any other.
+#[tokio::test]
+async fn an_idle_session_whose_monitor_ended_is_reaped() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = monitored(dir.path(), &monitor_turn(serde_json::json!(1_800_000))).await;
+    let reaped = |hub: &Hub| hub.service.st().live.get("s1").is_none_or(|l| l.closing);
+    hub.service.reap().await;
+    assert!(!reaped(&hub), "reaped with its Monitor armed");
+
+    hub.runner.notice();
+    let woken = hub
+        .summary(|s| s.active_run_id.as_ref().is_some_and(|r| r != "r1"))
+        .await
+        .active_run_id
+        .unwrap();
+    hub.settled(woken.as_str()).await;
+    hub.service.reap().await;
+    assert!(reaped(&hub), "kept for a Monitor that ended");
 }
