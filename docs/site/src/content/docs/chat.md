@@ -190,9 +190,9 @@ Publishing a report again under the same name makes a new version; the older one
 opens any of them, and **Show the newest** goes back.
 
 An HTML artifact runs sandboxed: its scripts run, but it can't reach the network (WebRTC included), the app, your hub
-key or another artifact, keep cookies or storage, or open a window, so a page can only show what it carries. A link you
-click in it opens in your browser; the page itself can't open one. On Telegram a link to an artifact shows as its
-title.
+key or another artifact, keep cookies or storage, or open a window or frame (its own frame tags show nothing), so a
+page can only show what it carries. A link you click in it opens in your browser; the page itself can't open one. On
+Telegram a link to an artifact shows as its title.
 
 Agents publish with the [`publish_artifact`](/docs/reference/agent-tools#publish_artifact) tool and link with
 `[Title](artifact:name)`.
