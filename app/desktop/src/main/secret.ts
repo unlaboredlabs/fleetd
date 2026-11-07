@@ -47,7 +47,7 @@ export const submitSecret = async (
 };
 
 /**
- * A link key pasted into a Navi's Linked hubs: sealed to the hub's own key (hub_links_get's boxPubKey), then
+ * A link key pasted into a project's Linked hubs: sealed to the hub's own key (hub_links_get's boxPubKey), then
  * hub_link_add. A link key is "flk_" and 52 base32 characters; anything else is refused here, before it goes anywhere.
  */
 export const submitHubLink = async (
@@ -59,7 +59,7 @@ export const submitHubLink = async (
   }
   const sealed = await seal(request.boxPubKey, request.key);
   if (!sealed.ok) return sealed;
-  return call("hub_link_add", { navi: request.navi, label: request.label, url: request.url, sealed: sealed.sealed });
+  return call("hub_link_add", { navi: request.project, label: request.label, url: request.url, sealed: sealed.sealed });
 };
 
 /**
@@ -230,7 +230,7 @@ export const submitOnePassword = async (
 };
 
 /**
- * A Navi's Telegram bot token from @BotFather, sealed to the Navi's machine only, then telegram_set. One line shaped
+ * A project's Telegram bot token from @BotFather, sealed to the project's machine only, then telegram_set. One line shaped
  * as BotFather gives it (the bot's id, a colon, the secret): a value pasted with its line break or quotes is trimmed,
  * anything else refused here, before it goes anywhere. The hub's answer has its fingerprint, never the value.
  */
@@ -242,12 +242,12 @@ export const submitTelegram = async (
   if (!/^\d{1,20}:[A-Za-z0-9_-]{30,100}$/u.test(value)) {
     return refused("That isn't a bot token: @BotFather gives one like 123456789:AAH… (digits, a colon, then letters).", "In @BotFather, send /mybots, pick your bot, press API Token and copy it again.");
   }
-  if (request.box.machineId !== request.navi.machineId) {
-    return refused("The token must be sealed to the Navi's own machine.", "Save it again from the Navi's settings.");
+  if (request.box.machineId !== request.project.machineId) {
+    return refused("The token must be sealed to the project's own machine.", "Save it again from the project's settings.");
   }
   const sealed = await seal(request.box.boxPubKey, value);
   if (!sealed.ok) return sealed;
-  return call("telegram_set", { navi: request.navi, sealed: sealed.sealed });
+  return call("telegram_set", { navi: request.project, sealed: sealed.sealed });
 };
 
 /**

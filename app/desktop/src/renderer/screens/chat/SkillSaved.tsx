@@ -1,5 +1,5 @@
-// A Navi's chat line when it saves or changes one of its skills (skill_save, W238), or installs one from a source
-// (skill_install, naming the source and commit): one quiet line, the skill's name a link to it in the panel's Skills,
+// A project's chat line when its lead saves or changes one of its skills (skill_save, W238), or installs one from a
+// source (skill_install, naming the source and commit): one quiet line, the skill's name a link to it in the panel's Skills,
 // where the person reads, edits or reverts it. Nothing to approve.
 import type { SkillSaved } from "../../../shared/contracts";
 import { Text } from "../../ui";

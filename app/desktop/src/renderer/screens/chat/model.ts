@@ -371,7 +371,7 @@ export function arrivalsOf(prev: Arrivals | undefined, items: readonly ChatItem[
 
 /**
  * Where a person's message was written, when not here: "From Telegram", or for a message they forwarded there, who
- * it came from ("Forwarded from Mallory on Telegram"), whose words the Navi reads as someone else's.
+ * it came from ("Forwarded from Mallory on Telegram"), whose words the lead reads as someone else's.
  */
 export const viaOf = (item: ChatItem): { text: string; forwarded: boolean } | undefined => {
   const m = item.message;

@@ -52,7 +52,7 @@ import s from "./addMachine.module.css";
 const MAC_LINE = "A Mac every project's agents use for builds and iOS simulators, set up from the fleetd app on it with a 6-digit code: never a runner.";
 
 const MAC_HEAD =
-  "Its fleetd runs in the account logged in at the Mac's screen, yours included: it runs no claude and no Navi, and takes no secret. Paste both parts in Terminal there.";
+  "Its fleetd runs in the account logged in at the Mac's screen, yours included: it runs no claude and no lead, and takes no secret. Paste both parts in Terminal there.";
 
 export type View =
   | { readonly kind: "choose" }

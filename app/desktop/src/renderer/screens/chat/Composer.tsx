@@ -47,7 +47,7 @@ export interface ChatComposerProps {
   /** The bubble your next message answers. */
   replyTo?: ReplyTarget | undefined;
   onCancelReply?: () => void;
-  /** Who reads it, when not "the lead": a Navi's name. */
+  /** Who reads it, when not "the lead": a project's name, in one with no repo. */
   who?: string | undefined;
   /** Docked to the box's top, inside its outline (and its focus ring): the live strip. */
   top?: ReactNode;

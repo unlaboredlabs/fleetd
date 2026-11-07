@@ -14,9 +14,7 @@ export const PROJECT_TOOLS = {
   purchases: "navi_purchases",
   cardSet: "navi_card_set",
   signinsForget: "navi_signins_forget",
-  skills: "navi_skills",
   asks: "navi_asks",
-  fleetdBot: "navi_fleetd_bot",
 } as const;
 
 /** Only its owner sees and uses it: on for a former Navi and, unless turned off, a new project with no repo. */
@@ -29,12 +27,11 @@ export const isOnlyMe = (p: Pick<ProjectSummary, "onlyMe"> | undefined): boolean
  */
 export const isYours = (p: Pick<ProjectSummary, "owner">, me: string | undefined): boolean => p.owner === undefined || p.owner === me;
 
+/** It holds a git repo: its chat starts on code. Without one it is a chat with a lead in a folder (a former Navi's too). */
+export const hasRepos = (p: Pick<ProjectSummary, "repos"> | undefined): boolean => (p?.repos?.length ?? 0) > 0;
+
 /** An archived project keeps its chat, memory and folder; its lead doesn't start until it is brought back. */
 export const isArchived = (p: Pick<ProjectSummary, "archivedAt">): boolean => p.archivedAt !== undefined;
-
-/** Your Only-me projects still in use: the ones a linked hub can reach (You › Hubs). */
-export const yourOwn = (projects: ReadonlyArray<ProjectSummary>, me: string | undefined): ProjectSummary[] =>
-  projects.filter((p) => isOnlyMe(p) && !isArchived(p) && isYours(p, me));
 
 /**
  * The sidebar's rows: archived ones left out, Only-me projects first, each part in the order it came. Your own order

@@ -1,26 +1,21 @@
-// A Navi's integrations page, as pure functions: which of its MCP servers are its integrations; the request that
-// connects one (main seals the key to Navi's machine, mcp_server_set saves it); what a connection test found, by the
+// A project's integrations, as pure functions: which of its MCP servers are its integrations; the request that
+// connects one (main seals the key to the project's machine, mcp_server_set saves it); what a connection test found, by the
 // hub's tool policy; and a failed test in words a person can act on.
-import type { McpOauth, McpScope, McpServer, McpTestResult, McpToolInfo, ProjectSummary } from "../../../shared/contracts";
+import type { McpOauth, McpScope, McpServer, McpTestResult, McpToolInfo } from "../../../shared/contracts";
 import type { McpServerRequest } from "../../../shared/ipc";
 import { toRequest, type Draft } from "./mcpModel";
 
-/** The project kind of a Navi: only a Navi's settings offer integrations, and the hub refuses them anywhere else. */
-export const NAVI_KIND = "assistant";
-
-export const isNavi = (p: ProjectSummary | undefined): boolean => p?.kind === NAVI_KIND;
-
 export const DOCS = "https://fleetd.sh/docs/integrations/";
 
-/** Integrations get only the lead's role: Navi's lead is the one whose every write asks first. */
+/** Integrations get only the lead's role: the lead is the one whose every write asks first. */
 const LEAD_ONLY = { lead: true, writers: false, reviewers: false } as const;
 
-/** A Navi's own MCP servers connected as its integrations. */
+/** A project's own MCP servers connected as its integrations. */
 export const connectionsOf = (servers: ReadonlyArray<McpServer>): ReadonlyArray<McpServer> => servers.filter((s) => s.integration !== undefined);
 
 type Built = { ok: true; request: McpServerRequest } | { ok: false; problem: string };
 
-/** A server for Navi's lead only, with the tools the person marked as only reading. */
+/** A server for the project's lead only, with the tools the person marked as only reading. */
 export const customRequest = (draft: Draft, readTools: ReadonlyArray<string>, scope: McpScope, boxes: McpServerRequest["boxes"]): Built => {
   const built = toRequest({ ...draft, roles: LEAD_ONLY, enabled: true }, scope, boxes);
   if (!built.ok) return built;
@@ -86,12 +81,12 @@ export const signInLine = (oauth: McpOauth): { text: string; tone: "quiet" | "da
   if (oauth.status === "connected") {
     const own = oauth.clientId === undefined ? "" : ", with your own app";
     return {
-      text: oauth.problem ?? `Signed in with ${host}${own}. fleetd renews the sign-in by itself, and Navi never sees it.`,
+      text: oauth.problem ?? `Signed in with ${host}${own}. fleetd renews the sign-in by itself, and it never goes in the chat.`,
       tone: oauth.problem === undefined ? "quiet" : "danger",
     };
   }
   if (oauth.signingIn === true) return { text: `Waiting for you to finish signing in with ${host}.`, tone: "quiet" };
-  return { text: oauth.problem ?? "Not signed in yet: Navi can't use it until you sign in.", tone: "danger" };
+  return { text: oauth.problem ?? "Not signed in yet: the lead can't use it until you sign in.", tone: "danger" };
 };
 
 /** Where a sign-in stood when it was opened: it has finished once the server's sign-in moves on from this. */

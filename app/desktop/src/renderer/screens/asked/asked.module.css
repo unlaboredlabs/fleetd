@@ -112,7 +112,7 @@
   text-overflow: ellipsis;
 }
 
-/* Opened: where it went and the orders opened for it, then the Navi's message in full. */
+/* Opened: where it went and the orders opened for it, then the lead's message in full. */
 .detail {
   display: flex;
   flex-direction: column;

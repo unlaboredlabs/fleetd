@@ -1,4 +1,4 @@
-// Screens (D305), a page of its own: every live and recent screen of the projects and Navis you can see, as a wall.
+// Screens (D305), a page of its own: every live and recent screen of the projects you can see, as a wall.
 // What asks for you is on top, its picture large enough to read, with Take over beside it; then every live screen as a
 // picture with its project, kind and machine, state, who has it and what its agent did last; then the ended ones as a
 // list. New screen is one sentence under the title (Open a browser on devbox for storefront). The pictures are the
@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, EmptyState, FrameTitle, Select, Text, Truncate, toast } from "../../ui";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { selectProjects } from "../../src/data/selectors";
-import { isNavi } from "../navi/model";
+import { isOnlyMe } from "../projects/model";
 import { useNow } from "../live/clock";
 import { navigate } from "../shell/navigation";
 import { panelRoute, type ProjectKey } from "../shell/routes";
@@ -241,19 +241,19 @@ const KIND_PHRASE: Readonly<Record<ScreenKind, string>> = {
 function OpenLine({ onClose }: { onClose: () => void }) {
   const layer = useDataLayer();
   const projects = useData(selectProjects);
-  // Navis first, as in the sidebar.
-  const owners = useMemo(() => (projects ?? []).slice().sort((a, b) => Number(isNavi(b)) - Number(isNavi(a))), [projects]);
+  // Your Only-me ones first, as a new one is in the sidebar.
+  const owners = useMemo(() => (projects ?? []).slice().sort((a, b) => Number(isOnlyMe(b)) - Number(isOnlyMe(a))), [projects]);
   const machines = useToolQuery("machine_roles", NONE).data?.machines;
   const [kind, setKind] = useState<ScreenKind>("browser");
   const [owner, setOwner] = useState<string | undefined>(undefined);
   const [picked, setPicked] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const forProject = owners.find((p) => keyOf(p) === owner) ?? owners[0];
-  // A Navi's browser runs on the Navi's own machine, with its saved sign-ins.
-  const naviHome = forProject !== undefined && isNavi(forProject) ? forProject.machineId : undefined;
-  const hosts = hostsFor(machines ?? [], kind, naviHome);
+  // A project's browser runs on the project's own machine, with its saved sign-ins.
+  const home = forProject?.machineId;
+  const hosts = hostsFor(machines ?? [], kind, home);
   const host = pickHost(hosts, picked);
-  const off = machines === undefined ? null : whyOff(machines, kind, naviHome);
+  const off = machines === undefined ? null : whyOff(machines, kind, home);
   useEffect(() => {
     const esc = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -291,7 +291,7 @@ function OpenLine({ onClose }: { onClose: () => void }) {
         ? `${host.name} is full: you’ll have the next free slot.`
         : kind === "mac"
           ? "One at a time: agents wait while you have it."
-          : naviHome !== undefined && kind === "browser"
+          : home !== undefined && kind === "browser"
             ? "With its saved sign-ins."
             : "You’re in control from the start.";
   return (

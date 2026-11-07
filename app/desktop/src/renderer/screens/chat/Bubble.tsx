@@ -93,7 +93,7 @@ function ImageAttachment({ project, file }: { project: ProjectRef; file: Attachm
   );
 }
 
-// Any other file is a card that opens or saves it, as a Navi's own files are.
+// Any other file is a card that opens or saves it, as a lead's own files are.
 function Attachment({ project, file }: { project: ProjectRef; file: AttachmentRef }) {
   return file.mime.startsWith("image/") ? <ImageAttachment project={project} file={file} /> : <FileCard project={project} file={file} />;
 }

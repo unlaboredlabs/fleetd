@@ -115,25 +115,21 @@ export const PANEL_TABS = [
     count: () => import("./counts").then((m) => m.DecisionCount),
   },
   {
-    // A Navi's only (panel/Sections.tsx, NAVI_SECTIONS).
     id: "asked",
     label: "Asked work",
     icon: Send,
-    detail: "The work this Navi asked your projects for, and how each order is going",
-    keywords: ["navi", "asked", "orders", "requests", "delegated", "factory"],
-    pane: () => import("../navi/AskedPane").then((m) => m.AskedPane),
-    feature: "navi_asks",
+    detail: "The work this project’s lead asked your other projects for, and how each order is going",
+    keywords: ["asked", "orders", "requests", "delegated", "factory"],
+    pane: () => import("../asked/AskedPane").then((m) => m.AskedPane),
   },
   {
-    // A Navi's only (panel/Sections.tsx, NAVI_SECTIONS).
     id: "skills",
     label: "Skills",
     icon: BookOpen,
-    detail: "What this Navi has learned to do, with every change: who, when and why",
-    keywords: ["navi", "skill", "skills", "learned", "how", "workflow", "history", "versions"],
+    detail: "What this project’s lead has learned to do, with every change: who, when and why",
+    keywords: ["skill", "skills", "learned", "how", "workflow", "history", "versions"],
     back: "All skills",
     pane: () => import("./panes").then((m) => m.SkillsTab),
-    feature: "navi_skills",
   },
 ] as const satisfies readonly PanelTabEntry[];
 

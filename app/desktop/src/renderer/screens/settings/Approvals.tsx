@@ -1,7 +1,7 @@
-// A Navi's approvals (its Projects page, only for a project of kind assistant; W239): how its risky actions (sends,
-// shares, a site it opens on its own for the first time, a final confirm on a site) are approved, the checker's model
-// and effort, and the log of what ran without asking, each row linking to its line in the Navi's chat. Reads
-// navi_approvals and profiles_list (the models); writes navi_approvals_set.
+// A project's approvals (its Projects page; W239): how its lead's risky actions (sends, shares, a site it opens on its
+// own for the first time, a final confirm on a site) are approved, the checker's model and effort, and the log of what
+// ran without asking, each row linking to its line in the project's chat. Reads project_approvals and profiles_list
+// (the models); writes project_approvals_set.
 import { useState } from "react";
 import type { AutoApproved, Effort, NaviApprovalMode, NaviApprovals, ProfileModel } from "../../../shared/contracts";
 import { Button, Field, Radio, RadioGroup, Select, Text } from "../../ui";
@@ -10,7 +10,8 @@ import { shortClock } from "../chat/format";
 import { prose } from "../inline/prose";
 import { navigate } from "../shell/navigation";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { checkerLine, checkerModels, FLOORS, logWhy, MODES } from "./naviApprovalsModel";
+import { checkerLine, checkerModels, FLOORS, logWhy, MODES } from "./approvalsModel";
+import { PROJECT_TOOLS } from "../projects/model";
 import { Setting } from "./parts";
 import { EFFORT_WORD } from "./profilesModel";
 import s from "./settings.module.css";
@@ -22,7 +23,7 @@ const noInput = {};
 
 export function ApprovalsSetting({ projectRef }: { projectRef: Ref }) {
   const live = useLive();
-  const read = useToolQuery("navi_approvals", projectRef, { enabled: live });
+  const read = useToolQuery(PROJECT_TOOLS.approvals, projectRef, { enabled: live });
   const profiles = useToolQuery("profiles_list", noInput, { enabled: live });
   const models = profiles.data?.models ?? [];
   const data = read.data;
@@ -31,13 +32,13 @@ export function ApprovalsSetting({ projectRef }: { projectRef: Ref }) {
       <Setting
         reveal="projects.approvals"
         label="Approvals"
-        help="What Navi does without asking you: its sends, replies, shares and invites, a site it opens on its own for the first time, and the final Confirm on a site. Its own commands never ask."
+        help="What the lead does without asking you: its sends, replies, shares and invites, a site it opens on its own for the first time, and the final Confirm on a site. Its own commands never ask."
       >
         {data === undefined && read.isError ? (
           // Plain words: the lookup's own error names the tool and the project, which mean nothing to the person.
           <div className={s.inline}>
             <Text size="sm" tone="danger">
-              Navi&apos;s approval settings couldn&apos;t be loaded.
+              The approval settings couldn&apos;t be loaded.
             </Text>
             <Button disabled={!live || read.isFetching} onClick={() => void read.refetch()}>
               Try again
@@ -65,10 +66,10 @@ function ModeEditor({ projectRef, saved, models }: { projectRef: Ref; saved: Nav
   const save = (mode: NaviApprovalMode, model: string | undefined, effort: Effort | undefined) => {
     setBusy(true);
     setProblem(null);
-    hubCall("navi_approvals_set", { ...projectRef, mode, ...(model === undefined ? {} : { model }), ...(effort === undefined ? {} : { effort }) }).then(
+    hubCall(PROJECT_TOOLS.approvalsSet, { ...projectRef, mode, ...(model === undefined ? {} : { model }), ...(effort === undefined ? {} : { effort }) }).then(
       () => {
         setBusy(false);
-        refetch(["navi_approvals"]);
+        refetch([PROJECT_TOOLS.approvals]);
       },
       (e: unknown) => {
         setBusy(false);
@@ -113,7 +114,7 @@ function ModeEditor({ projectRef, saved, models }: { projectRef: Ref; saved: Nav
         </div>
       ) : null}
       {saved.mode === "checker" ? (
-        <Text size="xs" tone="quiet">{`Runs on your own Claude: ${checkerLine(models, saved)}. It sees the action and where each part came from, never the mail or pages Navi read.`}</Text>
+        <Text size="xs" tone="quiet">{`Runs on your own Claude: ${checkerLine(models, saved)}. It sees the action and where each part came from, never the mail or pages the lead read.`}</Text>
       ) : null}
       <Text size="xs" tone="quiet">
         {FLOORS}

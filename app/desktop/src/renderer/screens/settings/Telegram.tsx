@@ -1,6 +1,6 @@
-// A Navi's Telegram (its Projects page, only for a project of kind assistant; W237): a guided setup in the first-run
+// A project's Telegram (its Projects page; W237): a guided setup in the first-run
 // steps' style (setup/Guide.tsx). 1 make a bot with @BotFather, the exact messages to send it; 2 paste the token it
-// gives, which main seals to the Navi's machine (telegram_set) and the page never gets back; 3 Test, the bot's name
+// gives, which main seals to the project's machine (telegram_set) and the page never gets back; 3 Test, the bot's name
 // and photo as Telegram answers (telegram_test); 4 Pair, which opens t.me/<bot>?start=<code> (telegram_pair) and waits
 // for the person's Start. Once paired: the bot, who it answers, the bridge's status, Pause, Unpair and Remove.
 import { Check, ExternalLink, Send } from "lucide-react";
@@ -28,7 +28,7 @@ const PAIR_POLL_MS = 2000;
 const open = (url: string): void => void window.fleetd.openExternal(url);
 
 const HELP =
-  "Talk to this Navi from Telegram, with a bot of your own that answers only you. Its replies and approvals reach you there too; the bot's token stays sealed on its machine.";
+  "Talk to this project's lead from Telegram, with a bot of your own that answers only you. Its replies and approvals reach you there too; the bot's token stays sealed on its machine.";
 
 export function TelegramSetting({ projectRef }: { projectRef: Ref }) {
   const live = useLive();
@@ -67,8 +67,8 @@ export function TelegramSetting({ projectRef }: { projectRef: Ref }) {
   );
 }
 
-function useNavi(ref: Ref) {
-  const title = useData((d) => d.projects[`${ref.machineId}/${ref.projectId}`]?.title) ?? "Navi";
+function useProject(ref: Ref) {
+  const title = useData((d) => d.projects[`${ref.machineId}/${ref.projectId}`]?.title) ?? "Project";
   const machine = useData((d) => d.machines[ref.machineId]);
   const box = boxOf(machine);
   return {
@@ -129,7 +129,7 @@ function Step(props: { n: number; title: string; done: boolean; open: boolean; a
  * token, goes back to it.
  */
 function Steps({ projectRef, bridge, onSaved, onCancel }: { projectRef: Ref; bridge: TelegramBridge | undefined; onSaved: () => void; onCancel?: () => void }) {
-  const navi = useNavi(projectRef);
+  const project = useProject(projectRef);
   const step = stepOf(bridge);
   const hubCall = useHubCall();
   const refetch = useRefetch();
@@ -142,7 +142,7 @@ function Steps({ projectRef, bridge, onSaved, onCancel }: { projectRef: Ref; bri
   const [pasting, setPasting] = useState(false);
   const [removing, setRemoving] = useState(false);
   const pasteOpen = step === 1 || pasting;
-  const username = suggestedUsername(navi.title);
+  const username = suggestedUsername(project.title);
   const test = async () => {
     setTesting(true);
     const out = await hubCall("telegram_test", { navi: projectRef }, { timeoutMs: TEST_MS }).then(
@@ -154,13 +154,13 @@ function Steps({ projectRef, bridge, onSaved, onCancel }: { projectRef: Ref; bri
     refetch(["telegram_get"]);
   };
   const save = async () => {
-    if (navi.box === undefined) {
-      setProblem(`${navi.machine} takes no secrets yet: update fleetd there, then save.`);
+    if (project.box === undefined) {
+      setProblem(`${project.machine} takes no secrets yet: update fleetd there, then save.`);
       return;
     }
     setBusy(true);
     setProblem(null);
-    const out = await window.fleetd.secret.telegram(hub, { navi: projectRef, token, box: navi.box }).catch((e: unknown) => ({ ok: false as const, problem: errorText(e) }));
+    const out = await window.fleetd.secret.telegram(hub, { project: projectRef, token, box: project.box }).catch((e: unknown) => ({ ok: false as const, problem: errorText(e) }));
     setBusy(false);
     if (!out.ok) {
       setProblem("problem" in out ? out.problem : errorText(new CallError(out.error)));
@@ -188,7 +188,7 @@ function Steps({ projectRef, bridge, onSaved, onCancel }: { projectRef: Ref; bri
         <Values
           values={[
             { label: "Send", value: "/newbot" },
-            { label: "Its name", value: navi.title, note: "What Telegram shows at the top of the chat." },
+            { label: "Its name", value: project.title, note: "What Telegram shows at the top of the chat." },
             { label: "Its username", value: username, note: "It must end in bot. If it's taken, add a number before _bot." },
           ]}
         />
@@ -196,8 +196,8 @@ function Steps({ projectRef, bridge, onSaved, onCancel }: { projectRef: Ref; bri
           It answers with the bot&apos;s token, a line like <InlineCode>123456789:AAH…</InlineCode>. Copy it for the next step.
         </Text>
       </Step>
-      <Step n={2} title="Paste the bot's token" done={step !== 1} open={pasteOpen} summary={`Sealed on ${navi.machine}.`}>
-        <Field label="Token" description={`Sealed on this computer to ${navi.machine}: fleetd never shows it again, and it never goes in a chat.`}>
+      <Step n={2} title="Paste the bot's token" done={step !== 1} open={pasteOpen} summary={`Sealed on ${project.machine}.`}>
+        <Field label="Token" description={`Sealed on this computer to ${project.machine}: fleetd never shows it again, and it never goes in a chat.`}>
           <Input
             mono
             aria-label="Bot token"
@@ -264,7 +264,7 @@ function Steps({ projectRef, bridge, onSaved, onCancel }: { projectRef: Ref; bri
       {removing ? (
         <ConfirmRemove
           title="Remove Telegram?"
-          description={`${navi.machine} forgets the bot's token. The bot itself stays in Telegram until you delete it with @BotFather.`}
+          description={`${project.machine} forgets the bot's token. The bot itself stays in Telegram until you delete it with @BotFather.`}
           action="Remove"
           onRemove={() => hubCall("telegram_remove", { navi: projectRef }).then(() => (setTested(undefined), refetch(["telegram_get"])))}
           onClose={() => setRemoving(false)}
@@ -277,7 +277,7 @@ function Steps({ projectRef, bridge, onSaved, onCancel }: { projectRef: Ref; bri
 function BotCard({ bot, words }: { bot: TelegramBot; words?: StatusWords | undefined }) {
   return (
     <div className={s.telegramBot} data-telegram-bot={bot.username}>
-      <Avatar name={bot.name} navi={false} size={36} {...(bot.photo === undefined ? {} : { src: bot.photo })} />
+      <Avatar name={bot.name} size={36} {...(bot.photo === undefined ? {} : { src: bot.photo })} />
       <div className={s.telegramBotName}>
         <Text size="sm" strong>
           {bot.name}
@@ -331,7 +331,7 @@ function Pair({ projectRef, bridge }: { projectRef: Ref; bridge: TelegramBridge 
   return (
     <>
       <Text as="p" size="sm" tone="quiet">
-        Opens your bot in Telegram. Press Start there: your account becomes the only one this Navi answers. Anyone else who finds the bot gets no reply.
+        Opens your bot in Telegram. Press Start there: your account becomes the only one this project answers. Anyone else who finds the bot gets no reply.
       </Text>
       <div className={s.inline}>
         <Button variant="primary" icon={<Send size={14} />} disabled={busy || bridge?.bot === undefined} onClick={() => void pair()}>
@@ -352,13 +352,13 @@ function Pair({ projectRef, bridge }: { projectRef: Ref; bridge: TelegramBridge 
 }
 
 function Paired({ projectRef, bridge, onReplace }: { projectRef: Ref; bridge: TelegramBridge; onReplace: () => void }) {
-  const navi = useNavi(projectRef);
+  const project = useProject(projectRef);
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
-  const words = statusWords(bridge, navi.machine);
+  const words = statusWords(bridge, project.machine);
   const act = (call: () => Promise<unknown>) => {
     setBusy(true);
     setProblem(null);
@@ -413,7 +413,7 @@ function Paired({ projectRef, bridge, onReplace }: { projectRef: Ref; bridge: Te
       {removing ? (
         <ConfirmRemove
           title="Remove Telegram?"
-          description={`${navi.machine} forgets the bot's token, and Telegram no longer reaches ${navi.title}. The bot itself stays in Telegram until you delete it with @BotFather.`}
+          description={`${project.machine} forgets the bot's token, and Telegram no longer reaches ${project.title}. The bot itself stays in Telegram until you delete it with @BotFather.`}
           action="Remove"
           onRemove={() => hubCall("telegram_remove", { navi: projectRef }).then(() => refetch(["telegram_get"]))}
           onClose={() => setRemoving(false)}

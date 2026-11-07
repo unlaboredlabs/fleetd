@@ -1,5 +1,5 @@
-// A Navi's Linked hubs (Settings › You › Hubs, under Hub links, one per Navi): the other hubs it reaches through hub links, each with the
-// person it acts as there, the projects it is limited to, and whether it works, can't reach that hub or was revoked
+// A project's Linked hubs (Settings › Projects): the other hubs it reaches through hub links, each with the person it
+// acts as there, the projects it is limited to, and whether it works, can't reach that hub or was revoked
 // there; Remove; and Link a hub, which takes a link key made on the other hub (Links to this hub, in its Settings ›
 // Hubs). The key goes to main, which seals it to this hub's own key (main/secret.ts) and calls hub_link_add: it
 // never reaches the hub in the clear and is never shown again.
@@ -15,22 +15,21 @@ import { labelProblem, linkState, reachLine, readPasted, urlProblem } from "./mo
 import s from "../settings/settings.module.css";
 import a from "../admin/admin.module.css";
 
-/** `label`: with several Navis, which one reaches them ("Hubs Ada reaches"). */
-export function LinkedHubs({ navi, label = "Linked hubs" }: { navi: ProjectRef; label?: string }) {
+export function LinkedHubs({ project }: { project: ProjectRef }) {
   return (
     <Setting
-      reveal="hubs.linked"
-      label={label}
-      help="Other hubs this Navi reaches: it opens and follows work in their projects, as the person who made the link there. Remove a link here, or revoke it on the other hub."
+      reveal="projects.linked"
+      label="Linked hubs"
+      help="Other hubs this project reaches: its lead opens and follows work in their projects, as the person who made the link there. Remove a link here, or revoke it on the other hub."
     >
-      <LinkedBody navi={navi} />
+      <LinkedBody project={project} />
     </Setting>
   );
 }
 
-function LinkedBody({ navi }: { navi: ProjectRef }) {
+function LinkedBody({ project }: { project: ProjectRef }) {
   const live = useLive();
-  const read = useToolQuery("hub_links_get", { navi }, { enabled: live });
+  const read = useToolQuery("hub_links_get", { navi: project }, { enabled: live });
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState<string | null>(null);
   if (!live) return <Text tone="quiet">Connect to a hub to see and change this.</Text>;
@@ -40,14 +39,14 @@ function LinkedBody({ navi }: { navi: ProjectRef }) {
   const links = read.data.links;
   const form = (
     <AddLink
-      navi={navi}
+      project={project}
       boxPubKey={read.data.boxPubKey}
       taken={links.map((l) => l.label)}
       onCancel={() => setAdding(false)}
       onAdded={(out) => {
         setAdding(false);
         const n = out.projects.length;
-        setAdded(`Linked to ${out.link.label}: this Navi reaches ${n === 1 ? "1 project" : `${String(n)} projects`} there.`);
+        setAdded(`Linked to ${out.link.label}: this project reaches ${n === 1 ? "1 project" : `${String(n)} projects`} there.`);
       }}
     />
   );
@@ -155,7 +154,7 @@ function LinkRow({ link }: { link: HubLink }) {
  * The hub's name here, its address and the pasted key. Pasting the two lines Links to this hub copies fills the
  * address too. The key box shows dots: what was pasted is never shown.
  */
-function AddLink(props: { navi: ProjectRef; boxPubKey: string; taken: ReadonlyArray<string>; onCancel: () => void; onAdded: (out: HubLinkAddOutput) => void }) {
+function AddLink(props: { project: ProjectRef; boxPubKey: string; taken: ReadonlyArray<string>; onCancel: () => void; onAdded: (out: HubLinkAddOutput) => void }) {
   const refetch = useRefetch();
   const { hub } = useDataLayer();
   const [label, setLabel] = useState("");
@@ -177,7 +176,7 @@ function AddLink(props: { navi: ProjectRef; boxPubKey: string; taken: ReadonlyAr
     if (!ready) return;
     setBusy(true);
     setError(null);
-    const out = await window.fleetd.secret.hubLink(hub, { navi: props.navi, label: label.trim(), url: url.trim(), boxPubKey: props.boxPubKey, key: pasted });
+    const out = await window.fleetd.secret.hubLink(hub, { project: props.project, label: label.trim(), url: url.trim(), boxPubKey: props.boxPubKey, key: pasted });
     setBusy(false);
     if (!out.ok) {
       setError({ message: out.error.message, fix: out.error.fix });
@@ -215,7 +214,7 @@ function AddLink(props: { navi: ProjectRef; boxPubKey: string; taken: ReadonlyAr
       <Field label="Its address" description="As this hub reaches it: https, or http over a tailnet." error={urlBad}>
         <Input value={url} placeholder="https://hub.example.com" autoComplete="off" spellCheck={false} disabled={busy} onChange={(e) => setUrl(e.target.value)} />
       </Field>
-      <Field label="What do you call it?" description="The Navi names the hub by this: “open an order in Shop on acme”." error={labelBad}>
+      <Field label="What do you call it?" description="The lead names the hub by this: “open an order in Shop on acme”." error={labelBad}>
         <Input value={label} placeholder="acme" maxLength={41} autoComplete="off" disabled={busy} onChange={(e) => setLabel(e.target.value)} />
       </Field>
       <div className={s.actions}>

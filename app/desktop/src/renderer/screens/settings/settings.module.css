@@ -485,7 +485,7 @@
   min-width: 0;
 }
 
-/* ---- A Navi's integrations: one row each, hairlines between, no boxes ---- */
+/* ---- A project's integrations: one row each, hairlines between, no boxes ---- */
 .integrations {
   display: flex;
   flex-direction: column;
@@ -568,7 +568,7 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-/* A Navi's Telegram: its setup steps (the first without the hairline a step draws above it), a done step's line, its
+/* A project's Telegram: its setup steps (the first without the hairline a step draws above it), a done step's line, its
    bot as Telegram shows it, and the bridge's status at the row's end. */
 .telegramSteps {
   display: flex;
@@ -604,7 +604,7 @@
   margin-left: auto;
 }
 
-/* ---- A Navi's purchases ---- */
+/* ---- A project's purchases ---- */
 .purchases {
   display: flex;
   flex-direction: column;
@@ -629,7 +629,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ---- A Navi's approvals: its three modes, one under another, and what ran without asking ---- */
+/* ---- A project's approvals: its three modes, one under another, and what ran without asking ---- */
 .modes {
   flex-direction: column;
   gap: var(--space-3);

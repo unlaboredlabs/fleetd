@@ -52,7 +52,7 @@ export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }
   // which comes before what's loaded.
   const loaded = new Set(items.map((i) => i.id));
   const unloaded = away.filter((o) => !loaded.has(o.messageId) && (o.kind === "command_approval" || o.kind === "secret_request"));
-  // A Navi's purchase is an approval too, said as what it is once its page is loaded.
+  // A purchase is an approval too, said as what it is once its page is loaded.
   const kindOf = (i: ChatItem) => {
     const item = i.message?.item;
     if (i.kind !== "gated") return item?.kind === "secret_request" && item.secureInput !== undefined ? "input" : "secret";

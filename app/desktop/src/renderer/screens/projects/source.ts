@@ -85,7 +85,7 @@ export const tilde = (path: string): string => {
 };
 
 /**
- * A folder's name from a project's name, as the hub makes it (hub/navi/mod.rs slug_or): lowercase letters, digits and
+ * A folder's name from a project's name, as the hub makes it (the hub's slug_or): lowercase letters, digits and
  * dashes, at most 40; "project" when nothing is left.
  */
 export const folderName = (name: string): string => {

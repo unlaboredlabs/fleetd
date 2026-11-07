@@ -1,7 +1,7 @@
 // Settings › Your accounts › 1Password (D235): the person's own 1Password service account token, which fill_credential
-// uses in the orders they start and in their Navi when the project has no OP_SERVICE_ACCOUNT_TOKEN of its own (that one
-// wins). Pasted once: main seals it to every machine, and the page never gets it back. Test lists the vaults it reads:
-// agents run as the person on their machine, so it should read one vault, kept for fleetd (D313).
+// uses in the orders they start and in their Only-me projects when the project has no OP_SERVICE_ACCOUNT_TOKEN of its
+// own (that one wins). Pasted once: main seals it to every machine, and the page never gets it back. Test lists the
+// vaults it reads: agents run as the person on their machine, so it should read one vault, kept for fleetd (D313).
 import { useState } from "react";
 import type { OnePasswordTest, OnePasswordToken } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
@@ -53,7 +53,7 @@ export function OnePasswordSettings() {
     <PagePart
       title="1Password"
       reveal="onepassword"
-      intro="The logins your agents sign in to sites with, in the orders you start and your Navi. They name a 1Password item and fleetd types the value in; no agent ever sees it."
+      intro="The logins your agents sign in to sites with, in the orders you start and your Only-me projects. They name a 1Password item and fleetd types the value in; no agent ever sees it."
     >
       {!live ? (
         <Text tone="quiet">Not connected. Connect to a hub to set up 1Password.</Text>

@@ -1,9 +1,9 @@
 // What the New screen picker shows, as plain view data (D239): the kinds of screen a person can open, the machines
 // that can host each (from machine_roles: the sessions role, the kind ready there, and a node that hosts screens the hub
-// places), and each machine's slots in words, full ones offering to wait. A Navi's browser runs only on the Navi's own
-// machine, where it keeps its sign-ins. An Android screen can take an open PR's CI build, installed before the person
-// gets it. iOS screens are gone (D298): iOS simulators are the agents' Mac's (`mac sim`), and the agents' Mac is the one
-// Apple kind here. A kind no machine can host says why, from what the machines' nodes report, and what fixes it: an
+// places), and each machine's slots in words, full ones offering to wait. A project's browser runs only on the project's
+// own machine, where it keeps its sign-ins. An Android screen can take an open PR's CI build, installed before the
+// person gets it. iOS screens are gone (D298): iOS simulators are the agents' Mac's (`mac sim`), and the agents' Mac is
+// the one Apple kind here. A kind no machine can host says why, from what the machines' nodes report, and what fixes it: an
 // admin's Turn on where it is only switched off, else who to ask. Pure, so it is unit-tested. The phone app runs it
 // too, on Hermes, which has no Array toSorted: each list here sorts its own fresh copy instead.
 import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
@@ -36,17 +36,20 @@ const ready = (m: MachineRolesEntry, kind: ScreenKind): boolean =>
   m.roles.includes("sessions") && m.hostsOthers && (m.hosts ?? []).some((h) => h.host === HOST[kind] && h.ready);
 
 /**
- * The machines that can host a screen of `kind`, online ones first, then by name. For a Navi (`navi` its machine) a
- * browser is only its own machine's.
+ * The machines that can host a screen of `kind`, online ones first, then by name. A project's browser (`home` its
+ * machine) is only its own machine's, where its sign-ins are.
  */
-export const hostsFor = (machines: readonly MachineRolesEntry[], kind: ScreenKind, navi?: string): HostChoice[] =>
+export const hostsFor = (machines: readonly MachineRolesEntry[], kind: ScreenKind, home?: string): HostChoice[] =>
   machines
-    .filter((m) => ready(m, kind) && (navi === undefined || kind !== "browser" || m.machineId === navi))
+    .filter((m) => ready(m, kind) && onHome(m, kind, home))
     .map((m) => ({ machineId: m.machineId, name: m.name, live: m.sessionsLive, max: m.maxSessions, online: m.online, full: m.sessionsLive >= m.maxSessions }))
     .sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name));
 
 /** Whether any machine can host `kind`: a kind none can is shown, and says why ([`whyOff`]). */
-export const canOpen = (machines: readonly MachineRolesEntry[], kind: ScreenKind, navi?: string): boolean => hostsFor(machines, kind, navi).length > 0;
+export const canOpen = (machines: readonly MachineRolesEntry[], kind: ScreenKind, home?: string): boolean => hostsFor(machines, kind, home).length > 0;
+
+/** A browser keeps its project's sign-ins on the project's machine, so it opens only there; other kinds go anywhere. */
+const onHome = (m: Pick<MachineRolesEntry, "machineId">, kind: ScreenKind, home: string | undefined): boolean => home === undefined || kind !== "browser" || m.machineId === home;
 
 /** What fixes a kind no machine can host: a switch an admin turns on (`turn_on`, on `machine`), a newer fleetd, a
  * machine let host screens, a machine of the kind it needs, or nothing anyone here can do (offline, installing). */
@@ -120,11 +123,11 @@ const sentence = (s: string): string => {
 /**
  * Why no machine can host `kind`, from what each machine's node reports, and what fixes it; null where one can. The
  * machine whose fix is nearest speaks: a switch turned off before an install, before an offline machine, before a
- * machine that can never run it. For a Navi's browser (`navi` its machine), only its own machine.
+ * machine that can never run it. For a project's browser (`home` its machine), only its own machine.
  */
-export const whyOff = (machines: readonly MachineRolesEntry[], kind: ScreenKind, navi?: string): OffReason | null => {
-  if (canOpen(machines, kind, navi)) return null;
-  const mine = machines.filter((m) => navi === undefined || kind !== "browser" || m.machineId === navi);
+export const whyOff = (machines: readonly MachineRolesEntry[], kind: ScreenKind, home?: string): OffReason | null => {
+  if (canOpen(machines, kind, home)) return null;
+  const mine = machines.filter((m) => onHome(m, kind, home));
   if (mine.length === 0) return { why: "No machine has joined this hub yet.", short: "No machine", fix: "add" };
   const hosting = mine.filter((m) => m.roles.includes("sessions"));
   if (hosting.length === 0) {

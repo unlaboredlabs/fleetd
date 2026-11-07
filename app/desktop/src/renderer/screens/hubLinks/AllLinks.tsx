@@ -27,7 +27,7 @@ export function AllLinks() {
           Hub links
         </Text>
         <Text size="xs" tone="quiet">
-          Keys that let a Navi on another hub open and follow work here, each as the person who made it. Revoking one stops it at once.
+          Keys that let a project on another hub open and follow work here, each as the person who made it. Revoking one stops it at once.
         </Text>
       </div>
       {!live ? null : lacksLinks(read.error) ? (

@@ -1,11 +1,10 @@
-// A project's or Navi's avatar where its chat shows (the sidebar, the chat's title, its settings): its picture once a
+// A project's avatar where its chat shows (the sidebar, the chat's title, its settings): its picture once a
 // person gave it one, read once per picture (project_avatar_get, refetched on its project.settings event), else its
 // built-in icon (icons.ts), else its letters.
 import { useEffect } from "react";
 import type { ProjectSummary } from "../../../shared/contracts";
 import { useToolQuery } from "../../src/data/react";
 import { Avatar } from "../../ui";
-import { isNavi } from "../navi/model";
 import { iconImage } from "./icons";
 
 type Pictured = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "kind" | "avatar" | "icon">;
@@ -27,5 +26,5 @@ export function ProjectAvatar({ project, size, className }: { project: Pictured;
   const picture = usePicture(project);
   // While a new picture loads, the icon stays rather than flashing the letters.
   const icon = iconImage(project.icon, size ?? 20);
-  return <Avatar name={project.title} navi={isNavi(project)} size={size} src={picture} icon={icon} className={className} />;
+  return <Avatar name={project.title} size={size} src={picture} icon={icon} className={className} />;
 }

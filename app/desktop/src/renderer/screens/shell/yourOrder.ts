@@ -1,7 +1,7 @@
-// Your own order of the sidebar's projects and Navis (W214): you drag a row or move it with ⌥↑ / ⌥↓ (Sidebar.tsx), and
+// Your own order of the sidebar's projects (W214): you drag a row or move it with ⌥↑ / ⌥↓ (Sidebar.tsx), and
 // each hub keeps the order of its rows for you (sidebar_order_get / _set), so it is the same on each of your desktops
-// and after a restart. Nobody else's sidebar follows yours. A project or Navi the order doesn't name yet (a new one)
-// goes at the end of its section, in the sidebar's own order (by title). The last order read is kept on this
+// and after a restart. Nobody else's sidebar follows yours. A project the order doesn't name yet (a new one) goes at
+// the end, in the sidebar's own order (by title, your Only-me ones first). The last order read is kept on this
 // computer too, only so a launch shows it before the hub answers.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
@@ -23,7 +23,7 @@ export const ordered = <R extends { readonly key: string }>(rows: ReadonlyArray<
 };
 
 /**
- * A hub's whole order after a move in one section: `rows` (that hub's, as they show) with the rows of `moved` (keys,
+ * A hub's whole order after a move: `rows` (that hub's, as they show) with the rows of `moved` (keys,
  * in their new order) put in their places, the others where they are.
  */
 export const withMoved = <R extends { readonly key: string }>(rows: ReadonlyArray<R>, moved: readonly string[]): R[] => {

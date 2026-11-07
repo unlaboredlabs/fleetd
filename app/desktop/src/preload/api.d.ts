@@ -36,7 +36,7 @@ export interface FleetdApi {
      */
     mcpServer(hub: HubId, request: McpServerRequest): Promise<CallOutcome>;
     /**
-     * A link key pasted into a Navi's Linked hubs: main seals it to `boxPubKey`, the hub's own key, and calls
+     * A link key pasted into a project's Linked hubs: main seals it to `boxPubKey`, the hub's own key, and calls
      * hub_link_add. The output has the link and what it reaches, never the key.
      */
     hubLink(hub: HubId, request: HubLinkRequest): Promise<CallOutcome>;
@@ -56,7 +56,7 @@ export interface FleetdApi {
      */
     onePassword(hub: HubId, request: OnePasswordRequest): Promise<CallOutcome>;
     /**
-     * A Navi's Telegram bot token: main seals it to the Navi's machine and calls telegram_set. The output has its
+     * A project's Telegram bot token: main seals it to the project's machine and calls telegram_set. The output has its
      * fingerprint only; nothing returns the value.
      */
     telegram(hub: HubId, request: TelegramRequest): Promise<CallOutcome>;

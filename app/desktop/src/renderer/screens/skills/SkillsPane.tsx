@@ -1,9 +1,9 @@
-// A Navi's panel, Skills (W238, D261): what it has learned to do. The list has its own skills (the ones it saved with
+// A project's panel, Skills (W238, D261): what it has learned to do. The list has its own skills (the ones it saved with
 // skill_save or the person wrote, and the ones installed for it), every project's and its folder's, each with who
 // changed it last, when, and when it was last used. One skill (`skills/<name>`, the wide panel) shows its SKILL.md
 // rendered, an editor whose save is a version of the person's, its history (every version with who, when and why,
 // each a diff against the one before, and Restore, which adds a new version), and turning it off or deleting it.
-// A Navi saves its skills with no approval; this is where the person audits and changes them. Reads skills_list and
+// A lead saves its skills with no approval; this is where the person audits and changes them. Reads skills_list and
 // skill_get; writes skill_set, skill_revert, skill_off and skill_delete. Every write's skills.changed reads both again.
 import { useLayoutEffect, useMemo, useState } from "react";
 import type { ProjectRef, SkillSummary, SkillVersion } from "../../../shared/contracts";
@@ -67,7 +67,7 @@ export function SkillsPane({ project }: { project: ProjectKey }) {
       {groups.length === 0 ? (
         <div className={s.empty}>
           <EmptyState title="No skills yet">
-            When this Navi works out a task it will do again, or you correct how it does something, it saves a skill and says so in the chat. Every change shows
+            When this project’s lead works out a task it will do again, or you correct how it does something, it saves a skill and says so in the chat. Every change shows
             here, and you can edit or undo it.
           </EmptyState>
         </div>
@@ -128,7 +128,7 @@ function SkillView({ project, name }: { project: ProjectKey; name: string }) {
     return (
       <div className={s.screen} data-screen="skill.gone">
         <div className={s.empty}>
-          <EmptyState title={`No skill called ${name}`}>It was deleted, or it was never this Navi’s.</EmptyState>
+          <EmptyState title={`No skill called ${name}`}>It was deleted, or it was never this project’s.</EmptyState>
         </div>
       </div>
     );
@@ -200,7 +200,7 @@ function SkillView({ project, name }: { project: ProjectKey; name: string }) {
             </div>
             {!own ? (
               <Text as="p" size="xs" tone="quiet" className={s.aside}>
-                {listed.origin === "global" ? "Every project gets this one; an owner or admin changes it in Settings › Hub." : "It is a file in this Navi’s folder: change it there."}
+                {listed.origin === "global" ? "Every project gets this one; an owner or admin changes it in Settings › Hub." : "It is a file in this project’s folder: change it there."}
               </Text>
             ) : listed.install ? (
               <Text as="p" size="xs" tone="quiet" className={s.aside}>
@@ -274,11 +274,11 @@ function Editor({ project, skill, text, onDone }: { project: ProjectKey; skill: 
   return (
     <section className={s.editor} aria-label={`Edit ${skill.name}`}>
       <div data-text="code">
-        <Field label="SKILL.md" description="Its frontmatter names it and says when to use it; the steps follow. The Navi’s next session gets your change.">
+        <Field label="SKILL.md" description="Its frontmatter names it and says when to use it; the steps follow. The lead’s next session gets your change.">
           <Textarea mono value={draft} minRows={12} maxRows={32} onChange={(e) => setDraft(e.target.value)} />
         </Field>
       </div>
-      <Field label="What changed" description="Optional. Kept with the version, beside the Navi’s own reasons.">
+      <Field label="What changed" description="Optional. Kept with the version, beside the lead’s own reasons.">
         <Input value={why} maxLength={300} placeholder="Use the new portal address" onChange={(e) => setWhy(e.target.value)} onKeyDown={(e) => e.key === "Enter" && dirty && !busy && save()} />
       </Field>
       <div className={s.actions}>
@@ -329,7 +329,7 @@ function DeleteSkill({ project, skill }: { project: ProjectKey; skill: SkillSumm
         open={confirm}
         onOpenChange={setConfirm}
         title={`Delete ${skill.name}?`}
-        description="It goes with its history. The Navi’s next session doesn’t get it, though it may save a new one if it works the task out again."
+        description="It goes with its history. The lead’s next session doesn’t get it, though it may save a new one if it works the task out again."
         footer={
           <>
             <Button onClick={() => setConfirm(false)}>Keep it</Button>

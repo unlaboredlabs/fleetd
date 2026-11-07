@@ -153,7 +153,7 @@ describe("sealing a secret ask's value", () => {
     expect((await submitMcpServer({ ...request, boxes: [] }, call)).ok).toBe(false);
     expect(sent).toEqual([]);
   });
-  it("sends a Navi's integration with its server, the token sealed and nowhere in the clear", async () => {
+  it("sends a project's integration with its server, the token sealed and nowhere in the clear", async () => {
     await sodium.ready;
     const sent: unknown[] = [];
     const call = (tool: string, input: unknown) => {
@@ -161,7 +161,7 @@ describe("sealing a secret ask's value", () => {
       return Promise.resolve({ ok: true as const, output: {} });
     };
     const request = {
-      scope: { kind: "project" as const, machineId: "devbox", projectId: "navi" },
+      scope: { kind: "project" as const, machineId: "devbox", projectId: "ada" },
       name: "crm",
       enabled: true,
       roles: { lead: true, writers: false, reviewers: false },
@@ -190,14 +190,14 @@ describe("a pasted hub link key", () => {
       return Promise.resolve({ ok: true as const, output: {} });
     };
     const key = `flk_${"a".repeat(52)}`;
-    const request = { navi: { machineId: "devbox", projectId: "ada" }, label: "acme", url: "https://acme.example", boxPubKey: rust.publicKey, key };
+    const request = { project: { machineId: "devbox", projectId: "ada" }, label: "acme", url: "https://acme.example", boxPubKey: rust.publicKey, key };
     expect(parseRequest(IPC.hubLinkSubmit, ["hub", request]).ok).toBe(true);
     expect(parseRequest(IPC.hubLinkSubmit, ["hub", { ...request, label: "x".repeat(41) }]).ok).toBe(false);
     expect((await submitHubLink(request, call)).ok).toBe(true);
     expect(sent[0]).toBe("hub_link_add");
     const input = sent[1] as { sealed: string; label: string; url: string };
     expect(JSON.stringify(input)).not.toContain(key);
-    expect(input).toMatchObject({ navi: request.navi, label: "acme", url: "https://acme.example" });
+    expect(input).toMatchObject({ navi: request.project, label: "acme", url: "https://acme.example" });
     expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.sealed), pk, sk))).toBe(key);
 
     sent.length = 0;
@@ -326,33 +326,33 @@ describe("a person's 1Password token", () => {
   });
 });
 
-describe("a Navi's Telegram bot token", () => {
-  it("seals it to the Navi's machine for telegram_set, trimmed, and refuses anything but a bot token before sending", async () => {
+describe("a project's Telegram bot token", () => {
+  it("seals it to the project's machine for telegram_set, trimmed, and refuses anything but a bot token before sending", async () => {
     await sodium.ready;
     const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
     const TOKEN = "123456789:AAHdevboxBotTokenFromBotFather0123456";
-    const navi = { machineId: "devbox", projectId: "ada" };
+    const project = { machineId: "devbox", projectId: "ada" };
     const box = { machineId: "devbox", boxPubKey: rust.publicKey };
     const sent: Array<{ tool: string; input: unknown }> = [];
     const call = (tool: "telegram_set", input: unknown) => {
       sent.push({ tool, input });
       return Promise.resolve({ ok: true as const, output: { bridge: {} } });
     };
-    const parsed = parseRequest(IPC.telegramSubmit, ["hub", { navi, token: ` '${TOKEN}'\n`, box }]);
+    const parsed = parseRequest(IPC.telegramSubmit, ["hub", { project, token: ` '${TOKEN}'\n`, box }]);
     if (!parsed.ok) throw new Error(`refused at the IPC boundary: ${parsed.reason}`);
     expect((await submitTelegram(parsed.args[1], call)).ok).toBe(true);
     expect(JSON.stringify(sent[0]?.input)).not.toContain(TOKEN);
     const input = sent[0]?.input as { navi: unknown; sealed: string };
-    expect(input.navi).toEqual(navi);
+    expect(input.navi).toEqual(project);
     expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.sealed), pk, sk))).toBe(TOKEN);
 
     sent.length = 0;
     for (const wrong of ["hunter2", "123:short", "123456789 AAHdevboxBotTokenFromBotFather0123456", "ops_devbox-service-account_CCCC"]) {
-      const out = await submitTelegram({ navi, token: wrong, box }, call);
+      const out = await submitTelegram({ project, token: wrong, box }, call);
       expect(out.ok).toBe(false);
       if (!out.ok) expect(out.error.message).toContain("bot token");
     }
-    const elsewhere = await submitTelegram({ navi, token: TOKEN, box: { ...box, machineId: "buildbox" } }, call);
+    const elsewhere = await submitTelegram({ project, token: TOKEN, box: { ...box, machineId: "buildbox" } }, call);
     expect(elsewhere.ok).toBe(false);
     expect(sent).toEqual([]);
   });

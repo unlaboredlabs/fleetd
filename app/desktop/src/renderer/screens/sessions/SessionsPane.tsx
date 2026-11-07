@@ -3,7 +3,7 @@
 // words, its agent (or the person who opened it), the site it is on and how long it has run. A row opens the session in
 // the list's place, live while it runs (SessionView), its replay once it has ended. At the top, New screen opens one of
 // your own (NewScreen), and your waits for a slot on a full machine show until their screen opens. All screens opens the
-// Screens page (D305): every project's and Navi's screens as a wall.
+// Screens page (D305): every project's screens as a wall.
 import { LayoutGrid } from "lucide-react";
 import { useMemo } from "react";
 import { Button, EmptyState, StateGlyph, Text, Truncate, cx, toast, useArrivals, useArrived } from "../../ui";

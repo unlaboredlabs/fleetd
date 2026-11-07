@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MachineRolesEntry, ProjectSummary } from "../../../shared/contracts";
-import { canHost, deleteWords, firstHome, isYours, nameProblem, projectHomes, sidebarOrder, yourOwn } from "./model";
+import { canHost, deleteWords, firstHome, isYours, nameProblem, projectHomes, sidebarOrder } from "./model";
 
 const project = (title: string, extra: Partial<ProjectSummary> = {}): { project: ProjectSummary } => ({
   project: {
@@ -40,15 +40,6 @@ describe("whose project it is", () => {
     expect(isYours({ owner: "p_bbbbbbbb" }, me)).toBe(false);
     // Until the hub says who you are, one with an owner waits.
     expect(isYours({ owner: me }, undefined)).toBe(false);
-  });
-  it("lists your own Only-me projects in use", () => {
-    const all = [
-      project("billing"),
-      project("Ada", { onlyMe: true, owner: me }),
-      project("Bee", { onlyMe: true, owner: "p_bbbbbbbb" }),
-      project("Taxes", { onlyMe: true, owner: me, archivedAt: "2026-10-20T09:00:00.000Z" }),
-    ].map((r) => r.project);
-    expect(yourOwn(all, me).map((p) => p.title)).toEqual(["Ada"]);
   });
 });
 
