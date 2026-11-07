@@ -44,6 +44,6 @@ describe("iOS 26 chrome", () => {
 
 describe("VoiceOver on iOS", () => {
   it("hears what a live region says on Android", () => {
-    for (const { f, src } of files.filter((x) => x.src.includes("accessibilityLiveRegion"))) expect([f, /useAnnounce\(|announce\(/u.test(src)]).toEqual([f, true]);
+    for (const { f, src } of files.filter((x) => x.src.includes("accessibilityLiveRegion"))) expect([f, /useAnnounce(Change)?\(|announce\(/u.test(src)]).toEqual([f, true]);
   });
 });

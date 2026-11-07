@@ -12,7 +12,7 @@ import { HIDDEN_WARNING, marked, type HubError, type HumanRequest } from "../des
 import { exactRuns, FSI, markRuns, PDI, type Run } from "../exact";
 import { approvalOutcome, approvalView, fieldCopy, type ApprovalField, type ApprovalOutcome, type ApprovalView } from "../lists";
 import { mono, space, type, useTheme } from "../theme";
-import { announce, useAnnounce } from "../ui/announce";
+import { useAnnounce, useAnnounceChange } from "../ui/announce";
 import { Avatar, type Pictured } from "../ui/Avatar";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
@@ -145,18 +145,25 @@ const OUTCOME: Record<ApprovalOutcome["tone"], { icon: IconName; ink: "success" 
 };
 
 /**
- * An approval in its chat once its card is gone: "Approved by ada · 9:41", said to VoiceOver as it changes, so the
- * person who answered hears that it went through.
+ * An approval in its chat once its card is gone: "Approved by ada · 9:41". VoiceOver hears it as it changes while
+ * shown, and as it first shows when `justAnswered` (its card was on screen a moment ago), so the person who answered
+ * hears that it went through; never for history as a chat opens or a row comes back into view.
  */
-export function ApprovalOutcomeLine({ item, decided }: { item: Parameters<typeof approvalOutcome>[0]; decided: HumanRequest | undefined }) {
+export function ApprovalOutcomeLine({
+  item,
+  decided,
+  justAnswered = false,
+}: {
+  item: Parameters<typeof approvalOutcome>[0];
+  decided: HumanRequest | undefined;
+  justAnswered?: boolean;
+}) {
   const t = useTheme();
   const now = useNow();
   const outcome = approvalOutcome(item, decided);
   const look = OUTCOME[outcome.tone];
   const text = outcome.at === undefined ? outcome.text : `${outcome.text} · ${listTime(outcome.at, now)}`;
-  useEffect(() => {
-    if (outcome.tone !== "waiting") announce(outcome.text);
-  }, [outcome.text, outcome.tone]);
+  useAnnounceChange(outcome.tone === "waiting" ? undefined : outcome.text, justAnswered);
   return (
     <View style={styles.outcome} accessible accessibilityLabel={text}>
       <View style={styles.outcomeIcon}>

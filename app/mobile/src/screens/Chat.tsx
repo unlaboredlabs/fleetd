@@ -667,7 +667,12 @@ function InlineApproval({ chatKey, item }: { chatKey: Key; item: CommandApproval
   // The hub's state, which a row reads only here: the rest of the thread doesn't draw again with it.
   const { state, session } = useHub();
   const open = item.state === "open" ? state.requests?.find((r) => r.requestId === item.requestId) : undefined;
-  if (open === undefined) return <ApprovalOutcomeLine item={item} decided={state.decided[item.requestId]} />;
+  // Its card was on screen in this row: the line that takes its place is news, said as it shows.
+  const hadCard = useRef(false);
+  useEffect(() => {
+    if (open !== undefined) hadCard.current = true;
+  }, [open]);
+  if (open === undefined) return <ApprovalOutcomeLine item={item} decided={state.decided[item.requestId]} justAnswered={hadCard.current} />;
   const project = state.projects?.[chatKey];
   return (
     <View style={[styles.card, styles.groupGap]}>
