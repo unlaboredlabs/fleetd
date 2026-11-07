@@ -1184,8 +1184,19 @@ impl Executors {
             None
         };
         let baseline = cursor.is_none();
+        // The agents' Mac hosts no session (node/agents_mac) and refuses a subscription: its link is live once it is
+        // up, so its updates, presence and checks see it online.
+        let tool_only = self
+            .store
+            .machine_get(&machine_id)
+            .ok()
+            .flatten()
+            .is_some_and(|m| m.agents_mac == Some(true));
         let mut attempt = 0;
         loop {
+            if tool_only {
+                break;
+            }
             match self
                 .call(
                     &machine_id,
