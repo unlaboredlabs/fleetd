@@ -30,6 +30,9 @@ const CLOSE_GOING_AWAY: u16 = 1001;
 const CLOSE_TOO_FAR_BEHIND: u16 = 1013;
 /// How long a closing frame may take: a socket too far behind may never take it.
 const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+/// How often a connection checks its key again with no revoke on this hub to wake it: a key revoked from the hub's
+/// home (`fleetd hub key revoke`, `fleetd people remove`) stops streaming within this.
+const KEY_RECHECK: std::time::Duration = std::time::Duration::from_secs(15);
 
 fn error_frame(error: &ToolError, id: Option<&str>) -> Value {
     let mut frame = json!({ "t": "error" });
@@ -166,6 +169,21 @@ enum After {
 impl Session {
     fn send(&self, frame: Value) {
         self.out.push(frame.to_string());
+    }
+
+    /// Whether the connection's key was refused since it authed: revoked, or its person removed. Only a refusal
+    /// counts; a check that failed otherwise keeps the connection.
+    fn key_refused(&self) -> bool {
+        let Some((key, _)) = &self.caller else {
+            return false;
+        };
+        match self.hub.auth.verify(key) {
+            Err(error @ AuthError::Unauthorized(_)) => {
+                self.send(error_frame(&refused(error), None));
+                true
+            }
+            _ => false,
+        }
     }
 
     async fn on_text(&mut self, text: &str) -> After {
@@ -442,9 +460,23 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
     let live_slot = session.live_slot.clone();
     let browser_slot = session.browser_slot.clone();
     let behind = frames.behind();
+    let mut revokes = session.hub.auth.revokes();
+    let mut recheck = tokio::time::interval(KEY_RECHECK);
+    recheck.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let close = loop {
         tokio::select! {
             () = shutdown.wait() => break Some((CLOSE_GOING_AWAY, "hub shutting down")),
+            // A revoked key's connection streams nothing more: it closes as refused, as at `auth`.
+            Ok(()) = revokes.changed() => {
+                if session.key_refused() {
+                    break Some(refuse(&mut socket, &behind, &mut frames).await);
+                }
+            }
+            _ = recheck.tick() => {
+                if session.key_refused() {
+                    break Some(refuse(&mut socket, &behind, &mut frames).await);
+                }
+            }
             () = behind.wait() => break Some(too_far_behind(&behind)),
             Some(frame) = frames.recv() => {
                 if !send(&mut socket, &behind, frame).await {
@@ -479,11 +511,7 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
                 };
                 if let After::Close(code, reason) = session.on_text(&text).await {
                     // Flush what this frame produced (the refusal) before closing.
-                    while let Some(frame) = frames.try_recv() {
-                        if !send(&mut socket, &behind, frame).await {
-                            break;
-                        }
-                    }
+                    flush(&mut socket, &behind, &mut frames).await;
                     break Some((code, reason));
                 }
             }
@@ -512,6 +540,25 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
         })));
         let _ = tokio::time::timeout(CLOSE_WAIT, closing).await;
     }
+}
+
+/// Sends what waits in the outbox, until the socket fails.
+async fn flush(socket: &mut WebSocket, behind: &Behind, frames: &mut outbox::Frames) {
+    while let Some(frame) = frames.try_recv() {
+        if !send(socket, behind, frame).await {
+            break;
+        }
+    }
+}
+
+/// How a connection whose key was refused ends: the refusal sent, then closed as unauthorized.
+async fn refuse(
+    socket: &mut WebSocket,
+    behind: &Behind,
+    frames: &mut outbox::Frames,
+) -> (u16, &'static str) {
+    flush(socket, behind, frames).await;
+    (CLOSE_UNAUTHORIZED, "unauthorized")
 }
 
 /// Sends one frame. False when the socket failed, or the connection fell too far behind while the frame was going

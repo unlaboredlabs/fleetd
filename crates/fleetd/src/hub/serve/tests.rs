@@ -762,3 +762,102 @@ async fn an_app_connection_that_stops_reading_is_closed_once_too_far_behind() {
         "the stalled client was sent everything ({deltas} deltas)"
     );
 }
+
+/// An app connection authed as `key`, with its event stream and a chat subscription open.
+async fn app_streaming(
+    url: &str,
+    key: &str,
+) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
+    let (mut app, _) = tokio_tungstenite::connect_async(format!("ws://{url}/app"))
+        .await
+        .unwrap();
+    app.send(Message::text(
+        json!({ "t": "auth", "key": key }).to_string(),
+    ))
+    .await
+    .unwrap();
+    let ready: Value =
+        serde_json::from_str(app.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+    assert_eq!(ready["t"], "ready", "{ready}");
+    for frame in [
+        json!({ "t": "events", "cursor": 0 }),
+        json!({ "t": "chat", "project": { "machineId": "devbox", "projectId": "p1" } }),
+    ] {
+        app.send(Message::text(frame.to_string())).await.unwrap();
+    }
+    app
+}
+
+/// The close code the hub ends `app` with, skipping the frames before it; panics if none comes within 5 seconds.
+async fn closed_with(
+    app: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+) -> u16 {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match app.next().await {
+                Some(Ok(Message::Close(Some(frame)))) => return u16::from(frame.code),
+                Some(Ok(_)) => {}
+                other => panic!("expected a close, got {other:?}"),
+            }
+        }
+    })
+    .await
+    .expect("the hub kept a revoked key's connection open")
+}
+
+/// A signed-out device's open app connection is closed as refused at once: it never goes on streaming the hub's
+/// events and chats to a device that no longer has a key.
+#[tokio::test]
+async fn a_revoked_device_s_open_app_connection_is_closed_at_once() {
+    let t = start().await;
+    let grants: Vec<Grant> =
+        serde_json::from_value(json!([{ "role": "operate", "machines": "*" }])).unwrap();
+    let device = t
+        .hub
+        .auth
+        .create_key("phone", &grants, KeyKind::Human)
+        .unwrap();
+    let mut app = app_streaming(&t.url, &device.key).await;
+    t.hub.auth.revoke(device.info.key_id.as_str()).unwrap();
+    assert_eq!(closed_with(&mut app).await, 4401);
+}
+
+/// So is every open connection of a person removed from the hub.
+#[tokio::test]
+async fn a_removed_person_s_open_app_connections_are_closed_at_once() {
+    let t = start().await;
+    let people = crate::hub::people::People::new(t.hub.db.clone(), t.hub.clock.clone());
+    people.ensure_owner().unwrap();
+    let admin: Vec<Grant> =
+        serde_json::from_value(json!([{ "role": "admin", "machines": "*" }])).unwrap();
+    let owner = t
+        .hub
+        .auth
+        .create_key("laptop", &admin, KeyKind::Human)
+        .unwrap();
+    let member = people
+        .create(
+            &fleetd_contracts::people::PersonName::unchecked("Sam"),
+            fleetd_contracts::people::HubRole::Member,
+        )
+        .unwrap();
+    let operate: Vec<Grant> =
+        serde_json::from_value(json!([{ "role": "operate", "machines": "*" }])).unwrap();
+    let device = t
+        .hub
+        .auth
+        .create_key_for("phone", &operate, KeyKind::Human, Some(&member.person_id))
+        .unwrap();
+    let mut app = app_streaming(&t.url, &device.key).await;
+    let mcp = Mcp::connect(&t.url, &owner.key).await;
+    let (failed, out) = mcp
+        .call(
+            "person_remove",
+            json!({ "personId": member.person_id.as_str() }),
+        )
+        .await;
+    assert!(!failed, "{out}");
+    assert_eq!(closed_with(&mut app).await, 4401);
+}
