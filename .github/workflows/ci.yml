@@ -53,9 +53,9 @@ jobs:
           components: rustfmt, clippy
       - name: Hub migrations only add new files, after the base's
         if: steps.scope.outputs.run == 'true' && github.event_name == 'pull_request'
-        run: |
-          git fetch --quiet --depth=1 origin "$GITHUB_BASE_REF"
-          node .github/migrations-check.mjs FETCH_HEAD
+        # Against the merge commit's own first parent, the base it was built on (the train's batch PR's too): a fresh
+        # fetch of the base branch could hold migrations main landed after the merge, which the PR seems to remove.
+        run: node .github/migrations-check.mjs HEAD^1
       - uses: Swatinem/rust-cache@v2
         if: steps.scope.outputs.run == 'true'
         with:

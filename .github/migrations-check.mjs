@@ -2,6 +2,7 @@
 // new ones, never edits, renames or removes one on its base, and each sorts after every one there, so every hub runs
 // them in the order a fresh one does. build.rs fails the build on a duplicate prefix.
 // Run by CI's rust-lint job on a PR, from the repo root: node .github/migrations-check.mjs <base commit> [<head>]
+// CI names HEAD^1, the merge commit's first parent, so the base is exactly the one the tree under test was built on.
 // <head> is HEAD (CI's merge commit) unless named: scripts/check.sh names its worktree merged onto origin/main.
 import { execFileSync } from "node:child_process";
 
