@@ -137,8 +137,9 @@ code; they lose only the LSP tool's go-to-definition and diagnostics for those l
 To turn them back on for a project, add the [project variable](/docs/projects#env) `HEAVY_LANGUAGE_SERVERS` with the
 value `1`; for every project on a machine, put `HEAVY_LANGUAGE_SERVERS=1` in its
 [`claude.env`](/docs/config-and-files). Each agent's next start uses the plugins your settings enable. Plan on about
-5 GB more per running agent for rust-analyzer (clangd and the JVM servers are in the same range), and set node.json's
-`memPerAgentGb` to match, so the machine starts fewer agents at once.
+5 GB more per running agent for rust-analyzer (clangd and the JVM servers are in the same range), and lower the
+machine's [max agents](/docs/projects#max-agents) to match (Settings › Hub › Machines, or
+`fleetd machine set <id> --max-agents <n>`), so it starts fewer agents at once.
 
 ### Claude's own subagents are off {#no-subagents}
 
