@@ -263,6 +263,83 @@ async fn the_http_feed_streams_an_asset_in_pieces() {
     assert!(missing.contains("404"), "{missing}");
 }
 
+/// A server that cuts the build off after `cut` bytes the first time, then serves the rest from the byte a Range asks
+/// for (or, with `ranges` off, the whole build again, as a server that can't go on does): its URL and how many GETs.
+async fn cutting_server(
+    build: Vec<u8>,
+    cut: usize,
+    ranges: bool,
+) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    use axum::http::{HeaderMap, StatusCode, header};
+    let gets = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = gets.clone();
+    let app = axum::Router::new().route(
+        "/fleetd-linux-x64",
+        axum::routing::get(move |headers: HeaderMap| {
+            let (build, n) = (build.clone(), counted.fetch_add(1, Ordering::SeqCst));
+            async move {
+                let from: usize = headers
+                    .get(header::RANGE)
+                    .and_then(|r| r.to_str().ok())
+                    .and_then(|r| r.strip_prefix("bytes=")?.strip_suffix('-')?.parse().ok())
+                    .filter(|_| ranges)
+                    .unwrap_or(0);
+                let mut chunks: Vec<Result<Vec<u8>, std::io::Error>> = build[from..]
+                    .chunks(16 * 1024)
+                    .map(|c| Ok(c.to_vec()))
+                    .collect();
+                if n == 0 {
+                    chunks.truncate(cut / (16 * 1024));
+                    chunks.push(Err(std::io::Error::other("cut off")));
+                }
+                let body = axum::body::Body::from_stream(futures_util::stream::iter(chunks));
+                if from == 0 {
+                    return (StatusCode::OK, HeaderMap::new(), body);
+                }
+                let mut sent = HeaderMap::new();
+                let range = format!("bytes {from}-{}/{}", build.len() - 1, build.len());
+                sent.insert(header::CONTENT_RANGE, range.parse().unwrap());
+                (StatusCode::PARTIAL_CONTENT, sent, body)
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await });
+    (base, gets)
+}
+
+/// A build's download cut off part way goes on from the byte it stopped at, not from the start.
+#[tokio::test]
+async fn a_cut_off_download_goes_on_from_where_it_stopped() {
+    let build: Vec<u8> = (0..1_000_000u32).map(|n| (n % 251) as u8).collect();
+    let (base, gets) = cutting_server(build.clone(), 400 * 1024, true).await;
+    let feed = HttpFeed::new(base);
+    let mut got = Vec::new();
+    feed.stream("fleetd-linux-x64", &mut |chunk| {
+        got.extend_from_slice(chunk);
+        Ok(())
+    })
+    .await
+    .unwrap();
+    assert_eq!(got.len(), build.len(), "nothing came twice");
+    assert_eq!(got, build);
+    assert_eq!(gets.load(Ordering::SeqCst), 2);
+
+    // A server that can't go on from a byte sends the whole build again: the download stops rather than doubling.
+    let (base, _) = cutting_server(build.clone(), 400 * 1024, false).await;
+    let mut got = Vec::new();
+    let refused = HttpFeed::new(base)
+        .stream("fleetd-linux-x64", &mut |chunk| {
+            got.extend_from_slice(chunk);
+            Ok(())
+        })
+        .await
+        .unwrap_err();
+    assert!(refused.contains("can't go on"), "{refused}");
+    assert_eq!(got, build[..got.len()]);
+}
+
 #[tokio::test]
 async fn reads_the_channels_newest_cli() {
     let feed = FakeFeed::with(&[], r#"{"cliVersion":"0.6.0-edge.202610261056+1b563d7"}"#);

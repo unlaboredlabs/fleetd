@@ -61,7 +61,7 @@ async fn a_step_runs_only_sealed_to_this_mac_for_the_session_the_hub_names_once_
     let (host, key) = mac(dir.path());
     let (step, answer_key) = sealed(&key, "s1", now_ms(), "n1", Step::Ps);
     let answer = host.answer(frame("s1", step.clone())).await;
-    let opened = open_answer(&answer_key, answer.sealed.unwrap().as_str()).unwrap();
+    let (opened, _) = open_answer(&answer_key, answer.sealed.unwrap().as_str()).unwrap();
     assert_eq!(opened.done, Some(Done::Ps { jobs: vec![] }));
     // The hub plays it again: refused, in clear, with nothing of the agent's.
     let again = host.answer(frame("s1", step)).await;
@@ -114,7 +114,7 @@ fn git(dir: &Path, args: &[&str]) -> String {
 /// The agent's worktree pushed to the Mac, as the client does it: snapshot, have, pack, put, checkout.
 async fn push(host: &Host, worktree: &Path, scratch: &Path) -> (String, u64) {
     let agent = host.agent(&caller("s1")).unwrap();
-    let Done::Have { snapshots } = host.step(&agent, Step::Have).await.unwrap() else {
+    let Done::Have { snapshots, .. } = host.step(&agent, Step::Have).await.unwrap() else {
         panic!()
     };
     let known = push::known(worktree, &snapshots);
@@ -228,7 +228,7 @@ async fn a_pull_brings_a_file_or_a_folder_from_the_agents_folder_into_its_worktr
             let dest = client::destination(&wt, &path, to)?;
             let Done::Get {
                 data_b64, folder, ..
-            } = host::get(&dir, &repo, &path, 0)?
+            } = host::get(&dir, &repo, &path, 0, false)?.0
             else {
                 panic!()
             };
@@ -499,11 +499,16 @@ fn an_answer_opens_only_with_its_own_key() {
         done: Some(Done::Run { job: 4 }),
         error: None,
     };
-    let sealed = seal_answer(&key, &answer);
+    let sealed = seal_answer(&key, &answer, &[]);
     assert_eq!(
-        open_answer(&key, &sealed).unwrap().done,
+        open_answer(&key, &sealed).unwrap().0.done,
         Some(Done::Run { job: 4 })
     );
+    // Raw bytes after the answer come back as they went.
+    let tail = [0u8, b'{', b'}', 255, b'\n'];
+    let (opened, raw) = open_answer(&key, &seal_answer(&key, &answer, &tail)).unwrap();
+    assert_eq!(opened.done, Some(Done::Run { job: 4 }));
+    assert_eq!(raw, tail);
     assert!(open_answer(&rand::random(), &sealed).is_none());
 }
 
@@ -641,4 +646,290 @@ async fn a_foreground_runs_line_closes_when_nobody_follows_it_and_keeps_its_star
         "its start is when it started"
     );
     assert!(closed.completed_at.is_some());
+}
+
+/// What the stand-in hub does with one `mac_send`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Fault {
+    /// The Mac does the step and its answer is lost on the way back.
+    LoseAnswer,
+    /// The step never reaches the Mac: the link is down.
+    Unreachable,
+}
+
+/// The steps the stand-in hub passed on: each as the Mac read it, with the bytes after it.
+type Passed = std::sync::Arc<std::sync::Mutex<Vec<(Step, usize)>>>;
+
+/// A client for session `s1` and worktree `wt`, linked to a stand-in hub in front of `host`: the `n`th `mac_send`
+/// (from 0) meets `faults`' fault for `n`, if any.
+fn linked(
+    dir: &Path,
+    host: std::sync::Arc<Host>,
+    mac_key: [u8; 32],
+    wt: &Path,
+    faults: Vec<(usize, Fault)>,
+) -> (client::Client, Passed) {
+    use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult, LeadResultFrame};
+    use fleetd_contracts::mac::{MacSendResult, MacWhereResult};
+    use fleetd_contracts::mcp::{ErrorCode, McpToolError};
+    use fleetd_contracts::node_link::NodeToHub;
+    let relay = crate::node::lead::LeadRelay::new();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let attached = relay.attach(tx);
+    let passed: Passed = Default::default();
+    let (hub_relay, seen) = (relay.clone(), passed.clone());
+    // The Mac's own key opens each step for the record.
+    let opener = load_or_create_box_key(&dir.join("node")).unwrap();
+    tokio::spawn(async move {
+        let _attached = attached;
+        let mut sends = 0;
+        while let Some(line) = rx.recv().await {
+            let Ok(NodeToHub::LeadCall(frame)) = serde_json::from_str::<NodeToHub>(&line) else {
+                continue;
+            };
+            let offline = || {
+                Some(McpToolError::new(
+                    ErrorCode::MachineOffline,
+                    "the link to the fleetd hub dropped before it answered",
+                ))
+            };
+            let (result, error) = match frame.call {
+                LeadCall::MacWhere(_) => (
+                    Some(LeadCallResult::MacWhere(MacWhereResult {
+                        machine_id: MachineId::unchecked("mac1"),
+                        box_pub_key: serde_json::from_value(serde_json::json!(B64.encode(mac_key)))
+                            .unwrap(),
+                    })),
+                    None,
+                ),
+                LeadCall::MacSend(call) => {
+                    let fault = faults.iter().find(|(n, _)| *n == sends).map(|(_, f)| *f);
+                    sends += 1;
+                    if fault == Some(Fault::Unreachable) {
+                        (None, offline())
+                    } else {
+                        let plain = opener
+                            .open(&B64.decode(call.sealed.as_str()).unwrap())
+                            .unwrap();
+                        let (envelope, raw) = split_raw::<Envelope>(&plain).unwrap();
+                        seen.lock().unwrap().push((envelope.step, raw.len()));
+                        let answer = host
+                            .answer(MacCallFrame {
+                                id: NonEmpty::unchecked("1"),
+                                caller: caller(call.thread_id.as_str()),
+                                sealed: call.sealed,
+                            })
+                            .await;
+                        match (fault, answer.sealed) {
+                            (Some(Fault::LoseAnswer), _) => (None, offline()),
+                            (_, Some(sealed)) => (
+                                Some(LeadCallResult::MacSend(MacSendResult { sealed })),
+                                None,
+                            ),
+                            (_, None) => (None, answer.error),
+                        }
+                    }
+                }
+                _ => continue,
+            };
+            hub_relay.resolve(LeadResultFrame {
+                id: frame.id,
+                result,
+                error,
+            });
+        }
+    });
+    let wt = wt.to_path_buf();
+    let client = client::Client::new(
+        relay,
+        std::sync::Arc::new(move |_: &str| Some(wt.clone())),
+        std::sync::Arc::new(|_: &str| Ok(crate::node::mask::Masker::default())),
+        std::sync::Arc::new(|_: &str, _| {}),
+        dir.join("home"),
+    );
+    (client, passed)
+}
+
+fn random_bytes(n: usize) -> Vec<u8> {
+    (0..n).map(|_| rand::random::<u8>()).collect()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_push_cut_mid_way_goes_on_from_its_piece_and_sends_pieces_raw() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, key) = mac(dir.path());
+    let wt = dir.path().join("wt");
+    std::fs::create_dir_all(&wt).unwrap();
+    git(&wt, &["init", "-q"]);
+    // Three pieces' worth, random so it doesn't pack small.
+    let big = random_bytes(PIECE * 2 + 1000);
+    std::fs::write(wt.join("big.bin"), &big).unwrap();
+    // Steps: have 0, put 1 (answer lost), put 1 again 2, put 3 (unreachable), put 3 again 4, put 5, checkout 6 (answer
+    // lost), checkout again 7.
+    let faults = vec![
+        (1, Fault::LoseAnswer),
+        (3, Fault::Unreachable),
+        (6, Fault::LoseAnswer),
+    ];
+    let (client, passed) = linked(dir.path(), std::sync::Arc::new(host), key, &wt, faults);
+    let done = client
+        .call("s1", fleetd_contracts::mac::MacCall::Push)
+        .await
+        .unwrap();
+    let fleetd_contracts::mac::MacDone::Push { folder, sent_bytes } = done else {
+        panic!("{done:?}")
+    };
+    assert_eq!(
+        std::fs::read(Path::new(&folder).join("big.bin")).unwrap(),
+        big
+    );
+    let passed = passed.lock().unwrap().clone();
+    let puts: Vec<(u64, usize)> = passed
+        .iter()
+        .filter_map(|(step, raw)| match step {
+            Step::Put {
+                offset, data_b64, ..
+            } => {
+                assert!(data_b64.is_empty(), "the piece goes raw, not in base64");
+                Some((*offset, *raw))
+            }
+            _ => None,
+        })
+        .collect();
+    // The piece whose answer was lost went again from its own offset, never from the start.
+    let p = PIECE as u64;
+    assert_eq!(
+        puts.iter().map(|(o, _)| *o).collect::<Vec<_>>(),
+        [0, 0, p, 2 * p]
+    );
+    assert_eq!(
+        sent_bytes,
+        puts[1..].iter().map(|(_, n)| *n as u64).sum::<u64>()
+    );
+    let checkouts = passed
+        .iter()
+        .filter(|(s, _)| matches!(s, Step::Checkout { .. }))
+        .count();
+    assert_eq!(checkouts, 2, "a checkout whose answer was lost goes again");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_pull_cut_mid_way_goes_on_from_its_piece_and_a_folders_lost_last_piece_starts_it_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, key) = mac(dir.path());
+    let agent = host.agent(&caller("s1")).unwrap();
+    std::fs::create_dir_all(agent.repo().join("out")).unwrap();
+    let big = random_bytes(PIECE * 2 + 1000);
+    std::fs::write(agent.repo().join("big.bin"), &big).unwrap();
+    std::fs::write(agent.repo().join("out/a.bin"), &big).unwrap();
+    std::fs::write(agent.repo().join("out/b.txt"), "b").unwrap();
+    let wt = dir.path().join("wt");
+    std::fs::create_dir_all(&wt).unwrap();
+    // The file: get 0, get 1 (answer lost), get 1 again 2, get 3 (unreachable), get 3 again 4. The folder: get 5, 6,
+    // get 7 (its last, answer lost), get 7 again 8 (the tar.gz is gone), then from the start: 9, 10, 11.
+    let faults = vec![
+        (1, Fault::LoseAnswer),
+        (3, Fault::Unreachable),
+        (7, Fault::LoseAnswer),
+    ];
+    let (client, passed) = linked(dir.path(), std::sync::Arc::new(host), key, &wt, faults);
+    let pull = |path: &str| fleetd_contracts::mac::MacCall::Pull {
+        path: path.into(),
+        to: None,
+    };
+    let done = client.call("s1", pull("big.bin")).await.unwrap();
+    assert_eq!(
+        done,
+        fleetd_contracts::mac::MacDone::Pull {
+            path: wt.join("big.bin").to_string_lossy().into_owned(),
+            bytes: big.len() as u64,
+        }
+    );
+    assert_eq!(std::fs::read(wt.join("big.bin")).unwrap(), big);
+    client.call("s1", pull("out")).await.unwrap();
+    assert_eq!(std::fs::read(wt.join("out/a.bin")).unwrap(), big);
+    assert_eq!(std::fs::read_to_string(wt.join("out/b.txt")).unwrap(), "b");
+    let p = PIECE as u64;
+    let offsets: Vec<u64> = passed
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(step, _)| match step {
+            Step::Get { offset, raw, .. } => {
+                assert!(raw, "asks for raw pieces");
+                *offset
+            }
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(offsets, [0, p, p, 2 * p, 0, p, 2 * p, 2 * p, 0, p, 2 * p]);
+}
+
+#[tokio::test]
+async fn an_older_node_and_an_older_mac_still_push_and_pull_in_base64() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, key) = mac(dir.path());
+    let agent = host.agent(&caller("s1")).unwrap();
+    // An older node's put: base64, nothing after the step.
+    let piece = random_bytes(1000);
+    let put = Step::Put {
+        name: "push.pack".into(),
+        offset: 0,
+        data_b64: B64.encode(&piece),
+    };
+    let (sealed, answer_key) = sealed(&key, "s1", now_ms(), "n1", put);
+    let answer = host.answer(frame("s1", sealed)).await;
+    // ...opens as it always did: the JSON alone.
+    let plain = {
+        use crypto_secretbox::KeyInit;
+        use crypto_secretbox::aead::Aead;
+        crypto_secretbox::XSalsa20Poly1305::new(crypto_secretbox::Key::from_slice(&answer_key))
+            .decrypt(
+                &crypto_secretbox::Nonce::default(),
+                B64.decode(answer.sealed.unwrap().as_str())
+                    .unwrap()
+                    .as_slice(),
+            )
+            .unwrap()
+    };
+    let old: Answer = serde_json::from_slice(&plain).unwrap();
+    assert_eq!(old.done, Some(Done::Put { bytes: 1000 }));
+    assert_eq!(
+        std::fs::read(agent.dir.join("in/push.pack")).unwrap(),
+        piece
+    );
+    // An older node's get has no `raw`: the piece comes in base64, with nothing after the answer.
+    std::fs::create_dir_all(agent.repo()).unwrap();
+    std::fs::write(agent.repo().join("f.txt"), "file").unwrap();
+    let get: Step = serde_json::from_value(serde_json::json!({
+        "step": "get", "path": "f.txt", "offset": 0
+    }))
+    .unwrap();
+    let (done, raw) = host.step_with(&agent, get, Vec::new()).await.unwrap();
+    assert!(raw.is_empty());
+    assert!(matches!(done, Done::Get { data_b64, .. } if data_b64 == B64.encode("file")));
+    // An older Mac's have says nothing of `raw`: the new node sends base64 then.
+    let have: Done =
+        serde_json::from_value(serde_json::json!({ "step": "have", "snapshots": [] })).unwrap();
+    assert_eq!(
+        have,
+        Done::Have {
+            snapshots: vec![],
+            raw: false
+        }
+    );
+    // An older Mac reads the new get, `raw` and all, and answers in base64 (which the node takes).
+    #[derive(serde::Deserialize)]
+    #[serde(tag = "step", rename_all = "snake_case")]
+    enum OlderStep {
+        Get { path: String, offset: u64 },
+    }
+    let new = serde_json::to_value(Step::Get {
+        path: "f.txt".into(),
+        offset: 7,
+        raw: true,
+    })
+    .unwrap();
+    let OlderStep::Get { path, offset } = serde_json::from_value(new).unwrap();
+    assert_eq!((path.as_str(), offset), ("f.txt", 7));
 }
