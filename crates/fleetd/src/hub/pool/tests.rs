@@ -1593,14 +1593,12 @@ async fn settings_are_checked_before_they_are_saved() {
             project_id: ProjectId::new("shop").unwrap(),
         }],
         environment: Some(" fleetd-devbox ".into()),
-        writers: Some(true),
     };
     w.pool.apply(&ok).unwrap();
     let s = w.pool.ledger.settings().unwrap();
     assert_eq!((s.pool_size, s.day_budget), (2, 5.0));
     assert_eq!(s.environment.as_deref(), Some("fleetd-devbox"));
     assert_eq!(s.projects.len(), 1);
-    assert!(s.writers);
     assert_eq!(
         s.month_budget(),
         20.0,
@@ -1944,4 +1942,157 @@ async fn a_resume_that_finds_the_machine_running_costs_no_start_and_renews_the_l
     let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
     assert_eq!(row.state, State::Waking);
     assert_eq!(row.renewed_at, Some(w.now()));
+}
+
+/// boat's `unknown_environment` (W468): the create's machine fails with a note naming the environment it sent and what
+/// to make or save, it counts no start (boat checks the name before it counts one) and holds no other start, so the
+/// person's next Create, once they made the environment, goes straight to boat; a later create that boat takes drops
+/// the note and the Test that failed before it.
+#[tokio::test]
+async fn an_unknown_environment_fails_its_machine_once_and_the_next_create_goes_through() {
+    let w = World::new().await;
+    w.pool
+        .ledger
+        .change_settings(&SettingsChange {
+            enabled: true,
+            pool_size: 3,
+            machine_type: "large".into(),
+            day_budget: 3.0,
+            month_budget: None,
+            projects: Vec::new(),
+            environment: Some("fleetd-devbox".into()),
+        })
+        .unwrap();
+    let refused = super::boat::refusal(
+        400,
+        &serde_json::json!({"ok": false, "code": "unknown_environment", "status": 400}),
+        None,
+    );
+    w.boat.refuse("create", refused);
+    w.pool.path_begin("boat-1");
+    let spec = CreateSpec {
+        body_until: w.now() + 15 * 60_000,
+        ..Default::default()
+    };
+    let why = w.pool.create("boat-1", spec).await.unwrap_err();
+    w.pool
+        .path_end(Err(format!("boat-1: the create didn't start: {why}")));
+    assert!(why.contains("no environment named fleetd-devbox"), "{why}");
+    assert!(why.contains("Safe for third parties"), "{why}");
+    let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
+    assert_eq!(
+        (row.state, row.note.as_deref()),
+        (State::Failed, Some(why.as_str()))
+    );
+    let starts = |w: &World| {
+        w.pool
+            .ledger
+            .starts_in(super::ledger::Window::Day, w.now())
+            .unwrap()
+            .0
+    };
+    assert_eq!(starts(&w), 0, "boat counted no start");
+    assert_eq!(w.pool.start_held(), None, "no other start waits on it");
+    assert_eq!(w.pool.ledger.settings().unwrap().paused, None);
+    let view = w.pool.machines(|_| None).unwrap();
+    assert_eq!(view[0].since_ms, Some(w.now()), "the refusal says when");
+
+    // The person made it; their next Create, a minute later, goes to boat and is taken.
+    w.advance(MIN);
+    w.create("boat-1").await;
+    assert_eq!(w.boat.calls_like("create").len(), 2);
+    let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
+    assert_eq!((row.state, row.note), (State::Creating, None));
+    assert_eq!(w.pool.path_test(), None, "the old Test's failure is gone");
+}
+
+/// A refusal of the request itself on a wake isn't asked again by itself: bursting pauses with boat's words until a
+/// person resumes, and a sweep whose /limits says boat can start doesn't lift it.
+#[tokio::test]
+async fn a_refused_wake_pauses_until_a_person_resumes() {
+    let w = World::new().await;
+    w.asleep("boat-1").await;
+    w.boat.refuse(
+        "resume",
+        BoatError::Refused {
+            status: 400,
+            code: "type_too_small".into(),
+        },
+    );
+    w.pool.wake("boat-1", Why::Need).await.unwrap_err();
+    let held = w.pool.start_held().unwrap();
+    assert!(
+        held.contains("type_too_small") && held.contains("Resume"),
+        "{held}"
+    );
+    sweep::sweep(&w.pool).await.unwrap();
+    assert_eq!(w.pool.start_held().as_deref(), Some(held.as_str()));
+    w.advance(Duration::from_secs(3600));
+    assert!(w.pool.wake("boat-1", Why::Need).await.is_err());
+    assert_eq!(
+        w.boat.calls_like("resume").len(),
+        1,
+        "never asked again by itself"
+    );
+    w.pool.resume_bursting().unwrap();
+    w.pool.wake("boat-1", Why::Need).await.unwrap();
+}
+
+/// A key or environment changed: what boat said about a create under the old one no longer shows.
+#[tokio::test]
+async fn a_new_key_drops_a_refused_creates_note() {
+    let w = World::new().await;
+    w.boat.refuse(
+        "create",
+        BoatError::UnknownEnvironment {
+            name: String::new(),
+        },
+    );
+    let spec = CreateSpec {
+        body_until: w.now() + 15 * 60_000,
+        ..Default::default()
+    };
+    w.pool.create("boat-1", spec).await.unwrap_err();
+    assert!(
+        w.pool
+            .ledger
+            .slot("boat-1")
+            .unwrap()
+            .unwrap()
+            .note
+            .is_some()
+    );
+    w.pool.set_key("boat_test_key_2").unwrap();
+    let row = w.pool.ledger.slot("boat-1").unwrap().unwrap();
+    assert_eq!((row.state, row.note), (State::Failed, None));
+}
+
+/// A hub restart doesn't eat a create's 15 minutes (W468: all three were deleted a second after one): the deadline counts
+/// from when the hub could see the machine again, as a wake's 2 minutes do.
+#[tokio::test]
+async fn a_hub_restart_gives_a_setting_up_machine_its_full_15_minutes() {
+    let w = World::new().await;
+    w.create("boat-1").await;
+    w.advance(14 * MIN);
+    let pool = w.restart();
+    w.advance(2 * MIN);
+    life::tick(&pool).await;
+    assert_eq!(
+        pool.ledger.slot("boat-1").unwrap().unwrap().state,
+        State::Creating
+    );
+    w.advance(12 * MIN); // 28 since the create, 14 since the restart
+    life::tick(&pool).await;
+    assert_eq!(
+        pool.ledger.slot("boat-1").unwrap().unwrap().state,
+        State::Creating
+    );
+    w.advance(2 * MIN);
+    life::tick(&pool).await;
+    let row = pool.ledger.slot("boat-1").unwrap().unwrap();
+    assert_eq!(row.state, State::Failed);
+    assert_eq!(
+        row.note.as_deref(),
+        Some("no hello within 15 minutes of its create")
+    );
 }

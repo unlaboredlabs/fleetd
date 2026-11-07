@@ -97,8 +97,10 @@ as_agent "\$HOME/.local/bin/claude --version >/dev/null"
 
 step "Rust"
 # The toolchain lives in the agents' home, so boat's base image moving doesn't make every build cold; a repo's own
-# rust-toolchain.toml picks its version.
-as_agent "command -v ~/.cargo/bin/rustup >/dev/null || curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path --profile minimal >/dev/null"
+# rust-toolchain.toml picks its version. boat's image ships a Rust of its own on the PATH, which rustup-init refuses
+# to install beside unless told to: ours comes first on the node's PATH, so the image's is left as it is.
+as_agent "command -v ~/.cargo/bin/rustup >/dev/null || curl -fsSL https://sh.rustup.rs \
+  | RUSTUP_INIT_SKIP_PATH_CHECK=yes sh -s -- -y --no-modify-path --profile minimal >/dev/null"
 as_agent "rustup default stable >/dev/null 2>&1 && [ \"\$(rustup show home)\" = \"\$HOME/.rustup\" ]"
 
 step "the node's environment"

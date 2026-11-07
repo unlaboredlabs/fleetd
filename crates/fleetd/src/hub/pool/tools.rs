@@ -1,8 +1,7 @@
 //! The cloud machines' tools: `cloud_get` for anyone signed in (Settings › Hub › Machines, Status), and for admin keys
-//! the settings, the boat key (made by "Sign in with boat", whose link and code only admins see, or pasted and sealed in
-//! the app to the hub's own box key), Test (the key, then the whole way from a cloud machine to the hub), Create, Reset,
-//! Resume and `cloud_stop`, the kill switch (`fleetd cloud stop`, and "Stop all cloud machines"). No key or secret comes
-//! back; the hub's SSH key shows only its public half.
+//! the settings, the boat key (sealed in the app to the hub's own box key), Test (the key, then the whole way from a
+//! cloud machine to the hub), Create, Reset, Resume and `cloud_stop`, the kill switch (`fleetd cloud stop`, and "Stop
+//! all cloud machines"). No key or secret comes back; the hub's SSH key shows only its public half.
 use std::sync::Arc;
 
 use base64::Engine;
@@ -13,8 +12,8 @@ use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::mcp::{
     CloudCreateInput, CloudCreateOutput, CloudGetInput, CloudGetOutput, CloudKeySetInput,
     CloudKeySetOutput, CloudResetInput, CloudResetOutput, CloudResumeInput, CloudResumeOutput,
-    CloudSetInput, CloudSetOutput, CloudSignInInput, CloudSignInOutput, CloudStopInput,
-    CloudStopOutput, CloudTestInput, CloudTestOutput, ErrorCode,
+    CloudSetInput, CloudSetOutput, CloudStopInput, CloudStopOutput, CloudTestInput,
+    CloudTestOutput, ErrorCode,
 };
 
 use super::boat::File;
@@ -27,7 +26,6 @@ pub fn register(tools: &mut Registry) {
     tools.add("cloud_get", get);
     tools.add("cloud_set", set);
     tools.add("cloud_key_set", key_set);
-    tools.add("cloud_sign_in", sign_in);
     tools.add("cloud_test", test);
     tools.add("cloud_create", create);
     tools.add("cloud_reset", reset);
@@ -79,14 +77,12 @@ pub fn cloud_view(hub: &Hub) -> Result<CloudView, ToolError> {
         month_is_plan: s.month_budget.is_none(),
         environment: s.environment.clone(),
         environment_default: environment_default(hub),
-        writers: s.writers,
         projects: s.projects.clone(),
         today: budget.day_spent,
         month: budget.month_spent,
         held: s.has_key.then(|| pool.start_held()).flatten(),
         paused: s.paused.as_ref().map(|(_, why)| why.clone()),
         key_test: pool.key_test(),
-        sign_in: pool.sign_in(),
         machines,
         sizes: view::sizes(),
         plan_dollars: s.plan_dollars,
@@ -96,15 +92,9 @@ pub fn cloud_view(hub: &Hub) -> Result<CloudView, ToolError> {
     })
 }
 
-async fn get(hub: Arc<Hub>, caller: Caller, _: CloudGetInput) -> Result<CloudGetOutput, ToolError> {
-    let mut cloud = cloud_view(&hub)?;
-    // The sign-in's link and code are the admin's: whoever types the code first, signed in to their own boat.dev
-    // account, gets the hub's key made there.
-    if require(&caller, Role::Admin, None).is_err() {
-        cloud.sign_in = None;
-    }
+async fn get(hub: Arc<Hub>, _: Caller, _: CloudGetInput) -> Result<CloudGetOutput, ToolError> {
     Ok(CloudGetOutput {
-        cloud,
+        cloud: cloud_view(&hub)?,
         next: None,
         truncated: None,
     })
@@ -121,7 +111,7 @@ async fn set(
         return Err(error(
             ErrorCode::Invalid,
             "Cloud machines need a boat.dev key first.",
-            "Sign in with boat (or paste a key), Test it, then turn cloud machines on.",
+            "Paste the key, Test it, then turn cloud machines on.",
         ));
     }
     hub.pool
@@ -170,53 +160,7 @@ async fn key_set(
         ));
     }
     hub.pool.set_key(key).map_err(failed)?;
-    // The pasted key replaces whatever a sign-in made, and one under way would replace it.
-    hub.pool.sign_in_forget();
     Ok(CloudKeySetOutput {
-        cloud: cloud_view(&hub)?,
-        next: None,
-        truncated: None,
-    })
-}
-
-/// "Sign in with boat": starts boat's sign-in to the admin's email (the hub makes the key the setup step lists, scoped
-/// to the pool's environment, and seals only that), or stops the one under way.
-async fn sign_in(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: CloudSignInInput,
-) -> Result<CloudSignInOutput, ToolError> {
-    require(&caller, Role::Admin, None)?;
-    match input.email.as_deref().map(str::trim) {
-        None => hub.pool.sign_in_stop(),
-        Some(email) => {
-            if !super::signin::email_ok(email) {
-                return Err(error(
-                    ErrorCode::Invalid,
-                    "That isn't an email address.",
-                    "Type the email you sign in to boat.dev with.",
-                ));
-            }
-            let name = environment_default(&hub);
-            let environment = hub
-                .pool
-                .ledger()
-                .settings()?
-                .environment
-                .unwrap_or_else(|| name.clone());
-            hub.pool
-                .sign_in_start(email, environment, name)
-                .await
-                .map_err(|why| {
-                    error(
-                        ErrorCode::Failed,
-                        format!("boat.dev's sign-in didn't start: {why}"),
-                        "Try again, or paste a key you made in boat.dev instead.",
-                    )
-                })?;
-        }
-    }
-    Ok(CloudSignInOutput {
         cloud: cloud_view(&hub)?,
         next: None,
         truncated: None,
@@ -266,16 +210,17 @@ pub async fn test_path(hub: &Hub) {
     }
     if let Some(slot) = first(&[State::Asleep, State::Stopping]) {
         pool.path_begin(&slot);
-        if let Err(why) = pool.wake(&slot, Why::Test).await {
-            pool.path_end(Err(format!("{slot}: the wake didn't start: {why}")));
+        // A wake that didn't start says why on the machine's line, or as the pool's hold.
+        if pool.wake(&slot, Why::Test).await.is_err() {
+            pool.path_clear();
         }
         return;
     }
     match pool.missing().ok().and_then(|m| m.into_iter().next()) {
         Some(slot) if s.environment.is_some() => {
             pool.path_begin(&slot);
-            if let Err(why) = create_slot(hub, &slot).await {
-                pool.path_end(Err(format!("{slot}: the create didn't start: {why}")));
+            if create_slot(hub, &slot).await.is_err() {
+                pool.path_clear();
             }
         }
         _ => {
@@ -292,9 +237,13 @@ pub async fn test_path(hub: &Hub) {
 }
 
 /// Creates `slot`'s machine: the setup script for this hub, and a one-time pool enroll token in a file under /tmp,
-/// which boat never snapshots. The create spends one boat start.
+/// which boat never snapshots. The create spends one boat start. No token is minted while starts are held, and one
+/// whose create boat didn't take is revoked: only a machine being made holds an open code.
 async fn create_slot(hub: &Hub, slot: &str) -> Result<(), String> {
     let id = MachineId::new(slot).map_err(|e| e.to_string())?;
+    if let Some(why) = hub.pool.start_held() {
+        return Err(why);
+    }
     let script = crate::hub::cloud::setup::for_slot(hub, &id)?;
     let token = hub
         .auth
@@ -302,19 +251,30 @@ async fn create_slot(hub: &Hub, slot: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let body_until = crate::hub::store::parse_ms(&token.expires_at)
         .ok_or("the enroll token's end can't be read")?;
-    hub.pool
+    let made = hub
+        .pool
         .create(
             slot,
             CreateSpec {
                 setup_script: Some(script),
                 files: vec![File {
                     path: crate::hub::cloud::setup::TOKEN_FILE.to_owned(),
-                    content: token.token,
+                    content: token.token.clone(),
                 }],
                 body_until,
             },
         )
-        .await
+        .await;
+    // A create with no answer stays `creating`, and the sweep may send its body, token and all, again.
+    let creating =
+        matches!(hub.pool.ledger().slot(slot), Ok(Some(r)) if r.state == State::Creating);
+    if made.is_err()
+        && !creating
+        && let Err(e) = hub.auth.revoke_enroll_secret(&token.token)
+    {
+        tracing::warn!(slot, error = %e, "pool: a refused create's enroll code wasn't revoked");
+    }
+    made
 }
 
 async fn create(

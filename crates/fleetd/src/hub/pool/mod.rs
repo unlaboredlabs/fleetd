@@ -27,7 +27,6 @@ pub mod lease;
 pub mod ledger;
 pub mod life;
 pub mod place;
-pub mod signin;
 pub mod starts;
 pub mod sweep;
 pub mod tools;
@@ -38,8 +37,6 @@ pub mod view;
 mod boat_tests;
 #[cfg(test)]
 mod place_tests;
-#[cfg(test)]
-mod signin_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -213,10 +210,9 @@ pub struct Pool {
     /// Awake slots whose disk boat says is hydrated since they woke: placement prefers them, since builds run about 5
     /// times slower until it is (W407's spike).
     hydrated: Mutex<HashSet<String>>,
-    /// boat's API: where "Sign in with boat" goes ([`signin`]).
-    api: String,
-    /// The admin's "Sign in with boat", since the hub started.
-    sign_ins: Mutex<signin::SignIns>,
+    /// When this hub process began watching its machines (ms): a hello deadline counts only time since then, never the
+    /// time the hub was down or restarting, when no hello could reach it.
+    watching_since: i64,
 }
 
 impl Pool {
@@ -229,19 +225,9 @@ impl Pool {
         clock: Arc<dyn Clock>,
         zone: Tz,
     ) -> Arc<Pool> {
-        Arc::new(Pool::build(db, home, boat, tunnels, fleet, clock, zone))
-    }
-
-    fn build(
-        db: Arc<HubDb>,
-        home: PathBuf,
-        boat: Arc<dyn Boat>,
-        tunnels: Arc<dyn Tunnels>,
-        fleet: Arc<dyn Fleet>,
-        clock: Arc<dyn Clock>,
-        zone: Tz,
-    ) -> Pool {
-        Pool {
+        let watching_since = now_ms(clock.as_ref());
+        Arc::new(Pool {
+            watching_since,
             ledger: Ledger::new(db),
             boat,
             tunnels,
@@ -257,9 +243,7 @@ impl Pool {
             key_test: Mutex::default(),
             path: Mutex::default(),
             hydrated: Mutex::default(),
-            api: boat::API.to_owned(),
-            sign_ins: Mutex::default(),
-        }
+        })
     }
 
     /// The hub's pool: boat itself at `api`, with the key the ledger holds sealed to the hub's box key, and the hub's
@@ -282,10 +266,7 @@ impl Pool {
         let ssh_key: tunnel::KeySource =
             Arc::new(move || tunnel::hub_key(&ledger, &ssh_home).map(Arc::new));
         let tunnels = Arc::new(SshTunnels::new(boat.clone(), ssh_key, hub));
-        Arc::new(Pool {
-            api: api.to_owned(),
-            ..Pool::build(db, home, boat, tunnels, fleet, clock, zone)
-        })
+        Pool::new(db, home, boat, tunnels, fleet, clock, zone)
     }
 
     /// The public half of the hub's SSH key, made now if it isn't yet: what boat puts on each machine.
@@ -315,6 +296,11 @@ impl Pool {
             Tunnel::Up => None,
             Tunnel::Down(why) => Some(why),
         }
+    }
+
+    /// The ms of a hello deadline that began at `at`, counted from when this hub could first see the machine.
+    pub(super) fn waited(&self, at: i64, now: i64) -> i64 {
+        now - at.max(self.watching_since)
     }
 
     pub fn ledger(&self) -> &Ledger {
@@ -361,9 +347,26 @@ impl Pool {
         self.ledger
             .set_sealed_key(Some(&sealed))
             .map_err(|e| e.to_string())?;
-        // A new key is untested.
+        // A new key is untested, and what boat said to the old one about a create no longer holds.
         self.heard(None);
+        self.forget_refused_creates();
         Ok(())
+    }
+
+    /// Drops the notes of the creates boat refused: once the key or the environment changes, the next Create asks
+    /// boat again, and a refusal it gives then is noted anew.
+    pub(super) fn forget_refused_creates(&self) {
+        let Ok(rows) = self.ledger.slots() else {
+            return;
+        };
+        for mut row in rows {
+            if row.state == State::Failed && row.sandbox_id.is_none() && row.note.is_some() {
+                row.note = None;
+                if let Err(e) = self.ledger.put(&row) {
+                    tracing::warn!(slot = row.slot, error = %e, "pool: a refused create's note not cleared");
+                }
+            }
+        }
     }
 
     /// Day and month spend against their budgets, the day and the month in the hub's time zone.
@@ -538,10 +541,12 @@ impl Pool {
         }
     }
 
+    /// A start boat took: its backoff ends, and a Test that failed before it is no longer what holds.
     fn started(&self) {
         if let Err(e) = self.ledger.set_hold(None, None, 0) {
             tracing::error!(error = %e, "pool: backoff not cleared");
         }
+        self.path_forget_failure();
     }
 
     /// The checks before any start: nothing holds starts, the budget allows one more machine, and boat's pre-flight
@@ -776,7 +781,16 @@ impl Pool {
             .ledger
             .open_spend(slot, None, now, price_per_hour(&s.machine_type))
             .map_err(|e| e.to_string())?;
-        let answer = self.boat.create(&idem_key, &bytes).await;
+        let answer = self
+            .boat
+            .create(&idem_key, &bytes)
+            .await
+            .map_err(|e| match e {
+                BoatError::UnknownEnvironment { .. } => BoatError::UnknownEnvironment {
+                    name: s.environment.clone().unwrap_or_else(|| "base".into()),
+                },
+                e => e,
+            });
         self.created(slot, answer, Some((start, spend)))
     }
 
@@ -815,15 +829,26 @@ impl Pool {
                 Err(e.line())
             }
             Err(e) => {
+                tracing::warn!(slot, error = %e.line(), "pool: boat.dev refused the create");
                 if let Some((start, spend)) = rows {
-                    if matches!(e, BoatError::NoReadyMachine | BoatError::RateLimited { .. }) {
+                    // boat checks the environment before it counts anything.
+                    if matches!(
+                        e,
+                        BoatError::NoReadyMachine
+                            | BoatError::RateLimited { .. }
+                            | BoatError::UnknownEnvironment { .. }
+                    ) {
                         let _ = self.ledger.uncount_start(start);
                     }
                     let _ = self.ledger.drop_spend(spend);
                 } else {
                     let _ = self.ledger.close_spend(slot, self.now());
                 }
-                self.back_off(&e);
+                // A refusal of this create's own ask fails only its machine: no other start waits on it, and the
+                // person's next Create, once they fixed it, goes straight to boat.
+                if !e.about_the_request() {
+                    self.back_off(&e);
+                }
                 row.state = State::Failed;
                 row.create_body = None;
                 row.lease_until = None;

@@ -46,7 +46,12 @@ pub async fn sweep(pool: &Pool) -> Result<(), String> {
     pool.ledger
         .set_plan(limits.start_limits, limits.sandbox_plan_dollars)
         .map_err(|e| e.to_string())?;
-    if limits.can_start && s.paused.is_some() {
+    // Only a billing or key pause: a refusal of what was asked stays until a person resumes.
+    if limits.can_start
+        && s.paused
+            .as_ref()
+            .is_some_and(|(kind, _)| kind == "billing" || kind == "key")
+    {
         tracing::info!("pool: boat.dev can start again; bursting resumes");
         pool.ledger.set_paused(None).map_err(|e| e.to_string())?;
     }

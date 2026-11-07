@@ -512,3 +512,93 @@ async fn a_failed_claude_step_leaves_the_cloud_machine_not_ready() {
     assert!(report.ready, "{report:?}");
     assert!(hub.cloud.ready(&hub, &m("boat-1")));
 }
+
+/// The setup script's own Rust step on an image that ships Rust (boat's does, W468): rustup-init, which refuses to
+/// install beside a Rust on the PATH unless `RUSTUP_INIT_SKIP_PATH_CHECK=yes`, installs into the agents' home, and the
+/// step's check passes. A stand-in rustup-init with the real one's PATH check; `sudo` and `curl` are fakes.
+#[test]
+fn the_setup_scripts_rust_step_installs_beside_the_images_own_rust() {
+    let script = render(&SetupScript {
+        hub_url: "http://127.0.0.1:47900".into(),
+        machine_id: m("boat-1"),
+        version: "0.4.0".into(),
+        release_build: true,
+        git_identity: None,
+        claude: "2.1.314".into(),
+    });
+    let between = |from: &str, to: &str| -> String {
+        let rest = script.split(from).nth(1).expect(from);
+        format!("{from}{}", rest.split(to).next().expect(to))
+    };
+    let as_agent = between("as_agent() {", "\n}\n") + "\n}\n";
+    let rust = between("step \"Rust\"", "step \"the node's environment\"");
+
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let image = dir.path().join("image/bin");
+    let bin = dir.path().join("bin");
+    for d in [&home, &image, &bin] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    let write = |path: std::path::PathBuf, body: &str| {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::write(&path, body).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    // The image's own Rust, on the PATH as boat's /usr/local/cargo/bin is.
+    write(image.join("rustc"), "#!/bin/sh\necho rustc 1.80.0\n");
+    write(image.join("cargo"), "#!/bin/sh\necho cargo 1.80.0\n");
+    // `sudo -u fleetd -H env …`: the agent is the test's own user here.
+    write(
+        bin.join("sudo"),
+        "#!/bin/sh\nwhile [ \"$1\" != env ]; do shift; done\nexec \"$@\"\n",
+    );
+    // rustup-init as sh.rustup.rs serves it, reduced to its PATH check and what it installs.
+    let init = r#"#!/bin/sh
+for d in $(echo "$PATH" | tr ':' ' '); do
+  if [ -x "$d/rustc" ] && [ "$d" != "$CARGO_HOME/bin" ] && [ "${RUSTUP_INIT_SKIP_PATH_CHECK:-no}" != yes ]; then
+    echo "error: cannot install while Rust is installed" >&2
+    exit 1
+  fi
+done
+mkdir -p "$CARGO_HOME/bin" "$RUSTUP_HOME"
+printf '%s\n' '#!/bin/sh' 'case "$1" in default) exit 0;; show) echo "$RUSTUP_HOME";; esac' > "$CARGO_HOME/bin/rustup"
+chmod +x "$CARGO_HOME/bin/rustup"
+"#;
+    std::fs::write(dir.path().join("rustup-init"), init).unwrap();
+    write(
+        bin.join("curl"),
+        &format!(
+            "#!/bin/sh\ncat '{}'\n",
+            dir.path().join("rustup-init").display()
+        ),
+    );
+
+    let harness = format!(
+        "set -euo pipefail\nAGENT=fleetd\nAGENT_UID=1000\nstep() {{ :; }}\n{as_agent}\n{rust}\necho rust-step-done\n"
+    );
+    let Ok(out) = std::process::Command::new("bash")
+        .args(["-c", &harness])
+        .env_clear()
+        .env("HOME", &home)
+        .env(
+            "PATH",
+            format!("{}:{}:/usr/bin:/bin", bin.display(), image.display()),
+        )
+        .output()
+    else {
+        return;
+    };
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.status.success(), "{said}");
+    assert!(said.contains("rust-step-done"), "{said}");
+    assert!(home.join(".cargo/bin/rustup").exists(), "{said}");
+    assert!(
+        image.join("rustc").exists(),
+        "the image's own Rust is left as it is"
+    );
+}

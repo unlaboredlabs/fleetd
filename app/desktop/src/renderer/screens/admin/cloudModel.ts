@@ -58,7 +58,7 @@ export const rate = (dollars: number): string => `$${(Number.isFinite(dollars) ?
 
 const plural = (n: number, one: string, many = `${one}s`): string => `${String(n)} ${n === 1 ? one : many}`;
 
-/** `14:02` today, else `Nov 3`: when a machine went to sleep. */
+/** `14:02` today, else `Nov 3`: when a machine went to sleep, began setting up, or was refused. */
 const since = (ms: number, nowMs: number): string => {
   const at = new Date(ms);
   const now = new Date(nowMs);
@@ -81,13 +81,14 @@ export const machineLine = (m: CloudMachine, nowMs: number): string => {
     case "waking":
       return `Waking for work · ${spend}`;
     case "creating":
-      return "Setting up: it joins in a few minutes, then sleeps";
+      return m.sinceMs === undefined ? "Setting up: it joins in a few minutes, then sleeps" : `Setting up since ${since(m.sinceMs, nowMs)}: it joins in a few minutes, then sleeps`;
     case "stopping":
       return `Going to sleep · ${spend}`;
     case "broken":
       return `It didn't come back from two wakes, so the hub won't wake it again. Reset deletes it and makes it anew.`;
     case "failed":
-      return m.note === undefined ? "Not made. Create cloud machines tries again." : `Not made: ${m.note}`;
+      if (m.note === undefined) return "Not made. Create cloud machines tries again.";
+      return m.sinceMs === undefined ? `Not made: ${m.note}` : `Not made (${since(m.sinceMs, nowMs)}): ${m.note}`;
     case "gone":
       return "boat.dev no longer has it. Create cloud machines makes it again.";
     default:

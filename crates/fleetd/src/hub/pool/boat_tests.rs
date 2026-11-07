@@ -396,6 +396,12 @@ async fn each_refusal_is_its_own_typed_error() {
             (409, "idempotency_in_progress", None),
             BoatError::IdempotencyInProgress,
         ),
+        (
+            (400, "unknown_environment", None),
+            BoatError::UnknownEnvironment {
+                name: String::new(),
+            },
+        ),
         ((404, "not_found", None), BoatError::NotFound),
         ((502, "not_found", None), BoatError::Server { status: 502 }),
     ];

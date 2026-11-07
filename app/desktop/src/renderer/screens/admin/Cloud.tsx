@@ -1,11 +1,10 @@
 // Cloud machines on boat.dev (D306), in Settings › Hub › Machines and the setup step: the boat.dev group beside the
 // person's own machines (each machine's state, what runs there and its spend today, Reset for a broken one, and the
-// kill switch), then the settings, in the same rows as the page's other settings: the hub's boat.dev key (made by the
-// hub once the person signs in with boat, or pasted and sealed in main to the hub's own key, never shown again) with
-// Test, the way cloud machines reach the hub (the hub's own SSH tunnel to each, so the hub stays private, and the Test
-// of that whole way), the pool, the budgets, the projects that may use it, and what it can cost, shown before it is
-// turned on. The hub's pool (cloud_get) is the only source; a hub without it shows nothing here. Status's line is
-// CloudStatus.tsx.
+// kill switch), then the settings, in the same rows as the page's other settings: the hub's boat.dev key (sealed in main
+// to the hub's own key, never shown again) with Test, the way cloud machines reach the hub (the hub's own SSH tunnel to
+// each, so the hub stays private, and the Test of that whole way), the pool, the budgets, the projects that may use it,
+// and what it can cost, shown before it is turned on. The hub's pool
+// (cloud_get) is the only source; a hub without it shows nothing here. Status's line is CloudStatus.tsx.
 import { useEffect, useState } from "react";
 import type { CloudView, ToolOutput } from "../../../shared/contracts";
 import { callKey } from "../../src/data/queries";
@@ -227,8 +226,6 @@ function KeySetting({ cloud }: { cloud: CloudView }) {
   const keep = useKeep();
   const refetch = useRefetch();
   const [editing, setEditing] = useState(false);
-  // Pasting a key is the fallback to signing in with boat.
-  const [pasting, setPasting] = useState(false);
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState<"save" | "test" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -259,7 +256,6 @@ function KeySetting({ cloud }: { cloud: CloudView }) {
     if (saved !== undefined) keep(saved);
     setKey("");
     setEditing(false);
-    setPasting(false);
     await test();
   };
   const open = editing || !cloud.hasKey;
@@ -268,7 +264,7 @@ function KeySetting({ cloud }: { cloud: CloudView }) {
     <Setting
       reveal="hub.cloud.key"
       label="boat.dev key"
-      help="Sign in with boat and the hub makes its own key on your boat.dev account, with only the actions the setup step lists, and keeps nothing broader. Or paste a key you made. fleetd never shows it, and no machine or agent gets it."
+      help="An API key of your own boat.dev account, with only the actions the setup step lists. It is sealed on this computer to the hub: fleetd never shows it again, and no machine or agent gets it."
     >
       {cloud.hasKey ? (
         <div className={s.inline}>
@@ -288,20 +284,7 @@ function KeySetting({ cloud }: { cloud: CloudView }) {
           <HubText>{tested.said}</HubText>
         </Text>
       ) : null}
-      {open || cloud.signIn !== undefined ? <SignIn cloud={cloud} form={open && !pasting} onDone={() => (setEditing(false), setPasting(false))} /> : null}
-      {open && !pasting && cloud.signIn?.state !== "waiting" ? (
-        <div className={s.inline}>
-          <button type="button" className={a.textLink} onClick={() => setPasting(true)}>
-            Paste a key instead
-          </button>
-          {editing ? (
-            <Button size="sm" variant="ghost" onClick={() => (setEditing(false), setProblem(null))}>
-              Cancel
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-      {open && pasting ? (
+      {open ? (
         <>
           <Field label="API key" description={cloud.hasKey ? "A new key replaces the saved one." : "From boat.dev › API keys, scoped as the setup step says."}>
             <Input mono aria-label="boat.dev API key" className={s.secretValue} data-secret="" value={key} disabled={busy !== null} autoComplete="off" spellCheck={false} placeholder="boat_…" onChange={(e) => setKey(e.target.value)} />
@@ -310,9 +293,11 @@ function KeySetting({ cloud }: { cloud: CloudView }) {
             <Button variant="primary" disabled={busy !== null || key.trim() === ""} onClick={() => void save()}>
               {busy === "save" ? "Saving…" : busy === "test" ? "Testing…" : "Save and test"}
             </Button>
-            <Button variant="ghost" disabled={busy !== null} onClick={() => (setPasting(false), setKey(""), setProblem(null))}>
-              Cancel
-            </Button>
+            {editing ? (
+              <Button variant="ghost" disabled={busy !== null} onClick={() => (setEditing(false), setKey(""), setProblem(null))}>
+                Cancel
+              </Button>
+            ) : null}
           </div>
         </>
       ) : null}
@@ -324,107 +309,6 @@ function KeySetting({ cloud }: { cloud: CloudView }) {
         </p>
       )}
     </Setting>
-  );
-}
-
-/** "Sign in with boat": the hub runs boat.dev's sign-in, so the person opens boat's page, signs in, then types the code
- * shown here (after the link, as boat asks: its own email sign-in sends a code too). The hub then makes and seals its
- * narrow key and revokes the sign-in's own; this view follows it from cloud_get until it ends. Its form shows while
- * the key is open to change (none yet, or Change) and no key is being pasted. */
-function SignIn({ cloud, form, onDone }: { cloud: CloudView; form: boolean; onDone: () => void }) {
-  const call = useHubCall();
-  const keep = useKeep();
-  const refetch = useRefetch();
-  const signIn = cloud.signIn;
-  const [email, setEmail] = useState(signIn?.email ?? "");
-  const [opened, setOpened] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const waiting = signIn?.state === "waiting";
-  const state = signIn?.state;
-  useEffect(() => {
-    if (!waiting) return;
-    const timer = setInterval(() => refetch(["cloud_get"]), 3_000);
-    return () => clearInterval(timer);
-  }, [waiting, refetch]);
-  useEffect(() => {
-    if (state === "done") {
-      refetch(["setup_list", "doctor_list"]);
-      onDone();
-    }
-    // onDone is the parent's fresh closure each render; only the state's change matters.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, refetch]);
-  const start = async (to: string | undefined) => {
-    setBusy(true);
-    setProblem(null);
-    setOpened(false);
-    try {
-      keep((await call("cloud_sign_in", to === undefined ? {} : { email: to }, { timeoutMs: 60_000 })).cloud);
-    } catch (e) {
-      setProblem(errorText(e));
-    }
-    setBusy(false);
-  };
-  if (waiting) {
-    const uri = signIn.verificationUri ?? "";
-    return (
-      <div className={a.signIn} data-sign-in="waiting">
-        <Text size="sm">{`1. Open boat.dev and sign in as ${signIn.email}, with GitHub, Google or email.`}</Text>
-        <div className={s.inline}>
-          <Button variant={opened ? "secondary" : "primary"} onClick={() => (setOpened(true), void window.fleetd.openExternal(uri))}>
-            Open boat.dev
-          </Button>
-          {opened ? null : (
-            <Button variant="ghost" onClick={() => setOpened(true)}>
-              I&apos;m signed in
-            </Button>
-          )}
-          <Button variant="ghost" disabled={busy} onClick={() => void start(undefined)}>
-            Cancel
-          </Button>
-        </div>
-        {opened ? (
-          <>
-            <Text size="sm">2. Once you are signed in, enter this code on boat.dev&apos;s page:</Text>
-            <div className={a.signInCode} data-sign-in-code="">
-              {signIn.userCode ?? ""}
-            </div>
-            <Text size="xs" tone="quiet">
-              Waiting for boat.dev… Then the hub makes its own key, with only the actions it needs, and revokes the sign-in&apos;s.
-            </Text>
-          </>
-        ) : null}
-      </div>
-    );
-  }
-  return (
-    <>
-      {signIn?.said === undefined ? null : (
-        <Text size="sm" tone={signIn.state === "done" ? "success" : "danger"} data-sign-in={signIn.state}>
-          <HubText>{signIn.said}</HubText>
-        </Text>
-      )}
-      {!form ? null : (
-        <>
-          <Field label="Your boat.dev email" description="Sign in to your boat.dev account, and the hub makes its key there.">
-            <Input aria-label="boat.dev email" type="email" value={email} disabled={busy} autoComplete="email" spellCheck={false} placeholder="you@example.com" onChange={(e) => setEmail(e.target.value)} />
-          </Field>
-          <div className={s.inline}>
-            <Button variant="primary" disabled={busy || !email.includes("@")} onClick={() => void start(email.trim())}>
-              {busy ? "Starting…" : "Sign in with boat"}
-            </Button>
-          </div>
-        </>
-      )}
-      {problem === null ? null : (
-        <p role="alert">
-          <Text size="sm" tone="danger">
-            {problem}
-          </Text>
-        </p>
-      )}
-    </>
   );
 }
 
@@ -486,7 +370,6 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set(cloud.projects.map((r) => `${r.machineId}/${r.projectId}`)));
   // The environment the setup step had them make, until one is saved: Create refuses without one.
   const [environment, setEnvironment] = useState(cloud.environment ?? cloud.environmentDefault);
-  const [writers, setWriters] = useState(cloud.writers);
   const [busy, setBusy] = useState<"save" | "create" | "resume" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [lines, setLines] = useState<ReadonlyArray<string>>([]);
@@ -510,7 +393,6 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
         dayBudget,
         ...(monthBudget === undefined ? {} : { monthBudget }),
         projects: refs,
-        writers,
         ...(environment.trim() === "" ? {} : { environment: environment.trim() }),
       });
       keep(out.cloud);
@@ -550,7 +432,6 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
     dayBudget !== cloud.dayBudget ||
     (monthBudget ?? null) !== (cloud.monthIsPlan ? null : cloud.monthBudget) ||
     environment.trim() !== (cloud.environment ?? "") ||
-    writers !== cloud.writers ||
     refs.length !== cloud.projects.length ||
     refs.some((r) => !cloud.projects.some((p) => p.machineId === r.machineId && p.projectId === r.projectId));
   const toggle = (key: string, on: boolean) =>
@@ -589,7 +470,7 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
         </div>
         <Text size="xs" tone="quiet">{`Today ${money(cloud.today)} of ${money(cloud.dayBudget)} · this month ${money(cloud.month)} of ${money(cloud.monthBudget)}`}</Text>
       </Setting>
-      <Setting reveal="hub.cloud.projects" label="Projects" help="Only the projects you tick run on cloud machines: their code, transcripts and the secrets sealed there go to boat.dev. Their reviews and readers may go there; writers only once you allow them.">
+      <Setting reveal="hub.cloud.projects" label="Projects" help="Only the projects you tick run on cloud machines: their code, transcripts and the secrets sealed there go to boat.dev. Any of their agents may go there, and a writer's follow-ups wake the machine it ran on.">
         {projects.length === 0 ? (
           <Text size="sm" tone="quiet">
             No projects yet.
@@ -602,13 +483,6 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
             })}
           </div>
         )}
-        <Switch
-          label="Writers too"
-          description="Off: only reviews and readers go to cloud machines. On: a writer's follow-ups wake the machine it ran on."
-          checked={writers}
-          disabled={busy !== null}
-          onCheckedChange={setWriters}
-        />
       </Setting>
       <Setting reveal="hub.cloud.environment" label="boat.dev environment" help="The environment you made for fleetd, marked safe for third parties. The key is scoped to it.">
         <Input aria-label="boat.dev environment" mono className={a.environment} value={environment} placeholder={cloud.environmentDefault} disabled={busy !== null} onChange={(e) => setEnvironment(e.target.value)} />

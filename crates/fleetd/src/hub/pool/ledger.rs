@@ -21,7 +21,8 @@ pub struct Settings {
     pub projects: Vec<ProjectRef>,
     pub environment: Option<String>,
     pub has_key: bool,
-    /// `billing` or `key`, with its line: held until a sweep's /limits says boat can start, or the admin resumes.
+    /// `billing` or `key`, with its line: held until a sweep's /limits says boat can start, or the admin resumes;
+    /// `refused`: held until the admin resumes.
     pub paused: Option<(String, String)>,
     pub hold_until: Option<i64>,
     pub hold_reason: Option<String>,
@@ -32,8 +33,6 @@ pub struct Settings {
     pub starts: Option<StartLimits>,
     pub plan_dollars: Option<f64>,
     pub strangers_warned: bool,
-    /// Writers may run on cloud machines too; off until the admin turns it on (reviews and readers go first).
-    pub writers: bool,
 }
 
 /// The included dollars of boat's $20 plan, the month budget before /limits was ever read.
@@ -241,7 +240,7 @@ impl Ledger {
             c.query_row(
                 "SELECT hub_id, enabled, pool_size, machine_type, day_budget, month_budget, projects, environment,
                         sealed_key IS NOT NULL, paused_kind, paused_reason, hold_until, hold_reason, backoff_step, full,
-                        starts_minute, starts_hour, starts_day, plan_dollars, strangers_warned, writers
+                        starts_minute, starts_hour, starts_day, plan_dollars, strangers_warned
                  FROM pool_settings WHERE id = 1",
                 [],
                 |r| {
@@ -274,7 +273,6 @@ impl Ledger {
                         starts,
                         plan_dollars: r.get(18)?,
                         strangers_warned: r.get(19)?,
-                        writers: r.get(20)?,
                     })
                 },
             )
@@ -300,14 +298,6 @@ impl Ledger {
             )?;
             Ok(())
         })
-    }
-
-    /// Whether writers may run on cloud machines.
-    pub fn set_writers(&self, on: bool) -> Result<(), StoreError> {
-        self.exec(
-            "UPDATE pool_settings SET writers = ?1 WHERE id = 1",
-            params![on],
-        )
     }
 
     pub fn set_enabled(&self, enabled: bool) -> Result<(), StoreError> {

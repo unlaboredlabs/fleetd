@@ -28,7 +28,6 @@ const BASE: JsonObject = {
   sizes: SIZES,
   boxPubKey: BOX,
   environmentDefault: "fleetd-devbox",
-  writers: false,
 };
 
 /** The public half of the hub's own SSH key, as cloud_get shows it. */
@@ -38,15 +37,6 @@ const SSH_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEZpeHR1cmVIdWJTc2hQdWJsaWN
 export const cloudNew = (over: JsonObject = {}): JsonObject => ({
   ...BASE,
   ...over,
-});
-
-/** "Sign in with boat" waiting for the person: boat.dev's link and code, the code lapsing 10 minutes after it began. */
-export const cloudSignIn = (now: string): JsonObject => ({
-  state: "waiting",
-  email: "person@example.com",
-  verificationUri: "https://boat.dev/api/box/agent/identity/claim?claim_attempt_token=fixture",
-  userCode: "151323",
-  expiresAtMs: Date.parse(at(now, 9 * 60_000)),
 });
 
 /** A pool at work: boat-1 awake with two agents and a screen, boat-2 asleep since the morning, boat-3 broken. */

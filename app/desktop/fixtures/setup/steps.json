@@ -426,7 +426,7 @@
     },
     {
       "fields": [],
-      "fieldsNote": "Cloud machines run on boat.dev: boat.dev can see what runs on them, as any host can. Sign in with boat (or paste a key), set the pool and turn it on in Settings › Hub › Machines › Cloud machines.",
+      "fieldsNote": "Cloud machines run on boat.dev: boat.dev can see what runs on them, as any host can. Paste the key, set the pool and turn it on in Settings › Hub › Machines › Cloud machines.",
       "group": "hub",
       "id": "cloud",
       "need": {
@@ -506,8 +506,8 @@
               "url": "https://docs.boat.dev/api-keys/scopes"
             }
           ],
-          "note": "In the app, press Sign in with boat: you open boat.dev, sign in and type the code fleetd shows, then the hub makes this key on your account itself, keeps only it, and revokes the sign-in's own full-access key. Or make it in boat.dev › API keys and paste it there. Only what the hub needs to make, wake, stop and delete its machines, and ssh for its tunnel: the hub dials each machine it wakes and holds an SSH tunnel its node reaches the hub through, so the hub needs no public address. No exec, file or snapshot actions: the hub never runs anything on a cloud machine.",
-          "title": "Sign in with boat, for the hub's API key",
+          "note": "Only what the hub needs to make, wake, stop and delete its machines, and ssh for its tunnel: the hub dials each machine it wakes and holds an SSH tunnel its node reaches the hub through, so the hub needs no public address. No exec, file or snapshot actions: the hub never runs anything on a cloud machine.",
+          "title": "Make the hub's API key",
           "values": [
             {
               "label": "Name",
@@ -524,14 +524,14 @@
             },
             {
               "label": "Expires",
-              "note": "Signing in makes it so: boat makes no key that outlives the sign-in's own year.",
-              "value": "364 days"
+              "plain": true,
+              "value": "365 days"
             }
           ]
         },
         {
           "links": [],
-          "note": "Once the key is saved and Test passes, pick these and turn cloud machines on. Before you do, fleetd shows the most the pool can cost a day and a typical day. Work goes to a cloud machine only when every machine of yours is at its agent limit.",
+          "note": "Paste the key, Test it, then pick these and turn cloud machines on. Before you do, fleetd shows the most the pool can cost a day and a typical day. Work goes to a cloud machine only when every machine of yours is at its agent limit.",
           "title": "Choose the pool, the budgets and the projects",
           "values": [
             {
