@@ -71,13 +71,18 @@
   border-collapse: collapse;
   min-width: 50%;
 }
+/* Cells wrap between words only: `anywhere` would shrink a column's narrowest width to one letter. */
 .root th,
 .root td {
   padding: var(--space-1) var(--space-3) var(--space-1) 0;
   border-bottom: 1px solid var(--hairline);
   text-align: left;
   vertical-align: top;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.root :is(th, td) code {
+  overflow-wrap: normal;
 }
 .root th {
   font-weight: var(--weight-strong);
