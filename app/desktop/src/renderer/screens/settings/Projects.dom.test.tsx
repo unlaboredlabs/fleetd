@@ -447,7 +447,10 @@ describe("Settings → Projects", () => {
     await settle();
     const part = document.querySelector('section[aria-label="Approvals"]');
     expect(part?.textContent).toContain("Checker decides");
-    expect(part?.textContent).toContain("Sonnet 5.5 · medium effort (the default)");
+    // The checker runs on the hub's default: no model or effort to pick here.
+    expect(part?.querySelector('[aria-label="Checker model"]')).toBeNull();
+    expect(part?.textContent).not.toContain("effort");
+    expect(part?.textContent).toContain("It sees the action, never the mail or pages the lead read.");
     expect(part?.querySelector<HTMLButtonElement>('[role="radio"][aria-checked="true"]')?.closest("label")?.textContent).toContain("Checker decides");
     const log = document.querySelector('ul[aria-label="Ran without asking"]');
     expect(log?.querySelectorAll("li")).toHaveLength(2);

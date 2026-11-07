@@ -244,18 +244,16 @@ function ToolsAndSkills() {
   );
 }
 
-/** Every project › Instructions & memory: the instructions every project's agents get, and the old shared memory. */
+/** Every project › Instructions & memory: the instructions every project's agents get, and the old shared memory while it has text. */
 function InstructionsAndMemory() {
   return (
     <div className={s.scroll} data-screen="settings.hub.instructions">
       <div className={s.column}>
-        <PageHead title="Instructions & memory">What every project&apos;s agents are told, and the old shared memory.</PageHead>
+        <PageHead title="Instructions & memory">What every project&apos;s agents are told.</PageHead>
         <PagePart title="Instructions" reveal="hub.instructions">
           <HubInstructions />
         </PagePart>
-        <PagePart title="Shared memory" reveal="hub.shared-memory" intro="The one memory every lead read before each person had their own. Owners and admins only.">
-          <SharedMemory />
-        </PagePart>
+        <SharedMemory />
       </div>
     </div>
   );

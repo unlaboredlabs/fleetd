@@ -1,7 +1,6 @@
-// A project's approvals (project_approvals, W239), as pure functions: the three modes in the person's words, the checker's
-// model and effort as the picker shows them, and each auto-approved action as a log row.
-import type { AutoApproved, NaviApprovalMode, NaviApprovals, ProfileModel } from "../../../shared/contracts";
-import { EFFORT_WORD } from "./profilesModel";
+// A project's approvals (project_approvals, W239), as pure functions: the three modes in the person's words, and each
+// auto-approved action as a log row.
+import type { AutoApproved, NaviApprovalMode } from "../../../shared/contracts";
 
 export const MODES: ReadonlyArray<{ readonly mode: NaviApprovalMode; readonly label: string; readonly description: string }> = [
   {
@@ -13,22 +12,12 @@ export const MODES: ReadonlyArray<{ readonly mode: NaviApprovalMode; readonly la
   {
     mode: "yolo",
     label: "YOLO",
-    description:
-      "No checker runs and nothing asks: not for a recipient or site only an email or a page named, a public share, a forwarding rule or a link carrying data. The limits below still hold. Each action still shows in the chat and in the log below.",
+    description: "Nothing asks. The limits below still hold, and each action shows in the log.",
   },
 ];
 
 /** What every mode keeps, YOLO included. */
-export const FLOORS =
-  "In every mode, YOLO too: moving money, trading and placing orders are refused, and so is a password, key or token in anything it sends or any link it opens; a link that moves money or trades is refused too; a server's own spending tool always asks you; and a command that would wipe the computer never runs.";
-
-/** The models to pick from: the hub's list, and the checker's current one when the list lacks it. */
-export const checkerModels = (models: ReadonlyArray<ProfileModel>, current: string): ReadonlyArray<ProfileModel> =>
-  models.some((m) => m.id === current) ? models : [...models, { id: current, fast: false }];
-
-/** "Opus 5.5 · high effort", for the line under the mode. */
-export const checkerLine = (models: ReadonlyArray<ProfileModel>, a: NaviApprovals): string =>
-  `${models.find((m) => m.id === a.model)?.displayName ?? a.model} · ${EFFORT_WORD[a.effort].toLowerCase()} effort${a.defaults ? " (the default)" : ""}`;
+export const FLOORS = "In every mode: no moving money or trading, no passwords or keys sent out, spending always asks you, and nothing that would wipe the computer.";
 
 /** Why one action ran without asking: the checker's reason, or YOLO. */
 export const logWhy = (e: AutoApproved): string => (e.by === "yolo" ? "YOLO: nothing asks" : e.reason === undefined ? "The checker let it through" : `Checker: ${e.reason}`);

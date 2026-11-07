@@ -13645,7 +13645,7 @@
       "description": "A Navi's approval settings: its mode, and the checker's model and effort.",
       "properties": {
         "defaults": {
-          "description": "Whether model and effort are the hub's defaults, not a pick of the person's.",
+          "description": "Always true now; kept for older apps, which offered \"Use the default\" when it was false.",
           "type": "boolean"
         },
         "effort": {
@@ -13656,7 +13656,7 @@
         },
         "model": {
           "$ref": "#/$defs/ModelName",
-          "description": "The checker's model: the person's pick, else [`CHECKER_MODEL`]."
+          "description": "The checker's model: always [`CHECKER_MODEL`] since W467, which dropped the per-project pick."
         }
       },
       "required": [
@@ -13711,7 +13711,7 @@
       "properties": {
         "effort": {
           "$ref": "#/$defs/Effort",
-          "description": "The checker's effort; absent: the hub's default."
+          "description": "Ignored, as `model` is."
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"
@@ -13721,7 +13721,7 @@
         },
         "model": {
           "$ref": "#/$defs/ModelName",
-          "description": "The checker's model; absent: the hub's default."
+          "description": "Ignored: the checker always runs on the hub's default model. Taken so an older app's call still works."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"

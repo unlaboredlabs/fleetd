@@ -23,7 +23,6 @@ export function HubsSettings() {
     <PagePart
       title="Paired hubs"
       reveal="hubs.add"
-      intro="Keep work apart on hubs of its own, each with its own machines, people and keys. Name each as you like."
       aside={
         <Button
           onClick={() => {
@@ -57,7 +56,7 @@ export function HubsSettings() {
 export function HubLinksSettings() {
   const hubs = useHubs();
   return (
-    <PagePart title="Hub links" reveal="hubs.hub-links" intro="Keys that let a project on one hub open and follow work on another, as the person who made them. Paste one into a project’s Linked hubs, in its settings.">
+    <PagePart title="Hub links" part="hubs.hub-links">
       {hubs.map((hub) => (
         <HubScope key={hub.id} hub={hub}>
           <LinksToThisHub label={hubs.length === 1 ? "Links to this hub" : `Links to ${hub.label}`} />
@@ -138,7 +137,8 @@ function HubSetting({ only }: { only: boolean }) {
         {/* The hub's fix may name a command in backticks: shown as code. */}
         <Prose tone="quiet" text={line.text} />
       </div>
-      {store === null ? null : <Prose size="xs" tone="quiet" text={keyStoreLine(store)} />}
+      {/* Said only where there's something to fix: a key kept in the OS store needs no line. */}
+      {store === null || store.kind === "os" ? null : <Prose size="xs" tone="quiet" text={keyStoreLine(store)} />}
       {hub === null ? null : <NameAndColor key={`${self.label}:${self.color ?? ""}`} />}
       <div className={s.inline}>
         {again ? (

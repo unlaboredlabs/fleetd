@@ -192,7 +192,8 @@ it("gathers what reaches every project on Every project's pages, and saves its i
   expect(parts()).toEqual(["hub.mcp", "hub.skills"]);
   window.location.hash = "#/settings/hub/instructions";
   await settle();
-  expect(parts()).toEqual(["hub.instructions", "hub.shared-memory"]);
+  // The old shared memory shows only while it has text: this hub's has none.
+  expect(parts()).toEqual(["hub.instructions"]);
   expect(host.querySelector("#machine-roles")).toBeNull();
   const text = host.querySelector<HTMLTextAreaElement>("textarea[aria-label='Instructions for every project']");
   if (text === null) throw new Error("no instructions");

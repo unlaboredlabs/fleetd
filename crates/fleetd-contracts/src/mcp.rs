@@ -1571,9 +1571,9 @@ input!(NaviApprovalsSetInput {
     machine_id: MachineId,
     project_id: ProjectId,
     mode: crate::navi::NaviApprovalMode,
-    /// The checker's model; absent: the hub's default.
+    /// Ignored: the checker always runs on the hub's default model. Taken so an older app's call still works.
     model: Option<ModelName>,
-    /// The checker's effort; absent: the hub's default.
+    /// Ignored, as `model` is.
     effort: Option<Effort>,
 });
 output!(NaviApprovalsSetOutput {

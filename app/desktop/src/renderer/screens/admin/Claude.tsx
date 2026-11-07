@@ -109,7 +109,6 @@ function HubKey({ api, pause }: { api: ClaudeHubApi | undefined; pause: string |
   const open = editing || api === undefined;
   return (
     <Setting
-      reveal="admin.claude.key"
       label="Hub API key"
       help="From the Claude Console, billed to that account. It is sealed on this computer to every machine: fleetd never shows it again, and no agent sees it."
     >

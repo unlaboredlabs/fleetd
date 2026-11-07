@@ -4574,11 +4574,11 @@ export type NaviApprovalMode = "ask" | "checker" | "yolo";
 
 /** A Navi's approval settings: its mode, and the checker's model and effort. */
 export type NaviApprovals = {
-  /** Whether model and effort are the hub's defaults, not a pick of the person's. */
+  /** Always true now; kept for older apps, which offered "Use the default" when it was false. */
   defaults: boolean;
   effort: Effort;
   mode: NaviApprovalMode;
-  /** The checker's model: the person's pick, else [`CHECKER_MODEL`]. */
+  /** The checker's model: always [`CHECKER_MODEL`] since W467, which dropped the per-project pick. */
   model: ModelName;
 };
 
@@ -4596,11 +4596,11 @@ export type NaviApprovalsOutput = {
 };
 
 export type NaviApprovalsSetInput = {
-  /** The checker's effort; absent: the hub's default. */
+  /** Ignored, as `model` is. */
   effort?: Effort;
   machineId: MachineId;
   mode: NaviApprovalMode;
-  /** The checker's model; absent: the hub's default. */
+  /** Ignored: the checker always runs on the hub's default model. Taken so an older app's call still works. */
   model?: ModelName;
   projectId: ProjectId;
 };

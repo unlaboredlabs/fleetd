@@ -261,10 +261,10 @@ pub const CHECKER_EFFORT: crate::effort::Effort = crate::effort::Effort::Medium;
 #[serde(rename_all = "camelCase")]
 pub struct NaviApprovals {
     pub mode: NaviApprovalMode,
-    /// The checker's model: the person's pick, else [`CHECKER_MODEL`].
+    /// The checker's model: always [`CHECKER_MODEL`] since W467, which dropped the per-project pick.
     pub model: crate::effort::ModelName,
     pub effort: crate::effort::Effort,
-    /// Whether model and effort are the hub's defaults, not a pick of the person's.
+    /// Always true now; kept for older apps, which offered "Use the default" when it was false.
     pub defaults: bool,
 }
 

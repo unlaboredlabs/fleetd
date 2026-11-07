@@ -1,5 +1,6 @@
-// Settings in the command palette: its pages, each setting by its own name, and every prompt by its plain name (typed, not listed: there
-// are 60 of them), each opening in a project's Prompts. The Hub group's pages are offered to its owners and admins
+// Settings in the command palette: its pages, a few settings by their own names, and every prompt by its plain name
+// (typed, not listed), each opening in a project's Prompts. One entry per place: Notifications covers its sound and
+// badge, and the theme commands cover Appearance. The Hub group's pages are offered to its owners and admins
 // only. main.tsx registers them once, with the app's data layer.
 import { registerCommands, registerSource, type Command } from "../palette";
 import { GROUPS, describe, groupOf } from "./catalog";
@@ -10,7 +11,7 @@ import { administers } from "../admin/model";
 import { toHash, type HubTab } from "../shell/routes";
 import type { PromptSummary } from "./contracts";
 import { promptHref, tabHref } from "./route";
-import { BADGE, revealNext } from "./search";
+import { revealNext } from "./search";
 
 const go = (hash: string) => {
   window.location.hash = hash;
@@ -22,7 +23,7 @@ const pages: Command[] = [
     title: "Notifications",
     detail: "What alerts you, sound, the badge",
     group: "settings",
-    keywords: ["alerts", "sound", "badge", "dock", "mute"],
+    keywords: ["alerts", "sound", "badge", "dock", "app icon", "mute", "silent", "notify me when"],
     run: () => {
       revealNext("notifications");
       go(tabHref("general"));
@@ -39,9 +40,9 @@ const pages: Command[] = [
   {
     id: "go:settings.projects",
     title: "Project settings",
-    detail: "A project's name, repos, worktrees, environment variables and setup, or delete it",
+    detail: "A project's name, repos, environment variables, setup and MCP servers, or delete it",
     group: "settings",
-    keywords: ["env", "secrets", "worktrees", "setup", "delete project", "rename"],
+    keywords: ["env", "secrets", "setup", "mcp", "integrations", "delete project", "rename"],
     run: () => go(tabHref("projects")),
   },
   {
@@ -95,15 +96,11 @@ const pages: Command[] = [
       go(tabHref("general"));
     },
   },
-  // Each setting by its own name, typed rather than listed, so "max agents" or "dark mode" finds it.
+  // A setting by its own name, typed rather than listed, so "max agents" finds it.
   ...(
     [
       ["Max agents", "How many of a project's agents run at once", "agents", ["agents", "limit", "at once", "cap", "concurrency"]],
-      ["Appearance", "Light, dark or match system", "general", ["theme", "dark mode", "light mode"]],
       ["Hub", "The connection, and this app's key", "hubs", ["connection", "disconnect", "key"]],
-      ["Notify me when", "Which kinds of notification show", "general", ["notifications", "alerts", "mute"]],
-      ["Sound", "Notifications play a sound or not", "general", ["notifications", "mute", "silent"]],
-      [BADGE, "How many projects need you, on the app icon", "general", ["badge", "dock", "count", "app icon"]],
     ] as const
   ).map(
     ([title, detail, tab, keywords]): Command => ({

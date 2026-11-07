@@ -27,7 +27,7 @@ export function LinksToThisHub({ label = "Links to this hub" }: { label?: string
     <Setting
       reveal="hubs.links"
       label={label}
-      help="A link key lets your project on another hub open and follow work here, as you. Paste it into that project’s Linked hubs; revoke it here at any time."
+      help="Lets your project on another hub work here as you. Paste it into that project’s Linked hubs."
     >
       <LinksBody />
     </Setting>

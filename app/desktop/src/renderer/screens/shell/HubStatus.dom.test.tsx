@@ -151,3 +151,33 @@ it("opens Machines from the popover always, and from \"N down\" while machines a
   act(() => down()?.click());
   expect(parseHash(window.location.hash)).toEqual({ id: "settings", tab: "hub.machines" });
 });
+
+it("shows a member the machines online and down as plain text: Machines is for admins", async () => {
+  let listener: (frame: HubFrame) => void = () => undefined;
+  const member: HubApi = {
+    ...hubApi,
+    call: (tool) => Promise.resolve({ ok: true, output: tool === "hub_info" ? { me: { personId: "pe_sam", name: "Sam", role: "member" } } : {} }),
+    subscribe: (l) => ((listener = l), () => undefined),
+  };
+  const machine = (name: string, status: "online" | "offline") => ({ machineId: name, name, nodeVersion: "1", status, lastSeenAt: "2026-10-26T09:00:00.000Z", tags: [] });
+  act(() => {
+    root.render(
+      <DataProvider layer={createDataLayer(member)}>
+        <TooltipProvider>
+          <HubStatus hub={{ phase: "live", hub: HUB, protocol: 1 }} />
+        </TooltipProvider>
+      </DataProvider>,
+    );
+  });
+  await act(async () => {
+    listener({ t: "state", state: { phase: "live", hub: HUB, protocol: 1 } });
+    listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], projects: [], machines: [machine("devbox", "online"), machine("laptop", "offline")] } });
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  expect(host.querySelector("[data-opens='machines']")).toBeNull();
+  expect(host.querySelector("[data-down]")?.textContent).toBe("1 down");
+  act(() => host.querySelector<HTMLButtonElement>("[data-hub-status]")?.click());
+  const pop = document.querySelector("[aria-label='Hub'][role='dialog']");
+  expect(pop?.querySelector("[data-opens='machines']")).toBeNull();
+  expect(pop?.textContent).toContain("1 of 2 online");
+});

@@ -122,7 +122,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_approvals_set",
-        "Set how a project's risky actions are approved: mode ask, checker or yolo, and the checker's model and effort (absent: the hub's defaults). A person's key only, never an agent's.",
+        "Set how a project's risky actions are approved: mode ask, checker or yolo. The checker always runs on the hub's default model and effort; model and effort are ignored. A person's key only, never an agent's.",
     ),
     (
         "navi_approvals_set",

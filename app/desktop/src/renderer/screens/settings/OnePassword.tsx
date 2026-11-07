@@ -113,23 +113,14 @@ function ServiceAccount({ token }: { token: OnePasswordToken | undefined }) {
     <>
       <ol className={s.steps}>
         <li>
-          <Text size="sm">
-            In 1Password, make a vault for fleetd with only the logins your agents sign in with and the card your projects buy with. Agents run as you on their machine, so one could read whatever
-            this token reads.
-          </Text>
+          <Text size="sm">Make a vault for fleetd with only the logins and card your agents may use.</Text>
         </li>
         <li>
-          <Text size="sm">For the card, use a virtual card with a monthly limit or a low-limit card, never your main one.</Text>
-        </li>
-        <li>
-          <Text size="sm">Make a service account that reads only that vault. Read access is enough.</Text>
-        </li>
-        <li>
-          <Text size="sm">Give each login item its website: agents fill a login only on that site.</Text>
+          <Text size="sm">Make a service account that reads only that vault.</Text>
         </li>
         <li>
           <Text size="sm">
-            Paste the service account&apos;s token below. It starts with <InlineCode>ops_</InlineCode>.
+            Paste its token below. It starts with <InlineCode>ops_</InlineCode>.
           </Text>
         </li>
       </ol>
@@ -159,7 +150,7 @@ function ServiceAccount({ token }: { token: OnePasswordToken | undefined }) {
     <Setting
       reveal="onepassword.token"
       label="Service account"
-      help="Sealed on this computer to the hub's machines: fleetd never shows it again, and no agent sees it. A project's own OP_SERVICE_ACCOUNT_TOKEN variable wins over it."
+      help="Kept encrypted on the hub's machines. A project's own 1Password token wins over it."
     >
       {token === undefined ? (
         form

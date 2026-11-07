@@ -22,7 +22,7 @@ export function ClaudeSettings() {
   const live = useLive();
   const read = useToolQuery("claude_accounts_get", noInput, { enabled: live });
   return (
-    <PagePart title="Claude" reveal="claude" intro="Which Claude account the orders you start and your own projects run on. Nobody else's work ever runs on your subscription.">
+    <PagePart title="Claude" reveal="claude" intro="What your work runs on.">
       {!live ? (
         <Text tone="quiet">Not connected. Connect to a hub to choose your Claude account.</Text>
       ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
@@ -40,16 +40,29 @@ export function ClaudeSettings() {
   );
 }
 
+/**
+ * The hub's API is an option (Runs on) only when the admin set it up and lets this person use it; one chosen before the
+ * admin turned it off stays shown, so they see why it no longer runs.
+ */
 function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude }) {
   const people = [me.person];
   const refused = me.runsOn.kind === "refused" ? me.runsOn : null;
+  // Runs on shows only when there is a choice; without one, In use says why the hub's key isn't offered.
+  const offer = me.mayUseHubApi || me.choice === "hub_api";
   return (
     <>
-      <Setting reveal="claude.in-use" label="In use" help="What the agents of the orders you start, and your Only-me projects, run on from their next start.">
+      <Setting label="In use" help="What the agents of the orders you start, and your Only-me projects, run on from their next start.">
         {refused === null ? (
-          <Text>
-          <HubText>{runsOnLine(me.runsOn, people, me.person.personId)}</HubText>
-        </Text>
+          <>
+            <Text>
+              <HubText>{runsOnLine(me.runsOn, people, me.person.personId)}</HubText>
+            </Text>
+            {!offer && data.hubApi !== undefined ? (
+              <Text size="sm" tone="quiet">
+                The hub&apos;s API key is kept for leads and unrequested work.
+              </Text>
+            ) : null}
+          </>
         ) : (
           <div className={s.notice} role="status">
             <div className={s.stack}>
@@ -61,30 +74,18 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
           </div>
         )}
       </Setting>
-      <Choice me={me} hubApi={data.hubApi !== undefined} />
+      {offer ? <Choice me={me} /> : null}
       <Subscription me={me} />
     </>
   );
 }
 
-function Choice({ me, hubApi }: { me: PersonClaude; hubApi: boolean }) {
+function Choice({ me }: { me: PersonClaude }) {
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const shown = shownChoice(me);
-  // The hub's API is an option only when the admin set it up and lets this person use it; one chosen before the
-  // admin turned it off stays shown, so they see why it no longer runs.
-  const offer = me.mayUseHubApi || me.choice === "hub_api";
-  if (!offer) {
-    return (
-      <Setting reveal="claude.choice" label="Runs on" help="Only your own subscription, on this hub.">
-        <Text size="sm" tone="quiet">
-          {hubApi ? "This hub's admins keep its API key for leads and unrequested work, so your work runs on your own subscription." : "This hub has no API key, so your work runs on your own subscription."}
-        </Text>
-      </Setting>
-    );
-  }
   const pick = (v: string) => {
     const choice: ClaudeChoice = v === "hub_api" ? "hub_api" : "subscription";
     setBusy(true);
@@ -101,7 +102,7 @@ function Choice({ me, hubApi }: { me: PersonClaude; hubApi: boolean }) {
     );
   };
   return (
-    <Setting reveal="claude.choice" label="Runs on" help="Switch any time: agents started from then on use it; a running one keeps its account.">
+    <Setting label="Runs on" help="Switch any time: agents started from then on use it; a running one keeps its account.">
       <RadioGroup className={s.radios} value={shown ?? ""} onValueChange={pick} disabled={busy} aria-label="Runs on">
         <Radio
           value="subscription"
@@ -155,7 +156,7 @@ function Subscription({ me }: { me: PersonClaude }) {
       setTried(t);
     });
   };
-  const help = "A long-lived token from your own Claude account. It is sealed on this computer to the hub's machines: fleetd never shows it again, and no agent sees it.";
+  const help = "Kept encrypted on the hub's machines. Never shown again.";
   const form = (
     <>
       <ol className={s.steps}>
@@ -168,7 +169,7 @@ function Subscription({ me }: { me: PersonClaude }) {
           <Text size="sm">Paste the token it prints below.</Text>
         </li>
       </ol>
-      <Field label="Token" description="CLAUDE_CODE_OAUTH_TOKEN. Valid for a year; run the command again to replace it.">
+      <Field label="Token" description="Valid for a year.">
         <Input mono aria-label="Token" className={s.secretValue} data-secret="" value={token} disabled={busy} autoComplete="off" spellCheck={false} placeholder={TOKEN_PLACEHOLDER} onChange={(e) => setToken(e.target.value)} />
       </Field>
       <div className={s.inline}>
@@ -184,7 +185,7 @@ function Subscription({ me }: { me: PersonClaude }) {
     </>
   );
   return (
-    <Setting reveal="claude.subscription" label="Your subscription" help={help}>
+    <Setting label="Your subscription" help={help}>
       {sub === undefined ? (
         form
       ) : (

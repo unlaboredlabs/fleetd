@@ -102,17 +102,21 @@ export function PageHead(props: { title: string; children?: ReactNode; aside?: R
 
 /**
  * One part of a page that gathers several (Your accounts, Tools & skills, General's Notifications): its heading and a line,
- * then its options. A search or a link for `reveal` lands on it.
+ * then its options. A search or a link for `reveal` lands on it; a part that search finds by an option inside it names
+ * itself with `part` instead, so one place is one search result. `untitled` when it is the page's one part, which the
+ * page title already names.
  */
-export function PagePart(props: { title: string; reveal: string; intro?: ReactNode; aside?: ReactNode; children?: ReactNode }) {
-  const ref = useReveal<HTMLElement>(props.reveal);
+export function PagePart(props: { title: string; reveal?: string; part?: string; intro?: ReactNode; aside?: ReactNode; untitled?: boolean; children?: ReactNode }) {
+  const ref = useReveal<HTMLElement>(props.reveal ?? "");
   return (
-    <section ref={ref} className={s.part} aria-label={props.title} data-part={props.reveal} tabIndex={-1}>
+    <section ref={ref} className={s.part} aria-label={props.title} data-part={props.reveal ?? props.part} tabIndex={-1}>
       <div className={s.partHead}>
         <div className={s.partTitle}>
-          <Text as="h2" size="lg" strong>
-            {props.title}
-          </Text>
+          {props.untitled === true ? null : (
+            <Text as="h2" size="lg" strong>
+              {props.title}
+            </Text>
+          )}
           {props.aside}
         </div>
         {props.intro ? (
@@ -132,9 +136,12 @@ export function NoProject() {
   return <Text tone="quiet">{projects === undefined ? "Loading…" : "No projects yet. Add one from Projects in the sidebar."}</Text>;
 }
 
-/** One option: its name and a line of help, then its controls. A settings search for `reveal` lands on it. */
-export function Setting(props: { reveal: string; label: string; help: string; children: ReactNode }) {
-  const ref = useReveal<HTMLElement>(props.reveal);
+/**
+ * One option: its name and a line of help, then its controls. A settings search for `reveal` lands on it; one without
+ * is found by the part it is in.
+ */
+export function Setting(props: { reveal?: string; label: string; help: string; children: ReactNode }) {
+  const ref = useReveal<HTMLElement>(props.reveal ?? "");
   return (
     <section ref={ref} className={s.setting} aria-label={props.label} tabIndex={-1}>
       <div className={s.settingLabel}>

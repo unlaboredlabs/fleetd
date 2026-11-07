@@ -4,7 +4,7 @@
 //! with the checker's reason; `block` refuses it, tells the person why, and lets them approve it anyway.
 //!
 //! The checker is a tool-less turn (`executor::turn`) on the Navi owner's own Claude, in the Navi's own project, on the
-//! model and effort the person picked (default [`CHECKER_MODEL`] at [`CHECKER_EFFORT`]). Its input is built here, not
+//! hub's model and effort for it ([`CHECKER_MODEL`] at [`CHECKER_EFFORT`]). Its input is built here, not
 //! by the Navi: the action exactly as it runs, where each of its parts came from ([`provenance`]: the person's own
 //! messages, content the Navi read, or neither), and the person's recent messages. The content the Navi read is only
 //! searched for those parts; it never reaches the checker. Its answer is one JSON verdict; anything else, a failure
@@ -112,46 +112,37 @@ pub fn always_asks(action: &Action) -> bool {
         .is_some_and(|p| p.action == ToolAction::Spend)
 }
 
-/// A Navi's approval settings: the defaults when the person set none.
+/// A Navi's approval settings: its mode (checker when the person set none), and the checker's model and effort, which
+/// are always the hub's defaults. A model or effort an older app stored for the project is kept in its row but no
+/// longer used (W467): a weaker pick would quietly weaken the guard.
 pub fn approvals(c: &Connection, r: &ProjectRef) -> rusqlite::Result<NaviApprovals> {
-    let row: Option<(String, Option<String>, Option<String>)> = c
-        .prepare_cached(
-            "SELECT mode, model, effort FROM navi_approvals WHERE machine_id = ? AND project_id = ?",
-        )?
+    let mode: Option<String> = c
+        .prepare_cached("SELECT mode FROM navi_approvals WHERE machine_id = ? AND project_id = ?")?
         .query_row(
             params![r.machine_id.as_str(), r.project_id.as_str()],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| row.get(0),
         )
         .optional()?;
-    let (mode, model, effort) = row.unwrap_or_default();
-    let model = model.and_then(|m| ModelName::new(m).ok());
-    let effort = effort.as_deref().and_then(Effort::parse);
     Ok(NaviApprovals {
-        mode: NaviApprovalMode::parse(&mode).unwrap_or_default(),
-        defaults: model.is_none() && effort.is_none(),
-        model: model.unwrap_or_else(|| ModelName::unchecked(CHECKER_MODEL)),
-        effort: effort.unwrap_or(CHECKER_EFFORT),
+        mode: mode
+            .as_deref()
+            .and_then(NaviApprovalMode::parse)
+            .unwrap_or_default(),
+        defaults: true,
+        model: ModelName::unchecked(CHECKER_MODEL),
+        effort: CHECKER_EFFORT,
     })
 }
 
-pub fn set_approvals(
-    c: &Connection,
-    r: &ProjectRef,
-    mode: NaviApprovalMode,
-    model: Option<&ModelName>,
-    effort: Option<Effort>,
-) -> rusqlite::Result<()> {
+pub fn set_approvals(c: &Connection, r: &ProjectRef, mode: NaviApprovalMode) -> rusqlite::Result<()> {
     c.prepare_cached(
-        "INSERT INTO navi_approvals (machine_id, project_id, mode, model, effort) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (machine_id, project_id) DO UPDATE SET mode = excluded.mode, model = excluded.model,
-           effort = excluded.effort",
+        "INSERT INTO navi_approvals (machine_id, project_id, mode) VALUES (?, ?, ?)
+         ON CONFLICT (machine_id, project_id) DO UPDATE SET mode = excluded.mode",
     )?
     .execute(params![
         r.machine_id.as_str(),
         r.project_id.as_str(),
-        mode.as_str(),
-        model.map(ModelName::as_str),
-        effort.map(Effort::as_str)
+        mode.as_str()
     ])?;
     Ok(())
 }

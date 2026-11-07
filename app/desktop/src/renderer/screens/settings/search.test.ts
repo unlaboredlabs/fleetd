@@ -37,7 +37,9 @@ describe("settings search", () => {
     const tabOf = (q: string, admin = false) => searchSettings(q, optionsFor(admin))[0]?.tab;
     expect([tabOf("hubs"), tabOf("claude"), tabOf("github")]).toEqual(["hubs", "accounts", "accounts"]);
     expect([tabOf("notifications"), tabOf("version"), tabOf("check for updates")]).toEqual(["general", "general", "general"]);
-    expect([tabOf("max agents"), tabOf("mcp"), tabOf("skills")]).toEqual(["agents", "agents", "agents"]);
+    expect([tabOf("max agents"), tabOf("skills")]).toEqual(["agents", "agents"]);
+    // A project's MCP servers are one list, on its Project page (W467).
+    expect([tabOf("mcp"), tabOf("integrations")]).toEqual(["projects", "projects"]);
     // Task profiles are the hub's, on Every project › Profiles (W146).
     const tabs = (q: string, admin: boolean) => searchSettings(q, optionsFor(admin)).map((o) => o.tab);
     expect(tabs("task profiles", false)).not.toContain("hub.profiles");
@@ -71,6 +73,17 @@ describe("settings search", () => {
     expect([...marked].filter((k) => !keys.has(k)), "marked on a page, missing from search").toEqual([]);
     const found = OPTIONS.filter((o) => o.key !== o.tab && o.prompt === undefined).map((o) => o.key);
     expect(found.filter((k) => !marked.has(k)), "in search, marked on no page").toEqual([]);
+  });
+
+  it("finds one place once: one result each for MCP, hub links, Claude and the hub's API key (W467)", () => {
+    const keys = (q: string, admin = false) => searchSettings(q, optionsFor(admin)).map((o) => o.key);
+    expect(keys("mcp")).toEqual(["projects.mcp"]);
+    expect(keys("hub links")).toEqual(["hubs.links"]);
+    expect(keys("claude").filter((k) => k.startsWith("claude"))).toEqual(["claude"]);
+    expect(keys("hub api key", true)[0]).toBe("admin.claude");
+    expect(keys("api key", true)).not.toContain("admin.claude.key");
+    expect(keys("global mcp", true)).toEqual(["hub.mcp"]);
+    expect(keys("worktrees")).toEqual([]);
   });
 
   it("gives every option a unique key", () => {

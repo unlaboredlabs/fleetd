@@ -55,7 +55,6 @@ export function HubMcpServers() {
       {data ? (
         <>
           <ServersSetting
-            reveal="mcp.servers"
             label="Global MCP servers"
             help="Given to every project's agents of the roles you pick, as commands on their machine or services over HTTP. A project's own replaces one of the same name."
             scope={null}
@@ -105,7 +104,7 @@ function UserServers({ on }: { on: boolean }) {
 
 type Editing = { kind: "new" } | { kind: "edit"; server: McpServer } | { kind: "remove"; server: McpServer };
 
-function ServersSetting(props: { reveal: string; label: string; help: string; scope: Ref | null; servers: ReadonlyArray<McpServer> }) {
+function ServersSetting(props: { label: string; help: string; scope: Ref | null; servers: ReadonlyArray<McpServer> }) {
   const [editing, setEditing] = useState<Editing | null>(null);
   const [echo, setEcho] = useState<{ ok: boolean; text: string } | null>(null);
   const machines = useMachineIds();
@@ -115,7 +114,7 @@ function ServersSetting(props: { reveal: string; label: string; help: string; sc
     setEcho({ ok: true, text });
   };
   return (
-    <Setting reveal={props.reveal} label={props.label} help={props.help}>
+    <Setting label={props.label} help={props.help}>
       {props.servers.length === 0 ? (
         <Text size="sm" tone="quiet">
           None yet.
