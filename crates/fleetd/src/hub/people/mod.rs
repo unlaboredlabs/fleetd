@@ -219,8 +219,9 @@ impl People {
         })
     }
 
-    /// Removes a person: their devices are revoked and their open invites closed. Returns the person and how many
-    /// devices it revoked; None when there is no such person.
+    /// Removes a person: their devices are revoked, their open invites closed, and their Only-me projects archived
+    /// (an owner or admin may delete them, never open them). Returns the person and how many devices it revoked; None
+    /// when there is no such person.
     pub fn remove(&self, id: &PersonId) -> Result<Option<(Person, usize)>, StoreError> {
         let now = self.now();
         self.db.transaction(|c| {
@@ -237,6 +238,7 @@ impl People {
                 "UPDATE pair_codes SET revoked_ms = ?2 WHERE person_id = ?1 AND used_ms IS NULL AND revoked_ms IS NULL",
             )?
             .execute(params![id.as_str(), now])?;
+            crate::hub::navi::store::archive_of(c, id, now)?;
             Ok(get_on(c, id.as_str())?.map(|person| (person, revoked)))
         })
     }

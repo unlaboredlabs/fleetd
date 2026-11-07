@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 use crate::brand;
-use crate::ids::Timestamp;
+use crate::ids::{MachineId, ProjectId, Timestamp};
 use crate::prim::Line;
 
 brand!(
@@ -114,6 +114,21 @@ pub struct Invite {
     pub revoked_at: Option<Timestamp>,
 }
 
+/// An Only-me project its owner left behind when removed from the hub: archived then, so its lead and automations stop,
+/// and listed to an owner or admin by name alone, to delete it (`project_remove`). Its chat and contents stay its
+/// owner's.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LeftProject {
+    pub machine_id: MachineId,
+    pub project_id: ProjectId,
+    pub title: String,
+    /// Its folder on its machine, which a delete may remove too.
+    pub path: String,
+    /// The removed person whose it was.
+    pub owner: PersonRef,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(extend("x-open" = true))]
@@ -125,6 +140,10 @@ pub enum PeopleChange {
     RoleChanged,
     Removed,
     DeviceRevoked,
+    /// One of their accounts was removed: their Claude subscription, 1Password token or GitHub connection.
+    AccountRemoved,
+    /// A hub link minted as them was revoked.
+    LinkRevoked,
 }
 
 /// `people.changed`.

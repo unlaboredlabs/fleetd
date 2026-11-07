@@ -3448,6 +3448,21 @@ export type LeadStartOutput = {
 
 export type LeadState = "starting" | "idle" | "working" | "stalled" | "stopped";
 
+/**
+ * An Only-me project its owner left behind when removed from the hub: archived then, so its lead and automations stop,
+ * and listed to an owner or admin by name alone, to delete it (`project_remove`). Its chat and contents stay its
+ * owner's.
+ */
+export type LeftProject = {
+  machineId: MachineId;
+  /** The removed person whose it was. */
+  owner: PersonRef;
+  /** Its folder on its machine, which a delete may remove too. */
+  path: string;
+  projectId: ProjectId;
+  title: string;
+};
+
 /** One project a link reaches. */
 export type LinkProject = {
   projectRef: ProjectRef;
@@ -5116,7 +5131,16 @@ export type PathSegment = {
   startMs: number;
 };
 
-export type KnownPeopleChange = "invited" | "joined" | "invite_revoked" | "renamed" | "role_changed" | "removed" | "device_revoked";
+export type KnownPeopleChange =
+  | "invited"
+  | "joined"
+  | "invite_revoked"
+  | "renamed"
+  | "role_changed"
+  | "removed"
+  | "device_revoked"
+  | "account_removed"
+  | "link_revoked";
 /** KnownPeopleChange, or a value from a newer hub. */
 export type PeopleChange = KnownPeopleChange | (string & {});
 
@@ -5141,6 +5165,11 @@ export type PeopleListOutput = {
   devices: AgentKeyInfo[];
   /** Open invites, newest first. */
   invites: Invite[];
+  /**
+   * The Only-me projects of people removed from the hub, by name alone: for an owner's or admin's human key,
+   * absent for anyone else's and from older hubs.
+   */
+  left?: LeftProject[];
   /** The caller's person; absent for an agent key. */
   me?: PersonId;
   next?: string;
