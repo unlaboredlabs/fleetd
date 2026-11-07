@@ -10,7 +10,7 @@ import { Check, CircleDashed } from "lucide-react";
 import { Button, copyText, Field, Input, StateGlyph, Text } from "../../ui";
 import { Mark } from "../onboarding/Mark";
 import { UpdateAppButton } from "../updates/UpdateAppButton";
-import { checkTitle, checkView, digitsOf, passes, initial, READ_EVERY_MS, reduce, spaced, stepOf, STEPS, type CheckRow, type State } from "./model";
+import { checkTitle, checkView, digitsOf, passes, waits, initial, READ_EVERY_MS, reduce, spaced, stepOf, STEPS, type CheckRow, type State } from "./model";
 import s from "./macSetup.module.css";
 
 const useNow = (every: number): number => {
@@ -368,9 +368,10 @@ function JoinStep({ state, dispatch }: { state: Extract<State, { step: "join" }>
 function CheckLine({ row }: { row: CheckRow }) {
   const [copied, setCopied] = useState<boolean>();
   const bad = !passes(row);
+  const says = bad || waits(row);
   return (
     <li className={s.check} data-state={row.state}>
-      <StateGlyph state={row.state === "ok" ? "done" : row.state === "fail" ? "failed" : row.state === "warn" ? "paused" : "working"} size="sm" />
+      <StateGlyph state={row.state === "ok" ? "done" : row.state === "fail" ? "failed" : row.state === "warn" ? "waiting" : "working"} size="sm" />
       <span className={s.stepText}>
         <Text size="sm" strong={bad}>
           {checkTitle(row.id)}
@@ -378,8 +379,14 @@ function CheckLine({ row }: { row: CheckRow }) {
         <Text size="xs" tone="quiet">
           {row.message}
         </Text>
-        {bad && row.fix !== undefined ? <Text size="xs">{row.fix}</Text> : null}
-        {bad && row.command !== undefined ? (
+        {says && row.fix !== undefined ? <Text size="xs">{row.fix}</Text> : null}
+        {says && row.opens !== undefined ? (
+          <span className={s.opens}>
+            <Button size="sm" variant="secondary" onClick={() => void window.fleetd.macSetup.openPane(row.opens ?? "app_store")}>
+              Open the App Store
+            </Button>
+          </span>
+        ) : says && row.command !== undefined ? (
           <span className={s.command}>
             <code>{row.command}</code>
             <Button size="sm" variant="ghost" onClick={() => void copyText(row.command ?? "").then(setCopied)}>
@@ -466,7 +473,9 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
   };
   const rows = [hub, ...view.checks];
   const open = rows.filter((c) => !passes(c));
-  const passed = rows.filter(passes);
+  // Not holding setup up, but each says what to do: listed with the failing ones, after them.
+  const waiting = rows.filter(waits);
+  const passed = rows.filter((c) => passes(c) && !waits(c));
   return (
     <>
       <Head
@@ -480,9 +489,9 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
               : "The node runs every check once more with both permissions on: a few seconds."
         }
       />
-      {open.length === 0 ? null : (
+      {open.length + waiting.length === 0 ? null : (
         <ul className={s.checks}>
-          {open.map((row) => (
+          {[...open, ...waiting].map((row) => (
             <CheckLine key={row.id} row={row} />
           ))}
         </ul>

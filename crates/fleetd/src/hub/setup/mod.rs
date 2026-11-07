@@ -96,8 +96,9 @@ pub(crate) fn host_of(hub: &str) -> String {
 
 /// What an admin pastes once on the agents' Mac, in the account it joins from: each line commented with why.
 pub const MAC_ADMIN_BLOCK: &str = "\
-# Xcode's licence and its system components, which only an admin can accept and install.
-sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch
+# Xcode's licence and its system components, which only an admin can accept and install. Skipped while no Xcode is
+# selected yet: setup's Xcode check then says the one command that installs or selects it.
+d=\"$(xcode-select -p 2>/dev/null)\" && test -x \"$d/usr/bin/xcodebuild\" && sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch
 # Simulators and debugging with no password prompt, for this account.
 sudo DevToolsSecurity -enable
 sudo dseditgroup -o edit -a \"$(id -un)\" -t user _developer";
@@ -413,7 +414,8 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                     "Xcode, once",
                     Some(
                         "In Terminal on the Mac, in the account it joins from (yours is fine). Xcode itself comes from \
-                         the App Store, and an iOS simulator runtime with xcodebuild -downloadPlatform iOS.",
+                         the App Store, and an iOS simulator runtime with xcodebuild -downloadPlatform iOS. Without \
+                         Xcode yet, the Mac still joins: only iOS simulators wait, and its Xcode check says what to do.",
                     ),
                     vec![],
                     vec![command(

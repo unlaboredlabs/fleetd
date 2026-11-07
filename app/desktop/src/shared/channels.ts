@@ -70,7 +70,7 @@ export const IPC = {
   macSetupJoinChanged: "mac-setup:join-changed",
   /** invoke(hub address | null) → MacHealthRead. The node's checks as it last wrote them, and whether the hub answers. */
   macSetupHealth: "mac-setup:health",
-  /** invoke(MacPane) → void. Opens that pane of System Settings › Privacy & Security. */
+  /** invoke(MacPane) → void. Opens that pane of System Settings › Privacy & Security, or Xcode in the App Store. */
   macSetupPane: "mac-setup:pane",
   /** invoke() → MacRestartOutcome. `fleetd node restart`. */
   macSetupRestart: "mac-setup:restart",

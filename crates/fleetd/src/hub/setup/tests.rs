@@ -147,6 +147,8 @@ fn the_macs_step_is_its_own_checks_and_a_failing_one_wants_a_look() {
     assert_eq!(block, super::MAC_ADMIN_BLOCK);
     for line in [
         "sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch",
+        // Skipped while no Xcode is selected: an empty `xcode-select -p` would test /usr/bin's shim, which every Mac has.
+        "d=\"$(xcode-select -p 2>/dev/null)\" && test -x \"$d/usr/bin/xcodebuild\" && sudo",
         "sudo DevToolsSecurity -enable",
         "sudo dseditgroup -o edit -a \"$(id -un)\" -t user _developer",
     ] {

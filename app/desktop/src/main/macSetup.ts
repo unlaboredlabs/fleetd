@@ -36,6 +36,8 @@ const MAX_PEERS = 48;
 export const PANE_URLS: Readonly<Record<MacPane, string>> = {
   accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
   screen_recording: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+  // The node's Xcode check gives the same link (agents_mac/xcode.rs).
+  app_store: "macappstore://apps.apple.com/app/id497799835",
 };
 
 export interface MacSetupPorts extends Pick<JoinPorts, "download" | "run" | "fleetdDir" | "fingerprint" | "baseOverride" | "platform" | "arch"> {

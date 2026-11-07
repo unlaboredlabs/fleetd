@@ -76,8 +76,9 @@ export const HUB_UPDATE_WHERE = "On your main machine, open Settings › Hub ›
 
 export type MacHubUpdateOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: MacSetupFailure };
 
-/** The System Settings panes setup opens. */
-export type MacPane = "accessibility" | "screen_recording";
+/** What setup opens on the Mac: a System Settings pane, or Xcode's page in the App Store. */
+export const MAC_PANES = ["accessibility", "screen_recording", "app_store"] as const;
+export type MacPane = (typeof MAC_PANES)[number];
 
 export type MacRestartOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: MacSetupFailure };
 

@@ -191,6 +191,8 @@ export interface CheckRow {
   readonly message: string;
   readonly fix?: string;
   readonly command?: string;
+  /** Its command only opens a page (Xcode in the App Store): the screen opens it. */
+  readonly opens?: MacPane;
 }
 
 /** Where the check step stands, from the node's last checks. */
@@ -217,6 +219,7 @@ const rowOf = (check: MacCheck): CheckRow => ({
   message: check.message,
   ...(check.fix ? { fix: check.fix } : {}),
   ...(check.command ? { command: check.command } : {}),
+  ...(check.command?.startsWith('open "macappstore:') === true ? { opens: "app_store" as const } : {}),
 });
 
 /** A check's name as the screen lists it. */
@@ -239,6 +242,9 @@ export const checkTitle = (id: string): string =>
 
 /** A check that passes, or the node is still at (an install, say): a warning, never a failure. */
 export const passes = (row: CheckRow): boolean => row.state !== "fail";
+
+/** A warning with something to do (Xcode not installed yet): it holds up only what needs it, so setup still ends. */
+export const waits = (row: CheckRow): boolean => row.state === "warn" && (row.fix !== undefined || row.command !== undefined);
 
 /** The node ran every check since `since` and is still running: what it wrote is this node's. */
 const current = (read: MacHealthRead, since: number): read is MacHealthRead & { health: MacHealth; checkedAt: number } =>

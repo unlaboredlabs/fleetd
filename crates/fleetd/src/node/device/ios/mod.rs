@@ -44,6 +44,7 @@ use super::agent_device;
 use super::remote;
 use super::scrcpy::{Frame, Input};
 use super::{Starting, drives_device, new_id, refuse};
+use crate::node::agents_mac::xcode as located;
 use crate::node::browser::SecretsFor;
 use crate::node::browser::upload::{self, HubCalls};
 use crate::node::util::AbortOnDrop;
@@ -166,19 +167,19 @@ fn xcode() -> Xcode {
             .arg("-p")
             .output()
             .ok()
+            .filter(|o| o.status.success())
             .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
     };
     let xcode = xcode_from(
         out.as_ref()
             .ok()
             .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-            .ok_or_else(|| match &out {
-                Ok(o) => String::from_utf8_lossy(&o.stderr).trim().to_owned(),
-                Err(e) => e.to_string(),
-            }),
-        selected().as_deref(),
-        Path::new("/Applications/Xcode.app").is_dir(),
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()),
+        &located::locate(
+            selected().as_deref(),
+            &located::in_applications(Path::new("/Applications")),
+            |p| Path::new(p).is_dir(),
+        ),
     );
     *last = Some((Instant::now(), xcode.clone()));
     xcode
@@ -199,33 +200,24 @@ pub fn no_xcode() -> String {
     )
 }
 
-/// [`xcode`] from its facts: simctl's runtimes (or what it said), the developer directory selected, and whether
-/// Xcode is in /Applications.
-pub fn xcode_from(
-    runtimes: Result<String, String>,
-    selected: Option<&str>,
-    in_applications: bool,
-) -> Xcode {
-    let json = match runtimes {
-        Ok(json) => json,
-        Err(said) => {
-            let tools_only = selected.is_some_and(|s| s.contains("CommandLineTools"));
-            return Err(match (tools_only, in_applications) {
-                (true, true) => (
-                    "the command line tools are selected, not Xcode, so simctl doesn't run"
-                        .to_owned(),
-                    Some("sudo xcode-select --switch /Applications/Xcode.app".to_owned()),
+/// [`xcode`] from its facts: simctl's runtimes (or that it didn't run), and where Xcode is (agents_mac/xcode.rs), which
+/// says why simctl doesn't run in place of xcrun's own error.
+pub fn xcode_from(runtimes: Option<String>, located: &located::Located) -> Xcode {
+    let Some(json) = runtimes else {
+        return Err(match located {
+            located::Located::Missing => (no_xcode(), Some(XCODE_FIX.to_owned())),
+            located::Located::Unselected { found, why } => (
+                format!(
+                    "{} is in /Applications, but {why}, so simctl doesn't run",
+                    located::name(found)
                 ),
-                (_, false) => (no_xcode(), Some(XCODE_FIX.to_owned())),
-                (false, true) => (
-                    format!(
-                        "Xcode's simctl doesn't run: {}",
-                        said.chars().take(200).collect::<String>()
-                    ),
-                    Some("sudo xcodebuild -runFirstLaunch".to_owned()),
-                ),
-            });
-        }
+                Some(located::switch(found)),
+            ),
+            located::Located::Selected(_) => (
+                "Xcode's simctl doesn't run: its licence isn't accepted or its first launch hasn't run".to_owned(),
+                Some(located::ACCEPT.to_owned()),
+            ),
+        });
     };
     let runtimes = simctl::ios_runtimes(&json).map_err(|why| (why, None))?;
     simctl::pick(&runtimes, None)

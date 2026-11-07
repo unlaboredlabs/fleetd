@@ -1623,6 +1623,39 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Update the hub" }).waitFor({ timeout: 10_000 });
     },
   },
+  // A Mac with no Xcode yet (the fixture's code 333333): setup still ends, its Xcode check amber with the App
+  // Store's button, and only the simulator check waiting for it.
+  {
+    id: "mac-setup",
+    route: "#/mac-setup",
+    fixtures: ["typical"],
+    sizes: ["narrow"],
+    realClock: true,
+    variant: "no-xcode",
+    open: async (page) => {
+      await page.getByRole("textbox").first().fill("333333");
+      await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
+      for (const button of await page.getByRole("button", { name: "Open System Settings" }).all()) await button.click();
+      await page.getByRole("heading", { name: "This Mac is ready" }).waitFor({ timeout: 20_000 });
+      await page.getByRole("button", { name: "Open the App Store" }).waitFor({ timeout: 5_000 });
+    },
+  },
+  // Its Xcode under another name, not selected (444444): the one command that selects it.
+  {
+    id: "mac-setup",
+    route: "#/mac-setup",
+    fixtures: ["typical"],
+    sizes: ["narrow"],
+    realClock: true,
+    variant: "xcode-beta",
+    open: async (page) => {
+      await page.getByRole("textbox").first().fill("444444");
+      await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
+      for (const button of await page.getByRole("button", { name: "Open System Settings" }).all()) await button.click();
+      await page.getByRole("heading", { name: "This Mac is ready" }).waitFor({ timeout: 20_000 });
+      await page.getByText("sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer").waitFor({ timeout: 5_000 });
+    },
+  },
   { id: "onboarding.key", route: "#/onboarding?key", fixtures: ["pairing-failed", "onboarding-file-store"] },
   {
     id: "onboarding",

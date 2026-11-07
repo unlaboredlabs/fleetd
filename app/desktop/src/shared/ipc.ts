@@ -6,6 +6,7 @@ import { HUB_CACHE_MAX_BYTES } from "./cache";
 import { HUB_COLORS, HUB_ID, LABEL_MAX } from "./hubs";
 import { ENV_VALUE_MAX_BYTES, SECRET_MAX_BYTES } from "./contracts";
 import { MENU_COMMANDS } from "./menu";
+import { MAC_PANES } from "./macSetup";
 import { IPC, type InvokeChannel } from "./channels";
 
 /** A call's input as JSON, at most; the hub has no use for more, and main shouldn't buffer it. */
@@ -384,7 +385,7 @@ export const REQUESTS = {
   [IPC.macSetupRedeem]: z.tuple([z.object({ code: z.string().max(32), hub: z.string().max(2048).optional() }).strict()]),
   [IPC.macSetupJoin]: none,
   [IPC.macSetupHealth]: z.tuple([z.string().max(2048).nullable()]),
-  [IPC.macSetupPane]: z.tuple([z.enum(["accessibility", "screen_recording"])]),
+  [IPC.macSetupPane]: z.tuple([z.enum(MAC_PANES)]),
   [IPC.macSetupRestart]: none,
   [IPC.macSetupStatus]: none,
   [IPC.macSetupCancel]: none,

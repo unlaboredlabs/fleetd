@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { MacCheck } from "../../../shared/contracts";
 import type { MacFound, MacHealthRead } from "../../../shared/macSetup";
-import { checkView, digitsOf, initial, passes, reduce, spaced, START_MS, stepOf, type Event, type State } from "./model";
+import { checkView, digitsOf, initial, passes, reduce, spaced, START_MS, stepOf, waits, type Event, type State } from "./model";
 
 const FOUND: MacFound = { hubUrl: "http://devbox:4790", hubName: "devbox", machineId: "mac", existing: false, here: { kind: "none" } };
 const run = (events: Event[], from: State = initial): State => events.reduce(reduce, from);
@@ -176,6 +176,22 @@ describe("the checks", () => {
     expect(checkView(installing, 2000)).toMatchObject({ kind: "test", green: true });
     expect(passes({ id: "tools", state: "unknown", message: "Installing…" })).toBe(true);
     expect(passes({ id: "xcode", state: "fail", message: "No Xcode." })).toBe(false);
+  });
+
+  it("ends green with Xcode not installed yet: the check waits with its App Store button, and holds up only simulators", () => {
+    const grants = [check("accessibility", "ok"), check("screen_recording", "ok")];
+    const first = checking([{ type: "health", read: read(grants, { writtenAt: 10_000, checkedAt: 9000 }) }]);
+    const noXcode = check("xcode", "warn", { fix: "Install Xcode from the App Store", command: 'open "macappstore://apps.apple.com/app/id497799835"' });
+    const sim = check("ios_runtime", "warn", { message: "Waits for Xcode: the Xcode check says what it needs." });
+    const done = reduce(first, { type: "health", read: read([...grants, noXcode, sim], { writtenAt: 12_000, checkedAt: 12_000, now: 12_500 }) }) as typeof first;
+    const view = checkView(done, 2000);
+    expect(view).toMatchObject({ kind: "test", green: true, checks: [{}, {}, { id: "xcode", opens: "app_store" }, { id: "ios_runtime" }] });
+    const rows = view.kind === "test" ? view.checks : [];
+    // The Xcode check says what to do; the simulator one only waits, and a passing check has nothing to say.
+    expect(rows.map(waits)).toEqual([false, false, true, false]);
+    // A switch command is a command to copy, not a page.
+    const switched = { id: "xcode", state: "warn", message: "Xcode-beta.app is in /Applications", command: "sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer" } as const;
+    expect(waits(switched)).toBe(true);
   });
 
   it("restarts the node once at a time, and says why when it can't", () => {

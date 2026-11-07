@@ -11,6 +11,10 @@ use super::tools::ToolsState;
 /// A Mac set up as the guide says, unless a test changes it.
 struct Fake {
     runs: HashMap<String, Ran>,
+    /// The Xcode bundles in /Applications.
+    xcodes: Vec<String>,
+    /// The directories that are there.
+    dirs: Vec<String>,
     accessibility: Option<bool>,
     screen: Option<bool>,
     console: Option<String>,
@@ -49,6 +53,8 @@ impl Default for Fake {
         .collect();
         Self {
             runs,
+            xcodes: vec!["/Applications/Xcode.app".into()],
+            dirs: vec!["/Applications/Xcode.app/Contents/Developer".into()],
             accessibility: Some(true),
             screen: Some(true),
             console: Some("agents".into()),
@@ -68,6 +74,12 @@ impl Probe for Fake {
             .collect::<Vec<_>>()
             .join(" ");
         self.runs.get(&key).cloned().unwrap_or_default()
+    }
+    fn xcodes(&self) -> Vec<String> {
+        self.xcodes.clone()
+    }
+    fn is_dir(&self, path: &str) -> bool {
+        self.dirs.iter().any(|d| d == path)
     }
     fn accessibility(&self) -> Option<bool> {
         self.accessibility
@@ -119,46 +131,157 @@ fn a_mac_set_up_as_the_guide_says_passes_every_check() {
     }
 }
 
+/// The Xcode check and the simulator one, with the Xcode check's fix and command.
+fn xcode_verdict(fake: &Fake) -> (MacCheckState, String, Option<String>, MacCheckState) {
+    let (state, message, fix) = verdict(fake, MacCheckId::Xcode);
+    (state, message, fix, verdict(fake, MacCheckId::IosRuntime).0)
+}
+
+/// Every way Xcode isn't usable warns with its one command, and only the simulator check waits for it: the rest of
+/// setup passes (docs: agents-mac.md#xcode). None says xcode-select's own error.
 #[test]
-fn xcode_fails_at_its_first_missing_step_with_that_steps_command() {
+fn a_missing_or_misplaced_xcode_warns_with_its_one_fix_and_holds_up_only_simulators() {
+    let rest_passes = |fake: &Fake| {
+        checks::run(fake)
+            .checks
+            .iter()
+            .filter(|c| !matches!(c.id, MacCheckId::Xcode | MacCheckId::IosRuntime))
+            .all(|c| c.state == MacCheckState::Ok)
+    };
+    let invalid = ran(
+        1,
+        "xcode-select: error: invalid developer directory '/Applications/Xcode.app'\n",
+    );
+
+    // No Xcode at all: the App Store's page.
+    let mut fake = Fake {
+        xcodes: vec![],
+        dirs: vec![],
+        ..Fake::default()
+    };
+    fake.runs.insert("xcode-select -p".into(), invalid.clone());
+    let (state, message, fix, sim) = xcode_verdict(&fake);
+    assert_eq!((state, sim), (MacCheckState::Warn, MacCheckState::Warn));
+    assert_eq!(
+        message,
+        "Xcode isn't installed. iOS simulators and builds wait for it; everything else works."
+    );
+    assert!(
+        fix.as_deref()
+            .unwrap()
+            .starts_with("Install Xcode from the App Store")
+            && fix
+                .as_deref()
+                .unwrap()
+                .ends_with("open \"macappstore://apps.apple.com/app/id497799835\""),
+        "{fix:?}"
+    );
+    assert!(rest_passes(&fake));
+
+    // Under another name, with xcode-select pointing at a removed copy: the switch to the one there.
+    fake.xcodes = vec!["/Applications/Xcode-beta.app".into()];
+    fake.runs.insert(
+        "xcode-select -p".into(),
+        ran(0, "/Applications/Xcode.app/Contents/Developer\n"),
+    );
+    let (state, message, fix, sim) = xcode_verdict(&fake);
+    assert_eq!((state, sim), (MacCheckState::Warn, MacCheckState::Warn));
+    assert_eq!(
+        message,
+        "Xcode-beta.app is in /Applications, but xcode-select points at /Applications/Xcode.app/Contents/Developer, \
+         which isn't there. iOS simulators and builds wait for it; everything else works."
+    );
+    assert!(
+        fix.unwrap()
+            .ends_with(": sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer")
+    );
+    // xcode-select failing outright says the same, never its error.
+    fake.runs.insert("xcode-select -p".into(), invalid);
+    let (_, message, fix, _) = xcode_verdict(&fake);
+    assert!(message.contains("no Xcode is selected") && !message.contains("error"));
+    assert!(
+        fix.unwrap()
+            .ends_with("/Applications/Xcode-beta.app/Contents/Developer")
+    );
+    // A name with a space in it is quoted.
+    fake.xcodes = vec!["/Applications/Xcode 26.app".into()];
+    assert!(
+        xcode_verdict(&fake)
+            .2
+            .unwrap()
+            .ends_with("sudo xcode-select -s '/Applications/Xcode 26.app/Contents/Developer'")
+    );
+    assert!(rest_passes(&fake));
+
+    // Only the Command Line Tools: the same switch.
     let mut fake = Fake::default();
     fake.runs.insert(
         "xcode-select -p".into(),
         ran(0, "/Library/Developer/CommandLineTools\n"),
     );
-    let (state, _, fix) = verdict(&fake, MacCheckId::Xcode);
-    assert_eq!(state, MacCheckState::Fail);
+    fake.dirs.push("/Library/Developer/CommandLineTools".into());
+    let (state, message, fix, sim) = xcode_verdict(&fake);
+    assert_eq!((state, sim), (MacCheckState::Warn, MacCheckState::Warn));
+    assert!(message.starts_with(
+        "Xcode.app is in /Applications, but only the Command Line Tools are selected."
+    ));
     assert!(
         fix.unwrap()
-            .contains("sudo xcode-select -s /Applications/Xcode.app")
+            .ends_with(": sudo xcode-select -s /Applications/Xcode.app/Contents/Developer")
     );
-    fake.runs.insert(
-        "xcode-select -p".into(),
-        ran(0, "/Applications/Xcode.app/Contents/Developer\n"),
-    );
+    assert!(rest_passes(&fake));
+
+    // Selected, but its licence not accepted, then its first launch not run.
+    let mut fake = Fake::default();
     fake.runs
         .insert("xcodebuild -license check".into(), ran(69, ""));
+    let (state, _, fix, sim) = xcode_verdict(&fake);
+    assert_eq!((state, sim), (MacCheckState::Warn, MacCheckState::Warn));
     assert!(
-        verdict(&fake, MacCheckId::Xcode)
-            .2
-            .unwrap()
-            .ends_with("sudo xcodebuild -license accept")
+        fix.unwrap()
+            .ends_with("sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch")
     );
     fake.runs
         .insert("xcodebuild -license check".into(), ran(0, ""));
     fake.runs
         .insert("xcodebuild -checkFirstLaunchStatus".into(), ran(69, ""));
-    assert!(
-        verdict(&fake, MacCheckId::Xcode)
-            .2
-            .unwrap()
-            .ends_with("sudo xcodebuild -runFirstLaunch")
-    );
+    let (state, _, fix, _) = xcode_verdict(&fake);
+    assert_eq!(state, MacCheckState::Warn);
+    assert!(fix.unwrap().ends_with(": sudo xcodebuild -runFirstLaunch"));
+    assert!(rest_passes(&fake));
+
     let (_, message, _) = verdict(&Fake::default(), MacCheckId::Xcode);
     assert_eq!(
         message,
         "Xcode 26.0 at /Applications/Xcode.app/Contents/Developer, licence accepted."
     );
+}
+
+/// The bundles setup looks for: Xcode.app first, then by name; a folder without a developer directory isn't one.
+#[test]
+fn the_xcodes_in_applications_are_found_by_name() {
+    let dir = tempfile::tempdir().unwrap();
+    for name in [
+        "Xcode-beta.app",
+        "Xcode.app",
+        "Xcode 26.app",
+        "Xcode-old.app",
+        "Other.app",
+    ] {
+        let app = dir.path().join(name);
+        std::fs::create_dir_all(if name == "Xcode-old.app" {
+            app
+        } else {
+            app.join("Contents/Developer")
+        })
+        .unwrap();
+    }
+    let found: Vec<_> = super::xcode::in_applications(dir.path())
+        .iter()
+        .map(|p| super::xcode::name(p).to_owned())
+        .collect();
+    assert_eq!(found, ["Xcode.app", "Xcode 26.app", "Xcode-beta.app"]);
+    assert!(super::xcode::in_applications(&dir.path().join("gone")).is_empty());
 }
 
 #[test]

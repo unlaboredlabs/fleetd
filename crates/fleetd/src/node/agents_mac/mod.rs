@@ -11,10 +11,12 @@
 //!   so the hub keeps its agents role off and clients seal nothing to it.
 //!
 //! The node checks the Mac's setup as its own user (checks.rs), takes up a new privacy grant by restarting (grants.rs), holds a keep-awake assertion for as
-//! long as it runs, and installs the pinned Node.js and agent-desktop beside agent-device (tools.rs).
+//! long as it runs, and installs the pinned Node.js and agent-desktop beside agent-device (tools.rs). Where Xcode is, and the
+//! one command that selects it, is xcode.rs.
 pub mod checks;
 pub mod grants;
 pub mod tools;
+pub mod xcode;
 
 #[cfg(target_os = "macos")]
 mod tcc;

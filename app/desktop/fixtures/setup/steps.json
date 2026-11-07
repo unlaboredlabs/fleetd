@@ -333,14 +333,14 @@
       "parts": [
         {
           "links": [],
-          "note": "In Terminal on the Mac, in the account it joins from (yours is fine). Xcode itself comes from the App Store, and an iOS simulator runtime with xcodebuild -downloadPlatform iOS.",
+          "note": "In Terminal on the Mac, in the account it joins from (yours is fine). Xcode itself comes from the App Store, and an iOS simulator runtime with xcodebuild -downloadPlatform iOS. Without Xcode yet, the Mac still joins: only iOS simulators wait, and its Xcode check says what to do.",
           "title": "Xcode, once",
           "values": [
             {
               "command": true,
               "label": "In Terminal on the Mac",
               "note": "Each line says why. It never pipes anything from the network into sudo.",
-              "value": "# Xcode's licence and its system components, which only an admin can accept and install.\nsudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch\n# Simulators and debugging with no password prompt, for this account.\nsudo DevToolsSecurity -enable\nsudo dseditgroup -o edit -a \"$(id -un)\" -t user _developer"
+              "value": "# Xcode's licence and its system components, which only an admin can accept and install. Skipped while no Xcode is\n# selected yet: setup's Xcode check then says the one command that installs or selects it.\nd=\"$(xcode-select -p 2>/dev/null)\" && test -x \"$d/usr/bin/xcodebuild\" && sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch\n# Simulators and debugging with no password prompt, for this account.\nsudo DevToolsSecurity -enable\nsudo dseditgroup -o edit -a \"$(id -un)\" -t user _developer"
             }
           ]
         },

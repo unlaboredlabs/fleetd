@@ -129,7 +129,8 @@ The app then does the rest, a step at a time: it installs the hub's own fleetd, 
 when that replaces a node, this Mac's or the hub's Mac of that name) and starts the node in this login. Then it opens
 **Accessibility** and **Screen Recording** in System Settings and sees each switch as you turn it on, and ends with a
 Test that turns green check by check. Each failure says what to do. Xcode's [one-time block](#xcode) still takes an
-admin's Terminal; its checks say so when it's missing. Close the window partway and open it again from the
+admin's Terminal; its checks say so when it's missing. A Mac without Xcode yet still finishes setup: only its iOS
+simulators wait for it, and its [Xcode check](#no-xcode) stays amber with an **Open the App Store** button. Close the window partway and open it again from the
 **fleetd** menu: it opens on where setup stands (still joining, the checks of a Mac joined already, or a code spent
 with nothing joined and what to do next).
 
@@ -155,8 +156,9 @@ fleetd does the rest, and ends at the checks.
 In Terminal on the Mac, in the account it joins from (yours is fine), paste:
 
 ```sh
-# Xcode's licence and its system components, which only an admin can accept and install.
-sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch
+# Xcode's licence and its system components, which only an admin can accept and install. Skipped while no Xcode is
+# selected yet: setup's Xcode check then says the one command that installs or selects it.
+d="$(xcode-select -p 2>/dev/null)" && test -x "$d/usr/bin/xcodebuild" && sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch
 # Simulators and debugging with no password prompt, for this account.
 sudo DevToolsSecurity -enable
 sudo dseditgroup -o edit -a "$(id -un)" -t user _developer
@@ -165,7 +167,8 @@ sudo dseditgroup -o edit -a "$(id -un)" -t user _developer
 Until an admin accepts Xcode's licence and installs its components, `xcodebuild` and `simctl` refuse to run. The
 `_developer` group and `DevToolsSecurity` let simulators, `xcodebuild test` and debugging run without a password
 prompt nobody is there to answer. Xcode itself comes from the App Store, and an iOS simulator runtime with
-`xcodebuild -downloadPlatform iOS`.
+`xcodebuild -downloadPlatform iOS`. Without a selected Xcode yet, the Xcode line skips itself and the rest of setup
+goes on: [Xcode missing, or under another name](#no-xcode) says what then.
 
 #### 2. Join, at the Mac's screen {#join}
 
@@ -229,6 +232,24 @@ Made without `-adminUser`, it gets no FileVault secure token, so its password ca
 closes your home, which macOS leaves readable to other users (not `-R`: only the folder itself). Then log in as fleetd
 agents at the Mac's screen (Apple menu › Lock Screen, then fleetd agents) and do steps 2 and 3 there.
 
+### Xcode missing, or under another name {#no-xcode}
+
+The Mac joins without Xcode: the join, the service and both grants never wait for it. Only iOS simulators and builds
+do, so `mac_xcode` warns (amber, not red), `mac_ios_runtime` waits for it, and the node looks again every 30 seconds,
+so both turn green by themselves once it's fixed. The check never shows xcode-select's own error; it says which case
+this is, with its one fix:
+
+| What the check finds | Fix |
+|---|---|
+| No Xcode selected, and none in /Applications | Install Xcode from the App Store. The setup window's **Open the App Store** opens its page (`open "macappstore://apps.apple.com/app/id497799835"`). |
+| An Xcode in /Applications under another name (`Xcode-beta.app`, `Xcode 26.app`), while xcode-select points at a copy since removed, or at nothing | `sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer`, with the name it found |
+| Only the Command Line Tools selected | The same switch, to the Xcode it found |
+| The licence not accepted | `sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch` |
+| The first launch not run | `sudo xcodebuild -runFirstLaunch` |
+
+The doctor's `ios` check on the Mac names the same cases; with no Xcode at all it offers `xcodes` too, which works
+over SSH.
+
 ## The checks {#checks}
 
 The node checks the Mac every 30 seconds as its own account, and its grants every 2 seconds while one is off; the hub
@@ -240,8 +261,8 @@ with no check still in progress (its tools installing), and lists one still in p
 | Check | Passes when | Fix |
 |---|---|---|
 | `mac_developer` | The account is in `_developer`. | `sudo dseditgroup -o edit -a "$(id -un)" -t user _developer` |
-| `mac_xcode` | A full Xcode is selected, its licence accepted and its first launch run. | [Step 1](#xcode)'s Xcode line, or `sudo xcode-select -s /Applications/Xcode.app` |
-| `mac_ios_runtime` | `xcrun simctl list runtimes` has an available iOS runtime. | `xcodebuild -downloadPlatform iOS` |
+| `mac_xcode` | A full Xcode is selected, its licence accepted and its first launch run. Otherwise it warns: setup still ends, and only simulators wait. | The one command for [what it found](#no-xcode): the App Store, `sudo xcode-select -s` to the Xcode in /Applications, or the licence |
+| `mac_ios_runtime` | `xcrun simctl list runtimes` has an available iOS runtime. While Xcode isn't usable it warns that it waits for it. | `xcodebuild -downloadPlatform iOS` |
 | `mac_accessibility`, `mac_screen_recording` | macOS has given fleetd's node each grant (asked of a fresh process, `fleetd node grants`; reading never prompts). | Turn on fleetd in that pane at the Mac; the node restarts itself to take it up. |
 | `mac_gui_session` | The node's account is the one at the Mac's screen (`console`). Behind someone else's session (`background`) it warns: builds and simulators work, the Mac's own apps need that account at the screen. | Switch to that account at the Mac, or use a Mac nobody sits at. |
 | `mac_tools` | The pinned Node.js, agent-device and agent-desktop are installed. | The Mac must reach nodejs.org and registry.npmjs.org. |

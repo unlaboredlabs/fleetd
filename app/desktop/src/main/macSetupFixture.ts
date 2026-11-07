@@ -3,7 +3,8 @@
 // any other is taken; the join takes a moment a step; each grant turns on a little after its pane is opened, and the
 // rest of the checks are green from the start. Two codes play a version difference: 111111, an Edge hub the edge
 // release has moved on past, which this app is signed in to as an admin (Update brings it level a moment later); and
-// 222222, a hub newer than this app, whose answer it can't read.
+// 222222, a hub newer than this app, whose answer it can't read. 333333 joins a Mac with no Xcode yet, 444444 one whose
+// Xcode-beta.app isn't selected.
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -35,12 +36,39 @@ const CHECKS = [
   ["keep_awake", "The Mac stays awake while the node runs."],
 ] as const;
 
+const WAITS = { id: "ios_runtime", state: "warn", message: "Waits for Xcode: the Xcode check says what it needs." };
+/** A Mac whose Xcode isn't usable yet, by its code: the node's two checks for it, as agents_mac/checks.rs words them. */
+const XCODE_WAITS: Readonly<Record<string, ReadonlyArray<object>>> = {
+  "333333": [
+    {
+      id: "xcode",
+      state: "warn",
+      message: "Xcode isn't installed. iOS simulators and builds wait for it; everything else works.",
+      fix: "Install Xcode from the App Store; this check looks again by itself",
+      command: 'open "macappstore://apps.apple.com/app/id497799835"',
+    },
+    WAITS,
+  ],
+  "444444": [
+    {
+      id: "xcode",
+      state: "warn",
+      message:
+        "Xcode-beta.app is in /Applications, but xcode-select points at /Applications/Xcode.app/Contents/Developer, which isn't there. iOS simulators and builds wait for it; everything else works.",
+      fix: "In your own (admin) account's Terminal",
+      command: "sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer",
+    },
+    WAITS,
+  ],
+};
+
 export const fixtureMacPorts = (): MacSetupPorts => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-mac-fixture-"));
   let joinedAt: number | undefined;
   /** The hub runs an older edge build than the Mac: 111111, until Update. */
   let behind = false;
   let hubVersion = "0.9.0";
+  let xcodeWaits: ReadonlyArray<object> | undefined;
   const asked = new Map<MacPane, number>();
   const granted = (pane: MacPane) => {
     const at = asked.get(pane);
@@ -49,7 +77,8 @@ export const fixtureMacPorts = (): MacSetupPorts => {
   const health = () => ({
     user: "ada",
     checks: [
-      ...CHECKS.slice(0, 6).map(([id, message]) => ({ id, state: "ok", message })),
+      ...CHECKS.slice(0, 4).map(([id, message]) => ({ id, state: "ok", message })),
+      ...(xcodeWaits ?? CHECKS.slice(4, 6).map(([id, message]) => ({ id, state: "ok", message }))),
       granted("accessibility")
         ? { id: "accessibility", state: "ok", message: "fleetd may control this Mac." }
         : { id: "accessibility", state: "fail", message: "fleetd may not control this Mac yet.", fix: "Turn on fleetd in Privacy & Security › Accessibility." },
@@ -67,6 +96,7 @@ export const fixtureMacPorts = (): MacSetupPorts => {
       behind = code === "111111";
       hubVersion = behind ? OLD_EDGE : "0.9.0";
       const answer = { hubUrl: HUB, hubName: "devbox", machineId: "mac", token: "fle_fixture", expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), version: hubVersion, existing: false };
+      xcodeWaits = XCODE_WAITS[code];
       return later(
         600,
         code === "000000"
@@ -109,7 +139,8 @@ export const fixtureMacPorts = (): MacSetupPorts => {
       return Promise.resolve(file.endsWith("mac-health.json") ? { text: JSON.stringify(health()), writtenAt: Date.now() } : undefined);
     },
     openPane: (url) => {
-      const pane = (Object.keys(PANE_URLS) as MacPane[]).find((p) => PANE_URLS[p] === url);
+      // Only a grant's pane turns something on: the App Store installs nothing here.
+      const pane = (["accessibility", "screen_recording"] as const).find((p) => PANE_URLS[p] === url);
       if (pane !== undefined && !asked.has(pane)) asked.set(pane, Date.now());
       return Promise.resolve();
     },
