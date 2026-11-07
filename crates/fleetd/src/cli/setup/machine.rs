@@ -34,9 +34,10 @@ pub fn machine_usage() -> String {
              first, --dry-run only prints (for a fresh machine, without connecting); --no-service
              enrolls the node but writes no service and prints how to run it; safe to run again
   machine remove <id> [--purge]
-             stop and remove the node's service on the machine and revoke its key on the hub; --purge
-             also deletes ~/.fleetd/node and ~/.fleetd/claude.env there, and
-             what an older fleetd installed for T3 Code
+             stop and remove the node's service on the machine, revoke its key on the hub and forget
+             its rows there (run again, it clears what an older remove left); --purge also deletes
+             ~/.fleetd/node and ~/.fleetd/claude.env there, and what an older fleetd installed for
+             T3 Code
 {}",
         crate::cli::project::MACHINE_SET_USAGE
     )
@@ -1363,16 +1364,25 @@ pub async fn remove(
         }
     }
 
-    let revoked = hub
+    let (revoked, rows) = hub
         .auth
         .revoke_node(machine)
-        .and_then(|revoked| hub.store.machine_remove(machine).map(|()| revoked))
+        .and_then(|revoked| {
+            hub.store
+                .machine_remove(machine)
+                .map(|rows| (revoked, rows))
+        })
         .map_err(|error| Stop::fail(error.to_string()))?;
     progress.say(&if revoked {
         format!("revoked {machine_id}'s node key; the hub refuses that node from now on.")
     } else {
         format!("the hub held no node key for {machine_id}.")
     });
+    if rows > 0 {
+        progress.say(&format!(
+            "the hub forgot {machine_id}'s projects, sessions, chats and settings ({rows} rows); its orders, event log and metrics stay as history."
+        ));
+    }
     if let (Some(mut state), Some(_)) = (state, &record) {
         state.machines.remove(&machine_id);
         write_setup(home, &state).map_err(Stop::fail)?;

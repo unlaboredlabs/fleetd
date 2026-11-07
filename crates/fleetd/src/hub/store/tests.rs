@@ -1347,3 +1347,131 @@ fn a_long_read_runs_on_its_own_read_only_connection() {
         .unwrap();
     assert_eq!(memory.read(count).unwrap(), 1);
 }
+
+/// A table's column: name, type, and whether a row may leave it null.
+type Column = (String, String, bool);
+
+/// Every table that names a machine, with its columns.
+fn machine_tables(c: &rusqlite::Connection) -> Vec<(String, Vec<Column>)> {
+    const MACHINE_COLUMNS: &[&str] = &[
+        "machine_id",
+        "checkout_machine_id",
+        "from_machine_id",
+        "to_machine_id",
+        "origin_machine",
+        "on_machine",
+    ];
+    let tables: Vec<String> = c
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    tables
+        .into_iter()
+        .filter_map(|t| {
+            let columns: Vec<Column> = c
+                .prepare(&format!(
+                    "SELECT name, type, \"notnull\" = 0 AND pk = 0 FROM pragma_table_info('{t}')"
+                ))
+                .unwrap()
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
+            columns
+                .iter()
+                .any(|(name, ..)| MACHINE_COLUMNS.contains(&name.as_str()))
+                .then_some((t, columns))
+        })
+        .collect()
+}
+
+#[test]
+fn removing_a_machine_forgets_its_rows_and_leaves_anothers_with_the_same_project_ids() {
+    use super::hub_store::{MACHINE_KEEPS, MACHINE_TABLES};
+    let db = HubDb::open_memory().unwrap();
+    let store = HubStore::new(db.clone());
+    let tables = db.with(|c| Ok(machine_tables(c))).unwrap();
+    // Each table with a machine id is cleared or kept on purpose; `repos`, `navi_asks` and `session_places` by
+    // their own rule.
+    for (t, columns) in &tables {
+        let by_id = columns.iter().any(|(name, ..)| name == "machine_id");
+        let own_rule =
+            ["repos", "navi_asks", "session_places", "slot_claims"].contains(&t.as_str());
+        assert!(
+            MACHINE_TABLES.contains(&t.as_str()) || MACHINE_KEEPS.contains(&t.as_str()) || own_rule,
+            "{t} names a machine: add it to MACHINE_TABLES, or to MACHINE_KEEPS with why"
+        );
+        assert!(
+            by_id || own_rule,
+            "{t} has no machine_id: give it its own rule"
+        );
+    }
+    // A row of devbox's and one of worker's in each, under the same project and thread ids (worker once mirrored
+    // devbox's projects).
+    let seed = |c: &rusqlite::Connection, machine: &str, n: i64| {
+        for (t, columns) in &tables {
+            let values: Vec<String> = columns
+                .iter()
+                .map(|(name, ty, nullable)| match name.as_str() {
+                    "project_id" | "checkout_project_id" | "from_project_id" | "to_project_id" => {
+                        "'p-shared'".to_owned()
+                    }
+                    "thread_id" | "origin_thread" => "'t-shared'".to_owned(),
+                    n_ if n_.contains("machine") => format!("'{machine}'"),
+                    _ if *nullable => "NULL".to_owned(),
+                    "kind" if ty.contains("TEXT") => "'plain'".to_owned(),
+                    "data" | "items" | "refs" | "projects" | "workstreams" => "'{}'".to_owned(),
+                    _ if ty.contains("INT") || ty.contains("REAL") => n.to_string(),
+                    _ => format!("'{machine}-{name}'"),
+                })
+                .collect();
+            let names: Vec<&str> = columns.iter().map(|(name, ..)| name.as_str()).collect();
+            c.execute(
+                &format!(
+                    "INSERT INTO {t} ({}) VALUES ({})",
+                    names.join(", "),
+                    values.join(", ")
+                ),
+                [],
+            )
+            .unwrap_or_else(|e| panic!("seeding {t}: {e}"));
+        }
+    };
+    db.with(|c| {
+        seed(c, "devbox", 1);
+        seed(c, "worker", 2);
+        Ok(())
+    })
+    .unwrap();
+    let count = |t: &str, machine: &str| -> i64 {
+        let column = tables
+            .iter()
+            .find(|(name, _)| name == t)
+            .and_then(|(_, columns)| {
+                ["machine_id", "from_machine_id", "origin_machine"]
+                    .into_iter()
+                    .find(|c| columns.iter().any(|(name, ..)| name == c))
+            })
+            .unwrap();
+        db.with(|c| {
+            Ok(c.query_row(
+                &format!("SELECT COUNT(*) FROM {t} WHERE {column} = ?"),
+                [machine],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap()
+    };
+
+    assert!(store.machine_remove(&m("worker")).unwrap() > 0);
+    for (t, _) in &tables {
+        assert_eq!(count(t, "devbox"), 1, "devbox's row in {t} stays");
+        let kept = i64::from(MACHINE_KEEPS.contains(&t.as_str()));
+        assert_eq!(count(t, "worker"), kept, "worker's rows in {t}");
+    }
+    // Run again, as over what an older remove left behind, it finds nothing more.
+    assert_eq!(store.machine_remove(&m("worker")).unwrap(), 0);
+}
