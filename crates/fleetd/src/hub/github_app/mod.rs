@@ -228,6 +228,8 @@ pub struct GithubApps {
     reach: std::sync::RwLock<Option<(i64, Vec<Reach>)>>,
     /// One change to people's tokens at a time: a refresh renews the refresh token too.
     accounts: tokio::sync::Mutex<()>,
+    /// The orders' token problems last logged (sessions.rs): each is logged again only once it changes.
+    pub(super) warned: sessions::Warned,
 }
 
 fn http() -> reqwest::Client {
@@ -306,6 +308,7 @@ impl GithubApps {
             refreshing: tokio::sync::Mutex::new(()),
             reach: std::sync::RwLock::new(None),
             accounts: tokio::sync::Mutex::new(()),
+            warned: sessions::Warned::default(),
         })
     }
 

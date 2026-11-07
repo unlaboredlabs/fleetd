@@ -308,7 +308,7 @@ pub async fn send(
         }
     };
     let (message, lead_waiting) = if hub.chat.is_held(&message).map_err(store_error)? {
-        go(hub, &r, message, now).await
+        waits(hub, &r, go(hub, &r, message, now).await)
     } else {
         (message, None)
     };
@@ -358,7 +358,7 @@ pub async fn send_as_agent(
         }
     };
     let (message, lead_waiting) = if hub.chat.is_held(&message).map_err(store_error)? {
-        go(hub, r, message, false).await
+        waits(hub, r, go(hub, r, message, false).await)
     } else {
         (message, None)
     };
@@ -496,6 +496,37 @@ async fn go(
                 e.message
             )),
         ),
+    }
+}
+
+/// [`go`]'s answer, with why a message the offline queue took waits there: the chat shows it under the message.
+fn waits(
+    hub: &Arc<Hub>,
+    r: &ProjectRef,
+    (message, waiting): (fleetd_contracts::chat::ChatMessage, Option<String>),
+) -> (fleetd_contracts::chat::ChatMessage, Option<String>) {
+    let waiting = waiting.or_else(|| {
+        (message.delivery == Some(ChatDelivery::Queued))
+            .then(|| machine_away(hub, &r.machine_id))
+            .flatten()
+    });
+    (message, waiting)
+}
+
+/// Why nothing reaches the machine's lead now, and what brings it back: the machine was removed from the hub, or its
+/// node isn't connected. None while it is linked.
+fn machine_away(hub: &Hub, machine_id: &MachineId) -> Option<String> {
+    let m = machine_id.as_str();
+    match hub.store.machine_get(machine_id) {
+        Ok(None) => Some(format!(
+            "{m} isn't one of this hub's machines now (it was removed), so its lead can't take this. It goes in once \
+             {m} joins again: on the hub, run `fleetd pair --worker {m}`, then run what it prints on {m} with --rejoin."
+        )),
+        _ if !hub.queue.is_connected(machine_id) => Some(format!(
+            "{m} is offline: its node isn't connected. It goes in when {m} is back. If {m} is on, Repair it in \
+             Settings › Hub › Machines."
+        )),
+        _ => None,
     }
 }
 

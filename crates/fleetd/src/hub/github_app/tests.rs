@@ -1077,7 +1077,20 @@ async fn a_token_goes_only_to_a_node_that_keeps_it_as_the_orders() {
         "{e}"
     );
     connect(&lab, &sam).await.unwrap();
-    // devbox's node isn't linked here, so it can't keep an order's variables: refused, never the machine's login.
+    // devbox can't keep an order's variables here, so the token is refused, never the machine's login, and why says
+    // which: devbox isn't among the hub's machines, then its node isn't linked, then its node's hello lacks them.
+    let e = deliver(&lab.hub, &r, &order, None, true).await.unwrap_err();
+    assert!(
+        e.contains("devbox isn't one of the hub's machines now"),
+        "{e}"
+    );
+    machine_record(&lab.hub, "devbox");
+    let e = deliver(&lab.hub, &r, &order, None, true).await.unwrap_err();
+    assert_eq!(
+        e,
+        "devbox's node is offline: it gets the token at the first sweep after it links again"
+    );
+    lab.hub.link.set_capabilities(&r.machine_id, &[]);
     let e = deliver(&lab.hub, &r, &order, None, true).await.unwrap_err();
     assert!(e.contains("too old to hand agents a GitHub token"), "{e}");
     assert!(
@@ -1088,6 +1101,87 @@ async fn a_token_goes_only_to_a_node_that_keeps_it_as_the_orders() {
             .unwrap()
             .is_empty()
     );
+}
+
+/// Everything the hub logs while a test runs.
+#[derive(Clone, Default)]
+struct Logs(Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for Logs {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Logs {
+    type Writer = Logs;
+    fn make_writer(&'a self) -> Logs {
+        self.clone()
+    }
+}
+
+impl Logs {
+    fn count(&self, words: &str) -> usize {
+        String::from_utf8_lossy(&self.0.lock().unwrap())
+            .lines()
+            .filter(|l| l.contains(words))
+            .count()
+    }
+}
+
+/// devbox's node is offline while its order's token is due: each sweep tries again, but says so once, as offline (not
+/// too old), and again only once why changes.
+#[tokio::test(flavor = "current_thread")]
+async fn a_node_offline_is_said_once_and_never_called_too_old() {
+    use super::sessions::{Kept, keep, renew};
+    let logs = Logs::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(logs.clone())
+        .with_max_level(tracing::Level::INFO)
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    // With one subscriber registered, tracing asks only the thread that first meets a log line whether it's wanted:
+    // another test's thread, with none, would turn the sweep's lines off for every thread. A second one keeps all asked.
+    let _second = tracing::Dispatch::new(tracing_subscriber::registry());
+    let lab = lab().await;
+    created(&lab).await;
+    call(&lab.hub, &admin(&lab.hub), "github_app_test", json!({}))
+        .await
+        .unwrap();
+    let (r, order) = order_on_acme(&lab.hub, None);
+    machine_record(&lab.hub, "devbox");
+    let now = crate::hub::store::now_ms(lab.clock.as_ref() as &dyn Clock);
+    keep(
+        &lab.hub,
+        &Kept {
+            r: r.clone(),
+            order: order.clone(),
+            checkout: r.clone(),
+            repo_id: None,
+            person: None,
+            expires_ms: now + 50 * 60_000,
+            margin_ms: 30 * 60_000,
+            blocked: false,
+        },
+    )
+    .unwrap();
+    // Within its margin, three sweeps 5 minutes apart.
+    lab.clock.advance(Duration::from_secs(25 * 60));
+    for _ in 0..3 {
+        renew(&lab.hub).await;
+        lab.clock.advance(Duration::from_secs(5 * 60));
+    }
+    assert_eq!(logs.count("devbox's node is offline"), 1);
+    assert_eq!(logs.count("too old"), 0);
+    // Its node links with a hello that lacks order variables: that's news, said once.
+    lab.hub.link.set_capabilities(&r.machine_id, &[]);
+    renew(&lab.hub).await;
+    renew(&lab.hub).await;
+    assert_eq!(logs.count("too old to hand agents a GitHub token"), 1);
 }
 
 /// The hub restarts while an order's agents run (an update): what it handed them is still renewed, with no new launch.
@@ -1326,14 +1420,7 @@ async fn fake_link(
 ) -> Arc<Mutex<Vec<(String, String, String, String)>>> {
     use fleetd_contracts::node_link::{CAP_ORDER_ENV, HubToNode, NodeToHub};
     let m = fleetd_contracts::ids::MachineId::unchecked(machine);
-    let secret = crypto_box::SecretKey::generate(&mut crypto_box::aead::OsRng);
-    let public = base64::engine::general_purpose::STANDARD.encode(secret.public_key().as_bytes());
-    let record = serde_json::from_value(json!({
-        "machineId": machine, "name": machine, "tags": [], "status": "online",
-        "lastSeenAt": "2026-10-28T10:00:00.000Z", "nodeVersion": "0.1.0", "boxPubKey": public,
-    }))
-    .unwrap();
-    hub.store.machine_upsert(&record, None).unwrap();
+    let secret = machine_record(hub, machine);
     hub.link.set_capabilities(&m, &[CAP_ORDER_ENV]);
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let link = hub.node_commands.attach(&m, tx);
@@ -1361,6 +1448,19 @@ async fn fake_link(
         }
     });
     kept
+}
+
+/// `machine` among the hub's machines, its node not linked: the key its node opens what is sealed to it with.
+fn machine_record(hub: &Hub, machine: &str) -> crypto_box::SecretKey {
+    let secret = crypto_box::SecretKey::generate(&mut crypto_box::aead::OsRng);
+    let public = base64::engine::general_purpose::STANDARD.encode(secret.public_key().as_bytes());
+    let record = serde_json::from_value(json!({
+        "machineId": machine, "name": machine, "tags": [], "status": "online",
+        "lastSeenAt": "2026-10-28T10:00:00.000Z", "nodeVersion": "0.1.0", "boxPubKey": public,
+    }))
+    .unwrap();
+    hub.store.machine_upsert(&record, None).unwrap();
+    secret
 }
 
 /// The values a fake link was handed, as `GH_TOKEN`.

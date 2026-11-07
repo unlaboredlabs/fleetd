@@ -1020,6 +1020,56 @@ async fn a_message_never_goes_missing_on_its_way_to_the_lead() {
     assert_eq!(hub.chat.page(&r, None, None, 10).unwrap().0.len(), 1);
 }
 
+/// A message that waits for its lead's machine says why under it, and what brings the machine back: one the hub no
+/// longer knows (removed) rejoins with --rejoin, one whose node isn't connected is repaired. Before, the chat read
+/// "the lead takes it when it's free" while the message sat in the offline queue.
+#[tokio::test]
+async fn a_message_waiting_for_its_machine_says_why() {
+    let (hub, _home) = hub();
+    give_lead(&hub);
+    let tools = crate::hub::api::registry();
+    let send = async |id: &str| {
+        let input = json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "text": "status?", "clientRequestId": id });
+        tools
+            .call(&hub, &person(), "chat_send", input)
+            .await
+            .unwrap()
+    };
+
+    // devbox was removed: no machine record.
+    let removed = send("c1").await;
+    assert_eq!(removed["message"]["delivery"], "queued");
+    let why = removed["leadWaiting"].as_str().unwrap();
+    assert!(
+        why.starts_with("devbox isn't one of this hub's machines now (it was removed)"),
+        "{why}"
+    );
+    assert!(
+        why.contains(
+            "run `fleetd pair --worker devbox`, then run what it prints on devbox with --rejoin"
+        ),
+        "{why}"
+    );
+
+    // devbox is known, its node not connected.
+    let machine = serde_json::from_value(json!({
+        "machineId": "devbox", "name": "devbox", "tags": [], "status": "offline", "lastSeenAt": AT,
+        "nodeVersion": "0.1.0",
+    }))
+    .unwrap();
+    hub.store.machine_upsert(&machine, None).unwrap();
+    let offline = send("c2").await;
+    let why = offline["leadWaiting"].as_str().unwrap();
+    assert!(
+        why.starts_with("devbox is offline: its node isn't connected."),
+        "{why}"
+    );
+    assert!(
+        why.contains("Repair it in Settings › Hub › Machines"),
+        "{why}"
+    );
+}
+
 /// A photo sent with no words is a message, as in Messages; no words and no files is refused.
 #[tokio::test]
 async fn a_photo_goes_with_no_words() {
