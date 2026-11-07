@@ -21,7 +21,7 @@ import { STEER_WORDS } from "../fixtures/agents/steers.ts";
 import { SESSION } from "../fixtures/sessions/ids.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
-import { ADA_ROUTE, HOME_ROUTE, TAXES_ROUTE } from "../fixtures/navi/ids.ts";
+import { ADA, ADA_ROUTE, HOME_ROUTE, TAXES_ROUTE } from "../fixtures/only-me/ids.ts";
 
 /**
  * What the system answers when the app posts a notification: shown, or not supported. Nothing reaches the screen of
@@ -153,21 +153,21 @@ export const fixtures = [
   "inline-items",
   "inline-failures",
   "inline-reopened",
-  // A Navi's integration cards (fixtures/inline/integrations.json).
+  // A project's integration cards (fixtures/inline/integrations.json).
   "inline-integrations",
-  // A Navi's purchases: a hotel waiting for Pay, a train ticket approved and filled (fixtures/inline/purchases.json).
+  // A project's purchases: a hotel waiting for Pay, a train ticket approved and filled (fixtures/inline/purchases.json).
   "inline-purchases",
-  // A Navi's approval checker at work (fixtures/inline/checker.json), and its approvals in its settings
+  // A project's approval checker at work (fixtures/inline/checker.json), and its approvals in its settings
   // (fixtures/integrations).
   "inline-checker",
   "integrations-approvals",
-  // A Navi's servers that sign in with OAuth (fixtures/integrations).
+  // A project's servers that sign in with OAuth (fixtures/integrations).
   "integrations-signin",
-  // A Navi's secure inputs: a passport number to type, a license number from 1Password (fixtures/inline/secure.json).
+  // A project's secure inputs: a passport number to type, a license number from 1Password (fixtures/inline/secure.json).
   "inline-secure",
   // Approvals whose fields hide or reorder text (fixtures/inline/hidden.json).
   "inline-hidden",
-  // W237: a Navi's Telegram, a setup step a fixture (fixtures/telegram).
+  // W237: a project's Telegram, a setup step a fixture (fixtures/telegram).
   "telegram-start",
   "telegram-tested",
   "telegram-paired",
@@ -212,7 +212,7 @@ export const fixtures = [
   // W46's design preview: storefront's browser sessions, one agent driving and one asking you to take over
   // (fixtures/sessions).
   "sessions-preview",
-  // D305: the Screens page, across projects, a Navi and three machines (fixtures/sessions).
+  // D305: the Screens page, across projects, an Only-me one among them, and three machines (fixtures/sessions).
   "sessions-page",
   // W96: what there is to look at, two of the lead's nudges, with nothing waiting (fixtures/look).
   "look-two",
@@ -256,15 +256,15 @@ export const fixtures = [
   "updates-run-updated",
   "updates-refused",
   "updates-run-left-over",
-  // Navi (fixtures/navi): no Navi yet; two Navis and an archived one, Ada asking to send an email and following work.
-  "navi-none",
-  "navi-two",
-  "navi-old-hub",
-  // Hub links (fixtures/navi): Ada's Linked hubs and Sam's links to this hub; and neither yet.
-  "navi-links",
-  "navi-links-none",
-  // Files both ways in a Navi's chat (fixtures/navi): a lease and a bank export in, a trip PDF and receipts out.
-  "navi-files",
+  // Only-me projects (fixtures/only-me): Ada and Home first in the sidebar and Taxes archived, Ada asking to book a
+  // table and following work it asked for.
+  "only-me-chats",
+  // Hub links (fixtures/only-me): Ada's Linked hubs and Sam's links to this hub; and neither yet.
+  "only-me-links",
+  "only-me-links-none",
+  // Files both ways in an Only-me project's chat (fixtures/only-me): a lease and a bank export in, a trip PDF and
+  // receipts out.
+  "only-me-files",
   // fleetd.sh's showcase: one request played from send to merge, recorded by showcase.spec.ts (fixtures/showcase).
   "showcase-order",
 ] as const;
@@ -872,27 +872,26 @@ export const screens: readonly Screen[] = [
       }, `${CHAT}/decisions`);
     }, (page) => page.getByLabel("Loading the decisions")),
   },
-  // Navi (fixtures/navi): the first run, with Meet Navi in the sidebar; two Navis pinned above the projects and one
-  // archived; Ada's chat with its send to approve, beside the work it asked for; and a hub that doesn't serve that, so
-  // no Asked tab.
-  { id: "navi", route: "#/navi", fixtures: ["navi-none", "navi-two", "long-text"] },
+  // Only-me projects (fixtures/only-me): Ada and Home first in the one Projects list, Taxes archived and out of it;
+  // Ada's chat with its booking to approve, beside the work it asked other projects for (Plan › Asked).
   {
     id: "chat",
     route: `${ADA_ROUTE}/asked`,
-    fixtures: ["navi-two"],
-    variant: "navi",
+    fixtures: ["only-me-chats"],
+    variant: "only-me",
     open: async (page) => {
       const panel = page.getByRole("complementary", { name: "Project panel" });
       await panel.locator('[data-screen="asked"]').waitFor();
       await expect(page.getByRole("textbox", { name: /Message Ada/u })).toBeVisible();
+      await expect(page.getByRole("navigation", { name: "Sidebar" })).not.toContainText("Taxes");
     },
   },
   // Asked work opened: a long ask the person's words were relayed in, and the follow-up folded into its order.
   {
     id: "chat",
     route: `${ADA_ROUTE}/asked`,
-    fixtures: ["navi-two"],
-    variant: "navi-asked-open",
+    fixtures: ["only-me-chats"],
+    variant: "asked-open",
     open: async (page) => {
       const panel = page.getByRole("complementary", { name: "Project panel" });
       await panel.locator('[data-screen="asked"]').waitFor();
@@ -903,25 +902,13 @@ export const screens: readonly Screen[] = [
       }
     },
   },
-  {
-    id: "chat",
-    route: `${ADA_ROUTE}/asked`,
-    fixtures: ["navi-old-hub"],
-    variant: "navi",
-    open: async (page) => {
-      // No Asked on a hub that doesn't serve it: the link opens the Plan.
-      const panel = page.getByRole("complementary", { name: "Project panel" });
-      await panel.locator('[data-section="plan"][aria-selected="true"]').waitFor();
-      await expect(panel.locator('[data-section="asked"]')).toHaveCount(0);
-    },
-  },
-  // A Navi's Skills (navi/SkillsPane): what it learned, installed and gets from every project; one skill rendered,
-  // in the wide panel; its history, the newest version open to its diff.
+  // A project's Skills (skills/SkillsPane): what it learned, installed and gets from every project; one skill
+  // rendered, in the wide panel; its history, the newest version open to its diff.
   {
     id: "chat",
     route: `${ADA_ROUTE}/skills`,
-    fixtures: ["navi-two"],
-    variant: "navi-skills",
+    fixtures: ["only-me-chats"],
+    variant: "skills",
     open: async (page) => {
       await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="skills"]').waitFor();
     },
@@ -929,8 +916,8 @@ export const screens: readonly Screen[] = [
   {
     id: "chat",
     route: `${ADA_ROUTE}/skills/weekly-invoices`,
-    fixtures: ["navi-two"],
-    variant: "navi-skill",
+    fixtures: ["only-me-chats"],
+    variant: "skill",
     open: async (page) => {
       await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="skill"]').waitFor();
     },
@@ -938,37 +925,57 @@ export const screens: readonly Screen[] = [
   {
     id: "chat",
     route: `${ADA_ROUTE}/skills/weekly-invoices`,
-    fixtures: ["navi-two"],
-    variant: "navi-skill-history",
+    fixtures: ["only-me-chats"],
+    variant: "skill-history",
     open: async (page) => {
       const panel = page.getByRole("complementary", { name: "Project panel" });
       await panel.getByRole("button", { name: /^History/u }).click();
       await panel.getByRole("region", { name: "Version 2 to 3" }).waitFor();
     },
   },
-  // A Navi's files: the person's .docx and .csv, and the PDF and CSV it made, each a card with Open and Save.
+  // Files both ways: the person's .docx and .csv, and the PDF and CSV the lead made, each a card with Open and Save.
   {
     id: "chat",
     route: HOME_ROUTE,
-    fixtures: ["navi-files"],
-    variant: "navi-files",
+    fixtures: ["only-me-files"],
+    variant: "files",
     open: async (page) => {
       await expect(page.getByRole("button", { name: "Save lisbon-itinerary.pdf" })).toBeVisible();
       await expect(page.getByText("Word document · 47 KB")).toBeVisible();
     },
   },
-  // An archived Navi still open: the palette offers its own views, never a code project's.
+  // An archived project still open: the palette offers every project's views, its Skills too.
   {
     id: "palette",
     route: TAXES_ROUTE,
-    fixtures: ["navi-two"],
-    variant: "archived-navi",
+    fixtures: ["only-me-chats"],
+    variant: "archived",
     open: async (page) => {
       await page.keyboard.press("ControlOrMeta+K");
-      await page.getByRole("combobox", { name: "Search" }).fill("Pull requests");
-      await expect(page.getByRole("option", { name: /Pull requests/u })).toHaveCount(0);
-      await page.getByRole("combobox", { name: "Search" }).fill("Checklist");
-      await expect(page.getByRole("option", { name: /Checklist/u }).first()).toBeVisible();
+      await page.getByRole("combobox", { name: "Search" }).fill("Skills");
+      await expect(page.getByRole("option", { name: /Skills/u }).first()).toBeVisible();
+    },
+  },
+  // Settings › Projects for an Only-me project: who sees it, then its Telegram, linked hubs, approvals, integrations,
+  // sign-ins, skills and payments, and Archive and Delete at the end.
+  {
+    id: "settings.projects",
+    variant: "only-me",
+    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    fixtures: ["only-me-links"],
+    open: async (page) => {
+      await expect(page.getByRole("region", { name: "Only me" }).getByRole("switch")).toBeChecked();
+      await page.getByRole("region", { name: "Linked hubs" }).waitFor();
+    },
+  },
+  {
+    id: "settings.projects",
+    variant: "archive",
+    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    fixtures: ["only-me-links"],
+    open: async (page) => {
+      await page.getByRole("region", { name: "Archive" }).scrollIntoViewIfNeeded();
+      await page.getByRole("region", { name: "Delete project" }).waitFor();
     },
   },
   // Resized from its edge with the keyboard: at its widest, and at its narrowest, where the tabs fold to icons.
@@ -1195,7 +1202,7 @@ export const screens: readonly Screen[] = [
   // A5 (F5): the two inline items, every state: the masked secret field, the exact command with Approve / Deny, open
   // again after the node was offline; answered ones folded to one line (saved, not needed, ran, ran with an error,
   // not run, denied, running).
-  // ...and a Navi's integration cards: a send, a delete, an answered send; and approvals whose hidden characters show
+  // ...and a project's integration cards: a send, a delete, an answered send; and approvals whose hidden characters show
   // as marks.
   { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-purchases", "inline-checker", "inline-secure", "inline-hidden"], variant: "inline" },
   // The same chat offline from the disk cache: an open item says it can't be answered now, and a secret never claims
@@ -1558,7 +1565,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["projects-cloning"],
     open: async (page) => {
       await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("acme/checkout-v2");
+      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("acme/checkout-v2");
       await page.keyboard.press("Enter");
       // The fixture's progress events are timed; shoot once the bar shows git's 42%.
       await page.locator('[role="progressbar"][aria-valuenow="42"]').waitFor();
@@ -1572,7 +1579,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["projects-dropped"],
     open: async (page) => {
       await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("acme/checkout-v2");
+      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("acme/checkout-v2");
       await page.keyboard.press("Enter");
       await page.locator('[data-screen="projects.add.unlisted"]').waitFor();
     },
@@ -1583,7 +1590,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["typical", "long-text"],
     open: async (page) => {
       await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("/home/dev/src/pricing");
+      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("/home/dev/src/pricing");
       await page.keyboard.press("Enter");
     },
   },
@@ -1595,7 +1602,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["typical", "long-text"],
     open: async (page) => {
       await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("Field notes");
+      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("Field notes");
       await page.getByRole("textbox", { name: "Folder", exact: true }).waitFor();
     },
   },
@@ -1606,7 +1613,7 @@ export const screens: readonly Screen[] = [
     variant: "too-old",
     open: async (page) => {
       await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("Field notes");
+      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("Field notes");
       await page.getByRole("group", { name: "Machine" }).getByRole("button", { name: /^buildbox/u }).click();
       await page.getByText(/^Update fleetd on buildbox/u).waitFor();
     },
@@ -1620,7 +1627,7 @@ export const screens: readonly Screen[] = [
     expect: "error",
     open: async (page) => {
       await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("Old notes");
+      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("Old notes");
       await page.keyboard.press("Enter");
     },
   },
@@ -1632,12 +1639,12 @@ export const screens: readonly Screen[] = [
     fixtures: ["projects-new"],
     open: async (page) => {
       await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("Field notes");
+      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("Field notes");
       await page.keyboard.press("Enter");
       await page.getByText("Field notes is ready on devbox").first().waitFor();
     },
   },
-  // W237: a Navi's Telegram in its settings (fixtures/telegram): @BotFather's steps and the sealed token field, the
+  // W237: a project's Telegram in its settings (fixtures/telegram): @BotFather's steps and the sealed token field, the
   // token tested with Pair next, paired and connected, and retrying after Telegram asked it to slow down; then Pair
   // pressed, waiting for the person's Start in Telegram.
   {
@@ -1670,7 +1677,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["projects-new"],
     open: async (page) => {
       await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("Field notes");
+      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("Field notes");
       await page.keyboard.press("Enter");
       await page.getByRole("button", { name: "Add a repo" }).click();
       await page.getByText("No repo, a plain folder.").waitFor({ timeout: 15_000 });
@@ -1684,7 +1691,7 @@ export const screens: readonly Screen[] = [
     expect: "error",
     open: async (page) => {
       await page.getByRole("listbox", { name: "Repos" }).waitFor();
-      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("acme/ledger-ui");
+      await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("acme/ledger-ui");
       await page.keyboard.press("Enter");
     },
   },
@@ -2401,22 +2408,23 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Undo" }).waitFor();
     },
   },
-  // Hub links (hubLinks/, on You › Hubs): a Navi's Linked hubs, working, can't reach and revoked there, and none yet;
-  // a person's Links to this hub, and a key just made, shown once. Hub › People's list of everyone's is on settings.hub.people.
+  // Hub links: a project's Linked hubs (in its settings), working, can't reach and revoked there, and none yet; a
+  // person's Links to this hub (on You › Hubs), and a key just made, shown once. Hub › People's list of everyone's is
+  // on settings.hub.people.
   {
-    id: "settings.hubs",
-    route: "#/settings/hubs",
-    fixtures: ["navi-links", "navi-links-none"],
+    id: "settings.projects",
+    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    fixtures: ["only-me-links", "only-me-links-none"],
     variant: "linked-hubs",
-    open: (page) => page.getByRole("region", { name: "Hubs Ada reaches" }).scrollIntoViewIfNeeded(),
+    open: (page) => page.getByRole("region", { name: "Linked hubs" }).scrollIntoViewIfNeeded(),
   },
   {
-    id: "settings.hubs",
-    route: "#/settings/hubs",
-    fixtures: ["navi-links-none"],
+    id: "settings.projects",
+    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    fixtures: ["only-me-links-none"],
     variant: "link-a-hub",
     open: async (page) => {
-      const region = page.getByRole("region", { name: "Hubs Ada reaches" });
+      const region = page.getByRole("region", { name: "Linked hubs" });
       await region.getByRole("button", { name: "Link a hub" }).click();
       await region.getByRole("form", { name: "Link a hub" }).scrollIntoViewIfNeeded();
     },
@@ -2424,14 +2432,14 @@ export const screens: readonly Screen[] = [
   {
     id: "settings.hubs",
     route: "#/settings/hubs",
-    fixtures: ["navi-links", "navi-links-none"],
+    fixtures: ["only-me-links", "only-me-links-none"],
     variant: "hubs-hub-links",
     open: (page) => page.getByRole("region", { name: "Links to this hub" }).scrollIntoViewIfNeeded(),
   },
   {
     id: "settings.hubs",
     route: "#/settings/hubs",
-    fixtures: ["navi-links"],
+    fixtures: ["only-me-links"],
     variant: "hubs-hub-link-made",
     open: async (page) => {
       const region = page.getByRole("region", { name: "Links to this hub" });
@@ -2496,7 +2504,7 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
     },
   },
-  // A Navi's approvals (W239): the three modes with the checker on, its model and effort, and what ran without asking.
+  // A project's approvals (W239): the three modes with the checker on, its model and effort, and what ran without asking.
   {
     id: "settings.projects",
     variant: "integrations-approvals",
@@ -2509,7 +2517,7 @@ export const screens: readonly Screen[] = [
       await part.scrollIntoViewIfNeeded();
     },
   },
-  // A Navi's servers that sign in with OAuth (W354): mail signed in, calendar signed out by its service with Reconnect.
+  // A project's servers that sign in with OAuth (W354): mail signed in, calendar signed out by its service with Reconnect.
   {
     id: "settings.projects",
     variant: "integrations-signin",

@@ -114,7 +114,7 @@ it("renders the composer and nothing else while you type", async () => {
   expect(host.querySelectorAll("[data-index]").length).toBeGreaterThanOrEqual(8);
   expect(host.querySelector("[data-entry='activity'][data-turn='running']")).not.toBeNull();
 
-  const box = host.querySelector<HTMLTextAreaElement>("textarea[aria-label='Message the lead']");
+  const box = host.querySelector<HTMLTextAreaElement>("textarea[aria-label^='Message']");
   if (box === null) throw new Error("no composer");
   // The first key makes the message sendable, which draws Send enabled once.
   type(box, "T");

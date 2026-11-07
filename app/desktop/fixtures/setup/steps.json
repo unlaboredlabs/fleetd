@@ -244,7 +244,7 @@
           ]
         }
       ],
-      "why": "Each person gets their own sign-in, chats and Navi; you choose who is an admin."
+      "why": "Each person gets their own sign-in, chats and projects; you choose who is an admin."
     },
     {
       "fields": [],
@@ -269,7 +269,7 @@
         },
         {
           "links": [],
-          "note": "Log out (or switch user) and log in as fleetd agents, then paste the join line in its Terminal. It refuses an admin user, installs fleetd for that user only, and joins as the agents' Mac: a tool every project's agents use, which runs no claude and no Navi and takes no secret. Settings › Hub › Machines › Add machine › A Mac for agents makes the line with its one-time code.",
+          "note": "Log out (or switch user) and log in as fleetd agents, then paste the join line in its Terminal. It refuses an admin user, installs fleetd for that user only, and joins as the agents' Mac: a tool every project's agents use, which runs no claude and no lead and takes no secret. Settings › Hub › Machines › Add machine › A Mac for agents makes the line with its one-time code.",
           "title": "Log in as fleetd agents and join",
           "values": [
             {

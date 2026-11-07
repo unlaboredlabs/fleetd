@@ -1,5 +1,5 @@
 {
-  "note": "A Navi's integration approvals (hub/integrations): a message to send through a custom MCP server, with its whole input; a page to delete; and a send already approved, folded. devbox; no personal data.",
+  "note": "A project's integration approvals (hub/integrations): a message to send through a custom MCP server, with its whole input; a page to delete; and a send already approved, folded. devbox; no personal data.",
   "items": [
     {
       "kind": "command_approval",
@@ -16,7 +16,7 @@
           "tool": "send_message",
           "action": "send",
           "title": "Use send_message on crm",
-          "input": "{\n  \"account\": \"me@example.com\",\n  \"to\": \"Ana Ruiz <ana@example.com>, bo@example.com.au\",\n  \"cc\": [\n    \"cy@example.com\"\n  ],\n  \"bcc\": [\n    \"sam@example.com\"\n  ],\n  \"subject\": \"Lunch on Tuesday\",\n  \"body\": \"Hi Ana,\\n\\nTuesday at 12:30 at the usual place? I'll book a table.\\n\\nNavi, for Sam\",\n  \"attachments\": [\n    {\n      \"path\": \"menu.pdf\",\n      \"sha256\": \"9f2c00000000000000000000000000000000000000000000000000000000a1b2\"\n    },\n    {\n      \"path\": \"maps/table.png\",\n      \"sha256\": \"5e7d00000000000000000000000000000000000000000000000000000000c3d4\"\n    }\n  ]\n}"
+          "input": "{\n  \"account\": \"me@example.com\",\n  \"to\": \"Ana Ruiz <ana@example.com>, bo@example.com.au\",\n  \"cc\": [\n    \"cy@example.com\"\n  ],\n  \"bcc\": [\n    \"sam@example.com\"\n  ],\n  \"subject\": \"Lunch on Tuesday\",\n  \"body\": \"Hi Ana,\\n\\nTuesday at 12:30 at the usual place? I'll book a table.\\n\\nHome, for Sam\",\n  \"attachments\": [\n    {\n      \"path\": \"menu.pdf\",\n      \"sha256\": \"9f2c00000000000000000000000000000000000000000000000000000000a1b2\"\n    },\n    {\n      \"path\": \"maps/table.png\",\n      \"sha256\": \"5e7d00000000000000000000000000000000000000000000000000000000c3d4\"\n    }\n  ]\n}"
         }
       }
     },

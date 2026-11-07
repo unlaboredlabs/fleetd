@@ -12,6 +12,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { SEND_AFTER_MS } from "./Picture";
+import { sectionRead } from "./projectReads.test-util";
 import { ProjectSettings } from "./Projects";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -102,6 +103,8 @@ const render = async (avatar: string | undefined, icon: { face: string; color: s
       if (tool === "attachment_put") return Promise.resolve({ ok: true, output: { attachmentId: "F7", bytes: 4, sha256: "x".repeat(64) } });
       if (tool === "project_avatar_set" || tool === "project_icon_set") return Promise.resolve({ ok: true, output: { project: {} } });
       if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
+      const section = sectionRead(tool);
+      if (section !== undefined) return Promise.resolve(section);
       return Promise.resolve({ ok: true, output: { settings } });
     },
     subscribe: (l) => ((listener = l), () => undefined),

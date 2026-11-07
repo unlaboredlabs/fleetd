@@ -104,7 +104,7 @@ const rightClick = () => {
 
 it("opens the project or its settings, and copies its path", async () => {
   rightClick();
-  expect(items()).toEqual(["Open", "Open settings", "Copy path", "Remove project…"]);
+  expect(items()).toEqual(["Open", "Rename…", "Open settings", "Copy path", "Archive", "Remove project…"]);
   await choose("Open");
   rightClick();
   await choose("Open settings");
