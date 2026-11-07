@@ -1,8 +1,14 @@
 //! The hub link: challenge, signed hello, welcome, then heartbeats and the hub's requests until the socket ends or the
 //! hub goes silent. Reconnects with backoff (250 ms doubling to 30 s, ±20% jitter, reset by each welcome: a hub that
 //! restarts, as its update does, is back within a second), and only gives up when the hub refuses the node.
+//! Silence is timed by bytes read, not whole frames, and a quiet link is pinged before it is given up on
+//! ([`QUIET_PROBE`], [`QUIET_DEAD`]). With a hub that lists `link_deflate` both ways, frames go compressed
+//! (crate::link_deflate).
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
@@ -23,17 +29,24 @@ use super::wire::{
     GatedResult, Heartbeat, HubToNode, MachineId, NodeHello, NodeToHub, PROTOCOL_VERSION,
     ProtocolVersion, SecretResult, Text, Timestamp, close, decode_hub_frame, to_json,
 };
+use crate::link_deflate::{Deflater, Inflater, MIN_DEFLATE_BYTES};
 use fleetd_contracts::model::SleptSpan;
 use fleetd_contracts::node_link::{HEARTBEAT_INTERVAL_SECS, HEARTBEAT_TIMEOUT_SECS};
 use fleetd_contracts::sessions::{
     SessionCall, SessionError, SessionErrorCode, SessionReplyFrame, SessionResult,
 };
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(HEARTBEAT_INTERVAL_SECS);
 const SILENCE_TIMEOUT: Duration = Duration::from_secs(HEARTBEAT_TIMEOUT_SECS);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// The dial and the WebSocket upgrade: a hub that takes the connection but never answers it is as gone as a silent one.
 const CONNECT_TIMEOUT: Duration = SILENCE_TIMEOUT;
+/// Nothing read for this long, a hub heartbeat 5 s late: the node pings, and any hub answers with a pong.
+const QUIET_PROBE: Duration = Duration::from_secs(HEARTBEAT_INTERVAL_SECS + 5);
+/// Nothing read for this long, the ping unanswered for 10 s: the link is gone (a dead wifi, a new NAT mapping), and
+/// the node dials again 15 s sooner than [`SILENCE_TIMEOUT`] would. A frame still arriving is never silence.
+const QUIET_DEAD: Duration = Duration::from_secs(HEARTBEAT_INTERVAL_SECS + 15);
 /// How long a node that answered an update reads its watcher's verdict: a refused restart is decided within seconds.
 const RESTART_WATCH: Duration = Duration::from_secs(crate::update::finish::HEALTH_WAIT_SECS);
 /// The largest frame the node takes from its hub: an attachment's put_file with room to spare.
@@ -255,65 +268,202 @@ fn tag(frame: &HubToNode) -> &'static str {
     }
 }
 
-type WsStream = futures_util::stream::SplitStream<
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
->;
+/// When the link last read a byte from the hub, as ms after `base`: a large frame still arriving keeps it live.
+struct Heard {
+    base: tokio::time::Instant,
+    at_ms: AtomicU64,
+}
 
-/// The next hub frame within `timeout`, or how the link ended.
+impl Heard {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            base: tokio::time::Instant::now(),
+            at_ms: AtomicU64::new(0),
+        })
+    }
+
+    fn stamp(&self) {
+        let ms = self.base.elapsed().as_millis() as u64;
+        self.at_ms.fetch_max(ms, Ordering::Relaxed);
+    }
+
+    fn at(&self) -> tokio::time::Instant {
+        self.base + Duration::from_millis(self.at_ms.load(Ordering::Relaxed))
+    }
+}
+
+/// The link's TCP socket, stamping [`Heard`] on every read that brought bytes.
+struct Stamped {
+    tcp: tokio::net::TcpStream,
+    heard: Arc<Heard>,
+}
+
+impl tokio::io::AsyncRead for Stamped {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let before = buf.filled().len();
+        let polled = Pin::new(&mut self.tcp).poll_read(cx, buf);
+        if buf.filled().len() > before {
+            self.heard.stamp();
+        }
+        polled
+    }
+}
+
+impl tokio::io::AsyncWrite for Stamped {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.tcp).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.tcp).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.tcp).poll_shutdown(cx)
+    }
+
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.tcp).poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.tcp.is_write_vectored()
+    }
+}
+
+type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<Stamped>>;
+type WsStream = futures_util::stream::SplitStream<Ws>;
+type WsSink = futures_util::stream::SplitSink<Ws, Message>;
+
+/// One hub message as a frame: `Ok(None)` for what isn't one (a ping, a pong, a frame over its cap), `Err` for how
+/// the link ends. A Binary message is `link_deflate` data, which only a hub this node told it inflates sends.
+fn decode_message(message: Message, inflater: &mut Inflater) -> Result<Option<HubToNode>, LinkEnd> {
+    let raw = match message {
+        Message::Text(text) => text.to_string(),
+        Message::Binary(bytes) => inflater
+            .inflate(&bytes, LINK_MAX_FRAME_BYTES)
+            .map_err(LinkEnd::Lost)?,
+        Message::Close(frame) => {
+            let (code, reason) = frame.map_or((1005, String::new()), |f| {
+                (u16::from(f.code), f.reason.to_string())
+            });
+            if code == close::UNAUTHORIZED || code == close::PROTOCOL_MISMATCH {
+                let reason = if reason.is_empty() {
+                    format!("closed with {code}")
+                } else {
+                    reason
+                };
+                return Err(LinkEnd::Fatal(LinkFatal { reason }));
+            }
+            return Err(LinkEnd::Lost(
+                format!("hub closed the link ({code} {reason})")
+                    .trim()
+                    .to_owned(),
+            ));
+        }
+        // Pings are answered by tungstenite; neither counts as a frame.
+        Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => return Ok(None),
+    };
+    let frame = decode_hub_frame(&raw)
+        .ok_or_else(|| LinkEnd::Lost("hub sent a frame that does not decode".into()))?;
+    if !size_allowed(&frame, raw.len()) {
+        // Never acted on: its sender's wait runs out, and the link stays up for the rest.
+        tracing::warn!(
+            kind = tag(&frame),
+            bytes = raw.len(),
+            "hub frame over the cap for anything but a file transfer; ignored"
+        );
+        return Ok(None);
+    }
+    Ok(Some(frame))
+}
+
+fn read_end(
+    next: Option<Result<Message, tokio_tungstenite::tungstenite::Error>>,
+) -> Result<Message, LinkEnd> {
+    match next {
+        None => Err(LinkEnd::Lost("hub closed the link".into())),
+        Some(Err(error)) => Err(LinkEnd::Lost(error.to_string())),
+        Some(Ok(message)) => Ok(message),
+    }
+}
+
+/// The next hub frame within `timeout` (the handshake's), or how the link ended.
 async fn next_frame(
     stream: &mut WsStream,
+    inflater: &mut Inflater,
     timeout: Duration,
     waiting_for: &str,
 ) -> Result<HubToNode, LinkEnd> {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
-        let message = match tokio::time::timeout_at(deadline, stream.next()).await {
-            Err(_) => {
-                return Err(LinkEnd::Lost(format!(
-                    "no {waiting_for} from the hub for {} s",
-                    timeout.as_secs()
-                )));
-            }
-            Ok(None) => return Err(LinkEnd::Lost("hub closed the link".into())),
-            Ok(Some(Err(error))) => return Err(LinkEnd::Lost(error.to_string())),
-            Ok(Some(Ok(message))) => message,
+        let Ok(next) = tokio::time::timeout_at(deadline, stream.next()).await else {
+            return Err(LinkEnd::Lost(format!(
+                "no {waiting_for} from the hub for {} s",
+                timeout.as_secs()
+            )));
         };
-        let raw = match message {
-            Message::Text(text) => text.to_string(),
-            Message::Binary(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-            Message::Close(frame) => {
-                let (code, reason) = frame.map_or((1005, String::new()), |f| {
-                    (u16::from(f.code), f.reason.to_string())
-                });
-                if code == close::UNAUTHORIZED || code == close::PROTOCOL_MISMATCH {
-                    let reason = if reason.is_empty() {
-                        format!("closed with {code}")
-                    } else {
-                        reason
-                    };
-                    return Err(LinkEnd::Fatal(LinkFatal { reason }));
-                }
-                return Err(LinkEnd::Lost(
-                    format!("hub closed the link ({code} {reason})")
-                        .trim()
-                        .to_owned(),
-                ));
-            }
-            // Pings are answered by tungstenite; neither counts as a frame.
-            Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => continue,
-        };
-        let frame = decode_hub_frame(&raw)
-            .ok_or_else(|| LinkEnd::Lost("hub sent a frame that does not decode".into()))?;
-        if !size_allowed(&frame, raw.len()) {
-            // Never acted on: its sender's wait runs out, and the link stays up for the rest.
-            tracing::warn!(
-                kind = tag(&frame),
-                bytes = raw.len(),
-                "hub frame over the cap for anything but a file transfer; ignored"
-            );
-            continue;
+        if let Some(frame) = decode_message(read_end(next)?, inflater)? {
+            return Ok(frame);
         }
-        return Ok(frame);
+    }
+}
+
+/// How long a linked hub may be quiet: past `probe` the node pings it once, past `dead` the link is gone.
+#[derive(Clone, Copy)]
+struct Quiet {
+    probe: Duration,
+    dead: Duration,
+}
+
+/// The next frame of a linked hub. Quiet is timed from the last byte read ([`Heard`]), so a large frame arriving
+/// slowly keeps the link; `ping` runs once per quiet spell (`pinged` holds which), and a pong ends the spell.
+async fn next_live_frame(
+    stream: &mut WsStream,
+    inflater: &mut Inflater,
+    heard: &Heard,
+    quiet: Quiet,
+    pinged: &mut Option<tokio::time::Instant>,
+    ping: &dyn Fn(),
+) -> Result<HubToNode, LinkEnd> {
+    loop {
+        let last = heard.at();
+        let now = tokio::time::Instant::now();
+        if now >= last + quiet.dead {
+            return Err(LinkEnd::Lost(format!(
+                "nothing from the hub for {} s, and no answer to a ping",
+                quiet.dead.as_secs()
+            )));
+        }
+        if now >= last + quiet.probe && *pinged != Some(last) {
+            *pinged = Some(last);
+            ping();
+        }
+        let wake = if *pinged == Some(last) {
+            last + quiet.dead
+        } else {
+            last + quiet.probe
+        };
+        tokio::select! {
+            next = stream.next() => {
+                if let Some(frame) = decode_message(read_end(next)?, inflater)? {
+                    return Ok(frame);
+                }
+            }
+            () = tokio::time::sleep_until(wake) => {}
+        }
     }
 }
 
@@ -336,23 +486,53 @@ fn size_allowed(frame: &HubToNode, len: usize) -> bool {
 
 /// Dials the hub's link and upgrades it to a WebSocket within `within`. Without a bound, a hub that took the
 /// connection and never answered it (one stalled, or stopped) held the node here for good, and it logged nothing.
-async fn connect(
-    url: &str,
-    within: Duration,
-) -> Result<
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-    String,
-> {
-    // Nagle off: the link's frames are small and answer each other, and holding one back for the last's ack costs a
-    // delayed ack (40 ms) per round trip, as a screen's start and its first frame have several.
-    let dial = tokio_tungstenite::connect_async_with_config(url, Some(link_config()), true);
+async fn connect(url: &str, within: Duration) -> Result<(Ws, Arc<Heard>), String> {
+    let dial = async {
+        let request = url
+            .into_client_request()
+            .map_err(|e| format!("cannot reach the hub: {e}"))?;
+        let host = request
+            .uri()
+            .host()
+            .unwrap_or_default()
+            .trim_matches(['[', ']'])
+            .to_owned();
+        let port =
+            request
+                .uri()
+                .port_u16()
+                .unwrap_or(if request.uri().scheme_str() == Some("wss") {
+                    443
+                } else {
+                    80
+                });
+        let tcp = tokio::net::TcpStream::connect((host.as_str(), port))
+            .await
+            .map_err(|e| format!("cannot reach the hub: {e}"))?;
+        // Nagle off: the link's frames are small and answer each other, and holding one back for the last's ack costs
+        // a delayed ack (40 ms) per round trip, as a screen's start and its first frame have several.
+        let _ = tcp.set_nodelay(true);
+        let heard = Heard::new();
+        let stamped = Stamped {
+            tcp,
+            heard: heard.clone(),
+        };
+        let (ws, _) = tokio_tungstenite::client_async_tls_with_config(
+            request,
+            stamped,
+            Some(link_config()),
+            None,
+        )
+        .await
+        .map_err(|e| format!("cannot reach the hub: {e}"))?;
+        Ok((ws, heard))
+    };
     match tokio::time::timeout(within, dial).await {
         Err(_) => Err(format!(
             "the hub did not answer the link within {} s",
             within.as_secs()
         )),
-        Ok(Err(error)) => Err(format!("cannot reach the hub: {error}")),
-        Ok(Ok((ws, _))) => Ok(ws),
+        Ok(result) => result,
     }
 }
 
@@ -366,45 +546,32 @@ async fn run_link_once(
         Ok(url) => url,
         Err(why) => return LinkEnd::Lost(why),
     };
-    let ws = match connect(&url, CONNECT_TIMEOUT).await {
-        Ok(ws) => ws,
+    let (ws, heard) = match connect(&url, CONNECT_TIMEOUT).await {
+        Ok(linked) => linked,
         Err(why) => return LinkEnd::Lost(why),
     };
-    let (mut sink, mut stream) = ws.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+    let (sink, mut stream) = ws.split();
+    let mut inflater = Inflater::default();
+    let (tx, rx) = mpsc::unbounded_channel::<String>();
     // Answered once every frame queued before it is written: what an update's answer waits on before its restart.
-    let (flush, mut flushes) = mpsc::unbounded_channel::<tokio::sync::oneshot::Sender<()>>();
+    let (flush, flushes) = mpsc::unbounded_channel::<tokio::sync::oneshot::Sender<()>>();
+    let (pings, pings_rx) = mpsc::unbounded_channel::<()>();
     // Browser sessions' screens wait in a slot of their own, newest only: they go when nothing else waits.
     let frames = Arc::new(crate::node::browser::FrameSlot::default());
+    // On once a welcome lists `link_deflate`: the hello and anything before it always go as Text.
+    let deflate = Arc::new(AtomicBool::new(false));
     // Everything this link starts ends with it: a lost link kills its commands, and the hub fails its waits.
     let mut tasks = tokio::task::JoinSet::new();
-    {
-        let frames = frames.clone();
-        tasks.spawn(async move {
-            loop {
-                let out = tokio::select! {
-                    biased;
-                    next = rx.recv() => match next {
-                        Some(frame) => vec![frame],
-                        None => break,
-                    },
-                    () = frames.notify.notified() => frames.take(),
-                    // Only with no frame waiting (`biased`): every frame queued before it went out.
-                    Some(done) = flushes.recv() => {
-                        let _ = done.send(());
-                        continue;
-                    }
-                };
-                for frame in out {
-                    if sink.send(Message::Text(frame.into())).await.is_err() {
-                        let _ = sink.close().await;
-                        return;
-                    }
-                }
-            }
-            let _ = sink.close().await;
-        });
-    }
+    tasks.spawn(write_frames(
+        sink,
+        Outgoing {
+            rx,
+            frames: frames.clone(),
+            flushes,
+            pings: pings_rx,
+        },
+        deflate.clone(),
+    ));
     let send = {
         let tx = tx.clone();
         move |frame: NodeToHub| {
@@ -412,7 +579,9 @@ async fn run_link_once(
         }
     };
 
-    let challenge = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "challenge").await {
+    let challenge = match next_frame(&mut stream, &mut inflater, HANDSHAKE_TIMEOUT, "challenge")
+        .await
+    {
         Ok(HubToNode::Challenge(challenge)) => challenge.nonce,
         Ok(other) => return LinkEnd::Lost(format!("expected a challenge, got {}", tag(&other))),
         Err(end) => return end,
@@ -468,6 +637,7 @@ async fn run_link_once(
             fleetd_contracts::node_link::CAP_PROJECT_ERASE.to_owned(),
             fleetd_contracts::node_link::CAP_NO_ASK_FILL.to_owned(),
             fleetd_contracts::node_link::CAP_PROJECT_SIGNINS.to_owned(),
+            fleetd_contracts::node_link::CAP_LINK_DEFLATE.to_owned(),
         ]
         .into_iter()
         .chain(
@@ -501,13 +671,18 @@ async fn run_link_once(
         shared.agents_mac.as_ref(),
         hello,
     )));
-    let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {
+    let hub_id = match next_frame(&mut stream, &mut inflater, HANDSHAKE_TIMEOUT, "welcome").await {
         Ok(HubToNode::Welcome(welcome)) if welcome.protocol.get() != PROTOCOL_VERSION => {
             return LinkEnd::Fatal(LinkFatal {
                 reason: crate::protocol_behind(welcome.protocol.get(), PROTOCOL_VERSION).into(),
             });
         }
         Ok(HubToNode::Welcome(welcome)) => {
+            let inflates = welcome
+                .capabilities
+                .iter()
+                .any(|c| c == fleetd_contracts::node_link::HUB_CAP_LINK_DEFLATE);
+            deflate.store(inflates, Ordering::Relaxed);
             shared.lead_calls.set_hub_caps(welcome.capabilities);
             welcome.hub_id
         }
@@ -570,10 +745,18 @@ async fn run_link_once(
     let _attached = shared.lead_calls.attach(tx.clone());
     let _sessions_attached = shared.node_sessions.attach(tx.clone());
 
+    let quiet = Quiet {
+        probe: QUIET_PROBE,
+        dead: QUIET_DEAD,
+    };
+    let mut pinged = None;
+    let ping = move || {
+        let _ = pings.send(());
+    };
     loop {
         while tasks.try_join_next().is_some() {}
         let frame = tokio::select! {
-            next = next_frame(&mut stream, SILENCE_TIMEOUT, "frame") => match next {
+            next = next_live_frame(&mut stream, &mut inflater, &heard, quiet, &mut pinged, &ping) => match next {
                 Ok(frame) => frame,
                 Err(end) => return end,
             },
@@ -784,6 +967,53 @@ async fn run_link_once(
     }
 }
 
+/// What the link's writer sends: frames in order, browser screens when nothing else waits, flush marks and pings.
+struct Outgoing {
+    rx: mpsc::UnboundedReceiver<String>,
+    frames: Arc<crate::node::browser::FrameSlot>,
+    flushes: mpsc::UnboundedReceiver<tokio::sync::oneshot::Sender<()>>,
+    pings: mpsc::UnboundedReceiver<()>,
+}
+
+/// Writes the link's frames until the link ends: Text, or once `deflate` is on (the hub inflates), Binary
+/// `link_deflate` data for any frame of at least [`MIN_DEFLATE_BYTES`].
+async fn write_frames(mut sink: WsSink, mut out: Outgoing, deflate: Arc<AtomicBool>) {
+    let mut deflater = Deflater::default();
+    loop {
+        let next = tokio::select! {
+            biased;
+            next = out.rx.recv() => match next {
+                Some(frame) => vec![frame],
+                None => break,
+            },
+            Some(()) = out.pings.recv() => {
+                if sink.send(Message::Ping(Vec::new().into())).await.is_err() {
+                    break;
+                }
+                continue;
+            }
+            () = out.frames.notify.notified() => out.frames.take(),
+            // Only with no frame waiting (`biased`): every frame queued before it went out.
+            Some(done) = out.flushes.recv() => {
+                let _ = done.send(());
+                continue;
+            }
+        };
+        for frame in next {
+            let message = if frame.len() >= MIN_DEFLATE_BYTES && deflate.load(Ordering::Relaxed) {
+                Message::Binary(deflater.deflate(&frame).into())
+            } else {
+                Message::Text(frame.into())
+            };
+            if sink.send(message).await.is_err() {
+                let _ = sink.close().await;
+                return;
+            }
+        }
+    }
+    let _ = sink.close().await;
+}
+
 /// The agents' Mac lists only a tool's calls (node/agents_mac); any other node, all it takes.
 fn tool_only(mac: Option<&crate::node::agents_mac::AgentsMac>, mut hello: NodeHello) -> NodeHello {
     if let Some(mac) = mac {
@@ -906,6 +1136,215 @@ mod tests {
         );
         assert_eq!(reconnect_delay(u32::MAX, 1.2), Duration::from_secs(36));
         assert_eq!(reconnect_delay(0, 0.8), Duration::from_millis(200));
+    }
+
+    /// A hub on a local socket: its side of the link, once the node dialled it with [`connect`].
+    async fn linked() -> (
+        Ws,
+        Arc<Heard>,
+        tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}/node/link", listener.local_addr().unwrap());
+        let hub = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            tokio_tungstenite::accept_async(tcp).await.unwrap()
+        });
+        let (ws, heard) = connect(&url, Duration::from_secs(10)).await.unwrap();
+        (ws, heard, hub.await.unwrap())
+    }
+
+    fn outgoing() -> (
+        Outgoing,
+        mpsc::UnboundedSender<String>,
+        mpsc::UnboundedSender<()>,
+    ) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let (_flush, flushes) = mpsc::unbounded_channel();
+        let (pings, pings_rx) = mpsc::unbounded_channel();
+        let out = Outgoing {
+            rx,
+            frames: Arc::default(),
+            flushes,
+            pings: pings_rx,
+        };
+        (out, tx, pings)
+    }
+
+    const ACK: &str = r#"{"t":"spans_ack","upto":7}"#;
+
+    /// An older hub (no `link_deflate` in its welcome) gets Text, as before. A hub that lists it gets each frame of 64
+    /// bytes or more as Binary that inflates, on one stream, and the short ones still as Text.
+    #[tokio::test]
+    async fn frames_go_compressed_only_once_the_hub_says_it_inflates() {
+        let (ws, _heard, mut hub) = linked().await;
+        let (sink, _stream) = ws.split();
+        let (out, tx, _pings) = outgoing();
+        let deflate = Arc::new(AtomicBool::new(false));
+        tokio::spawn(write_frames(sink, out, deflate.clone()));
+        let long = serde_json::json!({ "t": "heartbeat", "at": "2026-11-07T10:00:00Z", "pad": "x".repeat(500) })
+            .to_string();
+
+        tx.send(long.clone()).unwrap();
+        match hub.next().await.unwrap().unwrap() {
+            Message::Text(text) => assert_eq!(text.as_str(), long),
+            other => panic!("an older hub got {other:?}"),
+        }
+
+        deflate.store(true, Ordering::Relaxed);
+        let mut inflater = Inflater::default();
+        for _ in 0..2 {
+            tx.send(long.clone()).unwrap();
+            let Message::Binary(data) = hub.next().await.unwrap().unwrap() else {
+                panic!("a long frame went uncompressed")
+            };
+            assert!(
+                data.len() < long.len() / 4,
+                "{} of {}",
+                data.len(),
+                long.len()
+            );
+            assert_eq!(inflater.inflate(&data, 1 << 20).unwrap(), long);
+        }
+        tx.send(r#"{"t":"hb"}"#.to_owned()).unwrap();
+        assert!(matches!(
+            hub.next().await.unwrap().unwrap(),
+            Message::Text(_)
+        ));
+    }
+
+    /// A hub's Binary frame is `link_deflate` data and reads as its frame; Text still reads as JSON; data that
+    /// doesn't inflate ends the link instead of being taken as a frame.
+    #[test]
+    fn a_compressed_hub_frame_reads_as_its_frame() {
+        let (mut deflater, mut inflater) = (Deflater::default(), Inflater::default());
+        let binary = Message::Binary(deflater.deflate(ACK).into());
+        assert!(matches!(
+            decode_message(binary, &mut inflater),
+            Ok(Some(HubToNode::SpansAck(_)))
+        ));
+        assert!(matches!(
+            decode_message(Message::Text(ACK.into()), &mut inflater),
+            Ok(Some(HubToNode::SpansAck(_)))
+        ));
+        let garbage = Message::Binary(vec![0xff; 16].into());
+        assert!(matches!(
+            decode_message(garbage, &mut Inflater::default()),
+            Err(LinkEnd::Lost(_))
+        ));
+    }
+
+    const QUICK: Quiet = Quiet {
+        probe: Duration::from_millis(300),
+        dead: Duration::from_millis(700),
+    };
+
+    /// A frame that takes far longer than the quiet bound to arrive (a large one on a slow link) keeps the link: it
+    /// counts from the last byte, not the last whole frame.
+    #[tokio::test]
+    async fn a_frame_arriving_slowly_keeps_the_link() {
+        use tokio::io::AsyncWriteExt;
+        let (ws, heard, mut hub) = linked().await;
+        let (_sink, mut stream) = ws.split();
+        let mut payload = ACK.to_owned();
+        payload.push_str(&" ".repeat(300 - ACK.len()));
+        let mut raw = vec![0x81, 126, 0, 0];
+        raw[2..4].copy_from_slice(&(payload.len() as u16).to_be_bytes());
+        raw.extend_from_slice(payload.as_bytes());
+        tokio::spawn(async move {
+            // 2 s in all, 100 ms between bytes, under the 300 ms probe bound each time.
+            for chunk in raw.chunks(16) {
+                hub.get_mut().write_all(chunk).await.unwrap();
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            std::future::pending::<()>().await;
+        });
+        let pings = std::sync::atomic::AtomicUsize::new(0);
+        let started = tokio::time::Instant::now();
+        let frame = next_live_frame(
+            &mut stream,
+            &mut Inflater::default(),
+            &heard,
+            QUICK,
+            &mut None,
+            &|| {
+                pings.fetch_add(1, Ordering::Relaxed);
+            },
+        )
+        .await;
+        assert!(matches!(frame, Ok(HubToNode::SpansAck(_))));
+        assert!(started.elapsed() > Duration::from_millis(1500));
+        assert_eq!(pings.load(Ordering::Relaxed), 0);
+    }
+
+    /// A quiet link is pinged once; a hub that answers keeps it however long nothing else comes, and one that never
+    /// does is given up on at the dead bound, not the 45 s a missing frame took before.
+    #[tokio::test]
+    async fn a_quiet_hub_is_pinged_and_dropped_only_if_it_never_answers() {
+        // Answers: the hub reads, so tungstenite pongs each ping.
+        let (ws, heard, mut hub) = linked().await;
+        let (sink, mut stream) = ws.split();
+        let (out, _tx, pings) = outgoing();
+        tokio::spawn(write_frames(sink, out, Arc::new(AtomicBool::new(false))));
+        tokio::spawn(async move { while hub.next().await.is_some() {} });
+        let sent = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let ping = {
+            let sent = sent.clone();
+            move || {
+                sent.fetch_add(1, Ordering::Relaxed);
+                let _ = pings.send(());
+            }
+        };
+        let quiet = tokio::time::timeout(
+            Duration::from_secs(3),
+            next_live_frame(
+                &mut stream,
+                &mut Inflater::default(),
+                &heard,
+                QUICK,
+                &mut None,
+                &ping,
+            ),
+        )
+        .await;
+        assert!(quiet.is_err(), "a hub answering its pings was given up on");
+        assert!(
+            sent.load(Ordering::Relaxed) >= 3,
+            "one ping per quiet spell"
+        );
+
+        // Never answers: the hub took the link and reads nothing.
+        let (ws, heard, _hub) = linked().await;
+        let (_sink, mut stream) = ws.split();
+        let pinged = std::sync::atomic::AtomicUsize::new(0);
+        let started = tokio::time::Instant::now();
+        let end = next_live_frame(
+            &mut stream,
+            &mut Inflater::default(),
+            &heard,
+            QUICK,
+            &mut None,
+            &|| {
+                pinged.fetch_add(1, Ordering::Relaxed);
+            },
+        )
+        .await;
+        assert!(matches!(&end, Err(LinkEnd::Lost(why)) if why.contains("no answer to a ping")));
+        assert_eq!(pinged.load(Ordering::Relaxed), 1);
+        let took = started.elapsed();
+        assert!(
+            took >= QUICK.dead && took < Duration::from_secs(2),
+            "{took:?}"
+        );
+    }
+
+    /// The live bounds sit between the hub's heartbeat and the old silence timeout: a heartbeat late by 5 s probes,
+    /// and a link is given up on 15 s sooner than before.
+    #[test]
+    fn a_dead_link_is_noticed_sooner_than_it_was() {
+        assert!(QUIET_PROBE > HEARTBEAT_EVERY);
+        assert!(QUIET_DEAD > QUIET_PROBE);
+        assert_eq!(SILENCE_TIMEOUT - QUIET_DEAD, Duration::from_secs(15));
     }
 
     /// Only a file transfer may use the room the socket has for one: any other frame over 16 MiB is ignored.
