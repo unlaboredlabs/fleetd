@@ -329,6 +329,61 @@ fn a_machine_id_belongs_to_one_computer() {
     );
 }
 
+/// A node key is one machine's: the node enrolled as devbox, joining again as worker (`init --join --machine-id
+/// worker` on its home), is refused with both ways out, rather than forking devbox's projects and chats under a second
+/// id. Once devbox is removed, the node may take the new name.
+#[test]
+fn a_node_enrolled_under_one_id_never_enrolls_under_a_second() {
+    let (auth, _, _) = setup();
+    let code = |auth: &Auth, id: &str| auth.create_enroll_token(&m(id)).unwrap().token;
+    auth.enroll_node(
+        &code(&auth, "devbox"),
+        &m("devbox"),
+        "pub-hub",
+        Some("fp-hub"),
+    )
+    .unwrap();
+
+    let other = code(&auth, "worker");
+    let refused = unauthorized(auth.enroll_node(&other, &m("worker"), "pub-hub", Some("fp-hub")));
+    assert_eq!(refused.code, ErrorCode::Forbidden);
+    assert_eq!(
+        refused.message,
+        "this node is already enrolled as devbox, so it can't join as worker too"
+    );
+    let fix = refused.fix.unwrap();
+    assert!(
+        fix.contains("`fleetd pair --worker devbox`") && fix.contains("--rejoin"),
+        "{fix}"
+    );
+    assert!(
+        fix.contains("remove devbox first (fleetd machine remove devbox)"),
+        "{fix}"
+    );
+    // Nothing changed: worker holds no key, devbox keeps its own, and the code is not burned.
+    assert_eq!(auth.node_pub_key(&m("worker")).unwrap(), None);
+    assert_eq!(
+        auth.node_pub_key(&m("devbox")).unwrap().as_deref(),
+        Some("pub-hub")
+    );
+    // The same node rejoining as devbox is the repair it always was.
+    auth.enroll_node(
+        &code(&auth, "devbox"),
+        &m("devbox"),
+        "pub-hub",
+        Some("fp-hub"),
+    )
+    .unwrap();
+
+    auth.revoke_node(&m("devbox")).unwrap();
+    auth.enroll_node(&other, &m("worker"), "pub-hub", Some("fp-hub"))
+        .unwrap();
+    assert_eq!(
+        auth.node_pub_key(&m("worker")).unwrap().as_deref(),
+        Some("pub-hub")
+    );
+}
+
 /// A cloud machine's slot (hub/pool) enrolls with a pool token the hub minted, no person in the loop, and is a pool
 /// machine from then on. Its VM recreated is a new computer under the same id: only a fresh pool token enrolls it, and
 /// a pool token never moves a fixed machine's id to another computer.

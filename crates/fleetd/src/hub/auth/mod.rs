@@ -572,7 +572,9 @@ impl Auth {
     /// computer's (whatever its name, its code or its folders), else the token is burned and the node's key and
     /// computer recorded. A node with no fingerprint (an older one) is held to its token only. The one exception: a
     /// pool machine's id enrolls from a new computer with a pool enroll token the hub minted for it (its VM was
-    /// recreated); a fixed machine's never does, whatever the token.
+    /// recreated); a fixed machine's never does, whatever the token. A node key is one machine's too: a node enrolled
+    /// under one id never enrolls under a second one while the first is enrolled, which would put every project and
+    /// chat of the first on a second machine.
     pub fn enroll_node(
         &self,
         token: &str,
@@ -581,6 +583,18 @@ impl Auth {
         fingerprint: Option<&str>,
     ) -> Result<(), AuthError> {
         let m = machine_id.as_str();
+        if let Some(theirs) = self.machine_of_key(pub_key, machine_id)? {
+            return Err(Unauthorized {
+                code: ErrorCode::Forbidden,
+                message: format!("this node is already enrolled as {theirs}, so it can't join as {m} too"),
+                fix: Some(format!(
+                    "to keep it as {theirs}, run `fleetd pair --worker {theirs}` on the hub and run what it prints here \
+                     with --rejoin; to give it the new name {m}, remove {theirs} first (fleetd machine remove {theirs}), \
+                     then join as {m}"
+                )),
+            }
+            .into());
+        }
         if let Some(theirs) = fingerprint
             && let Some(ours) = self.node_fingerprint(machine_id)?
             && theirs != ours
@@ -600,6 +614,22 @@ impl Auth {
             self.set_node_fingerprint(machine_id, fingerprint)?;
         }
         Ok(())
+    }
+
+    /// The machine other than `machine_id` that `pub_key` is enrolled as, if any.
+    fn machine_of_key(
+        &self,
+        pub_key: &str,
+        machine_id: &MachineId,
+    ) -> Result<Option<String>, StoreError> {
+        self.db.with(|conn| {
+            Ok(conn
+                .prepare_cached(
+                    "SELECT machine_id FROM node_keys WHERE pub_key = ? AND machine_id != ? LIMIT 1",
+                )?
+                .query_row(params![pub_key, machine_id.as_str()], |row| row.get(0))
+                .optional()?)
+        })
     }
 
     /// The fingerprint of the computer the machine's node runs on, as its hellos gave it.
