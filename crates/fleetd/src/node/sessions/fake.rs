@@ -2,7 +2,8 @@
 //! [`StreamMapper`], so the session service sees the events production maps. Each user message plays the next
 //! recorded user turn with its uuid swapped for the run id. The fake answers the mapper's stdin lines as claude
 //! does: a permission prompt waits for its answer, an interrupt or a `now` message cuts the turn, a withdraw cancels
-//! a queued message, and `Shutdown` ends the process.
+//! a queued message, and `Shutdown` ends the process. [`FakeRunner::notice`] fires a background task's notice (a
+//! Monitor's event): an idle process then runs a turn of its own for it, as claude does.
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -45,6 +46,8 @@ pub struct FakeRunner {
     /// A spec with a host dir starts under a host in this process (`runner::host`), which outlives the service as a
     /// real host outlives the node.
     pub hosted: bool,
+    /// Wakes the idle process with a background task's notice ([`FakeRunner::notice`]).
+    notices: Arc<tokio::sync::Notify>,
 }
 
 impl FakeRunner {
@@ -90,7 +93,14 @@ impl FakeRunner {
             spawns: Mutex::new(Vec::new()),
             commands: Arc::new(Mutex::new(Vec::new())),
             hosted: false,
+            notices: Arc::new(tokio::sync::Notify::new()),
         }
+    }
+
+    /// A Monitor the agent started fires: the idle claude runs a turn of its own for its notice, one no user message
+    /// started, ending in a `result` with an `origin` and no `user_message_uuid`.
+    pub fn notice(&self) {
+        self.notices.notify_one();
     }
 
     pub fn spawned(&self) -> Vec<SessionSpec> {
@@ -165,6 +175,7 @@ impl Runner for FakeRunner {
             timed: self.timed,
             honour_interrupt: self.honour_interrupt,
             commands: self.commands.clone(),
+            notices: self.notices.clone(),
             rx: cmd_rx,
             tx: ev_tx,
             mapper,
@@ -217,6 +228,7 @@ struct Process {
     timed: bool,
     honour_interrupt: bool,
     commands: Arc<Mutex<Vec<(usize, SessionCommand)>>>,
+    notices: Arc<tokio::sync::Notify>,
     rx: mpsc::Receiver<SessionCommand>,
     tx: mpsc::Sender<RunnerEvent>,
     mapper: StreamMapper,
@@ -274,7 +286,13 @@ impl Process {
             match self.queue.pop_front() {
                 Some(_) if self.refusal.is_some() => self.exit = Some(1),
                 Some(uuid) => self.play(&uuid).await,
-                None => self.take_command().await,
+                None => {
+                    let notices = self.notices.clone();
+                    tokio::select! {
+                        command = self.rx.recv() => self.handle(command).await,
+                        () = notices.notified() => self.notice_turn().await,
+                    }
+                }
             }
         }
         let exit = ExitInfo {
@@ -383,6 +401,21 @@ impl Process {
         for reply in mapped.replies {
             self.claude(reply);
         }
+    }
+
+    /// claude's own turn for a Monitor's notice, its lines as 2.1.302 writes them.
+    async fn notice_turn(&mut self) {
+        for msg in [
+            json!({"type": "system", "subtype": "task_notification", "task_id": "bmon1", "tool_use_id": "toolu_mon",
+                "status": "completed", "summary": "Monitor \"build on the devbox\" stream ended"}),
+            json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "msg_notice", "role": "assistant",
+                "content": [{"type": "text", "text": "The build passed; pushing now."}]}}),
+            json!({"type": "result", "subtype": "success", "is_error": false, "num_turns": 1,
+                "result": "The build passed; pushing now.", "origin": {"kind": "task-notification"}}),
+        ] {
+            self.feed(msg);
+        }
+        self.flush().await;
     }
 
     async fn play(&mut self, uuid: &str) {

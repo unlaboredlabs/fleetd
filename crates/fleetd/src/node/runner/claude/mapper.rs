@@ -143,6 +143,9 @@ pub struct StreamMapper {
     /// Runs an older claude merged into the running turn; they end with its `result`.
     joined: Vec<String>,
     withdraws_sent: u64,
+    /// The run of a turn claude started by itself, for a background task's notice (a Monitor's event) while no run of
+    /// fleetd's was open: [`StreamMapper::woke`].
+    woken: Option<String>,
 }
 
 impl StreamMapper {
@@ -180,6 +183,7 @@ impl StreamMapper {
             dropped_by_stop: Vec::new(),
             joined: Vec::new(),
             withdraws_sent: 0,
+            woken: None,
         }
     }
 
@@ -361,6 +365,14 @@ impl StreamMapper {
 
     pub fn feed(&mut self, line: Line, now: &Now) -> Mapped {
         let mut out = Mapped::default();
+        let turn_output = match &line {
+            Line::Assistant(a) => a.parent_tool_use_id.is_none(),
+            Line::StreamEvent(e) => e.parent_tool_use_id.is_none(),
+            _ => false,
+        };
+        if turn_output && self.open_runs.is_empty() && !self.stopping {
+            self.woke(now, &mut out.events);
+        }
         match line {
             Line::System(system) => self.system(system, now, &mut out.events),
             Line::Assistant(assistant) => self.assistant(assistant, now, &mut out.events),
@@ -587,19 +599,7 @@ impl StreamMapper {
             }
             // A joined run ends with its turn's `result`.
             "cancelled" | "completed" if self.joined.contains(&run_id) => {}
-            "started" => {
-                self.steers_waiting.retain(|r| *r != run_id);
-                if !self.open_runs.contains(&run_id) {
-                    self.open_runs.push(run_id.clone());
-                }
-                self.active_run = Some(run_id.clone());
-                self.run_stderr.clear();
-                self.assistant_error = None;
-                self.usage_done = RunUsage::default();
-                self.usage_now = RunUsage::default();
-                self.spans.run_started(&run_id, now.ms);
-                out.events.push(RunnerEvent::RunStarted { run_id });
-            }
+            "started" => self.start_run(run_id, now, &mut out.events),
             // claude says `cancelled` before it answers the withdraw: that is the withdraw's success. A steer that
             // waited on a stopped turn is dropped the same way.
             "cancelled" if self.open_runs.contains(&run_id) && self.withdrawing(&run_id) => {
@@ -635,6 +635,29 @@ impl StreamMapper {
             }
             _ => {}
         }
+    }
+
+    fn start_run(&mut self, run_id: String, now: &Now, events: &mut Vec<RunnerEvent>) {
+        self.steers_waiting.retain(|r| *r != run_id);
+        if !self.open_runs.contains(&run_id) {
+            self.open_runs.push(run_id.clone());
+        }
+        self.active_run = Some(run_id.clone());
+        self.run_stderr.clear();
+        self.assistant_error = None;
+        self.usage_done = RunUsage::default();
+        self.usage_now = RunUsage::default();
+        self.spans.run_started(&run_id, now.ms);
+        events.push(RunnerEvent::RunStarted { run_id });
+    }
+
+    /// claude writes a turn while no run of fleetd's is open: it started one by itself, for a background task's notice
+    /// (a Monitor's event after the agent's turn ended). It runs as a run of its own, under an id of the mapper's, so
+    /// the session reads as working again and the turn's end and reply reach the hub as any run's do.
+    fn woke(&mut self, now: &Now, events: &mut Vec<RunnerEvent>) {
+        let run_id = self.mint(&format!("woke-{}", now.ms));
+        self.woken = Some(run_id.clone());
+        self.start_run(run_id, now, events);
     }
 
     fn stream_event(&mut self, event: StreamEvent, now: &Now, events: &mut Vec<RunnerEvent>) {
@@ -922,8 +945,12 @@ impl StreamMapper {
 
     fn result(&mut self, result: ResultLine, now: &Now, events: &mut Vec<RunnerEvent>) {
         // claude's own turn for a background task's notice (on a resume it runs before the message fleetd just sent)
-        // ends no run of fleetd's: taking it for the waiting run ended that run before its turn began.
-        if result.user_message_uuid.is_none() && result.origin.is_some() {
+        // ends no run of fleetd's: taking it for the waiting run ended that run before its turn began. It ends only
+        // the run it woke in, if it wrote anything.
+        if result.user_message_uuid.is_none()
+            && result.origin.is_some()
+            && (self.woken.is_none() || self.woken != self.active_run)
+        {
             return;
         }
         let mut joined = std::mem::take(&mut self.joined);
@@ -1068,6 +1095,9 @@ impl StreamMapper {
         }
         if self.active_run.as_deref() == Some(run_id.as_str()) {
             self.active_run = None;
+        }
+        if self.woken.as_deref() == Some(run_id.as_str()) {
+            self.woken = None;
         }
         self.interrupt = None;
         self.assistant_error = None;

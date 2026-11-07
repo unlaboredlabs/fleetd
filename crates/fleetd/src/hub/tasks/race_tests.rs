@@ -344,3 +344,34 @@ async fn a_continued_run_that_never_shows_up_is_given_up_on() {
     catch_up(&hub.tasks).await;
     assert_eq!(task(&hub).state, TaskState::Failed);
 }
+
+/// A Monitor fired after T1's turn ended: the node reports the turn its claude ran for the notice as a new run of t1,
+/// one the hub never sent. The done task runs again, and that run's end finishes it again, so its lead reads it.
+#[tokio::test]
+async fn a_done_task_whose_claude_wakes_for_a_monitor_runs_and_reports_again() {
+    let (hub, _home) = hub();
+    let _calls = serve(&hub, Node::link(&hub).await);
+    running(&hub, 1);
+    push(&hub, 1, "r1", "running");
+    push(&hub, 2, "r1", "completed");
+    logged(&hub, "thread.completed", "r1").await;
+    catch_up(&hub.tasks).await;
+    assert_eq!(task(&hub).state, TaskState::Done);
+
+    let woke = "t1-woke-1792000060000-1";
+    push(&hub, 3, woke, "running");
+    logged(&hub, "thread.started", woke).await;
+    catch_up(&hub.tasks).await;
+    let working = task(&hub);
+    assert_eq!(working.state, TaskState::Running);
+    assert!(working.ended_at.is_none());
+
+    push(&hub, 4, woke, "completed");
+    logged(&hub, "thread.completed", woke).await;
+    catch_up(&hub.tasks).await;
+    assert_eq!(task(&hub).state, TaskState::Done);
+    assert_eq!(
+        task_lines(&hub),
+        ["T1 completed: slice 1", "T1 completed: slice 1"]
+    );
+}

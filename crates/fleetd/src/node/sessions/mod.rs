@@ -97,6 +97,12 @@ const SHUTDOWN_DRAIN: Duration = Duration::from_secs(10);
 /// After the machine wakes, how long a running claude gets to say anything before its stream counts as lost.
 const WAKE_GRACE: Duration = Duration::from_secs(60);
 
+/// A Monitor's deadline when its call names none, and claude's longest: it kills a Monitor then, with a notice.
+const MONITOR_DEFAULT: Duration = Duration::from_secs(5 * 60);
+const MONITOR_MAX: Duration = Duration::from_secs(30 * 60);
+/// How long past a Monitor's deadline its claude stays up for the notice's turn to start.
+const MONITOR_GRACE: Duration = Duration::from_secs(60);
+
 /// HOME, PATH, USER, LANG and the git identity of the node's environment, `var`: never its SSH agent or anything else.
 pub(crate) fn session_env(var: impl Fn(&str) -> Option<String>) -> Vec<(String, String)> {
     super::util::passed_env(
@@ -655,6 +661,8 @@ struct Live {
     link: Option<host::Link>,
     /// Its tool calls running now, by tool_use id: while there is one, it is mid-step ([`SessionService::hold`]).
     tools: HashSet<String>,
+    /// Until when a Monitor it armed may still fire ([`SessionService::watching`]): it isn't reaped before.
+    watching: Option<Instant>,
 }
 
 #[derive(Default)]
@@ -1098,6 +1106,7 @@ impl SessionService {
                     spawned: secrets.clone(),
                     link: handle.link.clone(),
                     tools: HashSet::new(),
+                    watching: None,
                 },
             );
             generation
@@ -2704,6 +2713,7 @@ impl SessionService {
                     spawned: secrets.clone(),
                     link: link.clone(),
                     tools: HashSet::new(),
+                    watching: None,
                 },
             );
             generation
@@ -3213,6 +3223,26 @@ impl SessionService {
                             .filter_map(|r| r.ended_at.clone())
                             .max_by(|a, b| a.as_str().cmp(b.as_str()));
                         let mut pre = None;
+                        // A turn claude started by itself (a Monitor's notice after the agent's turn ended): a run of
+                        // the session's from here, so the hub reads it as working again, as when a message continues it.
+                        if c.run_mut(&started).is_none()
+                            && let Ok(woken) = NonEmpty::new(started.clone())
+                        {
+                            let ordinal = c.runs.len() as u64 + 1;
+                            c.runs.push(RunInfo {
+                                id: woken,
+                                status: RunStatus::Running,
+                                ordinal,
+                                queued_at: None,
+                                started_at: Some(at.clone()),
+                                ended_at: None,
+                                superseded_by: None,
+                                failure: None,
+                                usage: None,
+                                end: None,
+                                ended_by: None,
+                            });
+                        }
                         if let Some(run) = c.run_mut(&started)
                             && matches!(run.status, RunStatus::Queued | RunStatus::Starting)
                         {
@@ -3293,6 +3323,7 @@ impl SessionService {
                 }) => self.log(self.update(&id, |c| c.withdraw_prompt(&request_id))),
                 RunnerEvent::Item(item) => {
                     self.step(&id, &item);
+                    self.watching(&id, &item);
                     if let Some(browser) = self.inner.browser.get() {
                         browser.item(&id, &item);
                     }
@@ -3377,6 +3408,28 @@ impl SessionService {
             } else {
                 live.tools.remove(item.id.as_str());
             }
+        }
+    }
+
+    /// A Monitor the agent armed keeps its claude up until the Monitor's own deadline: its events, and the notice at
+    /// its end, start a turn of claude's own (a run of the session's), which a reaped claude never runs.
+    fn watching(&self, id: &str, item: &ThreadItem) {
+        let ItemKind::Tool {
+            tool_name, input, ..
+        } = &item.kind
+        else {
+            return;
+        };
+        if tool_name != "Monitor" || item.status != ItemStatus::Completed {
+            return;
+        }
+        let deadline = input["timeout_ms"]
+            .as_u64()
+            .map_or(MONITOR_DEFAULT, Duration::from_millis)
+            .min(MONITOR_MAX);
+        if let Some(live) = self.st().live.get_mut(id) {
+            let until = Instant::now() + deadline + MONITOR_GRACE;
+            live.watching = live.watching.max(Some(until));
         }
     }
 
@@ -4716,15 +4769,18 @@ impl SessionService {
 
     /// Idle processes cost RAM: close stdin on any without an active run for `idle_reap`. The next send resumes. One
     /// that holds a screen waits for [`SCREEN_IDLE`] instead: its exit ends the screen, which its next turn (after a
-    /// wait_ci, say) picks up again.
+    /// wait_ci, say) picks up again. One with a Monitor that may still fire waits for its deadline: its exit would end
+    /// the Monitor, whose notice then never wakes it.
     async fn reap(&self) {
         let idle_reap = self.inner.config.idle_reap;
         let hooks = self.inner.browser.get();
+        let now = Instant::now();
         let candidates: Vec<String> = self
             .st()
             .live
             .iter()
             .filter(|(_, l)| !l.closing && l.last_active.elapsed() >= idle_reap)
+            .filter(|(_, l)| l.watching.is_none_or(|until| until <= now))
             .map(|(id, _)| id.clone())
             .collect();
         for id in candidates {
