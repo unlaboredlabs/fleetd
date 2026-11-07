@@ -274,11 +274,14 @@ elif [ ${#named[@]} -eq 0 ] && changed app/desktop .github/workflows/desktop-qa.
 fi
 
 # For fleetd's pre-push gate, newest last: "<tree> <check>" for each check that passed on the tree, and "<tree>" once
-# every check it needs has. A check run on every call (reverts, the identifier check) that fails records none.
+# every check it needs has. A check run on every call (reverts, the identifier check) that fails records none, and a run
+# that fails anything never marks its tree whole: a later run that passes does.
 marks=$(git rev-parse --git-path fleetd-checked)
 ran=("${named[@]}")
 [ ${#named[@]} -gt 0 ] || ran=("${needed[@]}")
 passed=("${ran[@]}")
+whole=true
+[ ${#failed[@]} -eq 0 ] || whole=false
 for f in "${failed[@]}"; do
   [[ " ${ran[*]} " == *" ${f%%:*} "* ]] || passed=()
 done
@@ -288,7 +291,6 @@ done
     printf '%s\n' "${failed[@]}" | grep -q "^$c:" || echo "$checked_tree $c"
   done
 } >"$tmp/checked"
-whole=true
 for c in "${needed[@]}"; do grep -qxF "$checked_tree $c" "$tmp/checked" || { whole=false; missing+=" $c"; }; done
 $whole && echo "$checked_tree" >>"$tmp/checked"
 mv "$tmp/checked" "$marks"
@@ -297,7 +299,11 @@ if [ ${#failed[@]} -gt 0 ]; then
   echo
   echo "check.sh: ${#failed[@]} failed:"
   printf '  %s\n' "${failed[@]}"
-  $whole || echo "Still to pass on tree ${checked_tree:0:12} before a push:$missing (scripts/check.sh <check> runs one)"
+  if [ -n "$missing" ]; then
+    echo "Not pushable yet: still to pass on tree ${checked_tree:0:12}:$missing (scripts/check.sh <check> runs one)"
+  else
+    echo "Not pushable yet: tree ${checked_tree:0:12} is once a run of it fails nothing"
+  fi
   exit 1
 fi
 echo
