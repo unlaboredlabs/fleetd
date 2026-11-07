@@ -1261,13 +1261,13 @@ mod tests {
             (&*"d".repeat(32), &*"w".repeat(32)),
         ] {
             let token = auth
-                .create_enroll_token(&MachineId::unchecked(theirs))
+                .create_enroll_token(&MachineId::unchecked(theirs), "test")
                 .unwrap()
                 .token;
             auth.enroll_node(&token, &MachineId::unchecked(theirs), "pub-1", None)
                 .unwrap();
             let token = auth
-                .create_enroll_token(&MachineId::unchecked(ours))
+                .create_enroll_token(&MachineId::unchecked(ours), "test")
                 .unwrap()
                 .token;
             let Err(crate::hub::auth::AuthError::Unauthorized(refused)) =

@@ -138,7 +138,7 @@ print a one-time code (15 min) that pairs the fleetd app with this hub, and a QR
 fleetd pair --worker <machine-id>
 ```
 
-print the one command that makes another machine a worker of this hub, with a one-time code (15 min): for a machine the hub can't reach over SSH
+print the one command that makes another machine a worker of this hub, with a one-time code (15 min): for a machine the hub can't reach over SSH. A new code replaces the machine's open one, so only the newest works
 
 ### fleetd pair {#pair-worker-codes}
 

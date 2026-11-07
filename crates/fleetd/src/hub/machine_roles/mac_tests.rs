@@ -222,7 +222,11 @@ fn another_node_on_the_agents_mac_fails_its_one_node_check() {
         }))
         .unwrap();
         hub.store.machine_upsert(&machine, None).unwrap();
-        let token = hub.auth.create_enroll_token(&mid(id)).unwrap().token;
+        let token = hub
+            .auth
+            .create_enroll_token(&mid(id), "test")
+            .unwrap()
+            .token;
         hub.auth
             .enroll_node(&token, &mid(id), &format!("key-{id}"), Some(fingerprint))
             .unwrap();

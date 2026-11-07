@@ -185,7 +185,7 @@ fn grants_rank_read_operate_admin_and_scope_by_machine() {
 #[test]
 fn enrollment_tokens_are_one_time_and_record_the_node_key() {
     let (auth, _, _) = setup();
-    let EnrollToken { token, expires_at } = auth.create_enroll_token(&m("lab-a")).unwrap();
+    let EnrollToken { token, expires_at } = auth.create_enroll_token(&m("lab-a"), "test").unwrap();
     assert!(token.starts_with("fle_") && token.len() == 56);
     assert_eq!(expires_at, "1970-01-01T00:15:00.000Z");
     assert_eq!(auth.node_pub_key(&m("lab-a")).unwrap(), None);
@@ -211,11 +211,48 @@ fn enrollment_tokens_are_one_time_and_record_the_node_key() {
     assert!(!auth.revoke_node(&m("lab-a")).unwrap());
 }
 
+/// A caller asking again and again (a burst of 10 in a row) leaves one code that works: each new one replaces the
+/// machine's open one, and another machine's code is untouched.
+#[test]
+fn a_burst_of_enroll_codes_for_one_machine_leaves_only_the_newest_open() {
+    let (auth, _, clock) = setup();
+    let other = auth.create_enroll_token(&m("devbox"), "test").unwrap();
+    let codes: Vec<_> = (0..10)
+        .map(|_| {
+            clock.advance(Duration::from_millis(300));
+            auth.create_enroll_token(&m("worker"), "test").unwrap()
+        })
+        .collect();
+    let open = auth.open_enroll_tokens().unwrap();
+    assert_eq!(
+        open.iter()
+            .map(|c| c.machine_id.as_str())
+            .collect::<Vec<_>>(),
+        ["devbox", "worker"]
+    );
+    for old in &codes[..9] {
+        assert_eq!(
+            unauthorized(auth.consume_enroll_token(&old.token, &m("worker"), "pub")).message,
+            "unknown, replaced or revoked enrollment token"
+        );
+    }
+    auth.consume_enroll_token(&codes[9].token, &m("worker"), "pub")
+        .unwrap();
+    auth.consume_enroll_token(&other.token, &m("devbox"), "pub")
+        .unwrap();
+    // A used code is not open: the next one replaces nothing, and the used one still says it was used.
+    auth.create_enroll_token(&m("worker"), "test").unwrap();
+    assert_eq!(
+        unauthorized(auth.consume_enroll_token(&codes[9].token, &m("worker"), "pub")).message,
+        "enrollment token was already used"
+    );
+}
+
 #[test]
 fn enrollment_tokens_expire_after_15_minutes() {
     let (auth, _, clock) = setup();
-    let early = auth.create_enroll_token(&m("lab-a")).unwrap();
-    let late = auth.create_enroll_token(&m("lab-b")).unwrap();
+    let early = auth.create_enroll_token(&m("lab-a"), "test").unwrap();
+    let late = auth.create_enroll_token(&m("lab-b"), "test").unwrap();
     clock.advance(Duration::from_secs(14 * 60));
     auth.consume_enroll_token(&early.token, &m("lab-a"), "pub-a")
         .unwrap();
@@ -234,8 +271,8 @@ fn spent_enrollment_tokens_are_kept_a_day_then_pruned_and_open_ones_stay() {
         db.with(|c| Ok(c.query_row("SELECT COUNT(*) FROM enroll_tokens", [], |r| r.get(0))?))
             .unwrap()
     };
-    let used = auth.create_enroll_token(&m("lab-a")).unwrap();
-    auth.create_enroll_token(&m("lab-b")).unwrap();
+    let used = auth.create_enroll_token(&m("lab-a"), "test").unwrap();
+    auth.create_enroll_token(&m("lab-b"), "test").unwrap();
     auth.consume_enroll_token(&used.token, &m("lab-a"), "pub")
         .unwrap();
     // Within the day, a node trying the used code again still hears it was used.
@@ -247,7 +284,7 @@ fn spent_enrollment_tokens_are_kept_a_day_then_pruned_and_open_ones_stay() {
     );
     // A day after the unused one expired (15 min in), both go; a code made a minute before stays.
     clock.advance(Duration::from_secs(3600 + 15 * 60));
-    let open = auth.create_enroll_token(&m("lab-c")).unwrap();
+    let open = auth.create_enroll_token(&m("lab-c"), "test").unwrap();
     clock.advance(Duration::from_secs(61));
     assert_eq!(auth.prune_enroll_tokens().unwrap(), 2);
     assert_eq!(rows(), 1);
@@ -258,12 +295,12 @@ fn spent_enrollment_tokens_are_kept_a_day_then_pruned_and_open_ones_stay() {
 #[test]
 fn open_enrollment_tokens_list_by_id_without_the_code_and_revoke_by_it() {
     let (auth, _, clock) = setup();
-    let used = auth.create_enroll_token(&m("lab-a")).unwrap();
+    let used = auth.create_enroll_token(&m("lab-a"), "test").unwrap();
     auth.consume_enroll_token(&used.token, &m("lab-a"), "pub")
         .unwrap();
-    auth.create_enroll_token(&m("lab-gone")).unwrap();
+    auth.create_enroll_token(&m("lab-gone"), "test").unwrap();
     clock.advance(Duration::from_secs(16 * 60));
-    let open = auth.create_enroll_token(&m("lab-b")).unwrap();
+    let open = auth.create_enroll_token(&m("lab-b"), "test").unwrap();
     auth.create_pool_enroll_token(&m("cloud-1")).unwrap();
     let mut codes = auth.open_enroll_tokens().unwrap();
     codes.sort_by(|a, b| a.machine_id.as_str().cmp(b.machine_id.as_str()));
@@ -303,7 +340,7 @@ fn open_enrollment_tokens_list_by_id_without_the_code_and_revoke_by_it() {
     assert_eq!(auth.revoke_enroll_token(&b.id).unwrap(), None);
     assert_eq!(
         unauthorized(auth.consume_enroll_token(&open.token, &m("lab-b"), "pub")).message,
-        "unknown enrollment token"
+        "unknown, replaced or revoked enrollment token"
     );
     // A used code, or a prefix shorter than an id, revokes nothing.
     assert_eq!(
@@ -319,14 +356,14 @@ fn open_enrollment_tokens_list_by_id_without_the_code_and_revoke_by_it() {
 #[test]
 fn enrollment_tokens_only_enroll_their_machine_and_survive_a_wrong_machine_attempt() {
     let (auth, _, _) = setup();
-    let EnrollToken { token, .. } = auth.create_enroll_token(&m("lab-a")).unwrap();
+    let EnrollToken { token, .. } = auth.create_enroll_token(&m("lab-a"), "test").unwrap();
     assert_eq!(
         unauthorized(auth.consume_enroll_token(&token, &m("lab-b"), "pub")).message,
         "enrollment token is for machine lab-a, not lab-b"
     );
     assert_eq!(
         unauthorized(auth.consume_enroll_token("fle_bogus", &m("lab-a"), "pub")).message,
-        "unknown enrollment token"
+        "unknown, replaced or revoked enrollment token"
     );
     auth.consume_enroll_token(&token, &m("lab-a"), "pub")
         .unwrap();
@@ -374,7 +411,11 @@ fn retiring_revokes_the_owner_keys_and_deletes_their_file() {
 #[test]
 fn a_machine_id_belongs_to_one_computer() {
     let (auth, _, _) = setup();
-    let code = |auth: &Auth| auth.create_enroll_token(&m("devbox")).unwrap().token;
+    let code = |auth: &Auth| {
+        auth.create_enroll_token(&m("devbox"), "test")
+            .unwrap()
+            .token
+    };
     auth.enroll_node(&code(&auth), &m("devbox"), "pub-hub", Some("fp-hub"))
         .unwrap();
     assert_eq!(
@@ -424,7 +465,7 @@ fn a_machine_id_belongs_to_one_computer() {
 #[test]
 fn a_node_enrolled_under_one_id_never_enrolls_under_a_second() {
     let (auth, _, _) = setup();
-    let code = |auth: &Auth, id: &str| auth.create_enroll_token(&m(id)).unwrap().token;
+    let code = |auth: &Auth, id: &str| auth.create_enroll_token(&m(id), "test").unwrap().token;
     auth.enroll_node(
         &code(&auth, "devbox"),
         &m("devbox"),
@@ -472,7 +513,7 @@ fn every_enroll_refusal_fits_the_close_reason() {
         let (auth, _, clock) = setup();
         let id = |c: &str| m(&c.repeat(n));
         let (a, b, c) = (id("a"), id("b"), id("c"));
-        let code = |id: &MachineId| auth.create_enroll_token(id).unwrap().token;
+        let code = |id: &MachineId| auth.create_enroll_token(id, "test").unwrap().token;
         auth.enroll_node(&code(&a), &a, "pub-a", Some("fp-a"))
             .unwrap();
         let used = code(&b);
@@ -517,7 +558,10 @@ fn a_pool_token_enrolls_a_recreated_cloud_machine_and_nothing_else() {
     assert!(auth.is_pool(&m("boat-1")).unwrap());
 
     // The recreated VM, with an ordinary code: refused as another computer, as any machine's would be.
-    let ordinary = auth.create_enroll_token(&m("boat-1")).unwrap().token;
+    let ordinary = auth
+        .create_enroll_token(&m("boat-1"), "test")
+        .unwrap()
+        .token;
     let refused =
         unauthorized(auth.enroll_node(&ordinary, &m("boat-1"), "pub-vm-2", Some("fp-vm-2")));
     assert_eq!(refused.message, "boat-1 is another computer's machine id");
@@ -552,7 +596,10 @@ fn a_pool_token_enrolls_a_recreated_cloud_machine_and_nothing_else() {
 
     // A fixed machine: a pool token minted for its id doesn't move it to another computer.
     auth.enroll_node(
-        &auth.create_enroll_token(&m("devbox")).unwrap().token,
+        &auth
+            .create_enroll_token(&m("devbox"), "test")
+            .unwrap()
+            .token,
         &m("devbox"),
         "pub-hub",
         Some("fp-hub"),
