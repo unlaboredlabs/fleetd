@@ -204,9 +204,10 @@ of them can go on the Action Button. They sign in to your hub as the app does, w
 | **Get Waiting Approvals** | Reads what is waiting on you. | How many, and each with its chat |
 
 None of them approves, denies, enters a secret or pays: those stay in the app. **Wait for Reply** is off by default;
-with it on, the action waits up to **Wait Up To** seconds (60 by default, at most 600) for the lead's turn to end, then
-returns everything it said. If no reply comes in time, the action fails with **No reply yet**: the message is still
-sent, and the reply shows in the chat.
+with it on, the action waits up to **Wait Up To** seconds (20, the most) for the lead's turn to end, then returns
+everything it said. iOS ends an action that runs past about half a minute, so it suits quick answers. If no reply comes
+in time, the action fails with **No reply yet**: the message is still sent, and the reply shows in the chat. For a
+longer job, send without waiting and read the answer later with **Get Latest Messages**.
 
 **Files** on Send Message take what an earlier action hands it: a photo, a PDF, a scanned document, a text file. The
 hub takes images, PDFs, text and CSV files, Word, Excel and PowerPoint documents and zip archives, up to 25 MB each and

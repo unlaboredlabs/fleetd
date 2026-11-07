@@ -5,8 +5,9 @@
 // the share sheet does, with the pairing the app keeps in the keychain (HubLink.swift), on a link of its own; what
 // they decide is Actions.swift's. Nothing here answers an approval, enters a secret or pays: those stay in the app.
 //
-// iOS 18 or later: the two that open the app hand iOS the app's own link (OpenURLIntent), which it opens cold or warm
-// as any link, and the app goes to the chat or the list (src/shortcutLink.ts).
+// iOS 18 or later: the two that open the app open it, and leave it their link (Opened), which it takes cold or warm
+// (modules/shortcut-link) and goes to the chat or the list (src/shortcutLink.ts). iOS opens no app's own scheme for an
+// App Intent: OpenURLIntent takes web links only.
 import AppIntents
 import Foundation
 import ImageIO
@@ -77,6 +78,15 @@ enum Kept {
     let all = try await Run.automations { link }
     automations = all
     return all
+  }
+}
+
+/// The link an action that opens the app leaves it, in the app's own defaults: modules/shortcut-link's
+/// ShortcutLinkModule takes it, by this key and note.
+enum Opened {
+  static func leave(_ url: URL) {
+    UserDefaults.standard.set(url.absoluteString, forKey: "fleetd.shortcuts.opened")
+    NotificationCenter.default.post(name: Notification.Name("fleetd.shortcuts.opened"), object: nil)
   }
 }
 
@@ -208,13 +218,17 @@ struct OpenChat: AppIntent {
   @Parameter(title: "Chat")
   var chat: ChatEntity
 
+  static let openAppWhenRun = true
+
   static var parameterSummary: some ParameterSummary {
     Summary("Open \(\.$chat)")
   }
 
-  func perform() async throws -> some IntentResult & OpensIntent {
+  @MainActor
+  func perform() async throws -> some IntentResult {
     guard let url = Links.chat(chat.id) else { throw ActionError(problem: .unpaired) }
-    return .result(opensIntent: OpenURLIntent(url))
+    Opened.leave(url)
+    return .result()
   }
 }
 
@@ -223,8 +237,12 @@ struct OpenApprovals: AppIntent {
   static let title: LocalizedStringResource = "Open Approvals"
   static let description = IntentDescription("Opens fleetd's list of chats with something waiting on you. Approving and denying stay in the app.")
 
-  func perform() async throws -> some IntentResult & OpensIntent {
-    .result(opensIntent: OpenURLIntent(Links.approvals))
+  static let openAppWhenRun = true
+
+  @MainActor
+  func perform() async throws -> some IntentResult {
+    Opened.leave(Links.approvals)
+    return .result()
   }
 }
 
@@ -247,7 +265,7 @@ struct SendMessage: AppIntent {
   @Parameter(title: "Wait for Reply", default: false)
   var wait: Bool
 
-  @Parameter(title: "Wait Up To (Seconds)", default: 60)
+  @Parameter(title: "Wait Up To (Seconds)", default: 20, inclusiveRange: (1, 20))
   var seconds: Int
 
   static var parameterSummary: some ParameterSummary {
@@ -268,6 +286,10 @@ struct SendMessage: AppIntent {
   @MainActor
   func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
     let (wait, seconds, chat, text, given) = (wait, seconds, chat, text, files ?? [])
+    // Run with nothing to send (from its App Shortcut, say), it asks for the words, as Shortcuts asks for any value.
+    if (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && given.isEmpty {
+      throw $text.needsValueError("What's the message?")
+    }
     let reply = try await ActionError.shown {
       let files = try given.enumerated().map { i, file in try Self.upload(file, index: i) }
       let (link, p) = try HubLink.paired()
@@ -386,13 +408,14 @@ struct GetLatestMessages: AppIntent {
   }
 
   @MainActor
-  func perform() async throws -> some IntentResult & ReturnsValue<[MessageItem]> {
+  func perform() async throws -> some IntentResult & ReturnsValue<[MessageItem]> & ProvidesDialog {
     let (chat, count, since) = (chat, min(max(count, 1), 50), since)
     let said = try await ActionError.shown {
       let (link, p) = try HubLink.paired()
       return try await Run.latest({ link }, pairing: p, chat: chat.id, count: count, since: since)
     }
-    return .result(value: said.map(MessageItem.init))
+    // Run on its own (Siri, the Action Button), it says them.
+    return .result(value: said.map(MessageItem.init), dialog: "\(Messages.spoken(said))")
   }
 }
 

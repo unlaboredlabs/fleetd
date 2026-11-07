@@ -12,6 +12,8 @@ final class HubLink: HubCalls {
   private var calls = 0
   /// The snapshot's cursor: events after it are new.
   private(set) var cursor: Int?
+  /// Events that came while a call waited for its result, for `event(until:)`.
+  private var held: [(type: String, data: [String: Any])] = []
 
   init?(_ pairing: Pairing) {
     guard let url = pairing.socketURL else { return nil }
@@ -59,6 +61,7 @@ final class HubLink: HubCalls {
       while true {
         switch try await receive(within: 60) {
         case let .result(got, output)? where got == id: return output
+        case let .event(type, data)?: held.append((type, data))
         case let .error(got, code, message, fix)? where got == id || got == nil:
           throw Problem.hub(code: code, message: message, fix: fix)
         default: continue
@@ -84,6 +87,7 @@ final class HubLink: HubCalls {
 
   /// The next event before `until`; nil once that time is up, which closes the link. A dropped link throws.
   func event(until: Date) async throws -> (type: String, data: [String: Any])? {
+    if !held.isEmpty { return held.removeFirst() }
     do {
       while true {
         let left = until.timeIntervalSinceNow

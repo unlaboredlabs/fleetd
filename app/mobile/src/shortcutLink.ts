@@ -1,7 +1,7 @@
 // The links fleetd's Shortcuts actions open (plugins/app-intents, Actions.swift's Links): Open Chat's
-// `fleetd://chat?machine=…&project=…`, a chat, and Open Approvals' `fleetd://approvals`, Chats' Needs You list. iOS
-// opens them as any link, cold or warm; App.tsx goes there once the chats are up. Parsed by hand: React Native's URL
-// has no searchParams.
+// `fleetd://chat?machine=…&project=…`, a chat, and Open Approvals' `fleetd://approvals`, Chats' Needs You list. The
+// action opens the app and leaves it the link (modules/shortcut-link), cold or warm; App.tsx goes there once the chats
+// are up. Parsed by hand: React Native's URL has no searchParams.
 import { keyOf, type Key } from "./store";
 
 export type ShortcutLink = { readonly t: "chat"; readonly key: Key } | { readonly t: "approvals" };

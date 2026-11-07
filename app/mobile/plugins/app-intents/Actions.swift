@@ -261,6 +261,11 @@ enum Messages {
     return Array(kept.suffix(max(1, count)))
   }
 
+  /// The messages as one text, each with who wrote it, as Get Latest Messages says them: a dialog shows no line breaks.
+  static func spoken(_ said: [Said]) -> String {
+    said.isEmpty ? "No messages yet." : said.map { "\($0.author): \($0.text)" }.joined(separator: " · ")
+  }
+
   /// The lead's reply to message `after`: its final messages after it, in order, as one text.
   static func reply(_ history: [String: Any], after: Int) -> String {
     (history["messages"] as? [[String: Any]] ?? [])
@@ -313,12 +318,14 @@ struct Waiting: Equatable {
 enum Run {
   typealias Link = () throws -> HubCalls
 
-  /// The longest Wait for Reply: past this the reply shows in the chat.
-  static let waitMax = 600
+  /// The longest Wait for Reply, from the action's start: iOS ends an action that runs past about 30 seconds, and
+  /// reading the reply takes a few. Past this the reply shows in the chat.
+  static let waitMax = 20
 
   /// Sends `text` and `files` to the chat as the person, from Shortcuts; with `wait`, the lead's reply, waited for up
-  /// to that many seconds. nil without a wait.
+  /// to that many seconds from the start. nil without a wait.
   static func send(_ link: Link, pairing p: Pairing, chat id: String, text: String, files: [Upload] = [], wait: Int?, requestId: String) async throws -> String? {
+    let started = Date()
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
     if text.isEmpty && files.isEmpty { throw Problem.empty }
     if files.count > Limits.files { throw Problem.tooManyFiles }
@@ -336,7 +343,7 @@ enum Run {
     let seconds = min(max(wait, 1), waitMax)
     let seq = (sent["message"] as? [String: Any])?["seq"] as? Int ?? 0
     var watch = ReplyWatch(chat: ref, after: seq)
-    let until = Date().addingTimeInterval(Double(seconds))
+    let until = started.addingTimeInterval(Double(seconds))
     while !watch.done, let (type, data) = try await hub.event(until: until) {
       watch.take(type, data)
     }

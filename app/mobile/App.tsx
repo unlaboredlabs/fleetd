@@ -11,6 +11,7 @@
 // answers it.
 import { createNavigationContainerRef, NavigationContainer, useNavigation } from "@react-navigation/native";
 import { createNativeStackNavigator, type NativeStackNavigationOptions } from "@react-navigation/native-stack";
+import { requireOptionalNativeModule } from "expo";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -46,13 +47,26 @@ import { forgetPaired, forgetPush, loadPaired, pairWith } from "./src/vault";
 const nav = createNavigationContainerRef<RootParams>();
 const pairNav = createNavigationContainerRef<PairParams>();
 
+/** Where a Shortcuts action opens the app, left by it (modules/shortcut-link): iOS opens no scheme of ours for one. */
+const shortcutLinks =
+  Platform.OS === "ios" ? requireOptionalNativeModule<{ take(): string | null; addListener(event: "onOpened", listener: () => void): { remove(): void } }>("FleetdShortcutLink") : null;
+
 /** The newest link the app was opened with (or while running), until it is handled. */
 const useOpenedLink = (): [string | null, () => void] => {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
-    void Linking.getInitialURL().then((u) => setUrl(u ?? null));
+    void Linking.getInitialURL().then((u) => u !== null && setUrl(u));
     const sub = Linking.addEventListener("url", (e) => setUrl(e.url));
-    return () => sub.remove();
+    const take = () => {
+      const left = shortcutLinks?.take() ?? null;
+      if (left !== null) setUrl(left);
+    };
+    take();
+    const opened = shortcutLinks?.addListener("onOpened", take);
+    return () => {
+      sub.remove();
+      opened?.remove();
+    };
   }, []);
   const handled = useCallback(() => setUrl(null), []);
   return [url, handled];

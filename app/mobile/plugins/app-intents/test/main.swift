@@ -124,6 +124,8 @@ check(said.map(\.author) == ["You", "Inbox", "scout"] && said[1].text == "Mornin
 check(Messages.latest(said, count: 2, since: nil).map(\.author) == ["Inbox", "scout"], "the newest two")
 check(Messages.latest(said, count: 10, since: Messages.date("2026-11-03T08:00:05Z")).map(\.author) == ["Inbox", "scout"], "since a time")
 check(Messages.latest(said, count: 0, since: nil).count == 1, "at least one")
+check(Messages.spoken(Messages.latest(said, count: 2, since: nil)) == "Inbox: Morning! Two things today. · scout: CI is green", "said aloud")
+check(Messages.spoken([]) == "No messages yet.", "nothing said")
 check(Messages.reply(page, after: 5) == "Morning! Two things today.", "the reply: \(Messages.reply(page, after: 5))")
 check(Messages.reply(page, after: 6) == "", "no reply after it")
 
@@ -217,7 +219,7 @@ links = []
 check(try await Run.send(link, pairing: devbox, chat: "m1/p2", text: "hi", wait: 5, requestId: "s") == "On it.\n\nDone: the lights are on.", "a reply that came as time ran out")
 check(links.count == 2, "read on a new link")
 hub.answers["chat_history"] = { _ in ["messages": []] }
-check(await problem { _ = try await Run.send(link, pairing: devbox, chat: "m1/p2", text: "hi", wait: 5000, requestId: "s") } == .noReply("Inbox", seconds: 600), "no reply within the longest wait")
+check(await problem { _ = try await Run.send(link, pairing: devbox, chat: "m1/p2", text: "hi", wait: 5000, requestId: "s") } == .noReply("Inbox", seconds: 20), "no reply within the longest wait")
 
 // Get Latest Messages and Get Waiting Approvals read only.
 hub = FakeHub([inbox])
