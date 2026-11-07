@@ -232,12 +232,17 @@ pub struct GithubApps {
     pub(super) warned: sessions::Warned,
 }
 
-fn http() -> reqwest::Client {
-    reqwest::Client::builder()
-        .timeout(TIMEOUT)
-        .user_agent("fleetd")
-        .build()
-        .unwrap_or_default()
+/// One client for every call to GitHub, so its connections are kept and reused: a call on a slow link then skips the
+/// TCP and TLS handshakes a client of its own would make.
+fn http() -> &'static reqwest::Client {
+    static HTTP: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    HTTP.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(TIMEOUT)
+            .user_agent("fleetd")
+            .build()
+            .unwrap_or_default()
+    })
 }
 
 /// GitHub's own words for a refusal: its `message`, else the status.

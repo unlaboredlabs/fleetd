@@ -56,6 +56,8 @@ struct Fake {
     token_calls: Vec<HashMap<String, String>>,
     authorize_calls: Vec<HashMap<String, String>>,
     revoked_tokens: Vec<String>,
+    /// The connections calls came over, by the caller's end of each.
+    connections: HashSet<std::net::SocketAddr>,
 }
 
 type Shared = Arc<Mutex<Fake>>;
@@ -254,7 +256,18 @@ async fn service(dcr: bool) -> Shared {
         .route("/authorize", get(authorize))
         .route("/token", post(token))
         .route("/revoke", post(revoke))
+        .layer(axum::middleware::from_fn_with_state(
+            fake.clone(),
+            |State(fake): State<Shared>,
+             axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<std::net::SocketAddr>,
+             request: axum::extract::Request,
+             next: axum::middleware::Next| async move {
+                fake.lock().unwrap().connections.insert(peer);
+                next.run(request).await
+            },
+        ))
         .with_state(fake.clone());
+    let app = app.into_make_service_with_connect_info::<std::net::SocketAddr>();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     fake
 }
@@ -559,7 +572,10 @@ async fn signs_in_with_a_registered_client_and_pkce_and_its_tools_reach_the_navi
         "{tested}"
     );
 
+    fake.lock().unwrap().connections.clear();
     let out = start(&lab, json!({})).await;
+    // The knock, both metadata reads and the registration: over one kept connection, not a handshake each.
+    assert_eq!(fake.lock().unwrap().connections.len(), 1);
     assert_eq!(out["redirectUri"], format!("{HUB_URL}/oauth/callback"));
     assert!(out.get("needsClient").is_none());
     // fleetd registered itself for the hub's own callback, and opened the sign-in with PKCE, the 401's scope and the
