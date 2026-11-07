@@ -6,16 +6,15 @@
 //! records the screencast as video; each tool call of the agent's that drove the browser goes into the action log
 //! with the page's DOM after it. At the end the recording is scrubbed once more and uploaded to the hub (upload.rs).
 //!
-//! A Navi's session runs on the profile that Navi keeps (D221, chrome.rs [`chrome::Kept`]), not a fresh one: the node's
-//! sessions tell the broker which agent sessions are a Navi's ([`SessionHooks::navi`]), and every other one gets a
-//! fresh profile as before. Its browser reads and writes only in the Navi's folder (local.rs): no `file:` page, no
-//! upload or download elsewhere.
+//! A lead that does its own work (a project with no repo, as a Navi's did) runs its sessions on the profile its project
+//! keeps (D221; chrome.rs [`chrome::Kept`]), not a fresh one: the node's sessions tell the broker which agent sessions
+//! those are ([`SessionHooks::navi`]), and every other one gets a fresh profile as before. A person's screen for any
+//! project on its own machine runs on it too ([`Broker::person_screen`]). One browser at a time runs on a kept profile.
 pub mod agent_browser;
 pub mod cards;
 pub mod cdp;
 pub mod chrome;
 pub mod credentials;
-pub mod local;
 pub mod onepassword;
 pub mod proxy;
 pub mod record;
@@ -185,8 +184,8 @@ pub trait SessionHooks: Send + Sync + 'static {
     /// The values filled into the session's browsers from 1Password, when there are more than `known`: masked in what
     /// the session reports, as its own secrets are.
     fn filled_since(&self, thread: &str, known: usize) -> Option<Secrets>;
-    /// The agent session is Navi `navi`'s (its project), whose folder is `folder`: its browser sessions run on that
-    /// Navi's kept profile, and touch only that folder on this machine.
+    /// The agent session is the lead of project `navi`, in `folder`: its browser sessions run on that project's kept
+    /// profile.
     fn navi(&self, _thread: &str, _navi: &str, _folder: &Path) {}
     /// Forgets Navi `navi`'s sign-ins: its browser session here ends, and its kept profile goes. None: no broker here
     /// to ask, and the node deletes the profile itself.
@@ -195,11 +194,12 @@ pub trait SessionHooks: Send + Sync + 'static {
     }
 }
 
-/// An agent session's Navi: its name (its project) and its folder.
+/// A session's project, whose kept profile its browser runs on: a lead's that does its own work, or a person's screen.
 #[derive(Clone)]
 struct Navi {
     name: String,
-    folder: PathBuf,
+    /// A person's screen: with the kept profile busy, it opens on a fresh one rather than not at all.
+    fresh_if_busy: bool,
 }
 
 pub struct Broker {
@@ -375,8 +375,6 @@ impl Broker {
             .clone()
             .map(PathBuf::from)
             .or_else(|| chrome::find_ffmpeg(&chrome::install_dir(home)));
-        // The upload copies of sessions a node that stopped without closing them left.
-        let _ = std::fs::remove_dir_all(local::uploads_dir(home));
         let broker = Arc::new_cyclic(|me| Self {
             me: me.clone(),
             home: home.to_owned(),
@@ -699,17 +697,26 @@ impl Broker {
         let secrets = tokio::task::spawn_blocking(move || secrets_for(&secrets_thread));
         let navi = lock(&self.navis).get(&thread).cloned();
         let warm = pool.warm();
-        let browser = match &navi {
-            Some(navi) => {
-                let lease = self.kept.take(&navi.name).map_err(|why| {
-                    refuse(
+        // One browser at a time runs on a kept profile: a person's screen meanwhile opens on a fresh one, signed out.
+        let lease = match &navi {
+            Some(navi) => match self.kept.take(&navi.name) {
+                Ok(lease) => Some(lease),
+                Err(_) if navi.fresh_if_busy => None,
+                Err(why) => {
+                    return Err(refuse(
                         ErrorCode::Invalid,
-                        format!("{why}: it keeps your sign-ins, and one browser at a time runs on them."),
+                        format!(
+                            "{why}: it keeps the project's sign-ins, and one browser at a time runs on them."
+                        ),
                         "end that session first (session_end there), or wait for it to end, then session_start again",
-                    )
-                })?;
-                pool.take_kept(lease).await
-            }
+                    ));
+                }
+            },
+            None => None,
+        };
+        let kept = lease.is_some();
+        let browser = match lease {
+            Some(lease) => pool.take_kept(lease).await,
             None => pool.take().await,
         }
         .map_err(|why| {
@@ -719,10 +726,10 @@ impl Broker {
                 "try session_start again",
             )
         })?;
-        stages.done(match &navi {
-            Some(_) => "navi browser",
-            None if warm > 0 => "warm browser",
-            None => "cold browser",
+        stages.done(match kept {
+            true => "kept browser",
+            false if warm > 0 => "warm browser",
+            false => "cold browser",
         });
         let secrets = secrets
             .await
@@ -740,36 +747,6 @@ impl Broker {
         stages.done("secrets");
         let id = new_id();
         stages.id(id.as_str());
-        let fence = match &navi {
-            Some(navi) => {
-                let staging = local::uploads_dir(&self.home).join(id.as_str());
-                let on_breach: local::OnBreach = {
-                    let (broker, thread, id) = (self.me.clone(), thread.clone(), id.clone());
-                    Box::new(move || {
-                        tokio::spawn(async move {
-                            if let Some(broker) = broker.upgrade() {
-                                broker.end_breached(&thread, &id).await;
-                            }
-                        });
-                    })
-                };
-                Some(
-                    local::Fence::start(&browser.cdp, &navi.folder, staging, on_breach)
-                        .await
-                        .map_err(|why| {
-                            refuse(
-                                ErrorCode::Failed,
-                                format!("The browser did not start: {why}."),
-                                "try session_start again",
-                            )
-                        })?,
-                )
-            }
-            None => None,
-        };
-        if fence.is_some() {
-            stages.done("fence");
-        }
         let ffmpeg = lock(&self.ffmpeg).clone();
         let dir = upload::recordings_dir(&self.home).join(id.as_str());
         let session = Session::open(
@@ -782,7 +759,6 @@ impl Broker {
                 purpose: purpose.clone(),
                 ffmpeg,
                 secrets,
-                fence,
             },
         )
         .await
@@ -1031,19 +1007,16 @@ impl Broker {
         }))
     }
 
-    /// A Navi's session `id` lost its fence (local.rs): it ends now, its recording going to the hub as at any end.
-    async fn end_breached(self: &Arc<Self>, thread: &str, id: &BrowserSessionId) {
-        let session = {
-            let mut sessions = lock(&self.sessions);
-            match sessions.get(thread) {
-                Some(s) if s.id == *id => sessions.remove(thread),
-                _ => None,
-            }
-        };
-        if let Some(session) = session {
-            session.step("fence_lost", json!({}), false, None, 0);
-            self.close(session).await;
-        }
+    /// A person's screen `key` for project `project` of this machine's, as the hub's own frame names it (D239): on its
+    /// kept profile, or a fresh one while that profile is busy.
+    pub fn person_screen(&self, key: &str, project: &str) {
+        lock(&self.navis).insert(
+            key.to_owned(),
+            Navi {
+                name: project.to_owned(),
+                fresh_if_busy: true,
+            },
+        );
     }
 
     /// The agent session ended: it is no Navi's any more.
@@ -1051,7 +1024,7 @@ impl Broker {
         lock(&self.navis).remove(thread);
     }
 
-    /// Whether the agent session is a Navi's: its browser runs here, on its profile and inside its fence.
+    /// Whether the agent session is a project's lead: its browser runs here, on its project's kept profile.
     pub fn is_navi(&self, thread: &str) -> bool {
         lock(&self.navis).contains_key(thread)
     }
@@ -1103,12 +1076,12 @@ impl SessionHooks for Broker {
         self.credentials.filled_since(thread, known)
     }
 
-    fn navi(&self, thread: &str, navi: &str, folder: &Path) {
+    fn navi(&self, thread: &str, navi: &str, _folder: &Path) {
         lock(&self.navis).insert(
             thread.to_owned(),
             Navi {
                 name: navi.to_owned(),
-                folder: folder.to_owned(),
+                fresh_if_busy: false,
             },
         );
     }

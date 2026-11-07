@@ -536,7 +536,11 @@ pub async fn forget_signins(
         project_id: input.project_id,
     };
     require(caller, Role::Operate, Some(&r.machine_id))?;
-    let navi = navi_of(hub, &r)?;
+    // Any project keeps its sign-ins (D310), a Navi as before.
+    let navi = hub
+        .store
+        .project_get(&r)?
+        .ok_or_else(|| unknown_project(&r))?;
     if !hub.executors.is_connected(&r.machine_id) {
         return Err(offline(&r.machine_id));
     }
@@ -544,7 +548,7 @@ pub async fn forget_signins(
         return Err(error(
             ErrorCode::Invalid,
             format!(
-                "{}'s node is too old to keep a Navi's sign-ins",
+                "{}'s node is too old to keep a project's sign-ins",
                 r.machine_id
             ),
             format!(
@@ -557,11 +561,7 @@ pub async fn forget_signins(
         .navi_signins_forget(&r.machine_id, &r.project_id)
         .await
         .map_err(from_executor)?;
-    changed(
-        hub,
-        &navi,
-        format!("Navi {}'s sign-ins forgotten", navi.title),
-    )?;
+    changed(hub, &navi, format!("{}'s sign-ins forgotten", navi.title))?;
     Ok(NaviSigninsForgetOutput {
         ok: fleetd_contracts::prim::True,
         next: Some("Its next browser session starts signed out of every site.".into()),

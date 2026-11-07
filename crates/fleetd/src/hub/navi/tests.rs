@@ -391,6 +391,23 @@ async fn a_plain_folder_with_no_git_is_added_as_a_project_with_no_repo() {
     };
     assert_eq!(e.code, fleetd_contracts::mcp::ErrorCode::Forbidden);
     assert!(hub.store.project_get(&r).unwrap().unwrap().only_me);
+    // Refused, it renamed nothing either; asking what it already is passes.
+    let Err(CallError::Tool(_)) = call(
+        &hub,
+        "project_add",
+        json!({ "machineId": "devbox", "path": "/home/me/notes", "title": "Taken", "onlyMe": false }),
+    )
+    .await
+    else {
+        panic!("a refused add went through")
+    };
+    assert_eq!(hub.store.project_get(&r).unwrap().unwrap().title, "Notes");
+    ok(
+        &hub,
+        "project_add",
+        json!({ "machineId": "devbox", "path": "/home/me/notes", "onlyMe": true }),
+    )
+    .await;
     ok(
         &hub,
         "project_add",
@@ -478,14 +495,19 @@ async fn forgetting_a_navis_sign_ins_asks_its_node_to_delete_its_browser_profile
             project_id: ProjectId::unchecked(navi["projectId"].as_str().unwrap()),
         }
     );
-    let code = call(
+    // A project of code keeps its sign-ins too (D310), and forgets them the same way.
+    ok(
         &hub,
         "navi_signins_forget",
         json!({ "machineId": "devbox", "projectId": "p1" }),
     )
-    .await
-    .unwrap_err();
-    assert!(format!("{code:?}").contains("not a Navi"), "{code:?}");
+    .await;
+    assert_eq!(
+        calls.recv().await.unwrap(),
+        SessionCall::NaviSigninsForget {
+            project_id: ProjectId::unchecked("p1"),
+        }
+    );
 }
 
 #[tokio::test]

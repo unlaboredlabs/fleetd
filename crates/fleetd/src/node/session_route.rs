@@ -366,7 +366,7 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
     if device {
         return device_start(&router, thread, frame).await;
     }
-    // A Navi's runs here: another machine has neither its profile nor its folder to fence it in.
+    // A lead's runs here, on its project's kept profile: another machine hasn't that profile.
     if broker.is_navi(&thread) {
         return local(&router, thread, frame).await;
     }
@@ -492,20 +492,12 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
 }
 
 /// A `session_start` kind mac: always the hub's to place, on the Mac that lends its screen. Sealed to it with its relay
-/// key alone: the Mac's node is a tool every agent there shares, so it gets none of the session's secrets. A Navi never
-/// uses the Mac.
+/// key alone: the Mac's node is a tool every agent there shares, so it gets none of the session's secrets.
 async fn mac_start(
     router: &Arc<Router>,
     thread: String,
     frame: BrowserCallFrame,
 ) -> BrowserResultFrame {
-    if router.broker.as_ref().is_some_and(|b| b.is_navi(&thread)) {
-        return error_frame(
-            &frame.id,
-            McpToolError::new(ErrorCode::Forbidden, "A Navi never uses the agents' Mac.")
-                .with_fix("do without it and say so"),
-        );
-    }
     if !router.relay.hub_can(HUB_CAP_SESSION_ROUTE) {
         return error_frame(
             &frame.id,
@@ -1068,7 +1060,7 @@ impl SessionHooks for Router {
         (all.len() > known).then(|| crate::node::mask::Secrets(all))
     }
 
-    /// A Navi's browser runs here, on its kept profile and inside its folder's fence: never on another machine. Its iOS
+    /// A lead's browser runs here, on its project's kept profile: never on another machine. Its iOS
     /// screens keep their agent-device home in its session's folder, which its sandbox writes.
     fn navi(&self, thread: &str, navi: &str, folder: &std::path::Path) {
         if let Some(broker) = &self.broker {
@@ -1362,16 +1354,18 @@ pub async fn host(
                             if start.kind.is_none_or(|k| k == SessionKind::Browser)
                     );
                     let folder = navi_folder(&navi);
-                    let (Some(broker), Some(folder), true) = (&broker, folder, browser) else {
+                    let (Some(broker), Some(_), true) = (&broker, folder, browser) else {
                         return Some(SessionHostResult {
                             id: host.id,
                             frame: refuse(
                                 &host.frame.id,
-                                &format!("this machine has no Navi {navi} with a browser to open"),
+                                &format!(
+                                    "this machine has no project {navi} with a browser to open"
+                                ),
                             ),
                         });
                     };
-                    SessionHooks::navi(broker.as_ref(), &key, &navi, &folder);
+                    broker.person_screen(&key, &navi);
                 }
                 hosted.lock().insert(
                     key.clone(),

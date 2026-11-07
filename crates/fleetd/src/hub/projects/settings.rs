@@ -421,6 +421,10 @@ pub(super) fn set_only_me(
     on: bool,
 ) -> Result<(), ToolError> {
     let r = project_ref(&project.machine_id, &project.project_id);
+    // As it is already: nothing to change, nothing to refuse.
+    if on == project.only_me {
+        return Ok(());
+    }
     if !crate::hub::api::is_human(caller) {
         return Err(ToolError::new(
             ErrorCode::Forbidden,
@@ -439,9 +443,6 @@ pub(super) fn set_only_me(
         };
         return Err(ToolError::new(ErrorCode::Forbidden, why)
             .with_fix("Ask the person whose project it is, or an admin."));
-    }
-    if on == project.only_me {
-        return Ok(());
     }
     hub.db.with(|c| {
         Ok(crate::hub::navi::store::set_only_me(

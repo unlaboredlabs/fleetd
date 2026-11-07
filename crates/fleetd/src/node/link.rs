@@ -467,6 +467,7 @@ async fn run_link_once(
             fleetd_contracts::node_link::CAP_ONE_LEAD_MODE.to_owned(),
             fleetd_contracts::node_link::CAP_PROJECT_ERASE.to_owned(),
             fleetd_contracts::node_link::CAP_NO_ASK_FILL.to_owned(),
+            fleetd_contracts::node_link::CAP_PROJECT_SIGNINS.to_owned(),
         ]
         .into_iter()
         .chain(
