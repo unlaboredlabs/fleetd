@@ -55,7 +55,7 @@ const shortcutLinks =
 const useOpenedLink = (): [string | null, () => void] => {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
-    void Linking.getInitialURL().then((u) => u !== null && setUrl(u));
+    void Linking.getInitialURL().then((u) => u && setUrl(u));
     const sub = Linking.addEventListener("url", (e) => setUrl(e.url));
     const take = () => {
       const left = shortcutLinks?.take() ?? null;
