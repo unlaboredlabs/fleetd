@@ -37,6 +37,9 @@ const MAX_INFLATED: usize = 64 << 20;
 /// After this long without a frame to the app, the hub pings it: the event long-poll is silent when nothing happens,
 /// and a cellular or hotel NAT forgets an idle flow in as little as 30 s. The phone can't ping, but answers pongs.
 pub const KEEPALIVE: std::time::Duration = std::time::Duration::from_secs(25);
+/// How often a connection checks its key again with no revoke on this hub to wake it: a key revoked from the hub's
+/// home (`fleetd hub key revoke`, `fleetd people remove`) stops streaming within this.
+const KEY_RECHECK: std::time::Duration = std::time::Duration::from_secs(15);
 
 fn error_frame(error: &ToolError, id: Option<&str>) -> Value {
     let mut frame = json!({ "t": "error" });
@@ -175,6 +178,21 @@ enum After {
 impl Session {
     fn send(&self, frame: Value) {
         self.out.push(frame.to_string());
+    }
+
+    /// Whether the connection's key was refused since it authed: revoked, or its person removed. Only a refusal
+    /// counts; a check that failed otherwise keeps the connection.
+    fn key_refused(&self) -> bool {
+        let Some((key, _)) = &self.caller else {
+            return false;
+        };
+        match self.hub.auth.verify(key) {
+            Err(error @ AuthError::Unauthorized(_)) => {
+                self.send(error_frame(&refused(error), None));
+                true
+            }
+            _ => false,
+        }
     }
 
     async fn on_text(&mut self, text: &str) -> After {
@@ -460,9 +478,23 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
         tokio::time::interval_at(tokio::time::Instant::now() + KEEPALIVE, KEEPALIVE);
     // Each direction's compression stream, from the `ready` of an `auth` that asked for it to the socket's end.
     let mut wire = Wire::default();
+    let mut revokes = session.hub.auth.revokes();
+    let mut recheck = tokio::time::interval(KEY_RECHECK);
+    recheck.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let close = loop {
         tokio::select! {
             () = shutdown.wait() => break Some((CLOSE_GOING_AWAY, "hub shutting down")),
+            // A revoked key's connection streams nothing more: it closes as refused, as at `auth`.
+            Ok(()) = revokes.changed() => {
+                if session.key_refused() {
+                    break Some(refuse(&mut wire, &mut socket, &behind, &mut frames).await);
+                }
+            }
+            _ = recheck.tick() => {
+                if session.key_refused() {
+                    break Some(refuse(&mut wire, &mut socket, &behind, &mut frames).await);
+                }
+            }
             () = behind.wait() => break Some(too_far_behind(&behind)),
             _ = keepalive.tick() => {
                 if socket.send(Message::Ping(Default::default())).await.is_err() {
@@ -515,11 +547,7 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
                 };
                 if let After::Close(code, reason) = session.on_text(&text).await {
                     // Flush what this frame produced (the refusal) before closing.
-                    while let Some(frame) = frames.try_recv() {
-                        if !wire.send(&mut socket, &behind, frame).await {
-                            break;
-                        }
-                    }
+                    wire.flush(&mut socket, &behind, &mut frames).await;
                     break Some((code, reason));
                 }
                 if session.deflate && wire.deflater.is_none() {
@@ -588,6 +616,31 @@ impl Wire {
             () = behind.wait() => false,
         }
     }
+
+    /// Sends what waits in the outbox, until the socket fails.
+    async fn flush(
+        &mut self,
+        socket: &mut WebSocket,
+        behind: &Behind,
+        frames: &mut outbox::Frames,
+    ) {
+        while let Some(frame) = frames.try_recv() {
+            if !self.send(socket, behind, frame).await {
+                break;
+            }
+        }
+    }
+}
+
+/// How a connection whose key was refused ends: the refusal sent, then closed as unauthorized.
+async fn refuse(
+    wire: &mut Wire,
+    socket: &mut WebSocket,
+    behind: &Behind,
+    frames: &mut outbox::Frames,
+) -> (u16, &'static str) {
+    wire.flush(socket, behind, frames).await;
+    (CLOSE_UNAUTHORIZED, "unauthorized")
 }
 
 /// How a connection whose send failed ends: closed with a reason when it fell behind, else just dropped.
