@@ -4,7 +4,7 @@
 // top. The top bar says what needs you after the title (what the lead waits on you for, a block, what there is to look
 // at, a red main), and is just the title when nothing does; an empty chat asks what to do. It opens where you stopped
 // reading, under a "New" divider. Its settings (where its connections, sign-ins and approvals are) are a click away in
-// the title; a project with no repo has its name in the box and everyday starters rather than a codebase's.
+// the title; your own (Only me) project with no repo has its name in the box and everyday starters, not a codebase's.
 import { Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
@@ -27,7 +27,7 @@ import { ChatComposer } from "./Composer";
 import type { ProjectRef } from "./slots";
 import { useAsOfWords } from "../shell/offline";
 import { navigate } from "../shell/navigation";
-import { hasRepos } from "../projects/model";
+import { hasRepos, isOnlyMe } from "../projects/model";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { useHubRole } from "../admin/role";
 import s from "./view.module.css";
@@ -121,8 +121,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const empty = view !== undefined && view.items.length === 0 && !view.hasOlder;
   const title = data.title ?? "";
   const summary = useData((d) => d.projects[key]);
-  // Absent while it loads: a codebase's words until the hub has said.
-  const plain = summary !== undefined && !hasRepos(summary);
+  // Your own project with no repo: everyday words. Any other, or one still loading, a codebase's.
+  const plain = summary !== undefined && isOnlyMe(summary) && !hasRepos(summary);
   const who = plain && title !== "" ? title : undefined;
   const [replyTo, setReplyTo] = useState<ReplyTarget>();
   const onSent = useCallback(() => {

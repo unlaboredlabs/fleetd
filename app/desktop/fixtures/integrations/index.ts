@@ -198,7 +198,7 @@ const signin = (base: Fixture): Fixture => {
 
 /** A project's Payments: the card it pays with, the Credit Card items the person's 1Password reads, and its purchases. */
 const payments = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "integrations-payments", "A project's Payments: it pays with Visa from 1Password, and its purchases: a hotel waiting, a train ticket filled, a flight not bought.");
+  const f = Fixture.from(base, "integrations-payments", "A project's Payments: it pays with Visa from 1Password, and its purchases: a hotel not filled yet, a train ticket filled, a flight not bought.");
   const ref = home(f);
   f.answer("mcp_servers_get", { project: ref }, { global: [], project: [], userServers: true });
   const card = { ref: "op://Personal/Visa" };

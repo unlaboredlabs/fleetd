@@ -14,7 +14,6 @@ import { Exact, HiddenWarning, marks } from "./Exact";
 import { patchLocal, useLocal, type Failed } from "./local";
 import { prose } from "./prose";
 import { Media } from "../chat/blocks/Media";
-import { cardLabel, money, payQuestion, totalWords } from "../projects/payments";
 import { actionPlace, actionWarning, actionWords, answerWords, blockedWords, confirmStep, confirmWords } from "./toolPreview";
 import {
   approvalOffline,
@@ -142,7 +141,7 @@ function OfflineLine({ text }: { text: string }) {
 }
 
 /** An answered item's one line: what happened, then what it was about; a click opens the whole card. */
-/** `site`: the real domain a purchase or a secure input fills on, shown as written beside the name the lead gave it. */
+/** `site`: the real domain a secure input fills on, shown as written beside the name the lead gave it. */
 function Folded({ outcome, about, site, open, onToggle, focus, onFocused }: { outcome: Outcome; about: string; site?: string | undefined; open: boolean; onToggle: () => void; focus: boolean; onFocused: () => void }) {
   const button = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
@@ -368,7 +367,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
   const { local, shown, busy, failed, confirming, setConfirming, run, refocus, focused } = useSent(key, item, read, machine, section);
   const outcome = approvalOutcome(shown);
   const offline = approvalOffline(shown.state, live);
-  const { gated, permission, purchase, secureInput } = item;
+  const { gated, permission } = item;
   const preview = permission?.preview;
   // The approval checker judged it first: why it asks, or why it refused it (the person may approve it anyway).
   const checker = permission?.checker;
@@ -427,27 +426,14 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
     }
   };
 
-  const destructive = blocked || gated?.class === "irreversible" || preview?.action === "delete" || preview?.action === "spend" || purchase !== undefined;
+  const destructive = blocked || gated?.class === "irreversible" || preview?.action === "delete" || preview?.action === "spend";
   const who = asker ?? "The lead";
   return (
-    <Shell ref={section} label={purchase !== undefined ? "Purchase to approve" : secureInput !== undefined ? "Secure input to approve" : "Command to approve"} requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} site={(purchase?.shop ?? secureInput?.site)?.domain} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
+    <Shell ref={section} label="Command to approve" requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
-          {purchase !== undefined
-            ? "Purchase"
-            : secureInput !== undefined
-            ? "Secure input · 1Password"
-            : preview !== undefined
-              ? `${actionWords(preview.action)} · ${actionPlace(preview)}`
-              : gated === undefined
-                ? "Permission"
-                : "Command"}
+          {preview !== undefined ? `${actionWords(preview.action)} · ${actionPlace(preview)}` : gated === undefined ? "Permission" : "Command"}
         </Text>
-        {purchase === undefined ? null : (
-          <Text size="xs" tone="danger" strong>
-            Costs money
-          </Text>
-        )}
         {warning === undefined ? null : (
           <Text size="xs" tone={warning.tone} strong>
             {warning.text}
@@ -460,11 +446,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
         )}
       </div>
       <Text as="p" strong className={cx(s.title)}>
-        {purchase !== undefined
-          ? marks(`${who} wants to pay ${totalWords(purchase.total)} at ${purchase.shop.name}`)
-          : secureInput !== undefined
-          ? marks(`${who} wants to fill ${secureInput.label} for ${secureInput.site.name} from 1Password`)
-          : gated !== undefined
+        {gated !== undefined
             ? prose(gated.reason)
             : preview?.action === "confirm"
               ? (
@@ -503,13 +485,6 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
           ...(gated?.secretEnv ?? []).flatMap((e) => [e.name, e.secretKey]),
           permission?.toolName,
           preview?.title,
-          purchase?.shop.name,
-          purchase?.shop.domain,
-          ...(purchase?.items ?? []).map((i) => i.name),
-          secureInput?.site.name,
-          secureInput?.site.domain,
-          secureInput?.label,
-          secureInput?.ref,
         ]}
         lines={[gated?.reason, permission?.summary, preview?.input]}
       />
@@ -520,56 +495,6 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
       )}
       {permission?.screenshot === undefined ? null : <Media media={{ attachmentId: permission.screenshot, caption: "What the page shows" }} clip={false} />}
       <div className={s.detail}>
-        {/* A purchase: exactly what is bought and for how much, then where and with which card. */}
-        {purchase !== undefined ? (
-          <>
-            <dl className={s.receipt}>
-              {purchase.items.map((i, n) => (
-                <Fragment key={n}>
-                  <dt>
-                    <Text size="sm">{marks(`${i.quantity !== undefined && i.quantity > 1 ? `${String(i.quantity)} × ` : ""}${i.name}`)}</Text>
-                  </dt>
-                  <dd>
-                    <Text size="sm" tone="quiet">
-                      {i.amount === undefined ? "" : money(i.amount, purchase.total.currency)}
-                    </Text>
-                  </dd>
-                </Fragment>
-              ))}
-              <dt className={s.total}>
-                <Text size="sm" strong>
-                  Total
-                </Text>
-              </dt>
-              <dd className={s.total}>
-                <Text size="sm" strong>
-                  {totalWords(purchase.total)}
-                </Text>
-              </dd>
-            </dl>
-            <Text size="xs" tone="quiet">
-              <InlineCode>
-                <Exact text={purchase.shop.domain} ltr />
-              </InlineCode>
-              {` · with ${cardLabel(purchase.card)} from 1Password. fleetd fills the card into this checkout once, and it never goes in the chat.`}
-            </Text>
-          </>
-        ) : null}
-        {secureInput !== undefined ? (
-          <>
-            <Text size="sm">{marks(secureInput.why)}</Text>
-            <Text size="xs" tone="quiet">
-              <InlineCode>
-                <Exact text={secureInput.ref ?? ""} ltr />
-              </InlineCode>
-              {" into "}
-              <InlineCode>
-                <Exact text={secureInput.site.domain} ltr />
-              </InlineCode>
-              {`. fleetd fills it once, and it never goes in the chat.`}
-            </Text>
-          </>
-        ) : null}
         {/* Each word isolated, so a right-to-left word can't swap the order its neighbours read in. */}
         {gated !== undefined ? (
           <Code code={shellLine(gated.argv)} bare>
@@ -587,21 +512,19 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
             {marks(permission.summary, true)}
           </Code>
         ) : null}
-        {purchase !== undefined || secureInput !== undefined ? null : (
-          <Text size="xs" tone="quiet">
-            on {machine}
-            {gated?.cwd === undefined ? null : (
-              <>
-                {" "}
-                in{" "}
-                <InlineCode>
-                  <Exact text={gated.cwd} ltr />
-                </InlineCode>
-              </>
-            )}
-            {gated === undefined ? null : ` · stops after ${String(Math.ceil(gated.timeoutSec / 60))} min`}
-          </Text>
-        )}
+        <Text size="xs" tone="quiet">
+          on {machine}
+          {gated?.cwd === undefined ? null : (
+            <>
+              {" "}
+              in{" "}
+              <InlineCode>
+                <Exact text={gated.cwd} ltr />
+              </InlineCode>
+            </>
+          )}
+          {gated === undefined ? null : ` · stops after ${String(Math.ceil(gated.timeoutSec / 60))} min`}
+        </Text>
         {gated === undefined
           ? null
           : secretEnvLines(gated).map((line) => (
@@ -624,11 +547,11 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
       {shown.state !== "open" ? null : confirming ? (
         <div ref={confirm} tabIndex={-1} role="group" aria-labelledby={`${item.requestId}-confirm`} className={s.confirm}>
           <Text as="p" id={`${item.requestId}-confirm`} size="sm" tone="danger" strong className={cx(s.line)}>
-            {purchase !== undefined ? payQuestion(purchase) : preview === undefined ? `Run this on ${machine}? It can't be undone.` : confirmWords(preview).question}
+            {preview === undefined ? `Run this on ${machine}? It can't be undone.` : confirmWords(preview).question}
           </Text>
           <div className={s.actions}>
             <Button variant="danger" disabled={!canAnswer} onClick={() => answer("approve")}>
-              {purchase !== undefined ? "Yes, pay" : preview === undefined ? "Yes, run it" : confirmWords(preview).yes}
+              {preview === undefined ? "Yes, run it" : confirmWords(preview).yes}
             </Button>
             <Button variant="secondary" disabled={!canAnswer} onClick={cancel}>
               Cancel
@@ -641,13 +564,13 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
       ) : (
         <div className={s.actions}>
           <Button ref={approveButton} variant={destructive ? "danger" : "primary"} disabled={!canAnswer} onClick={approve}>
-            {purchase !== undefined ? `Pay ${totalWords(purchase.total)}` : secureInput !== undefined ? "Fill it" : words !== undefined ? words.yes : item.note === undefined ? "Approve" : "Approve again"}
+            {words !== undefined ? words.yes : item.note === undefined ? "Approve" : "Approve again"}
           </Button>
           <Button variant="secondary" disabled={!canAnswer} onClick={() => answer("deny")}>
-            {purchase !== undefined ? "Don't buy" : secureInput !== undefined ? "Don't fill" : words !== undefined ? words.no : "Deny"}
+            {words !== undefined ? words.no : "Deny"}
           </Button>
           <Text size="xs" tone="quiet" className={cx(s.whenFocused)}>
-            {purchase !== undefined ? "Enter: Pay · Esc: Don't buy" : words === undefined ? "Enter approves · Esc denies" : `Enter: ${words.yes} · Esc: ${words.no}`}
+            {words === undefined ? "Enter approves · Esc denies" : `Enter: ${words.yes} · Esc: ${words.no}`}
           </Text>
         </div>
       )}

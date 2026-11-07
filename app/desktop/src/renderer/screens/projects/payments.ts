@@ -1,7 +1,6 @@
-// Payments in the person's words (D265), shared with the phone: money as they read it, the card a project pays with,
-// each thing bought, a purchase's title and its Pay question, and Settings' card picker and purchase log. Pure, with no
-// UI, so it is unit-tested.
-import type { NaviCard, OnePasswordCard, Purchase, PurchaseLogEntry, PurchaseTotal } from "../../../shared/contracts";
+// Payments in the person's words (D265, D312), shared with the phone: money as they read it, the card a project pays
+// with, and Settings' help, card picker and purchase log. Pure, with no UI, so it is unit-tested.
+import type { NaviCard, OnePasswordCard, PurchaseLogEntry, PurchaseTotal } from "../../../shared/contracts";
 
 /** `129.90 EUR` as the person reads money: `€129.90`. An amount Intl can't place stays as the hub sent it. */
 export const money = (amount: string, currency: string): string => {
@@ -23,20 +22,9 @@ export const cardLabel = (card: NaviCard): string => {
   return slash < 0 ? rest : `${rest.slice(slash + 1)} (${rest.slice(0, slash)})`;
 };
 
-/** Each thing bought, as one line: `Double room, 2 nights · €129.90`, with how many when more than one. */
-export const itemLines = (purchase: Purchase): string[] =>
-  purchase.items.map((item) => {
-    const many = item.quantity !== undefined && item.quantity > 1 ? `${String(item.quantity)} × ` : "";
-    const price = item.amount === undefined ? "" : ` · ${money(item.amount, purchase.total.currency)}`;
-    return `${many}${item.name}${price}`;
-  });
-
-/** What the folded row says it was about, in the person's words: the shop's name, not its domain. */
-export const purchaseTitle = (purchase: Purchase): string => `${totalWords(purchase.total)} at ${purchase.shop.name}`;
-
-/** The second question a Pay asks, before anything is approved. */
-export const payQuestion = (purchase: Purchase): string =>
-  `Pay ${totalWords(purchase.total)} at ${purchase.shop.name} with ${cardLabel(purchase.card)}?`;
+/** Payments' help, word for word on the desktop's settings and the phone's (D312: a purchase fills without asking). */
+export const PAYMENTS_HELP =
+  "The card it pays with at a checkout, from your 1Password. fleetd fills it in at the checkout, and the project never sees it. Each purchase is listed below, with the shop and the total.";
 
 /** The picker's value for "no card". */
 export const NO_CARD = "none";
@@ -48,17 +36,16 @@ export const cardOptions = (cards: readonly OnePasswordCard[], picked: string | 
   return [...options, { value: NO_CARD, label: "No card" }];
 };
 
-/** What became of a purchase, in a few words. */
+/** What became of a purchase, in a few words; one from before D312 may have been turned down. */
 export const purchaseState = (entry: PurchaseLogEntry): string => {
   switch (entry.state) {
     case "open":
-      return "Waiting for you";
     case "approved":
-      return "Approved";
+      return "Not filled yet";
     case "ran":
-      return "Approved, card filled";
+      return "Card filled";
     case "failed":
-      return "Approved, never filled";
+      return "Never filled";
     case "denied":
       return "Not bought";
     default:

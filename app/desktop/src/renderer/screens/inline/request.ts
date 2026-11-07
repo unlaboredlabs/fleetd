@@ -4,8 +4,6 @@ import type { ChatItem, CommandApprovalItem, GatedClass, GatedRunSpec, HumanRequ
 import { shellWord } from "../../../shared/hidden";
 import type { HubError } from "../../../shared/hub";
 import { shortElapsed } from "../chat/format";
-import { purchaseTitle } from "../projects/payments";
-import { purchaseOutcome } from "./purchase";
 import { answeredWords, previewNeedsConfirm, previewOutcome } from "./toolPreview";
 
 /**
@@ -115,8 +113,6 @@ const took = (item: CommandApprovalItem): string | undefined => {
 
 /** The one line an answered approval folds to, or undefined while it waits for Approve / Deny. */
 export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined => {
-  if (item.purchase !== undefined) return purchaseOutcome(item);
-  if (item.secureInput !== undefined) return secureInputOutcome(item);
   if (item.permission?.preview !== undefined) return previewOutcome(item.permission.preview, item);
   const time = took(item);
   switch (item.state) {
@@ -140,24 +136,6 @@ export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined 
   }
 };
 
-/** A secure input from 1Password: approved, the project's node fills the field once. */
-const secureInputOutcome = (item: CommandApprovalItem): Outcome | undefined => {
-  switch (item.state) {
-    case "open":
-      return undefined;
-    case "approved":
-      return { tone: "success", text: "Approved, not filled yet" };
-    case "ran":
-      return { tone: "success", text: "Approved and filled" };
-    case "failed":
-      return { tone: "danger", text: "Approved, never filled" };
-    case "denied":
-      return { tone: "quiet", text: "Not filled" };
-    default:
-      return NEWER;
-  }
-};
-
 /** The one line an answered secret folds to, or undefined while it waits. */
 export const secretOutcome = (item: SecretRequestItem): Outcome | undefined => {
   // The fingerprint stays in the data: a raw hash is never UI text.
@@ -167,10 +145,9 @@ export const secretOutcome = (item: SecretRequestItem): Outcome | undefined => {
   return NEWER;
 };
 
-/** A command that can't be undone, a delete or a spend, and every purchase, ask once more before they run. */
+/** A command that can't be undone, a delete or a spend ask once more before they run. */
 export const needsConfirm = (item: CommandApprovalItem): boolean =>
   item.gated?.class === "irreversible" ||
-  item.purchase !== undefined ||
   (item.permission?.preview !== undefined && previewNeedsConfirm(item.permission.preview));
 
 /** The lead's line without its code marks, for a folded row's plain text. */
@@ -179,16 +156,12 @@ const plain = (text: string): string => text.replace(/`/gu, "");
 /** What an answered approval was about, as one plain line for its folded row. */
 export const approvalTitle = (item: CommandApprovalItem): string =>
   plain(
-    item.purchase !== undefined
-        ? purchaseTitle(item.purchase)
-        : item.secureInput !== undefined
-          ? `${item.secureInput.label} for ${item.secureInput.site.name}, from 1Password`
-        : (item.gated?.reason ??
-          (item.permission === undefined
-            ? "An agent's request"
-            : item.permission.preview !== undefined
-              ? `· ${answeredWords(item)}`
-              : `An agent wanted to use ${item.permission.toolName}`)),
+    item.gated?.reason ??
+      (item.permission === undefined
+        ? "An agent's request"
+        : item.permission.preview !== undefined
+          ? `· ${answeredWords(item)}`
+          : `An agent wanted to use ${item.permission.toolName}`),
   );
 
 /** What an answered secret was for, in the lead's words: its key is a slug, never row text. */

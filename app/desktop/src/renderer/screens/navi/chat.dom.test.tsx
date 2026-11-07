@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// A project with no repo: its empty chat offers everyday first asks and the box names it; one with a repo asks what the
-// lead should do in it. Every project's panel has the same sections, Asked work under Plan and Skills of its own.
+// Your own project with no repo: its empty chat offers everyday first asks and the box names it; one with a repo asks
+// what the lead should do in it. Every project's panel has the same sections, Asked work under Plan and Skills of its own.
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -85,7 +85,7 @@ const mount = async (ui: ReactNode, features?: string[], open: string = "devbox/
   for (let i = 0; i < 6; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
 };
 
-it("asks what a project with no repo can do for you, with everyday starters, and the box names it", async () => {
+it("asks what your own project with no repo can do for you, with everyday starters, and the box names it", async () => {
   await mount(<ChatScreen project={ADA} />);
   expect(host.querySelector("h2")?.textContent).toBe("What can Ada do for you?");
   const starters = [...host.querySelectorAll("[data-entry=empty] button")].map((b) => b.textContent);

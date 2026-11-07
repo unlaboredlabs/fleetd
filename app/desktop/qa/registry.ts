@@ -157,15 +157,13 @@ export const fixtures = [
   "inline-reopened",
   // A project's integration cards (fixtures/inline/integrations.json).
   "inline-integrations",
-  // A project's purchases: a hotel waiting for Pay, a train ticket approved and filled (fixtures/inline/purchases.json).
-  "inline-purchases",
   // A project's approval checker at work (fixtures/inline/checker.json), and its approvals in its settings
   // (fixtures/integrations).
   "inline-checker",
   "integrations-approvals",
   // A project's servers that sign in with OAuth (fixtures/integrations).
   "integrations-signin",
-  // A project's secure inputs: a passport number to type, a license number from 1Password (fixtures/inline/secure.json).
+  // A project's secure input: a passport number to type (fixtures/inline/secure.json).
   "inline-secure",
   // Approvals whose fields hide or reorder text (fixtures/inline/hidden.json).
   "inline-hidden",
@@ -1206,7 +1204,7 @@ export const screens: readonly Screen[] = [
   // not run, denied, running).
   // ...and a project's integration cards: a send, a delete, an answered send; and approvals whose hidden characters show
   // as marks.
-  { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-purchases", "inline-checker", "inline-secure", "inline-hidden"], variant: "inline" },
+  { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-checker", "inline-secure", "inline-hidden"], variant: "inline" },
   // The same chat offline from the disk cache: an open item says it can't be answered now, and a secret never claims
   // the hub doesn't know its machine.
   {
