@@ -1,6 +1,7 @@
-// The hub calls behind a Navi's Skills screens, each as the desktop makes it: the list (skills_list), a skill and its
+// The hub calls behind a project's Skills screens, each as the desktop makes it: the list (skills_list), a skill and its
 // versions (skill_get, an older version's text by `version`; its view adds its skills_list row), the person's edit
-// (skill_set), a restore (skill_revert), Turn Off (skill_off) and Delete (skill_delete). Every write fires skills.changed, which the screens read again on.
+// (skill_set), a restore (skill_revert), Turn Off (skill_off) and Delete (skill_delete). Every write fires
+// skills.changed, which the screens read again on.
 import type { HubError, HubEvent, ProjectRef, SkillOrigin } from "../../desktop";
 import type { Hub, Result } from "./api";
 import type { Skill, SkillRead } from "./skillsModel";
@@ -25,7 +26,7 @@ export const readSkill = async (hub: Hub, p: ProjectRef, origin: SkillOrigin, na
 };
 
 /**
- * A skill's view: skill_get's text and versions, with what only skills_list knows for the Navi: whether it is off there,
+ * A skill's view: skill_get's text and versions, with what only skills_list knows for the project: whether it is off there,
  * when it was last used, and whether another of its name wins.
  */
 export const readSkillView = async (hub: Hub, p: ProjectRef, origin: SkillOrigin, name: string): Promise<Result<SkillRead>> => {
@@ -38,7 +39,7 @@ export const readSkillView = async (hub: Hub, p: ProjectRef, origin: SkillOrigin
   return { ok: true, value: { ...got.value, skill: { ...skill, ...known } } };
 };
 
-/** The person's edit of one of the Navi's own skills, a new version with their line on why when they gave one. */
+/** The person's edit of one of the project's own skills, a new version with their line on why when they gave one. */
 export const saveSkill = async (hub: Hub, p: ProjectRef, name: string, text: string, why: string): Promise<Result<Skill>> => {
   const line = why.trim();
   const r = await untyped(hub)("skill_set", { scope: "project", projectRef: ref(p), name, text, ...(line === "" ? {} : { why: line }) });
@@ -51,7 +52,7 @@ export const restoreSkill = async (hub: Hub, p: ProjectRef, name: string, versio
   return r.ok ? { ok: true, value: (r.output as { skill: Skill }).skill } : r;
 };
 
-/** Off: the Navi's sessions don't get it from their next start; it stays, with its history. */
+/** Off: the project's sessions don't get it from their next start; it stays, with its history. */
 export const turnSkillOff = async (hub: Hub, p: ProjectRef, name: string, off: boolean): Promise<Result<null>> => {
   const r = await untyped(hub)("skill_off", { projectRef: ref(p), name, off });
   return r.ok ? { ok: true, value: null } : r;
@@ -62,7 +63,7 @@ export const deleteSkill = async (hub: Hub, p: ProjectRef, name: string): Promis
   return r.ok ? { ok: true, value: null } : r;
 };
 
-/** A skills.changed that may change what the Navi's screens show: its own scope's, or a hub-wide one's. */
+/** A skills.changed that may change what the project's screens show: its own scope's, or a hub-wide one's. */
 export const touchesSkills = (event: HubEvent, p: ProjectRef): boolean => {
   if (event.type !== "skills.changed") return false;
   const data = event.data as { scope?: string; projectRef?: ProjectRef } | undefined;

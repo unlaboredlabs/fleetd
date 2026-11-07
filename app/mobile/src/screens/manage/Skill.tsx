@@ -1,11 +1,10 @@
-// A skill's view, pushed from a Navi's Skills: its name, what it does and where it is from over its SKILL.md, read as
-// formatted text; then its History, whether the Navi uses it, and Delete, asking first. Edit in the bar opens the
+// A skill's view, pushed from a project's Skills: its name, what it does and where it is from over its SKILL.md, read as
+// formatted text; then its History, whether the project uses it, and Delete, asking first. Edit in the bar opens the
 // editor (SkillEdit.tsx). What the person may do follows what it is (skillsModel offers): a hub-wide or installed
-// skill is only turned off here, and one in the Navi's folder is only read.
+// skill is only turned off here, and one in the project's folder is only read.
 import { StackActions } from "@react-navigation/native";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
-import { isYours } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { shape, space, type, useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
@@ -13,6 +12,7 @@ import { ListRow, ListSection } from "../../ui/List";
 import { Markdown } from "../../ui/Markdown";
 import { EmptyState } from "../../ui/States";
 import { useNow } from "../time";
+import { manages } from "./model";
 import { confirmDestructive, errorWords, Problem, useRead } from "./parts";
 import { SkillTile, useSkillsChanged } from "./Skills";
 import { deleteSkill, readSkillView, turnSkillOff } from "./skillsApi";
@@ -33,7 +33,7 @@ export function Skill({ navigation, route }: ChatInfoProps<"Skill">) {
   // A fresh read says where the switch stands.
   useEffect(() => setOffNow(null), [r]);
   const v = r?.ok === true ? r.value : undefined;
-  const can = v === undefined || p === undefined ? undefined : offers(v.skill, isYours(p, state.me));
+  const can = v === undefined || p === undefined ? undefined : offers(v.skill, manages(p, state.me));
   const live = state.hub.phase === "live";
 
   useLayoutEffect(() => {

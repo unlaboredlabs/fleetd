@@ -1,14 +1,14 @@
-// New Screen, a sheet from a project's or Navi's Info: a screen of the person's own, as the desktop's picker opens one
+// New Screen, a sheet from a project's Info: a screen of the person's own, as the desktop's picker opens one
 // (screen_open). A browser unless they pick another kind; a kind no machine can host says why in its row, and picked,
 // says why in full with its fix: an admin's Turn On where it is only switched off on a machine (machine_screens_set),
 // a member's who to ask. Other fixes are on the desktop (Settings › Hub › Machines). The machine, when
-// more than one can (a Navi's browser is only its own machine's, on the profile that keeps its sign-ins), each with its
+// more than one can (its browser is only its own machine's, on the profile that keeps its sign-ins), each with its
 // slots in words. Open puts them in its live view, in control, with End Screen; a full machine offers Wait for a Slot,
 // which this sheet follows until the screen opens (or Cancel gives it up). A PR's build is the desktop's.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Keyboard, ScrollView, StyleSheet, Text, View } from "react-native";
-import { adminNames, askLine, hostsFor, idleFor, idleWords, isNavi, openWord, pickHost, SCREEN_KINDS, slotLine, whyOff, type HubError, type OffReason, type ScreenKind } from "../../desktop";
+import { adminNames, askLine, hostsFor, idleFor, idleWords, openWord, pickHost, SCREEN_KINDS, slotLine, whyOff, type HubError, type OffReason, type ScreenKind } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { waitLine, waitOutcome, type Wait } from "../../screen";
 import { refOf } from "../../store";
@@ -24,10 +24,10 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
   const { session, state } = useHub();
   const key = route.params.key;
   const project = state.projects?.[key];
-  const navi = project !== undefined && isNavi(project);
   const roles = useRead(() => session.call("machine_roles", {}), [session]);
   const machines = roles.value?.ok === true ? roles.value.output.machines : [];
-  const home = navi ? refOf(key).machineId : undefined;
+  // Its own browser opens on its machine, on the profile that keeps its sign-ins.
+  const home = refOf(key).machineId;
   const [kind, setKind] = useState<ScreenKind>("browser");
   const shownKind = kind;
   const off = whyOff(machines, shownKind, home);
@@ -129,7 +129,7 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
         <>
           <ListSection
             header="Kind"
-            footer={shownKind === "browser" && navi ? `It opens on ${project?.title ?? "the Navi"}'s own browser profile: a site you sign in to stays signed in for it. Close yours before it needs its own.` : `Yours from the start. It's recorded like an agent's, and ends ${idleWords(idleFor(machines, host?.machineId, shownKind))}.`}
+            footer={shownKind === "browser" ? `It opens on ${project?.title ?? "the project"}'s own browser profile: a site you sign in to stays signed in for it. Close yours before it needs its own.` : `Yours from the start. It's recorded like an agent's, and ends ${idleWords(idleFor(machines, host?.machineId, shownKind))}.`}
           >
             {SCREEN_KINDS.map((k) => {
               const kindOff = whyOff(machines, k.kind, home);

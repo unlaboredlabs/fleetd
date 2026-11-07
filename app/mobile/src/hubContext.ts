@@ -45,17 +45,16 @@ export type RootParams = {
    * chat's own, with no message or approval, at its newest).
    */
   Chat: { key: Key; messageId?: string; requestId?: string; tap?: number };
-  /** A Navi's or agent's live screen, full screen over its chat (screens/Screen.tsx). */
+  /** A project's or agent's live screen, full screen over its chat (screens/Screen.tsx). */
   Screen: { key: Key; sessionId: string };
 } & ManageParams;
-/** A project's and a Navi's own screens (screens/manage): made from the Chats list's +, opened from a chat's header. */
+/** A project's own screens (screens/manage): made from the Chats list's +, opened from a chat's header. */
 export type ManageParams = {
   /** `back`: once made, back to where it was opened (Import Memory) rather than to its chat. */
-  NewNavi: { back?: boolean } | undefined;
-  NewProject: undefined;
-  /** A screen of the person's own for a project or Navi: its kind and machine, then its live view (NewScreen.tsx). */
+  NewProject: { back?: boolean } | undefined;
+  /** A screen of the person's own for a project: its kind and machine, then its live view (NewScreen.tsx). */
   NewScreen: { key: Key };
-  /** A project's or Navi's screen and what it opens, a stack of their own over its chat (manage/index.tsx ChatInfo). */
+  /** A project's screen and what it opens, a stack of their own over its chat (manage/index.tsx ChatInfo). */
   ChatInfo: NavigatorScreenParams<ChatInfoParams>;
   /** Its icon: a built-in face and color, or a photo (IconPicker.tsx). */
   Icon: { key: Key };
@@ -66,7 +65,15 @@ export type ChatInfoParams = {
   Info: { key: Key };
   Rename: { key: Key };
   Profiles: { key: Key };
-  /** A Navi's skills (Skills.tsx), a skill's view, its editor, its history and one version's change. */
+  /** How its risky actions are approved, and what ran without asking (Approvals.tsx). */
+  Approvals: { key: Key };
+  /** The card it pays with and what it bought (Payments.tsx). */
+  Payments: { key: Key };
+  /** Its Telegram bot: how it stands, Pause, Unpair and Remove (Telegram.tsx). */
+  Telegram: { key: Key };
+  /** The other hubs it reaches (LinkedHubs.tsx). */
+  LinkedHubs: { key: Key };
+  /** Its skills (Skills.tsx), a skill's view, its editor, its history and one version's change. */
   Skills: { key: Key };
   Skill: { key: Key; origin: SkillOrigin; name: string };
   SkillEdit: { key: Key; name: string };
@@ -80,7 +87,7 @@ export type SettingsParams = {
   Settings: undefined;
   ImportMemory: undefined;
 };
-/** A Settings screen's props: its own stack's, and the root stack's above it (New Navi). */
+/** A Settings screen's props: its own stack's, and the root stack's above it (New Project). */
 export type SettingsProps<T extends keyof SettingsParams> = CompositeScreenProps<NativeStackScreenProps<SettingsParams, T>, NativeStackScreenProps<RootParams>>;
 export type PairParams = {
   Welcome: undefined;

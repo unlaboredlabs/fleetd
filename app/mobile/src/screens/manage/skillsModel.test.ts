@@ -18,7 +18,7 @@ describe("the Skills list", () => {
     expect(skillsShown({ phase: "connecting", hub: "http://devbox:4790", attempt: 1 })).toBe(false);
   });
 
-  it("puts the Navi's own first, then the installed ones, then its folder's, leaving out empty sections", () => {
+  it("puts the project's own first, then the installed ones, then its folder's, leaving out empty sections", () => {
     const skills = [skill("pdf", { origin: "global" }), skill("invoices"), skill("deploy", { install }), skill("lint", { origin: "repo_agents" })];
     expect(skillGroups(skills, "Nova").map((g) => [g.header, g.rows.map((s) => s.name)])).toEqual([
       ["Made by Nova", ["invoices"]],
@@ -62,7 +62,7 @@ describe("the Skills list", () => {
 });
 
 describe("a skill's view", () => {
-  it("offers edit and delete for the Navi's own alone, and turning off to its owner", () => {
+  it("offers edit and delete for the project's own alone, and turning off to whoever manages it", () => {
     expect(offers(skill("a"), true)).toEqual({ edit: true, delete: true, history: true, turnOff: true });
     expect(offers(skill("a", { install }), true)).toEqual({ edit: false, delete: false, history: true, turnOff: true });
     expect(offers(skill("a", { origin: "global" }), true)).toEqual({ edit: false, delete: false, history: true, turnOff: true });

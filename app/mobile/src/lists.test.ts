@@ -35,31 +35,34 @@ describe("lists", () => {
     expect(lists({ projects: undefined, chatStates: {}, requests: undefined })).toBeUndefined();
   });
 
-  it("leaves archived Navis out and sorts each group by title when none spoke later", () => {
+  it("lists every chat as one, sorted by title when none spoke later, and keeps archived ones apart", () => {
     const projects = {
-      "m1/b": project("b", "Bea", { kind: "assistant" }),
-      "m1/a": project("a", "Ada", { kind: "assistant" }),
-      "m1/old": project("old", "Old", { kind: "assistant", archivedAt: AT }),
+      "m1/b": project("b", "Bea", { onlyMe: true }),
+      "m1/a": project("a", "Ada", { onlyMe: true }),
+      "m1/old": project("old", "Old", { archivedAt: AT }),
       "m1/shop": project("shop", "storefront"),
     };
     const out = lists({ projects, chatStates: {}, requests: [] });
-    expect(out?.navis.map((r) => r.project.title)).toEqual(["Ada", "Bea"]);
-    expect(out?.projects.map((r) => r.project.title)).toEqual(["storefront"]);
+    expect(out?.chats.map((r) => r.project.title)).toEqual(["Ada", "Bea", "storefront"]);
+    expect(out?.archived.map((r) => r.project.title)).toEqual(["Old"]);
+    expect(chatList({ projects, chatStates: {}, requests: [] }, noPrefs, "archived")?.map((r) => r.key)).toEqual(["m1/old"]);
+    expect(chatList({ projects, chatStates: {}, requests: [] }, noPrefs)?.map((r) => r.key)).not.toContain("m1/old");
   });
 
-  it("shows an archived Navi while an approval of its waits, as the badges count it", () => {
-    const projects = { "m1/a": project("a", "Ada", { kind: "assistant" }), "m1/old": project("old", "Old", { kind: "assistant", archivedAt: AT }) };
+  it("shows an archived project while an approval of its waits, as the badges count it", () => {
+    const projects = { "m1/a": project("a", "Ada", { onlyMe: true }), "m1/old": project("old", "Old", { archivedAt: AT }) };
     const waiting = { ...gated("r1"), projectRef: { machineId: "m1", projectId: "old" } };
     const out = lists({ projects, chatStates: {}, requests: [waiting] });
     expect(out?.needsYou.map((r) => [r.project.title, r.approvals])).toEqual([["Old", 1]]);
     expect(chatList({ projects, chatStates: {}, requests: [waiting] }, noPrefs, "needsYou")?.map((r) => r.key)).toEqual(["m1/old"]);
     // Answered, or only a secret: gone again.
     expect(lists({ projects, chatStates: {}, requests: [{ ...waiting, state: "approved" }] })?.needsYou).toEqual([]);
+    expect(lists({ projects, chatStates: {}, requests: [{ ...waiting, state: "approved" }] })?.archived.map((r) => r.key)).toEqual(["m1/old"]);
     expect(lists({ projects, chatStates: {}, requests: [{ ...waiting, kind: "secret" }] })?.needsYou).toEqual([]);
   });
 
   it("gives each row its badge, its newest message and its time", () => {
-    const projects = { "m1/shop": project("shop", "storefront"), "m1/a": project("a", "Ada", { kind: "assistant" }) };
+    const projects = { "m1/shop": project("shop", "storefront"), "m1/a": project("a", "Ada", { onlyMe: true }) };
     const chatStates = { "m1/a": { projectRef: { machineId: "m1", projectId: "a" }, lastSeq: 2, leadWorking: true, needsYou: false, lastMessageAt: "2026-10-28T12:00:00Z" } };
     const chat = {
       messages: [
@@ -76,7 +79,7 @@ describe("lists", () => {
     };
     const out = lists({ projects, chatStates, requests: [asked("r1"), asked("r2")], chats: { "m1/a": chat } });
     expect(out?.needsYou.map((r) => [r.project.title, r.approvals, r.preview])).toEqual([["storefront", 2, undefined]]);
-    expect(out?.navis.map((r) => [r.preview, r.working, r.at])).toEqual([["Booked the table.", true, "2026-10-28T12:00:00Z"]]);
+    expect(out?.chats.map((r) => [r.preview, r.working, r.at])).toEqual([["Booked the table.", true, "2026-10-28T12:00:00Z"]]);
   });
 });
 
@@ -84,7 +87,7 @@ describe("a long chat's preview", () => {
   const ref = { machineId: "m1", projectId: "a" };
   const m = (seq: number, author: string, text: string) => ({ messageId: `a-${String(seq)}`, projectRef: ref, seq, author, text, state: "final", createdAt: AT });
   const chatOf = (messages: ReturnType<typeof m>[], streams: Record<string, { text: string; at: string }> = {}) => ({ messages, streams, leadWaiting: {}, hasOlder: false, loadingOlder: false, held: [], loaded: true, missing: [] });
-  const preview = (chat: ReturnType<typeof chatOf>) => lists({ projects: { "m1/a": project("a", "Ada", { kind: "assistant" }) }, chatStates: {}, requests: [], chats: { "m1/a": chat } })?.navis[0]?.preview;
+  const preview = (chat: ReturnType<typeof chatOf>) => lists({ projects: { "m1/a": project("a", "Ada", { onlyMe: true }) }, chatStates: {}, requests: [], chats: { "m1/a": chat } })?.chats[0]?.preview;
 
   it("is its newest line, the same each time it's drawn, and looks past a run of system lines", () => {
     const many = Array.from({ length: 300 }, (_, i) => m(i + 1, "lead", `Line **${String(i + 1)}**`));
@@ -115,11 +118,11 @@ describe("lists' order and previews", () => {
 
   it("puts who spoke last first, as Messages does", () => {
     const projects = {
-      "m1/a": project("a", "Ada", { kind: "assistant", lastActivityAt: "2026-10-28T09:00:00Z" }),
-      "m1/b": project("b", "Bea", { kind: "assistant", lastActivityAt: "2026-10-28T08:00:00Z" }),
+      "m1/a": project("a", "Ada", { lastActivityAt: "2026-10-28T09:00:00Z" }),
+      "m1/b": project("b", "Bea", { onlyMe: true, lastActivityAt: "2026-10-28T08:00:00Z" }),
     };
     const chatStates = { "m1/b": { projectRef: { machineId: "m1", projectId: "b" }, lastSeq: 4, leadWorking: false, needsYou: false, lastMessageAt: "2026-10-28T11:00:00Z" } };
-    expect(lists({ projects, chatStates, requests: [] })?.navis.map((r) => r.project.title)).toEqual(["Bea", "Ada"]);
+    expect(lists({ projects, chatStates, requests: [] })?.chats.map((r) => r.project.title)).toEqual(["Bea", "Ada"]);
   });
 
   it("keeps a working chat's newest message as its line, saying Working… only while it has none", () => {
@@ -130,9 +133,9 @@ describe("lists' order and previews", () => {
   });
 
   it("previews a chat not opened yet from its newest messages", () => {
-    const projects = { "m1/a": project("a", "Ada", { kind: "assistant" }) };
+    const projects = { "m1/a": project("a", "Ada") };
     const latest = { "m1/a": [message("a", 7, "human", "Lunch on Tuesday?"), message("a", 8, "lead", "Booked it for **12:30**.")] };
-    expect(lists({ projects, chatStates: {}, requests: [], latest })?.navis.map((r) => r.preview)).toEqual(["Booked it for 12:30."]);
+    expect(lists({ projects, chatStates: {}, requests: [], latest })?.chats.map((r) => r.preview)).toEqual(["Booked it for 12:30."]);
   });
 });
 
@@ -195,32 +198,6 @@ describe("approvals", () => {
     const deletes: HumanRequest = { ...r, permission: { requestId: "p2", threadId: "t1", toolName: "mcp__crm__delete_contact", summary: "", preview } };
     expect(approvalView(deletes, "Ada").risk).toBe("irreversible");
   });
-
-  it("shows a Navi's purchase whole: the shop, what it buys, the total and the card", () => {
-    const r: HumanRequest = {
-      ...asked("r1"),
-      text: "Pay 264.40 EUR at Hotel Devbox (hotel-devbox.example) with Visa (Personal)",
-      purchase: {
-        shop: { domain: "hotel-devbox.example", name: "Hotel Devbox" },
-        total: { amount: "264.40", currency: "EUR" },
-        items: [
-          { name: "Double room, 2 nights", quantity: 1, amount: "258.00" },
-          { name: "City tax", quantity: 2, amount: "3.20" },
-        ],
-        card: { ref: "op://Personal/Visa" },
-        sessionId: "B00000000000000000000000000000022",
-      },
-    };
-    const view = approvalView(r, "Ada");
-    expect(view.title).toBe("Ada wants to pay 264.40 EUR at Hotel Devbox");
-    expect(view.risk).toBe("money");
-    expect(view.fields.filter((f) => f.label !== "Asked").map((f) => [f.label, f.value, f.more === true])).toEqual([
-      ["Shop", "hotel-devbox.example", false],
-      ["Buying", "Double room, 2 nights · 258.00 EUR\n2 × City tax · 3.20 EUR", false],
-      ["Total", "264.40 EUR", false],
-      ["Card", "Visa (Personal)", false],
-    ]);
-  });
 });
 
 describe("an answered approval's line", () => {
@@ -249,8 +226,8 @@ describe("an answered approval's line", () => {
 
 describe("chatList", () => {
   const projects = {
-    "m1/a": project("a", "Ada", { kind: "assistant", lastActivityAt: "2026-10-28T09:00:00Z" }),
-    "m1/b": project("b", "Bea", { kind: "assistant", lastActivityAt: "2026-10-28T11:00:00Z" }),
+    "m1/a": project("a", "Ada", { onlyMe: true, lastActivityAt: "2026-10-28T09:00:00Z" }),
+    "m1/b": project("b", "Bea", { lastActivityAt: "2026-10-28T11:00:00Z" }),
     "m1/shop": project("shop", "Shop", { lastActivityAt: "2026-10-28T10:00:00Z" }),
   };
   const chatStates = {
@@ -271,8 +248,7 @@ describe("chatList", () => {
     const a = rows?.find((r) => r.key === "m1/a");
     expect([a?.unread, a?.muted, a?.lastSeq]).toEqual([2, true, 5]);
     expect(chatList(s, prefs, "unread")?.map((r) => r.key)).toEqual(["m1/shop", "m1/a"]);
-    expect(chatList(s, prefs, "navis")?.map((r) => r.key)).toEqual(["m1/b", "m1/a"]);
-    expect(chatList(s, prefs, "projects")?.map((r) => r.key)).toEqual(["m1/shop"]);
+    expect(chatList(s, prefs, "archived")).toEqual([]);
     expect(chatList(s, prefs, "pinned")).toEqual([]);
     expect(chatList(s, prefs, "pinned", ["m1/a", "m1/shop"])?.map((r) => r.key)).toEqual(["m1/a", "m1/shop"]);
   });

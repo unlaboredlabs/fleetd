@@ -1,16 +1,16 @@
-// A project's or a Navi's own screen, opened from its chat's header, as a contact's in Telegram: its avatar and name
-// (tapping the avatar, or Edit under it, opens its icon's sheet: a built-in face and color, or a photo: IconPicker.tsx),
-// then what runs there now (agents_list), its open orders (orders_board), its checklist and its recent merges with
-// their PRs, read-only; a Navi's Skills (Skills.tsx); then its name, the profiles its agents may run on and where it
-// lives, and for a Navi Forget Sign-ins; New Screen, a screen of your own for it, where the hub opens them. Delete
-// last, red, asking first: in an action sheet, or, for a Navi (erased, with a tickbox for its folder, as the desktop's
-// dialog) or when uncommitted changes would be lost, in a sheet that wants its name typed (TypedDelete). What the
-// person's role doesn't allow isn't offered.
+// A project's own screen, opened from its chat's header, as a contact's in Telegram: its avatar and name (tapping the
+// avatar, or Edit under it, opens its icon's sheet: a built-in face and color, or a photo: IconPicker.tsx), then what
+// runs there now (Agents: agents_list), its open orders (orders_board), its To-do (its checklist) and its recent
+// merges with their PRs, read-only; then its name, the profiles its agents may run on and where it lives, and Only
+// me. Then the desktop's sections, each pushed: Approvals, Payments, Telegram, Linked hubs and Skills; Forget Sign-ins;
+// New Screen, a screen of your own for it, where the hub opens them; Archive. Delete last, red, in a sheet that erases
+// everything fleetd keeps for it, with a tickbox for its folder, once its name is typed (TypedDelete). What the person
+// may not do isn't offered.
 import { StackActions, useFocusEffect } from "@react-navigation/native";
 import { useCallback, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { listTime } from "../../chatView";
-import { isNavi, tilde, type ProjectSummary, type TodoItem } from "../../desktop";
+import { isArchived, isOnlyMe, tilde, type ProjectSummary, type TodoItem } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { NEW_SCREEN } from "../../screen";
 import { space, type, useTheme, type Palette } from "../../theme";
@@ -20,8 +20,8 @@ import { Icon } from "../../ui/Icon";
 import { ListRow, ListSection } from "../../ui/List";
 import { EmptyState } from "../../ui/States";
 import { useNow } from "../time";
-import { deleteProject, forgetSignins, readForDelete, readInfo } from "./api";
-import { agentLines, allowed, checklist, deleteBlocked, deleteWords, machineName, merges, orderLines, profilesValue, subtitle, type DeleteWords, type Tone } from "./model";
+import { deleteProject, forgetSignins, readForDelete, readInfo, setArchived, setOnlyMe } from "./api";
+import { agentLines, checklist, deleteBlocked, deleteWords, machineName, manages, merges, orderLines, profilesValue, subtitle, type DeleteWords, type Tone } from "./model";
 import { confirmDestructive, errorWords, Problem, useRead } from "./parts";
 import { skillsShown } from "./skillsModel";
 import { TypedDelete } from "./TypedDelete";
@@ -47,10 +47,11 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
   const t = useTheme();
   const now = useNow();
   const { state, session } = useHub();
-  const navi = isNavi(p);
   const machine = machineName(state.machines, p.machineId);
-  const can = allowed(p, state.me);
-  const info = useRead(() => readInfo(session, p, Date.now()), [session, p.machineId, p.projectId]);
+  const can = manages(p, state.me);
+  const archived = isArchived(p);
+  const skills = skillsShown(state.hub);
+  const info = useRead(() => readInfo(session, p, Date.now(), skills), [session, p.machineId, p.projectId, skills]);
   // Back from Agent Profiles or Rename: read again (the first focus is the mount's read).
   const { reload } = info;
   const shown = useRef(false);
@@ -60,7 +61,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
       shown.current = true;
     }, [reload]),
   );
-  const [busy, setBusy] = useState<"delete" | "forget" | null>(null);
+  const [busy, setBusy] = useState<"delete" | "forget" | "onlyMe" | "archive" | null>(null);
   const [forgot, setForgot] = useState(false);
   const [typing, setTyping] = useState<DeleteWords | null>(null);
   const key = `${p.machineId}/${p.projectId}`;
@@ -78,11 +79,8 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
     if (!read.ok) return Alert.alert(`Couldn't check ${p.title}`, errorWords(read.error));
     const blocked = deleteBlocked(read.value);
     if (blocked !== undefined) return Alert.alert(`Can't delete ${p.title} now`, blocked);
-    const words = deleteWords(p, read.value, machine);
-    // A Navi, erased, or uncommitted changes that would be lost: the sheet with its name typed, as on the desktop (a
-    // Navi's with the tickbox for its folder). Else the action sheet.
-    if (words.unsaved.length > 0 || words.folder !== undefined) return setTyping(words);
-    confirmDestructive({ ...words, onConfirm: () => doDelete(false) });
+    // Erased, with the tickbox for its folder: the sheet with its name typed, as on the desktop.
+    setTyping(deleteWords(p, read.value, machine));
   };
 
   // Back to Chats first, then the delete: its row then goes from a list on screen, never in the same commit as these
@@ -112,11 +110,31 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
       },
     });
 
+  const onlyMe = (on: boolean) => {
+    haptics.select();
+    setBusy("onlyMe");
+    void setOnlyMe(session, p, on).then((r) => {
+      setBusy(null);
+      if (!r.ok) Alert.alert(on ? "Couldn't make it yours alone" : "Couldn't share it", errorWords(r.error));
+    });
+  };
+
+  // Archived, it goes from the chats to Archived: back there first, as for a delete. Brought back, it stays here.
+  const archive = () => {
+    setBusy("archive");
+    if (!archived) navigation.getParent()?.dispatch(StackActions.popToTop());
+    void setArchived(session, p, !archived).then((r) => {
+      setBusy(null);
+      if (!r.ok) return Alert.alert(archived ? `Couldn't bring back ${p.title}` : `Couldn't archive ${p.title}`, errorWords(r.error));
+      haptics.success();
+    });
+  };
+
   const editIcon = () => {
     haptics.tap();
     navigation.navigate("Icon", { key });
   };
-  const editable = can.rename && live && busy === null;
+  const editable = can && live && busy === null;
 
   const spinner = <ActivityIndicator color={t.secondary} />;
   const profiles = v?.profiles;
@@ -135,9 +153,9 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
           accessibilityLabel={editable ? "Edit icon" : p.title}
           style={({ pressed }) => pressed && styles.pressed}
         >
-          <Avatar name={p.title} navi={navi} size={96} picture={p} />
+          <Avatar name={p.title} size={96} picture={p} />
         </Pressable>
-        {can.rename ? (
+        {can ? (
           <Pressable disabled={!editable} onPress={editIcon} hitSlop={8} accessible={false} importantForAccessibility="no" style={({ pressed }) => pressed && styles.pressed}>
             <Text style={[type.subhead, { color: editable ? t.accent : t.tertiary }]}>Edit</Text>
           </Pressable>
@@ -148,7 +166,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
         <Text style={[type.subhead, styles.center, { color: t.secondary }]}>{subtitle(p, machine)}</Text>
       </View>
 
-      <ListSection header="Running">
+      <ListSection header="Agents">
         {v === undefined ? (
           <ListRow title="Reading…" accessory={spinner} />
         ) : agents.length === 0 ? (
@@ -167,7 +185,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
       )}
 
       {list.items.length === 0 ? null : (
-        <ListSection header="Checklist" {...(list.summary === undefined ? {} : { footer: list.more > 0 ? `${list.summary} · ${String(list.more)} more in the desktop app` : list.summary })}>
+        <ListSection header="To-do" {...(list.summary === undefined ? {} : { footer: list.more > 0 ? `${list.summary} · ${String(list.more)} more in the desktop app` : list.summary })}>
           {list.items.map((item) => (
             <ChecklistRow key={item.id} item={item} />
           ))}
@@ -189,41 +207,63 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
         </ListSection>
       )}
 
-      {navi && skillsShown(state.hub) ? (
-        <ListSection footer={`What ${p.title} worked out and saved, and what it was given. Read, change or turn off any of them.`}>
-          <ListRow title="Skills" {...(v?.skills === undefined ? {} : { value: String(v.skills.length) })} onPress={() => navigation.navigate("Skills", { key })} />
-        </ListSection>
-      ) : null}
-
       <Problem text={v?.error === undefined ? undefined : `Not everything was read: ${errorWords(v.error)}`} />
 
-      <ListSection footer={navi ? "Its folder keeps the name it was made with." : "Its folder keeps its own name."}>
-        <ListRow title="Name" value={p.title} {...(can.rename && live ? { onPress: () => navigation.navigate("Rename", { key }) } : {})} />
-        {can.profiles && profiles !== undefined && profiles.profiles.length > 1 ? (
+      <ListSection footer="Its folder keeps its own name.">
+        <ListRow title="Name" value={p.title} {...(can && live ? { onPress: () => navigation.navigate("Rename", { key }) } : {})} />
+        {can && profiles !== undefined && profiles.profiles.length > 1 ? (
           <ListRow title="Agent profiles" value={profilesValue(profiles)} {...(live ? { onPress: () => navigation.navigate("Profiles", { key }) } : {})} />
         ) : null}
-        <ListRow title={navi ? "Lives on" : "Machine"} value={machine} />
+        <ListRow title="Machine" value={machine} />
         <ListRow title="Folder" value={tilde(p.workspaceRoot)} selectable />
       </ListSection>
 
-      {live && state.hub.phase === "live" && state.hub.features?.includes(NEW_SCREEN) === true ? (
-        <ListSection footer={navi ? `A browser of your own on ${p.title}'s profile, to sign in to a site for it, or another kind of screen.` : "A browser, simulator, emulator or desktop of your own, live here."}>
-          <ListRow title="New Screen" icon="browser" onPress={() => navigation.navigate("NewScreen", { key })} />
+      {can ? (
+        <ListSection footer={isOnlyMe(p) ? "Only you see it and use it." : "Everyone on this hub sees it and can use it."}>
+          <ListRow
+            title="Only Me"
+            accessory={busy === "onlyMe" ? spinner : <Switch value={isOnlyMe(p)} disabled={!live || busy !== null} onValueChange={onlyMe} accessibilityLabel="Only me" />}
+          />
         </ListSection>
       ) : null}
 
-      {navi && can.forgetSignins ? (
+      <ListSection>
+        {can ? <ListRow title="Approvals" icon="approvals" tint={t.tints[0]} {...(live ? { onPress: () => navigation.navigate("Approvals", { key }) } : {})} /> : null}
+        {can ? <ListRow title="Payments" icon="money" tint={t.tints[3]} {...(live ? { onPress: () => navigation.navigate("Payments", { key }) } : {})} /> : null}
+        {can ? <ListRow title="Telegram" icon="paperplane" tint={t.tints[5]} {...(live ? { onPress: () => navigation.navigate("Telegram", { key }) } : {})} /> : null}
+        {can ? <ListRow title="Linked Hubs" icon="link" tint={t.tints[6]} {...(live ? { onPress: () => navigation.navigate("LinkedHubs", { key }) } : {})} /> : null}
+        {skills ? <ListRow title="Skills" icon="sparkles" tint={t.tints[1]} {...(v?.skills === undefined ? {} : { value: String(v.skills.length) })} onPress={() => navigation.navigate("Skills", { key })} /> : null}
+      </ListSection>
+
+      {can ? (
         <ListSection
           header="Sign-ins"
-          footer={forgot ? "Forgotten. Its next browser session starts signed out of every site." : `Its browser stays signed in to the sites it signed into. Their cookies stay on ${machine}, where ${p.title} itself can't read them.`}
+          footer={forgot ? "Forgotten. Its next browser session starts signed out of every site." : `Its browser stays signed in to the sites it signed into. Their cookies stay on ${machine}.`}
         >
           <ListRow title="Forget Sign-ins…" destructive chevron={false} {...(busy === null && live ? { onPress: forget } : {})} {...(busy === "forget" ? { accessory: spinner } : {})} />
         </ListSection>
       ) : null}
 
-      {can.delete ? (
-        <ListSection footer={navi ? "Erases it and everything it had. Its folder stays unless you tick it." : "Its files, branches and pull requests stay."}>
-          <ListRow title={navi ? "Delete Navi" : "Delete Project"} destructive chevron={false} {...(busy === null && live ? { onPress: () => void remove() } : {})} {...(busy === "delete" ? { accessory: spinner } : {})} />
+      {live && state.hub.phase === "live" && state.hub.features?.includes(NEW_SCREEN) === true ? (
+        <ListSection footer={`A browser of your own on ${p.title}'s profile, to sign in to a site for it, or another kind of screen.`}>
+          <ListRow title="New Screen" icon="browser" onPress={() => navigation.navigate("NewScreen", { key })} />
+        </ListSection>
+      ) : null}
+
+      {can ? (
+        <ListSection footer={archived ? "Archived: its lead doesn't start until you bring it back. Its chat, memory and folder are kept." : "Keeps its chat, memory and folder, and moves it to Archived. Its lead doesn't start until you bring it back."}>
+          <ListRow
+            title={archived ? "Unarchive Project" : "Archive Project"}
+            chevron={false}
+            {...(busy === null && live ? { onPress: archive } : {})}
+            {...(busy === "archive" ? { accessory: spinner } : {})}
+          />
+        </ListSection>
+      ) : null}
+
+      {can ? (
+        <ListSection footer="Erases it and everything fleetd keeps for it. Its folder stays unless you tick it.">
+          <ListRow title="Delete Project" destructive chevron={false} {...(busy === null && live ? { onPress: () => void remove() } : {})} {...(busy === "delete" ? { accessory: spinner } : {})} />
         </ListSection>
       ) : null}
       <TypedDelete words={typing} name={p.title} onCancel={() => setTyping(null)} onDelete={doDelete} />

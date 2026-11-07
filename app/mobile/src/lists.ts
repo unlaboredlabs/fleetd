@@ -1,16 +1,17 @@
-// The home list, as plain view data: what needs you on top, then your Navis, then the projects, each newest first. A
-// project wants you as the desktop's sidebar says (screens/shell/model.ts): a secret or an approval open for it, or
-// its lead waiting for your reply. An archived Navi is in none of them, unless an approval of its waits. Pure, so it is
+// The home list, as plain view data: what needs you on top, then every other chat, newest first. A project wants you
+// as the desktop's sidebar says (screens/shell/model.ts): a secret or an approval open for it, or its lead waiting for
+// your reply. An archived project is in neither, unless an approval of its waits: it is under Archived. Pure, so it is
 // unit-tested.
 import { previewOf } from "./chatView";
-import { chatItems, emptyChat, hasHidden, isArchived, isNavi, shellWord, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectSummary } from "./desktop";
+import { chatItems, emptyChat, hasHidden, isArchived, shellWord, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectSummary } from "./desktop";
 import { unreadCount, type Prefs } from "./prefs";
 import { keyOf, type Key, type State } from "./store";
 
 export interface Row {
   readonly key: Key;
   readonly project: ProjectSummary;
-  readonly navi: boolean;
+  /** Archived, and shown only while an approval of its waits, or under Archived. */
+  readonly archived: boolean;
   /** Why it wants you, in a few words; undefined when it doesn't. */
   readonly want: string | undefined;
   readonly working: boolean;
@@ -26,8 +27,9 @@ export interface Row {
 
 export interface Lists {
   readonly needsYou: readonly Row[];
-  readonly navis: readonly Row[];
-  readonly projects: readonly Row[];
+  readonly chats: readonly Row[];
+  /** Archived, with nothing waiting for you: the Archived filter's. */
+  readonly archived: readonly Row[];
 }
 
 const plural = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
@@ -109,14 +111,12 @@ const byRecent = (a: Row, b: Row): number => b.at.localeCompare(a.at) || a.proje
 export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & Partial<Pick<State, "chats" | "sends" | "latest">>): Lists | undefined => {
   if (s.projects === undefined) return undefined;
   const rows = Object.entries(s.projects)
-    // An archived Navi's approvals stay open on the hub, and count in the badges: its chat shows while one waits.
-    .filter(([key, p]) => !(isNavi(p) && isArchived(p)) || openFor(key, s.requests, "approval") > 0)
     .map(([key, project]): Row => {
       const chat = s.chatStates[key];
       return {
         key,
         project,
-        navi: isNavi(project),
+        archived: isArchived(project),
         want: wantOf(key, chat?.needsYou === true, s.requests),
         working: chat?.leadWorking === true,
         approvals: openFor(key, s.requests, "approval"),
@@ -126,11 +126,12 @@ export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & P
       };
     })
     .sort(byRecent);
-  const calm = rows.filter((r) => r.want === undefined);
+  // An archived project's approvals stay open on the hub, and count in the badges: its chat shows while one waits.
+  const shown = rows.filter((r) => !r.archived || r.approvals > 0);
   return {
-    needsYou: rows.filter((r) => r.want !== undefined),
-    navis: calm.filter((r) => r.navi),
-    projects: calm.filter((r) => !r.navi),
+    needsYou: shown.filter((r) => r.want !== undefined),
+    chats: shown.filter((r) => r.want === undefined),
+    archived: rows.filter((r) => r.archived && r.approvals === 0),
   };
 };
 
@@ -143,9 +144,9 @@ export const rowLine = (row: Pick<Row, "preview" | "working" | "want" | "empty">
 
 /**
  * The chats list's filters, as Telegram's folders: everything, what you haven't read, the chats with an approval
- * waiting for you, the Navis, the projects.
+ * waiting for you, the pinned ones, and the archived ones, which are in none of the others.
  */
-export type Filter = "all" | "unread" | "needsYou" | "pinned" | "navis" | "projects";
+export type Filter = "all" | "unread" | "needsYou" | "pinned" | "archived";
 
 export interface ChatRow extends Row {
   readonly pinned: boolean;
@@ -164,13 +165,13 @@ const waitingFirst = (a: Row, b: Row): number => Number(b.approvals > 0) - Numbe
 /**
  * The chats list, Telegram's way: one list, the chats with an approval waiting on top, then the pinned ones in the
  * order pinned, then every other chat with what spoke last first. Each says how many messages came since you read it,
- * and whether it's muted (its count goes grey). Archived Navis are in none of it, except while an approval of theirs
- * waits. `pinned`: this hub's pins, in the person's order (prefs.ts pinsOf).
+ * and whether it's muted (its count goes grey). Archived projects are only under Archived, except while an approval of
+ * theirs waits. `pinned`: this hub's pins, in the person's order (prefs.ts pinsOf).
  */
 export const chatList = (s: Parameters<typeof lists>[0], prefs: Prefs, filter: Filter = "all", pinned: readonly Key[] = []): readonly ChatRow[] | undefined => {
   const all = lists(s);
   if (all === undefined) return undefined;
-  const rows = [...all.needsYou, ...all.navis, ...all.projects]
+  const rows = [...(filter === "archived" ? all.archived : [...all.needsYou, ...all.chats])]
     .map((r): ChatRow => {
       const held = knownChat(s, r.key)?.messages ?? [];
       return {
@@ -192,10 +193,8 @@ export const chatList = (s: Parameters<typeof lists>[0], prefs: Prefs, filter: F
       return rows.filter((r) => r.approvals > 0);
     case "pinned":
       return rows.filter((r) => r.pinned);
-    case "navis":
-      return rows.filter((r) => r.navi);
-    case "projects":
-      return rows.filter((r) => !r.navi);
+    case "archived":
+      return rows;
   }
 };
 
@@ -261,7 +260,7 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
     add("Kind", r.gated.class, { more: true });
     add("Secrets", list(r.gated.secretEnv?.map((e) => e.name)));
   } else if (preview !== undefined) {
-    // The hub words it to follow "<the Navi> wants to": "Use create_page on docs".
+    // The hub words it to follow "<the project> wants to": "Use create_page on docs".
     wants = `wants to ${preview.title.charAt(0).toLowerCase()}${preview.title.slice(1)}`;
     risk = preview.action === "spend" ? "money" : preview.action === "delete" ? "irreversible" : undefined;
     add("Input", preview.input, { mono: true, more: true, lines: true });
@@ -270,28 +269,6 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
     add("What", r.permission.summary, { mono: true });
     // The summary is a first line or a path: the input is the rest of the command, or the file's content.
     if (r.permission.input !== undefined) add("Input", JSON.stringify(r.permission.input, null, 2), { mono: true, lines: true });
-  } else if (r.purchase !== undefined) {
-    // A Navi's purchase: exactly what is bought, for how much, where and with which card, all on the card's face.
-    const { shop, total, items, card } = r.purchase;
-    wants = `wants to pay ${total.amount} ${total.currency} at ${shop.name}`;
-    risk = "money";
-    add("Shop", shop.domain, { mono: true });
-    add(
-      "Buying",
-      items.map((i) => `${i.quantity !== undefined && i.quantity > 1 ? `${String(i.quantity)} × ` : ""}${i.name}${i.amount === undefined ? "" : ` · ${i.amount} ${total.currency}`}`).join("\n"),
-      { lines: true },
-    );
-    add("Total", `${total.amount} ${total.currency}`);
-    add("Card", card.ref.replace(/^op:\/\/([^/]+)\/(.+)$/u, "$2 ($1)"));
-  } else if (r.secureInput !== undefined) {
-    // A Navi's secure input from 1Password: what fills where, from which item's field.
-    const input = r.secureInput;
-    wants = `wants to fill ${input.label} on ${input.site.name} from 1Password`;
-    risk = "credential";
-    add("Site", input.site.domain, { mono: true });
-    add("Why", input.why, { prose: true });
-    add("From", input.ref, { mono: true });
-    add("Field", input.target, { mono: true, more: true });
   } else {
     wants = "asks for approval";
   }

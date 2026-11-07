@@ -1,4 +1,4 @@
-// The person's editor for one of a Navi's own skills, a sheet over its view: its whole SKILL.md as plain text, the
+// The person's editor for one of a project's own skills, a sheet over its view: its whole SKILL.md as plain text, the
 // frontmatter too, in a field that fills the sheet and stays above the keyboard, and an optional line on what changed
 // that its history keeps. ✓ saves it as a new version (skill_set); ✕ with changes asks before it drops them, and the
 // sheet doesn't swipe away while there are any.

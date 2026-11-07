@@ -10,14 +10,14 @@ const REF = { machineId: "m1", projectId: "navi" };
 const KEY = "m1/navi";
 const AT = "2026-10-28T10:00:00Z";
 
-const project = (projectId: string, title: string, kind?: "assistant") => ({
+const project = (projectId: string, title: string, onlyMe?: true) => ({
   machineId: "m1",
   projectId,
   title,
   workspaceRoot: `/home/devbox/${projectId}`,
   lastActivityAt: AT,
   threads: { running: 0, waiting: 0, failed: 0, idle: 0 },
-  ...(kind === undefined ? {} : { kind }),
+  ...(onlyMe === undefined ? {} : { onlyMe }),
 });
 
 const snapshot = {
@@ -25,7 +25,7 @@ const snapshot = {
   cursor: 1,
   attention: [],
   machines: [],
-  projects: [project("navi", "Ada", "assistant"), project("shop", "storefront")],
+  projects: [project("navi", "Ada", true), project("shop", "storefront")],
   chats: [{ projectRef: REF, lastSeq: 2, leadWorking: false, needsYou: false }],
 };
 
@@ -77,12 +77,12 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe("Session", () => {
-  it("lists what needs you on top, then the Navis, then the projects", async () => {
+  it("lists what needs you on top, then every other chat", async () => {
     const { hub, session } = setup();
-    expect(lists(session.state)).toMatchObject({ needsYou: [], navis: [{ key: KEY }], projects: [{ key: "m1/shop" }] });
+    expect(lists(session.state)).toMatchObject({ needsYou: [], chats: [{ key: KEY }, { key: "m1/shop" }] });
     hub.answer("requests_list", { requests: [approval("r1")] });
     await flush();
-    expect(lists(session.state)).toMatchObject({ needsYou: [{ key: KEY, want: "1 approval waiting" }], navis: [], projects: [{ key: "m1/shop" }] });
+    expect(lists(session.state)).toMatchObject({ needsYou: [{ key: KEY, want: "1 approval waiting" }], chats: [{ key: "m1/shop" }] });
     hub.link.frame({ t: "event", seq: 2, type: "chat.waiting", at: AT, data: { projectRef: { machineId: "m1", projectId: "shop" }, lastSeq: 5, leadWorking: false, needsYou: true } });
     expect(lists(session.state)?.needsYou.map((r) => r.want)).toEqual(["1 approval waiting", "Waiting for your reply"]);
   });
@@ -114,9 +114,9 @@ describe("Session", () => {
     ]);
     hub.link.frame({ t: "result", id: reads()[0]?.id, output: page([message(1, "Morning."), message(2, "Two **emails** need you.")]) });
     await flush();
-    expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["Two emails need you."]);
+    expect(lists(session.state)?.chats.find((r) => r.key === KEY)?.preview).toEqual("Two emails need you.");
     hub.link.frame({ t: "event", seq: 2, type: "chat.message", at: AT, data: { projectRef: REF, messageId: "msg3", seq: 3, author: "lead", state: "final", message: message(3, "Sent both.") } });
-    expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["Sent both."]);
+    expect(lists(session.state)?.chats.find((r) => r.key === KEY)?.preview).toEqual("Sent both.");
   });
 
   it("keeps the preview and count of a chat opened earlier true after the link comes back", async () => {
@@ -133,10 +133,10 @@ describe("Session", () => {
     const read = hub.sentOf("call").find((c) => c.tool === "chat_history" && (c.input as { projectRef: { projectId: string } }).projectRef.projectId === "navi");
     hub.link.frame({ t: "result", id: read?.id, output: page([message(2, "Two emails need you."), message(3, "Sent the first."), message(4, "Sent both.")]) });
     await flush();
-    expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["Sent both."]);
+    expect(lists(session.state)?.chats.find((r) => r.key === KEY)?.preview).toEqual("Sent both.");
     // A message after it lands aside in the held chat; the list still shows it.
     hub.link.frame({ t: "event", seq: 2, type: "chat.message", at: AT, data: { projectRef: REF, messageId: "msg5", seq: 5, author: "lead", state: "final", message: message(5, "All done.") } });
-    expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["All done."]);
+    expect(lists(session.state)?.chats.find((r) => r.key === KEY)?.preview).toEqual("All done.");
   });
 
   it("reads again only the previews that moved on while the link was down", async () => {
@@ -147,16 +147,16 @@ describe("Session", () => {
     hub.link.close(1006);
     vi.advanceTimersByTime(1000);
     hub.ready();
-    const navi = () => reads().filter((c) => (c.input as { projectRef: { projectId: string } }).projectRef.projectId === "navi");
-    // Nothing new in the navi's chat: it isn't read again.
+    const ada = () => reads().filter((c) => (c.input as { projectRef: { projectId: string } }).projectRef.projectId === "navi");
+    // Nothing new in Ada's chat: it isn't read again.
     hub.link.frame(snapshot);
     await flush();
-    expect(navi()).toEqual([]);
-    expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["Two emails need you."]);
-    // The navi's chat moved on: only it is read.
+    expect(ada()).toEqual([]);
+    expect(lists(session.state)?.chats.find((r) => r.key === KEY)?.preview).toEqual("Two emails need you.");
+    // Ada's chat moved on: only it is read.
     hub.link.frame({ ...snapshot, cursor: 2, chats: [{ ...snapshot.chats[0], lastSeq: 3 }] });
     await flush();
-    expect(navi()).toHaveLength(1);
+    expect(ada()).toHaveLength(1);
   });
 
   it("lifts a chat with its time when a message comes, with no change of what it waits for", () => {
@@ -179,7 +179,7 @@ describe("Session", () => {
       data: { projectRef: { machineId: "m1", projectId: "shop" }, messageId: "s2", seq: 2, author: "lead", state: "final", message: { ...message(2, "Live."), messageId: "s2", projectRef: { machineId: "m1", projectId: "shop" }, createdAt: later } },
     });
     expect(session.state.chatStates["m1/shop"]).toMatchObject({ lastSeq: 2, lastMessageAt: later });
-    expect(lists(session.state)?.projects.map((r) => r.at)).toEqual([later]);
+    expect(lists(session.state)?.chats.find((r) => r.key === "m1/shop")?.at).toEqual(later);
   });
 
   it("opens a chat at its latest page, streams the lead's text and takes its final message", async () => {
@@ -240,7 +240,7 @@ describe("Session", () => {
     session.sleep();
     session.stop();
     const next = new Session({ hub: "http://devbox:4790", key: "key_abc", transport: fakeHub().transport, cache: disk });
-    expect(lists(next.state)?.navis.map((r) => [r.project.title, r.preview])).toEqual([["Ada", "You: Send both"]]);
+    expect(lists(next.state)?.chats.filter((r) => r.key === KEY).map((r) => [r.project.title, r.preview])).toEqual([["Ada", "You: Send both"]]);
     expect(next.state.sends[KEY]).toMatchObject([{ text: "Send both", state: { t: "queued" } }]);
     // Another hub's is never shown.
     expect(new Session({ hub: "http://lab:4790", key: "key_abc", transport: fakeHub().transport, cache: disk }).state.projects).toBeUndefined();
@@ -354,8 +354,8 @@ describe("Session", () => {
     const before = hub.sentOf("snapshot").length;
     hub.link.frame({ t: "event", seq: 2, type: "project.settings", at: AT, machineId: "m1", projectId: "shop", data: { title: "Shop" } });
     expect(hub.sentOf("snapshot").length).toBe(before + 1);
-    hub.link.frame({ ...snapshot, cursor: 2, projects: [project("navi", "Ada", "assistant"), project("shop", "Shop")] });
-    expect(lists(session.state)?.projects.map((r) => r.project.title)).toEqual(["Shop"]);
+    hub.link.frame({ ...snapshot, cursor: 2, projects: [project("navi", "Ada", true), project("shop", "Shop")] });
+    expect(lists(session.state)?.chats.find((r) => r.key === "m1/shop")?.project.title).toEqual("Shop");
   });
 
   it("reads the open requests again when one changes", () => {
@@ -500,9 +500,9 @@ describe("a chat's screens", () => {
     hub.answer("browser_control", { session: live("human") });
     await expect(taking).resolves.toMatchObject({ ok: true });
     expect(session.state.screens[KEY]?.[0]?.control).toBe("human");
-    // Another person's Navi's screen: refused, and nothing changes here.
+    // Another person's project's screen: refused, and nothing changes here.
     const refused = session.control(live("human").sessionId, "agent");
-    hub.fail("browser_control", "forbidden", "navi on m1 is another person's Navi: only its owner uses and manages it.");
+    hub.fail("browser_control", "forbidden", "navi on m1 is another person's project: only its owner uses and manages it.");
     await expect(refused).resolves.toMatchObject({ ok: false, error: { code: "forbidden" } });
     expect(session.state.screens[KEY]?.[0]?.control).toBe("human");
   });

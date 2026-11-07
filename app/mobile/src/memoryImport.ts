@@ -119,11 +119,14 @@ export const importStep = (s: ImportState, m: ImportMsg): ImportState => {
   }
 };
 
-/** The hub's fix when the person has no Navi of their own, where an import runs. */
-export const NO_NAVI_FIX = "Create a Navi first, then import again.";
+/** The hub's reason when the person has no Only-me project of their own, where an import runs. */
+export const NO_ONLY_ME_PROJECT = "no_only_me_project";
 
-/** Refused for want of a Navi: the screen offers New Navi, and the paste stays for after. */
-export const needsNavi = (e: HubError): boolean => e.code === "invalid" && e.fix === NO_NAVI_FIX;
+/** An older hub's fix for the same, from before projects took Navis' place. */
+export const OLD_NO_NAVI_FIX = "Create a Navi first, then import again.";
+
+/** Refused for want of a project of their own: the screen offers New Project, and the paste stays for after. */
+export const needsOwnProject = (e: HubError): boolean => e.reason === NO_ONLY_ME_PROJECT || (e.code === "invalid" && e.fix === OLD_NO_NAVI_FIX);
 
 /** Add to Memory: something pasted, and not already on its way. */
 export const canAdd = (s: ImportState): boolean => s.text.trim() !== "" && s.phase.t !== "working" && !oldHub(s);
@@ -141,5 +144,5 @@ export const addedWords = (r: Imported): { readonly title: string; readonly deta
   ].filter((n) => n !== null);
   if (r.added === 0 && r.full > 0) return { title: "Memory Full", detail: ["None of it fit. Make room under Settings › Memory in the desktop app, then try again.", ...notes].join(" ") };
   if (r.added === 0) return { title: "Nothing New", detail: ["Your memory already has all of it.", ...notes].join(" ") };
-  return { title: `Added ${String(r.added)} to Memory`, detail: [`Your Navis and every lead read ${r.added === 1 ? "it" : "them"} from now on.`, ...notes].join(" ") };
+  return { title: `Added ${String(r.added)} to Memory`, detail: [`Every lead reads ${r.added === 1 ? "it" : "them"} from now on.`, ...notes].join(" ") };
 };

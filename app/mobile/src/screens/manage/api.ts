@@ -1,10 +1,11 @@
-// The hub calls behind a project's and a Navi's screens, each as the desktop makes it: New Navi (machine_roles,
-// navi_create), New Project (project_discover, then the desktop's add flow over project_add), its screen's reads
-// (agents_list, orders_board, checklist_get, pr_list, profiles_list, and a Navi's skills_list), Rename (navi_rename, or project_settings_set's
-// title), its icon (project_icon_set) or picture (attachment_put, then project_avatar_set), Agent Profiles
-// (project_set), Forget Sign-ins (navi_signins_forget) and Delete (project_settings_get for its worktrees, then
-// project_remove with them).
-import { allowedAfter, discovery, isNavi, type AddCall, type AttachmentMime, type AvatarCrop, type ProjectIcon, type AgentRow, type Discovery, type HubError, type MachineRolesEntry, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TodoItem } from "../../desktop";
+// The hub calls behind a project's screens, each as the desktop makes it: New Project (project_discover, then the
+// desktop's add flow over project_add, a new folder or a repo, with Only me), its screen's reads (agents_list,
+// orders_board, checklist_get, pr_list, profiles_list, skills_list), Rename (project_settings_set's title), Only me
+// (its onlyMe), Archive, its icon (project_icon_set) or picture (attachment_put, then project_avatar_set), Agent
+// Profiles (project_set), Approvals, Telegram (telegram_*), Linked hubs (hub_links_get, hub_link_remove), Forget
+// Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them). A project's own tools go
+// by the desktop's names for them (PROJECT_TOOLS); Payments' calls are its own (Payments.tsx).
+import { allowedAfter, discovery, PROJECT_TOOLS, type AddCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type AvatarCrop, type HubLink, type ProjectIcon, type AgentRow, type Discovery, type HubError, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TelegramBridge, type TodoItem } from "../../desktop";
 import type { Session } from "../../session";
 import { upload, UPLOAD_TIMEOUT_MS } from "../../upload";
 import { MERGES_DAYS } from "./model";
@@ -15,17 +16,10 @@ export type Result<T> = { readonly ok: true; readonly value: T } | { readonly ok
 
 const ref = (p: ProjectRef): ProjectRef => ({ machineId: p.machineId, projectId: p.projectId });
 
-/** Ending a Navi's open browser session, then deleting its profile, can take a while (as the desktop's). */
+/** Ending its open browser session, then deleting its profile, can take a while (as the desktop's). */
 export const FORGET_MS = 60_000;
 /** The hub gives the node 70 s to stop a project's processes, end its previews and browser, then remove it. */
 export const REMOVE_MS = 80_000;
-
-/** Where a new Navi may live, and the hub's pick; an older hub without machine_roles leaves the pick to it. */
-export const naviHomes = async (hub: Hub): Promise<{ machines: MachineRolesEntry[]; best?: string }> => {
-  const r = await hub.call("machine_roles", {});
-  if (!r.ok) return { machines: [] };
-  return { machines: r.output.machines, ...(r.output.best === undefined ? {} : { best: r.output.best }) };
-};
 
 /** Checkouts on the machines and the person's GitHub repos (`gh repo list` can take a while), machine ids as names. */
 export const DISCOVER_MS = 45_000;
@@ -35,20 +29,31 @@ export const discover = async (hub: Hub, name: (machineId: string) => string): P
   return r.ok ? { ok: true, value: discovery(r.output, name) } : r;
 };
 
-/** One of the add flow's project_add calls, the add itself named as the person typed (a clone's too). */
-export const addCall = async (hub: Hub, call: AddCall, title: string): Promise<{ readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: HubError }> => {
-  const named = call.purpose === "add" && title !== "" ? { ...call.input, title } : call.input;
-  return hub.call("project_add", named);
+/**
+ * One of the add flow's project_add calls, the add itself named as the person typed (a clone's too) and with Only me
+ * as they left it, on or off: left out, the hub would pick its own default (on for a folder with no git repo). A dry
+ * run only inspects, so it takes neither.
+ */
+export const addCall = async (hub: Hub, call: AddCall, title: string, onlyMe: boolean): Promise<{ readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: HubError }> => {
+  if (call.purpose !== "add") return hub.call("project_add", call.input);
+  return hub.call("project_add", { ...call.input, ...(title === "" ? {} : { title }), onlyMe });
 };
 
-export const createNavi = async (hub: Hub, name: string, machineId: string | undefined): Promise<Result<ProjectSummary>> => {
-  const r = await hub.call("navi_create", { name, ...(machineId === undefined ? {} : { machineId }) });
-  return r.ok ? { ok: true, value: r.output.navi } : r;
+/** Its settings' title. Its folder keeps its name. */
+export const rename = async (hub: Hub, p: ProjectRef, name: string): Promise<Result<null>> => {
+  const r = await hub.call("project_settings_set", { ...ref(p), title: name });
+  return r.ok ? { ok: true, value: null } : r;
 };
 
-/** A Navi by navi_rename; a project by its settings' title. Its folder keeps its name either way. */
-export const rename = async (hub: Hub, p: ProjectSummary, name: string): Promise<Result<null>> => {
-  const r = isNavi(p) ? await hub.call("navi_rename", { ...ref(p), name }) : await hub.call("project_settings_set", { ...ref(p), title: name });
+/** Only me: only its owner sees and uses it, the person turning it on becoming its owner; off, everyone on the hub again. */
+export const setOnlyMe = async (hub: Hub, p: ProjectRef, onlyMe: boolean): Promise<Result<null>> => {
+  const r = await hub.call("project_settings_set", { ...ref(p), onlyMe });
+  return r.ok ? { ok: true, value: null } : r;
+};
+
+/** Archived, it keeps its chat, memory and folder, and its lead doesn't start until it is brought back. */
+export const setArchived = async (hub: Hub, p: ProjectRef, archived: boolean): Promise<Result<null>> => {
+  const r = await hub.call(PROJECT_TOOLS.archive, { ...ref(p), archived });
   return r.ok ? { ok: true, value: null } : r;
 };
 
@@ -78,34 +83,32 @@ export interface Info {
   readonly checklist?: readonly TodoItem[];
   readonly prs?: readonly PrRow[];
   readonly profiles?: ProfilesListOutput;
-  /** A Navi's skills, for its Skills row's count. */
+  /** Its skills, for its Skills row's count. */
   readonly skills?: readonly SkillSummary[];
   /** The first read that failed, said under the sections; what did come is shown. */
   readonly error?: HubError;
 }
 
-/** Its screen's reads, side by side: a Navi has no orders, merges or profiles of its own, and a project's skills are
- * the desktop's. */
-export const readInfo = async (hub: Hub, p: ProjectSummary, nowMs: number): Promise<Info> => {
+/** Its screen's reads, side by side; its skills only from a hub that keeps them (`skills`). */
+export const readInfo = async (hub: Hub, p: ProjectRef, nowMs: number, skills: boolean): Promise<Info> => {
   const projectRef = ref(p);
-  const navi = isNavi(p);
   const since = new Date(nowMs - MERGES_DAYS * 86_400_000).toISOString();
-  const [agents, checklist, orders, prs, profiles, skills] = await Promise.all([
+  const [agents, checklist, orders, prs, profiles, kept] = await Promise.all([
     hub.call("agents_list", { projectRef }),
     hub.call("checklist_get", { projectRef }),
-    navi ? null : hub.call("orders_board", { projectRef }),
-    navi ? null : hub.call("pr_list", { projectRef, closedSince: since }),
-    navi ? null : hub.call("profiles_list", { projectRef }),
-    navi ? hub.call("skills_list", { projectRef }) : null,
+    hub.call("orders_board", { projectRef }),
+    hub.call("pr_list", { projectRef, closedSince: since }),
+    hub.call("profiles_list", { projectRef }),
+    skills ? hub.call("skills_list", { projectRef }) : null,
   ]);
-  const error = [agents, checklist, orders, prs, profiles, skills].find((r) => r !== null && !r.ok);
+  const error = [agents, checklist, orders, prs, profiles, kept].find((r) => r !== null && !r.ok);
   return {
     ...(agents.ok ? { agents: agents.output.agents } : {}),
     ...(checklist.ok ? { checklist: checklist.output.items } : {}),
-    ...(orders?.ok === true ? { orders: orders.output.orders } : {}),
-    ...(prs?.ok === true ? { prs: prs.output.prs } : {}),
-    ...(profiles?.ok === true ? { profiles: profiles.output } : {}),
-    ...(skills?.ok === true ? { skills: skills.output.skills } : {}),
+    ...(orders.ok ? { orders: orders.output.orders } : {}),
+    ...(prs.ok ? { prs: prs.output.prs } : {}),
+    ...(profiles.ok ? { profiles: profiles.output } : {}),
+    ...(kept?.ok === true ? { skills: kept.output.skills } : {}),
     ...(error === undefined || error === null || error.ok ? {} : { error: error.error }),
   };
 };
@@ -118,8 +121,46 @@ export const setProfile = async (hub: Hub, p: ProjectRef, view: ProfilesListOutp
 };
 
 export const forgetSignins = async (hub: Hub, p: ProjectRef): Promise<Result<null>> => {
-  const r = await hub.call("navi_signins_forget", ref(p), FORGET_MS);
+  const r = await hub.call(PROJECT_TOOLS.signinsForget, ref(p), FORGET_MS);
   return r.ok ? { ok: true, value: null } : r;
+};
+
+/** How its risky actions are approved, the log of what ran without asking, and the models the checker may run on. */
+export const readApprovals = async (hub: Hub, p: ProjectRef): Promise<Result<ApprovalsOutput & { models: ProfilesListOutput["models"] }>> => {
+  const [read, profiles] = await Promise.all([hub.call(PROJECT_TOOLS.approvals, ref(p)), hub.call("profiles_list", {})]);
+  if (!read.ok) return read;
+  return { ok: true, value: { ...read.output, models: profiles.ok ? profiles.output.models : [] } };
+};
+
+/** A mode picked, the checker's model and effort kept as the person set them; the defaults stay the hub's. */
+export const setApprovalMode = async (hub: Hub, p: ProjectRef, mode: ApprovalMode, saved: ApprovalsOutput["approvals"]): Promise<Result<null>> => {
+  const r = await hub.call(PROJECT_TOOLS.approvalsSet, { ...ref(p), mode, ...(saved.defaults ? {} : { model: saved.model, effort: saved.effort }) });
+  return r.ok ? { ok: true, value: null } : r;
+};
+
+/** Its Telegram bot, undefined until one is set up (on the desktop). */
+export const readTelegram = async (hub: Hub, p: ProjectRef): Promise<Result<TelegramBridge | undefined>> => {
+  const r = await hub.call("telegram_get", { navi: ref(p) });
+  return r.ok ? { ok: true, value: r.output.bridge } : r;
+};
+
+/** Pause or resume its bot, unpair the account it answers, or remove the bot and its sealed token. */
+export const telegramAct = async (hub: Hub, p: ProjectRef, act: { readonly t: "pause"; readonly paused: boolean } | { readonly t: "unpair" } | { readonly t: "remove" }): Promise<Result<null>> => {
+  const navi = ref(p);
+  const r = act.t === "pause" ? await hub.call("telegram_pause", { navi, paused: act.paused }) : act.t === "unpair" ? await hub.call("telegram_unpair", { navi }) : await hub.call("telegram_remove", { navi });
+  return r.ok ? { ok: true, value: null } : r;
+};
+
+/** The other hubs it reaches through hub links. */
+export const readLinks = async (hub: Hub, p: ProjectRef): Promise<Result<readonly HubLink[]>> => {
+  const r = await hub.call("hub_links_get", { navi: ref(p) });
+  return r.ok ? { ok: true, value: r.output.links.filter((l) => l.navi.machineId === p.machineId && l.navi.projectId === p.projectId) } : r;
+};
+
+/** A link removed here, and revoked on the other hub when it can be reached: the hub says which, and what's next. */
+export const removeLink = async (hub: Hub, linkId: string): Promise<Result<{ readonly revokedThere: boolean; readonly next?: string }>> => {
+  const r = await hub.call("hub_link_remove", { linkId });
+  return r.ok ? { ok: true, value: { revokedThere: r.output.revokedThere, ...(r.output.next === undefined ? {} : { next: r.output.next }) } } : r;
 };
 
 /** Its settings fresh from its machine, so the confirm names every worktree with uncommitted changes. */
@@ -129,8 +170,8 @@ export const readForDelete = async (hub: Hub, p: ProjectRef): Promise<Result<Pro
 };
 
 /**
- * Stops its agents and forgets it with its fleetd worktrees and its other repos' checkouts; files and branches stay. A
- * Navi is erased, and with `removeFolder` its folder goes too.
+ * Stops its agents and erases everything fleetd keeps for it, its fleetd worktrees and its other repos' checkouts
+ * with it; with `removeFolder` its folder goes too.
  */
 export const deleteProject = async (hub: Hub, p: ProjectRef, removeFolder = false): Promise<Result<null>> => {
   const r = await hub.call("project_remove", { ...ref(p), removeWorktrees: true, ...(removeFolder ? { removeFolder: true } : {}) }, REMOVE_MS);

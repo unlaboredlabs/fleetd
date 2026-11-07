@@ -55,7 +55,7 @@ export function PinnedGrid({ rows, onOpen, menu, label }: { rows: readonly ChatR
             >
               <View style={styles.cell}>
                 <View style={{ width: avatar, height: avatar }}>
-                  <Avatar name={row.project.title} navi={row.navi} size={avatar} picture={row.project} />
+                  <Avatar name={row.project.title} size={avatar} picture={row.project} />
                   {face.approvals > 0 ? <Approvals count={face.approvals} /> : null}
                   {bubble === null ? null : <View style={[styles.slot, slot]}>{bubble}</View>}
                 </View>

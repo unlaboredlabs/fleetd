@@ -18,8 +18,7 @@ const CHOICES: ReadonlyArray<Omit<FilterChoice, "subtitle">> = [
   { id: "unread", title: "Unread", symbol: "message.badge" },
   { id: "needsYou", title: "Needs You", symbol: "hand.raised" },
   { id: "pinned", title: "Pinned", symbol: "pin" },
-  { id: "navis", title: "Navis", symbol: "sparkles" },
-  { id: "projects", title: "Projects", symbol: "folder" },
+  { id: "archived", title: "Archived", symbol: "archivebox" },
 ];
 
 /** The filters menu, in its order: Unread counts its chats, Needs You the chats with an approval waiting. */

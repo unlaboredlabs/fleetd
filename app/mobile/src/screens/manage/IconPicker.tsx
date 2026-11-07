@@ -1,4 +1,4 @@
-// A project's or Navi's icon, from its screen (Info): a sheet with the icon large at the top, the built-in faces in a
+// A project's icon, from its screen (Info): a sheet with the icon large at the top, the built-in faces in a
 // grid in the color picked, the colors under them, and Choose Photo / Take Photo (then Move and Scale) / Remove Photo,
 // as the desktop's Settings › Projects › Icon. A face or color shows at once in the large icon; Done sends it
 // (project_icon_set, which takes the place of a picture), Cancel leaves the icon as it was. The last choice wins: a
@@ -6,7 +6,7 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useState } from "react";
 import { Alert, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { ICON_COLORS, ICON_FACES, isNavi, type IconColor, type IconFace, type ProjectIcon } from "../../desktop";
+import { ICON_COLORS, ICON_FACES, type IconColor, type IconFace, type ProjectIcon } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { shape, space, useTheme } from "../../theme";
 import { Avatar, iconSource } from "../../ui/Avatar";
@@ -74,7 +74,7 @@ export function IconPicker({ navigation, route }: NativeStackScreenProps<RootPar
   return (
     <ScrollView style={{ backgroundColor: t.grouped }} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       <View style={styles.preview} accessible accessibilityRole="image" accessibilityLabel={hasPicture ? "Its photo" : `${faceName(current.face)} in ${colorName(current.color)}`}>
-        <Avatar name={p.title} navi={isNavi(p)} size={PREVIEW} picture={p} {...(picked === null ? {} : { icon: picked })} />
+        <Avatar name={p.title} size={PREVIEW} picture={p} {...(picked === null ? {} : { icon: picked })} />
       </View>
 
       <View style={[styles.card, { backgroundColor: t.cell }]} accessibilityRole="radiogroup" accessibilityLabel="Face">

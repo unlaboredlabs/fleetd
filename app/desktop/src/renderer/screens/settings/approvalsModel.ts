@@ -20,7 +20,7 @@ export const MODES: ReadonlyArray<{ readonly mode: NaviApprovalMode; readonly la
 
 /** What every mode keeps, YOLO included. */
 export const FLOORS =
-  "In every mode, YOLO too: moving money, trading and placing orders are refused, and so is a password, key or token in anything it sends or any link it opens; a link that moves money or trades is refused too; purchases always ask you; and a command that would wipe the computer never runs.";
+  "In every mode, YOLO too: moving money, trading and placing orders are refused, and so is a password, key or token in anything it sends or any link it opens; a link that moves money or trades is refused too; a server's own spending tool always asks you; and a command that would wipe the computer never runs.";
 
 /** The models to pick from: the hub's list, and the checker's current one when the list lacks it. */
 export const checkerModels = (models: ReadonlyArray<ProfileModel>, current: string): ReadonlyArray<ProfileModel> =>

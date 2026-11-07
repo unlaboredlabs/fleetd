@@ -1,34 +1,21 @@
-// What a project's and a Navi's screens show and offer, from the hub's answers: pure, so the tests pin them. The hub
-// checks every call (a member operates, a Navi is its owner's alone); these only leave out what it would refuse, and
-// say in the desktop's words what a delete does.
-import { foundRows, isNavi, isYours, naviDeleteWords, tilde, type AgentRow, type Discovery, type Found, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
+// What a project's screens show and offer, from the hub's answers: pure, so the tests pin them. The hub checks every
+// call (a member operates, an Only-me project is its owner's alone); these only leave out what it would refuse, and say
+// in the desktop's words what a delete does.
+import { deleteWords as eraseWords, foundRows, isOnlyMe, isYours, tilde, type AgentRow, type Discovery, type Found, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
 import type { Machine } from "../../store";
 
-/** What the person may do to it from the phone. */
-export interface Allowed {
-  readonly rename: boolean;
-  /** Which profiles its agents may run on: a project's, never a Navi's (its lead runs on the hub's default). */
-  readonly profiles: boolean;
-  readonly forgetSignins: boolean;
-  readonly delete: boolean;
-}
-
 /**
- * A project: anyone who operates its machine, as the desktop's Settings › Projects. A Navi: only the person it belongs
- * to (D215); one with no owner, on a hub before people, is everyone's.
+ * Whether the person may manage it from the phone: rename, Only me, its approvals, payments, Telegram, links, sign-ins,
+ * archive and delete. A shared project: anyone who operates its machine, as the desktop's Settings › Projects. An
+ * Only-me one: its owner alone; one with no owner, on a hub before people, is everyone's.
  */
-export const allowed = (p: ProjectSummary, me: string | undefined): Allowed => {
-  if (!isNavi(p)) return { rename: true, profiles: true, forgetSignins: false, delete: true };
-  const own = isYours(p, me);
-  return { rename: own, profiles: false, forgetSignins: own, delete: own };
-};
+export const manages = (p: ProjectSummary, me: string | undefined): boolean => !isOnlyMe(p) || isYours(p, me);
 
 /** A machine's name, else its id. */
 export const machineName = (machines: readonly Machine[], machineId: string): string => machines.find((m) => m.machineId === machineId)?.name ?? machineId;
 
 /** The line under its name on its screen. */
 export const subtitle = (p: ProjectSummary, machine: string): string => {
-  if (isNavi(p)) return `Navi on ${machine}`;
   const repos = p.repos?.length ?? 0;
   return repos > 1 ? `${String(repos)} repos on ${machine}` : `Project on ${machine}`;
 };
@@ -170,40 +157,29 @@ export interface DeleteWords {
   readonly title: string;
   readonly message: string;
   readonly button: string;
-  /** Its worktrees with uncommitted changes, which the delete loses: each named, and its name typed to confirm. */
+  /** Its worktrees with uncommitted changes, which the delete loses: each named. */
   readonly unsaved: readonly string[];
-  /** A Navi's: the tickbox that deletes its folder too, and its note. Its delete is always confirmed by its name. */
-  readonly folder?: { readonly label: string; readonly note: string };
+  /**
+   * The tickbox that deletes its folder too, off by default, and its note: the desktop's label, its folder on a line of
+   * its own under it, as a phone's row is too narrow for both.
+   */
+  readonly folder: { readonly label: string; readonly path: string; readonly note: string };
 }
 
 /**
- * The delete's confirm, as the desktop's: a Navi is erased, its folder too when ticked (`naviDeleteWords`, the
- * desktop's own words); a plain folder keeps its folder; a repo's checkout, branches and
- * pull requests stay while its fleetd worktrees go (any with uncommitted changes named); the other repos a project
- * holds go from fleetd with it (#803), their checkouts staying on the machine. Uncommitted changes it would lose are
- * named apart (`unsaved`), for the confirm that asks for its name.
+ * The delete's confirm, the same for every project and in the desktop's own words (`deleteWords`): everything fleetd
+ * keeps for it is erased, its folder too when ticked. Uncommitted changes it would lose are named apart (`unsaved`); the
+ * confirm always asks for its name.
  */
 export const deleteWords = (p: ProjectSummary, settings: ProjectSettings, machine: string): DeleteWords => {
-  const navi = isNavi(p);
-  const own = (r: NonNullable<ProjectSummary["repos"]>[number]) => r.checkout.machineId === p.machineId && r.checkout.projectId === p.projectId;
-  const plain = !(p.repos ?? []).some(own);
-  const others = (p.repos ?? []).filter((r) => !own(r)).map((r) => r.name);
   const unsaved = (settings.worktrees?.worktrees ?? []).filter((w) => w.uncommitted).map((w) => w.branch ?? tilde(w.path));
   const path = tilde(settings.workspaceRoot);
-  if (navi) {
-    const words = naviDeleteWords(p.title, machine, path);
-    return { title: `Delete ${p.title}?`, message: words.message, button: "Delete Navi", unsaved, folder: { label: words.folder, note: words.folderNote } };
-  }
-  const lines = [
-    plain
-      ? `Its agents stop now and fleetd forgets it and its settings. Its folder at ${path} on ${machine} stays as it is.`
-      : `Its agents stop now, fleetd forgets it and its settings, and the worktrees its agents worked in are removed. Its checkout at ${path}, its branches and its pull requests stay.`,
-  ];
-  if (others.length > 0) lines.push(`Its other ${others.length === 1 ? "repo" : "repos"}, ${others.join(", ")}, ${others.length === 1 ? "goes" : "go"} from fleetd with it; ${others.length === 1 ? "its checkout stays" : "their checkouts stay"} on ${machine}.`);
-  return { title: `Delete ${p.title}?`, message: lines.join("\n\n"), button: "Delete Project", unsaved };
+  const words = eraseWords(p.title, machine, path);
+  const label = words.folder.endsWith(`, ${path}`) ? words.folder.slice(0, -(path.length + 2)) : words.folder;
+  return { title: `Delete ${p.title}?`, message: words.message, button: "Delete Project", unsaved, folder: { label, path, note: words.folderNote } };
 };
 
-/** A delete that loses uncommitted changes is confirmed by typing its name, as on the desktop: exactly, around spaces. */
+/** A delete is confirmed by typing its name, as on the desktop: exactly, around spaces. */
 export const deleteConfirmed = (typed: string, title: string): boolean => typed.trim() === title.trim() && title.trim() !== "";
 
 /** Why a delete can't be asked now: its machine has to list its worktrees first, so no uncommitted work goes unseen. */
@@ -224,14 +200,4 @@ export const suggestions = (text: string, d: Discovery | null): Found[] => {
     if (out.length === SUGGESTIONS_SHOWN) break;
   }
   return out;
-};
-
-/** The longest project name the desktop's box takes. */
-export const PROJECT_NAME_MAX = 200;
-
-/** Why a project's name won't do, in a few words; undefined when it will. */
-export const projectNameProblem = (name: string): string | undefined => {
-  if (/[\r\n]/u.test(name)) return "One line";
-  if (name.trim().length > PROJECT_NAME_MAX) return `Keep it under ${String(PROJECT_NAME_MAX)} characters`;
-  return undefined;
 };

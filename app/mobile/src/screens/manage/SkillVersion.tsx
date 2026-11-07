@@ -1,11 +1,11 @@
 // One version of a skill, pushed from its history: its why, who wrote it and when, and what it changed from the
 // version before as a prose diff (lines added in green, removed in red, the words that changed inside a line marked,
-// unchanged runs folded to a row that opens them). An older version of the Navi's own skill can be restored: it comes
+// unchanged runs folded to a row that opens them). An older version of the project's own skill can be restored: it comes
 // back as a new version (skill_revert), so nothing is lost.
 import { useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { fullTime } from "../../chatView";
-import { isYours, type DiffLine, type DiffPiece } from "../../desktop";
+import type { DiffLine, DiffPiece } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { mono, shape, space, type, useTheme, type Palette } from "../../theme";
 import { Button } from "../../ui/Button";
@@ -13,6 +13,7 @@ import { haptics } from "../../ui/haptics";
 import { EmptyState } from "../../ui/States";
 import { useNow } from "../time";
 import { errorWords, Note, Problem, useRead } from "./parts";
+import { manages } from "./model";
 import { readSkill, restoreSkill } from "./skillsApi";
 import { diffChunks, diffSummary, offers, whoOf, type SkillRead } from "./skillsModel";
 
@@ -52,7 +53,7 @@ export function SkillVersion({ navigation, route }: ChatInfoProps<"SkillVersion"
   const { after, before } = r.value;
   const v = after.versions.find((x) => x.version === version);
   const current = after.versions[0]?.version === version;
-  const restorable = !current && offers(after.skill, isYours(p, state.me)).edit && state.hub.phase === "live";
+  const restorable = !current && offers(after.skill, manages(p, state.me)).edit && state.hub.phase === "live";
   const chunks = diffChunks(before ?? "", after.text, open);
   const who = v === undefined ? undefined : whoOf(v, state.meName);
 

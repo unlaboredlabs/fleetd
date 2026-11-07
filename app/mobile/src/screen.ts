@@ -1,4 +1,4 @@
-// A Navi's or agent's live screen on the phone, as plain logic: which screens a chat shows as cards and what each
+// A project's or agent's live screen on the phone, as plain logic: which screens a chat shows as cards and what each
 // says, who has control, where a touch on the shown frame lands in the frame's own pixels (through the pinch zoom),
 // what a finger does to the page (a tap clicks, a drag scrolls, a touch held first presses and drags, as for a slider
 // or a press-and-hold captcha), what typing sends, and how often a frame is drawn. The hub's browser_watch,
@@ -284,7 +284,7 @@ export class FramePacer<T> {
   }
 }
 
-// ---- New Screen: a screen of the person's own, for a project or a Navi ----
+// ---- New Screen: a screen of the person's own, for a project ----
 
 /** The hub feature that says it opens people's screens (`screen_open`): without it, New Screen isn't offered. */
 export const NEW_SCREEN = "screen_open";

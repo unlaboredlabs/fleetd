@@ -1,4 +1,4 @@
-// What the project and Navi screens share: a text field as a grouped row, a row with a checkmark, the hub's error in
+// What the project screens share: a text field as a grouped row, a row with a checkmark, the hub's error in
 // a section's footnote, a sheet's ✕ and ✓ (iOS 26's own bar buttons, prominent for the ✓; text buttons on Android), and
 // the destructive confirm (an action sheet on iOS).
 import type { NativeStackNavigationOptions } from "@react-navigation/native-stack";

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRow, OrderCard, PrRow, ProfilesListOutput, ProjectSettings, ProjectSummary, TodoItem } from "../../desktop";
-import { naviDeleteWords } from "../../desktop";
-import { agentLines, allowed, checklist, deleteBlocked, deleteConfirmed, deleteWords, merges, orderLines, profileLines, profilesValue, projectNameProblem, subtitle, suggestions } from "./model";
+import { deleteWords as desktopDeleteWords } from "../../desktop";
+import { agentLines, checklist, deleteBlocked, deleteConfirmed, deleteWords, manages, merges, orderLines, profileLines, profilesValue, subtitle, suggestions } from "./model";
 
 const AT = "2026-10-28T10:00:00Z";
 
@@ -14,7 +14,7 @@ const project = (extra: Partial<ProjectSummary> = {}): ProjectSummary => ({
   threads: { running: 0, waiting: 0, failed: 0, idle: 0 },
   ...extra,
 });
-const navi = (extra: Partial<ProjectSummary> = {}) => project({ projectId: "ada", title: "Ada", workspaceRoot: "/home/ada/.fleetd/navi/ada", kind: "assistant", ...extra });
+const own = (extra: Partial<ProjectSummary> = {}) => project({ projectId: "ada", title: "Ada", workspaceRoot: "/home/ada/.fleetd/navi/ada", onlyMe: true, ...extra });
 
 const settings = (extra: Partial<ProjectSettings> = {}): ProjectSettings => ({
   machineId: "devbox",
@@ -28,17 +28,18 @@ const settings = (extra: Partial<ProjectSettings> = {}): ProjectSettings => ({
 });
 
 describe("what the person may do", () => {
-  it("lets anyone who operates manage a project, but never pick a Navi's profiles", () => {
-    expect(allowed(project(), "p_ada")).toEqual({ rename: true, profiles: true, forgetSignins: false, delete: true });
-    expect(allowed(project(), undefined)).toEqual({ rename: true, profiles: true, forgetSignins: false, delete: true });
+  it("lets anyone who operates manage a shared project", () => {
+    expect(manages(project(), "p_ada")).toBe(true);
+    expect(manages(project({ owner: "p_bob" }), "p_ada")).toBe(true);
+    expect(manages(project(), undefined)).toBe(true);
   });
 
-  it("lets only a Navi's owner rename it, forget its sign-ins or delete it", () => {
-    expect(allowed(navi({ owner: "p_ada" }), "p_ada")).toEqual({ rename: true, profiles: false, forgetSignins: true, delete: true });
-    expect(allowed(navi({ owner: "p_ada" }), "p_bob")).toEqual({ rename: false, profiles: false, forgetSignins: false, delete: false });
-    // Before people, or before hub_info answered: an unowned Navi is everyone's, an owned one nobody's here.
-    expect(allowed(navi(), undefined).delete).toBe(true);
-    expect(allowed(navi({ owner: "p_ada" }), undefined).delete).toBe(false);
+  it("lets only an Only-me project's owner manage it", () => {
+    expect(manages(own({ owner: "p_ada" }), "p_ada")).toBe(true);
+    expect(manages(own({ owner: "p_ada" }), "p_bob")).toBe(false);
+    // Before people, or before hub_info answered: an unowned one is everyone's, an owned one nobody's here.
+    expect(manages(own(), undefined)).toBe(true);
+    expect(manages(own({ owner: "p_ada" }), undefined)).toBe(false);
   });
 });
 
@@ -47,7 +48,7 @@ describe("its screen", () => {
     expect(subtitle(project(), "Dev Box")).toBe("Project on Dev Box");
     const repo = (name: string) => ({ repoId: name, name, checkout: { machineId: "devbox", projectId: name } });
     expect(subtitle(project({ repos: [repo("shop"), repo("api")] }), "Dev Box")).toBe("2 repos on Dev Box");
-    expect(subtitle(navi(), "Dev Box")).toBe("Navi on Dev Box");
+    expect(subtitle(own(), "Dev Box")).toBe("Project on Dev Box");
   });
 
   const agent = (laneId: string, role: AgentRow["role"], status: AgentRow["status"], extra: Partial<AgentRow> = {}): AgentRow => ({
@@ -139,52 +140,38 @@ describe("its screen", () => {
 });
 
 describe("Delete", () => {
-  it("erases a Navi in the desktop's words, with a tickbox naming its folder", () => {
-    const w = deleteWords(navi(), settings({ workspaceRoot: "/home/ada/.fleetd/navi/ada" }), "devbox");
-    expect(w.title).toBe("Delete Ada?");
-    expect(w.button).toBe("Delete Navi");
-    const desktop = naviDeleteWords("Ada", "devbox", "~/.fleetd/navi/ada");
-    expect(w.message).toBe(desktop.message);
-    expect(w.message).toContain("everything it had is erased from fleetd and devbox: its chat, memory, skills");
-    expect(w.folder).toEqual({ label: "Also delete its folder, ~/.fleetd/navi/ada", note: desktop.folderNote });
-    // A project's delete has no such tickbox.
-    expect(deleteWords(project(), settings(), "devbox").folder).toBeUndefined();
+  it("erases any project in the desktop's words, with a tickbox naming its folder", () => {
+    for (const p of [own(), project()]) {
+      const root = p.workspaceRoot;
+      const w = deleteWords(p, settings({ workspaceRoot: root }), "devbox");
+      expect(w.title).toBe(`Delete ${p.title}?`);
+      expect(w.button).toBe("Delete Project");
+      const desktop = desktopDeleteWords(p.title, "devbox", root.replace("/home/ada", "~"));
+      expect(w.message).toBe(desktop.message);
+      expect(`${w.folder.label}, ${w.folder.path}`).toBe(desktop.folder);
+      expect(w.folder.note).toBe(desktop.folderNote);
+    }
+    expect(deleteWords(own(), settings({ workspaceRoot: "/home/ada/.fleetd/navi/ada" }), "devbox").folder).toMatchObject({ label: "Also delete its folder", path: "~/.fleetd/navi/ada" });
   });
 
-  it("names a repo's other repos, which go with it, and worktrees with uncommitted changes", () => {
-    const own = { repoId: "r1", name: "shop", checkout: { machineId: "devbox", projectId: "shop" } };
-    const api = { repoId: "r2", name: "api", checkout: { machineId: "devbox", projectId: "api" } };
+  it("names the worktrees with uncommitted changes, a worktree without a branch by its path", () => {
     const w = deleteWords(
-      project({ repos: [own, api] as NonNullable<ProjectSummary["repos"]> }),
+      project(),
       settings({ worktrees: { dir: "/w", worktrees: [{ path: "/w/a", branch: "fleetd/T1-fix", sessionId: "s1", uncommitted: true }, { path: "/w/b", sessionId: "s2", uncommitted: false }] } }),
       "devbox",
     );
-    expect(w.button).toBe("Delete Project");
-    expect(w.message.split("\n\n")).toEqual([
-      "Its agents stop now, fleetd forgets it and its settings, and the worktrees its agents worked in are removed. Its checkout at ~/src/shop, its branches and its pull requests stay.",
-      "Its other repo, api, goes from fleetd with it; its checkout stays on devbox.",
-    ]);
-    // Uncommitted changes go to the confirm that wants the name typed; a worktree without a branch by its path.
     expect(w.unsaved).toEqual(["fleetd/T1-fix"]);
     const noBranch = deleteWords(project(), settings({ worktrees: { dir: "/w", worktrees: [{ path: "/home/ada/w/c", sessionId: "s3", uncommitted: true }] } }), "devbox");
     expect(noBranch.unsaved).toEqual(["~/w/c"]);
-  });
-
-  it("asks only the action sheet's tap when nothing uncommitted is lost", () => {
     expect(deleteWords(project(), settings(), "devbox").unsaved).toEqual([]);
-    expect(deleteWords(navi(), settings(), "devbox").unsaved).toEqual([]);
   });
 
-  it("enables a delete that loses uncommitted changes only once its name is typed exactly", () => {
+  it("enables the delete only once its name is typed exactly", () => {
     expect(deleteConfirmed("", "storefront")).toBe(false);
     expect(deleteConfirmed("store", "storefront")).toBe(false);
     expect(deleteConfirmed("Storefront", "storefront")).toBe(false);
     expect(deleteConfirmed("  storefront ", "storefront")).toBe(true);
     expect(deleteConfirmed("", " ")).toBe(false);
-  });
-
-  it("calls a project with no repo of its own a plain folder", () => {
-    expect(deleteWords(project(), settings(), "devbox").message).toBe("Its agents stop now and fleetd forgets it and its settings. Its folder at ~/src/shop on devbox stays as it is.");
   });
 
   it("waits until its machine lists its worktrees", () => {
@@ -211,11 +198,5 @@ describe("New Project", () => {
     expect(suggestions("acme/web", d).map((f) => f.name)).toEqual(["acme/web"]);
     expect(suggestions("zzz", d)).toEqual([]);
     expect(suggestions("api", null)).toEqual([]);
-  });
-
-  it("takes a name on one line", () => {
-    expect(projectNameProblem("Shop")).toBeUndefined();
-    expect(projectNameProblem("Shop\nfront")).toBe("One line");
-    expect(projectNameProblem("x".repeat(201))).toBe("Keep it under 200 characters");
   });
 });
