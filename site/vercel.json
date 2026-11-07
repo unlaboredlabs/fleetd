@@ -17,6 +17,11 @@
       "source": "/docs/projects-and-orders",
       "destination": "/docs/projects",
       "permanent": true
+    },
+    {
+      "source": "/docs/navi",
+      "destination": "/docs/projects",
+      "permanent": true
     }
   ],
   "rewrites": [

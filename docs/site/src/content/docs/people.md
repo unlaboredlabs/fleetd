@@ -22,8 +22,8 @@ A device never holds more than its person's role allows. A member's device opera
 paired with `admin`. Each device keeps its own cap too: a device paired `--role read` stays read-only. Admin options
 live on the Hub pages of the app's Settings, which only owners and admins see.
 
-Every project is open to everyone on the hub for now. Private projects and per-project roles come later. A
-[Navi](/docs/navi#yours) is the exception: only the person who made it sees and uses it, admins included.
+A project is open to everyone on the hub unless it is [Only me](/docs/projects#only-me): then only its owner sees
+and uses it, admins included. Per-project roles come later.
 
 ## Invite someone {#invite}
 
@@ -68,8 +68,8 @@ configuration**. They can switch at any time.
 | Work | Runs on |
 |---|---|
 | An order's agents (writers, readers, reviewers) | The choice of the person who started the order |
-| A Navi, its lead included | Its owner's choice |
-| A project's lead | The hub's API configuration, else the hub owner's subscription. The same on every turn, whoever writes |
+| An [Only me](/docs/projects#only-me) project, its lead included | Its owner's choice |
+| A shared project's lead | The hub's API configuration, else the hub owner's subscription. The same on every turn, whoever writes |
 | Work nobody started (automations, train fixes, the nightly memory refresh) | The same as the lead |
 
 - **The hub's API configuration** is a Claude API key and an optional custom endpoint (`ANTHROPIC_BASE_URL`). An
@@ -92,7 +92,7 @@ configuration**. They can switch at any time.
 
 In the app:
 
-- **Settings › Your accounts › Claude** is each person's own. *In use* says what your orders and your Navi run on now, or "Connect
+- **Settings › Your accounts › Claude** is each person's own. *In use* says what your orders and your Only me projects run on now, or "Connect
   your Claude to start orders" with what to do. *Runs on* picks your subscription or the hub's API key; the hub's key
   is offered only when you may use it. *Your subscription* takes the token: paste it and press Connect and test. The
   app seals it on your computer to every machine and never shows it again. Test, Replace and Disconnect are beside it.
@@ -108,7 +108,7 @@ The hub's tools are `claude_accounts_get`, `claude_hub_api_set`, `claude_hub_api
 [Security](/docs/security#claude) for how keys and tokens are kept.
 
 **Settings › Your accounts › 1Password** is each person's own too: a 1Password service account token that agents
-fill logins with in your orders and your Navi, unless the project has its own (see
+fill logins with in your orders and your Only me projects, unless the project has its own (see
 [Logins from 1Password](/docs/browser-sessions#1password)). Its tools are `onepassword_get`, `onepassword_set`,
 `onepassword_remove` and `onepassword_test`.
 

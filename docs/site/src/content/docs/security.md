@@ -70,7 +70,7 @@ files they are in. Keeping agents out takes a separate OS user, which fleetd doe
 Mac it is [an optional step](/docs/agents-mac)). So fleetd keeps what those tokens open small instead:
 
 - **1Password reads one vault.** fleetd's service account reads exactly one vault, made for fleetd, holding only the
-  logins agents sign in with and the card a Navi buys with. A service account reads only the vaults it was made with,
+  logins agents sign in with and the card a project buys with. A service account reads only the vaults it was made with,
   and 1Password can't add more later, so whatever else is in your 1Password stays out of reach even of an agent that
   reads the token.
 - **A card that can't cost much.** Keep a virtual card with a monthly limit, or a low-limit card, in that vault: never
@@ -80,7 +80,7 @@ Mac it is [an optional step](/docs/agents-mac)). So fleetd keeps what those toke
   or none, wants a look, with what to do: make a service account that reads only fleetd's vault, paste its token, and
   revoke the old one ([troubleshooting](/docs/troubleshooting#hub)). Test lists the vaults with that person's own token
   on a machine holding it.
-- A project's or a Navi's own `OP_SERVICE_ACCOUNT_TOKEN` variable is a secret the hub never tests: make it the same
+- A project's own `OP_SERVICE_ACCOUNT_TOKEN` variable is a secret the hub never tests: make it the same
   way, one vault of its own.
 
 Run agents on machines with nothing else on them you'd mind them reading, and keep the rest of your 1Password in
@@ -94,9 +94,9 @@ invite people, change roles and change hub-wide settings, and the hub always kee
 revokes all their devices at once.
 
 Chat messages, approvals, secrets, decisions and checklist changes record the person, next to the device as
-before. All projects are open to everyone on the hub, so give a hub only to people you trust with every project on
-it. Navis are the exception: the hub shows and serves each only to its owner, admins included (only deleting a
-removed person's Navi is an admin's). The hub's operator, and any agent on the hub machine, can read the hub's database: fleetd records who did what,
+before. A shared project is open to everyone on the hub, so give a hub only to people you trust with every shared project
+on it. An [Only me](/docs/projects#only-me) project is the exception: the hub shows and serves it only to its owner,
+admins included. An admin may only turn its Only me off, or delete one of a person since removed. The hub's operator, and any agent on the hub machine, can read the hub's database: fleetd records who did what,
 but it keeps nothing private from them.
 
 ## Claude accounts {#claude}
@@ -110,7 +110,7 @@ every other secret:
 - A session on an account drops the machine's own key, token and gateway variables, so they can't outrank it. One
   whose account the node no longer holds fails to start; it never falls back to the machine's own login. A node too
   old to run accounts gets no work on one.
-- One person's subscription runs only work they started, or their Navi. Removing a person forgets their token on
+- One person's subscription runs only work they started, or their Only me projects. Removing a person forgets their token on
   every machine.
 
 Like project secrets, the value is in the claude process's environment. Any process of the node's OS user can read
@@ -128,7 +128,7 @@ it, so the machine's owner and any agent running there could reach it, as [Peopl
 Every project's lead runs on its machine with the person's access and no sandbox (decision `projects.one-model`,
 D310). It runs in Claude Code's `manual` permission mode, allowed unasked what a full-access lead does: it reads and
 runs commands as you would, starts agents and works with repos. Only three things reach the person, by the project's
-[approval mode](/docs/navi#approvals):
+[approval mode](/docs/projects#approvals):
 
 - A send through an [integration](/docs/integrations) (a server saved with `integration`); its reads run unasked. A
   server saved without `integration` runs every tool unasked, as it does for the project's agents, who never get an
@@ -136,14 +136,14 @@ runs commands as you would, starts agents and works with repos. Only three thing
 - A first fetch or browser visit to a site the person didn't give it (a link in their own message is given).
 - `project_message`, `confirm_step` and `automation_confirm`.
 
-A command that would wipe the machine or your home (`rm -rf ~`, `mkfs`) is refused, whoever approves it. A former
-Navi's lead still runs its commands in the home it kept (`navis/<project id>/home` in the node's directory), with what
-it installed there first on their `PATH`; its agents use yours. A lead whose
+A command that would wipe the machine or your home (`rm -rf ~`, `mkfs`) is refused, whoever approves it. A project
+that had a home of its own from an earlier fleetd still runs its lead's commands there (`navis/<project id>/home` in
+the node's directory), with what it installed there first on their `PATH`; its agents use yours. A lead whose
 project has no repo does its own work and keeps `Edit`, `Write`, `WebFetch` and `WebSearch`; a lead with repos leaves
 those to its agents. Which one it is gets read at each lead start, so adding a repo changes it.
 
-A machine whose node is older starts leads as before: a Navi in its sandbox, every other lead under full access. Such a
-project takes no integration until that machine runs `fleetd update`.
+A machine whose node is older starts leads the old way, an Only me project's in a sandbox. Its projects take no
+integration until that machine runs `fleetd update`.
 
 ## The agents' Mac's screen {#mac-screen}
 
@@ -173,20 +173,21 @@ own](/docs/agents-mac#own-user), which keeps agents out of your files and logins
 
 ## Hub links {#hub-links}
 
-A hub link lets a Navi on one hub open and follow work in projects on another hub, for example from a personal hub
-into a team hub. You make it on the hub it reaches and add it to the Navi on the other ([how](/docs/navi#hub-links)).
+A hub link lets a project on one hub open and follow work in projects on another hub, for example from a personal
+hub into a team hub. You make it on the hub it reaches and add it to the project on the other
+([how](/docs/projects#hub-links)).
 
 | Rule | Detail |
 |---|---|
 | It acts as you | A link key (`flk_…`) acts as you, at the lesser of your [role](/docs/people) on that hub and the grants of the device you made it on, never above operate, limited to the projects you pick or not. A read-only device can't make one. Removing you from the hub stops it. |
 | Revoking a device leaves its links | By design, revoking a lost device doesn't stop the links made on it: they act as you, not as the device, and never gain rights it lacked. Revoke them too, in **Settings › Hubs**, **Hub links**, on that hub. |
 | It does five things | List the projects it reaches, ask a project's lead for work, read their status, follow its own asks, revoke itself. It can't use `/mcp` or the app's connection, so it reads no chat and answers no approval, question or secret. |
-| Its messages are never your answer | They go into the project's chat as "*you* via *label* Navi", an agent's input, like any Navi message. Approvals, secrets and merges still need you there. |
-| The other hub sees only the requests | Not the Navi, its chat or its title. |
-| The key stays sealed | The app seals it to the Navi's hub, which opens it only to call the other hub. Nothing shows it again. |
-| A person names the host it calls | `hub_link_add` makes the Navi's hub contact the URL that a person with operate gives it. Only the Navi's owner adds or removes its links. |
-| Only the Navi's hub calls out | It must reach the other hub over HTTPS or a tailnet; plain HTTP elsewhere is refused. When it can't reach it, the Navi and the link say "Can't reach *label*" with the reason. |
-| Revoke from either side | Removing it on the Navi's hub deletes the key at once and revokes it on the other hub when that answers. Revoking it on the other hub refuses its next call. A link unused for 90 days expires. |
+| Its messages are never your answer | They go into the project's chat as "*you* via *label*", an agent's input, like any message from another project's lead. Approvals, secrets and merges still need you there. |
+| The other hub sees only the requests | Not the project that asks, its chat or its title. |
+| The key stays sealed | The app seals it to the asking project's hub, which opens it only to call the other hub. Nothing shows it again. |
+| A person names the host it calls | `hub_link_add` makes the project's hub contact the URL that a person with operate gives it. On an Only me project, only its owner adds or removes its links. |
+| Only the project's hub calls out | It must reach the other hub over HTTPS or a tailnet; plain HTTP elsewhere is refused. When it can't reach it, the lead and the link say "Can't reach *label*" with the reason. |
+| Revoke from either side | Removing it on the project's hub deletes the key at once and revokes it on the other hub when that answers. Revoking it on the other hub refuses its next call. A link unused for 90 days expires. |
 
 ## Software {#software}
 

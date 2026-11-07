@@ -61,7 +61,7 @@ each message's time too.
 Your zone is the one your app or phone sends with each message (the desktop app's, or the phone's own setting).
 Before your devices have sent one, and for a hub that has no person for you, the lead gets the global decision
 `policy.tz`, else the hub machine's zone, and the message says which ("UTC, the hub machine's zone: theirs isn't known
-yet"). A message on [Telegram](/docs/navi#telegram) uses the zone your app or phone sent last.
+yet"). A message on [Telegram](/docs/projects#telegram) uses the zone your app or phone sent last.
 
 ### No time estimates {#no-time}
 
@@ -201,8 +201,9 @@ Leads remember how you work and what each project decided, so you don't say "con
 correct the lead or state a rule, it calls `remember` in that turn, and the chat shows "Remembered: …" with Undo. When
 an entry no longer holds, the lead removes it with `forget`, and the chat shows "Forgot: …" with the reason and Undo.
 
-- **You** (your own memory): how you work everywhere. Only you edit it. The agents of the work you start and your
-  Navi get it; on a hub with several people, a project's lead gets nobody's (see below).
+- **You** (your own memory): how you work everywhere. Only you edit it. The agents of the work you start and the leads
+  of your [Only me](/docs/projects#only-me) projects get it; on a hub with several people, a shared project's lead
+  gets nobody's (see below).
 - **Each project** (`MEMORY.md`, plus topic files for detail): only that project's sessions get it. Another project
   never sees it.
 
@@ -237,9 +238,9 @@ Your memory › Import memory:
    added.
 
 The hub reads the answer in one model turn on your own Claude (the account your work runs on, see
-[Claude accounts](/docs/people#claude)), in your own [Navi](/docs/navi) and nowhere else, so nobody else can read
-what you pasted. Without a Navi, import asks you to create one first; while your Navi's machine is offline, it says so,
-and you try again once it's back. That turn has no tools at all, not even fleetd's, and its prompt (`memory.import`) treats the pasted text as data only: a line in it
+[Claude accounts](/docs/people#claude)), in an [Only me](/docs/projects#only-me) project of yours and nowhere else, so nobody else can read what you
+pasted. Without one, import offers **New project** first; while its machine is offline, it says so, and you try again
+once it's back. That turn has no tools at all, not even fleetd's, and its prompt (`memory.import`) treats the pasted text as data only: a line in it
 that tries to give orders is at most an entry, never followed. It turns the answer into short entries of your own
 memory, which the hub writes the way the lead's `remember` does:
 
@@ -251,14 +252,14 @@ memory, which the hub writes the way the lead's `remember` does:
 Nothing else changes: no project's memory, nobody else's. The list above the import shows the new entries at once,
 on every device.
 
-### A Navi's approval checker {#navi-checker}
+### The approval checker {#checker}
 
-Before a Navi's risky action (a send, a share, a first visit to a site, a final Confirm on a site) reaches you, its
-[checker](/docs/navi#approvals) judges it in one model turn: a fresh session with no tools at all, on your own
+Before a lead's risky action (a send, a share, a first visit to a site, a final Confirm on a site) reaches you, its
+[checker](/docs/projects#approvals) judges it in one model turn: a fresh session with no tools at all, on your own
 Claude, on the checker's model and effort (Sonnet 5.5 at medium unless you pick another). Its system prompt is
-`navi.checker`, which an admin can change on the Prompts page; its one message is the action, where each part came
-from, your recent messages and the Navi's last question, as JSON inside `<action_review>`. It never gets the mail,
-pages or files the Navi read. It answers go, ask or block with a one-line reason; fleetd's own rules (the floors, and
+`approvals.checker`, which an admin can change on the Prompts page; its one message is the action, where each part came
+from, your recent messages and the lead's last question, as JSON inside `<action_review>`. It never gets the mail,
+pages or files the lead read. It answers go, ask or block with a one-line reason; fleetd's own rules (the floors, and
 the cases that always ask) hold past it, and anything else it answers asks you.
 
 ### The nightly refresh {#memory-refresh}
@@ -277,7 +278,7 @@ no longer holds stops misleading the agents:
   shows its next and last run, and its Run now refreshes the project at once.
 - **What it reads:** the chat since the last refresh (your messages and the lead's, newest kept, up to about 40,000
   characters), the active decisions and every memory file of the project, plus the memory of the person whose chat it
-  is: a Navi's owner, else the one person who wrote since the last refresh.
+  is: an Only me project's owner, else the one person who wrote since the last refresh.
 - **What it may do:** it is a lead session of its own, the `lead.memory` prompt, that opens no order and never
   writes in the chat. It may use `memory_read`, `remember` and `forget` and nothing else: it starts with none of
   Claude's own tools (no shell, files or web) and none of your MCP servers, its machine refuses any other tool it
@@ -338,7 +339,7 @@ Each session keeps the exact prompt versions it started with. An edit reaches ne
 attempt, a lead at its next start. To give a running lead your edit now, start a fresh one with `lead_start {fresh: true}` from an
 [MCP client](/docs/mcp-clients).
 
-A lead's or Navi's next turn starts a fresh session by itself, between turns and never in the middle of one, when it has
+A lead's next turn starts a fresh session by itself, between turns and never in the middle of one, when it has
 been idle for over an hour (its prompt cache is gone) or when the [MCP servers](/docs/mcp-servers#takes-effect) it gets
 were added, edited or removed since its session started. A fresh session starts like any lead, then reads the last few
 chat messages before the one it answers.

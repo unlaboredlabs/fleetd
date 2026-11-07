@@ -1,15 +1,15 @@
 ---
 title: Phone app
-description: Chat with your Navis and projects and answer approvals from your phone. Build and sign it yourself, for iPhone and Android phones, on GitHub's runners, and update it over the air.
+description: Chat with your projects and answer approvals from your phone. Build and sign it yourself, for iPhone and Android phones, on GitHub's runners, and update it over the air.
 ---
 
 The phone app connects to your [hub](/docs/glossary#hub) as the desktop app does, with its own key. It shows your
-[Navis](/docs/navi) and projects, with what needs you on top, and their chats, live as the lead writes. A chat with an
+[projects](/docs/projects), with what needs you on top, and their chats, live as the lead writes. A chat with an
 [approval](/docs/approvals-and-secrets) waiting on you sits at the top of the list with its count, and **Needs you**
 shows only those; you answer each from its card in the chat, with everything it would do. Its notifications show the
-full text, end-to-end encrypted. You can [watch and take over](#screens) a Navi's or agent's screen when it needs
-you (a captcha, a bank's check, a sign-in only you can do), open a screen of your own, make, rename and delete Navis
-and projects, and on an iPhone
+full text, end-to-end encrypted. You can [watch and take over](#screens) a lead's or agent's screen when it needs
+you (a captcha, a bank's check, a sign-in only you can do), open a screen of your own, make, rename, archive and
+delete projects, and on an iPhone
 [share](#share) text, links and images into a chat from any app. An admin can update fleetd. Secrets, machines, people
 and the hub's other admin pages stay in the desktop app.
 
@@ -58,43 +58,46 @@ Your pins are yours: the hub keeps them, in order, for each person, so they're t
 teammate's pins never change your list. Each hub keeps its own, and the app keeps them apart. The first time it connects
 to a hub that keeps pins, it sends up the pins it already had of that hub's chats, never another hub's.
 
-## Navis and projects {#manage}
+## Projects {#manage}
 
-Tap **+** at the top of Chats for **New Navi** or **New Project**.
-
-- **New Navi**: a name (Navi when left empty) and, with more than one machine it could live on, which one. Its chat
-  opens once it's made.
-- **New Project**: a GitHub repo to clone (`owner/repo` or its URL) or the path of a folder already on a machine, an
-  optional name, and the machine. Under the field, the app lists the checkouts it found on your machines and your
+Tap **+** at the top of Chats for **New Project**: a name, and optionally a GitHub repo to clone (`owner/repo` or its
+URL) or the path of a folder already on a machine; with neither, the machine makes a new folder for it. Then the
+machine, and **Only Me**, on for a project with no repo until you turn it off ([Only me](/docs/projects#only-me)). A
+new folder's chat opens at once. Under the field, the app lists the checkouts it found on your machines and your
   GitHub repos, filtered as you type; one that's already a project opens its chat. A clone shows its progress, then
   what the hub read of the repo: its default branch, CI and merge rules. When the clone's folder already holds the
   same repo, **Add the Folder That's There** adds it as it is.
 
-The **ⓘ** at the top of a chat opens its Navi's or project's page:
+The **ⓘ** at the top of a chat opens its project's page:
 
 - **Its icon**: tap the avatar, or **Edit** under it. Pick one of nine glass faces and one of twelve colors; the
   icon at the top shows it at once, and **Done** keeps it. Or **Choose Photo** or **Take Photo** (and, once it has
   one, **Remove Photo**): a photo opens in **Move and Scale**, pinch to zoom, drag to move, then **Choose**. Every
-  phone and desktop shows it. A project or Navi nobody picked for wears one made from its id. The hub keeps only a
+  phone and desktop shows it. A project nobody picked for wears one made from its id. The hub keeps only a
   photo's circle, at most 512 px, without its location or other metadata.
-- **Running**: the lead and the agents working now, each with its state. Then the project's open orders, its
-  checklist and its merges of the last two weeks, each opening its pull request. Change these in the chat or the
+- **Agents**: the lead and the agents working now, each with its state. Then the project's open orders, its
+  **To-do** and its merges of the last two weeks, each opening its pull request. Change these in the chat or the
   desktop app.
 - **Name**: rename it. Its folder keeps its name.
 - **Agent profiles**, for a project, when the hub has more than one: the profiles its lead may run agents on. The
   hub's default is always allowed.
-- **Forget Sign-ins…**, for a Navi: signs it out of every site its browser kept, after a confirm.
-- **Delete Navi** or **Delete Project**: asks first and names what goes. Its agents stop and fleetd forgets it, with
-  its fleetd worktrees and the checkouts of the project's other repos. Its folder, branches and pull requests stay.
-  When worktrees hold uncommitted changes, which the delete loses, the confirm names them and you type the project's
-  name to delete, as in the desktop app. Delete waits until the machine can list them.
+- **Only Me**: who sees and uses it, as in the desktop app.
+- **Approvals**, **Payments**, **Telegram**, **Linked Hubs** and **Skills**: the project's
+  [approval mode](/docs/projects#approvals) and what ran without asking, its card and purchases, its Telegram bot, the
+  hubs it reaches and what it learned, as in the desktop app's settings. The checker's model and a Telegram bot's
+  token are set in the desktop app.
+- **Forget Sign-ins…**: signs it out of every site its browser kept, after a confirm.
+- **Archive Project** sets it aside with everything kept; **Unarchive Project** brings it back.
+- **Delete Project**: erases everything fleetd keeps for it, as in the desktop app ([Delete a
+  project](/docs/projects#delete)), with a tickbox for its folder, once you type its name. When worktrees hold
+  uncommitted changes, which the delete loses, the confirm names them. Delete waits until the machine can list them.
 
-A member does everything here on the machines they operate. A Navi is its owner's alone: only they can rename it,
-forget its sign-ins or delete it. The hub checks each change too.
+A member does everything here on the machines they operate, and what you may not do isn't offered. An Only me
+project is its owner's alone. The hub checks each change too.
 
 ## Screens {#screens}
 
-A Navi or agent that needs you on its [screen](/docs/browser-sessions) (a captcha, a bank's 3-D Secure check, a passkey,
+A lead or agent that needs you on its [screen](/docs/browser-sessions) (a captcha, a bank's 3-D Secure check, a passkey,
 a sign-in only you can do) asks for you with `request_takeover`. The phone gets a notification, "Needs you on its
 screen: Solve the captcha on booking.com", and the chat shows a card, **Nova needs you**, with its reason and **Open**.
 Any other screen running in the chat has a card too, with **Watch**.
@@ -113,14 +116,14 @@ site's name.
 
 It's the desktop's live view and takeover, over the same hub connection: the phone draws at most 12 frames a second,
 and a slow connection skips frames rather than falling behind. Only a person's device takes a screen over, with
-operate on its machine, and a Navi's screen is its owner's alone: nobody else can watch it, take it over or read its
+operate on its machine, and an Only me project's screen is its owner's alone: nobody else can watch it, take it over or read its
 recording. What you type goes to the page; the action log says that you took over, never what you typed.
 
-**New Screen**, on a project's or Navi's ⓘ page, opens a screen of your own: a browser unless you pick another kind,
+**New Screen**, on a project's ⓘ page, opens a screen of your own: a browser unless you pick another kind,
 and the machine when more than one can. A kind no machine can host says why in its row; picked, it says why in full
 under **Can't open**, with **Turn On** for an owner or admin where it is only switched off on a machine, or whom to
 ask. It opens in the live view with you in
-control, and **End Screen** closes it. A browser starts on a blank page: tap the bar at the top to say where it goes. A Navi's browser runs on the Navi's own profile, so a site you sign in to there
+control, and **End Screen** closes it. A browser starts on a blank page: tap the bar at the top to say where it goes. A browser runs on the project's own profile, so a site you sign in to there
 stays signed in for it. On a full machine, **Wait** keeps your place for its next slot, and the screen opens once it
 has one. A PR's build opens from the desktop app. See [Open one yourself](/docs/browser-sessions#yours).
 
@@ -149,7 +152,7 @@ On an iPhone, **fleetd** is in the share sheet of Safari, Photos and any other a
 images into a chat you pick, with a message of your own if you want one.
 
 1. Tap **Share**, then **fleetd**. The sheet shows what you're sharing, with **Add a message** under it.
-2. Pick a chat: your most recent ones are in a row on top, then every Navi and project, with **Search chats**.
+2. Pick a chat: your most recent ones are in a row on top, then every project, with **Search chats**.
 3. Tap **Send**. Images go up first, then the message with them, and the sheet closes once the hub has it.
 
 A link goes as its page title and address, after your message. Images the hub doesn't take as they are, such as HEIC
@@ -164,8 +167,7 @@ it yet.
 
 ## Notifications {#notifications}
 
-The first time the app connects, it asks to send notifications. They show what happened in full: a Navi's reply, a
-lead's message, an approval waiting for you, an order that landed or stopped.
+The first time the app connects, it asks to send notifications. They show what happened in full: a lead's reply, an approval waiting for you, an order that landed or stopped.
 
 1. When you pair, the phone makes its own key pair. The secret key never leaves the phone: on iOS it is in the
    Keychain, shared only with the app's notification extension; on Android, in storage encrypted with a Keystore key.

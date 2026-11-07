@@ -1,10 +1,13 @@
 ---
 title: Projects
-description: "Add a project or start a new one, choose its branch, task profiles and settings, and how its lead plans the work."
+description: "Add a project or start a new one, choose who sees it, its branch, task profiles and settings, what its lead asks first, and how it plans the work."
 ---
 
-You'll add a repo as a [project](/docs/glossary#project), send it work, and follow that work to merged pull requests.
-A project doesn't need a repo to start: it can be a plain folder, and repos can be added later.
+A [project](/docs/glossary#project) is a chat with a lead, in a folder of its own, holding zero or more repos. Send
+it work and follow that work to merged pull requests, or keep one with no repo as your own assistant: one for home,
+one for taxes. Every project has the same abilities: memory, [automations](/docs/automations),
+[screens](/docs/browser-sessions), [Telegram](#telegram), [kept sign-ins](#sign-ins), [purchases](#purchases),
+[skills](#skills) and [links to other hubs](#hub-links).
 
 ## Add a project {#add-a-project}
 
@@ -39,7 +42,7 @@ A project doesn't need a repo to start: it can be a plain folder, and repos can 
 |---|---|
 | A GitHub URL or `owner/repo` | Clones it onto the least busy online worker, into `~/src` (or `~/code`, `~/projects`). |
 | A path, such as `~/src/storefront` | Adds that existing checkout on this machine. |
-| A folder with no git, such as `~/notes` | Adds it as a plain folder: its lead chats, remembers and uses screens there. Agents that change code need a repo. A [Navi](/docs/navi) is one of these. |
+| A folder with no git, such as `~/notes` | Adds it as a plain folder: its lead chats, remembers and uses screens there. Agents that change code need a repo. |
 | `--new <name>`, such as `--new "Field notes"` | Starts a new, empty project: the machine makes its folder. See [Start a new project](#start-a-new-project). |
 | Nothing, in a terminal | Lists checkouts on every worker and your repos from `gh repo list`, to pick from. |
 
@@ -48,6 +51,7 @@ A project doesn't need a repo to start: it can be a plain folder, and repos can 
 | `--machine <id>` | Clone to, or look for the path on, that worker. |
 | `--dest <dir>` | Clone into that folder, or make a new project's folder there. |
 | `--git-init` | With `--new`: run `git init` in the new folder. |
+| `--only-me`, `--no-only-me` | Keep it to yourself, or share it with everyone on the hub. By default a project with no repo is [Only me](#only-me) and one with a repo is shared. |
 | `--use-existing` | Add the folder's checkout when it already holds the same repo. Without a terminal, this is how you accept it. |
 
 fleetd reads GitHub through `gh` on the hub machine, as the hub's [GitHub App](/docs/github/) where it is installed. A private repo clones on any worker where `gh auth login` was run.
@@ -55,8 +59,9 @@ When something is in the way, such as an offline worker or a folder that exists,
 
 ### Start a new project {#start-a-new-project}
 
-A project can start as a plain folder, with no repo. In the app, open Add project, type the new project's name and
-pick **New project**. Pick the machine, check the folder it shows, and click **Create project**. From a terminal:
+A project can start as a plain folder, with no repo. In the app, click **+** beside the projects in the sidebar
+(**New project**) and type its name: the same box takes a GitHub URL to clone or a folder's path. Pick the machine, check the folder it shows and the **Only me**
+switch, and click **Create project**. From a terminal:
 
 ```sh
 fleetd project add --new "Field notes" --machine devbox
@@ -66,8 +71,10 @@ fleetd project add --new "Field notes" --machine devbox
 - An empty folder that is already there is used as it is. A folder that holds files is refused, and nothing is added.
 - It has no git unless you tick **Start a git repo in it** (`--git-init`).
 
-The project opens at once. Its lead chats, remembers and uses screens in the folder; agents that change code need a
-repo. Add one when you need it in **Settings → Projects → Repos**, or with `fleetd project repo add`.
+The project opens at once and its lead starts with your first message. With no repo, the lead does the work
+itself: it chats, remembers, writes drafts and notes, reads the web and uses screens in the folder. Agents that
+change code need a repo. Add one when you need it in **Settings → Projects → Repos**, or with
+`fleetd project repo add`.
 
 ### List and remove projects
 
@@ -76,8 +83,9 @@ fleetd project list
 fleetd project remove devbox/storefront
 ```
 
-`list` prints each project as `<machineId>/<projectId>`, its title and its folder. `remove` stops the project's agents and
-erases it: see [Delete a project](#delete). Its files, branches and worktrees stay.
+`list` prints each project as `<machineId>/<projectId>`, its title and its folder; `--archived` includes archived
+ones. `remove` stops the project's agents and erases it: see [Delete a project](#delete). Its files, branches and
+worktrees stay.
 
 ### Repos {#repos}
 
@@ -114,11 +122,18 @@ Open a project's settings in the desktop app: Settings → Projects, then pick t
 |---|---|
 | Icon | The circle its chat shows in the sidebar, the chat and on the phone. Pick one of nine glass faces and one of twelve colors: the large icon shows what the pointer is over, and a pick takes effect at once everywhere. One nobody picked is made from its id. Or **Upload image…** (or drop a png, jpeg or webp on the icon); **Move and scale** lets you drag and zoom it before **Save**. The hub keeps only the circle's square, at most 512 px, without the file's metadata. **Remove image** brings the icon back. |
 | Name | How fleetd shows the project. Its folder keeps its own name. |
-| Only me | Only its owner sees it and uses it, in lists, chats and tools; nobody else on the hub does, an admin neither. On by default for a new project with no repo (a plain folder), and for every former Navi; off for a clone or a repo folder. Its owner changes it, or an admin turns it off, which shares it with everyone on the hub (decision `projects.one-model`, D310). Only an admin turns it on for a project nobody owns, which then becomes theirs. `project_add` sets it when it adds a new project; for one it already has, it changes as `project_settings_set` does. Paying with a card and filling from 1Password need it on: turned off, the project keeps its card but doesn't pay until it is on again. |
-| Telegram, linked hubs, skills | Every project has them, as a Navi did: see [Navi](/docs/navi). Pairing Telegram makes the project yours when it has no owner, so what you send there is your own message. |
+| Only me | Who sees and uses it. See [Only me](#only-me). |
 | Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and the setup it runs with: its own, or the default. A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, **Default setup**: what runs in each new worktree of a repo without setup of its own. See [Setup commands](#setup). |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
+| Telegram | Talk to its lead from Telegram. See [Telegram](#telegram). |
+| Linked hubs | Hubs its lead opens and follows work on. See [Hub links](#hub-links). |
+| Approvals | Who approves its lead's sends and first visits, and what ran without asking. See [What the lead asks first](#approvals). |
+| Integrations | The accounts its lead reads and sends through. See [Integrations](/docs/integrations). |
+| Sign-ins | **Forget sign-ins…** signs its browser out of every site. See [Sign-ins](#sign-ins). |
+| Skills | What its lead learned and what was installed for it. See [Skills](#skills). |
+| Payments | The card it pays with, and its purchases. See [Purchases](#purchases). |
 | MCP servers | The project's own MCP servers for its agents, and the global ones it gets. See [MCP servers](/docs/mcp-servers). |
+| Archive | See [Archive](#archive). |
 | Delete project | See [Delete a project](#delete). |
 
 Its **Instructions & memory** page has **Refresh memory every night**: on (the default), around 04:00 on a day with
@@ -211,6 +226,38 @@ another, up to an hour), stops the rest.
 - Setup runs only in agents' worktrees, never in the project's checkout, and only on machines whose fleetd is new
   enough; the page says when it isn't.
 
+### Only me {#only-me}
+
+An Only me project is its owner's alone: only they see it and use it, in the sidebar, chats, approvals, screens,
+**Hub links** and tools. Nobody else on the hub does, an admin neither. A shared one (Only me off) is open to everyone
+on the hub, as every project with a repo is by default.
+
+- **On by default** for a new project with no repo, and for every personal assistant an earlier fleetd made; off for
+  a clone or a repo folder. The **Only me** switch in New project sets it as the project is made.
+- **Who changes it:** its owner, or an admin, who may turn it off and share it with everyone on the hub (decision
+  `projects.one-model`, D310). Only an admin turns it on for a project nobody owns, which then becomes theirs. On a
+  hub from before people, a project made earlier belongs to the person whose device made it, else the hub's owner.
+- **Your private life stays in it.** Keep family, health, money and accounts in an Only me project's memory, never in
+  your user memory: every piece of work you start reads your user memory, so it holds only how you like to work.
+  [Memory import](/docs/what-agents-are-told#memory-import) runs only in an Only me project of yours.
+- **Paying and 1Password need it on.** A card fill and a [secure input](#secure-input) from 1Password run only in an
+  Only me project. Turned off, a project keeps its card but doesn't pay until it is on again.
+
+Your own Only me projects come first in your sidebar, in your order; drag a row to move it. ⌘1–9 (Ctrl on Linux and
+Windows) open the first nine.
+
+### Archive {#archive}
+
+**Archive**, in a project's right-click menu or at the end of its settings, takes it out of the sidebar and stops its
+lead, with **Undo** in the notice. Its chat, memory, folder and settings stay. An archived project is listed in
+Settings › Projects, with **Bring back**; it comes back as it was, and its lead starts with your next message. A
+message to an archived project waits until you bring it back.
+
+```sh
+fleetd project archive devbox/taxes
+fleetd project unarchive devbox/taxes
+```
+
 ### Delete a project {#delete}
 
 **Delete project…** stops the project's agents, removes the worktrees they worked in, and erases the project: one rule
@@ -285,6 +332,406 @@ repo with no commits yet, nor run a reader on a machine whose fleetd is too old 
 
 A writer is checked for duplicates against the work in flight on its own repo only. The lead's `agents` list names
 the project's repos (`Repos: R1 api, R2 web.`), and each agent's `repoId` says which one it works in.
+
+## What the lead asks first {#approvals}
+
+A project's lead runs with your access and no sandbox ([How leads run](/docs/security#how-leads-run)): it reads and
+writes what you can, installs what it needs, starts agents and works with repos, and its shell commands never ask. A
+command that would wipe the machine or your home folder (`rm -rf ~`, `rm -rf /`, `mkfs`, `dd` onto a disk, a fork
+bomb) is refused, with why.
+
+What reaches outside asks first: a send, reply, forward, share or invite through an
+[integration](/docs/integrations), a site it opens on its own for the first time, the final Confirm or Submit on a
+site (`confirm_step`), and a message to another project's lead (`project_message`), whose card is headed "Message the
+lead of Shop" and shows the exact text. The project's **Approvals** setting decides who approves them (decision D263):
+
+| Mode | What happens |
+|---|---|
+| **Checker decides** (default) | A fresh model judges each risky action first. **Go** runs it and puts one quiet line in the chat: "Let through without asking you: send_message on gmail, to sam@example.org. The checker's reason: you asked to tell Sam that Saturday works". **Ask** brings the approval card, with the checker's reason on it. **Block** refuses it and tells you why, on a card with **Approve anyway**. |
+| **Ask me about everything** | Every risky action waits for you on a card. No checker runs. |
+| **YOLO** | No checker runs and nothing asks, not even for the cases fleetd's own rules ask about below (a recipient only an email named, a public share, a link carrying data). The floors still hold. Nothing shows in the chat; each action is still in the log below. |
+
+A card shows in the chat with **Approve** and **Deny**, and the sidebar marks the project *approve* until you answer.
+**Approve** runs the tool with exactly the input shown; **Deny** tells the lead you said no, with your reason if you
+give one. A prompt that goes away on its own (the run ended) closes its approval.
+
+### Sites {#sites}
+
+A link you write in your own chat message is allowed as you send it, so the lead fetches or opens it without asking.
+A link it finds itself, or reads in an email or on a page, isn't: the first time it fetches a page or opens a site in
+its browser, the approval mode decides, with the site named. Approve once and it fetches and opens that site unasked
+from then on.
+
+- In a browser command the URL must stand alone, plain or in single quotes
+  (`agent-browser open 'https://example.org/a?b=c'`). Double quotes, shell characters, an `agent-browser open` inside
+  a longer command, or a flag that changes the browser (`--session`, `--cdp`) asks each time.
+- `www.` is the same site, a subdomain is another, and `localhost` is a site per port (`localhost:3000`). Only `http`
+  and `https` name a site: `file:`, `data:`, `about:` and other schemes ask every time.
+- **Plain public reads** (decision D286): in **Checker decides**, a first fetch or
+  visit whose link carries no data runs on fleetd's own rule, with no checker call and no line in the chat, since a
+  `curl` of the same page already runs unasked. Its site isn't remembered. The link must be `http` or `https` to a
+  named public host (no IP address, `localhost`, `.local` or `.ts.net` name), with no query, no address or long code,
+  and no part of its path or `#` fragment that your messages or your own data the lead read hold (mail, files,
+  calendar; a web page's or a search's own links don't count). Any other link goes to the checker.
+- `project_sites` and `project_site_revoke` list the project's sites, those from your links included, and take one
+  back; a revoked site asks again.
+
+### The checker {#checker}
+
+The checker runs on your own Claude ([Claude accounts](/docs/people#claude)), as a session with no tools at all, in
+an empty folder of fleetd's own rather than the project's (so no `CLAUDE.md`, settings or skills the lead wrote reach
+it), on **Sonnet 5.5 at medium effort** by default. Pick another model (Opus 5.5, Haiku 5.5, Fable 5.1) or effort in
+the same setting. It reads only:
+
+- the action exactly as it runs: the tool, the recipients or the link, the full text;
+- where each part came from: your messages (`person`), text you pasted (`person (pasted text)`), your contacts,
+  the thread being replied to, your sent mail, an event's attendees, your files, a site you allowed, or `untrusted:
+  an email from …` / `a web page on …` for anything only content the lead read says, else `the lead`. In a list of
+  several mails each one's headers count, up to the first quoted or forwarded mail: nothing in or after a quote does,
+  so in your sent mail only each mail's own sender is you;
+- your recent messages to the lead, and its last question to you, marked as the lead's. A message that came through
+  the phone's share sheet or a Shortcuts action, or one forwarded on Telegram, isn't your go-ahead: the checker reads it as content the lead read, so a new recipient it names asks.
+  Messages you type in the app, on Telegram or in `fleetd chat` count;
+- the prompts of the [automations](#automations-go-ahead) whose run the lead is doing now, when you wrote or
+  confirmed them.
+
+It never sees the mail, pages or files the lead read, nor the lead's own explanation of the action. When the node
+can't send the whole of one thing the lead read, fleetd matches against the end of it that it already has, and keeps
+the rest whole. Its prompt is `approvals.checker` ([What agents are told](/docs/what-agents-are-told)).
+
+fleetd's own rules hold whatever the checker says:
+
+- **Floors**, in every mode, YOLO too: moving money, trading and placing orders are refused, by the tool's name or
+  by a link that does it (its path says transfer or trade and it carries an amount), and so is a password, key or
+  token anywhere in what goes out, a link it opens included. Any other link, one about Bitcoin or the stock market
+  too, follows the mode. Paying goes through a [purchase](#purchases). A final Confirm whose button cancels, returns
+  or refunds an order goes through the mode like any other.
+- **It asks you at least** when a recipient, share target, forwarding address or site came only from content the
+  lead read (an `account` or `mailbox` the lead already read your data as is no recipient, nor such a `user_id` on a
+  write to your own data; on a send or an invite a `user_id` counts like any other); when a link carries data (an
+  email address, a long code, text quoted from your mail), even on a site you allowed; for a public or
+  anyone-with-the-link share, edit access for someone new, a rule that forwards your mail to another domain, an
+  address on a domain one or two letters off a contact's, more than 10 recipients at once, or a one-time code or an
+  encoded blob in the text.
+- **A checker that fails asks.** A timeout, an error or an answer fleetd can't read brings the card. A model that
+  refuses to answer brings it too, saying "the checker flagged this as a likely attack".
+
+**Approve anyway** on a blocked card tells the lead it may run exactly that call once: when it asks again with the
+same input, it runs without the checker. **Keep it blocked** leaves it refused.
+
+**Ran without asking**, under Approvals, lists every action the checker let through or YOLO ran, newest first:
+when, what, the checker's reason, and **Show in chat**, which opens its line. `project_approvals {machineId,
+projectId}` reads the mode and the log; `project_approvals_set {machineId, projectId, mode, model?, effort?}` sets
+them, from your own key only.
+
+### Automations you set up {#automations-go-ahead}
+
+An [automation](/docs/automations) you wrote or edited in the app counts as your go-ahead on its runs, and so does one
+the lead made once you let it run on its own. While a run is open, the checker reads the automation's prompt as your
+own request (`person (automation "Weekly report")`), so a weekly "email the report to Dana" sends without a card on
+every run, with its quiet line in the chat. Only what the prompt names counts: a recipient, text or site it doesn't
+name goes to the checker as before, and a webhook's body is never part of it.
+
+An automation the lead made counts for nothing until you say so. The lead calls `automation_confirm`, and you get a
+card in its chat, "Let "Weekly report" run on its own", with the automation's name, prompt and schedule as the hub
+has them. Approving it is the only way such an automation gets the mark: no checker or YOLO answers that card, and
+nothing the lead writes or passes sets it. If the prompt or schedule changed after the card was shown, approving it
+marks nothing. When the lead later changes the prompt or schedule, the mark goes and it asks again.
+
+### A final Confirm, and what commands can still do {#confirm-step}
+
+Before the last click of a step that doesn't pay or order (booking a table, cancelling a subscription, sending a
+form, an expense, a return, a post), the lead calls `confirm_step` with the site, the button, what it does and a
+screenshot. It goes through the mode like a send: on a card you see the screenshot, and **Click it** lets the lead
+click. A Pay, Buy or Order button never goes this way: that is a [purchase](#purchases).
+
+This is enforced outside the model. The lead runs in Claude Code's `manual` permission mode with an allow-list
+([Agent tools](/docs/reference/agent-tools#claude-code-tools)). The node answers its commands, and every other prompt
+goes to the hub, which allows a site you allowed before or linked in your message and decides the rest by the mode.
+Through a command or a screen, a send is the lead's instruction, not fleetd's rule: it runs such a command with
+`gated_run`, which asks with exactly that command.
+
+The site gate covers fetching and opening a site; it doesn't follow a page after that, or a command's own network
+use. Browser commands inside an open page run unasked: clicks, fills, typing, snapshots, a script in the page. A
+command such as `curl` reaches the network unasked too, and so do the project's agents, which never get an
+integration. A click or a form that leads to another site isn't asked, and Android, iOS and desktop screens
+(`agent-device`) don't ask per site at all. That the lead calls `confirm_step` before a final click is its prompt,
+not fleetd's rules.
+
+## Purchases {#purchases}
+
+A project can book a hotel or a flight, or buy something online, with a card you keep in 1Password. You aren't asked
+(decision `projects.one-model`, D310): each purchase goes in its purchases log, fleetd fills the card into the
+checkout, the lead never sees it, and the chat says what was paid. It pays only in an [Only me](#only-me) project.
+Keep the card in fleetd's own vault, and make it a virtual card with a monthly limit or a low-limit card: an agent
+on the machine could read what the token reads ([why](/docs/security#agent-reach)).
+
+1. **Pick a card.** In the project's settings, **Payments** lists the Credit Card items the project's 1Password token
+   reads: its own `OP_SERVICE_ACCOUNT_TOKEN` variable if it has one, else yours (Settings › Your accounts ›
+   1Password). Pick one. fleetd keeps only its `op://vault/item` reference.
+2. **The lead records it.** At the checkout's payment step it calls `purchase_request` with the shop's domain and
+   name, the total and currency, and what is in the basket. The page must be on that domain. Your chat shows its
+   record: the shop, the total, each item, and the card.
+3. **The card is filled.** Within 15 minutes the lead calls `purchase_fill`. Its node reads the card from 1Password
+   and types the number, expiry, security code and name into the checkout's fields: on the shop's own page and in the
+   card frames of payment providers (Stripe, Adyen, Braintree, Checkout.com, Square, PayPal, Mollie, Worldpay), even
+   when they're on another site. It fills once per purchase, and only on its shop. The chat gets a quiet line: "Paid
+   129.90 EUR at Hotel Adlon with Visa (Personal)".
+4. **The lead pays.** It checks the total and clicks Pay or Book itself. If your bank asks to confirm (3-D Secure, a
+   code, its app), it hands the browser to you with a takeover, and finishes once you hand it back.
+
+| | |
+|---|---|
+| What the lead sees | Never the card's number, expiry or code. From the fill on, its browser session refuses to read values back (scripts of its own, `get value`, page snapshots). Every answer it gets, its transcript and the recording are scrubbed of the card. Filled fields show as blurred dots in the video, the live view and screenshots. |
+| Wrong shop | A request whose domain isn't the page's is refused. A fill on any other site gets nothing; the purchase stays good for the shop until its 15 minutes run out. |
+| Never | Paying an exchange or a broker (trading, crypto) or a money-transfer service is refused. That's decided by who is paid, not by what the basket says: an airport transfer is a purchase like any other. A command of a payment CLI (`stripe`, `shopify`, `paypal` and the like) through `gated_run` only you can approve. |
+| Unfilled | A purchase whose card isn't filled within 15 minutes ends as expired. |
+
+**Payments** in the project's settings also lists every purchase it made: the shop, the amount, when, and whether
+its card was filled.
+
+## Secure input {#secure-input}
+
+Some pages need something only you may give, which the lead must never see: a passport or ID number, a code texted to
+you. The lead doesn't ask for it in the chat. On that page it calls `request_secure_input` with the site, the field and
+why, and fleetd checks the page is on that site and the field is there.
+
+- **You type it.** The chat shows a sealed field: the site, what it is and why. What you type is sealed on your device
+  to the project's machine, whose node types it straight into that field on that site (in its frames too), once. The
+  phone app shows what is asked and sends you to the desktop app to enter it, and a Telegram chat never asks for the
+  value, since a chat there isn't sealed.
+- **From 1Password.** If it's in an Identity, Passport, Driver License or Social Security item, the lead names that
+  field (`op://vault/item/field`), and its node fills it from 1Password, once, within 15 minutes, in an
+  [Only me](#only-me) project. You aren't asked (D310).
+
+The value never reaches the lead, the chat, a transcript, a recording or a log. From the fill on, the project's
+browser session refuses to read values back, and the field shows as blurred dots. A page that moved to another site
+gets nothing.
+
+## Sign-ins {#sign-ins}
+
+The browser of a lead that does its own work (one whose project has no repo) stays signed in. Sign in to a site
+once, yourself in a takeover or by the lead, and its next browser session is still signed in there. No login page,
+captcha or approve-on-your-phone step each time. A project with repos leaves the browser to its agents, which start
+fresh each time.
+
+- **What's kept:** the browser's cookies and site data (local storage, IndexedDB), in a browser profile of the
+  project's own. Its history, cache, open tabs, saved passwords and form entries are not kept. Logins filled from
+  1Password aren't saved either: each session that fills one still refuses to read it back.
+- **Where:** on the project's machine, under fleetd's node directory (`browser/navis/<project id>`). Only the browser
+  fleetd starts for its lead uses them, though with no sandbox its own commands could read them, as yours can.
+- **Whose:** that project's alone. Another project's lead keeps its own, and agents each start with a fresh, empty
+  profile that is thrown away when the session ends.
+- **One at a time:** one browser runs on the profile. If the lead opens a second session while one is open in another
+  of its chats, the second is refused until the first ends.
+- **Its machine only:** the lead's browser always runs on the project's own machine, where its profile and folder
+  are, never on another one the hub would pick.
+- **Files:** the lead's browser touches no file on the machine outside the project's folder. It opens no `file://`
+  page, whether asked for, linked to or redirected to. It uploads only files in the folder, not through a link out of
+  it. It saves downloads only in the folder itself, each under a name of the browser's own so no site overwrites a
+  file there; `agent-browser download <ref> ./<name>` saves one under the name you give. A project's agents keep the
+  browser as before.
+
+**To sign it out of everything,** open the project's settings (**Open settings** in its right-click menu), find
+**Sign-ins** and click **Forget sign-ins…**. A browser session it has open now ends, and the profile is deleted. Its
+chat, memory, folder and allowed sites stay. Deleting the project deletes its sign-ins too. To sign out of one site
+only, ask the lead to sign out there.
+
+## Telegram {#telegram}
+
+Talk to a project's lead from Telegram, on your phone or anywhere else you use it. It's the same chat as in the app:
+what you send there lands in the project's chat, and its replies, photos, files and approvals come back to both places.
+The bot is yours and answers only you; nothing runs in a fleetd cloud, and your hub needs no public address. Pairing
+makes the project yours when it has no owner, so what you send there is your own message.
+
+### Set it up
+
+Open the project's settings (**Open settings** in its right-click menu) and find **Telegram**. It takes a few
+minutes, with no terminal:
+
+1. **Make a bot with @BotFather.** Click **Open @BotFather**, then send it `/newbot`. When it asks, send the bot's
+   name (the project's, say `Ada`) and a username ending in `bot` (the page suggests one, like `ada_fleetd_bot`; add a
+   number if it's taken). BotFather answers with the bot's token, a line like `123456789:AAH…`.
+2. **Paste the token** and click **Save and test**. The app seals it to the project's machine before it leaves your
+   computer: the hub keeps only its fingerprint, and it never appears in a chat, a log or the page again.
+3. **Test** asks Telegram which bot the token is, and shows its name, username and photo.
+4. **Pair your Telegram.** Click **Pair with Telegram**. Your bot opens in Telegram with a one-time link; press
+   **Start**. Your account is now the only one the project answers, and its chat in the app says so. The link works
+   for 15 minutes.
+
+Once paired, the setting shows the bot, the account it answers and its status: *Connected*, *Paused*, *Retrying* (with
+what went wrong and when it tries again) or *Stopped* (a revoked token: paste a new one). **Pause** stops reading and
+sending until you resume, and what the lead says meanwhile stays in the app. **Unpair** disconnects your account;
+**Pair with Telegram** connects one again. **Replace token** takes a new bot's token, and **Remove** makes the machine
+forget it. To delete the bot itself, send `/deletebot` to @BotFather.
+
+### What goes through
+
+- **Your messages** land in the project's chat as yours, marked *From Telegram*. While the lead works on one,
+  Telegram shows *typing…*.
+- **Photos and documents** arrive as attachments of the message: images, PDFs, text and CSV, Word, Excel and
+  PowerPoint files and zips, up to Telegram's 20 MB for bots ([Files](#files)). Anything else gets a short reply
+  saying it wasn't passed on.
+- **Voice notes** aren't supported yet: you get a reply saying so.
+- **/stop** stops what the lead is doing now, as **Stop** in the app does, and says so in Telegram and in its chat.
+  Sending it again once it has stopped does nothing more.
+- **A forwarded message** is marked *Forwarded from …*. The lead reads it as someone else's words, untrusted content,
+  never as your request or approval, and asks you before acting on anything it asks for.
+- **The lead's replies** go to the app and to Telegram, formatted for Telegram and split when long. Its images go as
+  photos, the files it made as documents under their own names. A table shows as monospace; a chart or diff says to
+  open the app. A question with choices comes with buttons, and pressing one is your reply.
+- **Quiet lines**: what the lead remembered or forgot, and a skill it saved or installed, come as one line each, as
+  in the app.
+- **A usage limit**: when the lead stops at its Claude usage limit, one line says so, and when it resets if the limit
+  said. It picks up your message then. No second line comes until it has replied.
+- **Approvals** come as a card with exactly what approving runs (the command, or the tool and its full input; in a
+  file just before the card when it's too long for one message), the checker's reason when it sent the card to you
+  (as in the app), and **Approve** and **Deny** buttons. Answer in either place: the other updates, and the card says
+  who answered and how. A secret is never entered in Telegram: the lead points you to the app.
+- **Anyone else** who finds the bot gets nothing back, not even an error. Group chats are ignored.
+
+While you talk to the project on Telegram (your latest message came from there), its replies notify you on Telegram
+only, not in the [phone app](/docs/phone-notifications) as well. Write from the app again and the app notifies you
+again.
+
+### How it works
+
+The project's machine long-polls Telegram's Bot API (`getUpdates`): no webhook, no open port. The token stays on that
+machine, in a file of fleetd's node there, out of the lead's environment. The node keeps where it read up to, so a
+restart neither loses nor repeats a message; when Telegram is down or asks it to slow down, it backs off and tries
+again. Messages that come while the machine is off wait on Telegram's side for up to a day. Replies the lead wrote more
+than an hour before the machine could send them stay in the app.
+
+## Hub links {#hub-links}
+
+A project's lead can open and follow work in projects on another hub, such as a team hub when the project lives on
+your personal one. You make a link key on the hub it reaches and add it to the project. It acts as you there, and
+either side can revoke it. [Security](/docs/security#hub-links) has the rules.
+
+**On the hub it reaches.** Open **Settings › Hubs**, **Hub links**, **Links to this hub** (with several hubs, *Links
+to* that hub), and click **Make a link key**:
+
+1. Name the other hub as you think of it, such as *home*. Requests through the link read "*you* via home" there.
+2. Leave **Every project you can reach**, or pick **Only some projects** and tick them.
+3. **Make link key** shows the key (`flk_…`) once. **Copy** takes it with the address other hubs reach this hub
+   at: its HTTPS or tailnet URL. When the hub has no such address set, type it in the box that appears.
+
+The list below shows the links made as you: what each is for, its projects, when it was last used, and **Revoke**.
+An admin sees everyone's on **Settings › Hub › People**, under **Hub links**, each with the person it acts as.
+
+**On the project's hub.** Open the project's settings, **Linked hubs**, and click **Link a hub**. Paste what you
+copied into **Link key**: the address fills itself. Name the hub as the lead should call it (*acme*), then click
+**Link hub**. The app seals the key to this hub, which checks it with the other hub and never shows it again. Then
+tell the lead what you want ("ask the Shop lead on acme for saved carts"). It follows the order and tells you when it
+lands.
+
+Each linked hub shows its address, the person it acts as there and its projects (*only Shop, Website*, or *every
+project of theirs*), and one word for its state:
+
+| State | Means |
+|---|---|
+| Working | Its last call went through. |
+| Can't reach | This hub can't reach the other one. The row gives the address and the reason, such as *connection refused*. A link needs the other hub reachable from this one over a tailnet or HTTPS. |
+| Revoked | The other hub refused the key: it was revoked there, or you left that hub. Remove it, or make a new key there and add it. |
+
+**Remove** deletes the key at once and asks the other hub to revoke it too. When that hub doesn't answer, the
+notice says so: its link stays listed there until someone revokes it, but nothing can use it.
+
+## Asked {#asked}
+
+**Asked**, beside **To-do** under Plan in the panel beside the chat, lists the work this project's lead asked your
+other projects for (`project_message`), newest first: one row each, with the ask in a line, its state (*Waiting* for
+an order, *Working*, *Merged*, *Done* or *Stopped*), the project and how long ago. A follow-up its lead took into the
+order of an earlier ask says *Folded into an earlier ask*. Click a row for the whole message and the orders opened for
+it, each linked to its page; the project's name opens its chat. The lead also tells you in its chat when work it asked
+for lands.
+
+## Files {#files}
+
+Files go both ways in a project's chat, from the app, the phone and Telegram.
+
+- **What you send:** images, PDFs, text and CSV (and other text: notes, JSON, calendar invites, mail), Word, Excel and
+  PowerPoint files (.docx, .xlsx, .pptx) and zips, up to 25 MB each (20 MB from Telegram). The hub keeps a file only
+  when its bytes are what its type says, and gives it an extension of that type, so a text file named `run.command`
+  becomes `run.command.txt`.
+- **What the lead reads:** each file lands in the project's folder under `.fleetd/attachments/chat/`. It reads images,
+  PDFs and text itself. For a Word, Excel or PowerPoint file the hub writes its text beside it (`lease.docx.txt`): a
+  document's paragraphs, each sheet of a workbook as CSV, each slide of a deck. A zip it unzips with its shell.
+- **Untrusted:** what a file says is content anyone could have written, like a web page. The
+  [checker](#checker) marks what only a file sent in the chat names as `untrusted: a file sent in the chat`, never as
+  your files, so a send to an address only an attached invoice gives asks you first.
+- **What the lead sends back:** a file it made in its folder (a trip as a PDF, receipts as a CSV, an invite as an
+  `.ics`) goes up with [`chat_file`](/docs/reference/agent-tools#chat_file) and shows as a card with its name, kind
+  and size. In the desktop app, **Open** opens it in your computer's app for its kind and the download button saves
+  it; on the phone, tapping it opens the share sheet. On Telegram it arrives as a document. Your files never leave
+  your hub: the app reads each one from it.
+
+## Earlier in the chat {#earlier}
+
+A lead's new session sees only the latest part of its chat, but the hub keeps all of it. When you mention something
+from before ("the dentist I told you about", "what we settled last week"), the lead searches the whole chat by words,
+within dates when you give them, and reads the messages around what it finds. It reads only its own project's chat,
+never another's. The tools are `chat_search` and `chat_read`, in [Agent tools](/docs/reference/agent-tools).
+
+## Skills {#skills}
+
+A project learns. When its lead has to work out a task it will do again (where a portal hides the invoices, the steps
+of a grocery order), or you correct how it does something, it saves a skill: a `SKILL.md` in the same format as an
+installed [skill](/docs/skills), with what the skill is for and the steps. Nothing asks you first. When it uses a
+skill and finds a step wrong or missing, it saves it again, improved. The chat gets one quiet line each time ("Saved
+a new skill, weekly-invoices: …"), the name a link to the skill.
+
+A project's skills are its own: they reach its sessions only, never another project's. A saved skill is in its next
+session's list as `fleetd:<name>`; the running session can read it from its skills folder at once.
+
+Open them from **Skills** in the panel beside the chat, or in the project's settings:
+
+- **The list**: what it learned, what was installed for it, the hub-wide skills every project gets, and any in its
+  folder. Each row says who changed it last, when, and when the lead last used it.
+- **A skill**: its `SKILL.md`, rendered. **Edit** opens the whole file with a line for what you changed; saving
+  makes a version of yours, which the lead's next session gets.
+- **History**: every version, newest first, with who wrote it (the lead or you), when, and why. Open one to see what
+  it changed against the one before. **Restore** puts an older version back as a new version, so nothing is lost.
+  The hub keeps the newest 100 versions of each skill.
+- **On**: turn a skill off and the project's sessions stop getting it, without deleting it. A lead that saves an off
+  skill again is told it stays off until you turn it back on.
+- **Delete**: removes the skill and its history.
+
+An installed skill stays yours: the lead doesn't change it, and saves its own version under another name. The tools
+are `skill_save` and `skill_install`, in [Agent tools](/docs/reference/agent-tools). Each skill it installs posts a
+quiet line in its chat naming the source and the commit it's pinned to, such as *Installed the skill pdf from
+acme/skills@0123456789ab*.
+
+## For the app and other clients {#clients}
+
+A new project is `project_add {new, machineId?, onlyMe?}`; `project_settings_set {machineId, projectId, title?,
+onlyMe?}` renames it or changes [Only me](#only-me); `project_archive {machineId, projectId, archived?}` archives it or
+brings it back. A project summary says `onlyMe`, its `owner`, `createdBy` (the id and name of the key that made it)
+and, once archived, `archivedAt`; for one more release a former Navi's also says `kind: "assistant"`, which older apps
+read, and the `navi_*` tools still answer as aliases. A project's icon is `project_icon_set {machineId, projectId,
+icon: {face, color}}`, a built-in face and color that replaces any picture; a summary's `icon` says which it wears
+(one made from its id until someone picks). Its picture is `project_avatar_set {machineId, projectId, attachmentId?,
+crop?}` (an image from `attachment_put` and the square to keep; no `attachmentId` removes it) and
+`project_avatar_get {machineId, projectId}`; a summary's `avatar` names the one it has.
+
+| What | Tools |
+|---|---|
+| Sites | `project_sites {machineId, projectId}`, `project_site_revoke {machineId, projectId, site}` |
+| Approvals | `project_approvals {machineId, projectId}`, `project_approvals_set {machineId, projectId, mode, model?, effort?}` |
+| Payments | `project_purchases {machineId, projectId}` reads its card and purchase log; `project_card_set {machineId, projectId, card?}` picks its card (a person's own device only) from `onepassword_cards {machineId?}`, the Credit Card items their 1Password token reads. |
+| Asked | `project_asks {project}`, with the orders opened for each, on a hub whose ready frame names the `project_asks` feature. |
+| Sign-ins | `project_signins_forget {machineId, projectId}`; it needs the project's machine online and on a fleetd that keeps them. |
+| Hub links | `hub_links_get {project?}`, `hub_link_mint {label, projects?}`, `hub_link_revoke {linkId}`, `hub_link_add {project, label, url, sealed}` (the key sealed to `boxPubKey` from `hub_links_get`), `hub_link_remove {linkId}` |
+| Telegram | `telegram_get {project}`, `telegram_set {project, sealed}` (the bot token sealed to the project's machine's `boxPubKey`), `telegram_test`, `telegram_pair` (the one-time `t.me` link), `telegram_unpair`, `telegram_pause {project, paused}`, `telegram_remove`, each its owner's only on an Only me project. |
+
+A project's [skills](#skills) are `scope: "project"` skills with its `projectRef`, on a hub whose ready frame names
+the `project_skills` feature. `skills_list {projectRef}` gives each with `changed` (its newest version: `version`,
+`author` `agent` or `person`, `by`, `at`, `why`), `off` and `lastUsedAt`. `skill_get {origin, projectRef, name,
+version?}` adds `versions`, newest first, without their texts; with `version`, its text is that version's.
+`skill_set {scope, projectRef, name, text, why?}` is the person's edit, `skill_revert {scope, projectRef, name,
+version}` puts a version back as a new one, `skill_off {projectRef, name, off}` turns one off in that project, and
+`skill_delete` removes it with its history. A chat message with `skillSaved {name, version, created, why,
+installed?}` is the line a save posts; `installed` (`<source>@<commit>`) marks one a `skill_install` posted.
 
 ## Max agents {#max-agents}
 
@@ -373,7 +820,7 @@ profile.
 |---|---|
 | Which profiles a project allows | Settings → Projects → Agents → **Allowed profiles**: a checkbox each, the default checked for good. Or `fleetd project set <machine>/<project> --profiles medium,quick` (`none`: the default alone). |
 | A profile's model, effort, fast mode or note, or which is the default | Settings → Hub → Every project → **Profiles** (owners and admins): New profile, Edit and Delete. Or `fleetd project profile <name> --model claude-sonnet-5-5 --effort xhigh`: a name that doesn't exist yet makes a new profile; `--delete` removes one. |
-| Which profile leads run on | Settings → Hub → Every project → Profiles → **Lead runs on** (owners and admins): any of the hub's profiles, the default until another is picked. Or `fleetd project profile <name> --lead`. Every project's lead and every Navi start on it at their next start; reviews and tasks that name no profile stay on the default. Members see it on a project's Agents page, under Allowed profiles, with who to ask. |
+| Which profile leads run on | Settings → Hub → Every project → Profiles → **Lead runs on** (owners and admins): any of the hub's profiles, the default until another is picked. Or `fleetd project profile <name> --lead`. Every project's lead starts on it at its next start; reviews and tasks that name no profile stay on the default. Members see it on a project's Agents page, under Allowed profiles, with who to ask. |
 | How the lead picks | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told), or a profile's note. It takes effect at the lead's next start. |
 
 ### What a profile runs on {#profile-settings}
@@ -403,7 +850,7 @@ name, ended ones show the name they ran on.
 
 Leads start on the profile picked under **Lead runs on**, the default until someone picks another. It is one setting
 for the whole hub, not one per project, and applies at each lead's next start: a lead already running keeps the model
-and effort it started on (`lead_start {fresh: true}` starts it again now). A Navi's lead follows it too. Each lead's
+and effort it started on (`lead_start {fresh: true}` starts it again now). Each lead's
 lane, and its time by profile, name the profile its session started on.
 
 ```text
