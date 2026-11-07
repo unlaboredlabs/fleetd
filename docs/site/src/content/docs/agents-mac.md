@@ -126,9 +126,10 @@ The main way in needs no terminal:
    one hub only.
 
 The app then does the rest, a step at a time: it installs the hub's own fleetd, joins as the agents' Mac (asking first
-when that replaces a node, this Mac's or the hub's Mac of that name) and starts the node in this login. Then it opens
-**Accessibility** and **Screen Recording** in System Settings and sees each switch as you turn it on, and ends with a
-Test that turns green check by check. Each failure says what to do. Xcode's [one-time block](#xcode) still takes an
+when that replaces a node, this Mac's or the hub's Mac of that name) and starts the node in this login. Then, for
+**Accessibility** and **Screen Recording** in turn, **Allow** has the node ask macOS (its prompt, and fleetd in the
+list) and opens that pane of System Settings: turn on fleetd there, and the window sees the switch as you flip it. It
+ends with a Test that turns green check by check. Each failure says what to do. Xcode's [one-time block](#xcode) still takes an
 admin's Terminal; its checks say so when it's missing. A Mac without Xcode yet still finishes setup: only its iOS
 simulators wait for it, and its [Xcode check](#no-xcode) stays amber with an **Open the App Store** button. Close the window partway and open it again from the
 **fleetd** menu: it opens on where setup stands (still joining, the checks of a Mac joined already, or a code spent
@@ -195,11 +196,22 @@ takes); a closed laptop lid still sleeps.
 
 #### 3. Two clicks at the Mac {#permissions}
 
-Right after it joins, the line opens **System Settings › Privacy & Security › Accessibility** and waits; once fleetd
-is on there, it opens **Screen Recording** and waits again. Turn on **fleetd** in each: Accessibility lets agents
-click and type in the Mac's apps, Screen Recording lets you and agents see the screen. The node asked macOS for both
-when it started, so fleetd is in each list. macOS may ask for an administrator's name and password: type it in that
-System Settings dialog at the Mac itself, never through fleetd's view of its screen.
+Right after it joins, the line has the node ask macOS for **Accessibility**: macOS shows its own prompt and puts
+fleetd in the list, and the line opens **System Settings › Privacy & Security › Accessibility** and waits. Once fleetd
+is on there, it does the same for **Screen Recording**. Turn on **fleetd** in each (or choose **Open System Settings**
+in macOS's prompt first): Accessibility lets agents click and type in the Mac's apps, Screen Recording lets you and
+agents see the screen. You never add fleetd to a list yourself. macOS may ask for an administrator's name and password:
+type it in that System Settings dialog at the Mac itself, never through fleetd's view of its screen.
+
+Only the node asks, never the line or the app: macOS lists whichever app a prompt comes from, so a prompt from setup
+would list Terminal or the fleetd app instead. Setup asks the node with `fleetd node grants --ask <grant>` (it writes
+`~/.fleetd/node/mac-grant-ask`, the node asks within 2 seconds), which also opens the pane. Run it yourself for a grant
+that's off:
+
+```sh
+fleetd node grants --ask accessibility
+fleetd node grants --ask screen_recording
+```
 
 macOS gives a running process a new grant only once it starts again, so the node restarts itself within seconds of
 each grant. While a grant is off, every 2 seconds, it asks a fresh process of its own (`fleetd node grants`) what
@@ -213,6 +225,16 @@ fleetd node restart
 
 macOS asks again from time to time: the check says when. The setup step's **Test** reads every check; done means each
 is green.
+
+#### Grants and updates {#grants-updates}
+
+macOS keeps a grant for fleetd's binary by its path (`~/.fleetd/bin/fleetd`) and its signature's designated requirement.
+Release builds are signed with fleetd's Developer ID as `sh.fleetd.cli`, and an update writes the new binary over the
+same path, so the requirement and the path stay the same and grants outlive updates. A binary signed otherwise (one you
+built yourself, which is signed ad hoc by its exact contents) loses both grants with each update: the switch still
+reads on, but macOS no longer counts it. The node notices at its start (it notes the version that last had both
+grants), asks macOS again, and the grant's check says that the update took it: turn fleetd off and on again in that
+pane.
 
 ### A user of its own, optional {#own-user}
 
@@ -263,7 +285,7 @@ with no check still in progress (its tools installing), and lists one still in p
 | `mac_developer` | The account is in `_developer`. | `sudo dseditgroup -o edit -a "$(id -un)" -t user _developer` |
 | `mac_xcode` | A full Xcode is selected, its licence accepted and its first launch run. Otherwise it warns: setup still ends, and only simulators wait. | The one command for [what it found](#no-xcode): the App Store, `sudo xcode-select -s` to the Xcode in /Applications, or the licence |
 | `mac_ios_runtime` | `xcrun simctl list runtimes` has an available iOS runtime. While Xcode isn't usable it warns that it waits for it. | `xcodebuild -downloadPlatform iOS` |
-| `mac_accessibility`, `mac_screen_recording` | macOS has given fleetd's node each grant (asked of a fresh process, `fleetd node grants`; reading never prompts). | Turn on fleetd in that pane at the Mac; the node restarts itself to take it up. |
+| `mac_accessibility`, `mac_screen_recording` | macOS has given fleetd's node each grant (asked of a fresh process, `fleetd node grants`; reading never prompts). One an update took away [says so](#grants-updates). | `fleetd node grants --ask <grant>` at the Mac, then turn on fleetd in the pane it opens; the node restarts itself to take it up. |
 | `mac_gui_session` | The node's account is the one at the Mac's screen (`console`). Behind someone else's session (`background`) it warns: builds and simulators work, the Mac's own apps need that account at the screen. | Switch to that account at the Mac, or use a Mac nobody sits at. |
 | `mac_tools` | The pinned Node.js, agent-device and agent-desktop are installed. | The Mac must reach nodejs.org and registry.npmjs.org. |
 | `mac_keep_awake` | The node holds its keep-awake assertion. | `sudo pmset -a sleep 0` |

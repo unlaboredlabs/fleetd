@@ -10,7 +10,8 @@
 //      what the page shows;
 //   6. then the page reads the node's checks from <fleetd dir>/node/mac-health.json, which the node rewrites after
 //      each run of every check (touching mac-health.checked) and after each read of the grants (every 2 s while one is
-//      off), opens the two System Settings panes, and can restart the node.
+//      off), has the node ask macOS for each grant (`fleetd node grants --ask`, which then opens its System Settings
+//      pane with fleetd in the list: only the node's own ask puts fleetd there, not the app's), and can restart it.
 // A version difference never stops it: the Mac installs the hub's own build and channel, or once the edge release has
 // moved on past the hub's build, the newer one it holds. The page then says the hub is behind, with its Update right
 // there for an admin signed in on this Mac (hubRole, updateHub). An app too old for the hub's answer says so, with
@@ -334,6 +335,11 @@ export async function readHealth(ports: MacSetupPorts, hubUrl: string | undefine
   return { health, writtenAt: file?.writtenAt ?? null, checkedAt: checked?.writtenAt ?? null, now: ports.now(), hubAnswers: answers, hubBehind };
 }
 
+/** `fleetd node grants --ask <grant>`: the running node asks macOS for it within 2 s, and the pane opens either way. */
+export async function askGrant(ports: MacSetupPorts, grant: "accessibility" | "screen_recording"): Promise<void> {
+  await ports.run(path.join(ports.fleetdDir, "bin", "fleetd"), ["node", "grants", "--ask", grant, "--home", path.join(ports.fleetdDir, "node")]);
+}
+
 /** `fleetd node restart`: launchd starts the node again in this login. */
 export async function restartNode(ports: MacSetupPorts): Promise<MacRestartOutcome> {
   const ran = await ports.run(path.join(ports.fleetdDir, "bin", "fleetd"), ["node", "restart"]);
@@ -462,8 +468,10 @@ export class MacSetup {
     return this.#ports.updateHub(hubUrl);
   }
 
-  openPane(pane: MacPane): Promise<void> {
-    return this.#ports.openPane(PANE_URLS[pane]);
+  /** A grant: the node asks macOS for it (its prompt, and fleetd in the list), then the CLI opens its pane. Else the link. */
+  async openPane(pane: MacPane): Promise<void> {
+    if (pane === "accessibility" || pane === "screen_recording") await askGrant(this.#ports, pane);
+    else await this.#ports.openPane(PANE_URLS[pane]);
   }
 
   restart(): Promise<MacRestartOutcome> {

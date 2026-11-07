@@ -1,6 +1,6 @@
 // Set up this Mac for agents under a fixture (FLEETD_FIXTURE): a Mac that isn't there, so the window's every step
 // runs on any computer, for QA and the docs' captures. The hub is devbox on the tailnet; the code 000000 is wrong,
-// any other is taken; the join takes a moment a step; each grant turns on a little after its pane is opened, and the
+// any other is taken; the join takes a moment a step; each grant turns on a little after the node is asked for it, and the
 // rest of the checks are green from the start. Two codes play a version difference: 111111, an Edge hub the edge
 // release has moved on past, which this app is signed in to as an admin (Update brings it level a moment later); and
 // 222222, a hub newer than this app, whose answer it can't read. 333333 joins a Mac with no Xcode yet, 444444 one whose
@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { MacPane } from "../shared/macSetup";
-import { PANE_URLS, type MacSetupPorts } from "./macSetup";
+import type { MacSetupPorts } from "./macSetup";
 
 const HUB = "http://devbox.example.ts.net:4790";
 /** 111111's hub, and the newer build the edge release holds. */
@@ -116,6 +116,12 @@ export const fixtureMacPorts = (): MacSetupPorts => {
             : BUILD,
       ),
     run: async (_file, args) => {
+      // `fleetd node grants --ask <grant>`: the node asks macOS, and the person turns it on a little later.
+      if (args[0] === "node" && args[1] === "grants") {
+        const pane = args[3] as MacPane;
+        if (!asked.has(pane)) asked.set(pane, Date.now());
+        return { code: 0, output: "" };
+      }
       if (args[0] === "status") return { code: 0, output: JSON.stringify({ Peer: { a: { DNSName: "devbox.example.ts.net.", Online: true } } }) };
       await later(STEP_MS * 2, null);
       if (args[0] === "init") joinedAt = Date.now();
@@ -138,12 +144,8 @@ export const fixtureMacPorts = (): MacSetupPorts => {
       if (file.endsWith(path.join("update", "up"))) return Promise.resolve({ text: behind ? NEW_EDGE : "0.9.0", writtenAt: joinedAt + 1500 });
       return Promise.resolve(file.endsWith("mac-health.json") ? { text: JSON.stringify(health()), writtenAt: Date.now() } : undefined);
     },
-    openPane: (url) => {
-      // Only a grant's pane turns something on: the App Store installs nothing here.
-      const pane = (["accessibility", "screen_recording"] as const).find((p) => PANE_URLS[p] === url);
-      if (pane !== undefined && !asked.has(pane)) asked.set(pane, Date.now());
-      return Promise.resolve();
-    },
+    // The grants come through the CLI's ask (run, above); the App Store installs nothing here.
+    openPane: () => Promise.resolve(),
     now: () => Date.now(),
     hubRole: () => Promise.resolve("admin"),
     // The hub restarts on the newer build a few seconds later.
