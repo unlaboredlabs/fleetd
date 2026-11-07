@@ -580,6 +580,14 @@ async fn register(
     let project_id =
         existing.unwrap_or_else(|| ProjectId::unchecked(crate::hub::executor::new_uuid().as_str()));
     let title = title.unwrap_or(name).to_owned();
+    let project = ProjectRef {
+        machine_id: m.clone(),
+        project_id: project_id.clone(),
+    };
+    // An existing project's Only me first: refused, the add changes nothing, its name included.
+    if !created {
+        only_me.apply(hub, &project, false, facts.is_git)?;
+    }
     if created || title != name {
         hub.executors
             .project_upsert(m, &project_id, &title, path)
@@ -588,16 +596,14 @@ async fn register(
     }
     bind_scope(hub, m, &project_id, facts);
     // A git checkout is the project's own repo, with a remote or without; a plain folder holds none.
-    let project = ProjectRef {
-        machine_id: m.clone(),
-        project_id: project_id.clone(),
-    };
     if facts.is_git
         && let Err(error) = hub.repos.ensure_own(&project, Some(path))
     {
         tracing::warn!(%error, "the project's own repo was not recorded");
     }
-    only_me.apply(hub, &project, created, facts.is_git)?;
+    if created {
+        only_me.apply(hub, &project, true, facts.is_git)?;
+    }
     let summary = format!("{title} added on {m}: {}", inspect.lead_needs);
     // The event log keeps at most 2 KB of data; a dry-run project_add has the whole inspect.
     let data = inspect::fit_added(ProjectAddedData {

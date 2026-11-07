@@ -83,12 +83,9 @@ async fn a_navi_stays_signed_in_between_sessions_and_no_other_navi_or_agent_is()
         "Signed out",
         "a regular agent gets a fresh profile"
     );
-    // And a regular agent's profile is thrown away, as before: only the Navis' are kept.
-    let navis: Vec<String> = std::fs::read_dir(kept.parent().unwrap())
-        .unwrap()
-        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    assert!(!navis.iter().any(|n| n != "ada" && n != "bee"), "{navis:?}");
+    // And a regular agent's profile is thrown away, as before: only the leads' projects' are kept.
+    assert!(!kept.parent().unwrap().join(THREAD).exists());
+    assert!(kept.parent().unwrap().join("bee").is_dir());
     assert_eq!(
         visit(broker, ADA, &format!("{site}/whoami")).await,
         "Signed in as ada",

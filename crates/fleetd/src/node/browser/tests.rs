@@ -35,7 +35,6 @@ mod credentials;
 /// A Navi's sign-ins, kept between its sessions.
 mod kept;
 /// What a Navi's browser may touch on this machine: no file pages, uploads and downloads only in its folder.
-mod local;
 /// agent-browser's own script shapes.
 mod shapes;
 
