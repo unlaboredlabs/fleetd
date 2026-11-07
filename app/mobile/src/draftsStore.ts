@@ -14,7 +14,7 @@ const file = (): File => new File(Paths.document, "drafts.json");
 
 try {
   const f = file();
-  if (f.exists) drafts = parseDrafts(JSON.parse(f.textSync()) as unknown);
+  if (f.exists) drafts = parseDrafts(JSON.parse(f.textSync()) as unknown, Date.now());
 } catch {
   drafts = {};
 }

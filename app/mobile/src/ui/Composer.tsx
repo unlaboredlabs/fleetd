@@ -11,7 +11,7 @@ import { useEffect, useRef, type ComponentRef } from "react";
 import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type LayoutChangeEvent } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import type { AttachmentRef } from "../desktop";
-import { sendSlot, type Draft, type DraftFile } from "../drafts";
+import { expired, sendSlot, type Draft, type DraftFile } from "../drafts";
 import { space, type, useTheme } from "../theme";
 import { mimeOf, pickedName, refusal, type Uploaded } from "../upload";
 import { Glass, GlassGroup } from "./Glass";
@@ -78,23 +78,26 @@ export function Composer({
 
   const send = () => {
     if (!ready) return;
+    // An upload the hub has deleted since (a draft left overnight) asks to be attached again, as one it refused.
+    const fresh = expired(draft, Date.now());
+    if (fresh !== draft) onDraft((d) => expired(d, Date.now()));
     const go = () => {
       haptics.tap();
-      onSend(text, files.flatMap((f) => (f.ref === undefined ? [] : [f.ref])));
+      onSend(text, fresh.files.flatMap((f) => (f.ref === undefined ? [] : [f.ref])));
       onDraft((d) => ({ ...d, text: "", files: [] }));
     };
     // A file the hub didn't take never goes quietly: the message waits for a yes.
-    const failed = files.filter((f) => f.error !== undefined);
+    const failed = fresh.files.filter((f) => f.error !== undefined);
     if (failed.length === 0) return go();
     haptics.warning();
-    Alert.alert(
-      failed.length === 1 ? `${failed[0]?.name ?? "A file"} wasn't attached` : `${String(failed.length)} files weren't attached`,
-      `${failed.map((f) => f.error).join("\n")}\n\nSend the message without ${failed.length === 1 ? "it" : "them"}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Send", onPress: go },
-      ],
-    );
+    const title = failed.length === 1 ? `${failed[0]?.name ?? "A file"} wasn't attached` : `${String(failed.length)} files weren't attached`;
+    const why = failed.map((f) => f.error).join("\n");
+    // Nothing left to send without them: the draft stays as it is, to attach them again.
+    if (sendSlot(fresh, false) !== "send") return Alert.alert(title, why);
+    Alert.alert(title, `${why}\n\nSend the message without ${failed.length === 1 ? "it" : "them"}?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Send", onPress: go },
+    ]);
   };
 
   const set = (id: number, change: Partial<DraftFile>) => setFiles((now) => now.map((f) => (f.id === id ? { ...f, ...change } : f)));
@@ -109,7 +112,7 @@ export function Composer({
           const why = refusal(p.name, mime, bytes.length);
           if (why !== undefined || mime === undefined) return set(id, { error: why ?? `${p.name} can't be sent.` });
           const r = await upload(bytes, p.name, mime, (done) => set(id, { progress: done }));
-          set(id, r.ok ? { ref: r.ref, progress: 1 } : { error: r.message });
+          set(id, r.ok ? { ref: r.ref, progress: 1, uploadedAt: Date.now() } : { error: r.message });
           if (!r.ok) haptics.warning();
         } catch {
           set(id, { error: `${p.name} couldn't be read.` });
