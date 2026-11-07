@@ -50,12 +50,16 @@ impl Unauthorized {
     }
 }
 
-/// A node already enrolled as `theirs` asked to enroll under another id: both ways out, rejoin as `theirs` or remove
-/// it first for a new id. The node reads this in the link's close reason, so the plainest wording that fits there.
+/// A node already enrolled as `theirs` asked to enroll under another id: both ways out, a code to rejoin as `theirs`
+/// (`fleetd pair --worker`; the code it holds is for the other id) or `theirs` removed first for a new id. The node
+/// reads this in the link's close reason, so the fullest wording that fits there; the last fits any two ids.
 fn enrolled_as(theirs: &str) -> Unauthorized {
     let forms = [
-        format!("rejoin with --rejoin, or for a new id run fleetd machine remove {theirs} first"),
-        format!("--rejoin, or fleetd machine remove {theirs}"),
+        format!(
+            "fleetd pair --worker {theirs} and run its line, or fleetd machine remove {theirs} first"
+        ),
+        format!("fleetd pair --worker {theirs}, or fleetd machine remove {theirs}"),
+        format!("fleetd pair --worker {theirs}, or remove it"),
     ];
     let refusal = |fix: &String| Unauthorized {
         code: ErrorCode::Forbidden,
@@ -66,7 +70,7 @@ fn enrolled_as(theirs: &str) -> Unauthorized {
         .iter()
         .map(refusal)
         .find(|r| r.reason().len() <= fleetd_contracts::node_link::close::REASON_MAX_BYTES)
-        .unwrap_or_else(|| refusal(&forms[1]))
+        .unwrap_or_else(|| refusal(&forms[2]))
 }
 
 #[derive(Debug, thiserror::Error)]

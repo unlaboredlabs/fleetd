@@ -1214,14 +1214,19 @@ mod tests {
     use crate::hub::store::test_clock::ManualClock;
 
     /// A refusal reaches the node as the link's close reason, cut at 123 bytes: the one for a node enrolled under
-    /// another id arrives whole, both ways out in it, whatever the ids' length.
+    /// another id arrives whole, both ways out in it (a code to rejoin under its id, or removing it first), whatever
+    /// the ids' length.
     #[test]
     fn a_node_enrolled_under_another_id_reads_its_whole_fix() {
         let auth = crate::hub::auth::Auth::new(
             HubDb::open_memory().unwrap(),
             ManualClock::at(1_792_000_000_000),
         );
-        for (theirs, ours) in [("devbox", "worker"), (&*"d".repeat(32), &*"w".repeat(32))] {
+        for (theirs, ours) in [
+            ("devbox", "worker"),
+            (&*"d".repeat(16), &*"w".repeat(16)),
+            (&*"d".repeat(32), &*"w".repeat(32)),
+        ] {
             let token = auth
                 .create_enroll_token(&MachineId::unchecked(theirs))
                 .unwrap()
@@ -1244,11 +1249,12 @@ mod tests {
                 read.starts_with(&format!("enrolled as {theirs}. Fix: ")),
                 "{read}"
             );
-            assert!(read.contains("--rejoin"), "{read}");
             assert!(
-                read.contains(&format!("fleetd machine remove {theirs}")),
+                read.contains(&format!("Fix: fleetd pair --worker {theirs}")),
                 "{read}"
             );
+            assert!(read.contains(", or "), "{read}");
+            assert!(read.contains("remove"), "{read}");
             auth.revoke_node(&MachineId::unchecked(theirs)).unwrap();
         }
     }

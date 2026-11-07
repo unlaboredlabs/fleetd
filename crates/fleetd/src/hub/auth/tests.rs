@@ -349,7 +349,7 @@ fn a_node_enrolled_under_one_id_never_enrolls_under_a_second() {
     assert_eq!(refused.code, ErrorCode::Forbidden);
     assert_eq!(
         refused.reason(),
-        "enrolled as devbox. Fix: rejoin with --rejoin, or for a new id run fleetd machine remove devbox first"
+        "enrolled as devbox. Fix: fleetd pair --worker devbox and run its line, or fleetd machine remove devbox first"
     );
     // Nothing changed: worker holds no key, devbox keeps its own, and the code is not burned.
     assert_eq!(auth.node_pub_key(&m("worker")).unwrap(), None);
