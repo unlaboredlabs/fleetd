@@ -10,7 +10,7 @@ project's chat, because plain chat text can't carry them safely.
 |---|---|---|
 | [Secret](#secrets) | A masked field naming the machine and where the value goes | Type the value |
 | [Approval](#approve) | The exact command, the reason, and where it runs | Approve or Deny |
-| [Tool approval](#tool-approvals) | A Navi's tool call: the tool and exactly what it would get | Approve or Deny |
+| [Tool approval](#tool-approvals) | A lead's tool call: the tool and exactly what it would get | Approve or Deny |
 
 Only a person's device can act on them, using a [human key](/docs/glossary#human-key) that the desktop app holds. An
 agent key can't, so no agent can approve itself.
@@ -36,10 +36,10 @@ command as a [gated command](/docs/glossary#gated-command).
 If the machine was offline when you approved, the item opens again and says why. Click "Approve again" once it is
 back. If an answer doesn't go through, the item says why in one line; click Retry.
 
-## Approve a Navi's integration call {#integrations}
+## Approve an integration call {#integrations}
 
-A call through a Navi's [integrations](/docs/integrations) that you didn't mark as a read goes by the Navi's
-[approval mode](/docs/navi#approvals): its checker lets what you asked for through and asks you about the rest, or
+A call through a project's [integrations](/docs/integrations) that you didn't mark as a read goes by the project's
+[approval mode](/docs/projects#approvals): its checker lets what you asked for through and asks you about the rest, or
 every call asks, or none does. A card shows the tool and its whole input, exactly as it runs, and the checker's reason
 when it had one. Approve sends exactly that, once. Moving money, trading and creating accounts are refused even if
 approved. See [The approval card](/docs/integrations#card).
@@ -110,17 +110,18 @@ it is never sent.
 From an MCP client, a secret is entered with `secret_submit` and an item is answered with `approval_answer`. Both
 take only a human key. `requests_list` lists every secret and approval request with its state.
 
-## Approve a Navi's tool call {#tool-approvals}
+## Approve a lead's tool call {#tool-approvals}
 
-A [Navi](/docs/navi)'s lead runs with claude's permission prompts on: any tool off its short allow-list (a command, an
-MCP server's write, its first visit to a site) raises a prompt. Its [approval mode](/docs/navi#approvals) decides
-it; one that asks you shows in the Navi's chat as an approval with the tool and its input. Approve runs the tool with
-exactly that input; Deny tells the Navi you said no, with your reason if you type one. A card the checker blocked
-says why, with **Approve anyway**. If the Navi's run ends before you answer, the approval closes by itself.
+A project's lead runs with claude's permission prompts on, allowed unasked what a full-access lead does: a send
+through an integration, a first visit to a site, `project_message`, `confirm_step` and `automation_confirm` raise a
+prompt. The project's [approval mode](/docs/projects#approvals) decides it; one that asks you shows in the project's
+chat as an approval with the tool and its input. Approve runs the tool with exactly that input; Deny tells the lead you
+said no, with your reason if you type one. A card the checker blocked says why, with **Approve anyway**. If the lead's
+run ends before you answer, the approval closes by itself.
 
 ## Tool permission rules {#tool-rules}
 
-Leads and tasks run with claude's permission prompts off; a Navi's lead is the one exception (above). A project can deny tools for every session, with rules in
+Tasks run with claude's permission prompts off, and leads ask only as above. A project can deny tools for every session, with rules in
 claude's own syntax in `.fleetd/policy.yaml`:
 
 ```yaml

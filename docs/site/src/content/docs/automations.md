@@ -53,20 +53,20 @@ automations with its own tools, listed under [Agent tools](/docs/reference/agent
 
 ## One-time runs: reminders and follow-ups {#one-time}
 
-Ask a Navi "remind me at 18:00 to call mom" or "check back on the refund Friday", and it makes an automation with a
-one-time schedule: `at`, one date and time such as `2026-11-03T18:00`. The Navi works out the date and time from your
+Ask a project's lead "remind me at 18:00 to call mom" or "check back on the refund Friday", and it makes an automation with a
+one-time schedule: `at`, one date and time such as `2026-11-03T18:00`. The lead works out the date and time from your
 words; the hub doesn't read words. Left without a zone, it runs in [yours](/docs/what-agents-are-told#your-time).
 
 - It shows in the automations list as "Once, Tue 3 Nov 2026 at 18:00 (Europe/Berlin)", with its next run, until it
   runs.
-- At that time it opens an order for the Navi once. The Navi's message lands in the chat, so it reaches
-  [Telegram](/docs/navi#telegram) and your phone's notifications like any reply.
+- At that time it opens an order for the lead once. The lead's message lands in the chat, so it reaches
+  [Telegram](/docs/projects#telegram) and your phone's notifications like any reply.
 - Then it is **Done**: it stays in the list with its run, and runs again only with a new time (**Edit**) or Run now.
   When a project's 50 automations are full, the oldest done one makes room for a new one.
 - Delete it to cancel it before it runs. Paused, it doesn't run; resuming it after its time is refused until it has
   a new time.
 - A time that has already passed is refused. Given with `Z` or an offset, it is kept as the zone's own clock time.
-- If the hub was down at that time, it runs once when the hub comes back, and its order tells the Navi how late it
+- If the hub was down at that time, it runs once when the hub comes back, and its order tells the lead how late it
   is, so the reminder says it comes late.
 - If another run of it is still open at that time (a Run now, say), it isn't skipped for good: it waits, shown as a
   skipped run that "goes once that ends", and runs once that run's order closes, late in the same way.
@@ -86,11 +86,11 @@ body, oldest first. A call that comes after the open run ended but before that o
 wait per automation (each body is at most 16 KiB); one past that is skipped. Pausing the automation skips new calls,
 but calls kept before the pause still go once the open run ends.
 
-A [Navi](/docs/navi)'s run closes its order by itself once the Navi's turn for it ends, whether it replied, failed or
-was cut off, so one run it never closed can't hold up the next ones. An automation you wrote in the app, or let run
-on its own on the card the Navi shows you, counts as your go-ahead for what its prompt names on each run, so a
-weekly send doesn't ask every week ([Approvals](/docs/navi#automations-go-ahead)). A coding project's lead closes
-its runs' orders itself, as it does any order.
+In a project with no repo, a run closes its order by itself once the lead's turn for it ends, whether it replied,
+failed or was cut off, so one run it never closed can't hold up the next ones. A project with repos has its lead close
+its runs' orders itself, as it does any order. An automation you wrote in the app, or let run on its own on the card
+the lead shows you, counts as your go-ahead for what its prompt names on each run, so a weekly send doesn't ask every
+week ([Approvals](/docs/projects#automations-go-ahead)).
 
 A run's state follows its order: **Running** while the order is open, then **Done** or **Stopped**. **Queued** is a
 webhook call waiting for the open run to end. **Skipped** means it came during another run or while the automation

@@ -11,7 +11,7 @@ app and take it over. The node records the screen and uploads the recording to t
 A screen is any of these an agent opens: a browser, an [Android emulator](#android), a
 [Linux desktop](#desktop), or the [agents' Mac's own screen](#mac), which agents take turns on. iOS simulators aren't
 screens: agents start their own on [the agents' Mac](/docs/agents-mac#sim) ([iOS screens are gone](#ios)). You can
-[open one yourself](#yours) too. The app shows every project's and Navi's on the [Screens page](#page), and each
+[open one yourself](#yours) too. The app shows every project's on the [Screens page](#page), and each
 project's under **Agents › Screens**. The agent tools that open and close one keep their names, `session_start` and
 `session_end`.
 
@@ -19,7 +19,7 @@ project's under **Agents › Screens**. The agent tools that open and close one 
 
 **Screens** in the sidebar says "needs you" when a screen asks for you, else how many are live: one count for the
 whole hub (`screens_count`), read again as screens start, change hands and end. The page shows every screen of the
-projects and Navis you can see, in three groups:
+projects you can see, in three groups:
 
 - **Needs you**: screens whose agent asked you to take over, each with a large picture, its reason and **Take over**.
 - **Live**: a grid of pictures. Over each, its project and where it runs (`Browser · devbox`, `Android · buildbox`,
@@ -28,7 +28,7 @@ projects and Navis you can see, in three groups:
 - **Recent**: screens that ended, newest first, with how they ended and when: the first 12, then **Show more**.
 
 Opening a screen gives its live view or replay the whole page, with a back arrow to the wall. **New screen** at the top
-right opens a short sentence: the kind, the machine with its slots in use, and the project or Navi. A full machine
+right opens a short sentence: the kind, the machine with its slots in use, and the project. A full machine
 gives you its next free slot. **All screens** at the top of a project's Screens tab opens the page too.
 
 The pictures are cheap by design. While the page is on screen, the hub takes one frame of each live screen every 20
@@ -47,8 +47,9 @@ it was logged.
    agent runs `agent-browser skills get core` once for how to use it.
 3. **`session_end`**. The node kills that Chrome, deletes its profile, and uploads the recording.
 
-A Navi's browser is the exception: it keeps one profile of the Navi's own between sessions, launched fresh for each
-session rather than taken warm, so the sites it signed into stay signed in ([Navi › Sign-ins](/docs/navi#sign-ins)).
+The browser of a lead that does its own work (a project with no repo) is the exception: it keeps one profile of the
+project's own between sessions, launched fresh for each session rather than taken warm, so the sites it signed into
+stay signed in ([Projects › Sign-ins](/docs/projects#sign-ins)).
 
 An agent has one screen open at a time. Its screen also ends when the agent's claude exits (its work is done, it was
 stopped or it went idle), or after 30 minutes without an `agent-browser` command. A screen never outlives its task:
@@ -91,14 +92,14 @@ moment and opens the page as that step found it. Press **Steps** again to close 
 open a screen.
 
 Any key that can read the screen's machine may watch. Taking over and typing take a person's device with operate
-there. A Navi's screen is its owner's alone, as the Navi is: nobody else watches it, takes it over, ends it or reads
+there. An [Only me](/docs/projects#only-me) project's screen is its owner's alone, as the project is: nobody else watches it, takes it over, ends it or reads
 its recording. MCP clients use `browser_control` to take over and hand back.
 
 ## Open one yourself {#yours}
 
-You can open a screen of your own: **New screen** at the top of a project's or a Navi's **Screens** tab, on the
+You can open a screen of your own: **New screen** at the top of a project's **Screens** tab, on the
 [Screens page](#page), or **New screen…** in the command palette (⌘K) for the project on screen. On the phone, **New Screen** is on a project's
-or Navi's ⓘ page ([Phone app](/docs/mobile#screens)).
+ⓘ page ([Phone app](/docs/mobile#screens)).
 
 1. **Pick the kind**: a browser, an Android emulator, a Linux desktop or the agents' Mac. A kind no machine can host
    says why under its name (`Turned off`, `Needs a Mac`, `Installing`, `Offline`, `Needs an update`). Pick it for the
@@ -116,9 +117,10 @@ or Navi's ⓘ page ([Phone app](/docs/mobile#screens)).
 Your screen is recorded and kept like an agent's, and plays back the same way once it ends. There's no agent to hand it
 to, so it has no Hand back. You need operate on the project's machine to open one, as to take a screen over.
 
-A Navi's browser runs on the Navi's own machine, on the profile it keeps ([Navi › Sign-ins](/docs/navi#sign-ins)):
-a site you sign in to there stays signed in for the Navi. Only the Navi's owner opens one, as only they reach the Navi.
-One browser at a time runs on that profile, so close yours before the Navi needs its own.
+A browser you open on a project's own machine runs on the profile the project keeps
+([Projects › Sign-ins](/docs/projects#sign-ins)): a site you sign in to there stays signed in for its lead. While the
+lead's browser is on that profile, yours opens on a fresh one, and so does one on another machine. One browser at a
+time runs on the profile, so close yours before the lead needs its own.
 
 ### When a machine is full {#yours-full}
 
@@ -190,15 +192,15 @@ An agent signs in to a site without seeing the password. It names a 1Password se
 the value into the page itself.
 
 1. **Save your service account token in Settings › Your accounts › 1Password.** In 1Password, make a vault for
-   fleetd with only the logins agents sign in with (and, for a Navi, a low-limit or virtual card), then
+   fleetd with only the logins agents sign in with (and, for [purchases](/docs/projects#purchases), a low-limit or virtual card), then
    [make a service account](https://start.1password.com/developer-tools/infrastructure-secrets/serviceaccount/) that
    reads only that vault: an agent on a machine could read whatever the token reads
    ([why](/docs/security#agent-reach)). Paste its token (it starts with `ops_`) and press Save and test. The app seals it on
    your computer to every machine and never shows it again; Test lists the vaults it can read, or says what 1Password
-   said, and asks for a new service account when it reads more than one. Remove is beside it. Your token serves the work you own: the tasks of the orders you start, and your Navi's
-   lead and agents. A project's lead and work nobody started (automations, train fixes) have no owner, so only a
+   said, and asks for a new service account when it reads more than one. Remove is beside it. Your token serves the work you own: the tasks of the orders you start, and your Only me
+   projects' leads and agents. A shared project's lead and work nobody started (automations, train fixes) have no owner, so only a
    variable serves them.
-   - **A project's own token wins**, a Navi's too. One that should use another service account sets
+   - **A project's own token wins**. One that should use another service account sets
      `OP_SERVICE_ACCOUNT_TOKEN` as a secret [project variable](/docs/projects#env), or the lead asks for it with
      `request_secret` (an [order's variable](/docs/approvals-and-secrets#order-variables)). Either is used instead of
      yours, in every order of that project, whoever started it.
@@ -329,9 +331,9 @@ its time. Each stage goes to the log as it ends, with its own time (`ms`) and th
 - **hub screen_open**: `checks`, `seal` and `place`, the hub placing a person's screen and taking its slot;
 - **hub screen launch**: `node start` (the node's answer), `recorded` (the node's report of it live) and `control`
   (the person's control, confirmed by the node);
-- **node browser**: `install`, `warm browser`, `cold browser` or `navi browser` (from the pool, launched now, or
-  launched on a Navi's profile), `secrets`, `fence` (a Navi's) and `session open`, which **node browser open** splits
-  into `recorder`, `discover` and `page`;
+- **node browser**: `install`, `warm browser`, `cold browser` or `kept browser` (from the pool, launched now, or
+  launched on a project's kept profile), `secrets` and `session open`, which **node browser open** splits into
+  `recorder`, `discover` and `page`;
 - **node desktop**: `prepare`, `warm display` or `cold display` (with **node display**'s `xvfb` or `container`),
   `connect`, `secrets` and `session open`.
 
@@ -501,7 +503,6 @@ What the screen is, and isn't:
   is missing.
 - **Recorded as any screen**: the video while a session holds the screen, and its action log, a line per action and
   agent-desktop command. Recordings go to the hub's storage, under the same retention.
-- **No Navi** ever uses it.
 
 ### On the Mac {#mac-setup}
 
