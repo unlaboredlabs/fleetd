@@ -376,7 +376,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 "Agents sign in and buy with the logins and card fleetd's service account reads: keep it to one vault \
                  of its own.",
                 SetupNeed::Before {
-                    what: "the first login agents fill".into(),
+                    what: "the first login".into(),
                 },
             )
         },

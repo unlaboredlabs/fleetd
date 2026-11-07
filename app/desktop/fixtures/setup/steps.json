@@ -219,7 +219,7 @@
       "id": "onepassword",
       "need": {
         "kind": "before",
-        "what": "the first login agents fill"
+        "what": "the first login"
       },
       "parts": [
         {

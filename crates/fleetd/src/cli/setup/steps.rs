@@ -279,7 +279,7 @@ mod tests {
                 ),
                 (
                     State::Skipped,
-                    "before the first login agents fill · fleetd init --step onepassword".into(),
+                    "before the first login · fleetd init --step onepassword".into(),
                     None
                 ),
                 (
