@@ -1,12 +1,15 @@
 //! The two privacy grants the agents' Mac needs, read exactly and never prompting: Accessibility
 //! (`AXIsProcessTrusted`) and Screen Recording (`CGPreflightScreenCaptureAccess`). macOS grants them to the node, the
-//! process launchd started, and its children share them. [`ask_once`] puts fleetd in both lists of System Settings,
-//! where the person turns it on.
+//! process launchd started, and its children share them. [`ask`] puts fleetd in a grant's list of System Settings,
+//! where the person turns it on: macOS keys a bare binary by its path and its signature's designated requirement,
+//! which release signing keeps the same across updates (`sh.fleetd.cli` and the team), so a grant outlives them.
 //!
 //! The frameworks are opened with dlopen: the darwin binary is cross-built without a macOS SDK and must link no
 //! framework (.github/release/check-darwin-deps.sh).
 use std::ffi::{CStr, c_void};
 use std::sync::OnceLock;
+
+use fleetd_contracts::node_link::MacCheckId;
 
 type Ask = unsafe extern "C" fn() -> u8;
 type AskWith = unsafe extern "C" fn(*const c_void) -> u8;
@@ -105,32 +108,35 @@ pub fn screen_recording() -> Option<bool> {
     Some(unsafe { (api.preflight)() } != 0)
 }
 
-/// Asks macOS for each grant the node lacks, once: that adds fleetd to its System Settings list (switched off) and
-/// shows macOS's own prompt at the Mac.
-pub fn ask_once() {
+/// Asks macOS for one grant the node lacks: that adds fleetd to its System Settings list (switched off) and shows
+/// macOS's own prompt at the Mac. Only the node asks: a process Terminal or the app started would put them in the list.
+pub fn ask(id: MacCheckId) {
     let Some(api) = api() else { return };
-    if accessibility() == Some(false) {
-        // SAFETY: a one-entry CFDictionary of CF globals, released after the call.
-        unsafe {
-            let keys = [*api.ax_prompt_key];
-            let values = [*api.cf_true];
-            let options = (api.dict_create)(
-                std::ptr::null(),
-                keys.as_ptr(),
-                values.as_ptr(),
-                1,
-                api.key_callbacks,
-                api.value_callbacks,
-            );
-            if !options.is_null() {
-                (api.ax_trusted_with)(options);
-                (api.cf_release)(options);
+    match id {
+        MacCheckId::Accessibility if accessibility() == Some(false) => {
+            // SAFETY: a one-entry CFDictionary of CF globals, released after the call.
+            unsafe {
+                let keys = [*api.ax_prompt_key];
+                let values = [*api.cf_true];
+                let options = (api.dict_create)(
+                    std::ptr::null(),
+                    keys.as_ptr(),
+                    values.as_ptr(),
+                    1,
+                    api.key_callbacks,
+                    api.value_callbacks,
+                );
+                if !options.is_null() {
+                    (api.ax_trusted_with)(options);
+                    (api.cf_release)(options);
+                }
             }
         }
-    }
-    if screen_recording() == Some(false) {
-        // SAFETY: no arguments.
-        unsafe { (api.request)() };
+        MacCheckId::ScreenRecording if screen_recording() == Some(false) => {
+            // SAFETY: no arguments.
+            unsafe { (api.request)() };
+        }
+        _ => {}
     }
 }
 

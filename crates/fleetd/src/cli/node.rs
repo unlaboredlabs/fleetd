@@ -21,6 +21,7 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("claude-config-dir", Kind::Str),
     ("mac", Kind::Bool),
     ("wait", Kind::Str),
+    ("ask", Kind::Str),
 ];
 
 fn usage(message: &str) -> u8 {
@@ -99,10 +100,43 @@ pub async fn node_command(argv: &[String]) -> u8 {
                 .map_err(|error| error.to_string()),
         ),
         // What a node started now would be granted; the agents' Mac's node asks it to take up a new grant (agents_mac/grants.rs).
-        Some("grants") => {
-            println!("{}", crate::node::agents_mac::grants::Grants::own().line());
-            0
-        }
+        // With --ask, setup's grant step: the running node asks macOS for one, then its pane opens.
+        Some("grants") => match v.str("ask") {
+            None => {
+                println!("{}", crate::node::agents_mac::grants::Grants::own().line());
+                0
+            }
+            Some(name) => {
+                use crate::cli::setup::mac_finish;
+                let Some(grant) =
+                    crate::node::agents_mac::grants::asked(name).map(mac_finish::grant)
+                else {
+                    return usage("--ask takes accessibility or screen_recording");
+                };
+                // The app asks for less: its grants view shows only while the node rewrites its checks every 2 s.
+                let wait = match v.str("wait").map(str::parse::<u64>) {
+                    None => mac_finish::ASK_WAIT,
+                    Some(Ok(secs)) => std::time::Duration::from_secs(secs),
+                    Some(Err(_)) => return usage("--wait takes a number of seconds"),
+                };
+                let home = home.unwrap_or_else(crate::node::config::default_node_home);
+                let asked = mac_finish::ask_node(&home, grant.id, wait).await;
+                mac_finish::open_pane(&grant);
+                if asked {
+                    println!(
+                        "macOS asks for {} now: turn on fleetd in System Settings › Privacy & Security › {}",
+                        grant.name, grant.name
+                    );
+                    0
+                } else {
+                    exit(Err(format!(
+                        "the node didn't ask macOS for {}: it isn't running. Fix: {}",
+                        grant.name,
+                        mac_finish::not_asked(&grant)
+                    )))
+                }
+            }
+        },
         // The node service fleetd init made for this binary, restarted: `launchctl kickstart -k` or `systemctl --user
         // restart`. The agents' Mac's node runs it to take up a new grant; setup runs it to retry.
         Some("restart") => {

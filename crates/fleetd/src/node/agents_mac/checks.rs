@@ -247,8 +247,8 @@ pub fn pane(id: MacCheckId) -> &'static str {
     }
 }
 
-pub fn grant(id: MacCheckId, granted: Option<bool>) -> MacCheck {
-    let (what, why) = match id {
+fn grant_words(id: MacCheckId) -> (&'static str, &'static str) {
+    match id {
         MacCheckId::ScreenRecording => (
             "Screen Recording",
             "the node can't show or record the Mac's screen",
@@ -257,7 +257,16 @@ pub fn grant(id: MacCheckId, granted: Option<bool>) -> MacCheck {
             "Accessibility",
             "the node can't click or type in the Mac's apps",
         ),
-    };
+    }
+}
+
+/// Has the node ask macOS for the grant (its prompt, and fleetd in the list), then opens the grant's pane.
+pub fn ask_command(id: MacCheckId) -> String {
+    format!("fleetd node grants --ask {}", id.as_str())
+}
+
+pub fn grant(id: MacCheckId, granted: Option<bool>) -> MacCheck {
+    let (what, why) = grant_words(id);
     match granted {
         Some(true) => check(id, Pass, &format!("fleetd has {what}."), None),
         Some(false) => check(
@@ -266,10 +275,10 @@ pub fn grant(id: MacCheckId, granted: Option<bool>) -> MacCheck {
             &format!("fleetd doesn't have {what}, so {why}."),
             Some(Fix {
                 label: format!(
-                    "At the Mac: System Settings › Privacy & Security › {what}, turn on \
-                     fleetd. macOS asks again from time to time: turn it on again then. This opens the pane there"
+                    "In Terminal at the Mac, then turn on fleetd in System Settings › Privacy & Security › {what}, \
+                     which this opens once macOS has asked. macOS asks again from time to time: turn it on again then"
                 ),
-                command: Some(format!("open \"{}\"", pane(id))),
+                command: Some(ask_command(id)),
             }),
         ),
         None => check(
@@ -279,6 +288,26 @@ pub fn grant(id: MacCheckId, granted: Option<bool>) -> MacCheck {
             None,
         ),
     }
+}
+
+/// A grant macOS stopped counting with an update to this version (grants.rs's `lost`): the switch may still read on.
+pub fn lost_grant(id: MacCheckId) -> MacCheck {
+    let (what, why) = grant_words(id);
+    check(
+        id,
+        Fail,
+        &format!(
+            "macOS stopped counting fleetd's {what} with the update to {}, so {why}.",
+            crate::version_label(crate::version())
+        ),
+        Some(Fix {
+            label: format!(
+                "In Terminal at the Mac, then turn fleetd off and on again in System Settings › Privacy & Security \
+                 › {what}, which this opens once macOS has asked"
+            ),
+            command: Some(ask_command(id)),
+        }),
+    )
 }
 
 pub fn gui_session(user: &str, console: Option<&str>) -> MacCheck {

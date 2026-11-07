@@ -145,6 +145,14 @@ describe("the checks", () => {
     expect(stepOf(s, 2000)).toBe("Permissions");
   });
 
+  it("says a grant an update lost in the node's words, not as one never turned on", () => {
+    const lost = check("screen_recording", "fail", { message: "macOS stopped counting fleetd's Screen Recording with the update to 0.9.1.", fix: "In Terminal at the Mac, then turn fleetd off and on again in System Settings" });
+    const s = checking([{ type: "health", read: read([check("accessibility", "fail", { fix: "In Terminal at the Mac, then turn on fleetd" }), lost]) }]);
+    const view = checkView(s, 2000);
+    expect(view).toMatchObject({ kind: "grants", grants: [{ id: "accessibility", granted: false }, { id: "screen_recording", granted: false, lost: lost.message }] });
+    expect(view.kind === "grants" && "lost" in (view.grants[0] ?? {})).toBe(false);
+  });
+
   it("counts only a run of every check made since the join started", () => {
     // The join's first report starts the clock; checks run before it are an older node's.
     const s = run([

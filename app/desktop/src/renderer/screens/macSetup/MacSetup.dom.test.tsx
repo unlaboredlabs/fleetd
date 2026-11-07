@@ -40,7 +40,7 @@ const { listeners, joins, status, health, redeem, updateHub, appCheck } = vi.hoi
         return () => listeners.delete(listener);
       },
       health,
-      openPane: () => Promise.resolve(),
+      openPane: () => Promise.resolve({ ok: true }),
       restart: () => Promise.resolve({ ok: true }),
       status,
       cancel: () => Promise.resolve(),

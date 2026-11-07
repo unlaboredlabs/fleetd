@@ -179,7 +179,8 @@ export interface FleetdApi {
     onJoin(listener: (join: MacJoin) => void): () => void;
     /** The node's checks as it last wrote them; with `hub`, whether it answers. */
     health(hub: string | null): Promise<MacHealthRead>;
-    openPane(pane: MacPane): Promise<void>;
+    /** A grant: the node asks macOS for it, then its pane opens; failed when the node didn't take the ask. */
+    openPane(pane: MacPane): Promise<MacRestartOutcome>;
     restart(): Promise<MacRestartOutcome>;
     /** Where this Mac's setup stands, as the window opens. */
     status(): Promise<MacSetupStatus>;

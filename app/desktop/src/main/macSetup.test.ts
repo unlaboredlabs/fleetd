@@ -277,15 +277,30 @@ describe("the checks", () => {
     expect((await readHealth(p, undefined)).health).toBeNull();
   });
 
-  it("opens Privacy & Security's two panes, and restarts the node with the CLI", async () => {
+  it("has the node ask macOS for each grant (the CLI then opens its pane), opens the App Store itself, and restarts the node with the CLI", async () => {
     const { p, dir, ran, opened } = ports();
     const setup = new MacSetup(p, () => undefined);
-    await setup.openPane("accessibility");
+    expect(await setup.openPane("accessibility")).toEqual({ ok: true });
     await setup.openPane("screen_recording");
-    expect(opened).toEqual([PANE_URLS.accessibility, PANE_URLS.screen_recording]);
-    expect(opened[1]).toContain("Privacy_ScreenCapture");
+    await setup.openPane("app_store");
+    expect(opened).toEqual([PANE_URLS.app_store]);
     expect(await setup.restart()).toEqual({ ok: true });
-    expect(ran).toEqual([{ file: path.join(dir, "bin", "fleetd"), args: ["node", "restart"] }]);
+    const [fleetd, node] = [path.join(dir, "bin", "fleetd"), path.join(dir, "node")];
+    expect(ran).toEqual([
+      { file: fleetd, args: ["node", "grants", "--ask", "accessibility", "--wait", "5", "--home", node] },
+      { file: fleetd, args: ["node", "grants", "--ask", "screen_recording", "--wait", "5", "--home", node] },
+      { file: fleetd, args: ["node", "restart"] },
+    ]);
+  });
+});
+
+describe("a grant's ask", () => {
+  it("says the node isn't running when it didn't take the ask, with the app's own Restart for a fix", async () => {
+    const { p } = ports({ exit: 1, output: "fleetd: the node didn't ask macOS for Accessibility: it isn't running. Fix: fleetd node restart: the node asks once it runs.\n" });
+    expect(await new MacSetup(p, () => undefined).openPane("accessibility")).toEqual({
+      ok: false,
+      failure: { message: "The node didn't ask macOS for Accessibility: it isn't running.", fix: "Restart the node: it asks macOS once it runs." },
+    });
   });
 });
 

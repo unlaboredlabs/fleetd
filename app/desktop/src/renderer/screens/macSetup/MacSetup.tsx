@@ -1,11 +1,11 @@
 // Set up this Mac for agents (D309): its own small window (`#/mac-setup`), never the full interface. One step at a
 // time (model.ts): the 6-digit code, a replace to confirm when there is one, the join as main runs it, then the node's
-// own checks read every second: the two privacy grants, each opening its pane of System Settings, and the Test, every
+// own checks read every second: the two privacy grants, each asked of macOS by the node and its pane opened, and the Test, every
 // check green. The page holds no hub key and no token: main trades the code and runs the CLI (src/main/macSetup.ts).
 // A version difference is one line and one fix: an app too old for the hub gets its Update button; a hub older than
 // the build this Mac got gets Update right there for an admin signed in here, and where to press it for anyone else.
 import { useEffect, useReducer, useRef, useState } from "react";
-import { HUB_UPDATE_WHERE, type HubBehind, type MacSetupFailure } from "../../../shared/macSetup";
+import { HUB_UPDATE_WHERE, type HubBehind, type MacPane, type MacSetupFailure } from "../../../shared/macSetup";
 import { Check, CircleDashed } from "lucide-react";
 import { Button, copyText, Field, Input, StateGlyph, Text } from "../../ui";
 import { Mark } from "../onboarding/Mark";
@@ -401,6 +401,18 @@ function CheckLine({ row }: { row: CheckRow }) {
 
 function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "check" }>; now: number; dispatch: Dispatch }) {
   const view = checkView(state, now);
+  // The grant the node is asking macOS for: within 2 s, then macOS's prompt and the pane, with fleetd in its list.
+  const [asking, setAsking] = useState<MacPane | undefined>(undefined);
+  // The node didn't take the ask: it isn't running, so the page says so with its Restart.
+  const [askFailure, setAskFailure] = useState<MacSetupFailure | undefined>(undefined);
+  const allow = (pane: MacPane) => {
+    setAsking(pane);
+    setAskFailure(undefined);
+    void window.fleetd.macSetup
+      .openPane(pane)
+      .then((outcome) => setAskFailure(outcome.ok ? undefined : outcome.failure))
+      .finally(() => setAsking(undefined));
+  };
   const restart = (
     <Button variant="secondary" size="md" disabled={state.restarting} onClick={() => dispatch({ type: "restart" })}>
       {state.restarting ? "Restarting…" : "Restart the node"}
@@ -433,7 +445,7 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
   if (view.kind === "grants") {
     return (
       <>
-        <Head title="Let agents use this Mac's screen" line="Turn fleetd on in each list. This screen sees each switch as you flip it." />
+        <Head title="Let agents use this Mac's screen" line="Allow each: macOS asks, then turn on fleetd in the list it opens. This screen sees each switch as you flip it." />
         <ul className={s.grants}>
           {view.grants.map((grant) => (
             <li key={grant.id} className={s.grant} data-granted={grant.granted}>
@@ -442,7 +454,7 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
                   {grant.title}
                 </Text>
                 <Text size="xs" tone="quiet">
-                  {`${grant.why.charAt(0).toUpperCase()}${grant.why.slice(1)}.`}
+                  {grant.lost === undefined ? `${grant.why.charAt(0).toUpperCase()}${grant.why.slice(1)}.` : `${grant.lost} Allow, then turn fleetd off and on again in the list.`}
                 </Text>
               </span>
               {grant.granted ? (
@@ -451,16 +463,19 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
                   Allowed
                 </span>
               ) : (
-                <Button size="md" variant={view.grants.find((g) => !g.granted)?.id === grant.id ? "primary" : "secondary"} onClick={() => void window.fleetd.macSetup.openPane(grant.id)}>
-                  Open System Settings
+                <Button size="md" variant={view.grants.find((g) => !g.granted)?.id === grant.id ? "primary" : "secondary"} disabled={asking !== undefined} onClick={() => allow(grant.id)}>
+                  {asking === grant.id ? "Asking macOS…" : "Allow"}
                 </Button>
               )}
             </li>
           ))}
         </ul>
-        <Text size="xs" tone="quiet" className={s.footnote}>
-          {"fleetd not in a list? Press + under it and pick fleetd in .fleetd › bin in your home folder (⇧⌘. shows hidden folders)."}
-        </Text>
+        {askFailure === undefined ? null : (
+          <>
+            <Failure failure={askFailure} />
+            <div className={s.actions}>{restart}</div>
+          </>
+        )}
         {state.restartFailure === undefined ? null : <Failure failure={state.restartFailure} />}
       </>
     );

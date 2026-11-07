@@ -1,16 +1,19 @@
 //! The end of the agents' Mac's setup, on the Mac itself, once its node has joined (docs: agents-mac.md#permissions):
 //! each grant's pane opened in turn and waited for, then the node's checks read until they pass. Each step returns
 //! what it found, so `fleetd init --join … --mac` and the app's "Set up this Mac for agents" drive the same steps and
-//! say the same things. The node does the restart a new grant needs by itself (node/agents_mac/grants.rs).
+//! say the same things. The node asks macOS for each grant when setup gets to it, so fleetd is in the list the pane
+//! opens on, and does the restart a new grant needs by itself (node/agents_mac/grants.rs).
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use fleetd_contracts::node_link::{MacCheck, MacCheckId, MacCheckState, MacHealth};
 
-use crate::node::agents_mac::{checks, last_full_check, read_health};
+use crate::node::agents_mac::{checks, grants as node_grants, last_full_check, read_health};
 
-/// The two grants, in the order setup asks for them.
-pub const GRANTS: [MacCheckId; 2] = [MacCheckId::Accessibility, MacCheckId::ScreenRecording];
+pub use crate::node::agents_mac::GRANTS;
+
+/// How long setup waits for the node to ask macOS for a grant: within 2 s while it runs.
+pub const ASK_WAIT: Duration = Duration::from_secs(30);
 
 /// How long setup waits for the person to turn a grant on.
 pub const GRANT_WAIT: Duration = Duration::from_secs(10 * 60);
@@ -36,15 +39,22 @@ fn name(id: MacCheckId) -> &'static str {
     }
 }
 
+/// The grant `id`, before the node says whether it has it.
+pub fn grant(id: MacCheckId) -> Grant {
+    Grant {
+        id,
+        name: name(id),
+        pane: checks::pane(id),
+        granted: None,
+    }
+}
+
 /// Both grants as the node at `node_home` found them last (`mac-health.json`, which it rewrites within 2 s of a grant).
 pub fn grants(node_home: &Path) -> Vec<Grant> {
     let health = read_health(node_home).map(|(h, _)| h);
     GRANTS
         .iter()
         .map(|&id| Grant {
-            id,
-            name: name(id),
-            pane: checks::pane(id),
             granted: health.as_ref().and_then(|h| {
                 h.checks
                     .iter()
@@ -55,15 +65,48 @@ pub fn grants(node_home: &Path) -> Vec<Grant> {
                         _ => None,
                     })
             }),
+            ..grant(id)
         })
         .collect()
 }
 
-/// What the person does for a grant the node lacks.
+/// What the person does for a grant the node lacks, in one line: what it's for, and the switch.
 pub fn ask(grant: &Grant) -> String {
+    let what = match grant.id {
+        MacCheckId::ScreenRecording => "lets you and agents see this Mac's screen",
+        _ => "lets agents click and type in this Mac's apps",
+    };
     format!(
-        "In System Settings › Privacy & Security › {} (open now), turn on fleetd. macOS may ask for an administrator's \
-         name and password there.",
+        "{} {what}: macOS asks now. Turn on fleetd in System Settings › Privacy & Security › {} (open now); macOS may \
+         ask for an administrator's name and password there.",
+        grant.name, grant.name
+    )
+}
+
+/// Has the node at `node_home` ask macOS for the grant (its prompt, and fleetd in that list of System Settings) and
+/// waits up to `wait` for it to; whether it did. Only the node asks: a prompt from this process would put Terminal or
+/// the app in the list instead. A node that didn't asks once it runs.
+pub async fn ask_node(node_home: &Path, id: MacCheckId, wait: Duration) -> bool {
+    if node_grants::request(node_home, id).is_err() {
+        return false;
+    }
+    let until = tokio::time::Instant::now() + wait;
+    loop {
+        if !node_grants::ask_file(node_home).exists() {
+            return true;
+        }
+        if tokio::time::Instant::now() >= until {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
+/// What to do when the node didn't ask in time, so isn't running.
+pub fn not_asked(grant: &Grant) -> String {
+    format!(
+        "fleetd node restart: the node asks once it runs. Then turn on fleetd in System Settings › Privacy & Security › \
+         {}.",
         grant.name
     )
 }
@@ -234,12 +277,49 @@ mod tests {
         assert!(before.iter().all(|g| g.granted.is_none()));
         assert!(before[1].pane.ends_with("Privacy_ScreenCapture"));
         assert!(
+            ask(&before[0]).contains(
+                "Turn on fleetd in System Settings › Privacy & Security › Accessibility (open now)"
+            ),
+            "{}",
             ask(&before[0])
-                .starts_with("In System Settings › Privacy & Security › Accessibility (open now)")
         );
         write(home.path(), &health(MacCheckState::Fail));
         let now = grants(home.path());
         assert_eq!((now[0].granted, now[1].granted), (Some(true), Some(false)));
+    }
+
+    /// Setup asks the node, which takes the ask within its 2-second read of the grants; a node that doesn't is not
+    /// running, and the ask stays for it to take once it runs.
+    #[tokio::test]
+    async fn asks_the_node_and_waits_for_it_to_ask_macos() {
+        let home = tempfile::tempdir().unwrap();
+        let ask = node_grants::ask_file(home.path());
+        assert!(
+            !ask_node(
+                home.path(),
+                MacCheckId::ScreenRecording,
+                Duration::from_millis(10)
+            )
+            .await
+        );
+        assert_eq!(std::fs::read_to_string(&ask).unwrap(), "screen_recording");
+        let node = {
+            let home = home.path().to_owned();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                node_grants::answer(&home);
+            })
+        };
+        assert!(
+            ask_node(
+                home.path(),
+                MacCheckId::Accessibility,
+                Duration::from_secs(5)
+            )
+            .await
+        );
+        node.await.unwrap();
+        assert!(!ask.exists());
     }
 
     #[tokio::test]

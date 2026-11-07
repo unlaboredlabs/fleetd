@@ -1576,7 +1576,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("textbox").first().fill("482913");
       await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
-      await page.getByRole("button", { name: "Open System Settings" }).first().click();
+      await page.getByRole("button", { name: "Allow", exact: true }).first().click();
       await page.getByText("Allowed", { exact: true }).waitFor({ timeout: 20_000 });
     },
   },
@@ -1590,7 +1590,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("textbox").first().fill("482913");
       await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
-      for (const button of await page.getByRole("button", { name: "Open System Settings" }).all()) await button.click();
+      for (const button of await page.getByRole("button", { name: "Allow", exact: true }).all()) await button.click();
       await page.getByRole("heading", { name: "This Mac is ready" }).waitFor({ timeout: 20_000 });
     },
   },
@@ -1618,7 +1618,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("textbox").first().fill("111111");
       await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
-      for (const button of await page.getByRole("button", { name: "Open System Settings" }).all()) await button.click();
+      for (const button of await page.getByRole("button", { name: "Allow", exact: true }).all()) await button.click();
       await page.getByRole("heading", { name: "This Mac is ready" }).waitFor({ timeout: 20_000 });
       await page.getByRole("button", { name: "Update the hub" }).waitFor({ timeout: 10_000 });
     },
@@ -1635,7 +1635,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("textbox").first().fill("333333");
       await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
-      for (const button of await page.getByRole("button", { name: "Open System Settings" }).all()) await button.click();
+      for (const button of await page.getByRole("button", { name: "Allow", exact: true }).all()) await button.click();
       await page.getByRole("heading", { name: "This Mac is ready" }).waitFor({ timeout: 20_000 });
       await page.getByRole("button", { name: "Open the App Store" }).waitFor({ timeout: 5_000 });
     },
@@ -1651,7 +1651,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("textbox").first().fill("444444");
       await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
-      for (const button of await page.getByRole("button", { name: "Open System Settings" }).all()) await button.click();
+      for (const button of await page.getByRole("button", { name: "Allow", exact: true }).all()) await button.click();
       await page.getByRole("heading", { name: "This Mac is ready" }).waitFor({ timeout: 20_000 });
       await page.getByText("sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer").waitFor({ timeout: 5_000 });
     },

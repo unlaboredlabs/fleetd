@@ -310,8 +310,11 @@ fn a_missing_grant_deep_links_its_pane() {
     let (state, _, fix) = verdict(&fake, MacCheckId::Accessibility);
     assert_eq!(state, MacCheckState::Fail);
     let fix = fix.unwrap();
-    assert!(fix.contains("Privacy_Accessibility"), "{fix}");
-    assert!(fix.starts_with("At the Mac: System Settings"), "{fix}");
+    assert!(fix.starts_with("In Terminal at the Mac"), "{fix}");
+    assert!(
+        fix.ends_with("fleetd node grants --ask accessibility"),
+        "{fix}"
+    );
     assert_eq!(
         verdict(&fake, MacCheckId::ScreenRecording).0,
         MacCheckState::Unknown

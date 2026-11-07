@@ -223,10 +223,21 @@ fn tilde(path: &Path) -> String {
 
 /// The end of a `--mac` join at the Mac: each grant's pane opened and waited for, then the node's checks, each a line.
 async fn mac_grants_and_checks(list: &mut Checklist, node_home: &Path) {
-    use super::mac_finish::{self, CHECKS_WAIT, GRANT_WAIT};
+    use super::mac_finish::{self, ASK_WAIT, CHECKS_WAIT, GRANT_WAIT};
     for grant in mac_finish::grants(node_home) {
         let title = grant.name.to_lowercase();
         if grant.granted != Some(true) {
+            // The node asks macOS first, so fleetd is in the list the pane opens on.
+            list.start(&format!("asking macOS for {}", grant.name));
+            if !mac_finish::ask_node(node_home, grant.id, ASK_WAIT).await {
+                mac_finish::open_pane(&grant);
+                list.failed(
+                    &title,
+                    "the node didn't ask macOS: it isn't running",
+                    &mac_finish::not_asked(&grant),
+                );
+                return;
+            }
             mac_finish::open_pane(&grant);
             list.note(&mac_finish::ask(&grant));
             list.start(&format!("waiting for {}", grant.name));
@@ -602,9 +613,10 @@ async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u
                     mac_grants_and_checks(list, Path::new(&added.layout.node_home)).await;
                 } else {
                     list.note(
-                        "This is the agents' Mac now. Last, at this Mac: in System Settings › Privacy & Security, turn \
-                         on fleetd in Accessibility and in Screen Recording; the node restarts itself to take up each. \
-                         Settings › Hub › Setup › A Mac for agents in the app shows each check.",
+                        "This is the agents' Mac now. Last, at this Mac: run fleetd node grants --ask accessibility, \
+                         then fleetd node grants --ask screen_recording, and turn on fleetd in each pane they open; the \
+                         node restarts itself to take up each. Settings › Hub › Setup › A Mac for agents in the app \
+                         shows each check.",
                     );
                 }
                 return Ok(worker_end(list, "This Mac is the agents' Mac now."));

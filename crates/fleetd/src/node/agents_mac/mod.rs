@@ -29,7 +29,7 @@ mod tcc {
     pub fn screen_recording() -> Option<bool> {
         None
     }
-    pub fn ask_once() {}
+    pub fn ask(_: fleetd_contracts::node_link::MacCheckId) {}
 }
 
 use std::path::{Path, PathBuf};
@@ -40,7 +40,7 @@ use super::config::NodeConfig;
 use fleetd_contracts::node_link::{
     CAP_AGENTS_MAC, CAP_BROWSER, CAP_MAC_TOOL, CAP_PROJECT_SETTINGS, CAP_SCREEN_SETTINGS,
     CAP_SELF_UPDATE, CAP_SESSION_END, CAP_SESSION_HOST, CAP_SESSION_IOS, CAP_SESSION_SEAL,
-    CAP_UPDATE_FETCH, CAP_UPDATE_HOLD, MacHealth,
+    CAP_UPDATE_FETCH, CAP_UPDATE_HOLD, MacCheckId, MacHealth,
 };
 use fleetd_contracts::prim::{List, Text};
 use fleetd_contracts::sessions::SessionCall;
@@ -124,6 +124,9 @@ pub fn session_call_allowed(call: &SessionCall) -> bool {
 /// `fleetd node restart` does the same for any node service.
 pub const RESTART_NODE: &str = "launchctl kickstart -k gui/$(id -u)/sh.fleetd.node";
 
+/// The two privacy grants, in the order setup asks for them.
+pub const GRANTS: [MacCheckId; 2] = [MacCheckId::Accessibility, MacCheckId::ScreenRecording];
+
 /// How often the node checks the Mac's setup again.
 pub const CHECK_EVERY: Duration = Duration::from_secs(30);
 
@@ -133,7 +136,7 @@ pub struct AgentsMac {
     health: Arc<Mutex<Option<MacHealth>>>,
     /// What a fresh process of the node was granted last (grants.rs): the grant checks say this, not the running
     /// process's own reads, which macOS updates only once it starts again.
-    fresh: Arc<Mutex<Option<grants::Grants>>>,
+    fresh: Arc<Mutex<Option<grants::Fresh>>>,
     /// Its tool is on, as the node found at its start: its hello lists `mac_tool`.
     tool: bool,
 }
@@ -152,7 +155,7 @@ impl AgentsMac {
 
     /// Holds `health`, with the grants a fresh process found, for the heartbeat and in [`health_file`] for setup.
     fn publish(&self, home: &Path, mut health: MacHealth) {
-        if let Some(fresh) = *self
+        if let Some(fresh) = &*self
             .fresh
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -167,8 +170,8 @@ impl AgentsMac {
     }
 
     /// Holds the keep-awake assertion, installs the pinned tools, and checks the setup every [`CHECK_EVERY`] until
-    /// dropped. Asks once for the two grants the person then turns on in System Settings, so fleetd is in their lists,
-    /// and restarts the node once a fresh process has a grant it lacks (grants.rs).
+    /// dropped. Asks macOS for a grant when setup asks it to (so fleetd is in that list of System Settings) and again
+    /// for one an update lost, and restarts the node once a fresh process has a grant it lacks (grants.rs).
     pub fn start(home: &Path, tool: bool) -> (Self, super::util::AbortOnDrop) {
         let mac = Self {
             tool,
@@ -183,17 +186,24 @@ impl AgentsMac {
                     tracing::warn!("the agents' Mac can't hold its keep-awake assertion: {e}");
                     e
                 });
-            tcc::ask_once();
+            {
+                let h = home.clone();
+                let _ = tokio::task::spawn_blocking(move || grants::ask_lost(&h)).await;
+            }
             // A new grant is taken up within seconds while the person is at System Settings (grants.rs).
             if cfg!(target_os = "macos") {
                 let (home, running) = (home.clone(), running.clone());
                 tokio::spawn(async move {
                     loop {
                         let h = home.clone();
-                        let fresh = tokio::task::spawn_blocking(move || grants::take_up(&h))
-                            .await
-                            .ok()
-                            .flatten();
+                        let fresh = tokio::task::spawn_blocking(move || {
+                            grants::answer(&h);
+                            grants::take_up(&h)
+                        })
+                        .await
+                        .ok()
+                        .flatten();
+                        let every = grants::every(fresh.as_ref().map(|f| f.grants));
                         if fresh.is_some() {
                             *running
                                 .fresh
@@ -203,7 +213,7 @@ impl AgentsMac {
                                 running.publish(&home, health);
                             }
                         }
-                        tokio::time::sleep(grants::every(fresh)).await;
+                        tokio::time::sleep(every).await;
                     }
                 });
             }

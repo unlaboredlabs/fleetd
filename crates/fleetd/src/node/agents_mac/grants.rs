@@ -3,6 +3,10 @@
 //! fresh process of its own binary (`fleetd node grants`, which macOS answers as it would a new node) and, when that one
 //! has a grant the node lacks, has launchd restart it: at most once for each answer, so a grant macOS never shows the
 //! running node can't make it restart again and again.
+//!
+//! The node is also the one that asks macOS for a grant, so fleetd (not Terminal or the app) is what lands in System
+//! Settings' list: setup's grant step writes [`ask_file`] and the node asks within 2 s ([`answer`]). At its start it
+//! asks again for a grant an update lost ([`lost`]), and the grant's check says so.
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -58,14 +62,24 @@ impl Grants {
     }
 }
 
+/// What a fresh process found: its grants, and those an update took away ([`lost`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Fresh {
+    pub grants: Grants,
+    pub lost: Vec<MacCheckId>,
+}
+
 /// The grant checks of `health` as a fresh process found them: what macOS has granted the node.
-pub fn overlay(health: &mut MacHealth, fresh: Grants) {
+pub fn overlay(health: &mut MacHealth, fresh: &Fresh) {
     let checks = health
         .checks
         .iter()
         .map(|c| match c.id {
-            MacCheckId::Accessibility => super::checks::grant(c.id, fresh.accessibility),
-            MacCheckId::ScreenRecording => super::checks::grant(c.id, fresh.screen_recording),
+            id if fresh.lost.contains(&id) => super::checks::lost_grant(id),
+            MacCheckId::Accessibility => super::checks::grant(c.id, fresh.grants.accessibility),
+            MacCheckId::ScreenRecording => {
+                super::checks::grant(c.id, fresh.grants.screen_recording)
+            }
             _ => c.clone(),
         })
         .collect();
@@ -83,9 +97,115 @@ pub fn restart_for(own: Grants, fresh: Grants, last: Option<&str>) -> Option<Str
     .then_some(line)
 }
 
+/// Whether the node forgets the answer it last restarted for (`last`): a fresh process now says otherwise (a grant
+/// turned off, or lost with an update), so the grant turned on again restarts it again.
+pub fn forgets(fresh: Grants, last: Option<&str>) -> bool {
+    last.is_some_and(|l| l != fresh.line())
+}
+
 /// Where the node writes the answer it last restarted for.
 fn marker(home: &Path) -> PathBuf {
     super::tools_dir(home).join("restarted-for-grants")
+}
+
+/// Where the node writes what it last saw: its version, then the grants a fresh process had ([`Grants::line`]), to
+/// tell an update that lost a grant.
+fn seen_file(home: &Path) -> PathBuf {
+    super::tools_dir(home).join("grants-seen")
+}
+
+/// What the node last saw, as [`seen_file`] holds it: the version, and the grants under it.
+pub fn parse_seen(text: &str) -> Option<(String, Grants)> {
+    let (version, line) = text.trim().split_once('\n')?;
+    Some((version.trim().to_owned(), Grants::parse(line.trim())?))
+}
+
+fn seen(home: &Path) -> Option<(String, Grants)> {
+    parse_seen(&std::fs::read_to_string(seen_file(home)).ok()?)
+}
+
+/// The grants an update lost: on when the node last looked, under another version (`seen`), off now under `version`.
+/// Release signing keeps fleetd's identity across updates, so this is a build signed otherwise (one built locally). A
+/// grant already off before the update (turned off, or macOS's periodic ask not answered) isn't one, nor one turned
+/// off under the same version: the plain check says those.
+pub fn lost(grants: Grants, seen: Option<&(String, Grants)>, version: &str) -> Vec<MacCheckId> {
+    let Some((_, before)) = seen.filter(|(was, _)| was != version) else {
+        return Vec::new();
+    };
+    [
+        (
+            MacCheckId::Accessibility,
+            before.accessibility,
+            grants.accessibility,
+        ),
+        (
+            MacCheckId::ScreenRecording,
+            before.screen_recording,
+            grants.screen_recording,
+        ),
+    ]
+    .into_iter()
+    .filter(|(_, before, now)| *before == Some(true) && *now == Some(false))
+    .map(|(id, _, _)| id)
+    .collect()
+}
+
+/// Notes what a fresh process had under this version, unless a grant is lost: then what the node saw before the update
+/// stays, so the check keeps saying so until the grant is back.
+fn note_seen(home: &Path, grants: Grants, lost: &[MacCheckId]) {
+    let text = format!("{}\n{}", crate::version(), grants.line());
+    if lost.is_empty()
+        && std::fs::read_to_string(seen_file(home)).ok().as_deref() != Some(text.as_str())
+    {
+        let _ = std::fs::create_dir_all(super::tools_dir(home))
+            .and_then(|()| std::fs::write(seen_file(home), text));
+    }
+}
+
+/// Where setup asks the node to ask macOS for a grant: the grant's id (`accessibility`, `screen_recording`), which
+/// the node removes once it asked.
+pub fn ask_file(home: &Path) -> PathBuf {
+    home.join("mac-grant-ask")
+}
+
+/// Setup's half: asks the node at `home` to ask macOS for `id`.
+pub fn request(home: &Path, id: MacCheckId) -> std::io::Result<()> {
+    let tmp = home.join("mac-grant-ask.tmp");
+    std::fs::write(&tmp, id.as_str()).and_then(|()| std::fs::rename(&tmp, ask_file(home)))
+}
+
+/// The grant [`ask_file`] names, if it names one.
+pub fn asked(text: &str) -> Option<MacCheckId> {
+    super::GRANTS
+        .into_iter()
+        .find(|id| id.as_str() == text.trim())
+}
+
+/// The node's half: asks macOS for the grant setup asked for, if it did, and removes the ask.
+pub fn answer(home: &Path) {
+    let Ok(text) = std::fs::read_to_string(ask_file(home)) else {
+        return;
+    };
+    let _ = std::fs::remove_file(ask_file(home));
+    if let Some(id) = asked(&text) {
+        tracing::info!(
+            "the agents' Mac asks macOS for {}, as setup asked",
+            id.as_str()
+        );
+        super::tcc::ask(id);
+    }
+}
+
+/// At the node's start: asks macOS again for each grant an update lost, so its prompt is at the Mac.
+pub fn ask_lost(home: &Path) {
+    for id in lost(Grants::own(), seen(home).as_ref(), crate::version()) {
+        tracing::warn!(
+            "the agents' Mac lost {} with an update to {}: it asks macOS again",
+            id.as_str(),
+            crate::version()
+        );
+        super::tcc::ask(id);
+    }
 }
 
 /// How often the node asks again: often while a grant is missing (the person is at System Settings), else at the
@@ -115,10 +235,19 @@ fn fresh() -> Option<Grants> {
 /// Asks a fresh process for its grants, and has launchd restart the node when that process holds a grant the node
 /// lacks (`fleetd node restart`, outside the node's own process group, which launchd ends with it). The restart ends
 /// the node's jobs, as any does; grants change only while the person sets the Mac up. What the fresh process had.
-pub fn take_up(home: &Path) -> Option<Grants> {
-    let fresh = fresh()?;
+pub fn take_up(home: &Path) -> Option<Fresh> {
+    let grants = fresh()?;
+    let fresh = Fresh {
+        grants,
+        lost: lost(grants, seen(home).as_ref(), crate::version()),
+    };
+    note_seen(home, grants, &fresh.lost);
     let last = std::fs::read_to_string(marker(home)).ok();
-    let Some(line) = restart_for(Grants::own(), fresh, last.as_deref().map(str::trim)) else {
+    let last = last.as_deref().map(str::trim);
+    let Some(line) = restart_for(Grants::own(), grants, last) else {
+        if forgets(grants, last) {
+            let _ = std::fs::remove_file(marker(home));
+        }
         return Some(fresh);
     };
     if let Err(e) = std::fs::create_dir_all(super::tools_dir(home))
@@ -172,7 +301,13 @@ mod tests {
                 super::super::checks::keep_awake(Ok(())),
             ],
         );
-        overlay(&mut health, g(Some(true), Some(true)));
+        overlay(
+            &mut health,
+            &Fresh {
+                grants: g(Some(true), Some(true)),
+                lost: Vec::new(),
+            },
+        );
         let states: Vec<_> = health.checks.iter().map(|c| (c.id, c.state)).collect();
         assert_eq!(
             states,
@@ -182,6 +317,100 @@ mod tests {
                 (MacCheckId::KeepAwake, MacCheckState::Ok),
             ]
         );
+    }
+
+    /// A grant on when the node last looked, under another version, and off now is one an update lost; one already off
+    /// before the update, or off under the same version, or nothing seen yet, is the plain missing grant.
+    #[test]
+    fn a_grant_on_before_an_update_and_off_after_is_lost() {
+        let (yes, no) = (Some(true), Some(false));
+        let seen = |v: &str, grants| Some((v.to_owned(), grants));
+        assert_eq!(
+            lost(g(yes, no), seen("0.4.0", g(yes, yes)).as_ref(), "0.4.1"),
+            [MacCheckId::ScreenRecording]
+        );
+        assert_eq!(
+            lost(g(no, no), seen("0.4.0", g(yes, yes)).as_ref(), "0.4.1"),
+            [MacCheckId::Accessibility, MacCheckId::ScreenRecording]
+        );
+        // Turned off (or its periodic ask unanswered) before the update: not the update's doing.
+        assert!(lost(g(yes, no), seen("0.4.0", g(yes, no)).as_ref(), "0.4.1").is_empty());
+        assert!(lost(g(yes, no), seen("0.4.1", g(yes, yes)).as_ref(), "0.4.1").is_empty());
+        assert!(lost(g(no, no), None, "0.4.1").is_empty());
+        assert!(
+            lost(g(None, None), seen("0.4.0", g(yes, yes)).as_ref(), "0.4.1").is_empty(),
+            "can't be asked"
+        );
+        let text = format!("0.4.0\n{}", g(yes, no).line());
+        assert_eq!(parse_seen(&text), Some(("0.4.0".to_owned(), g(yes, no))));
+        assert_eq!(parse_seen("0.4.0"), None);
+    }
+
+    /// While a grant is lost, what the node saw before the update stays, so the check keeps saying so; once it's back,
+    /// the node notes the new version.
+    #[test]
+    fn a_lost_grant_stays_lost_until_it_is_back() {
+        let home = tempfile::tempdir().unwrap();
+        let (yes, no) = (Some(true), Some(false));
+        std::fs::create_dir_all(crate::node::agents_mac::tools_dir(home.path())).unwrap();
+        std::fs::write(
+            seen_file(home.path()),
+            format!("0.0.0-old\n{}", g(yes, yes).line()),
+        )
+        .unwrap();
+        let now = g(yes, no);
+        let first = lost(now, seen(home.path()).as_ref(), crate::version());
+        assert_eq!(first, [MacCheckId::ScreenRecording]);
+        note_seen(home.path(), now, &first);
+        assert_eq!(
+            lost(now, seen(home.path()).as_ref(), crate::version()),
+            first
+        );
+        note_seen(home.path(), g(yes, yes), &[]);
+        assert_eq!(
+            seen(home.path()),
+            Some((crate::version().to_owned(), g(yes, yes)))
+        );
+    }
+
+    /// The lost grant's check says the update took it; the others read as before.
+    #[test]
+    fn a_lost_grant_says_the_update_took_it() {
+        let mut health = crate::node::agents_mac::health(
+            "ada",
+            vec![
+                super::super::checks::grant(MacCheckId::Accessibility, Some(true)),
+                super::super::checks::grant(MacCheckId::ScreenRecording, Some(true)),
+            ],
+        );
+        let fresh = Fresh {
+            grants: g(Some(true), Some(false)),
+            lost: vec![MacCheckId::ScreenRecording],
+        };
+        overlay(&mut health, &fresh);
+        let sr = &health.checks[1];
+        assert_eq!(sr.state, fleetd_contracts::node_link::MacCheckState::Fail);
+        assert!(sr.message.as_str().contains("update"), "{}", sr.message);
+        assert!(
+            sr.command
+                .as_ref()
+                .is_some_and(|c| c.as_str().contains("--ask screen_recording")),
+            "{:?}",
+            sr.command
+        );
+    }
+
+    /// Setup's ask names one grant; anything else asks nothing.
+    #[test]
+    fn the_ask_names_a_grant() {
+        let home = tempfile::tempdir().unwrap();
+        request(home.path(), MacCheckId::ScreenRecording).unwrap();
+        let text = std::fs::read_to_string(ask_file(home.path())).unwrap();
+        assert_eq!(asked(&text), Some(MacCheckId::ScreenRecording));
+        assert_eq!(asked("accessibility\n"), Some(MacCheckId::Accessibility));
+        assert_eq!(asked("xcode"), None);
+        answer(home.path());
+        assert!(!ask_file(home.path()).exists(), "taken");
     }
 
     #[test]
@@ -228,5 +457,18 @@ mod tests {
             "taken away"
         );
         assert_eq!(restart_for(g(None, None), g(None, None), None), None);
+    }
+
+    /// Turned off (or lost with an update) after a restart for it: the answer it restarted for is forgotten, so the
+    /// grant turned on again restarts the node again.
+    #[test]
+    fn forgets_the_restart_once_a_grant_goes() {
+        let (yes, no) = (Some(true), Some(false));
+        let line = g(yes, yes).line();
+        assert!(forgets(g(yes, no), Some(&line)));
+        assert!(!forgets(g(yes, yes), Some(&line)));
+        assert!(!forgets(g(yes, no), None));
+        let after = restart_for(g(yes, no), g(yes, yes), None);
+        assert_eq!(after.as_deref(), Some(line.as_str()));
     }
 }
