@@ -654,6 +654,30 @@ impl NodeLinkServer {
         tracing::info!(machine_id = %machine_id, "node link: machine offline");
     }
 
+    /// A node whose key was revoked since its hello (`fleetd machine remove`, which may run outside this hub's
+    /// process) is ended at its next heartbeat: its sessions are detached first, so nothing it reports is written
+    /// after, then, with its machine record gone too, what its link wrote since the remove is forgotten again. A
+    /// machine the hub still has keeps its rows. True when the link must close.
+    pub(crate) async fn forget_if_revoked(&self, machine_id: &MachineId, link: u64) -> bool {
+        if !matches!(self.deps.auth.node_pub_key(machine_id), Ok(None)) {
+            return false;
+        }
+        self.deps.executors.detach_link(machine_id, link).await;
+        if matches!(self.deps.store.machine_get(machine_id), Ok(None)) {
+            match self.deps.store.machine_remove(machine_id) {
+                Ok(0) => {}
+                Ok(rows) => {
+                    tracing::info!(machine_id = %machine_id, rows, "node link: a removed machine's rows forgotten again")
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "node link: a removed machine's rows weren't forgotten")
+                }
+            }
+        }
+        tracing::info!(machine_id = %machine_id, "node link: its key was revoked, so its link ends");
+        true
+    }
+
     /// Attributes a forwarded call to the project its cwd is in, on the machine whose node sent it, and answers it.
     pub(crate) async fn answer_lead_call(
         &self,
@@ -1036,6 +1060,14 @@ impl NodeLinkServer {
             self.touch(&machine_id);
             match frame {
                 NodeToHub::Heartbeat(beat) => {
+                    if self.forget_if_revoked(&machine_id, id).await {
+                        return refuse(
+                            close::UNAUTHORIZED,
+                            format!(
+                                "{machine_id} was removed from this hub: its node key is revoked"
+                            ),
+                        );
+                    }
                     self.deps
                         .time
                         .heartbeat(machine_id.as_str(), beat.at.as_str());
@@ -1309,6 +1341,93 @@ mod tests {
             event["summary"],
             "devbox's node linked again, on fleetd 0.2.0"
         );
+    }
+
+    /// `fleetd machine remove` of a node that is still linked: the hub revokes its key and forgets its rows, then the
+    /// node reports its projects again. Its next heartbeat ends the link and forgets those too, and devbox's project
+    /// under the same id stays. A machine whose record the hub still has keeps its rows.
+    #[tokio::test]
+    async fn a_removed_machine_still_linked_is_cut_off_and_what_it_reports_after_is_forgotten() {
+        use fleetd_contracts::model::{Machine, ProjectSummary};
+
+        use crate::hub::executor::NodeSessions;
+
+        let home = tempfile::tempdir().unwrap();
+        let config = HubConfig {
+            home: home.path().to_path_buf(),
+            listen: Listen::default(),
+            url: None,
+        };
+        let hub = crate::hub::serve::build_on(
+            HubDb::open_memory().unwrap(),
+            config,
+            ManualClock::at(1_792_000_000_000),
+        )
+        .unwrap();
+        let (devbox, worker) = (
+            MachineId::unchecked("devbox"),
+            MachineId::unchecked("worker"),
+        );
+        let machine = |id: &MachineId| -> Machine {
+            serde_json::from_value(serde_json::json!({
+                "machineId": id, "name": id, "status": "online", "lastSeenAt": "2026-11-07T10:00:00.000Z",
+                "nodeVersion": "0.1.0",
+            }))
+            .unwrap()
+        };
+        let reports = |id: &MachineId| {
+            let project: ProjectSummary = serde_json::from_value(serde_json::json!({
+                "machineId": id, "projectId": "p-shared", "title": "fleetd", "workspaceRoot": "/srv/fleetd",
+                "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 },
+                "lastActivityAt": "2026-11-07T10:00:00.000Z",
+            }))
+            .unwrap();
+            hub.store.projects_upsert_many(id, &[project]).unwrap();
+        };
+        let projects = |id: &MachineId| hub.store.projects_list(Some(id), None).unwrap().len();
+        for id in [&devbox, &worker] {
+            hub.store
+                .machine_upsert(&machine(id), Some("node-key"))
+                .unwrap();
+            reports(id);
+        }
+        let _link = hub.link.test_link(&worker, &[]);
+        let link = hub.link.link_id(&worker).unwrap();
+        let (send, _calls) = tokio::sync::mpsc::unbounded_channel();
+        hub.executors
+            .attach(
+                &worker,
+                NodeSessions {
+                    link_id: link,
+                    send,
+                },
+            )
+            .await;
+        assert!(
+            !hub.link.forget_if_revoked(&worker, link).await,
+            "an enrolled node stays"
+        );
+
+        assert!(hub.auth.revoke_node(&worker).unwrap());
+        hub.store.machine_remove(&worker).unwrap();
+        reports(&worker);
+        assert_eq!(
+            projects(&worker),
+            1,
+            "the linked node wrote its project back"
+        );
+
+        assert!(hub.link.forget_if_revoked(&worker, link).await);
+        assert_eq!(projects(&worker), 0);
+        assert_eq!(projects(&devbox), 1);
+        assert!(hub.executors.live_since(&worker).is_none());
+
+        // Revoked, but the hub still has the machine (its remove hasn't forgotten it yet): its rows are left alone.
+        assert!(hub.auth.revoke_node(&devbox).unwrap());
+        let _devbox_link = hub.link.test_link(&devbox, &[]);
+        let devbox_link = hub.link.link_id(&devbox).unwrap();
+        assert!(hub.link.forget_if_revoked(&devbox, devbox_link).await);
+        assert_eq!(projects(&devbox), 1);
     }
 
     /// The 2026-11-03 outage: a stalled hub ran a quiet link's silence timer out just as the node linked again. Its

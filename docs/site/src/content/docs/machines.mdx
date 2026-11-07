@@ -199,7 +199,12 @@ In the app, press **Remove** beside it in [Settings › Hub › Machines](#app-r
 fleetd machine remove builder-1
 ```
 
-It stops and removes the node's service on that machine, and revokes its key on the hub.
+It stops and removes the node's service on that machine, revokes its key on the hub, and forgets everything the hub
+held of it, keyed by its id: its projects, sessions, checkouts, chats, settings and slots. Another machine's rows stay,
+even under the same project ids. Its orders, the event log, and the time and factory metrics stay as history, until
+their own retention prunes them. A node that is still linked is cut off at its next heartbeat (within 15 s), and
+what it reported in the meantime is forgotten too. To clear what an older fleetd's remove left behind, run the same
+command again.
 
 | Option | Also does |
 |---|---|
@@ -210,6 +215,7 @@ For a machine that joined with `fleetd pair --worker`, only the key is revoked:
 ```text
 laptop was not set up by fleetd machine add from this hub, so only its key is revoked here; stop its node by hand.
 revoked laptop's node key; the hub refuses that node from now on.
+the hub forgot laptop's projects, sessions, chats and settings (214 rows); its orders, event log and metrics stay as history.
 ```
 
 Stop its node on that machine yourself:
