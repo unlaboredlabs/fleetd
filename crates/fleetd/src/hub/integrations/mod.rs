@@ -13,8 +13,8 @@ use fleetd_contracts::ids::ProjectRef;
 use crate::hub::store::{HubDb, StoreError};
 
 /// Whether the project is a Navi, as the hub keeps it (what `ProjectSummary.kind` says too; the
-/// project row a node reports has no kind). Integrations connect only to one: its lead asks before anything but a
-/// read, where a coding project's lead runs with full access and would send unasked.
+/// project row a node reports has no kind). An older node runs its lead asking before a send, as every node that runs
+/// one lead mode does for every lead.
 pub fn is_navi(db: &HubDb, r: &ProjectRef) -> Result<bool, StoreError> {
     db.with(|c| Ok(crate::hub::navi::store::of(c, r)?.is_some()))
 }

@@ -1,23 +1,19 @@
-//! Navis (W97): personal assistants, as many as a person likes. A Navi is a project of kind `assistant` in a plain
-//! folder of its own under its node's home (`navi/<name>`), marked in the `assistants` table with the key that made
-//! it. Everything else is a project's, unchanged: its chat, memory and nightly refresh, automations, screens,
-//! checklist and approvals. Its lead differs in two ways (`leads/lead.rs`): it starts from the `navi.start` prompt, and
-//! runs in the assistant role (`SessionRole::Assistant`), which asks a person before a send, a write through an
-//! integration, or a first visit to a site they didn't give it.
+//! Navis (W97): personal assistants, as many as a person likes. A Navi is an Only me project (D310) in a plain folder
+//! of its own under its node's home (`navi/<name>`), with the key that made it in its `project_settings` row.
+//! Everything else is a project's, unchanged: its chat, memory and nightly refresh, automations, screens, checklist
+//! and approvals. Its lead runs like any lead with no repo (`leads/lead.rs`): from the `navi.start` prompt in the
+//! assistant role, asking a person before a send, a write through an integration, or a first visit to a site they
+//! didn't give it.
 //!
-//! Its lead reads and writes what the person can on its machine, but their keys and logins and fleetd's own files, from
-//! a home of its own where its background processes outlive the turn (D234; the node's OS sandbox holds every tool and
-//! command to it, `node/runner/sandbox.rs`), runs commands unasked (D208), and fetches or opens a site unasked only once the person allowed that site at its
-//! first visit or linked it in their own message (`sites`).
+//! It runs with full access like any project's lead, with no sandbox (D310): it runs commands unasked (D208), can start
+//! agents and work with repos, and fetches or opens a site unasked only once the person allowed that site at its first
+//! visit or linked it in their own message (`sites`).
 //!
 //! Each Navi has an owner (D215, `owner`): only they see it and use it, and the hub refuses anyone else.
 //!
 //! Its browser keeps its sign-ins between sessions in a profile of its own on its node (D221, node/browser/chrome.rs);
 //! `navi_signins_forget` deletes it, and deleting the Navi (`project_remove`) does too: that erases all of it (D287,
 //! `erase`), its folder too when asked.
-//!
-//! Navis never run on a Mac (D299 mac.interim-lockdown): `navi_create` refuses one, picks none by default, and a Navi
-//! already on a Mac doesn't start there ([`on_mac`]); the node on a Mac refuses its sandbox too.
 //!
 //! An archived Navi keeps its chat, memory and folder; its lead is stopped and doesn't start again until it is brought
 //! back, and a message to it waits until then. Its factory bridge (messages to other projects' leads, the factory's
@@ -129,20 +125,6 @@ fn free_folders(hub: &Hub, m: &MachineId, slug: &str) -> Result<Vec<String>, Sto
         .collect())
 }
 
-/// Why a Navi doesn't run on Mac `m` (D299 mac.interim-lockdown), and how to have it elsewhere: macOS's sandbox leaves
-/// ways out. A Navi can't move machines, so one already there is made again on another machine.
-pub fn on_mac(m: &MachineId) -> (String, String) {
-    (
-        format!(
-            "Navis don't run on a Mac, and {m} is one: macOS's sandbox leaves a Navi ways out (the keychain through its \
-             system service, launchctl jobs, Apple Events)."
-        ),
-        "Make a Navi on a Linux machine instead (Navi › New, then pick the machine). To keep this one's files, copy \
-         them over from its folder on the Mac, then archive it."
-            .to_owned(),
-    )
-}
-
 fn too_old(m: &MachineId) -> ToolError {
     error(
         ErrorCode::Invalid,
@@ -195,16 +177,8 @@ pub async fn create(
     if let Some(m) = &input.machine_id {
         require(caller, Role::Operate, Some(m))?;
     }
-    let m = crate::hub::projects::navi_machine(hub, input.machine_id.as_ref())?;
+    let m = crate::hub::projects::target_machine(hub, input.machine_id.as_ref())?;
     require(caller, Role::Operate, Some(&m))?;
-    if hub.link.is_mac(&m) {
-        let (message, _) = on_mac(&m);
-        return Err(error(
-            ErrorCode::Invalid,
-            message,
-            "Pass the machineId of a Linux machine.",
-        ));
-    }
     if !hub.link.node_can(&m, CAP_ASSISTANT) {
         return Err(too_old(&m));
     }

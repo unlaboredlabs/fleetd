@@ -51,8 +51,8 @@ fn failed(e: StoreError) -> McpToolError {
     McpToolError::new(ErrorCode::Failed, "The hub failed to answer that request.")
 }
 
-/// Who may use the Mac: an agent's session (a lead's or a task's), never a person's shell or a Navi's.
-fn caller_of(hub: &Hub, caller: &LeadCaller) -> Result<(), McpToolError> {
+/// Who may use the Mac: an agent's session (a lead's or a task's), never a person's shell.
+fn caller_of(caller: &LeadCaller) -> Result<(), McpToolError> {
     if matches!(
         caller.agent,
         CallerAgent::Person | CallerAgent::MemoryRefresh
@@ -61,13 +61,6 @@ fn caller_of(hub: &Hub, caller: &LeadCaller) -> Result<(), McpToolError> {
             ErrorCode::Forbidden,
             "The agents' Mac is for agents' sessions, and this call comes from none.",
         ));
-    }
-    if crate::hub::integrations::is_navi(&hub.db, &caller.project_ref).map_err(failed)? {
-        return Err(McpToolError::new(
-            ErrorCode::Forbidden,
-            "A Navi doesn't use the agents' Mac: it's for coding agents only.",
-        )
-        .with_fix("do without the Mac and say so"));
     }
     Ok(())
 }
@@ -95,7 +88,7 @@ fn the_mac(
 }
 
 fn where_(hub: &Hub, caller: &LeadCaller) -> Result<MacWhereResult, McpToolError> {
-    caller_of(hub, caller)?;
+    caller_of(caller)?;
     let (machine_id, key) = the_mac(hub)?;
     let box_pub_key = key.ok_or_else(|| {
         McpToolError::new(
@@ -115,7 +108,7 @@ async fn send(
     caller: &LeadCaller,
     call: MacSendCall,
 ) -> Result<LeadCallResult, McpToolError> {
-    caller_of(hub, caller)?;
+    caller_of(caller)?;
     let (machine_id, _) = the_mac(hub)?;
     if machine_id != call.machine_id {
         return Err(McpToolError::new(

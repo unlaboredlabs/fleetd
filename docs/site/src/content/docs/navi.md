@@ -84,23 +84,12 @@ least busy worker that isn't a Mac.
 A Navi searches the web freely, and reads what its [integrations](/docs/integrations) hold and the factory's status. It
 also writes drafts and notes in its folder, remembers and forgets, keeps its checklist, works screens and logs in with 1Password.
 
-- **Files:** it reads and writes what you can on the machine, except your keys and logins (`~/.ssh`, `~/.config`,
-  other assistants' such as `~/.hermes`, `~/.openclaw` and `~/.codex`, and the rest), fleetd's own directory and
-  other Navis'. What runs outside its sandbox later stays read-only, so it
-  can't plant code that reads your keys: your shell's startup files, your programs (`~/.local/bin`, `~/.cargo/bin`,
-  Homebrew's and the rest), git's config and hooks and the `.claude`, `.fleetd`, `.mcp.json` and `CLAUDE.md` of every
-  project's checkout, and its own settings in its folder. If a checkout is moved aside and replaced, no lead or agent
-  starts there until you check it and run `fleetd node trust <folder>` ([Security](/docs/security#navi-sandbox)). A policy
-  file's allow rules don't apply to a Navi at all.
-  Its folder is where its notes, drafts and downloads go.
-- **Its own home:** each Navi has a home of its own, kept between sessions, where npm's global installs, `pip install --user`,
-  `cargo install` and install scripts put what they install, on its `PATH`. What it starts in the background with
-  `nohup` or `setsid` keeps running after its turn, until the machine or the node restarts. It has no root, `apt` or
-  systemd services.
-- **Sandbox:** a Navi's Claude Code and every command, MCP server and tool it starts run in an OS sandbox that holds
-  those lines whatever a command tries ([Security](/docs/security#navi-sandbox)).
-- **Commands:** its shell commands run without asking (decision `navi.shell-unasked`, D208). The sandbox is the
-  guard. The one exception is a browser command that opens a site, which goes through the site rule below.
+- **Files and commands:** it runs like any project's lead with no repo, with your access and no sandbox
+  ([How leads run](/docs/security#how-leads-run)): it reads and writes what you can, installs what it needs, and its
+  shell commands run without asking (decision `navi.shell-unasked`, D208). It can start agents and work with repos too.
+  Its folder is where its notes, drafts and downloads go. A Navi made before this keeps the home it had: its commands
+  still run there, with what it installed on their `PATH`. A command that opens a site goes through the site rule
+  below.
 - **Sites:** a link you write in your own chat message is allowed as you send it, so the Navi fetches or opens it
   without asking. A link it finds itself, or reads in an email or on a page, isn't. The first time it fetches a page or
   opens a site in its browser, the Navi's [approval mode](#approvals) decides, with the site named. Approve once and
@@ -117,20 +106,7 @@ also writes drafts and notes in its folder, remembers and forgets, keeps its che
   code, and no part of its path or `#` fragment that your messages or your own data the Navi read hold (mail, files,
   calendar; a web page's or a search's own links don't count). Any other link goes to the checker.
 
-**When the sandbox can't start, the Navi doesn't run.** Its chat says why and how to fix it. On Linux a Navi needs
-bubblewrap: install it (`sudo apt install bubblewrap`, `sudo dnf install bubblewrap`, `sudo pacman -S bubblewrap`).
-On Ubuntu 23.10 and later, AppArmor may also block the user namespaces bubblewrap uses; `bwrap --ro-bind / /
---unshare-all true` says so, and Ubuntu's `apparmor` package has a profile that allows them
-(`/etc/apparmor.d/bwrap-userns-restrict`). A setuid-root `bwrap` (`ls -l $(which bwrap)` shows `rws`) runs unprivileged
-for a Navi, so it needs unprivileged user namespaces too (on Debian before 11: `sudo sysctl
-kernel.unprivileged_userns_clone=1`).
-
-**Navis don't run on a Mac** (decision `mac.interim-lockdown`, D299). macOS's sandbox leaves a Navi ways out that no
-profile closes: the keychain through its system service, launchctl jobs, and Apple Events. So the hub refuses to make
-a Navi on a Mac, and the Navi dialog shows a Mac greyed out with why. A Navi made on a Mac before this doesn't start
-there: its chat says why, and each message waits. A Navi can't move machines, so make a new one on a Linux machine
-(**New**, then pick the machine), copy what you need from the old one's folder on the Mac, and archive the old one.
-The Mac's node refuses a Navi's sandbox too, if the hub didn't.
+A Navi runs on any machine, a Mac included.
 
 ### Approvals {#approvals}
 
@@ -227,8 +203,7 @@ rule: it runs such a command with `gated_run`, which asks with exactly that comm
 
 **What commands and screens can still do.** The site gate covers fetching and opening a site; it doesn't follow a page
 after that, or a command's own network use. Browser commands inside an open page run unasked: clicks, fills, typing,
-snapshots, a script in the page. A command such as `curl` reaches the network unasked too: the sandbox limits what a
-command writes and reads, not where it sends. So commands and screens aren't held to the approval rule for sends, and
+snapshots, a script in the page. A command such as `curl` reaches the network unasked too. So commands and screens aren't held to the approval rule for sends, and
 a click or a form that leads to another site isn't asked. Its Android, iOS and desktop screens (`agent-device`) don't
 ask per site at all. That the Navi calls `confirm_step` before a final click is its prompt, not fleetd's rules. Only
 allow sites where that's fine, such as your bank's when you mean to watch. Paying is different: the Navi has no card
@@ -288,8 +263,8 @@ session is still signed in there. No login page, captcha or approve-on-your-phon
 - **What's kept:** the browser's cookies and site data (local storage, IndexedDB), in a browser profile of the Navi's
   own. Its history, cache, open tabs, saved passwords and form entries are not kept. Logins filled from 1Password
   aren't saved either: each session that fills one still refuses to read it back.
-- **Where:** on the Navi's machine, under fleetd's node directory (`browser/navis/<project id>`). The Navi's sandbox
-  hides that directory, so the Navi's commands can't read the cookies. Only the browser fleetd starts for it uses them.
+- **Where:** on the Navi's machine, under fleetd's node directory (`browser/navis/<project id>`). Only the browser
+  fleetd starts for it uses them, though with no sandbox its own commands could read them, as yours can.
 - **Whose:** that Navi's alone. Another Navi and a project's agents each start with a fresh, empty profile that is
   thrown away when the session ends.
 - **One at a time:** one browser runs on the profile. If the Navi opens a second session while one is open in another

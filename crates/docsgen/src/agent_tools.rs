@@ -14,8 +14,8 @@ use fleetd::hub::tasks::policy::{
     self, CallerAgent, MAX_DEPTH, MAX_OPEN_TASKS, SPAWN_OPS, WORKER_OPS,
 };
 use fleetd::node::runner::claude::{
-    AGENT_DISALLOWED_WHY, ASSISTANT_ALLOWED_WHY, ASSISTANT_ASK_WHY, AUTO_MEMORY_OFF_ENV,
-    AUTO_MEMORY_OFF_WHY, DEFAULT_ENV_WHY, DISALLOWED_WHY, HELPER_MODEL_ENV, HELPER_MODEL_WHY,
+    AGENT_DISALLOWED_WHY, AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_WHY, DEFAULT_ENV_WHY,
+    DISALLOWED_WHY, HELPER_MODEL_ENV, HELPER_MODEL_WHY, LEAD_ALLOWED_WHY, LEAD_ASK_WHY,
     LEAD_DISALLOWED_WHY, NESTING_VARS_WHY, PROMPT_CACHE_TTL_VARS, PROMPT_CACHE_TTL_WHY,
     SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY, TASK_DISALLOWED_WHY, WORKER_ENV,
     WORKER_ENV_WHY,
@@ -900,30 +900,25 @@ fn builtins(root: &Path) -> Result<String, String> {
         }
     }
     md.push_str(
-        "\n**A Navi's lead** keeps `Edit`, `Write`, `WebFetch` and `WebSearch`, and runs in `manual` permission mode: \
-         any tool not below asks first. Its file tools and fetches always ask, in its settings' `permissions.ask`, \
-         whatever your own settings allow. The node answers a file tool as the Navi's sandbox has it: allowed but \
-         where the sandbox hides or keeps read-only (and for its `.claude`, `.mcp.json` and `.fleetd`), refused there \
-         whoever approves it ([Navi sandbox](/docs/security#navi-sandbox), D234). A policy file's \
-         allow rules don't apply to it. The node also answers a shell command: it runs, held by the OS sandbox \
-         (decision `navi.shell-unasked`, D208), unless it opens a site in the browser. A fetch or `agent-browser \
-         open` goes through without asking to a site the person allowed at its first visit or linked in their own \
-         chat message. Any other ask reaches the person as an approval in the Navi's chat, showing the tool and \
-         exactly what it would get.\n\n| Allowed without asking | Why |\n|---|---|\n",
+        "\n**Every lead** runs in `manual` permission mode with no sandbox (D310): it does unasked what full access \
+         does, and any tool not below asks first ([How leads run](/docs/security#how-leads-run)). A lead whose \
+         project has no repo does its own work: it keeps `Edit`, `Write`, `WebFetch` and `WebSearch`, re-read at \
+         each lead start, so adding a repo takes them away. The node answers a shell command: it runs (decision \
+         `navi.shell-unasked`, D208), unless it would wipe the machine or opens a site in the browser. A fetch or \
+         `agent-browser open` goes through without asking to a site the person allowed at its first visit or linked \
+         in their own chat message. A tool of an MCP server saved without `integration` runs unasked; an \
+         integration's send reaches the person as an approval in the project's chat, showing the tool and exactly \
+         what it would get.\n\n| Allowed without asking | Why |\n|---|---|\n",
     );
     for (tools, why) in grouped(
-        ASSISTANT_ALLOWED_WHY
+        LEAD_ALLOWED_WHY
             .iter()
             .map(|(t, why)| (format!("`{t}`"), *why)),
     ) {
         md.push_str(&format!("| {} | {} |\n", tools.join(", "), cell(why)));
     }
     md.push_str("\n| Always asked | Why |\n|---|---|\n");
-    for (tools, why) in grouped(
-        ASSISTANT_ASK_WHY
-            .iter()
-            .map(|(t, why)| (format!("`{t}`"), *why)),
-    ) {
+    for (tools, why) in grouped(LEAD_ASK_WHY.iter().map(|(t, why)| (format!("`{t}`"), *why))) {
         md.push_str(&format!("| {} | {} |\n", tools.join(", "), cell(why)));
     }
     md.push('\n');

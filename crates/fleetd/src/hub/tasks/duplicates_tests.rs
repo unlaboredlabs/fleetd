@@ -515,9 +515,9 @@ async fn a_writer_whose_node_does_not_answer_is_listed_as_changes_unknown() {
     );
 }
 
-/// A Navi works through its own tools and approvals: its lead can't start an agent that would run unasked.
+/// D310: a Navi's lead starts agents like any project's lead.
 #[tokio::test]
-async fn a_navi_starts_no_agents_of_its_own() {
+async fn a_navi_starts_agents_like_any_lead() {
     let (hub, app, _web, _home) = hub();
     let by = fleetd_contracts::model::ProjectCreator {
         key_id: "k1".into(),
@@ -526,17 +526,12 @@ async fn a_navi_starts_no_agents_of_its_own() {
     hub.db
         .with(|c| Ok(crate::hub::navi::store::put(c, &app, &by, None, 0)?))
         .unwrap();
-    let refused = spawn(
+    let spawned = spawn(
         &hub,
         &app,
         call("Book the dentist", json!({ "kind": "read" })),
     )
     .await
-    .unwrap_err();
-    assert!(
-        refused.message.contains("A Navi doesn't start agents"),
-        "{}",
-        refused.message
-    );
-    assert!(hub.tasks.list(&Default::default()).unwrap().is_empty());
+    .unwrap();
+    assert_eq!(spawned.task.title.as_str(), "Book the dentist");
 }

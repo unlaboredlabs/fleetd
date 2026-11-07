@@ -1,6 +1,6 @@
 //! `confirm_step` (W239): a Navi's lead calls it right before the final Confirm or Submit click on a site that doesn't
 //! pay or order: booking a table, cancelling a subscription, sending a form, an expense, a return, a post. Its lead
-//! is always asked for the call (the node's `ASSISTANT_ASK`), so the call is a permission prompt the approvals relay
+//! is always asked for the call (the node's `LEAD_ASK`), so the call is a permission prompt the approvals relay
 //! decides by the Navi's approval mode like a send: the checker's go, the person's approval on a card (with the page's
 //! screenshot) or YOLO let it run, and running it only answers "click it now". A payment, a trade or an order never
 //! goes through here: [`refused`] denies it, and the Navi hands it to the person.

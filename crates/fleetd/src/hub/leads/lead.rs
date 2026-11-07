@@ -1,5 +1,6 @@
-//! One lead per project: a thread on the project's machine, started with the lead prompt plus the digest. A Navi's
-//! lead starts from `navi.start` in the assistant role, and not at all while the Navi is archived.
+//! One lead per project: a thread on the project's machine, started with the lead prompt plus the digest. A project
+//! with no repo's lead does its own work, from `navi.start` in the assistant role; no lead starts while its project is
+//! archived.
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -95,7 +96,7 @@ impl Leads {
         let _guard = self.lock.lock().await;
         // Its lead record stays with its history, but an archived project's lead is never handed out.
         refuse_archived(&self.ctx.db, r)?;
-        if let Some(held) = self.archived(r).or_else(|| self.on_mac(r)) {
+        if let Some(held) = self.archived(r) {
             return Err(held);
         }
         if let Some(existing) = self.records.lead_get(r)? {
@@ -113,7 +114,7 @@ impl Leads {
         if let Err(e) = refuse_archived(&self.ctx.db, r) {
             return AutoStart::Held(e);
         }
-        if let Some(held) = self.archived(r).or_else(|| self.on_mac(r)) {
+        if let Some(held) = self.archived(r) {
             return AutoStart::Held(held);
         }
         match self.get(r) {
@@ -128,7 +129,7 @@ impl Leads {
         }
     }
 
-    /// Why an archived Navi's lead doesn't start or take a message; none for any other project.
+    /// Why an archived project's lead doesn't start or take a message; none for any other project.
     fn archived(&self, r: &ProjectRef) -> Option<LeadError> {
         let project = self.ctx.store.project_get(r).ok().flatten()?;
         project.archived_at.as_ref()?;
@@ -137,19 +138,6 @@ impl Leads {
             format!("{} is archived: its lead doesn't start.", project.title),
             "Bring it back with navi_archive (archived false) or in the app; a message waits until then.",
         ))
-    }
-
-    /// Why a Navi on a Mac doesn't start or take a message (D299 mac.interim-lockdown), with how to have it elsewhere;
-    /// none for any other project, or on another machine.
-    fn on_mac(&self, r: &ProjectRef) -> Option<LeadError> {
-        if !self.ctx.ports().is_mac(&r.machine_id) {
-            return None;
-        }
-        let project = self.ctx.store.project_get(r).ok().flatten()?;
-        (project.kind == Some(ProjectKind::Assistant)).then(|| {
-            let (message, fix) = crate::hub::navi::on_mac(&r.machine_id);
-            LeadError::new(ErrorCode::Invalid, message, fix)
-        })
     }
 
     /// Starts the lead of each project on `machine_id` that has orders waiting as drafts and no lead.
@@ -414,9 +402,9 @@ impl Leads {
         first: Option<&str>,
     ) -> Result<Lead, LeadError> {
         refuse_archived(&self.ctx.db, r)?;
-        // Every start comes here (a first start, a restart, a fresh start of a cold lead): an archived Navi gets none,
-        // nor one on a Mac.
-        if let Some(held) = self.archived(r).or_else(|| self.on_mac(r)) {
+        // Every start comes here (a first start, a restart, a fresh start of a cold lead): an archived project gets
+        // none.
+        if let Some(held) = self.archived(r) {
             return Err(held);
         }
         // M4 usage: no lead turn goes into a login fleetd knows is exhausted.
@@ -439,10 +427,16 @@ impl Leads {
             .filter(|p| names.contains(&p.name))
             .collect();
         let (digest, idle) = self.wakes.digest_to_send(r).await?;
-        // A Navi's lead runs from `navi.start` in the assistant role: manual permission mode, so every tool off its
-        // read allow-list asks a person first (approvals/permissions.rs).
-        let navi = project.kind == Some(ProjectKind::Assistant);
-        // Every lead, a Navi's too, runs on the profile picked for leads (Lead runs on), else the default.
+        // Every lead runs in manual permission mode, doing unasked what full access does, and asking for a send or a
+        // first site visit (approvals/permissions.rs, D310). One with no repo does its own work, in the assistant
+        // role from `navi.start` with file and web tools: re-read at every start, so adding a repo changes it. A node
+        // before this runs a Navi as before and every other lead under full access.
+        let manual = self.ctx.ports().one_lead_mode(&r.machine_id);
+        let own_work = match manual {
+            true => project.repos.is_empty(),
+            false => project.kind == Some(ProjectKind::Assistant),
+        };
+        // Every lead runs on the profile picked for leads (Lead runs on), else the default.
         let lead_profile = profiles.lead_profile()?;
         let you = crate::hub::memory::You::for_lead(&self.ctx.db, r)
             .unwrap_or(crate::hub::memory::You::Nobody);
@@ -454,7 +448,7 @@ impl Leads {
             &digest,
             &self.ctx.db.memory().injected(r, true, &you),
             &crate::hub::people::lead_people(&self.ctx.db),
-            navi.then_some(project.workspace_root.as_str()),
+            own_work.then_some(project.workspace_root.as_str()),
         );
         let mut prompt = start.first.clone();
         if let Some(repos) = super::prompt::repos_block(r, &project.repos) {
@@ -476,7 +470,7 @@ impl Leads {
             prompt: prompt.clone(),
             system_prompt: Some(start.system.clone()),
             profile: lead_profile.name.clone(),
-            runtime_mode: if navi {
+            runtime_mode: if manual || own_work {
                 RuntimeMode::ApprovalRequired
             } else {
                 RuntimeMode::FullAccess
@@ -489,7 +483,7 @@ impl Leads {
                 r.machine_id, r.project_id
             ),
         };
-        let role = if navi {
+        let role = if own_work {
             SessionRole::Assistant
         } else {
             SessionRole::Lead
@@ -545,7 +539,7 @@ impl Leads {
             project_id: Some(r.project_id.clone()),
             thread_id: Some(thread_id),
             summary: format!("Lead of {} started (session {session_generation})", project.title),
-            data: Some(serde_json::json!({ "sessionGeneration": session_generation, "profile": lead_profile.name, "promptRef": set.get(super::prompt::start_prompt(navi)).r#ref, "textSha": text_sha })),
+            data: Some(serde_json::json!({ "sessionGeneration": session_generation, "profile": lead_profile.name, "promptRef": set.get(super::prompt::start_prompt(own_work)).r#ref, "textSha": text_sha })),
             attention: None,
         })?;
         self.with_state(lead)

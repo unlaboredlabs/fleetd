@@ -35,6 +35,8 @@ pub(crate) struct Node {
     pub(crate) sends: Mutex<Vec<String>>,
     /// Sends fail (the write queue refused them) while set; they are still recorded.
     send_fails: AtomicBool,
+    /// The node runs every lead in one mode (`CAP_ONE_LEAD_MODE`).
+    pub(crate) one_lead_mode: AtomicBool,
 }
 
 struct Ports(Arc<Node>);
@@ -66,6 +68,9 @@ impl LeadPorts for Ports {
             }
             Ok(false)
         })
+    }
+    fn one_lead_mode(&self, _: &MachineId) -> bool {
+        self.0.one_lead_mode.load(Ordering::SeqCst)
     }
     fn open_requests(
         &self,
@@ -939,6 +944,73 @@ async fn a_navis_lead_starts_as_an_assistant_and_not_at_all_while_archived() {
     assert!(system.contains("/lab/repo-a") && system.contains("## Your voice"));
     assert!(!launches[0].prompt.contains("## Your voice"));
     assert_eq!(*hub.node.roles.lock().unwrap(), [SessionRole::Assistant]);
+}
+
+/// D310: on a node that runs one lead mode, every lead runs in manual mode, asking only for a send or a first visit. One
+/// with no repo does its own work, in the assistant role from the assistant's prompt; one with a repo is a project's
+/// lead. Which, the hub reads at each start.
+#[tokio::test(flavor = "current_thread")]
+async fn on_one_lead_mode_every_lead_asks_and_a_repo_makes_it_a_projects_lead() {
+    let hub = hub(true);
+    hub.node.one_lead_mode.store(true, Ordering::SeqCst);
+    assert!(matches!(
+        hub.area.leads.auto_start(&hub.project, None).await,
+        AutoStart::Started(_)
+    ));
+    let coded = ProjectRef {
+        machine_id: hub.project.machine_id.clone(),
+        project_id: ProjectId::unchecked("p-b"),
+    };
+    let mut summary = hub
+        .area
+        .ctx
+        .store
+        .project_get(&hub.project)
+        .unwrap()
+        .unwrap();
+    summary.project_id = coded.project_id.clone();
+    summary.title = "repo-b".into();
+    hub.area
+        .ctx
+        .store
+        .projects_upsert_many(&coded.machine_id, &[summary])
+        .unwrap();
+    hub.area
+        .ctx
+        .db
+        .with(|c| {
+            Ok(crate::hub::repos::store::ensure_own(
+                c,
+                &coded,
+                Some("/lab/repo-b"),
+            )?)
+        })
+        .unwrap();
+    assert!(matches!(
+        hub.area.leads.auto_start(&coded, None).await,
+        AutoStart::Started(_)
+    ));
+    let launches = hub.node.launches.lock().unwrap();
+    assert!(
+        launches
+            .iter()
+            .all(|l| l.runtime_mode == RuntimeMode::ApprovalRequired)
+    );
+    let system = |n: usize| launches[n].system_prompt.as_deref().unwrap().to_owned();
+    assert!(
+        system(0).starts_with("You are repo-a, a personal assistant"),
+        "{}",
+        system(0)
+    );
+    assert!(
+        system(1).starts_with("You are the lead of project repo-b"),
+        "{}",
+        system(1)
+    );
+    assert_eq!(
+        *hub.node.roles.lock().unwrap(),
+        [SessionRole::Assistant, SessionRole::Lead]
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]

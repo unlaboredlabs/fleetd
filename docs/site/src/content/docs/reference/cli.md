@@ -457,14 +457,6 @@ fleetd node grants
 
 on the agents' Mac: the Accessibility and Screen Recording grants macOS gives a node started now
 
-### fleetd node trust {#node-trust}
-
-```text
-fleetd node trust <dir>
-```
-
-start work again in a project's checkout fleetd refused as replaced, once you checked it
-
 ### fleetd node flush {#node-flush}
 
 ```text

@@ -51,7 +51,6 @@ fn spec(dir: &Path) -> SessionSpec {
             ),
             ("GO".into(), dir.join("go").display().to_string()),
         ],
-        sandbox: None,
         host_dir: Some(dir.join("hosts/s")),
         isolated: false,
     }

@@ -211,8 +211,7 @@ impl ApprovalHub for OpsPorts {
                 return false;
             };
             let hub = self.hub();
-            matches!(crate::hub::navi::of(&hub.db, &r), Ok(Some(_)))
-                && matches!(hub.leads.records.lead_get(&r), Ok(Some(lead)) if lead.thread_id.as_str() == thread_id)
+            matches!(hub.leads.records.lead_get(&r), Ok(Some(lead)) if lead.thread_id.as_str() == thread_id)
         })
     }
 
@@ -226,7 +225,6 @@ impl ApprovalHub for OpsPorts {
         Box::pin(async move {
             let r = r?;
             let db = &self.hub().db;
-            crate::hub::navi::of(db, &r).ok().flatten()?;
             let Some(site) = site else {
                 return Some(false);
             };
@@ -314,11 +312,10 @@ impl ApprovalHub for OpsPorts {
         Box::pin(async move {
             let r = r?;
             let db = &self.hub().db;
-            crate::hub::navi::of(db, &r).ok().flatten()?;
             match db.with(|c| Ok(crate::hub::navi::checker::approvals(c, &r)?)) {
                 Ok(settings) => Some(settings),
                 Err(error) => {
-                    // Unread, a Navi asks the person about every risky action.
+                    // Unread, a lead asks the person about every risky action.
                     tracing::warn!(%error, "approvals: a Navi's approval settings were not read");
                     Some(fleetd_contracts::navi::NaviApprovals {
                         mode: fleetd_contracts::navi::NaviApprovalMode::Ask,

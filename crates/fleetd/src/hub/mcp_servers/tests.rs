@@ -653,8 +653,10 @@ fn make_navi(hub: &Hub) {
         .unwrap();
 }
 
+/// D310: an integration connects to any project whose node runs every lead asking before a send; on an older node,
+/// whose leads but a Navi's run with full access, only to a Navi. Never to every project at once.
 #[tokio::test]
-async fn an_integration_connects_to_a_navi_only() {
+async fn an_integration_connects_to_a_project_whose_lead_asks_before_a_send() {
     let (hub, _home) = hub();
     let _calls = node(&hub).await;
     let plain = json!({ "kind": "plain", "name": "X-Team", "value": "core" });
@@ -667,15 +669,12 @@ async fn an_integration_connects_to_a_navi_only() {
     .await
     .unwrap_err();
     let said = format!("{error:?}");
-    assert!(said.contains("isn't a Navi"), "{said}");
-    assert!(said.contains("under MCP servers"), "{said}");
-    for word in ["lead", "ntegration", "read-only"] {
-        assert!(!said.contains(word), "{word}: {said}");
-    }
+    assert!(said.contains("too old"), "{said}");
+    assert!(said.contains("fleetd update on lab"), "{said}");
     let mut global = integration(plain.clone());
     global["scope"] = json!({ "kind": "global" });
     assert!(
-        call(&hub, &person(), "mcp_server_set", global)
+        call(&hub, &person(), "mcp_server_set", global.clone())
             .await
             .is_err()
     );
@@ -683,10 +682,29 @@ async fn an_integration_connects_to_a_navi_only() {
     let mut bare = integration(plain.clone());
     bare.as_object_mut().unwrap().remove("integration");
     call(&hub, &person(), "mcp_server_set", bare).await.unwrap();
+    // A Navi asks on any node; any project does on a node that runs one lead mode.
     make_navi(&hub);
+    call(
+        &hub,
+        &person(),
+        "mcp_server_set",
+        integration(plain.clone()),
+    )
+    .await
+    .unwrap();
+    hub.db
+        .with(|c| Ok(crate::hub::navi::store::remove(c, &project())?))
+        .unwrap();
+    hub.link
+        .set_capabilities(&lab(), &[fleetd_contracts::node_link::CAP_ONE_LEAD_MODE]);
     call(&hub, &person(), "mcp_server_set", integration(plain))
         .await
         .unwrap();
+    assert!(
+        call(&hub, &person(), "mcp_server_set", global)
+            .await
+            .is_err()
+    );
 }
 
 /// The person's case: a Navi made in the app (so only the hub says it is one), and a URL server with its
@@ -796,8 +814,8 @@ async fn an_integration_connects_with_its_key_sealed_and_revoking_forgets_the_ke
     assert_eq!(after["project"], json!([]));
 }
 
-/// A Navi's lead launches with its integrations' reads allowed, so it never asks for them; its sends still ask. Other
-/// sessions get no such rules.
+/// Every lead, with a repo or not, launches with its integrations' reads allowed, so it never asks for them; its sends
+/// still ask (D310).
 #[tokio::test]
 async fn a_navis_lead_launches_with_its_integrations_reads_allowed() {
     let (hub, _home) = hub();
@@ -838,7 +856,7 @@ async fn a_navis_lead_launches_with_its_integrations_reads_allowed() {
             .allowed_tools
             .iter()
             .any(|t| t == "mcp__docs__search_pages");
-        assert_eq!(reads, n == 1, "{role:?}: {:?}", launch.allowed_tools);
+        assert!(reads, "{n} {role:?}: {:?}", launch.allowed_tools);
         assert!(
             !launch
                 .allowed_tools

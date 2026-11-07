@@ -46,7 +46,8 @@ pub fn secret_scope(scope: &McpScope) -> McpSecretScope {
 
 /// A server as a session on `machine_id` gets it: plain values as they are, a secret by name. `None` when that
 /// machine's node doesn't hold all of its secrets, so it would start without them, or when it signs in with OAuth and
-/// is signed out or its token hasn't reached a machine yet.
+/// is signed out or its token hasn't reached a machine yet. An integration reaches the lead alone, whatever its roles
+/// say: only a lead asks before a send, and a project's agents run with full access.
 pub fn for_session(server: &McpServer, machine_id: &MachineId) -> Option<McpSessionServer> {
     let tokenless = server.oauth.is_some()
         && !server
@@ -71,7 +72,14 @@ pub fn for_session(server: &McpServer, machine_id: &MachineId) -> Option<McpSess
     Some(McpSessionServer {
         name: server.name.clone(),
         secrets: secret_scope(&server.scope),
-        roles: server.roles,
+        roles: match server.integration {
+            Some(_) => fleetd_contracts::mcp_servers::McpRoles {
+                writers: false,
+                reviewers: false,
+                ..server.roles
+            },
+            None => server.roles,
+        },
         transport: server.transport.clone(),
         env: values(&server.env),
         headers: values(&server.headers),

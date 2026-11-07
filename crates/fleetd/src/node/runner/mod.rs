@@ -16,9 +16,7 @@
 //! Files ending `.documented.jsonl` are built from the Agent SDK's types, not recorded.
 pub mod claude;
 pub mod host;
-pub mod navi_box;
 pub mod process;
-pub mod sandbox;
 pub mod scope;
 pub mod shell;
 
@@ -83,9 +81,6 @@ pub struct SessionSpec {
     pub plugin_dirs: Vec<PathBuf>,
     /// The whole child environment. Nothing is inherited: no CLAUDE* variable of the node's own parent leaks in.
     pub env: Vec<(String, String)>,
-    /// The OS sandbox the process and everything it starts run in: a Navi's ([`sandbox::navi_fence`]). None for every
-    /// other session.
-    pub sandbox: Option<sandbox::Fence>,
     /// Where the session's [`host`] keeps its registration and socket, so the process outlives the node and a
     /// restarted node re-adopts it. None: the node owns the process, which ends with it. A sandboxed session never
     /// gets one: its sandbox joins a box that ends with the node.
@@ -255,9 +250,6 @@ pub enum RunnerError {
     Missing { binary: String },
     #[error("could not start {binary}: {message}")]
     Spawn { binary: String, message: String },
-    /// The session must run in a sandbox, and none could start here.
-    #[error("{message}")]
-    Sandbox { message: String, fix: String },
 }
 
 /// One agent runtime, one per [`RunnerKind`].
@@ -266,12 +258,6 @@ pub trait Runner: Send + Sync + 'static {
     /// `env` is the environment a session would get now (the user's own setup, plus `claude.env`): the login it reports
     /// depends on exactly that, and the node re-reads it per spawn.
     fn probe<'a>(&'a self, env: &'a [(String, String)]) -> BoxFut<'a, RunnerInfo>;
-    /// Makes `spec`'s sandbox ready and checks that it starts, off the async runtime, before [`Runner::spawn`]: a
-    /// session whose sandbox can't start is refused here. Nothing to do for a session without one.
-    fn fence<'a>(&'a self, spec: &'a SessionSpec) -> BoxFut<'a, Result<(), RunnerError>> {
-        let _ = spec;
-        Box::pin(async { Ok(()) })
-    }
     /// One tiny model call with exactly `env` (a Claude account's variables on the machine's setup), to prove the
     /// account works: the runner's own words when it doesn't. The only model call fleetd makes outside a session,
     /// and only when a person presses Test.

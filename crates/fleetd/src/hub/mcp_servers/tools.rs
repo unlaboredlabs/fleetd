@@ -147,19 +147,33 @@ async fn set(
 ) -> Result<McpServerSetOutput, ToolError> {
     may_change(&caller, &input.scope)?;
     let project = project_of(&hub, &input.scope)?;
-    if input.integration.is_some() {
-        let navi = match &project {
-            Some(r) => crate::hub::integrations::is_navi(&hub.db, r)?,
-            None => false,
-        };
-        if !navi {
-            // Only a Navi asks before a tool runs: a server saved like this on a coding project would run unasked.
-            return Err(ToolError::new(
-                ErrorCode::Invalid,
-                "Only a Navi asks you before using a server's tools, and this project isn't a Navi.",
-            )
-            .with_fix("Add the server under MCP servers in this project's settings: its agents can use all its tools."));
-        }
+    if input.integration.is_some() && project.is_none() {
+        // Only a project's lead asks before a tool runs: one saved for every project would reach agents unasked.
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            "An integration asks you before its tools send anything, which only a project's lead does.",
+        )
+        .with_fix("Add it in one project's settings: its lead asks you before each send."));
+    }
+    if let Some(r) = project.as_ref().filter(|_| input.integration.is_some())
+        && !hub.link.node_can(
+            &r.machine_id,
+            fleetd_contracts::node_link::CAP_ONE_LEAD_MODE,
+        )
+        && !crate::hub::integrations::is_navi(&hub.db, r)?
+    {
+        // An older node runs this project's lead with full access, which would send unasked.
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            format!(
+                "{}'s node is too old for its lead to ask before a send.",
+                r.machine_id
+            ),
+        )
+        .with_fix(format!(
+            "Run fleetd update on {}, then add it again.",
+            r.machine_id
+        )));
     }
     let store = hub.db.mcp_servers();
     let before = store.get(&input.scope, &input.name)?;

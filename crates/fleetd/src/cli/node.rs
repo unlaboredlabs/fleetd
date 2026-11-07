@@ -1,4 +1,4 @@
-//! `fleetd node join|run|serve|trust|flush` and `fleetd hub start|serve`: the CLI parses the flags, the node and the hub run.
+//! `fleetd node join|run|serve|flush` and `fleetd hub start|serve`: the CLI parses the flags, the node and the hub run.
 
 use std::path::PathBuf;
 
@@ -48,7 +48,7 @@ pub async fn node_command(argv: &[String]) -> u8 {
         rest,
         &Spec {
             options: OPTIONS,
-            positionals: command == Some("trust"),
+            positionals: false,
         },
     ) {
         Ok(v) => v,
@@ -125,27 +125,6 @@ pub async fn node_command(argv: &[String]) -> u8 {
                         "{why}. Fix: log in as this user at the machine's screen, then run fleetd node restart again"
                     ))),
                 },
-            }
-        }
-        Some("trust") => {
-            let [dir] = v.positionals.as_slice() else {
-                return usage("node trust takes the checkout's folder");
-            };
-            let home = crate::node::config::default_node_home();
-            let dir = std::path::absolute(dir).unwrap_or_else(|_| PathBuf::from(dir));
-            match crate::node::checkouts::trust(&home, &dir) {
-                Ok(true) => {
-                    println!("{} is trusted as it is now: send again.", dir.display());
-                    0
-                }
-                Ok(false) => {
-                    println!(
-                        "fleetd has nothing recorded for {}: nothing to trust.",
-                        dir.display()
-                    );
-                    0
-                }
-                Err(e) => exit(Err(format!("{} was not trusted: {e}", dir.display()))),
             }
         }
         Some("flush") => {

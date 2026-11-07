@@ -153,9 +153,8 @@ pub enum SessionRole {
     Lead,
     /// A task's agent: reports and asks its lead.
     Worker,
-    /// A Navi's lead: a lead's fleetd tools, plus web reads and edits inside its own folder, in `manual` permission
-    /// mode with a read allow-list, so every other tool asks a person first. Only nodes listing
-    /// [`crate::node_link::CAP_ASSISTANT`] get it.
+    /// A lead that does its own work (a project with no repo, D310): a lead's fleetd tools plus file and web tools.
+    /// Only nodes listing [`crate::node_link::CAP_ASSISTANT`] get it.
     Assistant,
 }
 

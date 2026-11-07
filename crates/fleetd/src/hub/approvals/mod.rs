@@ -226,10 +226,10 @@ pub trait ApprovalHub: Send + Sync {
         &self,
         project: &ProjectRef,
     ) -> BoxFut<'_, Vec<fleetd_contracts::mcp_servers::McpServer>>;
-    /// Whether the thread is the lead of a Navi: the one session the tool prompt relay answers.
+    /// Whether the thread is a project's lead: the one session the tool prompt relay answers (every lead, D310).
     fn navi_lead(&self, project: &ProjectRef, thread_id: &str) -> BoxFut<'_, bool>;
-    /// For a Navi, whether it may fetch and open `site` without asking (false with no site); `None` for any other
-    /// project.
+    /// Whether the project's lead may fetch and open `site` without asking (false with no site); `None` when that
+    /// can't be read.
     fn navi_site(&self, project: &ProjectRef, site: Option<&str>) -> BoxFut<'_, Option<bool>>;
     /// A person approved a Navi's first visit to `site`: from now on it fetches and opens it without asking.
     fn navi_site_allow(&self, project: &ProjectRef, site: &str, by: &str) -> BoxFut<'_, ()>;
@@ -253,7 +253,7 @@ pub trait ApprovalHub: Send + Sync {
         project: &'a ProjectRef,
         id: &'a fleetd_contracts::mcp::AttachmentId,
     ) -> BoxFut<'a, bool>;
-    /// For a Navi, how its risky actions are approved; `None` for any other project.
+    /// How the project's risky actions are approved; `None` when that can't be read.
     fn navi_approvals(
         &self,
         project: &ProjectRef,

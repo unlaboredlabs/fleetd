@@ -1320,8 +1320,8 @@ async fn a_task_waiting_between_turns_keeps_its_screen() {
     assert_eq!(state(&hub), BrowserSessionState::Lost);
 }
 
-/// The app's Navi dialog reads each machine's Navi sandbox as its node last reported it (a Mac's as missing), whether
-/// the caller may make a Navi there, and where the hub puts one by default.
+/// The app's Navi dialog reads that no machine has a Navi sandbox any more, whether the caller may make a Navi there,
+/// and where the hub puts one by default.
 #[tokio::test]
 async fn machine_roles_say_where_a_navi_can_live() {
     let (hub, _home) = hub();
@@ -1350,19 +1350,14 @@ async fn machine_roles_say_where_a_navi_can_live() {
             .unwrap()
             .clone()
     };
-    assert_eq!(on("devbox")["naviSandbox"]["status"], "gap");
-    assert_eq!(on("devbox")["naviSandbox"]["fix"], "Update the kernel.");
-    assert_eq!(on("devbox")["operates"], true);
-    // mac1 hosts iOS simulators, so it is a Mac: no Navi there (D299), whatever its node says, and the dialog says why.
-    assert_eq!(on("mac1")["naviSandbox"]["status"], "missing");
+    // No sandbox any more (D310): none is shown, whatever an older node reports, and a Mac takes a Navi too.
     assert!(
-        on("mac1")["naviSandbox"]["line"]
-            .as_str()
-            .unwrap()
-            .starts_with("Navis don't run on a Mac, and mac1 is one"),
+        on("devbox").get("naviSandbox").is_none(),
         "{}",
-        on("mac1")
+        on("devbox")
     );
+    assert!(on("mac1").get("naviSandbox").is_none(), "{}", on("mac1"));
+    assert_eq!(on("devbox")["operates"], true);
 
     // A key that only reads sees the machines, and that it can't make a Navi on them.
     let reader: Caller = serde_json::from_value(json!({
