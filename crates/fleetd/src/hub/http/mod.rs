@@ -1,4 +1,4 @@
-//! The hub's HTTP server: /healthz, /mcp, /app, /pair, /node/link, session relays, automations' /hooks, hub links'
+//! The hub's HTTP server: /healthz, /mcp, /app, /pair (and the agents' Mac's /pair/mac), /node/link, session relays, automations' /hooks, hub links'
 //! /link/v1 and MCP sign-ins' /oauth/callback on one port, loopback by default.
 use crate::hub::api::{Hub, Registry};
 use crate::hub::{app_ws, mcp, pair};
@@ -27,6 +27,8 @@ struct Server {
     tools: Arc<Registry>,
     mcp: Arc<mcp::McpEndpoint>,
     pair_limiter: Arc<pair::Limiter>,
+    /// Every address's wrong agents' Mac setup codes together (hub/pair/mac.rs).
+    mac_limiter: Arc<pair::Limiter>,
 }
 
 pub fn router(hub: Arc<Hub>, tools: Arc<Registry>) -> Router {
@@ -36,6 +38,7 @@ pub fn router(hub: Arc<Hub>, tools: Arc<Registry>) -> Router {
         .route("/mcp", any(mcp_route))
         .route("/app", get(app_route))
         .route("/pair", post(pair_route))
+        .route("/pair/mac", post(mac_pair_route))
         .route("/node/link", get(node_link_route))
         .route("/relay/{token}", get(relay_route))
         .route("/hooks/{automation_id}/{secret}", post(hook_route))
@@ -46,6 +49,7 @@ pub fn router(hub: Arc<Hub>, tools: Arc<Registry>) -> Router {
             tools,
             mcp,
             pair_limiter: Arc::default(),
+            mac_limiter: Arc::default(),
         })
 }
 
@@ -72,6 +76,15 @@ async fn mcp_route(
 }
 
 async fn pair_route(State(server): State<Server>, request: Request) -> Response {
+    trade_code(server, request, false).await
+}
+
+async fn mac_pair_route(State(server): State<Server>, request: Request) -> Response {
+    trade_code(server, request, true).await
+}
+
+/// /pair's code for a key, or with `mac` /pair/mac's setup code for the agents' Mac's enroll token.
+async fn trade_code(server: Server, request: Request, mac: bool) -> Response {
     let (parts, body) = request.into_parts();
     let remote = parts
         .extensions
@@ -84,7 +97,17 @@ async fn pair_route(State(server): State<Server>, request: Request) -> Response 
     let Ok(body) = axum::body::to_bytes(body, 16 * 1024).await else {
         return (StatusCode::PAYLOAD_TOO_LARGE, "pairing request too large").into_response();
     };
-    let (status, json) = pair::handle(&server.hub, &server.pair_limiter, remote, host, &body);
+    let (status, json) = match mac {
+        true => pair::mac::handle(
+            &server.hub,
+            &server.pair_limiter,
+            &server.mac_limiter,
+            remote,
+            host,
+            &body,
+        ),
+        false => pair::handle(&server.hub, &server.pair_limiter, remote, host, &body),
+    };
     (status, axum::Json(json)).into_response()
 }
 

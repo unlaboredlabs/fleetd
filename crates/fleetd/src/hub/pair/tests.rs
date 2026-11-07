@@ -107,7 +107,7 @@ fn five_failures_in_a_minute_block_that_address_only_until_the_minute_passes() {
 }
 
 /// A hub with an in-memory database, as the app reaches it.
-fn hub() -> (Arc<Hub>, tempfile::TempDir) {
+pub(super) fn hub() -> (Arc<Hub>, tempfile::TempDir) {
     let home = tempfile::tempdir().unwrap();
     let config = crate::hub::api::HubConfig {
         home: home.path().to_path_buf(),

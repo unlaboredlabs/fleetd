@@ -2296,6 +2296,23 @@ output!(MachineJoinOutput {
     line: String,
 });
 
+// mac_code_create: Add machine › A Mac for agents mints the 6-digit code (10 min, single use) the fleetd app on the Mac
+// takes, with the hub address to give it should it not find the hub itself. A new code replaces any still open. It
+// joins the hub's agents' Mac (one Mac serves every project), else a new machine `mac`. `hubUrl` is where the app
+// reaches the hub, as pair_code_create's.
+input!(MacCodeCreateInput {
+    hub_url: Option<Line<1, 2048>>,
+});
+output!(MacCodeCreateOutput {
+    /// Six digits, shown as `123 456`; traded at `POST <hub>/pair/mac`.
+    code: String,
+    expires_at: Timestamp,
+    /// The machine id the Mac joins as.
+    machine_id: MachineId,
+    /// Where the Mac reaches the hub: never a loopback address; none when the hub has only those.
+    hub_url: Option<String>,
+});
+
 // machine_claude_login: the machine's node runs `claude auth login`; the person signs in on their own device and gives
 // back the code the page shows. Claude Code keeps its token on the machine, so it never reaches the hub, the app or a
 // transcript.
@@ -3804,6 +3821,7 @@ tools! {
     machine_hosts => MachineHosts, Admin, MachineHostsInput, MachineHostsOutput;
     machine_remove => MachineRemove, Admin, MachineRemoveInput, MachineRemoveOutput;
     machine_join => MachineJoin, Admin, MachineJoinInput, MachineJoinOutput;
+    mac_code_create => MacCodeCreate, Admin, MacCodeCreateInput, MacCodeCreateOutput;
     machine_claude_login => MachineClaudeLogin, Admin, MachineClaudeLoginInput, MachineClaudeLoginOutput;
     artifacts_list => ArtifactsList, Read, ArtifactsListInput, ArtifactsListOutput;
     artifact_get => ArtifactGet, Read, ArtifactGetInput, ArtifactGetOutput;
