@@ -45,9 +45,10 @@ use fleetd_contracts::node_link::{
 use fleetd_contracts::prim::{List, Text};
 use fleetd_contracts::sessions::SessionCall;
 
-/// What the agents' Mac answers everything it doesn't do: it is a tool, never a runner.
-pub const TOOL_ONLY: &str =
-    "this Mac is a tool for agents elsewhere: run fleetd from your own machine";
+/// What the agents' Mac answers the hub for everything it doesn't do: it is a tool, never a runner. Read in the app,
+/// so it names the Mac; a person typing `fleetd` on the Mac gets lead.rs's own answer.
+pub const TOOL_ONLY: &str = "the agents' Mac is a tool for agents on other machines: it runs no session, claude or \
+     secret itself";
 
 /// Whether this node is the agents' Mac. On any OS: a node.json that says so keeps the node a tool, though only macOS
 /// gives agents a tool there.

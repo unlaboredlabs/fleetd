@@ -29,12 +29,25 @@ struct Node {
 impl Node {
     /// `cursor`: what an earlier hub process stored for the machine.
     async fn start(cursor: Option<i64>) -> Self {
+        Self::start_as(cursor, false).await
+    }
+
+    /// `agents_mac`: the machine joined as the agents' Mac, as its hello's upsert stores it before the link attaches.
+    async fn start_as(cursor: Option<i64>, agents_mac: bool) -> Self {
         let db = HubDb::open_memory().unwrap();
         let clock = ManualClock::at(T0_MS);
         let store = Arc::new(HubStore::new(db.clone()));
         let machine = MachineId::new("lab-b").unwrap();
         if let Some(c) = cursor {
             store.cursor_set(&machine, c).unwrap();
+        }
+        if agents_mac {
+            let stored = serde_json::from_value(json!({
+                "machineId": machine, "name": "mac", "status": "online",
+                "lastSeenAt": "2026-10-17T10:00:00.000Z", "nodeVersion": "0.1.0", "agentsMac": true,
+            }))
+            .unwrap();
+            store.machine_upsert(&stored, None).unwrap();
         }
         let events = Arc::new(EventLog::new(db, clock.clone()).unwrap());
         let executors = Executors::new(store.clone(), events.clone(), clock.clone());
@@ -504,6 +517,24 @@ async fn a_logged_out_runner_refuses_launches_until_it_logs_back_in() {
         json!({ "ok": { "kind": "launched", "summary": session(l.session_id.as_str(), json!({})) } }),
     );
     launched.await.unwrap().unwrap();
+}
+
+/// The agents' Mac hosts no session and refuses a subscription (node/agents_mac): its link goes live without one, so
+/// the Updates dialog, presence and the doctor see it online, and no subscription is retried every half minute.
+#[tokio::test]
+async fn the_agents_macs_link_goes_live_without_a_subscription() {
+    let mut node = Node::start_as(None, true).await;
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        node.executors.await_live(&node.machine),
+    )
+    .await
+    .expect("the Mac's link goes live");
+    assert_eq!(node.executors.live_since(&node.machine), Some(T0_MS as i64));
+    assert!(
+        node.rx.try_recv().is_err(),
+        "the hub asks the Mac for no session"
+    );
 }
 
 #[tokio::test]
