@@ -1198,7 +1198,7 @@ async fn a_pasted_key_with_a_newline_is_kept_trimmed_and_works() {
 }
 
 /// Answers every `/link/v1` call under `/<how>/` as a broken or hostile hub would: `unauth` a 401 without `dead`,
-/// `redirect` a redirect to `to`, `big` 2 MB.
+/// `redirect` a redirect to `to`, `gzbomb` 2 MB gzipped to a few KB, `big` 2 MB.
 async fn stand_in(to: &str) -> String {
     use axum::response::IntoResponse;
     let to = to.to_owned();
@@ -1218,6 +1218,11 @@ async fn stand_in(to: &str) -> String {
                             axum::response::Redirect::temporary(&format!("{to}/link/v1/{op}"))
                                 .into_response()
                         }
+                        "gzbomb" => (
+                            [(axum::http::header::CONTENT_ENCODING, "gzip")],
+                            gzip(&vec![b' '; 2 * 1024 * 1024]),
+                        )
+                            .into_response(),
                         _ => "x".repeat(2 * 1024 * 1024).into_response(),
                     }
                 }
@@ -1228,6 +1233,94 @@ async fn stand_in(to: &str) -> String {
     let url = format!("http://{}", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, router).await });
     url
+}
+
+fn gzip(plain: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut z = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    z.write_all(plain).unwrap();
+    z.finish().unwrap()
+}
+
+/// `to` behind a hub that gzips its answers to a caller that asks for it, as a newer hub does: how many calls asked.
+async fn gzipping(to: &str) -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+    use axum::response::IntoResponse;
+    let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (to, count) = (to.to_owned(), asked.clone());
+    let router = axum::Router::new().fallback(
+        move |method: axum::http::Method,
+              uri: axum::http::Uri,
+              headers: axum::http::HeaderMap,
+              body: axum::body::Bytes| {
+            let (to, count) = (to.clone(), count.clone());
+            async move {
+                let mut there = reqwest::Client::new().request(method, format!("{to}{uri}"));
+                for name in [
+                    axum::http::header::AUTHORIZATION,
+                    axum::http::header::CONTENT_TYPE,
+                ] {
+                    if let Some(v) = headers.get(&name) {
+                        there = there.header(name, v);
+                    }
+                }
+                let answer = there.body(body).send().await.unwrap();
+                let status = answer.status();
+                let plain = answer.bytes().await.unwrap();
+                let wants = headers
+                    .get(axum::http::header::ACCEPT_ENCODING)
+                    .and_then(|v| v.to_str().ok())
+                    .is_some_and(|v| v.contains("gzip"));
+                if !wants {
+                    return (status, plain).into_response();
+                }
+                count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                (
+                    status,
+                    [
+                        (axum::http::header::CONTENT_ENCODING, "gzip"),
+                        (axum::http::header::CONTENT_TYPE, "application/json"),
+                    ],
+                    gzip(&plain),
+                )
+                    .into_response()
+            }
+        },
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, router).await });
+    (url, asked)
+}
+
+#[tokio::test]
+async fn a_hub_that_gzips_its_answers_is_read_as_one_that_doesnt() {
+    let l = linked(None).await;
+    let navi = project("navi");
+    let status = json!({ "op": "factory_status", "hub": "acme" });
+    let plain = lead(&l.home, &navi, status.clone()).await.unwrap();
+    let (gz, asked) = gzipping(&l.url).await;
+    point(&l, &gz);
+    assert_eq!(lead(&l.home, &navi, status).await.unwrap(), plain);
+    let ask = json!({ "op": "project_message", "hub": "acme", "project": "storefront", "text": "Ship the sale." });
+    lead(&l.home, &navi, ask).await.unwrap();
+    assert!(matches!(
+        follow_once(&l.home, &l.link_here, 0).await,
+        Ok(Followed::Read(_))
+    ));
+    assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 3);
+}
+
+#[test]
+fn a_follower_backs_off_from_a_second_to_half_a_minute() {
+    use super::client::retry_delay;
+    use std::time::Duration;
+    let waits: Vec<Duration> = (0..8).map(|a| retry_delay(a, 1.0)).collect();
+    assert_eq!(
+        waits.iter().map(Duration::as_secs).collect::<Vec<_>>(),
+        [1, 2, 4, 8, 16, 30, 30, 30]
+    );
+    assert_eq!(retry_delay(0, 0.8), Duration::from_millis(800));
+    assert_eq!(retry_delay(40, 1.2), Duration::from_secs(36));
 }
 
 #[tokio::test]
@@ -1277,6 +1370,7 @@ async fn only_the_other_hubs_word_that_the_key_is_dead_revokes_the_link() {
     for (how, says) in [
         ("redirect", "answered 307"),
         ("big", "more than 1048576 bytes"),
+        ("gzbomb", "more than 1048576 bytes"),
     ] {
         point(&l, &format!("{other}/{how}"));
         let (code, why) = lead(&l.home, &navi, status.clone()).await.unwrap_err();
