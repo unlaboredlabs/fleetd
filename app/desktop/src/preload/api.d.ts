@@ -20,7 +20,7 @@ export interface FleetdApi {
   /** Writes text to the clipboard (the page has no clipboard permission of its own). */
   copy(text: string): Promise<void>;
   /** Hands main an HTML artifact; the address of the sandboxed page to frame (no network, no reach into the app). */
-  artifactFrame(html: string): Promise<string>;
+  artifactFrame(html: string): Promise<{ url: string; key: string }>;
   readonly secret: {
     /** Main seals `value` to `boxPubKey` and submits it to `hub`; the value is never sent back or shown again. */
     submit(hub: HubId, request: SecretRequest): Promise<SecretOutcome>;

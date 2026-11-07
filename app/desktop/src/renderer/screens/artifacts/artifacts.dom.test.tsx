@@ -27,7 +27,7 @@ vi.hoisted(() =>
     fixture: null,
     artifactFrame: (html: string) => {
       framed.push(html);
-      return Promise.resolve(FRAME);
+      return Promise.resolve({ url: FRAME, key: "k1" });
     },
     files: {
       open: (_hub: unknown, r: { attachmentId: string }) => (opened.push(`open ${r.attachmentId}`), Promise.resolve({ ok: true })),

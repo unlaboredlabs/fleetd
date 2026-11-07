@@ -3,32 +3,51 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ARTIFACT_CSP, ArtifactFrames } from "./artifactFrames";
+import { linkOf } from "../shared/artifactLink";
+import { ARTIFACT_CSP, ArtifactFrames, framedPage } from "./artifactFrames";
 
 const directives = (csp: string): Map<string, string> => new Map(csp.split(";").map((d) => d.trim().split(/\s+/u)).map(([name, ...values]) => [name ?? "", values.join(" ")]));
 
 describe("artifact frames", () => {
   it("serve the page at its own address with its CSP, and nothing else", async () => {
     const frames = new ArtifactFrames();
-    const url = frames.put("<h1>Sweep</h1><script>1</script>");
+    const { url, key } = frames.put("<h1>Sweep</h1><script>1</script>");
     expect(url).toMatch(/^fleetd-artifact:\/\/[0-9a-f]{32}\/$/u);
+    expect(key).toMatch(/^[0-9a-f]{32}$/u);
     const page = frames.response(url);
     expect(page.status).toBe(200);
-    expect(await page.text()).toBe("<h1>Sweep</h1><script>1</script>");
+    expect(await page.text()).toBe(framedPage("<h1>Sweep</h1><script>1</script>", key));
     expect(page.headers.get("content-security-policy")).toBe(ARTIFACT_CSP);
     expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
     for (const other of [`${url}x.js`, url.replace(/[0-9a-f]{4}\//u, "0000/"), "fleetd-artifact://frame/", "https://example.com/"]) {
       expect(frames.response(other).status, other).toBe(404);
     }
     // Two pages never share an address.
-    expect(frames.put("<p>2</p>")).not.toBe(url);
+    const second = frames.put("<p>2</p>");
+    expect(second.url).not.toBe(url);
+    expect(second.key).not.toBe(key);
+  });
+
+  it("put main's first script ahead of the page's own code, after its doctype, holding the page's key", () => {
+    const page = framedPage("<!DOCTYPE html><html><script>mine()</script></html>", "k1");
+    expect(page.startsWith("<!DOCTYPE html><script>(() => {\n  document.currentScript.remove();")).toBe(true);
+    expect(page.indexOf("RTCPeerConnection")).toBeLessThan(page.indexOf("mine()"));
+    expect(page).toContain('key: "k1"');
+    expect(framedPage("<p>x</p>", "k1").startsWith("<script>")).toBe(true);
+  });
+
+  it("take a link from a frame's message only with its page's key", () => {
+    expect(linkOf({ fleetdArtifactLink: "https://x.dev/", key: "k1" }, "k1")).toBe("https://x.dev/");
+    for (const data of [{ fleetdArtifactLink: "https://x.dev/" }, { fleetdArtifactLink: "https://x.dev/", key: "k2" }, { fleetdArtifactLink: 1, key: "k1" }, "https://x.dev/", null]) {
+      expect(linkOf(data, "k1"), JSON.stringify(data)).toBeUndefined();
+    }
   });
 
   it("keep only the newest pages", () => {
     const frames = new ArtifactFrames();
     const first = frames.put("first");
     for (let i = 0; i < 8; i++) frames.put(String(i));
-    expect(frames.response(first).status).toBe(404);
+    expect(frames.response(first.url).status).toBe(404);
   });
 
   it("run the page's own scripts and styles, load nothing, and sandbox it without its origin", () => {
