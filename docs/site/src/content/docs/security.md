@@ -37,6 +37,24 @@ agent can reach too. Human key files are no exception: keep yours outside the hu
 count on that to stop an agent that goes looking. [What an agent can reach](#agent-reach) says what that means on a
 machine, and how fleetd keeps it small.
 
+### The node socket {#node-socket}
+
+Lead-side calls reach the hub through `~/.fleetd/node/node.sock` (mode `0600`). The node tells who is calling from
+the process tree, not from anything the caller says:
+
+| Caller | Acts as |
+|---|---|
+| A process that descends from a session's `claude` (its tools, its shell commands) | That session, a lead or a task, on its own project only. |
+| Any other process | You, on the project whose workspace holds its working directory. |
+
+A task can't start, steer or stop agents, and a call that names another session is refused.
+
+:::caution[Known limit]
+A process that deliberately leaves its session's process tree (for example with `setsid`) and scrubs its environment
+is treated as you. Any process of the node's OS user can do what that user can. Run agents you don't trust as a
+different OS user.
+:::
+
 ## What an agent can reach on a machine {#agent-reach}
 
 An agent runs as the OS user its machine's node runs as, which is usually you, and outside a
@@ -67,24 +85,6 @@ Mac it is [an optional step](/docs/agents-mac)). So fleetd keeps what those toke
 
 Run agents on machines with nothing else on them you'd mind them reading, and keep the rest of your 1Password in
 vaults fleetd's service account doesn't read.
-
-### The node socket {#node-socket}
-
-Lead-side calls reach the hub through `~/.fleetd/node/node.sock` (mode `0600`). The node tells who is calling from
-the process tree, not from anything the caller says:
-
-| Caller | Acts as |
-|---|---|
-| A process that descends from a session's `claude` (its tools, its shell commands) | That session, a lead or a task, on its own project only. |
-| Any other process | You, on the project whose workspace holds its working directory. |
-
-A task can't start, steer or stop agents, and a call that names another session is refused.
-
-:::caution[Known limit]
-A process that deliberately leaves its session's process tree (for example with `setsid`) and scrubs its environment
-is treated as you. Any process of the node's OS user can do what that user can. Run agents you don't trust as a
-different OS user.
-:::
 
 ## People {#people}
 
