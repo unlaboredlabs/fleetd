@@ -94,7 +94,8 @@ Most of this is also enforced by the hub, which refuses a call that breaks it an
 
 Writers are told to run the repo's quick pre-push checks after their final rebase. When the repo names its check in
 [`.fleetd/pre-push.json`](/docs/config-and-files#pre-push), fleetd enforces it: a writer's push of a tree the check
-hasn't passed on is refused with what to do, and `git push --no-verify` is denied to task agents. Your own pushes
+hasn't passed on is refused with what to do, and `git push --no-verify` is denied to task agents. A check too long for
+one command is started in the background and waited on with Claude's Monitor tool, never a sleep loop. Your own pushes
 aren't gated.
 
 ### Claude's auto memory is off {#auto-memory}

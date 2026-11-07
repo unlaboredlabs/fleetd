@@ -1,3 +1,5 @@
 {
-  "check": "scripts/check.sh"
+  "check": "scripts/check.sh",
+  "background": "scripts/check.sh --background",
+  "wait": "scripts/check.sh --wait"
 }

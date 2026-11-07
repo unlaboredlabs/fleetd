@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use super::landed::{HOOKS, HOT_HOOKS, own_hooks_dir, quoted};
 use super::worktree::{GitError, git};
 
-/// In a commit's tree: the repo's pre-push check, `{"check": "<command>"}`. A branch without it pushes as before.
+/// In a commit's tree: the repo's pre-push check, `{"check": "<command>"}`, and for a long one, how to run it in the
+/// background and wait for it (`"background"`, `"wait"`), which the refusal names. A branch without it pushes as before.
 pub const DECLARED: &str = ".fleetd/pre-push.json";
 /// In the worktree's git dir (`git rev-parse --git-path fleetd-checked`): the trees the check passed on, one per line.
 pub const CHECKED: &str = "fleetd-checked";
@@ -37,20 +38,28 @@ const GATE: &str = r#"#!/bin/sh
 # fleetd: a writer pushes only a tree its repo's pre-push check (.fleetd/pre-push.json) passed on.
 input=$(cat)
 checked=$(git rev-parse --git-path fleetd-checked) || exit 1
-refused=$(printf '%s\n' "$input" | while read -r _ sha ref _; do
-  case $sha in *[!0]*) ;; *) continue ;; esac
-  case $ref in refs/heads/*) ;; *) continue ;; esac
-  declared=$(git cat-file blob "$sha:.fleetd/pre-push.json" 2>/dev/null) || continue
-  tree=$(git rev-parse --verify -q "$sha^{tree}") || continue
-  grep -qxF "$tree" "$checked" 2>/dev/null && continue
-  check=$(printf '%s\n' "$declared" | sed -n 's/.*"check"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
-  echo "fleetd: push refused: ${check:-the check in .fleetd/pre-push.json} hasn't passed on ${ref#refs/heads/}'s tree at $(git rev-parse --short "$sha")."
-done)
-if [ -n "$refused" ]; then
-  printf '%s\n' "$refused" "Run it in this worktree after your final rebase, commit exactly what it checked, then push again." \
-    "Too long for one command? Its header or help may say how to run it in the background or a part at a time." >&2
+# field <key>: the string <key> holds in the declaration.
+field() { printf '%s\n' "$declared" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -n 1; }
+refused=$(printf '%s\n' "$input" | {
+  long=
+  while read -r _ sha ref _; do
+    case $sha in *[!0]*) ;; *) continue ;; esac
+    case $ref in refs/heads/*) ;; *) continue ;; esac
+    declared=$(git cat-file blob "$sha:.fleetd/pre-push.json" 2>/dev/null) || continue
+    tree=$(git rev-parse --verify -q "$sha^{tree}") || continue
+    grep -qxF "$tree" "$checked" 2>/dev/null && continue
+    check=$(field check) background=$(field background) wait_for=$(field wait)
+    echo "fleetd: push refused: ${check:-the check in .fleetd/pre-push.json} hasn't passed on ${ref#refs/heads/}'s tree at $(git rev-parse --short "$sha")."
+    [ -z "$background" ] || [ -z "$wait_for" ] ||
+      long="Too long for one command? Start \`$background\`, then wait for it with the Monitor tool running \`$wait_for\`, never a sleep loop."
+  done
+  echo "Run it in this worktree after your final rebase, commit exactly what it checked, then push again."
+  echo "${long:-Too long for one command? Run it in the background and wait for it with the Monitor tool, never a sleep loop.}"
+})
+case $refused in "fleetd: push refused: "*)
+  printf '%s\n' "$refused" >&2
   exit 1
-fi
+esac
 [ -z "$input" ] || input="$input
 "
 printf '%s' "$input" | exec BENEATH pre-push "$@"
@@ -198,7 +207,8 @@ mod tests {
     fn setup(dir: &Path, declared: bool) -> (PathBuf, PathBuf) {
         let root = repo(dir);
         if declared {
-            commit(&root, &[], DECLARED, "{\"check\": \"scripts/check.sh\"}\n");
+            let declared = r#"{"check": "scripts/check.sh", "background": "scripts/check.sh --background", "wait": "scripts/check.sh --wait"}"#;
+            commit(&root, &[], DECLARED, declared);
         }
         let remote = dir.join("remote.git");
         run(dir, &["init", "-q", "--bare", &remote.to_string_lossy()]);
@@ -249,7 +259,11 @@ mod tests {
         assert!(
             refused.contains(
                 "fleetd: push refused: scripts/check.sh hasn't passed on fleetd/T9-x's tree at "
-            ) && refused.contains("Run it in this worktree after your final rebase"),
+            ) && refused.contains("Run it in this worktree after your final rebase")
+                && refused.contains(
+                    "Start `scripts/check.sh --background`, then wait for it with the Monitor tool running \
+                     `scripts/check.sh --wait`, never a sleep loop."
+                ),
             "{refused}"
         );
 

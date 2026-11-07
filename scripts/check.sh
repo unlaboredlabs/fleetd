@@ -4,6 +4,7 @@
 #   scripts/check.sh              the checks the changes touch
 #   scripts/check.sh <check>...   these, changed or not: rust-lint rust-docs rust-tests site desktop qa
 #   scripts/check.sh --background [<check>...]   the same, detached, its output in the git dir's fleetd-check.log
+#   scripts/check.sh --wait       waits for the background run to end, and prints its last line
 #
 # Each runs the commands of its ci.yml job, scoped as CI scopes it (.github/rust-scope.sh's paths for the Rust ones):
 # - rust-lint: cargo fmt --check, clippy -D warnings, and the hub migrations check: the worktree (untracked files too)
@@ -23,27 +24,45 @@
 #   150 tests, only its own: its fixtures' and its page's or directory's): a screen that asks the hub something new
 #   fails there when one of its fixtures has no answer for it.
 #
-# It runs them all, then names each one that failed, with its command, and exits 1. It fetches origin/main first, and
-# doesn't install toolchains: cargo, node 24 and pnpm, and cargo-nextest if it's there (else cargo test).
+# It runs them all, then names each one that failed, with its command, and exits 1. Its last line is one of:
+#   check.sh: pushable <tree>                                  every check the changes touch passed on the tree
+#   check.sh: passed <check>...; still to pass on <tree>: ...  the checks named passed, others are still to pass
+#   check.sh: failed <check>...                                these failed (their commands are listed above it)
+# It fetches origin/main first, and doesn't install toolchains: cargo, node 24 and pnpm, and cargo-nextest if it's there (else cargo test).
 #
 # A fleetd writer's push of a branch is refused unless its tree passed (.fleetd/pre-push.json): it records the tree it
 # checked (the worktree's, committed or not) and each check that passed on it in the git dir's fleetd-checked, and the
 # tree passes once every check the changes touch has passed on it, in one run or in several (scripts/check.sh
 # rust-tests reruns only the one that failed). So run it after your final rebase onto origin/main, and commit
-# exactly what it checked. One too long for a command's time limit runs with --background: it records its pass when it
-# ends, and its log's last line says how it went.
+# exactly what it checked. One too long for a command's time limit runs with --background, and --wait, run with
+# Claude's Monitor tool, says how it ended (never a sleep loop): it records its pass when it ends either way.
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
+log=$(git rev-parse --path-format=absolute --git-path fleetd-check.log)
+pid_file=$(git rev-parse --path-format=absolute --git-path fleetd-check.pid)
+last_line='^check\.sh: (pushable|passed|failed) '
 if [ "${1:-}" = --background ]; then
   shift
-  log=$(git rev-parse --path-format=absolute --git-path fleetd-check.log)
   detach=(nohup)
   command -v setsid >/dev/null && detach=(setsid nohup)
   "${detach[@]}" "$PWD/scripts/check.sh" "$@" >"$log" 2>&1 </dev/null &
+  echo $! >"$pid_file"
   echo "check.sh: running in the background (pid $!), its output in $log."
-  echo "When it ends, the log's last line says whether all passed (tail -n 3 $log); a pass is recorded for the push."
+  echo "Wait for it with the Monitor tool running \`scripts/check.sh --wait\` (never a sleep loop): it prints the run's last"
+  echo "line when it ends (check.sh: pushable <tree>, or failed <checks>). A Monitor that times out first: start it again."
   exit 0
+fi
+if [ "${1:-}" = --wait ]; then
+  pid=$(cat "$pid_file" 2>/dev/null)
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    # GNU tail returns once the run ends; elsewhere, a check each second.
+    tail --pid="$pid" -f /dev/null 2>/dev/null || while kill -0 "$pid" 2>/dev/null; do sleep 1; done
+  fi
+  end=$(grep -E "$last_line" "$log" 2>/dev/null | tail -n 1)
+  echo "${end:-check.sh: failed (the background run ended before its last line; its output is in $log)}"
+  [[ $end == "check.sh: pushable "* || $end == "check.sh: passed "* ]]
+  exit
 fi
 
 all=(rust-lint rust-docs rust-tests site desktop qa)
@@ -295,20 +314,18 @@ for c in "${needed[@]}"; do grep -qxF "$checked_tree $c" "$tmp/checked" || { who
 $whole && echo "$checked_tree" >>"$tmp/checked"
 mv "$tmp/checked" "$marks"
 
+took="in $((SECONDS / 60))m$((SECONDS % 60))s"
 if [ ${#failed[@]} -gt 0 ]; then
   echo
-  echo "check.sh: ${#failed[@]} failed:"
+  echo "${#failed[@]} failed:"
   printf '  %s\n' "${failed[@]}"
-  if [ -n "$missing" ]; then
-    echo "Not pushable yet: still to pass on tree ${checked_tree:0:12}:$missing (scripts/check.sh <check> runs one)"
-  else
-    echo "Not pushable yet: tree ${checked_tree:0:12} is once a run of it fails nothing"
-  fi
+  echo "Not pushable yet: rerun what failed (scripts/check.sh <check> runs one) once it's fixed."
+  echo "check.sh: failed $(printf '%s\n' "${failed[@]%%:*}" | awk '!seen[$0]++' | tr '\n' ' ')($took)"
   exit 1
 fi
 echo
 if $whole; then
-  echo "check.sh: all passed on tree ${checked_tree:0:12}: it can be pushed"
+  echo "check.sh: pushable $checked_tree ($took)"
 else
-  echo "check.sh: all passed on tree ${checked_tree:0:12}; still to pass on it before a push:$missing"
+  echo "check.sh: passed ${ran[*]}; still to pass on $checked_tree:$missing ($took)"
 fi
