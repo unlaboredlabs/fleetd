@@ -51,7 +51,9 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
   const can = manages(p, state.me);
   const archived = isArchived(p);
   const skills = skillsShown(state.hub);
-  const info = useRead(() => readInfo(session, p, Date.now(), skills), [session, p.machineId, p.projectId, skills]);
+  // Read again when its machine comes back or goes: what its node holds is as of the read.
+  const status = state.machines.find((m) => m.machineId === p.machineId)?.status;
+  const info = useRead(() => readInfo(session, p, Date.now(), skills), [session, p.machineId, p.projectId, skills, status]);
   // Back from Agent Profiles or Rename: read again (the first focus is the mount's read).
   const { reload } = info;
   const shown = useRef(false);

@@ -21,6 +21,13 @@ describe("Import Memory's prompt", () => {
     expect(importStep(failed, { t: "reloadPrompt" }).prompt).toEqual({ t: "loading" });
   });
 
+  it("loads again once the link is back, rather than keep saying it couldn't; a loaded one stays", () => {
+    const offline = run({ t: "prompt", result: { ok: false, error: { code: "offline", message: "Not connected to the hub." } } });
+    expect(importStep(offline, { t: "live" }).prompt).toEqual({ t: "loading" });
+    const ready = run(PROMPT);
+    expect(importStep(ready, { t: "live" })).toBe(ready);
+  });
+
   it("says Copied once copied, until it has shown a moment; not before it has loaded", () => {
     expect(run({ t: "copied" }).copied).toBe(false);
     expect(run(PROMPT, { t: "copied" }).copied).toBe(true);

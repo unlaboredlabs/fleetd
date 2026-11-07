@@ -379,6 +379,64 @@ describe("Session", () => {
   });
 });
 
+describe("Stale errors", () => {
+  const devbox = { machineId: "m1", name: "devbox", nodeVersion: "0.9.0", status: "offline", tags: [], lastSeenAt: AT };
+
+  it("say a machine is back as soon as the hub does, not at the next snapshot", () => {
+    const { hub, session } = setup();
+    hub.link.frame({ ...snapshot, cursor: 2, machines: [devbox] });
+    expect(session.state.machines[0]?.status).toBe("offline");
+    const before = session.state;
+    hub.link.frame({ t: "event", seq: 3, type: "machine.online", at: AT, machineId: "m1" });
+    expect(session.state.machines[0]?.status).toBe("online");
+    hub.link.frame({ t: "event", seq: 4, type: "machine.degraded", at: AT, machineId: "m1" });
+    expect(session.state.machines[0]?.status).toBe("degraded");
+    hub.link.frame({ t: "event", seq: 5, type: "machine.offline", at: AT, machineId: "m1" });
+    expect(session.state.machines[0]?.status).toBe("offline");
+    // One the snapshot doesn't list changes nothing.
+    const now = session.state;
+    hub.link.frame({ t: "event", seq: 6, type: "machine.online", at: AT, machineId: "buildbox" });
+    expect(session.state.machines).toBe(now.machines);
+    expect(before.machines[0]?.status).toBe("offline");
+  });
+
+  it("tell a screen each time the link is live again, so a read that failed while it was down is read again", () => {
+    const hub = fakeHub();
+    const session = new Session({ hub: "http://devbox:4790", key: "key_abc", transport: hub.transport, now: () => Date.parse(AT) });
+    const lives = vi.fn();
+    session.onLive(lives);
+    session.start();
+    expect(lives).not.toHaveBeenCalled();
+    hub.ready();
+    expect(lives).toHaveBeenCalledTimes(1);
+    // A snapshot or event on the same link is no new link.
+    hub.link.frame(snapshot);
+    expect(lives).toHaveBeenCalledTimes(1);
+    hub.link.close(1006);
+    vi.advanceTimersByTime(1000);
+    hub.ready();
+    expect(lives).toHaveBeenCalledTimes(2);
+  });
+
+  it("keep an older page that failed apart from the chat, for the top of the thread, until a page comes", async () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    hub.answer("chat_history", { ...page([message(2, "Hi")]), moreBefore: true });
+    await flush();
+    const older = session.loadOlder(KEY);
+    hub.fail("chat_history", "timeout", "The hub didn't answer chat_history within 30 s.");
+    await older;
+    expect(session.state.chats[KEY]?.error).toBeUndefined();
+    expect(session.state.olderErrors[KEY]).toMatchObject({ code: "timeout" });
+    // Tried again, and read.
+    const again = session.loadOlder(KEY);
+    hub.answer("chat_history", page([message(1, "Hello")]));
+    await again;
+    expect(session.state.olderErrors[KEY]).toBeUndefined();
+    expect(session.state.chats[KEY]?.messages.map((m) => m.text)).toEqual(["Hello", "Hi"]);
+  });
+});
+
 describe("Pinned chats", () => {
   const pinCalls = (hub: ReturnType<typeof fakeHub>, tool: string) => hub.sentOf("call").filter((c) => c.tool === tool);
 

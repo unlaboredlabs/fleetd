@@ -7,7 +7,7 @@ import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import * as Updates from "expo-updates";
 import { useCallback, useState } from "react";
-import { Image, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { AppState, Image, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
 import { linkWords as statusOf } from "../chatsBar";
 import { useHub, type SettingsParams } from "../hubContext";
 import { pushDeps } from "../notifications";
@@ -29,13 +29,22 @@ export function Settings() {
   const { paired, state, disconnect } = useHub();
   const navigation = useNavigation<NavigationProp<SettingsParams>>();
   const [notifications, setNotifications] = useState<string | undefined>(undefined);
-  // Read again each time it shows: the person may have changed it in iOS Settings meanwhile.
+  // Read again each time it shows, and each time the app comes back to the front on it: the person may have changed it
+  // in iOS Settings meanwhile (Off opens it, and coming back leaves this screen as it was).
   const read = useCallback(() => {
     void Notifications.getPermissionsAsync()
       .then((p) => setNotifications(p.granted ? "On" : p.canAskAgain ? "Not asked yet" : "Off"))
       .catch(() => setNotifications(undefined));
   }, []);
-  useFocusEffect(read);
+  useFocusEffect(
+    useCallback(() => {
+      read();
+      const sub = AppState.addEventListener("change", (s) => {
+        if (s === "active") read();
+      });
+      return () => sub.remove();
+    }, [read]),
+  );
   // Never asked: asks here (its new token registers the phone with the hub); else iOS Settings is where it changes.
   const onNotifications = () => {
     if (notifications !== "Not asked yet") return void Linking.openSettings();

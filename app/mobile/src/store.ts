@@ -59,6 +59,8 @@ export interface State {
   /** That person's name, which the chats list's avatar shows the initial of; undefined as `me` is. */
   readonly meName: string | undefined;
   readonly chats: Readonly<Record<Key, Chat>>;
+  /** Why a chat's older page didn't come, which the top of its thread says, until a page of it does. */
+  readonly olderErrors: Readonly<Record<Key, HubError>>;
   readonly sends: Readonly<Record<Key, readonly ChatSend[]>>;
   /**
    * Each chat's newest few messages, read after each snapshot and kept by events: the chats list's previews, with a
@@ -97,6 +99,7 @@ export const initial = (hub: HubState): State => ({
   me: undefined,
   meName: undefined,
   chats: {},
+  olderErrors: {},
   sends: {},
   latest: {},
   corpus: {},
@@ -114,7 +117,7 @@ export type Action =
   | { readonly t: "frame"; readonly frame: HubFrame; readonly nowMs: number }
   | { readonly t: "chat_open"; readonly key: Key }
   | { readonly t: "history"; readonly key: Key; readonly page: ChatHistoryOutput; readonly direction: "latest" | "older" }
-  | { readonly t: "history_failed"; readonly key: Key; readonly error: HubError }
+  | { readonly t: "history_failed"; readonly key: Key; readonly error: HubError; readonly direction: "latest" | "older" }
   | { readonly t: "latest"; readonly key: Key; readonly messages: readonly ChatMessage[] }
   | { readonly t: "corpus"; readonly key: Key; readonly messages: readonly ChatMessage[] }
   | { readonly t: "admin"; readonly admin: boolean; readonly me?: string | undefined; readonly meName?: string | undefined }
@@ -153,9 +156,12 @@ export const reduce = (s: State, a: Action): State => {
     case "chat_open":
       return s.chats[a.key] === undefined ? withChat(s, a.key, emptyChat) : s;
     case "history":
-      return withChat(s, a.key, applyHistory(chatOf(s, a.key), a.page, a.direction));
+      return withChat({ ...s, olderErrors: without(s.olderErrors, a.key) }, a.key, applyHistory(chatOf(s, a.key), a.page, a.direction));
     case "history_failed":
-      return withChat(s, a.key, { ...chatOf(s, a.key), error: a.error, loadingOlder: false });
+      // An older page's failure is about the top of the thread, not the chat: it's said there (Chat.tsx).
+      return a.direction === "older"
+        ? withChat({ ...s, olderErrors: { ...s.olderErrors, [a.key]: a.error } }, a.key, { ...chatOf(s, a.key), loadingOlder: false })
+        : withChat(s, a.key, { ...chatOf(s, a.key), error: a.error, loadingOlder: false });
     case "latest":
       return withLatest(s, a.key, a.messages);
     case "corpus":
@@ -259,7 +265,15 @@ const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
   }
 };
 
+/** A machine's status as each event says, as the desktop's store patches it: the next snapshot may be a while off. */
+const MACHINE_STATUS: Readonly<Record<string, Machine["status"]>> = { "machine.online": "online", "machine.offline": "offline", "machine.degraded": "degraded" };
+
 const applyEvent = (s: State, event: HubEvent): State => {
+  const status = MACHINE_STATUS[event.type];
+  if (status !== undefined) {
+    const known = s.machines.some((m) => m.machineId === event.machineId && m.status !== status);
+    return known ? { ...s, machines: s.machines.map((m) => (m.machineId === event.machineId ? { ...m, status } : m)) } : s;
+  }
   if (event.type === "chat.waiting") {
     const state = event.data as ProjectChatState | undefined;
     if (state?.projectRef === undefined) return s;

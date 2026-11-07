@@ -52,6 +52,7 @@ export class Session {
   readonly #eventListeners = new Set<(event: HubEvent) => void>();
   readonly #frameListeners = new Set<(frame: BrowserFrame) => void>();
   readonly #inputErrorListeners = new Set<(error: HubError) => void>();
+  readonly #liveListeners = new Set<() => void>();
   readonly #now: () => number;
   readonly #newId: () => string;
   /** The chat on screen, which gets streamed text and is reloaded on each connection. */
@@ -130,6 +131,15 @@ export class Session {
     return () => this.#eventListeners.delete(listener);
   }
 
+  /**
+   * Each time the link is live again after it was down (and the first time): a screen's own read that failed while
+   * it was down reads again, rather than keep saying it couldn't (screens/manage/parts.tsx useRead).
+   */
+  onLive(listener: () => void): () => void {
+    this.#liveListeners.add(listener);
+    return () => this.#liveListeners.delete(listener);
+  }
+
   /** Disconnect, on the hub: this phone's push registration removed and its key revoked. */
   signOut(): ReturnType<typeof signOut> {
     return signOut(this.#client, { loadDevice: this.#push?.loadDevice ?? (async () => null) }, this.#key);
@@ -184,7 +194,7 @@ export class Session {
     this.#dispatch({ t: "history", key, page: { messages: [], moreAfter: false, moreBefore: true, state: this.#chatState(key) }, direction: "older" });
     const r = await this.#client.call("chat_history", { projectRef: refOf(key), before: oldest.seq, limit: CHAT_PAGE });
     if (r.ok) this.#dispatch({ t: "history", key, page: r.output, direction: "older" });
-    else this.#dispatch({ t: "history_failed", key, error: r.error });
+    else this.#dispatch({ t: "history_failed", key, error: r.error, direction: "older" });
   }
 
   /**
@@ -323,7 +333,7 @@ export class Session {
   async #loadLatest(key: Key): Promise<void> {
     const r = await this.#client.call("chat_history", { projectRef: refOf(key), limit: CHAT_PAGE });
     if (r.ok) this.#dispatch({ t: "history", key, page: r.output, direction: "latest" });
-    else if (r.error.code !== "offline") this.#dispatch({ t: "history_failed", key, error: r.error });
+    else if (r.error.code !== "offline") this.#dispatch({ t: "history_failed", key, error: r.error, direction: "latest" });
   }
 
   /**
@@ -404,8 +414,9 @@ export class Session {
       return;
     }
     const before = this.#state.chats[this.#open ?? ""];
+    const wasLive = this.#state.hub.phase === "live";
     this.#dispatch({ t: "frame", frame, nowMs: this.#now() });
-    if (frame.t === "state") this.#onState(frame.state);
+    if (frame.t === "state") this.#onState(frame.state, wasLive);
     if (frame.t === "snapshot") {
       void this.#readRequests();
       // After the snapshot: an older build's pins go up only for this hub's own chats.
@@ -436,8 +447,9 @@ export class Session {
     }
   }
 
-  #onState(state: HubState): void {
+  #onState(state: HubState, wasLive: boolean): void {
     if (state.phase === "live") void this.#readInfo();
+    if (state.phase === "live" && !wasLive) for (const listener of this.#liveListeners) listener();
     if (state.phase !== "live" || this.#registered) return;
     this.#registered = true;
     void this.#register();
