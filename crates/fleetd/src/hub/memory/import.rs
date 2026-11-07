@@ -43,20 +43,22 @@ pub fn export_prompt(hub: &Hub) -> String {
     hub.db.prompts().current(None).render("memory.export", &[])
 }
 
-/// The fix of the refusal for someone with no Navi: the apps show it as it is, with a way to make one.
+/// The fix of the refusal for someone with no Only me project of their own: older apps match it as it is, with a way to
+/// make one, and newer ones match the refusal's `reason` (`no_only_me_project`).
 pub const NO_NAVI_FIX: &str = "Create a Navi first, then import again.";
 
-/// Where the turn runs: `person`'s own Navi, and nowhere else, so nobody but them can read what they pasted. Refused
-/// for someone with none, and while none of theirs is on a node that can hold the turn to no tools.
+/// Where the turn runs: an Only me project of `person`'s own (a former Navi or any other, D310), and nowhere else, so
+/// nobody but them can read what they pasted. Refused for someone with none, and while none of theirs is on a node
+/// that can hold the turn to no tools.
 fn place(hub: &Hub, person: Option<&PersonId>) -> Result<ProjectRef, ToolError> {
-    let (navis, others) = hub.db.with(|c| {
+    let (only_me, others) = hub.db.with(|c| {
         Ok((
             crate::hub::navi::store::all(c)?,
             crate::hub::navi::store::others(c, person)?,
         ))
     })?;
     let mut own = Vec::new();
-    for r in navis.into_iter().filter(|r| !others.contains(r)) {
+    for r in only_me.into_iter().filter(|r| !others.contains(r)) {
         if crate::hub::navi::of(&hub.db, &r)?.is_some_and(|n| n.archived_at.is_none()) {
             own.push(r);
         }
@@ -64,9 +66,11 @@ fn place(hub: &Hub, person: Option<&PersonId>) -> Result<ProjectRef, ToolError> 
     let Some(first) = own.first().cloned() else {
         return Err(ToolError::new(
             ErrorCode::Invalid,
-            "Import memory runs in your own Navi, so nobody else can read what you paste, and you have no Navi yet.",
+            "Import memory runs in a project only you can see, so nobody else can read what you paste, and you have \
+             none yet.",
         )
-        .with_fix(NO_NAVI_FIX));
+        .with_fix(NO_NAVI_FIX)
+        .with_reason(fleetd_contracts::mcp::ErrorReason::NoOnlyMeProject));
     };
     own.into_iter()
         .find(|r| hub.link.node_can(&r.machine_id, CAP_ALLOWED_ONLY))
@@ -74,7 +78,7 @@ fn place(hub: &Hub, person: Option<&PersonId>) -> Result<ProjectRef, ToolError> 
             ToolError::new(
                 ErrorCode::MachineOffline,
                 format!(
-                    "Your Navi's machine, {}, is offline or runs a fleetd too old for this.",
+                    "Your project's machine, {}, is offline or runs a fleetd too old for this.",
                     first.machine_id
                 ),
             )

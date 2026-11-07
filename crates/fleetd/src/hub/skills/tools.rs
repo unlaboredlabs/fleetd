@@ -331,8 +331,6 @@ pub enum Installer {
     Person,
     /// From a remote source, fetched as the hub.
     Lead,
-    /// Over https only, fetched as no one: a Navi reads the web for its person, never with the hub's logins.
-    Navi,
 }
 
 /// Fetches `given` and keeps its skills (or `want`) in the scope, pinned to the commit fetched.
@@ -346,13 +344,6 @@ pub async fn install_from(
     who: Who,
 ) -> Result<(Vec<Kept>, String), SkillError> {
     let source = install::parse(given)?;
-    if by == Installer::Navi && !source.url.starts_with("https://") {
-        return Err(SkillError::new(
-            ErrorCode::Forbidden,
-            format!("A Navi installs skills over https only, and {given} isn't an https source."),
-            Some("Give owner/repo, or the https:// URL of a public repo."),
-        ));
-    }
     if install::is_local(&source) && by != Installer::Person {
         return Err(SkillError::new(
             ErrorCode::Forbidden,
@@ -363,7 +354,7 @@ pub async fn install_from(
         ));
     }
     let want = want.or(source.skill.as_ref());
-    let fetched = install::fetch(&source, by == Installer::Navi).await?;
+    let fetched = install::fetch(&source).await?;
     let found = install::find(fetched.tree.path(), &source, want)?;
     let at = iso_ms(now_ms(hub.clock.as_ref()));
     let folders: Vec<_> = found
@@ -435,7 +426,7 @@ async fn skill_update(
         ));
     };
     let source = install::source_of(&pin);
-    let fetched = install::fetch(&source, false).await?;
+    let fetched = install::fetch(&source).await?;
     if fetched.commit == pin.commit.as_str() {
         return Ok(SkillUpdateOutput {
             skill: hub

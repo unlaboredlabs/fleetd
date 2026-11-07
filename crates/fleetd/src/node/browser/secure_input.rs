@@ -231,9 +231,18 @@ pub async fn request(
             },
         );
     }
-    session.hold_for_answer(WAIT_ON_PERSON);
+    let filled_now = opened.state == fleetd_contracts::ledger::RequestState::Approved;
+    if !filled_now {
+        session.hold_for_answer(WAIT_ON_PERSON);
+    }
     session.step("request_secure_input", args, true, None, 0);
-    let message = if typed {
+    let message = if filled_now {
+        // A hub from D310 on fills a 1Password field with no ask.
+        format!(
+            "Ready to fill {label} from 1Password ({id}): call secure_input_fill with requestId {id} now, within \
+             {FILL_WINDOW_MINUTES} minutes."
+        )
+    } else if typed {
         format!(
             "Asked the person to type {label} ({id}) in a sealed field. Stay on this page and end your turn: once they \
              do, fleetd types it into {target} and you are woken. You never see it; don't ask for it in the chat."

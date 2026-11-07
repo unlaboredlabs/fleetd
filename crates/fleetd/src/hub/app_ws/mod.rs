@@ -41,6 +41,9 @@ fn error_frame(error: &ToolError, id: Option<&str>) -> Value {
     if let Some(fix) = &error.fix {
         frame["fix"] = json!(fix);
     }
+    if let Some(reason) = error.reason {
+        frame["reason"] = serde_json::to_value(reason).expect("serializable reason");
+    }
     frame
 }
 
@@ -50,6 +53,7 @@ fn refused(error: AuthError) -> ToolError {
             code: u.code,
             message: u.message,
             fix: u.fix,
+            reason: None,
         },
         other => {
             tracing::error!(error = %other, "key check failed");

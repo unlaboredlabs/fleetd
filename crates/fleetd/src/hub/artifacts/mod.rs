@@ -228,8 +228,8 @@ fn publisher(hub: &Hub, caller: &LeadCaller) -> String {
     {
         return task.title.as_str().to_owned();
     }
-    match crate::hub::navi::bridge::is_navi(&hub.db, r, false) {
-        Ok(true) => crate::hub::skills::calls::title_of(hub, r),
+    match crate::hub::navi::of(&hub.db, r) {
+        Ok(Some(_)) => crate::hub::skills::calls::title_of(hub, r),
         _ => "Lead".to_owned(),
     }
 }

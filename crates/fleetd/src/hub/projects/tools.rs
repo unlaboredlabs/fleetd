@@ -10,7 +10,7 @@ use fleetd_contracts::mcp::{
     ProjectAddInput, ProjectAddOutput, ProjectDiscoverInput, ProjectDiscoverOutput,
     ProjectRemoveInput,
 };
-use fleetd_contracts::node_link::{CAP_NAVI_ERASE, CAP_PROJECT_SETTINGS};
+use fleetd_contracts::node_link::{CAP_NAVI_ERASE, CAP_PROJECT_ERASE, CAP_PROJECT_SETTINGS};
 use serde_json::{Value, json};
 
 use crate::hub::api::{Caller, Hub, Registry, ToolError, error, offline, require, unknown_machine};
@@ -67,27 +67,23 @@ async fn remove(
         machine_id: m.clone(),
         project_id: input.project_id.clone(),
     };
-    // A Navi is erased (D287 navi.delete-erases), on its node too, which must know how; its folder goes only if asked.
+    // Every project is erased (D287, one rule since D310), on its node too, which must know how; its folder goes only
+    // if asked. A node before that erases a Navi alone.
     let navi = crate::hub::navi::of(&hub.db, &r)?.is_some();
     let remove_folder = input.remove_folder == Some(true);
-    if remove_folder && !navi {
+    let erases =
+        hub.link.node_can(m, CAP_PROJECT_ERASE) || (navi && hub.link.node_can(m, CAP_NAVI_ERASE));
+    if !erases {
         return Err(error(
             ErrorCode::Invalid,
-            "only a Navi's folder is deleted with it",
-            "Delete it without removeFolder: a project's files stay on its machine.",
-        ));
-    }
-    if navi && !hub.link.node_can(m, CAP_NAVI_ERASE) {
-        return Err(error(
-            ErrorCode::Invalid,
-            format!("{m}'s node is too old to erase a Navi"),
+            format!(
+                "Update fleetd on {m} first: its node is too old to erase a project, so nothing was deleted"
+            ),
             format!("Run fleetd update on {m}, then delete it again."),
         ));
     }
     // Marked first: should the node remove it but its answer never come, the hub still erases it (`navi::erase::run`).
-    if navi {
-        crate::hub::navi::erase::asked(&hub, &r)?;
-    }
+    crate::hub::navi::erase::asked(&hub, &r)?;
     let mut checkouts = Vec::new();
     for checkout in super::repos::other_checkouts(&hub, &r)? {
         if hub.repos.holders(&checkout)?.iter().all(|(h, _)| *h == r) {
@@ -97,30 +93,18 @@ async fn remove(
     for project_id in std::iter::once(&input.project_id).chain(&checkouts) {
         let own = project_id == &input.project_id;
         hub.executors
-            .project_remove(
-                m,
-                project_id,
-                remove_worktrees,
-                navi && own,
-                remove_folder && own,
-            )
+            .project_remove(m, project_id, remove_worktrees, own, remove_folder && own)
             .await
             .map_err(from_executor)?;
     }
-    if navi {
-        crate::hub::navi::erase::erase(&hub, &r)?;
-        let next = if remove_folder {
-            "It was erased, with its chat, memory, skills and folder."
-        } else {
-            "It was erased, with its chat, memory and skills; its folder stays on the machine."
-        };
-        return Ok(json!({ "ok": true, "next": next }));
-    }
-    let next = if remove_worktrees {
-        "Its threads were stopped and its worktrees removed; its checkout and branches stay on the machine. \
-         project_add brings it back."
+    crate::hub::navi::erase::erase(&hub, &r)?;
+    const ERASED: &str = "Erased: its chat, memory, skills, approvals and purchases, asks and decisions, orders and \
+                          tasks, automations, kept browser sign-ins, Telegram link, transcripts, attachments and \
+                          screen recordings";
+    let next = if remove_folder {
+        format!("{ERASED}, and its folder with everything in it.")
     } else {
-        "Its threads were stopped; its files, branches and worktrees stay on the machine. project_add brings it back."
+        format!("{ERASED}. Its folder, files and branches stay on the machine.")
     };
     Ok(json!({ "ok": true, "next": next }))
 }

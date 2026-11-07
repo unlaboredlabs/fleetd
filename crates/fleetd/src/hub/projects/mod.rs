@@ -517,6 +517,52 @@ async fn gh_list(hub: &Hub, fallback: Option<MachineId>, scans: &[MachineRepos])
 
 /// Registers `path` on `m` (the same directory again is the same project; a title renames it) and emits
 /// `project.added` with the inspect. Returns the inspect it emitted.
+/// Only me as `project_add` sets it (D310): what the call asked, and whose the project becomes when it is on.
+#[derive(Clone, Debug)]
+struct OnlyMe {
+    asked: Option<bool>,
+    owner: Option<fleetd_contracts::people::PersonId>,
+    caller: Caller,
+}
+
+impl OnlyMe {
+    fn of(hub: &Hub, caller: &Caller, asked: Option<bool>) -> Result<Self, ToolError> {
+        let owner = hub.db.with(|c| crate::hub::navi::owner::who(c, caller))?;
+        Ok(Self {
+            asked,
+            owner,
+            caller: caller.clone(),
+        })
+    }
+
+    /// Sets it on a project just added (`created`): as asked, else on for one with no repo, and the caller's. An
+    /// existing project keeps its own unless asked, and then changes only as `project_settings_set` changes it: by its
+    /// owner or an admin, from a person's own device.
+    fn apply(&self, hub: &Hub, r: &ProjectRef, created: bool, git: bool) -> Result<(), ToolError> {
+        let on = match (self.asked, created) {
+            (Some(on), false) => {
+                let Some(project) = hub.store.project_get(r)? else {
+                    return Err(crate::hub::api::unknown_project(r));
+                };
+                return settings::set_only_me(hub, &self.caller, &project, on);
+            }
+            (Some(on), true) => on,
+            (None, true) => !git,
+            (None, false) => return Ok(()),
+        };
+        hub.db.with(|c| {
+            Ok(crate::hub::navi::store::set_only_me(
+                c,
+                r,
+                on,
+                self.owner.as_ref(),
+            )?)
+        })?;
+        Ok(())
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn register(
     hub: &Hub,
     m: &MachineId,
@@ -525,6 +571,7 @@ async fn register(
     facts: &RepoFacts,
     inspect: ProjectInspect,
     add_id: Option<AddId>,
+    only_me: &OnlyMe,
 ) -> Result<(ProjectId, bool, ProjectInspect), ToolError> {
     let path = path.strip_suffix('/').unwrap_or(path);
     let name = path.rsplit('/').next().unwrap_or(path);
@@ -550,6 +597,7 @@ async fn register(
     {
         tracing::warn!(%error, "the project's own repo was not recorded");
     }
+    only_me.apply(hub, &project, created, facts.is_git)?;
     let summary = format!("{title} added on {m}: {}", inspect.lead_needs);
     // The event log keeps at most 2 KB of data; a dry-run project_add has the whole inspect.
     let data = inspect::fit_added(ProjectAddedData {
@@ -608,8 +656,9 @@ pub async fn add(
     require(caller, Role::Operate, Some(&m))?;
     let title = input.title.as_ref().map(|t| t.as_str().to_owned());
     let dry_run = input.dry_run == Some(true);
+    let only_me = OnlyMe::of(&hub, caller, input.only_me)?;
     if input.create == Some(true) {
-        return create(&hub, &m, &input, dry_run).await;
+        return create(&hub, &m, &input, dry_run, &only_me).await;
     }
     if let Some(path) = &input.path {
         let path = path.as_str().strip_suffix('/').unwrap_or(path.as_str());
@@ -618,8 +667,17 @@ pub async fn add(
         if dry_run {
             return Ok(dry(m, path.to_owned(), inspect, None));
         }
-        let (project_id, created, inspect) =
-            register(&hub, &m, path, title.as_deref(), &facts, inspect, None).await?;
+        let (project_id, created, inspect) = register(
+            &hub,
+            &m,
+            path,
+            title.as_deref(),
+            &facts,
+            inspect,
+            None,
+            &only_me,
+        )
+        .await?;
         return Ok(ProjectAddOutput {
             next: Some(format!(
                 "{}. Write to its lead with chat_send; the lead starts with the first message.",
@@ -655,6 +713,7 @@ pub async fn add(
                 &facts,
                 inspect,
                 None,
+                &only_me,
             )
             .await?;
             return Ok(ProjectAddOutput {
@@ -679,7 +738,10 @@ pub async fn add(
         m.clone(),
         repo,
         path.clone(),
-        CloneInto::Project { title },
+        CloneInto::Project {
+            title,
+            only_me: Box::new(only_me),
+        },
         run,
     ));
     Ok(ProjectAddOutput {
@@ -742,6 +804,7 @@ async fn create(
     m: &MachineId,
     input: &ProjectAddInput,
     dry_run: bool,
+    only_me: &OnlyMe,
 ) -> Result<ProjectAddOutput, ToolError> {
     if !hub
         .link
@@ -806,8 +869,17 @@ async fn create(
         .map_err(|e| folder_refused(m, &path, e))?;
     let facts = checkout(hub, m, &path).await?;
     let inspect = inspect_checkout(&facts).await?;
-    let (project_id, created, inspect) =
-        register(hub, m, &path, title.as_deref(), &facts, inspect, None).await?;
+    let (project_id, created, inspect) = register(
+        hub,
+        m,
+        &path,
+        title.as_deref(),
+        &facts,
+        inspect,
+        None,
+        only_me,
+    )
+    .await?;
     Ok(ProjectAddOutput {
         next: Some(format!(
             "{}. Write to its lead with chat_send; project_repo_add adds a repo later.",
@@ -849,6 +921,7 @@ fn dest_taken(m: &MachineId, repo: &GitHubRepo, target: &CloneTarget) -> ToolErr
 enum CloneInto {
     Project {
         title: Option<String>,
+        only_me: Box<OnlyMe>,
     },
     Repo {
         project: ProjectRef,
@@ -1077,7 +1150,7 @@ async fn clone_and_register(
         ),
     };
     let added = match &into {
-        CloneInto::Project { title } => register(
+        CloneInto::Project { title, only_me } => register(
             &hub,
             &m,
             &path,
@@ -1085,6 +1158,7 @@ async fn clone_and_register(
             &facts,
             inspect,
             Some(add_id.clone()),
+            only_me,
         )
         .await
         .map(drop),

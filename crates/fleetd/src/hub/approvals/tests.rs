@@ -1445,50 +1445,33 @@ fn approvals_at(
 
 const B1: &str = "B0123456789abcdef0123456789abcdef";
 
-/// A Navi's purchase is a request of its own class: it opens a card with the shop, the total, the items and the card,
-/// only a person answers it, and approved it is filled once, by the session that asked, within its window.
+/// A purchase is a request of its own class, kept as a record with the shop, the total, the items and the card, and
+/// approved as it opens with no ask (D310): nobody is woken or notified, and it is filled once, by the session that
+/// asked, within its window.
 #[tokio::test]
-async fn a_purchase_always_asks_a_person_and_its_card_fills_once_within_its_window() {
+async fn a_purchase_is_a_record_approved_as_it_opens_and_its_card_fills_once_within_its_window() {
     use fleetd_contracts::browser::BrowserSessionId;
     let fake = Arc::new(Fake::default());
     let clock = crate::hub::store::test_clock::ManualClock::at(1_790_000_000_000);
     let a = approvals_at(&fake, clock.clone());
     let open = a
-        .open_purchase(&p1(), purchase_call(B1), visa())
+        .open_purchase(&p1(), purchase_call(B1), visa(), true)
         .await
         .unwrap();
-    assert_eq!(open.state, RequestState::Open);
+    assert_eq!(open.state, RequestState::Approved);
+    assert_eq!(open.answered_by.as_deref(), Some(super::NO_ASK));
     assert_eq!(
         open.text.as_str(),
         "Pay 129.90 EUR at Hotel Devbox (hotel.devbox.test) with Visa (Personal)"
     );
-    assert!(
-        purchases::person_only(&open),
-        "no mode, checker or rule answers it"
-    );
+    assert!(fake.woken.lock().unwrap().is_empty());
     let ChatItem::CommandApproval(item) = chat_item(&open) else {
-        panic!("a purchase shows as an approval");
+        panic!("a purchase shows as its record");
     };
-    let shown = item.purchase.expect("the card shows the purchase");
+    let shown = item.purchase.expect("the record shows the purchase");
     assert_eq!(shown.shop.domain.as_str(), "hotel.devbox.test");
     assert_eq!(shown.card.label(), "Visa (Personal)");
-    assert!(item.gated.is_none() && item.permission.is_none());
     let session = BrowserSessionId::unchecked(B1);
-
-    // Unanswered: nothing fills it. Nor does a key that isn't a person's.
-    let early = a
-        .claim_purchase(&p1(), &open.request_id, &session)
-        .await
-        .unwrap_err();
-    assert!(early.message.contains("hasn't answered"), "{early:?}");
-    let by_agent = a.answer(&agent(), "Q1", true, None).await.unwrap_err();
-    assert_eq!(by_agent.code, "forbidden");
-
-    // Approved: the Navi is woken, and runs nothing here.
-    let approved = a.answer(&person(), "Q1", true, None).await.unwrap();
-    assert_eq!(approved.state, RequestState::Approved);
-    assert_eq!(*fake.woken.lock().unwrap(), ["Q1 approved"]);
-    assert!(fake.runs.lock().unwrap().is_empty());
 
     // Another browser session can't fill it.
     let other = BrowserSessionId::unchecked("Bffffffffffffffffffffffffffffffff");
@@ -1534,12 +1517,9 @@ async fn a_purchase_always_asks_a_person_and_its_card_fills_once_within_its_wind
         .unwrap_err();
     assert!(again.message.contains("fills once"), "{again:?}");
 
-    // Past its window, an approval fills nothing and ends.
+    // Past its window, it fills nothing and ends.
     let late = a
-        .open_purchase(&p1(), purchase_call(B1), visa())
-        .await
-        .unwrap();
-    a.answer(&person(), late.request_id.as_str(), true, None)
+        .open_purchase(&p1(), purchase_call(B1), visa(), true)
         .await
         .unwrap();
     clock.advance(std::time::Duration::from_secs(
@@ -1555,12 +1535,9 @@ async fn a_purchase_always_asks_a_person_and_its_card_fills_once_within_its_wind
         RequestState::Failed
     );
 
-    // Approved and never filled: once its window ran out it ends as failed, not "approved" for ever.
+    // Never filled: once its window ran out it ends as failed, not "approved" for ever.
     let idle = a
-        .open_purchase(&p1(), purchase_call(B1), visa())
-        .await
-        .unwrap();
-    a.answer(&person(), idle.request_id.as_str(), true, None)
+        .open_purchase(&p1(), purchase_call(B1), visa(), true)
         .await
         .unwrap();
     a.expire_unfilled().await;
@@ -1577,30 +1554,14 @@ async fn a_purchase_always_asks_a_person_and_its_card_fills_once_within_its_wind
     assert_eq!(ended.state, RequestState::Failed);
     assert!(ended.evidence.unwrap().as_str().starts_with("expired"));
 
-    // Denied: the Navi hears it, and nothing fills it.
-    let no = a
-        .open_purchase(&p1(), purchase_call(B1), visa())
+    // For an older node, which would wait for an answer, the person is asked as before.
+    let asked = a
+        .open_purchase(&p1(), purchase_call(B1), visa(), false)
         .await
         .unwrap();
-    a.answer(
-        &person(),
-        no.request_id.as_str(),
-        false,
-        Some("too dear".into()),
-    )
-    .await
-    .unwrap();
-    assert!(
-        fake.woken
-            .lock()
-            .unwrap()
-            .contains(&format!("{} denied", no.request_id))
-    );
-    let denied = a
-        .claim_purchase(&p1(), &no.request_id, &session)
-        .await
-        .unwrap_err();
-    assert!(denied.message.contains("is denied"), "{denied:?}");
+    assert_eq!(asked.state, RequestState::Open);
+    assert!(purchases::person_only(&asked));
+
     // Another project's purchase is none of this one's.
     let elsewhere = ProjectRef {
         machine_id: "lab-a".into(),
@@ -2336,17 +2297,20 @@ fn secure_call(reference: Option<&str>) -> fleetd_contracts::secure_input::Secur
     serde_json::from_value(json!({ "sessionId": B1, "input": input })).unwrap()
 }
 
-/// A secure input the person types is a sealed field whose sink is the Navi's browser session; one from 1Password is
-/// an approval filled once, by the session that asked, within its window. Only a person answers either, and a lead
-/// can't aim a secret at a browser session itself.
+/// A secure input the person types is a sealed field whose sink is the Navi's browser session, which only they fill;
+/// one from 1Password is approved as it opens (D310) and filled once, by the session that asked, within its window. A
+/// lead can't aim a secret at a browser session itself.
 #[tokio::test]
-async fn a_secure_input_is_a_sealed_field_or_an_approval_only_a_person_answers() {
+async fn a_secure_input_is_a_sealed_field_or_a_1password_fill_with_no_ask() {
     use fleetd_contracts::browser::BrowserSessionId;
     let fake = Arc::new(Fake::default());
     let clock = crate::hub::store::test_clock::ManualClock::at(1_790_000_000_000);
     let a = approvals_at(&fake, clock.clone());
 
-    let typed = a.open_secure_input(&p1(), secure_call(None)).await.unwrap();
+    let typed = a
+        .open_secure_input(&p1(), secure_call(None), true)
+        .await
+        .unwrap();
     assert_eq!(typed.kind, RequestKind::Secret);
     assert_eq!(
         typed.secret.as_ref().unwrap().sink.as_str(),
@@ -2385,25 +2349,17 @@ async fn a_secure_input_is_a_sealed_field_or_an_approval_only_a_person_answers()
     );
 
     let from_1password = a
-        .open_secure_input(&p1(), secure_call(Some("op://Personal/Passport/number")))
+        .open_secure_input(
+            &p1(),
+            secure_call(Some("op://Personal/Passport/number")),
+            true,
+        )
         .await
         .unwrap();
     assert_eq!(from_1password.kind, RequestKind::Approval);
-    assert!(purchases::person_only(&from_1password));
+    // From 1Password it fills with no ask (D310): approved as it opens.
+    assert_eq!(from_1password.state, RequestState::Approved);
     let id = from_1password.request_id.clone();
-    let early = a
-        .claim_secure_input(&p1(), &id, &session)
-        .await
-        .unwrap_err();
-    assert!(early.message.contains("hasn't answered"), "{early:?}");
-    assert_eq!(
-        a.answer(&agent(), id.as_str(), true, None)
-            .await
-            .unwrap_err()
-            .code,
-        "forbidden"
-    );
-    a.answer(&person(), id.as_str(), true, None).await.unwrap();
     let other = BrowserSessionId::unchecked("Bffffffffffffffffffffffffffffffff");
     assert_eq!(
         a.claim_secure_input(&p1(), &id, &other)
@@ -2422,12 +2378,13 @@ async fn a_secure_input_is_a_sealed_field_or_an_approval_only_a_person_answers()
             .contains("fills once")
     );
 
-    // Approved and never filled: it expires.
+    // Never filled: it expires.
     let late = a
-        .open_secure_input(&p1(), secure_call(Some("op://Personal/Passport/number")))
-        .await
-        .unwrap();
-    a.answer(&person(), late.request_id.as_str(), true, None)
+        .open_secure_input(
+            &p1(),
+            secure_call(Some("op://Personal/Passport/number")),
+            true,
+        )
         .await
         .unwrap();
     clock.advance(std::time::Duration::from_secs(

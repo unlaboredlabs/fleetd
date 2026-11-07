@@ -20,7 +20,7 @@ use zeroize::Zeroizing;
 use super::{Kept, box_key, failed, kept, kept_get, set_cursor, set_hello, set_state};
 use crate::hub::api::Hub;
 use crate::hub::leads::wakes::{LineKind, Trigger};
-use crate::hub::navi::bridge::{Woken, ask_sent, is_navi, record_sent};
+use crate::hub::navi::bridge::{Woken, ask_sent, is_project, record_sent};
 use crate::hub::store::now_ms;
 
 /// How long a follower waits before calling a hub that didn't answer again.
@@ -352,7 +352,7 @@ pub async fn follow_once(hub: &Hub, link_id: &str, wait: u64) -> Result<Followed
             if now.state != HubLinkState::Revoked {
                 return Err(e);
             }
-            if !is_navi(&hub.db, &link.navi, false).map_err(failed)? {
+            if !is_project(&hub.db, &link.navi, false).map_err(failed)? {
                 return Ok(Followed::Stop);
             }
             let line = format!("- {} Asks through it are no longer followed.", e.message);
@@ -383,13 +383,13 @@ pub async fn follow_once(hub: &Hub, link_id: &str, wait: u64) -> Result<Followed
     Ok(Followed::Read(sent))
 }
 
-/// The link while it is still followed: kept here, not dead there, and its Navi not archived.
+/// The link while it is still followed: kept here, not dead there, and its project not archived.
 fn followed(hub: &Hub, link_id: &str) -> Result<Option<Kept>, McpToolError> {
     let Some(link) = kept_get(&hub.db, link_id).map_err(failed)? else {
         return Ok(None);
     };
     if link.state == HubLinkState::Revoked
-        || !is_navi(&hub.db, &link.navi, false).map_err(failed)?
+        || !is_project(&hub.db, &link.navi, false).map_err(failed)?
     {
         return Ok(None);
     }

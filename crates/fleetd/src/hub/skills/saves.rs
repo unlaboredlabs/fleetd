@@ -1,9 +1,9 @@
-//! A Navi's `skill_save` (W238, D261): it writes one of its own skills, new or changed, with no approval. The skill is
-//! its project's, kept as a new version of the Navi's with its one line on why, so the person sees, diffs and reverts
-//! it in the app; the chat gets one quiet line linking to it; and the Navi's sessions get it from their next start, as
-//! every project skill reaches its sessions. Only a Navi's own lead makes it, so a Navi's skill never reaches another
-//! Navi or a project. An installed skill is the person's, pinned to its source: a Navi saves its version under a name
-//! of its own.
+//! A lead's `skill_save` (W238, D261; any project's since D310): it writes one of its project's own skills, new or
+//! changed, with no approval. The skill is its project's, kept as a new version with its one line on why, so the person
+//! sees, diffs and reverts it in the app; the chat gets one quiet line linking to it; and the project's sessions get it
+//! from their next start, as every project skill reaches its sessions. Only the project's own lead makes it, so its
+//! skill never reaches another project. An installed skill is the person's, pinned to its source: a lead saves its
+//! version under a name of its own.
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::chat::ChatAuthor;
@@ -53,18 +53,10 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
             format!("{} is not a skill save.", op_of(&call)),
         ));
     };
-    let r = &caller.project_ref;
-    if !crate::hub::navi::bridge::is_navi(&hub.db, r, false).map_err(failed)? {
-        return Err(McpToolError::new(
-            ErrorCode::Forbidden,
-            "Only a Navi saves skills of its own: a project's skills are the person's, in Settings > Skills.",
-        )
-        .with_fix("Install one from a source with skill_install, or ask the human to write it."));
-    }
     if caller.agent != CallerAgent::Lead {
         return Err(McpToolError::new(
             ErrorCode::Forbidden,
-            "Only the Navi itself saves its skills.",
+            "Only the project's lead saves its skills.",
         ));
     }
     Ok(LeadCallResult::SkillSave(save(hub, caller, &call)?))

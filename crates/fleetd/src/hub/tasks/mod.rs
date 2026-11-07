@@ -144,6 +144,7 @@ fn holds_pr(repo: &ProjectRepo, pr: &str) -> bool {
 
 fn lead_error(code: ErrorCode, message: impl Into<String>, fix: Option<&str>) -> TaskError {
     TaskError {
+        reason: None,
         code,
         message: message.into(),
         fix: fix.map(str::to_owned),

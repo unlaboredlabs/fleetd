@@ -277,17 +277,22 @@ async fn a_navi_is_renamed_archived_and_brought_back() {
     assert!(back["navi"].get("archivedAt").is_none());
     assert_eq!(names(&ok(&hub, "navi_list", json!({})).await), ["Grace"]);
 
-    // A project of code is not a Navi.
-    let Err(CallError::Tool(e)) = call(
+    // A project of code archives too (D310), and comes back.
+    let code = ok(
         &hub,
         "navi_archive",
         json!({ "machineId": "devbox", "projectId": "p1" }),
     )
-    .await
-    else {
-        panic!("archived a project of code")
-    };
-    assert!(e.message.contains("not a Navi"), "{}", e.message);
+    .await;
+    assert!(code["navi"]["archivedAt"].is_string(), "{code}");
+    assert!(code["navi"].get("onlyMe").is_none(), "{code}");
+    let back = ok(
+        &hub,
+        "navi_archive",
+        json!({ "machineId": "devbox", "projectId": "p1", "archived": false }),
+    )
+    .await;
+    assert!(back["navi"].get("archivedAt").is_none());
 }
 
 #[tokio::test]
@@ -366,8 +371,33 @@ async fn a_plain_folder_with_no_git_is_added_as_a_project_with_no_repo() {
     hub.store
         .projects_upsert_many(&devbox(), &[summary])
         .unwrap();
+    // With no repo it is Only me by default (D310), which an older app reads as a Navi.
     let project = hub.store.project_get(&r).unwrap().unwrap();
-    assert!(project.repos.is_empty() && project.kind.is_none());
+    assert!(project.repos.is_empty() && project.only_me);
+    assert_eq!(
+        project.kind,
+        Some(fleetd_contracts::model::ProjectKind::Assistant)
+    );
+    // Added again by its folder, it changes only as project_settings_set changes it: this operator neither owns it
+    // nor is an admin, so asking it off is refused, and an add that asks nothing keeps what it has.
+    let Err(CallError::Tool(e)) = call(
+        &hub,
+        "project_add",
+        json!({ "machineId": "devbox", "path": "/home/me/notes", "onlyMe": false }),
+    )
+    .await
+    else {
+        panic!("an add by its folder turned Only me off")
+    };
+    assert_eq!(e.code, fleetd_contracts::mcp::ErrorCode::Forbidden);
+    assert!(hub.store.project_get(&r).unwrap().unwrap().only_me);
+    ok(
+        &hub,
+        "project_add",
+        json!({ "machineId": "devbox", "path": "/home/me/notes" }),
+    )
+    .await;
+    assert!(hub.store.project_get(&r).unwrap().unwrap().only_me);
 }
 
 #[tokio::test]
@@ -698,7 +728,7 @@ async fn deleting_a_navi_erases_everything_it_had_and_its_folder_when_ticked() {
         .set_capabilities(&devbox(), &[CAP_REPOS, CAP_ASSISTANT, CAP_PROJECT_SETTINGS]);
     let old = call(&hub, "project_remove", at.clone()).await.unwrap_err();
     assert!(format!("{old:?}").contains("too old to erase"), "{old:?}");
-    // A project of code's folder is never deleted with it.
+    // Nor a project of code there (D310: every project is erased, which that node can't do).
     let code = call(
         &hub,
         "project_remove",
@@ -706,10 +736,7 @@ async fn deleting_a_navi_erases_everything_it_had_and_its_folder_when_ticked() {
     )
     .await
     .unwrap_err();
-    assert!(
-        format!("{code:?}").contains("only a Navi's folder"),
-        "{code:?}"
-    );
+    assert!(format!("{code:?}").contains("too old to erase"), "{code:?}");
 
     hub.link.set_capabilities(
         &devbox(),
@@ -722,7 +749,7 @@ async fn deleting_a_navi_erases_everything_it_had_and_its_folder_when_ticked() {
     );
     while calls.try_recv().is_ok() {}
     let out = ok(&hub, "project_remove", at).await;
-    assert!(out["next"].as_str().unwrap().contains("erased"), "{out}");
+    assert!(out["next"].as_str().unwrap().contains("Erased"), "{out}");
     assert_eq!(
         calls.recv().await.unwrap(),
         SessionCall::ProjectRemove {

@@ -444,20 +444,33 @@ pub(crate) fn path_safe(id: &str) -> bool {
         && !id.starts_with('.')
 }
 
-/// A relative project root (`navi/ada`) as the folder under the node's home it names; `None` for any other root. Each
-/// part is [`path_safe`], so it never leaves the home.
-/// Whether `folder` is a Navi's own, under the node home's `navi/`, which deleting the Navi may delete whole.
-fn navi_folder(home: &Path, folder: &Path) -> bool {
+/// Why deleting a project may not delete its `folder` whole (D310): it is the person's home, the node's home, the
+/// root, or above one of them; inside the node's home but not a Navi's own folder under `navi/`; or it holds
+/// another of the node's projects (`others`, their roots). None: it may go.
+fn kept_folder(home: &Path, folder: &Path, others: &[PathBuf]) -> Option<&'static str> {
     let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_owned());
-    let navis = real(&home.join("navi"));
     let folder = real(folder);
-    folder.starts_with(&navis) && folder != navis
+    let home = real(home);
+    let navis = home.join("navi");
+    if folder.parent().is_none()
+        || home.starts_with(&folder)
+        || real(&super::util::home_dir()).starts_with(&folder)
+    {
+        return Some("it is a home folder or one above it");
+    }
+    if folder.starts_with(&home) && !(folder.starts_with(&navis) && folder != navis) {
+        return Some("it is fleetd's own");
+    }
+    if others.iter().any(|o| real(o).starts_with(&folder)) {
+        return Some("another project is in it");
+    }
+    None
 }
 
-/// What a deleted Navi leaves on its machine, gone: Claude Code's transcripts of its sessions (each `<id>.jsonl`, the
+/// What a deleted project leaves on its machine, gone: Claude Code's transcripts of its sessions (each `<id>.jsonl`, the
 /// `<id>/` beside it, and its file backups and environment), the attachments placed in its folder, and with
 /// `remove_folder` the folder itself. Nothing there is no error; what can't go is logged.
-fn erase_navi(folder: &Path, sessions: &[(String, PathBuf, PathBuf)], remove_folder: bool) {
+fn erase_project(folder: &Path, sessions: &[(String, PathBuf, PathBuf)], remove_folder: bool) {
     let gone = |path: &Path| {
         let removed = match std::fs::symlink_metadata(path) {
             Ok(m) if m.is_dir() => std::fs::remove_dir_all(path),
@@ -465,7 +478,7 @@ fn erase_navi(folder: &Path, sessions: &[(String, PathBuf, PathBuf)], remove_fol
             Err(_) => return,
         };
         if let Err(e) = removed {
-            tracing::warn!(path = %path.display(), "a deleted Navi's file was not removed: {e}");
+            tracing::warn!(path = %path.display(), "a deleted project's file was not removed: {e}");
         }
     };
     for (id, config, cwd) in sessions {
@@ -4253,8 +4266,8 @@ impl SessionService {
             .collect())
     }
 
-    /// `erase` (a Navi's, D287 navi.delete-erases): its sessions, Claude Code's transcripts of them and the attachments
-    /// placed in its folder go too; `remove_folder` the folder itself, only one of a Navi's under the node home.
+    /// `erase` (any project's, D287, D310): its sessions, Claude Code's transcripts of them and the attachments placed in
+    /// its folder go too; `remove_folder` the folder itself, unless [`kept_folder`] keeps it.
     async fn project_remove(
         &self,
         project_id: &ProjectId,
@@ -4263,11 +4276,20 @@ impl SessionService {
         remove_folder: bool,
     ) -> Reply {
         let folder = self.project_root(project_id)?;
-        if remove_folder && !navi_folder(&self.inner.config.home, &folder) {
-            return Err(invalid(format!(
-                "project {project_id}'s folder {} isn't a Navi's own: it stays",
-                folder.display()
-            )));
+        if remove_folder {
+            let others: Vec<PathBuf> = self
+                .store()
+                .projects()?
+                .into_iter()
+                .filter(|p| p.project_id != *project_id)
+                .map(|p| PathBuf::from(p.workspace_root))
+                .collect();
+            if let Some(why) = kept_folder(&self.inner.config.home, &folder, &others) {
+                return Err(invalid(format!(
+                    "project {project_id}'s folder {} stays: {why}",
+                    folder.display()
+                )));
+            }
         }
         let stopping: Vec<_> = {
             let mut st = self.st();
@@ -4360,7 +4382,7 @@ impl SessionService {
             super::mcp_servers::forget(&home, &id);
             forget_navi_home(&home, &id);
             if erase {
-                erase_navi(&folder, &transcripts, remove_folder);
+                erase_project(&folder, &transcripts, remove_folder);
             }
         })
         .await;

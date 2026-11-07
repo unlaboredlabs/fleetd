@@ -144,10 +144,20 @@ pub async fn purchase_request(
             "try again",
         ));
     };
-    // The person may take a while: the checkout, and what it holds, waits for them.
-    session.hold_for_answer(WAIT_ON_PERSON);
     session.step("purchase_request", args, true, None, 0);
     let id = opened.request_id;
+    // A hub from D310 on keeps it as a record, approved as it opens: the card fills now.
+    if opened.state == fleetd_contracts::ledger::RequestState::Approved {
+        return Ok(BrowserCallResult::PurchaseRequest(PurchaseAsked {
+            message: format!(
+                "Recorded ({id}): call purchase_fill with requestId {id} now, within {FILL_WINDOW_MINUTES} minutes, \
+                 on this page with its card fields showing; never type card details yourself."
+            ),
+            request_id: id,
+        }));
+    }
+    // The person may take a while: the checkout, and what it holds, waits for them.
+    session.hold_for_answer(WAIT_ON_PERSON);
     Ok(BrowserCallResult::PurchaseRequest(PurchaseAsked {
         message: format!(
             "Asked the person to approve it ({id}). Stay on this checkout and end your turn: you are woken with their \
@@ -225,7 +235,7 @@ pub async fn purchase_fill(
             .label();
             let message = format!(
                 "Filled {filled} from {card}; this browser session now refuses reading them back. Check the total \
-                 is still what the person approved, then click the checkout's Pay or Book button yourself. If the \
+                 is still what the purchase asked for, then click the checkout's Pay or Book button yourself. If the \
                  bank asks to confirm the payment (3-D Secure, a code or its app), call request_takeover with \
                  \"Confirm the payment in your bank app\" and wait for them to hand it back. Then say in the chat \
                  whether the order went through."

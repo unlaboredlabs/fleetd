@@ -287,7 +287,7 @@ static TOOLS: &[Tool] = &[
     lead(
         "automation_confirm",
         "automation_confirm",
-        "A Navi's call: ask the person to let one of your automations run on its own. They get a card with its name, \
+        "A lead's call: ask the person to let one of your automations run on its own. They get a card with its name, \
          prompt and schedule; once they approve it, its runs count as their go-ahead for what the prompt names, so a \
          weekly send doesn't ask each week. Only their approval marks it; changing its prompt or schedule unmarks \
          it. Returns whether it is marked.",
@@ -308,13 +308,13 @@ static TOOLS: &[Tool] = &[
         "Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) \
          for this project (scope project; global skills take an admin, so the human installs those); pinned to the \
          commit fetched, and the human updates it from Settings > Skills. Agents list it as fleetd:<name> and run it \
-         with the Skill tool. A Navi installs over https only, and its chat shows what it installed.",
+         with the Skill tool. The chat shows what it installed.",
         inline_schema::<SkillInstallCall>,
     ),
     lead(
         "skill_save",
         "skill_save",
-        "A Navi's call: save one of your own skills, new or changed, as its whole SKILL.md (frontmatter with name \
+        "A lead's call: save one of your own skills, new or changed, as its whole SKILL.md (frontmatter with name \
          and description, then the steps), with why in one line. No one approves it: the person sees every version in \
          your Skills, with who, when and why, and can edit, revert or turn it off. Your next session lists it as \
          fleetd:<name>; it is yours only. To improve one, save it again whole.",
@@ -323,7 +323,7 @@ static TOOLS: &[Tool] = &[
     lead(
         "project_message",
         "project_message",
-        "A Navi's call: write to another project's lead in its chat, as this Navi, never as the person: \
+        "A lead's call: write to another project's lead in its chat, as this Navi, never as the person: \
          \"please add X\", or a question. Its lead reads it as input, never as the person's answer or approval, and \
          may open an order for it. Returns a handle (N<n>); a later wake says when an order opened for it opens, \
          closes, merges or fails. project is a title or project id from factory_status. With hub (a linked hub's \
@@ -335,7 +335,7 @@ static TOOLS: &[Tool] = &[
     lead(
         "factory_status",
         "factory_status",
-        "A Navi's call: the other projects in one read, or the one named: each one's state (working, waiting on the \
+        "A lead's call: the other projects in one read, or the one named: each one's state (working, waiting on the \
          person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and \
          merges over 7 days, and this Navi's asks to it with the orders opened for them, plus the hubs this Navi is \
          linked to. With hub, the projects the link reaches on that hub instead. Read-only.",
@@ -344,7 +344,7 @@ static TOOLS: &[Tool] = &[
     lead(
         "chat_search",
         "chat_search",
-        "A Navi's call: search your own chat, all of it, back to its start, for the messages holding every one of \
+        "A lead's call: search your own chat, all of it, back to its start, for the messages holding every one of \
          words (any order and case), optionally from and to a day (2026-10-20) or time, in UTC. Newest first, 20 a \
          page, each with its id, time, author (human is the person, lead is you) and its text around the words; \
          before (the last id of a page) reads the next. Only this chat, never another's. Read-only.",
@@ -353,7 +353,7 @@ static TOOLS: &[Tool] = &[
     lead(
         "chat_read",
         "chat_read",
-        "A Navi's call: read the messages around one of your own chat by its id from chat_search, oldest first: \
+        "A lead's call: read the messages around one of your own chat by its id from chat_search, oldest first: \
          before and after say how many on each side (5 when absent, at most 10). With both 0 it reads that one \
          message whole. Read-only.",
         inline_schema::<ChatReadCall>,
@@ -361,7 +361,7 @@ static TOOLS: &[Tool] = &[
     lead(
         "confirm_step",
         "confirm_step",
-        "A Navi's call, right before the final Confirm or Submit click on a site that doesn't pay or order (booking a \
+        "A lead's call, right before the final Confirm or Submit click on a site that doesn't pay or order (booking a \
          table, cancelling a subscription, sending a form, an expense, a return, a post): site, the button's label, \
          what clicking it does, the page's details and a screenshot from chat_image. It goes through your approval \
          mode like a send: once it returns, click that button, once. Denied, don't click it. A payment, order or \
@@ -544,24 +544,23 @@ static TOOLS: &[Tool] = &[
         worker: false,
         ..browser(
             "purchase_request",
-            "A Navi's call: ask the person to approve paying at the checkout open in your browser session, with the \
-             card they picked for you. Call it on the checkout page once the basket and total are final: shop is its \
-             domain (the page's host) and name, total the amount (`129.90`) and currency (`EUR`) with everything in \
-             it, items what is being bought. It always asks the person, whatever else you may do unasked; end your \
-             turn on that page and you are woken with the answer. Approved, call purchase_fill. Never type card \
-             details yourself. Trading, moving money between accounts and crypto stay refused.",
+            "An Only me project's lead's call: record a payment at the checkout open in your browser session, with the card the person \
+             picked for you. Call it on the checkout page once the basket and total are final: shop is its domain \
+             (the page's host) and name, total the amount (`129.90`) and currency (`EUR`) with everything in it, \
+             items what is being bought. Nobody is asked (D310): it goes in the person's purchases log, and you call \
+             purchase_fill right away. Never type card details yourself. Trading, moving money between accounts and \
+             crypto stay refused.",
             inline_schema::<PurchaseRequestCall>,
         )
-    }
-    .needs("The person approves this exact purchase in the chat."),
+    },
     Tool {
         worker: false,
         ..browser(
             "purchase_fill",
-            "A Navi's call: once the person approved a purchase, fill its card into the checkout's card fields \
-             (the shop's page and its payment provider's frames, such as Stripe's) without seeing it: requestId is \
-             what purchase_request returned. Call it on that checkout with its card form showing, within 15 minutes \
-             of the approval; it fills once. Then check the total and click Pay or Book yourself. A bank's \
+            "An Only me project's lead's call: fill a purchase's card into the checkout's card fields (the shop's page and its payment \
+             provider's frames, such as Stripe's) without seeing it: requestId is what purchase_request returned. \
+             Call it on that checkout with its card form showing, within 15 minutes of the request; it fills once, \
+             and the chat says what was paid. Then check the total and click Pay or Book yourself. A bank's \
              confirmation (3-D Secure, a code, its app) goes to the person with request_takeover. From the fill on \
              the session refuses reading values back.",
             inline_schema::<PurchaseFillCall>,
@@ -571,24 +570,23 @@ static TOOLS: &[Tool] = &[
         worker: false,
         ..browser(
             "request_secure_input",
-            "A Navi's call: when a page needs something only the person may give and you must never see (a passport \
+            "An Only me project's lead's call: when a page needs something only the person may give and you must never see (a passport \
              or ID number, a code texted to them), ask for it here, on that page: site is its domain and name, target \
              the field's CSS selector (in the page or one of its frames), label what it is in their words (\"Passport \
              number\"), why one line. The person types it in a sealed field in the app, and fleetd types it into that \
              field; you are woken once it is in. With ref (an Identity, Passport, Driver License or Social Security \
-             item's field in their 1Password) the person approves instead, then call secure_input_fill. Never ask for \
-             such a value in the chat.",
+             item's field in their 1Password) nobody is asked: call secure_input_fill right away. Never ask for such a \
+             value in the chat.",
             inline_schema::<SecureInputCall>,
         )
     }
-    .needs("The person enters the value in a sealed field, or approves filling it from 1Password."),
+    .needs("The person enters the value in a sealed field; a 1Password field fills with no ask."),
     Tool {
         worker: false,
         ..browser(
             "secure_input_fill",
-            "A Navi's call: once the person approved a secure input from 1Password, fill it into its field: requestId \
-             is what request_secure_input returned. Call it on that page within 15 minutes of the approval; it fills \
-             once, and from then on the session refuses reading values back.",
+            "An Only me project's lead's call: fill a secure input from 1Password into its field: requestId is what \
+             request_secure_input returned. Call it on that page within 15 minutes of the request; it fills once, and from then on the session refuses reading values back.",
             inline_schema::<SecureInputFillCall>,
         )
     },

@@ -356,13 +356,13 @@ pub enum LeadCall {
     /// Made by the node for its agent's `fleetd mac`: the agents' Mac, and one step sealed to it.
     MacWhere(crate::mac::MacWhereCall),
     MacSend(crate::mac::MacSendCall),
-    /// Navi's factory bridge (navi.rs): only a Navi's lead makes them.
+    /// The factory bridge (navi.rs): any project's lead makes them (D310).
     ProjectMessage(ProjectMessageCall),
     FactoryStatus(FactoryStatusCall),
-    /// A Navi's read back through its own chat (hub/navi/recall.rs): only a Navi's lead makes them.
+    /// A lead's read back through its own chat (hub/navi/recall.rs): any project's lead makes them (D310).
     ChatSearch(ChatSearchCall),
     ChatRead(ChatReadCall),
-    /// A Navi writes one of its own skills (hub/skills/saves.rs): only a Navi's lead makes it.
+    /// A lead writes one of its project's own skills (hub/skills/saves.rs): any project's lead makes it (D310).
     SkillSave(SkillSaveCall),
     /// A Navi's final Confirm or Submit click on a site, through its approval mode (hub/navi/confirm.rs).
     ConfirmStep(crate::navi::ConfirmStepCall),

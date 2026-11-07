@@ -1,6 +1,5 @@
-//! The lead's `skill_install`, for its own project or every project. A task can't make it (`tasks::policy`). A Navi's
-//! installs over https only, fetched with none of the hub's logins (`tools::Installer::Navi`), and posts one quiet chat
-//! line per skill naming where it came from, as its `skill_save` does.
+//! The lead's `skill_install`, for its own project or every project. A task can't make it (`tasks::policy`). It posts
+//! one quiet chat line per skill naming where it came from, as `skill_save` does.
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::chat::ChatAuthor;
@@ -68,19 +67,13 @@ async fn answer(
         .with_fix("Install it with scope project, or ask the human to install it globally from Settings > Skills."));
     }
     let r = Some(&caller.project_ref);
-    let navi = crate::hub::navi::bridge::is_navi(&hub.db, &caller.project_ref, false)
-        .map_err(|e| McpToolError::new(ErrorCode::Failed, e.to_string()))?;
     let (kept, commit) = install_from(
         hub,
         call.scope,
         r,
         call.source.as_str(),
         call.skill.as_ref(),
-        if navi {
-            Installer::Navi
-        } else {
-            Installer::Lead
-        },
+        Installer::Lead,
         super::Who {
             author: fleetd_contracts::skills::SkillAuthor::Agent,
             by: title_of(hub, &caller.project_ref),
@@ -92,11 +85,9 @@ async fn answer(
     let names: Vec<SkillName> = kept.iter().map(|k| k.name.clone()).collect();
     changed(hub, r, &names, &caller.by)
         .map_err(|e| McpToolError::new(ErrorCode::Failed, e.to_string()))?;
-    if navi {
-        for k in &kept {
-            posted(hub, &caller.project_ref, k, call.source.as_str(), &commit)
-                .map_err(|e| McpToolError::new(ErrorCode::Failed, e.to_string()))?;
-        }
+    for k in &kept {
+        posted(hub, &caller.project_ref, k, call.source.as_str(), &commit)
+            .map_err(|e| McpToolError::new(ErrorCode::Failed, e.to_string()))?;
     }
     let list = names
         .iter()

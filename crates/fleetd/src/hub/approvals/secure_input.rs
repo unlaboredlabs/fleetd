@@ -22,10 +22,12 @@ const KEY: &str = "navi.secure_input";
 impl Approvals {
     /// A Navi's `request_secure_input`, from its node: a sealed field for the person to type in, or an approval to fill
     /// it from 1Password.
+    /// `no_ask`: a 1Password field is approved as it opens (D310); false for a node that would wait for the person.
     pub async fn open_secure_input(
         &self,
         project: &ProjectRef,
         call: SecureInputOpenCall,
+        no_ask: bool,
     ) -> Result<HumanRequest, ApprovalRefused> {
         let SecureInputOpenCall { session_id, input } = call;
         let now = system_ms(self.deps.clock.now());
@@ -50,7 +52,7 @@ impl Approvals {
             env_name: None,
             fingerprint: None,
         });
-        self.create(NewRequest {
+        let new = NewRequest {
             project_ref: contract_project(project),
             workstream_id: None,
             kind: if from_1password {
@@ -74,8 +76,13 @@ impl Approvals {
             }),
             at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
-        })
-        .await
+        };
+        // From 1Password it fills with no ask (D310); a value the person types is theirs to enter, as before.
+        if from_1password && no_ask {
+            self.create_approved(new).await
+        } else {
+            self.create(new).await
+        }
     }
 
     /// The Navi's node claims an approved 1Password secure input for one fill, within its window and from the browser

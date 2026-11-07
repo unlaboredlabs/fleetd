@@ -8,16 +8,16 @@ use std::sync::Arc;
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::mcp::{
-    ErrorCode, NaviApprovalsInput, NaviApprovalsOutput, NaviApprovalsSetInput,
-    NaviApprovalsSetOutput, NaviArchiveInput, NaviArchiveOutput, NaviAsksInput, NaviAsksOutput,
-    NaviCreateInput, NaviCreateOutput, NaviListInput, NaviListOutput, NaviRenameInput,
-    NaviRenameOutput, NaviSigninsForgetInput, NaviSigninsForgetOutput, NaviSiteRevokeInput,
-    NaviSiteRevokeOutput, NaviSitesInput, NaviSitesOutput,
+    NaviApprovalsInput, NaviApprovalsOutput, NaviApprovalsSetInput, NaviApprovalsSetOutput,
+    NaviArchiveInput, NaviArchiveOutput, NaviAsksInput, NaviAsksOutput, NaviCreateInput,
+    NaviCreateOutput, NaviListInput, NaviListOutput, NaviRenameInput, NaviRenameOutput,
+    NaviSigninsForgetInput, NaviSigninsForgetOutput, NaviSiteRevokeInput, NaviSiteRevokeOutput,
+    NaviSitesInput, NaviSitesOutput,
 };
 use fleetd_contracts::navi::{NAVI_ASKS_MAX, NaviAsk, NaviAskOrder};
 use fleetd_contracts::prim::List;
 
-use super::bridge::{asks_from, is_navi, project_title};
+use super::bridge::{asks_from, project_title};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, readable, require, unknown_project};
 use crate::hub::store::iso_ms;
 
@@ -45,14 +45,7 @@ async fn navi_asks(
     if hub.store.project_get(&r)?.is_none() {
         return Err(unknown_project(&r));
     }
-    // An archived Navi's asks still read.
-    if !is_navi(&hub.db, &r, true)? {
-        return Err(ToolError::new(
-            ErrorCode::NotFound,
-            format!("{} on {} is not a Navi.", r.project_id, r.machine_id),
-        )
-        .with_fix("Only a Navi asks other projects for work; read a project's own orders with orders_board."));
-    }
+    // Any project's asks read (D310), an archived one's too.
     let all = asks_from(&hub.db, &r)?;
     let truncated = (all.len() > NAVI_ASKS_MAX).then_some(true);
     let mut asks = Vec::new();

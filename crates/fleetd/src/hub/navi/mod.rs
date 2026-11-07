@@ -353,7 +353,11 @@ pub async fn archive(
         project_id: input.project_id,
     };
     require(caller, Role::Operate, Some(&r.machine_id))?;
-    let before = navi_of(hub, &r)?;
+    // Any project archives (D310), a Navi as before.
+    let project_of = |r: &ProjectRef| -> Result<ProjectSummary, ToolError> {
+        hub.store.project_get(r)?.ok_or_else(|| unknown_project(r))
+    };
+    let before = project_of(&r)?;
     let archive = input.archived != Some(false);
     if archive == before.archived_at.is_some() {
         return Ok(NaviArchiveOutput {
@@ -367,7 +371,7 @@ pub async fn archive(
     if archive {
         stop_lead(hub, &r).await;
     }
-    let navi = navi_of(hub, &r)?;
+    let navi = project_of(&r)?;
     let (verb, next) = if archive {
         (
             "archived",
@@ -376,7 +380,7 @@ pub async fn archive(
     } else {
         ("back", "Its lead starts with the next chat message.")
     };
-    changed(hub, &navi, format!("Navi {} {verb}", navi.title))?;
+    changed(hub, &navi, format!("{} {verb}", navi.title))?;
     Ok(NaviArchiveOutput {
         navi,
         next: Some(next.into()),
@@ -385,7 +389,7 @@ pub async fn archive(
 }
 
 /// Ends the lead's process, its turn first. Best effort: a lead on an offline machine stays stopped there, since an
-/// archived Navi's lead never starts.
+/// archived project's lead never starts.
 async fn stop_lead(hub: &Hub, r: &ProjectRef) {
     let Ok(Some(lead)) = hub.leads.records.lead_get(r) else {
         return;

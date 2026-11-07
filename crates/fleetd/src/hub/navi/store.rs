@@ -1,5 +1,6 @@
-//! What the hub keeps of a Navi, in its project's own `project_settings` columns (D310): only_me (the Navi mark),
-//! the key that made it, its owner, when it was archived and the card it pays with.
+//! What the hub keeps of a project beyond its node's report, in its own `project_settings` columns (D310): Only me
+//! (`only_me`, every former Navi's), the key that made it, its owner, when it was archived and the card it pays with.
+//! A Navi is an Only me project.
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::model::ProjectCreator;
 use fleetd_contracts::people::PersonId;
@@ -14,6 +15,77 @@ pub struct Navi {
     pub archived_at: Option<Timestamp>,
     /// The person it belongs to (D215); none on a hub without people.
     pub owner: Option<PersonId>,
+}
+
+/// What the hub keeps of any project: its owner, maker and archive, whether Only me or not. None for a project with no
+/// row of its own.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Kept {
+    pub only_me: bool,
+    pub created_by: Option<ProjectCreator>,
+    pub owner: Option<PersonId>,
+    pub archived_at: Option<Timestamp>,
+}
+
+pub fn kept(db: &Connection, r: &ProjectRef) -> rusqlite::Result<Option<Kept>> {
+    db.prepare_cached(
+        "SELECT only_me, created_by_key, created_by_name, owner_person, archived_ms FROM project_settings
+         WHERE machine_id = ? AND project_id = ?",
+    )?
+    .query_row(
+        params![r.machine_id.as_str(), r.project_id.as_str()],
+        |row| {
+            let key: Option<String> = row.get(1)?;
+            let name: Option<String> = row.get(2)?;
+            Ok(Kept {
+                only_me: row.get(0)?,
+                created_by: key.map(|key_id| ProjectCreator {
+                    key_id,
+                    name: name.unwrap_or_default(),
+                }),
+                owner: row.get::<_, Option<String>>(3)?.map(PersonId::unchecked),
+                archived_at: row.get::<_, Option<i64>>(4)?.map(|ms| iso_ms(ms).into()),
+            })
+        },
+    )
+    .optional()
+}
+
+/// Turns Only me on or off. On, the project becomes `owner`'s when it has no owner yet; off, it is everyone's on the
+/// hub, and keeps its owner for when it is turned on again.
+pub fn set_only_me(
+    db: &Connection,
+    r: &ProjectRef,
+    on: bool,
+    owner: Option<&PersonId>,
+) -> rusqlite::Result<()> {
+    db.prepare_cached(
+        "INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT (machine_id, project_id) DO UPDATE SET only_me = excluded.only_me,
+           owner_person = COALESCE(project_settings.owner_person, excluded.owner_person)",
+    )?
+    .execute(params![
+        r.machine_id.as_str(),
+        r.project_id.as_str(),
+        on,
+        owner.filter(|_| on).map(PersonId::as_str)
+    ])?;
+    Ok(())
+}
+
+/// Makes `person` the project's owner when it has none, Only me as it was: the one person a Telegram bridge answers as.
+pub fn claim(db: &Connection, r: &ProjectRef, person: &PersonId) -> rusqlite::Result<()> {
+    db.prepare_cached(
+        "INSERT INTO project_settings (machine_id, project_id, owner_person) VALUES (?1, ?2, ?3)
+         ON CONFLICT (machine_id, project_id) DO UPDATE SET
+           owner_person = COALESCE(project_settings.owner_person, excluded.owner_person)",
+    )?
+    .execute(params![
+        r.machine_id.as_str(),
+        r.project_id.as_str(),
+        person.as_str()
+    ])?;
+    Ok(())
 }
 
 pub fn of(db: &Connection, r: &ProjectRef) -> rusqlite::Result<Option<Navi>> {
@@ -70,10 +142,11 @@ pub fn remove(db: &Connection, r: &ProjectRef) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// `None` brings it back.
+/// Archives any project; `None` brings it back.
 pub fn set_archived(db: &Connection, r: &ProjectRef, at_ms: Option<i64>) -> rusqlite::Result<()> {
     db.prepare_cached(
-        "UPDATE project_settings SET archived_ms = ? WHERE machine_id = ? AND project_id = ?",
+        "INSERT INTO project_settings (machine_id, project_id, archived_ms) VALUES (?2, ?3, ?1)
+         ON CONFLICT (machine_id, project_id) DO UPDATE SET archived_ms = excluded.archived_ms",
     )?
     .execute(params![at_ms, r.machine_id.as_str(), r.project_id.as_str()])?;
     Ok(())

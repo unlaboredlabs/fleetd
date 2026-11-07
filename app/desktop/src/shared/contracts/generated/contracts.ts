@@ -304,6 +304,11 @@ export type AppError = {
   /** Present when this answers a `call`. */
   id?: string;
   message: string;
+  /**
+   * Which refusal it is, for the app to act on rather than match the words (`McpToolError.reason`). Absent for
+   * most, and from an older hub.
+   */
+  reason?: ErrorReason;
 };
 
 /**
@@ -2435,6 +2440,11 @@ export type EnvVarSet = {
 };
 
 export type ErrorCode = "machine_offline" | "not_found" | "forbidden" | "invalid" | "failed";
+
+/** A refusal an app acts on. */
+export type KnownErrorReason = "no_only_me_project";
+/** KnownErrorReason, or a value from a newer hub. */
+export type ErrorReason = KnownErrorReason | (string & {});
 
 export type EventSeq = number;
 
@@ -5600,6 +5610,12 @@ export type ProjectAddInput = {
   gitInit?: boolean;
   /** Absent: the best worker (see `project_discover.best`). */
   machineId?: MachineId;
+  /**
+   * Only me (D310): only the caller's person sees and uses it. Absent: on for a new project with no repo (a plain
+   * folder, `create` without `gitInit`), off for a clone or a repo folder; an existing project keeps its own. For an
+   * existing project it changes only as `project_settings_set` changes it.
+   */
+  onlyMe?: boolean;
   path?: string;
   /** Absent means the directory's name. */
   title?: string;
@@ -5885,7 +5901,10 @@ export type ProjectRef = {
 export type ProjectRemoveInput = {
   machineId: MachineId;
   projectId: ProjectId;
-  /** A Navi's only: also delete its folder, with everything in it (its drafts and downloads). */
+  /**
+   * Also delete its folder, with everything in it: refused for a home folder, fleetd's own, or one holding another
+   * project. Absent: the folder stays.
+   */
   removeFolder?: boolean;
   /**
    * Also force-remove the fleetd worktrees its agents worked in, uncommitted changes and all, once its agents have
@@ -6027,6 +6046,12 @@ export type ProjectSettingsSetInput = {
   machineId: MachineId;
   /** Turns the nightly memory refresh on or off for the project. */
   memoryRefresh?: boolean;
+  /**
+   * Only me (D310), a person's own device only: on, only the project's owner sees and uses it; off, everyone on
+   * the hub does. Its owner or an admin changes it; only an admin turns it on for a project nobody owns, which
+   * becomes theirs.
+   */
+  onlyMe?: boolean;
   projectId: ProjectId;
   /**
    * The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title is the

@@ -1,8 +1,9 @@
-//! A Navi's purchases as approvals (D265 navi.purchases). A purchase is a class of its own: it never comes through the
-//! tool prompt relay (permissions.rs), so no rule, checker or approval mode answers it; only a person does
-//! ([`person_only`], which every automatic answer must ask first). Approved, its card may be filled once, by the
-//! Navi's node, within [`FILL_WINDOW_MINUTES`] of the approval: the node claims it ([`Approvals::claim_purchase`]),
-//! then says how the fill went ([`Approvals::purchase_filled`]); a fill that typed nothing gives the claim back.
+//! A project's purchases as requests (D265 navi.purchases). A purchase is a class of its own: it never comes through the
+//! tool prompt relay (permissions.rs), so no rule, checker or approval mode answers it. Since D310 nobody is asked: it
+//! is kept as a record, approved as it opens ([`Approvals::create_approved`]), and the purchases log shows it. Its card
+//! may be filled once, by the project's node, within [`FILL_WINDOW_MINUTES`] of that: the node claims it
+//! ([`Approvals::claim_purchase`]), then says how the fill went ([`Approvals::purchase_filled`]); a fill that typed
+//! nothing gives the claim back. What a bank asks at checkout (3-D Secure) the person still does, through a takeover.
 use fleetd_contracts::chat::ChatRequestId;
 use fleetd_contracts::ledger::{HumanRequest, RequestKind, RequestState};
 use fleetd_contracts::purchase::{
@@ -53,11 +54,13 @@ pub fn pays(program: &str) -> bool {
 
 impl Approvals {
     /// A Navi's `purchase_request`, from its node: opens the purchase card for the person, with the Navi's card.
+    /// `no_ask`: approved as it opens (D310); false for a node that would wait for the person, who is asked instead.
     pub async fn open_purchase(
         &self,
         project: &ProjectRef,
         call: PurchaseOpenCall,
         card: NaviCard,
+        no_ask: bool,
     ) -> Result<HumanRequest, ApprovalRefused> {
         let PurchaseOpenCall {
             session_id,
@@ -73,7 +76,8 @@ impl Approvals {
             purchase.shop.domain,
             card.label()
         );
-        self.create(NewRequest {
+        // A record and the fill, with no ask (D310): approved as it opens.
+        let new = NewRequest {
             project_ref: contract_project(project),
             workstream_id: None,
             kind: RequestKind::Approval,
@@ -92,8 +96,12 @@ impl Approvals {
             secure_input: None,
             at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
-        })
-        .await
+        };
+        if no_ask {
+            self.create_approved(new).await
+        } else {
+            self.create(new).await
+        }
     }
 
     /// The Navi's request `request_id` as its own purchase, or why not.
