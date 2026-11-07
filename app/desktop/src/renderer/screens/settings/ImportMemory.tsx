@@ -17,12 +17,12 @@ import s from "./settings.module.css";
 
 /**
  * The hub's refusal for someone with no Only-me project, where every import runs so nobody else reads the paste
- * (import.rs); an older hub says it by its fix alone.
+ * (import.rs): its `reason`, or on an older hub its fix alone.
  */
 export const NO_ONLY_ME = "no_only_me_project";
 const OLD_FIX = "Create a Navi first, then import again.";
 
-const needsOwnProject = (e: unknown): e is CallError => e instanceof CallError && (e.error.code === NO_ONLY_ME || e.error.fix === OLD_FIX);
+const needsOwnProject = (e: unknown): e is CallError => e instanceof CallError && (e.error.reason === NO_ONLY_ME || e.error.fix === OLD_FIX);
 
 export const NO_PROJECT_TEXT = "Import memory runs only in a project of yours with Only me on, so nobody else can read what you paste, and you have none yet.";
 
