@@ -1,5 +1,5 @@
 // The hub data the renderer sees: the /app protocol's own shapes, generated from crates/fleetd-contracts.
-import type { BrowserFrame, ChatDelta, FleetStatus, HubEvent, LiveFrame, ScreenThumb } from "./contracts";
+import type { BrowserFrame, ChatDelta, FleetStatus, HubEvent, HubInfoOutput, LiveFrame, ScreenThumb } from "./contracts";
 
 export type { BrowserFrame, HubEvent, LiveFrame };
 /** The answer to `snapshot`: fleetd_status's data, with the event cursor to resume from. */
@@ -58,3 +58,14 @@ export type DropInfo =
   | { readonly kind: "folder"; readonly path: string; readonly git: boolean; readonly repo?: string }
   | { readonly kind: "link"; readonly repo: string }
   | { readonly kind: "other" };
+
+/**
+ * Whether this app's person administers the hub: an owner or admin whose device isn't capped below admin. A hub from
+ * before people names no person; there it is the key's own admin grant, as Settings asked before: a hub too old to
+ * say leaves the app to try, and refuses a change it doesn't allow. False until hub_info answers.
+ */
+export function administers(info: Pick<HubInfoOutput, "admin" | "me"> | undefined): boolean {
+  if (info === undefined) return false;
+  if (info.me === undefined) return info.admin !== false;
+  return (info.me.role === "owner" || info.me.role === "admin") && info.admin !== false;
+}

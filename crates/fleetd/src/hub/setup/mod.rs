@@ -440,7 +440,10 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                             "curl -fsSL https://fleetd.sh | sh -s -- --join {base} --code <code> --machine-id mac{}",
                             crate::cli::pair::mac_flags(crate::version())
                         ),
-                        Some("Or on the hub: fleetd pair --worker mac, then add --mac to the line it prints."),
+                        Some(&format!(
+                            "Or on the hub: fleetd pair --worker mac, then add{} to the line it prints.",
+                            crate::cli::pair::mac_flags(crate::version())
+                        )),
                     )],
                 ),
                 part(

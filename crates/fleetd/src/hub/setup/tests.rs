@@ -164,6 +164,12 @@ fn the_macs_step_is_its_own_checks_and_a_failing_one_wants_a_look() {
         "--machine-id mac{}",
         crate::cli::pair::mac_flags(crate::version())
     )));
+    // So does the other way it offers, `fleetd pair --worker mac` with the flags added.
+    let note = step.parts[1].values[0].note.as_deref().unwrap();
+    assert!(note.contains(&format!(
+        "then add{} to the line",
+        crate::cli::pair::mac_flags(crate::version())
+    )));
 }
 
 #[test]
