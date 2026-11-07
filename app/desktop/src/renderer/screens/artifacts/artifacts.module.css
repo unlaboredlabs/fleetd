@@ -1,0 +1,210 @@
+/* A chat's Artifacts (ArtifactsPane.tsx), by ui/DESIGN.md: rows a space apart, each a format icon, its title in full
+   voice and one quiet line under it; one artifact's head and toolbar, then its document at a reading measure or its
+   page's frame filling the panel. The chat's card is the one card: a hairline box that opens it. */
+.screen {
+  --pad: var(--space-4);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--space-6);
+}
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8) var(--pad);
+}
+.note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--pad);
+}
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--pad);
+}
+.skeleton > span {
+  height: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--selected);
+}
+.skeleton > span:nth-child(2) {
+  width: 70%;
+}
+
+.rows {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+.group {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+/* The files' group under the artifacts, its head a quiet small label in the rows' inset. */
+.groupHead {
+  margin: var(--space-3) 0 var(--space-1);
+  padding: 0 var(--space-2);
+  font-weight: 500;
+}
+.groupHead:first-child {
+  margin-top: var(--space-1);
+}
+/* A file's Save shows on its row's hover or focus, over the row's end. */
+.fileItem {
+  position: relative;
+}
+.fileItem > .row {
+  padding-right: var(--space-8);
+}
+.save.save {
+  position: absolute;
+  top: 50%;
+  right: var(--space-1);
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: opacity var(--dur-quick) var(--ease-snap);
+}
+.fileItem:hover .save,
+.save:focus-visible {
+  opacity: 1;
+}
+.row {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.row:hover {
+  background: var(--hover);
+}
+.row:focus-visible,
+.card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  color: var(--quiet);
+}
+.words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.title {
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--pad) var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+}
+.heading {
+  margin: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 26px;
+}
+.versions.versions {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.doc {
+  max-width: var(--measure, 72ch);
+  padding: var(--space-4) var(--pad) 0;
+}
+
+/* The page's own frame: the panel's whole width and height under the head, white unless the page paints its own. */
+.frameWrap {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  padding: var(--space-3);
+}
+.frame {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color-scheme: light;
+}
+
+/* The chat's card for a publish: one line of title over one quiet line, the time at its end. */
+.card {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: min(100%, 420px);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--raised);
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.card:hover {
+  background: var(--hover);
+}
+.cardIcon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--quiet);
+}
+.cardTime {
+  flex: none;
+  align-self: flex-start;
+  font-size: var(--text-xs);
+  color: var(--quiet);
+  font-variant-numeric: tabular-nums;
+}

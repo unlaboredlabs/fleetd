@@ -31,9 +31,10 @@ pub type AppCallId = Text<1, 64>;
 ///   address bar. A machine whose node is older drops them.
 /// - `screen_thumbs`: the Screens page's pictures: `screen_thumbs` is read, the hub sends `screen_thumb`s,
 ///   `browser_sessions` names each screen's machine and latest step, and the `screens_count` tool exists.
+/// - `artifacts`: the `artifacts_list` and `artifact_get` tools and the `artifacts.changed` event: a chat's Artifacts.
 ///
 /// The desktop app's `features.test.ts` checks that every feature it gates on is named here.
-pub const APP_FEATURES: [&str; 7] = [
+pub const APP_FEATURES: [&str; 8] = [
     "presence",
     "browser_sessions",
     "navi_asks",
@@ -41,6 +42,7 @@ pub const APP_FEATURES: [&str; 7] = [
     "navi_skills",
     "browser_navigate",
     "screen_thumbs",
+    "artifacts",
 ];
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

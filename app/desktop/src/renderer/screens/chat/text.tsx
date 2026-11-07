@@ -1,16 +1,19 @@
 // How chat text renders: markdown with machine tokens (ids, hashes, keys) set as code, and one-line text with its
-// `code` runs. Shared by the messages and the told panel. With the project, its PR mentions are links that open the PR
-// in the panel.
+// `code` runs. Shared by the messages and the told panel. With the project, its PR mentions and artifact links
+// (`[Title](artifact:<name>)`) are links that open the PR or the artifact in the panel.
 import { useMemo } from "react";
 import { InlineCode, Markdown, Text, type TextProps } from "../../ui";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
+import { artifactLinks } from "../artifacts/model";
 import { codeRuns, machineCode, prLinks } from "./format";
 import s from "./view.module.css";
 
 const source = (text: string, machineId: string | undefined, projectId: string | undefined): string => {
   const md = machineCode(text);
   if (machineId === undefined || projectId === undefined) return md;
-  return prLinks(md, (pr) => toHash(panelRoute({ machineId, projectId }, { tab: "prs", pr })));
+  const project = { machineId, projectId };
+  const linked = artifactLinks(md, (artifact, version) => toHash(panelRoute(project, { tab: "artifacts", artifact, ...(version === undefined ? {} : { version }) })));
+  return prLinks(linked, (pr) => toHash(panelRoute(project, { tab: "prs", pr })));
 };
 
 /**

@@ -32,7 +32,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, its machine's cap within the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
 | Agents running at once, per machine | The machine's max agents, which a person may set up to the fleet cap (`cap_set`, `fleetd machine set`, Settings › Hub › Machines). Unset: what the machine fits, one per CPU less one in eight, and 2 GB of memory each after a quarter (4 to 16 GB) is left for the system, at most 64. Either way new agents pause while memory in use runs short, and wait for 5 GB of disk each above the free-space floor. |
 | Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |
-| Calls a task's agent may make | `report`, `ask_lead`, `brief_read`, `decisions_search`, `review_read`, `wait_ci`, `chat_image`, `chat_file`. Every other call is refused. |
+| Calls a task's agent may make | `report`, `ask_lead`, `brief_read`, `decisions_search`, `review_read`, `wait_ci`, `chat_image`, `chat_file`, `publish_artifact`. Every other call is refused. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 14400 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
@@ -79,6 +79,7 @@ Every lead gets these.
 | [`review_read`](#review_read) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
 | [`chat_image`](#chat_image) | Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. | No |
 | [`chat_file`](#chat_file) | Send the person a file you made (a PDF, a CSV, a document) in this project's chat, as a card they open or save on their computer or phone, and as a document on Telegram. | No |
+| [`publish_artifact`](#publish_artifact) | Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. | No |
 | [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). | No |
 | [`desktop`](#desktop) | Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. | No |
 | [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub. | No |
@@ -931,6 +932,31 @@ Send the person a file you made (a PDF, a CSV, a document) in this project's cha
 }
 ```
 
+### publish_artifact
+
+Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. name is its name in this project (lowercase words with hyphens: sweep-report); title what the human reads. Give content, or path to a file (relative to your working directory, or absolute; .html and .htm are html unless format says otherwise). The chat shows a card that opens it in the Artifacts tab beside it. Publishing the same name again keeps a new version, older ones stay. Link to it in any chat text as `[Title](artifact:name)`, or to one version as `artifact:name@2`. HTML runs sandboxed: its scripts run, but it has no network, so inline any script, style, font and image (data: URLs).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `content` | string | no | The whole document. Give this or `path`. At most 2000000 characters. |
+| `format` | string | no | `md` or `html`; absent, `html` for a `.html` or `.htm` path, else `md`. One of `md` (Markdown, rendered in the app's own style), `html` (A whole HTML page, rendered sandboxed: its scripts run, with no network and no reach into the app). |
+| `name` | string | yes | Its name in the project, which links use: `sweep-report`. The same name again keeps a new version. |
+| `path` | string | no | A file to publish instead of `content`: relative to your working directory, or absolute. At most 1000 characters. |
+| `title` | string | yes | What the person reads in the chat and the tab: `Dependency sweep, November`. At most 120 characters. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "publish_artifact",
+  "arguments": {
+    "name": "dependency-sweep",
+    "path": "reports/sweep.html",
+    "title": "Dependency sweep, November"
+  }
+}
+```
+
 ### session_start
 
 Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. An iOS simulator isn't a session: start one on the agents' Mac with `mac sim start` (mac --help). kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool. kind mac lends you the agents' Mac's own screen, one agent at a time, driven with the desktop tool and agent-desktop; while another holds it you only observe, and it ends after 5 idle minutes.
@@ -1161,6 +1187,7 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`review_read`](#review_read-task) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
 | [`chat_image`](#chat_image-task) | Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. | No |
 | [`chat_file`](#chat_file-task) | Send the person a file you made (a PDF, a CSV, a document) in this project's chat, as a card they open or save on their computer or phone, and as a document on Telegram. | No |
+| [`publish_artifact`](#publish_artifact-task) | Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. | No |
 | [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). | No |
 | [`desktop`](#desktop-task) | Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. | No |
 | [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub. | No |
@@ -1315,6 +1342,31 @@ Send the person a file you made (a PDF, a CSV, a document) in this project's cha
   "name": "chat_file",
   "arguments": {
     "path": "trips/lisbon-itinerary.pdf"
+  }
+}
+```
+
+### publish_artifact (task)
+
+Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. name is its name in this project (lowercase words with hyphens: sweep-report); title what the human reads. Give content, or path to a file (relative to your working directory, or absolute; .html and .htm are html unless format says otherwise). The chat shows a card that opens it in the Artifacts tab beside it. Publishing the same name again keeps a new version, older ones stay. Link to it in any chat text as `[Title](artifact:name)`, or to one version as `artifact:name@2`. HTML runs sandboxed: its scripts run, but it has no network, so inline any script, style, font and image (data: URLs).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `content` | string | no | The whole document. Give this or `path`. At most 2000000 characters. |
+| `format` | string | no | `md` or `html`; absent, `html` for a `.html` or `.htm` path, else `md`. One of `md` (Markdown, rendered in the app's own style), `html` (A whole HTML page, rendered sandboxed: its scripts run, with no network and no reach into the app). |
+| `name` | string | yes | Its name in the project, which links use: `sweep-report`. The same name again keeps a new version. |
+| `path` | string | no | A file to publish instead of `content`: relative to your working directory, or absolute. At most 1000 characters. |
+| `title` | string | yes | What the person reads in the chat and the tab: `Dependency sweep, November`. At most 120 characters. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "publish_artifact",
+  "arguments": {
+    "name": "dependency-sweep",
+    "path": "reports/sweep.html",
+    "title": "Dependency sweep, November"
   }
 }
 ```

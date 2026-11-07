@@ -1,12 +1,13 @@
 // The panel's sections, in everyday words: Agents (the agents, and the browsers they use); Shipping (its pull requests,
-// and the merge line they land in); Plan (the lead's checklist); History (what happened, and what was decided). One
-// compact row of four tabs, each its icon beside its word and its count on the word's baseline, a tooltip saying what
+// and the merge line they land in); Plan (the lead's checklist); Artifacts (the reports published in its chat, once the
+// hub serves them); History (what happened, and what was decided). One compact row of tabs, each its icon beside its word and its count on the word's baseline, a tooltip saying what
 // it is; under the row that same line, and in a section of two views a second, smaller row of tabs between them
 // (ui/DESIGN.md). The views are tabs.ts's, each with its route; a section remembers the view you last had in it while
 // the app runs. A view the hub doesn't serve (tabs.ts `feature`) isn't there: Agents without Sessions is one view, with
 // its own line. A Navi's panel has its own sections (NAVI_SECTIONS): the work it asked other projects for, the screens
-// it uses, its to-do list, its skills and its history; no agents, pull requests or merge line, since it ships no code itself.
-import { AppWindow, BookOpen, Bot, History, ListChecks, Send, Ship, type LucideIcon } from "lucide-react";
+// it uses, its to-do list, its skills, its reports and its history; no agents, pull requests or merge line, since it
+// ships no code itself.
+import { AppWindow, BookOpen, Bot, FileText, History, ListChecks, Send, Ship, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Tab, TabList, Tooltip } from "../../ui";
 import type { ProjectKey } from "../shell/routes";
@@ -48,6 +49,7 @@ export const SECTIONS: readonly Section[] = [
     ],
   },
   { id: "plan", label: "Plan", icon: ListChecks, line: "The lead’s to-do list for this project, ticked off as work lands.", views: [["checklist", "To-do"]] },
+  { id: "artifacts", label: "Artifacts", icon: FileText, line: "Reports the lead and its agents published here, every version kept, and the files sent in the chat.", views: [["artifacts", "Artifacts"]] },
   {
     id: "history",
     label: "History",
@@ -60,12 +62,13 @@ export const SECTIONS: readonly Section[] = [
   },
 ];
 
-/** A Navi's panel. Asked, Screens and Skills only once the hub serves them (sectionsFor). */
+/** A Navi's panel. Asked, Screens, Skills and Artifacts only once the hub serves them (sectionsFor). */
 export const NAVI_SECTIONS: readonly Section[] = [
   { id: "asked", label: "Asked", icon: Send, line: "Work this Navi asked your projects for, and how each order is going.", views: [["asked", "Asked work"]] },
   { id: "screens", label: "Screens", icon: AppWindow, line: "The browsers and devices this Navi uses: watch live, take over, replay.", views: [["sessions", "Screens"]] },
   { id: "plan", label: "Plan", icon: ListChecks, line: "This Navi’s to-do list, ticked off as it goes.", views: [["checklist", "To-do"]] },
   { id: "skills", label: "Skills", icon: BookOpen, line: "What this Navi has learned to do: see, edit and undo every change.", views: [["skills", "Skills"]] },
+  { id: "artifacts", label: "Artifacts", icon: FileText, line: "Reports this Navi published for you, every version kept, and the files sent in the chat.", views: [["artifacts", "Artifacts"]] },
   {
     id: "history",
     label: "History",
@@ -78,9 +81,9 @@ export const NAVI_SECTIONS: readonly Section[] = [
   },
 ];
 
-/** The sections a project’s panel shows: a Navi’s, or a project of code’s; a Navi’s Asked, Screens and Skills only once served. */
+/** The sections a project’s panel shows: a Navi’s, or a project of code’s; a section whose every view needs a feature, only once served. */
 export const sectionsFor = (navi: boolean, features: readonly string[] = []): readonly Section[] =>
-  navi ? NAVI_SECTIONS.filter((g) => g.views.some(([tab]) => served(tab, features))) : SECTIONS;
+  (navi ? NAVI_SECTIONS : SECTIONS).filter((g) => g.views.some(([tab]) => served(tab, features)));
 
 /** Whether `tab` is one of the panel's views for this kind of project. */
 export const inSections = (tab: PanelTab, sections: readonly Section[]): boolean => sections.some((g) => g.views.some(([t]) => t === tab));

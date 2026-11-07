@@ -494,6 +494,46 @@ pub(crate) async fn read(
     Some((r.name, mime, bytes))
 }
 
+/// The files sent in `project`'s chat, newest first: the ones a person attached there or to one of its orders, and the
+/// ones its lead or agents showed in it. The chat's Artifacts tab lists them.
+pub fn of_chat(
+    hub: &Hub,
+    project: &ProjectRef,
+) -> Result<Vec<fleetd_contracts::artifacts::ChatFile>, ToolError> {
+    let key = format!("{}/{}", project.machine_id, project.project_id);
+    let rows: Vec<(i64, String, String, i64, i64)> = hub.db.with(|c| {
+        let mut st = c.prepare_cached(
+            "SELECT a.n, a.name, a.mime, a.bytes, a.created_ms FROM attachments a
+             LEFT JOIN workstreams w ON w.n = CAST(substr(a.workstream_id, 2) AS INTEGER)
+             WHERE a.project = ?1 OR (w.machine_id = ?2 AND w.project_id = ?3)
+             ORDER BY a.created_ms DESC, a.n DESC LIMIT ?4",
+        )?;
+        let rows = st.query_map(
+            params![
+                key,
+                project.machine_id.as_str(),
+                project.project_id.as_str(),
+                fleetd_contracts::artifacts::CHAT_FILES_LISTED as i64
+            ],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    })?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(n, name, mime, bytes, at_ms)| {
+            Some(fleetd_contracts::artifacts::ChatFile {
+                attachment_id: AttachmentId::unchecked(format!("F{n}")),
+                name: fleetd_contracts::prim::Line::new(name.as_str())
+                    .unwrap_or_else(|_| fleetd_contracts::prim::Line::unchecked("file")),
+                mime: mime_of(&mime)?,
+                bytes: Count::unchecked(bytes),
+                at: fleetd_contracts::ids::Timestamp(crate::hub::store::iso_ms(at_ms)),
+            })
+        })
+        .collect())
+}
+
 /// What a chat message shows of each attachment, from its row.
 pub fn refs(
     hub: &Hub,
