@@ -44,7 +44,7 @@ const XCODE_WAITS: Readonly<Record<string, ReadonlyArray<object>>> = {
       id: "xcode",
       state: "warn",
       message: "Xcode isn't installed. iOS simulators and builds wait for it; everything else works.",
-      fix: "Install Xcode from the App Store (this opens its page); this check looks again by itself",
+      fix: "Install Xcode from the App Store; this check looks again by itself",
       command: 'open "macappstore://apps.apple.com/app/id497799835"',
     },
     WAITS,

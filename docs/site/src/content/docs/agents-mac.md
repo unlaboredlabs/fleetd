@@ -158,7 +158,7 @@ In Terminal on the Mac, in the account it joins from (yours is fine), paste:
 ```sh
 # Xcode's licence and its system components, which only an admin can accept and install. Skipped while no Xcode is
 # selected yet: setup's Xcode check then says the one command that installs or selects it.
-test -x "$(xcode-select -p 2>/dev/null)/usr/bin/xcodebuild" && sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch
+d="$(xcode-select -p 2>/dev/null)" && test -x "$d/usr/bin/xcodebuild" && sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch
 # Simulators and debugging with no password prompt, for this account.
 sudo DevToolsSecurity -enable
 sudo dseditgroup -o edit -a "$(id -un)" -t user _developer

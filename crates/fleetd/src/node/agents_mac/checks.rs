@@ -170,8 +170,7 @@ pub fn no_xcode(located: &Located) -> MacCheck {
             Warn,
             "Xcode isn't installed. iOS simulators and builds wait for it; everything else works.",
             Some(Fix {
-                label: "Install Xcode from the App Store (this opens its page); this check looks again by itself"
-                    .into(),
+                label: "Install Xcode from the App Store; this check looks again by itself".into(),
                 command: Some(format!("open \"{}\"", xcode::APP_STORE)),
             }),
         ),

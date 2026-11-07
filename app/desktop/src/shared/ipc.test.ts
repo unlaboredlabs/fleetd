@@ -12,6 +12,11 @@ describe("parseRequest", () => {
     expect(input({ kind: "back", url: "https://example.com/" })).toBe(false);
   });
 
+  it("lets the Mac setup window open each place it names, Xcode's App Store page included, and no other", () => {
+    for (const pane of ["accessibility", "screen_recording", "app_store"]) expect(parseRequest(IPC.macSetupPane, [pane]).ok, pane).toBe(true);
+    expect(parseRequest(IPC.macSetupPane, ["https://example.com"]).ok).toBe(false);
+  });
+
   it("accepts a well-formed call and keeps its input", () => {
     const parsed = parseRequest(IPC.hubCall, ["hub", { tool: "fleetd_status", input: { scope: { project: "p1" } }, timeoutMs: 60_000 }]);
     expect(parsed).toEqual({ ok: true, args: ["hub", { tool: "fleetd_status", input: { scope: { project: "p1" } }, timeoutMs: 60_000 }] });
