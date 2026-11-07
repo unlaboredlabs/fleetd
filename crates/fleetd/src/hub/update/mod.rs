@@ -336,15 +336,30 @@ impl Updates {
     }
 
     /// An online machine that can update runs an older build than the hub: an update left it behind (it was offline,
-    /// or failed). Automatic updates bring it to the hub's build, even with nothing newer out.
+    /// or failed). Automatic updates bring it to the hub's build, even with nothing newer out. Not one the last update
+    /// already asked for this build that refused it in a way asking again won't change ([`refused_for_good`]): every
+    /// hour its agents would wait for it again.
     fn behind(&self) -> bool {
         let Some(ports) = self.ports() else {
             return false;
         };
         let running = ports.running();
+        let last = self
+            .status()
+            .filter(|r| r.to.as_ref().is_some_and(|to| to.as_str() == running));
         ports.release_build()
             && ports.nodes().iter().any(|n| {
-                n.live_since.is_some() && n.can_update && !crate::at_least(&n.version, &running)
+                let refused = last.as_ref().is_some_and(|r| {
+                    r.parts.iter().any(|p| {
+                        p.part == UpdatePartKind::Node
+                            && p.machine_id.as_ref() == Some(&n.machine_id)
+                            && refused_for_good(p)
+                    })
+                });
+                n.live_since.is_some()
+                    && n.can_update
+                    && !refused
+                    && !crate::at_least(&n.version, &running)
             })
     }
 
@@ -490,10 +505,15 @@ impl Updates {
 
     /// Why the look at the channel came to nothing (None: it went), for [`Self::skip_reason`].
     fn checked(&self, failed: Option<String>) {
-        if let Some(why) = &failed {
+        let mut held = self.check_failed.lock().unwrap();
+        // Once per reason: a channel that stays unreachable isn't a line every 10 minutes.
+        let same = |a: &str, b: &str| a.split(" at ").next() == b.split(" at ").next();
+        if let Some(why) = &failed
+            && !held.as_deref().is_some_and(|was| same(was, why))
+        {
             tracing::info!("update: {why}");
         }
-        *self.check_failed.lock().unwrap() = failed;
+        *held = failed;
     }
 
     /// Downloads the channel's newest build when the hub doesn't run it, checks it against the release's SHA256SUMS
@@ -1621,6 +1641,18 @@ impl Updates {
 }
 
 const OFFLINE: &str = "offline: press Update again once it's online, or run `fleetd update` on it";
+
+/// A machine's node part that refused its build in a way asking again won't change: its build didn't come up healthy,
+/// it can't install or restart itself (a local build, not run as the service), or it was skipped other than offline.
+/// A failed download (the channel moved on, say) or a node that didn't come back is worth asking again.
+fn refused_for_good(p: &UpdatePart) -> bool {
+    match p.state {
+        UpdateState::RolledBack => true,
+        UpdateState::Failed => matches!(p.stage, Some(UpdateStage::Install | UpdateStage::Restart)),
+        UpdateState::Skipped => p.message.as_ref().is_none_or(|m| m.as_str() != OFFLINE),
+        _ => false,
+    }
+}
 
 /// How a finished run went, as [`Updates::last_auto`] keeps it: failed when the hub didn't update, partial when a
 /// machine didn't (its first such part says why), else done.

@@ -1885,10 +1885,10 @@ async fn a_cloud_machine_that_slept_through_an_update_catches_up_at_its_hello() 
     assert_eq!(fake.asked.lock().unwrap().len(), 1);
 }
 
-/// The devbox, 7 Nov: an automatic update moved the hub to its build, but its node, after waiting for its agents, found
-/// a newer edge build out and didn't update. With the hub on the channel's newest, nothing was ever ready again, so no
-/// automatic update came for the node: it stayed behind until a person pressed Update. Now the next hour's look brings
-/// a machine left behind to the hub's build, and says how it went.
+/// A machine an update left behind (the devbox's node, 7 Nov, found a newer edge build out after waiting for its agents,
+/// and didn't update). Once the hub runs the channel's newest, nothing is ready any more, so before, no automatic
+/// update ever came for it: it stayed behind until a person pressed Update. Now the next hour's look brings a machine
+/// left behind to the hub's build, and says how it went.
 #[tokio::test]
 async fn a_machine_an_update_left_behind_catches_up_by_itself() {
     let home = tempfile::tempdir().unwrap();
@@ -2018,4 +2018,69 @@ async fn automatic_updates_say_when_they_look_next_how_the_last_went_and_why_the
     back.start(None, true).unwrap();
     until(&back, |r| r.auto.is_none() && r.finished_at.is_some()).await;
     assert_eq!(back.last_auto(), Some(last));
+}
+
+/// A machine that refused the hub's build in a way asking again won't change (a local build, not run as the service) is
+/// not asked again every hour, holding its agents each time: only once the hub has another build. One that was offline
+/// is.
+#[tokio::test]
+async fn a_machine_that_refused_the_hubs_build_for_good_isnt_asked_every_hour() {
+    let left = |state: UpdateState, stage: Option<UpdateStage>, message: &str| {
+        let home = tempfile::tempdir().unwrap();
+        let fake = Fake::new(home.path(), b"new").node("devbox", OLD, true, true, None);
+        *fake.running.lock().unwrap() = NEW.into();
+        let fake = Arc::new(fake);
+        let now = 1_794_088_000_000_i64;
+        let ago = super::iso_ms(now - 2 * 3_600_000);
+        let hub = super::part(UpdatePartKind::Hub, None, "the hub", OLD, UpdateState::Done);
+        let mut node = super::part(
+            UpdatePartKind::Node,
+            Some(MachineId::unchecked("devbox")),
+            "devbox",
+            OLD,
+            state,
+        );
+        node.stage = stage;
+        node.message = Some(Text::unchecked(message.to_owned()));
+        let run = json!({
+            "id": "U1", "channel": "edge", "to": NEW, "startedAt": ago, "finishedAt": ago,
+            "parts": [hub, node], "auto": true,
+        });
+        fs::create_dir_all(home.path().join("update")).unwrap();
+        fs::write(home.path().join("update/run.json"), run.to_string()).unwrap();
+        let updates = Updates::new(
+            home.path(),
+            ManualClock::at(u64::try_from(now).unwrap()),
+            fast(),
+        );
+        updates.set_ports(fake.clone());
+        updates.set_settings(Some(true), None).unwrap();
+        (home, fake, updates)
+    };
+    let (_home, _fake, local) = left(
+        UpdateState::Failed,
+        Some(UpdateStage::Install),
+        "this node runs a local build of fleetd: install a release with curl -fsSL https://fleetd.sh | sh",
+    );
+    assert_eq!(local.auto_at(), None, "not again for this build");
+    assert!(local.auto_tick().await.is_none());
+
+    let (_home, _fake, put_back) = left(
+        UpdateState::RolledBack,
+        Some(UpdateStage::Health),
+        "it didn't come up healthy",
+    );
+    assert_eq!(put_back.auto_at(), None);
+
+    let (_home, _fake, offline) = left(UpdateState::Skipped, None, super::OFFLINE);
+    assert!(offline.auto_at().is_some(), "online now: asked again");
+
+    // The hub on another build: asked once more.
+    let (_home, fake, local) = left(
+        UpdateState::Failed,
+        Some(UpdateStage::Restart),
+        "this node doesn't run as the service",
+    );
+    *fake.running.lock().unwrap() = NEWER.into();
+    assert!(local.auto_at().is_some());
 }
