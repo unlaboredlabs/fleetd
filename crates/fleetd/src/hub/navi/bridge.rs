@@ -137,24 +137,33 @@ async fn answer(
     }
 }
 
-/// Only a Navi works with other projects: a project the hub keeps as one (Navi core), not archived. A coding
-/// project's lead keeps to its own. A hub without that table yet has no Navi.
+/// Every project's lead works with other projects (D310), but an archived one's.
 pub fn may_use(db: &HubDb, r: &ProjectRef) -> Result<(), McpToolError> {
-    let navi = is_navi(db, r, false).map_err(failed)?;
-    if navi {
+    if is_project(db, r, false).map_err(failed)? {
         return Ok(());
     }
     Err(McpToolError::new(
         ErrorCode::Forbidden,
-        "Only a Navi works with other projects: this project's lead keeps to its own.",
+        "This project is archived, or the hub doesn't have it: its lead works with no other project.",
     )
-    .with_fix("Ask the person to give it to their Navi, or to the other project's chat."))
+    .with_fix("Bring it back from the app first."))
 }
 
-/// Whether the hub keeps `r` as a Navi (Navi core); an archived one only with `archived`.
-pub fn is_navi(db: &HubDb, r: &ProjectRef, archived: bool) -> Result<bool, StoreError> {
-    let navi = db.with(|c| Ok(super::store::of(c, r)?))?;
-    Ok(navi.is_some_and(|n| archived || n.archived_at.is_none()))
+/// Whether the hub has project `r`; an archived one only with `archived`.
+pub fn is_project(db: &HubDb, r: &ProjectRef, archived: bool) -> Result<bool, StoreError> {
+    db.with(|c| {
+        Ok(c.prepare_cached(
+            "SELECT 1 FROM projects p WHERE p.machine_id = ?1 AND p.project_id = ?2 AND (?3 OR NOT EXISTS (
+               SELECT 1 FROM project_settings s WHERE s.machine_id = ?1 AND s.project_id = ?2
+                 AND s.archived_ms IS NOT NULL))",
+        )?
+        .query_row(
+            params![r.machine_id.as_str(), r.project_id.as_str(), archived],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+    })
 }
 
 /// Who asks: a Navi on this hub, or a link minted here, for a Navi on another hub.

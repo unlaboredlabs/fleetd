@@ -50,11 +50,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_add",
-        "Add a project. path: a directory on the machine, added at once with its inspect: a git checkout, or a plain folder with no git (its lead chats, remembers and uses screens there; agents that change code need a repo). url: a GitHub repo cloned onto the machine (machineId defaults to the best worker, dest to <cloneRoot>/<name>); answers with addId, then events project.clone_progress and project.added (or project.add_failed with a fix) carry data.addId. When the destination already holds the same repo, pass useExisting. create starts a new, empty project with no repo: the machine makes its folder (path, else <projectsRoot>/<name from title>, projectsRoot being ~/fleetd/projects as project_discover says), takes an empty folder that is already there, refuses one that holds anything, and runs git init in it only with gitInit; a repo can be added later with project_repo_add. The same directory again returns its project; title renames it. dryRun adds nothing: it answers the inspect (default branch, CI with active workflows and required checks, merge rules with protection, rulesets, squash allowed and required reviews, and leadNeeds: one line on what the lead and merge train will need) and, for a url, clone: where it would go and whether that directory already holds the repo.",
+        "Add a project. onlyMe (D310): only the caller's person sees and uses it; absent, on for a new project with no repo (a plain folder, create without gitInit) and off for a clone or a repo folder, and an existing project keeps its own. path: a directory on the machine, added at once with its inspect: a git checkout, or a plain folder with no git (its lead chats, remembers and uses screens there; agents that change code need a repo). url: a GitHub repo cloned onto the machine (machineId defaults to the best worker, dest to <cloneRoot>/<name>); answers with addId, then events project.clone_progress and project.added (or project.add_failed with a fix) carry data.addId. When the destination already holds the same repo, pass useExisting. create starts a new, empty project with no repo: the machine makes its folder (path, else <projectsRoot>/<name from title>, projectsRoot being ~/fleetd/projects as project_discover says), takes an empty folder that is already there, refuses one that holds anything, and runs git init in it only with gitInit; a repo can be added later with project_repo_add. The same directory again returns its project; title renames it. dryRun adds nothing: it answers the inspect (default branch, CI with active workflows and required checks, merge rules with protection, rulesets, squash allowed and required reviews, and leadNeeds: one line on what the lead and merge train will need) and, for a url, clone: where it would go and whether that directory already holds the repo.",
     ),
     (
         "project_remove",
-        "Stop the project's agent processes and forget it, with the checkouts of its repos that no other project holds. Its files, branches and worktrees stay on the machine; project_add brings it back. removeWorktrees also force-removes the fleetd worktrees its agents worked in (uncommitted changes in them are lost), once its agents have stopped; its checkout and every branch stay as they are. A Navi is erased instead, on the hub and its machine: its chat, approvals and purchases, asks and decisions, memory, skills, transcripts, attachments and screen recordings; removeFolder (a Navi's only) deletes its folder too.",
+        "Stop the project's agent processes and erase it, with the checkouts of its repos that no other project holds: one rule for every project (D310). On the hub and its machine its chat, approvals and purchases, asks and decisions, memory, skills, automations, kept browser sign-ins, Telegram link, transcripts, attachments and screen recordings go. Its files and branches stay on the machine unless removeFolder (default false), which deletes its folder with everything in it, refused for a home folder, fleetd's own or one holding another project. removeWorktrees also force-removes the fleetd worktrees its agents worked in (uncommitted changes in them are lost), once its agents have stopped.",
     ),
     (
         "project_repo_add",
@@ -110,7 +110,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "navi_archive",
-        "Archive a Navi: its lead stops and doesn't start again, and navi_list leaves it out; its chat, memory and folder stay. archived: false brings it back.",
+        "Archive any project (D310), a Navi too: its lead stops and doesn't start again, and its summary says archivedAt (navi_list leaves an archived Navi out); its chat, memory and folder stay. archived: false brings it back.",
     ),
     (
         "project_avatar_set",
@@ -130,7 +130,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_settings_set",
-        "Rename a project (title; its folder keeps its name), turn memoryRefresh on or off, or replace its setup commands. memoryRefresh on (the default): each night with chat or order activity, the lead tidies the project's memory in a session of its own and posts one line of its changes with Undo; off: it doesn't. setup: commands run in order with sh -c in each new worktree, with the project's variables, before its agent starts (install dependencies, generate code), each within timeoutSec; a failure fails the start unless runAnyway; a worktree set up before is not set up again while the commands and the inputs files are unchanged. No commands turns setup off.",
+        "Rename a project (title; its folder keeps its name), turn memoryRefresh on or off, turn onlyMe on or off, or replace its setup commands. onlyMe, from a person's own device, by its owner or an admin: on, only its owner sees and uses it (the caller becomes its owner when it has none); off, everyone on the hub does. memoryRefresh on (the default): each night with chat or order activity, the lead tidies the project's memory in a session of its own and posts one line of its changes with Undo; off: it doesn't. setup: commands run in order with sh -c in each new worktree, with the project's variables, before its agent starts (install dependencies, generate code), each within timeoutSec; a failure fails the start unless runAnyway; a worktree set up before is not set up again while the commands and the inputs files are unchanged. No commands turns setup off.",
     ),
     (
         "project_env_set",
@@ -254,7 +254,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "telegram_set",
-        "A Navi's owner only, from their own device. Save the Navi's Telegram bot token from @BotFather: sealed, the token sealed on the client with crypto_box_seal to the Navi's machine's boxPubKey. The hub relays the box to its node and keeps the fingerprint, never the token. A new token starts afresh: no paired account. Then telegram_test, then telegram_pair.",
+        "Any project's, from a person's own device (another person's Only me project is refused). Save the project's Telegram bot token from @BotFather: sealed, the token sealed on the client with crypto_box_seal to the Navi's machine's boxPubKey. The hub relays the box to its node and keeps the fingerprint, never the token. A new token starts afresh: no paired account. Then telegram_test, then telegram_pair.",
     ),
     (
         "telegram_test",
@@ -626,7 +626,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "navi_asks",
-        "What a Navi asked other projects for with project_message, newest first: each ask's handle (N<n>), the project it went to, its words and when, and the orders that project's lead opened for it, each with its state and headline. Read on the Navi's machine. A hub that names the navi_asks feature in its ready frame has it.",
+        "What a project (any, D310) asked other projects for with project_message, newest first: each ask's handle (N<n>), the project it went to, its words and when, and the orders that project's lead opened for it, each with its state and headline. Read on the Navi's machine. A hub that names the navi_asks feature in its ready frame has it.",
     ),
     (
         "machine_add_plan",

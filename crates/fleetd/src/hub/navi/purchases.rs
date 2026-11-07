@@ -3,7 +3,8 @@
 //!   its `op://vault/item` reference only (its project's `project_settings.card_ref`).
 //! - `navi_purchases`: the card and every purchase the Navi asked for, newest first, with what the person said.
 //! - `purchase_open`, `purchase_claim`, `purchase_filled`: its node's calls for its lead's `purchase_request` and
-//!   `purchase_fill` (node/browser/cards.rs). Only a Navi's lead buys; the approval itself is approvals/purchases.rs.
+//!   `purchase_fill` (node/browser/cards.rs). Only a Navi's lead buys; a purchase is a record approved as it opens, with
+//!   no ask (D310, approvals/purchases.rs), and its fill posts a quiet "Paid …" line in the chat.
 //! - `secure_input_open`, `secure_input_claim`, `secure_input_filled`: its node's calls for `request_secure_input` and
 //!   `secure_input_fill` (node/browser/secure_input.rs, approvals/secure_input.rs).
 use std::sync::{Arc, Weak};
@@ -173,9 +174,7 @@ async fn answer(
                 request_id: opened.request_id,
                 state: opened.state,
                 next: Some(
-                    "end your turn on the checkout: the person approves or denies it in the chat, and you are woken \
-                     with the answer"
-                        .into(),
+                    "recorded, with no ask (D310): fill the card now with purchase_fill, on this checkout".into(),
                 ),
             }))
         }
@@ -186,11 +185,16 @@ async fn answer(
             .map(LeadCallResult::PurchaseClaim)
             .map_err(refused),
         LeadCall::PurchaseFilled(call) => {
+            let filled = call.ok;
             let r = hub
                 .approvals
                 .purchase_filled(&project, call)
                 .await
                 .map_err(refused)?;
+            if filled && let Some(p) = &r.purchase {
+                paid_line(hub, &caller.project_ref, p)
+                    .map_err(|e| McpToolError::new(ErrorCode::Failed, e.to_string()))?;
+            }
             Ok(LeadCallResult::PurchaseFilled(RequestResult {
                 request_id: r.request_id,
                 state: r.state,
@@ -232,6 +236,30 @@ async fn answer(
             format!("{} is not a purchase or secure input call.", op_of(&other)),
         )),
     }
+}
+
+/// The chat's quiet line once a card filled into a checkout: what, where, and with which card, from the purchase's
+/// record.
+fn paid_line(
+    hub: &Hub,
+    r: &ProjectRef,
+    p: &fleetd_contracts::purchase::Purchase,
+) -> Result<(), crate::hub::store::StoreError> {
+    hub.chat.add(
+        r,
+        crate::hub::chat::NewMessage {
+            author: Some(fleetd_contracts::chat::ChatAuthor::System),
+            text: format!(
+                "Paid {} {} at {} with {}",
+                p.total.amount,
+                p.total.currency,
+                p.shop.name,
+                p.card.label()
+            ),
+            ..Default::default()
+        },
+    )?;
+    Ok(())
 }
 
 fn navi_ref(

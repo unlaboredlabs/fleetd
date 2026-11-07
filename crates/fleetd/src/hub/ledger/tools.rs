@@ -37,6 +37,7 @@ fn code(code: LedgerCode) -> ErrorCode {
 /// Leads and the ledger refuse in the same `{ code, message, fix }` shape.
 fn refusal(error: LedgerError) -> ToolError {
     ToolError {
+        reason: None,
         code: code(error.code),
         message: error.message,
         fix: error.fix,
@@ -62,6 +63,7 @@ fn actor_of(caller: &Caller) -> Actor {
 
 fn unknown_workstream(workstream_id: &WorkstreamId) -> ToolError {
     ToolError {
+        reason: None,
         code: ErrorCode::NotFound,
         message: format!("No workstream {workstream_id}."),
         fix: Some("Call workstream_list to see workstreams.".into()),
@@ -134,6 +136,7 @@ pub fn register(tools: &mut Registry) {
             (DecisionScope::Global, _) => {
                 if !allows_everywhere(&caller, Role::Operate) {
                     return Err(ToolError {
+                        reason: None,
                         code: ErrorCode::Forbidden,
                         message: "A global decision applies to every machine; this key has no operate grant on all of them.".into(),
                         fix: Some("Record it at project scope, or use a key with an operate grant on * machines.".into()),
@@ -219,6 +222,7 @@ async fn decisions_overturn(
     require_human(&caller, "decisions_overturn")?;
     let id = input.decision_id.as_str();
     let unknown = || ToolError {
+        reason: None,
         code: ErrorCode::NotFound,
         message: format!("No decision {id}."),
         fix: Some("Call decisions_list for the project's decisions.".into()),
@@ -234,6 +238,7 @@ async fn decisions_overturn(
         Some(r) => require(&caller, Role::Operate, Some(&r.machine_id))?,
         None if !allows_everywhere(&caller, Role::Operate) => {
             return Err(ToolError {
+                reason: None,
                 code: ErrorCode::Forbidden,
                 message: "A global decision applies to every machine; this key has no operate grant on all of them.".into(),
                 fix: Some("Use a key with an operate grant on * machines.".into()),

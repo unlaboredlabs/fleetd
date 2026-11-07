@@ -206,39 +206,39 @@ after that, or a command's own network use. Browser commands inside an open page
 snapshots, a script in the page. A command such as `curl` reaches the network unasked too. So commands and screens aren't held to the approval rule for sends, and
 a click or a form that leads to another site isn't asked. Its Android, iOS and desktop screens (`agent-device`) don't
 ask per site at all. That the Navi calls `confirm_step` before a final click is its prompt, not fleetd's rules. Only
-allow sites where that's fine, such as your bank's when you mean to watch. Paying is different: the Navi has no card
-until you approve a [purchase](#purchases).
+allow sites where that's fine, such as your bank's when you mean to watch. Paying is different: the Navi pays only
+with the card you picked, through a [purchase](#purchases).
 
 ## Purchases {#purchases}
 
-A Navi can book a hotel or a flight, or buy something online, with a card you keep in 1Password. You approve each
-purchase; fleetd fills the card into the checkout, and the Navi never sees it. Keep the card in fleetd's own vault,
-and make it a virtual card with a monthly limit or a low-limit card: an agent on the machine could read what the
-token reads ([why](/docs/security#agent-reach)).
+A Navi can book a hotel or a flight, or buy something online, with a card you keep in 1Password. You aren't asked
+(decision `projects.one-model`, D310): each purchase goes in your purchases log, fleetd fills the card into the
+checkout, the Navi never sees it, and the chat says what was paid.
+Keep the card in fleetd's own vault, and make it a virtual card with a monthly limit or a low-limit card: an agent
+on the machine could read what the token reads ([why](/docs/security#agent-reach)).
 
 1. **Pick a card.** In the Navi's settings, **Payments** lists the Credit Card items the Navi's 1Password token reads:
    its own `OP_SERVICE_ACCOUNT_TOKEN` variable if it has one, else yours (Settings › Your accounts › 1Password). Pick one. fleetd keeps only its `op://vault/item` reference.
-2. **The Navi asks.** At the checkout's payment step it calls `purchase_request` with the shop's domain and name, the
-   total and currency, and what is in the basket. The page must be on that domain. Your chat shows a purchase card:
-   the shop, the total, each item, and the card. It always asks you, whatever approval mode the Navi runs in: no
-   checker or rule answers a purchase.
-3. **You approve.** **Pay** approves that exact purchase; **Don't buy** tells the Navi no.
-4. **The card is filled.** Within 15 minutes of your approval the Navi calls `purchase_fill`. Its node reads the card
+2. **The Navi records it.** At the checkout's payment step it calls `purchase_request` with the shop's domain and
+   name, the total and currency, and what is in the basket. The page must be on that domain. Your chat shows its
+   record: the shop, the total, each item, and the card.
+3. **The card is filled.** Within 15 minutes the Navi calls `purchase_fill`. Its node reads the card
    from 1Password and types the number, expiry, security code and name into the checkout's fields: on the shop's own
    page and in the card frames of payment providers (Stripe, Adyen, Braintree, Checkout.com, Square, PayPal, Mollie,
-   Worldpay), even when they're on another site. It fills once per approval, and only on the approved shop.
-5. **The Navi pays.** It checks the total and clicks Pay or Book itself. If your bank asks to confirm (3-D Secure, a
+   Worldpay), even when they're on another site. It fills once per purchase, and only on its shop. The chat gets a
+   quiet line: "Paid 129.90 EUR at Hotel Adlon with Visa (Personal)".
+4. **The Navi pays.** It checks the total and clicks Pay or Book itself. If your bank asks to confirm (3-D Secure, a
    code, its app), it hands the browser to you with a takeover, and finishes once you hand it back.
 
 | | |
 |---|---|
 | What the Navi sees | Never the card's number, expiry or code. From the fill on, its browser session refuses to read values back (scripts of its own, `get value`, page snapshots). Every answer it gets, its transcript and the recording are scrubbed of the card. Filled fields show as blurred dots in the video, the live view and screenshots. |
-| Wrong shop | A request whose domain isn't the page's is refused. A fill on any other site gets nothing; the approval stays good for the shop until its 15 minutes run out. |
+| Wrong shop | A request whose domain isn't the page's is refused. A fill on any other site gets nothing; the purchase stays good for the shop until its 15 minutes run out. |
 | Never | Paying an exchange or a broker (trading, crypto) or a money-transfer service is refused, even approved. That's decided by who is paid, not by what the basket says: an airport transfer is a purchase like any other. A command of a payment CLI (`stripe`, `shopify`, `paypal` and the like) through `gated_run` only you can approve. |
-| While you decide | The browser session doesn't close for being idle, so a held room or fare stays held, until the Navi drives it again after your answer, for up to 2 hours. An approval whose card isn't filled within 15 minutes ends as expired. |
+| Unfilled | A purchase whose card isn't filled within 15 minutes ends as expired. |
 
-**Payments** in the Navi's settings also lists every purchase it asked for: the shop, the amount, when, and what you
-said.
+**Payments** in the Navi's settings also lists every purchase it made: the shop, the amount, when, and whether its
+card was filled.
 
 ## Secure input {#secure-input}
 
@@ -251,7 +251,8 @@ why, and fleetd checks the page is on that site and the field is there.
   phone app shows what is asked and sends you to the desktop app to enter it, and a Telegram chat never asks for the
   value, since a chat there isn't sealed.
 - **From 1Password.** If it's in an Identity, Passport, Driver License or Social Security item, the Navi names that
-  field (`op://vault/item/field`). You approve; within 15 minutes its node fills it from 1Password, once.
+  field (`op://vault/item/field`), and its node fills it from 1Password, once, within 15 minutes. You aren't asked
+  (D310).
 
 The value never reaches the Navi, the chat, a transcript, a recording or a log. From the fill on, the Navi's browser
 session refuses to read values back, and the field shows as blurred dots. A page that moved to another site gets

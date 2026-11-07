@@ -115,6 +115,18 @@ pub fn guard(hub: &Hub, caller: &Caller, tool: &str, input: &Value) -> Result<()
     {
         return Ok(());
     }
+    // An admin may turn another person's Only me off, and that alone (D310).
+    let only_me_alone = input.as_object().is_some_and(|o| {
+        o.contains_key("onlyMe")
+            && o.keys()
+                .all(|k| matches!(k.as_str(), "machineId" | "projectId" | "onlyMe"))
+    });
+    if tool == "project_settings_set"
+        && only_me_alone
+        && allows(caller, Role::Admin, Some(&r.machine_id))
+    {
+        return Ok(());
+    }
     Err(refused(&r))
 }
 

@@ -377,7 +377,7 @@ async fn an_approved_purchase_fills_the_card_into_the_providers_frame_once_and_t
         "nothing was asked"
     );
 
-    // The purchase asks the person; the session waits for them without idling out.
+    // The purchase is a record, approved as it opens with no ask (D310): the card fills now.
     let asked = call(&rig.broker, purchase("127.0.0.1", "Double room, 2 nights")).await;
     let id = asked["result"]["requestId"]
         .as_str()
@@ -391,36 +391,11 @@ async fn an_approved_purchase_fills_the_card_into_the_providers_frame_once_and_t
         "{asked}"
     );
     heard.push_str(&asked.to_string());
-    let session = rig.broker.live(THREAD).unwrap();
-    assert_eq!(
-        session.idle_for(),
-        Duration::ZERO,
-        "held while the person decides"
-    );
     let open = hub.approvals.get(&id).unwrap();
-    assert_eq!(open.state, fleetd_contracts::ledger::RequestState::Open);
-    assert!(crate::hub::approvals::purchases::person_only(&open));
+    assert_eq!(open.state, fleetd_contracts::ledger::RequestState::Approved);
     let fill = json!({ "op": "purchase_fill", "requestId": id });
-    let early = call(&rig.broker, fill.clone()).await;
-    assert!(
-        early["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("hasn't answered"),
-        "{early}"
-    );
 
-    // The person approves; the node fills the card, once.
-    let person = crate::hub::approvals::Caller {
-        human: true,
-        name: "desk",
-        person: None,
-        allows_operate: &|_: &str| true,
-    };
-    hub.approvals
-        .answer(&person, &id, true, None)
-        .await
-        .unwrap();
+    // The node fills the card, once.
     let filled = call(&rig.broker, fill.clone()).await;
     let message = filled["result"]["message"]
         .as_str()
@@ -433,6 +408,15 @@ async fn an_approved_purchase_fills_the_card_into_the_providers_frame_once_and_t
     );
     assert!(message.contains("request_takeover"), "{message}");
     heard.push_str(&filled.to_string());
+    // The chat gets one quiet line from the purchase's record (D310): no ask, but nothing unsaid.
+    let (messages, ..) = hub.chat.page(&project, None, None, 50).unwrap();
+    let paid: Vec<&str> = messages
+        .iter()
+        .map(|m| m.text.as_str())
+        .filter(|t| t.starts_with("Paid "))
+        .collect();
+    assert_eq!(paid.len(), 1, "{paid:?}");
+    assert!(paid[0].ends_with("with Visa (Personal)"), "{paid:?}");
     let twice = call(&rig.broker, fill.clone()).await;
     assert!(
         twice["error"]["message"]
@@ -586,6 +570,7 @@ async fn an_approved_purchase_fills_the_card_into_the_providers_frame_once_and_t
     )
     .await;
     assert!(takeover["result"].is_object(), "{takeover}");
+    let session = rig.broker.live(THREAD).unwrap();
     assert_eq!(
         session.idle_for(),
         Duration::ZERO,
@@ -694,25 +679,10 @@ async fn a_card_fills_only_on_the_approved_shop() {
         .as_str()
         .unwrap_or_else(|| panic!("{asked}"))
         .to_owned();
-    let person = crate::hub::approvals::Caller {
-        human: true,
-        name: "desk",
-        person: None,
-        allows_operate: &|_: &str| true,
-    };
-    hub.approvals
-        .answer(&person, &id, true, None)
-        .await
-        .unwrap();
-    // Held while the person decided; the Navi's next browser command, once woken with the answer, ends the hold.
+    // Approved as it opened (D310): nothing waits on the person, so the session isn't held.
     let session = rig.broker.live(THREAD).unwrap();
-    assert_eq!(session.idle_for(), Duration::ZERO);
-    rig.broker.item(
-        THREAD,
-        &command_item("agent-browser get title", "Checkout ready"),
-    );
     tokio::time::sleep(Duration::from_millis(5)).await;
-    assert!(session.idle_for() > Duration::ZERO, "no longer held");
+    assert!(session.idle_for() > Duration::ZERO, "not held");
 
     // The same checkout, on another site (localhost): refused, nothing typed, and the approval kept.
     let away = shop.replace("127.0.0.1", "localhost");
@@ -1020,25 +990,12 @@ async fn an_approved_passport_from_1password_fills_once() {
         request.kind,
         fleetd_contracts::ledger::RequestKind::Approval
     );
-    let fill = json!({ "op": "secure_input_fill", "requestId": id });
-    let early = call(&rig.broker, fill.clone()).await;
-    assert!(
-        early["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("hasn't answered"),
-        "{early}"
+    // From 1Password it fills with no ask (D310).
+    assert_eq!(
+        request.state,
+        fleetd_contracts::ledger::RequestState::Approved
     );
-    let person = crate::hub::approvals::Caller {
-        human: true,
-        name: "desk",
-        person: None,
-        allows_operate: &|_: &str| true,
-    };
-    hub.approvals
-        .answer(&person, &id, true, None)
-        .await
-        .unwrap();
+    let fill = json!({ "op": "secure_input_fill", "requestId": id });
     let filled = call(&rig.broker, fill.clone()).await;
     assert!(
         filled["result"]["message"]

@@ -1235,6 +1235,9 @@ input!(
     use_existing: Option<bool>,
     /// Absent means the directory's name.
     title: Option<Text<1, 200>>,
+    /// Only me (D310): only the caller's person sees and uses it. Absent: on for a new project with no repo (a plain
+    /// folder, `create` without `gitInit`), off for a clone or a repo folder; an existing project keeps its own.
+    only_me: Option<bool>,
     dry_run: Option<bool>,
 });
 checked!(ProjectAddInput, |input| {
@@ -1282,16 +1285,18 @@ output!(ProjectAddOutput {
     clone: Option<CloneTarget>,
 });
 
-// project_remove: stops the project's agent processes and forgets it. Its files and branches stay; its worktrees too,
-// unless removeWorktrees. A Navi's is erased (D287 navi.delete-erases): its chat, approvals and purchases, asks and
-// decisions, memory, skills, transcripts, attachments and screen recordings go, on the hub and its machine.
+// project_remove: stops the project's agent processes and erases it (D287, one rule for every project since D310): its
+// chat, approvals and purchases, asks and decisions, memory, skills, automations, sign-ins, Telegram link, transcripts,
+// attachments and screen recordings go, on the hub and its machine. Its files and branches stay unless removeFolder;
+// its worktrees too, unless removeWorktrees.
 input!(ProjectRemoveInput {
     machine_id: MachineId,
     project_id: ProjectId,
     /// Also force-remove the fleetd worktrees its agents worked in, uncommitted changes and all, once its agents have
     /// stopped. Their branches and the checkout stay as they are.
     remove_worktrees: Option<bool>,
-    /// A Navi's only: also delete its folder, with everything in it (its drafts and downloads).
+    /// Also delete its folder, with everything in it: refused for a home folder, fleetd's own, or one holding another
+    /// project. Absent: the folder stays.
     remove_folder: Option<bool>,
 });
 output!(ProjectRemoveOutput { ok: True });
@@ -1586,11 +1591,18 @@ input!(
         memory_refresh: Option<bool>,
         /// Replaces the project's setup commands and their settings; no commands turns setup off.
         setup: Option<crate::project_settings::WorktreeSetup>,
+        /// Only me (D310), a person's own device only: on, only the project's owner sees and uses it (the caller
+        /// becomes its owner when it has none); off, everyone on the hub does. Its owner or an admin changes it.
+        only_me: Option<bool>,
     }
 );
 checked!(ProjectSettingsSetInput, |input| {
-    if input.title.is_none() && input.memory_refresh.is_none() && input.setup.is_none() {
-        return Err("expected title, memoryRefresh, setup or more".into());
+    if input.title.is_none()
+        && input.memory_refresh.is_none()
+        && input.setup.is_none()
+        && input.only_me.is_none()
+    {
+        return Err("expected title, memoryRefresh, setup, onlyMe or more".into());
     }
     Ok(())
 });
@@ -3928,6 +3940,17 @@ pub struct McpToolError {
     pub message: String,
     /// What to do next.
     pub fix: Option<String>,
+    /// Which refusal it is, for an app to act on rather than match the words. Absent for most, and from an older hub.
+    pub reason: Option<ErrorReason>,
+}
+
+/// A refusal an app acts on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum ErrorReason {
+    /// Memory import runs only in an Only me project of the caller's own, and they have none (D310).
+    NoOnlyMeProject,
 }
 
 impl McpToolError {
@@ -3936,10 +3959,15 @@ impl McpToolError {
             code,
             message: message.into(),
             fix: None,
+            reason: None,
         }
     }
     pub fn with_fix(mut self, fix: impl Into<String>) -> Self {
         self.fix = Some(fix.into());
+        self
+    }
+    pub fn with_reason(mut self, reason: ErrorReason) -> Self {
+        self.reason = Some(reason);
         self
     }
 }

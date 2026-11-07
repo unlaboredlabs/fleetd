@@ -126,6 +126,9 @@ pub struct AppError {
     pub code: ErrorCode,
     pub message: String,
     pub fix: Option<String>,
+    /// Which refusal it is, for the app to act on rather than match the words (`McpToolError.reason`). Absent for
+    /// most, and from an older hub.
+    pub reason: Option<crate::mcp::ErrorReason>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

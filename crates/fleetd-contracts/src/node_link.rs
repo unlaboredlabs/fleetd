@@ -209,6 +209,11 @@ pub const CAP_SCREEN_SETTINGS: &str = "screen_settings";
 /// them and the attachments in its folder, and the folder itself when asked (D287 navi.delete-erases).
 pub const CAP_NAVI_ERASE: &str = "navi_erase";
 
+/// `project_remove` erases any project as it does a Navi (D310): its sessions, transcripts and attachments, and with
+/// `removeFolder` its folder, wherever it is but the person's home, the node's, a folder above either, or one holding
+/// another project.
+pub const CAP_PROJECT_ERASE: &str = "project_erase";
+
 /// Every lead runs in `manual` permission mode without a sandbox (D310): the node allows unasked what a full-access
 /// lead does (`LEAD_ALLOWED`), answers its commands itself, and sends only a fetch, a first site visit and a send on to
 /// the hub; the assistant role is a lead that does its own work (a project with no repo). The hub starts every lead

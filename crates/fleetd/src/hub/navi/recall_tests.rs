@@ -374,15 +374,18 @@ async fn only_a_navi_reads_back_and_only_its_own_chat() {
         .unwrap_err();
         assert_eq!(code, ErrorCode::NotFound);
     }
-    // A coding project's lead has no such call.
-    let (code, _) = call(
+    // A coding project's lead reads back its own chat too (D310), never the Navi's.
+    let own = call(
         &hub,
         &project("storefront"),
         json!({ "op": "chat_search", "words": "wifi" }),
     )
     .await
-    .unwrap_err();
-    assert_eq!(code, ErrorCode::Forbidden);
+    .unwrap();
+    let theirs: Vec<&Value> = out["messages"].as_array().unwrap().iter().collect();
+    for m in own["messages"].as_array().unwrap() {
+        assert!(!theirs.contains(&m), "read the Navi's {m}");
+    }
     // Nor has a person's shell in the Navi's folder: they read the chat in the app.
     let (code, _) = call_as(
         &hub,

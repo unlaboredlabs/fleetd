@@ -357,6 +357,109 @@ async fn on_a_hub_without_people_every_key_shares_the_navis_until_the_owner_take
     assert_eq!(titles(&mine, "navis"), ["Ada 2"]);
 }
 
+/// D310: Only me is one switch on any project, set from a person's own device. On, the project becomes the caller's when
+/// it has no owner, and every other person loses it from lists and tools, an admin too; its owner turns it off, or an
+/// admin with that alone, and then everyone has it again.
+#[tokio::test]
+async fn only_me_is_one_switch_on_any_project_its_owner_or_an_admin_turns() {
+    let (hub, _home) = hub();
+    let _calls = node(&hub, &[CAP_REPOS, CAP_ASSISTANT]).await;
+    let ann = people(&hub).ensure_owner().unwrap().person_id;
+    let bob = people(&hub)
+        .create(&PersonName::unchecked("Bob"), HubRole::Member)
+        .unwrap()
+        .person_id;
+    let (ann_d, bob_d) = (
+        device(&hub, Some(&ann), "admin"),
+        device(&hub, Some(&bob), "operate"),
+    );
+    let r = fleetd_contracts::ids::ProjectRef {
+        machine_id: fleetd_contracts::ids::MachineId::unchecked("devbox"),
+        project_id: fleetd_contracts::ids::ProjectId::unchecked("p1"),
+    };
+    let p1 = json!({ "machineId": "devbox", "projectId": "p1" });
+    let set = |extra: Value| {
+        let mut v = p1.clone();
+        v.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        v
+    };
+    let summary = || hub.store.project_get(&r).unwrap().unwrap();
+    assert!(!summary().only_me && summary().owner.is_none());
+
+    // An agent's key never turns it.
+    let agent = device(&hub, None, "admin");
+    let Err(CallError::Tool(e)) = call(
+        &hub,
+        &agent,
+        "project_settings_set",
+        set(json!({ "onlyMe": true })),
+    )
+    .await
+    else {
+        panic!("an agent turned Only me on")
+    };
+    assert_eq!(e.code, ErrorCode::Forbidden);
+
+    // Bob turns it on: it is his alone, and Ann, an admin, no longer reaches it.
+    ok(
+        &hub,
+        &bob_d,
+        "project_settings_set",
+        set(json!({ "onlyMe": true })),
+    )
+    .await;
+    assert!(summary().only_me);
+    assert_eq!(summary().owner, Some(bob.clone()));
+    refused(&hub, &ann_d, "project_settings_get", p1.clone()).await;
+    refused(
+        &hub,
+        &ann_d,
+        "project_settings_set",
+        set(json!({ "onlyMe": false, "title": "Mine now" })),
+    )
+    .await;
+
+    // An admin turns it off with that alone: everyone has it again, and it stays Bob's for when he turns it on.
+    ok(
+        &hub,
+        &ann_d,
+        "project_settings_set",
+        set(json!({ "onlyMe": false })),
+    )
+    .await;
+    assert!(!summary().only_me);
+    assert_eq!(summary().owner, Some(bob.clone()));
+    ok(&hub, &ann_d, "project_settings_get", p1.clone()).await;
+
+    // Off, only its owner or an admin turns it on again.
+    let dee = people(&hub)
+        .create(&PersonName::unchecked("Dee"), HubRole::Member)
+        .unwrap()
+        .person_id;
+    let dee_d = device(&hub, Some(&dee), "operate");
+    let Err(CallError::Tool(e)) = call(
+        &hub,
+        &dee_d,
+        "project_settings_set",
+        set(json!({ "onlyMe": true })),
+    )
+    .await
+    else {
+        panic!("someone else took Bob's project")
+    };
+    assert_eq!(e.code, ErrorCode::Forbidden);
+    ok(
+        &hub,
+        &bob_d,
+        "project_settings_set",
+        set(json!({ "onlyMe": true })),
+    )
+    .await;
+    assert!(summary().only_me);
+}
+
 /// A hub from before owners: a Navi made by a person's device is theirs, one made by a key with no person (or one
 /// since deleted) the hub's first owner's. With no people yet, none has an owner.
 #[test]

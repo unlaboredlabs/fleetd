@@ -188,39 +188,11 @@ async fn a_navi_saves_and_improves_its_own_skill_each_save_a_version_with_a_quie
     );
 }
 
-/// A Navi installs over https only: SSH, `git@`, local and plain-http sources are refused before anything is fetched
-/// (and its fetch takes https alone, `tests::an_anonymous_fetch_takes_https_alone`). Each skill it installs posts one
-/// quiet line, as a save does, naming the source at its commit.
+/// Each skill a lead installs posts one quiet line, as a save does, naming the source at its commit.
 #[tokio::test]
-async fn a_navi_installs_over_https_only_and_each_install_posts_a_quiet_line() {
+async fn each_install_posts_a_quiet_line() {
     let (hub, _home) = hub();
     let r = project("navi");
-    let caller = LeadCaller {
-        project_ref: r.clone(),
-        by: lead_by(&r),
-        agent: CallerAgent::Lead,
-    };
-    let handler = hub.lead_calls.handler("skill_install").unwrap();
-    for source in [
-        "ssh://git@github.com/acme/skills.git",
-        "git@github.com:acme/skills.git",
-        "file:///srv/skills",
-        "http://git.example.com/skills.git",
-    ] {
-        let call = LeadCall::SkillInstall(
-            serde_json::from_value(json!({ "source": source, "scope": "project" })).unwrap(),
-        );
-        let e = handler.handle(caller.clone(), call).await.unwrap_err();
-        assert_eq!(e.code, ErrorCode::Forbidden, "{source}");
-        assert!(e.message.contains("https only"), "{source}: {}", e.message);
-    }
-    assert!(
-        hub.db
-            .skills()
-            .list(SkillScope::Project, Some(&r))
-            .is_empty()
-    );
-
     let kept = hub
         .db
         .skills()
@@ -256,10 +228,11 @@ async fn a_navi_installs_over_https_only_and_each_install_posts_a_quiet_line() {
     );
 }
 
+/// D310: any project's own lead saves its skills, a task never, and never over an installed skill.
 #[tokio::test]
-async fn only_a_navis_own_lead_saves_and_never_over_an_installed_skill() {
+async fn only_a_projects_own_lead_saves_and_never_over_an_installed_skill() {
     let (hub, _home) = hub();
-    let (code, why) = save(
+    save(
         &hub,
         &project("shop"),
         CallerAgent::Lead,
@@ -268,9 +241,7 @@ async fn only_a_navis_own_lead_saves_and_never_over_an_installed_skill() {
         "Learned it.",
     )
     .await
-    .unwrap_err();
-    assert_eq!(code, ErrorCode::Forbidden);
-    assert!(why.contains("Only a Navi"), "{why}");
+    .unwrap();
     let task = CallerAgent::Task(fleetd_contracts::tasks::TaskId::unchecked("T3"));
     let (code, _) = save(
         &hub,

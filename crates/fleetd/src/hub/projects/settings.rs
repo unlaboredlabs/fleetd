@@ -410,6 +410,59 @@ async fn get(
     })
 }
 
+/// Only me (D310), from a person's own device: its owner or an admin changes it. On, the project becomes the caller's
+/// when it has no owner; off, everyone on the hub sees and uses it.
+fn set_only_me(
+    hub: &Hub,
+    caller: &Caller,
+    project: &ProjectSummary,
+    on: bool,
+) -> Result<(), ToolError> {
+    let r = project_ref(&project.machine_id, &project.project_id);
+    if !crate::hub::api::is_human(caller) {
+        return Err(ToolError::new(
+            ErrorCode::Forbidden,
+            "Only a person turns Only me on or off, from one of their own devices.",
+        )
+        .with_fix("Change it in the app: the project's settings."));
+    }
+    let me = hub.db.with(|c| crate::hub::navi::owner::who(c, caller))?;
+    let owns = project.owner.is_none() || project.owner == me;
+    if !owns && !crate::hub::api::allows(caller, Role::Admin, Some(&r.machine_id)) {
+        return Err(ToolError::new(
+            ErrorCode::Forbidden,
+            "Only this project's owner, or an admin, turns Only me on or off.",
+        )
+        .with_fix("Ask the person whose project it is."));
+    }
+    if on == project.only_me {
+        return Ok(());
+    }
+    hub.db.with(|c| {
+        Ok(crate::hub::navi::store::set_only_me(
+            c,
+            &r,
+            on,
+            me.as_ref(),
+        )?)
+    })?;
+    hub.events.append(NewEvent {
+        at: crate::hub::checks::now_ts(hub.clock.as_ref()),
+        r#type: HubEventType::ProjectSettings,
+        machine_id: Some(r.machine_id.clone()),
+        project_id: Some(r.project_id.clone()),
+        thread_id: None,
+        summary: format!(
+            "{}: Only me {}",
+            project.title,
+            if on { "on" } else { "off" }
+        ),
+        data: Some(serde_json::json!({ "onlyMe": on })),
+        attention: None,
+    })?;
+    Ok(())
+}
+
 async fn set(
     hub: Arc<Hub>,
     caller: Caller,
@@ -453,6 +506,9 @@ async fn set(
             data: Some(serde_json::json!({ "title": title })),
             attention: None,
         })?;
+    }
+    if let Some(on) = input.only_me {
+        set_only_me(&hub, &caller, &project, on)?;
     }
     if let Some(on) = input.memory_refresh {
         hub.db.project_settings().set_memory_refresh(&r, on)?;

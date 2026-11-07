@@ -76,8 +76,8 @@ fleetd project list
 fleetd project remove devbox/storefront
 ```
 
-`list` prints each project as `<machineId>/<projectId>`, its title and its folder. `remove` stops the project's agents and forgets it. Its files, branches and worktrees stay.
-To also remove the worktrees its agents worked in, delete it from the app instead: see [Delete a project](#delete).
+`list` prints each project as `<machineId>/<projectId>`, its title and its folder. `remove` stops the project's agents and
+erases it: see [Delete a project](#delete). Its files, branches and worktrees stay.
 
 ### Repos {#repos}
 
@@ -114,6 +114,8 @@ Open a project's settings in the desktop app: Settings → Projects, then pick t
 |---|---|
 | Icon | The circle its chat shows in the sidebar, the chat and on the phone. Pick one of nine glass faces and one of twelve colors: the large icon shows what the pointer is over, and a pick takes effect at once everywhere. One nobody picked is made from its id. Or **Upload image…** (or drop a png, jpeg or webp on the icon); **Move and scale** lets you drag and zoom it before **Save**. The hub keeps only the circle's square, at most 512 px, without the file's metadata. **Remove image** brings the icon back. |
 | Name | How fleetd shows the project. Its folder keeps its own name. |
+| Only me | Only its owner sees it and uses it, in lists, chats and tools; nobody else on the hub does, an admin neither. On by default for a new project with no repo (a plain folder), and for every former Navi; off for a clone or a repo folder. Turning it on makes the project yours when it has no owner. Its owner changes it, or an admin turns it off, which shares it with everyone on the hub (decision `projects.one-model`, D310). `project_add` and `project_settings_set` take `onlyMe`. |
+| Telegram, linked hubs, skills | Every project has them, as a Navi did: see [Navi](/docs/navi). Pairing Telegram makes the project yours when it has no owner, so what you send there is your own message. |
 | Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and the setup it runs with: its own, or the default. A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, **Default setup**: what runs in each new worktree of a repo without setup of its own. See [Setup commands](#setup). |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
 | MCP servers | The project's own MCP servers for its agents, and the global ones it gets. See [MCP servers](/docs/mcp-servers). |
@@ -211,12 +213,15 @@ another, up to an hour), stops the rest.
 
 ### Delete a project {#delete}
 
-**Delete project…** stops the project's agents, removes the worktrees they worked in, and forgets the project and its
-settings. Type the project's name to confirm. If any of its worktrees has uncommitted changes, the dialog names them:
+**Delete project…** stops the project's agents, removes the worktrees they worked in, and erases the project: one rule
+for every project (D310). On the hub and its machine its chat, memory, skills, approvals and purchases, asks and
+decisions, automations, kept browser sign-ins, Telegram link, transcripts, attachments and screen recordings go.
+**Also delete its folder** (`removeFolder`) deletes its folder with everything in it; fleetd refuses that for a home
+folder, its own directory, or a folder holding another project. Type the project's name to confirm. If any of its worktrees has uncommitted changes, the dialog names them:
 those changes are lost. The app lists the worktrees again when you click it, so Delete waits while the project's
 machine is offline or can't list them.
 
-What stays: the checkout itself, untouched, every branch (so every commit stays reachable), your own worktrees of the
+What stays, unless you delete its folder: the checkout itself, untouched, every branch (so every commit stays reachable), your own worktrees of the
 repo, and its pull requests on GitHub. Add the folder again any time; the toast after a delete has **Add it again**.
 
 ### Nightly worktree cleanup {#cleanup}

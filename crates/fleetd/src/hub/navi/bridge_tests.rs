@@ -140,23 +140,22 @@ async fn a_navi_writes_to_another_lead_as_itself_never_as_the_person() {
     assert!(for_lead.contains("Navi Home"), "{for_lead}");
 }
 
+/// D310: every project's lead uses the bridge, only toward other projects.
 #[tokio::test]
-async fn only_a_navi_uses_the_bridge_and_only_toward_other_projects() {
+async fn every_lead_uses_the_bridge_only_toward_other_projects() {
     let (hub, _home) = hub();
     let message = |to: &str| json!({ "op": "project_message", "project": to, "text": "hi" });
-    // A coding project's lead keeps to its own project.
-    let (code, why) = call(&hub, &project("checkout"), message("storefront"))
+    // A coding project's lead works with others too.
+    call(&hub, &project("checkout"), message("storefront"))
         .await
-        .unwrap_err();
-    assert_eq!(code, ErrorCode::Forbidden, "{why}");
-    let (code, _) = call(
+        .unwrap();
+    call(
         &hub,
         &project("checkout"),
         json!({ "op": "factory_status" }),
     )
     .await
-    .unwrap_err();
-    assert_eq!(code, ErrorCode::Forbidden);
+    .unwrap();
     // Not its own project, and not one the hub doesn't have.
     let (code, why) = call(&hub, &project("navi"), message("Home"))
         .await
@@ -168,11 +167,15 @@ async fn only_a_navi_uses_the_bridge_and_only_toward_other_projects() {
         .unwrap_err();
     assert_eq!(code, ErrorCode::NotFound);
     assert!(why.contains("factory_status"), "{why}");
-    // Nothing was written anywhere.
-    for r in ["storefront", "navi"] {
+    // Only the coding project's message was written, to the project it named.
+    let agents = |r: &str| {
         let (messages, _, _) = hub.chat.page(&project(r), None, None, 50).unwrap();
-        assert!(messages.iter().all(|m| m.author != ChatAuthor::Agent));
-    }
+        messages
+            .iter()
+            .filter(|m| m.author == ChatAuthor::Agent)
+            .count()
+    };
+    assert_eq!((agents("storefront"), agents("navi")), (1, 0));
     // An archived Navi no longer does.
     hub.db
         .with(|c| {
@@ -482,11 +485,9 @@ async fn the_app_reads_a_navis_asks_with_their_orders_and_states() {
         panic!("an unknown project has asks");
     };
     assert_eq!(e.code, ErrorCode::NotFound);
-    let Err(CallError::Tool(e)) = read(&person, "checkout").await else {
-        panic!("a coding project has asks");
-    };
-    assert_eq!(e.code, ErrorCode::NotFound);
-    assert!(e.message.contains("not a Navi"), "{}", e.message);
+    // A coding project's asks read too (D310): it asked nothing here.
+    let asked = read(&person, "checkout").await.unwrap();
+    assert_eq!(asked["asks"], json!([]), "{asked}");
 }
 
 #[tokio::test]

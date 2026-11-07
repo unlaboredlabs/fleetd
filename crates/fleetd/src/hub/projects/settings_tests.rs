@@ -86,7 +86,10 @@ async fn node(hub: &Arc<Hub>, capable: bool) -> mpsc::UnboundedReceiver<SessionC
     hub.link.set_capabilities(
         &lab(),
         if capable {
-            &[CAP_PROJECT_SETTINGS]
+            &[
+                CAP_PROJECT_SETTINGS,
+                fleetd_contracts::node_link::CAP_PROJECT_ERASE,
+            ]
         } else {
             &[]
         },

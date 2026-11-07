@@ -572,8 +572,12 @@ async fn it_runs_only_in_the_persons_own_navi_never_a_shared_project() {
     .await
     .unwrap_err();
     assert_eq!(err.code, ErrorCode::Invalid);
-    assert!(err.message.contains("you have no Navi yet"));
+    assert!(err.message.contains("you have none yet"), "{}", err.message);
     assert_eq!(err.fix.as_deref(), Some(import::NO_NAVI_FIX));
+    assert_eq!(
+        err.reason,
+        Some(fleetd_contracts::mcp::ErrorReason::NoOnlyMeProject)
+    );
     // Someone else's Navi is never theirs to run in either.
     assert!(model.inputs.lock().unwrap().is_empty());
     assert!(mine(&hub, &lee).is_empty());

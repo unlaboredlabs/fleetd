@@ -87,7 +87,12 @@ async fn node(hub: &Arc<Hub>) -> mpsc::UnboundedReceiver<SessionCall> {
     hub.executors.await_live(&devbox()).await;
     hub.link.set_capabilities(
         &devbox(),
-        &[CAP_REPOS, CAP_PROJECT_SETTINGS, CAP_PROJECT_ENV_COPY],
+        &[
+            CAP_REPOS,
+            CAP_PROJECT_SETTINGS,
+            CAP_PROJECT_ENV_COPY,
+            fleetd_contracts::node_link::CAP_PROJECT_ERASE,
+        ],
     );
     let git = |remote: &str| {
         json!({ "ok": { "kind": "repo_facts", "exists": true, "isGit": true, "remote": remote,

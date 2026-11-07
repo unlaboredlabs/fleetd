@@ -93,6 +93,7 @@ impl From<serde_json::Error> for LeadError {
 impl From<LeadError> for McpToolError {
     fn from(e: LeadError) -> Self {
         McpToolError {
+            reason: None,
             code: e.code,
             message: e.message,
             fix: e.fix,

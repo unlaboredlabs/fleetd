@@ -1,13 +1,14 @@
-//! A Navi's Telegram bridge (W237, decision navi.telegram; the wire types are `telegram.rs`). Its owner sets it up in
-//! the Navi's settings: makes a bot with @BotFather, pastes the token (sealed in the app to the Navi's machine; the hub
-//! relays the box and keeps the fingerprint, never the token), presses Test (getMe: the bot's name and photo), then
-//! Pair, which opens `t.me/<bot>?start=<code>`; their Start makes their account the one the Navi answers. Unpair and
-//! pair again, pause, or remove it from the same place.
+//! A project's Telegram bridge (W237, decision navi.telegram; any project's since D310; the wire types are
+//! `telegram.rs`). A person sets it up in the project's settings: makes a bot with @BotFather, pastes the token (sealed
+//! in the app to the project's machine; the hub relays the box and keeps the fingerprint, never the token), presses
+//! Test (getMe: the bot's name and photo), then Pair, which opens `t.me/<bot>?start=<code>`; their Start makes their
+//! account the one the project answers, and the project theirs when it had no owner. Unpair and pair again, pause, or
+//! remove it from the same place.
 //!
-//! The Navi's node holds the token and long-polls Telegram (node/telegram). The hub's part is [`run`]: it takes what the
-//! paired account sent from the node's journal into the Navi's chat (marked as from Telegram, a forward as someone
-//! else's words), answers approval buttons as the owner, and sends the Navi's replies and approval cards back. Rows:
-//! `telegram_bridges` (the bridge as the tools show it, the journal seq taken and the chat seq sent), and
+//! The project's node holds the token and long-polls Telegram (node/telegram). The hub's part is [`run`]: it takes what
+//! the paired account sent from the node's journal into the project's chat (marked as from Telegram, a forward as
+//! someone else's words), answers approval buttons as the owner, and sends the lead's replies and approval cards back.
+//! Rows: `telegram_bridges` (the bridge as the tools show it, the journal seq taken and the chat seq sent), and
 //! `telegram_cards` (each approval card sent, by request, to update it once answered anywhere).
 pub mod format;
 pub mod run;
@@ -175,24 +176,20 @@ pub fn merged(bridge: &TelegramBridge, node: &TelegramNode) -> TelegramBridge {
     }
 }
 
-/// The Navi a call names, for its owner on one of their devices: a person's own key, on a Navi.
+/// The project a call names, for a person on one of their own devices: any project (D310). Another person's Only me
+/// project is refused before any handler (navi::owner::guard).
 fn navi_of(hub: &Hub, caller: &Caller, r: &ProjectRef, role: Role) -> Result<(), ToolError> {
     require(caller, role, Some(&r.machine_id))?;
     if !is_human(caller) {
         return Err(error(
             ErrorCode::Forbidden,
-            "Only a person sets up their Navi's Telegram, from one of their own devices.",
-            "Open the Navi's settings in the fleetd app.",
+            "Only a person sets up a project's Telegram, from one of their own devices.",
+            "Open the project's settings in the fleetd app.",
         ));
     }
-    if crate::hub::navi::of(&hub.db, r)?.is_none() {
-        return Err(error(
-            ErrorCode::Invalid,
-            format!("{} on {} is not a Navi.", r.project_id, r.machine_id),
-            "Telegram connects to a Navi only: navi_list shows yours.",
-        ));
+    if hub.store.project_get(r)?.is_none() {
+        return Err(crate::hub::api::unknown_project(r));
     }
-    // Another person's Navi is refused before any handler (navi::owner::guard).
     Ok(())
 }
 
@@ -395,6 +392,12 @@ async fn pair(
 ) -> Result<TelegramPairOutput, ToolError> {
     let r = &input.navi;
     navi_of(&hub, &caller, r, Role::Operate)?;
+    // The paired account is one person's: the project becomes theirs when it has no owner, so what they send there is
+    // their own message and approval.
+    if let Some(person) = caller.person.as_ref() {
+        hub.db
+            .with(|c| Ok(crate::hub::navi::store::claim(c, r, &person.person_id)?))?;
+    }
     let row = saved(&hub, r)?;
     let bot = match row.bridge.bot.clone() {
         Some(bot) => bot,

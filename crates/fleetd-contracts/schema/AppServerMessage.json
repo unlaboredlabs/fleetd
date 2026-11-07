@@ -268,6 +268,10 @@
         },
         "message": {
           "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/ErrorReason",
+          "description": "Which refusal it is, for the app to act on rather than match the words (`McpToolError.reason`). Absent for\nmost, and from an older hub."
         }
       },
       "required": [
@@ -654,6 +658,17 @@
         "failed"
       ],
       "type": "string"
+    },
+    "ErrorReason": {
+      "description": "A refusal an app acts on.",
+      "oneOf": [
+        {
+          "const": "no_only_me_project",
+          "description": "Memory import runs only in an Only me project of the caller's own, and they have none (D310).",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     },
     "EventSeq": {
       "maximum": 9007199254740991,

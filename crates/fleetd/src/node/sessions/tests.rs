@@ -5057,24 +5057,40 @@ async fn deleting_a_navi_erases_its_sessions_transcripts_and_attachments_and_its
     }
     assert!(other.exists() && folder.join("notes.md").exists());
 
-    // Ticked, the folder goes whole; a project's own folder elsewhere never does.
+    // Ticked, the folder goes whole, any project's (D310): but never fleetd's own, a home, or one holding another
+    // project.
     hub.ok(navi("p2", "navi/bea")).await;
     let bea = dir.path().join("node/navi/bea");
     std::fs::write(bea.join("draft.md"), "a draft").unwrap();
     assert_eq!(hub.ok(remove("p2", true)).await, SessionOutput::Done);
     assert!(!bea.exists());
     let code = dir.path().join("code");
-    std::fs::create_dir_all(&code).unwrap();
+    std::fs::create_dir_all(code.join("inner")).unwrap();
     hub.ok(navi("p3", &code.to_string_lossy())).await;
+    hub.ok(navi("p4", &code.join("inner").to_string_lossy()))
+        .await;
     let SessionResult::Err(refused) = hub.call(remove("p3", true)).await else {
-        panic!("a project's own folder was deleted")
+        panic!("a folder holding another project was deleted")
     };
     assert!(
-        refused.message.contains("isn't a Navi's own"),
+        refused.message.contains("another project"),
         "{}",
         refused.message
     );
     assert!(code.exists());
+    assert_eq!(hub.ok(remove("p4", true)).await, SessionOutput::Done);
+    assert_eq!(hub.ok(remove("p3", true)).await, SessionOutput::Done);
+    assert!(!code.exists());
+    hub.ok(navi("p5", &dir.path().join("node").to_string_lossy()))
+        .await;
+    let SessionResult::Err(refused) = hub.call(remove("p5", true)).await else {
+        panic!("the node's home was deleted")
+    };
+    assert!(
+        refused.message.contains("home folder"),
+        "{}",
+        refused.message
+    );
 }
 
 /// `node join --enroll-only` exits the moment the hub accepts it, so the hub's Subscribe can be answered after the link

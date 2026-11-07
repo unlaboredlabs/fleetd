@@ -183,6 +183,7 @@ fn authenticate(hub: &Hub, headers: &HeaderMap) -> Result<Caller, Box<Response>>
     match hub.auth.verify(bearer) {
         Ok(caller) => Ok(caller),
         Err(AuthError::Unauthorized(refused)) => Err(Box::new(unauthorized(&McpToolError {
+            reason: None,
             code: refused.code,
             message: refused.message,
             fix: refused.fix,

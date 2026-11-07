@@ -50,7 +50,7 @@ impl Approvals {
             env_name: None,
             fingerprint: None,
         });
-        self.create(NewRequest {
+        let new = NewRequest {
             project_ref: contract_project(project),
             workstream_id: None,
             kind: if from_1password {
@@ -74,8 +74,13 @@ impl Approvals {
             }),
             at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
-        })
-        .await
+        };
+        // From 1Password it fills with no ask (D310); a value the person types is theirs to enter, as before.
+        if from_1password {
+            self.create_approved(new).await
+        } else {
+            self.create(new).await
+        }
     }
 
     /// The Navi's node claims an approved 1Password secure input for one fill, within its window and from the browser

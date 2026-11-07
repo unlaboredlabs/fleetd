@@ -140,15 +140,13 @@ fn with_repos(
         project_id: project.project_id.clone(),
     };
     project.repos = crate::hub::repos::store::of(conn, &r)?;
-    let navi = crate::hub::navi::store::of(conn, &r)?;
+    let kept = crate::hub::navi::store::kept(conn, &r)?.unwrap_or_default();
     project.avatar = crate::hub::projects::avatar::of(conn, &r)?;
     project.icon = Some(crate::hub::projects::icon::of(conn, &r)?);
-    project.only_me = navi.is_some();
+    project.only_me = kept.only_me;
     project.kind = project.only_me.then_some(ProjectKind::Assistant);
-    (project.created_by, project.archived_at, project.owner) = navi
-        .map_or((None, None, None), |n| {
-            (Some(n.created_by), n.archived_at, n.owner)
-        });
+    (project.created_by, project.archived_at, project.owner) =
+        (kept.created_by, kept.archived_at, kept.owner);
     Ok(project)
 }
 

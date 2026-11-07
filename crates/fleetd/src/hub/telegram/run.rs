@@ -256,7 +256,11 @@ pub async fn take_once(
 }
 
 fn owner(hub: &Hub, r: &ProjectRef) -> Option<fleetd_contracts::people::PersonRef> {
-    let owner = crate::hub::navi::of(&hub.db, r).ok()??.owner?;
+    let owner = hub
+        .db
+        .with(|c| Ok(crate::hub::navi::store::kept(c, r)?))
+        .ok()??
+        .owner?;
     crate::hub::people::People::new(hub.db.clone(), hub.clock.clone())
         .person_ref(&owner)
         .ok()?

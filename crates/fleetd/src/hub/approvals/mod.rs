@@ -57,6 +57,8 @@ fn refuse(code: &str, message: impl Into<String>, fix: Option<&str>) -> Approval
 }
 
 const EVIDENCE_MAX: usize = 2000;
+/// Who answered a request approved as it opened, with no ask ([`Approvals::create_approved`]).
+pub const NO_ASK: &str = "fleetd:no-ask";
 /// Evidence while an approved command runs; replaced by its result.
 const RUNNING: &str = "running on";
 static SINK: LazyLock<Regex> =
@@ -519,6 +521,24 @@ impl Approvals {
 
     async fn create(&self, new: NewRequest) -> Result<HumanRequest, ApprovalRefused> {
         let r = self.deps.requests.create(new).map_err(store_refusal)?;
+        self.announce("request.opened", &r).await;
+        Ok(r)
+    }
+
+    /// A request kept as a record and approved as it opens, with no ask (D310: a purchase, a 1Password secure
+    /// input): announced once approved, so no card waits on the person and no notification asks them.
+    async fn create_approved(&self, new: NewRequest) -> Result<HumanRequest, ApprovalRefused> {
+        let r = self.deps.requests.create(new).map_err(store_refusal)?;
+        let at = self.now();
+        let r = self
+            .deps
+            .requests
+            .update_from(&r.request_id, RequestState::Open, |r| {
+                r.state = RequestState::Approved;
+                r.answered_at = Some(fleetd_contracts::ids::Timestamp(at));
+                r.answered_by = Some(NO_ASK.to_owned());
+            })
+            .map_err(store_refusal)?;
         self.announce("request.opened", &r).await;
         Ok(r)
     }
