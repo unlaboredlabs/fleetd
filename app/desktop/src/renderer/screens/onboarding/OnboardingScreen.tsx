@@ -7,6 +7,7 @@ import { useHub, useSeveralHubs } from "../../src/data/react";
 import { ColorPick } from "../shell/ColorPick";
 import { formatCodeAt, initialForm, KEY_CREATE, mismatchFailure, needsOnboarding, reduce, type Reaching } from "./form";
 import { useHubState, useKeyStore, useReaching, useSecondsUntil } from "./hooks";
+import { Mark } from "./Mark";
 import { CommandLine, Failure, Prose } from "./Prose";
 import { TAGLINE } from "./setup";
 import s from "./onboarding.module.css";
@@ -99,20 +100,6 @@ function Welcome({ id, children }: { id: string; children: ReactNode }) {
         {children}
       </div>
     </div>
-  );
-}
-
-/** The app's icon in the theme's colours, drawn here so the welcome has the product's face without loading an image. */
-function Mark() {
-  return (
-    <svg className={s.mark} viewBox="100 100 824 824" aria-hidden>
-      <rect className={s.markTile} x="100" y="100" width="824" height="824" rx="185" />
-      <g className={s.markChevrons} fill="none" strokeWidth="72" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M255 362 405 512 255 662" opacity=".4" />
-        <path d="M437 362 587 512 437 662" opacity=".7" />
-        <path d="M619 362 769 512 619 662" />
-      </g>
-    </svg>
   );
 }
 
@@ -382,7 +369,27 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
         </Text>
         {connect}
       </section>
+      {window.fleetd.platform === "darwin" ? <AgentsMac /> : null}
     </Welcome>
+  );
+}
+
+/** On a Mac: the other way in, for the Mac every project's agents use (D309). It opens its own small window. */
+function AgentsMac() {
+  return (
+    <section className={s.section} aria-labelledby="agents-mac">
+      <Text as="h2" id="agents-mac" size="md" strong>
+        Is this the Mac for your agents?
+      </Text>
+      <Text as="p" tone="quiet">
+        Agents use it for builds and iOS simulators. You need a 6-digit code from Add machine on your main machine.
+      </Text>
+      <div className={s.actions}>
+        <Button variant="secondary" size="md" onClick={() => void window.fleetd.macSetup.open()}>
+          Set up this Mac for agents
+        </Button>
+      </div>
+    </section>
   );
 }
 

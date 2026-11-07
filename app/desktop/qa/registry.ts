@@ -1522,6 +1522,73 @@ export const screens: readonly Screen[] = [
       await page.getByText(/^Opened Terminal with|^Couldn't open a terminal/u).waitFor({ timeout: 10_000 });
     },
   },
+  // Set up this Mac for agents (D309), its own window: a Mac under the fixture (src/main/macSetupFixture.ts), on the
+  // real clock, as main's steps take their time. Each step the window goes through, as a variant.
+  { id: "mac-setup", route: "#/mac-setup", fixtures: ["typical"], sizes: ["narrow"], realClock: true },
+  {
+    id: "mac-setup",
+    route: "#/mac-setup",
+    fixtures: ["typical"],
+    sizes: ["narrow"],
+    realClock: true,
+    variant: "wrong-code",
+    open: async (page) => {
+      await page.getByRole("textbox").first().fill("000000");
+      await page.getByText("That code isn't open on this hub.").waitFor({ timeout: 10_000 });
+    },
+  },
+  {
+    id: "mac-setup",
+    route: "#/mac-setup",
+    fixtures: ["typical"],
+    sizes: ["narrow"],
+    realClock: true,
+    variant: "joining",
+    open: async (page) => {
+      await page.getByRole("textbox").first().fill("482913");
+      await page.getByRole("heading", { name: "Joining devbox" }).waitFor({ timeout: 10_000 });
+    },
+  },
+  {
+    id: "mac-setup",
+    route: "#/mac-setup",
+    fixtures: ["typical"],
+    sizes: ["narrow"],
+    realClock: true,
+    variant: "grants",
+    open: async (page) => {
+      await page.getByRole("textbox").first().fill("482913");
+      await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
+    },
+  },
+  {
+    id: "mac-setup",
+    route: "#/mac-setup",
+    fixtures: ["typical"],
+    sizes: ["narrow"],
+    realClock: true,
+    variant: "one-allowed",
+    open: async (page) => {
+      await page.getByRole("textbox").first().fill("482913");
+      await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
+      await page.getByRole("button", { name: "Open System Settings" }).first().click();
+      await page.getByText("Allowed", { exact: true }).waitFor({ timeout: 20_000 });
+    },
+  },
+  {
+    id: "mac-setup",
+    route: "#/mac-setup",
+    fixtures: ["typical"],
+    sizes: ["narrow"],
+    realClock: true,
+    variant: "ready",
+    open: async (page) => {
+      await page.getByRole("textbox").first().fill("482913");
+      await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
+      for (const button of await page.getByRole("button", { name: "Open System Settings" }).all()) await button.click();
+      await page.getByRole("heading", { name: "This Mac is ready" }).waitFor({ timeout: 20_000 });
+    },
+  },
   { id: "onboarding.key", route: "#/onboarding?key", fixtures: ["pairing-failed", "onboarding-file-store"] },
   {
     id: "onboarding",
@@ -2227,6 +2294,17 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Add builder-1" }).waitFor();
     },
   },
+  // A Mac for agents: the 6-digit code the fleetd app on the Mac takes, with the hub's address under it.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-add"],
+    variant: "mac-code",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Set up…" }).click();
+      await page.getByText("482 913").waitFor();
+    },
+  },
   // Any other machine: its name, then the line with Copy and "Waiting for laptop…", which turns into Joined.
   {
     id: "settings.hub.machines",
@@ -2252,7 +2330,8 @@ export const screens: readonly Screen[] = [
       await page.getByText("laptop joined.").waitFor();
     },
   },
-  // A Mac for agents (D309): the Xcode block from the hub's guide, the name, then its line and the two clicks.
+  // A Mac for agents in Terminal, under its code (D309): the Xcode block from the hub's guide, the name, then its line
+  // and the two clicks.
   {
     id: "settings.hub.machines",
     route: "#/settings/hub/machines",
@@ -2260,6 +2339,7 @@ export const screens: readonly Screen[] = [
     variant: "mac",
     open: async (page) => {
       await page.getByRole("button", { name: "Set up…" }).click();
+      await page.getByRole("button", { name: "Use Terminal instead" }).click();
       await page.getByRole("button", { name: "Make the line" }).click();
       await page.getByText("Waiting for mac…").waitFor();
     },

@@ -1,0 +1,293 @@
+/* Set up this Mac for agents: one centred column in a small window, a step at a time, no card around it. */
+.window {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+/* The hidden title bar: the window drags by it, and the traffic lights sit in it. */
+.titlebar {
+  flex: none;
+  height: 40px;
+  -webkit-app-region: drag;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+  max-width: 420px;
+  margin-inline: auto;
+  padding: var(--space-4) var(--space-6) var(--space-8);
+}
+
+.progress {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-xs);
+  color: var(--faint);
+}
+.progressStep {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 180ms var(--ease-out);
+}
+.progressStep[data-state="current"] {
+  color: var(--text);
+  font-weight: 600;
+}
+.progressStep[data-state="done"] {
+  color: var(--quiet);
+}
+.progressDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.5;
+}
+.progressStep[data-state="current"] .progressDot {
+  background: var(--accent);
+  opacity: 1;
+}
+
+/* Each step's face, title and line, centred, as a setup assistant's are; what the step asks for sits under it. */
+.head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+}
+.face {
+  width: 48px;
+  height: 48px;
+}
+.ready {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: var(--space-1);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+  animation: ready-in 420ms var(--ease-out) both;
+}
+@keyframes ready-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ready {
+    animation: none;
+  }
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.codeBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.codeLabel {
+  display: block;
+  text-align: center;
+}
+
+/* The six digits, large and spaced, as they are shown on the main machine. */
+.code {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 32px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.18em;
+  text-align: center;
+  outline: none;
+  transition: border-color 120ms ease-out, box-shadow 120ms ease-out;
+}
+.code::placeholder {
+  color: var(--faint);
+  opacity: 0.6;
+}
+.code:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.code[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+.code:disabled {
+  color: var(--quiet);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.failure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  text-align: center;
+}
+
+.footnote {
+  display: block;
+  text-align: center;
+}
+
+.steps,
+.grants,
+.checks {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.steps {
+  align-self: center;
+  gap: var(--space-2);
+  max-width: 100%;
+}
+.stepRow,
+.check {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  column-gap: var(--space-3);
+  align-items: start;
+}
+.stepRow > :first-child,
+.check > :first-child {
+  margin-top: 3px;
+}
+.stepText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.output {
+  margin: var(--space-1) 0 0;
+  padding: var(--space-2);
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  color: var(--quiet);
+}
+
+/* A grant per row: its name and why, and the pane that turns it on, or that it is on. */
+.grant {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-4) 0;
+}
+.grant + .grant {
+  border-top: 1px solid var(--hairline);
+}
+.allowed {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--success);
+  animation: ready-in 320ms var(--ease-out) both;
+}
+
+/* The checks that pass, one short line each, two to a row. */
+.passed {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.passedRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+  min-width: 0;
+  color: var(--success);
+}
+.passedRow > svg {
+  flex: none;
+  margin-top: 3px;
+}
+/* Works, short of what's recommended, or the node is still at it: amber, with what it says. */
+.passedRow[data-state="warn"],
+.passedRow[data-state="unknown"] {
+  color: var(--warning);
+}
+.passedText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.passedText > :first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checks {
+  gap: var(--space-3);
+}
+
+.command {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-top: 2px;
+  padding: 2px 2px 2px var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.command > code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}

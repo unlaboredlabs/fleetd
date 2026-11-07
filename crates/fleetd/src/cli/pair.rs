@@ -22,8 +22,9 @@ pub const PAIR_USAGE: &str = r#"  pair [--name <device>] [--role <read|operate|a
              print the one command that makes another machine a worker of this hub, with
              a one-time code (15 min): for a machine the hub can't reach over SSH
   pair --worker-codes
-             list the worker codes that can still be used: each one's id, machine, when it was
-             made and until when it works, never the code itself
+             list the worker codes that can still be used, the agents' Mac's 6-digit setup code
+             among them: each one's id, machine, when it was made and until when it works, never
+             the code itself
   pair --worker-revoke <id>
              take back the open worker code with that id (from --worker-codes): a machine
              that tries it is refused. Used and expired codes are dropped a day later
@@ -388,7 +389,11 @@ pub fn worker_codes(home: Option<&str>) -> Result<String, String> {
         .auth
         .open_enroll_tokens()
         .map_err(|error| error.to_string())?;
-    if codes.is_empty() {
+    let mac = hub
+        .pair_codes()
+        .open_mac()
+        .map_err(|error| error.to_string())?;
+    if codes.is_empty() && mac.is_none() {
         return Ok("No open worker codes. `fleetd pair --worker <machine-id>` makes one.\n".into());
     }
     let mut out = String::new();
@@ -406,6 +411,12 @@ pub fn worker_codes(home: Option<&str>) -> Result<String, String> {
             }
         );
     }
+    if let Some(code) = mac {
+        out += &format!(
+            "{}  {}  made {}  until {}  (the agents' Mac's 6-digit setup code)\n",
+            code.id, code.machine_id, code.created_at, code.expires_at
+        );
+    }
     out += "Take one back with `fleetd pair --worker-revoke <id>`.\n";
     Ok(out)
 }
@@ -421,13 +432,22 @@ pub fn revoke_worker_code(home: Option<&str>, id: &str) -> Result<String, String
     }
     let home = super::hub_key::resolve_home(home)?;
     let hub = super::hub_key::open_hub(&home)?;
-    match hub
+    if let Some(machine) = hub
         .auth
         .revoke_enroll_token(id)
         .map_err(|error| error.to_string())?
     {
-        Some(machine) => Ok(format!(
+        return Ok(format!(
             "Revoked worker code {id} for {machine}: a machine that tries it is refused.\n"
+        ));
+    }
+    match hub
+        .pair_codes()
+        .revoke_mac(id)
+        .map_err(|error| error.to_string())?
+    {
+        Some(machine) => Ok(format!(
+            "Revoked the setup code {id} for the agents' Mac {machine}: a Mac that types it is refused.\n"
         )),
         None => Err(format!(
             "no open worker code {id}; `fleetd pair --worker-codes` lists them"
@@ -691,6 +711,44 @@ mod tests {
                 .unwrap_err()
                 .starts_with("no open worker code")
         );
+        assert!(
+            worker_codes(Some(h))
+                .unwrap()
+                .starts_with("No open worker codes.")
+        );
+    }
+
+    /// The agents' Mac's 6-digit setup code is listed with the worker codes, never its digits, and revoked by its id.
+    #[test]
+    fn the_macs_setup_code_is_listed_and_revoked_with_the_worker_codes() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path().to_str().unwrap();
+        let hub = super::super::hub_key::open_hub(home.path()).unwrap();
+        let mac = fleetd_contracts::ids::MachineId::new("mac").unwrap();
+        let codes = hub.pair_codes();
+        let minted = codes.create_mac(&mac).unwrap();
+        let listed = worker_codes(Some(h)).unwrap();
+        let line = listed
+            .lines()
+            .find(|l| l.ends_with("(the agents' Mac's 6-digit setup code)"))
+            .unwrap_or_else(|| panic!("{listed}"));
+        assert!(
+            line.contains("  mac  made ") && line.contains(&format!("until {}", minted.expires_at)),
+            "{line}"
+        );
+        assert!(!listed.contains(&minted.code), "{listed}");
+        let id = line.split_whitespace().next().unwrap().to_owned();
+        assert_eq!(id.len(), crate::hub::auth::ENROLL_CODE_ID_LEN);
+        assert_eq!(
+            revoke_worker_code(Some(h), &id).unwrap(),
+            format!(
+                "Revoked the setup code {id} for the agents' Mac mac: a Mac that types it is refused.\n"
+            )
+        );
+        assert!(matches!(
+            codes.redeem_mac(&minted.code, |_| Ok::<(), ()>(())),
+            Err(hub_pair::RedeemError::Invalid)
+        ));
         assert!(
             worker_codes(Some(h))
                 .unwrap()

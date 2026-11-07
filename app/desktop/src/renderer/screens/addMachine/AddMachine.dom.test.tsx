@@ -106,6 +106,9 @@ let calls: Array<{ tool: string; input: unknown }>;
 let runs: MachineAddRun[];
 /** machine_join's code expiry. */
 let expiresAt: string;
+/** How many codes mac_code_create made, and when its next one expires. */
+let macCodes = 0;
+let macExpiresAt: string;
 /** How many more machine_add_plan calls the hub refuses, and what ssh said: by default, the host refused its key. */
 let planRefusals = 0;
 let sshSaid = "builder-1: Permission denied (publickey).";
@@ -123,6 +126,8 @@ beforeEach(() => {
   computer = { kind: "none" };
   hubInfo = undefined;
   expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
+  macCodes = 0;
+  macExpiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
   planRefusals = 0;
   sshSaid = "builder-1: Permission denied (publickey).";
   joinHere.mockClear();
@@ -172,6 +177,8 @@ const render = async (open?: { view: View; at: number }) => {
                       gitIdentity: "ada-lovelace <1+ada-lovelace@users.noreply.github.com>",
                       line: (input as { rejoin?: boolean }).rejoin ? `${LINE} --rejoin` : LINE,
                     }
+                  : tool === "mac_code_create"
+                    ? ((macCodes += 1), { code: macCodes === 1 ? "482913" : "107355", expiresAt: macExpiresAt, machineId: "mac", hubUrl: "http://devbox.example.ts.net:4790" })
                   : tool === "setup_list"
                     ? { steps: [MAC_STEP], requiredLeft: 0 }
                     : {};
@@ -498,10 +505,41 @@ it("waits on a repair of a machine still online until its node links again, then
   expect(button("Open devbox")).toBeDefined();
 });
 
-it("sets up a Mac for agents between the hub's own guide, and replaces one that is a machine already", async () => {
+it("shows A Mac for agents' 6-digit code, made once, with the hub's address, and turns its wait into joined", async () => {
+  await render();
+  await click("Set up…");
+  expect(state()).toBe("mac");
+  expect(host.querySelector("[aria-label='Setup code']")?.textContent).toContain("482 913");
+  expect(host.textContent).toContain("Should the Mac ask for the hub: http://devbox.example.ts.net:4790");
+  expect(host.textContent).toContain("Waiting for the Mac…");
+  expect(calls.filter((c) => c.tool === "mac_code_create").map((c) => c.input)).toEqual([{ hubUrl: "devbox:4790" }]);
+  // Frames and re-renders mint nothing more: one code per open view.
+  await snapshot([DEVBOX]);
+  expect(calls.filter((c) => c.tool === "mac_code_create")).toHaveLength(1);
+  await snapshot([DEVBOX, { ...DEVBOX, machineId: "mac", name: "mac" }]);
+  expect(host.textContent).toContain("mac joined. The Mac's window finishes the setup");
+  await click("Open the Mac's checks");
+  expect(window.location.hash).toBe("#/setup/mac");
+});
+
+it("says when A Mac for agents' code expired, and makes a new one only when asked", async () => {
+  macExpiresAt = new Date(Date.now() - 1000).toISOString();
+  await render();
+  await click("Set up…");
+  expect(host.textContent).toContain("This code expired before the Mac used it");
+  expect(host.querySelector("[aria-label='Setup code']")?.textContent).not.toContain("482 913");
+  expect(calls.filter((c) => c.tool === "mac_code_create")).toHaveLength(1);
+  macExpiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+  await click("New code");
+  expect(calls.filter((c) => c.tool === "mac_code_create")).toHaveLength(2);
+  expect(host.querySelector("[aria-label='Setup code']")?.textContent).toContain("107 355");
+});
+
+it("sets up a Mac for agents in Terminal between the hub's own guide, and replaces one that is a machine already", async () => {
   await render();
   expect(host.textContent).toContain("A Mac for agents");
   await click("Set up…");
+  await click("Use Terminal instead");
   expect(state()).toBe("line");
   // The Xcode block first, from the hub's guide; the name defaults to mac. A user of its own is only pointed to.
   expect(host.textContent).toContain("sudo xcodebuild -license accept");
@@ -526,6 +564,7 @@ it("sets up a Mac for agents between the hub's own guide, and replaces one that 
   await render();
   await snapshot([DEVBOX, { ...DEVBOX, machineId: "mac", name: "mac" }]);
   await click("Set up…");
+  await click("Use Terminal instead");
   expect(host.textContent).toContain("its line makes it the agents' Mac");
   await click("Make the line");
   expect(calls.filter((c) => c.tool === "machine_join").map((c) => c.input)).toEqual([{ machineId: "mac", rejoin: true, mac: true }]);

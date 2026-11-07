@@ -3,6 +3,9 @@
 //! An invite (`fleetd invite`, invite_create) is such a code bound to a person and valid for 7 days: the key it mints
 //! belongs to them. A plain `fleetd pair` code pairs one more device for the hub's owner.
 //! No auth header: the code is the credential, so failed attempts are rate limited per remote address.
+pub mod mac;
+#[cfg(test)]
+mod mac_tests;
 #[cfg(test)]
 mod tests;
 pub mod tools;
@@ -71,7 +74,7 @@ pub fn normalize(input: &str) -> Option<String> {
     (canon.len() == CODE_LEN && canon.bytes().all(|b| ALPHABET.contains(&b))).then_some(canon)
 }
 
-fn hash(canon: &str) -> String {
+pub(crate) fn hash(canon: &str) -> String {
     Sha256::digest(canon.as_bytes())
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -358,12 +361,17 @@ pub struct Limiter {
 
 impl Limiter {
     pub fn blocked(&self, addr: Option<IpAddr>, now: i64) -> bool {
+        self.blocked_over(addr, now, MAX_FAILURES)
+    }
+
+    /// Whether `addr` failed `max` times or more in the last minute.
+    pub fn blocked_over(&self, addr: Option<IpAddr>, now: i64, max: usize) -> bool {
         let mut failures = self.failures.lock().unwrap_or_else(|p| p.into_inner());
         let Some(times) = failures.get_mut(&addr) else {
             return false;
         };
         times.retain(|&at| now - at < FAILURE_WINDOW_MS);
-        times.len() >= MAX_FAILURES
+        times.len() >= max
     }
 
     pub fn failed(&self, addr: Option<IpAddr>, now: i64) {
@@ -375,7 +383,7 @@ impl Limiter {
     }
 }
 
-fn pair_error(
+pub(crate) fn pair_error(
     status: StatusCode,
     code: PairErrorCode,
     message: &str,
@@ -408,7 +416,7 @@ fn device_name(sent: Option<&str>, minted: Option<String>) -> String {
 
 /// Where the device should reach the hub from now on: the configured URL, else the address it just used when the
 /// hub listens on every interface (`http://0.0.0.0:…` reaches nothing), else `http://<listen>`.
-fn hub_url(hub: &Hub, host_header: Option<&str>) -> String {
+pub(crate) fn hub_url(hub: &Hub, host_header: Option<&str>) -> String {
     let unspecified = hub
         .config
         .listen
@@ -540,7 +548,7 @@ pub fn handle(
     )
 }
 
-fn store_failed(error: &StoreError) -> (StatusCode, serde_json::Value) {
+pub(crate) fn store_failed(error: &StoreError) -> (StatusCode, serde_json::Value) {
     tracing::error!("pairing failed: {error}");
     (
         StatusCode::INTERNAL_SERVER_ERROR,

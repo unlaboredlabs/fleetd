@@ -1,0 +1,13 @@
+.mark {
+  width: 56px;
+  height: 56px;
+  margin-bottom: var(--space-1);
+}
+
+.markTile {
+  fill: var(--accent-fill);
+}
+
+.markChevrons {
+  stroke: var(--on-accent);
+}

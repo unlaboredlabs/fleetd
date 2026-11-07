@@ -134,3 +134,32 @@
   align-items: center;
   gap: var(--space-2);
 }
+
+/* A Mac for agents: the two things to do on the Mac, and its code, large enough to read across a desk. */
+.macSteps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-4);
+}
+.macCode {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+.macDigits {
+  font-family: var(--font-mono);
+  font-size: 34px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.12em;
+  line-height: 1.15;
+  color: var(--text);
+  user-select: all;
+}
+.macCode[data-state="expired"] .macDigits,
+.macCode[data-state="joined"] .macDigits {
+  color: var(--faint);
+}

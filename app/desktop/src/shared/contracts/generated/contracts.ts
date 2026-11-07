@@ -3550,6 +3550,22 @@ export type KnownMacCheckState = "ok" | "fail" | "warn" | "unknown";
 /** KnownMacCheckState, or a value from a newer hub. */
 export type MacCheckState = KnownMacCheckState | (string & {});
 
+export type MacCodeCreateInput = {
+  hubUrl?: string;
+};
+
+export type MacCodeCreateOutput = {
+  /** Six digits, shown as `123 456`; traded at `POST <hub>/pair/mac`. */
+  code: string;
+  expiresAt: Timestamp;
+  /** Where the Mac reaches the hub: never a loopback address; none when the hub has only those. */
+  hubUrl?: string;
+  /** The machine id the Mac joins as. */
+  machineId: MachineId;
+  next?: string;
+  truncated?: boolean;
+};
+
 /**
  * The agents' Mac's setup, as its node checked it last (each heartbeat reads the quick checks again; the slow ones,
  * such as Xcode's, every few minutes and on a Test).
@@ -9001,6 +9017,7 @@ export interface ToolMap {
   invite_create: { input: InviteCreateInput; output: InviteCreateOutput };
   invite_revoke: { input: InviteRevokeInput; output: InviteRevokeOutput };
   lead_start: { input: LeadStartInput; output: LeadStartOutput };
+  mac_code_create: { input: MacCodeCreateInput; output: MacCodeCreateOutput };
   machine_add: { input: MachineAddInput; output: MachineAddOutput };
   machine_add_plan: { input: MachineAddPlanInput; output: MachineAddPlanOutput };
   machine_add_status: { input: MachineAddStatusInput; output: MachineAddStatusOutput };

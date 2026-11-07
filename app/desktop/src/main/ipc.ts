@@ -22,6 +22,8 @@ import { RELEASE_BUILD } from "./build";
 import { fixtureRequest } from "./hub/fixture";
 import { fleetdDir, joinHere, machineFingerprint, realPorts, thisComputer } from "./joinHere";
 import type { JoinHere } from "../shared/joinHere";
+import { MacSetup, realMacPorts } from "./macSetup";
+import { fixtureMacPorts } from "./macSetupFixture";
 import { isOwnPage } from "./security";
 import type { SessionWindows } from "./sessionWindow";
 import type { Updates } from "./updater";
@@ -46,7 +48,16 @@ const handle = <C extends InvokeChannel>(
 
 export const registerIpc = (
   hubs: Hubs,
-  frame: { opener: Opener; notifier: Notifier; log: AppLog; updates: Updates; presence: PresenceSetting; sessionWindows: SessionWindows },
+  frame: {
+    opener: Opener;
+    notifier: Notifier;
+    log: AppLog;
+    updates: Updates;
+    presence: PresenceSetting;
+    sessionWindows: SessionWindows;
+    /** Set up this Mac for agents' own window. */
+    macSetupWindow: { show(): void };
+  },
   pairing: PairingService,
 ): void => {
   // A hub removed while a call was on its way answers as an unpaired one would.
@@ -125,6 +136,28 @@ export const registerIpc = (
   handle(IPC.machinesJoinHereState, (_event, id) => lastJoin.get(id) ?? null);
   // Under a fixture, a computer that is neither, whatever this one holds.
   handle(IPC.machinesThisComputer, () => (fixtureRequest(process.env, RELEASE_BUILD).kind === "fixture" ? { kind: "none" } : machineFingerprint().then((fp) => thisComputer(fleetdDir(), fp))));
+  // Set up this Mac for agents: one at a time, as there is one fleetd dir here. Its pane URLs are main's constants.
+  // Under a fixture, a Mac that isn't there (macSetupFixture.ts).
+  const macSetup = new MacSetup(
+    fixtureRequest(process.env, RELEASE_BUILD).kind === "fixture"
+      ? fixtureMacPorts()
+      : // It calls no hub tool: the Mac holds no key, and trades its code over plain HTTP.
+        realMacPorts(realPorts(() => Promise.resolve(gone)), {
+          knownHubs: () => hubs.list().flatMap((h) => hubs.get(h.id)?.url() ?? []),
+          openPane: (url) => shell.openExternal(url),
+        }),
+    (join) => {
+      for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(IPC.macSetupJoinChanged, join);
+    },
+  );
+  handle(IPC.macSetupOpen, () => {
+    if (process.platform === "darwin") frame.macSetupWindow.show();
+  });
+  handle(IPC.macSetupRedeem, (_event, request) => macSetup.redeem(request));
+  handle(IPC.macSetupJoin, () => macSetup.join());
+  handle(IPC.macSetupHealth, (_event, hub) => macSetup.health(hub ?? undefined));
+  handle(IPC.macSetupPane, (_event, pane) => macSetup.openPane(pane));
+  handle(IPC.macSetupRestart, () => macSetup.restart());
   handle(IPC.projectsPickFolder, (event) => pickFolder(event.sender));
   handle(IPC.projectsReadDrop, (_event, path) => readDrop(path));
   handle(IPC.copy, (_event, text) => clipboard.writeText(text));

@@ -9258,6 +9258,48 @@
       "pattern": "^http://127\\.0\\.0\\.1:[1-9][0-9]{0,4}(/[A-Za-z0-9/._-]*)?$",
       "type": "string"
     },
+    "MacCodeCreateInput": {
+      "properties": {
+        "hubUrl": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "MacCodeCreateOutput": {
+      "properties": {
+        "code": {
+          "description": "Six digits, shown as `123 456`; traded at `POST <hub>/pair/mac`.",
+          "type": "string"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "hubUrl": {
+          "description": "Where the Mac reaches the hub: never a loopback address; none when the hub has only those.",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "The machine id the Mac joins as."
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "expiresAt",
+        "machineId"
+      ],
+      "type": "object"
+    },
     "MacTool": {
       "description": "The agents' Mac's tool, as the hub routes agents' `mac` calls to it.",
       "properties": {
@@ -11118,6 +11160,12 @@
         "lead_start.output": {
           "$ref": "#/$defs/LeadStartOutput"
         },
+        "mac_code_create.input": {
+          "$ref": "#/$defs/MacCodeCreateInput"
+        },
+        "mac_code_create.output": {
+          "$ref": "#/$defs/MacCodeCreateOutput"
+        },
         "machine_add.input": {
           "$ref": "#/$defs/MachineAddInput"
         },
@@ -12018,6 +12066,8 @@
         "invite_revoke.output",
         "lead_start.input",
         "lead_start.output",
+        "mac_code_create.input",
+        "mac_code_create.output",
         "machine_add.input",
         "machine_add.output",
         "machine_add_plan.input",
