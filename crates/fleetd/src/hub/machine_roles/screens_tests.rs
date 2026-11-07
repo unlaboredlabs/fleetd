@@ -362,19 +362,22 @@ fn navi(hub: &Hub, name: &str, owner: &PersonId) -> ProjectRef {
     r
 }
 
+/// A project's browser, opened on its own machine, runs on the profile it keeps (D221, any project's since D310); on
+/// another machine, on a fresh one; another person's Only me project is never reached.
 #[tokio::test]
-async fn a_navis_browser_opened_by_its_owner_runs_on_its_kept_profile_on_its_machine() {
+async fn a_projects_browser_opened_on_its_machine_runs_on_its_kept_profile() {
     let (hub, _home, _clock) = setup();
     let mut devbox = runner(&hub, "devbox");
-    let _mac1 = runner(&hub, "mac1");
+    let mut mac1 = runner(&hub, "mac1");
     let (ada, desk) = person(&hub, "Ada", "operate");
     let (_, bee) = person(&hub, "Bee", "admin");
     navi(&hub, "ada-navi", &ada);
     let input = |machine: &str| json!({ "projectRef": { "machineId": "devbox", "projectId": "ada-navi" }, "machineId": machine });
-    // Its profile is on devbox: a browser for it elsewhere would have none of its sign-ins.
-    let (code, message) = refusal(call(&hub, &desk, "screen_open", input("mac1")).await);
-    assert_eq!(code, ErrorCode::Invalid);
-    assert!(message.contains("runs on its own machine"), "{message}");
+    // Its profile is on devbox: a browser for it elsewhere runs on a fresh one.
+    call(&hub, &desk, "screen_open", input("mac1"))
+        .await
+        .unwrap();
+    assert!(next(&mut mac1).await.navi.is_none());
     // Another person, an admin too, never reaches it.
     let (code, message) = refusal(call(&hub, &bee, "screen_open", input("devbox")).await);
     assert_eq!(code, ErrorCode::Forbidden);
@@ -388,11 +391,11 @@ async fn a_navis_browser_opened_by_its_owner_runs_on_its_kept_profile_on_its_mac
     // The hub's own frame names the Navi; its seal doesn't, which any node could make.
     assert_eq!(started.navi.as_deref(), Some("ada-navi"));
     assert!(started.seal.unwrap().get("navi").is_none());
-    // A project's browser gets no Navi's profile.
+    // A project of code's browser on its machine runs on its own kept profile, never the Navi's.
     call(&hub, &desk, "screen_open", open("devbox", "browser"))
         .await
         .unwrap();
-    assert!(next(&mut devbox).await.navi.is_none());
+    assert_eq!(next(&mut devbox).await.navi.as_deref(), Some("app"));
 }
 
 /// An agent's node seals what it likes to the runner the hub names: a seal that names a Navi reaches the runner as it

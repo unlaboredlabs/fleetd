@@ -438,8 +438,9 @@ impl Pool {
     }
 }
 
-/// Where a Navi's kept profile lives: under the node's home, outside the Navi's folder, so only this node's Chrome
-/// reads its cookies. None for a name that isn't a plain path component.
+/// Where a project's kept profile lives, by its id: under the node's home, outside the project's folder,
+/// `browser/<project>`; a former Navi's stays where it was, `browser/navis/<project>` (D310). None for a name that
+/// isn't a plain path component.
 pub fn kept_dir(home: &Path, navi: &str) -> Option<PathBuf> {
     let plain = !navi.is_empty()
         && navi.len() <= 128
@@ -447,7 +448,13 @@ pub fn kept_dir(home: &Path, navi: &str) -> Option<PathBuf> {
         && navi
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
-    plain.then(|| home.join("browser").join("navis").join(navi))
+    plain.then(|| {
+        let navi_dir = home.join("browser").join("navis").join(navi);
+        match navi_dir.is_dir() {
+            true => navi_dir,
+            false => home.join("browser").join(navi),
+        }
+    })
 }
 
 /// What a kept profile doesn't keep, in its `Default` dir: the HTTP and code caches (a page as a site showed it, a
@@ -649,9 +656,15 @@ mod tests {
     #[tokio::test]
     async fn a_navis_profile_is_its_own_one_browser_at_a_time_and_keeps_only_sign_ins() {
         let home = tempfile::tempdir().unwrap();
+        // A project's is `browser/<id>`; a former Navi's stays where it was.
         assert_eq!(
             kept_dir(home.path(), "ada"),
-            Some(home.path().join("browser/navis/ada"))
+            Some(home.path().join("browser/ada"))
+        );
+        std::fs::create_dir_all(home.path().join("browser/navis/old")).unwrap();
+        assert_eq!(
+            kept_dir(home.path(), "old"),
+            Some(home.path().join("browser/navis/old"))
         );
         for name in ["", "..", "../ada", "a/b", ".hidden"] {
             assert_eq!(kept_dir(home.path(), name), None, "{name:?}");

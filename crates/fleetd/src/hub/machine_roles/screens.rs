@@ -6,8 +6,9 @@
 //! control to the person as soon as it is live. It is recorded as any screen is, and ends with `screen_end`, or after
 //! [`IDLE_MS`] without the person's input.
 //!
-//! A Navi's browser runs on the Navi's own machine, on the profile it keeps (D221): the hub's own `session_host` frame
-//! names the Navi (never the seal, which anyone can make), and the runner's node opens that profile for it. Only the Navi's owner reaches it (navi/owner.rs guards every tool).
+//! A project's browser on the project's own machine runs on the profile it keeps (D221, any project's since D310): the
+//! hub's own `session_host` frame names the project (never the seal, which anyone can make), and the runner's node
+//! opens that profile for it. On another machine it gets a fresh profile, as any screen there. Another person's Only me project is never reached (navi/owner.rs guards every tool).
 //!
 //! With a PR, an Android screen gets the PR's CI build first (builds.rs): the hub reads it, starts the screen, sends
 //! the file to the screen's machine and runs `agent-device install` there, sealed with the relay key the hub sealed
@@ -294,12 +295,6 @@ pub fn waits_of(hub: &Hub, caller: &Caller, r: &ProjectRef) -> Result<Vec<Screen
         .collect())
 }
 
-/// Whether `r` is a Navi.
-fn is_navi(hub: &Hub, r: &ProjectRef) -> Result<bool, StoreError> {
-    hub.db
-        .with(|c| Ok(crate::hub::navi::store::of(c, r)?.is_some()))
-}
-
 /// Why `runner` can't host a person's screen of `kind` at all, slots aside; None when it can.
 fn unable(runner: &Runner, host: SessionHost) -> Option<String> {
     let name = &runner.name;
@@ -357,17 +352,6 @@ async fn screen_open(
     }
     let runner_id = input.machine_id;
     require(&caller, Role::Read, Some(&runner_id))?;
-    let navi = is_navi(&hub, &r)?;
-    if navi && input.kind == SessionKind::Browser && runner_id != r.machine_id {
-        return Err(ToolError::new(
-            ErrorCode::Invalid,
-            format!(
-                "A Navi's browser runs on its own machine, {}, where it keeps its sign-ins.",
-                r.machine_id
-            ),
-        )
-        .with_fix(format!("Open it on {}.", r.machine_id)));
-    }
     let host = host_of(input.kind);
     let all = runners(&hub)?;
     let Some((runner, _, _)) = all.into_iter().find(|(m, _, _)| m.machine_id == runner_id) else {
@@ -405,9 +389,7 @@ async fn screen_open(
             {
                 return Ok(None);
             }
-            let start = prepare(
-                c, &opener, &r, input.kind, &runner_id, sealed, navi, pr, now,
-            )?;
+            let start = prepare(c, &opener, &r, input.kind, &runner_id, sealed, pr, now)?;
             // With a PR it opens in the hub's own time, its row saying how far it is.
             let wait = match pr {
                 Some(_) => Some(insert_wait(
@@ -698,7 +680,6 @@ fn prepare(
     kind: SessionKind,
     runner: &MachineId,
     sealed: Sealed,
-    navi: bool,
     pr: Option<&ScreenPr>,
     now: i64,
 ) -> Result<Start, StoreError> {
@@ -727,7 +708,10 @@ fn prepare(
         kind,
         frame,
         sealed,
-        navi: (navi && kind == SessionKind::Browser).then(|| r.project_id.clone()),
+        // On the project's own machine its browser runs on the profile it keeps, signed in (D221, any project's since
+        // D310); on another one, on a fresh profile, as any screen there.
+        navi: (kind == SessionKind::Browser && *runner == r.machine_id)
+            .then(|| r.project_id.clone()),
         by: format!("human:{}", opener.device),
     })
 }
@@ -1130,7 +1114,6 @@ pub fn serve_waits(hub: &Arc<Hub>) -> Result<usize, StoreError> {
             person,
             device: w.device.clone(),
         };
-        let navi = is_navi(hub, &w.project)?;
         let sealed = match sealed_for(hub, &w.runner) {
             Ok(sealed) => sealed,
             Err(e) => {
@@ -1163,7 +1146,6 @@ pub fn serve_waits(hub: &Arc<Hub>) -> Result<usize, StoreError> {
                 w.kind,
                 &w.runner,
                 sealed,
-                navi,
                 w.pr.as_ref(),
                 now,
             )?;
