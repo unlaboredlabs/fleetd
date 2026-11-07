@@ -113,7 +113,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.screens", label: "Screens", tab: "hub.machines", keywords: ["screens", "browser", "android", "ios", "iphone", "simulator", "emulator", "linux desktop", "turn on", "idle", "timeout", "recordings", "retention", "keep"] },
   { key: "hub.caps", label: "Machine max agents", tab: "hub.machines", keywords: ["max agents", "whole fleet", "fleet cap", "machine cap", "limit", "at once", "all machines"] },
   { key: "hub.cloud", label: "Cloud machines", tab: "hub.machines", keywords: ["cloud", "boat", "boat.dev", "overflow", "burst", "vm", "pool"] },
-  { key: "hub.cloud.key", label: "boat.dev key", tab: "hub.machines", keywords: ["cloud", "boat", "api key", "test"] },
+  { key: "hub.cloud.key", label: "boat.dev key", tab: "hub.machines", keywords: ["cloud", "boat", "api key", "sign in", "login", "test"] },
   { key: "hub.cloud.way", label: "Way to the hub for cloud machines", tab: "hub.machines", keywords: ["cloud", "tunnel", "ssh", "network", "private", "address"] },
   { key: "hub.cloud.pool", label: "Cloud pool", tab: "hub.machines", keywords: ["cloud", "boat", "pool", "size", "large", "machines"] },
   { key: "hub.cloud.budgets", label: "Cloud budgets", tab: "hub.machines", keywords: ["cloud", "budget", "cost", "spend", "dollars", "day", "month"] },

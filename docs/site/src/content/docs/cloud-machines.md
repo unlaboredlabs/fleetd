@@ -90,8 +90,10 @@ disk, and snapshots of it that may be stored outside the EU.
 - **No account secrets.** Machines are made in an environment marked safe for third parties: none of your boat.dev
   account's secrets, AI logins or in-machine boat.dev key.
 - **No sudo for agents.** The node and its agents run as a user of their own with no sudo.
-- **Your key stays on the hub.** The boat.dev key is sealed in the app to the hub's own key, and scoped to fleetd's
-  environment with only the actions below. It has no `exec`, `file` or `snapshot` actions: the hub never runs
+- **Your key stays on the hub.** The boat.dev key is sealed to the hub's own key (by the hub when you sign in with
+  boat, by the app when you paste one), and scoped to fleetd's environment with only the actions below. After a
+  sign-in the hub keeps nothing broader: boat's full-access key is revoked, and its claim token is only ever in the
+  hub's memory, for those few minutes. It has no `exec`, `file` or `snapshot` actions: the hub never runs
   anything on a cloud machine. Its `ssh` action only lets the hub's own SSH key in, for the tunnel.
 - **The hub's SSH key.** The hub makes its own SSH key for the tunnels and keeps it sealed to its box key; nobody
   pastes it, and its private half never leaves the hub. boat.dev puts the public half on each machine the hub wakes.
@@ -110,21 +112,30 @@ Setup is the optional **Cloud machines (boat.dev)** step: in `fleetd init`, the 
    leave **extra starts on invoice off**. In Members, set your own seat's caps: machine time **300 hours a month**,
    and machines at once **equal to your pool size** (3).
 2. **An environment** named `fleetd-<hub>` (for example `fleetd-devbox`), with **Safe for third parties** on.
-3. **The hub's API key**, named `fleetd-<hub>`, scoped to that environment, expiring in 365 days, with exactly these
+3. **The hub's API key**, named `fleetd-<hub>`, scoped to that environment, expiring in 364 days, with exactly these
    actions:
 
    ```
    sandbox.create sandbox.read sandbox.update sandbox.stop sandbox.resume sandbox.delete ssh account.read
    ```
 
-   Not a preset: `ci` and `admin` give far more.
-4. **In the app**, in the step itself or in Settings › Hub › Machines › Cloud machines: paste the key and press
-   **Save and test**. Test asks boat.dev for the key's plan and limits and this hub's machines, and says, for example,
-   "Key works · $20 plan · 200 starts a day (12 a minute) · 0 of 100 machines running · large allowed". Then pick the
-   pool, the budgets and the projects, and keep the boat.dev environment from part 2 (it starts as `fleetd-<hub>`;
-   Create waits until one is saved, since the key reaches only that environment). Check what it can cost, turn it on
-   and press **Create cloud machines** (one start each). Each machine sets itself up and joins in a few minutes, then
-   sleeps.
+   **Sign in with boat** makes it for you: in the step itself or in Settings › Hub › Machines › Cloud machines, type
+   your boat.dev email and press **Sign in with boat**. Open the link it shows, sign in to boat.dev (GitHub, Google or
+   email), then type the 6-digit code fleetd shows on boat.dev's page. boat.dev then gives the hub a full-access key of
+   your account; the hub uses it once to make the key above, checks boat.dev made exactly that, seals only that one,
+   revokes the full-access key and runs **Test**. It says, for example, "Signed in as you@example.com: the hub's key
+   fleetd-devbox is sealed, scoped to fleetd-devbox for 364 days. The sign-in's own key is revoked." The environment
+   from part 2 must exist first, with Safe for third parties on: signing in makes no environment. The key lasts 364
+   days, not 365, since boat.dev makes no key that outlives the sign-in's own year.
+
+   Or make the key yourself in boat.dev › API keys (not a preset: `ci` and `admin` give far more), press **Paste a key
+   instead**, paste it and press **Save and test**.
+4. **In the app**, once the key is saved: Test asks boat.dev for the key's plan and limits and this hub's machines,
+   and says, for example, "Key works · $20 plan · 200 starts a day (12 a minute) · 0 of 100 machines running · large
+   allowed". Then pick the pool, the budgets and the projects, and keep the boat.dev environment from part 2 (it
+   starts as `fleetd-<hub>`; Create waits until one is saved, since the key reaches only that environment). Check
+   what it can cost, turn it on and press **Create cloud machines** (one start each). Each machine sets itself up and
+   joins in a few minutes, then sleeps.
 
 There is nothing to set up on your network. Once cloud machines are on, **Test** also tries the whole way: it wakes
 an asleep machine (one start), or follows one already waking, or makes the first one, and passes once the hub's tunnel

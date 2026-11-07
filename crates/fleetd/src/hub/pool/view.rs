@@ -239,7 +239,7 @@ impl Pool {
         if !s.has_key {
             return CloudKeyTest {
                 ok: false,
-                said: "No boat.dev key yet: paste one first.".into(),
+                said: "No boat.dev key yet: sign in with boat, or paste one, first.".into(),
             };
         }
         let fail = |e: &BoatError| {

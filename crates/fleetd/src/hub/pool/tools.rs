@@ -1,7 +1,8 @@
 //! The cloud machines' tools: `cloud_get` for anyone signed in (Settings › Hub › Machines, Status), and for admin keys
-//! the settings, the boat key (sealed in the app to the hub's own box key), Test (the key, then the whole way from a
-//! cloud machine to the hub), Create, Reset, Resume and `cloud_stop`, the kill switch (`fleetd cloud stop`, and "Stop
-//! all cloud machines"). No key or secret comes back; the hub's SSH key shows only its public half.
+//! the settings, the boat key (made by "Sign in with boat", whose link and code only admins see, or pasted and sealed in
+//! the app to the hub's own box key), Test (the key, then the whole way from a cloud machine to the hub), Create, Reset,
+//! Resume and `cloud_stop`, the kill switch (`fleetd cloud stop`, and "Stop all cloud machines"). No key or secret comes
+//! back; the hub's SSH key shows only its public half.
 use std::sync::Arc;
 
 use base64::Engine;
@@ -12,8 +13,8 @@ use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::mcp::{
     CloudCreateInput, CloudCreateOutput, CloudGetInput, CloudGetOutput, CloudKeySetInput,
     CloudKeySetOutput, CloudResetInput, CloudResetOutput, CloudResumeInput, CloudResumeOutput,
-    CloudSetInput, CloudSetOutput, CloudStopInput, CloudStopOutput, CloudTestInput,
-    CloudTestOutput, ErrorCode,
+    CloudSetInput, CloudSetOutput, CloudSignInInput, CloudSignInOutput, CloudStopInput,
+    CloudStopOutput, CloudTestInput, CloudTestOutput, ErrorCode,
 };
 
 use super::boat::File;
@@ -26,6 +27,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("cloud_get", get);
     tools.add("cloud_set", set);
     tools.add("cloud_key_set", key_set);
+    tools.add("cloud_sign_in", sign_in);
     tools.add("cloud_test", test);
     tools.add("cloud_create", create);
     tools.add("cloud_reset", reset);
@@ -84,6 +86,7 @@ pub fn cloud_view(hub: &Hub) -> Result<CloudView, ToolError> {
         held: s.has_key.then(|| pool.start_held()).flatten(),
         paused: s.paused.as_ref().map(|(_, why)| why.clone()),
         key_test: pool.key_test(),
+        sign_in: pool.sign_in(),
         machines,
         sizes: view::sizes(),
         plan_dollars: s.plan_dollars,
@@ -93,9 +96,15 @@ pub fn cloud_view(hub: &Hub) -> Result<CloudView, ToolError> {
     })
 }
 
-async fn get(hub: Arc<Hub>, _: Caller, _: CloudGetInput) -> Result<CloudGetOutput, ToolError> {
+async fn get(hub: Arc<Hub>, caller: Caller, _: CloudGetInput) -> Result<CloudGetOutput, ToolError> {
+    let mut cloud = cloud_view(&hub)?;
+    // The sign-in's link and code are the admin's: whoever types the code first, signed in to their own boat.dev
+    // account, gets the hub's key made there.
+    if require(&caller, Role::Admin, None).is_err() {
+        cloud.sign_in = None;
+    }
     Ok(CloudGetOutput {
-        cloud: cloud_view(&hub)?,
+        cloud,
         next: None,
         truncated: None,
     })
@@ -112,7 +121,7 @@ async fn set(
         return Err(error(
             ErrorCode::Invalid,
             "Cloud machines need a boat.dev key first.",
-            "Paste the key, Test it, then turn cloud machines on.",
+            "Sign in with boat (or paste a key), Test it, then turn cloud machines on.",
         ));
     }
     hub.pool
@@ -162,6 +171,50 @@ async fn key_set(
     }
     hub.pool.set_key(key).map_err(failed)?;
     Ok(CloudKeySetOutput {
+        cloud: cloud_view(&hub)?,
+        next: None,
+        truncated: None,
+    })
+}
+
+/// "Sign in with boat": starts boat's sign-in to the admin's email (the hub makes the key the setup step lists, scoped
+/// to the pool's environment, and seals only that), or stops the one under way.
+async fn sign_in(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: CloudSignInInput,
+) -> Result<CloudSignInOutput, ToolError> {
+    require(&caller, Role::Admin, None)?;
+    match input.email.as_deref().map(str::trim) {
+        None => hub.pool.sign_in_stop(),
+        Some(email) => {
+            if !super::signin::email_ok(email) {
+                return Err(error(
+                    ErrorCode::Invalid,
+                    "That isn't an email address.",
+                    "Type the email you sign in to boat.dev with.",
+                ));
+            }
+            let name = environment_default(&hub);
+            let environment = hub
+                .pool
+                .ledger()
+                .settings()?
+                .environment
+                .unwrap_or_else(|| name.clone());
+            hub.pool
+                .sign_in_start(email, environment, name)
+                .await
+                .map_err(|why| {
+                    error(
+                        ErrorCode::Failed,
+                        format!("boat.dev's sign-in didn't start: {why}"),
+                        "Try again, or paste a key you made in boat.dev instead.",
+                    )
+                })?;
+        }
+    }
+    Ok(CloudSignInOutput {
         cloud: cloud_view(&hub)?,
         next: None,
         truncated: None,
