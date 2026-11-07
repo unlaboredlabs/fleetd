@@ -28,7 +28,8 @@ pub struct MachineLayout {
     pub bin_dir: String,
     /// The fleetd binary: the node service runs it, and the installer puts the CLI at the same path.
     pub bin: String,
-    /// Where older releases put the fleetd binary.
+    /// Where older releases put the fleetd binary: the user's own fleet only (`~/.fleetd`), so a second fleet with its
+    /// own fleetd dir never deletes the first one's install.
     pub legacy_share: Vec<String>,
 }
 
@@ -41,7 +42,13 @@ pub fn machine_layout(home: &str) -> MachineLayout {
 pub fn machine_layout_at(home: &str, fleetd: &str) -> MachineLayout {
     let home = home.trim_end_matches('/');
     let fleetd = fleetd.trim_end_matches('/').to_owned();
-    let share = format!("{home}/.local/share/fleetd");
+    let legacy_share = if fleetd == format!("{home}/.fleetd") {
+        ["bin", "cli"]
+            .map(|d| format!("{home}/.local/share/fleetd/{d}"))
+            .to_vec()
+    } else {
+        Vec::new()
+    };
     MachineLayout {
         node_home: format!("{fleetd}/node"),
         node_config: format!("{fleetd}/node/node.json"),
@@ -49,7 +56,7 @@ pub fn machine_layout_at(home: &str, fleetd: &str) -> MachineLayout {
         logs: format!("{fleetd}/logs"),
         bin_dir: format!("{fleetd}/bin"),
         bin: format!("{fleetd}/bin/fleetd"),
-        legacy_share: ["bin", "cli"].map(|d| format!("{share}/{d}")).to_vec(),
+        legacy_share,
         fleetd,
     }
 }
@@ -440,17 +447,20 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
     let binary_changes =
         facts.digests.get(&l.bin).and_then(|d| d.as_deref()) != Some(input.binary_digest.as_str());
     if binary_changes {
-        steps.push(Step {
-            title: format!("install fleetd {}", input.version),
-            command: format!(
-                "{} && rm -rf {}",
-                write_command(&l.bin, "755"),
+        let mut command = write_command(&l.bin, "755");
+        if !l.legacy_share.is_empty() {
+            command += &format!(
+                " && rm -rf {}",
                 l.legacy_share
                     .iter()
                     .map(|d| q(d))
                     .collect::<Vec<_>>()
                     .join(" ")
-            ),
+            );
+        }
+        steps.push(Step {
+            title: format!("install fleetd {}", input.version),
+            command,
             stdin: Some(Stdin::Binary),
             writes: None,
         });
@@ -1006,6 +1016,97 @@ mod tests {
         assert!(config.contains("mac-mini"), "{config}");
         assert!(!ctl.contains("restart"), "{ctl}");
         assert!(!std::path::Path::new(&format!("{}.before-join", l.node_config)).exists());
+    }
+
+    /// A second fleet (its own FLEETD_HOME, a throwaway hub on the devbox) installs and purges only its own files:
+    /// what an older fleetd left in the home's ~/.local/share/fleetd belongs to the user's own fleet.
+    #[cfg(unix)]
+    #[test]
+    fn a_relocated_fleet_deletes_nothing_outside_its_own_home() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().to_str().unwrap().to_owned();
+        let fleetd = format!("{home}/throwaway");
+        let share = format!("{home}/.local/share/fleetd");
+        for d in ["bin", "cli"] {
+            std::fs::create_dir_all(format!("{share}/{d}")).unwrap();
+            std::fs::write(format!("{share}/{d}/fleetd"), "the real install").unwrap();
+        }
+        let facts = Facts {
+            home: home.clone(),
+            fleetd: fleetd.clone(),
+            config_home: format!("{home}/.config"),
+            ..fresh_facts("ada", "x64")
+        };
+        let plan = plan_machine_add(
+            &facts,
+            &MachineAddInput {
+                service: false,
+                ..input()
+            },
+        )
+        .unwrap();
+        let remove = plan_machine_remove(
+            Platform::Linux,
+            &home,
+            Some(&fleetd),
+            &format!("{home}/.config"),
+            1000,
+            false,
+            true,
+        );
+        let run = |command: &str| {
+            let out = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(command)
+                .env("HOME", &home)
+                .stdin(std::process::Stdio::null())
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{command}: {out:?}");
+        };
+        let install = plan
+            .steps
+            .iter()
+            .find(|s| s.stdin == Some(Stdin::Binary))
+            .unwrap();
+        let purge = remove
+            .iter()
+            .find(|s| s.title.starts_with("delete the node's key"))
+            .unwrap();
+        run(&install.command);
+        run(&purge.command);
+        assert!(std::path::Path::new(&format!("{fleetd}/bin/fleetd")).exists());
+        assert!(!std::path::Path::new(&format!("{fleetd}/node")).exists());
+        for d in ["bin", "cli"] {
+            assert_eq!(
+                std::fs::read_to_string(format!("{share}/{d}/fleetd"))
+                    .ok()
+                    .as_deref(),
+                Some("the real install"),
+                "{share}/{d} survives"
+            );
+        }
+        for s in plan.steps.iter().chain(&remove) {
+            assert!(!s.command.contains(".local/share"), "{}", s.command);
+        }
+
+        // The user's own fleet still clears what an older fleetd left there.
+        let own = plan_machine_add(
+            &Facts {
+                fleetd: String::new(),
+                ..facts.clone()
+            },
+            &input(),
+        )
+        .unwrap();
+        run(&own
+            .steps
+            .iter()
+            .find(|s| s.stdin == Some(Stdin::Binary))
+            .unwrap()
+            .command);
+        assert!(!std::path::Path::new(&share).join("bin").exists());
+        assert!(!std::path::Path::new(&share).join("cli").exists());
     }
 
     /// --no-service: nothing for systemd or launchd, and the node's command to run by hand.

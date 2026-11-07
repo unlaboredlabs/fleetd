@@ -29,8 +29,10 @@ import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, o
 import { chatItems, emptyChat, isNavi, type AttachmentGetOutput, type AttachmentRef, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
+import { useCanStop } from "../stopProbe";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
-import { changeDraft, useDraft } from "../draftsStore";
+import type { DraftReply } from "../drafts";
+import { changeDraft } from "../draftsStore";
 import { refOf, type Key } from "../store";
 import { space, type, useTheme, type Palette } from "../theme";
 import { upload } from "../upload";
@@ -175,9 +177,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const [listTag, setListTag] = useState<number | null>(null);
   useEffect(() => setListTag(findNodeHandle(list.current) ?? null), []);
   const [composerHeight, setComposerHeight] = useState(60);
-  // What you're writing here, and the bubble it replies to: the chat's draft, kept when you leave (drafts.ts).
-  const [draft, setDraft] = useDraft(chatKey);
-  const reply = draft.reply;
+  // What you're writing here is the composer's (its draft, drafts.ts), so a letter typed draws the composer, not the
+  // thread; a bubble's Reply sets the draft's quote, and a send brings it.
+  const canStop = useCanStop(session, working);
   const [selecting, setSelecting] = useState<string | null>(null);
   const [image, setImage] = useState<AttachmentGetOutput | null>(null);
   const [lit, setLit] = useState<string | null>(null);
@@ -340,10 +342,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
 
   // What you send shows at once, as in Messages, wherever the thread was scrolled to. The composer's words go as a
   // reply while its banner shows; a quick answer or a starter never does, and leaves the banner for what you type.
-  const send = (body: string, files: readonly AttachmentRef[] = [], quoting = false) => {
-    const out = outgoing(body, files.length, quoting ? reply : undefined);
+  const send = (body: string, files: readonly AttachmentRef[] = [], reply?: DraftReply) => {
+    const out = outgoing(body, files.length, reply);
     if (out === null) return;
-    if (quoting) setDraft((d) => ({ ...d, reply: undefined }));
     setAwayFrom(null);
     // In a frame, once the hold above is off: on, the list would keep its place as your message went in under it.
     requestAnimationFrame(() => {
@@ -519,12 +520,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
             }
           >
             <Composer
-              onSend={(text, files) => send(text, files, true)}
+              chatKey={chatKey}
+              onSend={(text, files, reply) => send(text, files, reply)}
               upload={(bytes, name, mime, progress) => upload((tool, input, timeoutMs) => session.call(tool, input, timeoutMs), bytes, name, mime, progress)}
               bottomInset={insets.bottom}
-              draft={draft}
-              onDraft={setDraft}
-              onStop={working && live ? stop : undefined}
+              onStop={working && live && canStop ? stop : undefined}
               onHeight={setComposerHeight}
             />
           </EdgeEffect>

@@ -11,7 +11,9 @@ import { useEffect, useRef, type ComponentRef } from "react";
 import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type LayoutChangeEvent } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import type { AttachmentRef } from "../desktop";
-import { expired, sendSlot, type Draft, type DraftFile } from "../drafts";
+import { emptyDraft, expired, sendSlot, type DraftFile, type DraftReply } from "../drafts";
+import { useDraft } from "../draftsStore";
+import type { Key } from "../store";
 import { space, type, useTheme } from "../theme";
 import { mimeOf, pickedName, refusal, type Uploaded } from "../upload";
 import { Glass, GlassGroup } from "./Glass";
@@ -32,21 +34,20 @@ interface Picked {
 let nextId = Date.now();
 
 export function Composer({
+  chatKey,
   onSend,
   upload,
   bottomInset,
-  draft,
-  onDraft,
   onStop,
   onHeight,
   placeholder = "Message",
 }: {
-  onSend: (text: string, files: readonly AttachmentRef[]) => void;
+  /** The chat whose draft this is: what's written, picked and quoted, kept here so typing draws only the composer. */
+  chatKey: Key;
+  /** The words, the files the hub has, and the bubble they reply to. */
+  onSend: (text: string, files: readonly AttachmentRef[], reply: DraftReply | undefined) => void;
   upload: Upload;
   bottomInset: number;
-  /** What's written, picked and quoted, and how it changes: the chat's draft. */
-  draft: Draft;
-  onDraft: (change: (d: Draft) => Draft) => void;
   /** While the lead works: Stop in the send button's place, until something is written. */
   onStop?: (() => void) | undefined;
   /** The composer's height, for the thread to keep its last bubble clear of it. */
@@ -55,6 +56,7 @@ export function Composer({
 }) {
   const t = useTheme();
   const reduce = useReduceMotion();
+  const [draft, onDraft] = useDraft(chatKey);
   const { text, files, reply } = draft;
   const setText = (next: string) => onDraft((d) => ({ ...d, text: next }));
   const setFiles = (change: (now: readonly DraftFile[]) => readonly DraftFile[]) => onDraft((d) => ({ ...d, files: change(d.files) }));
@@ -83,8 +85,8 @@ export function Composer({
     if (fresh !== draft) onDraft((d) => expired(d, Date.now()));
     const go = () => {
       haptics.tap();
-      onSend(text, fresh.files.flatMap((f) => (f.ref === undefined ? [] : [f.ref])));
-      onDraft((d) => ({ ...d, text: "", files: [] }));
+      onSend(text, fresh.files.flatMap((f) => (f.ref === undefined ? [] : [f.ref])), fresh.reply);
+      onDraft(() => emptyDraft);
     };
     // A file the hub didn't take never goes quietly: the message waits for a yes.
     const failed = fresh.files.filter((f) => f.error !== undefined);
