@@ -220,6 +220,9 @@ pub async fn take_once(
     let Some(before) = row(&hub.db, r)? else {
         return Ok(None);
     };
+    if super::owner_removed(&hub.db, r)? {
+        return Ok(None);
+    }
     let answer = node_call(
         hub,
         r,
@@ -583,10 +586,11 @@ fn after(hub: &Hub, r: &ProjectRef, after: i64) -> Result<Vec<ChatMessage>, Stor
         .collect())
 }
 
-/// Whether the bridge sends now: paired, not paused, its node online.
+/// Whether the bridge sends now: paired, not paused, its node online, its owner still on the hub.
 fn sending(hub: &Hub, row: &Row) -> bool {
     row.bridge.paired.is_some()
         && !row.bridge.paused
+        && !super::owner_removed(&hub.db, &row.navi).unwrap_or(true)
         && hub.executors.is_connected(&row.navi.machine_id)
         && hub.link.node_can(
             &row.navi.machine_id,
