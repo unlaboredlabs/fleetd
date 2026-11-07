@@ -50,27 +50,41 @@ impl Unauthorized {
     }
 }
 
-/// A node already enrolled as `theirs` asked to enroll under another id: both ways out, a code to rejoin as `theirs`
-/// (`fleetd pair --worker`; the code it holds is for the other id) or `theirs` removed first for a new id. The node
-/// reads this in the link's close reason, so the fullest wording that fits there; the last fits any two ids.
-fn enrolled_as(theirs: &str) -> Unauthorized {
-    let forms = [
-        format!(
-            "fleetd pair --worker {theirs} and run its line, or fleetd machine remove {theirs} first"
-        ),
-        format!("fleetd pair --worker {theirs}, or fleetd machine remove {theirs}"),
-        format!("fleetd pair --worker {theirs}, or remove it"),
-    ];
-    let refusal = |fix: &String| Unauthorized {
+/// A node's refusal, from `forms` of (message, fix), fullest first: the first that fits the link's close reason, where
+/// the node reads it. The last one fits for any machine ids (at most 32 characters).
+fn refusal(forms: &[(String, String)]) -> Unauthorized {
+    let of = |(message, fix): &(String, String)| Unauthorized {
         code: ErrorCode::Forbidden,
-        message: format!("enrolled as {theirs}"),
+        message: message.clone(),
         fix: Some(fix.clone()),
     };
     forms
         .iter()
-        .map(refusal)
+        .map(of)
         .find(|r| r.reason().len() <= fleetd_contracts::node_link::close::REASON_MAX_BYTES)
-        .unwrap_or_else(|| refusal(&forms[2]))
+        .unwrap_or_else(|| of(&forms[forms.len() - 1]))
+}
+
+/// A node already enrolled as `theirs` asked to enroll under another id: both ways out, a code to rejoin as `theirs`
+/// (`fleetd pair --worker`; the code it holds is for the other id) or `theirs` removed first for a new id.
+fn enrolled_as(theirs: &str) -> Unauthorized {
+    let message = format!("enrolled as {theirs}");
+    refusal(&[
+        (
+            message.clone(),
+            format!(
+                "fleetd pair --worker {theirs} and run its line, or fleetd machine remove {theirs} first"
+            ),
+        ),
+        (
+            message.clone(),
+            format!("fleetd pair --worker {theirs}, or fleetd machine remove {theirs}"),
+        ),
+        (
+            message,
+            format!("fleetd pair --worker {theirs}, or remove it"),
+        ),
+    ])
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -572,23 +586,27 @@ impl Auth {
                 .query_row([&hash], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
                 .optional()?)
         })?;
-        let why = match row {
-            None => "unknown enrollment token".to_owned(),
-            Some((_, _, Some(_))) => "enrollment token was already used".to_owned(),
-            Some((_, expires, None)) if expires <= now => "enrollment token expired".to_owned(),
-            Some((machine, _, None)) => format!(
-                "enrollment token is for machine {machine}, not {}",
-                machine_id.as_str()
+        let m = machine_id.as_str();
+        let (why, short) = match row {
+            None => ("unknown enrollment token".to_owned(), None),
+            Some((_, _, Some(_))) => ("enrollment token was already used".to_owned(), None),
+            Some((_, expires, None)) if expires <= now => {
+                ("enrollment token expired".to_owned(), None)
+            }
+            Some((machine, _, None)) => (
+                format!("enrollment token is for machine {machine}, not {m}"),
+                Some(format!("the code is for {machine}")),
             ),
         };
-        Err(Unauthorized {
-            code: ErrorCode::Forbidden,
-            message: why,
-            fix: Some(format!(
-                "on the hub, run `fleetd pair --worker {}` and run the command it prints within 15 minutes",
-                machine_id.as_str()
-            )),
-        }
+        let short = short.unwrap_or_else(|| why.clone());
+        Err(refusal(&[
+            (
+                why.clone(),
+                format!("on the hub, run fleetd pair --worker {m} for a new code"),
+            ),
+            (why, format!("fleetd pair --worker {m} on the hub")),
+            (short, format!("fleetd pair --worker {m} on the hub")),
+        ])
         .into())
     }
 
@@ -624,13 +642,16 @@ impl Auth {
             && theirs != ours
             && !(self.is_pool(machine_id)? && self.pool_token_open(token, machine_id)?)
         {
-            return Err(Unauthorized {
-                code: ErrorCode::Forbidden,
-                message: format!("{m} is another computer's machine id"),
-                fix: Some(format!(
-                    "join this computer under a machine id of its own, or remove {m} first (fleetd machine remove {m})"
-                )),
-            }
+            return Err(refusal(&[
+                (
+                    format!("{m} is another computer's machine id"),
+                    format!("use an id of its own, or fleetd machine remove {m} first"),
+                ),
+                (
+                    "this id is another computer's".to_owned(),
+                    format!("use another id, or fleetd machine remove {m} first"),
+                ),
+            ])
             .into());
         }
         self.consume_enroll_token(token, machine_id, pub_key)?;
