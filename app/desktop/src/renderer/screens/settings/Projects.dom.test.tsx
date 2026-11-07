@@ -426,6 +426,12 @@ describe("Settings → Projects", () => {
     expect(document.body.textContent).toContain("Its next browser session starts signed out of every site.");
   });
 
+  it("opens a project's skills on its Agents page, where the one list of them is", async () => {
+    await render();
+    await click(button("Open its skills"));
+    expect(window.location.hash).toBe("#/settings/agents?for=devbox/p1");
+  });
+
   it("sets a project's approval mode and lists what ran without asking, each with its chat line", async () => {
     onlyMe = true;
     answers = [{ ...settings, title: "Adri", workspaceRoot: "/home/w/.fleetd/node/projects/adri", worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];

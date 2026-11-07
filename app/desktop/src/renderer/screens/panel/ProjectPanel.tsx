@@ -1,17 +1,18 @@
-// The panel beside a project's chat, in five sections (Sections.tsx): Agents, Shipping, Plan, Skills and History, three
-// of them with a view each side of an inner row of tabs. A row opens one agent's live work or one PR in the list's place, with
+// The panel beside a project's chat, in sections (Sections.tsx): Agents, Shipping, Plan and History, three of them with
+// a view each side of an inner row of tabs, and Artifacts once the project has one. One skill opens here with no tab,
+// its way back to the list in the project's settings. A row opens one agent's live work or one PR in the list's place, with
 // a way back above it; one screen takes the whole section, its way back in its own line. Sections, views, rows and Back are all routes (shell/routes.ts), so links from the chat, Status
 // and the palette open the same views. Only the open view's pane is mounted and reads from the hub; the counts on the
 // tabs read only what is cheap.
 import { ChevronLeft } from "lucide-react";
 import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from "react";
 import { Boundary } from "../../src/Boundary";
-import { useData } from "../../src/data/react";
+import { useData, useToolQuery } from "../../src/data/react";
 import { Button, TabPanel, Tabs, cx } from "../../ui";
 import { navigate } from "../shell/navigation";
-import { hasItem, listView, panelRoute, type PanelView, type ProjectKey } from "../shell/routes";
+import { hasItem, listView, panelRoute, projectSkills, type PanelView, type ProjectKey } from "../shell/routes";
 import { PanesProvider } from "./panes";
-import { noteView, SectionHead, sectionOf, SectionTabs, servedSection, viewOf } from "./Sections";
+import { noteView, SectionHead, sectionOf, SectionTabs, servedSection, SKILL, viewOf } from "./Sections";
 import { isPanelTab, PANEL_TABS, served, tabEntry, type CountProps, type PanelTab, type PanelTabEntry, type PaneProps } from "./tabs";
 import s from "./panel.module.css";
 
@@ -25,8 +26,10 @@ const COUNTS: Readonly<Partial<Record<PanelTab, Lazy<CountProps>>>> = Object.fro
   }),
 );
 
-export function ProjectPanel({ project, view: asked, onWide }: { project: ProjectKey; view: PanelView; onWide: (wide: boolean) => void }) {
+export function ProjectPanel({ project, view: routed, onWide }: { project: ProjectKey; view: PanelView; onWide: (wide: boolean) => void }) {
   const features = useData((st) => st.features);
+  // The skills' list is in the project's settings: the panel remembered on it opens on Agents.
+  const asked = routed.tab === "skills" && routed.skill === null ? listView("agents") : routed;
   // A link to a view this hub doesn't serve opens its section's first, or Agents when the hub serves none of it.
   const first = sectionOf(asked.tab).views[0]?.[0] ?? "agents";
   const view = served(asked.tab, features) ? asked : listView(served(first, features) ? first : "agents");
@@ -34,6 +37,11 @@ export function ProjectPanel({ project, view: asked, onWide }: { project: Projec
   const section = servedSection(sectionOf(view.tab), features);
   const Pane = PANES[view.tab];
   noteView(project, view.tab);
+  // Artifacts joins the row with the project's first report or file sent in the chat (artifacts.changed and
+  // chat.message read the list again), or while it's open.
+  const artifacts = useToolQuery("artifacts_list", { projectRef: { machineId: project.machineId, projectId: project.projectId } }, { enabled: served("artifacts", features) });
+  const has = (artifacts.data?.artifacts.length ?? 0) + (artifacts.data?.files.length ?? 0) > 0;
+  const extra = has ? [section.id, "artifacts"] : [section.id];
   const pick = (tab: string) => {
     if (isPanelTab(tab)) navigate(panelRoute(project, listView(tab)), { replace: true });
   };
@@ -45,7 +53,12 @@ export function ProjectPanel({ project, view: asked, onWide }: { project: Projec
     <>
       {hasItem(view) && entry.back !== undefined && !alone ? (
         <div className={s.back}>
-          <Button variant="quiet" size="sm" icon={<ChevronLeft aria-hidden />} onClick={() => navigate(panelRoute(project, listView(view.tab)))}>
+          <Button
+            variant="quiet"
+            size="sm"
+            icon={<ChevronLeft aria-hidden />}
+            onClick={() => navigate(view.tab === "skills" ? projectSkills(project) : panelRoute(project, listView(view.tab)))}
+          >
             {entry.back}
           </Button>
         </div>
@@ -61,23 +74,31 @@ export function ProjectPanel({ project, view: asked, onWide }: { project: Projec
     <PanesProvider>
       <Tabs className={s.panel} value={section.id} onValueChange={(id) => pick(viewOf(project, id, features))}>
         <div className={s.head}>
-          <SectionTabs count={count} features={features} />
+          <SectionTabs count={count} features={features} extra={extra} />
         </div>
-        <TabPanel value={section.id} className={s.section}>
-          {section.views.length > 1 ? (
-            <Tabs className={s.section} value={view.tab} onValueChange={pick}>
-              {alone ? null : <SectionHead section={section} count={count} />}
-              <TabPanel value={view.tab} className={cx(s.body, alone && s.flush)}>
-                {body}
-              </TabPanel>
-            </Tabs>
-          ) : (
-            <>
-              {alone ? null : <SectionHead section={section} count={count} />}
-              <div className={cx(s.body, alone && s.flush)}>{body}</div>
-            </>
-          )}
-        </TabPanel>
+        {section === SKILL ? (
+          // No tab names it, so no tab panel either.
+          <div className={s.section}>
+            <SectionHead section={section} count={count} />
+            <div className={s.body}>{body}</div>
+          </div>
+        ) : (
+          <TabPanel value={section.id} className={s.section}>
+            {section.views.length > 1 ? (
+              <Tabs className={s.section} value={view.tab} onValueChange={pick}>
+                {alone ? null : <SectionHead section={section} count={count} />}
+                <TabPanel value={view.tab} className={cx(s.body, alone && s.flush)}>
+                  {body}
+                </TabPanel>
+              </Tabs>
+            ) : (
+              <>
+                {alone ? null : <SectionHead section={section} count={count} />}
+                <div className={cx(s.body, alone && s.flush)}>{body}</div>
+              </>
+            )}
+          </TabPanel>
+        )}
       </Tabs>
     </PanesProvider>
   );

@@ -2,7 +2,8 @@
 // the palette's Go to commands and the remembered tab all read. A new tab is one entry here: its words, its icon, its
 // pane and, if it has one, its count, each loaded the first time the panel shows it. Agents, Sessions, Pull requests,
 // Skills and Artifacts also name an item in their routes (one agent's work, one session, one PR, one skill, one
-// artifact); every other tab's view is `{ tab }`.
+// artifact); every other tab's view is `{ tab }`. Skills is only its one skill, with no tab or Go to command: the
+// list is in the project's settings.
 import { Activity, AppWindow, BookOpen, Bot, FileText, GitPullRequest, ListChecks, Scale, Send, TrainFront, type LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 import type { PanelView, ProjectKey } from "../shell/routes";
@@ -34,6 +35,8 @@ export interface PanelTabEntry {
   readonly count?: () => Promise<ComponentType<CountProps>>;
   /** The hub feature it needs (its ready frame's `features`): a hub that doesn't serve it shows no such tab. */
   readonly feature?: string;
+  /** No Go to command in the palette: it opens only on one item. */
+  readonly itemOnly?: true;
 }
 
 export const PANEL_TABS = [
@@ -130,6 +133,7 @@ export const PANEL_TABS = [
     keywords: ["skill", "skills", "learned", "how", "workflow", "history", "versions"],
     back: "All skills",
     pane: () => import("./panes").then((m) => m.SkillsTab),
+    itemOnly: true,
   },
 ] as const satisfies readonly PanelTabEntry[];
 

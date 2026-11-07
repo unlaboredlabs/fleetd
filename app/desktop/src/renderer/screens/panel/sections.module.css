@@ -30,7 +30,8 @@
 .bar .section:hover {
   background: var(--hover);
 }
-.bar .section[data-state="active"] {
+/* aria-selected, not data-state: the tooltip around each tab sets data-state to its own. */
+.bar .section[aria-selected="true"] {
   background: var(--selected);
   font-weight: 500;
 }
@@ -61,8 +62,8 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-/* Six tabs need about 80 px each for their words. */
-@container (max-width: 480px) {
+/* Five tabs (Artifacts with the four) need about 80 px each for their words. */
+@container (max-width: 400px) {
   .label {
     display: none;
   }

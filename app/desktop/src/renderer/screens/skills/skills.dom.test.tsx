@@ -130,26 +130,17 @@ const type = async (field: HTMLInputElement | HTMLTextAreaElement | null, value:
     await Promise.resolve();
   });
 };
-const view = (skill: string | null) => <SkillsTabView project={ADA} skill={skill} onWide={() => undefined} />;
+const view = (skill: string) => <SkillsTabView project={ADA} skill={skill} onWide={() => undefined} />;
 
-it("gives every project's panel a Skills section, open on a link to it", async () => {
-  await mount(<ProjectPanel project={ADA} view={{ tab: "skills", skill: null }} onWide={() => undefined} />);
-  expect(host.querySelector("[aria-selected=true][data-section]")?.getAttribute("data-section")).toBe("skills");
-});
-
-it("lists what it learned and what every project has, with who changed each and its last use, and opens one", async () => {
-  await mount(view(null));
-  const groups = [...host.querySelectorAll("section[aria-label]")].map((g) => [g.getAttribute("aria-label"), [...g.querySelectorAll("[data-skill]")].map((r) => r.getAttribute("data-skill"))]);
-  expect(groups).toEqual([
-    ["Learned", ["groceries", "taxes"]],
-    ["From every project", ["standup"]],
-  ]);
-  const taxes = host.querySelector("[data-skill=taxes]");
-  expect(taxes?.textContent).toContain("by Ada");
-  expect(taxes?.textContent).toContain("used ");
-  expect(host.querySelector("[data-skill=groceries]")?.textContent).toContain("Off · ");
-  await click(taxes);
-  expect(window.location.hash).toBe("#/project/devbox/ada/skills/taxes");
+it("opens one skill in the panel with no tab of its own, Back going to the list in the project's settings", async () => {
+  await mount(<ProjectPanel project={ADA} view={{ tab: "skills", skill: "taxes" }} onWide={() => undefined} />);
+  expect(host.querySelector("[data-screen=skill]")).not.toBeNull();
+  expect(host.querySelector("[data-section=skills]")).toBeNull();
+  expect(host.querySelector("[aria-selected=true][data-section]")).toBeNull();
+  // Nothing points at a tab panel no tab names.
+  expect(host.querySelector("[role=tabpanel] [data-screen=skill]")).toBeNull();
+  await click(button("All skills"));
+  expect(window.location.hash).toBe("#/settings/agents?for=devbox/ada");
 });
 
 it("shows the skill rendered, and the person's edit saves with their line", async () => {
@@ -199,7 +190,7 @@ it("turns a skill off, and deletes it after asking", async () => {
   const confirm = [...document.querySelectorAll("[role=dialog] button")].find((b) => b.textContent === "Delete");
   await click(confirm);
   expect(calls.find((c) => c.tool === "skill_delete")?.input).toEqual({ scope: "project", projectRef: ADA, name: "taxes" });
-  expect(window.location.hash).toBe("#/project/devbox/ada/skills");
+  expect(window.location.hash).toBe("#/settings/agents?for=devbox/ada");
 });
 
 it("offers no off switch for a skill in its folder, which reaches its sessions from there", async () => {

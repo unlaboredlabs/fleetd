@@ -902,17 +902,8 @@ export const screens: readonly Screen[] = [
       }
     },
   },
-  // A project's Skills (skills/SkillsPane): what it learned, installed and gets from every project; one skill
+  // One of a project's skills (skills/SkillsPane), with no tab of its own (the list is Settings › Agents › Skills):
   // rendered, in the wide panel; its history, the newest version open to its diff.
-  {
-    id: "chat",
-    route: `${ADA_ROUTE}/skills`,
-    fixtures: ["only-me-chats"],
-    variant: "skills",
-    open: async (page) => {
-      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="skills"]').waitFor();
-    },
-  },
   {
     id: "chat",
     route: `${ADA_ROUTE}/skills/weekly-invoices`,
@@ -944,7 +935,7 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText("Word document · 47 KB")).toBeVisible();
     },
   },
-  // An archived project still open: the palette offers every project's views, its Skills too.
+  // An archived project still open: the palette offers every project's views, its Checklist too.
   {
     id: "palette",
     route: TAXES_ROUTE,
@@ -952,8 +943,8 @@ export const screens: readonly Screen[] = [
     variant: "archived",
     open: async (page) => {
       await page.keyboard.press("ControlOrMeta+K");
-      await page.getByRole("combobox", { name: "Search" }).fill("Skills");
-      await expect(page.getByRole("option", { name: /Skills/u }).first()).toBeVisible();
+      await page.getByRole("combobox", { name: "Search" }).fill("Checklist");
+      await expect(page.getByRole("option", { name: /Checklist/u }).first()).toBeVisible();
     },
   },
   // Settings › Projects for an Only-me project: who sees it, then its Telegram, linked hubs, approvals, integrations,

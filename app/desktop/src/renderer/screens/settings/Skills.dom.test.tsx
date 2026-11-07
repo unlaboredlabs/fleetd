@@ -28,7 +28,7 @@ const GLOBAL: SkillSummary[] = [
 ];
 const PROJECT: SkillSummary[] = [
   { name: "triage", origin: "repo_claude", description: "Sort new issues.", files: [], path: ".claude/skills/triage/SKILL.md" },
-  { name: "checkout-qa", origin: "project", description: "Walk the checkout flow.", files: [] },
+  { name: "checkout-qa", origin: "project", description: "Walk the checkout flow.", files: [], off: true, changed: { version: 2, author: "agent", by: "storefront", at: AT } },
 ];
 
 const snapshot: HubFrame = {
@@ -132,6 +132,23 @@ it("shows a member a project's skills and only names the hub-wide ones", async (
   expect(texts()).not.toContain("Hub-wide skills in Every project");
   expect(texts()).not.toContain("Update");
   expect(document.body.textContent).not.toMatch(/Global/u);
+});
+
+it("says on each of a project's rows whether it is off, who changed it last and its last use", async () => {
+  await render("settings", false);
+  expect(rowNamed("checkout-qa")?.textContent).toMatch(/Off · Changed .+ by storefront · not used yet$/u);
+  expect(rowNamed("triage")?.textContent).toMatch(/not used yet$/u);
+  expect(rowNamed("triage")?.textContent).not.toContain("Off");
+});
+
+it("opens one of the project's own skills' history in the panel, which has no Skills list of its own", async () => {
+  await render("settings", false);
+  await click(rowNamed("triage") as HTMLElement);
+  // A repo skill's history is the repo's.
+  expect(texts()).not.toContain("History, restore or turn off");
+  await click(rowNamed("checkout-qa") as HTMLElement);
+  await click([...document.querySelectorAll("button")].find((b) => b.textContent === "History, restore or turn off") as HTMLElement);
+  expect(window.location.hash).toBe("#/project/devbox/storefront/skills/checkout-qa");
 });
 
 it("writes a member's install into the project, never hub-wide", async () => {

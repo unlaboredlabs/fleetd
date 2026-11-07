@@ -25,7 +25,10 @@ export type PanelView =
   | { readonly tab: "agents"; readonly agent: string | null }
   | { readonly tab: "prs"; readonly pr: PrKey | null }
   | { readonly tab: "sessions"; readonly session: string | null }
-  /** A project's skills, or one of them by name. */
+  /**
+   * One of a project's skills by name, with its history (no tab: Settings › Agents › Skills lists them). `null`, the
+   * list, is the panel's Agents; a link to it opens the settings (`projectSkills`).
+   */
   | { readonly tab: "skills"; readonly skill: string | null }
   /** The chat's artifacts, or one of them by name: its newest version, or `version`. */
   | { readonly tab: "artifacts"; readonly artifact: string | null; readonly version?: number | undefined }
@@ -218,6 +221,8 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
     case "project": {
       if (a === undefined || b === undefined) return HOME;
       const panel = panelView(parts.slice(3));
+      // The skills' list moved to the project's settings: an older link to it opens them there.
+      if (panel?.tab === "skills" && panel.skill === null) return projectSkills({ machineId: a, projectId: b });
       return { id: "project", project: { machineId: a, projectId: b }, message: query.get("message") || null, ...(panel === null ? {} : { panel }) };
     }
     case "status":
@@ -334,6 +339,9 @@ export const toHash = (screen: Screen): string => {
 
 /** A project's chat with the panel on `panel`. */
 export const panelRoute = (project: ProjectKey, panel: PanelView): Screen => ({ id: "project", project, message: null, panel });
+
+/** A project's skills: Settings › Agents for the project, whose Skills list has every one (settings/Skills.tsx). */
+export const projectSkills = (project: ProjectKey): Screen & { readonly id: "settings" } => ({ id: "settings", tab: "agents", for: `${project.machineId}/${project.projectId}` });
 
 /** The same screen on hub `at`; none says the hub of the screen before. */
 export const onHub = (screen: Screen, at: HubId | undefined): Screen => {

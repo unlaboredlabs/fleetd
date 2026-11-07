@@ -683,11 +683,12 @@ a new skill, weekly-invoices: …"), the name a link to the skill.
 A project's skills are its own: they reach its sessions only, never another project's. A saved skill is in its next
 session's list as `fleetd:<name>`; the running session can read it from its skills folder at once.
 
-Open them from **Skills** in the panel beside the chat, or in the project's settings:
+The project's **Agents** page in Settings lists them: its own, what was installed for it and any in its folder, each
+saying whether it's off, who changed it last, when, and when the lead last used it, with the hub-wide ones every
+project gets named under them (**Open its skills** on its Project page goes there). A skill's
+name in the chat, or **History, restore or turn off** on one of its own there, opens it in the panel beside the chat:
 
-- **The list**: what it learned, what was installed for it, the hub-wide skills every project gets, and any in its
-  folder. Each row says who changed it last, when, and when the lead last used it.
-- **A skill**: its `SKILL.md`, rendered. **Edit** opens the whole file with a line for what you changed; saving
+- **A skill**: who changed it last, when, and when the lead last used it; its `SKILL.md`, rendered. **Edit** opens the whole file with a line for what you changed; saving
   makes a version of yours, which the lead's next session gets.
 - **History**: every version, newest first, with who wrote it (the lead or you), when, and why. Open one to see what
   it changed against the one before. **Restore** puts an older version back as a new version, so nothing is lost.

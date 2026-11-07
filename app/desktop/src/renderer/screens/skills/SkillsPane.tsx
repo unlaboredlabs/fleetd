@@ -1,114 +1,33 @@
-// A project's panel, Skills (W238, D261): what it has learned to do. The list has its own skills (the ones it saved with
-// skill_save or the person wrote, and the ones installed for it), every project's and its folder's, each with who
-// changed it last, when, and when it was last used. One skill (`skills/<name>`, the wide panel) shows its SKILL.md
+// One of a project's skills in its panel (W238, D261), from the chat's line for it or Settings › Agents › Skills, where
+// the list is (no panel tab lists them). One skill (`skills/<name>`, the wide panel) shows who changed it last, its SKILL.md
 // rendered, an editor whose save is a version of the person's, its history (every version with who, when and why,
 // each a diff against the one before, and Restore, which adds a new version), and turning it off or deleting it.
 // A lead saves its skills with no approval; this is where the person audits and changes them. Reads skills_list and
 // skill_get; writes skill_set, skill_revert, skill_off and skill_delete. Every write's skills.changed reads both again.
-import { useLayoutEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import type { ProjectRef, SkillSummary, SkillVersion } from "../../../shared/contracts";
-import { useData, useToolQuery } from "../../src/data/react";
+import { useToolQuery } from "../../src/data/react";
 import { Button, Dialog, EmptyState, Field, Input, Markdown, Segmented, Switch, Text, Textarea, cx } from "../../ui";
 import { useHubRole } from "../admin/role";
 import { DiffBlock } from "../settings/DiffBlock";
 import { errorText, useHubCall, useRefetch } from "../settings/hub";
 import { navigate } from "../shell/navigation";
-import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
-import { GROUP_LABEL, body, grouped, isOwn, metaLine, versionLine } from "./skillsModel";
+import { projectSkills, type ProjectKey } from "../shell/routes";
+import { body, isOwn, metaLine, versionLine } from "./skillsModel";
 import s from "./skills.module.css";
 
 const refOf = (p: ProjectKey): ProjectRef => ({ machineId: p.machineId, projectId: p.projectId });
 
-const open = (project: ProjectKey, skill: string | null) => navigate(panelRoute(project, { tab: "skills", skill }));
-
 /** One skill asks for the frame's wide width, so its SKILL.md and diffs read at a comfortable measure. */
-export function SkillsTabView({ project, skill, onWide }: { project: ProjectKey; skill: string | null; onWide: (wide: boolean) => void }) {
+export function SkillsTabView({ project, skill, onWide }: { project: ProjectKey; skill: string; onWide: (wide: boolean) => void }) {
   useLayoutEffect(() => {
-    onWide(skill !== null);
-  }, [skill, onWide]);
+    onWide(true);
+  }, [onWide]);
   useLayoutEffect(() => () => onWide(false), [onWide]);
-  return skill === null ? <SkillsPane project={project} /> : <SkillView key={skill} project={project} name={skill} />;
+  return <SkillView key={skill} project={project} name={skill} />;
 }
 
 const useMe = (): string | undefined => useHubRole().me?.name;
-
-export function SkillsPane({ project }: { project: ProjectKey }) {
-  const fresh = useData((st) => st.fresh);
-  const list = useToolQuery("skills_list", { projectRef: refOf(project) });
-  const me = useMe();
-  // Day-grained stamps: read once a mount.
-  const [now] = useState(() => Date.now());
-  const skills = list.data?.skills;
-  const groups = useMemo(() => grouped(skills ?? []), [skills]);
-
-  if (skills === undefined) {
-    return (
-      <div className={s.screen} data-screen={list.isError ? "skills.error" : "skills.loading"}>
-        {!fresh ? (
-          <div className={s.note}>
-            <Text tone="quiet">Skills show once you’re connected.</Text>
-          </div>
-        ) : list.isError ? (
-          <div className={s.note} role="alert">
-            <Text tone="quiet">Couldn’t read the skills.</Text>
-            <Button onClick={() => void list.refetch()}>Retry</Button>
-          </div>
-        ) : (
-          <div className={s.skeleton} aria-busy="true" aria-label="Loading the skills">
-            <span />
-            <span />
-          </div>
-        )}
-      </div>
-    );
-  }
-  return (
-    <div className={s.screen} data-screen={groups.length === 0 ? "skills.empty" : "skills"}>
-      {groups.length === 0 ? (
-        <div className={s.empty}>
-          <EmptyState title="No skills yet">
-            When this project’s lead works out a task it will do again, or you correct how it does something, it saves a skill and says so in the chat. Every change shows
-            here, and you can edit or undo it.
-          </EmptyState>
-        </div>
-      ) : (
-        <div className={s.scroll}>
-          {groups.map((g) => (
-            <section key={g.group} className={s.group} aria-label={GROUP_LABEL[g.group]}>
-              <Text as="h3" size="xs" tone="quiet" className={s.groupHead}>
-                {GROUP_LABEL[g.group]}
-              </Text>
-              <ul className={s.rows}>
-                {g.rows.map((row) => (
-                  <li key={`${row.origin}/${row.name}`}>
-                    <button type="button" className={cx(s.row, row.off === true && s.off)} data-skill={row.name} onClick={() => open(project, row.name)}>
-                      <span className={s.name}>{row.name}</span>
-                      <Text size="xs" tone="quiet" className={s.description}>
-                        {row.description || "No description."}
-                      </Text>
-                      <Text size="xs" tone="faint">
-                        {metaLine(row, now, me)}
-                      </Text>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
-      )}
-      <div className={s.foot}>
-        <Button
-          size="sm"
-          variant="quiet"
-          onClick={() => (window.location.hash = toHash({ id: "settings", tab: "agents", for: `${project.machineId}/${project.projectId}` }))}
-        >
-          Install a skill in Settings
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 type Mode = "read" | "history";
 type Echo = { ok: boolean; text: string } | null;
@@ -339,7 +258,7 @@ function DeleteSkill({ project, skill }: { project: ProjectKey; skill: SkillSumm
                 setConfirm(false);
                 run(
                   () => hubCall("skill_delete", { scope: "project", projectRef: refOf(project), name: skill.name }).then(() => "Deleted."),
-                  () => open(project, null),
+                  () => navigate(projectSkills(project)),
                 );
               }}
             >

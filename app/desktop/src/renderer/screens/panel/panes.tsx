@@ -54,9 +54,10 @@ export function SessionsTab({ project, view, onWide }: PaneProps) {
   return <SessionsPane project={project} session={session} />;
 }
 
-/** A project's skills, or one of them, which asks for the frame's wide width. */
-export function SkillsTab({ project, view, onWide }: PaneProps) {
-  return <SkillsTabView project={project} skill={view.tab === "skills" ? view.skill : null} onWide={onWide} />;
+/** One of a project's skills, which asks for the frame's wide width. */
+export function SkillsTab({ project, view, onWide }: PaneProps): ReactNode {
+  // ProjectPanel opens Agents for a skills view with none named.
+  return view.tab === "skills" && view.skill !== null ? <SkillsTabView project={project} skill={view.skill} onWide={onWide} /> : null;
 }
 
 /** The chat's artifacts, or one of them, which asks for the frame's wide width. */
