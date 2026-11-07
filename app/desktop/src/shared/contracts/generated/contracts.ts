@@ -5526,6 +5526,8 @@ export type ProjectAddInput = {
   gitInit?: boolean;
   /** Absent: the best worker (see `project_discover.best`). */
   machineId?: MachineId;
+  /** Only the caller sees and uses it. */
+  onlyMe?: boolean;
   path?: string;
   /** Absent means the directory's name. */
   title?: string;
@@ -5953,6 +5955,8 @@ export type ProjectSettingsSetInput = {
   machineId: MachineId;
   /** Turns the nightly memory refresh on or off for the project. */
   memoryRefresh?: boolean;
+  /** Only its owner sees and uses it (the caller becomes its owner), or everyone on the hub again. */
+  onlyMe?: boolean;
   projectId: ProjectId;
   /**
    * The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title is the
