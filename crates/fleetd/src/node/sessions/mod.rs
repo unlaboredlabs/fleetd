@@ -1807,14 +1807,10 @@ impl SessionService {
             .ok_or_else(|| not_found(format!("no session {id} on this machine")))
     }
 
-    /// A Navi's folder on this machine, by its project: one whose sessions are a Navi's (assistant). None for any other
-    /// project. A person's browser screen for that Navi runs on its kept profile, fenced in this folder (D239).
+    /// A project's folder on this machine, by its id; None for a project this node doesn't have. A person's browser
+    /// screen for it runs on its kept profile (D239, any project's since D310).
     pub fn navi_folder(&self, project_id: &str) -> Option<PathBuf> {
-        let navi = self.store().sessions().ok()?.iter().any(|row| {
-            row.summary.project_id.as_str() == project_id
-                && row.local.role == SessionRole::Assistant
-        });
-        navi.then(|| self.project_root(project_id).ok()).flatten()
+        self.project_root(project_id).ok()
     }
 
     /// An item in the session's action log, under its run now (`fleetd mac run`'s line).
@@ -3039,9 +3035,9 @@ impl SessionService {
             env.extend(browser_env);
             plugin_dirs.extend(browser.plugin_dirs());
         }
-        // A lead that does its own work keeps its browser's sign-ins between sessions, on the profile its project
-        // keeps (D221).
-        if row.local.role == SessionRole::Assistant
+        // A project's lead keeps its browser's sign-ins between sessions, on the profile its project keeps (D221, any
+        // project's since D310).
+        if matches!(row.local.role, SessionRole::Lead | SessionRole::Assistant)
             && let Some(browser) = self.inner.browser.get()
         {
             browser.navi(id, row.summary.project_id.as_str(), &row.local.cwd);
