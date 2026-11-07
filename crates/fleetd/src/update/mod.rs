@@ -122,28 +122,66 @@ pub struct HttpFeed {
     base: String,
 }
 
+/// A download that gets no byte for this long stops, and a build's goes on from where it stopped. No limit on the
+/// whole: a build is 50-130 MB, which takes most of an hour at 1 Mbit/s.
+const STALL: std::time::Duration = std::time::Duration::from_secs(60);
+/// The most a small file's GET takes.
+const SMALL_WAIT: std::time::Duration = std::time::Duration::from_secs(600);
+/// How often a build's download that was cut off (a dropped link, a stall, a server error) is asked for again from
+/// the byte it stopped at, waiting [`RESUME_WAIT`] longer each time; a try that brings bytes starts the count again.
+const RESUMES: u32 = 5;
+const RESUME_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
+
 impl HttpFeed {
     pub fn new(base: String) -> Self {
         let http = reqwest::Client::builder()
             .user_agent(format!("fleetd/{}", crate::version()))
             .connect_timeout(std::time::Duration::from_secs(20))
-            .timeout(std::time::Duration::from_secs(600))
+            .read_timeout(STALL)
             .build()
             .unwrap_or_default();
         Self { http, base }
     }
 }
 
+/// Why a GET failed: `Again` for what asking again may fix (the network, a server error), `Final` for the rest.
+enum Fail {
+    Again(String),
+    Final(String),
+}
+
 impl HttpFeed {
-    async fn send(&self, url: &str) -> Result<reqwest::Response, String> {
-        let response = self
-            .http
-            .get(url)
+    /// A GET of a build from byte `from`, or with `None` of a small file (within [`SMALL_WAIT`]).
+    async fn send(&self, url: &str, from: Option<u64>) -> Result<reqwest::Response, Fail> {
+        let mut request = self.http.get(url);
+        match from {
+            None => request = request.timeout(SMALL_WAIT),
+            Some(from) if from > 0 => {
+                request = request.header(reqwest::header::RANGE, format!("bytes={from}-"));
+            }
+            Some(_) => {}
+        }
+        let from = from.unwrap_or(0);
+        let response = request
             .send()
             .await
-            .map_err(|e| format!("GET `{url}`: {e}"))?;
-        if !response.status().is_success() {
-            return Err(format!("GET `{url}`: {}", response.status()));
+            .map_err(|e| Fail::Again(format!("GET `{url}`: {e}")))?;
+        let status = response.status();
+        if status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(Fail::Again(format!("GET `{url}`: {status}")));
+        }
+        if !status.is_success() {
+            return Err(Fail::Final(format!("GET `{url}`: {status}")));
+        }
+        let resumed = response
+            .headers()
+            .get(reqwest::header::CONTENT_RANGE)
+            .and_then(|r| r.to_str().ok())
+            .is_some_and(|r| r.starts_with(&format!("bytes {from}-")));
+        if from > 0 && (status != reqwest::StatusCode::PARTIAL_CONTENT || !resumed) {
+            return Err(Fail::Final(format!(
+                "GET `{url}` was cut off at byte {from}, and the server can't go on from there"
+            )));
         }
         Ok(response)
     }
@@ -154,8 +192,9 @@ impl Feed for HttpFeed {
         Box::pin(async move {
             let url = format!("{}/{name}", self.base);
             Ok(self
-                .send(&url)
-                .await?
+                .send(&url, None)
+                .await
+                .map_err(|(Fail::Again(e) | Fail::Final(e))| e)?
                 .bytes()
                 .await
                 .map_err(|e| format!("GET `{url}`: {e}"))?
@@ -170,15 +209,29 @@ impl Feed for HttpFeed {
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
             let url = format!("{}/{name}", self.base);
-            let mut response = self.send(&url).await?;
-            while let Some(chunk) = response
-                .chunk()
-                .await
-                .map_err(|e| format!("GET `{url}`: {e}"))?
-            {
-                sink(&chunk)?;
+            let (mut got, mut tries) = (0u64, 0u32);
+            loop {
+                let before = got;
+                let cut = match self.send(&url, Some(got)).await {
+                    Ok(mut response) => loop {
+                        match response.chunk().await {
+                            Ok(Some(chunk)) => {
+                                sink(&chunk)?;
+                                got += chunk.len() as u64;
+                            }
+                            Ok(None) => return Ok(()),
+                            Err(e) => break format!("GET `{url}`: {e}"),
+                        }
+                    },
+                    Err(Fail::Final(e)) => return Err(e),
+                    Err(Fail::Again(e)) => e,
+                };
+                tries = if got > before { 1 } else { tries + 1 };
+                if tries > RESUMES {
+                    return Err(cut);
+                }
+                tokio::time::sleep(RESUME_WAIT * tries).await;
             }
-            Ok(())
         })
     }
 }

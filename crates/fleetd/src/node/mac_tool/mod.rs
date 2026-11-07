@@ -57,7 +57,8 @@ pub const SKEW_MS: i64 = 5 * 60_000;
 pub enum Step {
     /// The snapshots of the project the Mac already holds.
     Have,
-    /// One piece of a file for the next step, at `offset`.
+    /// One piece of a file for the next step, at `offset`: in `data_b64`, or, to a Mac whose `have` said `raw`, as the
+    /// raw bytes after the sealed step's JSON ([`seal_step`]) with `data_b64` empty.
     #[serde(rename_all = "camelCase")]
     Put {
         name: String,
@@ -82,10 +83,13 @@ pub enum Step {
     Kill {
         job: u32,
     },
-    /// One piece of a file or folder (as a tar.gz) in the agent's folder.
+    /// One piece of a file or folder (as a tar.gz) in the agent's folder. `raw`: the piece may come as raw bytes after
+    /// the answer's JSON ([`seal_answer`]) rather than in `data_b64`; an older Mac ignores it and sends base64.
     Get {
         path: String,
         offset: u64,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        raw: bool,
     },
     /// `device`: a device type of the agent's choosing; absent, the golden's (an older agent's node sends none).
     SimStart {
@@ -101,6 +105,9 @@ pub enum Step {
 pub enum Done {
     Have {
         snapshots: Vec<String>,
+        /// This Mac takes a `put`'s piece as raw bytes after the step (an older one says nothing: base64 then).
+        #[serde(default)]
+        raw: bool,
     },
     Put {
         bytes: u64,
@@ -180,6 +187,25 @@ pub struct Answer {
     pub error: Option<McpToolError>,
 }
 
+/// A step and the raw bytes that follow its JSON (a `put`'s piece, or none), sealed to the Mac's key `to`.
+pub fn seal_step(to: &[u8; 32], envelope: &Envelope, raw: &[u8]) -> Option<String> {
+    let mut plain = zeroize::Zeroizing::new(serde_json::to_vec(envelope).ok()?);
+    plain.extend_from_slice(raw);
+    seal_to(to, &plain)
+}
+
+/// A JSON value at the start of `plain`, and the raw bytes after it.
+pub fn split_raw<T: serde::de::DeserializeOwned>(
+    plain: &[u8],
+) -> Result<(T, &[u8]), serde_json::Error> {
+    use serde::de::Error as _;
+    let mut values = serde_json::Deserializer::from_slice(plain).into_iter::<T>();
+    let value = values
+        .next()
+        .ok_or_else(|| serde_json::Error::custom("nothing to read"))??;
+    Ok((value, &plain[values.byte_offset()..]))
+}
+
 /// `plain`, sealed to the raw X25519 key `to`, base64.
 pub fn seal_to(to: &[u8; 32], plain: &[u8]) -> Option<String> {
     crypto_box::PublicKey::from(*to)
@@ -193,17 +219,20 @@ fn answer_box(key: &[u8; 32]) -> crypto_secretbox::XSalsa20Poly1305 {
     crypto_secretbox::XSalsa20Poly1305::new(crypto_secretbox::Key::from_slice(key))
 }
 
-/// The answer, sealed with the step's own answer key (fresh for each step, so one fixed nonce is safe).
-pub fn seal_answer(key: &[u8; 32], answer: &Answer) -> String {
+/// The answer and the raw bytes after its JSON (a `get` step's piece when it asked for `raw`, else none), sealed with
+/// the step's own answer key (fresh for each step, so one fixed nonce is safe).
+pub fn seal_answer(key: &[u8; 32], answer: &Answer, raw: &[u8]) -> String {
     use crypto_secretbox::aead::Aead;
-    let plain = zeroize::Zeroizing::new(serde_json::to_vec(answer).expect("an answer serializes"));
+    let mut plain =
+        zeroize::Zeroizing::new(serde_json::to_vec(answer).expect("an answer serializes"));
+    plain.extend_from_slice(raw);
     let sealed = answer_box(key)
         .encrypt(&crypto_secretbox::Nonce::default(), plain.as_slice())
         .expect("sealing fits");
     B64.encode(sealed)
 }
 
-pub fn open_answer(key: &[u8; 32], sealed_b64: &str) -> Option<Answer> {
+pub fn open_answer(key: &[u8; 32], sealed_b64: &str) -> Option<(Answer, Vec<u8>)> {
     use crypto_secretbox::aead::Aead;
     let sealed = B64.decode(sealed_b64).ok()?;
     let plain = zeroize::Zeroizing::new(
@@ -211,7 +240,8 @@ pub fn open_answer(key: &[u8; 32], sealed_b64: &str) -> Option<Answer> {
             .decrypt(&crypto_secretbox::Nonce::default(), sealed.as_slice())
             .ok()?,
     );
-    serde_json::from_slice(&plain).ok()
+    let (answer, raw) = split_raw(&plain).ok()?;
+    Some((answer, raw.to_vec()))
 }
 
 /// A name safe as one path part: what an agent's folder and a project's mirror are called on the Mac.
