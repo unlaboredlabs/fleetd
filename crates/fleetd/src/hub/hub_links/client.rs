@@ -1,7 +1,9 @@
 //! The hub with the Navi calling the other hub over a kept link: `project_message` and `factory_status` with `hub`,
 //! and [`follow`], which reads the link's feed there and wakes the Navi's lead with each piece of news, as the bridge
 //! does for asks here. It long-polls the feed, so news arrives as it happens; when the other hub can't be reached it
-//! retries every [`RETRY`] and the link reads "unreachable" until it answers again.
+//! retries with backoff ([`retry_delay`]: 1 s doubling to 30 s, ±20% jitter, so a hub that restarts is followed again
+//! within a second or two and many links don't call it at once) and the link reads "unreachable" until it answers
+//! again. It asks for gzip, and reads a plain answer as before from a hub that doesn't compress.
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -23,10 +25,10 @@ use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::navi::bridge::{Woken, ask_sent, is_project, record_sent};
 use crate::hub::store::now_ms;
 
-/// How long a follower waits before calling a hub that didn't answer again.
-pub const RETRY: Duration = Duration::from_secs(30);
 const CONNECT: Duration = Duration::from_secs(5);
 const CALL: Duration = Duration::from_secs(20);
+/// How long a feed read waits past the other hub's own wait: a read on a connection that died meanwhile ends then.
+const FEED_MARGIN: Duration = Duration::from_secs(10);
 /// The most a call there reads back.
 const BODY_MAX: usize = 1024 * 1024;
 
@@ -68,6 +70,7 @@ pub async fn call<T: DeserializeOwned>(
     };
     let response = request
         .bearer_auth(key)
+        .header(reqwest::header::ACCEPT_ENCODING, "gzip")
         .timeout(timeout)
         .send()
         .await
@@ -97,9 +100,14 @@ pub async fn call<T: DeserializeOwned>(
     )
 }
 
-/// The body, refused past [`BODY_MAX`]: an answer that big is no fleetd hub's.
+/// The body, gunzipped when the other hub sent it so, refused past [`BODY_MAX`] either way: an answer that big is no
+/// fleetd hub's.
 async fn read_capped(mut response: reqwest::Response) -> Result<Vec<u8>, Failure> {
     let too_big = || Failure::Unreachable(format!("it answered with more than {BODY_MAX} bytes"));
+    let gzip = response
+        .headers()
+        .get(reqwest::header::CONTENT_ENCODING)
+        .is_some_and(|e| e.as_bytes().eq_ignore_ascii_case(b"gzip"));
     if response
         .content_length()
         .is_some_and(|n| n > BODY_MAX as u64)
@@ -117,7 +125,22 @@ async fn read_capped(mut response: reqwest::Response) -> Result<Vec<u8>, Failure
         }
         body.extend_from_slice(&chunk);
     }
-    Ok(body)
+    if !gzip {
+        return Ok(body);
+    }
+    let mut plain = Vec::new();
+    std::io::Read::read_to_end(
+        &mut std::io::Read::take(
+            flate2::read::GzDecoder::new(body.as_slice()),
+            BODY_MAX as u64 + 1,
+        ),
+        &mut plain,
+    )
+    .map_err(|_| Failure::Unreachable("it answered with a broken gzip body".into()))?;
+    if plain.len() > BODY_MAX {
+        return Err(too_big());
+    }
+    Ok(plain)
 }
 
 fn reason(e: &reqwest::Error) -> String {
@@ -340,7 +363,7 @@ pub async fn follow_once(hub: &Hub, link_id: &str, wait: u64) -> Result<Followed
         &key,
         None,
         &path,
-        CALL + Duration::from_secs(wait),
+        FEED_MARGIN + Duration::from_secs(wait),
     )
     .await;
     let feed = match read {
@@ -429,16 +452,22 @@ pub async fn follow(hub: Arc<Hub>, link_id: String, hello: bool) {
     if hello {
         refresh(&hub, &link_id).await;
     }
+    let mut attempt = 0;
     loop {
         if hub.shutdown.is_triggered() {
             return;
         }
         let pause = match follow_once(&hub, &link_id, FEED_WAIT_MAX_SEC).await {
             Ok(Followed::Stop) => return,
-            Ok(Followed::Read(_)) => None,
+            Ok(Followed::Read(_)) => {
+                attempt = 0;
+                None
+            }
             Err(e) => {
                 tracing::debug!(link = %link_id, error = %e.message, "hub link feed");
-                Some(RETRY)
+                let jitter: f64 = rand::Rng::gen_range(&mut rand::thread_rng(), 0.8..1.2);
+                attempt += 1;
+                Some(retry_delay(attempt - 1, jitter))
             }
         };
         if let Some(pause) = pause {
@@ -448,6 +477,12 @@ pub async fn follow(hub: Arc<Hub>, link_id: String, hello: bool) {
             }
         }
     }
+}
+
+/// The wait before calling a hub again after failed read `attempt` (0 first) in a row, `jitter` in 0.8..1.2.
+pub fn retry_delay(attempt: u32, jitter: f64) -> Duration {
+    let ms = 30_000f64.min(1_000.0 * 2f64.powi(attempt.min(16) as i32)) * jitter;
+    Duration::from_millis(ms.round() as u64)
 }
 
 /// Starts a follower for every kept link that still works.

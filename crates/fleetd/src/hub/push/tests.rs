@@ -131,6 +131,12 @@ struct FakeRelay {
 }
 
 async fn fake_relay() -> (FakeRelay, String) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    (fake_relay_on(listener), url)
+}
+
+fn fake_relay_on(listener: tokio::net::TcpListener) -> FakeRelay {
     let relay = FakeRelay::default();
     let seen = relay.clone();
     let app = axum::Router::new().route(
@@ -140,25 +146,64 @@ async fn fake_relay() -> (FakeRelay, String) {
                 let seen = seen.clone();
                 async move {
                     let dead = push.token.starts_with("dead");
+                    let boom = push.token.starts_with("boom");
                     seen.got.lock().unwrap().push(push);
                     seen.auth.lock().unwrap().push(
                         headers
                             .get("authorization")
                             .map(|v| v.to_str().unwrap().to_owned()),
                     );
-                    axum::Json(if dead {
+                    let answer = if dead {
                         RelayAnswer::Dead
+                    } else if boom {
+                        RelayAnswer::Failed {
+                            error: "APNs is down".into(),
+                        }
                     } else {
                         RelayAnswer::Sent
-                    })
+                    };
+                    let status = if boom {
+                        StatusCode::BAD_GATEWAY
+                    } else {
+                        StatusCode::OK
+                    };
+                    (status, axum::Json(answer))
                 }
             },
         ),
     );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, app).await });
-    (relay, url)
+    relay
+}
+
+#[tokio::test]
+async fn a_push_the_relay_never_got_is_posted_again_once_it_answers_and_one_it_got_never_twice() {
+    // Nothing listens there yet: the relay is restarting, or the hub's network blinked.
+    let addr = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap();
+    let url = format!("http://{addr}");
+    let late = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        fake_relay_on(tokio::net::TcpListener::bind(addr).await.unwrap())
+    });
+    let push = |token: &str| RelayPush {
+        platform: PushPlatform::Ios,
+        token: token.into(),
+        ciphertext: "sealed".into(),
+        collapse_key: None,
+    };
+    let http = reqwest::Client::new();
+    assert_eq!(post(&http, &url, None, &push("aa11")).await, Outcome::Sent);
+    let relay = late.await.unwrap();
+    assert_eq!(relay.got.lock().unwrap().len(), 1);
+    // The relay got it and failed: posting it again could notify twice.
+    assert!(matches!(
+        post(&http, &url, None, &push("boom")).await,
+        Outcome::Failed(why) if why.contains("APNs is down")
+    ));
+    assert_eq!(relay.got.lock().unwrap().len(), 2);
 }
 
 fn lead_message(hub: &Hub, project: &str, seq: i64, text: &str) {
