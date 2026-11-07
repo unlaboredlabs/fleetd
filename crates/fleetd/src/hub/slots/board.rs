@@ -743,6 +743,26 @@ impl Board {
         c.state == ClaimState::Held || unlaunched
     }
 
+    /// The project is gone (`navi::erase`): its claims are dropped, held or queued, and so is its own max agents.
+    /// True when that freed capacity (the caller then evaluates and notifies).
+    pub fn forget_project(&mut self, r: &ProjectRef) -> bool {
+        let holders: Vec<String> = self
+            .claims
+            .iter()
+            .filter(|c| same(&c.project_ref, r))
+            .map(|c| c.holder.clone())
+            .collect();
+        let mut freed = false;
+        for holder in holders {
+            freed |= self.release(&holder);
+        }
+        if self.max_agents.iter().any(|(s, _)| same(s, r)) {
+            self.set_cap(None, Some((r.clone(), None)));
+        }
+        self.moved.retain(|(s, _)| !same(s, r));
+        freed
+    }
+
     /// Applies a bound thread's running/stopped status; a thread no claim follows is not counted. True when a slot
     /// was freed.
     pub fn observe(&mut self, machine_id: &str, thread_id: &ThreadId, running: bool) -> bool {

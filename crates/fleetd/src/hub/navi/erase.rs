@@ -3,7 +3,8 @@
 //! person ticks it, `node/sessions`), then [`erase`] deletes everything of it the hub keeps: its chat and the events
 //! that carried it, its approvals and purchases (`requests`), asks and decisions, its orders and what they hold, its
 //! memory and skills, its attachments and its screen recordings, and the time inspector's record of its sessions (whose
-//! labels name its commands, searches and pages). Its settings go with the project as any project's do
+//! labels name its commands, searches and pages). Its agents' slots and its own max agents go from the slot board,
+//! and its project.removed stays in the log for the open apps. Its settings go with the project as any project's do
 //! (`HubStore::project_remove`).
 //!
 //! The delete is marked as asked for first (`navi_erases`, [`asked`]): when its node removes the Navi but its answer
@@ -99,8 +100,80 @@ pub fn finish_pending(hub: &Hub) -> Result<usize, StoreError> {
     Ok(n)
 }
 
-/// Finishes the erases asked for at the hub's start, then at each `project.removed`, until the hub stops.
+/// Projects the hub no longer has, whose rows an older hub left behind: `projects` names their id on no machine,
+/// yet a table [`HubStore::machine_project_forget`] or [`erase`] clears still holds them, or a person's sidebar order
+/// or pins do. A delete from before every project was erased (D310) left its chat, orders, leads and settings; one
+/// since, its max agents and its place in each order. Each is erased and forgotten as a project of a removed machine
+/// is (`projects::tools::forget_gone`), which clears every one of those rows, so a second run finds none. A project
+/// any machine has under that id is never touched. Run at the hub's start; how many were pruned.
+///
+/// [`HubStore::machine_project_forget`]: crate::hub::store::HubStore::machine_project_forget
+pub fn prune_orphans(hub: &Hub) -> Result<usize, StoreError> {
+    let orphans = hub.db.with(orphans)?;
+    for (machine_id, project_id) in &orphans {
+        let r = ProjectRef {
+            machine_id: MachineId::unchecked(machine_id),
+            project_id: ProjectId::unchecked(project_id),
+        };
+        erase(hub, &r)?;
+        hub.store.machine_project_forget(&r)?;
+    }
+    Ok(orphans.len())
+}
+
+/// [`prune_orphans`]' projects, as (machine, project).
+fn orphans(c: &Connection) -> Result<BTreeSet<(String, String)>, StoreError> {
+    let live: BTreeSet<String> = c
+        .prepare("SELECT project_id FROM projects")?
+        .query_map([], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut out = BTreeSet::new();
+    let tables = crate::hub::store::MACHINE_TABLES
+        .iter()
+        .chain(&["workstreams", "tasks"])
+        .filter(|t| **t != "projects");
+    for table in tables {
+        let has_project = c
+            .prepare_cached("SELECT 1 FROM pragma_table_info(?) WHERE name = 'project_id'")?
+            .exists([table])?;
+        if !has_project {
+            continue;
+        }
+        let rows = c
+            .prepare(&format!(
+                "SELECT DISTINCT machine_id, project_id FROM {table}"
+            ))?
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        out.extend(rows.into_iter().filter(|(_, p)| !live.contains(p)));
+    }
+    for table in ["sidebar_orders", "chat_pins"] {
+        let lists = c
+            .prepare(&format!("SELECT refs FROM {table}"))?
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for refs in lists {
+            let refs: Vec<ProjectRef> = serde_json::from_str(&refs).unwrap_or_default();
+            out.extend(
+                refs.into_iter()
+                    .filter(|r| !live.contains(r.project_id.as_str()))
+                    .map(|r| (r.machine_id.to_string(), r.project_id.to_string())),
+            );
+        }
+    }
+    Ok(out)
+}
+
+/// Prunes what older hubs left of deleted projects ([`prune_orphans`]), then finishes the erases asked for at the
+/// hub's start, then at each `project.removed`, until the hub stops.
 pub async fn run(hub: Arc<Hub>) {
+    match prune_orphans(&hub) {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(projects = n, "erased what was left of deleted projects"),
+        Err(e) => tracing::warn!(error = %e, "what was left of deleted projects wasn't erased"),
+    }
     let mut head = hub.events.subscribe();
     let mut cursor = hub.events.head();
     let types = [HubEventType::ProjectRemoved];
@@ -138,6 +211,8 @@ pub async fn run(hub: Arc<Hub>) {
 /// Erases what the hub keeps of the Navi `r`, its rows and its files, and its mark ([`asked`]). Run once its node has
 /// forgotten it.
 pub fn erase(hub: &Hub, r: &ProjectRef) -> Result<(), StoreError> {
+    // Its tasks' rows go below, so their slots are given back here, while the board still knows whose they are.
+    hub.slots.forget_project(r)?;
     let (recordings, blobs) = hub.db.transaction(|c| rows(c, r))?;
     for id in &recordings {
         gone(&crate::hub::browser::dir(

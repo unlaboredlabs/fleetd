@@ -52,6 +52,28 @@ fn put_order(db: &HubDb, person: &PersonId, order: &[ProjectRef]) -> Result<(), 
     })
 }
 
+/// The project is gone (`HubStore::project_remove`): it leaves every person's order, so a project made later is
+/// never ranked where the gone one was.
+pub fn forget(c: &rusqlite::Connection, r: &ProjectRef) -> rusqlite::Result<()> {
+    let rows: Vec<(String, String)> = c
+        .prepare_cached("SELECT person_id, refs FROM sidebar_orders")?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    for (person, refs) in rows {
+        let Ok(order) = serde_json::from_str::<Vec<ProjectRef>>(&refs) else {
+            continue;
+        };
+        if !order.contains(r) {
+            continue;
+        }
+        let kept: Vec<&ProjectRef> = order.iter().filter(|o| *o != r).collect();
+        let kept = serde_json::to_string(&kept).unwrap_or_else(|_| "[]".into());
+        c.prepare_cached("UPDATE sidebar_orders SET refs = ? WHERE person_id = ?")?
+            .execute(params![kept, person])?;
+    }
+    Ok(())
+}
+
 /// The live person behind a human key; none for an agent's key or a removed person's.
 pub(crate) fn me(hub: &Hub, caller: &Caller) -> Result<Option<PersonId>, ToolError> {
     let Some(p) = caller.person.as_ref().filter(|_| is_human(caller)) else {

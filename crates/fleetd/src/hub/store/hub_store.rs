@@ -22,7 +22,7 @@ pub struct StoredThread {
 
 /// The tables [`HubStore::machine_remove`] clears by `machine_id`: the machine itself, what its node reported (its
 /// projects, sessions, checkouts) and what the hub holds for them (chats, settings, secrets, leads, slots, Navis).
-pub(super) const MACHINE_TABLES: &[&str] = &[
+pub(crate) const MACHINE_TABLES: &[&str] = &[
     "machines",
     "node_keys",
     "enroll_tokens",
@@ -313,6 +313,7 @@ impl HubStore {
             ] {
                 n += conn.prepare_cached(sql)?.execute([m, p])?;
             }
+            crate::hub::sidebar_order::forget(conn, r)?;
             Ok(n)
         })
     }
@@ -450,6 +451,7 @@ impl HubStore {
                 .execute(params![r.machine_id.as_str(), r.project_id.as_str()])?;
             }
             crate::hub::repos::store::remove_project(conn, r)?;
+            crate::hub::sidebar_order::forget(conn, r)?;
             Ok(())
         })
     }

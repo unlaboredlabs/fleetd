@@ -815,3 +815,148 @@ async fn removing_a_project_leaves_a_checkout_another_project_holds() {
     assert_eq!(removed(&mut calls), [("shop".into(), false)]);
     assert_eq!(shown(&hub), ["app"]);
 }
+
+/// W465: a deleted project's project.removed stays in the event log once its erase has run, so every open desktop and
+/// phone (reading the log after it, `events_wait`) drops it without a restart. The erase deleted it with the project's
+/// other events, so an open app never heard the project went.
+#[tokio::test]
+async fn a_deleted_projects_removal_reaches_open_apps_after_its_erase() {
+    let (hub, _home) = hub();
+    let _calls = node(&hub).await;
+    let cursor = hub.events.head();
+    call(
+        &hub,
+        "project_remove",
+        json!({ "machineId": "devbox", "projectId": "app", "removeWorktrees": true }),
+    )
+    .await
+    .unwrap();
+    let page = hub
+        .events
+        .page(cursor, Some(&[HubEventType::ProjectRemoved]), None)
+        .unwrap();
+    let removed: Vec<_> = page
+        .events
+        .iter()
+        .map(|e| e.project_id.as_ref().map(ProjectId::to_string))
+        .collect();
+    assert_eq!(removed, [Some("app".to_owned())]);
+}
+
+/// W465: a deleted project's agents give their slots back and its own max agents goes: neither the agents it had
+/// running or queued nor its max stays on the slot board (Settings › Agents' rows, the fleet cap's warning), and the
+/// machine's slots are free for the other projects. The erase deleted its tasks before their slots were released.
+#[tokio::test]
+async fn a_deleted_projects_slots_and_max_agents_go_with_it() {
+    use crate::hub::slots::{CapInput, SlotPriority, SlotRequest};
+    let (hub, _home) = hub();
+    let _calls = node(&hub).await;
+    hub.slots
+        .set_cap(CapInput {
+            max_agents: Some((project("app"), Some(5))),
+            ..Default::default()
+        })
+        .unwrap();
+    for holder in ["T1", "T2"] {
+        hub.slots
+            .acquire(SlotRequest {
+                holder,
+                project_ref: &project("app"),
+                priority: SlotPriority::Work,
+                on: None,
+            })
+            .unwrap();
+    }
+    let rows = |hub: &Hub| -> Vec<String> {
+        hub.slots
+            .state()
+            .per_project
+            .iter()
+            .map(|p| p.project_ref.project_id.to_string())
+            .collect()
+    };
+    assert_eq!(rows(&hub), ["app"]);
+
+    call(
+        &hub,
+        "project_remove",
+        json!({ "machineId": "devbox", "projectId": "app", "removeWorktrees": true }),
+    )
+    .await
+    .unwrap();
+    let state = hub.slots.state();
+    assert_eq!(rows(&hub), Vec::<String>::new());
+    assert_eq!((state.used.get(), state.queued.get()), (0, 0));
+    let shares: i64 = hub
+        .db
+        .with(|c| Ok(c.query_row("SELECT COUNT(*) FROM slot_shares", [], |r| r.get(0))?))
+        .unwrap();
+    assert_eq!(shares, 0);
+}
+
+/// W465: what older hubs left of deleted projects (a chat, a max agents, a place in a sidebar order) is erased at the
+/// hub's start, once: a second run finds nothing. A project any machine has under that id is left alone, even
+/// another machine's rows under it.
+#[tokio::test]
+async fn what_older_hubs_left_of_deleted_projects_is_pruned_once() {
+    use crate::hub::chat::NewMessage;
+    use crate::hub::navi::erase::prune_orphans;
+    use crate::hub::slots::CapInput;
+    use fleetd_contracts::chat::ChatAuthor;
+    let (hub, _home) = hub();
+    let _calls = node(&hub).await;
+    let gone = project("gone");
+    let elsewhere = ProjectRef {
+        machine_id: MachineId::unchecked("worker"),
+        project_id: ProjectId::unchecked("app"),
+    };
+    for r in [&gone, &project("app"), &elsewhere] {
+        hub.chat
+            .add(
+                r,
+                NewMessage {
+                    author: Some(ChatAuthor::Human),
+                    text: "hi".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        hub.slots
+            .set_cap(CapInput {
+                max_agents: Some((r.clone(), Some(3))),
+                ..Default::default()
+            })
+            .unwrap();
+    }
+    let order = serde_json::to_string(&[&gone, &project("app")]).unwrap();
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO sidebar_orders (person_id, refs) VALUES ('p_ann', ?)",
+                [order],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+    assert_eq!(prune_orphans(&hub).unwrap(), 1);
+    let chat = |r: &ProjectRef| hub.chat.page(r, None, None, 10).unwrap().0.len();
+    assert_eq!(
+        (chat(&gone), chat(&project("app")), chat(&elsewhere)),
+        (0, 1, 1)
+    );
+    let maxes: Vec<String> = hub
+        .slots
+        .state()
+        .per_project
+        .iter()
+        .map(|p| format!("{}/{}", p.project_ref.machine_id, p.project_ref.project_id))
+        .collect();
+    assert_eq!(maxes, ["devbox/app", "worker/app"]);
+    let order: String = hub
+        .db
+        .with(|c| Ok(c.query_row("SELECT refs FROM sidebar_orders", [], |r| r.get(0))?))
+        .unwrap();
+    assert_eq!(order, serde_json::to_string(&[project("app")]).unwrap());
+    assert_eq!(prune_orphans(&hub).unwrap(), 0);
+}
