@@ -117,8 +117,10 @@ pub fn register(c: &Connection, new: &NewDevice<'_>, at_ms: i64) -> Result<PushD
 
 /// A person's devices, oldest first.
 pub fn list(c: &Connection, person: &PersonId) -> Result<Vec<PushDevice>, StoreError> {
+    // A phone signed out of the hub gets nothing more (see [`targets`]), so it isn't listed either.
     Ok(c.prepare_cached(&format!(
-        "SELECT {COLUMNS} FROM push_devices WHERE person_id = ? ORDER BY created_ms, rowid"
+        "SELECT {COLUMNS} FROM push_devices WHERE person_id = ? \
+         AND key_id IN (SELECT key_id FROM agent_keys WHERE revoked_ms IS NULL) ORDER BY created_ms, rowid"
     ))?
     .query_map([person.as_str()], read_device)?
     .collect::<rusqlite::Result<_>>()?)
