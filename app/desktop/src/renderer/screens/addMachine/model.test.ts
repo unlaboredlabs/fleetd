@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MachineAddRun, MachineHost } from "../../../shared/contracts";
-import { hereLine, hereOf, hostLine, joinSteps, lineState, lineWords, machineIdProblem, pickable, resumable, shortOutput, sshProblem } from "./model";
+import { hereLine, hereOf, hostLine, joinSteps, lineState, lineWords, MAC_TOKEN_MS, macCodeOver, macCodeState, machineIdProblem, pickable, resumable, shortOutput, sshProblem } from "./model";
 
 const hub: MachineHost = { machineId: "devbox", source: "hub", joined: true };
 const builder: MachineHost = { machineId: "builder-1", host: "builder-1", source: "ssh_config", joined: false };
@@ -118,5 +118,22 @@ describe("Add machine's model", () => {
     });
     // The probe ran there and failed: its "Permission denied" is the machine's, not a refused key.
     expect(sshProblem("builder-1", "cannot read builder-1 over SSH (exit 1): mkdir: cannot create directory: Permission denied")).toBeUndefined();
+  });
+});
+
+describe("A Mac for agents' code", () => {
+  const code = { expiresAt: "2026-11-07T10:10:00.000Z", onlineAtMint: false, linkedAtMint: undefined };
+  const offline = { online: false, linked: undefined };
+  const at = (iso: string) => Date.parse(iso);
+
+  it("says the Mac took it while it may still join, then that setup stopped once its token is past", () => {
+    expect(macCodeState(code, offline, at("2026-11-07T10:05:00.000Z"), "used")).toBe("used");
+    // Past the code's own 10 minutes, the Mac's token still works: it may yet join.
+    expect(macCodeState(code, offline, at("2026-11-07T10:20:00.000Z"), "used")).toBe("used");
+    expect(macCodeState(code, offline, Date.parse(code.expiresAt) + MAC_TOKEN_MS, "used")).toBe("stalled");
+    expect(macCodeOver("stalled")).toBe(true);
+    expect(macCodeOver("used")).toBe(false);
+    // Joined wins over every word of the hub's.
+    expect(macCodeState(code, { online: true, linked: "x" }, at("2026-11-07T11:00:00.000Z"), "used")).toBe("joined");
   });
 });

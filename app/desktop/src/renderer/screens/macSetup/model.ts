@@ -1,11 +1,15 @@
 // Set up this Mac for agents (D309): the screen's steps and words, apart from React. One step at a time:
-//   code   → the six digits (and the hub's address, only once the Mac didn't find the hub by itself);
-//   confirm → only when joining replaces a node: this Mac's own, or the hub's machine of that name;
+//   code   → the six digits (and the hub's address, only once the Mac didn't find the hub by itself, or the hubs it
+//            found to pick from: the code goes to one hub only);
+//   confirm → only when joining replaces a node: this Mac's own, or the hub's machine of that name; or, opened again
+//            after the hub took the code, whether to join now;
+// A window opening asks main where the setup stands (`resume`) and opens on that: the join running, the checks of a
+// node joined already, or what became of a code spent with nothing joined.
 //   join   → install the hub's fleetd and join, each step as main reports it;
 //   check  → the node's own checks, read live: the two grants first, each with its System Settings pane, then every
 //            other check, until all are green and the hub answers: done.
 import type { MacCheck, MacHealth } from "../../../shared/contracts";
-import type { MacFound, MacHealthRead, MacJoin, MacRedeemOutcome, MacRestartOutcome, MacSetupFailure, MacPane } from "../../../shared/macSetup";
+import type { MacFound, MacHealthRead, MacJoin, MacRedeemOutcome, MacRestartOutcome, MacSetupFailure, MacSetupStatus, MacPane } from "../../../shared/macSetup";
 
 export type State =
   | {
@@ -16,8 +20,19 @@ export type State =
       readonly askHub: boolean;
       readonly busy: boolean;
       readonly failure?: MacSetupFailure | undefined;
+      /** The hubs this Mac found, for the person to pick theirs; the code goes to that one only. */
+      readonly choices?: ReadonlyArray<string> | undefined;
+      /** What became of an earlier setup, as the window opened on it: a code spent with nothing joined. */
+      readonly notice?: MacSetupFailure | undefined;
     }
-  | { readonly step: "confirm"; readonly found: MacFound; readonly replaces: string }
+  | {
+      readonly step: "confirm";
+      readonly found: MacFound;
+      /** The node joining replaces; undefined when it replaces none (a window opened again after the trade). */
+      readonly replaces: string | undefined;
+      /** Opened again after the hub took the code, before the join ran. */
+      readonly resumed?: boolean;
+    }
   | {
       readonly step: "join";
       readonly found: MacFound;
@@ -36,6 +51,10 @@ export type State =
       readonly since: number;
       /** When the node first wrote both grants on: the Test counts only a run of every check after it. */
       readonly grantedAt?: number;
+      /** Opened on a node joined already, from an earlier window: any run of its checks counts, and a restart is
+       * offered only once it ran none for a while after `waitFrom`, when the window opened. */
+      readonly resumed?: boolean;
+      readonly waitFrom?: number;
       readonly restarting: boolean;
       readonly restartFailure?: MacSetupFailure | undefined;
     };
@@ -44,6 +63,8 @@ export type Event =
   | { readonly type: "code"; readonly value: string }
   | { readonly type: "hub"; readonly value: string }
   | { readonly type: "askHub" }
+  | { readonly type: "pick"; readonly hub: string }
+  | { readonly type: "resume"; readonly status: MacSetupStatus; readonly at: number }
   | { readonly type: "submit" }
   | { readonly type: "redeemed"; readonly outcome: MacRedeemOutcome }
   | { readonly type: "confirm" }
@@ -69,11 +90,34 @@ export const replaced = (found: MacFound): string | undefined =>
 export function reduce(state: State, event: Event): State {
   switch (event.type) {
     case "code":
-      return state.step === "code" && !state.busy ? { ...state, code: digitsOf(event.value), failure: undefined } : state;
+      return state.step === "code" && !state.busy ? { ...state, code: digitsOf(event.value), failure: undefined, notice: undefined } : state;
     case "hub":
       return state.step === "code" && !state.busy ? { ...state, hub: event.value } : state;
     case "askHub":
       return state.step === "code" ? { ...state, askHub: true } : state;
+    case "pick":
+      // The one hub the code goes to: sent at once when the code is whole.
+      return state.step === "code" && !state.busy
+        ? { ...state, hub: event.hub, askHub: true, choices: undefined, failure: undefined, busy: state.code.length === 6 }
+        : state;
+    case "resume": {
+      // Only a window that hasn't started: what the person does here wins over what main said.
+      if (state.step !== "code" || state.busy || state.code !== "") return state;
+      const { status } = event;
+      switch (status.kind) {
+        case "fresh":
+          return state;
+        case "traded":
+          return { step: "confirm", found: status.found, replaces: replaced(status.found), resumed: true };
+        case "joining":
+          return { step: "join", found: status.found };
+        case "joined":
+          return { step: "check", found: status.found, since: 0, restarting: false, resumed: true, waitFrom: event.at };
+        case "spent":
+          return { ...state, notice: status.failure };
+      }
+      return state;
+    }
     case "submit":
       return state.step === "code" && !state.busy && state.code.length === 6 ? { ...state, busy: true, failure: undefined } : state;
     case "redeemed": {
@@ -85,7 +129,8 @@ export function reduce(state: State, event: Event): State {
           ...state,
           busy: false,
           failure: outcome.failure,
-          askHub: state.askHub || hubFailure,
+          choices: outcome.failure.choices,
+          askHub: state.askHub || (hubFailure && outcome.failure.choices === undefined),
           hub: hubFailure && state.hub.trim() === "" ? (outcome.failure.hub ?? "") : state.hub,
           // A wrong or spent code is typed again from its first digit.
           code: outcome.failure.field === "code" ? "" : state.code,
@@ -201,7 +246,7 @@ const current = (read: MacHealthRead, since: number): read is MacHealthRead & { 
 
 export function checkView(state: Extract<State, { step: "check" }>, now: number): CheckView {
   const read = state.read;
-  if (read === undefined || !current(read, state.since)) return { kind: "starting", late: now - state.since > START_MS };
+  if (read === undefined || !current(read, state.since)) return { kind: "starting", late: now - (state.waitFrom ?? state.since) > START_MS };
   const checks = read.health.checks;
   const granted = (id: MacPane) => checks.find((c) => c.id === id)?.state === "ok";
   const grants = GRANTS.map((g) => ({ ...g, granted: granted(g.id) }));

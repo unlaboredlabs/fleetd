@@ -291,3 +291,25 @@
   align-items: center;
   gap: var(--space-2);
 }
+
+/* What became of an earlier setup, as the window opened on it. */
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+
+/* The hubs this Mac found, one button each: the code goes to the one picked. */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

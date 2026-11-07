@@ -13,6 +13,8 @@ export interface MacSetupFailure {
   readonly field?: "code" | "hub";
   /** The address it was about, to show in the hub field. */
   readonly hub?: string;
+  /** The hubs this Mac found when there was more than one: the person picks theirs, and only it gets the code. */
+  readonly choices?: ReadonlyArray<string>;
 }
 
 /** What the page sends to trade a code: `hub` only when the person typed an address. */
@@ -58,3 +60,15 @@ export interface MacHealthRead {
 export type MacPane = "accessibility" | "screen_recording";
 
 export type MacRestartOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: MacSetupFailure };
+
+/**
+ * What main knows of this Mac's setup as the window opens, so a window closed partway opens on what happened: nothing
+ * yet; a code the hub took for a join not run yet; a join running; a node joined as the agents' Mac (from node.json);
+ * or a code spent with nothing joined (cancelled, its token expired, or the join failed), with what to do.
+ */
+export type MacSetupStatus =
+  | { readonly kind: "fresh" }
+  | { readonly kind: "traded"; readonly found: MacFound }
+  | { readonly kind: "joining"; readonly found: MacFound }
+  | { readonly kind: "joined"; readonly found: MacFound }
+  | { readonly kind: "spent"; readonly failure: MacSetupFailure };

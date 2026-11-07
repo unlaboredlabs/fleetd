@@ -121,18 +121,22 @@ The main way in needs no terminal:
 2. On the Mac, in the account it joins from (yours is fine), open the [fleetd app](/docs/desktop-app) and choose **Set
    up this Mac for agents**: on its first window, or in the **fleetd** menu when it's already signed in. A small
    window of its own opens, not the full app.
-3. Type the code. The app finds the hub by itself (a hub it's signed in to, or one on your tailnet answering on port
-   4790) and asks for the address only when it doesn't.
+3. Type the code. The app looks for the hub without it: hubs it's signed in to, and machines on your tailnet answering
+   on port 4790. One found is your hub; several, it asks which; none, it asks for the address. The code goes to that
+   one hub only.
 
 The app then does the rest, a step at a time: it installs the hub's own fleetd, joins as the agents' Mac (asking first
 when that replaces a node, this Mac's or the hub's Mac of that name) and starts the node in this login. Then it opens
 **Accessibility** and **Screen Recording** in System Settings and sees each switch as you turn it on, and ends with a
 Test that turns green check by check. Each failure says what to do. Xcode's [one-time block](#xcode) still takes an
-admin's Terminal; its checks say so when it's missing.
+admin's Terminal; its checks say so when it's missing. Close the window partway and open it again from the
+**fleetd** menu: it opens on where setup stands (still joining, the checks of a Mac joined already, or a code spent
+with nothing joined and what to do next).
 
-The code works once, for 10 minutes, and a new one replaces the one before. Ten wrong codes in a minute, from
-anywhere, make the hub refuse every code for that minute. Neither the code nor its enroll token gives a key to the hub:
-the app on the Mac stays signed out unless you sign it in yourself.
+The code works once, for 10 minutes, and a new one replaces the one before. Wrong codes are limited per address (5 a
+minute) and per code: ten wrong ones while it's open close it, and Add machine says so and makes a new one. Nothing
+is locked hub-wide. Neither the code nor its enroll token gives a key to the hub: the app on the Mac stays signed out
+unless you sign it in yourself.
 
 ### Or in Terminal {#terminal}
 

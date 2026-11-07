@@ -109,6 +109,8 @@ let expiresAt: string;
 /** How many codes mac_code_create made, and when its next one expires. */
 let macCodes = 0;
 let macExpiresAt: string;
+/** What mac_code_status says of the code. */
+let macStatus: string | undefined;
 /** How many more machine_add_plan calls the hub refuses, and what ssh said: by default, the host refused its key. */
 let planRefusals = 0;
 let sshSaid = "builder-1: Permission denied (publickey).";
@@ -127,6 +129,7 @@ beforeEach(() => {
   hubInfo = undefined;
   expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
   macCodes = 0;
+  macStatus = "open";
   macExpiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
   planRefusals = 0;
   sshSaid = "builder-1: Permission denied (publickey).";
@@ -177,6 +180,8 @@ const render = async (open?: { view: View; at: number }) => {
                       gitIdentity: "ada-lovelace <1+ada-lovelace@users.noreply.github.com>",
                       line: (input as { rejoin?: boolean }).rejoin ? `${LINE} --rejoin` : LINE,
                     }
+                  : tool === "mac_code_status"
+                    ? { state: macStatus }
                   : tool === "mac_code_create"
                     ? ((macCodes += 1), { code: macCodes === 1 ? "482913" : "107355", expiresAt: macExpiresAt, machineId: "mac", hubUrl: "http://devbox.example.ts.net:4790" })
                   : tool === "setup_list"
@@ -520,6 +525,32 @@ it("shows A Mac for agents' 6-digit code, made once, with the hub's address, and
   expect(host.textContent).toContain("mac joined. The Mac's window finishes the setup");
   await click("Open the Mac's checks");
   expect(window.location.hash).toBe("#/setup/mac");
+});
+
+it("says when A Mac for agents' code closed after ten wrong codes, or the Mac took it, from the hub's word", async () => {
+  macStatus = "closed";
+  await render();
+  await click("Set up…");
+  expect(calls.filter((c) => c.tool === "mac_code_status").map((c) => c.input)).toContainEqual({ code: "482913" });
+  expect(host.textContent).toContain("Ten wrong codes were tried while this one was open, so it closed. Make a new one.");
+  expect(host.querySelector("[aria-label='Setup code']")?.textContent).not.toContain("482 913");
+  macStatus = "open";
+  await click("New code");
+  expect(host.querySelector("[aria-label='Setup code']")?.textContent).toContain("107 355");
+  expect(host.textContent).toContain("Waiting for the Mac…");
+
+  act(() => root.unmount());
+  root = createRoot(host);
+  macStatus = "used";
+  await render();
+  await click("Set up…");
+  expect(host.textContent).toContain("The Mac took the code and is joining as mac…");
+  // The Mac's join may stop short (a replace declined, a failed join): a new code is one click away meanwhile.
+  expect(host.textContent).toContain("Should its window say setup stopped, make a new code.");
+  macStatus = "open";
+  await click("New code");
+  expect(host.querySelector("[aria-label='Setup code']")?.textContent).toContain("107 355");
+  expect(host.textContent).toContain("Waiting for the Mac…");
 });
 
 it("says when A Mac for agents' code expired, and makes a new one only when asked", async () => {

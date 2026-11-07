@@ -54,6 +54,47 @@ describe("the code", () => {
   });
 });
 
+describe("which hub", () => {
+  it("lists the hubs found for the person to pick, and sends the code once one is picked", () => {
+    const asked = run([
+      typed("123456"),
+      { type: "submit" },
+      { type: "redeemed", outcome: { ok: false, failure: { message: "This Mac found 2 hubs. Which is yours?", field: "hub", choices: ["http://a:4790", "http://b:4790"] } } },
+    ]);
+    expect(asked).toMatchObject({ step: "code", busy: false, code: "123456", choices: ["http://a:4790", "http://b:4790"], askHub: false });
+    expect(reduce(asked, { type: "pick", hub: "http://b:4790" })).toMatchObject({ hub: "http://b:4790", askHub: true, busy: true, choices: undefined, failure: undefined });
+    // Picked before the code is whole: it waits for the sixth digit.
+    expect(reduce(reduce(initial, typed("12")), { type: "pick", hub: "http://b:4790" })).toMatchObject({ busy: false, hub: "http://b:4790" });
+  });
+});
+
+describe("opening the window again", () => {
+  const at = 5000;
+  it("opens on the join running, a join still to run, or a joined node's checks", () => {
+    expect(reduce(initial, { type: "resume", status: { kind: "joining", found: FOUND }, at })).toEqual({ step: "join", found: FOUND });
+    expect(reduce(initial, { type: "resume", status: { kind: "traded", found: FOUND }, at })).toEqual({ step: "confirm", found: FOUND, replaces: undefined, resumed: true });
+    const joined = reduce(initial, { type: "resume", status: { kind: "joined", found: { ...FOUND, existing: true } }, at });
+    expect(joined).toMatchObject({ step: "check", since: 0, resumed: true, waitFrom: at });
+    if (joined.step !== "check") throw new Error(joined.step);
+    // Its node's checks count whenever they ran; a restart is offered only a while after the window opened.
+    expect(checkView(joined, at + 1000)).toEqual({ kind: "starting", late: false });
+    expect(checkView(joined, at + START_MS + 1)).toEqual({ kind: "starting", late: true });
+    expect(checkView(reduce(joined, { type: "health", read: read([check("accessibility", "ok"), check("screen_recording", "fail")], { checkedAt: 1 }) }) as typeof joined, at).kind).toBe("grants");
+  });
+
+  it("says what became of a code spent with nothing joined, until a new one is typed", () => {
+    const spent = reduce(initial, { type: "resume", status: { kind: "spent", failure: { message: "Cancelled: nothing changed on this Mac.", fix: "The code you typed is spent." } }, at });
+    expect(spent).toMatchObject({ step: "code", notice: { message: "Cancelled: nothing changed on this Mac." } });
+    expect(reduce(spent, typed("4"))).toMatchObject({ notice: undefined });
+    expect(reduce(initial, { type: "resume", status: { kind: "fresh" }, at })).toBe(initial);
+  });
+
+  it("never overrides what the person has started here", () => {
+    const typing = reduce(initial, typed("12"));
+    expect(reduce(typing, { type: "resume", status: { kind: "joining", found: FOUND }, at })).toBe(typing);
+  });
+});
+
 describe("replacing a node", () => {
   it("joins at once when there is nothing to replace", () => {
     expect(run([typed("123456"), { type: "submit" }, { type: "redeemed", outcome: { ok: true, found: FOUND } }])).toEqual({ step: "join", found: FOUND });

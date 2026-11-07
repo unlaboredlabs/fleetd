@@ -6,6 +6,7 @@ use super::*;
 use crate::hub::api::{CallError, Caller};
 use crate::hub::store::test_clock::ManualClock;
 use fleetd_contracts::ids::MachineId;
+use fleetd_contracts::mcp::MacCodeState;
 use std::time::Duration;
 
 fn setup() -> (PairCodes, Arc<ManualClock>) {
@@ -25,7 +26,6 @@ fn open(_: &MachineId) -> Result<(), ()> {
 fn trade(
     hub: &Hub,
     limiter: &Limiter,
-    global: &Limiter,
     from: &str,
     body: serde_json::Value,
 ) -> (StatusCode, serde_json::Value) {
@@ -33,7 +33,6 @@ fn trade(
     super::mac::handle(
         hub,
         limiter,
-        global,
         remote,
         Some("devbox:4790"),
         body.to_string().as_bytes(),
@@ -162,7 +161,6 @@ async fn an_admin_mints_a_code_the_mac_trades_for_a_token_that_enrolls_it() {
     let (status, answer) = trade(
         &hub,
         &Limiter::default(),
-        &Limiter::default(),
         "100.64.0.1",
         serde_json::json!({ "code": code, "fingerprint": "abc" }),
     );
@@ -176,7 +174,6 @@ async fn an_admin_mints_a_code_the_mac_trades_for_a_token_that_enrolls_it() {
         .unwrap();
     let (again, _) = trade(
         &hub,
-        &Limiter::default(),
         &Limiter::default(),
         "100.64.0.1",
         serde_json::json!({ "code": code }),
@@ -208,11 +205,10 @@ async fn the_code_joins_the_hubs_agents_mac_and_refuses_another_computer_before_
     let out = mint(&hub, &admin(&hub, Role::Admin)).await.unwrap();
     assert_eq!(out["machineId"], "studio");
     let code = out["code"].as_str().unwrap();
-    let (limiter, global) = (Limiter::default(), Limiter::default());
+    let limiter = Limiter::default();
     let (status, answer) = trade(
         &hub,
         &limiter,
-        &global,
         "100.64.0.1",
         serde_json::json!({ "code": code, "fingerprint": "new-mac" }),
     );
@@ -225,7 +221,6 @@ async fn the_code_joins_the_hubs_agents_mac_and_refuses_another_computer_before_
     let (status, answer) = trade(
         &hub,
         &limiter,
-        &global,
         "100.64.0.1",
         serde_json::json!({ "code": code, "fingerprint": "old-mac" }),
     );
@@ -234,7 +229,7 @@ async fn the_code_joins_the_hubs_agents_mac_and_refuses_another_computer_before_
 }
 
 #[test]
-fn wrong_codes_are_limited_per_address_and_across_every_address() {
+fn wrong_codes_are_limited_per_address_and_close_the_open_code_never_the_hub() {
     let (hub, _home) = hub();
     let codes = PairCodes::new(hub.db.clone(), hub.clock.clone());
     let minted = codes.create_mac(&mid("mac")).unwrap();
@@ -243,31 +238,13 @@ fn wrong_codes_are_limited_per_address_and_across_every_address() {
     } else {
         "000000"
     };
-    let (limiter, global) = (Limiter::default(), Limiter::default());
+    let limiter = Limiter::default();
+    // Five wrong codes from one address: that address waits a minute; the Mac, at another, doesn't.
     for _ in 0..5 {
         let (status, _) = trade(
             &hub,
             &limiter,
-            &global,
             "100.64.0.1",
-            serde_json::json!({ "code": wrong }),
-        );
-        assert_eq!(status, StatusCode::UNAUTHORIZED);
-    }
-    let (status, _) = trade(
-        &hub,
-        &limiter,
-        &global,
-        "100.64.0.1",
-        serde_json::json!({ "code": minted.code }),
-    );
-    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "that address waits");
-    for i in 2..7 {
-        let (status, _) = trade(
-            &hub,
-            &limiter,
-            &global,
-            &format!("100.64.0.{i}"),
             serde_json::json!({ "code": wrong }),
         );
         assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -275,16 +252,76 @@ fn wrong_codes_are_limited_per_address_and_across_every_address() {
     let (status, answer) = trade(
         &hub,
         &limiter,
-        &global,
+        "100.64.0.1",
+        serde_json::json!({ "code": minted.code }),
+    );
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(answer["code"], "pair_rate_limited");
+    assert_eq!(
+        codes.mac_state(&minted.code).unwrap(),
+        Some(MacCodeState::Open)
+    );
+    // Five more from other addresses make ten against the open code: it closes, and says so.
+    for i in 2..7 {
+        let (status, _) = trade(
+            &hub,
+            &limiter,
+            &format!("100.64.0.{i}"),
+            serde_json::json!({ "code": wrong }),
+        );
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+    assert_eq!(
+        codes.mac_state(&minted.code).unwrap(),
+        Some(MacCodeState::Closed)
+    );
+    let (status, _) = trade(
+        &hub,
+        &limiter,
         "100.64.0.9",
         serde_json::json!({ "code": minted.code }),
     );
     assert_eq!(
         status,
-        StatusCode::TOO_MANY_REQUESTS,
-        "ten wrong codes from anywhere stop every address: {answer}"
+        StatusCode::UNAUTHORIZED,
+        "a closed code joins nothing"
     );
-    assert_eq!(answer["code"], "pair_rate_limited");
+    // Nothing is locked hub-wide: a new code starts clean and joins from an address that tried nothing.
+    let next = codes.create_mac(&mid("mac")).unwrap();
+    assert_eq!(
+        codes.mac_state(&next.code).unwrap(),
+        Some(MacCodeState::Open)
+    );
+    let (status, answer) = trade(
+        &hub,
+        &limiter,
+        "100.64.0.9",
+        serde_json::json!({ "code": next.code }),
+    );
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    assert_eq!(
+        codes.mac_state(&next.code).unwrap(),
+        Some(MacCodeState::Used)
+    );
+}
+
+#[test]
+fn a_codes_state_says_used_expired_revoked_or_unknown() {
+    let (codes, clock) = setup();
+    let first = codes.create_mac(&mid("mac")).unwrap();
+    let second = codes.create_mac(&mid("mac")).unwrap();
+    if first.code != second.code {
+        assert_eq!(
+            codes.mac_state(&first.code).unwrap(),
+            Some(MacCodeState::Revoked)
+        );
+    }
+    clock.advance(Duration::from_millis(MAC_CODE_TTL_MS as u64));
+    assert_eq!(
+        codes.mac_state(&second.code).unwrap(),
+        Some(MacCodeState::Expired)
+    );
+    assert_eq!(codes.mac_state("12345").unwrap(), None);
 }
 
 #[test]

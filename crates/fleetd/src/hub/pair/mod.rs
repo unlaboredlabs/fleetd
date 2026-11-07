@@ -361,17 +361,12 @@ pub struct Limiter {
 
 impl Limiter {
     pub fn blocked(&self, addr: Option<IpAddr>, now: i64) -> bool {
-        self.blocked_over(addr, now, MAX_FAILURES)
-    }
-
-    /// Whether `addr` failed `max` times or more in the last minute.
-    pub fn blocked_over(&self, addr: Option<IpAddr>, now: i64, max: usize) -> bool {
         let mut failures = self.failures.lock().unwrap_or_else(|p| p.into_inner());
         let Some(times) = failures.get_mut(&addr) else {
             return false;
         };
         times.retain(|&at| now - at < FAILURE_WINDOW_MS);
-        times.len() >= max
+        times.len() >= MAX_FAILURES
     }
 
     pub fn failed(&self, addr: Option<IpAddr>, now: i64) {

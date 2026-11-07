@@ -2313,6 +2313,29 @@ output!(MacCodeCreateOutput {
     hub_url: Option<String>,
 });
 
+// mac_code_status: where the Mac setup code Add machine shows stands, so it says when the code was used, expired, was
+// revoked by a newer one, or closed after ten wrong codes.
+input!(MacCodeStatusInput { code: Line<1, 32> });
+output!(MacCodeStatusOutput {
+    /// Absent: the hub has no such code (pruned a day after it ended).
+    state: Option<MacCodeState>,
+});
+
+/// Where a Mac setup code stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum MacCodeState {
+    Open,
+    /// The Mac traded it.
+    Used,
+    Expired,
+    /// A newer code took its place, or `fleetd pair --worker-revoke` took it back.
+    Revoked,
+    /// Ten wrong codes were tried while it was open.
+    Closed,
+}
+
 // machine_claude_login: the machine's node runs `claude auth login`; the person signs in on their own device and gives
 // back the code the page shows. Claude Code keeps its token on the machine, so it never reaches the hub, the app or a
 // transcript.
@@ -3822,6 +3845,7 @@ tools! {
     machine_remove => MachineRemove, Admin, MachineRemoveInput, MachineRemoveOutput;
     machine_join => MachineJoin, Admin, MachineJoinInput, MachineJoinOutput;
     mac_code_create => MacCodeCreate, Admin, MacCodeCreateInput, MacCodeCreateOutput;
+    mac_code_status => MacCodeStatus, Admin, MacCodeStatusInput, MacCodeStatusOutput;
     machine_claude_login => MachineClaudeLogin, Admin, MachineClaudeLoginInput, MachineClaudeLoginOutput;
     artifacts_list => ArtifactsList, Read, ArtifactsListInput, ArtifactsListOutput;
     artifact_get => ArtifactGet, Read, ArtifactGetInput, ArtifactGetOutput;

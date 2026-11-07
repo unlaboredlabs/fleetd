@@ -4,9 +4,12 @@
 //! works once, and a new one revokes any still open, so there is one open code at a time. `fleetd pair --worker-codes`
 //! lists it beside the worker codes, and `--worker-revoke` takes it back.
 //!
-//! Six digits are few: beside the per-address limit /pair has, every wrong code counts against one hub-wide budget of
-//! [`MAX_GLOBAL_FAILURES`] a minute, so a code's 10 minutes allow at most 100 of its million guesses from anywhere.
+//! Six digits are few, so wrong codes are limited twice, never hub-wide, so nobody locks setup out: per address, /pair's
+//! 5 a minute; and per open code, which closes at its [`MAX_CODE_FAILURES`]th wrong code from anywhere (at most 10 of
+//! its million guesses), so a new code starts clean. Add machine reads a code's state (mac_code_status) and says when
+//! it closed.
 use fleetd_contracts::ids::MachineId;
+use fleetd_contracts::mcp::MacCodeState;
 use fleetd_contracts::pair::{MacCodeRequest, MacCodeResponse, PairErrorCode};
 use rand::Rng;
 use rusqlite::{OptionalExtension, named_params, params};
@@ -18,8 +21,8 @@ use crate::hub::store::{StoreError, iso_ms, now_ms};
 use axum::http::StatusCode;
 
 pub const MAC_CODE_TTL_MS: i64 = 10 * 60_000;
-/// Wrong Mac codes a minute from every address together.
-pub const MAX_GLOBAL_FAILURES: usize = 10;
+/// Wrong codes tried while a code is open, from every address together, before it closes.
+pub const MAX_CODE_FAILURES: i64 = 10;
 const DIGITS: usize = 6;
 /// A listed code's id: as long as a worker code's, so `--worker-revoke` takes either.
 const ID_LEN: usize = crate::hub::auth::ENROLL_CODE_ID_LEN;
@@ -172,6 +175,48 @@ impl PairCodes {
     }
 }
 
+impl PairCodes {
+    /// A wrong code was tried: it counts against the open Mac code, which closes at its [`MAX_CODE_FAILURES`]th.
+    pub fn failed_mac(&self) -> Result<(), StoreError> {
+        let now = now_ms(self.clock.as_ref());
+        self.db.with(|conn| {
+            conn.prepare_cached(
+                "UPDATE pair_codes SET failures = failures + 1, \
+                 revoked_ms = CASE WHEN failures + 1 >= ?2 THEN ?1 ELSE NULL END \
+                 WHERE machine_id IS NOT NULL AND used_ms IS NULL AND revoked_ms IS NULL AND expires_ms > ?1",
+            )?
+            .execute(params![now, MAX_CODE_FAILURES])?;
+            Ok(())
+        })
+    }
+
+    /// Where the Mac setup code `code` stands, for Add machine: open, used by the Mac, expired, revoked (a newer code,
+    /// or `--worker-revoke`), or closed after [`MAX_CODE_FAILURES`] wrong codes. None when the hub has no such code.
+    pub fn mac_state(&self, code: &str) -> Result<Option<MacCodeState>, StoreError> {
+        let Some(canon) = normalize_mac(code) else {
+            return Ok(None);
+        };
+        let now = now_ms(self.clock.as_ref());
+        let row: Option<(i64, Option<i64>, Option<i64>, i64)> = self.db.with(|conn| {
+            Ok(conn
+                .prepare_cached(
+                    "SELECT expires_ms, used_ms, revoked_ms, failures FROM pair_codes WHERE hash = ? AND machine_id IS NOT NULL",
+                )?
+                .query_row([mac_hash(&canon)], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))
+                .optional()?)
+        })?;
+        Ok(
+            row.map(|(expires, used, revoked, failures)| match (used, revoked) {
+                (Some(_), _) => MacCodeState::Used,
+                (None, Some(_)) if failures >= MAX_CODE_FAILURES => MacCodeState::Closed,
+                (None, Some(_)) => MacCodeState::Revoked,
+                (None, None) if expires <= now => MacCodeState::Expired,
+                (None, None) => MacCodeState::Open,
+            }),
+        )
+    }
+}
+
 /// The machine a new Mac code is for: the hub's agents' Mac (the first by id, should there be two), else
 /// [`FIRST_MAC`], else `agents-mac` when a machine that isn't the Mac has that name.
 pub fn mac_machine_id(hub: &Hub) -> Result<MachineId, StoreError> {
@@ -188,18 +233,16 @@ pub fn mac_machine_id(hub: &Hub) -> Result<MachineId, StoreError> {
     }))
 }
 
-/// `POST /pair/mac`: the status and JSON body to answer with. `limiter` is /pair's per-address one; `global` counts
-/// every address's wrong Mac codes together.
+/// `POST /pair/mac`: the status and JSON body to answer with. `limiter` is /pair's per-address one.
 pub fn handle(
     hub: &Hub,
     limiter: &Limiter,
-    global: &Limiter,
     remote: Option<IpAddr>,
     host_header: Option<&str>,
     body: &[u8],
 ) -> (StatusCode, serde_json::Value) {
     let now = now_ms(hub.clock.as_ref());
-    if limiter.blocked(remote, now) || global.blocked_over(None, now, MAX_GLOBAL_FAILURES) {
+    if limiter.blocked(remote, now) {
         return pair_error(
             StatusCode::TOO_MANY_REQUESTS,
             PairErrorCode::PairRateLimited,
@@ -248,7 +291,9 @@ pub fn handle(
         }
         Err(error @ (RedeemError::Invalid | RedeemError::Expired)) => {
             limiter.failed(remote, now);
-            global.failed(None, now);
+            if let Err(error) = codes.failed_mac() {
+                return store_failed(&error);
+            }
             let (code, message) = match error {
                 RedeemError::Expired => (PairErrorCode::PairCodeExpired, "that code expired"),
                 _ => (
