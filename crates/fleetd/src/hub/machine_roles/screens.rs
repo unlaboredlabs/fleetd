@@ -295,6 +295,27 @@ pub fn waits_of(hub: &Hub, caller: &Caller, r: &ProjectRef) -> Result<Vec<Screen
         .collect())
 }
 
+/// Whether a person's screen of `kind` on `runner` runs on the profile project `r` keeps (D221, any project's since
+/// D310): a browser on the project's own machine, a Navi's on any node, any other project's on a node that keeps them.
+/// On another machine, or an older node, it runs on a fresh profile as any screen there.
+fn kept_profile(
+    hub: &Hub,
+    r: &ProjectRef,
+    kind: SessionKind,
+    runner: &MachineId,
+) -> Result<bool, StoreError> {
+    if kind != SessionKind::Browser || *runner != r.machine_id {
+        return Ok(false);
+    }
+    let navi = hub
+        .db
+        .with(|c| Ok(crate::hub::navi::store::of(c, r)?.is_some()))?;
+    Ok(navi
+        || hub
+            .link
+            .node_can(runner, fleetd_contracts::node_link::CAP_PROJECT_SIGNINS))
+}
+
 /// Why `runner` can't host a person's screen of `kind` at all, slots aside; None when it can.
 fn unable(runner: &Runner, host: SessionHost) -> Option<String> {
     let name = &runner.name;
@@ -382,6 +403,7 @@ async fn screen_open(
     };
     stages.done("seal");
     let pr = input.pr.as_ref();
+    let kept = kept_profile(&hub, &r, input.kind, &runner_id)?;
     let taken = match sealed {
         None => None,
         Some(sealed) => hub.db.transaction(|c| {
@@ -389,7 +411,9 @@ async fn screen_open(
             {
                 return Ok(None);
             }
-            let start = prepare(c, &opener, &r, input.kind, &runner_id, sealed, pr, now)?;
+            let start = prepare(
+                c, &opener, &r, input.kind, &runner_id, sealed, kept, pr, now,
+            )?;
             // With a PR it opens in the hub's own time, its row saying how far it is.
             let wait = match pr {
                 Some(_) => Some(insert_wait(
@@ -680,6 +704,7 @@ fn prepare(
     kind: SessionKind,
     runner: &MachineId,
     sealed: Sealed,
+    kept: bool,
     pr: Option<&ScreenPr>,
     now: i64,
 ) -> Result<Start, StoreError> {
@@ -708,10 +733,7 @@ fn prepare(
         kind,
         frame,
         sealed,
-        // On the project's own machine its browser runs on the profile it keeps, signed in (D221, any project's since
-        // D310); on another one, on a fresh profile, as any screen there.
-        navi: (kind == SessionKind::Browser && *runner == r.machine_id)
-            .then(|| r.project_id.clone()),
+        navi: kept.then(|| r.project_id.clone()),
         by: format!("human:{}", opener.device),
     })
 }
@@ -1127,6 +1149,7 @@ pub fn serve_waits(hub: &Arc<Hub>) -> Result<usize, StoreError> {
                 continue;
             }
         };
+        let kept = kept_profile(hub, &w.project, w.kind, &w.runner)?;
         // Taken only while it still waits (not given up meanwhile): its slot is a place from here.
         let start = hub.db.transaction(|c| {
             let waiting: Option<i64> = c
@@ -1146,6 +1169,7 @@ pub fn serve_waits(hub: &Arc<Hub>) -> Result<usize, StoreError> {
                 w.kind,
                 &w.runner,
                 sealed,
+                kept,
                 w.pr.as_ref(),
                 now,
             )?;

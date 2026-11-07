@@ -83,9 +83,15 @@ async fn a_navi_stays_signed_in_between_sessions_and_no_other_navi_or_agent_is()
         "Signed out",
         "a regular agent gets a fresh profile"
     );
-    // And a regular agent's profile is thrown away, as before: only the leads' projects' are kept.
-    assert!(!kept.parent().unwrap().join(THREAD).exists());
-    assert!(kept.parent().unwrap().join("bee").is_dir());
+    // And a regular agent's profile is thrown away, as before: only the projects' are kept.
+    let projects: Vec<String> = std::fs::read_dir(kept.parent().unwrap())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        !projects.iter().any(|n| n != "ada" && n != "bee"),
+        "{projects:?}"
+    );
     assert_eq!(
         visit(broker, ADA, &format!("{site}/whoami")).await,
         "Signed in as ada",
@@ -115,10 +121,7 @@ async fn one_browser_at_a_time_runs_on_a_navis_profile_and_forgetting_it_signs_t
     )
     .await;
     let message = second["error"]["message"].as_str().unwrap_or_default();
-    assert!(
-        message.contains("open in another of its sessions"),
-        "{second}"
-    );
+    assert!(message.contains("open in another session"), "{second}");
     assert!(
         second["error"]["fix"]
             .as_str()
@@ -174,7 +177,7 @@ async fn an_agent_session_that_ended_is_no_navis_and_a_screen_ending_keeps_it_on
         }
         let closing = started["error"]["message"]
             .as_str()
-            .is_some_and(|m| m.contains("open in another of its sessions"));
+            .is_some_and(|m| m.contains("open in another session"));
         assert!(closing && Instant::now() < deadline, "{started}");
         tokio::time::sleep(Duration::from_millis(50)).await;
     };
@@ -311,4 +314,24 @@ async fn a_persons_screen_for_a_navi_runs_on_its_kept_profile() {
     host_as(other, json!({ "op": "session_end" }), None, None)
         .await
         .unwrap();
+}
+
+/// A person's screen for a project whose lead has its browser open runs on a fresh profile, signed out, rather than
+/// not at all (D310); the lead's own second session is still refused, with how to free the profile.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_persons_screen_opens_signed_out_while_the_lead_holds_the_profile() {
+    let Some(rig) = rig().await else { return };
+    let (site, _site) = site().await;
+    let broker = &rig.broker;
+    rig.navi(ADA, "ada");
+    assert_eq!(
+        visit(broker, ADA, &format!("{site}/remember?user=ada")).await,
+        "Welcome ada"
+    );
+    let (_driver, _page) = open_on(broker, ADA, &format!("{site}/whoami")).await;
+    broker.person_screen("screen-1", "ada");
+    assert_eq!(
+        visit(broker, "screen-1", &format!("{site}/whoami")).await,
+        "Signed out"
+    );
 }

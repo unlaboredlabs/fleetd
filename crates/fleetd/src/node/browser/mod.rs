@@ -6,10 +6,10 @@
 //! records the screencast as video; each tool call of the agent's that drove the browser goes into the action log
 //! with the page's DOM after it. At the end the recording is scrubbed once more and uploaded to the hub (upload.rs).
 //!
-//! A project's lead runs its sessions on the profile its project keeps (D221, any project's since D310; chrome.rs
-//! [`chrome::Kept`]), not a fresh one: the node's sessions tell the broker which agent sessions are a lead's
-//! ([`SessionHooks::navi`]), and every other one gets a fresh profile as before. One browser at a time runs on a kept
-//! profile.
+//! A lead that does its own work (a project with no repo, as a Navi's did) runs its sessions on the profile its project
+//! keeps (D221; chrome.rs [`chrome::Kept`]), not a fresh one: the node's sessions tell the broker which agent sessions
+//! those are ([`SessionHooks::navi`]), and every other one gets a fresh profile as before. A person's screen for any
+//! project on its own machine runs on it too ([`Broker::person_screen`]). One browser at a time runs on a kept profile.
 pub mod agent_browser;
 pub mod cards;
 pub mod cdp;
@@ -194,10 +194,12 @@ pub trait SessionHooks: Send + Sync + 'static {
     }
 }
 
-/// A lead's agent session's project, whose kept profile its browser runs on.
+/// A session's project, whose kept profile its browser runs on: a lead's that does its own work, or a person's screen.
 #[derive(Clone)]
 struct Navi {
     name: String,
+    /// A person's screen: with the kept profile busy, it opens on a fresh one rather than not at all.
+    fresh_if_busy: bool,
 }
 
 pub struct Broker {
@@ -695,14 +697,21 @@ impl Broker {
         let secrets = tokio::task::spawn_blocking(move || secrets_for(&secrets_thread));
         let navi = lock(&self.navis).get(&thread).cloned();
         let warm = pool.warm();
+        // One browser at a time runs on a kept profile: a person's screen meanwhile opens on a fresh one, signed out.
         let lease = match &navi {
-            Some(navi) => Some(self.kept.take(&navi.name).map_err(|why| {
-                refuse(
-                    ErrorCode::Invalid,
-                    format!("{why}: it keeps your sign-ins, and one browser at a time runs on them."),
-                    "end that session first (session_end there), or wait for it to end, then session_start again",
-                )
-            })?),
+            Some(navi) => match self.kept.take(&navi.name) {
+                Ok(lease) => Some(lease),
+                Err(_) if navi.fresh_if_busy => None,
+                Err(why) => {
+                    return Err(refuse(
+                        ErrorCode::Invalid,
+                        format!(
+                            "{why}: it keeps the project's sign-ins, and one browser at a time runs on them."
+                        ),
+                        "end that session first (session_end there), or wait for it to end, then session_start again",
+                    ));
+                }
+            },
             None => None,
         };
         let kept = lease.is_some();
@@ -998,6 +1007,18 @@ impl Broker {
         }))
     }
 
+    /// A person's screen `key` for project `project` of this machine's, as the hub's own frame names it (D239): on its
+    /// kept profile, or a fresh one while that profile is busy.
+    pub fn person_screen(&self, key: &str, project: &str) {
+        lock(&self.navis).insert(
+            key.to_owned(),
+            Navi {
+                name: project.to_owned(),
+                fresh_if_busy: true,
+            },
+        );
+    }
+
     /// The agent session ended: it is no Navi's any more.
     pub fn not_navi(&self, thread: &str) {
         lock(&self.navis).remove(thread);
@@ -1060,6 +1081,7 @@ impl SessionHooks for Broker {
             thread.to_owned(),
             Navi {
                 name: navi.to_owned(),
+                fresh_if_busy: false,
             },
         );
     }

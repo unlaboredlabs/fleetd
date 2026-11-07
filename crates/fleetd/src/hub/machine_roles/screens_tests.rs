@@ -391,7 +391,21 @@ async fn a_projects_browser_opened_on_its_machine_runs_on_its_kept_profile() {
     // The hub's own frame names the Navi; its seal doesn't, which any node could make.
     assert_eq!(started.navi.as_deref(), Some("ada-navi"));
     assert!(started.seal.unwrap().get("navi").is_none());
-    // A project of code's browser on its machine runs on its own kept profile, never the Navi's.
+    // A project of code's browser on its machine runs on its own kept profile, never the Navi's, once its node keeps
+    // them; an older node's runs on a fresh one.
+    call(&hub, &desk, "screen_open", open("devbox", "browser"))
+        .await
+        .unwrap();
+    assert!(next(&mut devbox).await.navi.is_none());
+    hub.link.set_capabilities(
+        &mid("devbox"),
+        &[
+            CAP_SESSION_HOST,
+            CAP_SESSION_SEAL,
+            CAP_BROWSER,
+            fleetd_contracts::node_link::CAP_PROJECT_SIGNINS,
+        ],
+    );
     call(&hub, &desk, "screen_open", open("devbox", "browser"))
         .await
         .unwrap();

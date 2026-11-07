@@ -439,7 +439,7 @@ impl Pool {
 }
 
 /// Where a project's kept profile lives, by its id: under the node's home, outside the project's folder,
-/// `browser/<project>`; a former Navi's stays where it was, `browser/navis/<project>` (D310). None for a name that
+/// `browser/kept/<project>`; a former Navi's stays where it was, `browser/navis/<project>` (D310). None for a name that
 /// isn't a plain path component.
 pub fn kept_dir(home: &Path, navi: &str) -> Option<PathBuf> {
     let plain = !navi.is_empty()
@@ -452,7 +452,7 @@ pub fn kept_dir(home: &Path, navi: &str) -> Option<PathBuf> {
         let navi_dir = home.join("browser").join("navis").join(navi);
         match navi_dir.is_dir() {
             true => navi_dir,
-            false => home.join("browser").join(navi),
+            false => home.join("browser").join("kept").join(navi),
         }
     })
 }
@@ -585,7 +585,7 @@ impl Kept {
             .or_default()
             .clone()
             .try_lock_owned()
-            .map_err(|_| "This Navi's browser is open in another of its sessions".to_owned())?;
+            .map_err(|_| "This project's browser is open in another session".to_owned())?;
         Ok(KeptLease { dir, _held: held })
     }
 
@@ -659,7 +659,7 @@ mod tests {
         // A project's is `browser/<id>`; a former Navi's stays where it was.
         assert_eq!(
             kept_dir(home.path(), "ada"),
-            Some(home.path().join("browser/ada"))
+            Some(home.path().join("browser/kept/ada"))
         );
         std::fs::create_dir_all(home.path().join("browser/navis/old")).unwrap();
         assert_eq!(

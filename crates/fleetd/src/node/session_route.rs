@@ -1354,16 +1354,18 @@ pub async fn host(
                             if start.kind.is_none_or(|k| k == SessionKind::Browser)
                     );
                     let folder = navi_folder(&navi);
-                    let (Some(broker), Some(folder), true) = (&broker, folder, browser) else {
+                    let (Some(broker), Some(_), true) = (&broker, folder, browser) else {
                         return Some(SessionHostResult {
                             id: host.id,
                             frame: refuse(
                                 &host.frame.id,
-                                &format!("this machine has no Navi {navi} with a browser to open"),
+                                &format!(
+                                    "this machine has no project {navi} with a browser to open"
+                                ),
                             ),
                         });
                     };
-                    SessionHooks::navi(broker.as_ref(), &key, &navi, &folder);
+                    broker.person_screen(&key, &navi);
                 }
                 hosted.lock().insert(
                     key.clone(),

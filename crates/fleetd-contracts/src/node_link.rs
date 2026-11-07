@@ -218,6 +218,10 @@ pub const CAP_PROJECT_ERASE: &str = "project_erase";
 /// lead to fill now rather than wait for an answer. To a node that doesn't list it, the hub still asks the person.
 pub const CAP_NO_ASK_FILL: &str = "no_ask_fill";
 
+/// A person's browser screen for any project on its own machine runs on the profile that project keeps (D310): the
+/// hub names a project that isn't a Navi in `session_host` only to a node listing it.
+pub const CAP_PROJECT_SIGNINS: &str = "project_signins";
+
 /// Every lead runs in `manual` permission mode without a sandbox (D310): the node allows unasked what a full-access
 /// lead does (`LEAD_ALLOWED`), answers its commands itself, and sends only a fetch, a first site visit and a send on to
 /// the hub; the assistant role is a lead that does its own work (a project with no repo). The hub starts every lead

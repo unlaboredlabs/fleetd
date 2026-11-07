@@ -548,7 +548,7 @@ pub async fn forget_signins(
         return Err(error(
             ErrorCode::Invalid,
             format!(
-                "{}'s node is too old to keep a Navi's sign-ins",
+                "{}'s node is too old to keep a project's sign-ins",
                 r.machine_id
             ),
             format!(

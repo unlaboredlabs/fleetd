@@ -32,9 +32,8 @@ use crate::node::util::AbortOnDrop;
 mod cards;
 /// Logins from 1Password, with a fake one.
 mod credentials;
-/// A Navi's sign-ins, kept between its sessions.
+/// A project's sign-ins, kept between its sessions.
 mod kept;
-/// What a Navi's browser may touch on this machine: no file pages, uploads and downloads only in its folder.
 /// agent-browser's own script shapes.
 mod shapes;
 
