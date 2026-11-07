@@ -33,13 +33,18 @@ export function MacSetup() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submitting]);
 
-  // The join starts as its step opens, and again on a retry; each change comes from main.
-  const joining = state.step === "join" && state.join === undefined;
+  // Each change of the join comes from main, heard for as long as its step is open: the first report sets the
+  // step's join, and every later one must still arrive.
+  const onJoinStep = state.step === "join";
+  useEffect(() => {
+    if (!onJoinStep) return;
+    return window.fleetd.macSetup.onJoin((join) => dispatch({ type: "join", join, at: Date.now() }));
+  }, [onJoinStep]);
+  // The join starts as its step opens, and again on a retry.
+  const joining = onJoinStep && state.join === undefined;
   useEffect(() => {
     if (!joining) return;
-    const off = window.fleetd.macSetup.onJoin((join) => dispatch({ type: "join", join, at: Date.now() }));
     void window.fleetd.macSetup.join().then((join) => dispatch({ type: "join", join, at: Date.now() }));
-    return off;
   }, [joining]);
 
   // The node's checks, read every second while the check step is open.
