@@ -148,6 +148,7 @@ fn lead_error(code: ErrorCode, message: impl Into<String>, fix: Option<&str>) ->
         code,
         message: message.into(),
         fix: fix.map(str::to_owned),
+        person_fix: None,
     }
 }
 

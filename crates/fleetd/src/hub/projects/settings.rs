@@ -363,7 +363,9 @@ async fn settings_of(
     let store = hub.db.project_settings();
     let repo_id = repo.map(|repo| &repo.repo_id);
     let m = &r.machine_id;
-    let (worktrees, worktrees_unknown) = if !hub.executors.is_connected(m) {
+    let (worktrees, worktrees_unknown) = if hub.store.machine_get(m)?.is_none() {
+        (None, Some(format!("{m} was removed from this hub.")))
+    } else if !hub.executors.is_connected(m) {
         (None, Some(format!("{m} is offline.")))
     } else if !hub.link.node_can(m, CAP_PROJECT_SETTINGS) {
         (

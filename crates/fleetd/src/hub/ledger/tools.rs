@@ -41,6 +41,7 @@ fn refusal(error: LedgerError) -> ToolError {
         code: code(error.code),
         message: error.message,
         fix: error.fix,
+        person_fix: None,
     }
 }
 
@@ -67,6 +68,7 @@ fn unknown_workstream(workstream_id: &WorkstreamId) -> ToolError {
         code: ErrorCode::NotFound,
         message: format!("No workstream {workstream_id}."),
         fix: Some("Call workstream_list to see workstreams.".into()),
+        person_fix: None,
     }
 }
 
@@ -140,6 +142,7 @@ pub fn register(tools: &mut Registry) {
                         code: ErrorCode::Forbidden,
                         message: "A global decision applies to every machine; this key has no operate grant on all of them.".into(),
                         fix: Some("Record it at project scope, or use a key with an operate grant on * machines.".into()),
+                        person_fix: None,
                     });
                 }
             }
@@ -226,6 +229,7 @@ async fn decisions_overturn(
         code: ErrorCode::NotFound,
         message: format!("No decision {id}."),
         fix: Some("Call decisions_list for the project's decisions.".into()),
+        person_fix: None,
     };
     let old = hub
         .decisions
@@ -242,6 +246,7 @@ async fn decisions_overturn(
                 code: ErrorCode::Forbidden,
                 message: "A global decision applies to every machine; this key has no operate grant on all of them.".into(),
                 fix: Some("Use a key with an operate grant on * machines.".into()),
+                person_fix: None,
             });
         }
         None => {}

@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 // Settings › Hub › Machines: the machine list's Repair (over SSH, or a line that enrolls it again) and Remove (asked
-// first, then gone), and a machine's page: its checklist read from the hub's checks, each item waiting until checked,
+// first, then gone), the projects left from a removed machine (each with Remove), and a machine's page: its checklist read from the hub's checks, each item waiting until checked,
 // and Claude's login from the app, its code going to the hub once.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { DoctorCheck, Machine, MachineHost } from "../../../shared/contracts";
+import type { DoctorCheck, Machine, MachineHost, ProjectSummary } from "../../../shared/contracts";
 import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
@@ -74,7 +74,7 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-const render = async (ui: React.ReactNode) => {
+const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
     call: (tool, input, options) => {
@@ -122,7 +122,7 @@ const render = async (ui: React.ReactNode) => {
   });
   await act(async () => {
     listener({ t: "state", state: { phase: "live", hub: "devbox:4790", protocol: 1 } });
-    listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [machine("devbox"), machine("builder-1"), machine("laptop", "offline")], projects: [] } });
+    listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [machine("devbox"), machine("builder-1"), machine("laptop", "offline")], projects } });
     await new Promise((r) => setTimeout(r, 0));
   });
   await settle();
@@ -311,4 +311,29 @@ it("says so when the hub has no such machine", async () => {
   await render(<MachinePage machineId="ghost" />);
   expect(host.textContent).toContain("This hub has no such machine. It may have been removed.");
   expect(host.querySelector("li[data-item]")).toBeNull();
+});
+
+it("lists the projects left from a removed machine, and Remove only forgets one in fleetd", async () => {
+  const project = (machineId: string, projectId: string): ProjectSummary => ({
+    machineId,
+    projectId,
+    title: projectId,
+    workspaceRoot: `/home/dev/src/${projectId}`,
+    lastActivityAt: AT,
+    threads: { running: 0, waiting: 0, idle: 0, failed: 0 },
+  });
+  await render(<MachineList onRepair={() => undefined} />, [project("devbox", "fleetd"), project("worker", "fleetd")]);
+  const leftovers = host.querySelector("[aria-label='Projects left from removed machines']");
+  expect([...(leftovers?.querySelectorAll("[role='listitem']") ?? [])].map((li) => li.textContent)).toEqual([
+    "fleetdworker · /home/dev/src/fleetdRemove",
+  ]);
+  await click(rowButton("fleetd", "Remove"));
+  expect(document.querySelector("[role='dialog']")?.textContent).toContain("Forget fleetd?");
+  await click(button("Forget project"));
+  expect(calls.filter((c) => c.tool === "project_remove").map((c) => c.input)).toEqual([{ machineId: "worker", projectId: "fleetd" }]);
+});
+
+it("lists no leftovers while every project's machine is in the hub", async () => {
+  await render(<MachineList onRepair={() => undefined} />);
+  expect(document.body.textContent).not.toContain("Left from removed machines");
 });

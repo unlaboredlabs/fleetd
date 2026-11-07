@@ -54,6 +54,7 @@ fn refused(error: AuthError) -> ToolError {
             message: u.message,
             fix: u.fix,
             reason: None,
+            person_fix: None,
         },
         other => {
             tracing::error!(error = %other, "key check failed");

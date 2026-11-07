@@ -187,6 +187,7 @@ fn authenticate(hub: &Hub, headers: &HeaderMap) -> Result<Caller, Box<Response>>
             code: refused.code,
             message: refused.message,
             fix: refused.fix,
+            person_fix: None,
         }))),
         Err(error) => {
             tracing::error!(%error, "key check failed");

@@ -124,6 +124,9 @@ pub fn unknown_machine(machine_id: &MachineId) -> ToolError {
         format!("No machine {machine_id}."),
         "Call fleetd_status to list machines.",
     )
+    .with_person_fix(
+        "This hub has no machine by that id: Settings › Hub › Machines lists the ones it has, or ask the hub admin.",
+    )
 }
 
 pub fn unknown_project(r: &ProjectRef) -> ToolError {
@@ -134,6 +137,9 @@ pub fn unknown_project(r: &ProjectRef) -> ToolError {
             "Call project_get with machineId {} and no projectId.",
             r.machine_id
         ),
+    )
+    .with_person_fix(
+        "It was removed, or its machine was: the projects list has the ones that are left.",
     )
 }
 

@@ -105,7 +105,8 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
 
 /**
  * Delete opens only on a fresh list of the project's worktrees, so the confirm names every one with uncommitted
- * changes: while its machine is offline, too old, or can't list them, Delete is off and says why.
+ * changes: while its machine is offline, too old, or can't list them, Delete is off and says why. A project whose
+ * machine was removed has no worktrees anywhere: its Delete only forgets it in fleetd (RemoveProjectDialog's `gone`).
  */
 function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; refresh: () => Promise<Settings | undefined>; onDeleted: () => void }) {
   const ref = { machineId: settings.machineId, projectId: settings.projectId };
@@ -116,8 +117,13 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
   const [deleting, setDeleting] = useState<RemoveTarget | null>(null);
   const [checking, setChecking] = useState(false);
   const [blocked, setBlocked] = useState<string | null>(null);
-  const unknown = settings.worktrees === undefined ? (settings.worktreesUnknown ?? "its machine hasn't listed its worktrees.") : null;
+  const gone = useData((d) => d.fresh && d.machines[settings.machineId] === undefined);
+  const unknown = gone || settings.worktrees !== undefined ? null : (settings.worktreesUnknown ?? "its machine hasn't listed its worktrees.");
   const open = async () => {
+    if (gone) {
+      setDeleting({ ...ref, title: settings.title, path: settings.workspaceRoot, deleting: { unsaved: [], plain, navi } });
+      return;
+    }
     setChecking(true);
     setBlocked(null);
     const fresh = await refresh().catch(() => undefined);
@@ -168,7 +174,13 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
         help={navi ? "Stops it and erases everything it had: its chat, memory, skills and the rest." : "Stops its agents and removes it from fleetd, with its fleetd worktrees."}
       >
         <Text size="sm" tone="quiet">
-          {navi ? "Its folder stays unless you tick it when you delete." : plain ? "Its folder stays as it is." : "Its checkout, its branches and its pull requests stay as they are."}
+          {gone
+            ? `${settings.machineId} was removed from this hub, so no machine holds its files: deleting only forgets it in fleetd.`
+            : navi
+              ? "Its folder stays unless you tick it when you delete."
+              : plain
+                ? "Its folder stays as it is."
+                : "Its checkout, its branches and its pull requests stay as they are."}
         </Text>
         <div className={s.inline}>
           <Button variant="danger" disabled={unknown !== null || checking} onClick={() => void open()}>

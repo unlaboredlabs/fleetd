@@ -3944,6 +3944,11 @@ pub struct McpToolError {
     pub fix: Option<String>,
     /// Which refusal it is, for an app to act on rather than match the words. Absent for most, and from an older hub.
     pub reason: Option<ErrorReason>,
+    /// What a person does next, where `fix` is worded for an agent (a tool to call): the hub sends it as `fix` to a
+    /// person's device, and `fix` to everyone else. Never on the wire itself.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub person_fix: Option<String>,
 }
 
 /// A refusal an app acts on.
@@ -3962,6 +3967,7 @@ impl McpToolError {
             message: message.into(),
             fix: None,
             reason: None,
+            person_fix: None,
         }
     }
     pub fn with_fix(mut self, fix: impl Into<String>) -> Self {
@@ -3970,6 +3976,17 @@ impl McpToolError {
     }
     pub fn with_reason(mut self, reason: ErrorReason) -> Self {
         self.reason = Some(reason);
+        self
+    }
+    pub fn with_person_fix(mut self, fix: impl Into<String>) -> Self {
+        self.person_fix = Some(fix.into());
+        self
+    }
+    /// The error as a person reads it: its `person_fix`, where it has one, in place of `fix`.
+    pub fn for_person(mut self) -> Self {
+        if let Some(fix) = self.person_fix.take() {
+            self.fix = Some(fix);
+        }
         self
     }
 }

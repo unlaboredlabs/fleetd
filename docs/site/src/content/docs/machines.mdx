@@ -209,7 +209,9 @@ held of it, keyed by its id: its projects, sessions, checkouts, chats, settings 
 even under the same project ids. Its orders, the event log, and the time and factory metrics stay as history, until
 their own retention prunes them. A node that is still linked is cut off at its next heartbeat (within 15 s), and
 what it reported in the meantime is forgotten too. To clear what an older fleetd's remove left behind, run the same
-command again.
+command again. The projects it left are also listed under **Left from removed machines** in Settings › Hub ›
+Machines, each with Remove, and Delete in Settings › Projects works for them too: no machine holds their files, so
+either only forgets the project in fleetd. The hub never forgets them on its own.
 
 | Option | Also does |
 |---|---|

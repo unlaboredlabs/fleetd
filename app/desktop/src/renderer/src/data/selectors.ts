@@ -170,6 +170,20 @@ export const selectMachines = memo(
       .sort((a, b) => a.machine.name.localeCompare(b.machine.name)),
 );
 
+/**
+ * Projects the hub still lists whose machine it no longer has: left over from a machine removed before its rows were
+ * forgotten. Settings › Hub › Machines lists them, each with Remove, which only forgets it in fleetd.
+ */
+export const selectOrphanProjects = memo(
+  (s) => [s.fresh, s.machines, s.projects],
+  (fresh, machines, projects): readonly ProjectSummary[] =>
+    !fresh
+      ? []
+      : Object.values(projects)
+          .filter((p) => machines[p.machineId] === undefined)
+          .sort((a, b) => a.machineId.localeCompare(b.machineId) || a.title.localeCompare(b.title)),
+);
+
 export const selectProjects = memo(
   (s) => [s.fresh, s.projects],
   (fresh, projects) => (fresh ? Object.values(projects).sort((a, b) => a.title.localeCompare(b.title)) : undefined),
