@@ -5165,3 +5165,32 @@ async fn deleting_a_navi_erases_its_sessions_transcripts_and_attachments_and_its
     );
     assert!(code.exists());
 }
+
+/// `node join --enroll-only` exits the moment the hub accepts it, so the hub's Subscribe can be answered after the link
+/// is gone. The outbox it turns on has nowhere to send: it must not stay due, or the flusher spins on a worker and the
+/// process never exits.
+#[tokio::test]
+async fn a_subscribe_answered_after_its_link_ended_leaves_no_span_flush_due() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    drop(hub._attached);
+    let reply = hub
+        .service
+        .handle(SessionCallFrame {
+            id: NonEmpty::unchecked("c1"),
+            call: SessionCall::Subscribe {
+                after: None,
+                spans_after: Some(0),
+                caught_up: false,
+            },
+        })
+        .await;
+    assert!(matches!(reply.result, SessionResult::Ok(_)));
+    hub.service.flush_spans();
+    assert_eq!(hub.service.st().outbox.due(), None);
+}

@@ -105,10 +105,16 @@ impl SessionService {
     }
 
     /// Sends every unsent row, a frame at a time, up to the in-flight bound.
-    fn flush_spans(&self) {
+    pub(super) fn flush_spans(&self) {
         loop {
             let mut st = self.st();
-            if !st.outbox.enabled || st.outlet.is_none() {
+            if !st.outbox.enabled {
+                return;
+            }
+            // A Subscribe answered after its link ended leaves the outbox on with no link to send on: off until the
+            // next link's Subscribe, else the flusher finds it due again at once and spins without ever yielding.
+            if st.outlet.is_none() {
+                st.outbox.enabled = false;
                 return;
             }
             let after = st.outbox.sent;
