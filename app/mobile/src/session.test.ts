@@ -341,6 +341,42 @@ describe("Session", () => {
     expect(session.state.requests?.map((r) => r.requestId)).toEqual(["r1"]);
   });
 
+  it("reads the open chat's page as the link comes back, with the snapshot rather than after it, and once", async () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    hub.answer("chat_history", page([message(1, "Morning."), message(2, "Two emails need you.")]));
+    await flush();
+    hub.link.close(1006);
+    vi.advanceTimersByTime(1000);
+    hub.ready();
+    const reads = () => hub.sentOf("call").filter((c) => c.tool === "chat_history" && (c.input as { limit: number }).limit === 50);
+    expect(reads()).toHaveLength(1);
+    hub.link.frame(snapshot);
+    expect(reads()).toHaveLength(1);
+    // A refresh's snapshot reads it again.
+    session.refresh();
+    hub.link.frame(snapshot);
+    expect(reads()).toHaveLength(2);
+  });
+
+  it("checks a live link when the network changes, and dials at once one that waits out its backoff", () => {
+    const { hub, session } = setup();
+    vi.advanceTimersByTime(1000);
+    session.networkChanged();
+    expect(hub.sentOf("call").filter((c) => c.tool === "hub_info")).toHaveLength(2);
+    // Nothing back: the link was on the network left behind.
+    vi.advanceTimersByTime(2500);
+    expect(hub.links).toHaveLength(2);
+    hub.link.close(1006);
+    expect(session.state.hub.phase).toBe("retrying");
+    session.networkChanged();
+    expect(hub.links).toHaveLength(3);
+    // Still dialling on the old network: again, on the new one.
+    session.networkChanged();
+    expect(hub.links).toHaveLength(4);
+    expect(hub.links[2]?.closed).toBe(true);
+  });
+
   it("refreshes with a fresh snapshot while live", () => {
     const { hub, session } = setup();
     const before = hub.sentOf("snapshot").length;

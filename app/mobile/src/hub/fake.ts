@@ -7,6 +7,8 @@ export interface FakeLink {
   closed: boolean;
   open(): void;
   frame(frame: Record<string, unknown>): void;
+  /** A Binary message as it comes off the wire. */
+  binary(bytes: Uint8Array): void;
   close(code: number, reason?: string): void;
 }
 
@@ -33,6 +35,7 @@ export const fakeHub = (): FakeHub => {
       closed: false,
       open: () => events.onOpen(),
       frame: (f) => events.onText(JSON.stringify(f)),
+      binary: (bytes) => events.onBinary(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer),
       close: (code, reason = "") => {
         if (link.closed) return;
         link.closed = true;

@@ -64,6 +64,8 @@ export class Session {
   readonly #hub: string;
   readonly #cache: CacheStore | undefined;
   #saveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The open chat's latest page went out as this link came up, so the snapshot after it doesn't ask again. */
+  #openRead = false;
 
   constructor(options: SessionOptions) {
     this.#now = options.now ?? Date.now;
@@ -154,6 +156,12 @@ export class Session {
     this.#client.sleep();
     if (this.#open !== null) this.#client.chat(null);
     this.#saveNow();
+  }
+
+  /** The phone's network changed: the link is checked, or dialled now (client.ts networkChanged). */
+  networkChanged(): void {
+    if (this.#state.hub.phase === "refused") return;
+    this.#client.networkChanged();
   }
 
   /** Pulled to refresh: a fresh snapshot (which reads the requests and the open chat again) while live, else a dial now. */
@@ -413,7 +421,8 @@ export class Session {
       void this.#readLatest();
       // An admin's: the build the hub has ready, and a run going on, followed.
       if (this.#state.admin === true) void loadRun(this.updates);
-      if (this.#open !== null) void this.#loadLatest(this.#open);
+      if (this.#open !== null && !this.#openRead) void this.#loadLatest(this.#open);
+      this.#openRead = false;
       // The screens of the chats looked at may have changed while the link was down.
       for (const key of Object.keys(this.#state.screens)) void this.readScreens(key);
       for (const [key, rows] of Object.entries(this.#state.sends)) {
@@ -437,6 +446,9 @@ export class Session {
   }
 
   #onState(state: HubState): void {
+    // The open chat's page goes with the snapshot rather than a round trip after it: the person is looking at it.
+    this.#openRead = state.phase === "live" && this.#open !== null;
+    if (this.#open !== null && this.#openRead) void this.#loadLatest(this.#open);
     if (state.phase === "live") void this.#readInfo();
     if (state.phase !== "live" || this.#registered) return;
     this.#registered = true;
