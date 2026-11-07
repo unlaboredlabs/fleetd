@@ -74,8 +74,6 @@ export const fixtures = [
   "machines-checklist",
   // ...and cloud machines on boat.dev beside the hub's own: one awake, one asleep, one broken (W407).
   "machines-cloud",
-  // ...and Sign in with boat under way: the link to open, then the code to type on boat.dev's page (W448).
-  "machines-cloud-sign-in",
   // F2: the lead chat's live strip with 0, 3 and 20 agents at work (fixtures/live).
   "live-0",
   "live-3",
@@ -1673,15 +1671,14 @@ export const screens: readonly Screen[] = [
   { id: "setup.welcome", route: "#/setup/welcome", fixtures: ["setup-fresh"] },
   { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"], variant: "claude" },
   { id: "setup", route: "#/setup/github", fixtures: ["setup-github"], variant: "github" },
-  // The optional cloud step: its parts, then Sign in with boat (pasting a key behind it) and the way to the hub inline
-  // (nothing to set up).
+  // The optional cloud step: its parts, then the key's sealed field and the way to the hub inline (nothing to set up).
   {
     id: "setup",
     route: "#/setup/cloud",
     fixtures: ["setup-fresh"],
     variant: "cloud",
     open: async (page) => {
-      await page.getByRole("button", { name: "Sign in with boat" }).waitFor();
+      await page.getByRole("textbox", { name: "boat.dev API key" }).waitFor();
       await page.locator('[data-way="untested"]').waitFor();
     },
   },
@@ -2312,20 +2309,6 @@ export const screens: readonly Screen[] = [
       const part = page.locator('[data-part="hub.cloud"]');
       await part.waitFor();
       await page.locator("[data-key-test]").waitFor();
-      await part.evaluate((el) => el.scrollIntoView({ block: "start" }));
-    },
-  },
-  // Sign in with boat in place of a pasted key: the link first, then, once they are signed in, the code to type there.
-  {
-    id: "settings.hub.machines",
-    route: "#/settings/hub/machines",
-    fixtures: ["machines-cloud-sign-in"],
-    variant: "cloud-sign-in",
-    open: async (page) => {
-      const part = page.locator('[data-part="hub.cloud"]');
-      await part.waitFor();
-      await page.getByRole("button", { name: "I'm signed in" }).click();
-      await page.locator("[data-sign-in-code]").waitFor();
       await part.evaluate((el) => el.scrollIntoView({ block: "start" }));
     },
   },

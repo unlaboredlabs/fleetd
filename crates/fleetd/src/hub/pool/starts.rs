@@ -87,7 +87,8 @@ pub enum Backoff {
     },
     /// boat's machines-at-once limit: no start until one of ours stops.
     Full,
-    /// Bursting pauses until a sweep's /limits says boat can start, or the admin resumes: `kind` is `billing` or `key`.
+    /// Bursting pauses until the admin resumes, or for `billing` and `key` until a sweep's /limits says boat can start;
+    /// `refused` is boat refusing what was asked, which only a person can change.
     Pause { kind: &'static str, reason: String },
 }
 
@@ -152,9 +153,15 @@ pub fn backoff(error: &BoatError, step: u32, now: i64, jitter: f64, zone: Tz) ->
             let secs = (base * (0.8 + 0.4 * jitter.clamp(0.0, 1.0))).round() as i64;
             hold(secs, "boat.dev unreachable, retrying".into())
         }
-        // A refusal boat won't change its mind on soon (a size the plan lacks, a gone or expired machine): hold 5
-        // minutes with its own words, so a bug can't spin on it.
-        other => hold(300, other.line()),
+        // A refusal boat gives again to the same ask (a size the plan lacks, a field it won't take): asking again
+        // changes nothing, so nothing starts until a person fixes it and resumes.
+        other => Backoff::Pause {
+            kind: "refused",
+            reason: format!(
+                "{}: fix that, then Resume in Settings › Hub › Machines › Cloud machines",
+                other.line()
+            ),
+        },
     }
 }
 
@@ -367,10 +374,10 @@ mod tests {
             until(backoff(&BoatError::Server { status: 502 }, 6, T, 1.0, UTC)) - T,
             360_000
         );
-        // Anything else holds 5 minutes, in boat's words.
+        // Anything else pauses until a person resumes, in boat's words: asked again, boat says the same.
         assert!(matches!(
             backoff(&BoatError::Refused { status: 403, code: "machine_class_plan_required".into() }, 0, T, 0.5, UTC),
-            Backoff::Hold { until, reason, .. } if until == T + 300_000 && reason.contains("machine_class_plan_required")
+            Backoff::Pause { kind: "refused", reason } if reason.contains("machine_class_plan_required") && reason.contains("Resume")
         ));
     }
 }

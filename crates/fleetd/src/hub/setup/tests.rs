@@ -499,53 +499,6 @@ fn the_cloud_step_gives_the_exact_values_and_is_done_only_when_every_check_passe
     );
 }
 
-/// "Sign in with boat" under way: its link and code reach admins only, and a pasted key ends it.
-#[tokio::test]
-async fn only_an_admin_reads_the_sign_ins_link_and_code() {
-    use fleetd_contracts::cloud::{BoatSignIn, BoatSignInState};
-    let (hub, _home) = hub();
-    hub.pool.sign_in_show(BoatSignIn {
-        state: BoatSignInState::Waiting,
-        email: "person@example.com".into(),
-        verification_uri: Some(
-            "https://boat.dev/api/box/agent/identity/claim?claim_attempt_token=t".into(),
-        ),
-        user_code: Some("151323".into()),
-        expires_at_ms: Some(1),
-        said: None,
-    });
-    let admin = call(&hub, &caller("admin"), "cloud_get", json!({}))
-        .await
-        .unwrap();
-    assert_eq!(admin["cloud"]["signIn"]["userCode"], "151323");
-    // Whoever types the code first gets the hub's key made on their own boat.dev account.
-    for role in ["operate", "read"] {
-        let got = call(&hub, &caller(role), "cloud_get", json!({}))
-            .await
-            .unwrap();
-        assert!(got["cloud"].get("signIn").is_none(), "{role}: {got}");
-        assert!(!got.to_string().contains("151323"), "{role}: {got}");
-    }
-    // A pasted key replaces whatever the sign-in made: its line goes.
-    use base64::Engine;
-    let to: [u8; 32] = base64::engine::general_purpose::STANDARD
-        .decode(admin["cloud"]["boxPubKey"].as_str().unwrap())
-        .unwrap()
-        .try_into()
-        .unwrap();
-    let sealed = crate::node::mac_tool::seal_to(&to, b"boat_pasted_key_never_logged").unwrap();
-    let pasted = call(
-        &hub,
-        &caller("admin"),
-        "cloud_key_set",
-        json!({ "sealed": sealed }),
-    )
-    .await
-    .unwrap();
-    assert_eq!(pasted["cloud"]["hasKey"], true);
-    assert!(pasted["cloud"].get("signIn").is_none(), "{pasted}");
-}
-
 /// The cloud tools over a real hub: anyone reads the pool, with the environment the step names as its default; only an
 /// admin changes it; Create refuses while no environment is saved, before any start, since the key is scoped to one.
 #[tokio::test]
@@ -581,4 +534,34 @@ async fn cloud_create_waits_for_the_environment_the_key_is_scoped_to() {
     .await
     .unwrap();
     assert_eq!(saved["cloud"]["environment"], "fleetd-devbox");
+}
+
+/// Create while starts are held (a backoff, a pause) asks boat nothing and mints no enroll code: each press used to mint
+/// one, 13 in 75 seconds while a refusal's hold lasted (W468).
+#[tokio::test]
+async fn cloud_create_mints_no_enroll_code_while_starts_are_held() {
+    let (hub, _home) = hub();
+    hub.pool.set_key("boat_test_key").unwrap();
+    call(
+        &hub,
+        &caller("admin"),
+        "cloud_set",
+        json!({ "enabled": true, "poolSize": 1, "machineType": "large", "dayBudget": 3.0, "environment": "fleetd-devbox" }),
+    )
+    .await
+    .unwrap();
+    hub.pool
+        .ledger()
+        .set_paused(Some(("billing", "boat.dev needs billing attention")))
+        .unwrap();
+    for _ in 0..3 {
+        let out = call(&hub, &caller("admin"), "cloud_create", json!({}))
+            .await
+            .unwrap();
+        assert_eq!(
+            out["lines"],
+            json!(["boat-1: not created: boat.dev needs billing attention"])
+        );
+    }
+    assert!(hub.auth.open_enroll_tokens().unwrap().is_empty());
 }

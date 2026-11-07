@@ -90,10 +90,8 @@ disk, and snapshots of it that may be stored outside the EU.
 - **No account secrets.** Machines are made in an environment marked safe for third parties: none of your boat.dev
   account's secrets, AI logins or in-machine boat.dev key.
 - **No sudo for agents.** The node and its agents run as a user of their own with no sudo.
-- **Your key stays on the hub.** The boat.dev key is sealed to the hub's own key (by the hub when you sign in with
-  boat, by the app when you paste one), and scoped to fleetd's environment with only the actions below. After a
-  sign-in the hub keeps nothing broader: boat's full-access key is revoked, and its claim token is only ever in the
-  hub's memory, for those few minutes. It has no `exec`, `file` or `snapshot` actions: the hub never runs
+- **Your key stays on the hub.** The boat.dev key is sealed in the app to the hub's own key, and scoped to fleetd's
+  environment with only the actions below. It has no `exec`, `file` or `snapshot` actions: the hub never runs
   anything on a cloud machine. Its `ssh` action only lets the hub's own SSH key in, for the tunnel.
 - **The hub's SSH key.** The hub makes its own SSH key for the tunnels and keeps it sealed to its box key; nobody
   pastes it, and its private half never leaves the hub. boat.dev puts the public half on each machine the hub wakes.
@@ -111,37 +109,32 @@ Setup is the optional **Cloud machines (boat.dev)** step: in `fleetd init`, the 
    seat, so boat.dev itself stops everything at the cap whatever fleetd does. In Billing, turn **auto top-up off** and
    leave **extra starts on invoice off**. In Members, set your own seat's caps: machine time **300 hours a month**,
    and machines at once **equal to your pool size** (3).
-2. **An environment** named `fleetd-<hub>` (for example `fleetd-devbox`), with **Safe for third parties** on.
-3. **The hub's API key**, named `fleetd-<hub>`, scoped to that environment, expiring in 364 days, with exactly these
+2. **An environment** named `fleetd-<hub>` (for example `fleetd-devbox`), with **Safe for third parties** on. Make it
+   among your own environments, not the organization's: boat.dev lets a machine use an organization's environment
+   only when that machine bills to the organization, and refuses any other name with `unknown_environment`.
+3. **The hub's API key**, named `fleetd-<hub>`, scoped to that environment, expiring in 365 days, with exactly these
    actions:
 
    ```
    sandbox.create sandbox.read sandbox.update sandbox.stop sandbox.resume sandbox.delete ssh account.read
    ```
 
-   **Sign in with boat** makes it for you: in the step itself or in Settings › Hub › Machines › Cloud machines, type
-   your boat.dev email and press **Sign in with boat**. Open the link it shows, sign in to boat.dev (GitHub, Google or
-   email), then type the 6-digit code fleetd shows on boat.dev's page. boat.dev then gives the hub a full-access key of
-   your account; the hub uses it once to make the key above, checks boat.dev made exactly that, seals only that one,
-   revokes the full-access key and runs **Test**. It says, for example, "Signed in as you@example.com: the hub's key
-   fleetd-devbox is sealed, scoped to fleetd-devbox for 364 days. The sign-in's own key is revoked." The environment
-   from part 2 must exist first, with Safe for third parties on: signing in makes no environment. The key lasts 364
-   days, not 365, since boat.dev makes no key that outlives the sign-in's own year.
-
-   Or make the key yourself in boat.dev › API keys (not a preset: `ci` and `admin` give far more), press **Paste a key
-   instead**, paste it and press **Save and test**.
-4. **In the app**, once the key is saved: Test asks boat.dev for the key's plan and limits and this hub's machines,
-   and says, for example, "Key works · $20 plan · 200 starts a day (12 a minute) · 0 of 100 machines running · large
-   allowed". Then pick the pool, the budgets and the projects, and keep the boat.dev environment from part 2 (it
-   starts as `fleetd-<hub>`; Create waits until one is saved, since the key reaches only that environment). Check
-   what it can cost, turn it on and press **Create cloud machines** (one start each). Each machine sets itself up and
-   joins in a few minutes, then sleeps.
+   Not a preset: `ci` and `admin` give far more.
+4. **In the app**, in the step itself or in Settings › Hub › Machines › Cloud machines: paste the key and press
+   **Save and test**. Test asks boat.dev for the key's plan and limits and this hub's machines, and says, for example,
+   "Key works · $20 plan · 200 starts a day (12 a minute) · 0 of 100 machines running · large allowed". Then pick the
+   pool, the budgets and the projects, and keep the boat.dev environment from part 2 (it starts as `fleetd-<hub>`;
+   Create waits until one is saved, since the key reaches only that environment). Check what it can cost, turn it on
+   and press **Create cloud machines** (one start each). Each machine sets itself up and joins in a few minutes, then
+   sleeps. One whose node hasn't said hello 15 minutes after its create is deleted and shows as not made, with boat's
+   setup error when it has one; time the hub was down or restarting doesn't count.
 
 There is nothing to set up on your network. Once cloud machines are on, **Test** also tries the whole way: it wakes
 an asleep machine (one start), or follows one already waking, or makes the first one, and passes once the hub's tunnel
 to it is up and its node said hello through it. If a step fails, it says which and why, for example "boat-1: no hello
-within 2 minutes of its wake: the hub's tunnel to it didn't come up (…: connection refused)". A Test wake goes back to
-sleep after 5 idle minutes.
+within 2 minutes of its wake: the hub's tunnel to it didn't come up (…: connection refused)". A wake or create that
+doesn't start says why on that machine's line (or as the pool's hold), not under Way to the hub, and a failed Test
+clears once a later start goes through. A Test wake goes back to sleep after 5 idle minutes.
 
 Claude needs nothing more: each cloud machine gets the hub's Claude configuration (its API key or the owner's
 subscription) sealed to it when it joins, and again whenever it changes. Nobody pastes it.
@@ -191,7 +184,13 @@ there, and its spend today.
 | Going to sleep | A stop was sent. |
 | Asleep | Stopped; it costs nothing and keeps its disk. |
 | Broken | Two wakes in a row brought no hello, so the hub won't wake it again. [Reset](#reset) it. |
-| Not made | Its create failed, with boat.dev's reason; Create cloud machines tries again. |
+| Not made | Its create failed, with when and boat.dev's reason; Create cloud machines tries again. |
+
+A create boat.dev refuses for what it asked (an environment it doesn't know, a size the plan lacks) fails only that
+machine, once: nothing asks again by itself, and the next **Create cloud machines** goes straight to boat.dev. For
+`unknown_environment`, make the environment the line names (part 2 of [setup](#setup)), or save the name of the one
+the key is scoped to, then Create again. A wake boat.dev refuses that way pauses cloud machines until you press
+**Resume**. Changing the key or the environment clears the old refusals.
 
 An asleep cloud machine shows offline elsewhere, but never counts as a machine down. Members see the day's line on
 [Status](/docs/status), with who to ask.
@@ -220,8 +219,8 @@ then makes it again with one start. Work pushed to GitHub is safe. An awake mach
 - Every cloud machine is x86_64 Ubuntu: no macOS and no iOS simulators. Those stay on [the agents' Mac](/docs/agents-mac).
 - A pool holds 1 to 10 machines of one size. Grow it with more `large` machines rather than `xlarge`, which costs more
   per vCPU.
-- Reviews and readers of the projects you opt in may go to cloud machines; writers only once an admin turns on
-  **Writers too** in Settings › Hub › Machines › Cloud machines.
+- Any agent of the projects you opt in may go to cloud machines, writers too: the project ticks and the budgets are
+  the controls.
 - Cloud machines reach the hub only through the hub's own tunnel; they never join your tailnet.
 - One boat.dev account can serve several hubs: each touches only machines with its own label, and they share the
   account's starts.

@@ -167,10 +167,27 @@ impl Pool {
         });
     }
 
-    /// The Test ends here: passed, or failed at a step the life loop never sees (a start refused).
+    /// The Test ends here: passed, or failed at a step the life loop never sees.
     pub(super) fn path_end(&self, result: Result<String, String>) {
         if let Some(test) = self.path.lock().unwrap().as_mut() {
             test.result = Some(result);
+        }
+    }
+
+    /// The Test never reached the way to the hub (its wake or create didn't start): it says nothing of the way, and the
+    /// reason shows where it belongs, on the machine's line or as the pool's hold.
+    pub(super) fn path_clear(&self) {
+        *self.path.lock().unwrap() = None;
+    }
+
+    /// A failed Test is dropped once a later start went through: what it named was fixed, and the next Test says anew.
+    pub(super) fn path_forget_failure(&self) {
+        let mut path = self.path.lock().unwrap();
+        if path
+            .as_ref()
+            .is_some_and(|t| matches!(t.result, Some(Err(_))))
+        {
+            *path = None;
         }
     }
 
@@ -239,7 +256,7 @@ impl Pool {
         if !s.has_key {
             return CloudKeyTest {
                 ok: false,
-                said: "No boat.dev key yet: sign in with boat, or paste one, first.".into(),
+                said: "No boat.dev key yet: paste one first.".into(),
             };
         }
         let fail = |e: &BoatError| {
@@ -318,6 +335,13 @@ impl Pool {
                 projects.push(p.clone());
             }
         }
+        let moved = self
+            .ledger
+            .settings()
+            .map_err(|e| e.to_string())?
+            .environment
+            .as_deref()
+            != environment;
         self.ledger
             .change_settings(&SettingsChange {
                 enabled: c.enabled,
@@ -329,8 +353,8 @@ impl Pool {
                 environment: environment.map(str::to_owned),
             })
             .map_err(|e| e.to_string())?;
-        if let Some(on) = c.writers {
-            self.ledger.set_writers(on).map_err(|e| e.to_string())?;
+        if moved {
+            self.forget_refused_creates();
         }
         Ok(())
     }
@@ -410,6 +434,8 @@ impl Pool {
                 let since_ms = match r.state {
                     State::Awake | State::Waking => r.awake_since.or(r.wake_at),
                     State::Asleep => r.asleep_since,
+                    // When its create was asked: setting up since, or refused then.
+                    State::Creating | State::Failed if r.wake_at.is_some() => Some(r.created_at),
                     _ => None,
                 };
                 Some(CloudMachine {

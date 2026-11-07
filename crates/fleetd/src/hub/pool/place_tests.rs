@@ -1,6 +1,5 @@
-//! Which tasks may run on a cloud machine (D306), on a hub: cloud machines on, the project opted in, its kind allowed
-//! (writers only once turned on), no secret variables only its own machine holds; and nothing until the hub's first
-//! check of boat.dev.
+//! Which tasks may run on a cloud machine (D306), on a hub: cloud machines on, the project opted in (any of its agents),
+//! no secret variables only its own machine holds; and nothing until the hub's first check of boat.dev.
 use std::sync::Arc;
 use std::sync::atomic::Ordering::SeqCst;
 
@@ -57,7 +56,7 @@ fn opt_in(hub: &Hub, enabled: bool) {
 }
 
 #[tokio::test]
-async fn only_an_opted_in_projects_reviews_and_readers_may_go_to_a_cloud_machine() {
+async fn only_an_opted_in_projects_agents_may_go_to_a_cloud_machine() {
     let home = tempfile::tempdir().unwrap();
     let hub = hub(&home);
     let app = project("app");
@@ -76,14 +75,7 @@ async fn only_an_opted_in_projects_reviews_and_readers_may_go_to_a_cloud_machine
     assert_eq!((review.eligible, review.closed), (Ok(()), None));
     assert!(review.awake.is_empty(), "no machine awake");
 
-    // Writers wait for the admin's switch.
-    assert_eq!(
-        room(&hub, &task("write", "app"), &app).eligible,
-        Err(Some(
-            "writers don't run on cloud machines unless a hub admin turns them on in Settings › Hub › Machines".into()
-        ))
-    );
-    hub.pool.ledger().set_writers(true).unwrap();
+    // Writers go too: the project's tick and the budget are the controls.
     assert_eq!(room(&hub, &task("write", "app"), &app).eligible, Ok(()));
 
     // A project that didn't opt in, or the pool off: nothing to say.

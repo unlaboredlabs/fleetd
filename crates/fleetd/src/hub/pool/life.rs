@@ -51,7 +51,8 @@ pub async fn tick(pool: &Pool) {
 
 /// Why a machine never said hello: the timeout, and the tunnel's last error when it never came up.
 fn no_hello(pool: &Pool, slot: &str, within: &str) -> String {
-    match pool.tunnel_down(slot) {
+    // A tunnel still on its first dial (a hub restart just opened it) says nothing of the ones before it.
+    match pool.tunnel_down(slot).filter(|why| why != "opening") {
         Some(why) => {
             format!("no hello within {within}: the hub's tunnel to it didn't come up ({why})")
         }
@@ -81,13 +82,19 @@ async fn step(pool: &Pool, row: Slot) -> Result<(), String> {
             Ok(())
         }
         State::Creating => {
-            if row.wake_at.is_some_and(|at| now - at > CREATE_HELLO_MS) {
+            if row
+                .wake_at
+                .is_some_and(|at| pool.waited(at, now) > CREATE_HELLO_MS)
+            {
                 return never_joined(pool, row).await;
             }
             Ok(())
         }
         State::Waking => {
-            if row.wake_at.is_some_and(|at| now - at > HELLO_MS) {
+            if row
+                .wake_at
+                .is_some_and(|at| pool.waited(at, now) > HELLO_MS)
+            {
                 let failures = row.wake_failures + 1;
                 let mut r = row.clone();
                 r.wake_failures = failures;
@@ -291,6 +298,11 @@ async fn never_joined(pool: &Pool, mut row: Slot) -> Result<(), String> {
             }
         }
     }
+    tracing::warn!(
+        slot = row.slot,
+        why = note,
+        "pool: a created machine never joined; deleted"
+    );
     row.state = State::Failed;
     row.create_body = None;
     row.note = Some(note);

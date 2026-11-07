@@ -6,9 +6,8 @@
 //! 3. waking a sleeping one ([`Pool::wake_for_work`]), within the start budget and the money budget, one at a time;
 //! 4. else it queues, its line saying why ("…; cloud paused: today's boat.dev budget ($3.00) is spent").
 //!
-//! It may go only when cloud machines are on, its project opted in, and its kind may: reviews and readers, and writers
-//! once the admin turns them on (`pool_settings.writers`). Never a Navi's, and never a project with secret variables,
-//! which only its own machine holds. A task placed on one records it (`Task.ranOn`), and every later turn of it runs
+//! It may go only when cloud machines are on and its project opted in: any of its agents, writers too. Never a Navi's,
+//! and never a project with secret variables, which only its own machine holds. A task placed on one records it (`Task.ranOn`), and every later turn of it runs
 //! there, where its worktree is: a follow-up wakes that machine, and waits while it can't.
 //!
 //! Each cloud machine holds a **pool checkout** of each opted-in project's repos: a clone registered on it under the
@@ -24,7 +23,7 @@ use std::sync::{Arc, Mutex};
 use fleetd_contracts::ids::{MachineId, ProjectRef};
 use fleetd_contracts::project_settings::{EnvVarKind, EnvVarSet};
 use fleetd_contracts::secrets::SealedSecret;
-use fleetd_contracts::tasks::{Task, TaskKind};
+use fleetd_contracts::tasks::Task;
 
 use super::ledger::State;
 use super::{Pool, Why};
@@ -159,14 +158,6 @@ impl Pool {
     }
 }
 
-/// Whether a task of `kind` may run on a cloud machine with `writers` on.
-pub fn kind_may(kind: TaskKind, writers: bool) -> bool {
-    match kind {
-        TaskKind::Review | TaskKind::Read => true,
-        TaskKind::Write => writers,
-    }
-}
-
 /// A github.com repo key's `owner/name`, which the hub's App gives a token for; None for another host.
 pub fn github_repo(key: &str) -> Option<&str> {
     key.strip_prefix("github.com/").filter(|r| r.contains('/'))
@@ -229,11 +220,6 @@ fn eligible(hub: &Hub, task: &Task, checkout: &ProjectRef) -> Result<(), Option<
     let s = hub.pool.ledger().settings().map_err(|_| None)?;
     if !s.enabled || !s.has_key || !s.projects.contains(&task.project_ref) {
         return Err(None);
-    }
-    if !kind_may(task.kind, s.writers) {
-        return Err(Some(
-            "writers don't run on cloud machines unless a hub admin turns them on in Settings › Hub › Machines".into(),
-        ));
     }
     let secrets = hub
         .db

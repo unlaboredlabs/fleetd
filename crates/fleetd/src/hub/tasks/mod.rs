@@ -5393,11 +5393,11 @@ mod tests {
         assert_eq!(launched_on(&node).len(), 1);
     }
 
-    /// Only an eligible task bursts: a writer while writers may not says why; a project that didn't opt in says
-    /// nothing more than its machine's line. Neither wakes anything.
+    /// Only an eligible task bursts: one whose project holds secret variables says why; a project that didn't opt in
+    /// says nothing more than its machine's line. Neither wakes anything.
     #[tokio::test]
     async fn a_task_that_may_not_burst_waits_for_its_own_machine() {
-        let why = "writers don't run on cloud machines unless a hub admin turns them on in Settings › Hub › Machines";
+        let why = "not for cloud: its project's secret variables are only on its own machine";
         let (tasks, node) = cloud_tasks(crate::hub::pool::place::Room {
             eligible: Err(Some(why.into())),
             ..room(&[1])

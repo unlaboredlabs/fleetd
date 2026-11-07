@@ -7,7 +7,6 @@ const machine = (machineId: string, state: CloudMachine["state"], more: Partial<
 const view = (more: Partial<CloudView> = {}): CloudView => ({
   boxPubKey: "A".repeat(43) + "=",
   environmentDefault: "fleetd-devbox",
-  writers: false,
   hasKey: true,
   enabled: true,
   poolSize: 3,
@@ -56,6 +55,10 @@ describe("Settings › Hub › Machines' cloud model", () => {
     expect(machineLine(machine("boat-2", "asleep", { sinceMs: new Date(2026, 10, 4, 14, 2).getTime(), today: 0.12 }), now)).toBe("Asleep since 14:02, costs nothing · $0.12 today");
     expect(machineLine(machine("boat-3", "broken"), now)).toContain("Reset deletes it");
     expect(machineLine(machine("boat-3", "failed", { note: "its setup failed: claude" }), now)).toBe("Not made: its setup failed: claude");
+    // When it was refused, or began setting up: an old refusal reads as old.
+    const at = new Date(2026, 10, 4, 14, 5).getTime();
+    expect(machineLine(machine("boat-1", "failed", { note: "boat.dev has no environment named fleetd-devbox", sinceMs: at }), now)).toBe("Not made (14:05): boat.dev has no environment named fleetd-devbox");
+    expect(machineLine(machine("boat-1", "creating", { sinceMs: at }), now)).toBe("Setting up since 14:05: it joins in a few minutes, then sleeps");
   });
 
   it("puts the day's spend and the machines awake on one Status line, and none before the pool is set up", () => {
