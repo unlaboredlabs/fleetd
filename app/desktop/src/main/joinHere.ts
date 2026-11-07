@@ -184,14 +184,15 @@ export type Installed = { readonly ok: true; readonly bin: string; readonly vers
  * Steps 2–4 of a join: the hub's own `version` built for this computer (`asset`), downloaded with SHA256SUMS, checked
  * against them, and put in place as <fleetd dir>/bin/fleetd by renaming. The edge release keeps only its newest
  * build: once main moved on past an Edge hub's, that newer one is installed (same channel, same link protocol), and
- * the hub's own Update then brings the hub level, so a hub behind never stops a join. `step.next` starts each of the three steps
- * and `step.done` ends it; a failure ends the step it is in, with what to do. Never rejects.
+ * the hub's own Update then brings the hub level, so a hub behind never stops a join; `step.newer` hears which, before
+ * the download. `step.next` starts each of the three steps and `step.done` ends it; a failure ends the step it is in,
+ * with what to do. Never rejects.
  */
 export async function installBuild(
   ports: Pick<JoinPorts, "download" | "fleetdDir" | "baseOverride">,
   version: string,
   asset: string,
-  step: { readonly next: () => void; readonly done: (output?: string) => void },
+  step: { readonly next: () => void; readonly done: (output?: string) => void; readonly newer?: (version: string) => void },
 ): Promise<Installed> {
   const fail = (message: string): Installed => ({ ok: false, message });
   const { next, done } = step;
@@ -204,6 +205,7 @@ export async function installBuild(
     if (edge) {
       // The edge release moves on: past the hub's build, its newest is what there is.
       installs = parseCli(JSON.parse(new TextDecoder().decode(await ports.download(`${base}/release.json`)))) ?? version;
+      step.newer?.(installs);
     }
     try {
       sums = new TextDecoder().decode(await ports.download(`${base}/SHA256SUMS`));

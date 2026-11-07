@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MacJoin } from "../shared/macSetup";
 import type { CallOutcome } from "../shared/hub";
-import { APP_BEHIND, cliFailure, findHubs, hubOrigin, joinMac, MacSetup, PANE_URLS, readHealth, redeemMac, signedInPorts, tailnetPeers, type MacSetupPorts } from "./macSetup";
+import { APP_BEHIND, ASK_ROLE_AGAIN_MS, cliFailure, findHubs, hubOrigin, joinMac, MacSetup, PANE_URLS, readHealth, redeemMac, signedInPorts, tailnetPeers, type MacSetupPorts } from "./macSetup";
 
 const BUILD = new TextEncoder().encode("#!/bin/sh\necho fleetd\n");
 const SUM = createHash("sha256").update(BUILD).digest("hex");
@@ -324,9 +324,13 @@ describe("a version difference", () => {
 
   it("an edge release that moved on past the hub's build: the Mac joins on the newer build, and says so in its first step", async () => {
     const { p, ran, fetched } = ports({ edgeHolds: NEW });
-    const end = await joinMac(p, edgePending, () => undefined);
+    const seen: MacJoin[] = [];
+    const end = await joinMac(p, edgePending, (j) => seen.push(j));
     expect(end.state).toBe("done");
     expect(end.steps[0]?.title).toBe("download the newest edge fleetd, newer than the hub's");
+    // Said while it downloads, not only once it's done.
+    const downloading = seen.filter((j) => j.steps[0]?.state === "running").map((j) => j.steps[0]?.title);
+    expect(downloading.at(-1)).toBe("download the newest edge fleetd, newer than the hub's");
     expect(fetched[0]).toBe("https://github.com/unlaboredlabs/fleetd/releases/download/edge/release.json");
     expect(ran).toHaveLength(1);
     // While the release is still the hub's own, the step says so.
@@ -357,6 +361,36 @@ describe("a version difference", () => {
     const setup = new MacSetup(p, () => undefined);
     for (let i = 0; i < 3; i++) expect((await setup.health(ANSWER.hubUrl)).hubBehind?.who).toBe("member");
     expect(roles).toEqual([ANSWER.hubUrl]);
+  });
+
+  it("asks again a little later when it couldn't tell, so an admin whose hub link came up gets the button", async () => {
+    const { p, dir } = ports({ hubVersion: OLD });
+    fs.mkdirSync(path.join(dir, "node", "update"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "node", "update", "up"), NEW);
+    let now = 1_000_000;
+    let role: "admin" | "unknown" = "unknown";
+    const asked: number[] = [];
+    const setup = new MacSetup(
+      {
+        ...p,
+        now: () => now,
+        hubRole: () => {
+          asked.push(now);
+          return Promise.resolve(role);
+        },
+      },
+      () => undefined,
+    );
+    expect((await setup.health(ANSWER.hubUrl)).hubBehind?.who).toBe("unknown");
+    role = "admin";
+    now += ASK_ROLE_AGAIN_MS / 2;
+    expect((await setup.health(ANSWER.hubUrl)).hubBehind?.who).toBe("unknown");
+    now += ASK_ROLE_AGAIN_MS;
+    expect((await setup.health(ANSWER.hubUrl)).hubBehind?.who).toBe("admin");
+    // A definite answer is kept.
+    now += ASK_ROLE_AGAIN_MS * 10;
+    expect((await setup.health(ANSWER.hubUrl)).hubBehind?.who).toBe("admin");
+    expect(asked).toHaveLength(2);
   });
 
   it("a hub on an older link protocol: refused before the code is spent, in words, and the same code tries again", async () => {

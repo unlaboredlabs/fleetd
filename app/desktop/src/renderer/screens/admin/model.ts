@@ -1,19 +1,11 @@
 // The Hub group's rules, pure and tested: who sees the page, what each row of People offers the person looking at it,
 // and the invites still open. The hub enforces all of it again (people_list, person_set, person_remove); these only
 // keep the page from offering what it would refuse.
-import type { AgentKeyInfo, GithubAccount, HubInfoOutput, HubRole, Invite, PeopleListOutput, Person, PersonClaude } from "../../../shared/contracts";
+import type { AgentKeyInfo, GithubAccount, HubRole, Invite, PeopleListOutput, Person, PersonClaude } from "../../../shared/contracts";
 import { theirRunsOn } from "../settings/claudeModel";
 
-/**
- * Whether this app's person administers the hub: an owner or admin whose device isn't capped below admin. A hub from
- * before people names no person; there it is the key's own admin grant, as Settings asked before: a hub too old to
- * say leaves the app to try, and refuses a change it doesn't allow. False until hub_info answers.
- */
-export function administers(info: Pick<HubInfoOutput, "admin" | "me"> | undefined): boolean {
-  if (info === undefined) return false;
-  if (info.me === undefined) return info.admin !== false;
-  return (info.me.role === "owner" || info.me.role === "admin") && info.admin !== false;
-}
+// Shared with main, whose Mac setup window offers the hub's Update to an admin (main/macSetup.ts).
+export { administers } from "../../../shared/hub";
 
 export const ROLE_WORD: Readonly<Record<string, string>> = { owner: "Owner", admin: "Admin", member: "Member" };
 export const roleWord = (role: HubRole): string => ROLE_WORD[role] ?? role;

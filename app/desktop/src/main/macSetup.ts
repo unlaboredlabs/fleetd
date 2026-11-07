@@ -20,7 +20,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { MacHealth } from "../shared/contracts";
 import type { JoinStep, ThisComputer } from "../shared/joinHere";
-import type { CallOutcome } from "../shared/hub";
+import { administers, type CallOutcome } from "../shared/hub";
 import { HUB_UPDATE_WHERE, type HubBehind, type MacFound, type MacHealthRead, type MacHubUpdateOutcome, type MacJoin, type MacPane, type MacRedeemOutcome, type MacRedeemRequest, type MacRestartOutcome, type MacSetupFailure, type MacSetupStatus } from "../shared/macSetup";
 import { compareVersions, isEdge } from "../shared/pairing";
 import { assetFor, installBuild, thisComputer, type JoinPorts } from "./joinHere";
@@ -271,10 +271,15 @@ export async function joinMac(ports: MacSetupPorts, pending: Pending, report: (j
     return send({ state: "failed", steps, failure, ...(retry ? { retry } : {}) });
   };
 
-  const installed = await installBuild(ports, pending.version, asset, { next, done });
+  // The edge release moved on past the hub's build: the first step says so as soon as it is known, while it downloads.
+  const newer = (version: string) => {
+    if (version === pending.version) return;
+    steps = steps.map((s, i) => (i === 0 ? { ...s, title: NEWER_TITLE } : s));
+    send({ state: "running", steps });
+  };
+  const installed = await installBuild(ports, pending.version, asset, { next, done, newer });
   // The token is unspent: the same code tries again.
   if (!installed.ok) return fail({ message: installed.message }, true);
-  if (installed.version !== pending.version) steps = steps.map((s, i) => (i === 0 ? { ...s, title: NEWER_TITLE } : s));
 
   next();
   const { found } = pending;
@@ -354,6 +359,9 @@ export async function joinedHere(ports: MacSetupPorts): Promise<MacFound | undef
   return { hubUrl: hub, hubName, machineId, existing: true, here: { kind: "node", machineId, hub } };
 }
 
+/** How long "not signed in to the hub here" stands before it is asked again. */
+export const ASK_ROLE_AGAIN_MS = 10_000;
+
 const CANCELLED: MacSetupFailure = {
   message: "Cancelled: nothing changed on this Mac.",
   fix: "The code you typed is spent. For a new one, open Add machine › A Mac for agents on your main machine.",
@@ -374,8 +382,11 @@ export class MacSetup {
   #ended: MacSetupFailure | undefined;
   readonly #ports: MacSetupPorts;
   readonly #report: (join: MacJoin) => void;
-  /** Who this app is on each hub, asked once per hub while the hub is behind: health is read every second. */
-  readonly #roles = new Map<string, Promise<HubBehind["who"]>>();
+  /**
+   * Who this app is on each hub, asked once while the hub is behind (health is read every second): an admin or a
+   * member is kept; "unknown" only for ASK_ROLE_AGAIN_MS.
+   */
+  readonly #roles = new Map<string, { readonly role: Promise<HubBehind["who"]>; until: number }>();
 
   constructor(ports: MacSetupPorts, report: (join: MacJoin) => void) {
     this.#ports = ports;
@@ -429,12 +440,18 @@ export class MacSetup {
 
   health(hubUrl: string | undefined): Promise<MacHealthRead> {
     return readHealth(this.#ports, hubUrl, (hub) => {
-      let role = this.#roles.get(hub);
-      if (role === undefined) {
-        role = this.#ports.hubRole(hub).catch(() => "unknown" as const);
-        this.#roles.set(hub, role);
+      const now = this.#ports.now();
+      let asked = this.#roles.get(hub);
+      if (asked === undefined || asked.until <= now) {
+        const entry = { role: this.#ports.hubRole(hub).catch(() => "unknown" as const), until: Infinity };
+        // Not known yet (a link still coming up, a sign-in here to come): asked again a little later.
+        void entry.role.then((role) => {
+          if (role === "unknown") entry.until = this.#ports.now() + ASK_ROLE_AGAIN_MS;
+        });
+        this.#roles.set(hub, entry);
+        asked = entry;
       }
-      return role;
+      return asked.role;
     });
   }
 
@@ -468,9 +485,8 @@ export const signedInPorts = (signedIn: () => ReadonlyArray<SignedIn>): Pick<Mac
     hubRole: async (hubUrl) => {
       const info = await at(hubUrl)?.call("hub_info", {});
       if (info?.ok !== true) return "unknown";
-      // As Settings decides it (screens/admin/model.ts administers): an owner or admin whose key isn't capped below.
-      const { admin, me } = (info.output ?? {}) as { admin?: unknown; me?: { role?: unknown } };
-      return admin !== false && (me === undefined || me.role === "owner" || me.role === "admin") ? "admin" : "member";
+      // As Settings decides it: an owner or admin whose key isn't capped below.
+      return administers(info.output ?? {}) ? "admin" : "member";
     },
     updateHub: async (hubUrl) => {
       const hub = at(hubUrl);

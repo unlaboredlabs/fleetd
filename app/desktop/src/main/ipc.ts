@@ -141,7 +141,8 @@ export const registerIpc = (
   const macSetup = new MacSetup(
     fixtureRequest(process.env, RELEASE_BUILD).kind === "fixture"
       ? fixtureMacPorts()
-      : // It calls no hub tool: the Mac holds no key, and trades its code over plain HTTP.
+      : // It trades its code over plain HTTP, as the Mac holds no key of its own. Only a hub admin's Update uses a key:
+        // that of a hub this app is signed in to here (signedInPorts).
         realMacPorts(realPorts(() => Promise.resolve(gone)), {
           knownHubs: () => hubs.list().flatMap((h) => hubs.get(h.id)?.url() ?? []),
           openPane: (url) => shell.openExternal(url),
