@@ -151,6 +151,10 @@ async fn answer(
         .with_fix("leave the payment to the person and say so"));
     }
     let project = convert(r).expect("a project ref reads back");
+    // An older node waits for the person's answer: they are asked, as before.
+    let no_ask = hub
+        .link
+        .node_can(&r.machine_id, fleetd_contracts::node_link::CAP_NO_ASK_FILL);
     match call {
         LeadCall::PurchaseOpen(call) => {
             if let Some(never) = refused_purchase(&call.purchase) {
@@ -167,15 +171,19 @@ async fn answer(
                 })?;
             let opened = hub
                 .approvals
-                .open_purchase(&project, call, card)
+                .open_purchase(&project, call, card, no_ask)
                 .await
                 .map_err(refused)?;
             Ok(LeadCallResult::PurchaseOpen(RequestResult {
                 request_id: opened.request_id,
                 state: opened.state,
-                next: Some(
-                    "recorded, with no ask (D310): fill the card now with purchase_fill, on this checkout".into(),
-                ),
+                next: Some(if no_ask {
+                    "recorded, with no ask (D310): fill the card now with purchase_fill, on this checkout".into()
+                } else {
+                    "end your turn on the checkout: the person approves or denies it in the chat, and you are woken \
+                     with the answer"
+                        .into()
+                }),
             }))
         }
         LeadCall::PurchaseClaim(call) => hub
@@ -204,7 +212,7 @@ async fn answer(
         LeadCall::SecureInputOpen(call) => {
             let opened = hub
                 .approvals
-                .open_secure_input(&project, call)
+                .open_secure_input(&project, call, no_ask)
                 .await
                 .map_err(refused)?;
             Ok(LeadCallResult::SecureInputOpen(RequestResult {

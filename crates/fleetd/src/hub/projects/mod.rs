@@ -518,23 +518,35 @@ async fn gh_list(hub: &Hub, fallback: Option<MachineId>, scans: &[MachineRepos])
 /// Registers `path` on `m` (the same directory again is the same project; a title renames it) and emits
 /// `project.added` with the inspect. Returns the inspect it emitted.
 /// Only me as `project_add` sets it (D310): what the call asked, and whose the project becomes when it is on.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct OnlyMe {
     asked: Option<bool>,
     owner: Option<fleetd_contracts::people::PersonId>,
+    caller: Caller,
 }
 
 impl OnlyMe {
     fn of(hub: &Hub, caller: &Caller, asked: Option<bool>) -> Result<Self, ToolError> {
         let owner = hub.db.with(|c| crate::hub::navi::owner::who(c, caller))?;
-        Ok(Self { asked, owner })
+        Ok(Self {
+            asked,
+            owner,
+            caller: caller.clone(),
+        })
     }
 
-    /// Sets it on a project just added (`created`): as asked, else on for one with no repo. An existing project keeps
-    /// its own unless asked.
+    /// Sets it on a project just added (`created`): as asked, else on for one with no repo, and the caller's. An
+    /// existing project keeps its own unless asked, and then changes only as `project_settings_set` changes it: by its
+    /// owner or an admin, from a person's own device.
     fn apply(&self, hub: &Hub, r: &ProjectRef, created: bool, git: bool) -> Result<(), ToolError> {
         let on = match (self.asked, created) {
-            (Some(on), _) => on,
+            (Some(on), false) => {
+                let Some(project) = hub.store.project_get(r)? else {
+                    return Err(crate::hub::api::unknown_project(r));
+                };
+                return settings::set_only_me(hub, &self.caller, &project, on);
+            }
+            (Some(on), true) => on,
             (None, true) => !git,
             (None, false) => return Ok(()),
         };
@@ -726,7 +738,10 @@ pub async fn add(
         m.clone(),
         repo,
         path.clone(),
-        CloneInto::Project { title, only_me },
+        CloneInto::Project {
+            title,
+            only_me: Box::new(only_me),
+        },
         run,
     ));
     Ok(ProjectAddOutput {
@@ -906,7 +921,7 @@ fn dest_taken(m: &MachineId, repo: &GitHubRepo, target: &CloneTarget) -> ToolErr
 enum CloneInto {
     Project {
         title: Option<String>,
-        only_me: OnlyMe,
+        only_me: Box<OnlyMe>,
     },
     Repo {
         project: ProjectRef,

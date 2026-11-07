@@ -1455,7 +1455,7 @@ async fn a_purchase_is_a_record_approved_as_it_opens_and_its_card_fills_once_wit
     let clock = crate::hub::store::test_clock::ManualClock::at(1_790_000_000_000);
     let a = approvals_at(&fake, clock.clone());
     let open = a
-        .open_purchase(&p1(), purchase_call(B1), visa())
+        .open_purchase(&p1(), purchase_call(B1), visa(), true)
         .await
         .unwrap();
     assert_eq!(open.state, RequestState::Approved);
@@ -1519,7 +1519,7 @@ async fn a_purchase_is_a_record_approved_as_it_opens_and_its_card_fills_once_wit
 
     // Past its window, it fills nothing and ends.
     let late = a
-        .open_purchase(&p1(), purchase_call(B1), visa())
+        .open_purchase(&p1(), purchase_call(B1), visa(), true)
         .await
         .unwrap();
     clock.advance(std::time::Duration::from_secs(
@@ -1537,7 +1537,7 @@ async fn a_purchase_is_a_record_approved_as_it_opens_and_its_card_fills_once_wit
 
     // Never filled: once its window ran out it ends as failed, not "approved" for ever.
     let idle = a
-        .open_purchase(&p1(), purchase_call(B1), visa())
+        .open_purchase(&p1(), purchase_call(B1), visa(), true)
         .await
         .unwrap();
     a.expire_unfilled().await;
@@ -1553,6 +1553,14 @@ async fn a_purchase_is_a_record_approved_as_it_opens_and_its_card_fills_once_wit
     let ended = fake.request(idle.request_id.as_str());
     assert_eq!(ended.state, RequestState::Failed);
     assert!(ended.evidence.unwrap().as_str().starts_with("expired"));
+
+    // For an older node, which would wait for an answer, the person is asked as before.
+    let asked = a
+        .open_purchase(&p1(), purchase_call(B1), visa(), false)
+        .await
+        .unwrap();
+    assert_eq!(asked.state, RequestState::Open);
+    assert!(purchases::person_only(&asked));
 
     // Another project's purchase is none of this one's.
     let elsewhere = ProjectRef {
@@ -2299,7 +2307,10 @@ async fn a_secure_input_is_a_sealed_field_or_a_1password_fill_with_no_ask() {
     let clock = crate::hub::store::test_clock::ManualClock::at(1_790_000_000_000);
     let a = approvals_at(&fake, clock.clone());
 
-    let typed = a.open_secure_input(&p1(), secure_call(None)).await.unwrap();
+    let typed = a
+        .open_secure_input(&p1(), secure_call(None), true)
+        .await
+        .unwrap();
     assert_eq!(typed.kind, RequestKind::Secret);
     assert_eq!(
         typed.secret.as_ref().unwrap().sink.as_str(),
@@ -2338,7 +2349,11 @@ async fn a_secure_input_is_a_sealed_field_or_a_1password_fill_with_no_ask() {
     );
 
     let from_1password = a
-        .open_secure_input(&p1(), secure_call(Some("op://Personal/Passport/number")))
+        .open_secure_input(
+            &p1(),
+            secure_call(Some("op://Personal/Passport/number")),
+            true,
+        )
         .await
         .unwrap();
     assert_eq!(from_1password.kind, RequestKind::Approval);
@@ -2365,7 +2380,11 @@ async fn a_secure_input_is_a_sealed_field_or_a_1password_fill_with_no_ask() {
 
     // Never filled: it expires.
     let late = a
-        .open_secure_input(&p1(), secure_call(Some("op://Personal/Passport/number")))
+        .open_secure_input(
+            &p1(),
+            secure_call(Some("op://Personal/Passport/number")),
+            true,
+        )
         .await
         .unwrap();
     clock.advance(std::time::Duration::from_secs(

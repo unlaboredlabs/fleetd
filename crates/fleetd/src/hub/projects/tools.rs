@@ -76,7 +76,9 @@ async fn remove(
     if !erases {
         return Err(error(
             ErrorCode::Invalid,
-            format!("{m}'s node is too old to erase a project"),
+            format!(
+                "Update fleetd on {m} first: its node is too old to erase a project, so nothing was deleted"
+            ),
             format!("Run fleetd update on {m}, then delete it again."),
         ));
     }
@@ -96,10 +98,13 @@ async fn remove(
             .map_err(from_executor)?;
     }
     crate::hub::navi::erase::erase(&hub, &r)?;
+    const ERASED: &str = "Erased: its chat, memory, skills, approvals and purchases, asks and decisions, orders and \
+                          tasks, automations, kept browser sign-ins, Telegram link, transcripts, attachments and \
+                          screen recordings";
     let next = if remove_folder {
-        "It was erased, with its chat, memory, skills and folder."
+        format!("{ERASED}, and its folder with everything in it.")
     } else {
-        "It was erased, with its chat, memory and skills; its folder stays on the machine."
+        format!("{ERASED}. Its folder, files and branches stay on the machine.")
     };
     Ok(json!({ "ok": true, "next": next }))
 }

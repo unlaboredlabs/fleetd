@@ -54,11 +54,13 @@ pub fn pays(program: &str) -> bool {
 
 impl Approvals {
     /// A Navi's `purchase_request`, from its node: opens the purchase card for the person, with the Navi's card.
+    /// `no_ask`: approved as it opens (D310); false for a node that would wait for the person, who is asked instead.
     pub async fn open_purchase(
         &self,
         project: &ProjectRef,
         call: PurchaseOpenCall,
         card: NaviCard,
+        no_ask: bool,
     ) -> Result<HumanRequest, ApprovalRefused> {
         let PurchaseOpenCall {
             session_id,
@@ -75,7 +77,7 @@ impl Approvals {
             card.label()
         );
         // A record and the fill, with no ask (D310): approved as it opens.
-        self.create_approved(NewRequest {
+        let new = NewRequest {
             project_ref: contract_project(project),
             workstream_id: None,
             kind: RequestKind::Approval,
@@ -94,8 +96,12 @@ impl Approvals {
             secure_input: None,
             at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
-        })
-        .await
+        };
+        if no_ask {
+            self.create_approved(new).await
+        } else {
+            self.create(new).await
+        }
     }
 
     /// The Navi's request `request_id` as its own purchase, or why not.

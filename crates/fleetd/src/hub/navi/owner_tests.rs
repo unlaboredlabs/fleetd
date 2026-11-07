@@ -357,9 +357,9 @@ async fn on_a_hub_without_people_every_key_shares_the_navis_until_the_owner_take
     assert_eq!(titles(&mine, "navis"), ["Ada 2"]);
 }
 
-/// D310: Only me is one switch on any project, set from a person's own device. On, the project becomes the caller's when
-/// it has no owner, and every other person loses it from lists and tools, an admin too; its owner turns it off, or an
-/// admin with that alone, and then everyone has it again.
+/// D310: Only me is one switch on any project, set from a person's own device. Only an admin turns it on for a project
+/// nobody owns, which becomes theirs; on, every other person loses it from lists and tools, an admin too; its owner
+/// turns it off, or an admin with that alone, and then everyone has it again.
 #[tokio::test]
 async fn only_me_is_one_switch_on_any_project_its_owner_or_an_admin_turns() {
     let (hub, _home) = hub();
@@ -402,57 +402,69 @@ async fn only_me_is_one_switch_on_any_project_its_owner_or_an_admin_turns() {
     };
     assert_eq!(e.code, ErrorCode::Forbidden);
 
-    // Bob turns it on: it is his alone, and Ann, an admin, no longer reaches it.
-    ok(
-        &hub,
-        &bob_d,
-        "project_settings_set",
-        set(json!({ "onlyMe": true })),
-    )
-    .await;
-    assert!(summary().only_me);
-    assert_eq!(summary().owner, Some(bob.clone()));
-    refused(&hub, &ann_d, "project_settings_get", p1.clone()).await;
-    refused(
-        &hub,
-        &ann_d,
-        "project_settings_set",
-        set(json!({ "onlyMe": false, "title": "Mine now" })),
-    )
-    .await;
-
-    // An admin turns it off with that alone: everyone has it again, and it stays Bob's for when he turns it on.
-    ok(
-        &hub,
-        &ann_d,
-        "project_settings_set",
-        set(json!({ "onlyMe": false })),
-    )
-    .await;
-    assert!(!summary().only_me);
-    assert_eq!(summary().owner, Some(bob.clone()));
-    ok(&hub, &ann_d, "project_settings_get", p1.clone()).await;
-
-    // Off, only its owner or an admin turns it on again.
-    let dee = people(&hub)
-        .create(&PersonName::unchecked("Dee"), HubRole::Member)
-        .unwrap()
-        .person_id;
-    let dee_d = device(&hub, Some(&dee), "operate");
+    // Nobody owns it: Bob, a member, can't take it; Ann, an admin, turns it on, and it is hers alone.
     let Err(CallError::Tool(e)) = call(
         &hub,
-        &dee_d,
+        &bob_d,
         "project_settings_set",
         set(json!({ "onlyMe": true })),
     )
     .await
     else {
-        panic!("someone else took Bob's project")
+        panic!("a member took a project nobody owns")
     };
     assert_eq!(e.code, ErrorCode::Forbidden);
     ok(
         &hub,
+        &ann_d,
+        "project_settings_set",
+        set(json!({ "onlyMe": true })),
+    )
+    .await;
+    assert!(summary().only_me);
+    assert_eq!(summary().owner, Some(ann.clone()));
+    refused(&hub, &bob_d, "project_settings_get", p1.clone()).await;
+    // Another admin reaches it only to turn it off, with that alone.
+    let cy = people(&hub)
+        .create(&PersonName::unchecked("Cy"), HubRole::Admin)
+        .unwrap()
+        .person_id;
+    let cy_d = device(&hub, Some(&cy), "admin");
+    refused(
+        &hub,
+        &cy_d,
+        "project_settings_set",
+        set(json!({ "onlyMe": false, "title": "Mine now" })),
+    )
+    .await;
+
+    // Another admin turns it off with that alone: everyone has it again, and it stays Ann's for when she turns it on.
+    ok(
+        &hub,
+        &cy_d,
+        "project_settings_set",
+        set(json!({ "onlyMe": false })),
+    )
+    .await;
+    assert!(!summary().only_me);
+    assert_eq!(summary().owner, Some(ann.clone()));
+    ok(&hub, &bob_d, "project_settings_get", p1.clone()).await;
+
+    // Off, only its owner or an admin turns it on again.
+    let Err(CallError::Tool(e)) = call(
+        &hub,
         &bob_d,
+        "project_settings_set",
+        set(json!({ "onlyMe": true })),
+    )
+    .await
+    else {
+        panic!("someone else took Ann's project")
+    };
+    assert_eq!(e.code, ErrorCode::Forbidden);
+    ok(
+        &hub,
+        &ann_d,
         "project_settings_set",
         set(json!({ "onlyMe": true })),
     )

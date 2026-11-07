@@ -1236,7 +1236,8 @@ input!(
     /// Absent means the directory's name.
     title: Option<Text<1, 200>>,
     /// Only me (D310): only the caller's person sees and uses it. Absent: on for a new project with no repo (a plain
-    /// folder, `create` without `gitInit`), off for a clone or a repo folder; an existing project keeps its own.
+    /// folder, `create` without `gitInit`), off for a clone or a repo folder; an existing project keeps its own. For an
+    /// existing project it changes only as `project_settings_set` changes it.
     only_me: Option<bool>,
     dry_run: Option<bool>,
 });
@@ -1591,8 +1592,9 @@ input!(
         memory_refresh: Option<bool>,
         /// Replaces the project's setup commands and their settings; no commands turns setup off.
         setup: Option<crate::project_settings::WorktreeSetup>,
-        /// Only me (D310), a person's own device only: on, only the project's owner sees and uses it (the caller
-        /// becomes its owner when it has none); off, everyone on the hub does. Its owner or an admin changes it.
+        /// Only me (D310), a person's own device only: on, only the project's owner sees and uses it; off, everyone on
+        /// the hub does. Its owner or an admin changes it; only an admin turns it on for a project nobody owns, which
+        /// becomes theirs.
         only_me: Option<bool>,
     }
 );

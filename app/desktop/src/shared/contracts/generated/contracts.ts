@@ -5612,7 +5612,8 @@ export type ProjectAddInput = {
   machineId?: MachineId;
   /**
    * Only me (D310): only the caller's person sees and uses it. Absent: on for a new project with no repo (a plain
-   * folder, `create` without `gitInit`), off for a clone or a repo folder; an existing project keeps its own.
+   * folder, `create` without `gitInit`), off for a clone or a repo folder; an existing project keeps its own. For an
+   * existing project it changes only as `project_settings_set` changes it.
    */
   onlyMe?: boolean;
   path?: string;
@@ -6046,8 +6047,9 @@ export type ProjectSettingsSetInput = {
   /** Turns the nightly memory refresh on or off for the project. */
   memoryRefresh?: boolean;
   /**
-   * Only me (D310), a person's own device only: on, only the project's owner sees and uses it (the caller
-   * becomes its owner when it has none); off, everyone on the hub does. Its owner or an admin changes it.
+   * Only me (D310), a person's own device only: on, only the project's owner sees and uses it; off, everyone on
+   * the hub does. Its owner or an admin changes it; only an admin turns it on for a project nobody owns, which
+   * becomes theirs.
    */
   onlyMe?: boolean;
   projectId: ProjectId;

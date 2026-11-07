@@ -378,21 +378,26 @@ async fn a_plain_folder_with_no_git_is_added_as_a_project_with_no_repo() {
         project.kind,
         Some(fleetd_contracts::model::ProjectKind::Assistant)
     );
-    // Asked off when it is added again, it is everyone's; an add that asks nothing keeps what it has.
-    ok(
+    // Added again by its folder, it changes only as project_settings_set changes it: this operator neither owns it
+    // nor is an admin, so asking it off is refused, and an add that asks nothing keeps what it has.
+    let Err(CallError::Tool(e)) = call(
         &hub,
         "project_add",
         json!({ "machineId": "devbox", "path": "/home/me/notes", "onlyMe": false }),
     )
-    .await;
-    assert!(!hub.store.project_get(&r).unwrap().unwrap().only_me);
+    .await
+    else {
+        panic!("an add by its folder turned Only me off")
+    };
+    assert_eq!(e.code, fleetd_contracts::mcp::ErrorCode::Forbidden);
+    assert!(hub.store.project_get(&r).unwrap().unwrap().only_me);
     ok(
         &hub,
         "project_add",
         json!({ "machineId": "devbox", "path": "/home/me/notes" }),
     )
     .await;
-    assert!(!hub.store.project_get(&r).unwrap().unwrap().only_me);
+    assert!(hub.store.project_get(&r).unwrap().unwrap().only_me);
 }
 
 #[tokio::test]
@@ -744,7 +749,7 @@ async fn deleting_a_navi_erases_everything_it_had_and_its_folder_when_ticked() {
     );
     while calls.try_recv().is_ok() {}
     let out = ok(&hub, "project_remove", at).await;
-    assert!(out["next"].as_str().unwrap().contains("erased"), "{out}");
+    assert!(out["next"].as_str().unwrap().contains("Erased"), "{out}");
     assert_eq!(
         calls.recv().await.unwrap(),
         SessionCall::ProjectRemove {

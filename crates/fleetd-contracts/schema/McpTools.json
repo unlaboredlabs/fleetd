@@ -16311,7 +16311,7 @@
           "description": "Absent: the best worker (see `project_discover.best`)."
         },
         "onlyMe": {
-          "description": "Only me (D310): only the caller's person sees and uses it. Absent: on for a new project with no repo (a plain\nfolder, `create` without `gitInit`), off for a clone or a repo folder; an existing project keeps its own.",
+          "description": "Only me (D310): only the caller's person sees and uses it. Absent: on for a new project with no repo (a plain\nfolder, `create` without `gitInit`), off for a clone or a repo folder; an existing project keeps its own. For an\nexisting project it changes only as `project_settings_set` changes it.",
           "type": "boolean"
         },
         "path": {
@@ -17402,7 +17402,7 @@
           "type": "boolean"
         },
         "onlyMe": {
-          "description": "Only me (D310), a person's own device only: on, only the project's owner sees and uses it (the caller\nbecomes its owner when it has none); off, everyone on the hub does. Its owner or an admin changes it.",
+          "description": "Only me (D310), a person's own device only: on, only the project's owner sees and uses it; off, everyone on\nthe hub does. Its owner or an admin changes it; only an admin turns it on for a project nobody owns, which\nbecomes theirs.",
           "type": "boolean"
         },
         "projectId": {

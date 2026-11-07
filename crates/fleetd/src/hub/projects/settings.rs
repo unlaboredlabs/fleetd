@@ -410,9 +410,9 @@ async fn get(
     })
 }
 
-/// Only me (D310), from a person's own device: its owner or an admin changes it. On, the project becomes the caller's
-/// when it has no owner; off, everyone on the hub sees and uses it.
-fn set_only_me(
+/// Only me (D310), from a person's own device: its owner or an admin changes it, and only an admin turns it on for a
+/// project nobody owns, which then becomes theirs; off, everyone on the hub sees and uses it.
+pub(super) fn set_only_me(
     hub: &Hub,
     caller: &Caller,
     project: &ProjectSummary,
@@ -427,13 +427,16 @@ fn set_only_me(
         .with_fix("Change it in the app: the project's settings."));
     }
     let me = hub.db.with(|c| crate::hub::navi::owner::who(c, caller))?;
-    let owns = project.owner.is_none() || project.owner == me;
+    let owns = project.owner.is_some() && project.owner == me;
     if !owns && !crate::hub::api::allows(caller, Role::Admin, Some(&r.machine_id)) {
-        return Err(ToolError::new(
-            ErrorCode::Forbidden,
-            "Only this project's owner, or an admin, turns Only me on or off.",
-        )
-        .with_fix("Ask the person whose project it is."));
+        let why = match project.owner {
+            Some(_) => "Only this project's owner, or an admin, turns Only me on or off.",
+            None => {
+                "Nobody owns this project yet: only an admin turns Only me on for it, and it becomes theirs."
+            }
+        };
+        return Err(ToolError::new(ErrorCode::Forbidden, why)
+            .with_fix("Ask the person whose project it is, or an admin."));
     }
     if on == project.only_me {
         return Ok(());

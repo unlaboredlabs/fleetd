@@ -214,6 +214,10 @@ pub const CAP_NAVI_ERASE: &str = "navi_erase";
 /// another project.
 pub const CAP_PROJECT_ERASE: &str = "project_erase";
 
+/// A purchase or a 1Password secure input the hub opens already approved (D310) is filled at once: the node tells its
+/// lead to fill now rather than wait for an answer. To a node that doesn't list it, the hub still asks the person.
+pub const CAP_NO_ASK_FILL: &str = "no_ask_fill";
+
 /// Every lead runs in `manual` permission mode without a sandbox (D310): the node allows unasked what a full-access
 /// lead does (`LEAD_ALLOWED`), answers its commands itself, and sends only a fetch, a first site visit and a send on to
 /// the hub; the assistant role is a lead that does its own work (a project with no repo). The hub starts every lead

@@ -306,6 +306,11 @@ async fn an_approved_purchase_fills_the_card_into_the_providers_frame_once_and_t
     // Approvals announce and wake through the ops ports, which the hub's loops bind.
     hub.ops.bind(hub);
     let project = rig.hub.project.clone();
+    // A node from D310 on fills with no ask.
+    hub.link.set_capabilities(
+        &project.machine_id,
+        &[fleetd_contracts::node_link::CAP_NO_ASK_FILL],
+    );
     hub.db
         .with(|c| {
             crate::hub::navi::store::put(
@@ -638,6 +643,11 @@ async fn a_card_fills_only_on_the_approved_shop() {
     // Approvals announce and wake through the ops ports, which the hub's loops bind.
     hub.ops.bind(hub);
     let project = rig.hub.project.clone();
+    // A node from D310 on fills with no ask.
+    hub.link.set_capabilities(
+        &project.machine_id,
+        &[fleetd_contracts::node_link::CAP_NO_ASK_FILL],
+    );
     hub.db
         .with(|c| {
             crate::hub::navi::store::put(
@@ -743,6 +753,11 @@ async fn navi_rig() -> Option<(Rig, String, Arc<std::sync::Mutex<Vec<String>>>, 
     let hub = rig.hub.hub.clone();
     hub.ops.bind(&hub);
     let project = rig.hub.project.clone();
+    // A node from D310 on fills with no ask.
+    hub.link.set_capabilities(
+        &project.machine_id,
+        &[fleetd_contracts::node_link::CAP_NO_ASK_FILL],
+    );
     hub.db
         .with(|c| {
             crate::hub::navi::store::put(
