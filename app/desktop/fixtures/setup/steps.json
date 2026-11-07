@@ -224,7 +224,7 @@
       "parts": [
         {
           "links": [],
-          "note": "Agents run as you on their machine: they reach your files, gh and ssh, and could read what fleetd's 1Password service account reads. Keep only the logins agents sign in with and the card a Navi buys with in this vault, and nothing else of yours.",
+          "note": "Agents run as you on their machine: they reach your files, gh and ssh, and could read what fleetd's 1Password service account reads. Keep only the logins agents sign in with and the card a project buys with in this vault, and nothing else of yours.",
           "title": "Make a vault for fleetd",
           "values": [
             {
@@ -234,7 +234,7 @@
             {
               "label": "In it",
               "plain": true,
-              "value": "Each login agents sign in with, with its website, and the card a Navi buys with"
+              "value": "Each login agents sign in with, with its website, and the card a project buys with"
             }
           ]
         },

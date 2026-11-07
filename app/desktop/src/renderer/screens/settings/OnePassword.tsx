@@ -114,7 +114,7 @@ function ServiceAccount({ token }: { token: OnePasswordToken | undefined }) {
       <ol className={s.steps}>
         <li>
           <Text size="sm">
-            In 1Password, make a vault for fleetd with only the logins your agents sign in with and the card your Navi buys with. Agents run as you on their machine, so one could read whatever
+            In 1Password, make a vault for fleetd with only the logins your agents sign in with and the card your projects buy with. Agents run as you on their machine, so one could read whatever
             this token reads.
           </Text>
         </li>
