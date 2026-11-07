@@ -159,6 +159,12 @@ impl NodeStore {
         Self::init(Connection::open_in_memory()?, events_kept)
     }
 
+    /// Runs raw SQL, for a test that breaks the store under the service.
+    #[cfg(test)]
+    pub fn execute_batch(&self, sql: &str) -> StoreResult<()> {
+        Ok(self.lock().execute_batch(sql)?)
+    }
+
     fn init(conn: Connection, events_kept: u64) -> StoreResult<Self> {
         conn.execute_batch(SCHEMA)?;
         Ok(Self {

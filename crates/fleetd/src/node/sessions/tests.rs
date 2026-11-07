@@ -5194,3 +5194,105 @@ async fn a_subscribe_answered_after_its_link_ended_leaves_no_span_flush_due() {
     hub.service.flush_spans();
     assert_eq!(hub.service.st().outbox.due(), None);
 }
+
+/// Everything logged while a closure runs on this thread.
+#[derive(Clone, Default)]
+struct Logs(Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for Logs {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Logs {
+    type Writer = Logs;
+    fn make_writer(&'a self) -> Logs {
+        self.clone()
+    }
+}
+
+impl Logs {
+    fn capture<R>(&self, f: impl FnOnce() -> R) -> R {
+        let sub = tracing_subscriber::fmt()
+            .with_writer(self.clone())
+            .with_ansi(false)
+            .finish();
+        tracing::subscriber::with_default(sub, f)
+    }
+    fn count(&self, needle: &str) -> usize {
+        String::from_utf8_lossy(&self.0.lock().unwrap())
+            .matches(needle)
+            .count()
+    }
+}
+
+/// A store that cannot read its span outbox while a full batch waits must not leave the flush due at once: the flusher
+/// would spin and warn on every pass. Each failure waits longer, up to a cap; one warning per streak; a good read resets.
+#[tokio::test]
+async fn a_span_outbox_that_cannot_be_read_backs_off_and_warns_once() {
+    use super::spans::{FLUSH_AT, RETRY_FIRST, RETRY_MAX};
+    use tokio::time::Instant;
+    let dir = tempfile::tempdir().unwrap();
+    let hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.ok(SessionCall::Subscribe {
+        after: None,
+        spans_after: Some(0),
+        caught_up: false,
+    })
+    .await;
+    hub.service.st().outbox.added(FLUSH_AT, false);
+    let store = hub.service.store();
+    store
+        .execute_batch("ALTER TABLE spans RENAME TO spans_gone")
+        .unwrap();
+    let slack = Duration::from_millis(100);
+    let logs = Logs::default();
+    logs.capture(|| {
+        hub.service.flush_spans();
+        let due = hub.service.st().outbox.due().expect("a retry");
+        assert!(
+            due >= Instant::now() + RETRY_FIRST - slack,
+            "retried at once"
+        );
+        hub.service.flush_spans();
+        hub.service.flush_spans();
+        let due = hub.service.st().outbox.due().expect("a retry");
+        assert!(
+            due >= Instant::now() + RETRY_FIRST * 4 - slack,
+            "the pause grows"
+        );
+        for _ in 0..20 {
+            hub.service.flush_spans();
+        }
+        let due = hub.service.st().outbox.due().expect("a retry");
+        assert!(due <= Instant::now() + RETRY_MAX, "the pause is bounded");
+    });
+    assert_eq!(logs.count("cannot read the span outbox"), 1);
+
+    store
+        .execute_batch("ALTER TABLE spans_gone RENAME TO spans")
+        .unwrap();
+    logs.capture(|| hub.service.flush_spans());
+    assert_eq!(logs.count("the span outbox reads again"), 1);
+    assert_eq!(hub.service.st().outbox.due(), None);
+
+    // A new streak starts over: the first pause again, and its own warning.
+    hub.service.st().outbox.added(FLUSH_AT, false);
+    store
+        .execute_batch("ALTER TABLE spans RENAME TO spans_gone")
+        .unwrap();
+    logs.capture(|| hub.service.flush_spans());
+    let due = hub.service.st().outbox.due().expect("a retry");
+    assert!(due <= Instant::now() + RETRY_FIRST);
+    assert_eq!(logs.count("cannot read the span outbox"), 2);
+}
