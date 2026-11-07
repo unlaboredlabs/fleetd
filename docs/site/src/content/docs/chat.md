@@ -30,6 +30,10 @@ as soon as a chat opens. A new chat asks what the lead should do, with a few sta
 
 Words you haven't sent stay in each project's box, even after you quit the app.
 
+If the project's machine is offline or was removed from the hub, your message waits on the hub for it. The message
+says so, and what to do: Repair an offline machine in Settings › Hub › Machines. A removed machine has to join
+again under its own id (`fleetd pair --worker <id>`, then the line it prints with `--rejoin`).
+
 The lead keeps its own plan and bookkeeping. You never file tasks or orders yourself.
 
 After an hour idle, the lead starts fresh with your next message: from the project's state, its decisions and the
