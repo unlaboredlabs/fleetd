@@ -19,6 +19,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { diskCache, forgetCache } from "./src/cacheStore";
+import { watchNetwork } from "./src/networkWatch";
 import { webSocketTransport } from "./src/hub/socket";
 import type { Paired } from "./src/hub/pair";
 import { pairLinkStep } from "./src/hub/pairLink";
@@ -204,8 +205,10 @@ function Hub({ paired, onForget }: { paired: Paired; onForget: (why?: string) =>
       if (s === "background") session.sleep();
       was = s;
     });
+    const unwatch = watchNetwork(() => session.networkChanged());
     return () => {
       sub.remove();
+      unwatch();
       session.stop();
     };
   }, [session]);
