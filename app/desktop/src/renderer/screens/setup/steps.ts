@@ -24,6 +24,12 @@ export const isRequiredLeft = (step: SetupStep): boolean =>
 
 export const requiredLeft = (steps: ReadonlyArray<SetupStep>): number => steps.filter(isRequiredLeft).length;
 
+/**
+ * How long a step's Test may take: 1Password's first on a machine installs the SDK (the hub waits 230 s for the node),
+ * then the hub reruns its checks.
+ */
+export const testMs = (step: SetupStep): number => (step.id === "onepassword" ? 300_000 : 120_000);
+
 /** Where a step's result is saved in the app: a page, and on a page that gathers several, the part (useReveal). */
 export interface Place {
   readonly label: string;

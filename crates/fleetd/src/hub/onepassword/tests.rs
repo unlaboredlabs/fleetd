@@ -282,10 +282,9 @@ async fn the_setup_step_wants_one_vault_each() {
         if status == "look" {
             assert!(said.contains("reads 2 vaults (Agents, Shared)"), "{said}");
             assert!(
-                tested["fix"]["label"]
-                    .as_str()
-                    .unwrap()
-                    .contains("reads only fleetd's vault"),
+                tested["fix"]["label"].as_str().unwrap().contains(
+                    "for only fleetd's vault (https://start.1password.com/developer-tools/active)"
+                ),
                 "{tested}"
             );
         } else {

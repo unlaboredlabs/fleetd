@@ -57,8 +57,8 @@ different OS user.
 
 ## What an agent can reach on a machine {#agent-reach}
 
-An agent runs as the OS user its machine's node runs as, which is usually you, and outside a
-[Navi's sandbox](#navi-sandbox) nothing fences it in. So on its machine it can reach what you can:
+An agent runs as the OS user its machine's node runs as, which is usually you, with no sandbox (as
+[leads run](#how-leads-run)). So on its machine it can reach what you can:
 
 - your files: your home, your projects, and any key or token kept in them;
 - your logins there: `gh`, your SSH keys and agent, git's credentials, and other CLIs you have logged in;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fixtures from "../../../../fixtures/setup/steps.json" with { type: "json" };
-import { isRequiredLeft, needWords, placesOf, requiredLeft, statusWords, type SetupStep } from "./steps";
+import { isRequiredLeft, needWords, placesOf, requiredLeft, statusWords, testMs, type SetupStep } from "./steps";
 
 /** The hub's own steps (hub/setup's catalog, as the fixtures carry it), read as `read` says. */
 const step = (id: string, read: Partial<SetupStep> = {}): SetupStep => {
@@ -46,6 +46,9 @@ describe("setup steps", () => {
     expect(placesOf(step("onepassword"))).toEqual([
       { label: "Open Your accounts › 1Password", screen: { id: "settings", tab: "accounts" }, reveal: "onepassword" },
     ]);
+    // 1Password's first Test on a machine installs the SDK: the Test waits for it.
+    expect(testMs(step("onepassword"))).toBe(300_000);
+    expect(testMs(step("github"))).toBe(120_000);
     // A place this app doesn't know opens nothing.
     expect(placesOf(step("github", { place: "github_app" }))).toEqual([]);
   });

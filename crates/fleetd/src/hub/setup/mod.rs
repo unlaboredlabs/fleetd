@@ -360,13 +360,15 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 ),
             ],
             fields_note: Some(
-                "Each person pastes their own token (it starts with ops_) in Settings › You › 1Password; the app seals \
+                "Each person pastes their own token (it starts with ops_) in Settings › Your accounts › 1Password; the app seals \
                  it on their device to every machine. Test there lists the vaults it reads."
                     .into(),
             ),
             place: Some("onepassword".into()),
             test: Some(
-                "Test your own token on a machine holding it, then read each person's last Test: one vault each".into(),
+                "Test your own token on a machine holding it, then read each person's last Test: one vault each. The \
+                 first Test on a machine can take up to 4 minutes while its node installs the 1Password SDK"
+                    .into(),
             ),
             ways: vec![way(None, &["hub/onepassword_vault"])],
             ..step(

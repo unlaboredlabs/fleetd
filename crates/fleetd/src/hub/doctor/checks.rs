@@ -319,12 +319,14 @@ pub fn onepassword_vault(
         Warn => 2,
         Fail => 3,
     };
-    let page = "Settings › You › 1Password";
+    let page = "Settings › Your accounts › 1Password";
+    // 1Password's service accounts page, where a new one is made and the old one revoked.
     let one_vault = |name: &str| {
         manual(
             &format!(
-                "{name} makes a service account that reads only fleetd's vault (1Password › Developer › Service \
-                 accounts), pastes its token in {page} and revokes the old one"
+                "{name} makes a service account for only fleetd's vault ({}), pastes its token in {page} and revokes \
+                 the old one",
+                crate::hub::setup::ONEPASSWORD_ACCOUNTS
             ),
             None,
         )
@@ -2346,12 +2348,19 @@ mod tests {
         let fix = fix.unwrap();
         assert!(
             fix.label
-                .starts_with("Bob makes a service account that reads only fleetd's vault"),
+                .starts_with("Bob makes a service account for only fleetd's vault"),
             "{}",
             fix.label
         );
         assert!(
-            fix.label.contains("Settings › You › 1Password"),
+            fix.label
+                .contains("(https://start.1password.com/developer-tools/active)"),
+            "{}",
+            fix.label
+        );
+        assert!(
+            fix.label
+                .contains("Settings › Your accounts › 1Password and revokes the old one"),
             "{}",
             fix.label
         );

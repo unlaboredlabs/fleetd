@@ -345,7 +345,7 @@ async fn cards(
                     error(
                         ErrorCode::NotFound,
                         "You have no 1Password token saved.",
-                        "Paste a service account token in Settings › You › 1Password first.",
+                        "Paste a service account token in Settings › Your accounts › 1Password first.",
                     )
                 })?
                 .sealed_on;
@@ -373,7 +373,7 @@ async fn cards(
         Err(why) => (Vec::new(), Some(why)),
     };
     let next = match (&error, cards.is_empty()) {
-        (Some(_), _) => Some("Check the token in Settings › You › 1Password, then try again.".to_owned()),
+        (Some(_), _) => Some("Check the token in Settings › Your accounts › 1Password, then try again.".to_owned()),
         (None, true) => Some(
             "This token reads no Credit Card item: add the card to a vault it reads in 1Password, then try again."
                 .to_owned(),
