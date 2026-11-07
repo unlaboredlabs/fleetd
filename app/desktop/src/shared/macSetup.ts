@@ -45,8 +45,10 @@ export interface MacJoin {
 /** The node's checks as it last wrote them, and whether the hub answers this Mac. */
 export interface MacHealthRead {
   readonly health: MacHealth | null;
-  /** When the node last wrote them (ms since the epoch); null when there is no file. */
+  /** When the node last wrote them (ms since the epoch), a full run or a fresh read of the grants; null when there is no file. */
   readonly writtenAt: number | null;
+  /** When the node last ran every check (`mac-health.checked`); null before its first. */
+  readonly checkedAt: number | null;
   readonly now: number;
   /** The hub answered its /healthz from this Mac just now. */
   readonly hubAnswers: boolean;

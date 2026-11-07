@@ -55,6 +55,11 @@ pub fn open_hub(home: &Path) -> Result<HubAccess, String> {
 }
 
 impl HubAccess {
+    /// The hub's pairing codes, the agents' Mac's setup code among them.
+    pub fn pair_codes(&self) -> crate::hub::pair::PairCodes {
+        crate::hub::pair::PairCodes::new(self.db.clone(), Arc::new(SystemClock))
+    }
+
     /// Releases the work a revoked key had claimed, so it stops blocking others now rather than when it expires.
     fn release_claims(&self, key_id: &str) -> Result<Vec<String>, StoreError> {
         let clock: Arc<dyn crate::clock::Clock> = Arc::new(SystemClock);

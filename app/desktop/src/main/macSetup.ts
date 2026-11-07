@@ -8,7 +8,8 @@
 //      node and bootstraps its LaunchAgent in this GUI session; a failure's last `fleetd: <why>. Fix: <what>` line is
 //      what the page shows;
 //   6. then the page reads the node's checks from <fleetd dir>/node/mac-health.json, which the node rewrites after
-//      each check (every 2 s while a grant is off), opens the two System Settings panes, and can restart the node.
+//      each run of every check (touching mac-health.checked) and after each read of the grants (every 2 s while one is
+//      off), opens the two System Settings panes, and can restart the node.
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
@@ -257,10 +258,12 @@ export async function joinMac(ports: MacSetupPorts, pending: Pending, report: (j
 const CHECK = z.object({ id: z.string(), state: z.string(), message: z.string(), fix: z.string().nullish(), command: z.string().nullish() });
 const HEALTH = z.object({ user: z.string(), checks: z.array(CHECK) });
 
-/** The node's checks, as it last wrote them, and whether the hub answers. */
+/** The node's checks, as it last wrote them, when it last ran them all, and whether the hub answers. */
 export async function readHealth(ports: MacSetupPorts, hubUrl: string | undefined): Promise<MacHealthRead> {
-  const [file, answers] = await Promise.all([
-    ports.readFile(path.join(ports.fleetdDir, "node", "mac-health.json")),
+  const node = path.join(ports.fleetdDir, "node");
+  const [file, checked, answers] = await Promise.all([
+    ports.readFile(path.join(node, "mac-health.json")),
+    ports.readFile(path.join(node, "mac-health.checked")),
     hubUrl === undefined ? Promise.resolve(false) : probe(ports.fetch, hubUrl, FIND_TIMEOUT_MS).then((p) => p.answers),
   ]);
   let health: MacHealth | null = null;
@@ -272,7 +275,7 @@ export async function readHealth(ports: MacSetupPorts, hubUrl: string | undefine
       // Half-written: the next read has it.
     }
   }
-  return { health, writtenAt: file?.writtenAt ?? null, now: ports.now(), hubAnswers: answers };
+  return { health, writtenAt: file?.writtenAt ?? null, checkedAt: checked?.writtenAt ?? null, now: ports.now(), hubAnswers: answers };
 }
 
 /** `fleetd node restart`: launchd starts the node again in this login. */

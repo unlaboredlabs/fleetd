@@ -26,7 +26,7 @@ const CHECKS = [
   ["xcode", "Xcode 26.1 is selected, its licence accepted."],
   ["ios_runtime", "iOS 26.1 is installed."],
   ["gui_session", "ada is at the Mac's screen."],
-  ["tools", "agent-device and agent-desktop are installed."],
+  ["tools", "Installing agent-device and agent-desktop…"],
   ["keep_awake", "The Mac stays awake while the node runs."],
 ] as const;
 
@@ -48,7 +48,7 @@ export const fixtureMacPorts = (): MacSetupPorts => {
       granted("screen_recording")
         ? { id: "screen_recording", state: "ok", message: "fleetd may record the screen." }
         : { id: "screen_recording", state: "fail", message: "fleetd may not record the screen yet.", fix: "Turn on fleetd in Privacy & Security › Screen Recording." },
-      ...CHECKS.slice(6).map(([id, message]) => ({ id, state: "ok", message })),
+      ...CHECKS.slice(6).map(([id, message]) => ({ id, state: id === "tools" ? "unknown" : "ok", message })),
     ],
   });
   return {
@@ -77,8 +77,15 @@ export const fixtureMacPorts = (): MacSetupPorts => {
     arch: "arm64",
     knownHubs: () => [],
     tailscaleStatus: () => Promise.resolve(JSON.stringify({ Peer: { a: { DNSName: "devbox.example.ts.net.", Online: true } } })),
-    readFile: (file) =>
-      Promise.resolve(joinedAt === undefined || Date.now() - joinedAt < 1500 || !file.endsWith("mac-health.json") ? undefined : { text: JSON.stringify(health()), writtenAt: Date.now() }),
+    // The node writes its first checks a moment after joining; it runs them all again a moment after both grants.
+    readFile: (file) => {
+      if (joinedAt === undefined || Date.now() - joinedAt < 1500) return Promise.resolve(undefined);
+      const both = granted("accessibility") && granted("screen_recording");
+      const lastGrant = Math.max(...[...asked.values()].map((at) => at + GRANT_MS));
+      const checkedAt = both && Date.now() - lastGrant > 1000 ? Date.now() : joinedAt + 1500;
+      if (file.endsWith("mac-health.checked")) return Promise.resolve({ text: "", writtenAt: checkedAt });
+      return Promise.resolve(file.endsWith("mac-health.json") ? { text: JSON.stringify(health()), writtenAt: Date.now() } : undefined);
+    },
     openPane: (url) => {
       const pane = (Object.keys(PANE_URLS) as MacPane[]).find((p) => PANE_URLS[p] === url);
       if (pane !== undefined && !asked.has(pane)) asked.set(pane, Date.now());

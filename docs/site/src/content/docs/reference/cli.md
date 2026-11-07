@@ -146,7 +146,7 @@ print the one command that makes another machine a worker of this hub, with a on
 fleetd pair --worker-codes
 ```
 
-list the worker codes that can still be used: each one's id, machine, when it was made and until when it works, never the code itself
+list the worker codes that can still be used, the agents' Mac's 6-digit setup code among them: each one's id, machine, when it was made and until when it works, never the code itself
 
 ### fleetd pair {#pair-worker-revoke}
 

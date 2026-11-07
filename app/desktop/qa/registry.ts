@@ -2330,7 +2330,8 @@ export const screens: readonly Screen[] = [
       await page.getByText("laptop joined.").waitFor();
     },
   },
-  // A Mac for agents (D309): the Xcode block from the hub's guide, the name, then its line and the two clicks.
+  // A Mac for agents in Terminal, under its code (D309): the Xcode block from the hub's guide, the name, then its line
+  // and the two clicks.
   {
     id: "settings.hub.machines",
     route: "#/settings/hub/machines",
@@ -2338,6 +2339,7 @@ export const screens: readonly Screen[] = [
     variant: "mac",
     open: async (page) => {
       await page.getByRole("button", { name: "Set up…" }).click();
+      await page.getByRole("button", { name: "Use Terminal instead" }).click();
       await page.getByRole("button", { name: "Make the line" }).click();
       await page.getByText("Waiting for mac…").waitFor();
     },

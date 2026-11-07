@@ -18,13 +18,24 @@ export type State =
       readonly failure?: MacSetupFailure | undefined;
     }
   | { readonly step: "confirm"; readonly found: MacFound; readonly replaces: string }
-  | { readonly step: "join"; readonly found: MacFound; readonly join?: MacJoin }
+  | {
+      readonly step: "join";
+      readonly found: MacFound;
+      readonly join?: MacJoin;
+      /** When this join first reported, by the page's clock: checks the node ran before it are an older node's. */
+      readonly started?: number;
+    }
   | {
       readonly step: "check";
       readonly found: MacFound;
       readonly read?: MacHealthRead;
-      /** When joining ended, by the page's clock: a node that writes no checks for a while is told how to restart. */
+      /**
+       * When the join (or the last restart) started: only a run of every check after it counts, and a node that runs
+       * none for a while is told how to restart.
+       */
       readonly since: number;
+      /** When the node first wrote both grants on: the Test counts only a run of every check after it. */
+      readonly grantedAt?: number;
       readonly restarting: boolean;
       readonly restartFailure?: MacSetupFailure | undefined;
     };
@@ -41,7 +52,7 @@ export type Event =
   | { readonly type: "retry" }
   | { readonly type: "health"; readonly read: MacHealthRead }
   | { readonly type: "restart" }
-  | { readonly type: "restarted"; readonly outcome: MacRestartOutcome };
+  | { readonly type: "restarted"; readonly outcome: MacRestartOutcome; readonly at: number };
 
 export const initial: State = { step: "code", code: "", hub: "", askHub: false, busy: false };
 
@@ -89,16 +100,22 @@ export function reduce(state: State, event: Event): State {
       return { ...initial, ...(event.failure === undefined ? {} : { failure: event.failure }), ...(state.step === "code" ? { hub: state.hub, askHub: state.askHub } : {}) };
     case "join":
       if (state.step !== "join") return state;
-      return event.join.state === "done" ? { step: "check", found: state.found, since: event.at, restarting: false } : { ...state, join: event.join };
+      return event.join.state === "done"
+        ? { step: "check", found: state.found, since: state.started ?? event.at, restarting: false }
+        : { ...state, join: event.join, started: state.started ?? event.at };
     case "retry":
       return state.step === "join" && state.join?.state === "failed" && state.join.retry === true ? { step: "join", found: state.found } : state;
-    case "health":
-      return state.step === "check" ? { ...state, read: event.read } : state;
+    case "health": {
+      if (state.step !== "check") return state;
+      const grants = event.read.health?.checks.filter((c) => (c.id === "accessibility" || c.id === "screen_recording") && c.state === "ok").length ?? 0;
+      const grantedAt = state.grantedAt ?? (grants === 2 && event.read.writtenAt !== null ? event.read.writtenAt : undefined);
+      return { ...state, read: event.read, ...(grantedAt === undefined ? {} : { grantedAt }) };
+    }
     case "restart":
       return state.step === "check" && !state.restarting ? { ...state, restarting: true, restartFailure: undefined } : state;
     case "restarted":
       if (state.step !== "check") return state;
-      return event.outcome.ok ? { ...state, restarting: false } : { ...state, restarting: false, restartFailure: event.outcome.failure };
+      return event.outcome.ok ? { ...state, restarting: false, since: event.at } : { ...state, restarting: false, restartFailure: event.outcome.failure };
   }
 }
 
@@ -106,7 +123,7 @@ export function reduce(state: State, event: Event): State {
 export const STEPS = ["Code", "Join", "Permissions", "Test"] as const;
 export type StepName = (typeof STEPS)[number];
 
-/** A node that wrote its checks this long ago is still running. */
+/** A node that wrote its checks this long ago is still running (it runs them all every 30 s). */
 export const FRESH_MS = 90_000;
 /** After joining, the node gets this long to write its first checks before the screen offers a restart. */
 export const START_MS = 45_000;
@@ -135,7 +152,14 @@ export interface CheckRow {
 export type CheckView =
   | { readonly kind: "starting"; readonly late: boolean }
   | { readonly kind: "grants"; readonly grants: ReadonlyArray<GrantRow> }
-  | { readonly kind: "test"; readonly checks: ReadonlyArray<CheckRow>; readonly hubAnswers: boolean; readonly green: boolean };
+  | {
+      readonly kind: "test";
+      readonly checks: ReadonlyArray<CheckRow>;
+      readonly hubAnswers: boolean;
+      /** The node ran every check since both grants came on: what they say now is the Test's. */
+      readonly settled: boolean;
+      readonly green: boolean;
+    };
 
 const stateOf = (check: MacCheck): CheckRow["state"] => {
   const state: string = check.state;
@@ -163,25 +187,29 @@ export const checkTitle = (id: string): string =>
     accessibility: "Accessibility",
     screen_recording: "Screen Recording",
     gui_session: "Login on screen",
-    one_node: "One node on this Mac",
-    awake: "Stays awake",
+    keep_awake: "Stays awake",
     tools: "Agent tools",
     reaches_hub: "Reaches the hub",
   })[id] ?? id.replace(/_/gu, " ").replace(/^./u, (c) => c.toUpperCase());
 
-const fresh = (read: MacHealthRead): read is MacHealthRead & { health: MacHealth; writtenAt: number } =>
-  read.health !== null && read.writtenAt !== null && read.now - read.writtenAt < FRESH_MS;
+/** A check that passes, or the node is still at (an install, say): a warning, never a failure. */
+export const passes = (row: CheckRow): boolean => row.state !== "fail";
+
+/** The node ran every check since `since` and is still running: what it wrote is this node's. */
+const current = (read: MacHealthRead, since: number): read is MacHealthRead & { health: MacHealth; checkedAt: number } =>
+  read.health !== null && read.checkedAt !== null && read.checkedAt > since && read.now - Math.max(read.checkedAt, read.writtenAt ?? 0) < FRESH_MS;
 
 export function checkView(state: Extract<State, { step: "check" }>, now: number): CheckView {
   const read = state.read;
-  if (read === undefined || !fresh(read)) return { kind: "starting", late: now - state.since > START_MS };
+  if (read === undefined || !current(read, state.since)) return { kind: "starting", late: now - state.since > START_MS };
   const checks = read.health.checks;
   const granted = (id: MacPane) => checks.find((c) => c.id === id)?.state === "ok";
   const grants = GRANTS.map((g) => ({ ...g, granted: granted(g.id) }));
   if (grants.some((g) => !g.granted)) return { kind: "grants", grants };
   const rows = checks.map(rowOf);
-  const green = read.hubAnswers && rows.every((r) => r.state === "ok" || r.state === "warn");
-  return { kind: "test", checks: rows, hubAnswers: read.hubAnswers, green };
+  const settled = state.grantedAt !== undefined && read.checkedAt > state.grantedAt;
+  const green = settled && read.hubAnswers && rows.every(passes);
+  return { kind: "test", checks: rows, hubAnswers: read.hubAnswers, settled, green };
 }
 
 /** The header's current step. */

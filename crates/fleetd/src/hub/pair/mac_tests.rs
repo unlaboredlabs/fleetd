@@ -286,3 +286,19 @@ fn wrong_codes_are_limited_per_address_and_across_every_address() {
     );
     assert_eq!(answer["code"], "pair_rate_limited");
 }
+
+#[test]
+fn a_spent_code_is_pruned_with_the_others_and_an_open_one_kept() {
+    let (codes, clock) = setup();
+    let spent = codes.create_mac(&mid("mac")).unwrap();
+    assert_eq!(codes.redeem_mac(&spent.code, open).unwrap(), Ok(mid("mac")));
+    clock.advance(Duration::from_millis(
+        crate::hub::auth::SPENT_CODE_KEPT_MS as u64 + 1,
+    ));
+    let fresh = codes.create_mac(&mid("mac")).unwrap();
+    assert_eq!(codes.prune().unwrap(), 1);
+    assert_eq!(
+        codes.open_mac().unwrap().map(|c| c.expires_at),
+        Some(fresh.expires_at)
+    );
+}

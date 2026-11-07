@@ -4,10 +4,10 @@
 // check green. The page holds no hub key and no token: main trades the code and runs the CLI (src/main/macSetup.ts).
 import { useEffect, useReducer, useRef, useState } from "react";
 import type { MacSetupFailure } from "../../../shared/macSetup";
-import { Check } from "lucide-react";
+import { Check, CircleDashed } from "lucide-react";
 import { Button, copyText, Field, Input, StateGlyph, Text } from "../../ui";
 import { Mark } from "../onboarding/Mark";
-import { checkTitle, checkView, digitsOf, initial, READ_EVERY_MS, reduce, spaced, stepOf, STEPS, type CheckRow, type State } from "./model";
+import { checkTitle, checkView, digitsOf, passes, initial, READ_EVERY_MS, reduce, spaced, stepOf, STEPS, type CheckRow, type State } from "./model";
 import s from "./macSetup.module.css";
 
 const useNow = (every: number): number => {
@@ -62,7 +62,7 @@ export function MacSetup() {
   const restarting = state.step === "check" && state.restarting;
   useEffect(() => {
     if (!restarting) return;
-    void window.fleetd.macSetup.restart().then((outcome) => dispatch({ type: "restarted", outcome }));
+    void window.fleetd.macSetup.restart().then((outcome) => dispatch({ type: "restarted", outcome, at: Date.now() }));
   }, [restarting]);
 
   const current = stepOf(state, now);
@@ -258,7 +258,7 @@ function JoinStep({ state, dispatch }: { state: Extract<State, { step: "join" }>
 
 function CheckLine({ row }: { row: CheckRow }) {
   const [copied, setCopied] = useState<boolean>();
-  const bad = row.state === "fail" || row.state === "unknown";
+  const bad = !passes(row);
   return (
     <li className={s.check} data-state={row.state}>
       <StateGlyph state={row.state === "ok" ? "done" : row.state === "fail" ? "failed" : row.state === "warn" ? "paused" : "working"} size="sm" />
@@ -347,8 +347,8 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
     ...(view.hubAnswers ? {} : { fix: "Check this Mac is on the hub's tailnet or network, and that the hub is running." }),
   };
   const rows = [hub, ...view.checks];
-  const open = rows.filter((c) => c.state === "fail" || c.state === "unknown");
-  const passed = rows.filter((c) => c.state === "ok" || c.state === "warn");
+  const open = rows.filter((c) => !passes(c));
+  const passed = rows.filter(passes);
   return (
     <>
       <Head
@@ -357,7 +357,9 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
         line={
           view.green
             ? `${state.found.machineId} is ${state.found.hubName}'s agents' Mac. Agents reach it with mac and agent-device, and you can watch its screen from the app.`
-            : `${String(open.length)} ${open.length === 1 ? "check needs" : "checks need"} you. Each one says what to do, and turns green here as you do it.`
+            : open.length > 0
+              ? `${String(open.length)} ${open.length === 1 ? "check needs" : "checks need"} you. Each one says what to do, and turns green here as you do it.`
+              : "The node runs every check once more with both permissions on: a few seconds."
         }
       />
       {open.length === 0 ? null : (
@@ -370,8 +372,15 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
       <ul className={s.passed} aria-label="Checks that pass">
         {passed.map((row) => (
           <li key={row.id} className={s.passedRow} data-state={row.state} title={row.message}>
-            <Check size={13} strokeWidth={2.5} aria-hidden />
-            <Text size="sm">{checkTitle(row.id)}</Text>
+            {row.state === "ok" ? <Check size={13} strokeWidth={2.5} aria-hidden /> : <CircleDashed size={13} strokeWidth={2.5} aria-hidden />}
+            <span className={s.passedText}>
+              <Text size="sm">{checkTitle(row.id)}</Text>
+              {row.state === "ok" ? null : (
+                <Text size="xs" tone="quiet">
+                  {row.message}
+                </Text>
+              )}
+            </span>
           </li>
         ))}
       </ul>
@@ -381,8 +390,10 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
           <Button variant="primary" size="md" onClick={() => window.close()}>
             Done
           </Button>
-        ) : (
+        ) : open.length > 0 ? (
           restart
+        ) : (
+          <StateGlyph state="working" size="sm" label="Testing" />
         )}
       </div>
     </>

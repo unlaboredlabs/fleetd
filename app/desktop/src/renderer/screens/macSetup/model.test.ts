@@ -2,14 +2,21 @@
 import { describe, expect, it } from "vitest";
 import type { MacCheck } from "../../../shared/contracts";
 import type { MacFound, MacHealthRead } from "../../../shared/macSetup";
-import { checkView, digitsOf, initial, reduce, spaced, START_MS, stepOf, type Event, type State } from "./model";
+import { checkView, digitsOf, initial, passes, reduce, spaced, START_MS, stepOf, type Event, type State } from "./model";
 
 const FOUND: MacFound = { hubUrl: "http://devbox:4790", hubName: "devbox", machineId: "mac", existing: false, here: { kind: "none" } };
 const run = (events: Event[], from: State = initial): State => events.reduce(reduce, from);
 const typed = (code: string): Event => ({ type: "code", value: code });
 
 const check = (id: string, state: "ok" | "fail" | "warn" | "unknown", extra: Partial<MacCheck> = {}): MacCheck => ({ id, state, message: `${id} is ${state}`, ...extra });
-const read = (checks: MacCheck[], over: Partial<MacHealthRead> = {}): MacHealthRead => ({ health: { user: "ada", checks }, writtenAt: 10_000, now: 11_000, hubAnswers: true, ...over });
+const read = (checks: MacCheck[], over: Partial<MacHealthRead> = {}): MacHealthRead => ({
+  health: { user: "ada", checks },
+  writtenAt: 10_000,
+  checkedAt: 10_000,
+  now: 11_000,
+  hubAnswers: true,
+  ...over,
+});
 const checking = (extra: Event[] = []): Extract<State, { step: "check" }> => {
   const s = run([typed("123456"), { type: "submit" }, { type: "redeemed", outcome: { ok: true, found: FOUND } }, { type: "join", join: { state: "done", steps: [] }, at: 1000 }, ...extra]);
   if (s.step !== "check") throw new Error(s.step);
@@ -76,6 +83,8 @@ describe("joining", () => {
 
   it("goes on to the checks once joined", () => {
     expect(reduce(joining, { type: "join", join: { state: "done", steps: [] }, at: 5 })).toEqual({ step: "check", found: FOUND, since: 5, restarting: false });
+    const started = reduce(joining, { type: "join", join: { state: "running", steps: [] }, at: 2 });
+    expect(reduce(started, { type: "join", join: { state: "done", steps: [] }, at: 5 })).toMatchObject({ since: 2 });
   });
 });
 
@@ -85,7 +94,7 @@ describe("the checks", () => {
     expect(checkView(s, 2000)).toEqual({ kind: "starting", late: false });
     expect(checkView(s, 1000 + START_MS + 1)).toEqual({ kind: "starting", late: true });
     // Checks written long ago are a node that stopped.
-    expect(checkView(checking([{ type: "health", read: read([], { writtenAt: 0, now: 200_000 }) }]), 2000).kind).toBe("starting");
+    expect(checkView(checking([{ type: "health", read: read([], { writtenAt: 2000, checkedAt: 2000, now: 200_000 }) }]), 2000).kind).toBe("starting");
   });
 
   it("shows the two grants until both are on, each seen as it turns on", () => {
@@ -94,21 +103,45 @@ describe("the checks", () => {
     expect(stepOf(s, 2000)).toBe("Permissions");
   });
 
-  it("is green only with every check ok (or a warning) and the hub answering", () => {
+  it("counts only a run of every check made since the join started", () => {
+    // The join's first report starts the clock; checks run before it are an older node's.
+    const s = run([
+      typed("123456"),
+      { type: "submit" },
+      { type: "redeemed", outcome: { ok: true, found: FOUND } },
+      { type: "join", join: { state: "running", steps: [] }, at: 400 },
+      { type: "join", join: { state: "done", steps: [] }, at: 9000 },
+    ]);
+    if (s.step !== "check") throw new Error(s.step);
+    expect(s.since).toBe(400);
+    const grants = [check("accessibility", "ok"), check("screen_recording", "fail")];
+    expect(checkView(reduce(s, { type: "health", read: read(grants, { checkedAt: 300 }) }) as typeof s, 2000).kind).toBe("starting");
+    expect(checkView(reduce(s, { type: "health", read: read(grants, { checkedAt: 500 }) }) as typeof s, 2000).kind).toBe("grants");
+  });
+
+  it("is green only after the node ran every check with both grants on, each passing (or still at it) and the hub answering", () => {
     const grants = [check("accessibility", "ok"), check("screen_recording", "ok")];
-    const failing = checking([{ type: "health", read: read([...grants, check("xcode", "fail", { fix: "Install Xcode." })]) }]);
-    expect(checkView(failing, 2000)).toMatchObject({ kind: "test", green: false, checks: [{}, {}, { id: "xcode", fix: "Install Xcode." }] });
-    expect(stepOf(failing, 2000)).toBe("Test");
-    const offline = checking([{ type: "health", read: read([...grants, check("gui_session", "warn")], { hubAnswers: false }) }]);
-    expect(checkView(offline, 2000)).toMatchObject({ kind: "test", green: false, hubAnswers: false });
-    const green = checking([{ type: "health", read: read([...grants, check("gui_session", "warn")]) }]);
-    expect(checkView(green, 2000)).toMatchObject({ kind: "test", green: true });
+    // Both grants on at 10 000, by the 2-second re-read: the last full run (at 9 000) was before them.
+    const first = checking([{ type: "health", read: read([...grants, check("xcode", "ok")], { writtenAt: 10_000, checkedAt: 9000 }) }]);
+    expect(checkView(first, 2000)).toMatchObject({ kind: "test", settled: false, green: false });
+    expect(stepOf(first, 2000)).toBe("Test");
+    const after = (checks: MacCheck[], over: Partial<MacHealthRead> = {}) => reduce(first, { type: "health", read: read(checks, { writtenAt: 12_000, checkedAt: 12_000, now: 12_500, ...over }) }) as typeof first;
+    const failing = after([...grants, check("xcode", "fail", { fix: "Install Xcode." })]);
+    expect(checkView(failing, 2000)).toMatchObject({ kind: "test", settled: true, green: false, checks: [{}, {}, { id: "xcode", fix: "Install Xcode." }] });
+    expect(checkView(after([...grants, check("gui_session", "warn")], { hubAnswers: false }), 2000)).toMatchObject({ green: false, hubAnswers: false });
+    // A check the node is still at (its tools installing) is a warning, never a failure.
+    const installing = after([...grants, check("gui_session", "warn"), check("tools", "unknown", { message: "Installing…" })]);
+    expect(checkView(installing, 2000)).toMatchObject({ kind: "test", green: true });
+    expect(passes({ id: "tools", state: "unknown", message: "Installing…" })).toBe(true);
+    expect(passes({ id: "xcode", state: "fail", message: "No Xcode." })).toBe(false);
   });
 
   it("restarts the node once at a time, and says why when it can't", () => {
     const s = reduce(checking(), { type: "restart" });
     expect(s).toMatchObject({ restarting: true });
+    // A restart's checks count only once the node ran them again.
+    expect(reduce(s, { type: "restarted", outcome: { ok: true }, at: 77 })).toMatchObject({ restarting: false, since: 77 });
     expect(reduce(s, { type: "restart" })).toBe(s);
-    expect(reduce(s, { type: "restarted", outcome: { ok: false, failure: { message: "No LaunchAgent." } } })).toMatchObject({ restarting: false, restartFailure: { message: "No LaunchAgent." } });
+    expect(reduce(s, { type: "restarted", outcome: { ok: false, failure: { message: "No LaunchAgent." } }, at: 0 })).toMatchObject({ restarting: false, restartFailure: { message: "No LaunchAgent." } });
   });
 });

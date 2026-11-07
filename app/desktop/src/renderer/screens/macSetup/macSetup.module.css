@@ -238,15 +238,26 @@
 }
 .passedRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-1-5);
   min-width: 0;
   color: var(--success);
 }
-.passedRow[data-state="warn"] {
+.passedRow > svg {
+  flex: none;
+  margin-top: 3px;
+}
+/* Works, short of what's recommended, or the node is still at it: amber, with what it says. */
+.passedRow[data-state="warn"],
+.passedRow[data-state="unknown"] {
   color: var(--warning);
 }
-.passedRow > :last-child {
+.passedText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.passedText > :first-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -184,13 +184,16 @@ describe("joining as the agents' Mac", () => {
 });
 
 describe("the checks", () => {
-  it("reads the node's mac-health.json and whether the hub answers", async () => {
+  it("reads the node's mac-health.json, when it last ran every check, and whether the hub answers", async () => {
     const { p, dir } = ports();
-    expect(await readHealth(p, ANSWER.hubUrl)).toMatchObject({ health: null, writtenAt: null, hubAnswers: true });
+    expect(await readHealth(p, ANSWER.hubUrl)).toMatchObject({ health: null, writtenAt: null, checkedAt: null, hubAnswers: true });
     fs.mkdirSync(path.join(dir, "node"), { recursive: true });
     const health = { user: "ada", checks: [{ id: "accessibility", state: "ok", message: "Allowed." }] };
     fs.writeFileSync(path.join(dir, "node", "mac-health.json"), JSON.stringify(health));
-    expect(await readHealth(p, "http://nowhere:4790")).toMatchObject({ health, hubAnswers: false });
+    expect(await readHealth(p, "http://nowhere:4790")).toMatchObject({ health, checkedAt: null, hubAnswers: false });
+    // A run of every check touches mac-health.checked; the grants' re-reads only rewrite mac-health.json.
+    fs.writeFileSync(path.join(dir, "node", "mac-health.checked"), "");
+    expect((await readHealth(p, undefined)).checkedAt).toBe(fs.statSync(path.join(dir, "node", "mac-health.checked")).mtimeMs);
     fs.writeFileSync(path.join(dir, "node", "mac-health.json"), "{ half");
     expect((await readHealth(p, undefined)).health).toBeNull();
   });
