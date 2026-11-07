@@ -1,14 +1,17 @@
 // The composer, as iOS 26's Messages and Telegram draw it: floating over the thread in Liquid Glass, an attach button
 // (photos, the camera, files; iOS's own menu on iOS 26, MenuButton) beside a glass field that grows with the text, and a round send button inside it that
 // shows once there is something to send. Picked files upload at once (upload.ts), each a thumbnail with its progress;
-// a reply shows what it quotes above the field. Return makes a new line; the button sends.
+// a reply shows what it quotes above the field. Return makes a new line; the button sends. While the lead works and
+// nothing is written, the button is Stop, as ChatGPT's and the desktop's. What's in it is the chat's draft
+// (draftsStore.ts): it stays when you leave the chat, and when the app starts again.
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
-import { useEffect, useRef, useState, type ComponentRef } from "react";
+import { useEffect, useRef, type ComponentRef } from "react";
 import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type LayoutChangeEvent } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import type { AttachmentRef } from "../desktop";
+import { expired, sendSlot, type Draft, type DraftFile } from "../drafts";
 import { space, type, useTheme } from "../theme";
 import { mimeOf, pickedName, refusal, type Uploaded } from "../upload";
 import { Glass, GlassGroup } from "./Glass";
@@ -19,27 +22,11 @@ import { grows, quick, useReduceMotion } from "./motion";
 
 export type Upload = (bytes: Uint8Array, name: string, mime: NonNullable<ReturnType<typeof mimeOf>>, progress: (done: number) => void) => Promise<Uploaded>;
 
-/** A file on its way into the message: a picture's own uri for its thumbnail, its progress, then the hub's reference. */
-interface Attaching {
-  readonly id: number;
-  readonly name: string;
-  readonly image: string | undefined;
-  readonly progress: number;
-  readonly ref?: AttachmentRef;
-  readonly error?: string;
-}
-
 interface Picked {
   readonly uri: string;
   readonly name: string;
   readonly type: string | undefined;
   readonly image: boolean;
-}
-
-export interface Reply {
-  /** Whose bubble it answers. */
-  readonly who: string;
-  readonly quote: string;
 }
 
 let nextId = Date.now();
@@ -48,62 +35,72 @@ export function Composer({
   onSend,
   upload,
   bottomInset,
-  reply,
-  onCancelReply,
+  draft,
+  onDraft,
+  onStop,
   onHeight,
   placeholder = "Message",
 }: {
   onSend: (text: string, files: readonly AttachmentRef[]) => void;
   upload: Upload;
   bottomInset: number;
-  reply?: Reply | undefined;
-  onCancelReply?: () => void;
+  /** What's written, picked and quoted, and how it changes: the chat's draft. */
+  draft: Draft;
+  onDraft: (change: (d: Draft) => Draft) => void;
+  /** While the lead works: Stop in the send button's place, until something is written. */
+  onStop?: (() => void) | undefined;
   /** The composer's height, for the thread to keep its last bubble clear of it. */
   onHeight?: (height: number) => void;
   placeholder?: string;
 }) {
   const t = useTheme();
   const reduce = useReduceMotion();
-  const [text, setText] = useState("");
-  const [files, setFiles] = useState<readonly Attaching[]>([]);
+  const { text, files, reply } = draft;
+  const setText = (next: string) => onDraft((d) => ({ ...d, text: next }));
+  const setFiles = (change: (now: readonly DraftFile[]) => readonly DraftFile[]) => onDraft((d) => ({ ...d, files: change(d.files) }));
   const input = useRef<ComponentRef<typeof TextInput>>(null);
-  const uploading = files.some((f) => f.ref === undefined && f.error === undefined);
-  const ready = (text.trim() !== "" || files.some((f) => f.ref !== undefined)) && !uploading;
+  const slot = sendSlot(draft, onStop !== undefined);
+  const ready = slot === "send";
+  const stop = slot === "stop";
 
   // The send button shows as the first letter is typed, on the snap curve; no bounce.
   const shown = useSharedValue(0);
   useEffect(() => {
-    shown.value = withTiming(ready ? 1 : 0, { ...quick, duration: reduce ? 0 : quick.duration });
-  }, [ready, reduce, shown]);
+    shown.value = withTiming(ready || stop ? 1 : 0, { ...quick, duration: reduce ? 0 : quick.duration });
+  }, [ready, stop, reduce, shown]);
   const sendStyle = useAnimatedStyle(() => ({ opacity: shown.value, transform: [{ scale: 0.6 + 0.4 * shown.value }] }));
 
+  // A reply picked now brings the keyboard up; one the draft held when the chat opened doesn't.
+  const replyAtOpen = useRef(reply);
   useEffect(() => {
-    if (reply !== undefined) input.current?.focus();
+    if (reply !== undefined && reply !== replyAtOpen.current) input.current?.focus();
   }, [reply]);
 
   const send = () => {
     if (!ready) return;
+    // An upload the hub has deleted since (a draft left overnight) asks to be attached again, as one it refused.
+    const fresh = expired(draft, Date.now());
+    if (fresh !== draft) onDraft((d) => expired(d, Date.now()));
     const go = () => {
       haptics.tap();
-      onSend(text, files.flatMap((f) => (f.ref === undefined ? [] : [f.ref])));
-      setText("");
-      setFiles([]);
+      onSend(text, fresh.files.flatMap((f) => (f.ref === undefined ? [] : [f.ref])));
+      onDraft((d) => ({ ...d, text: "", files: [] }));
     };
     // A file the hub didn't take never goes quietly: the message waits for a yes.
-    const failed = files.filter((f) => f.error !== undefined);
+    const failed = fresh.files.filter((f) => f.error !== undefined);
     if (failed.length === 0) return go();
     haptics.warning();
-    Alert.alert(
-      failed.length === 1 ? `${failed[0]?.name ?? "A file"} wasn't attached` : `${String(failed.length)} files weren't attached`,
-      `${failed.map((f) => f.error).join("\n")}\n\nSend the message without ${failed.length === 1 ? "it" : "them"}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Send", onPress: go },
-      ],
-    );
+    const title = failed.length === 1 ? `${failed[0]?.name ?? "A file"} wasn't attached` : `${String(failed.length)} files weren't attached`;
+    const why = failed.map((f) => f.error).join("\n");
+    // Nothing left to send without them: the draft stays as it is, to attach them again.
+    if (sendSlot(fresh, false) !== "send") return Alert.alert(title, why);
+    Alert.alert(title, `${why}\n\nSend the message without ${failed.length === 1 ? "it" : "them"}?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Send", onPress: go },
+    ]);
   };
 
-  const set = (id: number, change: Partial<Attaching>) => setFiles((now) => now.map((f) => (f.id === id ? { ...f, ...change } : f)));
+  const set = (id: number, change: Partial<DraftFile>) => setFiles((now) => now.map((f) => (f.id === id ? { ...f, ...change } : f)));
   const attach = (picked: readonly Picked[]) => {
     for (const p of picked) {
       const id = ++nextId;
@@ -115,7 +112,7 @@ export function Composer({
           const why = refusal(p.name, mime, bytes.length);
           if (why !== undefined || mime === undefined) return set(id, { error: why ?? `${p.name} can't be sent.` });
           const r = await upload(bytes, p.name, mime, (done) => set(id, { progress: done }));
-          set(id, r.ok ? { ref: r.ref, progress: 1 } : { error: r.message });
+          set(id, r.ok ? { ref: r.ref, progress: 1, uploadedAt: Date.now() } : { error: r.message });
           if (!r.ok) haptics.warning();
         } catch {
           set(id, { error: `${p.name} couldn't be read.` });
@@ -165,7 +162,7 @@ export function Composer({
               {reply.quote}
             </Text>
           </View>
-          <Pressable accessibilityRole="button" accessibilityLabel="Cancel reply" hitSlop={10} onPress={onCancelReply}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Cancel reply" hitSlop={10} onPress={() => onDraft((d) => ({ ...d, reply: undefined }))}>
             <Icon name="close" size={14} color={t.secondary} weight="semibold" />
           </Pressable>
         </Glass>
@@ -185,7 +182,8 @@ export function Composer({
         <Animated.View {...grows(reduce)} style={styles.grow}>
           <Glass style={styles.field}>
             {files.length === 0 ? null : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tray} keyboardShouldPersistTaps="handled">
+              // Not iOS's status-bar tap: the chat's StatusBarTap takes it, and two that would make it do nothing.
+              <ScrollView horizontal scrollsToTop={false} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tray} keyboardShouldPersistTaps="handled">
                 {files.map((f) => (
                   <Thumb key={f.id} file={f} onRemove={() => setFiles((now) => now.filter((x) => x.id !== f.id))} />
                 ))}
@@ -204,17 +202,18 @@ export function Composer({
                 accessibilityLabel="Message"
                 keyboardAppearance={t.dark ? "dark" : "light"}
               />
-              <Animated.View style={[styles.sendSlot, sendStyle]} pointerEvents={ready ? "auto" : "none"}>
+              <Animated.View style={[styles.sendSlot, sendStyle]} pointerEvents={ready || stop ? "auto" : "none"}>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Send"
-                  accessibilityElementsHidden={!ready}
-                  importantForAccessibility={ready ? "yes" : "no-hide-descendants"}
-                  onPress={send}
+                  accessibilityLabel={stop ? "Stop" : "Send"}
+                  {...(stop ? { accessibilityHint: "Stops what the lead is doing now" } : {})}
+                  accessibilityElementsHidden={!ready && !stop}
+                  importantForAccessibility={ready || stop ? "yes" : "no-hide-descendants"}
+                  onPress={stop ? onStop : send}
                   hitSlop={8}
-                  style={({ pressed }) => [styles.send, { backgroundColor: t.accentFill }, pressed && styles.pressed]}
+                  style={({ pressed }) => [styles.send, { backgroundColor: stop ? t.label : t.accentFill }, pressed && styles.pressed]}
                 >
-                  <Icon name="send" size={16} color="#FFFFFF" weight="bold" />
+                  {stop ? <View style={[styles.stopMark, { backgroundColor: t.bg }]} /> : <Icon name="send" size={16} color="#FFFFFF" weight="bold" />}
                 </Pressable>
               </Animated.View>
             </View>
@@ -226,7 +225,7 @@ export function Composer({
 }
 
 /** A picked file in the tray: its picture or its name, a bar while it uploads, red when the hub didn't take it. */
-function Thumb({ file, onRemove }: { file: Attaching; onRemove: () => void }) {
+function Thumb({ file, onRemove }: { file: DraftFile; onRemove: () => void }) {
   const t = useTheme();
   const busy = file.ref === undefined && file.error === undefined;
   const label = file.error ?? (busy ? `${file.name}, uploading, ${String(Math.round(file.progress * 100))} percent` : file.name);
@@ -277,6 +276,7 @@ const styles = StyleSheet.create({
   input: { flex: 1, maxHeight: 140, paddingTop: 11, paddingBottom: 11, marginRight: space.xs },
   sendSlot: { marginBottom: 6 },
   send: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  stopMark: { width: 11, height: 11, borderRadius: 2.5 },
   pressed: { opacity: 0.6 },
   strong: { fontWeight: "600" },
   reply: { flexDirection: "row", alignItems: "center", gap: space.md, borderRadius: 18, borderCurve: "continuous", paddingVertical: space.sm, paddingLeft: space.md, paddingRight: space.lg },

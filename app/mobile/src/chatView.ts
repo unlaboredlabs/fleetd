@@ -86,16 +86,19 @@ export const quoteOf = (text: string): string => {
 export const replyText = (quote: string, text: string): string => (quote === "" ? text : `> ${quote}\n\n${text}`);
 
 /**
- * What a send carries: the words trimmed, under the quote of the bubble it replies to, and which bubble that is; null
- * with nothing to send. A photo goes with no words. A quick answer or a starter passes no reply: it never quotes what
- * the composer's Reply banner holds, which stays for the words being typed.
+ * What a send carries: the words without blank lines or spaces at their ends (the first line's indent kept in a message
+ * of more lines), under the quote of the bubble it replies to, and which bubble that is; null with nothing to send. A
+ * photo goes with no words. A quick answer or a starter passes no reply: it never quotes what the composer's Reply
+ * banner holds, which stays for the words being typed.
  */
 export const outgoing = (
   body: string,
   files: number,
   reply: { readonly id: string; readonly part: number; readonly quote: string } | undefined,
 ): { readonly text: string; readonly replyTo: { readonly messageId: string; readonly part: number } | undefined } | null => {
-  const words = body.trim();
+  // Blank lines at either end go; in a message of more lines, its first line's indent (a code block's) stays.
+  const lines = body.replace(/^\s*\n/u, "").trimEnd();
+  const words = lines.includes("\n") ? lines : lines.trim();
   if (words === "" && files === 0) return null;
   if (reply === undefined) return { text: words, replyTo: undefined };
   return { text: words === "" ? replyText(reply.quote, "").trim() : replyText(reply.quote, words), replyTo: { messageId: reply.id, part: reply.part } };
