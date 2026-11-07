@@ -460,16 +460,6 @@
           "const": "shortcuts",
           "description": "An iOS Shortcuts action (Send Message), run by the person or by one of their automations. Its text may hold\nwhat the shortcut pulled from elsewhere.",
           "type": "string"
-        },
-        {
-          "const": "share",
-          "description": "The phone's share sheet: what another app handed over.",
-          "type": "string"
-        },
-        {
-          "const": "shortcuts",
-          "description": "A Shortcuts action or Siri on the phone.",
-          "type": "string"
         }
       ],
       "x-open": true
