@@ -34,6 +34,9 @@ describe("artifact frames", () => {
     expect(page.indexOf("RTCPeerConnection")).toBeLessThan(page.indexOf("mine()"));
     expect(page).toContain('key: "k1"');
     expect(framedPage("<p>x</p>", "k1").startsWith("<script>")).toBe(true);
+    // Its own frame tags are inert, whatever their case or what follows them.
+    const framed = framedPage("<IFRAME srcdoc='x'></iframe><iframe\nsrc=x><frameset><frame/><object data=x><embed>", "k1");
+    expect(framed).not.toMatch(/<(iframe|frameset|frame|object|embed)[\s/>]/iu);
   });
 
   it("take a link from a frame's message only with its page's key", () => {
@@ -57,9 +60,12 @@ describe("artifact frames", () => {
     expect(d.get("frame-src")).toBe("'none'");
     expect(d.get("form-action")).toBe("'none'");
     expect(d.get("script-src")?.split(" ")).not.toContain("*");
+    // Every HTML string and script through the first script's one policy.
+    expect(d.get("require-trusted-types-for")).toBe("'script'");
+    expect(d.get("trusted-types")).toBe("default");
     // Nothing from a network: only inline code and data: or blob: media.
     for (const [name, values] of d) {
-      if (name === "sandbox") continue;
+      if (name === "sandbox" || name === "require-trusted-types-for" || name === "trusted-types") continue;
       for (const value of values.split(" ").filter(Boolean)) expect(["'none'", "'unsafe-inline'", "'unsafe-eval'", "data:", "blob:"], `${name} ${value}`).toContain(value);
     }
     expect(d.get("sandbox")).toBe("allow-scripts");
