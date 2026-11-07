@@ -72,7 +72,7 @@ describe("Rename, Only me and Archive", () => {
 describe("A project's screen", () => {
   it("reads what runs, its orders, checklist, last two weeks' merges, profiles and skills side by side", async () => {
     const { hub, session, calls } = setup();
-    const info = readInfo(session, SHOP, NOW);
+    const info = readInfo(session, SHOP, NOW, true);
     const projectRef = REF;
     expect(calls("agents_list").at(-1)?.input).toEqual({ projectRef });
     expect(calls("checklist_get").at(-1)?.input).toEqual({ projectRef });
@@ -93,6 +93,13 @@ describe("A project's screen", () => {
     expect(got.prs).toBeUndefined();
     expect(got.skills).toMatchObject([{ name: "weekly-invoices" }]);
     expect(got.error).toMatchObject({ message: "GitHub didn't answer." });
+  });
+
+  it("leaves its skills out on a hub that doesn't keep them", () => {
+    const { session, calls } = setup();
+    void readInfo(session, SHOP, NOW, false);
+    expect(calls("agents_list")).toHaveLength(1);
+    expect(calls("skills_list")).toEqual([]);
   });
 
   it("checks a profile for its agents, keeping the others and leaving the default out", async () => {
@@ -178,7 +185,7 @@ describe("New Project", () => {
     };
     const off = session.onEvent((event: HubEvent) => send({ t: "event", event }));
     send({ t: "start", request: { kind: "clone", repo: "acme/web", machineId: "devbox", useExisting: false }, path: "" });
-    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", url: "acme/web", title: "Web" });
+    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", url: "acme/web", title: "Web", onlyMe: false });
     hub.answer("project_add", { addId: "a1", created: false, machineId: "devbox", path: "/home/ada/src/web" });
     await flush();
     hub.link.frame({ t: "event", seq: 2, type: "project.clone_progress", at: AT, data: { addId: "a1", phase: "receiving", percent: 40 } });
@@ -201,10 +208,11 @@ describe("New Project", () => {
     off();
   });
 
-  it("adds a folder as it is, unnamed when no name is typed", () => {
+  it("adds a folder as it is, unnamed when no name is typed, Only me off as the person left it", () => {
     const { session, calls } = setup();
+    // Off is sent too: the hub's own default for a folder with no git repo is on.
     void addCall(session, { purpose: "add", gen: 1, input: { machineId: "devbox", path: "~/src/api" } }, "", false);
-    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", path: "~/src/api" });
+    expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", path: "~/src/api", onlyMe: false });
     // A dry run that inspects a clone's folder is never named, nor Only me.
     void addCall(session, { purpose: "inspect", gen: 1, input: { machineId: "devbox", url: "acme/web", dryRun: true } }, "Web", true);
     expect(calls("project_add").at(-1)?.input).toEqual({ machineId: "devbox", url: "acme/web", dryRun: true });

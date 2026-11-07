@@ -87,7 +87,7 @@ describe("a long chat's preview", () => {
   const ref = { machineId: "m1", projectId: "a" };
   const m = (seq: number, author: string, text: string) => ({ messageId: `a-${String(seq)}`, projectRef: ref, seq, author, text, state: "final", createdAt: AT });
   const chatOf = (messages: ReturnType<typeof m>[], streams: Record<string, { text: string; at: string }> = {}) => ({ messages, streams, leadWaiting: {}, hasOlder: false, loadingOlder: false, held: [], loaded: true, missing: [] });
-  const preview = (chat: ReturnType<typeof chatOf>) => lists({ projects: { "m1/a": project("a", "Ada", { kind: "assistant" }) }, chatStates: {}, requests: [], chats: { "m1/a": chat } })?.navis[0]?.preview;
+  const preview = (chat: ReturnType<typeof chatOf>) => lists({ projects: { "m1/a": project("a", "Ada", { onlyMe: true }) }, chatStates: {}, requests: [], chats: { "m1/a": chat } })?.chats[0]?.preview;
 
   it("is its newest line, the same each time it's drawn, and looks past a run of system lines", () => {
     const many = Array.from({ length: 300 }, (_, i) => m(i + 1, "lead", `Line **${String(i + 1)}**`));

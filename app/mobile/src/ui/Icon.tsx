@@ -86,6 +86,7 @@ const SYMBOLS = {
   pageForward: ["chevron.forward", "arrow_forward"],
   reload: ["arrow.clockwise", "refresh"],
   paperplane: ["paperplane.fill", "send"],
+  archive: ["archivebox", "archive"],
 } as const satisfies Record<string, readonly [Extract<SymbolViewProps["name"], string>, AndroidSymbol]>;
 
 export type IconName = keyof typeof SYMBOLS;

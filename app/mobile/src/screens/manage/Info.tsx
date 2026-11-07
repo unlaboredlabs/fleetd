@@ -23,6 +23,7 @@ import { useNow } from "../time";
 import { deleteProject, forgetSignins, readForDelete, readInfo, setArchived, setOnlyMe } from "./api";
 import { agentLines, checklist, deleteBlocked, deleteWords, machineName, manages, merges, orderLines, profilesValue, subtitle, type DeleteWords, type Tone } from "./model";
 import { confirmDestructive, errorWords, Problem, useRead } from "./parts";
+import { skillsShown } from "./skillsModel";
 import { TypedDelete } from "./TypedDelete";
 
 const toneColor = (t: Palette, tone: Tone): string => (tone === "accent" ? t.accent : tone === "warning" ? t.warning : tone === "danger" ? t.danger : t.secondary);
@@ -49,7 +50,8 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
   const machine = machineName(state.machines, p.machineId);
   const can = manages(p, state.me);
   const archived = isArchived(p);
-  const info = useRead(() => readInfo(session, p, Date.now()), [session, p.machineId, p.projectId]);
+  const skills = skillsShown(state.hub);
+  const info = useRead(() => readInfo(session, p, Date.now(), skills), [session, p.machineId, p.projectId, skills]);
   // Back from Agent Profiles or Rename: read again (the first focus is the mount's read).
   const { reload } = info;
   const shown = useRef(false);
@@ -230,7 +232,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
         {can ? <ListRow title="Payments" icon="money" tint={t.tints[3]} {...(live ? { onPress: () => navigation.navigate("Payments", { key }) } : {})} /> : null}
         {can ? <ListRow title="Telegram" icon="paperplane" tint={t.tints[5]} {...(live ? { onPress: () => navigation.navigate("Telegram", { key }) } : {})} /> : null}
         {can ? <ListRow title="Linked Hubs" icon="link" tint={t.tints[6]} {...(live ? { onPress: () => navigation.navigate("LinkedHubs", { key }) } : {})} /> : null}
-        <ListRow title="Skills" icon="sparkles" tint={t.tints[1]} {...(v?.skills === undefined ? {} : { value: String(v.skills.length) })} onPress={() => navigation.navigate("Skills", { key })} />
+        {skills ? <ListRow title="Skills" icon="sparkles" tint={t.tints[1]} {...(v?.skills === undefined ? {} : { value: String(v.skills.length) })} onPress={() => navigation.navigate("Skills", { key })} /> : null}
       </ListSection>
 
       {can ? (

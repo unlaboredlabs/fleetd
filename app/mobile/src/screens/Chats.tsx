@@ -197,6 +197,10 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
       <EmptyState icon="doneAll" title="All Caught Up" body="Nothing you haven't read." />
     ) : filter === "needsYou" ? (
       <EmptyState icon="doneAll" title="All Caught Up" body="When a project asks before it acts, its chat shows up here." />
+    ) : filter === "pinned" ? (
+      <EmptyState icon="pin" title="No Pinned Chats" body="Swipe a chat right, or hold it, and pin it to keep it on top." />
+    ) : filter === "archived" ? (
+      <EmptyState icon="archive" title="Nothing Archived" body="Archive a project from its info page to set it aside here, with everything kept." />
     ) : (
       <EmptyState icon="bubble" title="No Chats Yet" body="Tap + to start a project, and its chat shows up here." />
     );

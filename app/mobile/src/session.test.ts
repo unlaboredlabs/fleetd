@@ -133,10 +133,10 @@ describe("Session", () => {
     const read = hub.sentOf("call").find((c) => c.tool === "chat_history" && (c.input as { projectRef: { projectId: string } }).projectRef.projectId === "navi");
     hub.link.frame({ t: "result", id: read?.id, output: page([message(2, "Two emails need you."), message(3, "Sent the first."), message(4, "Sent both.")]) });
     await flush();
-    expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["Sent both."]);
+    expect(lists(session.state)?.chats.find((r) => r.key === KEY)?.preview).toEqual("Sent both.");
     // A message after it lands aside in the held chat; the list still shows it.
     hub.link.frame({ t: "event", seq: 2, type: "chat.message", at: AT, data: { projectRef: REF, messageId: "msg5", seq: 5, author: "lead", state: "final", message: message(5, "All done.") } });
-    expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["All done."]);
+    expect(lists(session.state)?.chats.find((r) => r.key === KEY)?.preview).toEqual("All done.");
   });
 
   it("reads again only the previews that moved on while the link was down", async () => {
@@ -147,16 +147,16 @@ describe("Session", () => {
     hub.link.close(1006);
     vi.advanceTimersByTime(1000);
     hub.ready();
-    const navi = () => reads().filter((c) => (c.input as { projectRef: { projectId: string } }).projectRef.projectId === "navi");
-    // Nothing new in the navi's chat: it isn't read again.
+    const ada = () => reads().filter((c) => (c.input as { projectRef: { projectId: string } }).projectRef.projectId === "navi");
+    // Nothing new in Ada's chat: it isn't read again.
     hub.link.frame(snapshot);
     await flush();
-    expect(navi()).toEqual([]);
-    expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["Two emails need you."]);
-    // The navi's chat moved on: only it is read.
+    expect(ada()).toEqual([]);
+    expect(lists(session.state)?.chats.find((r) => r.key === KEY)?.preview).toEqual("Two emails need you.");
+    // Ada's chat moved on: only it is read.
     hub.link.frame({ ...snapshot, cursor: 2, chats: [{ ...snapshot.chats[0], lastSeq: 3 }] });
     await flush();
-    expect(navi()).toHaveLength(1);
+    expect(ada()).toHaveLength(1);
   });
 
   it("lifts a chat with its time when a message comes, with no change of what it waits for", () => {
@@ -179,7 +179,7 @@ describe("Session", () => {
       data: { projectRef: { machineId: "m1", projectId: "shop" }, messageId: "s2", seq: 2, author: "lead", state: "final", message: { ...message(2, "Live."), messageId: "s2", projectRef: { machineId: "m1", projectId: "shop" }, createdAt: later } },
     });
     expect(session.state.chatStates["m1/shop"]).toMatchObject({ lastSeq: 2, lastMessageAt: later });
-    expect(lists(session.state)?.projects.map((r) => r.at)).toEqual([later]);
+    expect(lists(session.state)?.chats.find((r) => r.key === "m1/shop")?.at).toEqual(later);
   });
 
   it("opens a chat at its latest page, streams the lead's text and takes its final message", async () => {
@@ -240,7 +240,7 @@ describe("Session", () => {
     session.sleep();
     session.stop();
     const next = new Session({ hub: "http://devbox:4790", key: "key_abc", transport: fakeHub().transport, cache: disk });
-    expect(lists(next.state)?.navis.map((r) => [r.project.title, r.preview])).toEqual([["Ada", "You: Send both"]]);
+    expect(lists(next.state)?.chats.filter((r) => r.key === KEY).map((r) => [r.project.title, r.preview])).toEqual([["Ada", "You: Send both"]]);
     expect(next.state.sends[KEY]).toMatchObject([{ text: "Send both", state: { t: "queued" } }]);
     // Another hub's is never shown.
     expect(new Session({ hub: "http://lab:4790", key: "key_abc", transport: fakeHub().transport, cache: disk }).state.projects).toBeUndefined();

@@ -30,12 +30,13 @@ export const discover = async (hub: Hub, name: (machineId: string) => string): P
 };
 
 /**
- * One of the add flow's project_add calls, the add itself named as the person typed (a clone's too) and Only me when
- * they left it on. A dry run only inspects, so it takes neither.
+ * One of the add flow's project_add calls, the add itself named as the person typed (a clone's too) and with Only me
+ * as they left it, on or off: left out, the hub would pick its own default (on for a folder with no git repo). A dry
+ * run only inspects, so it takes neither.
  */
 export const addCall = async (hub: Hub, call: AddCall, title: string, onlyMe: boolean): Promise<{ readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: HubError }> => {
   if (call.purpose !== "add") return hub.call("project_add", call.input);
-  return hub.call("project_add", { ...call.input, ...(title === "" ? {} : { title }), ...(onlyMe ? { onlyMe: true } : {}) });
+  return hub.call("project_add", { ...call.input, ...(title === "" ? {} : { title }), onlyMe });
 };
 
 /** Its settings' title. Its folder keeps its name. */
@@ -88,27 +89,27 @@ export interface Info {
   readonly error?: HubError;
 }
 
-/** Its screen's reads, side by side. */
-export const readInfo = async (hub: Hub, p: ProjectRef, nowMs: number): Promise<Info> => {
+/** Its screen's reads, side by side; its skills only from a hub that keeps them (`skills`). */
+export const readInfo = async (hub: Hub, p: ProjectRef, nowMs: number, skills: boolean): Promise<Info> => {
   const projectRef = ref(p);
   const since = new Date(nowMs - MERGES_DAYS * 86_400_000).toISOString();
-  const [agents, checklist, orders, prs, profiles, skills] = await Promise.all([
+  const [agents, checklist, orders, prs, profiles, kept] = await Promise.all([
     hub.call("agents_list", { projectRef }),
     hub.call("checklist_get", { projectRef }),
     hub.call("orders_board", { projectRef }),
     hub.call("pr_list", { projectRef, closedSince: since }),
     hub.call("profiles_list", { projectRef }),
-    hub.call("skills_list", { projectRef }),
+    skills ? hub.call("skills_list", { projectRef }) : null,
   ]);
-  const error = [agents, checklist, orders, prs, profiles, skills].find((r) => !r.ok);
+  const error = [agents, checklist, orders, prs, profiles, kept].find((r) => r !== null && !r.ok);
   return {
     ...(agents.ok ? { agents: agents.output.agents } : {}),
     ...(checklist.ok ? { checklist: checklist.output.items } : {}),
     ...(orders.ok ? { orders: orders.output.orders } : {}),
     ...(prs.ok ? { prs: prs.output.prs } : {}),
     ...(profiles.ok ? { profiles: profiles.output } : {}),
-    ...(skills.ok ? { skills: skills.output.skills } : {}),
-    ...(error === undefined || error.ok ? {} : { error: error.error }),
+    ...(kept?.ok === true ? { skills: kept.output.skills } : {}),
+    ...(error === undefined || error === null || error.ok ? {} : { error: error.error }),
   };
 };
 
