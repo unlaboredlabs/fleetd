@@ -10,6 +10,7 @@ import {
   applyHistory,
   emptyChat,
   heldChat,
+  mergeMessages,
   mergeLive,
   mergeOwn,
   settleSends,
@@ -113,6 +114,8 @@ export const initial = (hub: HubState): State => ({
 export type Action =
   | { readonly t: "frame"; readonly frame: HubFrame; readonly nowMs: number }
   | { readonly t: "chat_open"; readonly key: Key }
+  /** A chat held through a drop goes on as it was: the events the link missed replay into it (client.ts replay). */
+  | { readonly t: "resume"; readonly key: Key }
   | { readonly t: "history"; readonly key: Key; readonly page: ChatHistoryOutput; readonly direction: "latest" | "older" }
   | { readonly t: "history_failed"; readonly key: Key; readonly error: HubError }
   | { readonly t: "latest"; readonly key: Key; readonly messages: readonly ChatMessage[] }
@@ -152,6 +155,11 @@ export const reduce = (s: State, a: Action): State => {
       return applyFrame(s, a.frame, a.nowMs);
     case "chat_open":
       return s.chats[a.key] === undefined ? withChat(s, a.key, emptyChat) : s;
+    case "resume": {
+      const chat = s.chats[a.key];
+      if (chat?.cached !== true) return s;
+      return withChat(s, a.key, { ...mergeMessages({ ...chat, cached: false, loaded: true }, chat.held), held: [] });
+    }
     case "history":
       return withChat(s, a.key, applyHistory(chatOf(s, a.key), a.page, a.direction));
     case "history_failed":
@@ -235,7 +243,7 @@ const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
       };
     }
     case "event":
-      return applyEvent(s, frame.event);
+      return applyEvent(s, frame.event, frame.replayed === true);
     case "chat_delta": {
       const key = keyOf(frame.delta.projectRef);
       const chat = s.chats[key];
@@ -259,8 +267,10 @@ const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
   }
 };
 
-const applyEvent = (s: State, event: HubEvent): State => {
+const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
   if (event.type === "chat.waiting") {
+    // What a chat waits for, missed while the link was down: the snapshot before it says it as it is now.
+    if (replayed) return s;
     const state = event.data as ProjectChatState | undefined;
     if (state?.projectRef === undefined) return s;
     const key = keyOf(state.projectRef);
