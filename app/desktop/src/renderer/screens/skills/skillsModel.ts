@@ -1,4 +1,4 @@
-// A Navi's Skills, kept pure: which group a skill is in (what it learned, what was installed for it, every project's,
+// A project's Skills, kept pure: which group a skill is in (what it learned, what was installed for it, every project's,
 // its folder's), the line under each, what the person may change, and a SKILL.md's body without its frontmatter.
 import type { SkillSummary, SkillVersion } from "../../../shared/contracts";
 import { when } from "../status/view";
@@ -26,7 +26,7 @@ export function grouped(skills: readonly SkillSummary[]): { group: SkillGroup; r
   );
 }
 
-/** Whose a version is, in a line's words: "Home" for the Navi, "you" for the person reading. */
+/** Whose a version is, in a line's words: its project's name for its lead, "you" for the person reading. */
 export const byWord = (v: Pick<SkillVersion, "author" | "by">, me: string | undefined): string => (v.author === "person" && v.by === me ? "you" : v.by);
 
 /** A row's line under its name: off, then who changed it last and when, then its last use. */
@@ -39,7 +39,7 @@ export function metaLine(s: SkillSummary, now: number, me?: string): string {
   return parts.join(" · ");
 }
 
-/** The person edits, reverts and deletes the Navi's own (learned or installed); an admin keeps every project's. */
+/** The person edits, reverts and deletes the project's own (learned or installed); an admin keeps every project's. */
 export const isOwn = (s: SkillSummary): boolean => s.origin === "project";
 
 /** A SKILL.md without its frontmatter: what the view renders. */

@@ -115,7 +115,7 @@ export function McpSection({ projectRef }: { projectRef: Ref }) {
   }
   const data = read.data;
   if (!data) return null;
-  // A Navi's integrations are kept on its Integrations section, where saving keeps what each is to the tool policy.
+  // A project's integrations are kept on its Integrations section, where saving keeps what each is to the tool policy.
   const all = data.project ?? [];
   const own = all.filter((x) => x.integration === undefined);
   const integrations = all.length - own.length;

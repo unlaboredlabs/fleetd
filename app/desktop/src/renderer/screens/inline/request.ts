@@ -80,7 +80,7 @@ export const secretTarget = (machines: Readonly<Record<string, Machine>>, item: 
   const input = item.secureInput;
   const where =
     kind === "fill" && input !== undefined
-      ? `into the ${input.label} field for ${input.site.name}, in the Navi's browser on ${machine.name}`
+      ? `into the ${input.label} field for ${input.site.name}, in the project's browser on ${machine.name}`
       : kind === "order"
       ? `${item.envName === undefined ? "" : `as ${item.envName} `}for ${path}'s agents on ${machine.name}, until the order closes`
       : kind === "env"
@@ -140,7 +140,7 @@ export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined 
   }
 };
 
-/** A secure input from 1Password: approved, the Navi's node fills the field once. */
+/** A secure input from 1Password: approved, the project's node fills the field once. */
 const secureInputOutcome = (item: CommandApprovalItem): Outcome | undefined => {
   switch (item.state) {
     case "open":

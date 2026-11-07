@@ -1,4 +1,4 @@
-// Mounted once by the shell: the palette's "Add project…" and its machines, and a folder or a GitHub link dropped
+// Mounted once by the shell: the palette's "New project…" and its machines, and a folder or a GitHub link dropped
 // anywhere on the window, a lead chat included (a link dragged out of a browser works too). Files dropped on a chat
 // are its composer's (see dropOwner); any other file is ignored, never turned into an Add project.
 
@@ -115,10 +115,10 @@ export function ProjectsHost() {
       {
         // Overrides the palette's default with one that keeps a running add and returns where it came from.
         id: "go:projects.add",
-        title: "Add project…",
-        detail: "Clone a GitHub repo onto a machine, or add a folder already on one",
+        title: "New project…",
+        detail: "Start a chat with its own lead: in a new folder, a GitHub repo cloned onto a machine, or a folder already on one",
         group: "actions",
-        keywords: ["new project", "clone", "repo", "github", "folder"],
+        keywords: ["add project", "new", "clone", "repo", "github", "folder", "only me", "assistant"],
         run: () => openAddProject(),
       },
     ],

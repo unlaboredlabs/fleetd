@@ -1,4 +1,4 @@
-// Settings › Your accounts › Claude: which Claude account the orders a person starts, and their Navi, run on (teams step 8, D200).
+// Settings › Your accounts › Claude: which Claude account the orders a person starts, and their own projects' leads, run on (teams step 8, D200).
 // Their own subscription, connected here with the long-lived token `claude setup-token` prints (main seals it to
 // every machine; the page never gets it back), or the hub's API key when an admin set one up and lets them use it.
 // The hub's own key and who may use it are the Hub group's (admin/Claude.tsx), never here.
@@ -22,7 +22,7 @@ export function ClaudeSettings() {
   const live = useLive();
   const read = useToolQuery("claude_accounts_get", noInput, { enabled: live });
   return (
-    <PagePart title="Claude" reveal="claude" intro="Which Claude account the orders you start and your Navi run on. Nobody else's work ever runs on your subscription.">
+    <PagePart title="Claude" reveal="claude" intro="Which Claude account the orders you start and your own projects run on. Nobody else's work ever runs on your subscription.">
       {!live ? (
         <Text tone="quiet">Not connected. Connect to a hub to choose your Claude account.</Text>
       ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
@@ -45,7 +45,7 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
   const refused = me.runsOn.kind === "refused" ? me.runsOn : null;
   return (
     <>
-      <Setting reveal="claude.in-use" label="In use" help="What the agents of the orders you start, and your Navi, run on from their next start.">
+      <Setting reveal="claude.in-use" label="In use" help="What the agents of the orders you start, and your Only-me projects, run on from their next start.">
         {refused === null ? (
           <Text>
           <HubText>{runsOnLine(me.runsOn, people, me.person.personId)}</HubText>

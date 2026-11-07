@@ -30,6 +30,8 @@ export interface AddUi {
   readonly folder?: string;
   /** Run git init in a new project's folder. */
   readonly gitInit?: boolean;
+  /** Only me, as the person set it; absent: on for a project with no repo (onlyMeFirst). */
+  readonly onlyMe?: boolean;
   /** The sheet is on screen. */
   readonly open: boolean;
   /** This computer's host name, once main has said. */
@@ -152,7 +154,7 @@ export const useAddUi = (): AddUi => {
 };
 
 /**
- * Opens Add project from anywhere: the sidebar's + Add, the palette, the File menu, a drop on the window. A
+ * Opens New project from anywhere: the sidebar's + New, the palette, the File menu, a drop on the window. A
  * `prefill` (a pasted or dropped URL or path) replaces what is typed unless an add is running.
  */
 /** The machine a prefill goes to: the one it names (a removed project's), else this computer for a path. */
@@ -182,9 +184,9 @@ export const sheetHidden = (): void => {
   if (!ui.open) return;
   // A finished or untouched sheet starts fresh next time; one still adding keeps going out of sight.
   const fresh = ui.add.phase.kind !== "working";
-  const rest = omit(ui, "note", "machine", "folder", "gitInit");
+  const rest = omit(ui, "note", "machine", "folder", "gitInit", "onlyMe");
   set(fresh ? { ...rest, open: false, text: "", add: step(ui.add, { t: "reset" }, machineName)[0] } : { ...ui, open: false });
-  if (!fresh) toast({ title: `Still adding ${ui.add.phase.kind === "working" ? ui.add.phase.job.what : "the project"}`, description: "Add project… shows its progress." });
+  if (!fresh) toast({ title: `Still adding ${ui.add.phase.kind === "working" ? ui.add.phase.job.what : "the project"}`, description: "New project… shows its progress." });
 };
 
 export const closeAddProject = (): void => {
@@ -213,12 +215,14 @@ export const setFolder = (folder: string): void => set({ ...ui, folder });
 
 export const setGitInit = (gitInit: boolean): void => set({ ...ui, gitInit });
 
+export const setOnlyMe = (onlyMe: boolean): void => set({ ...ui, onlyMe });
+
 export const startAdd = (request: Request, path: string): void => dispatch({ t: "start", request, path });
 
 export const back = (): void => dispatch({ t: "back" });
 
 export const addAnother = (): void => {
-  const rest = omit(ui, "note", "folder", "gitInit");
+  const rest = omit(ui, "note", "folder", "gitInit", "onlyMe");
   set({ ...rest, text: "" });
   dispatch({ t: "reset" });
 };

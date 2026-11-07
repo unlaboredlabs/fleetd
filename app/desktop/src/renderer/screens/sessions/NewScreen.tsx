@@ -1,5 +1,5 @@
 // New screen (D239): a person opens a browser, an Android emulator, a Linux desktop or the agents' Mac's screen, for a
-// project or a Navi. A short picker: the kind, as tiles, then the machine that can host it, each with its
+// project. A short picker: the kind, as tiles, then the machine that can host it, each with its
 // slots in words; a full one offers to wait for its next slot, which goes to people before agents. It opens in the
 // panel's live view with the person in control; a wait shows in the Screens list until its screen opens.
 //
@@ -22,7 +22,6 @@ import { Button, Dialog, Radio, RadioGroup, Select, Text, cx } from "../../ui";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { useCommands } from "../palette";
 import { HubText } from "../projects/HubText";
-import { isNavi } from "../navi/model";
 import { projectKey } from "../../src/data/store";
 import { currentRoute, navigate } from "../shell/navigation";
 import { useHubRole } from "../admin/role";
@@ -130,18 +129,16 @@ const noInput = {};
 
 export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onClose: () => void }) {
   const layer = useDataLayer();
-  const navi = useData((d) => {
-    const p = d.projects[projectKey(project)];
-    return p !== undefined && isNavi(p) ? p.title : undefined;
-  });
+  const title = useData((d) => d.projects[projectKey(project)]?.title);
   const roles = useToolQuery("machine_roles", noInput);
   const machines = roles.data?.machines ?? [];
-  const naviHome = navi === undefined ? undefined : project.machineId;
+  // A browser opens on the project's own machine, with its saved sign-ins.
+  const home = project.machineId;
   const [kind, setKind] = useState<ScreenKind>("browser");
   const [picked, setPicked] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; fix?: string | undefined } | null>(null);
-  const hosts = hostsFor(machines, kind, naviHome);
+  const hosts = hostsFor(machines, kind, home);
   const host = pickHost(hosts, picked);
   const idle = idleWords(idleFor(machines, host?.machineId, kind));
   const projectRef = { machineId: project.machineId, projectId: project.projectId };
@@ -290,8 +287,8 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
       }}
       title="New screen"
       description={
-        navi !== undefined && kind === "browser"
-          ? `A browser on ${navi}’s saved sign-ins: sites you sign in to stay signed in for ${navi}. You’re in control; it ends when you close it or ${idle}.`
+        title !== undefined && kind === "browser"
+          ? `A browser on ${title}’s saved sign-ins: sites you sign in to stay signed in for ${title}. You’re in control; it ends when you close it or ${idle}.`
           : `You’re in control from the start. It’s recorded like agents’ screens, and ends when you close it or ${idle}.`
       }
       footer={
@@ -315,7 +312,7 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
       <div className={s.picker} data-screen="sessions.new">
         <div className={s.kinds} role="radiogroup" aria-label="Kind of screen">
           {KINDS.map((k) => {
-            const off = loading ? null : whyOff(machines, k.kind, naviHome);
+            const off = loading ? null : whyOff(machines, k.kind, home);
             return (
               <button
                 key={k.kind}
@@ -350,7 +347,7 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
               Reading machines…
             </Text>
           ) : hosts.length === 0 ? (
-            <OffLine kind={kind} reason={whyOff(machines, kind, naviHome)} onLeave={onClose} />
+            <OffLine kind={kind} reason={whyOff(machines, kind, home)} onLeave={onClose} />
           ) : (
             <RadioGroup value={host?.machineId ?? ""} onValueChange={setPicked} disabled={busy} aria-labelledby="screen-host">
               {hosts.map((h) => (

@@ -263,7 +263,7 @@ export interface SidebarItemProps extends Omit<ComponentProps<"button">, "childr
   indent?: boolean;
   /** Something new since you last looked: the label in full weight. */
   emphasis?: boolean;
-  /** A chat's row (a project, a Navi): taller, for its avatar (layout.module.css .tall). */
+  /** A project's row: taller, for its avatar (layout.module.css .tall). */
   tall?: boolean;
 }
 

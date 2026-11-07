@@ -1,13 +1,13 @@
 // The panel's sections, in everyday words: Agents (the agents, and the browsers they use); Shipping (its pull requests,
-// and the merge line they land in); Plan (the lead's checklist); Artifacts (the reports published in its chat, once the
-// hub serves them); History (what happened, and what was decided). One compact row of tabs, each its icon beside its word and its count on the word's baseline, a tooltip saying what
-// it is; under the row that same line, and in a section of two views a second, smaller row of tabs between them
-// (ui/DESIGN.md). The views are tabs.ts's, each with its route; a section remembers the view you last had in it while
-// the app runs. A view the hub doesn't serve (tabs.ts `feature`) isn't there: Agents without Sessions is one view, with
-// its own line. A Navi's panel has its own sections (NAVI_SECTIONS): the work it asked other projects for, the screens
-// it uses, its to-do list, its skills, its reports and its history; no agents, pull requests or merge line, since it
-// ships no code itself.
-import { AppWindow, BookOpen, Bot, FileText, History, ListChecks, Send, Ship, type LucideIcon } from "lucide-react";
+// and the merge line they land in); Plan (the lead's checklist, and the work it asked other projects for); Skills (what
+// the lead has learned to do); Artifacts (the reports published in its chat, once the hub serves them); History (what
+// happened, and what was decided). One compact row of tabs, each its icon beside its word and its count on the word's
+// baseline, a tooltip saying what it is; under the row that same line,
+// and in a section of two views a second, smaller row of tabs between them (ui/DESIGN.md). The views are tabs.ts's,
+// each with its route; a section remembers the view you last had in it while the app runs. A view the hub doesn't
+// serve (tabs.ts `feature`) isn't there: Agents without Sessions is one view, with its own line, and a section whose
+// every view needs one shows once it is served. Every project's panel is the same.
+import { BookOpen, Bot, FileText, History, ListChecks, Ship, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Tab, TabList, Tooltip } from "../../ui";
 import type { ProjectKey } from "../shell/routes";
@@ -48,7 +48,17 @@ export const SECTIONS: readonly Section[] = [
       ["train", "Merge line"],
     ],
   },
-  { id: "plan", label: "Plan", icon: ListChecks, line: "The lead’s to-do list for this project, ticked off as work lands.", views: [["checklist", "To-do"]] },
+  {
+    id: "plan",
+    label: "Plan",
+    icon: ListChecks,
+    line: "The lead’s to-do list, ticked off as work lands, and the work it asked your other projects for.",
+    views: [
+      ["checklist", "To-do"],
+      ["asked", "Asked"],
+    ],
+  },
+  { id: "skills", label: "Skills", icon: BookOpen, line: "What the lead has learned to do: see, edit and undo every change.", views: [["skills", "Skills"]] },
   { id: "artifacts", label: "Artifacts", icon: FileText, line: "Reports the lead and its agents published here, every version kept, and the files sent in the chat.", views: [["artifacts", "Artifacts"]] },
   {
     id: "history",
@@ -62,38 +72,14 @@ export const SECTIONS: readonly Section[] = [
   },
 ];
 
-/** A Navi's panel. Asked, Screens, Skills and Artifacts only once the hub serves them (sectionsFor). */
-export const NAVI_SECTIONS: readonly Section[] = [
-  { id: "asked", label: "Asked", icon: Send, line: "Work this Navi asked your projects for, and how each order is going.", views: [["asked", "Asked work"]] },
-  { id: "screens", label: "Screens", icon: AppWindow, line: "The browsers and devices this Navi uses: watch live, take over, replay.", views: [["sessions", "Screens"]] },
-  { id: "plan", label: "Plan", icon: ListChecks, line: "This Navi’s to-do list, ticked off as it goes.", views: [["checklist", "To-do"]] },
-  { id: "skills", label: "Skills", icon: BookOpen, line: "What this Navi has learned to do: see, edit and undo every change.", views: [["skills", "Skills"]] },
-  { id: "artifacts", label: "Artifacts", icon: FileText, line: "Reports this Navi published for you, every version kept, and the files sent in the chat.", views: [["artifacts", "Artifacts"]] },
-  {
-    id: "history",
-    label: "History",
-    icon: History,
-    line: "What happened here while you were away, and what you and this Navi decided.",
-    views: [
-      ["activity", "What happened"],
-      ["decisions", "Decisions"],
-    ],
-  },
-];
-
-/** The sections a project’s panel shows: a Navi’s, or a project of code’s; a section whose every view needs a feature, only once served. */
-export const sectionsFor = (navi: boolean, features: readonly string[] = []): readonly Section[] =>
-  (navi ? NAVI_SECTIONS : SECTIONS).filter((g) => g.views.some(([tab]) => served(tab, features)));
-
-/** Whether `tab` is one of the panel's views for this kind of project. */
-export const inSections = (tab: PanelTab, sections: readonly Section[]): boolean => sections.some((g) => g.views.some(([t]) => t === tab));
-
 const AGENTS = SECTIONS[0] as Section;
 
-export const sectionOf = (tab: PanelTab, sections: readonly Section[] = SECTIONS): Section =>
-  sections.find((g) => g.views.some(([t]) => t === tab)) ?? sections[0] ?? AGENTS;
+/** The sections a hub shows: a section whose every view needs a feature, only once it is served. */
+export const shownSections = (features: readonly string[]): readonly Section[] => SECTIONS.filter((g) => g.views.some(([tab]) => served(tab, features)));
 
-export const isSection = (id: string): boolean => SECTIONS.some((g) => g.id === id) || NAVI_SECTIONS.some((g) => g.id === id);
+export const sectionOf = (tab: PanelTab): Section => SECTIONS.find((g) => g.views.some(([t]) => t === tab)) ?? AGENTS;
+
+export const isSection = (id: string): boolean => SECTIONS.some((g) => g.id === id);
 
 /** `section` with only the views the hub serves (always its first), and the line that fits them. */
 export const servedSection = (section: Section, features: readonly string[]): Section => {
@@ -105,13 +91,13 @@ export const servedSection = (section: Section, features: readonly string[]): Se
 const lastView = new Map<string, PanelTab>();
 
 /** Notes `tab` as its section's view for `project`. */
-export const noteView = (project: ProjectKey, tab: PanelTab, sections: readonly Section[] = SECTIONS): void => {
-  lastView.set(`${project.machineId}/${project.projectId}/${sectionOf(tab, sections).id}`, tab);
+export const noteView = (project: ProjectKey, tab: PanelTab): void => {
+  lastView.set(`${project.machineId}/${project.projectId}/${sectionOf(tab).id}`, tab);
 };
 
 /** The view a section opens on for `project`: the one you last had in it while the hub serves it, else its first. */
-export const viewOf = (project: ProjectKey, id: string, features: readonly string[] = [], sections: readonly Section[] = SECTIONS): PanelTab => {
-  const section = sections.find((g) => g.id === id) ?? sections[0] ?? AGENTS;
+export const viewOf = (project: ProjectKey, id: string, features: readonly string[] = []): PanelTab => {
+  const section = SECTIONS.find((g) => g.id === id) ?? AGENTS;
   const last = lastView.get(`${project.machineId}/${project.projectId}/${id}`);
   return last !== undefined && served(last, features) ? last : (section.views[0]?.[0] ?? "agents");
 };
@@ -120,13 +106,13 @@ export const viewOf = (project: ProjectKey, id: string, features: readonly strin
 export const forgetViews = (): void => lastView.clear();
 
 /**
- * The four sections, as the panel's tabs (inside its Tabs, whose value is a section's id), each tooltip the line for
- * the views the hub serves.
+ * The sections, as the panel's tabs (inside its Tabs, whose value is a section's id), each tooltip the line for the
+ * views the hub serves.
  */
-export function SectionTabs({ count, features, sections = SECTIONS }: { count: (tab: PanelTab) => ReactNode; features: readonly string[]; sections?: readonly Section[] | undefined }) {
+export function SectionTabs({ count, features }: { count: (tab: PanelTab) => ReactNode; features: readonly string[] }) {
   return (
     <TabList aria-label="Panel" className={s.bar}>
-      {sections.map((section) => {
+      {shownSections(features).map((section) => {
         const g = servedSection(section, features);
         const Icon = g.icon;
         const first = g.views[0]?.[0] ?? "agents";

@@ -1,5 +1,5 @@
-// A Navi's Integrations (its Projects page, only for a project of kind assistant): the MCP servers the person connects
-// to it. Connecting seals the key in main to Navi's machine and saves it (mcp_server_set), then tests it at once
+// A project's Integrations (its Projects page): the MCP servers the person connects to its lead. Connecting seals the
+// key in main to the project's machine and saves it (mcp_server_set), then tests it at once
 // (mcp_server_test), which lists each tool by the hub's policy: runs without asking, asks each time, never. A server
 // that wants the person to sign in instead (OAuth) opens its own sign-in page in the browser (mcp_oauth_start), which
 // sends them back to the hub; the dialog follows the server's sign-in until it is done, then tests it. A signed-out
@@ -206,7 +206,7 @@ function SignInBody({
           <Input mono aria-label="Client secret" className={s.secretValue} data-secret="" value={client.secret} autoComplete="off" spellCheck={false} onChange={(e) => setClient({ ...client, secret: e.target.value })} />
         </Field>
         <Text size="xs" tone="quiet">
-          The secret is encrypted on this computer so only the hub can read it. fleetd never shows it again, and Navi never sees it.
+          The secret is encrypted on this computer so only the hub can read it. fleetd never shows it again, and it never goes in the chat.
         </Text>
         <Problem text={signIn.problem} />
       </div>
@@ -217,7 +217,7 @@ function SignInBody({
       {why === undefined ? null : <Prose size="sm" tone="danger" text={why} />}
       <Prose
         size="sm"
-        text={`Your browser opens ${hostOf(url)}'s own sign-in page. Sign in with your account there and allow fleetd; you come back here once it's done. fleetd keeps the sign-in fresh by itself, and Navi never sees it.`}
+        text={`Your browser opens ${hostOf(url)}'s own sign-in page. Sign in with your account there and allow fleetd; you come back here once it's done. fleetd keeps the sign-in fresh by itself, and it never goes in the chat.`}
       />
       <Problem text={signIn.problem} />
     </div>
@@ -282,12 +282,12 @@ export function IntegrationsSection({ projectRef }: { projectRef: Ref }) {
   const [tests, setTests] = useState<Readonly<Record<string, Tested>>>({});
   const machine = useMachine(projectRef);
   const help =
-    "What Navi reaches for you. Reads run unasked; anything that writes, sends, deletes or shares asks you in the chat first, every time, showing exactly what it would send. Moving money, trading and creating accounts are never allowed.";
+    "What the lead reaches for you. Reads run unasked; anything that writes, sends, deletes or shares asks you in the chat first, every time, showing exactly what it would send. Moving money, trading and creating accounts are never allowed.";
   if (!live || read.data === undefined) {
     return (
       <Setting reveal="projects.integrations" label="Integrations" help={help}>
         <Text size="sm" tone={read.isLoadingError ? "danger" : "quiet"}>
-          {!live ? "Not connected. Connect to a hub to change Navi's integrations." : read.isLoadingError ? errorText(read.error) : "Loading…"}
+          {!live ? "Not connected. Connect to a hub to change its integrations." : read.isLoadingError ? errorText(read.error) : "Loading…"}
         </Text>
       </Setting>
     );
@@ -393,7 +393,7 @@ function Row(props: {
         <Prose size="xs" tone={line.tone === "quiet" ? "quiet" : "danger"} text={line.text} />
       ) : sealed ? (
         <Text size="xs" tone="quiet">
-          Key sealed on {props.machine}. Navi never sees it.
+          Key sealed on {props.machine}. It never goes in the chat.
         </Text>
       ) : null}
       {props.tested === undefined ? null : <Found tested={props.tested} machine={props.machine} />}
@@ -470,7 +470,7 @@ function ConnectFooter(props: { busy: boolean; ok: boolean; label: string; onClo
 function SealedNote({ machine, what }: { machine: string; what: string }) {
   return (
     <Text size="xs" tone="quiet">
-      {`The ${what} is encrypted on this computer so only ${machine} can read it. fleetd never shows it again, and Navi never sees it.`}
+      {`The ${what} is encrypted on this computer so only ${machine} can read it. fleetd never shows it again, and it never goes in the chat.`}
     </Text>
   );
 }
@@ -553,13 +553,13 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
       open
       wide
       onOpenChange={(o) => !o && !busy && (tested === null ? props.onClose() : props.onDone(name, tested))}
-      title={tested === null ? "Add an MCP server" : failed ? `${name} is added, but its test failed` : `Which of ${name}'s tools may Navi use without asking?`}
+      title={tested === null ? "Add an MCP server" : failed ? `${name} is added, but its test failed` : `Which of ${name}'s tools may the lead use without asking?`}
       description={
         tested === null
-          ? `Any MCP server, by its URL or a command run on ${machine.name}. Navi asks you before it uses any of its tools, until you pick the ones it may use freely.`
+          ? `Any MCP server, by its URL or a command run on ${machine.name}. The lead asks you before it uses any of its tools, until you pick the ones it may use freely.`
           : failed
-            ? `Navi can't use it until it works. Test it again from the list; to change its URL or key, disconnect it and add it again.`
-            : "Tick the ones that only look things up. Leave anything that changes, sends or deletes unticked, so Navi asks you each time. Moving money, trading and creating accounts are always blocked."
+            ? `The lead can't use it until it works. Test it again from the list; to change its URL or key, disconnect it and add it again.`
+            : "Tick the ones that only look things up. Leave anything that changes, sends or deletes unticked, so the lead asks you each time. Moving money, trading and creating accounts are always blocked."
       }
       footer={
         tested === null ? (
@@ -582,14 +582,14 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
     >
       {tested === null ? (
         <div className={s.stack}>
-          <Field label="Name" error={nameIssue} description="Short: Navi sees its tools as mcp__<name>__<tool>.">
+          <Field label="Name" error={nameIssue} description="Short: the lead sees its tools as mcp__<name>__<tool>.">
             <Input mono aria-label="Name" value={draft.name} disabled={busy} autoComplete="off" spellCheck={false} placeholder="linear" onChange={(e) => set({ name: e.target.value })} />
           </Field>
           <RadioGroup
             className={s.radios}
             value={draft.kind}
             onValueChange={(v) => set({ kind: v === "stdio" ? "stdio" : "http", values: [{ name: v === "stdio" ? "API_KEY" : "Authorization", secret: true, value: "", saved: false }] })}
-            aria-label="How Navi reaches it"
+            aria-label="How the lead reaches it"
           >
             <Radio value="http" label="URL" />
             <Radio value="stdio" label="Command" />
@@ -681,7 +681,7 @@ function Disconnect(props: { server: McpServer; machine: string; onClose: () => 
       open
       onOpenChange={(o) => !o && !busy && props.onClose()}
       title={`Disconnect ${name}?`}
-      description={`Navi starts without it from its next message, and the key is erased from ${props.machine}. ${source}`}
+      description={`The lead starts without it from its next message, and the key is erased from ${props.machine}. ${source}`}
       footer={
         <>
           <Button onClick={props.onClose} disabled={busy}>

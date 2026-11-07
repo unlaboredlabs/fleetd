@@ -1,7 +1,7 @@
-// Links to this hub (Settings › You › Hubs, under Hub links, one per paired hub): a person makes a link key that lets their Navi on another hub open and
-// follow work here, as them, optionally limited to chosen projects (hub_link_mint). The key is shown once, with this
-// hub's address another hub reaches (hub_info's url; typed here when the hub has none), to paste into that Navi's Linked
-// hubs. Below, the links made as them, each with Revoke. Even for an admin this lists only their own, and nothing until
+// Links to this hub (Settings › You › Hubs, under Hub links, one per paired hub): a person makes a link key that lets
+// their project on another hub open and follow work here, as them, optionally limited to chosen projects (hub_link_mint). The key is shown once, with this
+// hub's address another hub reaches (hub_info's url; typed here when the hub has none), to paste into that project's
+// Linked hubs. Below, the links made as them, each with Revoke. Even for an admin this lists only their own, and nothing until
 // hub_info says who they are: everyone's is on Settings › Hub › People.
 import { useMemo, useState } from "react";
 import type { HubLinkMintOutput, ProjectRef } from "../../../shared/contracts";
@@ -11,7 +11,7 @@ import { projectKey } from "../../src/data/store";
 import { Button, Checkbox, copyText, Field, Input, Radio, RadioGroup, Text } from "../../ui";
 import { HubText } from "../projects/HubText";
 import { useHubRole } from "../admin/role";
-import { isNavi } from "../navi/model";
+import { isArchived } from "../projects/model";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { Setting } from "../settings/parts";
 import { IssuedRow, lacksLinks, LinksNeedUpdate } from "./parts";
@@ -27,7 +27,7 @@ export function LinksToThisHub({ label = "Links to this hub" }: { label?: string
     <Setting
       reveal="hubs.links"
       label={label}
-      help="A link key lets your Navi on another hub open and follow work here, as you. Paste it into that Navi’s Linked hubs; revoke it here at any time."
+      help="A link key lets your project on another hub open and follow work here, as you. Paste it into that project’s Linked hubs; revoke it here at any time."
     >
       <LinksBody />
     </Setting>
@@ -89,10 +89,10 @@ function LinksBody() {
   );
 }
 
-/** Every project of code on this hub, for a link's limits: a Navi is no place to send work to. */
+/** Every project on this hub still in use, for a link's limits. */
 const useLinkable = () => {
   const projects = useData(selectProjects);
-  return useMemo(() => (projects ?? []).filter((p) => !isNavi(p)), [projects]);
+  return useMemo(() => (projects ?? []).filter((p) => !isArchived(p)), [projects]);
 };
 
 function MintForm({ onCancel, onMade }: { onCancel: () => void; onMade: (out: HubLinkMintOutput) => void }) {
@@ -129,7 +129,7 @@ function MintForm({ onCancel, onMade }: { onCancel: () => void; onMade: (out: Hu
         mint();
       }}
     >
-      <Field label="What do you call the other hub?" description="Requests through the link read “Alex via home Navi” here." error={labelBad}>
+      <Field label="What do you call the other hub?" description="Requests through the link read “Alex via home” here." error={labelBad}>
         <Input value={label} placeholder="home" maxLength={41} autoComplete="off" disabled={busy} onChange={(e) => setLabel(e.target.value)} />
       </Field>
       <div className={s.settingLabel}>
@@ -200,7 +200,7 @@ function MadeKey({ made }: { made: HubLinkMintOutput }) {
         </Field>
       ) : null}
       <Text size="xs" tone="quiet">
-        {`Shown only now. On ${made.link.label}, open your Navi’s settings, Linked hubs, and paste it${address === undefined ? ", with the address that hub reaches this one at" : ` with this hub’s address, ${address}, which Copy takes too`}. It acts as you here; revoke it below at any time.`}
+        {`Shown only now. On ${made.link.label}, open your project’s settings, Linked hubs, and paste it${address === undefined ? ", with the address that hub reaches this one at" : ` with this hub’s address, ${address}, which Copy takes too`}. It acts as you here; revoke it below at any time.`}
       </Text>
       {copied === false ? (
         <Text size="xs" tone="danger">

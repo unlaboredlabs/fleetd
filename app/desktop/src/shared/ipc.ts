@@ -167,7 +167,7 @@ export const McpServerRequest = z.strictObject({
   env: z.array(McpValueRequest).max(50),
   headers: z.array(McpValueRequest).max(50),
   boxes: z.array(z.strictObject({ machineId: z.string().min(1).max(64), boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u) })).max(500),
-  /** A Navi's integration: what the hub's tool policy reads its tools as. */
+  /** A project's integration: what the hub's tool policy reads its tools as. */
   integration: z
     .strictObject({
       readTools: z
@@ -179,7 +179,7 @@ export const McpServerRequest = z.strictObject({
 });
 export type McpServerRequest = z.infer<typeof McpServerRequest>;
 /**
- * The person's own OAuth client for an MCP server whose service lets no app register itself (a Navi's Integrations):
+ * The person's own OAuth client for an MCP server whose service lets no app register itself (a project's Integrations):
  * main seals `clientSecret` to `boxPubKey`, the hub's own key from mcp_oauth_start's needsClient, and calls
  * mcp_oauth_start with the client. The hub gets the box, never the secret. No secret: a public client.
  */
@@ -193,11 +193,11 @@ export const McpOauthClientRequest = z.strictObject({
 });
 export type McpOauthClientRequest = z.infer<typeof McpOauthClientRequest>;
 /**
- * A link key pasted into a Navi's Linked hubs (Settings › Projects): main seals `key` to `boxPubKey`, the hub's own key
+ * A link key pasted into a project's Linked hubs (Settings › Projects): main seals `key` to `boxPubKey`, the hub's own key
  * from hub_links_get, and calls hub_link_add. The hub gets the box, never the key, and nothing returns it.
  */
 export const HubLinkRequest = z.strictObject({
-  navi: z.strictObject({ machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) }),
+  project: z.strictObject({ machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) }),
   label: z.string().trim().min(1).max(40),
   url: z.string().trim().min(1).max(2048),
   boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),
@@ -243,11 +243,11 @@ export const OnePasswordRequest = z.strictObject({ token: z.string().min(1).max(
 export type OnePasswordRequest = z.infer<typeof OnePasswordRequest>;
 
 /**
- * A Navi's Telegram bot token (its settings › Telegram): main seals it to the Navi's machine in `box` and calls
+ * A project's Telegram bot token (its settings › Telegram): main seals it to the project's machine in `box` and calls
  * telegram_set. The hub gets the box, never the value.
  */
 export const TelegramRequest = z.strictObject({
-  navi: z.strictObject({ machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) }),
+  project: z.strictObject({ machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) }),
   token: z.string().min(1).max(SECRET_MAX_BYTES),
   box: z.strictObject({ machineId: z.string().min(1).max(64), boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u) }),
 });

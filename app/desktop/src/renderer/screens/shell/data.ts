@@ -1,12 +1,12 @@
-// The sidebar's projects, from the data layer, the Navis first (navi/model.ts), each section in your order
-// (yourOrder.ts): the project list (needs-you and agents at work), the open requests (what a lead waits on you for),
+// The sidebar's projects, from the data layer, in your order (yourOrder.ts; the ones it doesn't name yet after, your
+// Only-me ones first, projects/model.ts), archived ones left out: the project list (needs-you and agents at work), the open requests (what a lead waits on you for),
 // Status's rows (what is blocked, what is red on main) and what you last saw in each chat. Offline, the projects held
 // from before, with their marks as last known (the open requests the store keeps).
 import { useEffect, useMemo } from "react";
 import { hubKey, useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { markSeen, useSeen } from "../../src/data/seen";
 import { selectShownProjects } from "../../src/data/selectors";
-import { sidebarOrder } from "../navi/model";
+import { sidebarOrder } from "../projects/model";
 import { projectId, toSidebar, type SidebarProject } from "./model";
 import type { ProjectKey } from "./routes";
 import { ordered, useYourOrder } from "./yourOrder";
@@ -51,7 +51,7 @@ export const useSidebarProjects = (open: ProjectKey | null): ReadonlyArray<Sideb
   }, [rows, openKey, seen, hub]);
   return useMemo(() => {
     const shown = toSidebar(rows, { requests, blocked, warnings, seen, open });
-    return shown === undefined ? undefined : sidebarOrder(ordered(shown, order));
+    return shown === undefined ? undefined : ordered(sidebarOrder(shown), order);
   }, [rows, requests, blocked, warnings, seen, open, order]);
 };
 

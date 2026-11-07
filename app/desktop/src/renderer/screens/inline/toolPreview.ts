@@ -19,7 +19,7 @@ export const actionWords = (action: ToolAction): string =>
             ? "Confirms"
             : "Changes";
 
-/** Where the act happens, after the kicker's verb: a Navi's final click is on a site; anything else, an MCP server. */
+/** Where the act happens, after the kicker's verb: a final click is on a site; anything else, an MCP server. */
 export const actionPlace = (p: ToolPreview): string => (p.action === "confirm" ? "on a site" : "MCP server");
 
 /** The one amber or red word, for what needs a second look. */
@@ -40,7 +40,7 @@ export const answerWords = (action: ToolAction): { readonly yes: string; readonl
             ? { yes: "Click it", no: "Don't click" }
             : { yes: "Do it", no: "Don't" };
 
-/** A Navi's final click on a site (`confirm_step`): the site and the button, read from what it runs with. */
+/** A final click on a site (`confirm_step`): the site and the button, read from what it runs with. */
 export const confirmStep = (p: ToolPreview): { readonly site: string; readonly button: string } => {
   try {
     const input = JSON.parse(p.input) as { site?: unknown; button?: unknown };
@@ -63,7 +63,7 @@ const ACT_WORDS: Readonly<Record<ToolAction, string>> = { send: "a send", write:
 
 /**
  * The line an answered card folds to: what the person decided ("Approved: a send"), or undefined while it waits. Never "Sent": the hub knows the answer, not the tool's result, and the tool may still
- * refuse or fail. What happened then is in the Navi's chat.
+ * refuse or fail. What happened then is in the project's chat.
  */
 export const previewOutcome = (p: ToolPreview, item: CommandApprovalItem): Outcome | undefined => {
   // Its act, not the tool's name: a name is a slug, which the open card shows as code.

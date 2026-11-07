@@ -14,7 +14,7 @@ import { Exact, HiddenWarning, marks } from "./Exact";
 import { patchLocal, useLocal, type Failed } from "./local";
 import { prose } from "./prose";
 import { Media } from "../chat/blocks/Media";
-import { cardLabel, money, payQuestion, totalWords } from "./purchase";
+import { cardLabel, money, payQuestion, totalWords } from "../projects/payments";
 import { actionPlace, actionWarning, actionWords, answerWords, blockedWords, confirmStep, confirmWords } from "./toolPreview";
 import {
   approvalOffline,
@@ -120,7 +120,7 @@ const useSent = <T extends { readonly state: string }>(key: string, item: T, rea
 /** Every request the hub holds, newest first; one read shared by all the items, refetched on request.* events. */
 const REQUESTS = { limit: 100 } as const;
 
-/** `asker`: the Navi's name, for an integration's card ("Ada wants to send an email"). */
+/** `asker`: the project's name, for an integration's card ("Ada wants to send an email"). */
 export function InlineChatItem({ item: posted, asker }: { item: ChatItem; asker?: string | undefined }) {
   const requests = useToolQuery("requests_list", REQUESTS);
   const listed = requests.data?.requests.find((r) => r.requestId === posted.requestId);
@@ -142,7 +142,7 @@ function OfflineLine({ text }: { text: string }) {
 }
 
 /** An answered item's one line: what happened, then what it was about; a click opens the whole card. */
-/** `site`: the real domain a purchase or a secure input fills on, shown as written beside the name the Navi gave it. */
+/** `site`: the real domain a purchase or a secure input fills on, shown as written beside the name the lead gave it. */
 function Folded({ outcome, about, site, open, onToggle, focus, onFocused }: { outcome: Outcome; about: string; site?: string | undefined; open: boolean; onToggle: () => void; focus: boolean; onFocused: () => void }) {
   const button = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
@@ -275,7 +275,7 @@ function SecretItem({ item, read, asker }: { item: SecretRequestItem; read: numb
         </InlineCode>
       </div>
       <Text as="p" strong className={cx(s.title)}>
-        {input === undefined ? prose(item.text) : marks(`${asker ?? "Navi"} needs ${input.label} for ${input.site.name}`)}
+        {input === undefined ? prose(item.text) : marks(`${asker ?? "The lead"} needs ${input.label} for ${input.site.name}`)}
       </Text>
       {input === undefined ? null : (
         <Text as="p" size="sm" className={cx(s.line)}>
@@ -325,7 +325,7 @@ function SecretItem({ item, read, asker }: { item: SecretRequestItem; read: numb
           <Text as="p" size="xs" tone="quiet" className={cx(s.line)}>
             {input === undefined
               ? `Sealed on this computer to ${target.machine}'s key, so only ${target.machine} can open it. fleetd never shows it again. To skip it, say so in the chat.`
-              : `Sealed on this computer to ${target.machine}'s key. fleetd types it into the field once; ${asker ?? "Navi"} never sees it. To skip it, say so in the chat.`}
+              : `Sealed on this computer to ${target.machine}'s key. fleetd types it into the field once, and it never goes in the chat. To skip it, say so in the chat.`}
           </Text>
         </>
       )}
@@ -370,7 +370,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
   const offline = approvalOffline(shown.state, live);
   const { gated, permission, purchase, secureInput } = item;
   const preview = permission?.preview;
-  // The Navi's approval checker judged it first: why it asks, or why it refused it (the person may approve it anyway).
+  // The approval checker judged it first: why it asks, or why it refused it (the person may approve it anyway).
   const checker = permission?.checker;
   const blocked = checker?.verdict === "block";
   const warning = blocked ? { text: "Blocked by the checker", tone: "danger" as const } : preview === undefined ? undefined : actionWarning(preview.action);
@@ -428,7 +428,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
   };
 
   const destructive = blocked || gated?.class === "irreversible" || preview?.action === "delete" || preview?.action === "spend" || purchase !== undefined;
-  const navi = asker ?? "Navi";
+  const who = asker ?? "The lead";
   return (
     <Shell ref={section} label={purchase !== undefined ? "Purchase to approve" : secureInput !== undefined ? "Secure input to approve" : "Command to approve"} requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} site={(purchase?.shop ?? secureInput?.site)?.domain} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
       <div className={s.head}>
@@ -461,15 +461,15 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
       </div>
       <Text as="p" strong className={cx(s.title)}>
         {purchase !== undefined
-          ? marks(`${navi} wants to pay ${totalWords(purchase.total)} at ${purchase.shop.name}`)
+          ? marks(`${who} wants to pay ${totalWords(purchase.total)} at ${purchase.shop.name}`)
           : secureInput !== undefined
-          ? marks(`${navi} wants to fill ${secureInput.label} for ${secureInput.site.name} from 1Password`)
+          ? marks(`${who} wants to fill ${secureInput.label} for ${secureInput.site.name} from 1Password`)
           : gated !== undefined
             ? prose(gated.reason)
             : preview?.action === "confirm"
               ? (
                   <>
-                    {marks(`${asker ?? "Navi"} wants to click “${confirmStep(preview).button}” on `)}
+                    {marks(`${who} wants to click “${confirmStep(preview).button}” on `)}
                     <InlineCode>
                       <Exact text={confirmStep(preview).site} ltr />
                     </InlineCode>
@@ -478,7 +478,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
             : preview !== undefined
               ? (
                   <>
-                    {marks(`${asker ?? "Navi"} wants to use `)}
+                    {marks(`${who} wants to use `)}
                     <InlineCode>
                       <Exact text={preview.tool} ltr />
                     </InlineCode>
@@ -515,7 +515,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
       />
       {checker === undefined ? null : (
         <Text as="p" size="sm" tone={blocked ? "danger" : "quiet"} className={cx(s.line)} data-checker={checker.verdict}>
-          {prose(blocked ? `The checker refused it: ${sentence(checker.reason)} Approve it anyway and ${asker ?? "Navi"} runs exactly this, once.` : `The checker asks you: ${checker.reason}`)}
+          {prose(blocked ? `The checker refused it: ${sentence(checker.reason)} Approve it anyway and ${asker ?? "the lead"} runs exactly this, once.` : `The checker asks you: ${checker.reason}`)}
         </Text>
       )}
       {permission?.screenshot === undefined ? null : <Media media={{ attachmentId: permission.screenshot, caption: "What the page shows" }} clip={false} />}
@@ -551,7 +551,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
               <InlineCode>
                 <Exact text={purchase.shop.domain} ltr />
               </InlineCode>
-              {` · with ${cardLabel(purchase.card)} from 1Password. fleetd fills the card into this checkout once; ${navi} never sees it.`}
+              {` · with ${cardLabel(purchase.card)} from 1Password. fleetd fills the card into this checkout once, and it never goes in the chat.`}
             </Text>
           </>
         ) : null}
@@ -566,7 +566,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
               <InlineCode>
                 <Exact text={secureInput.site.domain} ltr />
               </InlineCode>
-              {`. fleetd fills it once; ${navi} never sees it.`}
+              {`. fleetd fills it once, and it never goes in the chat.`}
             </Text>
           </>
         ) : null}

@@ -1,6 +1,6 @@
 // Memory, as the plain text files the hub keeps (D212): a project's MEMORY.md and the topic files it lists, on its
 // Instructions & memory, which only its sessions get; your own memory, on You › Your memory, which only the agents of
-// work you start and your Navi read, and only you edit; and the hub's old shared user.md, read by no agent now, on Hub ›
+// work you start and your Only-me projects read, and only you edit; and the hub's old shared user.md, read by no agent now, on Hub ›
 // Every project › Instructions & memory for an owner or admin to read and retire. The lead writes with `remember`; here a person reads each file as a list of entries (one card per line, with where and when the lead
 // remembered it when the hub knows), edits or deletes one (its buttons, or its right-click menu), and undoes a delete
 // from its toast. "Edit as text" is the whole file in a textarea. Every change is the file's new text through
@@ -133,7 +133,7 @@ export function Memory({ project }: { project: Scope | null }) {
 }
 
 /**
- * You › Your memory: how you work, as the leads remember it. The agents of work you start and your Navi read it; only
+ * You › Your memory: how you work, as the leads remember it. The agents of work you start and your Only-me projects read it; only
  * you edit it (memory_set at user scope writes the caller's own). On a hub with no people it is the hub's one user.md.
  */
 export function YourMemory() {
@@ -151,7 +151,7 @@ export function YourMemory() {
       </div>
       <MemoryGroup
         label="Your memory"
-        help="Read by the agents of work you start and by your Navi. Nobody else reads or edits it."
+        help="Read by the agents of work you start and by your Only-me projects. Nobody else reads or edits it."
         name="your memory"
         file={read.data?.user}
         query={query}

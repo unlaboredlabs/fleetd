@@ -1,4 +1,4 @@
-/* A Navi's Skills: groups under a quiet heading, a skill a row apart by space; one skill's head, its toolbar, then its
+/* A project's Skills: groups under a quiet heading, a skill a row apart by space; one skill's head, its toolbar, then its
    SKILL.md or its history, each version a row apart by a hairline. No cards, no coloured edges (ui/DESIGN.md). */
 .screen {
   --pad: var(--space-4);

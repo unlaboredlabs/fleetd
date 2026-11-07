@@ -50,7 +50,7 @@ import s from "./addMachine.module.css";
 const MAC_LINE = "A dedicated Mac every project's agents use for builds and iOS simulators, in a standard user of its own: never a runner.";
 
 const MAC_HEAD =
-  "Its fleetd runs in a standard user of its own, fleetd agents, which holds none of your accounts or keys: it runs no claude and no Navi, and takes no secret. Paste the first part in your own account, then log in as fleetd agents.";
+  "Its fleetd runs in a standard user of its own, fleetd agents, which holds none of your accounts or keys: it runs no claude and no lead, and takes no secret. Paste the first part in your own account, then log in as fleetd agents.";
 
 export type View =
   | { readonly kind: "choose" }

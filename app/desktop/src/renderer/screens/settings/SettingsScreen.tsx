@@ -106,7 +106,7 @@ function Hubs() {
   return (
     <div className={s.scroll} data-screen="settings.hubs">
       <div className={s.column}>
-        <PageHead title="Hubs">The hubs this app is paired with, and the links that let a Navi on another hub act as you.</PageHead>
+        <PageHead title="Hubs">The hubs this app is paired with, and the links that let a project on another hub act as you.</PageHead>
         <HubsSettings />
         <HubLinksSettings />
       </div>

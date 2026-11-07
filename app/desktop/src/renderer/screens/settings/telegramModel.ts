@@ -1,4 +1,4 @@
-// A Navi's Telegram setup (Telegram.tsx), as plain functions: which step the person is on, the names to give
+// A project's Telegram setup (Telegram.tsx), as plain functions: which step the person is on, the names to give
 // @BotFather, and the bridge's status in words.
 import type { TelegramBridge } from "../../../shared/contracts";
 
@@ -16,7 +16,7 @@ export const stepOf = (bridge: TelegramBridge | undefined): TelegramStep => {
 };
 
 /**
- * A username to ask @BotFather for: the Navi's name in Telegram's letters, ending in `bot` as Telegram wants, 5 to 32
+ * A username to ask @BotFather for: the project's name in Telegram's letters, ending in `bot` as Telegram wants, 5 to 32
  * characters. "Ada" → ada_fleetd_bot.
  */
 export const suggestedUsername = (title: string): string => {
@@ -27,7 +27,7 @@ export const suggestedUsername = (title: string): string => {
     .replace(/[^a-z0-9]+/gu, "_")
     .replace(/^_+|_+$/gu, "")
     .replace(/^[0-9_]+/u, "");
-  const head = (base === "" ? "navi" : base).slice(0, 21).replace(/_+$/u, "");
+  const head = (base === "" ? "project" : base).slice(0, 21).replace(/_+$/u, "");
   return `${head}_fleetd_bot`;
 };
 
@@ -43,7 +43,7 @@ const clock = (at: string | undefined): string | undefined => {
 export const statusWords = (bridge: TelegramBridge, machine: string): StatusWords => {
   if (bridge.offline === true) return { tone: "quiet", word: "Offline", line: `${machine} is offline: nothing goes through until it's back.` };
   const status = bridge.status;
-  if (bridge.paused || status?.state === "paused") return { tone: "quiet", word: "Paused", line: "Nothing is read or sent until you resume. What Navi says meanwhile stays here." };
+  if (bridge.paused || status?.state === "paused") return { tone: "quiet", word: "Paused", line: "Nothing is read or sent until you resume. What the lead says meanwhile stays here." };
   if (status === undefined) return { tone: "quiet", word: "Starting" };
   const error = status.error?.trim().replace(/\.$/u, "");
   switch (status.state) {
