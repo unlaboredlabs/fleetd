@@ -177,6 +177,30 @@ export default defineGroup({
         return f;
       })(),
       everything("refused", "Update pressed with a key that isn't Admin everywhere: the hub's words and fix.", () => null),
+      // W469: Update automatically on, on Hub › Updates and in the sheet: the last update it made, and the ready build it
+      // installs next and when; and one holding back, its last update partial, with why and its next look.
+      (() => {
+        const f = withHub("auto-on", "Update automatically on: its last update, and the ready build it installs next and when.", OLDER, { release: { ...RELEASE, cli: NEXT } });
+        f.answer("hub_update_status", {}, {
+          ready: NEXT,
+          settings: { auto: true, drainMinutes: 10 },
+          autoAt: "2026-10-19T10:30:00.000Z",
+          lastAuto: { at: "2026-10-19T09:00:00.000Z", to: OLDER, result: "done" },
+          nextCheck: "2026-10-19T10:10:00.000Z",
+        });
+        return f;
+      })(),
+      (() => {
+        const f = withHub("auto-held", "Update automatically holding back: its last update partial, why it waits, and its next look.", OLDER, { release: { ...RELEASE, cli: NEXT } });
+        f.answer("hub_update_status", {}, {
+          ready: NEXT,
+          settings: { auto: true, drainMinutes: 10 },
+          lastAuto: { at: "2026-10-19T09:00:00.000Z", to: OLDER, result: "partial", message: "mac1 was offline, so it kept its build." },
+          nextCheck: "2026-10-19T10:10:00.000Z",
+          skipReason: "An update someone started is still running.",
+        });
+        return f;
+      })(),
       make("idle", "Not checked yet (just started).", { kind: "idle" }, null),
       make("checking", "A check someone asked for, under way.", { kind: "checking" }, null),
       make("unsupported", "A development or test build, which doesn't update itself.", { kind: "unsupported" }, null),

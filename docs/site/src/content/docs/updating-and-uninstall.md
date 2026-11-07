@@ -46,7 +46,7 @@ the new build.
 The 10 minutes are `drainMinutes` in `~/.fleetd/hub/update/settings.json` (`{"drainMinutes": 20}`; `0` doesn't wait),
 read at each update.
 
-**Update automatically**, in Settings › Hub › Machines › Updates (`"auto": true` in the same file), is off by default.
+**Update automatically**, in Settings › Hub › Updates and in the update sheet (`"auto": true` in the same file), is off by default.
 On, the hub installs a new build by itself, at most once an hour: an hour after the last update started (yours or its
 own), it updates to the channel's newest build, so builds that came out in between install once, as the newest. It waits
 for agents as **Update** does; **Update now** works on it too. A build the hub didn't come up healthy on, and put back,

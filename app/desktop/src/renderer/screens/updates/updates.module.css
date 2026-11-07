@@ -150,6 +150,30 @@
   min-width: 0;
 }
 
+/* Update automatically: its switch, then its status lines under the switch's words. */
+.auto {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.status {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px var(--space-3);
+  margin: var(--space-1) 0 0;
+  /* The switch's width and gap: the rows start where its words do. */
+  padding: 0 0 0 calc(28px + var(--space-2));
+  list-style: none;
+}
+/* A row is its label and its value, in the grid's two columns; the off line spans both. */
+.status > li {
+  display: contents;
+}
+.status > li > :only-child {
+  grid-column: 1 / -1;
+}
+
 /* The sidebar's update pill (UpdatesLine.tsx), at the end of the hub's row: in the update's tone on a faint wash of it. */
 .pill {
   flex: none;

@@ -92,7 +92,9 @@ const render = async (hash: string, admin: boolean) => {
       const output =
         tool === "hub_info"
           ? { version: "0.9.0", protocol: 1, busy: [], admin, me: { personId: "p_aaaaaaaa", name: "Sam", role: admin ? "owner" : "member", createdAt: AT } }
-          : undefined;
+          : tool === "people_list"
+            ? { people: [{ personId: "p_bbbbbbbb", name: "Ana", role: "owner", createdAt: AT }] }
+            : undefined;
       return Promise.resolve(output === undefined ? { ok: false, error: { code: "not_found", message: `${tool} isn't faked` } } : { ok: true, output });
     },
     subscribe: (l) => ((listener = l), () => undefined),
@@ -197,7 +199,7 @@ it("shows a project's prompts under its Prompts, with no picker of its own", asy
   expect(group?.querySelector("#settings-project")?.textContent).toContain("storefront");
 });
 
-it("says which fleetd this app runs, with Check for updates, and the hub's standing in one read-only line; the update itself is on Hub › Machines", async () => {
+it("says which fleetd this app runs, with Check for updates, and the hub's standing in one read-only line; the update itself is on Hub › Updates", async () => {
   await render("#/settings/general", false);
   const part = host.querySelector<HTMLElement>("[data-part='general.updates']");
   expect(part).not.toBeNull();
@@ -210,6 +212,8 @@ it("says which fleetd this app runs, with Check for updates, and the hub's stand
   expect(part?.querySelector("[data-updates-row='devbox']")).toBeNull();
   expect(part?.textContent).not.toContain("Update…");
   expect(part?.textContent).not.toContain("Open updates…");
+  // …and is told whom to ask.
+  expect(part?.querySelector("[data-auto-updates='member']")?.textContent).toContain("ask Ana.");
   expect([...host.querySelectorAll("[data-part]")].map((p) => p.getAttribute("data-part"))).toContain("notifications");
 
   act(() => root.unmount());
@@ -217,9 +221,10 @@ it("says which fleetd this app runs, with Check for updates, and the hub's stand
   await render("#/settings/general", true);
   const mine = host.querySelector<HTMLElement>("[data-part='general.updates']");
   expect(mine?.textContent).not.toContain("Open updates…");
-  await click(button("Updates in Hub › Machines", mine ?? document));
-  expect(window.location.hash).toBe("#/settings/hub/machines");
-  const updates = host.querySelector<HTMLElement>("[data-part='hub.updates']");
+  expect(mine?.querySelector("[data-auto-updates]")).toBeNull();
+  await click(button("Open Hub › Updates", mine ?? document));
+  expect(window.location.hash).toBe("#/settings/hub/updates");
+  const updates = host.querySelector<HTMLElement>("[data-screen='settings.hub.updates']");
   expect(updates?.querySelector("[data-updates-row='devbox']")).not.toBeNull();
   await click(button("Open updates…", updates ?? document));
   expect(host.querySelector("[data-sheet]")).not.toBeNull();

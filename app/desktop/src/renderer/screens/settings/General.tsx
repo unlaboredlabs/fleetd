@@ -7,6 +7,7 @@ import { isEdge } from "../../../shared/pairing";
 import { Button, Radio, RadioGroup, Switch, Text, THEME_MODES, useTheme } from "../../ui";
 import { useAdministers } from "../admin/role";
 import { navigate } from "../shell/navigation";
+import { AutoUpdates } from "../updates/AutoUpdates";
 import { useUpdatesView } from "../updates/hooks";
 import { hubStanding } from "../updates/model";
 import { runApp } from "../updates/UpdatesHost";
@@ -41,7 +42,7 @@ export function General() {
 
 /**
  * Which fleetd this app runs, with Check for updates, and one read-only line on the hub and its machines. Updating the
- * hub takes admin on every machine: its owners and admins do it in Hub › Machines › Updates.
+ * hub takes admin on every machine: its owners and admins do it in Hub › Updates; a member is told whom to ask.
  */
 function Versions() {
   const view = useUpdatesView();
@@ -61,12 +62,14 @@ function Versions() {
             <Line text={hub.text} />
           </Text>
           {administers ? (
-            <Button size="sm" variant="quiet" onClick={() => navigate({ id: "settings", tab: "hub.machines" })}>
-              Updates in Hub › Machines
+            <Button size="sm" variant="quiet" onClick={() => navigate({ id: "settings", tab: "hub.updates" })}>
+              Open Hub › Updates
             </Button>
           ) : null}
         </div>
       )}
+      {/* A member: whom to ask to update the hub or turn Update automatically on. */}
+      {hub === null || administers ? null : <AutoUpdates />}
     </PagePart>
   );
 }

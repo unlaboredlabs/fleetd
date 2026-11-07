@@ -1,6 +1,6 @@
 // The updates sheet's content, laid out from the view: one overall state with the Update button and what's new (or a
-// quiet Start over beside a run that stopped moving), one line per part (the hub, each machine, Claude Code, this app) with Retry on one that failed, and every part's steps
-// behind Details. Hairlines between lines, no boxes; still, never an animation.
+// quiet Start over beside a run that stopped moving), one line per part (the hub, each machine, Claude Code, this app) with Retry on one that failed,
+// Update automatically, and every part's steps behind Details. Hairlines between lines, no boxes; still, never an animation.
 import { ChevronRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button, copyText, InlineCode, Text } from "../../ui";
@@ -257,11 +257,13 @@ export interface SheetProps {
   readonly onUpdateNow: () => void;
   readonly onRetry: (retry: Retry) => void;
   readonly onApp: (action: AppAction) => void;
+  /** Update automatically, its switch and status (AutoUpdates.tsx), above Details. */
+  readonly auto?: ReactNode;
   /** Details shown at first; a test opens them. */
   readonly details?: boolean;
 }
 
-export function UpdatesSheet({ view, onUpdate, onStartOver, onUpdateNow, onRetry, onApp, details = false }: SheetProps) {
+export function UpdatesSheet({ view, onUpdate, onStartOver, onUpdateNow, onRetry, onApp, auto, details = false }: SheetProps) {
   const [open, setOpen] = useState(details);
   return (
     <div className={s.parts} data-screen="updates">
@@ -273,6 +275,7 @@ export function UpdatesSheet({ view, onUpdate, onStartOver, onUpdateNow, onRetry
           ))}
         </ul>
       )}
+      {auto}
       <div>
         <Button variant="quiet" aria-expanded={open} icon={<ChevronRight className={s.chevron} data-open={open} />} onClick={() => setOpen(!open)}>
           Details

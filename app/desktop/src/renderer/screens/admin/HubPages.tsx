@@ -1,16 +1,17 @@
 // Settings' Hub group (#/settings/hub/<page>, D211): the hub's owners' and admins' pages, in the Settings window and
 // shown to nobody else; the hub refuses anyone else's change too. People (roles, Invite someone and the invites open,
 // and every hub link); Machines (Add machine, the machines with Repair and Remove, each one's page with its checklist,
-// their roles, their screens, their caps, and Updates: each one's fleetd with Update…); Every project, laid out as a project's own pages are: Profiles, Tools & skills,
+// their roles, their screens and their caps); Updates (UpdatesPage.tsx: where the hub and each machine stand, Update now and
+// Update automatically); Every project, laid out as a project's own pages are: Profiles, Tools & skills,
 // Instructions & memory and Prompts, each reaching every project on the hub; Hub accounts (the hub's Claude API key
 // and its GitHub App, github/AdminGithub.tsx); and Setup, the hub's guided steps (setup/SetupScreen.tsx), listed only
 // while a required one is left. With several hubs the group manages
 // one hub at a time, named above every page, and switches between the hubs this person administers: nothing here acts
 // on a hub the page doesn't name.
 import { useState, type ReactNode } from "react";
-import { Button, Separator, SidebarItem, Switch, Text, Truncate, cx, toast } from "../../ui";
+import { Button, Separator, SidebarItem, Text, Truncate, cx } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
-import { useData, useDataLayer, useHub, useSeveralHubs } from "../../src/data/react";
+import { useData, useHub, useSeveralHubs } from "../../src/data/react";
 import { HUB_COLOR } from "../shell/hubColor";
 import { AddMachine, type View } from "../addMachine";
 import { HubCaps } from "../settings/Agents";
@@ -27,17 +28,13 @@ import { HubSkills } from "../settings/Skills";
 import { AdminGithub } from "../github/AdminGithub";
 import { progressLine, SetupSteps, useSetupSteps } from "../setup/SetupScreen";
 import { navigate } from "../shell/navigation";
-import { setAutoUpdates, useAutoUpdates } from "../updates/flow";
-import { useUpdatesView } from "../updates/hooks";
-import { autoWords } from "../updates/model";
-import { setUpdatesOpen } from "../updates/state";
-import { HubSection } from "../updates/UpdatesSheet";
 import type { HubTab } from "../shell/routes";
 import { ClaudeAdmin } from "./Claude";
 import { CloudPart } from "./Cloud";
 import { MachineList } from "./MachineList";
 import { MachinePage } from "./MachinePage";
 import { People } from "./People";
+import { UpdatesPage } from "./UpdatesPage";
 import { useAdministers, useHubRole, type HubRoleView } from "./role";
 import type { Person } from "../../../shared/contracts";
 import s from "../settings/settings.module.css";
@@ -115,6 +112,8 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
       return <People me={me} />;
     case "hub.machines":
       return route.machine === undefined ? <Machines /> : <MachinePage machineId={route.machine} />;
+    case "hub.updates":
+      return <UpdatesPage />;
     case "hub.profiles":
       return <Profiles />;
     case "hub.tools":
@@ -158,55 +157,8 @@ function Machines() {
           <HubCaps />
         </PagePart>
         <CloudPart />
-        <Updates />
       </div>
     </div>
-  );
-}
-
-/** Which fleetd the hub and each machine run, whether each is up to date, the updates sheet, whose Update runs on the
- * hub, and automatic updates (off by default). */
-function Updates() {
-  const view = useUpdatesView();
-  const layer = useDataLayer();
-  const { hub } = layer;
-  const auto = useAutoUpdates();
-  const [saving, setSaving] = useState(false);
-  const turn = async (on: boolean) => {
-    setSaving(true);
-    const refused = await setAutoUpdates(layer, on);
-    setSaving(false);
-    if (refused !== null) toast({ title: "Automatic updates didn't change", description: refused, tone: "danger" });
-  };
-  return (
-    <PagePart title="Updates" reveal="hub.updates">
-      {view.hub === null ? (
-        <Text size="sm" tone="quiet">
-          Connect to the hub to see its version and its machines&apos;.
-        </Text>
-      ) : (
-        <>
-          <HubSection part={view.hub} nodes={view.nodes} />
-          <div className={s.inline}>
-            <Button variant={view.update === null ? "secondary" : "primary"} onClick={() => setUpdatesOpen(true, hub)}>
-              {view.update === null ? "Open updates…" : "Update…"}
-            </Button>
-            <Text size="xs" tone="quiet">
-              Updates the hub, then every machine, then this app.
-            </Text>
-          </div>
-          {auto === null ? null : (
-            <Switch
-              label="Update automatically"
-              description={autoWords(auto.settings.drainMinutes, auto.at, auto.skips)}
-              checked={auto.settings.auto}
-              disabled={saving}
-              onCheckedChange={(on) => void turn(on)}
-            />
-          )}
-        </>
-      )}
-    </PagePart>
   );
 }
 

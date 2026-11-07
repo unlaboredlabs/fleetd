@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings' Hub group (D211): People, Machines, Every project (Profiles, Tools & skills, Instructions & memory,
+// Settings' Hub group (D211): People, Machines, Updates, Every project (Profiles, Tools & skills, Instructions & memory,
 // Prompts), Hub accounts, and Setup while required steps are left; machine roles and caps on Machines; Claude and
 // GitHub on Hub accounts with the way back into the guided setup; and the hub-wide instructions, MCP
 // servers, skills and prompts on Every project's pages, its prompts nested under its Prompts in the sidebar and saved
@@ -67,7 +67,7 @@ beforeEach(() => {
   vi.stubGlobal("fleetd", { platform: "linux", fixture: null, openExternal: () => Promise.resolve({ ok: true }), system: { hostName: () => Promise.resolve("devbox") },
     // Add machine, on Machines: this computer isn't one of the hub's, and nothing is joining.
     machines: { thisComputer: () => new Promise(() => undefined), joinHereState: () => new Promise(() => undefined), onJoinHere: () => () => undefined },
-    // Updates, on Machines: nothing to say.
+    // Updates: nothing to say.
     updates: { subscribe: () => () => undefined, state: () => new Promise(() => undefined) },
   });
   host = document.createElement("div");
@@ -161,7 +161,7 @@ it("nests Every project's pages, Setup last saying how many required steps are l
   window.location.hash = "#/settings/hub/people";
   await render(admin);
   const rows = [...(nav()?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim());
-  expect(rows).toEqual(["People", "Machines", "Every project", "Profiles", "Tools & skills", "Instructions & memory", "Prompts", "Hub accounts", "Setup2 left"]);
+  expect(rows).toEqual(["People", "Machines", "Updates", "Every project", "Profiles", "Tools & skills", "Instructions & memory", "Prompts", "Hub accounts", "Setup2 left"]);
   expect(nav()?.querySelector("[role='group'][aria-label='Prompts']")).toBeNull();
 
   await click(button("Every project", nav() ?? document));
@@ -177,7 +177,7 @@ it("puts machine roles, screens and caps on Machines, and the hub's Claude and G
   await render(admin);
   expect(host.querySelector("[data-screen='settings.hub.machines']")).not.toBeNull();
   expect(host.querySelector("#machine-roles")).not.toBeNull();
-  expect(parts()).toEqual(["hub.screens", "hub.caps", "hub.updates"]);
+  expect(parts()).toEqual(["hub.screens", "hub.caps"]);
 
   await click(button("Hub accounts", nav() ?? document));
   expect(host.querySelector("[data-screen='settings.hub.accounts']")).not.toBeNull();

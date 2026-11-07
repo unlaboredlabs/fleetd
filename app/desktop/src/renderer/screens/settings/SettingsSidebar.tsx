@@ -1,6 +1,6 @@
 // Settings in the sidebar's place: Back to where you were, a search field that narrows to an option by name, then
 // the three groups (D211). You: General, Your accounts, Your memory, Your devices, Hubs. Projects: the project picker and that project's pages,
-// with its prompts under Prompts. Hub, for the hub's owners and admins only: People, Machines, Every project's four
+// with its prompts under Prompts. Hub, for the hub's owners and admins only: People, Machines, Updates, Every project's four
 // pages (the hub-wide prompts under its Prompts), Hub accounts, and Setup while a required step is left, saying how
 // many. With several hubs the Hub group switches between the hubs this person administers.
 import {
@@ -8,6 +8,7 @@ import {
   BookText,
   Brain,
   Bot,
+  CircleArrowUp,
   FolderGit2,
   KeyRound,
   Layers,
@@ -202,6 +203,7 @@ function HubGroup({ route }: { route: SettingsRoute }) {
       ) : null}
       {row("hub.people", <Users />)}
       {row("hub.machines", <Server />)}
+      {row("hub.updates", <CircleArrowUp />)}
       <div role="group" aria-label="Every project" className={s.navGroup}>
         <SidebarItem label="Every project" icon={<Layers />} current={false} onClick={() => open(isEveryProject(route.tab) ? route.tab : "hub.profiles")} />
         {EVERY_PROJECT.map((tab) => (
