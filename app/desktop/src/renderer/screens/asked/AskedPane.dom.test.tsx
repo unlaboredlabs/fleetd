@@ -1,0 +1,153 @@
+// @vitest-environment happy-dom
+// Asked work, in a project's panel: each ask a row that opens to its words and its orders, with no fleetd ids.
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { FleetStatus, NaviAsksOutput, ProjectSummary } from "../../../shared/contracts";
+import type { CallOutcome, HubFrame } from "../../../shared/hub";
+import { createDataLayer, type HubApi } from "../../src/data/queries";
+import { DataProvider } from "../../src/data/react";
+import { AT, live } from "../../src/data/fixtures.test-util";
+import { UiProvider } from "../../ui";
+import { orderHref } from "../automations/model";
+import { PROJECT_TOOLS } from "../projects/model";
+import { AskedPane } from "./AskedPane";
+
+const went = vi.hoisted(() => [] as unknown[]);
+vi.mock("../shell/navigation", () => ({ navigate: (s: unknown) => went.push(s) }));
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const summary = (title: string, extra: Partial<ProjectSummary> = {}): ProjectSummary => ({
+  machineId: "devbox",
+  projectId: title.toLowerCase(),
+  title,
+  workspaceRoot: `/home/dev/${title.toLowerCase()}`,
+  lastActivityAt: AT,
+  threads: { running: 0, waiting: 0, idle: 0, failed: 0 },
+  ...extra,
+});
+const STOREFRONT = summary("storefront");
+const ADA = summary("Ada", { onlyMe: true });
+
+const snapshot = (cursor: number, projects: ProjectSummary[]): HubFrame => {
+  const snap: FleetStatus = {
+    cursor,
+    attention: [],
+    machines: [{ machineId: "devbox", name: "devbox", nodeVersion: "1", status: "online", lastSeenAt: AT, tags: [] }],
+    projects,
+  };
+  return { t: "snapshot", snapshot: snap };
+};
+
+let host: HTMLDivElement;
+let root: Root;
+beforeEach(() => {
+  went.length = 0;
+  host = document.createElement("div");
+  document.body.appendChild(host);
+  root = createRoot(host);
+});
+afterEach(() => {
+  act(() => root.unmount());
+  host.remove();
+});
+
+const settle = async () => {
+  for (let i = 0; i < 6; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
+};
+
+const mount = async (ui: React.ReactNode, projects: ProjectSummary[], answer: (tool: string, input: unknown) => CallOutcome | undefined = () => undefined, features?: string[]) => {
+  let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
+  const calls: { tool: string; input: unknown }[] = [];
+  const hub: HubApi = {
+    call: (tool, input) => {
+      calls.push({ tool, input });
+      return Promise.resolve(answer(tool, input) ?? { ok: true, output: {} });
+    },
+    subscribe: (l) => ((send = l), () => undefined),
+    resync: () => (calls.push({ tool: "resync", input: undefined }), Promise.resolve()),
+    focus: () => Promise.resolve(),
+    chat: () => Promise.resolve(),
+  };
+  act(() => {
+    root.render(
+      <UiProvider>
+        <DataProvider layer={createDataLayer(hub)}>{ui}</DataProvider>
+      </UiProvider>,
+    );
+  });
+  act(() => {
+    send(live(features));
+    send(snapshot(1, projects));
+  });
+  await settle();
+  return { calls, send: (f: HubFrame) => act(() => send(f)) };
+};
+
+const screen = () => host.querySelector("[data-screen]")?.getAttribute("data-screen");
+const buttons = () => [...host.querySelectorAll("button")].map((b) => b.textContent.trim());
+const button = (name: string): HTMLButtonElement => {
+  const b = [...host.querySelectorAll("button")].find((x) => x.textContent.trim() === name);
+  if (b === undefined) throw new Error(`no button ${name} in: ${buttons().join(" | ")}`);
+  return b;
+};
+
+const READ: NaviAsksOutput = {
+  navi: { machineId: "devbox", projectId: "ada" },
+  asks: [
+    {
+      handle: "N4",
+      to: { machineId: "devbox", projectId: "billing" },
+      toTitle: "billing",
+      text: "Is the usage report ready?",
+      at: AT,
+      orders: [],
+    },
+    {
+      handle: "N3",
+      to: { machineId: "devbox", projectId: "storefront" },
+      toTitle: "storefront",
+      text: "Let people save their cart.",
+      at: AT,
+      orders: [
+        { workstreamId: "W12", title: "Saved carts", state: "open", headline: "A writer adds the table." },
+        { workstreamId: "W9", title: "Cart cleanup", state: "done", headline: "Merged #40." },
+      ],
+    },
+  ],
+};
+
+describe("Asked work", () => {
+  it("reads this project's asks and shows each ask as a row that opens to its words and orders, with no ids", async () => {
+    const { calls } = await mount(<AskedPane project={{ machineId: "devbox", projectId: "ada" }} />, [STOREFRONT, ADA], (tool) => (tool === PROJECT_TOOLS.asks ? { ok: true, output: READ } : undefined));
+    expect(calls).toContainEqual({ tool: PROJECT_TOOLS.asks, input: { navi: { machineId: "devbox", projectId: "ada" } } });
+    expect(screen()).toBe("asked");
+    expect([...host.querySelectorAll("[data-ask]")].map((a) => a.getAttribute("data-ask"))).toEqual(["N4", "N3"]);
+    // Closed: the ask in a line, its chip, the project; no order yet is Waiting.
+    const waiting = host.querySelector("[data-ask=N4]");
+    expect(waiting?.getAttribute("data-state")).toBe("waiting");
+    expect(waiting?.textContent).toContain("Is the usage report ready?Waitingbilling");
+    const ask = host.querySelector("[data-ask=N3]");
+    const row = ask?.querySelector("button[aria-expanded]");
+    expect(row?.getAttribute("aria-expanded")).toBe("false");
+    expect(ask?.textContent).toContain("Let people save their cart.Workingstorefront");
+    expect(ask?.textContent).not.toContain("Saved carts");
+    // Open: the orders by title, each linked to its page, the open one with its headline; a finished one without.
+    act(() => (row as HTMLButtonElement).click());
+    expect(row?.getAttribute("aria-expanded")).toBe("true");
+    const links = [...(ask?.querySelectorAll("a") ?? [])].map((a) => [a.textContent, a.getAttribute("href")]);
+    expect(links).toEqual([
+      ["Saved carts", orderHref("W12")],
+      ["Cart cleanup", orderHref("W9")],
+    ]);
+    expect(ask?.textContent).toContain("Saved cartsWorking");
+    expect(ask?.textContent).toContain("A writer adds the table.");
+    expect(ask?.textContent).toContain("Cart cleanupDone");
+    expect(ask?.textContent).not.toContain("Merged #40.");
+    expect(host.textContent).not.toMatch(/\b[WN]\d+\b/u);
+    act(() => button("storefront").click());
+    expect(went).toEqual([{ id: "project", project: { machineId: "devbox", projectId: "storefront" }, message: null }]);
+  });
+
+});

@@ -1,6 +1,6 @@
 // A file in a message as a card: its kind's glyph, name, kind and size, with Open (in this computer's app for its
 // type) and Save. Main reads the file from the hub for either (main/files.ts), so a large one never loads into the
-// page. A Navi's `file` block, and any file a message carries that isn't an image.
+// page. A lead's `file` block, and any file a message carries that isn't an image.
 import { Download, File, FileArchive, FileImage, FileSpreadsheet, FileText, Presentation, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { glyphOf, kindOf, type FileGlyph } from "../../../../shared/files";

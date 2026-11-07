@@ -149,7 +149,7 @@ const view = (artifact: string | null, version?: number) => <ArtifactsTabView pr
 
 it("gives the panel an Artifacts section once the hub serves it", async () => {
   await mount(<ProjectPanel project={SHOP} view={{ tab: "artifacts", artifact: null }} onWide={() => undefined} />);
-  expect([...host.querySelectorAll("[data-section]")].map((t) => t.getAttribute("data-section"))).toEqual(["agents", "shipping", "plan", "artifacts", "history"]);
+  expect([...host.querySelectorAll("[data-section]")].map((t) => t.getAttribute("data-section"))).toEqual(["agents", "shipping", "plan", "skills", "artifacts", "history"]);
   act(() => root.unmount());
   root = createRoot(host);
   await mount(<ProjectPanel project={SHOP} view={{ tab: "checklist" }} onWide={() => undefined} />, []);

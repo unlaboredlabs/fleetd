@@ -446,7 +446,7 @@ describe("an integration's approval", () => {
     const hub = await render("Q12");
     const text = host.textContent;
     expect(text).toContain("Sends · MCP server");
-    expect(text).toContain("Navi wants to use send_message on crm");
+    expect(text).toContain("The lead wants to use send_message on crm");
     // The tool and the server are names, shown as code.
     expect([...host.querySelectorAll("code")].map((c) => c.textContent)).toEqual(expect.arrayContaining(["send_message", "crm"]));
     const everything = one("details");

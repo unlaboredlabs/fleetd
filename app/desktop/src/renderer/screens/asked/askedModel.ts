@@ -1,10 +1,10 @@
-// A Navi's Asked tab as rows: each message it sent another project's lead (navi_asks), said in a short line, with how
+// A project's Asked tab as rows: each message its lead sent another project's lead (project_asks), said in a short line, with how
 // its order is going as one word and whether its lead folded it into the order of an earlier ask. Pure, so it is
 // unit-tested. No fleetd ids: an order is its title.
 import type { NaviAsk, NaviAskOrder } from "../../../shared/contracts";
 import type { StatusTone } from "../../ui";
 
-/** One message the Navi sent another project's lead (project_message), and the orders that lead opened for it. */
+/** One message the lead sent another project's lead (project_message), and the orders that lead opened for it. */
 export type Ask = NaviAsk;
 
 export type AskedOrder = NaviAskOrder;
@@ -30,9 +30,10 @@ export const askState = (orders: readonly AskedOrder[]): AskState => {
   return (["working", "merged", "done", "stopped"] as const).find((s) => states.includes(s)) ?? "waiting";
 };
 
-// What a Navi says before the person's words when it passes them on ("From the person, relayed by their Navi (their
-// words: "…"): …"): every ask would open the same way, so the summary starts after it.
-const RELAYED = /^from (?:the person|your person|[^\s,:]+),? (?:relayed|passed on|forwarded) by (?:their|the|your) navi\s*(?:\((?:in )?their words:\s*|:\s*)?/iu;
+// What a lead says before the person's words when it passes them on ("From the person, relayed by their lead (their
+// words: "…"): …"), and what older asks said ("…by their Navi"): every ask would open the same way, so the summary
+// starts after it.
+const RELAYED = /^from (?:the person|your person|[^\s,:]+),? (?:relayed|passed on|forwarded) by (?:their|the|your) (?:lead|navi)\s*(?:\((?:in )?their words:\s*|:\s*)?/iu;
 
 /** The ask in a line: its first line, past a relay preamble; one that quotes the person, their quoted words. The row
  * clamps it to two lines. */

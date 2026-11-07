@@ -3,8 +3,8 @@
 // gated command), and the composer, which has the cursor as soon as the chat opens, with the live strip docked to its
 // top. The top bar says what needs you after the title (what the lead waits on you for, a block, what there is to look
 // at, a red main), and is just the title when nothing does; an empty chat asks what to do. It opens where you stopped
-// reading, under a "New" divider. A Navi's chat is the same screen as an assistant's: its name in the box, an
-// assistant's starters, and its settings (where its connections are) a click away in the title.
+// reading, under a "New" divider. Its settings (where its connections, sign-ins and approvals are) are a click away in
+// the title; your own (Only me) project with no repo has its name in the box and everyday starters, not a codebase's.
 import { Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
@@ -27,7 +27,7 @@ import { ChatComposer } from "./Composer";
 import type { ProjectRef } from "./slots";
 import { useAsOfWords } from "../shell/offline";
 import { navigate } from "../shell/navigation";
-import { isNavi } from "../navi/model";
+import { hasRepos, isOnlyMe } from "../projects/model";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { useHubRole } from "../admin/role";
 import s from "./view.module.css";
@@ -121,8 +121,9 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const empty = view !== undefined && view.items.length === 0 && !view.hasOlder;
   const title = data.title ?? "";
   const summary = useData((d) => d.projects[key]);
-  const navi = summary !== undefined && isNavi(summary);
-  const who = navi && title !== "" ? title : undefined;
+  // Your own project with no repo: everyday words. Any other, or one still loading, a codebase's.
+  const plain = summary !== undefined && isOnlyMe(summary) && !hasRepos(summary);
+  const who = plain && title !== "" ? title : undefined;
   const [replyTo, setReplyTo] = useState<ReplyTarget>();
   const onSent = useCallback(() => {
     // Back to following the newest message.
@@ -247,12 +248,12 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip>
           </span>
         ) : null}
-        {navi && !data.missing ? (
+        {summary !== undefined && !data.missing ? (
           <Button
             variant="quiet"
             iconOnly
-            aria-label={`${title || "Navi"}’s settings`}
-            title={`${title || "Navi"}’s settings: its connections, memory and automations`}
+            aria-label={title === "" ? "Project settings" : `${title}’s settings`}
+            title={`${title === "" ? "Project" : title}’s settings: its connections, sign-ins, approvals and memory`}
             onClick={() => navigate({ id: "settings", tab: "projects", for: key })}
           >
             <Settings />
@@ -292,7 +293,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           <Text tone="quiet">{view === undefined && data.title !== undefined ? "Loading the conversation…" : "Loading…"}</Text>
         </div>
       ) : empty ? (
-        <EmptyChat project={project} title={title} navi={navi} />
+        <EmptyChat project={project} title={title} plain={plain} />
       ) : (
         <BubbleActionsContext.Provider value={actions}>
           <ChatList rows={rows} project={project} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} openPart={shown?.part} sent={sent} entering={arrived?.entering} />

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// A Navi's Skills: the list in its groups with who changed each and when it was last used, one skill's SKILL.md, the
+// A project's Skills: the list in its groups with who changed each and when it was last used, one skill's SKILL.md, the
 // person's edit, its history with a diff and Restore, turning it off and deleting it; and the chat's line linking to it.
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -26,7 +26,7 @@ const snapshot: HubFrame = {
     cursor: 1,
     attention: [],
     machines: [{ machineId: "devbox", name: "devbox", nodeVersion: "1", status: "online", lastSeenAt: AT, tags: [] }],
-    projects: [{ ...ADA, title: "Ada", workspaceRoot: "/home/dev/.fleetd/navi/ada", lastActivityAt: AT, threads: { running: 0, waiting: 0, idle: 1, failed: 0 }, kind: "assistant" }],
+    projects: [{ ...ADA, title: "Ada", workspaceRoot: "/home/dev/ada", lastActivityAt: AT, threads: { running: 0, waiting: 0, idle: 1, failed: 0 }, onlyMe: true }],
   } satisfies FleetStatus,
 };
 
@@ -85,7 +85,7 @@ const settle = async () => {
   for (let i = 0; i < 8; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
 };
 
-const mount = async (ui: ReactNode, features: string[] = ["navi_skills"]) => {
+const mount = async (ui: ReactNode, features: string[] = []) => {
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const hub: HubApi = {
     call: (tool, input) => {
@@ -132,13 +132,9 @@ const type = async (field: HTMLInputElement | HTMLTextAreaElement | null, value:
 };
 const view = (skill: string | null) => <SkillsTabView project={ADA} skill={skill} onWide={() => undefined} />;
 
-it("gives a Navi's panel a Skills section once the hub serves it", async () => {
+it("gives every project's panel a Skills section, open on a link to it", async () => {
   await mount(<ProjectPanel project={ADA} view={{ tab: "skills", skill: null }} onWide={() => undefined} />);
-  expect([...host.querySelectorAll("[data-section]")].map((t) => t.getAttribute("data-section"))).toEqual(["plan", "skills", "history"]);
-  act(() => root.unmount());
-  root = createRoot(host);
-  await mount(<ProjectPanel project={ADA} view={{ tab: "checklist" }} onWide={() => undefined} />, []);
-  expect(host.querySelector("[data-section=skills]")).toBeNull();
+  expect(host.querySelector("[aria-selected=true][data-section]")?.getAttribute("data-section")).toBe("skills");
 });
 
 it("lists what it learned and what every project has, with who changed each and its last use, and opens one", async () => {

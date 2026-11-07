@@ -79,7 +79,7 @@ export function MacCode(props: { onLine: () => void; onDone: () => void }) {
       <div className={s.head}>
         <Text strong>A Mac for agents</Text>
         <Text size="xs" tone="quiet">
-          {"A Mac every project's agents use for builds and iOS simulators. It's a tool, never a runner: it runs no claude and no Navi, and holds none of your keys. Your own account on it is fine."}
+          {"A Mac every project's agents use for builds and iOS simulators. It's a tool, never a runner: it runs no claude and no lead, and holds none of your keys. Your own account on it is fine."}
         </Text>
       </div>
       <ol className={s.macSteps}>

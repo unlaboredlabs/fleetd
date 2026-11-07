@@ -1,22 +1,19 @@
 // Settings › You › Hubs: the hubs this app is paired with, each under a name the person picks and an
 // optional colour. Each can be renamed, recoloured, paired again or removed; Add a hub pairs one more beside them.
 // A hub's name shows in the sidebar, notifications, Status and Commands once there are two. Then Hub links: the keys
-// made as you on each hub (hubLinks/LinksToThisHub.tsx) and the hubs your Navi reaches (hubLinks/LinkedHubs.tsx).
+// made as you on each hub (hubLinks/LinksToThisHub.tsx); the hubs a project reaches are in its settings (LinkedHubs).
 import { useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import { LABEL_MAX, type HubColor } from "../../../shared/hubs";
 import { keyStoreLine } from "../../../shared/pairing";
 import { Button, Dialog, Dot, Field, Input, Truncate } from "../../ui";
 import { HubScope, useData, useHub, useHubs } from "../../src/data/react";
-import { LinkedHubs } from "../hubLinks/LinkedHubs";
 import { LinksToThisHub } from "../hubLinks/LinksToThisHub";
-import { useHubRole } from "../admin/role";
-import { yourNavis } from "../navi/model";
 import { useKeyStore } from "../onboarding";
 import { sentence } from "../onboarding/form";
 import { Prose } from "../onboarding/Prose";
 import { ColorPick } from "../shell/ColorPick";
-import { PagePart, Setting, useProjects } from "./parts";
+import { PagePart, Setting } from "./parts";
 import s from "./settings.module.css";
 
 /** Settings › You › Hubs: each hub this app is paired with, and Add a hub. */
@@ -54,23 +51,17 @@ export function HubsSettings() {
 }
 
 /**
- * Hub links, both halves in one place: the link keys made as you on each paired hub, which let your Navi elsewhere act
- * here, then the other hubs each of your Navis on this hub reaches through keys made there.
+ * Hub links: the link keys made as you on each paired hub, which let your project elsewhere act here. The other hubs a
+ * project reaches through keys made there are in its settings (Settings › Projects › Linked hubs).
  */
 export function HubLinksSettings() {
   const hubs = useHubs();
-  const projects = useProjects();
-  const me = useHubRole().me?.personId;
-  const navis = yourNavis(projects ?? [], me);
   return (
-    <PagePart title="Hub links" reveal="hubs.hub-links" intro="Keys that let a Navi on one hub open and follow work on another, as the person who made them.">
+    <PagePart title="Hub links" reveal="hubs.hub-links" intro="Keys that let a project on one hub open and follow work on another, as the person who made them. Paste one into a project’s Linked hubs, in its settings.">
       {hubs.map((hub) => (
         <HubScope key={hub.id} hub={hub}>
           <LinksToThisHub label={hubs.length === 1 ? "Links to this hub" : `Links to ${hub.label}`} />
         </HubScope>
-      ))}
-      {navis.map((n) => (
-        <LinkedHubs key={`${n.machineId}/${n.projectId}`} navi={{ machineId: n.machineId, projectId: n.projectId }} label={navis.length === 1 ? "Linked hubs" : `Hubs ${n.title} reaches`} />
       ))}
     </PagePart>
   );

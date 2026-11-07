@@ -1,4 +1,4 @@
-// A Navi's approvals (navi_approvals, W239), as pure functions: the three modes in the person's words, the checker's
+// A project's approvals (project_approvals, W239), as pure functions: the three modes in the person's words, the checker's
 // model and effort as the picker shows them, and each auto-approved action as a log row.
 import type { AutoApproved, NaviApprovalMode, NaviApprovals, ProfileModel } from "../../../shared/contracts";
 import { EFFORT_WORD } from "./profilesModel";

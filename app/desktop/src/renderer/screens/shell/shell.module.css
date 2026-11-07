@@ -229,12 +229,6 @@
   outline: 2px solid var(--accent);
 }
 
-/* With several hubs, a Navi's hub beside it: quiet, before its mark. */
-.naviHub {
-  color: var(--faint);
-  font-size: var(--text-xs);
-}
-
 /* Words for a screen reader only: a section's reorder announcements. */
 .srOnly {
   position: absolute;

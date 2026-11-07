@@ -18,7 +18,7 @@ vi.hoisted(() => {
 const AT = "2026-10-27T10:00:00.000Z";
 const BOX = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
 const CRM_KEY = "Bearer crm_never_in_a_hub_call_0123";
-const ref = { machineId: "devbox", projectId: "navi" };
+const ref = { machineId: "devbox", projectId: "ada" };
 
 const crm: McpServer = {
   scope: { kind: "project", ...ref },
@@ -37,7 +37,7 @@ const snapshot: HubFrame = {
     cursor: 1,
     attention: [],
     machines: [{ machineId: "devbox", name: "devbox", nodeVersion: "1", status: "online", lastSeenAt: AT, tags: [], boxPubKey: BOX }],
-    projects: [],
+    projects: [{ ...ref, title: "Ada", workspaceRoot: "/home/dev/ada", lastActivityAt: AT, threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, onlyMe: true }],
   },
 };
 
@@ -173,7 +173,7 @@ const row = (name: string) => {
 };
 const hubCalls = () => JSON.stringify(calls);
 
-describe("a Navi's integrations", () => {
+describe("a project's integrations", () => {
   it("offers to add an MCP server", async () => {
     await render();
     expect(document.querySelectorAll('[role="listitem"]')).toHaveLength(0);
@@ -182,13 +182,13 @@ describe("a Navi's integrations", () => {
     expect(document.body.textContent).not.toMatch(/xaq/iu);
   });
 
-  it("shows a connected server: its key sealed on Navi's machine, and a test by policy", async () => {
+  it("shows a connected server: its key sealed on the project's machine, and a test by policy", async () => {
     project = [crm];
     await render();
     await click(button("Test connection", row("crm")));
     const text = row("crm").textContent;
     expect(text).toContain("Connected");
-    expect(text).toContain("Key sealed on devbox. Navi never sees it.");
+    expect(text).toContain("Key sealed on devbox. It never goes in the chat.");
     expect(text).toContain("Works on devbox (CRM 2.0.0): 2 tools run without asking · 1 asks you each time.");
     expect(text).toContain("list_contacts, get_contact");
     tested = { machineId: "devbox", result: { error: "HTTP 401 Unauthorized" } };
@@ -239,7 +239,7 @@ describe("a Navi's integrations", () => {
     expect(saved[0]?.transport).toEqual({ type: "http", url: "https://macbook.example.ts.net/mcp" });
     expect(saved[0]?.headers).toEqual([{ kind: "secret", name: "Authorization", value: CRM_KEY }]);
     expect(dialog().querySelector('[role="alert"]')).toBeNull();
-    expect(words()).toContain("Which of xaq's tools may Navi use without asking?");
+    expect(words()).toContain("Which of xaq's tools may Ada use without asking?");
     expect(words()).not.toMatch(/\blead\b|integration|only reads?\b|sealed/iu);
   });
 
@@ -276,7 +276,7 @@ describe("a Navi's integrations", () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it("disconnects: the server goes, and the key is erased from Navi's machine", async () => {
+  it("disconnects: the server goes, and the key is erased from the project's machine", async () => {
     project = [crm];
     await render();
     await click(button("Disconnect", row("crm")));
@@ -330,7 +330,7 @@ describe("an MCP server that signs you in", () => {
 
     tested = { machineId: "devbox", result: { server: "mail 1.0", tools: [{ name: "search_mail", readOnly: true, policy: "read" }, { name: "send_mail", policy: "ask" }] } };
     await signInMoved({ status: "connected", issuer: "https://auth.mail.example", signedInAt: AT, expiresAt: AT });
-    expect(dialog().textContent).toContain("Which of mail's tools may Navi use without asking?");
+    expect(dialog().textContent).toContain("Which of mail's tools may Ada use without asking?");
     expect(dialog().textContent).toContain("Works on devbox (mail 1.0).");
     await click(button("Save", dialog()));
     expect(saved[1]?.integration).toEqual({ readTools: ["search_mail"] });
@@ -341,7 +341,7 @@ describe("an MCP server that signs you in", () => {
     project = [mail({ status: "signed_out", issuer: "https://auth.mail.example" })];
     await render();
     expect(row("mail").textContent).toContain("Signed out");
-    expect(row("mail").textContent).toContain("Not signed in yet: Navi can't use it until you sign in.");
+    expect(row("mail").textContent).toContain("Not signed in yet: the lead can't use it until you sign in.");
     await click(button("Sign in", row("mail")));
     expect(dialog().textContent).toContain("Sign in to mail");
     await click(button("Sign in", dialog()));
@@ -405,7 +405,7 @@ describe("an MCP server that signs you in", () => {
     await signInMoved({ status: "connected", issuer: "https://auth.mail.example", signedInAt: "2026-10-27T11:00:00.000Z" });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(row("mail").textContent).toContain("Connected");
-    expect(row("mail").textContent).toContain("Signed in with auth.mail.example. fleetd renews the sign-in by itself, and Navi never sees it.");
+    expect(row("mail").textContent).toContain("Signed in with auth.mail.example. fleetd renews the sign-in by itself, and it never goes in the chat.");
     expect(row("mail").textContent).toContain("Works on devbox (mail 1.0): 1 tool runs without asking");
     expect(row("mail").querySelector("button")?.textContent).not.toBe("Reconnect");
   });

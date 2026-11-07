@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PurchaseLogEntry } from "../../../shared/contracts";
-import { NO_CARD, cardOptions, purchaseLine, purchaseState } from "./paymentsModel";
+import { cardLabel, money, NO_CARD, cardOptions, purchaseLine, purchaseState } from "./payments";
 
 const entry = (state: PurchaseLogEntry["state"]): PurchaseLogEntry => ({
   requestId: "Q3",
@@ -15,7 +15,7 @@ const entry = (state: PurchaseLogEntry["state"]): PurchaseLogEntry => ({
   },
 });
 
-describe("a Navi's payments", () => {
+describe("a project's payments", () => {
   it("offers the person's cards, the one picked even if no longer listed, and no card", () => {
     const cards = [{ ref: "op://Shared/Amex", title: "Amex", vault: "Shared" }];
     expect(cardOptions(cards, "op://Personal/Visa").map((o) => o.label)).toEqual(["Visa (Personal)", "Amex (Shared)", "No card"]);
@@ -23,11 +23,19 @@ describe("a Navi's payments", () => {
   });
 
   it("says what became of each purchase, an expired one too", () => {
-    expect(purchaseState(entry("ran"))).toBe("Approved, card filled");
-    expect(purchaseState(entry("failed"))).toBe("Approved, never filled");
+    expect(purchaseState(entry("ran"))).toBe("Card filled");
+    expect(purchaseState(entry("failed"))).toBe("Never filled");
     expect(purchaseState(entry("denied"))).toBe("Not bought");
     const line = purchaseLine(entry("open"));
     expect(line.shop).toBe("Hotel Devbox");
     expect(line.amount).toMatch(/129\.90/u);
+  });
+});
+
+describe("money and cards in the person's words", () => {
+  it("says an amount as they read money, and a card by its name and vault", () => {
+    expect(money("129.90", "EUR")).toMatch(/129\.90/u);
+    expect(money("129.90", "XYZ1")).toBe("129.90 XYZ1");
+    expect(cardLabel({ ref: "op://Personal/Visa" })).toBe("Visa (Personal)");
   });
 });

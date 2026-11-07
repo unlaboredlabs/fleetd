@@ -10,7 +10,7 @@ import { AgentsPane, isLine, scopedAgents, useAgentScope, type AgentScope } from
 import type { PrTab } from "../prs/PrDetail";
 import { PrsPane, usePrList } from "../prs/PrsPane";
 import { SessionsPane } from "../sessions/SessionsPane";
-import { SkillsTabView } from "../navi/SkillsPane";
+import { SkillsTabView } from "../skills/SkillsPane";
 import { ArtifactsTabView } from "../artifacts/ArtifactsPane";
 import { isLive } from "../sessions/model";
 import { useSessions } from "../sessions/hub";
@@ -54,7 +54,7 @@ export function SessionsTab({ project, view, onWide }: PaneProps) {
   return <SessionsPane project={project} session={session} />;
 }
 
-/** A Navi's skills, or one of them, which asks for the frame's wide width. */
+/** A project's skills, or one of them, which asks for the frame's wide width. */
 export function SkillsTab({ project, view, onWide }: PaneProps) {
   return <SkillsTabView project={project} skill={view.tab === "skills" ? view.skill : null} onWide={onWide} />;
 }

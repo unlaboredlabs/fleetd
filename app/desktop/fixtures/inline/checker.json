@@ -1,5 +1,5 @@
 {
-  "note": "A Navi's checker at work (W239): what it let through, as one quiet line; a send it asks about, with why; a forward it blocked, which the person may approve anyway; and a final Confirm on a site with the page's screenshot. devbox; no personal data.",
+  "note": "A project's checker at work (W239): what it let through, as one quiet line; a send it asks about, with why; a forward it blocked, which the person may approve anyway; and a final Confirm on a site with the page's screenshot. devbox; no personal data.",
   "items": [
     {
       "line": "Let through without asking you: `send_message` on `gmail`, to sam@example.com. The checker's reason: you asked to tell Sam that Saturday works"
@@ -19,7 +19,7 @@
           "tool": "send_message",
           "action": "send",
           "title": "Use send_message on gmail",
-          "input": "{\n  \"to\": [\n    \"sam@example.com\",\n    \"ines@example.com\"\n  ],\n  \"subject\": \"Saturday\",\n  \"body\": \"Hi both,\\n\\nSaturday works. I booked Lupa for 8 pm; see you there.\\n\\nNavi, for Ana\"\n}"
+          "input": "{\n  \"to\": [\n    \"sam@example.com\",\n    \"ines@example.com\"\n  ],\n  \"subject\": \"Saturday\",\n  \"body\": \"Hi both,\\n\\nSaturday works. I booked Lupa for 8 pm; see you there.\\n\\nHome, for Ana\"\n}"
         },
         "checker": {
           "verdict": "ask",

@@ -3,8 +3,6 @@
 // as you last left it.
 import { useCallback, useEffect, useState } from "react";
 import { isPanelTab, type PanelTab } from "../panel/tabs";
-import type { ProjectSummary } from "../../../shared/contracts";
-import { isNavi } from "../navi/model";
 
 export const NARROW_PX = 1000;
 
@@ -130,11 +128,11 @@ export function useCollapsedHubs(): readonly [ReadonlySet<string>, (hub: string)
 }
 
 /**
- * The sidebar's rows on show, in order: with several hubs, a collapsed group's projects are hidden (its Navis stay, in
- * the Navi section above the groups). ⌘1–9 count these, in the sidebar's numbers and in the commands alike.
+ * The sidebar's rows on show, in order: with several hubs, a collapsed group's projects are hidden. ⌘1–9 count these,
+ * in the sidebar's numbers and in the commands alike.
  */
-export const shownRows = <P extends { readonly hub: string; readonly project: Pick<ProjectSummary, "kind"> }>(
+export const shownRows = <P extends { readonly hub: string }>(
   rows: ReadonlyArray<P>,
   collapsed: ReadonlySet<string>,
   several: boolean,
-): ReadonlyArray<P> => (several ? rows.filter((p) => isNavi(p.project) || !collapsed.has(p.hub)) : rows);
+): ReadonlyArray<P> => (several ? rows.filter((p) => !collapsed.has(p.hub)) : rows);

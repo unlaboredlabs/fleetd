@@ -1,6 +1,6 @@
 // The showcase's scenes past the storefront's request (qa/showcase.spec.ts moves through them as the batch merges),
-// each made of another group's fixture rather than data of its own: Navi with Ada and Home above the projects, Ada's
-// lease renewal waiting on your approval and the order it asked storefront for (fixtures/navi), and a second hub, Personal, beside this one in the sidebar (fixtures/sidebar).
+// each made of another group's fixture rather than data of its own: Ada and Home, Only me, above the projects, Ada's
+// lease renewal waiting on your approval and the order it asked storefront for (fixtures/only-me), and a second hub, Personal, beside this one in the sidebar (fixtures/sidebar).
 // Hub › People's people and invites are admin-owner's (fixtures/admin), and so are the people in checkout's chat, which
 // the team shares: Sam writes from this app, Alice and Bob from theirs, and the lead answers them together. The nightly
 // memory refresh's line is in storefront's chat (index.ts), and its built-in row on the Automations page comes with
@@ -10,8 +10,9 @@ import { writeChat, type Ref } from "../kit/chat.ts";
 import { asText, isObject, type JsonObject } from "../kit/json.ts";
 import { arr, obj } from "../kit/stress.ts";
 import { PEOPLE } from "../admin/index.ts";
-import { navi, toolApproval, type ToolCall } from "../navi/index.ts";
-import { ADA, HOME } from "../navi/ids.ts";
+import { ownProject, toolApproval, type ToolCall } from "../only-me/index.ts";
+import { ADA, HOME } from "../only-me/ids.ts";
+import { PROJECT_TOOLS } from "../../src/renderer/screens/projects/model.ts";
 import { retitle } from "../sidebar/index.ts";
 
 /** Ada's renewal: the request the card answers. */
@@ -39,8 +40,7 @@ const LEASE: ToolCall = {
  */
 export const naviScene = (f: Fixture, storefront: Ref): void => {
   if (f.snapshot === undefined) throw new Error("the showcase needs a snapshot");
-  f.snapshot["projects"] = [...arr(f.snapshot["projects"]), navi(f, ADA, "Ada", "ada"), navi(f, HOME, "Home", "home")];
-  if (f.state.phase === "live") f.state = { ...f.state, features: [...(f.state.features ?? []), "navi_asks"] };
+  f.snapshot["projects"] = [...arr(f.snapshot["projects"]), ownProject(f, ADA, "Ada", "ada"), ownProject(f, HOME, "Home", "home")];
   const item = { ...toolApproval(ADA, "ada", LEASE), requestId: ADA_REQUEST };
   const messages = writeChat(
     f,
@@ -60,7 +60,7 @@ export const naviScene = (f: Fixture, storefront: Ref): void => {
   f.answer("requests_list", { limit: 100 }, { requests: [...(isObject(old) ? arr(old["requests"]) : []), { ...request, state: "open" }, { ...request, state: "approved" }] });
   const row = (state: string) => ({ tool: "requests_list", field: "requests", where: { requestId: ADA_REQUEST, state } });
   f.hidden.push(row("approved"));
-  f.answer("navi_asks", { navi: { ...ADA } }, {
+  f.answer(PROJECT_TOOLS.asks, { navi: { ...ADA } }, {
     navi: { ...ADA },
     asks: [
       {

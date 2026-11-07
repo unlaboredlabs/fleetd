@@ -104,7 +104,7 @@ const rightClick = () => {
 
 it("opens the project or its settings, and copies its path", async () => {
   rightClick();
-  expect(items()).toEqual(["Open", "Open settings", "Copy path", "Remove project…"]);
+  expect(items()).toEqual(["Open", "Rename…", "Open settings", "Copy path", "Archive", "Delete project…"]);
   await choose("Open");
   rightClick();
   await choose("Open settings");
@@ -117,17 +117,13 @@ it("opens the project or its settings, and copies its path", async () => {
   expect(copy).toHaveBeenCalledWith("/home/dev/src/storefront");
 });
 
-it("Remove project… asks first, and removes nothing until confirmed", async () => {
+it("Delete project… opens its settings at Delete, which asks first, and erases nothing from the menu", async () => {
   row().focus();
   act(() => {
     row().dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }));
   });
-  await choose("Remove project…");
-  const dialog = document.querySelector("[role='dialog']");
-  expect(dialog?.textContent).toContain("Remove storefront from devbox?");
+  await choose("Delete project…");
+  expect(went).toEqual([{ id: "settings", tab: "projects", for: "devbox/storefront" }]);
+  expect(document.querySelector("[role='dialog']")).toBeNull();
   expect(calls).not.toContain("project_remove");
-  const remove = [...(dialog?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((b) => b.textContent === "Remove project");
-  act(() => remove?.click());
-  await act(() => new Promise((done) => setTimeout(done, 0)));
-  expect(calls).toContain("project_remove");
 });

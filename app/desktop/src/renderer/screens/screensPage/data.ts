@@ -1,11 +1,10 @@
-// The Screens page's data: every screen the hub serves, of every project and Navi you can see, each with its project,
+// The Screens page's data: every screen the hub serves, of every project you can see, each with its project,
 // the machine it runs on and its agent's latest step (browser_sessions), and a live one's newest picture (the hub's
 // screen_thumb feed, which runs only while the page shows: useThumbFeed), sorted as the page shows them.
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
 import { useData, useDataLayer, useToolQueries, useToolQuery } from "../../src/data/react";
 import { selectLiveAgents, selectProjects } from "../../src/data/selectors";
-import { isNavi } from "../navi/model";
 import { FEATURE, fromHub, ownerOf } from "../sessions/hub";
 import { isLive, type BrowserSession } from "../sessions/model";
 import { parseMs } from "../live/format";
@@ -20,7 +19,7 @@ export type Kind = NonNullable<BrowserSession["kind"]> | "browser";
 export interface PageScreen {
   readonly x: BrowserSession;
   readonly kind: Kind;
-  readonly project: { readonly title: string; readonly navi: boolean };
+  readonly project: { readonly title: string };
   /** The machine it runs on; its project's from a hub too old to say. */
   readonly machine: string;
   /** Its newest picture, as a data URL, while it is live and the hub has taken one. */
@@ -61,17 +60,14 @@ export function useScreens(): readonly PageScreen[] {
   lists.forEach((list, i) => {
     const p = projects?.[i];
     if (list === undefined || p === undefined) return;
-    const navi = isNavi(p);
     for (const row of list) {
       const x = fromHub(row, ownerOf(agents, row));
       const live = isLive(x);
       const thumb = live ? thumbs[row.sessionId] : undefined;
-      // A Navi's own screen is the Navi's: its name, not "Lead".
-      const agent = navi && row.openedBy === undefined ? { laneId: x.agent.laneId, title: p.title } : x.agent;
       out.push({
-        x: { ...x, agent },
+        x,
         kind: x.kind ?? "browser",
-        project: { title: p.title, navi },
+        project: { title: p.title },
         machine: row.machineId ?? p.machineId,
         ...(thumb === undefined ? {} : { thumb: `data:image/jpeg;base64,${thumb.jpegB64}` }),
         ...(x.now === undefined ? {} : { doing: x.now }),

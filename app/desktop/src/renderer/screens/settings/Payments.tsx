@@ -1,16 +1,16 @@
-// A Navi's Payments (its Projects page, only for a project of kind assistant; D265): the card it pays with, a Credit
-// Card item from the person's own 1Password (onepassword_cards lists them; navi_card_set keeps only its op://
-// reference), and every purchase it asked for (navi_purchases), with what the person said. Each purchase asks the
-// person in the Navi's chat; approved, its card is filled into that checkout once, and the Navi never sees it.
+// A project's Payments (its Projects page; D265): the card its lead pays with, a Credit Card item from the person's own
+// 1Password (onepassword_cards lists them; project_card_set keeps only its op:// reference), and every purchase it
+// made (project_purchases). A purchase fills the card in at its checkout without asking (D312), and the chat says what
+// was paid. One section on its own, so it can go without touching the rest.
 import { useState } from "react";
 import type { OnePasswordCardsOutput } from "../../../shared/contracts";
 import { Button, InlineCode, Select, Text } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
-import { cardLabel } from "../inline/purchase";
+import { cardLabel, NO_CARD, cardOptions, PAYMENTS_HELP, purchaseLine, purchaseState } from "../projects/payments";
+import { PROJECT_TOOLS } from "../projects/model";
 import { when } from "../status/view";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { NO_CARD, cardOptions, purchaseLine, purchaseState } from "./paymentsModel";
 import { Setting } from "./parts";
 import s from "./settings.module.css";
 
@@ -24,7 +24,7 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
   const nowMs = useNow(true, 60_000);
   const hubCall = useHubCall();
   const refetch = useRefetch();
-  const read = useToolQuery("navi_purchases", projectRef, { enabled: live });
+  const read = useToolQuery(PROJECT_TOOLS.purchases, projectRef, { enabled: live });
   const [picking, setPicking] = useState(false);
   // The cards are read when the person opens the picker, and only then: listing them may take minutes the first time.
   const [cards, setCards] = useState<{ data?: OnePasswordCardsOutput; error?: string } | null>(null);
@@ -36,7 +36,7 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
   const open = (): void => {
     setPicking(true);
     setCards(null);
-    // On the Navi's machine, with the token its fills read the card with.
+    // On the project's machine, with the token its fills read the card with.
     hubCall("onepassword_cards", { navi: projectRef }, { timeoutMs: CARDS_MS }).then(
       (data) => setCards({ data }),
       (e: unknown) => setCards({ error: errorText(e) }),
@@ -46,11 +46,11 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
   const pick = (value: string): void => {
     setSaving(true);
     setProblem(null);
-    hubCall("navi_card_set", { ...projectRef, ...(value === NO_CARD ? {} : { card: value }) }).then(
+    hubCall(PROJECT_TOOLS.cardSet, { ...projectRef, ...(value === NO_CARD ? {} : { card: value }) }).then(
       () => {
         setSaving(false);
         setPicking(false);
-        refetch(["navi_purchases"]);
+        refetch([PROJECT_TOOLS.purchases]);
       },
       (e: unknown) => {
         setSaving(false);
@@ -63,7 +63,7 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
     <Setting
       reveal="projects.payments"
       label="Payments"
-      help="The card Navi pays with at a checkout, from your 1Password. Every purchase asks you first, with the shop, the total and what's in the basket; fleetd fills the card in, and Navi never sees it."
+      help={PAYMENTS_HELP}
     >
       {read.isLoadingError ? (
         <Text size="sm" tone="danger">
@@ -95,7 +95,7 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
             ) : (
               <div className={s.inline}>
                 <Select
-                  id="navi-card"
+                  id="project-card"
                   aria-label="Card"
                   value={card?.ref ?? NO_CARD}
                   disabled={saving}
@@ -109,7 +109,7 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
             )
           ) : (
             <div className={s.inline}>
-              <Text size="sm">{card === undefined ? "No card: Navi can't pay at a checkout." : `Pays with ${cardLabel(card)}`}</Text>
+              <Text size="sm">{card === undefined ? "No card: the lead can't pay at a checkout." : `Pays with ${cardLabel(card)}`}</Text>
               <Button variant="secondary" disabled={!live} onClick={open}>
                 {card === undefined ? "Pick a card…" : "Change…"}
               </Button>
@@ -137,7 +137,7 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
                 const line = purchaseLine(p);
                 return (
                   <li key={p.requestId} className={s.purchase}>
-                    {/* The name is the Navi's words; the domain is where the card was filled, so the log can't be spoofed. */}
+                    {/* The name is the lead's words; the domain is where the card was filled, so the log can't be spoofed. */}
                     <Text size="sm">
                       {`${line.shop} · `}
                       <InlineCode>{p.purchase.shop.domain}</InlineCode>

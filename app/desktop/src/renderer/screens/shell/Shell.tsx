@@ -22,8 +22,6 @@ import { useSidebarProjects } from "./data";
 import { dropRows, publishRows, useHubRows } from "./hubRows";
 import { navigate, setRouteHubs, useRoute, type Routed } from "./navigation";
 import { PANEL_TABS, served } from "../panel/tabs";
-import { inSections, sectionsFor } from "../panel/Sections";
-import { isNavi, sidebarOrder } from "../navi/model";
 import { HOME, listView, panelRoute, type ProjectKey, type Screen } from "./routes";
 import { PanelSlot, PanelToggle, useProjectPanel } from "./panel";
 import { ConnectionBanner, needsOnboarding } from "../onboarding";
@@ -103,14 +101,14 @@ function HubWatch({ open }: { open: ProjectKey | null }) {
 }
 
 /**
- * Every hub's rows in sidebar order, undefined while the screen's own hub's are loading: the Navis of every hub first,
- * then each hub's projects (navi/model.ts's sidebarOrder over them all).
+ * Every hub's rows in sidebar order, undefined while the screen's own hub's are loading: each hub's projects, hub after
+ * hub, in your order of them.
  */
 const usePlaced = (hubs: readonly HubView[], on: HubId): ReadonlyArray<Placed> | undefined => {
   const rows = useHubRows();
   return useMemo(() => {
     if (rows.get(on)?.projects === undefined) return undefined;
-    return sidebarOrder(hubs.flatMap((h) => (rows.get(h.id)?.projects ?? []).map((p): Placed => ({ ...p, key: hubKey(h.id, p.key), hub: h.id }))));
+    return hubs.flatMap((h) => (rows.get(h.id)?.projects ?? []).map((p): Placed => ({ ...p, key: hubKey(h.id, p.key), hub: h.id })));
   }, [rows, hubs, on]);
 };
 
@@ -175,12 +173,6 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   // The palette's Agents and Pull requests: the project on screen, else the one `#/` opens on this hub.
   const homeHere = projects === undefined ? null : homeProject(projects.filter((p) => p.hub === route.at), readLast());
   const panelProject = open ?? (homeHere === null ? null : routeOf(homeHere));
-  // A Navi's panel has its own views: the palette's Go to offers only those a panel for it shows.
-  // From the screen's hub's every project, archived Navis too: an archived Navi still open gets a Navi's views, never a
-  // code project's.
-  const panelKey = panelProject === null ? null : projectId(panelProject);
-  const panelNavi = useData((st) => (panelKey === null ? undefined : st.projects[panelKey]));
-  const panelSections = sectionsFor(panelNavi !== undefined && isNavi(panelNavi), features);
   const panel = useProjectPanel(screen);
   useEffect(() => {
     if (openKey === null) return;
@@ -257,7 +249,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
           detail: tab.detail,
           group: "go-to",
           keywords: [...tab.keywords],
-          enabled: () => chrome && panelProject !== null && served(tab.id, features) && inSections(tab.id, panelSections),
+          enabled: () => chrome && panelProject !== null && served(tab.id, features),
           run: () => {
             if (panelProject !== null) go(panelRoute(panelProject, listView(tab.id)));
           },

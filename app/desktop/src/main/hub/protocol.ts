@@ -36,6 +36,7 @@ export const ServerFrame = z.discriminatedUnion("t", [
     code: z.string(),
     message: z.string(),
     fix: z.string().optional(),
+    reason: z.string().max(64).optional(),
   }),
   z.looseObject({ t: z.literal("live"), full: z.boolean() }),
   z.looseObject({ t: z.literal("chat_delta"), messageId: z.string(), offset: z.int().min(0), append: z.string() }),

@@ -7,7 +7,7 @@ const at = (h: number) => new Date(2026, 9, 31, h, 5).toISOString();
 
 const skill = (name: string, extra: Partial<SkillSummary> = {}): SkillSummary => ({ name, origin: "project", description: `${name} things.`, ...extra });
 
-describe("a Navi's skills", () => {
+describe("a project's skills", () => {
   it("groups what it learned, what was installed, every project's and its folder's, each by name", () => {
     const g = grouped([
       skill("taxes"),

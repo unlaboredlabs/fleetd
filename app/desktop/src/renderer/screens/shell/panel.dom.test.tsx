@@ -9,7 +9,7 @@ import { AT, event, live, snapshot } from "../../src/data/fixtures.test-util";
 import { AppFrame } from "../../ui";
 import frameStyles from "../../ui/layout/layout.module.css";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
-import { forgetViews, inSections, SECTIONS, sectionOf } from "../panel/Sections";
+import { forgetViews, SECTIONS, sectionOf } from "../panel/Sections";
 import { PANEL_TABS } from "../panel/tabs";
 import { useRoute } from "./navigation";
 import { PanelSlot, PanelToggle, useProjectPanel } from "./panel";
@@ -403,9 +403,8 @@ it("shows its sections as tabs, each view a route of its own under its section, 
   await mount({ features: ["browser_sessions", "artifacts"] });
   const outer = () => [...(panel()?.querySelectorAll<HTMLElement>("[role='tab'][data-section]") ?? [])];
   expect(outer().map((tab) => tab.dataset["section"])).toEqual(SECTIONS.map((g) => g.id));
-  expect(outer().map((tab) => tab.textContent.replace(/[0-9]+$/u, ""))).toEqual(["Agents", "Shipping", "Plan", "Artifacts", "History"]);
-  // A Navi's own views (Asked work) aren't a project of code's.
-  for (const tab of PANEL_TABS.filter((t) => inSections(t.id, SECTIONS))) {
+  expect(outer().map((tab) => tab.textContent.replace(/[0-9]+$/u, ""))).toEqual(["Agents", "Shipping", "Plan", "Skills", "Artifacts", "History"]);
+  for (const tab of PANEL_TABS) {
     await go(`${CHAT}/${tab.id}`);
     const section = sectionOf(tab.id);
     const selected = panel()?.querySelector<HTMLElement>(`[role='tab'][data-section='${section.id}']`);

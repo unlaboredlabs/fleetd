@@ -1,25 +1,22 @@
-// The sidebar: your Navis pinned on top (navi/model.ts), then the projects, each section in your own order: drag a row,
-// or move a focused one with ⌥↑ / ⌥↓, and it stays there on each of your desktops (yourOrder.ts; new ones go at the
-// end, by title, and nothing moves by itself, so a row never moves under the pointer). Each opens its chat and says
-// why it wants you ("reply", "approve", "secret", "blocked") or how many agents work; a chat with a message you haven't
-// seen is bold. With no Navi yet, one quiet row offers to meet it (#/navi), with no
-// heading. Then three rows: Status, Factory (its Agent time tab too) and Settings, which for an admin says how many
-// of the hub's required setup steps are left and opens on them (a project's agents and PRs are in the panel beside
-// its chat); then any update to make, and the hub (HubStatus), which
-// says how many machines are down and opens Machines. Holding ⌘ (Ctrl) shows jump numbers on the first nine rows, which ⌘1..9 open. A
-// project's right-click menu opens it or its settings, copies its path, or removes it (RemoveProjectDialog asks
-// first); a Navi's renames or archives it instead (Undo in the toast).
+// The sidebar: each hub's projects in your own order: drag a row, or move a focused one with ⌥↑ / ⌥↓, and it stays
+// there on each of your desktops (yourOrder.ts; new ones go at the end, your own Only-me ones first, and nothing moves
+// by itself, so a row never moves under the pointer). Each opens its chat and says why it wants you ("reply",
+// "approve", "secret", "blocked") or how many agents work; a chat with a message you haven't seen is bold. An archived
+// project is in none (Settings › Projects brings it back). Then three rows: Status, Factory (its Agent time tab too) and
+// Settings, which for an admin says how many of the hub's required setup steps are left and opens on them (a project's
+// agents and PRs are in the panel beside its chat); then any update to make, and the hub (HubStatus), which says how
+// many machines are down and opens Machines. Holding ⌘ (Ctrl) shows jump numbers on the first nine rows, which ⌘1..9
+// open. A project's right-click menu opens it or its settings, renames it, copies its path, archives it (Undo in the
+// toast) or deletes it (from its settings, which list its worktrees and ask for its name first).
 //
-// With several hubs the Navis of every hub stay on top, each saying its hub, and each hub's
-// projects are a group under its name, which collapses; the footer has a row per hub. With one, there is no name and
-// no group, as before.
-import { Activity, ChevronDown, ChevronRight, Factory, MonitorSmartphone, Plus, Settings, Sparkle } from "lucide-react";
+// With several hubs each hub's projects are a group under its name, which collapses; the footer has a row per hub.
+// With one, there is no name and no group, as before.
+import { Activity, ChevronDown, ChevronRight, Factory, MonitorSmartphone, Plus, Settings } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useData, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
-import { archiveNavi, RenameNaviDialog, type NaviTarget } from "../navi/actions";
-import { isNavi } from "../navi/model";
+import { archiveProject, RenameProjectDialog, type ProjectTarget } from "../projects/actions";
 import {
   Button,
   ContextMenu,
@@ -38,7 +35,7 @@ import {
   useReorder,
 } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
-import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
+import { revealNext } from "../settings/reveal";
 import { UpdatesLine } from "../updates";
 import { HubStatus } from "./HubStatus";
 import { useHubState } from "./hubFeed";
@@ -55,7 +52,7 @@ import { saveOrder, withMoved } from "./yourOrder";
 import s from "./shell.module.css";
 
 const platform = window.fleetd.platform;
-/** A project's or Navi's icon in its tall row (SidebarItem `tall`): big enough to enjoy its glass face, the row 48 px around it. */
+/** A project's icon in its tall row (SidebarItem `tall`): big enough to enjoy its glass face, the row 48 px around it. */
 const SIDEBAR_AVATAR = 36;
 
 const kbd = (id: ShortcutId): ReactNode => <Kbd>{display(id, platform)}</Kbd>;
@@ -218,14 +215,10 @@ export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, f
         </div>
       }
     >
-      {projects === undefined ? null : (
-        <NaviSection navis={projects.filter((p) => isNavi(p.project))} all={projects} named={several} screen={screen} jumpOf={jumpOf} go={go} />
-      )}
       {hubs.map((hub) => {
         // A hub whose projects haven't loaded (offline from the start, say) waits on its own; the others show theirs.
         const waiting = projects === undefined || (loaded.has(hub.id) && loaded.get(hub.id)?.projects === undefined);
-        // Its Navis are in the Navi section above.
-        const rows = waiting ? undefined : projects.filter((p) => p.hub === hub.id && !isNavi(p.project));
+        const rows = waiting ? undefined : projects.filter((p) => p.hub === hub.id);
         return (
           <HubScope key={hub.id} hub={hub}>
             <ProjectGroup
@@ -259,116 +252,6 @@ export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, f
   );
 }
 
-/**
- * The Navis, every hub's, pinned above the projects; with several hubs each says its hub. With none yet, one quiet row
- * to meet Navi (on the hub of the screen you're on), with no heading over it.
- */
-function NaviSection(props: {
-  navis: ReadonlyArray<Placed>;
-  all: ReadonlyArray<Placed>;
-  named: boolean;
-  screen: Routed;
-  jumpOf: (p: Placed) => number | null;
-  go: (screen: Screen) => void;
-}) {
-  const { navis, all, named, screen, go } = props;
-  const hubs = useHubs();
-  const rows = useMemo(() => byKey(navis), [navis]);
-  // With several hubs, a Navi moves among its own hub's: each hub keeps the order of its own.
-  const reorder = useReorder({
-    keys: useMemo(() => navis.map((p) => p.key), [navis]),
-    name: (key) => rows.get(key)?.project.title ?? "",
-    group: named ? (key) => rows.get(key)?.hub ?? "" : undefined,
-    onMove: (order, key) => {
-      const hub = rows.get(key)?.hub;
-      if (hub !== undefined) save(hubs.find((h) => h.id === hub)?.layer, all, hub, order);
-    },
-  });
-  if (navis.length === 0) {
-    return (
-      <SidebarSection label="Navi">
-        <SidebarItem label="Meet Navi" icon={<Sparkle />} current={screen.id === "navi"} onClick={() => go({ id: "navi" })} />
-      </SidebarSection>
-    );
-  }
-  return (
-    <SidebarSection
-      title="Navi"
-      action={
-        <Button variant="quiet" size="sm" icon={<Plus />} onClick={() => go({ id: "navi" })} aria-label="New Navi">
-          New
-        </Button>
-      }
-    >
-      <div {...reorder.list}>
-        {reorder.shown.map((key) => {
-          const p = rows.get(key);
-          const hub = p === undefined ? undefined : hubs.find((h) => h.id === p.hub);
-          return p === undefined || hub === undefined ? null : (
-            <div key={key} {...reorder.row(key)}>
-              <HubScope hub={hub}>
-                <NaviRow
-                  p={p}
-                  named={named}
-                  current={screen.id === "project" && screen.at === p.hub && sameProject(screen.project, p.project)}
-                  jump={props.jumpOf(p)}
-                  go={go}
-                />
-              </HubScope>
-            </div>
-          );
-        })}
-      </div>
-      <span role="status" className={s.srOnly}>
-        {reorder.status}
-      </span>
-    </SidebarSection>
-  );
-}
-
-/** One Navi, in its hub's scope: its menu renames or archives it there. */
-function NaviRow({ p, named, current, jump, go }: { p: Placed; named: boolean; current: boolean; jump: number | null; go: (screen: Screen) => void }) {
-  const hub = useHub();
-  const layer = useDataLayer();
-  const asOf = useOfflineAsOf();
-  const [renaming, setRenaming] = useState<NaviTarget | null>(null);
-  const at = named ? { at: hub.id } : {};
-  const { machineId, projectId, title, workspaceRoot } = p.project;
-  const open = () => go({ id: "project", project: routeOf(p), message: null, ...at });
-  const menu = () => (
-    <>
-      <ContextMenuItem onSelect={open}>Open</ContextMenuItem>
-      <ContextMenuItem onSelect={() => setRenaming({ machineId, projectId, title })}>Rename…</ContextMenuItem>
-      {/* Its connections (MCP servers) are in its settings. */}
-      <ContextMenuItem onSelect={() => go({ id: "settings", tab: "projects", for: `${machineId}/${projectId}`, ...at })}>Open settings</ContextMenuItem>
-      <ContextMenuCopy text={workspaceRoot}>Copy folder path</ContextMenuCopy>
-      <ContextMenuSeparator />
-      <ContextMenuItem onSelect={() => void archiveNavi(layer, { machineId, projectId, title })}>Archive</ContextMenuItem>
-    </>
-  );
-  return (
-    <>
-      <ContextMenu menu={menu}>
-        <SidebarItem
-          label={p.project.title}
-          tall
-          icon={<ProjectAvatar project={p.project} size={SIDEBAR_AVATAR} />}
-          current={current}
-          emphasis={p.unread}
-          trailing={
-            <>
-              {named ? <span className={s.naviHub}>{hub.label}</span> : null}
-              {trailing(p, jump, asOf)}
-            </>
-          }
-          onClick={open}
-        />
-      </ContextMenu>
-      <RenameNaviDialog navi={renaming} onClose={() => setRenaming(null)} />
-    </>
-  );
-}
-
 /** A hub's row in the footer, and any update to it at its end. */
 function HubFooter() {
   const hub = useHubState();
@@ -399,7 +282,7 @@ function ProjectGroup(props: {
   const hub = useHub();
   const state = useHubState();
   const asOf = useOfflineAsOf();
-  const [removing, setRemoving] = useState<RemoveTarget | null>(null);
+  const [renaming, setRenaming] = useState<ProjectTarget | null>(null);
   const layer = useDataLayer();
   const rowsByKey = useMemo(() => byKey(rows ?? []), [rows]);
   const reorder = useReorder({
@@ -414,11 +297,21 @@ function ProjectGroup(props: {
     return (
       <>
         <ContextMenuItem onSelect={() => openRow(p)}>Open</ContextMenuItem>
+        <ContextMenuItem onSelect={() => setRenaming({ machineId, projectId, title })}>Rename…</ContextMenuItem>
+        {/* Its connections, sign-ins, approvals and the rest are in its settings. */}
         <ContextMenuItem onSelect={() => go({ id: "settings", tab: "projects", for: `${machineId}/${projectId}`, ...at })}>Open settings</ContextMenuItem>
         <ContextMenuCopy text={workspaceRoot}>Copy path</ContextMenuCopy>
         <ContextMenuSeparator />
-        <ContextMenuItem danger onSelect={() => setRemoving({ machineId, projectId, title, path: workspaceRoot })}>
-          Remove project…
+        <ContextMenuItem onSelect={() => void archiveProject(layer, { machineId, projectId, title })}>Archive</ContextMenuItem>
+        {/* Delete erases everything fleetd keeps for it: its settings' Delete lists its worktrees and asks for its name. */}
+        <ContextMenuItem
+          danger
+          onSelect={() => {
+            revealNext("projects.delete");
+            go({ id: "settings", tab: "projects", for: `${machineId}/${projectId}`, ...at });
+          }}
+        >
+          Delete project…
         </ContextMenuItem>
       </>
     );
@@ -444,8 +337,8 @@ function ProjectGroup(props: {
     <SidebarSection
       {...(named ? { head, label: hub.label } : { title: asOf === undefined ? "Projects" : `Projects, ${asOf}` })}
       action={
-        <Button variant="quiet" size="sm" icon={<Plus />} aria-label={named ? `Add a project on ${hub.label}` : undefined} onClick={() => go({ id: "projects.add", ...at })}>
-          Add
+        <Button variant="quiet" size="sm" icon={<Plus />} aria-label={named ? `New project on ${hub.label}` : "New project"} onClick={() => go({ id: "projects.add", ...at })}>
+          New
         </Button>
       }
     >
@@ -459,7 +352,7 @@ function ProjectGroup(props: {
         </div>
       ) : rows.length === 0 ? (
         <Text as="p" size="xs" tone="quiet" className={s.sidebarNote}>
-          No projects yet. Add one: a GitHub repo, or a folder on one of your machines.
+          No projects yet. Start one: a chat with its own lead, with a GitHub repo, a folder on one of your machines, or nothing at all.
         </Text>
       ) : (
         <div {...reorder.list}>
@@ -486,7 +379,7 @@ function ProjectGroup(props: {
       <span role="status" className={s.srOnly}>
         {reorder.status}
       </span>
-      <RemoveProjectDialog project={removing} onClose={() => setRemoving(null)} />
+      <RenameProjectDialog project={renaming} onClose={() => setRenaming(null)} />
     </SidebarSection>
   );
 }

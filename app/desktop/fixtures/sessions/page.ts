@@ -1,6 +1,6 @@
 // The Screens page (D305): sessions-preview's hub with screens across the hub, not one project. On storefront: its
 // agent at checkout, the one asking for the payouts code, and an agent leased the agents' Mac; on billing (buildbox),
-// an agent on a Linux desktop and your own Android emulator with #31's build; your Navi Home booking a table in its
+// an agent on a Linux desktop and your own Android emulator with #31's build; your own project Home booking a table in its
 // browser; and the recent ones that ended. Each row names the machine it runs on and, while live, its agent's latest
 // step, and each live one's picture comes as a screen_thumb while the page shows. Its pages: media/.
 import fs from "node:fs";
@@ -24,28 +24,28 @@ export const PAGE_SESSION = {
   mac: "B7c1e5a9d3f7b1c5e9a3d7f1b5c9e3a7d",
   desktop: "B2d6f0a4c8e2b6d0f4a8c2e6b0d4f8a2c",
   android: "B9e3c7a1f5d9b3e7c1a5f9d3b7e1c5a9f",
-  navi: "B4a8e2c6f0b4d8a2e6c0f4b8d2a6e0c4b",
+  home: "B4a8e2c6f0b4d8a2e6c0f4b8d2a6e0c4b",
   checkoutEnded: "B6f0b4d8a2e6c0f4b8d2a6e0c4b8f2a6d",
-  naviEnded: "B8b2f6d0a4e8c2f6b0d4a8e2c6f0b4d8a",
+  homeEnded: "B8b2f6d0a4e8c2f6b0d4a8e2c6f0b4d8a",
 } as const;
 
 export const screensPage = (preview: Fixture): Fixture => {
-  const f = Fixture.from(preview, "sessions-page", "Screens page: live and recent screens across the hub's projects and a Navi, on devbox, buildbox and the agents' Mac.");
+  const f = Fixture.from(preview, "sessions-page", "Screens page: live and recent screens across the hub's projects, Home among them, on devbox, buildbox and the agents' Mac.");
   const iso = (agoMs: number) => new Date(Date.parse(f.now) - agoMs).toISOString();
   if (f.state.phase !== "live") throw new Error("sessions-preview's hub isn't live");
   f.state = { ...f.state, features: [...(f.state.features ?? []), "screen_thumbs"] };
   const snapshot = f.snapshot;
   if (snapshot === undefined) throw new Error("sessions-preview has no snapshot");
-  // Your Navi Home beside the projects, and the agents' Mac beside devbox and buildbox.
+  // Your own Home beside the projects, and the agents' Mac beside devbox and buildbox.
   const projects = snapshot["projects"];
   if (!Array.isArray(projects)) throw new Error("no projects");
   projects.unshift({
     ...HOME,
     title: "Home",
-    workspaceRoot: "/home/dev/.fleetd/navi/home",
+    workspaceRoot: "/home/dev/projects/home",
     lastActivityAt: iso(60_000),
     threads: { failed: 0, idle: 0, running: 1, waiting: 0 },
-    kind: "assistant",
+    onlyMe: true,
     createdBy: { keyId: "k-laptop", name: "laptop" },
   });
   const machines = snapshot["machines"];
@@ -105,17 +105,17 @@ export const screensPage = (preview: Fixture): Fixture => {
   });
   f.answer("browser_sessions", { projectRef: CHECKOUT }, { sessions: [checkoutEnded], waits: [], retention: { retentionDays: 30, maxGbPerProject: 20 } });
 
-  // Home (a Navi): booking a table in its own browser, with its saved sign-ins; and yesterday's train times.
-  const navi = row(HOME, PAGE_SESSION.navi, "c8a1f2e3-0000-4000-8000-0000000navi1", "Book a table for two at Casa Lina on Tuesday", 90_000, {
+  // Home: booking a table in its own browser, with its saved sign-ins; and yesterday's train times.
+  const booking = row(HOME, PAGE_SESSION.home, "c8a1f2e3-0000-4000-8000-0000000home1", "Book a table for two at Casa Lina on Tuesday", 90_000, {
     machineId: "devbox",
     step: step("agent-browser", { command: "agent-browser click @e21" }, iso(4_000)),
   });
-  const naviEnded = row(HOME, PAGE_SESSION.naviEnded, "c8a1f2e3-0000-4000-8000-0000000navi2", "Find Friday’s last train to Porto", 26 * 3_600_000, {
+  const train = row(HOME, PAGE_SESSION.homeEnded, "c8a1f2e3-0000-4000-8000-0000000home2", "Find Friday’s last train to Porto", 26 * 3_600_000, {
     state: "recorded",
     machineId: "devbox",
     endedAt: iso(26 * 3_600_000 - 64_000),
   });
-  f.answer("browser_sessions", { projectRef: HOME }, { sessions: [navi, naviEnded], waits: [], retention: { retentionDays: 30, maxGbPerProject: 20 } });
+  f.answer("browser_sessions", { projectRef: HOME }, { sessions: [booking, train], waits: [], retention: { retentionDays: 30, maxGbPerProject: 20 } });
 
   // Their pages now, for the view a row opens.
   const frame = (sessionId: string, image: string, width: number, height: number, control: string, url?: string): JsonObject => ({
@@ -130,7 +130,7 @@ export const screensPage = (preview: Fixture): Fixture => {
   f.later(0, "browser_frame", frame(PAGE_SESSION.mac, "macDesktop.jpg", 1280, 800, "agent"));
   f.later(0, "browser_frame", frame(PAGE_SESSION.desktop, "linuxDesktop.jpg", 1280, 800, "agent"));
   f.later(0, "browser_frame", frame(PAGE_SESSION.android, "androidInvoices.jpg", 412, 915, "human"));
-  f.later(0, "browser_frame", frame(PAGE_SESSION.navi, "tableBooking.jpg", 960, 600, "agent", "https://casalina.example.com/reservations"));
+  f.later(0, "browser_frame", frame(PAGE_SESSION.home, "tableBooking.jpg", 960, 600, "agent", "https://casalina.example.com/reservations"));
 
   // Each live one's picture, as the hub sends it while the page shows: a frame made small.
   const thumb = (sessionId: string, image: string, width: number, height: number): JsonObject => ({ sessionId, jpegB64: b64(image), width, height, at: iso(3_000) });
@@ -139,7 +139,7 @@ export const screensPage = (preview: Fixture): Fixture => {
   f.later(0, "screen_thumb", thumb(PAGE_SESSION.mac, "macDesktop.jpg", 1280, 800));
   f.later(0, "screen_thumb", thumb(PAGE_SESSION.desktop, "linuxDesktop.jpg", 1280, 800));
   f.later(0, "screen_thumb", thumb(PAGE_SESSION.android, "androidInvoices.jpg", 412, 915));
-  f.later(0, "screen_thumb", thumb(PAGE_SESSION.navi, "tableBooking.jpg", 960, 600));
+  f.later(0, "screen_thumb", thumb(PAGE_SESSION.home, "tableBooking.jpg", 960, 600));
 
   // The sidebar's Screens row: six live across the hub, one asking for you.
   f.answer("screens_count", undefined, { live: 6, asking: 1 });
