@@ -83,7 +83,7 @@ export {
 export { initialAdd, requestWhat, step as addStep, type AddMsg, type AddState, type Call as AddCall } from "../../desktop/src/renderer/screens/projects/flow";
 export { allowedAfter, runsLine } from "../../desktop/src/renderer/screens/settings/profilesModel";
 export { checkerLine, FLOORS, logWhy, MODES as APPROVAL_MODES } from "../../desktop/src/renderer/screens/settings/approvalsModel";
-export { cardLabel, cardOptions, NO_CARD, purchaseLine, purchaseState } from "../../desktop/src/renderer/screens/projects/payments";
+export { cardLabel, cardOptions, NO_CARD, PAYMENTS_HELP, purchaseLine, purchaseState } from "../../desktop/src/renderer/screens/projects/payments";
 export { statusWords as telegramWords } from "../../desktop/src/renderer/screens/settings/telegramModel";
 export { linkState, reachLine } from "../../desktop/src/renderer/screens/hubLinks/model";
 export { unsavedWorktrees } from "../../desktop/src/renderer/screens/settings/projectModel";
