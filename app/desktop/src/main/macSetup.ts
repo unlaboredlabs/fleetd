@@ -208,7 +208,7 @@ export const cliFailure = (output: string): MacSetupFailure => {
   return at < 0 ? { message: sentence } : { message: sentence, fix: text.slice(at + " Fix: ".length) };
 };
 
-const STEP_TITLES = (asset: string) => [`download ${asset}`, "check it against the release's SHA256SUMS", "put it in place", "join the hub and start the node in this login"];
+const STEP_TITLES = (version: string) => [`download fleetd ${version}, the hub's own`, "check it against the release's checksums", "put it in place", "join the hub and start the node in this login"];
 
 /** Installs the hub's build and joins as the agents' Mac, reporting every change; resolves with how it ended. Never rejects. */
 export async function joinMac(ports: MacSetupPorts, pending: Pending, report: (join: MacJoin) => void): Promise<MacJoin> {
@@ -218,7 +218,7 @@ export async function joinMac(ports: MacSetupPorts, pending: Pending, report: (j
     report(join);
     return join;
   }
-  let steps: JoinStep[] = STEP_TITLES(asset).map((title) => ({ title, state: "planned" }));
+  let steps: JoinStep[] = STEP_TITLES(pending.version).map((title) => ({ title, state: "planned" }));
   let at = -1;
   const send = (join: MacJoin): MacJoin => {
     report(join);

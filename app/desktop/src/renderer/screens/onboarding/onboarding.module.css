@@ -25,20 +25,6 @@
   text-align: center;
 }
 
-.mark {
-  width: 56px;
-  height: 56px;
-  margin-bottom: var(--space-1);
-}
-
-.markTile {
-  fill: var(--accent-fill);
-}
-
-.markChevrons {
-  stroke: var(--on-accent);
-}
-
 /* One way in: its heading, its words, its command or fields. */
 .section {
   display: flex;

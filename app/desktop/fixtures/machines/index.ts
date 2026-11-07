@@ -133,6 +133,14 @@ function hub(from: Fixture, name: string, note: string, runs: (f: Fixture) => Js
     line: MAC_LINE,
     next: "Paste the line in Terminal on mac, logged in at its screen.",
   });
+  // A Mac for agents: its 6-digit code (mac_code_create), for the fleetd app on the Mac.
+  f.answer("mac_code_create", undefined, {
+    code: "482913",
+    expiresAt: "2026-10-19T09:13:00.000Z",
+    machineId: "mac",
+    hubUrl: HUB,
+    next: "In the fleetd app on the Mac, choose Set up this Mac for agents and type the code.",
+  });
   f.answer("machine_remove", undefined, { machineId: "mac-mini", steps: [], revoked: true, next: "revoked mac-mini's node key; the hub refuses that node from now on." });
   f.answer("machine_claude_login", undefined, {
     machineId: "laptop",

@@ -112,11 +112,36 @@ The agents' Mac is a tool, never a runner:
   typed there answer "this Mac is a tool for agents elsewhere: run fleetd from your own machine".
 A Mac nobody else uses (a Mac mini) is best. Release signing stays in CI.
 
-The setup is the optional **A Mac for agents** step in **Settings › Hub › Setup** (and `fleetd init --step mac`), and
-**Settings › Hub › Machines › Add machine › A Mac for agents**. You paste two things at the Mac and click two
-switches; fleetd does the rest, and ends at the checks.
+### From the fleetd app on the Mac {#app}
 
-### 1. Xcode, once {#xcode}
+The main way in needs no terminal:
+
+1. On your main machine, open **Settings › Hub › Machines › Add machine › A Mac for agents**. It shows a 6-digit code,
+   and the hub's address under it.
+2. On the Mac, in the account it joins from (yours is fine), open the [fleetd app](/docs/desktop-app) and choose **Set
+   up this Mac for agents**: on its first window, or in the **fleetd** menu when it's already signed in. A small
+   window of its own opens, not the full app.
+3. Type the code. The app finds the hub by itself (a hub it's signed in to, or one on your tailnet answering on port
+   4790) and asks for the address only when it doesn't.
+
+The app then does the rest, a step at a time: it installs the hub's own fleetd, joins as the agents' Mac (asking first
+when that replaces a node, this Mac's or the hub's Mac of that name) and starts the node in this login. Then it opens
+**Accessibility** and **Screen Recording** in System Settings and sees each switch as you turn it on, and ends with a
+Test that turns green check by check. Each failure says what to do. Xcode's [one-time block](#xcode) still takes an
+admin's Terminal; its checks say so when it's missing.
+
+The code works once, for 10 minutes, and a new one replaces the one before. Ten wrong codes in a minute, from
+anywhere, make the hub refuse every code for that minute. Neither the code nor its enroll token gives a key to the hub:
+the app on the Mac stays signed out unless you sign it in yourself.
+
+### Or in Terminal {#terminal}
+
+The same setup is the optional **A Mac for agents** step in **Settings › Hub › Setup** (and `fleetd init --step mac`),
+and **Use Terminal instead** under the code in Add machine. You paste two things at the Mac and click two switches;
+fleetd does the rest, and ends at the checks.
+
+
+#### 1. Xcode, once {#xcode}
 
 In Terminal on the Mac, in the account it joins from (yours is fine), paste:
 
@@ -133,7 +158,7 @@ Until an admin accepts Xcode's licence and installs its components, `xcodebuild`
 prompt nobody is there to answer. Xcode itself comes from the App Store, and an iOS simulator runtime with
 `xcodebuild -downloadPlatform iOS`.
 
-### 2. Join, at the Mac's screen {#join}
+#### 2. Join, at the Mac's screen {#join}
 
 Paste the join line in Terminal on the Mac, logged in at its screen (or over Screen Sharing). `su` and ssh won't do:
 launchd runs the node only inside a login at the screen, and the installer says so, before it changes anything, when
@@ -154,7 +179,7 @@ that account, and installs for itself, each pinned and checked by its digest:
 Nothing comes from Homebrew. The node also keeps the Mac from sleeping while idle (an IOKit assertion, as `caffeinate`
 takes); a closed laptop lid still sleeps.
 
-### 3. Two clicks at the Mac {#permissions}
+#### 3. Two clicks at the Mac {#permissions}
 
 Right after it joins, the line opens **System Settings › Privacy & Security › Accessibility** and waits; once fleetd
 is on there, it opens **Screen Recording** and waits again. Turn on **fleetd** in each: Accessibility lets agents

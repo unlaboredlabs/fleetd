@@ -27,6 +27,7 @@
 
 .progress {
   display: flex;
+  justify-content: center;
   gap: var(--space-4);
   margin: 0;
   padding: 0;
@@ -59,10 +60,39 @@
   opacity: 1;
 }
 
+/* Each step's face, title and line, centred, as a setup assistant's are; what the step asks for sits under it. */
 .head {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: var(--space-2);
+  text-align: center;
+}
+.face {
+  width: 48px;
+  height: 48px;
+}
+.ready {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: var(--space-1);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+  animation: ready-in 420ms var(--ease-out) both;
+}
+@keyframes ready-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ready {
+    animation: none;
+  }
 }
 
 .form {
@@ -78,6 +108,7 @@
 }
 .codeLabel {
   display: block;
+  text-align: center;
 }
 
 /* The six digits, large and spaced, as they are shown on the main machine. */
@@ -114,6 +145,7 @@
 .actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: var(--space-2);
 }
 
@@ -121,10 +153,12 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  text-align: center;
 }
 
 .footnote {
   display: block;
+  text-align: center;
 }
 
 .steps,
@@ -137,7 +171,9 @@
   list-style: none;
 }
 .steps {
+  align-self: center;
   gap: var(--space-2);
+  max-width: 100%;
 }
 .stepRow,
 .check {
@@ -170,11 +206,11 @@
   color: var(--quiet);
 }
 
-/* A grant per row: its glyph, its name and why, and the pane that turns it on. */
+/* A grant per row: its name and why, and the pane that turns it on, or that it is on. */
 .grant {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
-  column-gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-4);
   align-items: center;
   padding: var(--space-4) 0;
 }
@@ -182,7 +218,38 @@
   border-top: 1px solid var(--hairline);
 }
 .allowed {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-md);
+  font-weight: 600;
   color: var(--success);
+  animation: ready-in 320ms var(--ease-out) both;
+}
+
+/* The checks that pass, one short line each, two to a row. */
+.passed {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.passedRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: 0;
+  color: var(--success);
+}
+.passedRow[data-state="warn"] {
+  color: var(--warning);
+}
+.passedRow > :last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .checks {

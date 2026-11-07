@@ -65,7 +65,7 @@ export function MacCode(props: { onLine: () => void; onDone: () => void }) {
       </div>
       <ol className={s.macSteps}>
         <li>
-          <Text size="sm">On the Mac, open the fleetd app (fleetd.sh has it) and choose Set up this Mac for agents.</Text>
+          <Text size="sm">On the Mac, open the fleetd app (download it from fleetd.sh) and choose Set up this Mac for agents.</Text>
         </li>
         <li>
           <Text size="sm">Type this code there:</Text>

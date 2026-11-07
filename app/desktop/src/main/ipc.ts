@@ -23,6 +23,7 @@ import { fixtureRequest } from "./hub/fixture";
 import { fleetdDir, joinHere, machineFingerprint, realPorts, thisComputer } from "./joinHere";
 import type { JoinHere } from "../shared/joinHere";
 import { MacSetup, realMacPorts } from "./macSetup";
+import { fixtureMacPorts } from "./macSetupFixture";
 import { isOwnPage } from "./security";
 import type { SessionWindows } from "./sessionWindow";
 import type { Updates } from "./updater";
@@ -136,12 +137,15 @@ export const registerIpc = (
   // Under a fixture, a computer that is neither, whatever this one holds.
   handle(IPC.machinesThisComputer, () => (fixtureRequest(process.env, RELEASE_BUILD).kind === "fixture" ? { kind: "none" } : machineFingerprint().then((fp) => thisComputer(fleetdDir(), fp))));
   // Set up this Mac for agents: one at a time, as there is one fleetd dir here. Its pane URLs are main's constants.
+  // Under a fixture, a Mac that isn't there (macSetupFixture.ts).
   const macSetup = new MacSetup(
-    // It calls no hub tool: the Mac holds no key, and trades its code over plain HTTP.
-    realMacPorts(realPorts(() => Promise.resolve(gone)), {
-      knownHubs: () => hubs.list().flatMap((h) => hubs.get(h.id)?.url() ?? []),
-      openPane: (url) => shell.openExternal(url),
-    }),
+    fixtureRequest(process.env, RELEASE_BUILD).kind === "fixture"
+      ? fixtureMacPorts()
+      : // It calls no hub tool: the Mac holds no key, and trades its code over plain HTTP.
+        realMacPorts(realPorts(() => Promise.resolve(gone)), {
+          knownHubs: () => hubs.list().flatMap((h) => hubs.get(h.id)?.url() ?? []),
+          openPane: (url) => shell.openExternal(url),
+        }),
     (join) => {
       for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(IPC.macSetupJoinChanged, join);
     },

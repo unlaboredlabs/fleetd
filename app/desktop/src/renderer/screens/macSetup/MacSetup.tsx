@@ -4,7 +4,9 @@
 // check green. The page holds no hub key and no token: main trades the code and runs the CLI (src/main/macSetup.ts).
 import { useEffect, useReducer, useRef, useState } from "react";
 import type { MacSetupFailure } from "../../../shared/macSetup";
+import { Check } from "lucide-react";
 import { Button, copyText, Field, Input, StateGlyph, Text } from "../../ui";
+import { Mark } from "../onboarding/Mark";
 import { checkTitle, checkView, digitsOf, initial, READ_EVERY_MS, reduce, spaced, stepOf, STEPS, type CheckRow, type State } from "./model";
 import s from "./macSetup.module.css";
 
@@ -85,9 +87,15 @@ export function MacSetup() {
   );
 }
 
-function Head({ title, line }: { title: string; line?: string | undefined }) {
+function Head({ title, line, face }: { title: string; line?: string | undefined; face?: "mark" | "ready" | undefined }) {
   return (
     <header className={s.head}>
+      {face === "mark" ? <Mark className={s.face} /> : null}
+      {face === "ready" ? (
+        <span className={s.ready} aria-hidden>
+          <Check size={28} strokeWidth={2.5} />
+        </span>
+      ) : null}
       <Text as="h1" size="xl" strong>
         {title}
       </Text>
@@ -165,7 +173,7 @@ function CodeStep({ state, dispatch }: { state: Extract<State, { step: "code" }>
         dispatch({ type: "submit" });
       }}
     >
-      <Head title="Set up this Mac for agents" line="Every project's agents use it for builds and iOS simulators. It's a tool: it runs no claude and holds none of your keys." />
+      <Head face="mark" title="Set up this Mac for agents" line="Every project's agents use it for builds and iOS simulators. It's a tool: it runs no claude and holds none of your keys." />
       <div className={s.codeBlock}>
         <label className={s.codeLabel} htmlFor="mac-code">
           <Text size="sm" tone="quiet">
@@ -304,19 +312,19 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
         <ul className={s.grants}>
           {view.grants.map((grant) => (
             <li key={grant.id} className={s.grant} data-granted={grant.granted}>
-              <StateGlyph state={grant.granted ? "done" : "queued"} size="sm" />
               <span className={s.stepText}>
                 <Text size="md" strong>
                   {grant.title}
                 </Text>
                 <Text size="xs" tone="quiet">
-                  {grant.granted ? "Allowed." : `Privacy & Security › ${grant.title}: ${grant.why}.`}
+                  {`${grant.why.charAt(0).toUpperCase()}${grant.why.slice(1)}.`}
                 </Text>
               </span>
               {grant.granted ? (
-                <Text size="sm" tone="quiet" className={s.allowed}>
+                <span className={s.allowed}>
+                  <Check size={14} strokeWidth={2.5} aria-hidden />
                   Allowed
-                </Text>
+                </span>
               ) : (
                 <Button size="md" variant={view.grants.find((g) => !g.granted)?.id === grant.id ? "primary" : "secondary"} onClick={() => void window.fleetd.macSetup.openPane(grant.id)}>
                   Open System Settings
@@ -326,40 +334,51 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
           ))}
         </ul>
         <Text size="xs" tone="quiet" className={s.footnote}>
-          {"fleetd isn't in a list? Press + under it, then choose fleetd in your home's .fleetd › bin folder (⇧⌘. shows hidden folders). The node restarts itself once a new switch is on."}
+          {"fleetd not in a list? Press + under it and pick fleetd in .fleetd › bin in your home folder (⇧⌘. shows hidden folders)."}
         </Text>
         {state.restartFailure === undefined ? null : <Failure failure={state.restartFailure} />}
       </>
     );
   }
-  const failing = view.checks.filter((c) => c.state === "fail" || c.state === "unknown").length + (view.hubAnswers ? 0 : 1);
+  const hub: CheckRow = {
+    id: "reaches_hub",
+    state: view.hubAnswers ? "ok" : "fail",
+    message: view.hubAnswers ? `${state.found.hubUrl} answers.` : `${state.found.hubUrl} doesn't answer from this Mac.`,
+    ...(view.hubAnswers ? {} : { fix: "Check this Mac is on the hub's tailnet or network, and that the hub is running." }),
+  };
+  const rows = [hub, ...view.checks];
+  const open = rows.filter((c) => c.state === "fail" || c.state === "unknown");
+  const passed = rows.filter((c) => c.state === "ok" || c.state === "warn");
   return (
     <>
       <Head
+        face={view.green ? "ready" : undefined}
         title={view.green ? "This Mac is ready" : "Testing"}
         line={
           view.green
-            ? `${state.found.machineId} is ${state.found.hubName}'s agents' Mac. Agents reach it with mac and agent-device; you can close this window.`
-            : `${String(failing)} ${failing === 1 ? "check needs" : "checks need"} you. Each one says what to do, and turns green here as you do it.`
+            ? `${state.found.machineId} is ${state.found.hubName}'s agents' Mac. Agents reach it with mac and agent-device, and you can watch its screen from the app.`
+            : `${String(open.length)} ${open.length === 1 ? "check needs" : "checks need"} you. Each one says what to do, and turns green here as you do it.`
         }
       />
-      <ul className={s.checks}>
-        <CheckLine
-          row={{
-            id: "reaches_hub",
-            state: view.hubAnswers ? "ok" : "fail",
-            message: view.hubAnswers ? `${state.found.hubUrl} answers.` : `${state.found.hubUrl} doesn't answer from this Mac.`,
-            ...(view.hubAnswers ? {} : { fix: "Check this Mac is on the hub's tailnet or network, and that the hub is running." }),
-          }}
-        />
-        {view.checks.map((row) => (
-          <CheckLine key={row.id} row={row} />
+      {open.length === 0 ? null : (
+        <ul className={s.checks}>
+          {open.map((row) => (
+            <CheckLine key={row.id} row={row} />
+          ))}
+        </ul>
+      )}
+      <ul className={s.passed} aria-label="Checks that pass">
+        {passed.map((row) => (
+          <li key={row.id} className={s.passedRow} data-state={row.state} title={row.message}>
+            <Check size={13} strokeWidth={2.5} aria-hidden />
+            <Text size="sm">{checkTitle(row.id)}</Text>
+          </li>
         ))}
       </ul>
       {state.restartFailure === undefined ? null : <Failure failure={state.restartFailure} />}
       <div className={s.actions}>
         {view.green ? (
-          <Button variant="primary" size="md" autoFocus onClick={() => window.close()}>
+          <Button variant="primary" size="md" onClick={() => window.close()}>
             Done
           </Button>
         ) : (

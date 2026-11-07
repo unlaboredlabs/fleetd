@@ -165,7 +165,7 @@ export const checkTitle = (id: string): string =>
     gui_session: "Login on screen",
     one_node: "One node on this Mac",
     awake: "Stays awake",
-    tools: "agent-device and agent-desktop",
+    tools: "Agent tools",
     reaches_hub: "Reaches the hub",
   })[id] ?? id.replace(/_/gu, " ").replace(/^./u, (c) => c.toUpperCase());
 

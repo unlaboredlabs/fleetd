@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useSyncExternalStore } from "react";
 import { Shell } from "../screens/shell/Shell";
 import { parseHash } from "../screens/shell/routes";
 import { HubScope, useHubs } from "./data/react";
@@ -7,12 +7,26 @@ import { HubScope, useHubs } from "./data/react";
 const SessionWindow = lazy(() => import("../screens/sessions/SessionWindow").then((m) => ({ default: m.SessionWindow })));
 // Set up this Mac for agents has a window of its own too (main opens it on `#/mac-setup`), with no hub in it.
 const MacSetup = lazy(() => import("../screens/macSetup/MacSetup").then((m) => ({ default: m.MacSetup })));
-const macSetup = window.location.hash.startsWith("#/mac-setup");
+// Once on it, the window stays on it, whatever the shell then makes of the route. Heard before the shell's own
+// listener is (it registers as it mounts), so its redirect of a route it doesn't know never wins.
+let onMacSetup = window.location.hash.startsWith("#/mac-setup");
+const macSetupListeners = new Set<() => void>();
+window.addEventListener("hashchange", () => {
+  if (onMacSetup || !window.location.hash.startsWith("#/mac-setup")) return;
+  onMacSetup = true;
+  for (const listener of macSetupListeners) listener();
+});
+const onMacSetupChange = (changed: () => void) => {
+  macSetupListeners.add(changed);
+  return () => macSetupListeners.delete(changed);
+};
+const useMacSetup = () => useSyncExternalStore(onMacSetupChange, () => onMacSetup);
 const opened = parseHash(window.location.hash);
 
 // main.tsx wraps this in the hubs' data layers and the design system's providers.
 export const App = () => {
   const hubs = useHubs();
+  const macSetup = useMacSetup();
   if (macSetup) {
     return (
       <Suspense fallback={<div aria-busy="true" />}>
