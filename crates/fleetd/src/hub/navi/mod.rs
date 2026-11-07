@@ -1,7 +1,7 @@
 //! Navis (W97): personal assistants, as many as a person likes. A Navi is an Only me project (D310) in a plain folder
 //! of its own under its node's home (`navi/<name>`), with the key that made it in its `project_settings` row.
 //! Everything else is a project's, unchanged: its chat, memory and nightly refresh, automations, screens, checklist
-//! and approvals. Its lead runs like any lead with no repo (`leads/lead.rs`): from the `navi.start` prompt in the
+//! and approvals. Its lead runs like any lead with no repo (`leads/lead.rs`): from the `assistant.start` prompt in the
 //! assistant role, asking a person before a send, a write through an integration, or a first visit to a site they
 //! didn't give it.
 //!
@@ -128,7 +128,7 @@ fn free_folders(hub: &Hub, m: &MachineId, slug: &str) -> Result<Vec<String>, Sto
 fn too_old(m: &MachineId) -> ToolError {
     error(
         ErrorCode::Invalid,
-        format!("{m}'s node is too old to hold a Navi"),
+        format!("{m}'s node is too old to hold a project"),
         format!("Run fleetd update on {m}, or pass another machineId"),
     )
 }
@@ -136,8 +136,11 @@ fn too_old(m: &MachineId) -> ToolError {
 fn not_a_navi(r: &ProjectRef) -> ToolError {
     error(
         ErrorCode::NotFound,
-        format!("{} on {} is not a Navi", r.project_id, r.machine_id),
-        "navi_list shows the Navis and their ids",
+        format!(
+            "{} on {} is not an Only me project",
+            r.project_id, r.machine_id
+        ),
+        "project_get shows the projects and their ids",
     )
 }
 
@@ -225,7 +228,7 @@ pub async fn create(
                 error(
                     ErrorCode::Failed,
                     format!("every free folder name for {name} on {m} is taken"),
-                    "Give the Navi another name",
+                    "Give it another name",
                 )
             }));
         }
@@ -263,11 +266,8 @@ pub async fn create(
         machine_id: Some(m.clone()),
         project_id: Some(r.project_id.clone()),
         thread_id: None,
-        summary: crate::hub::executor::shell_mapper::js_take(
-            &format!("Navi {name} made on {m}"),
-            200,
-        )
-        .to_owned(),
+        summary: crate::hub::executor::shell_mapper::js_take(&format!("{name} made on {m}"), 200)
+            .to_owned(),
         data: serde_json::to_value(&data).ok(),
         attention: None,
     })?;
@@ -300,7 +300,7 @@ pub fn list(hub: &Hub, caller: &Caller, input: NaviListInput) -> Result<NaviList
     }
     let next = navis
         .is_empty()
-        .then(|| "No Navis yet: navi_create makes one.".to_owned());
+        .then(|| "No Only me projects yet: project_add with onlyMe makes one.".to_owned());
     Ok(NaviListOutput {
         navis,
         next,
@@ -335,7 +335,7 @@ pub async fn rename(
         }],
     )?;
     let navi = navi_of(hub, &r)?;
-    changed(hub, &navi, format!("Navi {} renamed {name}", r.project_id))?;
+    changed(hub, &navi, format!("{} renamed {name}", r.project_id))?;
     Ok(NaviRenameOutput {
         navi,
         next: None,
@@ -463,8 +463,8 @@ pub fn set_approvals(
     if !is_human(caller) {
         return Err(error(
             ErrorCode::Forbidden,
-            "Only a person decides what their Navi does without asking.",
-            "Change it in the desktop app: the Navi's settings, Approvals.",
+            "Only a person decides what their project does without asking.",
+            "Change it in the desktop app: the project's settings, Approvals.",
         ));
     }
     let navi = navi_of(hub, &r)?;

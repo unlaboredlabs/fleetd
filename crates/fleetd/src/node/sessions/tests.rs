@@ -1075,7 +1075,7 @@ async fn a_host_no_session_runs_on_is_stopped() {
 }
 
 /// A lead's and a Navi's voice is in their system prompt, which claude never compacts: after a compaction and a
-/// restart of their node, the claude that resumes each gets its voice (lead.voice, navi.voice) verbatim again, and no
+/// restart of their node, the claude that resumes each gets its voice (lead.voice, assistant.voice) verbatim again, and no
 /// first message had it.
 #[tokio::test]
 async fn a_leads_voice_survives_a_compaction_and_a_resume_verbatim() {
@@ -1094,7 +1094,7 @@ async fn a_leads_voice_survives_a_compaction_and_a_resume_verbatim() {
             "s2",
             SessionRole::Assistant,
             Some("/home/me/navi"),
-            voice("navi.voice"),
+            voice("assistant.voice"),
         ),
     ];
     let mut before = hub(

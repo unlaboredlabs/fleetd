@@ -127,17 +127,17 @@ async fn a_navi_writes_to_another_lead_as_itself_never_as_the_person() {
         .unwrap();
     let said = messages.last().unwrap();
     assert_eq!(said.author, ChatAuthor::Agent);
-    assert_eq!(said.by.as_deref(), Some("Navi Home"));
+    assert_eq!(said.by.as_deref(), Some("Home"));
     assert_eq!(
         said.text,
         "Please add gift cards at checkout.\n\n(Ask N1. If you open an order for it, pass asked: \"N1\" to brief, \
-         so Navi hears when it lands. If you fold it into an order already open, call brief with that workstreamId \
+         so the asker hears when it lands. If you fold it into an order already open, call brief with that workstreamId \
          and asked: \"N1\".)"
     );
     // What the lead reads says it is an agent's, not the person's.
     let set = hub.db.prompts().current(Some(&project("storefront")));
     let for_lead = crate::hub::chat::flow::for_lead(&set, said, None, "", "The human", "");
-    assert!(for_lead.contains("Navi Home"), "{for_lead}");
+    assert!(for_lead.contains("Home"), "{for_lead}");
 }
 
 /// D310: every project's lead uses the bridge, only toward other projects.

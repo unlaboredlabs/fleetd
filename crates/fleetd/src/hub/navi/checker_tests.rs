@@ -188,7 +188,7 @@ fn context(person: &[&str]) -> Context {
     Context {
         person: json!({ "name": "Sam Rivera" }),
         person_messages: person.iter().map(|s| (*s).to_owned()).collect(),
-        navi_last_question: None,
+        lead_last_question: None,
         standing: Vec::new(),
         reads: reads(),
         allowed_sites: vec!["github.com".to_owned()],
@@ -262,7 +262,7 @@ async fn a_reply_the_person_asked_for_goes_on_a_fresh_tool_less_turn() {
     let input = model.inputs.lock().unwrap()[0].clone();
     assert_eq!(
         input.system_prompt.unwrap(),
-        include_str!("../../../assets/prompts/navi.checker.md").trim_end()
+        include_str!("../../../assets/prompts/approvals.checker.md").trim_end()
     );
     assert!(
         input.prompt.starts_with("<action_review>\n{")
@@ -289,7 +289,7 @@ async fn an_injected_forward_never_goes_and_the_checker_never_reads_the_email() 
     assert_eq!(note.verdict, CheckerVerdict::Ask);
     assert_eq!(
         note.reason.as_str(),
-        "evil@attacker.example came only from content the Navi read, not from you"
+        "evil@attacker.example came only from content the lead read, not from you"
     );
     let prompt = model.prompt();
     assert!(
@@ -403,12 +403,12 @@ fn provenance_tags_each_part_by_where_its_value_was_seen() {
         ["untrusted: a calendar invite from dana@northwind.example"],
         "anyone can send an invite: its attendees are no one the person chose"
     );
-    assert_eq!(sources(&review, "cc[0]"), ["navi"]);
+    assert_eq!(sources(&review, "cc[0]"), ["the lead"]);
     assert_eq!(sources(&review, "cc[1]"), ["person (pasted text)"]);
     assert_eq!(sources(&review, "subject"), ["person"]);
     assert_eq!(sources(&review, "attachments[0]"), ["person's files"]);
     let body = review.provenance.iter().find(|p| p.part == "body").unwrap();
-    assert_eq!(body.sources, ["navi"]);
+    assert_eq!(body.sources, ["the lead"]);
     assert!(
         body.value.is_none(),
         "a long text is described, not repeated"
@@ -513,13 +513,13 @@ fn the_persons_messages_are_theirs_only_with_the_question_their_last_answers() {
         Some("Shall I confirm the Grand Hall booking with the €2,400 deposit?")
     );
     let mut ctx = context(&[]);
-    ctx.navi_last_question = question;
+    ctx.lead_last_question = question;
     let review = checker::review(&mail_send(json!({ "to": ["a@b.example"] })), &ctx);
     assert!(
         review
-            .navi_last_question
+            .lead_last_question
             .unwrap()
-            .starts_with("(written by the Navi, not the person)")
+            .starts_with("(written by the lead, not the person)")
     );
     // A question the person answered before their last message isn't the one their last answers.
     said(&hub, "and one more thing");
@@ -1019,7 +1019,7 @@ fn gateway_context() -> Context {
             "Did the Wagyu place confirm my booking? Check my mail".to_owned(),
             "yes".to_owned(),
         ],
-        navi_last_question: Some("It's confirmed for Sunday 20:30. Add it to your calendar?".to_owned()),
+        lead_last_question: Some("It's confirmed for Sunday 20:30. Add it to your calendar?".to_owned()),
         standing: Vec::new(),
         reads: vec![
             Read {
@@ -1123,7 +1123,7 @@ fn an_account_field_is_a_recipient_unless_it_is_the_one_the_navi_read_as() {
     );
     assert!(
         sources(&checker::review(&note, &context), "account")
-            .contains(&"an account the Navi read the person's data as")
+            .contains(&"an account the lead read the person's data as")
     );
     let review = |tool: &str, input: Value, action: ToolAction| {
         let review = checker::review(&gateway(tool, input, action), &context);
@@ -1283,7 +1283,10 @@ async fn a_confirmed_automations_prompt_is_the_persons_word_on_its_runs() {
 
     // A recipient the prompt doesn't name is the Navi's, and goes to the checker as such.
     let other = mail_send(json!({ "to": ["ben@team.example"], "body": "this week's numbers" }));
-    assert_eq!(sources(&checker::review(&other, &later), "to[0]"), ["navi"]);
+    assert_eq!(
+        sources(&checker::review(&other, &later), "to[0]"),
+        ["the lead"]
+    );
     // Without the standing request, the same send has no authority but the invite the Navi read.
     let bare = checker::review(&send, &context(&["What's the weather tomorrow?"]));
     assert!(bare.standing_requests.is_empty());
@@ -1460,7 +1463,7 @@ async fn a_shortcuts_message_is_no_go_ahead_for_a_send_to_a_new_address() {
     let review = checker::review(&send, &relayed_context);
     assert_eq!(
         sources(&review, "to[0]"),
-        ["untrusted: content the Navi read"]
+        ["untrusted: content the lead read"]
     );
     let rule = super::review::rules(&review).unwrap();
     assert_eq!(rule.verdict, CheckerVerdict::Ask);

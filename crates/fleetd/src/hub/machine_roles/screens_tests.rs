@@ -381,7 +381,10 @@ async fn a_projects_browser_opened_on_its_machine_runs_on_its_kept_profile() {
     // Another person, an admin too, never reaches it.
     let (code, message) = refusal(call(&hub, &bee, "screen_open", input("devbox")).await);
     assert_eq!(code, ErrorCode::Forbidden);
-    assert!(message.contains("another person's Navi"), "{message}");
+    assert!(
+        message.contains("another person's Only me project"),
+        "{message}"
+    );
 
     let out = call(&hub, &desk, "screen_open", input("devbox"))
         .await

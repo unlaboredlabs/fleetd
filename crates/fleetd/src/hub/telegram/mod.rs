@@ -226,7 +226,7 @@ fn saved(hub: &Hub, r: &ProjectRef) -> Result<Row, ToolError> {
     row(&hub.db, r)?.ok_or_else(|| {
         error(
             ErrorCode::NotFound,
-            "This Navi has no Telegram bot yet.",
+            "This project has no Telegram bot yet.",
             "Make a bot with @BotFather and paste its token first.",
         )
     })
@@ -277,7 +277,7 @@ async fn get(
     caller: Caller,
     input: TelegramGetInput,
 ) -> Result<TelegramGetOutput, ToolError> {
-    let r = &input.navi;
+    let r = input.project_ref();
     navi_of(&hub, &caller, r, Role::Read)?;
     let bridge = match row(&hub.db, r)? {
         Some(row) => Some(refreshed(&hub, r, row).await?),
@@ -295,7 +295,7 @@ async fn set(
     caller: Caller,
     input: TelegramSetInput,
 ) -> Result<TelegramSetOutput, ToolError> {
-    let r = &input.navi;
+    let r = input.project_ref();
     navi_of(&hub, &caller, r, Role::Operate)?;
     let answer = node_call(
         &hub,
@@ -342,7 +342,7 @@ async fn test(
     caller: Caller,
     input: TelegramTestInput,
 ) -> Result<TelegramTestOutput, ToolError> {
-    let r = &input.navi;
+    let r = input.project_ref();
     navi_of(&hub, &caller, r, Role::Operate)?;
     let row = saved(&hub, r)?;
     let TelegramAnswer::Tested { bot, error } =
@@ -390,7 +390,7 @@ async fn pair(
     caller: Caller,
     input: TelegramPairInput,
 ) -> Result<TelegramPairOutput, ToolError> {
-    let r = &input.navi;
+    let r = input.project_ref();
     navi_of(&hub, &caller, r, Role::Operate)?;
     // The paired account is one person's: the project becomes theirs when it has no owner, so what they send there is
     // their own message and approval.
@@ -462,7 +462,7 @@ async fn unpair(
     caller: Caller,
     input: TelegramUnpairInput,
 ) -> Result<TelegramUnpairOutput, ToolError> {
-    let r = &input.navi;
+    let r = input.project_ref();
     navi_of(&hub, &caller, r, Role::Operate)?;
     let row = saved(&hub, r)?;
     let state = state_of(node_call(&hub, r, TelegramCall::Unpair, CALL_WAIT).await?)?;
@@ -471,7 +471,7 @@ async fn unpair(
         let _ = hub.chat.system_line(
             r,
             &format!(
-                "Telegram unpaired: {} no longer reaches this Navi there.",
+                "Telegram unpaired: {} no longer reaches this project there.",
                 was.name.as_str()
             ),
         );
@@ -488,7 +488,7 @@ async fn pause(
     caller: Caller,
     input: TelegramPauseInput,
 ) -> Result<TelegramPauseOutput, ToolError> {
-    let r = &input.navi;
+    let r = input.project_ref();
     navi_of(&hub, &caller, r, Role::Operate)?;
     let row = saved(&hub, r)?;
     let state = state_of(
@@ -520,7 +520,7 @@ async fn remove(
     caller: Caller,
     input: TelegramRemoveInput,
 ) -> Result<TelegramRemoveOutput, ToolError> {
-    let r = &input.navi;
+    let r = input.project_ref();
     navi_of(&hub, &caller, r, Role::Operate)?;
     saved(&hub, r)?;
     // The node must forget the token first: one left running would still read the person's messages.

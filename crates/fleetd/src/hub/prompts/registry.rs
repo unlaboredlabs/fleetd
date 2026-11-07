@@ -205,13 +205,13 @@ pub const ENTRIES: &[Entry] = &[
         ]
     ),
     entry!(
-        "navi.start",
+        "assistant.start",
         Start,
         Lead,
         Lead,
-        "Navi",
-        "a Navi's lead start and every fresh start, instead of the lead prompt, followed by the state block",
-        "project!=the Navi's name; projectRef!=<machineId>/<projectId>; folder!=its folder on its machine",
+        "Lead with no repo",
+        "a lead's start and every fresh start in a project with no repo, instead of the lead prompt, followed by the state block",
+        "project!=the project's name; projectRef!=<machineId>/<projectId>; folder!=its folder on its machine",
         &[
             (
                 "asks-before-risky",
@@ -267,12 +267,12 @@ pub const ENTRIES: &[Entry] = &[
         )]
     ),
     entry!(
-        "navi.voice",
+        "assistant.voice",
         Start,
         Lead,
         Lead,
-        "Navi's voice",
-        "after the Navi prompt, at every start of a Navi, instead of the lead's voice",
+        "Voice with no repo",
+        "after the lead with no repo prompt, at every start of a lead in a project with no repo, instead of the lead's voice",
         "",
         &[(
             "chat-only-voice",
@@ -581,12 +581,12 @@ pub const ENTRIES: &[Entry] = &[
         ]
     ),
     entry!(
-        "navi.checker",
+        "approvals.checker",
         Oneshot,
         OneShots,
         Audience::None,
-        "Navi approval checker",
-        "as the system prompt of a fresh tool-less session on the Navi owner's Claude, before one of its risky actions; its one message is the action, where each part came from, the person's recent messages and the Navi's last question, as JSON in <action_review>",
+        "Approval checker",
+        "as the system prompt of a fresh tool-less session on the project owner's Claude, before one of its lead's risky actions; its one message is the action, where each part came from, the person's recent messages and the lead's last question, as JSON in <action_review>",
         "",
         &[
             (
@@ -636,7 +636,27 @@ pub const ENTRIES: &[Entry] = &[
 
 pub const INSTRUCTIONS: &str = "instructions";
 
+/// Prompts a release renamed, old id first (D310: Navis became projects). For one release the old id still finds the
+/// prompt, and an override saved under it still applies until one is saved under the new id.
+pub const RENAMED: &[(&str, &str)] = &[
+    ("navi.start", "assistant.start"),
+    ("navi.voice", "assistant.voice"),
+    ("navi.checker", "approvals.checker"),
+];
+
+/// The id `id` had before [`RENAMED`], if it had another.
+pub fn old_id(id: &str) -> Option<&'static str> {
+    RENAMED
+        .iter()
+        .find(|(_, new)| *new == id)
+        .map(|(old, _)| *old)
+}
+
 pub fn get(id: &str) -> Option<&'static Entry> {
+    let id = RENAMED
+        .iter()
+        .find(|(old, _)| *old == id)
+        .map_or(id, |(_, new)| new);
     ENTRIES.iter().find(|e| e.id == id)
 }
 

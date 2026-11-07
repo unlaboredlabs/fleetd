@@ -104,7 +104,7 @@ async fn machine_roles_set(
         return Err(ToolError::new(
             ErrorCode::Invalid,
             format!(
-                "{m} is the agents' Mac: a tool for agents on other machines, so it never runs agents, leads or Navis itself."
+                "{m} is the agents' Mac: a tool for agents on other machines, so it never runs agents or leads itself."
             ),
         )
         .with_fix("Run agents on another machine; they use this Mac with `mac run` and `mac sim`."));

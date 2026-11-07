@@ -2980,7 +2980,10 @@ export type HubLink = {
 
 export type HubLinkAddInput = {
   label: string;
-  navi: ProjectRef;
+  /** Old name of `project`, accepted for one release. */
+  navi?: ProjectRef;
+  /** The project (D310); one of `project` and `navi`, its old name for one release. */
+  project?: ProjectRef;
   /** The link key sealed to this hub's boxPubKey. */
   sealed: SealedSecret;
   /** The other hub's URL, as the app pairs with it: https, or http over a tailnet. */
@@ -3038,8 +3041,10 @@ export type KnownHubLinkState = "ok" | "unreachable" | "revoked";
 export type HubLinkState = KnownHubLinkState | (string & {});
 
 export type HubLinksGetInput = {
-  /** A Navi: the links this hub keeps for it. Absent: none. */
+  /** Old name of `project`, accepted for one release. */
   navi?: ProjectRef;
+  /** The project (D310); `navi` is its old name, accepted for one release. */
+  project?: ProjectRef;
 };
 
 export type HubLinksGetOutput = {
@@ -4689,7 +4694,10 @@ export type NaviAskOrder = {
 };
 
 export type NaviAsksInput = {
-  navi: ProjectRef;
+  /** Old name of `project`, accepted for one release. */
+  navi?: ProjectRef;
+  /** The project (D310); one of `project` and `navi`, its old name for one release. */
+  project?: ProjectRef;
 };
 
 export type NaviAsksOutput = {
@@ -4917,11 +4925,10 @@ export type OnePasswordCard = {
 export type OnePasswordCardsInput = {
   /** Where to list them; default: the first machine online that holds the token. */
   machineId?: MachineId;
-  /**
-   * The Navi the card is for: listed on its machine with the token its fills use (its own
-   * OP_SERVICE_ACCOUNT_TOKEN variable, else the caller's).
-   */
+  /** Old name of `project`, accepted for one release. */
   navi?: ProjectRef;
+  /** The project (D310); `navi` is its old name, accepted for one release. */
+  project?: ProjectRef;
 };
 
 export type OnePasswordCardsOutput = {
@@ -7955,7 +7962,10 @@ export type TelegramBridge = {
 };
 
 export type TelegramGetInput = {
-  navi: ProjectRef;
+  /** Old name of `project`, accepted for one release. */
+  navi?: ProjectRef;
+  /** The project (D310); one of `project` and `navi`, its old name for one release. */
+  project?: ProjectRef;
 };
 
 export type TelegramGetOutput = {
@@ -7966,7 +7976,10 @@ export type TelegramGetOutput = {
 };
 
 export type TelegramPairInput = {
-  navi: ProjectRef;
+  /** Old name of `project`, accepted for one release. */
+  navi?: ProjectRef;
+  /** The project (D310); one of `project` and `navi`, its old name for one release. */
+  project?: ProjectRef;
 };
 
 export type TelegramPairOutput = {
@@ -7978,8 +7991,11 @@ export type TelegramPairOutput = {
 };
 
 export type TelegramPauseInput = {
-  navi: ProjectRef;
+  /** Old name of `project`, accepted for one release. */
+  navi?: ProjectRef;
   paused: boolean;
+  /** The project (D310); one of `project` and `navi`, its old name for one release. */
+  project?: ProjectRef;
 };
 
 export type TelegramPauseOutput = {
@@ -7999,7 +8015,10 @@ export type TelegramPerson = {
 };
 
 export type TelegramRemoveInput = {
-  navi: ProjectRef;
+  /** Old name of `project`, accepted for one release. */
+  navi?: ProjectRef;
+  /** The project (D310); one of `project` and `navi`, its old name for one release. */
+  project?: ProjectRef;
 };
 
 export type TelegramRemoveOutput = {
@@ -8009,7 +8028,10 @@ export type TelegramRemoveOutput = {
 };
 
 export type TelegramSetInput = {
-  navi: ProjectRef;
+  /** Old name of `project`, accepted for one release. */
+  navi?: ProjectRef;
+  /** The project (D310); one of `project` and `navi`, its old name for one release. */
+  project?: ProjectRef;
   /** The bot token, sealed on the client with crypto_box_seal to the Navi's machine's boxPubKey. */
   sealed: SealedSecret;
 };
@@ -8035,7 +8057,10 @@ export type TelegramStatus = {
 };
 
 export type TelegramTestInput = {
-  navi: ProjectRef;
+  /** Old name of `project`, accepted for one release. */
+  navi?: ProjectRef;
+  /** The project (D310); one of `project` and `navi`, its old name for one release. */
+  project?: ProjectRef;
 };
 
 export type TelegramTestOutput = {
@@ -8048,7 +8073,10 @@ export type TelegramTestOutput = {
 };
 
 export type TelegramUnpairInput = {
-  navi: ProjectRef;
+  /** Old name of `project`, accepted for one release. */
+  navi?: ProjectRef;
+  /** The project (D310); one of `project` and `navi`, its old name for one release. */
+  project?: ProjectRef;
 };
 
 export type TelegramUnpairOutput = {
@@ -9117,13 +9145,19 @@ export interface ToolMap {
   profile_update: { input: ProfileUpdateInput; output: ProfileUpdateOutput };
   profiles_list: { input: ProfilesListInput; output: ProfilesListOutput };
   project_add: { input: ProjectAddInput; output: ProjectAddOutput };
+  project_approvals: { input: NaviApprovalsInput; output: NaviApprovalsOutput };
+  project_approvals_set: { input: NaviApprovalsSetInput; output: NaviApprovalsSetOutput };
+  project_archive: { input: NaviArchiveInput; output: NaviArchiveOutput };
+  project_asks: { input: NaviAsksInput; output: NaviAsksOutput };
   project_avatar_get: { input: ProjectAvatarGetInput; output: ProjectAvatarGetOutput };
   project_avatar_set: { input: ProjectAvatarSetInput; output: ProjectAvatarSetOutput };
+  project_card_set: { input: NaviCardSetInput; output: NaviCardSetOutput };
   project_discover: { input: ProjectDiscoverInput; output: ProjectDiscoverOutput };
   project_env_set: { input: ProjectEnvSetInput; output: ProjectEnvSetOutput };
   project_files: { input: ProjectFilesInput; output: ProjectFilesOutput };
   project_get: { input: ProjectGetInput; output: ProjectGetOutput };
   project_icon_set: { input: ProjectIconSetInput; output: ProjectIconSetOutput };
+  project_purchases: { input: NaviPurchasesInput; output: NaviPurchasesOutput };
   project_remove: { input: ProjectRemoveInput; output: ProjectRemoveOutput };
   project_repo_add: { input: ProjectRepoAddInput; output: ProjectRepoAddOutput };
   project_repo_list: { input: ProjectRepoListInput; output: ProjectRepoListOutput };
@@ -9131,6 +9165,9 @@ export interface ToolMap {
   project_set: { input: ProjectSetInput; output: ProjectSetOutput };
   project_settings_get: { input: ProjectSettingsGetInput; output: ProjectSettingsGetOutput };
   project_settings_set: { input: ProjectSettingsSetInput; output: ProjectSettingsSetOutput };
+  project_signins_forget: { input: NaviSigninsForgetInput; output: NaviSigninsForgetOutput };
+  project_site_revoke: { input: NaviSiteRevokeInput; output: NaviSiteRevokeOutput };
+  project_sites: { input: NaviSitesInput; output: NaviSitesOutput };
   project_stop: { input: ProjectStopInput; output: ProjectStopOutput };
   prompt_get: { input: PromptGetInput; output: PromptGetOutput };
   prompt_set: { input: PromptSetInput; output: PromptSetOutput };

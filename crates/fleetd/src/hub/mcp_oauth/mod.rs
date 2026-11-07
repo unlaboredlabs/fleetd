@@ -815,7 +815,7 @@ pub async fn renew(hub: &Hub, row: &mut Row) -> Result<Renewed, String> {
                 say(
                     hub,
                     row,
-                    &format!("{} works again: Navi can use it.", row.name),
+                    &format!("{} works again: the lead can use it.", row.name),
                 );
             }
             if let Err(why) = push(hub, row).await {
@@ -847,7 +847,7 @@ pub async fn renew(hub: &Hub, row: &mut Row) -> Result<Renewed, String> {
                     hub,
                     row,
                     &format!(
-                        "{} isn't working: {problem} Navi can't use it until then.",
+                        "{} isn't working: {problem} the lead can't use it until then.",
                         row.name
                     ),
                 );

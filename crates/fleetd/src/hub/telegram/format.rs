@@ -403,7 +403,7 @@ pub fn secret(navi: &str, item: &fleetd_contracts::chat::SecretRequestItem) -> S
             escape(i.why.as_str())
         ),
         None => format!(
-            "<b>{} needs a secret: {}</b>\nSecrets are entered only in the fleetd app, never here. Open the Navi there to enter it.",
+            "<b>{} needs a secret: {}</b>\nSecrets are entered only in the fleetd app, never here. Open the project there to enter it.",
             escape(navi),
             escape(item.text.as_str())
         ),

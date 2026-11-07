@@ -48,7 +48,7 @@ pub struct Review {
     pub person_messages: Vec<String>,
     /// The Navi's last message to the person, when it asked something: Navi-written, never authority.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub navi_last_question: Option<String>,
+    pub lead_last_question: Option<String>,
     /// The automations whose runs the Navi is doing now and whose prompt the person wrote or said yes to: the person's
     /// standing word, as their messages are.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -371,7 +371,7 @@ impl Sources {
             }
         }
         if v.is_empty() {
-            return vec!["navi".to_owned()];
+            return vec![LEAD.to_owned()];
         }
         if self.said.iter().any(|m| m.contains(&v)) {
             add(&mut out, "person");
@@ -397,7 +397,7 @@ impl Sources {
             }
         }
         if out.is_empty() {
-            out.push("navi".to_owned());
+            out.push(LEAD.to_owned());
         }
         out
     }
@@ -532,7 +532,7 @@ fn label(k: Kind, r: &Read) -> String {
         },
         Kind::File => "a file".to_owned(),
         Kind::ChatFile => "a file sent in the chat".to_owned(),
-        Kind::Contacts | Kind::Other => "content the Navi read".to_owned(),
+        Kind::Contacts | Kind::Other => "content the lead read".to_owned(),
     }
 }
 
@@ -592,11 +592,11 @@ pub fn provenance(
         let host = parsed.host_str().unwrap_or_default().to_lowercase();
         let site = crate::hub::navi::sites::site_of(url).unwrap_or_else(|| host.clone());
         let mut from = sources.of(url);
-        if from == ["navi"] {
+        if from == [LEAD] {
             from = sources.of(&host);
         }
         if allowed.contains(&site) {
-            from.retain(|s| s != "navi");
+            from.retain(|s| s != LEAD);
             from.insert(0, format!("allowed site {site}"));
         }
         out.push(Provenance {
@@ -618,8 +618,8 @@ pub fn provenance(
             let (quoted, said) = sources.spans(&decoded.replace(['&', '='], "\n"));
             out.push(Provenance {
                 part: "url.path_and_query".to_owned(),
-                sources: if sources.of(&rest) == ["navi"] {
-                    vec!["navi".to_owned()]
+                sources: if sources.of(&rest) == [LEAD] {
+                    vec![LEAD.to_owned()]
                 } else {
                     sources.of(&rest)
                 },
@@ -661,7 +661,7 @@ pub fn provenance(
             sources: if whole.iter().any(|s| s.starts_with("person")) {
                 whole
             } else {
-                vec!["navi".to_owned()]
+                vec![LEAD.to_owned()]
             },
             value: None,
             quoted_from_untrusted: quoted,
@@ -806,7 +806,9 @@ const ACTING_AS: &[&str] = &[
     "userid",
 ];
 /// The source of an [`ACTING_AS`] value the Navi already read the person's data as. It vouches for no recipient.
-const ACCOUNT: &str = "an account the Navi read the person's data as";
+const ACCOUNT: &str = "an account the lead read the person's data as";
+/// The source of what the lead wrote itself, as the checker and a card name it.
+const LEAD: &str = "the lead";
 /// An [`ACTING_AS`] key's value in a read's call: `"account":"sam@example.org"`, at any depth, in a cut call too.
 static ACCOUNT_IN_CALL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#""([A-Za-z_]+)"\s*:\s*"([^"]+)""#).unwrap());
@@ -843,7 +845,7 @@ fn untrusted(source: &str) -> bool {
 
 /// A source of the person's own: anything but untrusted content and the Navi.
 fn own(source: &str) -> bool {
-    !untrusted(source) && source != "navi" && source != ACCOUNT
+    !untrusted(source) && source != LEAD && source != ACCOUNT
 }
 
 /// The addresses an action reaches: each destination's value, and every address in a list part.
@@ -977,7 +979,7 @@ pub fn rules(review: &Review) -> Option<CheckerNote> {
         if p.sources.iter().any(|s| untrusted(s)) && !p.sources.iter().any(|s| own(s)) {
             let what = p.value.clone().unwrap_or_else(|| p.part.clone());
             return Some(ask(&format!(
-                "{what} came only from content the Navi read, not from you"
+                "{what} came only from content the lead read, not from you"
             )));
         }
     }

@@ -90,10 +90,10 @@ pub fn refused(r: &ProjectRef) -> ToolError {
     error(
         ErrorCode::Forbidden,
         format!(
-            "{} on {} is another person's Navi: only its owner uses and manages it.",
+            "{} on {} is another person's Only me project: only its owner uses and manages it.",
             r.project_id, r.machine_id
         ),
-        "navi_list shows your own Navis; make one of your own with navi_create.",
+        "Your own projects are in your list; make one with project_add.",
     )
 }
 

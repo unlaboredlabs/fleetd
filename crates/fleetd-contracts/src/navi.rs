@@ -215,7 +215,7 @@ pub struct NaviAskOrder {
 /// for it or folding it into one already open.
 pub fn ask_footer(handle: &AskHandle) -> String {
     format!(
-        "(Ask {handle}. If you open an order for it, pass asked: \"{handle}\" to brief, so Navi hears when it lands. \
+        "(Ask {handle}. If you open an order for it, pass asked: \"{handle}\" to brief, so the asker hears when it lands. \
          If you fold it into an order already open, call brief with that workstreamId and asked: \"{handle}\".)"
     )
 }

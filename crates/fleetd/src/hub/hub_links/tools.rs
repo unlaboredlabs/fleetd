@@ -67,9 +67,9 @@ fn may_manage(hub: &Hub, caller: &Caller, navi: &ProjectRef) -> Result<(), ToolE
     }
     Err(ToolError::new(
         ErrorCode::Forbidden,
-        "Only the Navi's owner, or an admin, changes its linked hubs.",
+        "Only the project's owner, or an admin, changes its linked hubs.",
     )
-    .with_fix("Ask the person whose Navi it is."))
+    .with_fix("Ask the person whose project it is."))
 }
 
 fn box_failed(e: std::io::Error) -> ToolError {
@@ -83,7 +83,7 @@ async fn get(
     caller: Caller,
     input: HubLinksGetInput,
 ) -> Result<HubLinksGetOutput, ToolError> {
-    let links = match &input.navi {
+    let links = match input.project_ref() {
         Some(navi) => {
             require(&caller, Role::Read, Some(&navi.machine_id))?;
             kept(&hub.db, Some(navi))?
@@ -175,7 +175,7 @@ async fn add(
     input: HubLinkAddInput,
 ) -> Result<HubLinkAddOutput, ToolError> {
     person_only(&caller)?;
-    let navi = &input.navi;
+    let navi = input.project_ref();
     require(&caller, Role::Operate, Some(&navi.machine_id))?;
     if hub.store.project_get(navi)?.is_none() {
         return Err(unknown_project(navi));
@@ -205,7 +205,10 @@ async fn add(
     let Some(link_id) = keep(&hub, navi, &input.label, &url, &sealed, hello.cursor)? else {
         return Err(ToolError::new(
             ErrorCode::Invalid,
-            format!("This Navi has a linked hub called {} already.", input.label),
+            format!(
+                "This project has a linked hub called {} already.",
+                input.label
+            ),
         )
         .with_fix("Pick another label, or remove that link first."));
     };
@@ -220,7 +223,7 @@ async fn add(
         .ok_or_else(crate::hub::api::internal_error)?;
     Ok(HubLinkAddOutput {
         next: Some(format!(
-            "The Navi reaches {} project(s) on {}: factory_status and project_message with hub \"{}\".",
+            "The lead reaches {} project(s) on {}: factory_status and project_message with hub \"{}\".",
             hello.projects.len(),
             input.label,
             input.label
@@ -242,7 +245,7 @@ async fn remove(
             ErrorCode::NotFound,
             format!("No linked hub {} here.", input.link_id),
         )
-        .with_fix("hub_links_get with the Navi lists its links."));
+        .with_fix("hub_links_get with the project lists its links."));
     };
     may_manage(&hub, &caller, &link.navi)?;
     // The key goes first, so nothing more goes through it; then the other hub is asked to revoke it too.

@@ -325,15 +325,18 @@ async fn cards(
     let person = me(&hub, &caller)?;
     let id = &person.person_id;
     // For a Navi: on its machine, where its fills read the card, with the token they use there.
-    let machine_id = match &input.navi {
+    let machine_id = match input.project_ref() {
         Some(navi) => {
             // Its own token is its project's secret: listed only for a Navi, with operate on its machine.
             require(&caller, Role::Operate, Some(&navi.machine_id))?;
             if !matches!(crate::hub::navi::of(&hub.db, navi)?, Some(n) if n.archived_at.is_none()) {
                 return Err(error(
                     ErrorCode::NotFound,
-                    format!("{} on {} is not a Navi.", navi.project_id, navi.machine_id),
-                    "List cards for one of your Navis.",
+                    format!(
+                        "{} on {} is not an Only me project.",
+                        navi.project_id, navi.machine_id
+                    ),
+                    "List cards for one of your own Only me projects.",
                 ));
             }
             node_ready(&hub, &navi.machine_id)?;
@@ -364,7 +367,7 @@ async fn cards(
         .onepassword_cards(
             &machine_id,
             id.clone(),
-            input.navi.as_ref().map(|n| n.project_id.clone()),
+            input.project_ref().map(|n| n.project_id.clone()),
         )
         .await
         .map_err(from_executor)?;

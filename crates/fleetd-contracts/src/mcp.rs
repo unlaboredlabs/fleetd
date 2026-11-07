@@ -85,6 +85,38 @@ macro_rules! output {
 }
 
 /// Declares an input struct.
+/// Tool inputs that name their project as `project`, or as `navi`, its old name for one release (D310): exactly one of
+/// the two (`required`), or at most one; [`ProjectArg::project_ref`] reads whichever was given.
+macro_rules! names_project {
+    (required: $($name:ident),*; optional: $($opt:ident),*) => {
+        $(
+            checked!($name, |i| match (&i.project, &i.navi) {
+                (Some(_), Some(_)) => Err("give project or navi (its old name), not both".into()),
+                (None, None) => Err("give project".into()),
+                _ => Ok(()),
+            });
+            impl $name {
+                /// The project the call names, as `project` or `navi`.
+                pub fn project_ref(&self) -> &ProjectRef {
+                    self.project.as_ref().or(self.navi.as_ref()).expect("checked on decode")
+                }
+            }
+        )*
+        $(
+            checked!($opt, |i| match (&i.project, &i.navi) {
+                (Some(_), Some(_)) => Err("give project or navi (its old name), not both".into()),
+                _ => Ok(()),
+            });
+            impl $opt {
+                /// The project the call names, as `project` or `navi`; none when it names none.
+                pub fn project_ref(&self) -> Option<&ProjectRef> {
+                    self.project.as_ref().or(self.navi.as_ref())
+                }
+            }
+        )*
+    };
+}
+
 macro_rules! input {
     ($(#[$meta:meta])* $name:ident { $($(#[$fmeta:meta])* $field:ident : $ty:ty),* $(,)? }) => {
         #[skip_serializing_none]
@@ -331,10 +363,15 @@ output!(ProfileDeleteOutput { ok: True });
 // hub_links_get, hub_link_mint, hub_link_revoke, hub_link_add, hub_link_remove: hub links (D194). Minting and revoking
 // happen on the hub whose projects a link reaches; adding and removing on the hub whose Navi uses it. Human keys only
 // for the writes (the handlers check).
-input!(HubLinksGetInput {
-    /// A Navi: the links this hub keeps for it. Absent: none.
+input!(
+    #[serde(remote = "Self")]
+    HubLinksGetInput {
+    /// The project (D310); `navi` is its old name, accepted for one release.
+    project: Option<ProjectRef>,
+    /// Old name of `project`, accepted for one release.
     navi: Option<ProjectRef>,
-});
+}
+);
 output!(HubLinksGetOutput {
     /// The navi's links to other hubs.
     links: Vec<crate::hub_links::HubLink>,
@@ -360,14 +397,20 @@ input!(HubLinkRevokeInput {
 output!(HubLinkRevokeOutput {
     link: crate::hub_links::IssuedLink,
 });
-input!(HubLinkAddInput {
-    navi: ProjectRef,
+input!(
+    #[serde(remote = "Self")]
+    HubLinkAddInput {
+    /// The project (D310); one of `project` and `navi`, its old name for one release.
+    project: Option<ProjectRef>,
+    /// Old name of `project`, accepted for one release.
+    navi: Option<ProjectRef>,
     label: crate::hub_links::HubLabel,
     /// The other hub's URL, as the app pairs with it: https, or http over a tailnet.
     url: Line<1, 500>,
     /// The link key sealed to this hub's boxPubKey.
     sealed: crate::secrets::SealedSecret,
-});
+}
+);
 output!(HubLinkAddOutput {
     link: crate::hub_links::HubLink,
     /// What the Navi reaches there.
@@ -2039,7 +2082,15 @@ output!(ChecklistRemoveOutput {
 
 // navi_asks: what a Navi asked other projects for (`project_message`), newest first, with each order opened for it and
 // its state. The app shows it to a hub that names the `navi_asks` feature.
-input!(NaviAsksInput { navi: ProjectRef });
+input!(
+    #[serde(remote = "Self")]
+    NaviAsksInput {
+    /// The project (D310); one of `project` and `navi`, its old name for one release.
+    project: Option<ProjectRef>,
+    /// Old name of `project`, accepted for one release.
+    navi: Option<ProjectRef>,
+    }
+);
 output!(NaviAsksOutput {
     navi: ProjectRef,
     asks: List<crate::navi::NaviAsk, 0, { crate::navi::NAVI_ASKS_MAX }>,
@@ -3529,55 +3580,111 @@ output!(OnePasswordTestOutput {
 // telegram_get, telegram_set, telegram_test, telegram_pair, telegram_unpair, telegram_pause, telegram_remove: a Navi's
 // Telegram bridge (W237, `telegram.rs`), its owner's own, from their devices. The bot token is sealed in the app to the
 // Navi's machine's boxPubKey; the hub relays the box to the node and keeps the fingerprint, never the token.
-input!(TelegramGetInput { navi: ProjectRef });
+input!(
+    #[serde(remote = "Self")]
+    TelegramGetInput {
+    /// The project (D310); one of `project` and `navi`, its old name for one release.
+    project: Option<ProjectRef>,
+    /// Old name of `project`, accepted for one release.
+    navi: Option<ProjectRef>,
+    }
+);
 output!(TelegramGetOutput {
     /// Absent until a bot token is saved.
     bridge: Option<crate::telegram::TelegramBridge>,
 });
-input!(TelegramSetInput {
-    navi: ProjectRef,
+input!(
+    #[serde(remote = "Self")]
+    TelegramSetInput {
+    /// The project (D310); one of `project` and `navi`, its old name for one release.
+    project: Option<ProjectRef>,
+    /// Old name of `project`, accepted for one release.
+    navi: Option<ProjectRef>,
     /// The bot token, sealed on the client with crypto_box_seal to the Navi's machine's boxPubKey.
     sealed: crate::secrets::SealedSecret,
-});
+}
+);
 output!(TelegramSetOutput {
     bridge: crate::telegram::TelegramBridge,
 });
-input!(TelegramTestInput { navi: ProjectRef });
+input!(
+    #[serde(remote = "Self")]
+    TelegramTestInput {
+    /// The project (D310); one of `project` and `navi`, its old name for one release.
+    project: Option<ProjectRef>,
+    /// Old name of `project`, accepted for one release.
+    navi: Option<ProjectRef>,
+    }
+);
 output!(TelegramTestOutput {
     /// The bot Telegram answered for, when the token works.
     bot: Option<crate::telegram::TelegramBot>,
     /// Telegram's words when it doesn't, the token masked.
     error: Option<Text<0, 500>>,
 });
-input!(TelegramPairInput { navi: ProjectRef });
+input!(
+    #[serde(remote = "Self")]
+    TelegramPairInput {
+    /// The project (D310); one of `project` and `navi`, its old name for one release.
+    project: Option<ProjectRef>,
+    /// Old name of `project`, accepted for one release.
+    navi: Option<ProjectRef>,
+    }
+);
 output!(TelegramPairOutput {
     /// `https://t.me/<bot>?start=<code>`: Start there pairs the account that presses it.
     link: Line<1, 300>,
     expires_at: Timestamp,
 });
-input!(TelegramUnpairInput { navi: ProjectRef });
+input!(
+    #[serde(remote = "Self")]
+    TelegramUnpairInput {
+    /// The project (D310); one of `project` and `navi`, its old name for one release.
+    project: Option<ProjectRef>,
+    /// Old name of `project`, accepted for one release.
+    navi: Option<ProjectRef>,
+    }
+);
 output!(TelegramUnpairOutput {
     bridge: crate::telegram::TelegramBridge,
 });
-input!(TelegramPauseInput {
-    navi: ProjectRef,
+input!(
+    #[serde(remote = "Self")]
+    TelegramPauseInput {
+    /// The project (D310); one of `project` and `navi`, its old name for one release.
+    project: Option<ProjectRef>,
+    /// Old name of `project`, accepted for one release.
+    navi: Option<ProjectRef>,
     paused: bool,
-});
+}
+);
 output!(TelegramPauseOutput {
     bridge: crate::telegram::TelegramBridge,
 });
-input!(TelegramRemoveInput { navi: ProjectRef });
+input!(
+    #[serde(remote = "Self")]
+    TelegramRemoveInput {
+    /// The project (D310); one of `project` and `navi`, its old name for one release.
+    project: Option<ProjectRef>,
+    /// Old name of `project`, accepted for one release.
+    navi: Option<ProjectRef>,
+    }
+);
 output!(TelegramRemoveOutput { ok: True });
 
 // onepassword_cards: the Credit Card items the caller's own 1Password token reads, for a Navi's card picker: each
 // item's reference and name, never its number, expiry or code.
-input!(OnePasswordCardsInput {
+input!(
+    #[serde(remote = "Self")]
+    OnePasswordCardsInput {
     /// Where to list them; default: the first machine online that holds the token.
     machine_id: Option<MachineId>,
-    /// The Navi the card is for: listed on its machine with the token its fills use (its own
-    /// OP_SERVICE_ACCOUNT_TOKEN variable, else the caller's).
+    /// The project (D310); `navi` is its old name, accepted for one release.
+    project: Option<ProjectRef>,
+    /// Old name of `project`, accepted for one release.
     navi: Option<ProjectRef>,
-});
+}
+);
 output!(OnePasswordCardsOutput {
     machine_id: MachineId,
     cards: Vec<crate::purchase::OnePasswordCard>,
@@ -3621,6 +3728,12 @@ input!(ChatPinsSetInput {
 output!(ChatPinsSetOutput {
     pins: Vec<ProjectRef>
 });
+
+names_project!(
+    required: TelegramGetInput, TelegramSetInput, TelegramTestInput, TelegramPairInput, TelegramUnpairInput,
+        TelegramPauseInput, TelegramRemoveInput, NaviAsksInput, HubLinkAddInput;
+    optional: HubLinksGetInput, OnePasswordCardsInput
+);
 
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
 macro_rules! tools {
@@ -3697,15 +3810,21 @@ tools! {
     navi_list => NaviList, Read, NaviListInput, NaviListOutput;
     navi_rename => NaviRename, Operate, NaviRenameInput, NaviRenameOutput;
     navi_archive => NaviArchive, Operate, NaviArchiveInput, NaviArchiveOutput;
+    project_archive => ProjectArchive, Operate, NaviArchiveInput, NaviArchiveOutput;
     project_avatar_set => ProjectAvatarSet, Operate, ProjectAvatarSetInput, ProjectAvatarSetOutput;
     project_avatar_get => ProjectAvatarGet, Read, ProjectAvatarGetInput, ProjectAvatarGetOutput;
     project_icon_set => ProjectIconSet, Operate, ProjectIconSetInput, ProjectIconSetOutput;
     navi_sites => NaviSites, Read, NaviSitesInput, NaviSitesOutput;
+    project_sites => ProjectSites, Read, NaviSitesInput, NaviSitesOutput;
     navi_site_revoke => NaviSiteRevoke, Operate, NaviSiteRevokeInput, NaviSiteRevokeOutput;
+    project_site_revoke => ProjectSiteRevoke, Operate, NaviSiteRevokeInput, NaviSiteRevokeOutput;
     navi_approvals => NaviApprovals, Read, NaviApprovalsInput, NaviApprovalsOutput;
-    // Human keys only (the handler checks): a person decides what their Navi does without asking.
+    project_approvals => ProjectApprovals, Read, NaviApprovalsInput, NaviApprovalsOutput;
+    // Human keys only (the handler checks): a person decides what their project does without asking.
     navi_approvals_set => NaviApprovalsSet, Operate, NaviApprovalsSetInput, NaviApprovalsSetOutput;
+    project_approvals_set => ProjectApprovalsSet, Operate, NaviApprovalsSetInput, NaviApprovalsSetOutput;
     navi_signins_forget => NaviSigninsForget, Operate, NaviSigninsForgetInput, NaviSigninsForgetOutput;
+    project_signins_forget => ProjectSigninsForget, Operate, NaviSigninsForgetInput, NaviSigninsForgetOutput;
     telegram_get => TelegramGet, Read, TelegramGetInput, TelegramGetOutput;
     telegram_set => TelegramSet, Operate, TelegramSetInput, TelegramSetOutput;
     telegram_test => TelegramTest, Operate, TelegramTestInput, TelegramTestOutput;
@@ -3714,7 +3833,9 @@ tools! {
     telegram_pause => TelegramPause, Operate, TelegramPauseInput, TelegramPauseOutput;
     telegram_remove => TelegramRemove, Operate, TelegramRemoveInput, TelegramRemoveOutput;
     navi_purchases => NaviPurchases, Read, NaviPurchasesInput, NaviPurchasesOutput;
+    project_purchases => ProjectPurchases, Read, NaviPurchasesInput, NaviPurchasesOutput;
     navi_card_set => NaviCardSet, Operate, NaviCardSetInput, NaviCardSetOutput;
+    project_card_set => ProjectCardSet, Operate, NaviCardSetInput, NaviCardSetOutput;
     project_settings_get => ProjectSettingsGet, Read, ProjectSettingsGetInput, ProjectSettingsGetOutput;
     project_settings_set => ProjectSettingsSet, Operate, ProjectSettingsSetInput, ProjectSettingsSetOutput;
     // Human keys only (the handler checks): a person sets a project's environment.
@@ -3836,6 +3957,7 @@ tools! {
     memory_refresh_run => MemoryRefreshRun, Operate, MemoryRefreshRunInput, MemoryRefreshRunOutput;
     checklist_get => ChecklistGet, Read, ChecklistGetInput, ChecklistGetOutput;
     navi_asks => NaviAsks, Read, NaviAsksInput, NaviAsksOutput;
+    project_asks => ProjectAsks, Read, NaviAsksInput, NaviAsksOutput;
     // Human keys only (the handler checks).
     checklist_remove => ChecklistRemove, Operate, ChecklistRemoveInput, ChecklistRemoveOutput;
     browser_sessions => BrowserSessions, Read, BrowserSessionsInput, BrowserSessionsOutput;
@@ -4177,5 +4299,30 @@ mod tests {
                 .is_none()
         );
         assert!(decode::<HubInfoInput>(json!({ "machineId": "devbox" })).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod project_arg_tests {
+    use super::*;
+
+    /// D310: a tool that named its project `navi` takes `project`, and `navi` still for one release; one, not both.
+    #[test]
+    fn a_project_argument_takes_its_old_name_navi_too() {
+        let r = serde_json::json!({ "machineId": "devbox", "projectId": "p1" });
+        for key in ["project", "navi"] {
+            let input: TelegramGetInput =
+                serde_json::from_value(serde_json::json!({ key: r })).unwrap();
+            assert_eq!(input.project_ref().project_id.as_str(), "p1", "{key}");
+        }
+        assert!(
+            serde_json::from_value::<TelegramGetInput>(
+                serde_json::json!({ "project": r, "navi": r })
+            )
+            .is_err()
+        );
+        assert!(serde_json::from_value::<TelegramGetInput>(serde_json::json!({})).is_err());
+        let none: HubLinksGetInput = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(none.project_ref().is_none());
     }
 }

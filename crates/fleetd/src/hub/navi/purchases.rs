@@ -37,8 +37,12 @@ pub const OPS: [&str; 6] = [
 const LOG_MAX: i64 = 200;
 
 pub fn register(tools: &mut Registry) {
-    tools.add("navi_purchases", purchases);
-    tools.add("navi_card_set", card_set);
+    for name in ["project_purchases", "navi_purchases"] {
+        tools.add(name, purchases);
+    }
+    for name in ["project_card_set", "navi_card_set"] {
+        tools.add(name, card_set);
+    }
 }
 
 pub fn register_lead_calls(hub: &Arc<Hub>) {
@@ -146,7 +150,7 @@ async fn answer(
     if caller.agent != CallerAgent::Lead || !navi {
         return Err(McpToolError::new(
             ErrorCode::Forbidden,
-            "Only a Navi pays at a checkout or asks for a secure input, and this session is none.",
+            "Only an Only me project's lead pays at a checkout or asks for a secure input, and this session is none.",
         )
         .with_fix("leave the payment to the person and say so"));
     }
@@ -334,8 +338,8 @@ async fn card_set(
     if !is_human(&caller) {
         return Err(error(
             ErrorCode::Forbidden,
-            "Only a person picks the card a Navi pays with.",
-            "Pick it in the app: the Navi's Settings › Payments.",
+            "Only a person picks the card a project pays with.",
+            "Pick it in the app: the project's Settings › Payments.",
         ));
     }
     let r = navi_ref(&hub, input.machine_id, input.project_id)?;
@@ -344,10 +348,10 @@ async fn card_set(
     let card = input.card.map(|reference| NaviCard { reference });
     let next = Some(match &card {
         Some(card) => format!(
-            "The Navi pays with {} from now on, after you approve each purchase.",
+            "The project pays with {} from now on, with no ask at each purchase.",
             card.label()
         ),
-        None => "The Navi has no card now: it can't pay at a checkout.".to_owned(),
+        None => "The project has no card now: it can't pay at a checkout.".to_owned(),
     });
     Ok(NaviCardSetOutput {
         card,

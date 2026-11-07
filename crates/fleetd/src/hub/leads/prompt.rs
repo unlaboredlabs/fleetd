@@ -1,5 +1,5 @@
 //! What a lead starts with. Its system prompt holds its standing rules, which a compaction never summarizes: the
-//! `lead.start` prompt (a Navi's: `navi.start`), `lead.voice` (a Navi's: `navi.voice`), `lead.profiles` with each profile the project allows
+//! `lead.start` prompt (a Navi's: `assistant.start`), `lead.voice` (a Navi's: `assistant.voice`), `lead.profiles` with each profile the project allows
 //! and its note, while it allows more than the default (never for a Navi, which runs no code tasks), the human's custom
 //! instructions, then the memory (user memory per `You::for_lead`, and the project's `MEMORY.md`). Its first message
 //! holds the state it starts in: the digest, and, for a project with repos besides its own directory, those
@@ -16,9 +16,13 @@ automations: start its work without asking the human first; reviews, the train a
 recurring or triggered work the human asks for, use `automation_create`, `automation_list`, `automation_update`, \
 `automation_pause`, `automation_delete`, `automation_run` and `automation_runs`.";
 
-/// The prompt a lead starts from: `navi.start` for a Navi, else `lead.start`.
+/// The prompt a lead starts from: `assistant.start` for a Navi, else `lead.start`.
 pub fn start_prompt(navi: bool) -> &'static str {
-    if navi { "navi.start" } else { "lead.start" }
+    if navi {
+        "assistant.start"
+    } else {
+        "lead.start"
+    }
 }
 
 /// A lead's system prompt and first message.
@@ -37,7 +41,7 @@ impl LeadStart {
     }
 }
 
-/// `navi_folder`: a Navi's folder, for `navi.start`; none for any other project.
+/// `navi_folder`: a Navi's folder, for `assistant.start`; none for any other project.
 #[allow(clippy::too_many_arguments)]
 pub fn render_lead_start(
     set: &PromptSet,
@@ -84,7 +88,7 @@ pub fn render_lead_start(
     };
     // A Navi talks as a personal assistant, and its prompt already says how it runs its own automations.
     let (voice, automations) = match navi_folder {
-        Some(_) => (set.render("navi.voice", &[]), String::new()),
+        Some(_) => (set.render("assistant.voice", &[]), String::new()),
         None => (set.render("lead.voice", &[]), format!("\n\n{AUTOMATIONS}")),
     };
     let system = set.with_instructions(format!(
@@ -285,7 +289,7 @@ mod tests {
             let starts = set.render(start_prompt(navi.is_some()), &[]);
             let head = starts.lines().nth(2).unwrap();
             let (voice, automations) = match navi {
-                Some(_) => (set.render("navi.voice", &[]), "From automation"),
+                Some(_) => (set.render("assistant.voice", &[]), "From automation"),
                 None => (set.render("lead.voice", &[]), AUTOMATIONS),
             };
             for part in [head, voice.trim_end(), automations, "MEMORY"] {

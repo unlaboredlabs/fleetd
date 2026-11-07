@@ -327,7 +327,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                         value("Vault name", "fleetd"),
                         plain(
                             "In it",
-                            "Each login agents sign in with, with its website, and the card a Navi buys with",
+                            "Each login agents sign in with, with its website, and the card a project buys with",
                         ),
                     ],
                 ),
@@ -401,7 +401,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 SetupStepId::People,
                 SetupGroup::People,
                 "Invite people",
-                "Each person gets their own sign-in, chats and Navi; you choose who is an admin.",
+                "Each person gets their own sign-in, chats and projects; you choose who is an admin.",
                 SetupNeed::Optional,
             )
         },

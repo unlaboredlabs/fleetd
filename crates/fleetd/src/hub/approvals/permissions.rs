@@ -544,7 +544,7 @@ impl Approvals {
         self.change_from(&r.request_id, RequestState::Approved, |r| {
             r.state = RequestState::Ran;
             r.evidence = Some(fleetd_contracts::prim::Text::unchecked(
-                "ran: the Navi asked again with exactly the input approved",
+                "ran: the lead asked again with exactly the input approved",
             ));
             r.finished_at = Some(fleetd_contracts::ids::Timestamp(at));
         })

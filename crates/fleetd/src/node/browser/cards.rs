@@ -75,7 +75,7 @@ pub(super) fn navi_session(broker: &Broker, thread: &str) -> Result<Arc<Session>
     if !broker.is_navi(thread) {
         return Err(refuse(
             ErrorCode::Forbidden,
-            "Only a Navi pays at a checkout.",
+            "Only an Only me project's lead pays at a checkout.",
             "leave the payment to the person and say so",
         ));
     }

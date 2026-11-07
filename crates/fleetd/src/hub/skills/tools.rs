@@ -528,7 +528,7 @@ async fn skill_off(
             format!("The hub keeps no skill called {} for this project.", input.name),
         )
         .with_fix(
-            "Only the hub's skills turn off here: one in the repo's or a Navi's folder reaches its sessions from              there, so remove it from that folder.",
+            "Only the hub's skills turn off here: one in the repo's or a project's folder reaches its sessions from              there, so remove it from that folder.",
         ));
     }
     versions::set_off(&hub.db, &input.project_ref, &input.name, input.off)?;

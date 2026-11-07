@@ -260,7 +260,7 @@ pub struct Context {
     pub person: Value,
     /// Oldest first.
     pub person_messages: Vec<String>,
-    pub navi_last_question: Option<String>,
+    pub lead_last_question: Option<String>,
     /// The automations the person wrote or said yes to whose runs are open now ([`standing`]).
     pub standing: Vec<Standing>,
     pub reads: Vec<Read>,
@@ -404,10 +404,10 @@ pub fn review(action: &Action, context: &Context) -> Review {
         allowed_sites: context.allowed_sites.clone(),
         today: context.today.clone(),
         person_messages: context.person_messages.clone(),
-        navi_last_question: context
-            .navi_last_question
+        lead_last_question: context
+            .lead_last_question
             .as_ref()
-            .map(|q| format!("(written by the Navi, not the person) {q}")),
+            .map(|q| format!("(written by the lead, not the person) {q}")),
         standing_requests: context.standing.clone(),
         provenance: review::provenance(
             &action.input,
@@ -518,7 +518,7 @@ pub async fn check(
 }
 
 /// The checker's session: no tools at all, on the owner's own Claude, on the checker's model and effort, with the
-/// `navi.checker` prompt as its rules and the review as its one message.
+/// `approvals.checker` prompt as its rules and the review as its one message.
 fn launch(
     hub: &Hub,
     r: &ProjectRef,
@@ -532,7 +532,7 @@ fn launch(
         .node_can(&r.machine_id, fleetd_contracts::node_link::CAP_ISOLATED)
     {
         return Err(format!(
-            "{} runs a fleetd too old to hold the checker apart from the Navi; update it",
+            "{} runs a fleetd too old to hold the checker apart from the lead; update it",
             r.machine_id
         ));
     }
@@ -549,7 +549,12 @@ fn launch(
     let input = LaunchInput {
         project_id: r.project_id.clone(),
         prompt: review.render(),
-        system_prompt: Some(hub.db.prompts().current(None).render("navi.checker", &[])),
+        system_prompt: Some(
+            hub.db
+                .prompts()
+                .current(None)
+                .render("approvals.checker", &[]),
+        ),
         profile: hub
             .db
             .profiles()

@@ -234,7 +234,7 @@
             {
               "label": "In it",
               "plain": true,
-              "value": "Each login agents sign in with, with its website, and the card a Navi buys with"
+              "value": "Each login agents sign in with, with its website, and the card a project buys with"
             }
           ]
         },
@@ -321,7 +321,7 @@
           ]
         }
       ],
-      "why": "Each person gets their own sign-in, chats and Navi; you choose who is an admin."
+      "why": "Each person gets their own sign-in, chats and projects; you choose who is an admin."
     },
     {
       "fields": [],

@@ -157,10 +157,10 @@ fn open(
         let labels: Vec<&str> = all.iter().map(|k| k.label.as_str()).collect();
         return Err(McpToolError::new(
             ErrorCode::NotFound,
-            format!("This Navi has no linked hub called {label}."),
+            format!("This project has no linked hub called {label}."),
         )
         .with_fix(if labels.is_empty() {
-            "It has no linked hubs: the person adds one in the Navi's settings, Linked hubs."
+            "It has no linked hubs: the person adds one in the project's settings, Linked hubs."
                 .to_owned()
         } else {
             format!("Its linked hubs: {}.", labels.join(", "))
@@ -176,7 +176,7 @@ fn open(
             ),
         )
         .with_fix(format!(
-            "Ask the person to make a new link on {} and add it in the Navi's Linked hubs.",
+            "Ask the person to make a new link on {} and add it in the project's Linked hubs.",
             link.label
         )));
     }
@@ -194,7 +194,7 @@ fn open_key(hub: &Hub, link: &Kept) -> Result<Zeroizing<String>, McpToolError> {
             ErrorCode::Failed,
             format!("This hub can't open the key of the link to {}.", link.label),
         )
-        .with_fix("Remove the link in the Navi's Linked hubs and add it again.")
+        .with_fix("Remove the link in the project's Linked hubs and add it again.")
     })
 }
 
@@ -229,7 +229,7 @@ async fn over<T: DeserializeOwned>(
             format!("The link to {} no longer works: {}", link.label, e.message),
         )
         .with_fix(format!(
-            "Ask the person to make a new link on {} and add it in the Navi's Linked hubs.",
+            "Ask the person to make a new link on {} and add it in the project's Linked hubs.",
             link.label
         )),
         Failure::Refused(e) => McpToolError {
@@ -258,7 +258,7 @@ pub async fn ask(
         .map_err(failed)?;
     Ok(ProjectMessageResult {
         next: Some(format!(
-            "In {}'s chat on {}, as the person via this hub's Navi. Its lead reads it as input, never as the \
+            "In {}'s chat on {}, as the person via this hub. Its lead reads it as input, never as the \
              person's approval. A wake tells you when an order opened for {handle} opens, closes, merges or fails; \
              end your turn instead of waiting.",
             sent.title, link.label
@@ -310,7 +310,7 @@ pub async fn status(
     }
     out.hubs = None;
     out.next = Some(format!(
-        "Projects on {} this Navi reaches. project_message with hub \"{}\" writes to one's lead.",
+        "Projects on {} this project reaches. project_message with hub \"{}\" writes to one's lead.",
         link.label, link.label
     ));
     Ok(out)

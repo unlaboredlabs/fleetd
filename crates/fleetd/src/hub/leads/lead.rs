@@ -1,5 +1,5 @@
 //! One lead per project: a thread on the project's machine, started with the lead prompt plus the digest. A project
-//! with no repo's lead does its own work, from `navi.start` in the assistant role; no lead starts while its project is
+//! with no repo's lead does its own work, from `assistant.start` in the assistant role; no lead starts while its project is
 //! archived.
 use std::sync::Arc;
 use std::time::Duration;
@@ -429,7 +429,7 @@ impl Leads {
         let (digest, idle) = self.wakes.digest_to_send(r).await?;
         // Every lead runs in manual permission mode, doing unasked what full access does, and asking for a send or a
         // first site visit (approvals/permissions.rs, D310). One with no repo does its own work, in the assistant
-        // role from `navi.start` with file and web tools: re-read at every start, so adding a repo changes it. A node
+        // role from `assistant.start` with file and web tools: re-read at every start, so adding a repo changes it. A node
         // before this runs a Navi as before and every other lead under full access.
         let manual = self.ctx.ports().one_lead_mode(&r.machine_id);
         let own_work = match manual {

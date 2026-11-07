@@ -367,7 +367,7 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
         return device_start(&router, thread, frame).await;
     }
     // A lead's runs here, on its project's kept profile: another machine hasn't that profile.
-    if broker.is_navi(&thread) {
+    if broker.stays_here(&thread) {
         return local(&router, thread, frame).await;
     }
     let ending = matches!(frame.call, BrowserCall::SessionEnd(_));
@@ -1068,6 +1068,12 @@ impl SessionHooks for Router {
         }
         if let Some(ios) = &self.ios {
             ios.navi(thread);
+        }
+    }
+
+    fn lead_profile(&self, thread: &str, project: &str) {
+        if let Some(broker) = &self.broker {
+            SessionHooks::lead_profile(broker.as_ref(), thread, project);
         }
     }
 

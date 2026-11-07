@@ -358,7 +358,7 @@ async fn handle(
             hub.chat.system_line(
                 r,
                 &format!(
-                    "Telegram paired with {}{handle}{bot}: messages there reach this Navi, and its replies go there too.",
+                    "Telegram paired with {}{handle}{bot}: messages there reach this project, and its replies go there too.",
                     person.name.as_str()
                 ),
             )?;
@@ -386,7 +386,7 @@ async fn stop(hub: &Arc<Hub>, r: &ProjectRef, seq: i64, at: &str) -> Result<(), 
                 Ok(false) => "Nothing was running.",
                 Err(e) => {
                     tracing::warn!(navi = %r.project_id, "telegram: stop: {}", e.message);
-                    "Couldn't stop: the Navi's machine didn't answer. Try /stop again."
+                    "Couldn't stop: the project's machine didn't answer. Try /stop again."
                 }
             };
             crate::hub::chat::flow::ensure(hub, r).await?;
@@ -628,7 +628,7 @@ fn title(hub: &Hub, r: &ProjectRef) -> String {
         .flatten()
         .map(|p| p.title.to_string())
         .filter(|t| !t.trim().is_empty())
-        .unwrap_or_else(|| "Your Navi".to_owned())
+        .unwrap_or_else(|| "Your project".to_owned())
 }
 
 /// Sends what the Navi said since the last send, and updates the cards answered since.

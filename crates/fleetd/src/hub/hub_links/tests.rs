@@ -310,10 +310,10 @@ async fn an_ask_from_a_navi_opens_an_order_on_the_other_hub_as_the_person_and_it
     assert_eq!(out["hub"], "acme");
     assert_eq!(out["title"], "Storefront");
 
-    // Acme records it as the person, via home's Navi, and sees nothing of the Navi itself.
+    // Acme records it as the person, via home, and sees nothing of the project itself.
     let posts = agent_posts(&l.acme, &shop);
     assert_eq!(posts.len(), 1);
-    assert_eq!(posts[0].0, "Alex via home Navi");
+    assert_eq!(posts[0].0, "Alex via home");
     assert!(posts[0].1.starts_with("Gift cards, please."));
     assert!(posts[0].1.contains("pass asked: \"N1\""), "{}", posts[0].1);
     assert!(
@@ -627,7 +627,7 @@ async fn a_link_acts_as_its_person_whatever_their_device_and_stops_when_they_lea
     // The device it was made on is revoked: the link still acts as Alex, at Alex's role.
     l.acme.auth.revoke(l.you_acme.key_id.as_str()).unwrap();
     lead(&l.home, &navi, ask("Gift cards.")).await.unwrap();
-    assert_eq!(agent_posts(&l.acme, &shop)[0].0, "Alex via home Navi");
+    assert_eq!(agent_posts(&l.acme, &shop)[0].0, "Alex via home");
     // A new name shows on the next ask.
     let people = crate::hub::people::People::new(l.acme.db.clone(), l.acme.clock.clone());
     let alex = l.you_acme.person.clone().unwrap();
@@ -639,7 +639,7 @@ async fn a_link_acts_as_its_person_whatever_their_device_and_stops_when_they_lea
         )
         .unwrap();
     lead(&l.home, &navi, ask("Dark mode.")).await.unwrap();
-    assert_eq!(agent_posts(&l.acme, &shop)[1].0, "Alex K via home Navi");
+    assert_eq!(agent_posts(&l.acme, &shop)[1].0, "Alex K via home");
     // Alex leaves acme: the link stops at once, and home marks it revoked.
     people.remove(&alex.person_id).unwrap().unwrap();
     let (code, why) = lead(&l.home, &navi, ask("Receipts.")).await.unwrap_err();
@@ -728,7 +728,7 @@ async fn only_the_navis_owner_or_an_admin_changes_its_links() {
         .await
         .unwrap_err();
     assert_eq!(code, ErrorCode::Forbidden);
-    assert!(why.contains("Navi's owner"), "{why}");
+    assert!(why.contains("project's owner"), "{why}");
     let (code, _) = tool(
         &l.home,
         &blake,
@@ -814,7 +814,7 @@ async fn a_link_from_before_people_acts_at_its_device_and_dies_with_it() {
     lead(&l.home, &navi, ask.clone()).await.unwrap();
     assert_eq!(
         agent_posts(&l.acme, &project("storefront"))[0].0,
-        "laptop via home Navi"
+        "laptop via home"
     );
     l.acme.auth.revoke(l.you_acme.key_id.as_str()).unwrap();
     let (code, why) = lead(&l.home, &navi, ask).await.unwrap_err();
@@ -1030,14 +1030,14 @@ async fn a_message_through_a_link_is_never_the_persons_answer_approval_or_secret
         ChatAuthor::Agent,
         "an agent's input, not the person's"
     );
-    assert_eq!(said.by.as_deref(), Some("Alex via home Navi"));
+    assert_eq!(said.by.as_deref(), Some("Alex via home"));
     assert!(
         crate::hub::chat::needs_you(&after),
         "the question still waits on the person"
     );
     let set = l.acme.db.prompts().current(Some(&shop));
     let for_lead = crate::hub::chat::flow::for_lead(&set, said, None, "", "The human", "");
-    assert!(for_lead.contains("Alex via home Navi"), "{for_lead}");
+    assert!(for_lead.contains("Alex via home"), "{for_lead}");
 
     // The key opens /link/v1 and nothing else: no tool, no approval, no chat read.
     let http = reqwest::Client::new();

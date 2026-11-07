@@ -512,7 +512,7 @@ const KEPT_PREFS: &str = r#"{
 /// lock and leftovers of the browser before it cleared (the lease says none runs on it now; one killed leaves both).
 fn ready_kept(dir: &Path) -> Result<(), String> {
     let fail =
-        |e: std::io::Error| format!("cannot ready the Navi's profile {}: {e}", dir.display());
+        |e: std::io::Error| format!("cannot ready the project's profile {}: {e}", dir.display());
     crate::node::config::mkdir_private(&dir.join("Default")).map_err(fail)?;
     for lock in ["SingletonLock", "SingletonSocket", "SingletonCookie"] {
         let _ = std::fs::remove_file(dir.join(lock));
@@ -572,7 +572,7 @@ impl Kept {
     }
 
     fn dir_of(&self, navi: &str) -> Result<PathBuf, String> {
-        kept_dir(&self.home, navi).ok_or_else(|| format!("{navi} is no Navi's name"))
+        kept_dir(&self.home, navi).ok_or_else(|| format!("{navi} is no project's id"))
     }
 
     /// The Navi's profile, unless a browser runs on it now (Err: why not).

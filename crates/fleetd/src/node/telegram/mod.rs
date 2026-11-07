@@ -246,7 +246,7 @@ impl Telegram {
         }
         let Some(bot) = self.bot(project) else {
             return Err(
-                "this machine holds no Telegram bot token for this Navi: paste it again in its settings".into(),
+                "this machine holds no Telegram bot token for this project: paste it again in its settings".into(),
             );
         };
         match call {

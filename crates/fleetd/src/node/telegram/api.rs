@@ -35,7 +35,7 @@ impl ApiError {
             Self::Unauthorized => {
                 "Telegram refused the token: it is wrong or was revoked. Paste a new one from @BotFather.".into()
             }
-            Self::Conflict => "Another program is reading this bot's messages. Stop it, or make a new bot for this Navi.".into(),
+            Self::Conflict => "Another program is reading this bot's messages. Stop it, or make a new bot for this project.".into(),
             Self::RateLimited(s) => format!("Telegram asked to slow down for {s} s."),
             Self::Refused(why) => format!("Telegram said: {why}"),
             Self::Down(why) => format!("Telegram couldn't be reached: {why}"),

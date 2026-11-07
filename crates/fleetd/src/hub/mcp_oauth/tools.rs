@@ -56,7 +56,7 @@ async fn start(
             "Signing in connects one project's server, with your own account; a global server reaches every \
              teammate's agents.",
         )
-        .with_fix("Add the server to the project (a Navi's Integrations), then sign in."));
+        .with_fix("Add the server to the project (a project's Integrations), then sign in."));
     }
     project_of(&hub, &input.scope)?;
     let Some(server) = hub.db.mcp_servers().get(&input.scope, &input.name)? else {

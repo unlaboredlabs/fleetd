@@ -108,7 +108,7 @@ async fn set(
         error(
             ErrorCode::Forbidden,
             "Only a person keeps a sidebar order, from one of their own devices.",
-            "Pair the app as yourself, then drag a project or a Navi in its sidebar.",
+            "Pair the app as yourself, then drag a project in its sidebar.",
         )
     })?;
     let order = input.order.into_inner();

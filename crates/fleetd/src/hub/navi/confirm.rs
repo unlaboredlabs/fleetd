@@ -48,7 +48,7 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
     if caller.agent != CallerAgent::Lead {
         return Err(McpToolError::new(
             ErrorCode::Forbidden,
-            "Only a Navi confirms a step on a site.",
+            "Only a project confirms a step on a site.",
         ));
     }
     let LeadCall::ConfirmStep(call) = call else {

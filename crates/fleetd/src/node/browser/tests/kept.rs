@@ -335,3 +335,31 @@ async fn a_persons_screen_opens_signed_out_while_the_lead_holds_the_profile() {
         "Signed out"
     );
 }
+
+/// D310: a lead with repos keeps its sign-ins too, on its project's kept profile, whenever the hub places its browser
+/// on its own machine; it isn't held there, so placement and the machines' caps still decide, and with the profile
+/// busy it opens on a fresh one.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_lead_with_repos_keeps_its_sign_ins_where_the_hub_places_it_here() {
+    let Some(rig) = rig().await else { return };
+    let (site, _site) = site().await;
+    let broker = &rig.broker;
+    let lead = "th-lead-shop";
+    SessionHooks::lead_profile(broker.as_ref(), lead, "shop");
+    assert!(!broker.stays_here(lead), "the hub places it");
+    assert_eq!(
+        visit(broker, lead, &format!("{site}/remember?user=shop")).await,
+        "Welcome shop"
+    );
+    assert_eq!(
+        visit(broker, lead, &format!("{site}/whoami")).await,
+        "Signed in as shop",
+        "its next session is still signed in"
+    );
+    let (_driver, _page) = open_on(broker, lead, &format!("{site}/whoami")).await;
+    broker.person_screen("screen-2", "shop");
+    assert_eq!(
+        visit(broker, "screen-2", &format!("{site}/whoami")).await,
+        "Signed out"
+    );
+}

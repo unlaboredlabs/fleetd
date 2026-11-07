@@ -3,7 +3,7 @@
 //!
 //! - `GET hello`: the link's label, its person, the projects it reaches (and whether it is limited to them), and the
 //!   feed's start.
-//! - `POST ask` (`LinkAskCall`): `project_message` as the link's person, "<person> via <label> Navi".
+//! - `POST ask` (`LinkAskCall`): `project_message` as the link's person, "<person> via <label>".
 //! - `GET status?project=`: `factory_status` over the projects it reaches, with its own asks.
 //! - `GET feed?after=&wait=`: what happened to its asks after `after`, waiting up to `wait` seconds for some.
 //! - `POST revoke`: the link revokes itself, when the hub with the Navi removes it.

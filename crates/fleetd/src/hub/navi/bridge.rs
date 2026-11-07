@@ -244,7 +244,7 @@ fn target(hub: &Hub, asker: &Asker, name: &str) -> Result<ProjectSummary, McpToo
     };
     if !asker.reaches(&project_ref(&p)) {
         return Err(match asker {
-            Asker::Navi(_) => McpToolError::new(ErrorCode::Invalid, "That is this Navi's own project.")
+            Asker::Navi(_) => McpToolError::new(ErrorCode::Invalid, "That is this project's own project.")
                 .with_fix("project_message writes to another project's lead; say it in your own reply."),
             Asker::Link(_) => McpToolError::new(
                 ErrorCode::Forbidden,
@@ -263,19 +263,13 @@ fn project_ref(p: &ProjectSummary) -> ProjectRef {
     }
 }
 
-/// The agent name a Navi writes under: its title, with "Navi" in front unless the title says it already.
+/// The agent name a lead writes under in another project's chat: its project's title.
 pub fn author(hub: &Hub, r: &ProjectRef) -> String {
-    let title = hub
-        .store
+    hub.store
         .project_get(r)
         .ok()
         .flatten()
-        .map_or_else(|| r.project_id.to_string(), |p| p.title);
-    if title.to_lowercase().contains("navi") {
-        title
-    } else {
-        format!("Navi {title}")
-    }
+        .map_or_else(|| r.project_id.to_string(), |p| p.title)
 }
 
 pub async fn project_message(

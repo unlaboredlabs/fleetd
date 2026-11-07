@@ -26,7 +26,12 @@ pub const PROJECT_USAGE: &str =
              start a new, empty project: the machine makes its folder (~/fleetd/projects/<name>
              by default, or --dest; one that holds files is refused). A plain folder with no
              repo, unless --git-init; add a repo later with project repo add
-  project list [--machine <id>] [--hub <url>]
+  project add ... --only-me|--no-only-me
+             Only me: only you see and use it. Without either, on for a new project with no
+             repo, off for a clone or a repo folder
+  project list [--archived] [--machine <id>] [--hub <url>]
+  project archive|unarchive <machine>/<project> [--hub <url>]
+             archived, its lead stops and its chat, memory and folder stay
   project stop <machine>/<project> --key-file <human key> [--yes] [--hub <url>]
              stop its lead's turn and its agents, as you; the lead and its chat stay,
              and the chat says what stopped
@@ -87,6 +92,9 @@ const SPEC: Spec = Spec {
         ("name", Kind::Str),
         ("new", Kind::Str),
         ("git-init", Kind::Bool),
+        ("only-me", Kind::Bool),
+        ("no-only-me", Kind::Bool),
+        ("archived", Kind::Bool),
     ],
     positionals: true,
 };
@@ -305,6 +313,8 @@ pub async fn project_command(argv: &[String]) -> u8 {
         "add" => add(&mut client, &out, &v, &home).await,
         "list" => list(&mut client, &v).await,
         "remove" => remove(&mut client, &out, &v).await,
+        "archive" => archive(&mut client, &out, &v, true).await,
+        "unarchive" => archive(&mut client, &out, &v, false).await,
         "stop" => stop(&mut client, &out, &v).await,
         "set" => set(&mut client, &out, &v).await,
         "profiles" => profiles(&mut client, &v).await,
@@ -331,18 +341,70 @@ async fn list(client: &mut McpClient, v: &args::Parsed) -> Result<(), Stop> {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    if projects.is_empty() {
+    let archived = v.flag("archived");
+    let shown: Vec<&Value> = projects
+        .iter()
+        .filter(|p| archived || p.get("archivedAt").is_none())
+        .collect();
+    if shown.is_empty() {
         println!("No projects yet: fleetd project add <path|github-url>");
     }
-    for p in &projects {
+    for p in shown {
+        let only_me = if p.get("onlyMe") == Some(&Value::Bool(true)) {
+            "  (only me)"
+        } else {
+            ""
+        };
+        let archived = if p.get("archivedAt").is_some() {
+            "  (archived)"
+        } else {
+            ""
+        };
         println!(
-            "{}/{}  {}  {}",
+            "{}/{}  {}  {}{only_me}{archived}",
             s(p, "/machineId"),
             s(p, "/projectId"),
             s(p, "/title"),
             tilde(s(p, "/workspaceRoot"))
         );
     }
+    Ok(())
+}
+
+/// `--only-me` or `--no-only-me`, as project_add's `onlyMe`; none: the hub's default.
+fn only_me(v: &args::Parsed) -> Result<Option<bool>, Stop> {
+    match (v.flag("only-me"), v.flag("no-only-me")) {
+        (true, true) => Err(Stop(
+            2,
+            "give --only-me or --no-only-me, not both".into(),
+            None,
+        )),
+        (true, false) => Ok(Some(true)),
+        (false, true) => Ok(Some(false)),
+        (false, false) => Ok(None),
+    }
+}
+
+/// `fleetd project archive|unarchive <machine>/<project>`: project_archive.
+async fn archive(
+    client: &mut McpClient,
+    out: &Out,
+    v: &args::Parsed,
+    archived: bool,
+) -> Result<(), Stop> {
+    let (machine, project) = find(client, v).await?;
+    call(
+        client,
+        "project_archive",
+        json!({ "machineId": machine, "projectId": s(&project, "/projectId"), "archived": archived }),
+    )
+    .await?;
+    let title = s(&project, "/title");
+    out.success(&if archived {
+        format!("{title} is archived; its chat, memory and folder stay")
+    } else {
+        format!("{title} is back; its lead starts with your next message")
+    });
     Ok(())
 }
 
@@ -1160,6 +1222,9 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
             }
         }
     }
+    if let Some(on) = only_me(v)? {
+        input["onlyMe"] = json!(on);
+    }
     // The cursor before the add, so no progress event is missed.
     let head = call(client, "events_wait", json!({ "timeoutSec": 0 })).await?;
     let cursor = head.get("cursor").cloned().unwrap_or(json!(0));
@@ -1214,6 +1279,9 @@ async fn add_new(
     }
     if v.flag("git-init") {
         input["gitInit"] = json!(true);
+    }
+    if let Some(on) = only_me(v)? {
+        input["onlyMe"] = json!(on);
     }
     let added = call(client, "project_add", input).await?;
     let machine = s(&added, "/machineId");

@@ -1,5 +1,6 @@
-//! `fleetd navi create|list|rename|archive|unarchive`: Navis, personal assistants, from a terminal (navi_create,
-//! navi_list, navi_rename and navi_archive). `fleetd chat <machine>/<id> "…"` talks to one.
+//! `fleetd navi create|list|rename|archive|unarchive`: the old name of `fleetd project add --new … --only-me`, `project
+//! list`, `project set` and `project archive|unarchive`, kept for one release (D310), on navi_create, navi_list,
+//! navi_rename and project_archive. `fleetd chat <machine>/<id> "…"` talks to one.
 use std::io::IsTerminal;
 
 use serde_json::{Value, json};
@@ -10,7 +11,10 @@ use super::mcp_client::McpClient;
 use super::project::{Out, Stop, call, s, tilde};
 use super::setup::doctor::connect_to;
 
-pub const NAVI_USAGE: &str = "  navi create <name> [--machine <id>] [--hub <url>]
+pub const NAVI_USAGE: &str =
+    "  navi ...   the old name of fleetd project (project add --new <name> --only-me,
+             project list, project archive|unarchive), kept for one release
+  navi create <name> [--machine <id>] [--hub <url>]
              make a Navi: a personal assistant with its own chat, memory and folder
              (navi/<name> under the machine's fleetd home; the least busy worker by default)
   navi list [--archived] [--machine <id>] [--hub <url>]
@@ -195,7 +199,7 @@ async fn archive(
     let navi = find(client, v.positionals.first()).await?;
     let mut input = key(&navi);
     input["archived"] = json!(archived);
-    call(client, "navi_archive", input).await?;
+    call(client, "project_archive", input).await?;
     let title = s(&navi, "/title");
     out.success(&if archived {
         format!("{title} is archived; its chat, memory and folder stay")

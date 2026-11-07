@@ -60,7 +60,7 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
     if caller.agent != CallerAgent::Lead {
         return Err(McpToolError::new(
             ErrorCode::Forbidden,
-            "Only the Navi itself reads back through its chat.",
+            "Only the lead itself reads back through its chat.",
         )
         .with_fix("The person reads the chat in the app."));
     }

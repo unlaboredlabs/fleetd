@@ -69,8 +69,8 @@ Every lead gets these.
 | [`checklist`](#checklist) | Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done. | No |
 | [`skill_install`](#skill_install) | Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. | No |
 | [`skill_save`](#skill_save) | A lead's call: save one of your own skills, new or changed, as its whole SKILL.md (frontmatter with name and description, then the steps), with why in one line. | No |
-| [`project_message`](#project_message) | A lead's call: write to another project's lead in its chat, as this Navi, never as the person: "please add X", or a question. | No |
-| [`factory_status`](#factory_status) | A lead's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this Navi's asks to it with the orders opened for them, plus the hubs this Navi is linked to. | No |
+| [`project_message`](#project_message) | A lead's call: write to another project's lead in its chat, as this project, never as the person: "please add X", or a question. | No |
+| [`factory_status`](#factory_status) | A lead's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this project's asks to it with the orders opened for them, plus the hubs this project is linked to. | No |
 | [`chat_search`](#chat_search) | A lead's call: search your own chat, all of it, back to its start, for the messages holding every one of words (any order and case), optionally from and to a day (2026-10-20) or time, in UTC. | No |
 | [`chat_read`](#chat_read) | A lead's call: read the messages around one of your own chat by its id from chat_search, oldest first: before and after say how many on each side (5 when absent, at most 10). | No |
 | [`confirm_step`](#confirm_step) | A lead's call, right before the final Confirm or Submit click on a site that doesn't pay or order (booking a table, cancelling a subscription, sending a form, an expense, a return, a post): site, the button's label, what clicking it does, the page's details and a screenshot from chat_image. | No |
@@ -80,9 +80,9 @@ Every lead gets these.
 | [`chat_image`](#chat_image) | Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. | No |
 | [`chat_file`](#chat_file) | Send the person a file you made (a PDF, a CSV, a document) in this project's chat, as a card they open or save on their computer or phone, and as a document on Telegram. | No |
 | [`publish_artifact`](#publish_artifact) | Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. | No |
-| [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). | No |
+| [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a project's lead with no repo keeps its project's profile instead, so the sites it signed into stay signed in). | No |
 | [`desktop`](#desktop) | Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. | No |
-| [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub. | No |
+| [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away (a kept project profile stays, with its sign-ins), and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
 | [`fill_credential`](#fill_credential) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
 | [`purchase_request`](#purchase_request) | An Only me project's lead's call: record a payment at the checkout open in your browser session, with the card the person picked for you. | No |
@@ -188,7 +188,7 @@ Stop a task: interrupts its thread and releases its slot.
 
 ### brief
 
-Open and start work. Without workstreamId it opens a new order from text (the human's words) and this brief, and starts it: new work from the chat starts this way, even when every order is closed. With workstreamId it sets that workstream's brief (goal, why, pointers, constraints, doneWhen lines) and starts it, or edits it later. An order opened for a Navi's message gives asked, its N&lt;n> handle, so the Navi hears when it lands; a later Navi message folded into an open order gives asked with that workstreamId.
+Open and start work. Without workstreamId it opens a new order from text (the human's words) and this brief, and starts it: new work from the chat starts this way, even when every order is closed. With workstreamId it sets that workstream's brief (goal, why, pointers, constraints, doneWhen lines) and starts it, or edits it later. An order opened for another project's message gives asked, its N&lt;n> handle, so the asker hears when it lands; a later one folded into an open order gives asked with that workstreamId.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -459,7 +459,7 @@ Flag the chat message you just wrote for the human's look, with reason in a few 
 
 ### automation_create
 
-Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 \* \* 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app. A Navi: for one whose runs send or change something, call automation_confirm after it, so the person can let it run on its own.
+Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 \* \* 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app. For one whose runs send or change something, call automation_confirm after it, so the person can let it run on its own.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -720,7 +720,7 @@ A lead's call: save one of your own skills, new or changed, as its whole SKILL.m
 
 ### project_message
 
-A lead's call: write to another project's lead in its chat, as this Navi, never as the person: "please add X", or a question. Its lead reads it as input, never as the person's answer or approval, and may open an order for it. Returns a handle (N&lt;n>); a later wake says when an order opened for it opens, closes, merges or fails. project is a title or project id from factory_status. With hub (a linked hub's label, from factory_status's hubs), it goes to that project on the other hub, as the person via this Navi. It goes through your approval mode like a send, its exact text on the card. Open an order this way only when the person asked for it in this conversation.
+A lead's call: write to another project's lead in its chat, as this project, never as the person: "please add X", or a question. Its lead reads it as input, never as the person's answer or approval, and may open an order for it. Returns a handle (N&lt;n>); a later wake says when an order opened for it opens, closes, merges or fails. project is a title or project id from factory_status. With hub (a linked hub's label, from factory_status's hubs), it goes to that project on the other hub, as the person via this project. It goes through your approval mode like a send, its exact text on the card. Open an order this way only when the person asked for it in this conversation.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -742,7 +742,7 @@ A lead's call: write to another project's lead in its chat, as this Navi, never 
 
 ### factory_status
 
-A lead's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this Navi's asks to it with the orders opened for them, plus the hubs this Navi is linked to. With hub, the projects the link reaches on that hub instead. Read-only.
+A lead's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this project's asks to it with the orders opened for them, plus the hubs this project is linked to. With hub, the projects the link reaches on that hub instead. Read-only.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -959,7 +959,7 @@ Publish a report for the human: Markdown (format md) or a whole HTML page (html)
 
 ### session_start
 
-Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. An iOS simulator isn't a session: start one on the agents' Mac with `mac sim start` (mac --help). kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool. kind mac lends you the agents' Mac's own screen, one agent at a time, driven with the desktop tool and agent-desktop; while another holds it you only observe, and it ends after 5 idle minutes.
+Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a project's lead with no repo keeps its project's profile instead, so the sites it signed into stay signed in). It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. An iOS simulator isn't a session: start one on the agents' Mac with `mac sim start` (mac --help). kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool. kind mac lends you the agents' Mac's own screen, one agent at a time, driven with the desktop tool and agent-desktop; while another holds it you only observe, and it ends after 5 idle minutes.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1008,7 +1008,7 @@ Act on your Linux desktop session (session_start kind linux_desktop) or the agen
 
 ### session_end
 
-Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub.
+Close your browser session: the browser and its profile are thrown away (a kept project profile stays, with its sign-ins), and its recording goes to the hub.
 
 No parameters.
 
@@ -1188,9 +1188,9 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`chat_image`](#chat_image-task) | Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. | No |
 | [`chat_file`](#chat_file-task) | Send the person a file you made (a PDF, a CSV, a document) in this project's chat, as a card they open or save on their computer or phone, and as a document on Telegram. | No |
 | [`publish_artifact`](#publish_artifact-task) | Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. | No |
-| [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). | No |
+| [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a project's lead with no repo keeps its project's profile instead, so the sites it signed into stay signed in). | No |
 | [`desktop`](#desktop-task) | Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. | No |
-| [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub. | No |
+| [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away (a kept project profile stays, with its sign-ins), and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover-task) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
 | [`fill_credential`](#fill_credential-task) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
 
@@ -1373,7 +1373,7 @@ Publish a report for the human: Markdown (format md) or a whole HTML page (html)
 
 ### session_start (task)
 
-Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. An iOS simulator isn't a session: start one on the agents' Mac with `mac sim start` (mac --help). kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool. kind mac lends you the agents' Mac's own screen, one agent at a time, driven with the desktop tool and agent-desktop; while another holds it you only observe, and it ends after 5 idle minutes.
+Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a project's lead with no repo keeps its project's profile instead, so the sites it signed into stay signed in). It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. An iOS simulator isn't a session: start one on the agents' Mac with `mac sim start` (mac --help). kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool. kind mac lends you the agents' Mac's own screen, one agent at a time, driven with the desktop tool and agent-desktop; while another holds it you only observe, and it ends after 5 idle minutes.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1422,7 +1422,7 @@ Act on your Linux desktop session (session_start kind linux_desktop) or the agen
 
 ### session_end (task)
 
-Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub.
+Close your browser session: the browser and its profile are thrown away (a kept project profile stays, with its sign-ins), and its recording goes to the hub.
 
 No parameters.
 

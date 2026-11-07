@@ -206,7 +206,12 @@ impl Prompts<'_> {
         if project.is_some() && !e.per_project() {
             return None;
         }
-        let raw = std::fs::read_to_string(self.file(e, project)?).ok()?;
+        let raw = std::fs::read_to_string(self.file(e, project)?)
+            .ok()
+            .or_else(|| {
+                let old = registry::old_id(e.id)?;
+                std::fs::read_to_string(self.file_of(old, project)?).ok()
+            })?;
         Some(parse_file(&raw))
     }
 
@@ -506,7 +511,8 @@ impl Prompts<'_> {
         project: Option<&ProjectRef>,
     ) -> Result<(), PromptError> {
         let level = self.level(e, scope, project)?;
-        if let Some(file) = self.file(e, level) {
+        let old = registry::old_id(e.id).and_then(|old| self.file_of(old, level));
+        for file in self.file(e, level).into_iter().chain(old) {
             match std::fs::remove_file(file) {
                 Err(err) if err.kind() != std::io::ErrorKind::NotFound => return Err(err.into()),
                 _ => {}
