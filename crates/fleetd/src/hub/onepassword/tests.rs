@@ -193,26 +193,25 @@ async fn a_launch_names_the_person_whose_work_it_is_when_they_saved_a_token() {
     );
 }
 
-/// A Navi's card picker lists with the Navi's own token on its machine: only for a Navi, and never another project's,
-/// whose own token is its secret.
+/// A project's card picker lists with the project's own token on its machine (any project, D310): refused for one the
+/// hub doesn't have, and for a key without operate there.
 #[tokio::test]
-async fn cards_are_listed_for_a_navi_only() {
+async fn cards_are_listed_for_a_project_the_hub_has() {
     use fleetd_contracts::node_link::CAP_ONEPASSWORD_CARDS;
     let (hub, _home) = hub();
     let ann = owner(&hub);
     let mut calls = node(&hub, &[CAP_ONEPASSWORD, CAP_ONEPASSWORD_CARDS]).await;
     let desk = device(&hub, &ann, "operate");
-    // p1 is a plain project: its OP_SERVICE_ACCOUNT_TOKEN is never used to list cards.
     let refused = call(
         &hub,
         &desk,
         "onepassword_cards",
-        json!({ "navi": { "machineId": "lab", "projectId": "p1" } }),
+        json!({ "project": { "machineId": "lab", "projectId": "nope" } }),
     )
     .await
     .unwrap_err();
     assert!(
-        format!("{refused:?}").contains("is not an Only me project"),
+        format!("{refused:?}").contains("is no project here"),
         "{refused:?}"
     );
     // A key without operate on the machine is refused first.

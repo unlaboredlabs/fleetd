@@ -956,7 +956,7 @@ fn link_urls_are_https_or_a_private_path() {
 }
 
 #[tokio::test]
-async fn only_a_person_links_hubs_and_only_for_a_navi() {
+async fn only_a_person_links_hubs_for_any_project() {
     let l = linked(None).await;
     let agent = l
         .acme
@@ -984,7 +984,12 @@ async fn only_a_person_links_hubs_and_only_for_a_navi() {
     )
     .await
     .unwrap_err();
-    assert_eq!(code, ErrorCode::Forbidden, "a coding project gets no links");
+    // A coding project gets links too (D310): past the gate, the add only fails to reach the other hub.
+    assert_ne!(
+        code,
+        ErrorCode::Forbidden,
+        "a coding project gets links too"
+    );
 }
 
 /// Points the kept link at `url`: a closed port makes the other hub unreachable.

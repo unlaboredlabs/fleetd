@@ -103,4 +103,11 @@ describe("unreadCount", () => {
   it("counts messages past what the phone holds", () => {
     expect(unreadCount(p, "a", 8, [msg(4)])).toBe(5);
   });
+
+  it("counts what came between the read mark and the newest few the list holds, not capping at those", () => {
+    // 37 came overnight; the list holds the newest 3.
+    expect(unreadCount(p, "a", 40, [msg(38), msg(39), msg(40)])).toBe(37);
+    // Your reply among them: only what came after it.
+    expect(unreadCount(p, "a", 40, [msg(38, "human"), msg(39), msg(40)])).toBe(2);
+  });
 });

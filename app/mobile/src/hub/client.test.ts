@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { backoff, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, READY_TIMEOUT_MS, socketUrl, type HubFrame } from "./client";
+import { backoff, FRONT_BACKOFF_CAP_MS, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, QUIET_FRONT_MS, READY_TIMEOUT_MS, SILENT_DEAD_FRONT_MS, SILENT_DEAD_MS, WAKE_PROBE_MS, socketUrl, type HubFrame } from "./client";
 import { fakeHub } from "./fake";
 
 const HUB = "http://devbox:4790";
@@ -103,12 +103,94 @@ describe("HubClient", () => {
     const { hub, client, states } = setup();
     client.start();
     const first = hub.ready();
-    vi.advanceTimersByTime(PROBE_EVERY_MS);
-    expect(first.sent.filter((m) => m.t === "call" && m.tool === "hub_info")).toHaveLength(1);
-    // Probed again at 30 s; at 45 s nothing was heard for SILENT_DEAD_MS.
-    vi.advanceTimersByTime(2 * PROBE_EVERY_MS);
+    const probes = () => first.sent.filter((m) => m.t === "call" && m.tool === "hub_info");
+    // In front, nothing goes before 10 s of quiet, so a cellular radio can idle between.
+    vi.advanceTimersByTime(QUIET_FRONT_MS - 1);
+    expect(probes()).toHaveLength(0);
+    vi.advanceTimersByTime(1);
+    expect(probes()).toHaveLength(1);
+    // Probed at 10, 15 and 20 s; at 25 s nothing was heard for SILENT_DEAD_FRONT_MS.
+    vi.advanceTimersByTime(SILENT_DEAD_FRONT_MS - QUIET_FRONT_MS - 1);
+    expect(first.closed).toBe(false);
+    vi.advanceTimersByTime(1);
     expect(first.closed).toBe(true);
     expect(states().at(-1)).toMatchObject({ phase: "retrying", reason: "The hub stopped answering" });
+  });
+
+  it("gives a quiet link longer while the app is behind", () => {
+    const { hub, client } = setup();
+    client.start();
+    const first = hub.ready();
+    client.sleep();
+    vi.advanceTimersByTime(10_000);
+    expect(first.sent.filter((m) => m.t === "call" && m.tool === "hub_info")).toHaveLength(0);
+    vi.advanceTimersByTime(SILENT_DEAD_MS - 10_000 - 1);
+    expect(first.closed).toBe(false);
+    vi.advanceTimersByTime(PROBE_EVERY_MS);
+    expect(first.closed).toBe(true);
+  });
+
+  it("keeps a live link that answers when the app comes back to the front, and its calls with it", async () => {
+    const { hub, client, frames } = setup();
+    client.start();
+    const first = hub.ready();
+    const pending = client.call("requests_list", { state: "open" });
+    client.sleep();
+    client.wake();
+    const probe = first.sent.filter((m) => m.t === "call" && m.tool === "hub_info").at(-1);
+    first.frame({ t: "result", id: probe?.id, output: {} });
+    vi.advanceTimersByTime(WAKE_PROBE_MS);
+    expect(hub.links).toHaveLength(1);
+    expect(first.closed).toBe(false);
+    expect(frames.filter((f) => f.t === "state")).toHaveLength(2);
+    hub.answer("requests_list", { requests: [] });
+    await expect(pending).resolves.toEqual({ ok: true, output: { requests: [] } });
+  });
+
+  it("dials again when a link silent since the app slept doesn't answer on waking", () => {
+    const { hub, client, states } = setup();
+    client.start();
+    const first = hub.ready();
+    client.sleep();
+    vi.advanceTimersByTime(1000);
+    client.wake();
+    vi.advanceTimersByTime(WAKE_PROBE_MS - 1);
+    expect(hub.links).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(first.closed).toBe(true);
+    expect(hub.links).toHaveLength(2);
+    expect(states().at(-1)).toMatchObject({ phase: "connecting" });
+  });
+
+  it("asks rather than counts the sleep as silence when its timer wakes late", () => {
+    const { hub, client } = setup();
+    client.start();
+    const first = hub.ready();
+    // iOS stops the timers behind: the clock jumps, and the late tick sees minutes of quiet.
+    vi.setSystemTime(Date.now() + 10 * 60_000);
+    vi.advanceTimersByTime(PROBE_EVERY_MS);
+    expect(first.closed).toBe(false);
+    const probe = first.sent.filter((m) => m.t === "call" && m.tool === "hub_info").at(-1);
+    first.frame({ t: "result", id: probe?.id, output: {} });
+    vi.advanceTimersByTime(WAKE_PROBE_MS);
+    expect(first.closed).toBe(false);
+    expect(hub.links).toHaveLength(1);
+  });
+
+  it("dials at once on waking while it waits out a backoff, and waits less in front", () => {
+    const { hub, client, states } = setup();
+    client.start();
+    for (let i = 0; i < 8; i++) {
+      hub.link.close(1006);
+      vi.advanceTimersByTime(FRONT_BACKOFF_CAP_MS * 1.25);
+    }
+    expect(hub.links).toHaveLength(9);
+    client.sleep();
+    hub.link.close(1006);
+    const retrying = states().at(-1);
+    expect(retrying?.phase === "retrying" ? retrying.retryAt - Date.now() : 0).toBe(backoff(8));
+    client.wake();
+    expect(hub.links).toHaveLength(10);
   });
 
   it("sends the chat subscription again on each connection", () => {

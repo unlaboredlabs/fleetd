@@ -1,6 +1,6 @@
 // The app: pair with a hub once, then its chats, where its approvals are answered too. The paired hub lives in secure
-// storage (vault.ts); one Session talks to it while the app runs, and dials again whenever the app comes back to the
-// front. Pairing makes the phone's notification key; Disconnect signs the phone out on the hub, after a confirm, and
+// storage (vault.ts); one Session talks to it while the app runs, and checks its link whenever the app comes back to
+// the front. Pairing makes the phone's notification key; Disconnect signs the phone out on the hub, after a confirm, and
 // forgets both. A pairing link (`fleetd://pair?…`, from a QR code scanned with iOS's Camera) opens the app and, once
 // confirmed, pairs it.
 //
@@ -18,6 +18,7 @@ import { ActionSheetIOS, Alert, AppState, Linking, Platform, StyleSheet, View } 
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { diskCache, forgetCache } from "./src/cacheStore";
 import { webSocketTransport } from "./src/hub/socket";
 import type { Paired } from "./src/hub/pair";
 import { pairLinkStep } from "./src/hub/pairLink";
@@ -68,6 +69,7 @@ export default function App() {
   }, []);
   const forget = useCallback((why?: string) => {
     setNote(why);
+    forgetCache();
     void Promise.all([forgetPaired(), forgetPush()]).then(() => setPaired(null));
   }, []);
   const theme = useMemo(() => navigationTheme(t), [t]);
@@ -175,7 +177,7 @@ const go = (route: Route, state: Pick<State, "requests" | "projects">): boolean 
 };
 
 function Hub({ paired, onForget }: { paired: Paired; onForget: (why?: string) => void }) {
-  const session = useMemo(() => new Session({ hub: paired.hub, key: paired.key, transport: webSocketTransport, push: pushDeps, pins: pinStoreFor(paired.hub) }), [paired]);
+  const session = useMemo(() => new Session({ hub: paired.hub, key: paired.key, transport: webSocketTransport, push: pushDeps, pins: pinStoreFor(paired.hub), cache: diskCache }), [paired]);
   const state = useSyncExternalStore(session.subscribe, session.getState);
   // A tapped notification before the navigator is ready, or before an approval's chat is known, waits for them.
   const pending = useRef<Route | null>(null);
@@ -195,8 +197,12 @@ function Hub({ paired, onForget }: { paired: Paired; onForget: (why?: string) =>
 
   useEffect(() => {
     session.start();
+    // Only from behind: Control Center, a system alert or Face ID make the app inactive a moment, and its link lives.
+    let was = AppState.currentState;
     const sub = AppState.addEventListener("change", (s) => {
-      if (s === "active") session.wake();
+      if (s === "active" && was === "background") session.wake();
+      if (s === "background") session.sleep();
+      was = s;
     });
     return () => {
       sub.remove();

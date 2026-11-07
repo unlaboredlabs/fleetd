@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HumanRequest, ProjectSummary, ToolPreview } from "./desktop";
-import { approvalOutcome, approvals, approvalView, chatList, fieldCopy, lists } from "./lists";
+import { approvalOutcome, approvals, approvalView, chatList, fieldCopy, lists, rowLine } from "./lists";
 import { exactRuns } from "./exact";
 import { noPrefs } from "./prefs";
 
@@ -80,6 +80,28 @@ describe("lists", () => {
   });
 });
 
+describe("a long chat's preview", () => {
+  const ref = { machineId: "m1", projectId: "a" };
+  const m = (seq: number, author: string, text: string) => ({ messageId: `a-${String(seq)}`, projectRef: ref, seq, author, text, state: "final", createdAt: AT });
+  const chatOf = (messages: ReturnType<typeof m>[], streams: Record<string, { text: string; at: string }> = {}) => ({ messages, streams, leadWaiting: {}, hasOlder: false, loadingOlder: false, held: [], loaded: true, missing: [] });
+  const preview = (chat: ReturnType<typeof chatOf>) => lists({ projects: { "m1/a": project("a", "Ada", { kind: "assistant" }) }, chatStates: {}, requests: [], chats: { "m1/a": chat } })?.navis[0]?.preview;
+
+  it("is its newest line, the same each time it's drawn, and looks past a run of system lines", () => {
+    const many = Array.from({ length: 300 }, (_, i) => m(i + 1, "lead", `Line **${String(i + 1)}**`));
+    const chat = chatOf(many);
+    expect(preview(chat)).toBe("Line 300");
+    expect(preview(chat)).toBe("Line 300");
+    const quiet = chatOf([...many, ...Array.from({ length: 30 }, (_, i) => m(301 + i, "system", "Memory refreshed"))]);
+    expect(preview(quiet)).toBe("Line 300");
+  });
+
+  it("shows a streamed reply's words so far, not its message's", () => {
+    const many = Array.from({ length: 30 }, (_, i) => m(i + 1, "lead", `Line ${String(i + 1)}`));
+    const streaming = { ...m(31, "lead", ""), state: "streaming" };
+    expect(preview(chatOf([...many, streaming], { "a-31": { text: "Reading the", at: AT } }))).toBe("Reading the");
+  });
+});
+
 describe("lists' order and previews", () => {
   const message = (projectId: string, seq: number, author: string, text: string) => ({
     messageId: `${projectId}-${String(seq)}`,
@@ -98,6 +120,13 @@ describe("lists' order and previews", () => {
     };
     const chatStates = { "m1/b": { projectRef: { machineId: "m1", projectId: "b" }, lastSeq: 4, leadWorking: false, needsYou: false, lastMessageAt: "2026-10-28T11:00:00Z" } };
     expect(lists({ projects, chatStates, requests: [] })?.navis.map((r) => r.project.title)).toEqual(["Bea", "Ada"]);
+  });
+
+  it("keeps a working chat's newest message as its line, saying Working… only while it has none", () => {
+    const row = { preview: "Sent both.", working: true, want: undefined, empty: false };
+    expect(rowLine(row)).toBe("Sent both.");
+    expect(rowLine({ ...row, preview: undefined })).toBe("Working…");
+    expect(rowLine({ ...row, preview: undefined, working: false, want: "Waiting for your reply" })).toBe("Waiting for your reply");
   });
 
   it("previews a chat not opened yet from its newest messages", () => {

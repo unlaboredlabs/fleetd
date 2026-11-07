@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { afterCall, applyDelta, applyHistory, CHAT_KEEP, chatItems, emptyChat, mergeLive, mergeMessages, settleSends, toResend, upsertSend, type ChatSend } from "./chat";
+import { afterCall, applyDelta, applyHistory, CHAT_KEEP, chatItems, emptyChat, heldChat, mergeLive, mergeMessages, settleSends, toResend, upsertSend, type ChatSend } from "./chat";
 import type { ChatHistoryOutput, ChatMessage } from "./chat-contract";
 
 const ref = { machineId: "devbox", projectId: "storefront" };
@@ -66,6 +66,26 @@ describe("chat messages", () => {
     // The window paged back to is kept; a live message lands at the end, the oldest giving way.
     chat = mergeLive(chat, msg(3001));
     expect([chat.messages[0]?.seq, chat.messages.at(-1)?.seq, chat.messages.length, chat.hasOlder]).toEqual([2, 3001, 3000, true]);
+  });
+
+  it("a reconnect's latest page keeps the older pages it joins up with, and starts over one it doesn't", () => {
+    const run = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => msg(from + i));
+    let chat = applyHistory(emptyChat, page(run(51, 100), true), "latest");
+    chat = applyHistory({ ...chat, loadingOlder: true }, page(run(1, 50), true), "older");
+    const held = heldChat(chat);
+    if (held === undefined) throw new Error("not held");
+    // Two came while the link was down: the page reaches back past what it held.
+    const joined = applyHistory(held, page([...run(53, 100), msg(73, { text: "edited", updatedAt: "2026-10-19T12:00:00.000Z" }), ...run(101, 102)].sort((a, b) => a.seq - b.seq), true), "latest");
+    expect(joined.messages.map((m) => m.seq)).toEqual(run(1, 102).map((m) => m.seq));
+    expect(joined.messages.find((m) => m.seq === 73)?.text).toBe("edited");
+    expect([joined.hasOlder, joined.cached, joined.loaded]).toEqual([true, false, true]);
+    // Too much came: the page doesn't reach what it held, so it starts over.
+    const apart = applyHistory(held, page(run(200, 249), true), "latest");
+    expect(apart.messages.map((m) => m.seq)).toEqual(run(200, 249).map((m) => m.seq));
+    expect(apart.hasOlder).toBe(true);
+    // A page with nothing before it is the whole chat: what it held from before is gone from the hub.
+    const whole = applyHistory(held, page(run(53, 102)), "latest");
+    expect([whole.messages[0]?.seq, whole.hasOlder]).toEqual([53, false]);
   });
 
   it("streams by offset: a repeat or overlap adds only what's new, a jump past the end is a gap, the final ends it", () => {

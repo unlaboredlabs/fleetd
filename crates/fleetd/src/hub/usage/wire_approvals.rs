@@ -350,10 +350,12 @@ impl ApprovalHub for OpsPorts {
             let Some(r) = r else {
                 return failed("the checker couldn't find the project");
             };
-            let owner = crate::hub::navi::of(&hub.db, &r)
+            let owner = hub
+                .db
+                .with(|c| Ok(crate::hub::navi::store::kept(c, &r)?))
                 .ok()
                 .flatten()
-                .and_then(|n| n.owner);
+                .and_then(|k| k.owner);
             let thread = ThreadRef {
                 machine_id: r.machine_id.clone(),
                 thread_id: fleetd_contracts::ids::ThreadId::unchecked(thread_id),

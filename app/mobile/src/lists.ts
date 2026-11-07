@@ -3,7 +3,7 @@
 // its lead waiting for your reply. An archived Navi is in none of them, unless an approval of its waits. Pure, so it is
 // unit-tested.
 import { previewOf } from "./chatView";
-import { chatItems, emptyChat, hasHidden, isArchived, isNavi, shellWord, type HumanRequest, type ProjectSummary } from "./desktop";
+import { chatItems, emptyChat, hasHidden, isArchived, isNavi, shellWord, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectSummary } from "./desktop";
 import { unreadCount, type Prefs } from "./prefs";
 import { keyOf, type Key, type State } from "./store";
 
@@ -43,16 +43,63 @@ const wantOf = (key: Key, needsYou: boolean, requests: readonly HumanRequest[] |
   return needsYou ? "Waiting for your reply" : undefined;
 };
 
-const previewFor = (s: Partial<Pick<State, "chats" | "sends" | "latest">>, key: Key): string | undefined => {
+/**
+ * What the list knows of a chat: the chat opened here, with its newest few messages after it when those are newer (a
+ * chat held from an earlier link, which keeps what came since aside), or only those newest few.
+ */
+const knownChat = (s: Partial<Pick<State, "chats" | "latest">>, key: Key): Chat | undefined => {
+  const chat = s.chats?.[key];
   const latest = s.latest?.[key];
-  const chat = s.chats?.[key] ?? (latest === undefined ? undefined : { ...emptyChat, messages: [...latest] });
+  if (latest === undefined) return chat;
+  if (chat === undefined) return { ...emptyChat, messages: [...latest] };
+  const newest = chat.messages.at(-1)?.seq ?? 0;
+  const later = latest.filter((m) => m.seq > newest);
+  return later.length === 0 ? chat : { ...chat, messages: [...chat.messages, ...later] };
+};
+
+/**
+ * Each message's line, made once: the list is drawn twice a render (all of it, and the filter's) and again on each
+ * event, and a line is a markdown parse. A streamed text isn't its message's, so it's made each time.
+ */
+const lines = new WeakMap<ChatMessage, string>();
+
+const lineOf = (item: ChatItem): string => {
+  const m = item.message;
+  if (m === undefined || item.text !== m.text) return previewOf(item);
+  const known = lines.get(m);
+  if (known !== undefined) return known;
+  const line = previewOf(item);
+  lines.set(m, line);
+  return line;
+};
+
+/** How many of a chat's newest messages a preview looks through first: an opened chat holds up to 2000. */
+const PREVIEW_TAIL = 20;
+
+const previewFor = (s: Partial<Pick<State, "chats" | "sends" | "latest">>, key: Key): string | undefined => {
+  const chat = knownChat(s, key);
   if (chat === undefined) return undefined;
-  const items = chatItems(chat, s.sends?.[key] ?? []).filter((i) => i.kind !== "event");
-  for (let i = items.length - 1; i >= 0; i--) {
-    const line = previewOf(items[i] ?? { author: "system", text: "", message: undefined });
-    if (line !== "") return line;
-  }
-  return undefined;
+  const sends = s.sends?.[key] ?? [];
+  const newest = (c: Chat): string | undefined => {
+    const items = chatItems(c, sends);
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      if (item === undefined || item.kind === "event") continue;
+      const line = lineOf(item);
+      if (line !== "") return line;
+    }
+    return undefined;
+  };
+  if (chat.messages.length <= PREVIEW_TAIL) return newest(chat);
+  const tail = chat.messages.slice(-PREVIEW_TAIL);
+  const before = chat.messages.length - PREVIEW_TAIL;
+  // A stream whose message is older than the tail isn't the newest line (chatItems would put it last).
+  const older = (id: string): boolean => {
+    const at = chat.messages.findIndex((m) => m.messageId === id);
+    return at !== -1 && at < before;
+  };
+  const streams = Object.fromEntries(Object.entries(chat.streams).filter(([id]) => !older(id)));
+  return newest({ ...chat, messages: tail, streams }) ?? newest(chat);
 };
 
 /** Who spoke last first, as Messages orders chats. */
@@ -88,6 +135,13 @@ export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & P
 };
 
 /**
+ * A row's one line: its newest message, kept while its lead works (the glyph in front says so: a turn lasts minutes),
+ * "Working…" only while it has none; else why it wants you.
+ */
+export const rowLine = (row: Pick<Row, "preview" | "working" | "want" | "empty">): string =>
+  row.preview ?? (row.working ? "Working…" : (row.want ?? (row.empty ? "No messages yet" : "")));
+
+/**
  * The chats list's filters, as Telegram's folders: everything, what you haven't read, the chats with an approval
  * waiting for you, the Navis, the projects.
  */
@@ -118,7 +172,7 @@ export const chatList = (s: Parameters<typeof lists>[0], prefs: Prefs, filter: F
   if (all === undefined) return undefined;
   const rows = [...all.needsYou, ...all.navis, ...all.projects]
     .map((r): ChatRow => {
-      const held = s.chats?.[r.key]?.messages ?? s.latest?.[r.key] ?? [];
+      const held = knownChat(s, r.key)?.messages ?? [];
       return {
         ...r,
         pinned: pinned.includes(r.key),

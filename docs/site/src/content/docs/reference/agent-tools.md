@@ -85,10 +85,10 @@ Every lead gets these.
 | [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away (a kept project profile stays, with its sign-ins), and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
 | [`fill_credential`](#fill_credential) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
-| [`purchase_request`](#purchase_request) | An Only me project's lead's call: record a payment at the checkout open in your browser session, with the card the person picked for you. | No |
-| [`purchase_fill`](#purchase_fill) | An Only me project's lead's call: fill a purchase's card into the checkout's card fields (the shop's page and its payment provider's frames, such as Stripe's) without seeing it: requestId is what purchase_request returned. | No |
-| [`request_secure_input`](#request_secure_input) | An Only me project's lead's call: when a page needs something only the person may give and you must never see (a passport or ID number, a code texted to them), ask for it here, on that page: site is its domain and name, target the field's CSS selector (in the page or one of its frames), label what it is in their words ("Passport number"), why one line. | The person enters the value in a sealed field; a 1Password field fills with no ask. |
-| [`secure_input_fill`](#secure_input_fill) | An Only me project's lead's call: fill a secure input from 1Password into its field: requestId is what request_secure_input returned. | No |
+| [`purchase_request`](#purchase_request) | A lead's call: record a payment at the checkout open in your browser session, with the card the person picked for you. | No |
+| [`purchase_fill`](#purchase_fill) | A lead's call: fill a purchase's card into the checkout's card fields (the shop's page and its payment provider's frames, such as Stripe's) without seeing it: requestId is what purchase_request returned. | No |
+| [`request_secure_input`](#request_secure_input) | A lead's call: when a page needs something only the person may give and you must never see (a passport or ID number, a code texted to them), ask for it here, on that page: site is its domain and name, target the field's CSS selector (in the page or one of its frames), label what it is in their words ("Passport number"), why one line. | The person enters the value in a sealed field; a 1Password field fills with no ask. |
+| [`secure_input_fill`](#secure_input_fill) | A lead's call: fill a secure input from 1Password into its field: requestId is what request_secure_input returned. | No |
 
 ### spawn_agent
 
@@ -1064,7 +1064,7 @@ Fill a login field of your browser session from 1Password without seeing the val
 
 ### purchase_request
 
-An Only me project's lead's call: record a payment at the checkout open in your browser session, with the card the person picked for you. Call it on the checkout page once the basket and total are final: shop is its domain (the page's host) and name, total the amount (`129.90`) and currency (`EUR`) with everything in it, items what is being bought. Nobody is asked (D310): it goes in the person's purchases log, and you call purchase_fill right away. Never type card details yourself. Trading, moving money between accounts and crypto stay refused.
+A lead's call: record a payment at the checkout open in your browser session, with the card the person picked for you. Call it on the checkout page once the basket and total are final: shop is its domain (the page's host) and name, total the amount (`129.90`) and currency (`EUR`) with everything in it, items what is being bought. Nobody is asked (D310): it goes in the person's purchases log, and you call purchase_fill right away. Never type card details yourself. Trading, moving money between accounts and crypto stay refused.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1106,7 +1106,7 @@ An Only me project's lead's call: record a payment at the checkout open in your 
 
 ### purchase_fill
 
-An Only me project's lead's call: fill a purchase's card into the checkout's card fields (the shop's page and its payment provider's frames, such as Stripe's) without seeing it: requestId is what purchase_request returned. Call it on that checkout with its card form showing, within 15 minutes of the request; it fills once, and the chat says what was paid. Then check the total and click Pay or Book yourself. A bank's confirmation (3-D Secure, a code, its app) goes to the person with request_takeover. From the fill on the session refuses reading values back.
+A lead's call: fill a purchase's card into the checkout's card fields (the shop's page and its payment provider's frames, such as Stripe's) without seeing it: requestId is what purchase_request returned. Call it on that checkout with its card form showing, within 15 minutes of the request; it fills once, and the chat says what was paid. Then check the total and click Pay or Book yourself. A bank's confirmation (3-D Secure, a code, its app) goes to the person with request_takeover. From the fill on the session refuses reading values back.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1125,7 +1125,7 @@ An Only me project's lead's call: fill a purchase's card into the checkout's car
 
 ### request_secure_input
 
-An Only me project's lead's call: when a page needs something only the person may give and you must never see (a passport or ID number, a code texted to them), ask for it here, on that page: site is its domain and name, target the field's CSS selector (in the page or one of its frames), label what it is in their words ("Passport number"), why one line. The person types it in a sealed field in the app, and fleetd types it into that field; you are woken once it is in. With ref (an Identity, Passport, Driver License or Social Security item's field in their 1Password) nobody is asked: call secure_input_fill right away. Never ask for such a value in the chat.
+A lead's call: when a page needs something only the person may give and you must never see (a passport or ID number, a code texted to them), ask for it here, on that page: site is its domain and name, target the field's CSS selector (in the page or one of its frames), label what it is in their words ("Passport number"), why one line. The person types it in a sealed field in the app, and fleetd types it into that field; you are woken once it is in. With ref (an Identity, Passport, Driver License or Social Security item's field in their 1Password) nobody is asked: call secure_input_fill right away. Never ask for such a value in the chat.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1156,7 +1156,7 @@ An Only me project's lead's call: when a page needs something only the person ma
 
 ### secure_input_fill
 
-An Only me project's lead's call: fill a secure input from 1Password into its field: requestId is what request_secure_input returned. Call it on that page within 15 minutes of the request; it fills once, and from then on the session refuses reading values back.
+A lead's call: fill a secure input from 1Password into its field: requestId is what request_secure_input returned. Call it on that page within 15 minutes of the request; it fills once, and from then on the session refuses reading values back.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

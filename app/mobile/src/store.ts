@@ -1,6 +1,6 @@
 // What the phone shows, as one pure state: the connection, the projects and their chat states from the snapshot and
 // events, the chats opened so far (the desktop's chat reducers, desktop.ts), the person's sends on their way, the
-// open requests, what the open chat's lead does this moment (its live lane) with when its turn began, and the screens
+// open requests (held through a drop, as the chats are), what the open chat's lead does this moment (its live lane) with when its turn began, and the screens
 // of the chats looked at (their cards, and the live view's). The session (session.ts) does the calls and feeds their
 // answers back here; a screen's frames go past it (session.ts onFrame), as they come many a second.
 import type { HubFrame } from "./hub/client";
@@ -60,7 +60,10 @@ export interface State {
   readonly meName: string | undefined;
   readonly chats: Readonly<Record<Key, Chat>>;
   readonly sends: Readonly<Record<Key, readonly ChatSend[]>>;
-  /** Each chat's newest few messages, read after each snapshot and kept by events: the chats list's previews. */
+  /**
+   * Each chat's newest few messages, read after each snapshot and kept by events: the chats list's previews, with a
+   * chat's own messages when those are newer.
+   */
   readonly latest: Readonly<Record<Key, readonly ChatMessage[]>>;
   /** Each chat's newest page, read when search opens: what search looks through, with the chats opened. */
   readonly corpus: Readonly<Record<Key, readonly ChatMessage[]>>;
@@ -68,6 +71,11 @@ export interface State {
   readonly requests: readonly HumanRequest[] | undefined;
   /** Approvals answered from here and on their way, by requestId. */
   readonly answering: Readonly<Record<string, true>>;
+  /**
+   * Answers the link cut off, which may have reached the hub: on their way, never an error, until the requests are
+   * read again and say.
+   */
+  readonly cut: Readonly<Record<string, true>>;
   /** Why an answer failed, by requestId, until the next try. */
   readonly answerErrors: Readonly<Record<string, HubError>>;
   /** Requests answered from here, as the hub answered them: the chat says how each went before its message catches up. */
@@ -94,6 +102,7 @@ export const initial = (hub: HubState): State => ({
   corpus: {},
   requests: undefined,
   answering: {},
+  cut: {},
   answerErrors: {},
   decided: {},
   leadActivity: {},
@@ -111,6 +120,8 @@ export type Action =
   | { readonly t: "admin"; readonly admin: boolean; readonly me?: string | undefined; readonly meName?: string | undefined }
   | { readonly t: "send"; readonly key: Key; readonly row: ChatSend }
   | { readonly t: "sent"; readonly key: Key; readonly clientRequestId: string; readonly result: CallResult; readonly leadWaiting?: string | undefined }
+  /** A failed send deleted: it never goes. */
+  | { readonly t: "discard"; readonly key: Key; readonly clientRequestId: string }
   | { readonly t: "requests"; readonly requests: readonly HumanRequest[] }
   | { readonly t: "screens"; readonly key: Key; readonly sessions: readonly BrowserSession[] }
   /** One screen as the hub answered a change of control with it. */
@@ -169,8 +180,15 @@ export const reduce = (s: State, a: Action): State => {
       }
       return out;
     }
-    case "requests":
-      return { ...s, requests: a.requests.filter((r) => r.state === "open") };
+    case "discard": {
+      const rows = s.sends[a.key] ?? [];
+      const sends = rows.filter((r) => r.clientRequestId !== a.clientRequestId);
+      return sends.length === rows.length ? s : { ...s, sends: { ...s.sends, [a.key]: sends } };
+    }
+    case "requests": {
+      const answering = Object.keys(s.cut).length === 0 ? s.answering : Object.fromEntries(Object.entries(s.answering).filter(([id]) => s.cut[id] === undefined));
+      return { ...s, requests: a.requests.filter((r) => r.state === "open"), answering, cut: {} };
+    }
     case "screens":
       return { ...s, screens: { ...s.screens, [a.key]: a.sessions } };
     case "screen": {
@@ -182,7 +200,8 @@ export const reduce = (s: State, a: Action): State => {
     case "answer":
       return { ...s, answering: { ...s.answering, [a.requestId]: true }, answerErrors: without(s.answerErrors, a.requestId) };
     case "answered": {
-      const base = { ...s, answering: without(s.answering, a.requestId) };
+      if (!a.result.ok && a.result.error.code === "disconnected") return { ...s, cut: { ...s.cut, [a.requestId]: true } };
+      const base = { ...s, answering: without(s.answering, a.requestId), cut: without(s.cut, a.requestId) };
       if (!a.result.ok) return { ...base, answerErrors: { ...s.answerErrors, [a.requestId]: a.result.error } };
       const answered = a.result.request;
       return {
@@ -197,11 +216,12 @@ export const reduce = (s: State, a: Action): State => {
 const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
   switch (frame.t) {
     case "state": {
-      // A link that isn't live any more: what it showed stays, held, until the next snapshot and pages replace it.
+      // A link that isn't live any more: what it showed stays, held, until the next snapshot and pages replace it. The
+      // open requests too, so approvals keep their cards and their chats their place, till requests_list says again.
       if (frame.state.phase === "live" || s.hub.phase !== "live") return { ...s, hub: frame.state };
       const chats: Record<Key, Chat> = {};
       for (const [key, chat] of Object.entries(s.chats)) chats[key] = heldChat(chat) ?? emptyChat;
-      return { ...s, hub: frame.state, chats, requests: undefined, answering: {}, leadActivity: {} };
+      return { ...s, hub: frame.state, chats, leadActivity: {} };
     }
     case "snapshot": {
       const snap = frame.snapshot;
@@ -254,9 +274,15 @@ const applyEvent = (s: State, event: HubEvent): State => {
   if (data?.projectRef === undefined) return s;
   const key = keyOf(data.projectRef);
   const known = s.chatStates[key];
-  const base = known === undefined || data.seq <= known.lastSeq ? s : { ...s, chatStates: { ...s.chatStates, [key]: { ...known, lastSeq: data.seq } } };
-  const chat = base.chats[key];
   const message = data.message;
+  // A new message lifts its chat in the list at once, with its time: the hub says chat.waiting only when what its
+  // chat waits for changes.
+  const at = message?.createdAt ?? event.at;
+  const base =
+    known === undefined || data.seq <= known.lastSeq
+      ? s
+      : { ...s, chatStates: { ...s.chatStates, [key]: { ...known, lastSeq: data.seq, lastMessageAt: known.lastMessageAt === undefined || at > known.lastMessageAt ? at : known.lastMessageAt } } };
+  const chat = base.chats[key];
   if (chat === undefined) return message === undefined ? base : withLatest(base, key, [message]);
   if (message === undefined) {
     // Too big for the event: the session reads it by seq (missingSeqs).
@@ -264,7 +290,8 @@ const applyEvent = (s: State, event: HubEvent): State => {
   }
   const sends = base.sends[key];
   const settled = sends === undefined ? undefined : settleSends(sends, [message]);
-  const out = withChat(base, key, mergeLive(chat, message));
+  // Its newest few too: a chat held from an earlier link keeps new messages aside, and the list's preview reads these.
+  const out = withChat(withLatest(base, key, [message]), key, mergeLive(chat, message));
   return settled === undefined || settled === sends ? out : { ...out, sends: { ...out.sends, [key]: settled } };
 };
 

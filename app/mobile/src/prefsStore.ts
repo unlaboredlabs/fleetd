@@ -41,5 +41,15 @@ const subscribe = (l: () => void) => {
 
 export const usePrefs = (): Prefs => useSyncExternalStore(subscribe, () => prefs);
 
+/** Each change of the prefs, with them before and after: notifications.ts clears a chat read here. */
+export const onPrefs = (listener: (now: Prefs, was: Prefs) => void): (() => void) => {
+  let was = prefs;
+  return subscribe(() => {
+    const now = prefs;
+    listener(now, was);
+    was = now;
+  });
+};
+
 /** A hub's session's copy of its pinned chats (pins.ts): the prefs' own, so the list follows it. */
 export const pinStoreFor = (hub: HubOrigin): PinStore => hubPinStore(() => prefs, dispatchPrefs, hub);

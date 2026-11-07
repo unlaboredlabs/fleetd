@@ -26,6 +26,8 @@ export interface PushDeps {
   /** The hub's id for this phone's registration (`pd_…`), kept to remove it at Disconnect. */
   readonly saveDevice: (deviceId: string) => Promise<void>;
   readonly loadDevice: () => Promise<string | null>;
+  /** The chat on screen (null: none), whose notifications don't show while the app is open (inApp). */
+  readonly onScreen?: (key: Key | null) => void;
 }
 
 export type Registered =
@@ -222,6 +224,16 @@ export const routeOf = (p: PushPayload): Route | undefined => {
   if (key !== undefined && p.sessionId !== undefined && /^B[0-9a-f]{32}$/u.test(p.sessionId)) return { t: "screen", key, sessionId: p.sessionId };
   return key === undefined ? undefined : { t: "chat", key };
 };
+
+/**
+ * Whether a notification shows while the app is open: not for the chat on screen, nor its approvals, whose messages
+ * and cards are already there, as Messages shows no banner for the conversation you're in.
+ */
+export const inApp = (route: Route | undefined, onScreen: Key | null): boolean =>
+  onScreen === null || route === undefined || route.t === "screen" || route.key !== onScreen;
+
+/** Whether a notification goes from Notification Center once `key` is read: its chat's messages, not what still waits for you. */
+export const readClears = (route: Route | undefined, key: Key): boolean => route?.t === "chat" && route.key === key;
 
 /** Where a route opens: a chat, an approval's at its card, a screen's with its live view over it. */
 export interface ChatAt {
