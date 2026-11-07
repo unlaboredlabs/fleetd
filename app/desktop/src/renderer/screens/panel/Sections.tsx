@@ -1,7 +1,7 @@
 // The panel's sections, in everyday words: Agents (the agents, and the browsers they use); Shipping (its pull requests,
 // and the merge line they land in); Plan (the lead's checklist, and the work it asked other projects for); History (what
-// happened, and what was decided); and Artifacts (the reports published in its chat), which joins the row once the
-// project has one and the hub serves them, or while it is open. One skill (`skills/<name>`, from a chat line or
+// happened, and what was decided); and Artifacts (the reports published in its chat, and the files sent in it), which
+// joins the row once the project has one of either and the hub serves them, or while it is open. One skill (`skills/<name>`, from a chat line or
 // Settings › Agents › Skills, where the list is) opens in the panel with no tab of its own. One compact row of tabs,
 // each its icon beside its word and its count on the word's baseline, a tooltip saying what it is; under the row that
 // same line, and in a section of two views a second, smaller row of tabs between them (ui/DESIGN.md). The views are
@@ -25,7 +25,7 @@ export interface Section {
   readonly lineAlone?: string;
   /** Its views, in the inner row's order, with the inner row's words. */
   readonly views: readonly (readonly [PanelTab, string])[];
-  /** Off the row unless the panel asks for it (`shownSections`' `extra`): Artifacts, once there is one or it's open. */
+  /** Off the row unless the panel asks for it (`shownSections`' `extra`): Artifacts, once it has something or is open. */
   readonly tucked?: true;
 }
 

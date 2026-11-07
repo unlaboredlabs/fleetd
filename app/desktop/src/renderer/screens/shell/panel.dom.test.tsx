@@ -78,6 +78,7 @@ const decision = (decisionId: string, state: Decision["state"]): Decision => ({
 
 // storefront's chat has no artifacts until a test publishes one.
 let artifacts: unknown[];
+let files: unknown[];
 
 const ANSWERS: Readonly<Record<string, unknown>> = {
   skills_list: { skills: [] },
@@ -132,6 +133,7 @@ beforeEach(() => {
   window.localStorage.clear();
   forgetViews();
   artifacts = [];
+  files = [];
   checklist = listOf([
     todo(1, "done", "Receipts in the shop's time zone", { pr: "https://github.com/acme/storefront/pull/11" }),
     todo(2, "doing", "Dark mode", { taskId: "T1" }),
@@ -171,7 +173,7 @@ const mount = async ({ online = true, features }: { online?: boolean; features?:
         const state = (input as { state?: string }).state;
         return Promise.resolve({ ok: true, output: { changes: TRAIN.filter((c) => c.state === state) } });
       }
-      if (tool === "artifacts_list") return Promise.resolve({ ok: true, output: { artifacts, files: [] } });
+      if (tool === "artifacts_list") return Promise.resolve({ ok: true, output: { artifacts, files } });
       return Promise.resolve({ ok: true, output: tool === "checklist_get" ? checklist : (ANSWERS[tool] ?? {}) });
     },
     subscribe: (l) => ((send = l), () => undefined),
@@ -457,6 +459,17 @@ it("shows Artifacts once the project has one, the moment its first is published"
   artifacts = [{ name: "dependency-sweep", newest: { version: 1, title: "Dependency sweep", format: "md", by: "the lead", at: AT } }];
   act(() => send(event(2, "artifacts.changed", { projectRef: STORE, name: "dependency-sweep", version: 1 })));
   // Events coalesce for a moment before their reads go out.
+  await act(() => new Promise((done) => setTimeout(done, 150)));
+  await settle();
+  expect(outer().map((tab) => tab.dataset["section"])).toEqual(["agents", "shipping", "plan", "artifacts", "history"]);
+});
+
+it("shows Artifacts for a chat with files sent in it and no report, so its Files list is there", async () => {
+  await mount({ features: ["artifacts"] });
+  expect(panel()?.querySelector("[role='tab'][data-section='artifacts']")).toBeNull();
+  files = [{ attachmentId: "F1", name: "itinerary.pdf", mime: "application/pdf", bytes: 2048, at: AT }];
+  // A message may carry a file: the list is read again.
+  act(() => send(event(2, "chat.message", { projectRef: STORE })));
   await act(() => new Promise((done) => setTimeout(done, 150)));
   await settle();
   expect(outer().map((tab) => tab.dataset["section"])).toEqual(["agents", "shipping", "plan", "artifacts", "history"]);

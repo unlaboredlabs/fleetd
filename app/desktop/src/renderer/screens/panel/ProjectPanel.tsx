@@ -37,9 +37,11 @@ export function ProjectPanel({ project, view: routed, onWide }: { project: Proje
   const section = servedSection(sectionOf(view.tab), features);
   const Pane = PANES[view.tab];
   noteView(project, view.tab);
-  // Artifacts joins the row with the project's first one (artifacts.changed reads the list again), or while it's open.
+  // Artifacts joins the row with the project's first report or file sent in the chat (artifacts.changed and
+  // chat.message read the list again), or while it's open.
   const artifacts = useToolQuery("artifacts_list", { projectRef: { machineId: project.machineId, projectId: project.projectId } }, { enabled: served("artifacts", features) });
-  const extra = (artifacts.data?.artifacts.length ?? 0) > 0 ? [section.id, "artifacts"] : [section.id];
+  const has = (artifacts.data?.artifacts.length ?? 0) + (artifacts.data?.files.length ?? 0) > 0;
+  const extra = has ? [section.id, "artifacts"] : [section.id];
   const pick = (tab: string) => {
     if (isPanelTab(tab)) navigate(panelRoute(project, listView(tab)), { replace: true });
   };

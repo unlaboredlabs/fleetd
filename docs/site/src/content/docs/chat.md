@@ -177,9 +177,10 @@ For a project's work at a glance, see [Status](/docs/status). For where the time
 
 A report too long for a chat message, such as a dependency sweep's findings or a chart of build times, comes as an
 **artifact**: the lead or one of its agents publishes it, the chat shows a small card for it, and the panel's
-**Artifacts** tab, there once the chat has one, lists every one published in it, the newest first. Click a card or a
-row to read it; the panel widens while you do. A message can link to one too: the link opens it in the same place. Under the reports, **Files**
-lists every file sent in the chat, yours and the agents': click one to open it, or Save.
+**Artifacts** tab, there once the chat has one or a file, lists every one published in it, the newest first. Click a
+card or a row to read it; the panel widens while you do. A message can link to one too: the link opens it in the same
+place. Under the reports, **Files** lists every file sent in the chat, yours and the agents': click one to open it, or
+Save.
 
 | An artifact is | Shows as |
 |---|---|
