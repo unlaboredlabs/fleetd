@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { backoff, FRONT_BACKOFF_CAP_MS, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, QUIET_FRONT_MS, READY_TIMEOUT_MS, SILENT_DEAD_FRONT_MS, SILENT_DEAD_MS, WAKE_PROBE_MS, socketUrl, type HubFrame } from "./client";
+import { backoff, FRONT_BACKOFF_CAP_MS, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, QUIET_FRONT_MS, READY_TIMEOUT_MS, REPLAY_MAX, SILENT_DEAD_FRONT_MS, SILENT_DEAD_MS, WAKE_PROBE_MS, socketUrl, type HubFrame } from "./client";
 import { fakeHub } from "./fake";
 import { Deflate, Z_SYNC_FLUSH } from "pako";
 
@@ -223,6 +223,50 @@ describe("HubClient", () => {
     expect(frames.at(-1)).toEqual({ t: "live", frame: { at: "2026-10-28T10:00:01Z", full: true, lanes: [lane] } });
     client.chat(null);
     expect(hub.sentOf("live").at(-1)).toEqual({ t: "live", board: false });
+  });
+
+  it("back from a drop, replays the events since the last one applied when only a few were missed", () => {
+    const { hub, client, frames } = setup();
+    client.start();
+    // A first connection reads everything.
+    hub.ready();
+    hub.link.frame(snapshot);
+    expect(hub.sentOf("events")).toEqual([{ t: "events", cursor: 7 }]);
+    hub.link.frame({ t: "event", seq: 9, type: "x", at: "2026-10-28T10:00:00Z" });
+    hub.link.close(1006);
+    vi.advanceTimersByTime(FRONT_BACKOFF_CAP_MS);
+    // One that drops before its snapshot leaves where to resume as it was.
+    hub.link.open();
+    hub.link.close(1006);
+    vi.advanceTimersByTime(FRONT_BACKOFF_CAP_MS);
+    hub.ready();
+    hub.link.frame({ ...snapshot, cursor: 12 });
+    expect(hub.sentOf("events")).toEqual([{ t: "events", cursor: 9 }]);
+    for (const seq of [10, 12, 13]) hub.link.frame({ t: "event", seq, type: "x", at: "2026-10-28T10:00:00Z" });
+    const replayed = frames.filter((f) => f.t === "event").map((f) => (f.t === "event" ? [f.event.seq, f.replayed === true] : []));
+    expect(replayed.slice(-3)).toEqual([[10, true], [12, true], [13, false]]);
+    expect(frames.filter((f) => f.t === "snapshot").map((f) => f.t === "snapshot" && f.replay === true)).toEqual([false, true]);
+    // A resync while live reads everything again.
+    client.resync();
+    hub.link.frame({ ...snapshot, cursor: 14 });
+    expect(hub.sentOf("events").at(-1)).toEqual({ t: "events", cursor: 14 });
+  });
+
+  it("reads everything again after a drop that missed too many events, and after a stop", () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.ready();
+    hub.link.frame(snapshot);
+    hub.link.close(1006);
+    vi.advanceTimersByTime(FRONT_BACKOFF_CAP_MS);
+    hub.ready();
+    hub.link.frame({ ...snapshot, cursor: 7 + REPLAY_MAX + 1 });
+    expect(hub.sentOf("events")).toEqual([{ t: "events", cursor: 7 + REPLAY_MAX + 1 }]);
+    client.stop();
+    client.start();
+    hub.ready();
+    hub.link.frame({ ...snapshot, cursor: 7 + REPLAY_MAX + 2 });
+    expect(hub.sentOf("events")).toEqual([{ t: "events", cursor: 7 + REPLAY_MAX + 2 }]);
   });
 
   it("resumes the event stream after a session error", () => {

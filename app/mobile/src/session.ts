@@ -64,8 +64,8 @@ export class Session {
   readonly #hub: string;
   readonly #cache: CacheStore | undefined;
   #saveTimer: ReturnType<typeof setTimeout> | null = null;
-  /** The open chat's latest page went out as this link came up, so the snapshot after it doesn't ask again. */
-  #openRead = false;
+  /** The open chat, when the link dropped with its latest page shown: a replay after the drop keeps it going. */
+  #resumable: Key | null = null;
 
   constructor(options: SessionOptions) {
     this.#now = options.now ?? Date.now;
@@ -412,6 +412,7 @@ export class Session {
       return;
     }
     const before = this.#state.chats[this.#open ?? ""];
+    if (frame.t === "state" && frame.state.phase !== "live" && this.#state.hub.phase === "live") this.#resumable = before?.loaded === true ? this.#open : null;
     this.#dispatch({ t: "frame", frame, nowMs: this.#now() });
     if (frame.t === "state") this.#onState(frame.state);
     if (frame.t === "snapshot") {
@@ -421,15 +422,19 @@ export class Session {
       void this.#readLatest();
       // An admin's: the build the hub has ready, and a run going on, followed.
       if (this.#state.admin === true) void loadRun(this.updates);
-      if (this.#open !== null && !this.#openRead) void this.#loadLatest(this.#open);
-      this.#openRead = false;
+      // Back from a drop whose events replay, the open chat goes on with them; else its latest page starts it over.
+      if (this.#open !== null && frame.replay === true && this.#resumable === this.#open) this.#dispatch({ t: "resume", key: this.#open });
+      else if (this.#open !== null) void this.#loadLatest(this.#open);
+      this.#resumable = null;
       // The screens of the chats looked at may have changed while the link was down.
       for (const key of Object.keys(this.#state.screens)) void this.readScreens(key);
       for (const [key, rows] of Object.entries(this.#state.sends)) {
         for (const row of toResend(rows)) void this.#send(key, { ...row, state: { t: "sending" } });
       }
     }
-    if (frame.t === "event") {
+    // What a missed event changed, the snapshot before it already read again (requests, pins, screens, projects).
+    if (frame.t === "event" && frame.replayed === true) for (const listener of this.#eventListeners) listener(frame.event);
+    else if (frame.t === "event") {
       for (const listener of this.#eventListeners) listener(frame.event);
       const effects = effectsOf(frame.event);
       if (effects.requests) void this.#readRequests();
@@ -446,9 +451,6 @@ export class Session {
   }
 
   #onState(state: HubState): void {
-    // The open chat's page goes with the snapshot rather than a round trip after it: the person is looking at it.
-    this.#openRead = state.phase === "live" && this.#open !== null;
-    if (this.#open !== null && this.#openRead) void this.#loadLatest(this.#open);
     if (state.phase === "live") void this.#readInfo();
     if (state.phase !== "live" || this.#registered) return;
     this.#registered = true;

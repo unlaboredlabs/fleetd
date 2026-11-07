@@ -341,22 +341,33 @@ describe("Session", () => {
     expect(session.state.requests?.map((r) => r.requestId)).toEqual(["r1"]);
   });
 
-  it("reads the open chat's page as the link comes back, with the snapshot rather than after it, and once", async () => {
+  it("back from a drop that missed a few events, the open chat goes on with them rather than read again", async () => {
     const { hub, session } = setup();
     session.openChat(KEY);
     hub.answer("chat_history", page([message(1, "Morning."), message(2, "Two emails need you.")]));
     await flush();
+    hub.link.frame({ t: "event", seq: 3, type: "x", at: AT });
     hub.link.close(1006);
     vi.advanceTimersByTime(1000);
     hub.ready();
-    const reads = () => hub.sentOf("call").filter((c) => c.tool === "chat_history" && (c.input as { limit: number }).limit === 50);
-    expect(reads()).toHaveLength(1);
-    hub.link.frame(snapshot);
-    expect(reads()).toHaveLength(1);
-    // A refresh's snapshot reads it again.
-    session.refresh();
-    hub.link.frame(snapshot);
-    expect(reads()).toHaveLength(2);
+    const pages = () => hub.sentOf("call").filter((c) => c.tool === "chat_history" && (c.input as { limit: number }).limit === 50);
+    hub.link.frame({ ...snapshot, cursor: 5, chats: [{ ...snapshot.chats[0], lastSeq: 3, leadWorking: false }] });
+    expect(hub.sentOf("events")).toEqual([{ t: "events", cursor: 3 }]);
+    expect(pages()).toHaveLength(0);
+    // What it missed: its lead started and finished a turn, and wrote.
+    hub.link.frame({ t: "event", seq: 4, type: "chat.waiting", at: AT, data: { ...snapshot.chats[0], lastSeq: 2, leadWorking: true } });
+    hub.link.frame({ t: "event", seq: 5, type: "chat.message", at: AT, data: { projectRef: REF, messageId: "msg3", seq: 3, author: "lead", state: "final", message: message(3, "Sent both.") } });
+    expect(session.state.chats[KEY]?.messages.map((m) => m.text)).toEqual(["Morning.", "Two emails need you.", "Sent both."]);
+    expect(session.state.chats[KEY]?.cached).toBe(false);
+    // The snapshot is newer than what the chat waited for back then.
+    expect(session.state.chatStates[KEY]?.leadWorking).toBe(false);
+    // Too many missed: everything is read again. (The second retry in a row waits up to 1.25 s.)
+    hub.link.close(1006);
+    vi.advanceTimersByTime(1250);
+    hub.ready();
+    hub.link.frame({ ...snapshot, cursor: 500 });
+    expect(hub.sentOf("events")).toEqual([{ t: "events", cursor: 500 }]);
+    expect(pages()).toHaveLength(1);
   });
 
   it("checks a live link when the network changes, and dials at once one that waits out its backoff", () => {
