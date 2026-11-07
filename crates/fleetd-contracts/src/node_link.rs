@@ -238,6 +238,13 @@ pub const CAP_MAC_TOOL: &str = "mac_tool";
 /// the hub knows the machine even while its tool is off.
 pub const CAP_AGENTS_MAC: &str = "agents_mac";
 
+/// `link_deflate`: the node inflates the hub's compressed frames. A compressed frame is a Binary message of RFC 7692
+/// permessage-deflate data with context takeover (one raw-DEFLATE stream per direction per link, each message
+/// sync-flushed without its trailing `00 00 ff ff`); a Text message is always plain JSON. The hub compresses only
+/// after a hello that lists this, and an older node never sees one. The hub lists [`HUB_CAP_LINK_DEFLATE`] for the
+/// other direction.
+pub const CAP_LINK_DEFLATE: &str = "link_deflate";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -253,6 +260,10 @@ pub struct HubWelcome {
 
 /// The hub takes `session_route`, and places every session an agent starts (machine_roles.rs).
 pub const HUB_CAP_SESSION_ROUTE: &str = "session_route";
+
+/// The hub inflates the node's compressed frames ([`CAP_LINK_DEFLATE`] says how): the node compresses only after a
+/// welcome that lists this.
+pub const HUB_CAP_LINK_DEFLATE: &str = "link_deflate";
 
 /// Both directions every 15 s; a link silent for 45 s is offline.
 #[skip_serializing_none]
