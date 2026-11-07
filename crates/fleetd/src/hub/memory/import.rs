@@ -28,7 +28,7 @@ use serde::Deserialize;
 
 use super::{Target, You};
 use crate::hub::api::{Hub, ToolError};
-use crate::hub::claude_accounts::{Whose, launch_account};
+use crate::hub::claude_accounts::{Whose, launch_account, node_accounts};
 pub use crate::hub::executor::turn::Turn;
 use crate::hub::executor::turn::{self, Owner};
 use crate::hub::executor::{LaunchInput, LaunchOptions};
@@ -167,10 +167,7 @@ pub async fn import(
     let setup = hub.db.claude_accounts().setup()?;
     let whose = person.clone().map_or(Whose::Hub, Whose::Person);
     let claude_account = launch_account(&setup, &whose, &r.machine_id, || {
-        hub.link.node_can(
-            &r.machine_id,
-            fleetd_contracts::node_link::CAP_CLAUDE_ACCOUNTS,
-        )
+        node_accounts(&hub.link, &r.machine_id)
     })
     .map_err(|refused| ToolError::new(ErrorCode::Invalid, refused.message).with_fix(refused.fix))?;
     let (system_prompt, prompt) = prompts(hub, &memory.read(&t), text);
