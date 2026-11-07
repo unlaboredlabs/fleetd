@@ -40,6 +40,15 @@ export const cloudNew = (over: JsonObject = {}): JsonObject => ({
   ...over,
 });
 
+/** "Sign in with boat" waiting for the person: boat.dev's link and code, the code lapsing 10 minutes after it began. */
+export const cloudSignIn = (now: string): JsonObject => ({
+  state: "waiting",
+  email: "person@example.com",
+  verificationUri: "https://boat.dev/api/box/agent/identity/claim?claim_attempt_token=fixture",
+  userCode: "151323",
+  expiresAtMs: Date.parse(at(now, 9 * 60_000)),
+});
+
 /** A pool at work: boat-1 awake with two agents and a screen, boat-2 asleep since the morning, boat-3 broken. */
 export const cloudAtWork = (now: string, projects: JsonObject[], over: JsonObject = {}): JsonObject => ({
   ...BASE,

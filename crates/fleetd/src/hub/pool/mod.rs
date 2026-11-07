@@ -27,6 +27,7 @@ pub mod lease;
 pub mod ledger;
 pub mod life;
 pub mod place;
+pub mod signin;
 pub mod starts;
 pub mod sweep;
 pub mod tools;
@@ -37,6 +38,8 @@ pub mod view;
 mod boat_tests;
 #[cfg(test)]
 mod place_tests;
+#[cfg(test)]
+mod signin_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -210,6 +213,10 @@ pub struct Pool {
     /// Awake slots whose disk boat says is hydrated since they woke: placement prefers them, since builds run about 5
     /// times slower until it is (W407's spike).
     hydrated: Mutex<HashSet<String>>,
+    /// boat's API: where "Sign in with boat" goes ([`signin`]).
+    api: String,
+    /// The admin's "Sign in with boat", since the hub started.
+    sign_ins: Mutex<signin::SignIns>,
 }
 
 impl Pool {
@@ -222,7 +229,19 @@ impl Pool {
         clock: Arc<dyn Clock>,
         zone: Tz,
     ) -> Arc<Pool> {
-        Arc::new(Pool {
+        Arc::new(Pool::build(db, home, boat, tunnels, fleet, clock, zone))
+    }
+
+    fn build(
+        db: Arc<HubDb>,
+        home: PathBuf,
+        boat: Arc<dyn Boat>,
+        tunnels: Arc<dyn Tunnels>,
+        fleet: Arc<dyn Fleet>,
+        clock: Arc<dyn Clock>,
+        zone: Tz,
+    ) -> Pool {
+        Pool {
             ledger: Ledger::new(db),
             boat,
             tunnels,
@@ -238,7 +257,9 @@ impl Pool {
             key_test: Mutex::default(),
             path: Mutex::default(),
             hydrated: Mutex::default(),
-        })
+            api: boat::API.to_owned(),
+            sign_ins: Mutex::default(),
+        }
     }
 
     /// The hub's pool: boat itself at `api`, with the key the ledger holds sealed to the hub's box key, and the hub's
@@ -261,7 +282,10 @@ impl Pool {
         let ssh_key: tunnel::KeySource =
             Arc::new(move || tunnel::hub_key(&ledger, &ssh_home).map(Arc::new));
         let tunnels = Arc::new(SshTunnels::new(boat.clone(), ssh_key, hub));
-        Pool::new(db, home, boat, tunnels, fleet, clock, zone)
+        Arc::new(Pool {
+            api: api.to_owned(),
+            ..Pool::build(db, home, boat, tunnels, fleet, clock, zone)
+        })
     }
 
     /// The public half of the hub's SSH key, made now if it isn't yet: what boat puts on each machine.

@@ -80,6 +80,38 @@ pub struct CloudPathTest {
     pub said: String,
 }
 
+/// Where "Sign in with boat" is (cloud_sign_in).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum BoatSignInState {
+    /// The person opens the link, signs in to boat.dev and types the code; the hub asks boat every few seconds.
+    Waiting,
+    /// The hub's narrow key is sealed and the sign-in's own key revoked.
+    Done,
+    Failed,
+}
+
+/// "Sign in with boat": boat.dev's agent sign-in, which the hub runs in place of a pasted key. Once the person signs
+/// in, boat hands the hub a full-access key; the hub uses it once to make the narrow key the setup step lists, seals
+/// only that one, and revokes the full-access key. Neither key, nor boat's claim token, is ever shown.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BoatSignIn {
+    pub state: BoatSignInState,
+    /// The boat.dev account's email it signs in to.
+    pub email: String,
+    /// boat.dev's page the person opens and signs in on, while waiting.
+    pub verification_uri: Option<String>,
+    /// The 6-digit code they type on that page once signed in, while waiting.
+    pub user_code: Option<String>,
+    /// When the code lapses (ms), while waiting.
+    pub expires_at_ms: Option<i64>,
+    /// What happened, in one line: the key made and the sign-in's key revoked, or the step that failed and why.
+    pub said: Option<String>,
+}
+
 /// The hub's pool: its settings, its machines and what they cost.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -112,6 +144,8 @@ pub struct CloudView {
     /// A billing or key pause that only boat's next "can start" or an admin's Resume lifts.
     pub paused: Option<String>,
     pub key_test: Option<CloudKeyTest>,
+    /// The admin's "Sign in with boat", since the hub started.
+    pub sign_in: Option<BoatSignIn>,
     pub machines: Vec<CloudMachine>,
     pub sizes: Vec<CloudSize>,
     /// What the plan includes a month, as boat.dev last said.
