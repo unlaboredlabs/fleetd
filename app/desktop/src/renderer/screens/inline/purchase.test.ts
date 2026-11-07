@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CommandApprovalItem, Purchase } from "../../../shared/contracts";
-import { cardLabel, itemLines, money, payQuestion, purchaseOutcome, purchaseTitle } from "./purchase";
+import { cardLabel, itemLines, money, payQuestion, purchaseTitle } from "../projects/payments";
+import { purchaseOutcome } from "./purchase";
 
 const purchase: Purchase = {
   shop: { domain: "hotel.devbox.test", name: "Hotel Devbox" },

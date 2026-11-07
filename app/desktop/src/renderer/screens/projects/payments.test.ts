@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PurchaseLogEntry } from "../../../shared/contracts";
-import { NO_CARD, cardOptions, purchaseLine, purchaseState } from "./paymentsModel";
+import { NO_CARD, cardOptions, purchaseLine, purchaseState } from "./payments";
 
 const entry = (state: PurchaseLogEntry["state"]): PurchaseLogEntry => ({
   requestId: "Q3",
@@ -15,7 +15,7 @@ const entry = (state: PurchaseLogEntry["state"]): PurchaseLogEntry => ({
   },
 });
 
-describe("a Navi's payments", () => {
+describe("a project's payments", () => {
   it("offers the person's cards, the one picked even if no longer listed, and no card", () => {
     const cards = [{ ref: "op://Shared/Amex", title: "Amex", vault: "Shared" }];
     expect(cardOptions(cards, "op://Personal/Visa").map((o) => o.label)).toEqual(["Visa (Personal)", "Amex (Shared)", "No card"]);
