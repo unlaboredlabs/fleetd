@@ -1,4 +1,4 @@
-// A Navi's or agent's live screen, full screen over its chat: the page as its agent sees it, who has control, and the one
+// A project's or agent's live screen, full screen over its chat: the page as its agent sees it, who has control, and the one
 // control that matters (Take Over, or Hand Back once it's yours). Opened from the screen's card in the chat, from the
 // push that says its agent needs you, or as a screen of your own (New Screen, which is yours from its start and ends
 // with End Screen).
@@ -19,7 +19,7 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import Animated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
-import { zoomAbout, isNavi, type BrowserFrame } from "../desktop";
+import { zoomAbout, type BrowserFrame } from "../desktop";
 import { useHub, type RootParams } from "../hubContext";
 import { addressable, addressOf, BACKSPACE, cardOf, clampView, controlLine, controlOf, ENTER, FramePacer, hostOf, KIND_WORD, MAX_ZOOM, NAVIGATE, PageTouches, pixelsPerPoint, toFrame, typed, type Navigation, type Size } from "../screen";
 import { space, type, useTheme } from "../theme";
@@ -306,7 +306,6 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   const kind = card === undefined ? "screen" : KIND_WORD[card.kind];
   const status = ended ? "Ended" : control === "agent" && card?.reason === undefined && newest === undefined ? "Connecting…" : controlLine(control, who, own);
   const ground = t.dark ? "#000000" : t.grouped;
-  const navi = project !== undefined && isNavi(project);
 
   const image = (slot: "a" | "b") => {
     const f = slots[slot];
@@ -418,7 +417,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
               style={({ pressed }) => [styles.titleHit, pressed && styles.pressed]}
             >
               <Glass style={styles.title}>
-                <Avatar name={who} navi={navi} size={28} picture={project} />
+                <Avatar name={who} size={28} picture={project} />
                 <View style={styles.titleText}>
                   <Text style={[type.headline, { color: t.label }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
                     {host === "" ? (canGo ? "Enter an address" : who) : host}

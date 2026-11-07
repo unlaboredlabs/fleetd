@@ -6,7 +6,7 @@ import { deleteSkill, listSkills, readSkill, readSkillView, restoreSkill, saveSk
 
 const AT = "2026-10-31T10:00:00Z";
 const REF = { machineId: "devbox", projectId: "nova" };
-const NOVA = { ...REF, title: "Nova", kind: "assistant", workspaceRoot: "/home/ada/.fleetd/navi/nova", lastActivityAt: AT, threads: { running: 0, waiting: 0, failed: 0, idle: 0 } };
+const NOVA = { ...REF, title: "Nova", onlyMe: true, workspaceRoot: "/home/ada/.fleetd/navi/nova", lastActivityAt: AT, threads: { running: 0, waiting: 0, failed: 0, idle: 0 } };
 const SKILL = { name: "weekly-invoices", description: "Sends the week's invoices", origin: "project" };
 const V2 = { version: 2, author: "agent", by: "Nova", at: AT, why: "Learned the export step" };
 
@@ -23,8 +23,8 @@ const setup = () => {
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-describe("a Navi's skills", () => {
-  it("lists them for the Navi alone", async () => {
+describe("a project's skills", () => {
+  it("lists them for the project alone", async () => {
     const { hub, session, last } = setup();
     const listed = listSkills(session, REF);
     expect(last("skills_list")).toEqual({ projectRef: REF });
@@ -92,7 +92,7 @@ describe("a Navi's skills", () => {
     await expect(gone).resolves.toMatchObject({ ok: false, error: { code: "forbidden" } });
   });
 
-  it("reads again on a change to this Navi's skills or a hub-wide one, not another's", () => {
+  it("reads again on a change to this project's skills or a hub-wide one, not another's", () => {
     const event = (data: unknown): HubEvent => ({ type: "skills.changed", at: AT, data }) as HubEvent;
     expect(touchesSkills(event({ scope: "project", projectRef: REF, names: ["a"] }), REF)).toBe(true);
     expect(touchesSkills(event({ scope: "global", names: ["a"] }), REF)).toBe(true);

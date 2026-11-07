@@ -1,5 +1,5 @@
 // A skill's history, pushed from its view: every version the hub keeps, newest first, each with its why, who wrote it
-// (the Navi, or a person) and when. Tapping one opens what it changed (SkillVersion.tsx).
+// (its lead, or a person) and when. Tapping one opens what it changed (SkillVersion.tsx).
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { shape, space, type, useTheme } from "../../theme";

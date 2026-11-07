@@ -16,7 +16,7 @@ describe("tappedStack", () => {
   });
 
   it("closes a sheet, Settings or a live view, so the chat never opens under them", () => {
-    const sheet: StackRoute = { key: "NewNavi-1", name: "NewNavi" };
+    const sheet: StackRoute = { key: "NewProject-1", name: "NewProject" };
     const live: StackRoute = { key: "Screen-1", name: "Screen", params: { key: "m1/a", sessionId: "s1" } };
     for (const top of [sheet, live, { key: "Settings-1", name: "Settings" }]) {
       const at = tappedStack([home, chat("m1/a"), top], { key: "m1/b", requestId: "r1" }, 2);

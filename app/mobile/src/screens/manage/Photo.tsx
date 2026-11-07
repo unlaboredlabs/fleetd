@@ -1,4 +1,4 @@
-// A picked or taken photo moved and scaled in a circle before it becomes a project's or Navi's picture, as iOS's own
+// A picked or taken photo moved and scaled in a circle before it becomes a project's picture, as iOS's own
 // Move and Scale: black, the circle clear, the rest dimmed; pinch to zoom about the fingers, drag to move, and it
 // springs back so the circle stays covered (the desktop's shared/crop.ts). Cancel goes back; Choose sends the photo as
 // it was picked with the square under the circle (setPicture), and the hub keeps that square alone, small and without

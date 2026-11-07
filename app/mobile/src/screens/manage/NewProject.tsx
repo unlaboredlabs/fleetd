@@ -1,13 +1,14 @@
-// New Project, a sheet from the Chats list's +, as the desktop's Add project: a GitHub repo to clone (owner/repo or
-// its URL) or a folder already on a machine, which machine, and what to call it. Under the field, what the hub found
-// (project_discover: checkouts on the machines, the person's GitHub repos), filtered as you type; one already a project
-// opens its chat. The add runs the desktop's own flow (flow.ts) over project_add and the clone's events: its progress,
-// what the hub read of the repo once added, or why it failed, with adding the folder that's already there when that
-// is the same repo.
+// New Project, a sheet from the Chats list's +, as the desktop's New project: what to call it, and optionally a GitHub
+// repo to clone (owner/repo or its URL) or a folder already on a machine; with none, the hub makes a new folder of its
+// own. Then which machine, and Only me, on for a project with no repo until the person says otherwise. Under it all,
+// what the hub found (project_discover: checkouts on the machines, the person's GitHub repos), filtered as you type;
+// one already a project opens its chat. The add runs the desktop's own flow (flow.ts) over project_add and the clone's
+// events: its progress, what the hub read of the repo once added, or why it failed, with adding the folder that's
+// already there when that is the same repo. A new folder opens its chat at once.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
-import { addSource, addStep, baseName, initialAdd, otherHost, target, tilde, type AddMsg, type AddState, type Found, type Ready, type Request } from "../../desktop";
+import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { addSource, addStep, baseName, initialAdd, NAME_MAX, nameProblem, newPath, otherHost, target, tilde, type AddMsg, type AddState, type Found, type Ready, type Request } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { keyOf } from "../../store";
 import { space, type, useTheme } from "../../theme";
@@ -16,12 +17,12 @@ import { haptics } from "../../ui/haptics";
 import { ListRow, ListSection } from "../../ui/List";
 import { addCall, discover } from "./api";
 import { closeThenOpen } from "./arrival";
-import { machineName, PROJECT_NAME_MAX, projectNameProblem, suggestions } from "./model";
+import { machineName, suggestions } from "./model";
 import { CheckRow, errorWords, FieldRow, Note, Problem, sheetOptions, Symbol, useRead } from "./parts";
 
 type Props = NativeStackScreenProps<RootParams, "NewProject">;
 
-export function NewProject({ navigation }: Props) {
+export function NewProject({ navigation, route }: Props) {
   const t = useTheme();
   const { state, session } = useHub();
   const names = useCallback((id: string) => machineName(state.machines, id), [state.machines]);
@@ -32,17 +33,22 @@ export function NewProject({ navigation }: Props) {
   const [fixed, setFixed] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [name, setName] = useState("");
+  // Only me as the person set it; till then, on for a new folder and off for a repo.
+  const [onlyMeSet, setOnlyMe] = useState<boolean | null>(null);
 
   // The add, as the desktop runs it: messages in, its project_add calls out.
   const flow = useRef<AddState>({ ...initialAdd, live: state.hub.phase === "live" });
   const [phase, setPhase] = useState(flow.current.phase);
   const title = useRef("");
+  const onlyMeSent = useRef(false);
+  // A new folder of its own, which opens its chat once made: the flow forgets its request by then.
+  const startedNew = useRef(false);
   const send = useCallback(
     (msg: AddMsg) => {
       const [next, calls] = addStep(flow.current, msg, names);
       flow.current = next;
       setPhase(next.phase);
-      for (const call of calls) void addCall(session, call, title.current).then((outcome) => send({ t: "answer", call, outcome }));
+      for (const call of calls) void addCall(session, call, title.current, onlyMeSent.current).then((outcome) => send({ t: "answer", call, outcome }));
     },
     [session, names],
   );
@@ -58,20 +64,41 @@ export function NewProject({ navigation }: Props) {
   const to = target(d, picked) ?? workers[0] ?? null;
   const machineId = fixed ?? picked ?? to?.machineId;
   const source = addSource(text);
+  // No repo or folder typed: a new folder of its own, where its machine makes new projects' folders.
+  const fresh = text.trim() === "";
+  const freshPath = newPath(d?.workers.find((w) => w.machineId === machineId), name.trim());
   const request: Request | null =
-    machineId === undefined || source === null
+    machineId === undefined
       ? null
-      : source.kind === "github"
-        ? { kind: "clone", repo: source.repo, machineId, useExisting: false }
-        : { kind: "folder", machineId, path: source.path };
-  const nameIssue = projectNameProblem(name);
+      : fresh
+        ? name.trim() === "" || freshPath === null
+          ? null
+          : { kind: "new", machineId, name: name.trim(), path: freshPath, gitInit: false }
+        : source === null
+          ? null
+          : source.kind === "github"
+            ? { kind: "clone", repo: source.repo, machineId, useExisting: false }
+            : { kind: "folder", machineId, path: source.path };
+  const onlyMe = onlyMeSet ?? fresh;
+  const nameIssue = nameProblem(name);
   const ready = request !== null && nameIssue === undefined && live;
   const start = (r: Request) => {
     title.current = name.trim();
+    onlyMeSent.current = onlyMe;
+    startedNew.current = r.kind === "new";
     haptics.tap();
-    send({ t: "start", request: r, path: r.kind === "folder" ? r.path : "" });
+    send({ t: "start", request: r, path: r.kind === "clone" ? "" : r.path });
   };
-  const openChat = (key: string) => closeThenOpen(navigation, key);
+  // Made from Import Memory: back there, where the paste waits. Else its chat.
+  const openChat = (key: string) => (route.params?.back === true ? navigation.goBack() : closeThenOpen(navigation, key));
+  // A new folder has nothing to show once made: its chat opens at once.
+  const made = phase.kind === "ready" && startedNew.current ? keyOf(phase.ready.project) : undefined;
+  useEffect(() => {
+    if (made === undefined) return;
+    haptics.success();
+    openChat(made);
+    // Once, as it is made.
+  }, [made]);
 
   useLayoutEffect(() => {
     const k = phase.kind;
@@ -80,14 +107,14 @@ export function NewProject({ navigation }: Props) {
       ...sheetOptions(
         t,
         () => navigation.goBack(),
-        // Always the one ✓, only its job changing: Add, then Open Chat once added.
+        // Always the one ✓, only its job changing: Create, then Open Chat once added.
         k === "ready"
           ? { label: "Open Chat", enabled: true, busy: false, onPress: () => openChat(keyOf(phase.ready.project)) }
-          : { label: "Add", enabled: k === "pick" && ready, busy: k === "working", onPress: () => request !== null && start(request) },
+          : { label: "Create", enabled: k === "pick" && ready, busy: k === "working", onPress: () => request !== null && start(request) },
       ),
     });
     // `start` and `openChat` read what these are.
-  }, [navigation, t, phase, ready, request?.kind, text, name, machineId]);
+  }, [navigation, t, phase, ready, request?.kind, text, name, machineId, onlyMe]);
 
   const list = useMemo(() => suggestions(text, d), [text, d]);
 
@@ -96,7 +123,7 @@ export function NewProject({ navigation }: Props) {
     return (
       <View style={[styles.center, { backgroundColor: t.grouped }]}>
         <ActivityIndicator size="large" color={t.secondary} />
-        <Text style={[type.title3, styles.text, { color: t.label }]}>{job.clone ? `Cloning ${job.what}` : `Adding ${job.what}`}</Text>
+        <Text style={[type.title3, styles.text, { color: t.label }]}>{job.clone ? `Cloning ${job.what}` : job.create === true ? `Making ${job.what}` : `Adding ${job.what}`}</Text>
         <Text style={[type.subhead, styles.text, { color: t.secondary }]}>{job.detail}</Text>
         {job.fraction === undefined ? null : (
           <View style={[styles.track, { backgroundColor: t.fill }]}>
@@ -107,6 +134,7 @@ export function NewProject({ navigation }: Props) {
       </View>
     );
   }
+  if (phase.kind === "ready" && made !== undefined) return <View style={[styles.center, { backgroundColor: t.grouped }]} />;
   if (phase.kind === "ready") return <Added ready={phase.ready} name={title.current} onOpen={() => openChat(keyOf(phase.ready.project))} />;
   if (phase.kind === "failed" || phase.kind === "unlisted") {
     const failure = phase.kind === "failed" ? phase.failure : { message: `${phase.what} isn't listed yet.`, fix: "A clone may still be running: it shows in Chats once added. If it doesn't, try again." };
@@ -137,9 +165,25 @@ export function NewProject({ navigation }: Props) {
     }
   };
   const other = otherHost(text);
-  const placeholderName = request === null ? "Name" : request.kind === "clone" ? baseName(request.repo) : baseName(request.path);
+  const placeholderName = request?.kind === "clone" ? baseName(request.repo) : request?.kind === "folder" ? baseName(request.path) : "Name";
+  const where = machineId === undefined ? "its machine" : names(machineId);
+  const named = name.trim() !== "";
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingBottom: space.xxl }} style={{ backgroundColor: t.grouped }}>
+      <ListSection header="Name">
+        <FieldRow
+          value={name}
+          onChangeText={setName}
+          placeholder={placeholderName}
+          autoFocus
+          maxLength={NAME_MAX + 1}
+          autoCapitalize="words"
+          returnKeyType="next"
+          accessibilityLabel="Name"
+          invalid={nameIssue !== undefined}
+        />
+      </ListSection>
+      <Problem text={nameIssue} />
       <ListSection header="Repo or folder">
         <FieldRow
           value={text}
@@ -147,12 +191,11 @@ export function NewProject({ navigation }: Props) {
             setText(v);
             setFixed(null);
           }}
-          placeholder="owner/repo, a GitHub URL or ~/folder"
-          autoFocus
+          placeholder="Optional: owner/repo, a URL or ~/folder"
           autoCapitalize="none"
           keyboardType="url"
-          returnKeyType="next"
-          accessibilityLabel="Repo or folder"
+          returnKeyType="done"
+          accessibilityLabel="Repo or folder, optional"
         />
       </ListSection>
       {other === null ? (
@@ -161,15 +204,15 @@ export function NewProject({ navigation }: Props) {
             ? `Clones ${request.repo} onto ${names(request.machineId)}.`
             : request?.kind === "folder"
               ? `Adds the folder ${tilde(request.path)} that's already on ${names(request.machineId)}.`
-              : "A GitHub repo is cloned onto the machine; a folder must already be on it."}
+              : fresh && named && freshPath !== null
+                ? `Makes the folder ${tilde(freshPath)} on ${where}. Add repos to it any time.`
+                : fresh && named && d !== null
+                  ? `${where} can't make a new folder. Give it a repo or a folder that's there, or pick another machine.`
+                  : "Empty, it gets a new folder of its own. A GitHub repo is cloned onto the machine; a folder must already be on it."}
         </Note>
       ) : (
         <Problem text={other} />
       )}
-      <ListSection header="Name" footer="How fleetd shows it. Its folder keeps its own name.">
-        <FieldRow value={name} onChangeText={setName} placeholder={placeholderName} maxLength={PROJECT_NAME_MAX + 1} autoCapitalize="words" accessibilityLabel="Name" invalid={nameIssue !== undefined} />
-      </ListSection>
-      <Problem text={nameIssue} />
       {workers.length > 1 && fixed === null ? (
         <ListSection header="Machine">
           {workers.map((w) => (
@@ -185,6 +228,9 @@ export function NewProject({ navigation }: Props) {
           ))}
         </ListSection>
       ) : null}
+      <ListSection footer={onlyMe ? "Only you see it and use it." : "Everyone on this hub sees it and can use it."}>
+        <ListRow title="Only Me" accessory={<Switch value={onlyMe} onValueChange={(on) => setOnlyMe(on)} accessibilityLabel="Only me" />} />
+      </ListSection>
       {list.length > 0 ? (
         <ListSection header={text.trim() === "" ? "Found" : "Matches"}>
           {list.map((f) => (

@@ -1,4 +1,4 @@
-// A photo for a project's or Navi's icon sheet (IconPicker.tsx): Choose Photo (the library) or Take Photo (the camera);
+// A photo for a project's icon sheet (IconPicker.tsx): Choose Photo (the library) or Take Photo (the camera);
 // one picked or taken goes on to Move and Scale (Photo.tsx).
 import * as ImagePicker from "expo-image-picker";
 import { Alert, Linking } from "react-native";

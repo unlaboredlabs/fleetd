@@ -1,9 +1,10 @@
 // What the phone app takes from the desktop app, all in one place: the /app protocol's generated types, the pairing
-// rules, the chat reducers, what makes a project a Navi and who it belongs to, the Add project flow, a project's allowed
-// profiles and worktrees, the prose diff a skill's history shows, the Update button's run and its wording, the
-// characters an approval card marks, the state glyph's frames, the words of the lead's turn line, and the New screen
-// picker's machines. Pure modules that import no packages, so Metro and vitest read them as they are
-// (metro.config.js); mobile.yml runs this app's checks when they change.
+// rules, the chat reducers, whose a project is and the tools it calls, the Add project flow, a project's allowed
+// profiles and worktrees, its approvals', payments', Telegram's and linked hubs' words, the prose diff a skill's
+// history shows, the Update button's run and its wording, the characters an approval card marks, the state glyph's
+// frames, the words of the lead's turn line, and the New screen picker's machines. Pure modules that import no
+// packages, so Metro and vitest read them as they are (metro.config.js); mobile.yml runs this app's checks when they
+// change.
 export type {
   ApprovalDecision,
   AttachmentGetOutput,
@@ -39,6 +40,14 @@ export type {
   ProfilesListOutput,
   ProjectSettings,
   TodoItem,
+  AutoApproved,
+  NaviApprovalMode as ApprovalMode,
+  NaviApprovalsOutput as ApprovalsOutput,
+  NaviPurchasesOutput as PurchasesOutput,
+  OnePasswordCardsOutput,
+  PurchaseLogEntry,
+  TelegramBridge,
+  HubLink,
   SkillOrigin,
   SkillSummary,
   Activity,
@@ -57,11 +66,10 @@ export { ICON_COLORS, ICON_FACES } from "../../desktop/src/shared/botIcons";
 export { baseScale, clampPan, clampZoom, cropOf, MAX_ZOOM, zoomAbout } from "../../desktop/src/shared/crop";
 export * from "../../desktop/src/renderer/src/data/chat";
 export { canHost, deleteWords, firstHome, isArchived, isOnlyMe, isYours, NAME_MAX, nameProblem, projectHomes, PROJECT_TOOLS } from "../../desktop/src/renderer/screens/projects/model";
-// The phone's names from before projects/model.ts, until its screens move to the new ones (W457).
-export { deleteWords as naviDeleteWords, isOnlyMe as isNavi, projectHomes as naviHomes } from "../../desktop/src/renderer/screens/projects/model";
 export { addSource, baseName, otherHost, tilde } from "../../desktop/src/renderer/screens/projects/source";
 export {
   discovery,
+  newPath,
   rows as foundRows,
   target,
   type Discovery,
@@ -74,6 +82,10 @@ export {
 } from "../../desktop/src/renderer/screens/projects/discovery";
 export { initialAdd, requestWhat, step as addStep, type AddMsg, type AddState, type Call as AddCall } from "../../desktop/src/renderer/screens/projects/flow";
 export { allowedAfter, runsLine } from "../../desktop/src/renderer/screens/settings/profilesModel";
+export { checkerLine, FLOORS, logWhy, MODES as APPROVAL_MODES } from "../../desktop/src/renderer/screens/settings/approvalsModel";
+export { cardLabel, cardOptions, NO_CARD, purchaseLine, purchaseState } from "../../desktop/src/renderer/screens/projects/payments";
+export { statusWords as telegramWords } from "../../desktop/src/renderer/screens/settings/telegramModel";
+export { linkState, reachLine } from "../../desktop/src/renderer/screens/hubLinks/model";
 export { unsavedWorktrees } from "../../desktop/src/renderer/screens/settings/projectModel";
 export { diffLines, type DiffLine, type Piece as DiffPiece } from "../../desktop/src/renderer/screens/settings/diff";
 export { versionLabel, type UpdatesState } from "../../desktop/src/shared/updates";

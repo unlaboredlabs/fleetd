@@ -5,7 +5,7 @@ import { gridSize, pinFace, pinnedSplit } from "./pinnedGrid";
 const row = (id: string, extra: Partial<ChatRow> = {}): ChatRow => ({
   key: `m1/${id}`,
   project: { machineId: "m1", projectId: id, title: id, workspaceRoot: `/home/devbox/${id}`, lastActivityAt: "2026-10-31T10:00:00Z", threads: { running: 0, waiting: 0, failed: 0, idle: 0 } },
-  navi: false,
+  archived: false,
   want: undefined,
   working: false,
   approvals: 0,

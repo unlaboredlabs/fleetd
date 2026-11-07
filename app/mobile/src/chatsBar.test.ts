@@ -21,8 +21,7 @@ describe("the filters menu", () => {
       ["unread", "Unread", "3 chats"],
       ["needsYou", "Needs You", "1 chat"],
       ["pinned", "Pinned", undefined],
-      ["navis", "Navis", undefined],
-      ["projects", "Projects", undefined],
+      ["archived", "Archived", undefined],
     ]);
     expect(filterChoices({ unread: 0, needsYou: 0 }).every((c) => c.subtitle === undefined)).toBe(true);
     expect(new Set(menu.map((c) => c.symbol)).size).toBe(menu.length);

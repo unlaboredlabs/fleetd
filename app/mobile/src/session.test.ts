@@ -10,14 +10,14 @@ const REF = { machineId: "m1", projectId: "navi" };
 const KEY = "m1/navi";
 const AT = "2026-10-28T10:00:00Z";
 
-const project = (projectId: string, title: string, kind?: "assistant") => ({
+const project = (projectId: string, title: string, onlyMe?: true) => ({
   machineId: "m1",
   projectId,
   title,
   workspaceRoot: `/home/devbox/${projectId}`,
   lastActivityAt: AT,
   threads: { running: 0, waiting: 0, failed: 0, idle: 0 },
-  ...(kind === undefined ? {} : { kind }),
+  ...(onlyMe === undefined ? {} : { onlyMe }),
 });
 
 const snapshot = {
@@ -25,7 +25,7 @@ const snapshot = {
   cursor: 1,
   attention: [],
   machines: [],
-  projects: [project("navi", "Ada", "assistant"), project("shop", "storefront")],
+  projects: [project("navi", "Ada", true), project("shop", "storefront")],
   chats: [{ projectRef: REF, lastSeq: 2, leadWorking: false, needsYou: false }],
 };
 
@@ -77,12 +77,12 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe("Session", () => {
-  it("lists what needs you on top, then the Navis, then the projects", async () => {
+  it("lists what needs you on top, then every other chat", async () => {
     const { hub, session } = setup();
-    expect(lists(session.state)).toMatchObject({ needsYou: [], navis: [{ key: KEY }], projects: [{ key: "m1/shop" }] });
+    expect(lists(session.state)).toMatchObject({ needsYou: [], chats: [{ key: KEY }, { key: "m1/shop" }] });
     hub.answer("requests_list", { requests: [approval("r1")] });
     await flush();
-    expect(lists(session.state)).toMatchObject({ needsYou: [{ key: KEY, want: "1 approval waiting" }], navis: [], projects: [{ key: "m1/shop" }] });
+    expect(lists(session.state)).toMatchObject({ needsYou: [{ key: KEY, want: "1 approval waiting" }], chats: [{ key: "m1/shop" }] });
     hub.link.frame({ t: "event", seq: 2, type: "chat.waiting", at: AT, data: { projectRef: { machineId: "m1", projectId: "shop" }, lastSeq: 5, leadWorking: false, needsYou: true } });
     expect(lists(session.state)?.needsYou.map((r) => r.want)).toEqual(["1 approval waiting", "Waiting for your reply"]);
   });
@@ -111,9 +111,9 @@ describe("Session", () => {
     hub.answer("chat_history", page([message(1, "Morning."), message(2, "Two **emails** need you.")]));
     await flush();
     expect(reads().map((c) => (c.input as { projectRef: unknown }).projectRef)).toEqual([REF, { machineId: "m1", projectId: "shop" }]);
-    expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["Two emails need you."]);
+    expect(lists(session.state)?.chats.find((r) => r.key === KEY)?.preview).toEqual("Two emails need you.");
     hub.link.frame({ t: "event", seq: 2, type: "chat.message", at: AT, data: { projectRef: REF, messageId: "msg3", seq: 3, author: "lead", state: "final", message: message(3, "Sent both.") } });
-    expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["Sent both."]);
+    expect(lists(session.state)?.chats.find((r) => r.key === KEY)?.preview).toEqual("Sent both.");
   });
 
   it("opens a chat at its latest page, streams the lead's text and takes its final message", async () => {
@@ -197,8 +197,8 @@ describe("Session", () => {
     const before = hub.sentOf("snapshot").length;
     hub.link.frame({ t: "event", seq: 2, type: "project.settings", at: AT, machineId: "m1", projectId: "shop", data: { title: "Shop" } });
     expect(hub.sentOf("snapshot").length).toBe(before + 1);
-    hub.link.frame({ ...snapshot, cursor: 2, projects: [project("navi", "Ada", "assistant"), project("shop", "Shop")] });
-    expect(lists(session.state)?.projects.map((r) => r.project.title)).toEqual(["Shop"]);
+    hub.link.frame({ ...snapshot, cursor: 2, projects: [project("navi", "Ada", true), project("shop", "Shop")] });
+    expect(lists(session.state)?.chats.find((r) => r.key === "m1/shop")?.project.title).toEqual("Shop");
   });
 
   it("reads the open requests again when one changes", () => {
@@ -343,9 +343,9 @@ describe("a chat's screens", () => {
     hub.answer("browser_control", { session: live("human") });
     await expect(taking).resolves.toMatchObject({ ok: true });
     expect(session.state.screens[KEY]?.[0]?.control).toBe("human");
-    // Another person's Navi's screen: refused, and nothing changes here.
+    // Another person's project's screen: refused, and nothing changes here.
     const refused = session.control(live("human").sessionId, "agent");
-    hub.fail("browser_control", "forbidden", "navi on m1 is another person's Navi: only its owner uses and manages it.");
+    hub.fail("browser_control", "forbidden", "navi on m1 is another person's project: only its owner uses and manages it.");
     await expect(refused).resolves.toMatchObject({ ok: false, error: { code: "forbidden" } });
     expect(session.state.screens[KEY]?.[0]?.control).toBe("human");
   });

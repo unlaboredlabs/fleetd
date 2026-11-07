@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ago, diffChunks, diffSummary, isOff, kindOf, offers, rowLine, skillGroups, skillsShown, sourceLine, splitSkill, versionLine, whoOf, type Skill, type SkillVersion } from "./skillsModel";
+import { ago, diffChunks, diffSummary, isOff, kindOf, offers, rowLine, skillGroups, sourceLine, splitSkill, versionLine, whoOf, type Skill, type SkillVersion } from "./skillsModel";
 
 const NOW = Date.parse("2026-10-31T12:00:00Z");
 const clock = { nowMs: NOW };
@@ -10,15 +10,7 @@ const install = { source: "acme/skills", url: "https://github.com/acme/skills", 
 const version = (n: number, extra: Partial<SkillVersion> = {}): SkillVersion => ({ version: n, author: "agent", by: "Nova", at: hoursAgo(2), why: "Learned the export step", ...extra });
 
 describe("the Skills list", () => {
-  it("shows only on a hub that keeps skills' versions", () => {
-    const live = { phase: "live", hub: "http://devbox:4790", protocol: 1 } as const;
-    expect(skillsShown({ ...live, features: ["presence", "navi_skills"] })).toBe(true);
-    expect(skillsShown({ ...live, features: ["presence"] })).toBe(false);
-    expect(skillsShown(live)).toBe(false);
-    expect(skillsShown({ phase: "connecting", hub: "http://devbox:4790", attempt: 1 })).toBe(false);
-  });
-
-  it("puts the Navi's own first, then the installed ones, then its folder's, leaving out empty sections", () => {
+  it("puts the project's own first, then the installed ones, then its folder's, leaving out empty sections", () => {
     const skills = [skill("pdf", { origin: "global" }), skill("invoices"), skill("deploy", { install }), skill("lint", { origin: "repo_agents" })];
     expect(skillGroups(skills, "Nova").map((g) => [g.header, g.rows.map((s) => s.name)])).toEqual([
       ["Made by Nova", ["invoices"]],
@@ -62,7 +54,7 @@ describe("the Skills list", () => {
 });
 
 describe("a skill's view", () => {
-  it("offers edit and delete for the Navi's own alone, and turning off to its owner", () => {
+  it("offers edit and delete for the project's own alone, and turning off to whoever manages it", () => {
     expect(offers(skill("a"), true)).toEqual({ edit: true, delete: true, history: true, turnOff: true });
     expect(offers(skill("a", { install }), true)).toEqual({ edit: false, delete: false, history: true, turnOff: true });
     expect(offers(skill("a", { origin: "global" }), true)).toEqual({ edit: false, delete: false, history: true, turnOff: true });

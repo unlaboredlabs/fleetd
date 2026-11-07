@@ -1,15 +1,14 @@
-// Rename, pushed from a project's or a Navi's screen, as iOS Settings' Name: one field, and a ✓ that saves it
-// (navi_rename, or project_settings_set's title). Its folder keeps its name; the hub's project.settings event brings
+// Rename, pushed from a project's screen, as iOS Settings' Name: one field, and a ✓ that saves it
+// (project_settings_set's title). Its folder keeps its name; the hub's project.settings event brings
 // the new one to the chats list and the chat.
 import { useLayoutEffect, useState } from "react";
 import { ScrollView } from "react-native";
-import { isNavi, NAME_MAX, nameProblem, type HubError } from "../../desktop";
+import { NAME_MAX, nameProblem, type HubError } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { space, useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
 import { ListSection } from "../../ui/List";
 import { rename } from "./api";
-import { PROJECT_NAME_MAX, projectNameProblem } from "./model";
 import { errorWords, FieldRow, Problem, sheetOptions } from "./parts";
 
 export function Rename({ navigation, route }: ChatInfoProps<"Rename">) {
@@ -19,8 +18,7 @@ export function Rename({ navigation, route }: ChatInfoProps<"Rename">) {
   const [name, setName] = useState(p?.title ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<HubError | null>(null);
-  const navi = p !== undefined && isNavi(p);
-  const problem = navi ? nameProblem(name) : projectNameProblem(name);
+  const problem = nameProblem(name);
   const ready = p !== undefined && problem === undefined && name.trim() !== "" && name.trim() !== p.title;
 
   const save = async () => {
@@ -44,13 +42,13 @@ export function Rename({ navigation, route }: ChatInfoProps<"Rename">) {
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: space.xxl }} style={{ backgroundColor: t.grouped }}>
-      <ListSection footer={navi ? "Its chat, memory and folder stay as they are; only what you call it changes." : "How fleetd shows the project. Its folder keeps its own name."}>
+      <ListSection footer="Its chat, memory and folder stay as they are; only what you call it changes.">
         <FieldRow
           value={name}
           onChangeText={setName}
           autoFocus
           selectTextOnFocus
-          maxLength={(navi ? NAME_MAX : PROJECT_NAME_MAX) + 1}
+          maxLength={NAME_MAX + 1}
           autoCapitalize="words"
           returnKeyType="done"
           editable={!busy}

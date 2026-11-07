@@ -1,23 +1,23 @@
-// What a Navi's Skills screens show, from the hub's answers: pure, so the tests pin them. Its own skills (the ones it
+// What a project's Skills screens show, from the hub's answers: pure, so the tests pin them. Its own skills (the ones it
 // saved itself) come first, then the installed ones, then any its folder has; each row says who changed it last and
 // when, or when it was last used. A skill's view reads its SKILL.md without the frontmatter, its history each version
 // with who, when and why, and a version's change from the one before as the desktop's prose diff, folded around it.
-import { diffLines, type DiffLine, type HubState, type SkillOrigin, type SkillSummary } from "../../desktop";
+import { diffLines, type DiffLine, type SkillOrigin, type SkillSummary } from "../../desktop";
 
 // The hub's skill versions (D261), as fleetd-contracts has them: copied until the generated contracts carry them.
-/** One version of a hub-kept skill's SKILL.md: a Navi's save, a person's edit or restore, an install. */
+/** One version of a hub-kept skill's SKILL.md: its lead's save, a person's edit or restore, an install. */
 export interface SkillVersion {
   readonly version: number;
   readonly author: "agent" | "person";
-  /** The Navi's title, or the person's name. */
+  /** The project's title, or the person's name. */
   readonly by: string;
   readonly at: string;
-  /** The one line its author gave: a Navi always gives one; a person may. */
+  /** The one line its author gave: a lead always gives one; a person may. */
   readonly why?: string;
 }
 /** A skill as skills_list lists it for a project: its newest version, whether it is off there, when it was last run. */
 export type Skill = SkillSummary & { readonly changed?: SkillVersion; readonly off?: boolean; readonly lastUsedAt?: string };
-/** A chat line's skill: a Navi saved or changed one (`skill_save`). */
+/** A chat line's skill: its lead saved or changed one (`skill_save`). */
 export interface SkillSaved {
   readonly name: string;
   readonly version: number;
@@ -33,12 +33,9 @@ export interface SkillRead {
   readonly versions: readonly SkillVersion[];
 }
 
-/** The hub keeps skills' versions and lets a person restore and turn them off (`navi_skills`), as the desktop checks. */
-export const skillsShown = (hub: HubState): boolean => hub.phase === "live" && hub.features?.includes("navi_skills") === true;
-
 export type Kind = "own" | "installed" | "folder";
 
-/** Its own: saved by the Navi (or written by the person) in its scope; installed: from a source, or hub-wide. */
+/** Its own: saved by its lead (or written by the person) in its scope; installed: from a source, or hub-wide. */
 export const kindOf = (s: Pick<Skill, "origin" | "install">): Kind =>
   s.origin === "project" ? (s.install === undefined ? "own" : "installed") : s.origin === "global" ? "installed" : "folder";
 
@@ -52,8 +49,8 @@ export interface SkillGroup {
 }
 
 /** The list's sections in order, the empty ones left out; each keeps the hub's order (by name). */
-export const skillGroups = (skills: readonly Skill[], navi: string): SkillGroup[] => {
-  const headers: Record<Kind, string> = { own: `Made by ${navi}`, installed: "Installed", folder: "In its folder" };
+export const skillGroups = (skills: readonly Skill[], title: string): SkillGroup[] => {
+  const headers: Record<Kind, string> = { own: `Made by ${title}`, installed: "Installed", folder: "In its folder" };
   return (["own", "installed", "folder"] as const).map((kind) => ({ kind, header: headers[kind], rows: skills.filter((s) => kindOf(s) === kind) })).filter((g) => g.rows.length > 0);
 };
 
@@ -128,20 +125,20 @@ export interface SkillOffers {
   readonly turnOff: boolean;
 }
 
-/** `own`: the Navi is the person's (the hub refuses another's). A skill in its folder is the folder's: the hub can't
+/** `own`: the person manages the project (the hub refuses others). A skill in its folder is the folder's: the hub can't
  * turn it off, only taking it out of the folder does. */
 export const offers = (s: Pick<Skill, "origin" | "install">, own: boolean): SkillOffers => {
   const mine = own && kindOf(s) === "own";
   return { edit: mine, delete: mine, history: hubKept(s.origin), turnOff: own && kindOf(s) !== "folder" };
 };
 
-/** Off for the Navi: a folder's skill never is, whatever an older hub said. */
+/** Off for the project: a folder's skill never is, whatever an older hub said. */
 export const isOff = (s: Pick<Skill, "origin" | "install" | "off">): boolean => s.off === true && kindOf(s) !== "folder";
 
 /** The view's line under the description: where it is from and its version. */
-export const sourceLine = (s: Skill, navi: string, versions: number): string => {
+export const sourceLine = (s: Skill, title: string, versions: number): string => {
   const kind = kindOf(s);
-  const where = kind === "own" ? `Made by ${navi}` : s.install !== undefined ? `Installed from ${s.install.source}` : kind === "installed" ? "Hub-wide" : (s.path ?? "In its folder");
+  const where = kind === "own" ? `Made by ${title}` : s.install !== undefined ? `Installed from ${s.install.source}` : kind === "installed" ? "Hub-wide" : (s.path ?? "In its folder");
   return versions > 1 ? `${where} · ${String(versions)} versions` : where;
 };
 

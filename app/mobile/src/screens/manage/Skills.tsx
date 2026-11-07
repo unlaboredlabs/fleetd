@@ -1,6 +1,6 @@
-// A Navi's skills, pushed from its screen: the ones it saved itself first, then the installed ones, each a row with its
+// A project's skills, pushed from its screen: the ones it saved itself first, then the installed ones, each a row with its
 // name, its description and who changed it last or when it was last used; an off one dimmed. Tapping one opens its
-// view (Skill.tsx). The list reads again on skills.changed, so a skill the Navi saves shows up while it is open.
+// view (Skill.tsx). The list reads again on skills.changed, so a skill its lead saves shows up while it is open.
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useRef } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -63,7 +63,7 @@ export function Skills({ navigation, route }: ChatInfoProps<"Skills">) {
   );
 }
 
-/** Reads again on a skills.changed for this Navi, and on coming back to the screen (the first focus is the mount's read). */
+/** Reads again on a skills.changed for this project, and on coming back to the screen (the first focus is the mount's read). */
 export const useSkillsChanged = (session: Session, p: ProjectRef | undefined, reload: () => void): void => {
   const machineId = p?.machineId;
   const projectId = p?.projectId;
@@ -82,7 +82,7 @@ export const useSkillsChanged = (session: Session, p: ProjectRef | undefined, re
   );
 };
 
-/** A skill's tile: sparkles on the accent for the Navi's own, a box for an installed one, a folder for its folder's. */
+/** A skill's tile: sparkles on the accent for its own, a box for an installed one, a folder for its folder's. */
 export function SkillTile({ kind, size = 29 }: { kind: Kind; size?: number }) {
   const t = useTheme();
   const glyph = size * 0.58;

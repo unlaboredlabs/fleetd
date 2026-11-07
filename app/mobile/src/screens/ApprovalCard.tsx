@@ -27,7 +27,6 @@ const RISK: Record<NonNullable<ApprovalView["risk"]>, { icon: IconName; text: st
 export function ApprovalCard({
   request,
   projectTitle,
-  navi,
   picture,
   answering,
   error,
@@ -35,7 +34,6 @@ export function ApprovalCard({
 }: {
   request: HumanRequest;
   projectTitle: string | undefined;
-  navi: boolean;
   picture?: Pictured | undefined;
   answering: boolean;
   error: HubError | undefined;
@@ -51,7 +49,7 @@ export function ApprovalCard({
   return (
     <Card>
       <View style={styles.head} accessible accessibilityLabel={`${marked(view.title)}${risk === undefined ? "" : `. ${risk.text}`}`}>
-        <Avatar name={view.who} navi={navi} size={40} picture={picture} />
+        <Avatar name={view.who} size={40} picture={picture} />
         <View style={styles.who}>
           <View style={styles.whoTop}>
             <Text style={[type.headline, styles.grow, { color: t.label }]} numberOfLines={1}>

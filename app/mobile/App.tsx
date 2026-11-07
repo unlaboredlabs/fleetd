@@ -282,7 +282,7 @@ function ChatsHome() {
           +, filters button and search field, which only a view around the navigator hears. */}
       <View style={styles.fill} onTouchStart={swiped.touched}>
         <ChatsStack.Navigator screenOptions={{ headerTintColor: t.label, headerShadowVisible: false, contentStyle: { backgroundColor: t.bg }, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.bg } }) }}>
-          <ChatsStack.Screen name="Chats" component={Chats} options={{ headerSearchBarOptions: searchBar, ...newChatOptions(t, (name) => nav.navigate(name)) }} />
+          <ChatsStack.Screen name="Chats" component={Chats} options={{ headerSearchBarOptions: searchBar, ...newChatOptions(t, () => nav.navigate("NewProject")) }} />
         </ChatsStack.Navigator>
       </View>
     </SwipeGroup>

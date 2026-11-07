@@ -1,9 +1,8 @@
 // A chat's avatar, a circle as iOS draws a contact's: its picture once a person gave it one (project_avatar_set), else
 // its built-in icon (a glass being on a field of a color: the hub's pick or one it derived), else, from an older hub,
-// its initials on a color picked from its name. A Navi's letters sit on a soft top-to-bottom gradient of its color, as
-// Telegram draws a person's; a project's on a soft wash of it. A picture is read from the hub once (Session.picture)
-// and kept in the cache folder by its id, so it shows at once on the next launch; one not seen before fades in over
-// the icon.
+// its initials on a soft top-to-bottom gradient of a color picked from its name, as Telegram draws a person's. A
+// picture is read from the hub once (Session.picture) and kept in the cache folder by its id, so it shows at once on
+// the next launch; one not seen before fades in over the icon.
 import { File, Paths } from "expo-file-system";
 import { LinearGradient } from "expo-linear-gradient";
 import { useContext, useEffect, useRef, useState } from "react";
@@ -19,12 +18,6 @@ export const lighter = (hex: string, amount: number): string => {
   const n = Number.parseInt(hex.slice(1), 16);
   const mix = (c: number) => Math.round(c + (255 - c) * amount);
   return `rgb(${String(mix((n >> 16) & 255))},${String(mix((n >> 8) & 255))},${String(mix(n & 255))})`;
-};
-
-/** "#RRGGBB" at an opacity. */
-export const withAlpha = (hex: string, alpha: number): string => {
-  const n = Number.parseInt(hex.slice(1), 16);
-  return `rgba(${String((n >> 16) & 255)},${String((n >> 8) & 255)},${String(n & 255)},${String(alpha)})`;
 };
 
 /** Whose picture: a project's summary has these. */
@@ -94,7 +87,7 @@ export const usePicture = (of: Pictured | undefined): { uri: string | undefined;
   return { uri: read !== undefined && read.avatar === avatar ? read.uri : undefined, fresh: true };
 };
 
-export function Avatar({ name, navi, size = 52, picture, icon }: { name: string; navi: boolean; size?: number; picture?: Pictured | undefined; icon?: ProjectIcon | undefined }) {
+export function Avatar({ name, size = 52, picture, icon }: { name: string; size?: number; picture?: Pictured | undefined; icon?: ProjectIcon | undefined }) {
   const t = useTheme();
   const tint = t.tints[tintIndex(name, t.tints.length)] ?? t.accent;
   const text = initials(name);
@@ -111,11 +104,11 @@ export function Avatar({ name, navi, size = 52, picture, icon }: { name: string;
     );
   }
   return (
-    <View accessible={false} style={[styles.base, box, { backgroundColor: navi ? tint : withAlpha(tint, t.dark ? 0.28 : 0.16) }]}>
-      {navi ? <LinearGradient colors={[lighter(tint, 0.32), tint]} style={StyleSheet.absoluteFill} /> : null}
+    <View accessible={false} style={[styles.base, box, { backgroundColor: tint }]}>
+      <LinearGradient colors={[lighter(tint, 0.32), tint]} style={StyleSheet.absoluteFill} />
       <Text
         allowFontScaling={false}
-        style={{ color: navi ? "#FFFFFF" : tint, fontSize: size * (text.length > 1 ? 0.36 : 0.42), fontWeight: "600", letterSpacing: 0.2 }}
+        style={{ color: "#FFFFFF", fontSize: size * (text.length > 1 ? 0.36 : 0.42), fontWeight: "600", letterSpacing: 0.2 }}
       >
         {text}
       </Text>
