@@ -4,7 +4,7 @@
 // artifacts.changed and on a message in the chat, so a new one shows while it is open.
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { listTime } from "../../chatView";
 import type { ProjectRef } from "../../desktop";
 import { glyphOf } from "../../desktop";
@@ -90,7 +90,7 @@ export function Artifacts({ navigation, route }: ChatInfoProps<"Artifacts">) {
 }
 
 /** A file sent in the chat: its kind's tile, its name and a line of its kind, size and when; tapping it reads it from
- * the hub and opens the share sheet (Save to Files, another app). */
+ * the hub and opens the share sheet (Save to Files, another app), or says why it couldn't. */
 function FileRow({ chatKey, file, when }: { chatKey: string; file: ChatFile; when: string }) {
   const t = useTheme();
   const { session } = useHub();
@@ -108,8 +108,8 @@ function FileRow({ chatKey, file, when }: { chatKey: string; file: ChatFile; whe
         setBusy(true);
         void session
           .attachment(chatKey, file.attachmentId)
-          .then((got) => (got === null ? undefined : shareFile(got)))
-          .catch(() => undefined)
+          .then((got) => (got === null ? Alert.alert(`Couldn't open ${file.name}`, "The hub didn't send it. Try again in a moment.") : shareFile(got)))
+          .catch((e: unknown) => Alert.alert(`Couldn't open ${file.name}`, e instanceof Error ? e.message : String(e)))
           .finally(() => setBusy(false));
       }}
     >
