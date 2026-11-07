@@ -2,7 +2,7 @@
 
 The static site behind `curl -fsSL https://fleetd.sh | sh`. `vercel.json` serves `install.sh` at `/` to curl, Wget and
 fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first. `home.html` is the landing page: a hero
-with the install line, the philosophy (three lines set big and a paragraph), then four short sections, each with its own clip of the app (`showcase-*`). It is dark until
+with the install line, the philosophy (three lines set big and a paragraph), then three short sections, each with its own clip of the app (`showcase-*`). It is dark until
 the reader picks Light in the header; the choice is kept under the docs' `starlight-theme` key, where anything but
 `light` (the docs' Auto included) reads as dark. `fleetd.txt` is its plain-text twin (not `index.txt`: Vercel would serve that at `/` and break the curl rewrite) for agents, and `fonts/`
 holds the self-hosted IBM Plex Sans and Lilex (both SIL OFL, licences alongside).
@@ -22,7 +22,6 @@ a cut:
 | `lead` | Ask the lead; it lands the PRs | you ask storefront's lead, it splits the request between three writers and #231 opens; then the merge line as four PRs merge as one batch |
 | `team` | Your team in one chat | checkout's chat: Bob's earlier request, Sam's ask, Alice's beside it under her name, and the lead answering both |
 | `screens` | Watch an agent's screen, and take over | a writer's live browser; then the iPhone simulator's sign-in asking for you, Take over, the code, Hand back |
-| `navi` | Navi, your own assistant | Ada, with Marta's lease renewal that waits on you; Send it, and it went |
 
 Each is `showcase-<clip>-<theme>.webm` (VP9, 2800x1800, 60 fps) with an H.264 `.mp4` twin for browsers without VP9
 (1792x1152 at 60 fps, level 4.2 at most, which older iPhones and iPads decode; encoded frame by frame by the app's WebCodecs,

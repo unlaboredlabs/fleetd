@@ -6,8 +6,8 @@ description: Give agents more tools, globally or per project, from a command on 
 You can give fleetd's agents more tools through MCP servers: a GitHub or database server, your docs search, an internal
 API. Configure them in the desktop app, for every project or for one, and pick which agents get each.
 
-A Navi's servers, whose tools ask before they write, are connected under its [Integrations](/docs/integrations)
-instead. That is also where a server that signs you in with your account ([OAuth](/docs/integrations#sign-in)) is
+A server whose tools ask before they write, and which reaches a project's lead alone, is connected under the
+project's [Integrations](/docs/integrations) instead. That is also where a server that signs you in with your account ([OAuth](/docs/integrations#sign-in)) is
 connected.
 
 ## Add a server {#add}
@@ -31,7 +31,7 @@ A command server starts in the agent's working directory with the agent's enviro
 
 ## When a change takes effect {#takes-effect}
 
-An agent started after you save gets the change. A lead or a Navi already running gets it at its next turn: when a
+An agent started after you save gets the change. A lead already running gets it at its next turn: when a
 server it gets was added, edited or removed, or had its key replaced, that turn starts a fresh session, as
 [a cold lead's does](/docs/what-agents-are-told#pinning), with the latest part of the chat. A turn in progress is never
 cut short: the change waits for the next one. The chat then says once that the server is there ("docs is connected: I

@@ -3,7 +3,7 @@ title: Phone notifications
 description: Phone notifications work out of the box through push.fleetd.sh, end-to-end encrypted. Run your own relay only for an app you build yourself.
 ---
 
-The fleetd phone app shows full notifications: a Navi's reply, a lead's message, an approval waiting for you, an
+The fleetd phone app shows full notifications: a lead's message, an approval waiting for you, an
 order that landed or stopped. They are end-to-end encrypted. The hub seals each one to your phone's own key, and only
 the phone can open it.
 
@@ -19,8 +19,8 @@ Press and hold a notification, or swipe it left on the lock screen and tap **Opt
 | Notification | Buttons |
 |---|---|
 | An approval of a command, shown whole with where it runs | **Approve**, **Deny** |
-| Money, an irreversible command, a command that uses a secret, a file edit, an email or anything else a Navi sends or shares | **Review**, which opens its full card in the app |
-| A Navi's or a lead's message | **Reply**, which sends your text into that chat |
+| Money, an irreversible command, a command that uses a secret, a file edit, an email or anything else a lead sends or shares | **Review**, which opens its full card in the app |
+| A lead's message | **Reply**, which sends your text into that chat |
 | A secret, an order, an alert | none: tap it to open the app |
 
 - Approve, Deny and Reply ask you to unlock the phone first: they act with the phone's own key.
@@ -131,9 +131,9 @@ over HTTPS only.
 
 ## What is sent, and to whom {#what}
 
-- A Navi's messages and approvals go to its owner only. While they talk to it on [Telegram](/docs/navi#telegram)
+- An [Only me](/docs/projects#only-me) project's messages and approvals go to its owner only. While they talk to it on [Telegram](/docs/projects#telegram)
   (their latest message came from there), its replies reach them there, and the phone isn't notified of them too.
-- A project lead's messages go to the person who last wrote in that project's chat, else the hub's owner.
+- A shared project's messages go to the person who last wrote in that project's chat, else the hub's owner.
 - Approvals, failed fetches, machines down under running work and usage limits: what the hub already marks as
   needing you. Money and irreversible commands are urgent.
 - Orders that landed or stopped.

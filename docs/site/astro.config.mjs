@@ -65,7 +65,6 @@ export default defineConfig({
           items: [
             "machines",
             "projects",
-            "navi",
             "chat",
             "merge-train",
             "github",

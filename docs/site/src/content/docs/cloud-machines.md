@@ -83,7 +83,7 @@ disk, and snapshots of it that may be stored outside the EU.
 | Its node's keys | The hub's box key |
 | The secrets sealed to it: the hub's Claude configuration, an order's `GH_TOKEN` while the order runs there, project secrets sealed there | Your boat.dev key |
 | The worktrees, transcripts and caches of the projects you opted in | The GitHub App's private key |
-| Recordings waiting to upload | Navis, leads or their integrations |
+| Recordings waiting to upload | Leads or their integrations |
 
 - **Only the projects you tick.** Their code, transcripts and the secrets sealed there go to boat.dev; other projects
   never run there.

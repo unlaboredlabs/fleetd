@@ -5,7 +5,7 @@ description: One Mac that every agent uses from wherever it runs, for its shell,
 
 Browsers, Linux desktops and Android emulators are cheap to start anywhere; Macs aren't. So fleetd lends one real Mac
 to every agent at once. Its node runs in the account logged in at the Mac's screen (yours is fine, an admin's too, or
-a [user of its own](#own-user)), and it runs no agents or [Navis](/docs/navi) itself. Agents stay on the machines their projects
+a [user of its own](#own-user)), and it runs no agents or leads itself. Agents stay on the machines their projects
 live on and reach the Mac with the `mac` command, through the hub.
 
 ## How an agent uses it {#use}
@@ -104,7 +104,7 @@ A folder nothing touched for 3 days goes. Jobs end with the Mac's node: a restar
 
 The agents' Mac is a tool, never a runner:
 
-- No agent, lead or Navi runs there, whatever its [machine roles](/docs/machines#roles) say. Its agents role stays
+- No agent or lead runs there, whatever its [machine roles](/docs/machines#roles) say. Its agents role stays
   off, and no project can be added on it.
 - It takes no secret: the app never seals a Claude account, an API key, a 1Password token, an MCP server's secret, a
   project's variable or a browser fill to it, and its node refuses one that comes anyway.
@@ -254,7 +254,7 @@ holding the Mac can read. That's your call.
 ## Agents may use this Mac {#switch}
 
 **Settings › Hub › Machines › Machine roles** shows the agents' Mac with one switch, **Agents may use this Mac**, for
-every project's agents (Navis never). Off, agents' `mac` commands answer that the Mac is turned off. Under it, the row
+every project's agents. Off, agents' `mac` commands answer that the Mac is turned off. Under it, the row
 says why agents can't use the Mac now, when they can't: offline, or a node that doesn't offer the tool.
 
 ## A Mac that runs fleetd already {#move}

@@ -118,9 +118,9 @@ The lead texts like a teammate: short messages, split into bubbles, with PR numb
 words aren't the best fit it sends a block instead: a chart, a table, a diff, a live card for a PR or an agent, a
 checklist, an image, a file, or a question with buttons. Tapping a button sends your answer as a chat message, so only you
 can answer it. To change how it talks, edit the **Voice** prompt (`lead.voice`) like any
-[prompt](/docs/what-agents-are-told). Commit messages, PR bodies and agents' briefs stay plain whatever the voice. A
-[Navi](/docs/navi) talks in a voice of its own, a personal assistant's rather than an engineer's: **Navi's voice**
-(`navi.voice`).
+[prompt](/docs/what-agents-are-told). Commit messages, PR bodies and agents' briefs stay plain whatever the voice. The lead
+of a project with no repo talks in a voice of its own, a personal assistant's rather than an engineer's
+(`assistant.voice`).
 
 An image can be one the lead or its agents made, such as a screenshot of a UI change: they upload it with
 [`chat_image`](/docs/reference/agent-tools#chat_image), which reads only a png, jpeg, webp or gif file (checked by its
@@ -176,7 +176,7 @@ For a project's work at a glance, see [Status](/docs/status). For where the time
 ## Reports in Artifacts {#artifacts}
 
 A report too long for a chat message, such as a dependency sweep's findings or a chart of build times, comes as an
-**artifact**: the lead, one of its agents or a Navi publishes it, the chat shows a small card for it, and the panel's
+**artifact**: the lead or one of its agents publishes it, the chat shows a small card for it, and the panel's
 **Artifacts** tab lists every one published in that chat, the newest first. Click a card or a row to read it; the panel
 widens while you do. A message can link to one too: the link opens it in the same place. Under the reports, **Files**
 lists every file sent in the chat, yours and the agents': click one to open it, or Save.

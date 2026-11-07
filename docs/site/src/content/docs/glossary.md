@@ -89,6 +89,11 @@ open.
 
 The fleetd process on a worker. It connects out to the hub and starts the Claude sessions.
 
+## Only me {#only-me}
+
+A project's switch that keeps it to its owner: only they see it and use it, admins included. On by default for a
+project with no repo. See [Only me](/docs/projects#only-me).
+
 ## Pairing code {#pairing-code}
 
 A one-time code, such as `K4QW-7RNP`, that connects the desktop app or a new worker to the hub. It lasts 15 minutes.
@@ -106,7 +111,10 @@ An optional `.fleetd/policy.yaml` in a project's checkout. It sets tool rules an
 
 ## Project {#project}
 
-A git repo on a worker that fleetd works on, with one lead and one chat. See [Projects](/docs/projects).
+A chat with one lead, in a folder of its own on a worker, holding zero or more git repos. With repos, its lead
+plans the work and its agents open pull requests; with none, the lead does the work itself. Every project has the
+same abilities: memory, automations, screens, Telegram, kept sign-ins, purchases and skills. See
+[Projects](/docs/projects).
 
 ## Receipt {#receipt}
 
