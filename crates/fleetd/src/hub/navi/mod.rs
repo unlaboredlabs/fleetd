@@ -55,7 +55,7 @@ use fleetd_contracts::mcp::{
     NaviSigninsForgetOutput, NaviSiteRevokeInput, NaviSiteRevokeOutput, NaviSitesInput,
     NaviSitesOutput,
 };
-use fleetd_contracts::model::{ProjectCreator, ProjectKind, ProjectSummary};
+use fleetd_contracts::model::{ProjectCreator, ProjectSummary};
 use fleetd_contracts::node_link::{CAP_ASSISTANT, CAP_NAVI_SIGNINS};
 use fleetd_contracts::projects::ProjectAddedData;
 
@@ -133,27 +133,10 @@ fn too_old(m: &MachineId) -> ToolError {
     )
 }
 
-fn not_a_navi(r: &ProjectRef) -> ToolError {
-    error(
-        ErrorCode::NotFound,
-        format!(
-            "{} on {} is not an Only me project",
-            r.project_id, r.machine_id
-        ),
-        "project_get shows the projects and their ids",
-    )
-}
-
-/// The Navi's summary as the hub serves it, or why there is none.
+/// The project's summary as the hub serves it, or why there is none: any project (D310), Only me or shared. Another
+/// person's Only me project never gets here (`owner::guard`).
 fn navi_of(hub: &Hub, r: &ProjectRef) -> Result<ProjectSummary, ToolError> {
-    let project = hub
-        .store
-        .project_get(r)?
-        .ok_or_else(|| unknown_project(r))?;
-    if project.kind != Some(ProjectKind::Assistant) {
-        return Err(not_a_navi(r));
-    }
-    Ok(project)
+    hub.store.project_get(r)?.ok_or_else(|| unknown_project(r))
 }
 
 fn changed(hub: &Hub, navi: &ProjectSummary, summary: String) -> Result<(), ToolError> {

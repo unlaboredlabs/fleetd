@@ -954,3 +954,51 @@ async fn a_navi_removed_without_its_answer_is_still_erased_once_the_hub_sees_it_
     assert_eq!((chat(&hub), marks(&hub)), (0, 0));
     assert!(!memory.exists());
 }
+
+/// D310: approvals, sites, purchases, sign-ins and asks work on a shared project too, by their project_* names and
+/// their navi_* ones, as on an Only me one; nothing answers "not an Only me project".
+#[tokio::test]
+async fn a_shared_projects_approvals_sites_purchases_sign_ins_and_asks_work() {
+    use fleetd_contracts::node_link::CAP_NAVI_SIGNINS;
+    let (hub, _home) = hub();
+    let mut calls = node(&hub, &[CAP_REPOS, CAP_ASSISTANT, CAP_NAVI_SIGNINS]).await;
+    let p1 = json!({ "machineId": "devbox", "projectId": "p1" });
+    let with = |extra: Value| {
+        let mut v = p1.clone();
+        v.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        v
+    };
+    for prefix in ["project", "navi"] {
+        let sites = ok(&hub, &format!("{prefix}_sites"), p1.clone()).await;
+        assert_eq!(sites["sites"], json!([]), "{prefix}");
+        ok(
+            &hub,
+            &format!("{prefix}_site_revoke"),
+            with(json!({ "site": "example.com" })),
+        )
+        .await;
+        let approvals = ok(&hub, &format!("{prefix}_approvals"), p1.clone()).await;
+        assert!(approvals["approvals"]["mode"].is_string(), "{approvals}");
+        let set = ok(
+            &hub,
+            &format!("{prefix}_approvals_set"),
+            with(json!({ "mode": "ask" })),
+        )
+        .await;
+        assert_eq!(set["approvals"]["mode"], "ask");
+        let purchases = ok(&hub, &format!("{prefix}_purchases"), p1.clone()).await;
+        assert!(purchases.get("card").is_none(), "{purchases}");
+        ok(&hub, &format!("{prefix}_card_set"), p1.clone()).await;
+        let asks = ok(&hub, &format!("{prefix}_asks"), json!({ "project": p1 })).await;
+        assert_eq!(asks["asks"], json!([]));
+        ok(&hub, &format!("{prefix}_signins_forget"), p1.clone()).await;
+        assert_eq!(
+            calls.recv().await.unwrap(),
+            SessionCall::NaviSigninsForget {
+                project_id: ProjectId::unchecked("p1"),
+            }
+        );
+    }
+}

@@ -146,11 +146,13 @@ async fn answer(
     call: LeadCall,
 ) -> Result<LeadCallResult, McpToolError> {
     let r = &caller.project_ref;
-    let navi = matches!(super::of(&hub.db, r), Ok(Some(n)) if n.archived_at.is_none());
-    if caller.agent != CallerAgent::Lead || !navi {
+    // Any project's lead (D310), but an archived one's.
+    let live = super::bridge::is_project(&hub.db, r, false)
+        .map_err(|e| McpToolError::new(ErrorCode::Failed, e.to_string()))?;
+    if caller.agent != CallerAgent::Lead || !live {
         return Err(McpToolError::new(
             ErrorCode::Forbidden,
-            "Only an Only me project's lead pays at a checkout or asks for a secure input, and this session is none.",
+            "Only a project's lead pays at a checkout or asks for a secure input, and this session is none.",
         )
         .with_fix("leave the payment to the person and say so"));
     }
