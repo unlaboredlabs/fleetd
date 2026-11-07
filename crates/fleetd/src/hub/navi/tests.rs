@@ -531,18 +531,19 @@ async fn a_link_the_person_writes_allows_its_site_and_an_agents_doesnt() {
     assert_eq!(sites, 1);
 }
 
-/// devbox's node says what it hosts: an iOS simulator it could turn on (a Mac), or one it can't (Linux).
-fn hosts_ios(hub: &Hub, mac: bool) {
-    use fleetd_contracts::machine_roles::{HostCheck, HostOff, SessionHost};
+/// devbox's node says what it hosts: its Mac screen it could turn on (a Mac), or one it can't (Linux); `host` Ios is a
+/// node from before iOS screens were gone, which said it of its iOS simulators.
+fn hosts_mac(hub: &Hub, host: fleetd_contracts::machine_roles::SessionHost, mac: bool) {
+    use fleetd_contracts::machine_roles::{HostCheck, HostOff};
     use fleetd_contracts::prim::{Line, List};
     let mut load = crate::hub::link::guard::tests::load(500, 1.0);
     load.hosts = Some(List::unchecked(vec![HostCheck {
-        host: SessionHost::Ios,
+        host,
         ready: false,
         detail: Line::unchecked(if mac {
-            "iOS screens are off in node.json"
+            "off in node.json"
         } else {
-            "iOS simulators need macOS"
+            "the Mac screen is a Mac's own"
         }),
         off: Some(if mac {
             HostOff::Off
@@ -562,7 +563,13 @@ fn hosts_ios(hub: &Hub, mac: bool) {
 async fn a_mac_gets_no_navi_and_one_already_there_doesnt_start() {
     let (hub, _home) = hub();
     let _calls = node(&hub, &[CAP_REPOS, CAP_ASSISTANT]).await;
-    hosts_ios(&hub, false);
+    use fleetd_contracts::machine_roles::SessionHost;
+    hosts_mac(&hub, SessionHost::Ios, false);
+    assert!(
+        !hub.link.is_mac(&devbox()),
+        "a Linux machine, from an older node"
+    );
+    hosts_mac(&hub, SessionHost::Mac, false);
     assert!(!hub.link.is_mac(&devbox()), "a Linux machine");
     let navi = ok(&hub, "navi_create", json!({ "name": "Ada" })).await["navi"].clone();
     let r = ProjectRef {
@@ -570,7 +577,9 @@ async fn a_mac_gets_no_navi_and_one_already_there_doesnt_start() {
         project_id: ProjectId::unchecked(navi["projectId"].as_str().unwrap()),
     };
 
-    hosts_ios(&hub, true);
+    hosts_mac(&hub, SessionHost::Ios, true);
+    assert!(hub.link.is_mac(&devbox()), "a Mac, from an older node");
+    hosts_mac(&hub, SessionHost::Mac, true);
     assert!(hub.link.is_mac(&devbox()));
     for input in [
         json!({ "name": "Grace", "machineId": "devbox" }),

@@ -80,18 +80,19 @@ const item = (key: ChecklistItem["key"], title: string, checks: ReadonlyArray<Do
 
 /**
  * A machine's checklist after it joined: claude installed and logged in, the commit identity its agents use, GitHub
- * (git fetches its projects' remotes), and the sessions it can host. Each item waits until the hub has checked it.
+ * (git fetches its projects' remotes), and the sessions it can host (no iOS: the agents' Mac lends its simulators,
+ * D298). Each item waits until the hub has checked it.
  */
 export const checklistOf = (checks: ReadonlyArray<DoctorCheck>, machineId: string): ReadonlyArray<ChecklistItem> => {
   const claude = item("claude", "Claude", named(checks, machineId, ["claude_version", "claude_login", "runner_conformance"]), "Waiting for its node to report claude.");
   const login = named(checks, machineId, ["claude_login"])[0];
-  const devices = named(checks, machineId, ["android", "ios", "desktop"]);
+  const devices = named(checks, machineId, ["android", "desktop"]);
   return [
     login?.status === "fail" ? { ...claude, login: true } : claude,
     item("identity", "Git identity", named(checks, machineId, ["commit_identity"]), "Waiting for its node to report the identity its commits carry."),
     item("github", "GitHub access", named(checks, machineId, ["git_fetch"]), "Checked when an agent first starts in one of its projects."),
     devices.length === 0
-      ? { key: "capabilities", title: "Capabilities", state: "done", lines: ["Agents and their browsers. No Android, iOS or Linux desktop sessions are set up here."], screens: true }
+      ? { key: "capabilities", title: "Capabilities", state: "done", lines: ["Agents and their browsers. No Android or Linux desktop sessions are set up here."], screens: true }
       : item("capabilities", "Capabilities", devices, ""),
   ];
 };

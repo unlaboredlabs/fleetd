@@ -211,8 +211,9 @@ const preview = (base: Fixture): Fixture => {
     openedBy: { personId: "p_adaadaad", name: "Ada" },
   };
   const ended: JsonObject = { ...mine, state: "uploading", endedAt: iso(0) };
-  const wait: JsonObject = { waitId: "W5e2c4a6f8d0b1a3c5e7f9d1b3a5c7e9f", projectRef: STOREFRONT, kind: "ios", machineId: "mac", since: iso(0), ahead: 0 };
-  // An iOS simulator of Ada's on the Mac, hers from the start, the shop's app on it.
+  const wait: JsonObject = { waitId: "W5e2c4a6f8d0b1a3c5e7f9d1b3a5c7e9f", projectRef: STOREFRONT, kind: "mac", machineId: "mac", since: iso(0), ahead: 0 };
+  // An iOS simulator of Ada's on the Mac from before iOS screens were gone (D298), hers from the start, the shop's app
+  // on it: past ones still show.
   const phone: JsonObject = {
     sessionId: SESSION.phone,
     projectRef: STOREFRONT,
@@ -253,11 +254,11 @@ const preview = (base: Fixture): Fixture => {
     maxSessionsWhy: "set",
     sessionsLive: live,
     hostsOthers: true,
-    hosts: ["browser", "android", "ios", "desktop"].map((h) => check(h, ready.includes(h))),
+    hosts: ["browser", "android", "desktop", "mac"].map((h) => check(h, ready.includes(h))),
   });
   f.drop("machine_roles");
-  f.answer("machine_roles", undefined, { machines: [machine("devbox", ["browser", "android", "desktop"], 2, 8), machine("mac", ["browser", "ios"], 2, 2)] });
-  // The open PRs an Android or iOS screen can take the build of.
+  f.answer("machine_roles", undefined, { machines: [machine("devbox", ["browser", "android", "desktop"], 2, 8), machine("mac", ["mac"], 1, 1)] });
+  // The open PRs an Android screen can take the build of.
   const pr = (number: number, title: string, state: string): JsonObject => ({
     repo: "acme/storefront",
     number,
@@ -281,11 +282,11 @@ const preview = (base: Fixture): Fixture => {
     show: [mineAs("live")],
     frames: [sessionEvent("live"), { ms: 400, kind: "browser_frame", payload: frame(SESSION.mine, 1, "home", "https://staging.shop.example.com/", "human") }],
   });
-  f.answer("screen_open", opened("ios", "mac", true), { waiting: wait });
+  f.answer("screen_open", opened("mac", "mac", true), { waiting: wait });
   const withPr = { ...opened("android", "devbox", false), pr: { repo: "acme/storefront", number: 14 } };
   f.answer("screen_open", withPr, { waiting: installing });
   f.then("screen_open", withPr, { show: [building], frames: [] });
-  f.then("screen_open", opened("ios", "mac", true), { show: [waiting], frames: [sessionEvent("live")] });
+  f.then("screen_open", opened("mac", "mac", true), { show: [waiting], frames: [sessionEvent("live")] });
   f.answer("screen_end", { waitId: asText(wait["waitId"]) }, {});
   f.then("screen_end", { waitId: asText(wait["waitId"]) }, { hide: [waiting], frames: [sessionEvent("live")] });
   f.answer("screen_end", { sessionId: SESSION.mine }, { session: ended });

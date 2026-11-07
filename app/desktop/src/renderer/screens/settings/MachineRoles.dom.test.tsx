@@ -29,7 +29,7 @@ const devbox: MachineRolesEntry = {
   hosts: [
     { host: "browser", ready: true, detail: "Chrome at /usr/bin/google-chrome" },
     { host: "android", ready: false, detail: "Android SDK at /home/dev/Android/Sdk, but no /dev/kvm: the emulator needs KVM" },
-    { host: "ios", ready: false, detail: "iOS simulators need macOS" },
+    { host: "mac", ready: false, detail: "the Mac screen is a Mac's own: its agents session's screen", off: "unsupported" },
     { host: "desktop", ready: true, detail: "Xvfb at /usr/bin/Xvfb" },
   ],
   hostsOthers: true,
@@ -40,7 +40,7 @@ const mac1: MachineRolesEntry = {
   name: "mac1",
   roles: ["sessions"],
   sessionsLive: 0,
-  hosts: [{ host: "ios", ready: true, detail: "Xcode with 6 iOS simulators" }],
+  hosts: [{ host: "mac", ready: true, detail: "the agents session is on the Mac's screen" }],
 };
 
 /** The agents' Mac: no roles to pick, its switch, and why agents can't use it now. */

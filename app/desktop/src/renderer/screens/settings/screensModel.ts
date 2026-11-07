@@ -2,10 +2,10 @@
 // line under it from what the machine's node reports, the idle timeout's and recording retention's choices.
 import type { HostCheck, MachineRolesEntry, SessionHost } from "../../../shared/contracts";
 
-/** The kinds, in the picker's order, with their switch's label. */
+/** The kinds, in the picker's order, with their switch's label. No iOS (D298): the agents' Mac lends its simulators with
+ * `mac sim`, on unless its node.json turns them off. */
 export const SCREEN_KINDS: ReadonlyArray<{ readonly host: SessionHost; readonly label: string }> = [
   { host: "browser", label: "Browser" },
-  { host: "ios", label: "iOS" },
   { host: "android", label: "Android" },
   { host: "desktop", label: "Linux desktop" },
   { host: "mac", label: "Agents’ Mac" },

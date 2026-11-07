@@ -34,8 +34,8 @@ in one line and exits with 69; the agent carries on without it and says so.
 
 ## iOS simulators {#sim}
 
-`mac sim start` gives the agent an iOS simulator of its own: a booted clone of the Mac's golden simulator, from the
-same warm pool as [iOS screens](/docs/browser-sessions#ios), headless. From then on the agent drives it with
+`mac sim start` gives the agent an iOS simulator of its own: a booted clone of the Mac's golden simulator, headless.
+From then on the agent drives it with
 [agent-device](https://github.com/callstack/agent-device), as it always has: an `agent-device` first on its PATH runs
 each command on the Mac, already pointed at that simulator (pass no `--udid` or `--platform`). `agent-device` inside
 `mac run` is pointed at it too.
@@ -57,7 +57,12 @@ minutes with no `mac` command from that agent.
 
 The Mac makes its golden simulator by itself once its tool is on (minutes, the first time: a boot to settle, then
 agent-device's runner built with `xcodebuild`); until then `mac sim start` says it's still being made. It needs an iOS
-runtime (the `mac_ios_runtime` check). `"ios": {"enabled": false}` in its node.json turns simulators off.
+runtime (the `mac_ios_runtime` check), and the doctor's `ios` check says where the golden stands. The simulators live
+in a device set of the node's own (`~/.fleetd/node/device/ios/set`), apart from the ones in Xcode, and the golden is
+the newest iOS runtime on a plain iPhone. The node keeps a clone booted for the next `mac sim start`, with
+agent-device's runner already started in it, and boots another behind it; when boots keep failing it waits before the
+next one, a minute doubling up to half an hour. It deletes the clones a stopped node left behind each time it starts.
+There's no switch for them in the app: `"ios": {"enabled": false}` in its node.json turns simulators off.
 
 The Mac boots at most as many simulators at once as its memory allows: one for every 3 GB past the 8 GB the Mac keeps
 for itself (2 on 16 GB, 8 on 32 GB), at least one. `"mac": {"simulators": N}` in its node.json sets another number. When all are
@@ -244,3 +249,4 @@ Mac is reachable from the agents' user.
 | `"agentsMac": true` | This machine is the agents' Mac: a tool, never a runner. Only `--mac` sets it; no switch in the app turns it off. The node offers agents its tool only on macOS and while its user is a standard one (not in `admin`, and `sudo -n` fails); otherwise its `mac_standard_user` check says why. |
 | `"mac": {"enabled": true}` | Its own screen, which one agent at a time drives ([the Mac's screen](/docs/browser-sessions#mac)). Settings › Hub › Machines › Screens turns it off and on; the Mac stays a tool either way. |
 | `"mac": {"simulators": N}` | How many [iOS simulators](#sim) agents may have booted at once. Absent: from the Mac's memory. Not written by `--mac`. |
+| `"ios": {…}` | The [simulators](#sim)' golden and warm pool, by hand only: `enabled` (`false` turns them off; absent, on), `pool` (clones kept booted, absent 1, each 1–2 GB of memory) and `deviceType` (such as `iPhone 17 Pro`; absent, the newest plain iPhone of the newest iOS runtime; a change takes effect when the golden is made again: delete `device/ios/golden.json`). Not written by `--mac`. |

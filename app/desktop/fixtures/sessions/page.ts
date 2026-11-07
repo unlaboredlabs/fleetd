@@ -155,7 +155,7 @@ export const screensPage = (preview: Fixture): Fixture => {
     maxSessionsWhy: "set",
     sessionsLive: live,
     hostsOthers: true,
-    hosts: ["browser", "android", "ios", "desktop", "mac"].map((h) => check(h, ready.includes(h))),
+    hosts: ["browser", "android", "desktop", "mac"].map((h) => check(h, ready.includes(h))),
   });
   f.drop("machine_roles");
   f.answer("machine_roles", undefined, {

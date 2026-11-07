@@ -32,8 +32,8 @@ const devbox: MachineRolesEntry = {
   hosts: [
     { host: "browser", ready: true, detail: "Chrome at /usr/bin/google-chrome", on: true, idleMinutes: 30 },
     { host: "android", ready: false, detail: "Android screens are off in node.json", off: "off", on: false, idleMinutes: 30 },
-    { host: "ios", ready: false, detail: "iOS simulators need macOS", off: "unsupported", on: false, idleMinutes: 30 },
     { host: "desktop", ready: true, detail: "Xvfb at /usr/bin/Xvfb", on: true, idleMinutes: 30 },
+    { host: "mac", ready: false, detail: "the Mac screen is a Mac's own: its agents session's screen", off: "unsupported", on: false, idleMinutes: 5 },
   ],
 };
 // A Mac on an older fleetd: what it hosts shows, but its switches don't move from here.
@@ -44,7 +44,7 @@ const mac1: MachineRolesEntry = {
   roles: ["sessions"],
   screenSettings: false,
   nodeRestart: "launchctl kickstart -k gui/501/sh.fleetd.node",
-  hosts: [{ host: "ios", ready: true, detail: "Xcode with 6 iOS simulators" }],
+  hosts: [{ host: "mac", ready: true, detail: "the agents session is on the Mac's screen" }],
 };
 // A Linux box with no Xvfb: its node says what installs it.
 const lab: MachineRolesEntry = {
@@ -130,13 +130,14 @@ it("lists each machine that hosts screens with a switch per kind and what its no
   expect(toggle(box, "Android")?.getAttribute("aria-checked")).toBe("false");
   expect(toggle(box, "Android")?.disabled).toBe(false);
   expect(box?.textContent).toContain("Ready");
-  // iOS can't run on Linux: its switch doesn't move, and says why.
-  expect(toggle(box, "iOS")?.disabled).toBe(true);
-  expect(box?.textContent).toContain("iOS simulators need macOS");
+  // No iOS switch (D298); the agents' Mac can't run on Linux: its switch doesn't move, and says why.
+  expect(toggle(box, "iOS")).toBeNull();
+  expect(toggle(box, "Agents’ Mac")?.disabled).toBe(true);
+  expect(box?.textContent).toContain("the Mac screen is a Mac's own");
   expect(box?.textContent).toContain("Idle screens end after");
   // An older node: what it hosts shows, and why it can't be switched from here.
-  expect(toggle(row("mac1"), "iOS")?.getAttribute("aria-checked")).toBe("true");
-  expect(toggle(row("mac1"), "iOS")?.disabled).toBe(true);
+  expect(toggle(row("mac1"), "Agents’ Mac")?.getAttribute("aria-checked")).toBe("true");
+  expect(toggle(row("mac1"), "Agents’ Mac")?.disabled).toBe(true);
   expect(row("mac1")?.textContent).toContain("mac1's fleetd is too old to change these from here: press Update under Updates below.");
   // And if an update didn't restart it: the command, to copy, and where to run it.
   expect(row("mac1")?.textContent).toContain("run this on mac1");

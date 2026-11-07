@@ -29,14 +29,14 @@ brand!(
 
 /// What a session drives: a fresh Chrome with an empty profile (`browser`, driven with agent-browser), or a fresh
 /// `-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at
-/// the copy's serial), a fresh clone of an iOS simulator from the node's settled golden device (`ios`, driven with
-/// agent-device at the clone's udid), or an X display of its own with a window manager (`linux_desktop`, driven with
-/// the agent's `desktop` tool), in a fresh container or else beside a fresh home directory, or the agents' Mac's own
-/// screen (`mac`: the GUI session of the Mac's standard `agents` user, leased to one agent at a time, driven with the
-/// `desktop` tool and agent-desktop). Every kind shares the session tools, the action log, the video and the hub's
-/// storage; only a browser recording has a `dom` file, and an iOS one's video is `video_mp4`. A node hosts android
-/// sessions when it lists the `session_android` capability, iOS ones when it lists `session_ios`, and desktop ones
-/// when it lists `session_linux_desktop`; a Mac screen where its `mac` host check is ready.
+/// the copy's serial), or an X display of its own with a window manager (`linux_desktop`, driven with the agent's
+/// `desktop` tool), in a fresh container or else beside a fresh home directory, or the agents' Mac's own screen (`mac`:
+/// the GUI session of the Mac's standard `agents` user, leased to one agent at a time, driven with the `desktop` tool
+/// and agent-desktop). `ios` is a legacy value (D298): past iOS screens' rows and recordings still read as it, and a
+/// new one is refused with [`IOS_GONE`], since iOS simulators are the agents' Mac's (`mac sim`). Every kind shares the
+/// session tools, the action log, the video and the hub's storage; only a browser recording has a `dom` file, and an
+/// iOS one's video is `video_mp4`. A node hosts android sessions when it lists the `session_android` capability and
+/// desktop ones when it lists `session_linux_desktop`; a Mac screen where its `mac` host check is ready.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(extend("x-open" = true))]
@@ -60,6 +60,11 @@ impl SessionKind {
         }
     }
 }
+
+/// What a new `ios` session gets, from the node (an agent's `session_start`) and the hub (an older node's, or a
+/// person's `screen_open`): iOS simulators are the agents' Mac's now.
+pub const IOS_GONE: &str = "iOS screens are gone: start an iOS simulator of your own on the agents' Mac with `mac sim \
+                            start`, then drive it with agent-device as before.";
 
 /// What the agent opened the session for, in one line ("Check the signup form on staging").
 pub type BrowserPurpose = Line<1, 200>;

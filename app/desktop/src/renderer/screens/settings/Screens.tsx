@@ -1,6 +1,6 @@
 // Hub › Machines › Screens (W268): which kinds of screen each machine that hosts screens opens, a switch each, how long
 // an idle one lasts there, and how long the hub keeps recordings. A switch is a machine_screens_set call: the machine's
-// node writes its node.json, so turning Android or iOS on installs what it needs, and the line under the switch follows
+// node writes its node.json, so turning Android on installs what it needs, and the line under the switch follows
 // what the node says (installing, starting once its live screens end). A kind that can't run for something missing
 // shows the command that fixes it, to run on that machine. Retention is browser_retention_set, for every
 // project. Hub-wide, so only owners and admins see it; the hub's answer reads the machines again.

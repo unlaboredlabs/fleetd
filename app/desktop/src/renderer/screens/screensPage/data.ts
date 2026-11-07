@@ -29,6 +29,7 @@ export interface PageScreen {
   readonly doing?: string;
 }
 
+/** A screen's kind in words; `ios` for past iOS screens, which still show read-only (no new one opens, D298). */
 export const KIND_WORD: Readonly<Record<Kind, string>> = {
   browser: "Browser",
   android: "Android",

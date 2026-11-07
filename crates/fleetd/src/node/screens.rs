@@ -229,9 +229,10 @@ pub fn unsupported(host: SessionHost) -> Option<&'static str> {
         SessionHost::Android if !super::device::sdk::supported() => {
             Some("Android screens run on Linux x86_64 with KVM")
         }
-        SessionHost::Ios if !super::device::ios::supported() => {
-            Some("iOS simulators need a Mac with Xcode")
-        }
+        // Gone (D298): the agents' Mac lends its simulators with `mac sim`, on unless its node.json turns them off.
+        SessionHost::Ios => Some(
+            "iOS screens are gone: agents start iOS simulators on the agents' Mac with `mac sim`",
+        ),
         SessionHost::Desktop if !cfg!(target_os = "linux") => {
             Some("desktop screens run on Linux (docker or Xvfb)")
         }
@@ -295,7 +296,9 @@ pub fn edited(text: &str, settings: &ScreenSettings) -> Result<String, String> {
 /// Writes `settings` into node.json, and restarts the node to apply them once no screen is live here. The answer, in
 /// plain words.
 pub fn apply(home: &Path, settings: &ScreenSettings) -> Result<String, String> {
-    if let (Some(host), Some(true)) = (settings.host, settings.on)
+    // iOS isn't a screen to turn on or off any more: an app before that still has its switch.
+    if let Some(host) = settings.host
+        && (settings.on == Some(true) || host == SessionHost::Ios)
         && let Some(why) = unsupported(host)
     {
         return Err(why.to_owned());

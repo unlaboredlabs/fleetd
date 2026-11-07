@@ -6,12 +6,13 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use fleetd_contracts::browser::{
-    BrowserCall, BrowserCallFrame, BrowserCallResult, BrowserResultFrame,
+    BrowserCall, BrowserCallFrame, BrowserCallResult, BrowserResultFrame, IOS_GONE,
 };
 use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::machine_roles::{
-    SessionRouteCall, SessionRouteResult, SessionStepCall, SessionStepFrame, SessionStepResult,
+    SessionHost, SessionRouteCall, SessionRouteResult, SessionStepCall, SessionStepFrame,
+    SessionStepResult,
 };
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::node_link::{CAP_SESSION_SEAL, HubToNode};
@@ -167,6 +168,11 @@ pub async fn route(
                 .map_err(failed)?;
         }
         return answer.map(|frame| relayed(&open.runner, frame));
+    }
+    // iOS screens are gone (D298): a node before them still asks to place one, and gets the agents' Mac's way.
+    if call.host == SessionHost::Ios {
+        return Err(McpToolError::new(ErrorCode::Invalid, IOS_GONE)
+            .with_fix("mac --help says the rest; fleetd docs: The agents' Mac"));
     }
     if let Some(open) = open {
         return Err(McpToolError::new(

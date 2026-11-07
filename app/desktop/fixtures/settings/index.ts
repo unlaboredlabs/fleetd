@@ -178,7 +178,7 @@ function automations(f: Fixture) {
 
 /**
  * Settings → Machines: the fleet's first machine runs agents and hosts sessions on Linux (Chrome and Xvfb; an Android
- * SDK without KVM), the next only hosts sessions on macOS (iOS simulators) on a node too old for screen settings, and
+ * SDK without KVM), the next only hosts sessions on macOS (its Mac screen) on a node too old for screen settings, and
  * any after them only run agents. A role change answers with the row it asked for.
  */
 function machineRoles(f: Fixture) {
@@ -186,13 +186,13 @@ function machineRoles(f: Fixture) {
   const linux: JsonObject[] = [
     { host: "browser", ready: true, detail: "Chrome at /home/dev/.fleetd/node/browser/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell" },
     { host: "android", ready: false, detail: "Android SDK at /home/dev/Android/Sdk, but no /dev/kvm: the emulator needs KVM" },
-    { host: "ios", ready: false, detail: "iOS simulators need macOS" },
+    { host: "mac", ready: false, detail: "the Mac screen is a Mac's own: its agents session's screen", off: "unsupported" },
     { host: "desktop", ready: true, detail: "Xvfb at /usr/bin/Xvfb, docker at /usr/bin/docker" },
   ];
   const mac: JsonObject[] = [
     { host: "browser", ready: true, detail: "Chrome not installed yet: the node installs it with the first screen" },
     { host: "android", ready: true, detail: "Android SDK at /Users/dev/Library/Android/sdk" },
-    { host: "ios", ready: true, detail: "Xcode with 6 iOS simulators" },
+    { host: "mac", ready: true, detail: "the agents session is on the Mac's screen, unlocked, with Screen Recording and Accessibility" },
     { host: "desktop", ready: false, detail: "desktop screens run on Linux (docker or Xvfb)" },
   ];
   const entries: JsonObject[] = machines.map((m, i) => {

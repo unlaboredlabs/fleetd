@@ -47,7 +47,8 @@ describe("Administration › Machines' model", () => {
         check("laptop/claude_login", "fail", "not logged in"),
         check("laptop/commit_identity", "warn", "no identity"),
         check("devbox/git_fetch", "fail"),
-        check("laptop/ios", "ok", "iOS screens are ready"),
+        check("laptop/ios", "ok", "iOS simulators are ready"),
+        check("laptop/android", "ok", "Android screens are ready"),
       ],
       "laptop",
     );
@@ -59,7 +60,8 @@ describe("Administration › Machines' model", () => {
     ]);
     expect(items[0]?.login).toBe(true);
     expect(items[0]?.lines).toEqual(["not logged in"]);
-    expect(items[3]?.lines).toEqual(["iOS screens are ready"]);
+    // No iOS: the agents' Mac lends its simulators (D298), so its check isn't a screen here.
+    expect(items[3]?.lines).toEqual(["Android screens are ready"]);
     const ready = checklistOf([check("laptop/claude_version", "ok", "claude 2.1.314"), check("laptop/claude_login", "ok")], "laptop");
     expect(ready[0]).toEqual({ key: "claude", title: "Claude", state: "done", lines: ["claude 2.1.314"] });
   });

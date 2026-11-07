@@ -1723,7 +1723,8 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "sessions", route: SESSION_ROUTE(SESSION.payouts), fixtures: ["sessions-preview"], variant: "asking" },
-  // W266: an iOS simulator of your own on the Mac, the phone in its bezel the panel's full height under one line.
+  // W266: an iOS simulator of your own on the Mac from before iOS screens were gone (D298), still shown: the phone in its
+  // bezel the panel's full height under one line.
   {
     id: "sessions",
     route: SESSION_ROUTE(SESSION.phone),
@@ -1766,8 +1767,8 @@ export const screens: readonly Screen[] = [
     fixtures: ["sessions-page"],
     variant: "view",
   },
-  // D239: New screen at the top of Screens: the kind as four tiles, the machines that can host it with their slots; the
-  // Mac, its two simulators in use, offers to wait, and the wait shows in the list until cancelled.
+  // D239: New screen at the top of Screens: the kind as four tiles (no iOS, D298), the machines that can host it with
+  // their slots; the agents' Mac, its one screen in use, offers to wait, and the wait shows in the list until cancelled.
   {
     id: "sessions",
     route: `${CHAT}/sessions`,
@@ -1776,7 +1777,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("button", { name: "New screen", exact: true }).click();
       await expect(page.locator('[data-screen="sessions.new"]')).toBeVisible();
-      await page.getByRole("radio", { name: /^iOS/u }).click();
+      await page.getByRole("radio", { name: /^Agents’ Mac/u }).click();
       await expect(page.getByRole("button", { name: "Wait for a slot" })).toBeVisible();
     },
   },
@@ -1787,7 +1788,7 @@ export const screens: readonly Screen[] = [
     variant: "new-screen-waiting",
     open: async (page) => {
       await page.getByRole("button", { name: "New screen", exact: true }).click();
-      await page.getByRole("radio", { name: /^iOS/u }).click();
+      await page.getByRole("radio", { name: /^Agents’ Mac/u }).click();
       await page.getByRole("button", { name: "Wait for a slot" }).click();
       await expect(page.getByText("waiting for a free slot · next in line")).toBeVisible();
     },
@@ -2312,6 +2313,20 @@ export const screens: readonly Screen[] = [
       await machines.scrollIntoViewIfNeeded();
       await machines.getByText("Auto: memory 60 GB, about 2 GB an agent.").waitFor();
       await machines.getByRole("button", { name: "Use auto" }).waitFor();
+    },
+  },
+  // Machines › Screens: a switch per kind (no iOS, D298), the agents' Mac's switch on the Mac and, on Linux, still with
+  // the reason it can't turn on there.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["settings-machines"],
+    variant: "screens",
+    open: async (page) => {
+      const screens = page.locator("[data-screens]").first();
+      await screens.scrollIntoViewIfNeeded();
+      await page.getByRole("switch", { name: /^Agents’ Mac screens on /u }).first().waitFor();
+      await expect(page.getByRole("switch", { name: /^iOS screens on /u })).toHaveCount(0);
     },
   },
   // storefront set to 30 on devbox, which holds it at 22: the line, and for an admin the way to Hub › Machines.

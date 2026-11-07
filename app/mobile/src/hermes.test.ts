@@ -12,7 +12,7 @@ const machine = (name: string, ready: boolean, more: Partial<MachineRolesEntry> 
   maxSessionsWhy: "set",
   sessionsLive: 0,
   hostsOthers: true,
-  hosts: [{ host: "ios", ready, detail: "as tested", ...(ready ? {} : { off: "off" as const }) }],
+  hosts: [{ host: "android", ready, detail: "as tested", ...(ready ? {} : { off: "off" as const }) }],
   ...more,
 });
 
@@ -28,9 +28,9 @@ describe("on Hermes", () => {
 
   it("the New Screen sheet's machines and reasons still sort", () => {
     expect([].toSorted).toBeUndefined();
-    const hosts = hostsFor([machine("mac-b", true), machine("mac-a", true), machine("lab", true, { online: false })], "ios");
+    const hosts = hostsFor([machine("mac-b", true), machine("mac-a", true), machine("lab", true, { online: false })], "android");
     expect(hosts.map((h) => h.name)).toEqual(["mac-a", "mac-b", "lab"]);
-    const off = whyOff([machine("mac-b", false, { screenSettings: true }), machine("lab", false, { online: false }), machine("mac-a", false, { screenSettings: true })], "ios");
+    const off = whyOff([machine("mac-b", false, { screenSettings: true }), machine("lab", false, { online: false }), machine("mac-a", false, { screenSettings: true })], "android");
     expect(off).toMatchObject({ fix: "turn_on", machine: { name: "mac-a" } });
   });
 });

@@ -2,7 +2,7 @@
 // New screen (D239): the Screens tab's button opens the picker; it lists the machines that can host the kind picked,
 // opens the screen there and goes to its live view; a full machine waits for a slot, and the wait shows in the list
 // with Cancel. An Android screen takes an open PR's build: the picker follows it in the hub until the screen is
-// yours, or says why it failed. An iOS one says why it takes none (D299). The palette's "New screen…" opens the same picker.
+// yours, or says why it failed. No iOS screen is offered (D298): the agents' Mac is the one Apple kind. The palette's "New screen…" opens the same picker.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -26,9 +26,9 @@ const machine = (machineId: string, ready: readonly string[], live = 0) => ({
   maxSessionsWhy: "set",
   sessionsLive: live,
   hostsOthers: true,
-  hosts: ["browser", "android", "ios", "desktop"].map((host) => ({ host, ready: ready.includes(host), detail: "as tested" })),
+  hosts: ["browser", "android", "desktop", "mac"].map((host) => ({ host, ready: ready.includes(host), detail: "as tested" })),
 });
-const MACHINES = [machine("devbox", ["browser", "desktop", "android"]), machine("mac", ["browser", "ios"], 2)];
+const MACHINES = [machine("devbox", ["browser", "desktop", "android"]), machine("mac", ["browser", "mac"], 2)];
 const pr = (number: number, title: string, state: string) => ({
   repo: "acme/app",
   number,
@@ -45,14 +45,14 @@ const OPENED = {
   sessionId: "B00000000000000000000000000000001",
   projectRef: project,
   threadId: "screen-1",
-  kind: "ios",
-  purpose: "iOS simulator opened by Ada",
+  kind: "mac",
+  purpose: "Agents' Mac opened by Ada",
   state: "live",
   control: "human",
   startedAt: AT,
   openedBy: { personId: "p_adaadaad", name: "Ada" },
 };
-const WAIT = { waitId: "W1", projectRef: project, kind: "ios", machineId: "mac", since: AT, ahead: 0 };
+const WAIT = { waitId: "W1", projectRef: project, kind: "mac", machineId: "mac", since: AT, ahead: 0 };
 // An Android screen with #12's build, past its wait from the answer on.
 const OPENING = { ...WAIT, waitId: "W2", kind: "android", machineId: "devbox", stage: "starting", threadId: "screen-2", pr: { repo: "acme/app", number: 12 } };
 const MINE = { ...OPENED, sessionId: "B00000000000000000000000000000002", threadId: "screen-2", kind: "android" };
@@ -133,7 +133,7 @@ const mount = async () => {
         return Promise.resolve({ ok: true, output: { waiting: OPENING } });
       }
       if (tool === "screen_open") {
-        const full = (input as { machineId: string }).machineId === "mac" && (input as { kind: string }).kind === "ios";
+        const full = (input as { machineId: string }).machineId === "mac" && (input as { kind: string }).kind === "mac";
         if (full) waits = [WAIT];
         else if (forgets) return Promise.resolve({ ok: true, output: {} });
         else sessions = [OPENED];
@@ -180,8 +180,10 @@ it("opens a screen on the machine picked, from the Screens tab, and goes to its 
   // A browser by default: both machines can host one.
   const machines = () => [...document.querySelectorAll("[role='radiogroup'] label")].map((l) => l.textContent);
   expect(machines().some((m) => m.startsWith("devbox"))).toBe(true);
-  // iOS: only the Mac, full, so the picker offers to wait.
-  act(() => button("iOS")?.click());
+  // No iOS screen: the agents' Mac is the one Apple kind.
+  expect(button("iOS")).toBeUndefined();
+  // The agents' Mac: only the Mac, full, so the picker offers to wait.
+  act(() => button("Agents’ Mac")?.click());
   await settle();
   expect(machines()).toEqual(["macFull: 2 of 2 screens in use. You can wait for the next one."]);
   expect(button("Wait for a slot")).toBeDefined();
@@ -239,12 +241,12 @@ it("waits for a slot on a full machine, shows the wait in the list, and cancels 
   await mount();
   act(() => button("New screen")?.click());
   await settle();
-  act(() => button("iOS")?.click());
+  act(() => button("Agents’ Mac")?.click());
   await settle();
   act(() => button("Wait for a slot")?.click());
   await settle();
-  expect(calls.find((c) => c.tool === "screen_open")?.input).toMatchObject({ kind: "ios", machineId: "mac", wait: true });
-  expect(host.textContent).toContain("iOS simulator on mac");
+  expect(calls.find((c) => c.tool === "screen_open")?.input).toMatchObject({ kind: "mac", machineId: "mac", wait: true });
+  expect(host.textContent).toContain("Agents’ Mac on mac");
   expect(host.textContent).toContain("waiting for a free slot · next in line");
   act(() => button("Cancel")?.click());
   await settle();
@@ -271,11 +273,10 @@ it("installs an open PR's build into an Android screen, following it until the s
   await mount();
   act(() => button("New screen")?.click());
   await settle();
-  // An iOS screen takes none until the shared Mac (D299), and says why.
-  act(() => button("iOS")?.click());
+  // Only an Android screen takes one.
+  act(() => button("Agents’ Mac")?.click());
   await settle();
   expect(document.querySelector("[aria-label='PR build']")).toBeNull();
-  expect(picker()?.textContent).toContain("PR builds go into Android screens for now");
   act(() => button("Android")?.click());
   await settle();
   expect(document.querySelector("[aria-label='PR build']")?.textContent).toBe("None");
@@ -373,11 +374,11 @@ const ANDROID_OFF = [
   {
     ...machine("devbox", ["browser", "desktop"]),
     screenSettings: true,
-    hosts: ["browser", "android", "ios", "desktop"].map((host) =>
+    hosts: ["browser", "android", "desktop", "mac"].map((host) =>
       host === "android"
         ? { host, ready: false, detail: "Android screens are off in node.json", off: "off", on: false }
-        : host === "ios"
-          ? { host, ready: false, detail: "iOS simulators need macOS", off: "unsupported", on: false }
+        : host === "mac"
+          ? { host, ready: false, detail: "the Mac screen is a Mac's own", off: "unsupported", on: false }
           : { host, ready: true, detail: "as tested", on: true },
     ),
   },
@@ -391,11 +392,11 @@ it("says why a kind can't open, and an admin turns it on from there", async () =
   // Each kind that can't open says so in its tile, and stays pickable.
   const tile = (name: string) => button(name);
   expect(tile("Android")?.textContent).toContain("Turned off");
-  expect(tile("iOS")?.textContent).toContain("Needs a Mac");
+  expect(tile("Agents’ Mac")?.textContent).toContain("Needs a Mac");
   expect(tile("Android")?.disabled).toBe(false);
-  act(() => tile("iOS")?.click());
+  act(() => tile("Agents’ Mac")?.click());
   await settle();
-  expect(document.querySelector("[data-off-reason]")?.textContent).toContain("iOS simulators need a Mac with Xcode");
+  expect(document.querySelector("[data-off-reason]")?.textContent).toContain("needs a Mac set aside for agents");
   expect(button("Add machine")).toBeDefined();
   act(() => tile("Android")?.click());
   await settle();

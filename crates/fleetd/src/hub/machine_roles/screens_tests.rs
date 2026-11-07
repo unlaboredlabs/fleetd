@@ -2,8 +2,8 @@
 //! has control from its start; only people who may use the project (a Navi: its owner) open one; a Navi's browser is
 //! sealed to run on the profile it keeps; a full machine refuses or takes the person in line, ahead of agents, without
 //! ending an agent's screen; and an idle one ends. With a PR, its CI build (from a fake `gh`) goes into an Android screen
-//! in steps sealed with the start's relay key before the person gets it; a PR with no build, or one for an iOS screen
-//! (D299), starts nothing.
+//! in steps sealed with the start's relay key before the person gets it; a PR with no build, or an iOS screen (gone, D298),
+//! starts nothing.
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -240,13 +240,13 @@ async fn a_person_opens_a_screen_on_the_machine_they_pick_and_drives_it_from_the
     let (hub, _home, _clock) = setup();
     let mut mac1 = runner(&hub, "mac1");
     let (ada, desk) = person(&hub, "Ada", "operate");
-    let out = call(&hub, &desk, "screen_open", open("mac1", "ios"))
+    let out = call(&hub, &desk, "screen_open", open("mac1", "mac"))
         .await
         .unwrap();
     let session = &out["session"];
     assert_eq!(session["control"], "human", "{out}");
     assert_eq!(session["state"], "live");
-    assert_eq!(session["kind"], "ios");
+    assert_eq!(session["kind"], "mac");
     assert_eq!(session["openedBy"]["personId"], ada.as_str());
     assert_eq!(session["projectRef"]["projectId"], "app");
     let started = next(&mut mac1).await;
@@ -319,12 +319,12 @@ async fn only_people_who_may_use_the_project_open_one_and_only_where_it_can_run(
         "grants": [{ "role": "admin", "machines": "*" }],
     }))
     .unwrap();
-    let (code, _) = refusal(call(&hub, &agent, "screen_open", open("mac1", "ios")).await);
+    let (code, _) = refusal(call(&hub, &agent, "screen_open", open("mac1", "mac")).await);
     assert_eq!(code, ErrorCode::Forbidden);
-    let (code, _) = refusal(call(&hub, &viewer, "screen_open", open("mac1", "ios")).await);
+    let (code, _) = refusal(call(&hub, &viewer, "screen_open", open("mac1", "mac")).await);
     assert_eq!(code, ErrorCode::Forbidden);
-    // devbox can't run an iOS simulator: said in the machine's own words.
-    let (code, message) = refusal(call(&hub, &desk, "screen_open", open("devbox", "ios")).await);
+    // devbox can't run the agents' Mac screen: said in the machine's own words.
+    let (code, message) = refusal(call(&hub, &desk, "screen_open", open("devbox", "mac")).await);
     assert_eq!(code, ErrorCode::Failed);
     assert!(message.contains("devbox can't host"), "{message}");
     let (code, _) = refusal(
@@ -404,7 +404,7 @@ async fn an_agents_start_never_names_a_navi_whatever_its_node_sealed() {
     let mut mac1 = runner(&hub, "mac1");
     let (ada, _) = person(&hub, "Ada", "operate");
     navi(&hub, "ada-navi", &ada);
-    let first = route_once(&hub, "th-1", SessionHost::Ios, start(), None)
+    let first = route_once(&hub, "th-1", SessionHost::Mac, start(), None)
         .await
         .unwrap();
     let to = first.seal_to.expect("sealed to mac1 first");
@@ -416,7 +416,7 @@ async fn an_agents_start_never_names_a_navi_whatever_its_node_sealed() {
     let routed = route_once(
         &hub,
         "th-1",
-        SessionHost::Ios,
+        SessionHost::Mac,
         start(),
         Some(json!({ "runner": "mac1", "dataB64": B64.encode(sealed) })),
     )
@@ -452,26 +452,26 @@ async fn a_full_machine_takes_people_in_line_ahead_of_agents_and_ends_no_agents_
         .unwrap();
     let (_, ada) = person(&hub, "Ada", "operate");
     let (bee_id, bee) = person(&hub, "Bee", "operate");
-    // An agent's screen and Ada's fill mac1's two simulators.
-    let agents = route(&hub, "th-1", SessionHost::Ios, start())
+    // An agent's screen and Ada's fill mac1's two slots.
+    let agents = route(&hub, "th-1", SessionHost::Mac, start())
         .await
         .unwrap();
     assert_eq!(agents.runner, mid("mac1"));
     let agent_key = next(&mut mac1).await.key;
-    let first = call(&hub, &ada, "screen_open", open("mac1", "ios"))
+    let first = call(&hub, &ada, "screen_open", open("mac1", "mac"))
         .await
         .unwrap();
     next(&mut mac1).await;
 
     // Full: Bee is told so, and may wait.
-    let (code, message) = refusal(call(&hub, &bee, "screen_open", open("mac1", "ios")).await);
+    let (code, message) = refusal(call(&hub, &bee, "screen_open", open("mac1", "mac")).await);
     assert_eq!(code, ErrorCode::Failed);
     assert!(message.contains("mac1 is full: 2 of 2"), "{message}");
     let waiting = call(
         &hub,
         &bee,
         "screen_open",
-        json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "kind": "ios", "machineId": "mac1", "wait": true }),
+        json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "kind": "mac", "machineId": "mac1", "wait": true }),
     )
     .await
     .unwrap();
@@ -497,7 +497,7 @@ async fn a_full_machine_takes_people_in_line_ahead_of_agents_and_ends_no_agents_
     .await
     .unwrap();
     assert_eq!(next(&mut mac1).await.op, "session_end");
-    let refused = route(&hub, "th-2", SessionHost::Ios, start())
+    let refused = route(&hub, "th-2", SessionHost::Mac, start())
         .await
         .unwrap_err();
     assert!(
@@ -533,7 +533,7 @@ async fn a_full_machine_takes_people_in_line_ahead_of_agents_and_ends_no_agents_
     assert_eq!(opened["openedBy"]["personId"], bee_id.as_str());
     // The agent's screen ran on throughout; the next agent's start is refused while mac1 is full.
     assert!(
-        route(&hub, "th-2", SessionHost::Ios, start())
+        route(&hub, "th-2", SessionHost::Mac, start())
             .await
             .is_err()
     );
@@ -544,7 +544,7 @@ async fn a_full_machine_takes_people_in_line_ahead_of_agents_and_ends_no_agents_
 async fn a_wait_given_up_holds_no_slot_and_a_persons_idle_screen_ends() {
     let (hub, _home, clock) = setup();
     let mut mac1 = runner(&hub, "mac1");
-    report_hosts(&hub, "mac1", &[SessionHost::Browser, SessionHost::Ios]);
+    report_hosts(&hub, "mac1", &[SessionHost::Browser, SessionHost::Mac]);
     hub.db
         .transaction(|c| {
             super::set_roles(
@@ -730,12 +730,12 @@ fn with_pr(machine: &str, kind: &str) -> Value {
     input
 }
 
-/// mac1 hosts Android emulators too, so a PR's build goes into a screen there: an iOS one takes none (D299).
+/// mac1 hosts Android emulators too, so a PR's build goes into a screen there.
 fn android_on_mac1(hub: &Hub) {
     report_hosts(
         hub,
         "mac1",
-        &[SessionHost::Browser, SessionHost::Ios, SessionHost::Android],
+        &[SessionHost::Browser, SessionHost::Mac, SessionHost::Android],
     );
 }
 
@@ -826,10 +826,18 @@ async fn a_prs_build_goes_into_the_screen_before_the_person_has_it() {
         ],
         &app,
     );
-    // An iOS screen takes none until the shared Mac (D299): an app in the Mac's simulator runs as the Mac's own user.
-    let (code, message) = refusal(call(&hub, &desk, "screen_open", with_pr("mac1", "ios")).await);
+    // iOS screens are gone (D298), with a PR or without, and only an Android screen takes a PR's build.
+    for open in [with_pr("mac1", "ios"), open("mac1", "ios")] {
+        let (code, message) = refusal(call(&hub, &desk, "screen_open", open).await);
+        assert_eq!(code, ErrorCode::Invalid);
+        assert!(
+            message.contains("iOS screens are gone") && message.contains("mac sim"),
+            "{message}"
+        );
+    }
+    let (code, message) = refusal(call(&hub, &desk, "screen_open", with_pr("mac1", "mac")).await);
     assert_eq!(code, ErrorCode::Invalid);
-    assert!(message.contains("outside the iOS sandbox"), "{message}");
+    assert!(message.contains("goes into an Android screen"), "{message}");
     assert!(mac1.try_recv().is_err(), "nothing starts");
     assert_eq!(live_on(&hub, "mac1"), 0);
     // It answers at once, its slot taken: the rest goes on in the hub, listed under the person's waits.
@@ -924,7 +932,7 @@ async fn a_pr_opens_slot_is_held_while_its_build_downloads() {
     let out = call(&hub, &desk, "screen_open", with_pr("mac1", "android"))
         .await
         .unwrap();
-    let refused = route(&hub, "th-1", SessionHost::Ios, start())
+    let refused = route(&hub, "th-1", SessionHost::Mac, start())
         .await
         .unwrap_err();
     assert!(refused.message.contains("full"), "{}", refused.message);
@@ -1070,7 +1078,7 @@ async fn a_wait_with_a_pr_gets_its_build_when_its_slot_frees() {
         &[(41, "fleetd-android-apk", false)],
         b"an app",
     );
-    let first = call(&hub, &ada, "screen_open", open("mac1", "ios"))
+    let first = call(&hub, &ada, "screen_open", open("mac1", "mac"))
         .await
         .unwrap();
     next(&mut mac1).await;

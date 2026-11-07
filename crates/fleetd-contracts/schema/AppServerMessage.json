@@ -2134,7 +2134,7 @@
         },
         {
           "const": "ios",
-          "description": "An iOS simulator: Xcode on macOS.",
+          "description": "An iOS simulator: legacy (D298). No node reports it any more, and the hub places none: the agents' Mac lends\nsimulators with `mac sim`.",
           "type": "string"
         },
         {
