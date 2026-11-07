@@ -163,6 +163,9 @@ A node keeps the machine id it joined with. The hub refuses to enroll a node hom
 already enrolled under another id, since that would put all its projects and chats on a second machine. To repair it, rejoin it under its own id: run `fleetd pair --worker <id>` on the hub and the line it prints.
 To give it a new id, remove the old machine first (`fleetd machine remove <old id>`), then join under the new one.
 
+If the hub refuses the join (a spent code, say), the machine stays as it was: its node keeps its settings, and its
+service starts again.
+
 ## Log in Claude on a worker {#claude}
 
 Sessions use the worker's own claude setup in `~/.claude`. If `claude` works in your shell there, it works for

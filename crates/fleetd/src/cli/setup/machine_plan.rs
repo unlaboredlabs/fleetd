@@ -492,16 +492,32 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             l.node_home.clone(),
             "--enroll-only".into(),
         ]);
-        let stop_first = if node_existed {
-            format!("{}; ", services.remove(Role::Node))
-        } else {
-            String::new()
+        // A join the hub refuses (a spent code, or this node enrolled under another id) leaves the node as it was: its
+        // settings kept aside first and put back, and the service it stopped started again.
+        let (config, kept) = (
+            q(&l.node_config),
+            q(&format!("{}.before-join", l.node_config)),
+        );
+        let (keep, put_back) = match &existing_node {
+            Some(_) => (
+                format!("cp -p {config} {kept}; "),
+                format!("mv -f {kept} {config}; "),
+            ),
+            None => (String::new(), String::new()),
         };
+        let (stop_first, start_again) = if node_existed {
+            (
+                format!("{}; ", services.remove(Role::Node)),
+                format!("{}; ", services.restart(Role::Node, node_changed)),
+            )
+        } else {
+            (String::new(), String::new())
+        };
+        let join = argv.iter().map(|a| q(a)).collect::<Vec<_>>().join(" ");
         steps.push(Step {
             title: "enroll the node with a one-time token (sent on stdin)".into(),
             command: format!(
-                "{stop_first}{}",
-                argv.iter().map(|a| q(a)).collect::<Vec<_>>().join(" ")
+                "{keep}{stop_first}if {join}; then rm -f {kept}; else code=$?; {put_back}{start_again}exit $code; fi"
             ),
             stdin: Some(Stdin::EnrollToken),
             writes: None,
@@ -870,6 +886,91 @@ mod tests {
             started.starts_with("launchctl kickstart -k gui/1000/sh.fleetd.node 2>/dev/null || "),
             "{started}"
         );
+    }
+
+    /// A join the hub refuses leaves the node as it went in: on the devbox, joining its node home under a second id
+    /// was refused, and the step had already rewritten node.json to the new id and stopped the node's service, so the
+    /// enrolled node stayed down. The enroll step, run in sh with a fleetd the hub refuses, puts node.json back and
+    /// starts the service again; one the hub accepts keeps what it wrote.
+    #[cfg(unix)]
+    #[test]
+    fn a_refused_join_leaves_the_node_as_it_went_in() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().to_str().unwrap().to_owned();
+        let mut facts = Facts {
+            home: home.clone(),
+            config_home: format!("{home}/.config"),
+            ..fresh_facts("ada", "x64")
+        };
+        let first = plan_machine_add(&facts, &input()).unwrap();
+        for s in &first.steps {
+            if let (Some(file), Some(Stdin::Text { text, .. })) = (&s.writes, &s.stdin) {
+                facts.files.insert(file.clone(), Some(text.clone()));
+            }
+        }
+        let l = machine_layout(&home);
+        let enrolled = json!({ "hub": "https://devbox.example.ts.net", "machineId": "devbox", "name": "devbox",
+            "enrolled": true }).to_string();
+        facts
+            .files
+            .insert(l.node_config.clone(), Some(enrolled.clone()));
+        let step = plan_machine_add(&facts, &input())
+            .unwrap()
+            .steps
+            .into_iter()
+            .find(|s| s.stdin == Some(Stdin::EnrollToken))
+            .unwrap();
+
+        let script = |path: &str, body: &str| {
+            std::fs::create_dir_all(std::path::Path::new(path).parent().unwrap()).unwrap();
+            std::fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        // systemctl only logs what it was asked.
+        script(
+            &format!("{home}/fakebin/systemctl"),
+            &format!("echo \"$*\" >> {home}/systemctl.log"),
+        );
+        let run = |exit: u8| {
+            std::fs::create_dir_all(&l.node_home).unwrap();
+            std::fs::write(&l.node_config, &enrolled).unwrap();
+            let _ = std::fs::remove_file(format!("{home}/systemctl.log"));
+            // `node join` writes the new id's settings, then the hub accepts it (0) or refuses it (1).
+            script(
+                &l.bin,
+                &format!(
+                    "cat > /dev/null; echo '{{\"machineId\":\"mac-mini\",\"enrolled\":false}}' > {}; exit {exit}",
+                    l.node_config
+                ),
+            );
+            let out = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(&step.command)
+                .env("PATH", format!("{home}/fakebin:/usr/bin:/bin"))
+                .stdin(std::process::Stdio::null())
+                .output()
+                .unwrap();
+            let ctl = std::fs::read_to_string(format!("{home}/systemctl.log")).unwrap_or_default();
+            let config = std::fs::read_to_string(&l.node_config).unwrap();
+            (out.status.code(), config, ctl)
+        };
+
+        let (code, config, ctl) = run(1);
+        assert_eq!(code, Some(1), "the step still fails");
+        assert_eq!(config, enrolled, "node.json is the enrolled node's again");
+        assert!(ctl.contains("disable --now fleetd-node.service"), "{ctl}");
+        assert!(
+            ctl.trim_end().ends_with("restart fleetd-node.service"),
+            "the node's service starts again: {ctl}"
+        );
+        assert!(!std::path::Path::new(&format!("{}.before-join", l.node_config)).exists());
+
+        let (code, config, ctl) = run(0);
+        assert_eq!(code, Some(0));
+        assert!(config.contains("mac-mini"), "{config}");
+        assert!(!ctl.contains("restart"), "{ctl}");
+        assert!(!std::path::Path::new(&format!("{}.before-join", l.node_config)).exists());
     }
 
     /// --no-service: nothing for systemd or launchd, and the node's command to run by hand.
