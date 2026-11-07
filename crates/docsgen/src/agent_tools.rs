@@ -17,7 +17,8 @@ use fleetd::node::runner::claude::{
     AGENT_DISALLOWED_WHY, ASSISTANT_ALLOWED_WHY, ASSISTANT_ASK_WHY, AUTO_MEMORY_OFF_ENV,
     AUTO_MEMORY_OFF_WHY, DEFAULT_ENV_WHY, DISALLOWED_WHY, HELPER_MODEL_ENV, HELPER_MODEL_WHY,
     LEAD_DISALLOWED_WHY, NESTING_VARS_WHY, PROMPT_CACHE_TTL_VARS, PROMPT_CACHE_TTL_WHY,
-    SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY, WORKER_ENV, WORKER_ENV_WHY,
+    SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY, TASK_DISALLOWED_WHY, WORKER_ENV,
+    WORKER_ENV_WHY,
 };
 use fleetd::node::runner::claude::{
     conformance,
@@ -882,6 +883,7 @@ fn builtins(root: &Path) -> Result<String, String> {
     );
     for (list, who) in [
         (AGENT_DISALLOWED_WHY, "Leads and task agents"),
+        (TASK_DISALLOWED_WHY, "Task agents"),
         (LEAD_DISALLOWED_WHY, "Leads"),
     ] {
         for (tools, why) in grouped(list.iter().map(|(t, why)| (format!("`{t}`"), *why))) {
@@ -1073,7 +1075,11 @@ mod tests {
         for (tool, _) in DISALLOWED_WHY {
             assert!(!allowed.contains(&format!("`{tool}`")), "{tool}");
         }
-        for (tool, _) in AGENT_DISALLOWED_WHY.iter().chain(LEAD_DISALLOWED_WHY) {
+        for (tool, _) in AGENT_DISALLOWED_WHY
+            .iter()
+            .chain(TASK_DISALLOWED_WHY)
+            .chain(LEAD_DISALLOWED_WHY)
+        {
             assert!(blocked.contains(&format!("`{tool}`")), "{tool}");
         }
         assert!(allowed.contains("`Bash`") && allowed.contains("`Edit`"));

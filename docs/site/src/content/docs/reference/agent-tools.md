@@ -1451,6 +1451,7 @@ fleetd also blocks any tool like these that a newer Claude Code adds: a session 
 |---|---|---|
 | `ReportFindings` | Leads and task agents | Agents report a review with fleetd's own `report`. |
 | `DesignSync`, `NotebookEdit` | Leads and task agents | Unused by fleetd's agents, and tool schemas ride on every request. |
+| `Bash(git push *--no-verify*)`, `Bash(git *core.hooksPath*)`, `Bash(git *core.hookspath*)` | Task agents | A writer pushes only a tree the repo's pre-push check passed on (`.fleetd/pre-push.json`): run the check, and push again. A person's push can still skip it. |
 | `Edit`, `Write` | Leads | The lead never changes files: its agents do. |
 | `WebFetch`, `WebSearch` | Leads | The lead's agents read the web; the lead routes. |
 

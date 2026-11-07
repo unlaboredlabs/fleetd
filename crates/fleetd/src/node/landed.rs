@@ -24,13 +24,13 @@ pub fn branch_task(branch: &str) -> Option<String> {
 }
 
 /// `text` as one shell word.
-fn quoted(text: &str) -> String {
+pub(super) fn quoted(text: &str) -> String {
     format!("'{}'", text.replace('\'', r"'\''"))
 }
 
 /// Git's client-side hooks, each forwarded from fleetd's hooks dir to the repo's own when it has one, so one the repo
 /// gets later runs too. [`HOT_HOOKS`] are forwarded only when the repo has them already.
-const HOOKS: &[&str] = &[
+pub(super) const HOOKS: &[&str] = &[
     "applypatch-msg",
     "pre-applypatch",
     "post-applypatch",
@@ -53,10 +53,10 @@ const HOOKS: &[&str] = &[
 
 /// Hooks git runs on every ref or index write: a forwarder there would start a shell and several git processes each
 /// time, so one is set up only for a repo whose own hooks dir has the hook when the worktree's hooks are set.
-const HOT_HOOKS: &[&str] = &["reference-transaction", "post-index-change"];
+pub(super) const HOT_HOOKS: &[&str] = &["reference-transaction", "post-index-change"];
 
 /// The repo's own hooks dir as [`OWN_HOOK`] finds it, seen from the worktree `cwd`.
-fn own_hooks_dir(cwd: &Path) -> Result<PathBuf, GitError> {
+pub(super) fn own_hooks_dir(cwd: &Path) -> Result<PathBuf, GitError> {
     for scope in ["--local", "--global", "--system"] {
         if let Ok(dir) = git(
             cwd,

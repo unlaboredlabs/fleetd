@@ -163,7 +163,26 @@ branchPrefix: team-a/
 
 A broken file is refused with the exact problem, never ignored, so a typo can't drop a deny rule.
 
-## Services {#services}
+## .fleetd/pre-push.json {#pre-push}
+
+Optional: the repo's own pre-push check, which fleetd's writers must pass before they push.
+
+```json
+{ "check": "scripts/check.sh" }
+```
+
+A writer's push of a branch whose tree has this file is refused, with what to do, unless the check passed on that exact
+tree. The check says so when it passes, by adding the tree it checked to `fleetd-checked` in the git dir:
+
+```sh
+tree=$(git write-tree)   # with everything it checked staged
+echo "$tree" >>"$(git rev-parse --git-path fleetd-checked)"
+```
+
+The gate is set up for each writer's worktree in its session's environment alone. Your own checkouts, your pushes from
+a writer's worktree, other repos and the merge train's pushes run their hooks as before, and a repo's own `pre-push`
+hook still runs after it. Writers can't push with `--no-verify` or an overridden `core.hooksPath`.
+
 
 `fleetd init` and `fleetd machine add` run the hub and node as user services:
 

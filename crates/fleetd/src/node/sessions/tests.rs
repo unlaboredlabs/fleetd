@@ -1748,7 +1748,7 @@ async fn a_writers_commits_name_its_task_in_a_trailer_only_in_its_worktree() {
 /// A repo without `extensions.worktreeConfig` is never given it: its shared config stays as it was, and the agent's
 /// commits carry no trailer.
 #[tokio::test]
-async fn a_writer_in_a_repo_without_worktree_config_sets_nothing_and_names_no_task() {
+async fn a_writer_in_a_repo_without_worktree_config_leaves_its_config_and_names_no_task() {
     writer_commits(false).await;
 }
 
@@ -1786,11 +1786,18 @@ async fn writer_commits(worktree_config: bool) {
         .await;
     hub.settled("r1").await;
     let spec = hub.runner.spawned()[0].clone();
-    // Nothing in the session's environment points git anywhere.
+    // The session's environment points git at fleetd's pre-push gate for the worktree's git dir alone.
+    let git_config: Vec<_> = spec
+        .env
+        .iter()
+        .filter(|(k, _)| k.starts_with("GIT_CONFIG"))
+        .collect();
+    assert_eq!(git_config.len(), 3, "{git_config:?}");
     assert!(
-        !spec.env.iter().any(|(k, _)| k.starts_with("GIT_CONFIG")),
-        "{:?}",
-        spec.env
+        git_config.iter().any(|(k, v)| k == "GIT_CONFIG_KEY_0"
+            && v.starts_with("includeIf.gitdir:/")
+            && v.ends_with(".path")),
+        "{git_config:?}"
     );
     // The agent's git, as claude's Bash tool runs it, with the session's environment.
     let agent_git = |cwd: &Path, args: &[&str]| -> String {
