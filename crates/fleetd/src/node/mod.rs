@@ -334,10 +334,16 @@ async fn run_node(
     };
     // The agents' Mac lends clones from the same warm pool (node/mac_tool `mac sim`).
     let mac_simulators = ios.clone();
-    let desktop_config = config.desktop.clone().unwrap_or_default();
+    // The agents' Mac hosts its own screen, never a Linux desktop, whatever node.json's `desktop` says.
+    let desktop_config = match agents_mac {
+        true => desktop::DesktopConfig {
+            enabled: Some(false),
+            ..Default::default()
+        },
+        false => config.desktop.clone().unwrap_or_default(),
+    };
     let mac_config = config.mac.clone().unwrap_or_default();
-    // The agents' Mac hosts its own screen, never a Linux desktop.
-    let desktops = match (desktop_config.enabled() && !agents_mac) || mac_config.enabled() {
+    let desktops = match desktop_config.enabled() || mac_config.enabled() {
         true => Some(
             desktop::Desktops::start(
                 home,

@@ -3,6 +3,8 @@
 //! with KVM), a Linux desktop (docker or Xvfb), and the agents' Mac's own screen (its agents session on the screen,
 //! unlocked, with fleetd's grants). Each says why in plain words. Read at most every few minutes. iOS simulators are no
 //! screen any more (D298): the agents' Mac lends them with `mac sim`, and the doctor's `ios` check says how they are.
+//! The agents' Mac offers only its own screen: no browser, emulator or Linux desktop runs there (node/mod.rs), so it
+//! says nothing of them.
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -244,21 +246,25 @@ fn cached(home: &Path, config: Option<&NodeConfig>) -> Vec<HostCheck> {
     {
         return checks.clone();
     }
-    let checks = vec![
-        browser(
-            home,
-            &config.and_then(|c| c.browser.clone()).unwrap_or_default(),
-        ),
-        android(
-            home,
-            &config.and_then(|c| c.device.clone()).unwrap_or_default(),
-        ),
-        desktop(
-            home,
-            &config.and_then(|c| c.desktop.clone()).unwrap_or_default(),
-        ),
-        mac_screen(&config.and_then(|c| c.mac.clone()).unwrap_or_default()),
-    ];
+    let mac = mac_screen(&config.and_then(|c| c.mac.clone()).unwrap_or_default());
+    let checks = match config.is_some_and(super::agents_mac::is_agents_mac) {
+        true => vec![mac],
+        false => vec![
+            browser(
+                home,
+                &config.and_then(|c| c.browser.clone()).unwrap_or_default(),
+            ),
+            android(
+                home,
+                &config.and_then(|c| c.device.clone()).unwrap_or_default(),
+            ),
+            desktop(
+                home,
+                &config.and_then(|c| c.desktop.clone()).unwrap_or_default(),
+            ),
+            mac,
+        ],
+    };
     *last = Some((Instant::now(), checks.clone()));
     checks
 }

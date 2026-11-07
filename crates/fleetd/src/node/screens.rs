@@ -243,6 +243,20 @@ pub fn unsupported(host: SessionHost) -> Option<&'static str> {
     }
 }
 
+/// Why the agents' Mac refuses `settings`, None where it takes them: it offers only its own screen, whose lease keeps
+/// its own short idle release (one screen for every agent, so a long one keeps them all waiting).
+pub fn mac_refuses(settings: &ScreenSettings) -> Option<&'static str> {
+    if settings.host.is_some_and(|h| h != SessionHost::Mac) {
+        return Some(
+            "the agents' Mac offers only its own screen: browsers, emulators and Linux desktops run on other machines",
+        );
+    }
+    settings
+        .idle_minutes
+        .is_some()
+        .then_some("the agents' Mac's screen ends after 5 idle minutes, so the next agent gets it")
+}
+
 /// node.json's section for `host`.
 fn section(host: SessionHost) -> &'static str {
     match host {
@@ -306,6 +320,11 @@ pub fn apply(home: &Path, settings: &ScreenSettings) -> Result<String, String> {
     let file = home.join("node.json");
     let text =
         std::fs::read_to_string(&file).map_err(|e| format!("couldn't read node.json: {e}"))?;
+    let agents_mac = serde_json::from_str::<NodeConfig>(&text)
+        .is_ok_and(|c| super::agents_mac::is_agents_mac(&c));
+    if agents_mac && let Some(why) = mac_refuses(settings) {
+        return Err(why.to_owned());
+    }
     let out = edited(&text, settings)?;
     if out != text {
         // Write beside it, then rename: a node that stops midway keeps the old file whole. 0600, as node.json is.
@@ -688,6 +707,45 @@ mod tests {
         let broken = r#"{ "hub": "x", "machineId": "devbox", "name": "devbox", "enrolled": true, "ios": [] }"#;
         let err = edited(broken, &settings(Some(SessionHost::Ios), Some(true), None)).unwrap_err();
         assert!(err.contains("ios"), "{err}");
+    }
+
+    #[test]
+    fn the_agents_mac_takes_only_its_own_screens_switch() {
+        let mac = NODE.replacen(
+            "\"enrolled\": true,",
+            "\"enrolled\": true,\n  \"agentsMac\": true,",
+            1,
+        );
+        for refused in [
+            settings(Some(SessionHost::Browser), Some(true), None),
+            settings(Some(SessionHost::Android), Some(false), None),
+            settings(Some(SessionHost::Desktop), Some(true), None),
+            settings(None, None, Some(45)),
+        ] {
+            let home = tempfile::tempdir().unwrap();
+            std::fs::write(home.path().join("node.json"), &mac).unwrap();
+            let why = apply(home.path(), &refused).unwrap_err();
+            assert_eq!(Some(why.as_str()), mac_refuses(&refused), "{refused:?}");
+            assert_eq!(
+                std::fs::read_to_string(home.path().join("node.json")).unwrap(),
+                mac,
+                "nothing written"
+            );
+        }
+        assert_eq!(
+            mac_refuses(&settings(Some(SessionHost::Mac), Some(false), None)),
+            None
+        );
+        // Another machine takes every kind it can run, as before.
+        let home = tempfile::tempdir().unwrap();
+        std::fs::write(home.path().join("node.json"), NODE).unwrap();
+        assert!(
+            apply(
+                home.path(),
+                &settings(Some(SessionHost::Browser), Some(false), None)
+            )
+            .is_ok()
+        );
     }
 
     #[test]

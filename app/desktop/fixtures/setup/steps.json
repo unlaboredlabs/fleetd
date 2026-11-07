@@ -67,8 +67,8 @@
         },
         {
           "links": [],
-          "note": "A browser and a Linux desktop are on wherever they can run. iOS simulators (a Mac with Xcode) and Android emulators (Linux with KVM) install once a machine is opted in: its switch in Settings › Hub › Machines › Screens.",
-          "title": "Turn on iOS or Android screens (optional)",
+          "note": "A browser and a Linux desktop are on wherever they can run. Android emulators (Linux with KVM) install once a machine is opted in: its switch in Settings › Hub › Machines › Screens. iOS simulators are the agents' Mac's: A Mac for agents sets it up.",
+          "title": "Turn on Android screens (optional)",
           "values": []
         }
       ],

@@ -353,6 +353,26 @@ function repos(from: Fixture): Fixture {
   return f;
 }
 
+/**
+ * Settings › Hub › Machines › Screens with the fleet's second machine as the agents' Mac, ready and on a current
+ * fleetd: the hub lists only its own screen there, so its row has that one switch.
+ */
+function agentsMac(from: Fixture): Fixture {
+  const f = Fixture.from(from, "settings-agents-mac", "The fleet's second machine is the agents' Mac, ready: its Screens row has only its own screen");
+  f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true });
+  const mac: JsonObject = { host: "mac", ready: true, detail: "the node's session is on the Mac's screen, unlocked, with Screen Recording and Accessibility", on: true, idleMinutes: 5 };
+  f.update("machine_roles", (out) => {
+    if (!isObject(out) || !Array.isArray(out["machines"])) return out;
+    const machines = out["machines"].filter(isObject).map((m, i): JsonObject => {
+      if (i !== 1) return m;
+      const { nodeRestart: _, ...rest } = m;
+      return { ...rest, roles: ["sessions"], screenSettings: true, mac: { on: true, ready: true }, hosts: [mac] };
+    });
+    return { ...out, machines };
+  });
+  return f;
+}
+
 export default defineGroup({
   extend: {
     ...Object.fromEntries(SHARED.map((name) => [name, shared])),
@@ -391,6 +411,6 @@ export default defineGroup({
     const off = Fixture.from(withAgents, "settings-default-profile-only", "Max agents as in settings-agents, with storefront allowing only the default profile");
     const storefront = isObject(off.snapshot) && Array.isArray(off.snapshot["projects"]) ? off.snapshot["projects"].filter(isObject)[0] : undefined;
     projectSettings(off, new Set(storefront === undefined ? [] : [asText(storefront["projectId"])]));
-    return [f, withAgents, off, machines(base("typical")), repos(base("typical"))];
+    return [f, withAgents, off, machines(base("typical")), repos(base("typical")), agentsMac(base("typical"))];
   },
 });

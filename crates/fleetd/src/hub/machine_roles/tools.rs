@@ -168,6 +168,20 @@ async fn machine_screens_set(
         );
     };
     let name = machine.name;
+    let settings = ScreenSettings {
+        host: input.host,
+        on: input.on,
+        idle_minutes: input.idle_minutes,
+    };
+    // The agents' Mac offers only its own screen, whatever an older node of it still lists.
+    if machine.agents_mac == Some(true)
+        && let Some(why) = crate::node::screens::mac_refuses(&settings)
+    {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            format!("{name} didn't change: {why}."),
+        ));
+    }
     if !hub.link.node_can(m, CAP_SCREEN_SETTINGS) {
         let (code, why, fix) = match hub.node_commands.linked(m) {
             false => (
@@ -185,11 +199,6 @@ async fn machine_screens_set(
         };
         return Err(ToolError::new(code, why).with_fix(fix));
     }
-    let settings = ScreenSettings {
-        host: input.host,
-        on: input.on,
-        idle_minutes: input.idle_minutes,
-    };
     let answer = hub
         .node_commands
         .screens(m, &settings)

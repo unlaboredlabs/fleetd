@@ -278,8 +278,10 @@ purpose, state (`live`, `uploading`, `recorded`, `lost` or `expired`) and files.
   ready, off, installing, or what stands in the way (no KVM, no docker or Xvfb, no grants). A kind the machine can't
   run at all (the agents' Mac on Linux) can't be switched on, and says why. There's no iOS switch: the agents' Mac
   lends its [simulators](/docs/agents-mac#sim) to agents.
+- **The agents' Mac has one switch, Agents' Mac.** It offers only its own screen: no browser, Android or Linux
+  desktop runs there, so its row has none of their switches, and New screen never offers it for them.
 - **Idle screens end after**: the minutes without a command before a screen there ends, for every kind but the
-  agents' Mac, whose screen goes back after 5 minutes so the next agent isn't kept waiting.
+  agents' Mac, whose screen goes back after 5 minutes so the next agent isn't kept waiting. Its row says so instead.
 - **Recordings**: how long the hub keeps them and how much per project, for every project
   ([On the hub](#hub)).
 
@@ -291,7 +293,8 @@ waits for the ones mid-step to finish (10 minutes at most), so the restart finds
 after it. Until then a kind turned on says it starts once the node restarts. A node that doesn't run as
 the service `fleetd machine add` sets up saves the change and says to restart it. The machine has to be online, and
 its fleetd new enough: an older one's switches show what it hosts but don't move. MCP clients use
-`machine_screens_set`, and `machine_roles` reads each kind's reason (`off`), switch (`on`) and `idleMinutes`.
+`machine_screens_set`, and `machine_roles` reads each kind's reason (`off`), switch (`on`) and `idleMinutes`. On the
+agents' Mac, `machine_roles` lists only `mac`, and `machine_screens_set` takes only `host` `mac`.
 
 ## On each machine {#setup}
 
@@ -470,7 +473,8 @@ Settings go under `desktop` in [node.json](/docs/config-and-files#node-json):
 ## The agents' Mac's screen {#mac}
 
 A Mac set aside for agents runs its fleetd node as a standard `agents` user, and that user's desktop is a screen too:
-**`session_start`** with `kind` `mac`. Unlike the other kinds there is only one, so agents take turns on it:
+**`session_start`** with `kind` `mac`, the only kind the agents' Mac hosts (its node's `browser`, `device` and
+`desktop` settings are ignored). Unlike the other kinds there is only one, so agents take turns on it:
 
 - **One holder at a time.** The first agent to open it holds it. Another agent's `session_start` still opens a session,
   but it only observes: its `desktop` tool's `screenshot`, `cursor_position` and `wait`, and agent-desktop's reading

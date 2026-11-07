@@ -3,7 +3,8 @@
 // node writes its node.json, so turning Android on installs what it needs, and the line under the switch follows
 // what the node says (installing, starting once its live screens end). A kind that can't run for something missing
 // shows the command that fixes it, to run on that machine. Retention is browser_retention_set, for every
-// project. Hub-wide, so only owners and admins see it; the hub's answer reads the machines again.
+// project. Hub-wide, so only owners and admins see it; the hub's answer reads the machines again. The agents' Mac's row
+// has only its own screen's switch, and says how soon an idle one ends instead of a timeout to pick.
 import { useState } from "react";
 import type { HostCheck, MachineRolesEntry, SessionHost } from "../../../shared/contracts";
 import { useToolQuery } from "../../src/data/react";
@@ -11,7 +12,7 @@ import { Select, Switch, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { CommandLine } from "../onboarding/Prose";
 import { RunOn } from "../setup/Guide";
-import { daysChoices, fixOf, gbChoices, idleChoices, idleOf, lockedWhy, nodeWait, SCREEN_KINDS, stateLine, switchOn } from "./screensModel";
+import { daysChoices, fixOf, gbChoices, idleChoices, idleOf, kindsOf, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -69,6 +70,7 @@ function ScreensRow({ machine: m }: { machine: MachineRolesEntry }) {
       });
   };
   const check = (host: SessionHost): HostCheck | undefined => (m.hosts ?? []).find((h) => h.host === host);
+  const kinds = kindsOf(m);
   const idle = idleOf(m);
   const wait = nodeWait(m);
   return (
@@ -82,7 +84,7 @@ function ScreensRow({ machine: m }: { machine: MachineRolesEntry }) {
         </Text>
       </div>
       <div className={s.screenKinds}>
-        {SCREEN_KINDS.map(({ host, label }) => {
+        {kinds.map(({ host, label }) => {
           const c = check(host);
           const locked = lockedWhy(m, c);
           return (
@@ -98,21 +100,27 @@ function ScreensRow({ machine: m }: { machine: MachineRolesEntry }) {
           );
         })}
       </div>
-      {SCREEN_KINDS.map(({ host, label }) => {
+      {kinds.map(({ host, label }) => {
         const fix = fixOf(m, check(host));
         return fix === null ? null : <RunOn key={host} where={`${m.name}, for ${label}`} command={fix} />;
       })}
-      <div className={s.inline}>
-        <Text size="xs">Idle screens end after</Text>
-        <Select
-          aria-label={`Idle timeout on ${m.name}`}
-          className={s.machineCap}
-          value={idle === undefined ? undefined : String(idle)}
-          options={idleChoices(idle)}
-          disabled={!live || busy || lockedWhy(m, check("browser")) !== null || idle === undefined}
-          onValueChange={(v) => set({ idleMinutes: Number(v) })}
-        />
-      </div>
+      {m.mac === undefined ? (
+        <div className={s.inline}>
+          <Text size="xs">Idle screens end after</Text>
+          <Select
+            aria-label={`Idle timeout on ${m.name}`}
+            className={s.machineCap}
+            value={idle === undefined ? undefined : String(idle)}
+            options={idleChoices(idle)}
+            disabled={!live || busy || lockedWhy(m, check("browser")) !== null || idle === undefined}
+            onValueChange={(v) => set({ idleMinutes: Number(v) })}
+          />
+        </div>
+      ) : (
+        <Text size="xs" tone="quiet">
+          {`An idle Mac screen ends after ${String(check("mac")?.idleMinutes ?? 5)} minutes, so the next agent gets it.`}
+        </Text>
+      )}
       {wait === "restarting" ? (
         <Text size="xs" tone="quiet">
           {`${m.name}'s node is restarting: these come back once it links again.`}
