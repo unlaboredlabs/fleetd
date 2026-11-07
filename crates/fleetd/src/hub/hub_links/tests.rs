@@ -1130,14 +1130,9 @@ async fn revoking_on_the_other_hub_while_unreachable_stops_the_link_once_it_answ
     let navi = project("navi");
     let status = json!({ "op": "factory_status", "hub": "acme" });
     point(&l, &closed_url().await);
-    tool(
-        &l.acme,
-        &l.you_acme,
-        "hub_link_revoke",
-        json!({ "linkId": l.link_there }),
-    )
-    .await
-    .unwrap();
+    // Revoked with no event: the tool's people.changed would wake the follower's read already open there, which then
+    // hears it at once.
+    assert!(super::revoke_issued(&l.acme, &l.link_there).unwrap());
     // Acme never calls home: home only learns at its next call that gets through.
     let (code, why) = lead(&l.home, &navi, status.clone()).await.unwrap_err();
     assert_eq!(code, ErrorCode::Failed);
@@ -1364,4 +1359,40 @@ fn a_link_key_is_copied_with_an_address_another_hub_reaches_never_a_local_one() 
     ] {
         assert_eq!(reachable_url(local), None, "{local}");
     }
+}
+
+/// Removing a link from its project, or revoking one on the other hub, tells every open app there: the project's
+/// `project.settings` here, its person's `people.changed` there, so another device's page never keeps the gone link.
+#[tokio::test]
+async fn a_removed_or_revoked_link_tells_every_open_app() {
+    use fleetd_contracts::events::HubEventType;
+    let l = linked(None).await;
+    let last = |hub: &Hub, t: HubEventType| {
+        hub.events
+            .page(0, Some(&[t]), None)
+            .unwrap()
+            .events
+            .pop()
+            .and_then(|e| e.data)
+    };
+    tool(
+        &l.acme,
+        &l.you_acme,
+        "hub_link_revoke",
+        json!({ "linkId": l.link_there }),
+    )
+    .await
+    .unwrap();
+    let there = last(&l.acme, HubEventType::PeopleChanged).unwrap();
+    assert_eq!(there["change"], "link_revoked", "{there}");
+    tool(
+        &l.home,
+        &l.you_home,
+        "hub_link_remove",
+        json!({ "linkId": l.link_here }),
+    )
+    .await
+    .unwrap();
+    let here = last(&l.home, HubEventType::ProjectSettings).unwrap();
+    assert_eq!(here["hubLinkRemoved"], json!(l.link_here), "{here}");
 }
