@@ -104,7 +104,9 @@ runs commands as you would, starts agents and works with repos. Only three thing
 - A first fetch or browser visit to a site the person didn't give it (a link in their own message is given).
 - `project_message`, `confirm_step` and `automation_confirm`.
 
-A command that would wipe the machine or your home (`rm -rf ~`, `mkfs`) is refused, whoever approves it. A lead whose
+A command that would wipe the machine or your home (`rm -rf ~`, `mkfs`) is refused, whoever approves it. A former
+Navi's lead still runs its commands in the home it kept (`navis/<project id>/home` in the node's directory), with what
+it installed there first on their `PATH`; its agents use yours. A lead whose
 project has no repo does its own work and keeps `Edit`, `Write`, `WebFetch` and `WebSearch`; a lead with repos leaves
 those to its agents. Which one it is gets read at each lead start, so adding a repo changes it.
 

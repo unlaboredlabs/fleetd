@@ -4637,6 +4637,9 @@ async fn a_navi_gets_its_folder_under_the_node_home_and_its_lead_the_assistant_r
     };
     navi.role = fleetd_contracts::sessions::SessionRole::Assistant;
     navi.disallowed_tools = vec![];
+    // The home it kept as a Navi (D234), which stays its commands' HOME.
+    let own = dir.path().join("node/navis/p1/home");
+    std::fs::create_dir_all(&own).unwrap();
     hub.ok(SessionCall::Launch(navi)).await;
     hub.settled("r1").await;
     let spec = hub.runner.spawned()[0].clone();
@@ -4674,15 +4677,21 @@ async fn a_navi_gets_its_folder_under_the_node_home_and_its_lead_the_assistant_r
         mcp["mcpServers"]["fleetd"]["args"],
         serde_json::json!(["agent-mcp", "--role", "lead"])
     );
-    // No sandbox (D310): it starts under a host like any session, with the person's own HOME and the build slots.
+    // No sandbox (D310): it starts under a host like any session, and its commands run in the home it kept, with
+    // what it installed there on their PATH.
     assert!(spec.host_dir.is_some());
     let sourced = spec
         .env
         .iter()
         .find(|(k, _)| k == crate::node::runner::claude::ORDER_ENV_FILE_ENV)
-        .map(|(_, v)| std::fs::read_to_string(v).unwrap_or_default())
-        .unwrap_or_default();
-    assert!(!sourced.contains("export HOME="), "{sourced}");
+        .map(|(_, v)| std::fs::read_to_string(v).unwrap())
+        .expect("its commands' environment");
+    let own = std::fs::canonicalize(&own).unwrap();
+    assert!(
+        sourced.contains(&format!("export HOME='{}'\n", own.display())),
+        "{sourced}"
+    );
+    assert!(sourced.contains("$HOME/.local/bin:"), "{sourced}");
 }
 
 /// The browser's hooks, keeping only which agent sessions are a Navi's.

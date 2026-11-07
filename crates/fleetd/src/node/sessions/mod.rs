@@ -550,6 +550,51 @@ fn allowed_tools(local: &SessionLocal, mode: fleetd_contracts::model::RuntimeMod
     local.allowed_tools.iter().cloned().chain(role).collect()
 }
 
+/// The user-level bin dirs installers put programs in, in a former Navi's home, first on its commands' PATH.
+const NAVI_HOME_BINS: &[&str] = &[
+    ".local/bin",
+    "bin",
+    ".cargo/bin",
+    "go/bin",
+    ".bun/bin",
+    ".deno/bin",
+];
+
+/// What claude runs ahead of each command of a former Navi's lead (`CLAUDE_ENV_FILE`), when the project has the home a
+/// Navi kept (`navis/<id>/home` under the node's home, D234): that home as HOME, with [`NAVI_HOME_BINS`] first on its
+/// PATH and npm installing globally there too (`~/.local`); `navis/<id>/tmp` as TMPDIR; pip allowed to install for the
+/// user on a system that marks its Python as managed; the person's rustup toolchains, when they have them. claude
+/// itself keeps the person's HOME, where its login and settings are. None for a project with no such home.
+fn navi_home_env(node_home: &Path, project_id: &str, user_home: &Path) -> Option<String> {
+    let own = node_home.join("navis").join(project_id);
+    let home = std::fs::canonicalize(own.join("home")).ok()?;
+    let tmp = own.join("tmp");
+    if let Err(e) = std::fs::create_dir_all(&tmp) {
+        tracing::warn!(dir = %tmp.display(), "a former Navi's tmp dir was not made: {e}");
+    }
+    let quoted = |p: &Path| format!("'{}'", p.to_string_lossy().replace('\'', "'\\''"));
+    let bins: Vec<String> = NAVI_HOME_BINS
+        .iter()
+        .map(|b| format!("$HOME/{b}"))
+        .collect();
+    let mut env = format!(
+        "export HOME={home}\n\
+         export PATH=\"{bins}:$PATH\"\n\
+         export NPM_CONFIG_PREFIX=\"$HOME/.local\"\n\
+         export CARGO_HOME=\"$HOME/.cargo\"\n\
+         export PIP_BREAK_SYSTEM_PACKAGES=1\n\
+         export TMPDIR={tmp} TMP={tmp} TEMP={tmp}\n",
+        home = quoted(&home),
+        bins = bins.join(":"),
+        tmp = quoted(&tmp),
+    );
+    let rustup = user_home.join(".rustup");
+    if rustup.is_dir() {
+        env.push_str(&format!("export RUSTUP_HOME={}\n", quoted(&rustup)));
+    }
+    Some(env)
+}
+
 /// Deletes what a Navi kept under the node's home before Navis became projects (D310): its own home, `navis/<id>`.
 /// Nothing there is no error.
 fn forget_navi_home(home: &Path, project_id: &str) {
@@ -2906,9 +2951,20 @@ impl SessionService {
         // Its order's variables as they are at each Bash command, not only as its claude started: a GitHub token the
         // hub renews mid-turn reaches the agent's next command. The file names the order's script, no value.
         env.retain(|(k, _)| k != ORDER_ENV_FILE_ENV);
-        let sourced = row.local.order_id.as_deref().and_then(|order| {
+        let mut sourced = row.local.order_id.as_deref().and_then(|order| {
             super::order_env::env_file(&config.home, row.summary.project_id.as_str(), order)
         });
+        // A former Navi's lead still runs its commands in the home it kept, with what it installed there on the PATH
+        // (D234, kept by D310); its agents run in the person's own, with their git and logins.
+        if matches!(row.local.role, SessionRole::Lead | SessionRole::Assistant)
+            && let Some(own) = navi_home_env(
+                &config.home,
+                row.summary.project_id.as_str(),
+                &super::util::home_dir(),
+            )
+        {
+            sourced = Some(own + sourced.as_deref().unwrap_or_default());
+        }
         if let Some(sourced) = sourced {
             let at = dir.join("order-env.sh");
             std::fs::write(&at, sourced)?;

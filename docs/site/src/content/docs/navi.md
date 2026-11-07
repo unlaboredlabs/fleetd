@@ -87,7 +87,9 @@ also writes drafts and notes in its folder, remembers and forgets, keeps its che
 - **Files and commands:** it runs like any project's lead with no repo, with your access and no sandbox
   ([How leads run](/docs/security#how-leads-run)): it reads and writes what you can, installs what it needs, and its
   shell commands run without asking (decision `navi.shell-unasked`, D208). It can start agents and work with repos too.
-  Its folder is where its notes, drafts and downloads go. A command that opens a site goes through the site rule below.
+  Its folder is where its notes, drafts and downloads go. A Navi made before this keeps the home it had: its commands
+  still run there, with what it installed on their `PATH`. A command that opens a site goes through the site rule
+  below.
 - **Sites:** a link you write in your own chat message is allowed as you send it, so the Navi fetches or opens it
   without asking. A link it finds itself, or reads in an email or on a page, isn't. The first time it fetches a page or
   opens a site in its browser, the Navi's [approval mode](#approvals) decides, with the site named. Approve once and
