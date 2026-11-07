@@ -1,3 +1,5 @@
+import type { Socket } from "node:net";
+import { constants, createInflateRaw, type InflateRaw } from "node:zlib";
 import WebSocket from "ws";
 import type { SocketError } from "./explain";
 import { trustSystemCAs } from "../trust";
@@ -9,7 +11,8 @@ import { trustSystemCAs } from "../trust";
 export interface ConnectionEvents {
   onOpen(): void;
   onText(text: string): void;
-  onPong(): void;
+  /** Anything came: a pong, the hub's own ping, or the bytes of a frame still arriving. The link is alive. */
+  onHeard(): void;
   onClose(code: number, reason: string, error?: SocketError): void;
 }
 
@@ -24,22 +27,100 @@ export interface Connection {
 /** Opens one connection to a hub's /app socket URL. The real one is a WebSocket; tests use a fake. */
 export type Transport = (url: string, events: ConnectionEvents) => Connection;
 
+/** The most one compressed frame may inflate to, as the hub's own cap. */
+export const INFLATE_MAX_BYTES = 64 * 1024 * 1024;
+const SYNC_TAIL = Buffer.from([0x00, 0x00, 0xff, 0xff]);
+
+/**
+ * A hub that read `deflate` in the auth sends frames as Binary: permessage-deflate (RFC 7692), one raw DEFLATE stream
+ * per connection with its context kept, each message sync-flushed with its 00 00 ff ff cut off. So one inflater per
+ * connection, each message's text read after its own flush; `inflateRawSync` would lose the context between them.
+ */
+export const inflater = (): ((data: Buffer) => Promise<string>) => {
+  let stream: InflateRaw | null = null;
+  return (data) =>
+    new Promise((resolve, reject) => {
+      stream ??= createInflateRaw({ windowBits: 15 });
+      const s = stream;
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let failed = false;
+      const fail = (error: Error) => {
+        if (failed) return;
+        failed = true;
+        s.off("data", onData);
+        s.off("error", fail);
+        reject(error);
+      };
+      const onData = (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > INFLATE_MAX_BYTES) fail(new Error("a compressed frame inflated past its cap"));
+        else chunks.push(chunk);
+      };
+      s.on("data", onData);
+      s.on("error", fail);
+      s.write(Buffer.concat([data, SYNC_TAIL]));
+      s.flush(constants.Z_SYNC_FLUSH, () => {
+        if (failed) return;
+        s.off("data", onData);
+        s.off("error", fail);
+        resolve(Buffer.concat(chunks).toString("utf8"));
+      });
+    });
+};
+
 /** Node's built-in WebSocket can't ping, so `ws`. */
 export const webSocketTransport: Transport = (url, events) => {
   trustSystemCAs();
   const socket = new WebSocket(url, { maxPayload: 64 * 1024 * 1024 });
   let closed = false;
   let error: SocketError | undefined;
+  const inflate = inflater();
+  /** Frames reach the client in the order they came: a Text frame waits for the Binary ones before it to inflate. */
+  let inflating: Promise<void> | null = null;
+  let behind = 0;
+  const deliver = (bytes: Buffer, isBinary: boolean) => {
+    if (!isBinary && inflating === null) {
+      events.onText(bytes.toString("utf8"));
+      return;
+    }
+    behind++;
+    // One inflation at a time: each reads the inflater's output up to its own flush.
+    inflating = (inflating ?? Promise.resolve())
+      .then(() => (isBinary ? inflate(bytes) : bytes.toString("utf8")))
+      .then(
+        (text) => {
+          if (!closed) events.onText(text);
+        },
+        (e: unknown) => {
+          // A frame that won't inflate leaves the stream unreadable from here: drop the link, the client dials again.
+          error = { code: undefined, message: e instanceof Error ? e.message : String(e) };
+          socket.terminate();
+          close(1006, "a compressed frame didn't inflate");
+        },
+      )
+      .finally(() => {
+        if (--behind === 0) inflating = null;
+      });
+  };
   const close = (code: number, reason: string) => {
     if (closed) return;
     closed = true;
     events.onClose(code, reason, error);
   };
-  socket.on("open", () => events.onOpen());
-  socket.on("message", (data, isBinary) => {
-    if (!isBinary) events.onText(Buffer.isBuffer(data) ? data.toString("utf8") : Buffer.concat(Array.isArray(data) ? data : [Buffer.from(data)]).toString("utf8"));
+  // Bytes, not whole frames: a large one taking seconds on a slow link is the link at work, not a silent one. Heard
+  // from `open` on, once `ws` reads the socket itself: a listener before that would take its first frames.
+  let raw: Socket | undefined;
+  socket.on("upgrade", (response) => (raw = response.socket));
+  socket.on("open", () => {
+    raw?.on("data", () => events.onHeard());
+    events.onOpen();
   });
-  socket.on("pong", () => events.onPong());
+  socket.on("message", (data, isBinary) => {
+    const bytes = Buffer.isBuffer(data) ? data : Buffer.concat(Array.isArray(data) ? data : [Buffer.from(data)]);
+    deliver(bytes, isBinary);
+  });
+  socket.on("ping", () => events.onHeard());
   // An error is always followed by close; the close carries the code, the error the cause.
   socket.on("error", (e: Error & { code?: unknown; errors?: ReadonlyArray<Error & { code?: unknown }> }) => {
     // A name with several addresses fails as an AggregateError; its first error has the code.

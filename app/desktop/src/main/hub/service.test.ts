@@ -42,6 +42,25 @@ describe("hub service", () => {
     service.stop();
   });
 
+  it("dials only once started, and a pairing made after that at once", () => {
+    const urls: string[] = [];
+    const transport: Transport = (url) => {
+      urls.push(url);
+      return { send: () => undefined, ping: () => undefined, close: () => undefined };
+    };
+    const saved = { url: "http://devbox:4790", key: "k1" };
+    const service = new HubService({ kind: "hub", id: "hub", credentials: {} as CredentialEnv, loaded: { saved }, ephemeral: true, transport, cache: cacheFile().cache });
+    // The window is on its way: the saved hub isn't dialled yet, and says it is connecting meanwhile.
+    expect(urls).toEqual([]);
+    expect(service.state()).toMatchObject({ phase: "connecting", hub: "http://devbox:4790" });
+    service.start();
+    service.start();
+    expect(urls).toEqual(["ws://devbox:4790/app"]);
+    expect(service.connect({ url: "http://other:4790", key: "k2" })).toEqual({ ok: true });
+    expect(urls).toEqual(["ws://devbox:4790/app", "ws://other:4790/app"]);
+    service.stop();
+  });
+
   it("keeps the focus across a forget and a new pairing", () => {
     const sent: Record<string, unknown>[] = [];
     let events: ConnectionEvents | null = null;
@@ -52,6 +71,7 @@ describe("hub service", () => {
     // Scripted credentials: nothing is read from or written to a store, so `credentials` is never used.
     const vars = { FLEETD_HUB_URL: "http://devbox:4790", FLEETD_AGENT_KEY: "k1" };
     const service = new HubService({ kind: "hub", id: "hub", credentials: {} as CredentialEnv, loaded: { saved: { url: vars.FLEETD_HUB_URL, key: vars.FLEETD_AGENT_KEY } }, ephemeral: true, transport, cache: cacheFile().cache });
+    service.start();
     service.focus("ws-1");
     service.forget();
     expect(service.connect({ url: "http://devbox:4790", key: "k2" })).toEqual({ ok: true });

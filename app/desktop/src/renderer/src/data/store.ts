@@ -4,7 +4,8 @@
 // Freshness: a snapshot starts a new generation and drops everything calls filled in, so a (re)connect shows
 // skeletons until the refetches land, never the previous connection's data as if it were live. The project list and
 // the chats are the exception: they stay on screen through a drop and a reconnect, marked offline (as of `asOf`)
-// while there is no link, until the new connection's own copies replace them.
+// while there is no link, until the new connection's own copies replace them. A resumed snapshot (a reconnect that
+// replays the events missed meanwhile) keeps everything: those events patch and make stale what they touch.
 import { createStore } from "zustand/vanilla";
 import {
   dataField,
@@ -163,6 +164,8 @@ export const initialState = (): DataState => ({
 export interface Effects {
   /** A new snapshot: refetch everything. */
   readonly refetchAll?: boolean;
+  /** A reconnect resumed after the last event applied: only reads that failed or never landed go out again. */
+  readonly resumed?: boolean;
 }
 
 const byId = <T>(items: readonly T[], id: (item: T) => string): Record<string, T> =>
@@ -206,6 +209,21 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
     }
     case "snapshot": {
       const snap = frame.snapshot;
+      // Resumed onto what this window already had: the events after its cursor come next and bring the rest.
+      if (frame.resumed === true && s.cursor !== undefined) {
+        return [
+          {
+            ...s,
+            fresh: true,
+            generation: s.generation + 1,
+            machines: byId(snap.machines, (m) => m.machineId),
+            projects: byId(snap.projects, projectKey),
+            slots: snap.slots,
+            chatStates: byId(snap.chats ?? [], (c) => projectKey(c.projectRef)),
+          },
+          { resumed: true },
+        ];
+      }
       return [
         {
           ...s,
