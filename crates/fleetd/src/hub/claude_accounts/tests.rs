@@ -436,6 +436,15 @@ pub(crate) fn sealed(value: &str) -> String {
 /// Links a node holding project p1 that answers account and 1Password calls as a node would (a Claude test fails
 /// with the token masked; a 1Password test lists two vaults), handing each call to the test.
 pub(crate) async fn node(hub: &Arc<Hub>, caps: &[&str]) -> mpsc::UnboundedReceiver<SessionCall> {
+    node_reading(hub, caps, &["Agents", "Shared"]).await
+}
+
+/// [`node`], its fake 1Password's Test listing `vaults`.
+pub(crate) async fn node_reading(
+    hub: &Arc<Hub>,
+    caps: &[&str],
+    vaults: &'static [&'static str],
+) -> mpsc::UnboundedReceiver<SessionCall> {
     let (tx, mut rx) = mpsc::unbounded_channel();
     hub.executors
         .attach(
@@ -488,7 +497,7 @@ pub(crate) async fn node(hub: &Arc<Hub>, caps: &[&str]) -> mpsc::UnboundedReceiv
                     json!({ "ok": { "kind": "onepassword_saved" } })
                 }
                 SessionCall::OnePasswordTest { .. } => {
-                    json!({ "ok": { "kind": "onepassword_tested", "vaults": ["Agents", "Shared"] } })
+                    json!({ "ok": { "kind": "onepassword_tested", "vaults": vaults } })
                 }
                 SessionCall::ClaudeAccountTest { .. } => {
                     json!({ "ok": { "kind": "claude_account_tested",

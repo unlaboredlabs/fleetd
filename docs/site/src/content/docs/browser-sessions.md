@@ -189,11 +189,13 @@ scrubbed: whatever showed on the page is in it.
 An agent signs in to a site without seeing the password. It names a 1Password secret reference, and the node types
 the value into the page itself.
 
-1. **Save your service account token in Settings › Your accounts › 1Password.** In 1Password,
-   [make a service account](https://developer.1password.com/docs/service-accounts/get-started/) that can read the vault
-   with the agents' logins, then paste its token (it starts with `ops_`) and press Save and test. The app seals it on
+1. **Save your service account token in Settings › Your accounts › 1Password.** In 1Password, make a vault for
+   fleetd with only the logins agents sign in with (and, for a Navi, a low-limit or virtual card), then
+   [make a service account](https://start.1password.com/developer-tools/infrastructure-secrets/serviceaccount/) that
+   reads only that vault: an agent on a machine could read whatever the token reads
+   ([why](/docs/security#agent-reach)). Paste its token (it starts with `ops_`) and press Save and test. The app seals it on
    your computer to every machine and never shows it again; Test lists the vaults it can read, or says what 1Password
-   said. Remove is beside it. Your token serves the work you own: the tasks of the orders you start, and your Navi's
+   said, and asks for a new service account when it reads more than one. Remove is beside it. Your token serves the work you own: the tasks of the orders you start, and your Navi's
    lead and agents. A project's lead and work nobody started (automations, train fixes) have no owner, so only a
    variable serves them.
    - **A project's own token wins**, a Navi's too. One that should use another service account sets

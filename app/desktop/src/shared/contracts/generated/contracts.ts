@@ -6971,7 +6971,7 @@ export type SetupStep = {
 };
 
 /** The steps, in the order they are listed. */
-export type KnownSetupStepId = "address" | "machines" | "claude" | "github" | "people" | "mac" | "cloud";
+export type KnownSetupStepId = "address" | "machines" | "claude" | "github" | "people" | "onepassword" | "mac" | "cloud";
 /** KnownSetupStepId, or a value from a newer hub. */
 export type SetupStepId = KnownSetupStepId | (string & {});
 

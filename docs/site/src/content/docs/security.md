@@ -34,7 +34,8 @@ no more than the role of the device that made the code. Its QR holds only the hu
 
 Agents run as the same OS user as the hub, so anything that can read the hub home (its keys and its database) an
 agent can reach too. Human key files are no exception: keep yours outside the hub home and your projects, but don't
-count on that to stop an agent that goes looking. Isolating agents from your files is future work.
+count on that to stop an agent that goes looking. [What an agent can reach](#agent-reach) says what that means on a
+machine, and how fleetd keeps it small.
 
 ### The node socket {#node-socket}
 
@@ -53,6 +54,37 @@ A process that deliberately leaves its session's process tree (for example with 
 is treated as you. Any process of the node's OS user can do what that user can. Run agents you don't trust as a
 different OS user.
 :::
+
+## What an agent can reach on a machine {#agent-reach}
+
+An agent runs as the OS user its machine's node runs as, which is usually you, with no sandbox (as
+[leads run](#how-leads-run)). So on its machine it can reach what you can:
+
+- your files: your home, your projects, and any key or token kept in them;
+- your logins there: `gh`, your SSH keys and agent, git's credentials, and other CLIs you have logged in;
+- fleetd's own files in `~/.fleetd`: the node's key, and the secrets the node holds for the work it runs: projects'
+  secret variables, Claude tokens, and each person's sealed 1Password service account token.
+
+fleetd keeps those values out of agents' environments and transcripts, but an agent that goes looking can read the
+files they are in. Keeping agents out takes a separate OS user, which fleetd doesn't set up on its own (on the agents'
+Mac it is [an optional step](/docs/agents-mac)). So fleetd keeps what those tokens open small instead:
+
+- **1Password reads one vault.** fleetd's service account reads exactly one vault, made for fleetd, holding only the
+  logins agents sign in with and the card a Navi buys with. A service account reads only the vaults it was made with,
+  and 1Password can't add more later, so whatever else is in your 1Password stays out of reach even of an agent that
+  reads the token.
+- **A card that can't cost much.** Keep a virtual card with a monthly limit, or a low-limit card, in that vault: never
+  your main card.
+- **Checked.** The [1Password setup step](/docs/quick-start#setup-steps) and the doctor's `hub/onepassword_vault`
+  check read each saved token's last Test: the names of the vaults it reads, never an item. One vault passes. More,
+  or none, wants a look, with what to do: make a service account that reads only fleetd's vault, paste its token, and
+  revoke the old one ([troubleshooting](/docs/troubleshooting#hub)). Test lists the vaults with that person's own token
+  on a machine holding it.
+- A project's or a Navi's own `OP_SERVICE_ACCOUNT_TOKEN` variable is a secret the hub never tests: make it the same
+  way, one vault of its own.
+
+Run agents on machines with nothing else on them you'd mind them reading, and keep the rest of your 1Password in
+vaults fleetd's service account doesn't read.
 
 ## People {#people}
 

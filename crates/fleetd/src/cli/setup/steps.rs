@@ -15,8 +15,17 @@ use crate::hub::doctor::checks::DoctorCheck;
 
 /// What the hub answered, or a refusal as a failure with its fix.
 async fn call(client: &mut McpClient, tool: &str, input: Value) -> Result<Value, Failure> {
+    call_for(client, tool, input, Duration::from_secs(120)).await
+}
+
+async fn call_for(
+    client: &mut McpClient,
+    tool: &str,
+    input: Value,
+    wait: Duration,
+) -> Result<Value, Failure> {
     let result = client
-        .call_tool(tool, input, Duration::from_secs(120))
+        .call_tool(tool, input, wait)
         .await
         .map_err(|error| Failure {
             message: format!("{tool} failed: {}", error.message()),
@@ -60,9 +69,17 @@ pub async fn list(client: &mut McpClient) -> Result<Option<Vec<HubSetupStep>>, F
     }
 }
 
-/// Runs one step's checks now.
+/// The hub waits up to 230 s for a node's 1Password Test (hub/executor), then reruns its own checks.
+const TEST_ONEPASSWORD_SECS: u64 = 300;
+
+/// Runs one step's checks now: 1Password's Test as long as its first can take, while the node installs the SDK.
 pub async fn test(client: &mut McpClient, id: SetupStepId) -> Result<HubSetupStep, Failure> {
-    let body = call(client, "setup_test", json!({ "step": id })).await?;
+    let wait = Duration::from_secs(if id == SetupStepId::Onepassword {
+        TEST_ONEPASSWORD_SECS
+    } else {
+        120
+    });
+    let body = call_for(client, "setup_test", json!({ "step": id }), wait).await?;
     serde_json::from_value(body["step"].clone()).map_err(shape)
 }
 
@@ -167,6 +184,7 @@ fn place_words(place: &str) -> String {
         "invites" | "people" => "Hub › People",
         "machines" => "Hub › Machines",
         "cloud" => "Hub › Machines › Cloud machines",
+        "onepassword" => "Your accounts › 1Password",
         other => other,
     };
     format!("Settings › {name}")
@@ -274,6 +292,11 @@ mod tests {
                 (
                     State::Skipped,
                     "before the first PR · fleetd init --step github".into(),
+                    None
+                ),
+                (
+                    State::Skipped,
+                    "before the first login · fleetd init --step onepassword".into(),
                     None
                 ),
                 (

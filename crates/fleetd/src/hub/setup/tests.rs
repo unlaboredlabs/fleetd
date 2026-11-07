@@ -87,6 +87,7 @@ fn a_step_is_todo_until_a_check_says_otherwise_and_skipping_is_only_kept_for_tod
             (Machines, Todo),
             (Claude, Todo),
             (Github, Todo),
+            (Onepassword, Todo),
             (People, Todo),
             (Mac, Todo),
             (Cloud, Todo),
@@ -287,12 +288,12 @@ async fn the_tools_are_an_admins() {
 
     let list = call(&hub, &admin, "setup_list", json!({})).await.unwrap();
     let steps = list["steps"].as_array().unwrap();
-    assert_eq!(steps.len(), 7);
+    assert_eq!(steps.len(), 8);
     assert_eq!(steps[0]["parts"][0]["values"][0]["value"], HUB);
     // No machines yet, so machines and Claude are left at least.
     assert!(list["requiredLeft"].as_i64().unwrap() >= 2, "{list}");
-    assert_eq!(steps[4]["id"], "people");
-    assert_eq!(steps[4]["status"], "todo");
+    assert_eq!(steps[5]["id"], "people");
+    assert_eq!(steps[5]["status"], "todo");
 
     // The hub's API key, saved and tested (Settings › Hub accounts › Claude), is enough for Claude though no machine is
     // logged in: read fresh, without a doctor run.
@@ -334,7 +335,7 @@ async fn the_tools_are_an_admins() {
         .create(&PersonName::unchecked("Alice"), HubRole::Member)
         .unwrap();
     let list = call(&hub, &admin, "setup_list", json!({})).await.unwrap();
-    assert_eq!(list["steps"][4]["status"], "todo", "{}", list["steps"][4]);
+    assert_eq!(list["steps"][5]["status"], "todo", "{}", list["steps"][5]);
     hub.auth
         .create_key_for(
             "alice's laptop",
@@ -344,8 +345,8 @@ async fn the_tools_are_an_admins() {
         )
         .unwrap();
     let list = call(&hub, &admin, "setup_list", json!({})).await.unwrap();
-    assert_eq!(list["steps"][4]["status"], "done", "{}", list["steps"][4]);
-    assert_eq!(list["steps"][4]["said"], "Alice has joined.");
+    assert_eq!(list["steps"][5]["status"], "done", "{}", list["steps"][5]);
+    assert_eq!(list["steps"][5]["said"], "Alice has joined.");
 }
 
 /// The agents' Mac runs no claude: the doctor never asks its node about one, from its hello on, before its first

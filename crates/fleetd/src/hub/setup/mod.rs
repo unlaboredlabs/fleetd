@@ -114,6 +114,11 @@ chmod 700 ~";
 /// for the tunnel its node reaches the hub through; it never runs a command there (`exec`, `file.*`).
 pub const BOAT_KEY_ACTIONS: &str = "sandbox.create sandbox.read sandbox.update sandbox.stop sandbox.resume sandbox.delete ssh account.read";
 
+/// 1Password's page that makes a service account, and the one listing them (to revoke one that reads too much).
+pub const ONEPASSWORD_NEW: &str =
+    "https://start.1password.com/developer-tools/infrastructure-secrets/serviceaccount/";
+pub const ONEPASSWORD_ACCOUNTS: &str = "https://start.1password.com/developer-tools/active";
+
 /// Every step in order, its values computed for `hub` (the URL devices reach it at), status still to read.
 pub fn guides(hub: &str) -> Vec<HubSetupStep> {
     let base = hub.trim_end_matches('/');
@@ -303,6 +308,77 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 "The hub opens PRs, reads their CI and merges them.",
                 SetupNeed::Before {
                     what: "the first PR".into(),
+                },
+            )
+        },
+        // 1Password (D235, D313): agents run as the person on their machine, so whatever fleetd's service account reads,
+        // an agent there could reach. One vault of its own, holding only what fleetd needs, keeps that small.
+        HubSetupStep {
+            parts: vec![
+                part(
+                    "Make a vault for fleetd",
+                    Some(
+                        "Agents run as you on their machine: they reach your files, gh and ssh, and could read what \
+                         fleetd's 1Password service account reads. Keep only the logins agents sign in with and the \
+                         card a Navi buys with in this vault, and nothing else of yours.",
+                    ),
+                    vec![],
+                    vec![
+                        value("Vault name", "fleetd"),
+                        plain(
+                            "In it",
+                            "Each login agents sign in with, with its website, and the card a Navi buys with",
+                        ),
+                    ],
+                ),
+                part(
+                    "Use a low-limit or virtual card",
+                    Some(
+                        "A card in the vault is one an agent on a machine could read. A virtual card with a monthly \
+                         limit, or a card with a low limit, caps what that could cost.",
+                    ),
+                    vec![],
+                    vec![plain(
+                        "Card",
+                        "A virtual card with a monthly limit, or a low-limit card: never your main card",
+                    )],
+                ),
+                part(
+                    "Make a service account that reads only that vault",
+                    Some(
+                        "1Password can't change a service account's vaults once it's made: for one that reads more, \
+                         make a new one, paste its token, and revoke the old one on Your service accounts.",
+                    ),
+                    vec![
+                        link("Make a service account", ONEPASSWORD_NEW),
+                        link("Your service accounts", ONEPASSWORD_ACCOUNTS),
+                    ],
+                    vec![
+                        value("Name", &name),
+                        plain("Vaults", "Only fleetd's vault, with read access"),
+                    ],
+                ),
+            ],
+            fields_note: Some(
+                "Each person pastes their own token (it starts with ops_) in Settings › Your accounts › 1Password; the app seals \
+                 it on their device to every machine. Test there lists the vaults it reads."
+                    .into(),
+            ),
+            place: Some("onepassword".into()),
+            test: Some(
+                "Test your own token on a machine holding it, then read each person's last Test: one vault each. The \
+                 first Test on a machine can take up to 4 minutes while its node installs the 1Password SDK"
+                    .into(),
+            ),
+            ways: vec![way(None, &["hub/onepassword_vault"])],
+            ..step(
+                SetupStepId::Onepassword,
+                SetupGroup::Accounts,
+                "1Password",
+                "Agents sign in and buy with the logins and card fleetd's service account reads: keep it to one vault \
+                 of its own.",
+                SetupNeed::Before {
+                    what: "the first login".into(),
                 },
             )
         },

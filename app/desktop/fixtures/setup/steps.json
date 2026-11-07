@@ -214,6 +214,83 @@
     },
     {
       "fields": [],
+      "fieldsNote": "Each person pastes their own token (it starts with ops_) in Settings › Your accounts › 1Password; the app seals it on their device to every machine. Test there lists the vaults it reads.",
+      "group": "accounts",
+      "id": "onepassword",
+      "need": {
+        "kind": "before",
+        "what": "the first login"
+      },
+      "parts": [
+        {
+          "links": [],
+          "note": "Agents run as you on their machine: they reach your files, gh and ssh, and could read what fleetd's 1Password service account reads. Keep only the logins agents sign in with and the card a Navi buys with in this vault, and nothing else of yours.",
+          "title": "Make a vault for fleetd",
+          "values": [
+            {
+              "label": "Vault name",
+              "value": "fleetd"
+            },
+            {
+              "label": "In it",
+              "plain": true,
+              "value": "Each login agents sign in with, with its website, and the card a Navi buys with"
+            }
+          ]
+        },
+        {
+          "links": [],
+          "note": "A card in the vault is one an agent on a machine could read. A virtual card with a monthly limit, or a card with a low limit, caps what that could cost.",
+          "title": "Use a low-limit or virtual card",
+          "values": [
+            {
+              "label": "Card",
+              "plain": true,
+              "value": "A virtual card with a monthly limit, or a low-limit card: never your main card"
+            }
+          ]
+        },
+        {
+          "links": [
+            {
+              "label": "Make a service account",
+              "url": "https://start.1password.com/developer-tools/infrastructure-secrets/serviceaccount/"
+            },
+            {
+              "label": "Your service accounts",
+              "url": "https://start.1password.com/developer-tools/active"
+            }
+          ],
+          "note": "1Password can't change a service account's vaults once it's made: for one that reads more, make a new one, paste its token, and revoke the old one on Your service accounts.",
+          "title": "Make a service account that reads only that vault",
+          "values": [
+            {
+              "label": "Name",
+              "value": "fleetd on devbox"
+            },
+            {
+              "label": "Vaults",
+              "plain": true,
+              "value": "Only fleetd's vault, with read access"
+            }
+          ]
+        }
+      ],
+      "place": "onepassword",
+      "status": "todo",
+      "test": "Test your own token on a machine holding it, then read each person's last Test: one vault each. The first Test on a machine can take up to 4 minutes while its node installs the 1Password SDK",
+      "title": "1Password",
+      "ways": [
+        {
+          "checks": [
+            "hub/onepassword_vault"
+          ]
+        }
+      ],
+      "why": "Agents sign in and buy with the logins and card fleetd's service account reads: keep it to one vault of its own."
+    },
+    {
+      "fields": [],
       "group": "people",
       "id": "people",
       "need": {
@@ -535,6 +612,9 @@
           "said": "devbox is online.",
           "status": "done"
         },
+        "onepassword": {
+          "status": "todo"
+        },
         "people": {
           "status": "todo"
         }
@@ -570,6 +650,9 @@
           "said": "devbox is online.",
           "status": "done"
         },
+        "onepassword": {
+          "status": "todo"
+        },
         "people": {
           "status": "todo"
         }
@@ -601,6 +684,9 @@
           "said": "devbox is online.",
           "status": "done"
         },
+        "onepassword": {
+          "status": "todo"
+        },
         "people": {
           "status": "todo"
         }
@@ -630,6 +716,9 @@
         "machines": {
           "said": "devbox is online.",
           "status": "done"
+        },
+        "onepassword": {
+          "status": "todo"
         },
         "people": {
           "status": "todo"
@@ -668,6 +757,9 @@
           "said": "devbox is online.",
           "status": "done"
         },
+        "onepassword": {
+          "status": "todo"
+        },
         "people": {
           "status": "todo"
         }
@@ -703,6 +795,9 @@
         "machines": {
           "said": "devbox is online.",
           "status": "done"
+        },
+        "onepassword": {
+          "status": "todo"
         },
         "people": {
           "status": "todo"
@@ -740,6 +835,9 @@
           "said": "devbox is online.",
           "status": "done"
         },
+        "onepassword": {
+          "status": "todo"
+        },
         "people": {
           "status": "todo"
         }
@@ -769,6 +867,9 @@
         "machines": {
           "said": "devbox is online.",
           "status": "done"
+        },
+        "onepassword": {
+          "status": "todo"
         },
         "people": {
           "status": "todo"

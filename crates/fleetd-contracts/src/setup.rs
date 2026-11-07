@@ -20,6 +20,8 @@ pub enum SetupStepId {
     Machines,
     Claude,
     Github,
+    /// Each person's 1Password service account reads one vault of its own: optional.
+    Onepassword,
     People,
     /// A Mac for agents (D298): optional.
     Mac,
@@ -28,11 +30,12 @@ pub enum SetupStepId {
 }
 
 impl SetupStepId {
-    pub const ALL: [SetupStepId; 7] = [
+    pub const ALL: [SetupStepId; 8] = [
         Self::Address,
         Self::Machines,
         Self::Claude,
         Self::Github,
+        Self::Onepassword,
         Self::People,
         Self::Mac,
         Self::Cloud,
@@ -44,6 +47,7 @@ impl SetupStepId {
             Self::Machines => "machines",
             Self::Claude => "claude",
             Self::Github => "github",
+            Self::Onepassword => "onepassword",
             Self::People => "people",
             Self::Mac => "mac",
             Self::Cloud => "cloud",

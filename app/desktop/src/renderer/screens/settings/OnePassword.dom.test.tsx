@@ -131,7 +131,7 @@ const sent = (tool: string) => calls.filter((c) => c.tool === tool).map((c) => c
 
 it("guides a person to a service account, seals the pasted token through main, lists its vaults, and never shows it again", async () => {
   await render({});
-  expect(host.textContent).toContain("make a service account");
+  expect(host.textContent).toContain("Make a service account that reads only that vault");
   await click(button("1Password › Service accounts"));
   expect(opened).toEqual([SERVICE_ACCOUNTS]);
   await type("Token", TOKEN);
@@ -141,10 +141,24 @@ it("guides a person to a service account, seals the pasted token through main, l
   for (let i = 0; i < 2; i++) await settle();
   expect(host.textContent).toContain("Saved. Sealed on devbox.");
   expect(host.textContent).toContain("Reads Agents and Shared (on devbox");
+  // Two vaults want a look: one kept for fleetd is what to make.
+  expect(host.querySelector("[role='alert']")?.textContent).toContain("reads only fleetd's vault");
   // oldbox has no box key, so it doesn't hold it.
   expect(host.textContent).toContain("Not on oldbox: agents there fill no logins with it.");
   expect(host.textContent).not.toContain(TOKEN);
   expect([...host.querySelectorAll("input")].map((i) => i.value)).not.toContain(TOKEN);
+});
+
+it("asks for a vault of fleetd's own and a low-limit card, and is quiet when the token reads one vault", async () => {
+  await render({ token: saved });
+  expect(host.textContent).not.toContain("make a vault");
+  await click(button("Replace"));
+  expect(host.textContent).toContain("make a vault for fleetd with only the logins");
+  expect(host.textContent).toContain("virtual card with a monthly limit or a low-limit card");
+  testAnswer = { test: { at: AT, machineId: "devbox", ok: true, vaults: ["fleetd"] } };
+  await click(button("Test"));
+  expect(host.querySelector("[role='alert']")).toBeNull();
+  expect(host.textContent).toContain("Reads fleetd (on devbox");
 });
 
 it("says what 1Password said when a Test fails, and removes the token once confirmed", async () => {

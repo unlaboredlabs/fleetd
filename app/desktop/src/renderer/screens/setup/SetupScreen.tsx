@@ -18,7 +18,7 @@ import { revealNext } from "../settings/search";
 import { navigate } from "../shell/navigation";
 import { GuideParts, Part } from "./Guide";
 import { CloudSettings, useCloud } from "../admin/Cloud";
-import { groupWords, isRequiredLeft, needWords, placesOf, requiredLeft, statusWords, type SetupStep } from "./steps";
+import { groupWords, isRequiredLeft, needWords, placesOf, requiredLeft, statusWords, testMs, type SetupStep } from "./steps";
 import s from "./setup.module.css";
 
 const noInput = {};
@@ -204,7 +204,7 @@ function StepPane({
   const onward = () => (next !== undefined ? onOpen(next.id) : onEnd?.());
   const test = async () => {
     setBusy("test");
-    const out = await data.call("setup_test", { step: step.id }, { timeoutMs: 120_000 });
+    const out = await data.call("setup_test", { step: step.id }, { timeoutMs: testMs(step) });
     setBusy(null);
     if (!out.ok) {
       setTested({ ok: false, text: out.error.message });

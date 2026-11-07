@@ -110,6 +110,21 @@ async fn setup_test(
     if input.step == SetupStepId::Cloud && hub.pool.test().await.ok {
         crate::hub::pool::tools::test_path(&hub).await;
     }
+    // 1Password's Test lists the vaults the caller's own token reads, on a machine holding it, and keeps it as that
+    // token's last Test, which hub/onepassword_vault reads with everyone else's.
+    if input.step == SetupStepId::Onepassword
+        && let Err(e) = crate::hub::onepassword::test(
+            hub.clone(),
+            caller.clone(),
+            fleetd_contracts::mcp::OnePasswordTestInput { machine_id: None },
+        )
+        .await
+    {
+        tracing::info!(
+            "setup: no 1Password token of the caller's own tested: {}",
+            e.message
+        );
+    }
     // Machines, Claude and the Mac read every machine's checks; the rest, the hub's own.
     let results = match input.step {
         SetupStepId::Machines | SetupStepId::Claude | SetupStepId::Mac => {
