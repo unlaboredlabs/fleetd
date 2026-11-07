@@ -1,8 +1,8 @@
 // Payments, pushed from a project's screen, as the desktop's Settings › Projects › Payments: the card it pays with, a
 // Credit Card item from the person's own 1Password (onepassword_cards lists them, on its machine; the project's card
-// tool keeps only its op:// reference), and every purchase it asked for, with what became of it. Each purchase asks the
-// person in its chat; approved, the card is filled into that checkout once, and the project never sees it. Its calls
-// are its own, here, so Payments stays one piece.
+// tool keeps only its op:// reference), and every purchase it made, with what became of it. The card is filled into a
+// checkout without asking (D312), and the project never sees it. Its calls are its own, here, so Payments stays one
+// piece.
 import { useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView } from "react-native";
 import { listTime } from "../../chatView";
@@ -19,7 +19,7 @@ import { CheckRow, errorWords, Problem, useRead } from "./parts";
 /** Listing the cards may install the 1Password SDK on the machine first. */
 const CARDS_MS = 240_000;
 
-const HELP = "The card it pays with at a checkout, from your 1Password. Every purchase asks you first, with the shop, the total and what's in the basket; fleetd fills the card in, and the project never sees it.";
+const HELP = "The card it pays with at a checkout, from your 1Password. fleetd fills it in at the checkout, and the project never sees it. Each purchase is listed below, with the shop and the total.";
 
 const ref = (p: ProjectRef): ProjectRef => ({ machineId: p.machineId, projectId: p.projectId });
 
