@@ -59,13 +59,8 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
     hub.db
         .with(|c| {
             c.execute_batch(
-                "CREATE TABLE IF NOT EXISTS assistants (
-                   machine_id TEXT NOT NULL, project_id TEXT NOT NULL, created_ms INTEGER NOT NULL,
-                   created_by_key TEXT NOT NULL, created_by_name TEXT NOT NULL, archived_ms INTEGER,
-                   PRIMARY KEY (machine_id, project_id)
-                 );
-                 INSERT INTO assistants (machine_id, project_id, created_ms, created_by_key, created_by_name)
-                 VALUES ('devbox', 'navi', 1792000000000, 'k1', 'desk'), ('devbox', 'work', 1792000000000, 'k1', 'desk');",
+                "INSERT INTO project_settings (machine_id, project_id, only_me, created_ms, created_by_key, created_by_name)
+                 VALUES ('devbox', 'navi', 1, 1792000000000, 'k1', 'desk'), ('devbox', 'work', 1, 1792000000000, 'k1', 'desk');",
             )?;
             Ok(())
         })

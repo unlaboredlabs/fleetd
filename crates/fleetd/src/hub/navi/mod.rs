@@ -266,6 +266,7 @@ pub async fn create(
         last_activity_at: iso_ms(at_ms).into(),
         repos: vec![],
         kind: None,
+        only_me: false,
         created_by: None,
         owner: None,
         archived_at: None,

@@ -51,7 +51,7 @@ fn escape_like(s: &str) -> String {
 }
 
 /// The project with what the hub keeps of it, whatever its stored row says: its repos from `repos`, and from
-/// `assistants` whether it is a Navi.
+/// `project_settings` whether only its owner has it (a Navi, sent as `kind: assistant` too for one release).
 fn with_repos(
     conn: &rusqlite::Connection,
     mut project: ProjectSummary,
@@ -64,7 +64,8 @@ fn with_repos(
     let navi = crate::hub::navi::store::of(conn, &r)?;
     project.avatar = crate::hub::projects::avatar::of(conn, &r)?;
     project.icon = Some(crate::hub::projects::icon::of(conn, &r)?);
-    project.kind = navi.as_ref().map(|_| ProjectKind::Assistant);
+    project.only_me = navi.is_some();
+    project.kind = project.only_me.then_some(ProjectKind::Assistant);
     (project.created_by, project.archived_at, project.owner) = navi
         .map_or((None, None, None), |n| {
             (Some(n.created_by), n.archived_at, n.owner)
@@ -169,6 +170,7 @@ impl HubStore {
                     machine_id: machine_id.clone(),
                     repos: Vec::new(),
                     kind: None,
+                    only_me: false,
                     created_by: None,
                     archived_at: None,
                     owner: None,
@@ -267,7 +269,6 @@ impl HubStore {
                 "order_env",
                 "memory_refreshes",
                 "memory_refresh_lines",
-                "assistants",
                 "navi_sites",
                 "navi_approvals",
                 "navi_auto_approved",

@@ -12,7 +12,7 @@ use fleetd_contracts::ids::ProjectRef;
 
 use crate::hub::store::{HubDb, StoreError};
 
-/// Whether the project is a Navi, as the hub keeps it in `assistants` (what `ProjectSummary.kind` says too; the
+/// Whether the project is a Navi, as the hub keeps it (what `ProjectSummary.kind` says too; the
 /// project row a node reports has no kind). Integrations connect only to one: its lead asks before anything but a
 /// read, where a coding project's lead runs with full access and would send unasked.
 pub fn is_navi(db: &HubDb, r: &ProjectRef) -> Result<bool, StoreError> {

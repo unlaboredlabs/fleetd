@@ -611,7 +611,7 @@ pub fn recipients(
     let (m, p) = (r.machine_id.as_str(), r.project_id.as_str());
     let navi_owner: Option<Option<String>> = c
         .prepare_cached(
-            "SELECT owner_person FROM assistants WHERE machine_id = ? AND project_id = ?",
+            "SELECT owner_person FROM project_settings WHERE machine_id = ? AND project_id = ? AND only_me = 1",
         )?
         .query_row(params![m, p], |row| row.get(0))
         .optional()?;

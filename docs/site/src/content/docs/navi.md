@@ -482,8 +482,8 @@ any picture; a summary's `icon` says which it wears (one made from its id until 
 `project_avatar_set {machineId, projectId, attachmentId?, crop?}` (an image from `attachment_put` and the square to
 keep; no `attachmentId` removes it) and `project_avatar_get {machineId, projectId}`; a summary's `avatar` names the
 one it has. Each returns the
-Navi as a project summary with `kind: "assistant"`, `createdBy` (the id and name of the key that made it) and, once
-archived, `archivedAt`. Every other project has no `kind`. Talk to a Navi with `chat_send`, as to any project.
+Navi as a project summary with `onlyMe: true`, its `owner`, `createdBy` (the id and name of the key that made it)
+and, once archived, `archivedAt`; for one more release it also says `kind: "assistant"`, which older apps read. Talk to a Navi with `chat_send`, as to any project.
 `navi_purchases {machineId, projectId}` reads a Navi's card and its purchase log; `navi_card_set {machineId,
 projectId, card?}` picks its card (a person's own device only) from `onepassword_cards {machineId?}`, the Credit Card
 items their 1Password token reads.

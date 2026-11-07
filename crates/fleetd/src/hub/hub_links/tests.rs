@@ -55,15 +55,10 @@ fn hub(
     if let Some(navi) = navi {
         hub.db
             .with(|c| {
-                // Navi core's table (its migration makes it on a hub that has it).
+                // A Navi, as navi_create marks it.
                 c.execute_batch(&format!(
-                    "CREATE TABLE IF NOT EXISTS assistants (
-                       machine_id TEXT NOT NULL, project_id TEXT NOT NULL, created_ms INTEGER NOT NULL,
-                       created_by_key TEXT NOT NULL, created_by_name TEXT NOT NULL, archived_ms INTEGER,
-                       PRIMARY KEY (machine_id, project_id)
-                     );
-                     INSERT INTO assistants (machine_id, project_id, created_ms, created_by_key, created_by_name)
-                     VALUES ('devbox', '{navi}', 1792000000000, 'k1', 'desk');"
+                    "INSERT INTO project_settings (machine_id, project_id, only_me, created_ms, created_by_key, created_by_name)
+                     VALUES ('devbox', '{navi}', 1, 1792000000000, 'k1', 'desk');"
                 ))?;
                 Ok(())
             })
@@ -219,7 +214,7 @@ async fn linked(projects: Option<Value>) -> Linked {
     home.db
         .with(|c| {
             c.execute(
-                "UPDATE assistants SET created_by_key = ?",
+                "UPDATE project_settings SET created_by_key = ?",
                 [you_home.key_id.as_str()],
             )?;
             Ok(())
@@ -791,7 +786,7 @@ async fn a_removed_link_or_an_archived_navi_wakes_no_one() {
     l.home
         .db
         .with(|c| {
-            c.execute_batch("UPDATE assistants SET archived_ms = 1792000000000")?;
+            c.execute_batch("UPDATE project_settings SET archived_ms = 1792000000000")?;
             Ok(())
         })
         .unwrap();

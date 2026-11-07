@@ -22,7 +22,7 @@ fn project(id: &str) -> ProjectRef {
     }
 }
 
-/// A hub with a Navi called "Home" (`navi`, in `assistants`) and two coding projects.
+/// A hub with a Navi called "Home" (`navi`) and two coding projects.
 fn hub() -> (Arc<Hub>, tempfile::TempDir) {
     let home = tempfile::tempdir().unwrap();
     let config = HubConfig {
@@ -54,15 +54,10 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
     }
     hub.db
         .with(|c| {
-            // Navi core's table (its migration makes it on a hub that has it).
+            // A Navi, as navi_create marks it.
             c.execute_batch(
-                "CREATE TABLE IF NOT EXISTS assistants (
-                   machine_id TEXT NOT NULL, project_id TEXT NOT NULL, created_ms INTEGER NOT NULL,
-                   created_by_key TEXT NOT NULL, created_by_name TEXT NOT NULL, archived_ms INTEGER,
-                   PRIMARY KEY (machine_id, project_id)
-                 );
-                 INSERT INTO assistants (machine_id, project_id, created_ms, created_by_key, created_by_name)
-                 VALUES ('devbox', 'navi', 1792000000000, 'k1', 'desk');",
+                "INSERT INTO project_settings (machine_id, project_id, only_me, created_ms, created_by_key, created_by_name)
+                 VALUES ('devbox', 'navi', 1, 1792000000000, 'k1', 'desk');",
             )?;
             Ok(())
         })
@@ -181,7 +176,10 @@ async fn only_a_navi_uses_the_bridge_and_only_toward_other_projects() {
     // An archived Navi no longer does.
     hub.db
         .with(|c| {
-            c.execute("UPDATE assistants SET archived_ms = 1792000001000", [])?;
+            c.execute(
+                "UPDATE project_settings SET archived_ms = 1792000001000",
+                [],
+            )?;
             Ok(())
         })
         .unwrap();
