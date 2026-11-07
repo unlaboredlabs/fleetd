@@ -18,25 +18,29 @@ use super::setup::state::read_setup;
 
 pub const PROJECT_USAGE: &str =
     "  project add [<path|github-url>] [--machine <id>] [--title <t>] [--dest <dir>]
-         [--use-existing] [--yes] [--hub <url>]
+         [--use-existing] [--only-me | --no-only-me] [--yes] [--hub <url>]
              add a project: a checkout or a plain folder on a machine (this one by default),
              or a GitHub repo cloned onto one (the least busy worker by default), with progress;
-             then its CI, merge rules and what the lead will need. No argument: pick one
-  project add --new <name> [--machine <id>] [--dest <dir>] [--git-init] [--hub <url>]
+             then its CI, merge rules and what the lead will need. No argument: pick one.
+             --only-me: only you see and use it; without it or --no-only-me, on for a plain
+             folder, off for a clone or a repo folder
+  project add --new <name> [--machine <id>] [--dest <dir>] [--git-init]
+         [--only-me | --no-only-me] [--hub <url>]
              start a new, empty project: the machine makes its folder (~/fleetd/projects/<name>
              by default, or --dest; one that holds files is refused). A plain folder with no
-             repo, unless --git-init; add a repo later with project repo add
-  project add ... --only-me|--no-only-me
-             Only me: only you see and use it. Without either, on for a new project with no
-             repo, off for a clone or a repo folder
+             repo, unless --git-init; add a repo later with project repo add. Only me unless
+             --git-init or --no-only-me
   project list [--archived] [--machine <id>] [--hub <url>]
-  project archive|unarchive <machine>/<project> [--hub <url>]
-             archived, its lead stops and its chat, memory and folder stay
+  project archive <machine>/<project> [--hub <url>]
+             its lead stops and doesn't start again; its chat, memory and folder stay
+  project unarchive <machine>/<project> [--hub <url>]
+             bring it back: its lead starts with your next message
   project stop <machine>/<project> --key-file <human key> [--yes] [--hub <url>]
              stop its lead's turn and its agents, as you; the lead and its chat stay,
              and the chat says what stopped
   project remove <machine>/<project> [--yes] [--hub <url>]
-             stop its agents and forget it; its files, branches and worktrees stay
+             stop its agents and erase it: its chat, memory, skills, approvals, orders,
+             automations, sign-ins and Telegram link; its files, branches and worktrees stay
   project repo list <machine>/<project> [--hub <url>]
   project repo add <machine>/<project> <path|github-url> [--name <n>] [--dest <dir>]
          [--use-existing] [--hub <url>]
@@ -346,8 +350,10 @@ async fn list(client: &mut McpClient, v: &args::Parsed) -> Result<(), Stop> {
         .iter()
         .filter(|p| archived || p.get("archivedAt").is_none())
         .collect();
-    if shown.is_empty() {
+    if projects.is_empty() {
         println!("No projects yet: fleetd project add <path|github-url>");
+    } else if shown.is_empty() {
+        println!("Every project is archived: fleetd project list --archived shows them");
     }
     for p in shown {
         let only_me = if p.get("onlyMe") == Some(&Value::Bool(true)) {
@@ -385,6 +391,16 @@ fn only_me(v: &args::Parsed) -> Result<Option<bool>, Stop> {
     }
 }
 
+/// project_archive, else navi_archive, its old name, on a hub from before it (D310).
+pub(super) async fn archive_call(client: &mut McpClient, input: Value) -> Result<Value, Stop> {
+    match call(client, "project_archive", input.clone()).await {
+        Err(stop) if stop.1.contains("'project_archive' not found") => {
+            call(client, "navi_archive", input).await
+        }
+        other => other,
+    }
+}
+
 /// `fleetd project archive|unarchive <machine>/<project>`: project_archive.
 async fn archive(
     client: &mut McpClient,
@@ -393,12 +409,8 @@ async fn archive(
     archived: bool,
 ) -> Result<(), Stop> {
     let (machine, project) = find(client, v).await?;
-    call(
-        client,
-        "project_archive",
-        json!({ "machineId": machine, "projectId": s(&project, "/projectId"), "archived": archived }),
-    )
-    .await?;
+    let input = json!({ "machineId": machine, "projectId": s(&project, "/projectId"), "archived": archived });
+    archive_call(client, input).await?;
     let title = s(&project, "/title");
     out.success(&if archived {
         format!("{title} is archived; its chat, memory and folder stay")
@@ -494,7 +506,7 @@ async fn remove(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(
     let title = s(project, "/title").to_owned();
     if out.tty {
         let sure = cliclack::confirm(format!(
-            "Remove {title} on {machine}? Its agents stop; its files stay."
+            "Remove {title} on {machine}? Its agents stop and its chat, memory, skills and orders are erased; its files stay."
         ))
         .initial_value(false)
         .interact()
@@ -510,7 +522,7 @@ async fn remove(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(
     )
     .await?;
     out.success(&format!(
-        "{title} removed from {machine}; its files, branches and worktrees stay"
+        "{title} removed from {machine} and erased; its files, branches and worktrees stay"
     ));
     Ok(())
 }

@@ -84,9 +84,8 @@ macro_rules! output {
     };
 }
 
-/// Declares an input struct.
 /// Tool inputs that name their project as `project`, or as `navi`, its old name for one release (D310): exactly one of
-/// the two (`required`), or at most one; [`ProjectArg::project_ref`] reads whichever was given.
+/// the two (`required`), or at most one; each one's `project_ref` reads whichever was given.
 macro_rules! names_project {
     (required: $($name:ident),*; optional: $($opt:ident),*) => {
         $(
@@ -117,6 +116,7 @@ macro_rules! names_project {
     };
 }
 
+/// Declares an input struct.
 macro_rules! input {
     ($(#[$meta:meta])* $name:ident { $($(#[$fmeta:meta])* $field:ident : $ty:ty),* $(,)? }) => {
         #[skip_serializing_none]
@@ -3679,7 +3679,8 @@ input!(
     OnePasswordCardsInput {
     /// Where to list them; default: the first machine online that holds the token.
     machine_id: Option<MachineId>,
-    /// The project (D310); `navi` is its old name, accepted for one release.
+    /// The project the card is for: listed on its machine with the token its fills use (its own
+    /// OP_SERVICE_ACCOUNT_TOKEN variable, else the caller's). `navi` is its old name, accepted for one release.
     project: Option<ProjectRef>,
     /// Old name of `project`, accepted for one release.
     navi: Option<ProjectRef>,

@@ -98,7 +98,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_purchases",
-        "A project's card and its purchase log: the Credit Card item in its person's 1Password it pays with (kept as an op:// reference only, never the card's details), and every purchase it asked for, newest first, with its shop, total, items, state, when it was asked and answered, and by whom. A purchase always asks the person; approved, the project's node fills the card into that checkout once.",
+        "A project's card and its purchase log: the Credit Card item in its person's 1Password it pays with (kept as an op:// reference only, never the card's details), and every purchase it asked for, newest first, with its shop, total, items, state, when it was asked and answered, and by whom. A purchase asks nobody (D310): it is recorded, and the project's node fills the card into that checkout once.",
     ),
     (
         "navi_purchases",
@@ -114,7 +114,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_approvals",
-        "How a project's risky actions (sends, replies, shares, invites, a site it opens on its own the first time) are approved: mode ask (a card for every one), checker (default: a fresh tool-less model on the owner's Claude judges each first; go runs it with a quiet chat line, ask brings the card with its reason, block refuses it and the person may approve it anyway) or yolo (nothing asks); the checker's model and effort; and the log of actions that ran without asking, newest first, each with the checker's reason and its chat line. Money, trading and credentials in outgoing content stay refused in every mode, and spending always asks.",
+        "How a project's risky actions (sends, replies, shares, invites, a site it opens on its own the first time) are approved: mode ask (a card for every one), checker (default: a fresh tool-less model on the owner's Claude judges each first; go runs it with a quiet chat line, ask brings the card with its reason, block refuses it and the person may approve it anyway) or yolo (nothing asks); the checker's model and effort; and the log of actions that ran without asking, newest first, each with the checker's reason and its chat line. Money, trading and credentials in outgoing content stay refused in every mode, and spending through a server's tool always asks; a purchase with the project's card asks nobody (D310).",
     ),
     (
         "navi_approvals",
@@ -658,7 +658,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_asks",
-        "What a project (any, D310) asked other projects for with project_message, newest first: each ask's handle (N<n>), the project it went to, its words and when, and the orders that project's lead opened for it, each with its state and headline. Read on the project's machine. A hub that names the project_asks feature in its ready frame has it.",
+        "What a project (any, D310) asked other projects for with project_message, newest first: each ask's handle (N<n>), the project it went to, its words and when, and the orders that project's lead opened for it, each with its state and headline. Read on the project's machine. A hub that names the navi_asks feature in its ready frame has it.",
     ),
     (
         "navi_asks",

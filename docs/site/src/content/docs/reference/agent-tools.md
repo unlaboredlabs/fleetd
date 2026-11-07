@@ -192,7 +192,7 @@ Open and start work. Without workstreamId it opens a new order from text (the hu
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `asked` | string | no | The Navi message (`project_message`) this order is opened for, so that Navi hears when it lands. With workstreamId, a later message folded into that open order: the Navi hears it went there. |
+| `asked` | string | no | The ask (`project_message`) this order is opened for, so its asker hears when it lands. With workstreamId, a later ask folded into that open order: its asker hears it went there. |
 | `brief` | object | yes |  |
 | `brief.constraints` | string[] | yes | At most 20 items. |
 | `brief.doneWhen` | string[] | yes | At least one. At most 20 items. |
@@ -728,7 +728,7 @@ A lead's call: write to another project's lead in its chat, as this project, nev
 | `project` | string | yes | The project: its title, as factory_status names it, or its project id. At most 200 characters. |
 | `text` | string | yes | At most 4000 characters. |
 
-**Who may call:** a Navi's lead, checked by the hub. **Needs a human:** no.
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
 ```json
 {
@@ -746,10 +746,10 @@ A lead's call: the other projects in one read, or the one named: each one's stat
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `hub` | string | no | A linked hub, by its label: its projects this Navi reaches through the link. Absent: this hub. At most 40 characters. |
+| `hub` | string | no | A linked hub, by its label: its projects this project reaches through the link. Absent: this hub. At most 40 characters. |
 | `project` | string | no | One project, by title or project id; absent, every project but this one. At most 200 characters. |
 
-**Who may call:** a Navi's lead, checked by the hub. **Needs a human:** no.
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
 ```json
 {
@@ -1072,7 +1072,7 @@ An Only me project's lead's call: record a payment at the checkout open in your 
 | `items[].amount` | string | no | Its price in the total's currency, when the checkout shows one. |
 | `items[].name` | string | yes | What it is, as the checkout names it: `Double room, 12-14 Nov, 2 nights`. At most 200 characters. |
 | `items[].quantity` | integer | no | How many; absent: 1. 1 to 10000. |
-| `shop` | object | yes | The shop the Navi buys from. |
+| `shop` | object | yes | The shop the lead buys from. |
 | `shop.domain` | string | yes | The checkout page's host: `shop.example.com`. The card fills only on it (and its subdomains) and in its payment provider's frames. |
 | `shop.name` | string | yes | Its name, as the shop calls itself: `Hotel Adlon`. At most 120 characters. |
 | `total` | object | yes | The total the checkout shows, with everything in it (taxes, fees, shipping). |
@@ -1543,8 +1543,8 @@ Set in the claude process's environment. "In settings" marks the ones also in fl
 | `DISABLE_AUTOUPDATER` | `1` | Sessions | yes | Keeps the claude fleetd checked. An update mid-run would swap the binary under a live session. |
 | `CLAUDE_CODE_STARTUP_FAILURE_RESULTS` | `1` | Sessions | no | A refusal at startup arrives as a result fleetd can read, not only as stderr. |
 | `ENABLE_TOOL_SEARCH` | `true` unless your environment or `claude.env` sets it | Every claude fleetd starts | no | Tool schemas load when a tool is used, not on every request. fleetd's own tools always load at start. |
-| `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless your environment or `claude.env` sets it | Navis' leads | yes | A lead doing its own work idles between a person's messages, like a lead between wakes. |
-| `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless your environment or `claude.env` sets it | Leads | yes | A lead idles between wakes, often more than 5 minutes while reviews and CI run, and would otherwise rewrite its whole context to the prompt cache on those wakes. |
+| `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless your environment or `claude.env` sets it | Leads with no repo | yes | A lead doing its own work idles between a person's messages, like a lead between wakes. |
+| `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless your environment or `claude.env` sets it | Leads with repos | yes | A lead idles between wakes, often more than 5 minutes while reviews and CI run, and would otherwise rewrite its whole context to the prompt cache on those wakes. |
 | `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless your environment or `claude.env` sets it | Threads you start | yes | A person's thread idles while they read and reply. |
 | `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `5m` unless your environment or `claude.env` sets it | Task agents | yes | A task's agent (writer, reader, reviewer, CI fix) works in one burst and ends, so a 1-hour write pays for an hour it never uses. |
 | `BASH_MAX_TIMEOUT_MS` | `280000` unless your environment or `claude.env` sets it | Task agents | yes | No one command outlives a task agent's 5-minute prompt cache: past it, the agent's next request writes its whole context to the cache again. A longer suite is CI's job. |

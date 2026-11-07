@@ -4927,7 +4927,10 @@ export type OnePasswordCardsInput = {
   machineId?: MachineId;
   /** Old name of `project`, accepted for one release. */
   navi?: ProjectRef;
-  /** The project (D310); `navi` is its old name, accepted for one release. */
+  /**
+   * The project the card is for: listed on its machine with the token its fills use (its own
+   * OP_SERVICE_ACCOUNT_TOKEN variable, else the caller's). `navi` is its old name, accepted for one release.
+   */
   project?: ProjectRef;
 };
 
@@ -6369,7 +6372,7 @@ export type PurchaseLogEntry = {
   state: RequestState;
 };
 
-/** The shop the Navi buys from. */
+/** The shop the lead buys from. */
 export type PurchaseShop = {
   /**
    * The checkout page's host: `shop.example.com`. The card fills only on it (and its subdomains) and in its

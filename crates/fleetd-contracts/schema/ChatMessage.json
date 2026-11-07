@@ -1337,7 +1337,7 @@
       "type": "object"
     },
     "PurchaseShop": {
-      "description": "The shop the Navi buys from.",
+      "description": "The shop the lead buys from.",
       "properties": {
         "domain": {
           "$ref": "#/$defs/ShopDomain",

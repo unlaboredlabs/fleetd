@@ -14401,7 +14401,7 @@
         },
         "project": {
           "$ref": "#/$defs/ProjectRef",
-          "description": "The project (D310); `navi` is its old name, accepted for one release."
+          "description": "The project the card is for: listed on its machine with the token its fills use (its own\nOP_SERVICE_ACCOUNT_TOKEN variable, else the caller's). `navi` is its old name, accepted for one release."
         }
       },
       "type": "object"
@@ -18239,7 +18239,7 @@
       "type": "object"
     },
     "PurchaseShop": {
-      "description": "The shop the Navi buys from.",
+      "description": "The shop the lead buys from.",
       "properties": {
         "domain": {
           "$ref": "#/$defs/ShopDomain",

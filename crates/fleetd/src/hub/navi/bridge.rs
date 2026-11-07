@@ -244,7 +244,7 @@ fn target(hub: &Hub, asker: &Asker, name: &str) -> Result<ProjectSummary, McpToo
     };
     if !asker.reaches(&project_ref(&p)) {
         return Err(match asker {
-            Asker::Navi(_) => McpToolError::new(ErrorCode::Invalid, "That is this project's own project.")
+            Asker::Navi(_) => McpToolError::new(ErrorCode::Invalid, "That is this lead's own project.")
                 .with_fix("project_message writes to another project's lead; say it in your own reply."),
             Asker::Link(_) => McpToolError::new(
                 ErrorCode::Forbidden,
