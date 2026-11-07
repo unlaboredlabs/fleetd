@@ -212,6 +212,7 @@ describe("an answered approval's line", () => {
     expect(approvalOutcome({ state: "ran", by: "human:ada", answeredAt: ANSWERED }, decided)).toEqual({ text: "Approved by ada", tone: "approved", at: ANSWERED });
     expect(approvalOutcome({ state: "failed", by: "human:ada" }, decided).text).toBe("Approved by ada, but it failed");
     expect(approvalOutcome({ state: "failed", note: "The machine is offline." }, undefined)).toMatchObject({ text: "Not run: The machine is offline.", tone: "failed" });
+    expect(approvalOutcome({ state: "failed", note: "not run on devbox: could not start shopctl" }, undefined).text).toBe("Not run on devbox: could not start shopctl");
     expect(approvalOutcome({ state: "denied", by: "human:ada", note: "Not now." }, undefined).text).toBe("Denied by ada");
     expect(approvalOutcome({ state: "denied", note: "It timed out." }, undefined).text).toBe("Closed: It timed out.");
   });

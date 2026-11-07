@@ -63,18 +63,47 @@ final class EdgeEffectView: ExpoView {
     guard #available(iOS 26.0, *) else { return }
     if let old = interaction as? UIScrollEdgeElementContainerInteraction { removeInteraction(old) }
     interaction = nil
-    guard window != nil, let tag = scrollViewTag, let scrollView = scrollView(tag) else { return }
+    guard window != nil, let scrollView = scrollViewTag.flatMap(scrollView(tagged:)) ?? nearestList() else { return }
     let added = UIScrollEdgeElementContainerInteraction()
     added.scrollView = scrollView
     added.edge = edge == "bottom" ? .bottom : .top
     addInteraction(added)
     interaction = added
+    // Messages' soft fade: UIKit picks the hard one, with its divider line, for a scroll view outside a bar it manages.
+    (edge == "bottom" ? scrollView.bottomEdgeEffect : scrollView.topEdgeEffect).style = .soft
   }
 
-  /** The list's UIScrollView: the view of its tag, or the one just inside it. */
-  private func scrollView(_ tag: Int) -> UIScrollView? {
+  /** The list's UIScrollView: the view of its tag, or the first one inside it. */
+  private func scrollView(tagged tag: Int) -> UIScrollView? {
     guard let view = appContext?.findView(withTag: tag, ofType: UIView.self) else { return nil }
+    return firstScrollView(in: view, depth: 4)
+  }
+
+  /**
+   The list beside the bar when its tag finds none (React Native's view for a tag isn't always the scroll view's
+   parent): the nearest ancestor's scroll view, outside the bar, at least half the window's height.
+   */
+  private func nearestList() -> UIScrollView? {
+    guard let window else { return nil }
+    var level = superview
+    while let ancestor = level {
+      var queue = ancestor.subviews.filter { $0 !== self }
+      while !queue.isEmpty {
+        let view = queue.removeFirst()
+        if let scroll = view as? UIScrollView, scroll.bounds.height >= window.bounds.height / 2 { return scroll }
+        queue.append(contentsOf: view.subviews.filter { $0 !== self })
+      }
+      level = ancestor.superview
+    }
+    return nil
+  }
+
+  private func firstScrollView(in view: UIView, depth: Int) -> UIScrollView? {
     if let scroll = view as? UIScrollView { return scroll }
-    return view.subviews.lazy.compactMap { $0 as? UIScrollView }.first
+    guard depth > 0 else { return nil }
+    for child in view.subviews {
+      if let found = firstScrollView(in: child, depth: depth - 1) { return found }
+    }
+    return nil
   }
 }

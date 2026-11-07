@@ -1,6 +1,6 @@
 // A bar drawn over a list's edge, with iOS 26's scroll edge effect under it (modules/context-menu's FleetdEdgeEffect):
-// the list blurs away beneath the bar as under the system's own bars. Older iOS and Android get `fallback`, the
-// painted fade they had before.
+// the list blurs away beneath the bar as under the system's own bars. `fallback`, the painted fade, stays under it:
+// UIKit's soft effect alone is faint over an upside-down list, and it is all older iOS and Android get.
 import { requireNativeView } from "expo";
 import type { ComponentType, ReactNode } from "react";
 import { View, type StyleProp, type ViewStyle } from "react-native";
@@ -15,9 +15,6 @@ interface NativeProps {
 }
 
 const Native: ComponentType<NativeProps> | null = liquidGlass ? requireNativeView<NativeProps>("FleetdEdgeEffect") : null;
-
-/** Whether the system draws the effect, so a screen leaves out its own fades. */
-export const edgeEffects = Native !== null;
 
 export function EdgeEffect({
   list,
@@ -44,6 +41,7 @@ export function EdgeEffect({
   }
   return (
     <Native scrollViewTag={list} edge={edge} style={style} pointerEvents="box-none">
+      {fallback}
       {children}
     </Native>
   );

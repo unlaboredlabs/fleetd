@@ -159,7 +159,9 @@ export function ApprovalOutcomeLine({ item, decided }: { item: Parameters<typeof
   }, [outcome.text, outcome.tone]);
   return (
     <View style={styles.outcome} accessible accessibilityLabel={text}>
-      <Icon name={look.icon} size={13} color={t[look.ink]} />
+      <View style={styles.outcomeIcon}>
+        <Icon name={look.icon} size={13} color={t[look.ink]} />
+      </View>
       <Text style={[type.footnote, styles.outcomeText, { color: t.secondary }]}>{text}</Text>
     </View>
   );
@@ -264,6 +266,8 @@ const styles = StyleSheet.create({
   details: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", minHeight: 28 },
   flip: { transform: [{ rotate: "180deg" }] },
   actions: { flexDirection: "row", gap: space.md, marginTop: space.xs },
-  outcome: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, marginVertical: space.sm, paddingHorizontal: space.xl },
-  outcomeText: { textAlign: "center", flexShrink: 1 },
+  // Centered on one line; a longer one wraps beside its symbol, which stays on the first line.
+  outcome: { flexDirection: "row", alignItems: "flex-start", justifyContent: "center", gap: 5, marginVertical: space.sm, paddingHorizontal: space.xl },
+  outcomeIcon: { marginTop: 2.5 },
+  outcomeText: { flexShrink: 1 },
 });

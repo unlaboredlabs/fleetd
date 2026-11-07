@@ -272,7 +272,8 @@ export const approvalOutcome = (
     case "ran":
       return { text: `Approved${who}`, tone: "approved", at };
     case "failed":
-      return { text: note === undefined ? `Approved${who}, but it failed` : `Not run: ${note}`, tone: "failed", at };
+      // The hub's note may say "not run" itself ("not run on devbox: …"): said once.
+      return { text: note === undefined ? `Approved${who}, but it failed` : /^not run\b/iu.test(note) ? `N${note.slice(1)}` : `Not run: ${note}`, tone: "failed", at };
     case "denied":
       return { text: note !== undefined && by === undefined ? `Closed: ${note}` : `Denied${who}`, tone: "denied", at };
     default:
