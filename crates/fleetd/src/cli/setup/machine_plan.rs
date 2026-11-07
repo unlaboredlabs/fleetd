@@ -799,6 +799,79 @@ mod tests {
         assert_eq!(written["cmdRoots"], json!(["/srv"]));
     }
 
+    /// A refused node exits until systemd's start limit leaves its unit failed, and a failed unit refuses `start` and
+    /// `restart`: enrolling it again, or only making sure it runs, clears that first. launchd has no such state, and
+    /// `kickstart -k` (or a fresh bootstrap) starts it.
+    #[test]
+    fn a_node_left_failed_by_refusals_is_reset_and_started_again() {
+        let mut facts = fresh_facts("ada", "x64");
+        let first = plan_machine_add(&facts, &input()).unwrap();
+        for s in &first.steps {
+            if let (Some(file), Some(Stdin::Text { text, .. })) = (&s.writes, &s.stdin) {
+                facts.files.insert(file.clone(), Some(text.clone()));
+            }
+        }
+        facts
+            .digests
+            .insert(machine_layout(&facts.home).bin, Some(input().binary_digest));
+        let command = |plan: MachinePlan, title: &str| -> String {
+            plan.steps
+                .into_iter()
+                .find(|s| s.title == title)
+                .unwrap_or_else(|| panic!("no step {title:?}"))
+                .command
+        };
+        let ctl = "XDG_RUNTIME_DIR=/run/user/1000 systemctl --user";
+        // Re-enrolled with a new code: the hub no longer holds the node's key.
+        let rejoined = command(
+            plan_machine_add(&facts, &input()).unwrap(),
+            "(re)start the node",
+        );
+        assert_eq!(
+            rejoined,
+            format!(
+                "{ctl} reset-failed fleetd-node.service 2>/dev/null; {ctl} enable fleetd-node.service && {ctl} restart fleetd-node.service"
+            )
+        );
+        let node = json!({ "hub": "https://devbox.example.ts.net", "machineId": "mac-mini",
+            "name": "mac-mini", "enrolled": true, "claudeConfigDir": null });
+        facts.files.insert(
+            machine_layout(&facts.home).node_config,
+            Some(node.to_string()),
+        );
+        let set_up = MachineAddInput {
+            hub_has_node_key: true,
+            ..input()
+        };
+        assert_eq!(
+            command(
+                plan_machine_add(&facts, &set_up).unwrap(),
+                "make sure the node runs"
+            ),
+            format!(
+                "{ctl} reset-failed fleetd-node.service 2>/dev/null; {ctl} enable fleetd-node.service && {ctl} start fleetd-node.service"
+            )
+        );
+
+        let mac = Facts {
+            platform: "darwin".into(),
+            arch: "arm64".into(),
+            ..fresh_facts("ada", "arm64")
+        };
+        let on_mac = MachineAddInput {
+            binary_target: ("darwin".into(), "arm64".into()),
+            ..input()
+        };
+        let started = command(
+            plan_machine_add(&mac, &on_mac).unwrap(),
+            "(re)start the node",
+        );
+        assert!(
+            started.starts_with("launchctl kickstart -k gui/1000/sh.fleetd.node 2>/dev/null || "),
+            "{started}"
+        );
+    }
+
     /// --no-service: nothing for systemd or launchd, and the node's command to run by hand.
     #[test]
     fn no_service_writes_no_unit_and_says_how_to_run_the_node() {

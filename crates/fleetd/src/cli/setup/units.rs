@@ -278,12 +278,25 @@ impl ServiceManager {
         )
     }
 
+    /// A unit systemd gave up on (the hub refused the node until StartLimitBurst ran out) refuses `start` and `restart`
+    /// until its failed state is cleared. Fails quietly where the unit isn't loaded yet. launchd has no such state.
+    fn reset_failed(&self, role: Role) -> String {
+        format!(
+            "{} reset-failed {} 2>/dev/null; ",
+            self.ctl(),
+            systemd_name(role)
+        )
+    }
+
     /// Enables the service and starts it if it is not running; leaves a running one alone.
     pub fn ensure_running(&self, role: Role) -> String {
         match self.platform {
             Platform::Linux => {
                 let (ctl, name) = (self.ctl(), systemd_name(role));
-                format!("{ctl} enable {name} && {ctl} start {name}")
+                format!(
+                    "{}{ctl} enable {name} && {ctl} start {name}",
+                    self.reset_failed(role)
+                )
             }
             Platform::Darwin => format!(
                 "launchctl print {} >/dev/null 2>&1 || {}",
@@ -299,7 +312,8 @@ impl ServiceManager {
             Platform::Linux => {
                 let (ctl, name) = (self.ctl(), systemd_name(role));
                 format!(
-                    "{}{ctl} enable {name} && {ctl} restart {name}",
+                    "{}{}{ctl} enable {name} && {ctl} restart {name}",
+                    self.reset_failed(role),
                     if unit_changed {
                         format!("{ctl} daemon-reload && ")
                     } else {
