@@ -744,3 +744,107 @@ async fn a_persons_zone_is_their_devices_else_policy_tz_else_the_hubs_and_says_w
     let project = serde_json::from_value(r).unwrap();
     assert_eq!(zone::of_chat(&hub.db, &project).name(), "Europe/Berlin");
 }
+
+/// A removed person's Only-me projects don't run on as ghosts nobody can see: they are archived with the removal (so
+/// their leads and automations take no turn), and an owner or admin sees them by name alone, to delete them.
+#[tokio::test]
+async fn a_removed_persons_only_me_projects_are_archived_and_listed_to_admins_by_name() {
+    use crate::hub::claude_accounts::tests as t;
+    let (hub, _home) = t::hub();
+    let ann = t::owner(&hub);
+    let bob = t::member(&hub, "Bob");
+    let cat = t::member(&hub, "Cat");
+    let ann_desk = t::device(&hub, &ann, "admin");
+    let cat_desk = t::device(&hub, &cat, "operate");
+    let bobs = t::project();
+    hub.store
+        .projects_upsert_many(
+            &bobs.machine_id,
+            &[serde_json::from_value(json!({
+                "machineId": "lab", "projectId": "p1", "title": "Bob's diary", "workspaceRoot": "/home/devbox/diary",
+                "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 },
+                "lastActivityAt": "2026-11-07T10:00:00.000Z",
+            }))
+            .unwrap()],
+        )
+        .unwrap();
+    hub.db
+        .with(|c| {
+            crate::hub::navi::store::put(
+                c,
+                &bobs,
+                &fleetd_contracts::model::ProjectCreator {
+                    key_id: "k_bob".into(),
+                    name: "desk".into(),
+                },
+                Some(&bob),
+                0,
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let listed = |caller: Caller| {
+        let hub = hub.clone();
+        async move {
+            t::call(&hub, &caller, "people_list", json!({}))
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(listed(ann_desk.clone()).await["left"], json!([]));
+
+    t::call(
+        &hub,
+        &ann_desk,
+        "person_remove",
+        json!({ "personId": bob.as_str() }),
+    )
+    .await
+    .unwrap();
+    let project = hub.store.project_get(&bobs).unwrap().unwrap();
+    assert!(project.archived_at.is_some(), "archived with Bob");
+    assert!(matches!(
+        hub.leads.leads.auto_start(&bobs, None).await,
+        crate::hub::leads::lead::AutoStart::Held(_)
+    ));
+    assert_eq!(
+        listed(ann_desk.clone()).await["left"],
+        json!([{ "machineId": "lab", "projectId": "p1", "title": "Bob's diary", "path": "/home/devbox/diary",
+                 "owner": { "personId": bob.as_str(), "name": "Bob" } }])
+    );
+    // A member sees none; nobody but Bob opens its chat.
+    assert_eq!(listed(cat_desk).await.get("left"), None);
+    let history = json!({ "projectRef": { "machineId": "lab", "projectId": "p1" } });
+    match t::call(&hub, &ann_desk, "chat_history", history).await {
+        Err(CallError::Tool(e)) => assert_eq!(e.code, ErrorCode::Forbidden, "{}", e.message),
+        other => panic!("an admin read a removed person's chat: {other:?}"),
+    }
+}
+
+/// Removing one of your accounts tells every open app (`people.changed`, `account_removed`): your other devices'
+/// pages and an admin's People line of your accounts read again, never keeping the gone one.
+#[tokio::test]
+async fn removing_an_account_tells_every_open_app() {
+    use crate::hub::claude_accounts::tests as t;
+    use fleetd_contracts::events::HubEventType;
+    let (hub, _home) = t::hub();
+    t::owner(&hub);
+    let bob = t::member(&hub, "Bob");
+    let phone = t::device(&hub, &bob, "operate");
+    for tool in ["onepassword_remove", "github_disconnect"] {
+        t::call(&hub, &phone, tool, json!({})).await.unwrap();
+        let told = hub
+            .events
+            .page(0, Some(&[HubEventType::PeopleChanged]), None)
+            .unwrap()
+            .events
+            .pop()
+            .and_then(|e| e.data)
+            .unwrap_or_default();
+        assert_eq!(
+            (told["change"].as_str(), told["person"]["personId"].as_str()),
+            (Some("account_removed"), Some(bob.as_str())),
+            "{tool}: {told}"
+        );
+    }
+}

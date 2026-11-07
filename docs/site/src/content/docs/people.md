@@ -57,8 +57,11 @@ fleetd invite --person p_abcd2345
 | `fleetd invite revoke <inviteId>` | Takes back an invite. A person it invited who never joined goes with it |
 | `fleetd hub key revoke <keyId>` | Signs out one device |
 
-A person can sign out their own devices from the app. Owners and admins can sign out anyone's. What a removed
-person did keeps their name.
+A person can sign out their own devices from the app. Owners and admins can sign out anyone's. A device signed out,
+or every device of a person removed, stops at once: an app it has open is disconnected, its phone gets no more
+notifications, and a Telegram bridge of theirs takes and sends nothing more. What a removed person did keeps their
+name. Their Only me projects are archived, so nothing runs in them; **Settings › Hub › People** lists them by name
+under *Left by removed people*, with Delete. Nobody else opens them.
 
 ## Claude accounts {#claude}
 

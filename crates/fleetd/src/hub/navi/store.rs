@@ -181,6 +181,45 @@ pub fn others(db: &Connection, person: Option<&PersonId>) -> rusqlite::Result<Ve
     rows.collect()
 }
 
+/// Archives `person`'s Only-me projects not archived yet, as they are removed from the hub: an archived project's lead
+/// takes no turn, its automations' included. The ones it archived.
+pub fn archive_of(
+    db: &Connection,
+    person: &PersonId,
+    at_ms: i64,
+) -> rusqlite::Result<Vec<ProjectRef>> {
+    let mut stmt = db.prepare_cached(
+        "UPDATE project_settings SET archived_ms = ?2
+         WHERE only_me = 1 AND owner_person = ?1 AND archived_ms IS NULL RETURNING machine_id, project_id",
+    )?;
+    let rows = stmt.query_map(params![person.as_str(), at_ms], |row| {
+        Ok(ProjectRef {
+            machine_id: fleetd_contracts::ids::MachineId::unchecked(row.get::<_, String>(0)?),
+            project_id: fleetd_contracts::ids::ProjectId::unchecked(row.get::<_, String>(1)?),
+        })
+    })?;
+    rows.collect()
+}
+
+/// The Only-me projects of people removed from the hub, each with its owner, oldest first.
+pub fn left(db: &Connection) -> rusqlite::Result<Vec<(ProjectRef, PersonId)>> {
+    let mut stmt = db.prepare_cached(
+        "SELECT s.machine_id, s.project_id, s.owner_person FROM project_settings s
+         JOIN people p ON p.person_id = s.owner_person
+         WHERE s.only_me = 1 AND p.removed_ms IS NOT NULL ORDER BY s.created_ms, s.rowid",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            ProjectRef {
+                machine_id: fleetd_contracts::ids::MachineId::unchecked(row.get::<_, String>(0)?),
+                project_id: fleetd_contracts::ids::ProjectId::unchecked(row.get::<_, String>(1)?),
+            },
+            PersonId::unchecked(row.get::<_, String>(2)?),
+        ))
+    })?;
+    rows.collect()
+}
+
 /// Gives every Navi with no owner to `person`: a hub's first owner takes the Navis from before people.
 pub fn adopt(db: &Connection, person: &PersonId) -> rusqlite::Result<()> {
     db.prepare_cached(

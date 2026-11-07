@@ -60,7 +60,9 @@ pub enum HubEventType {
     ProjectFetchFailed,
     /// A project's settings changed (`project_set`): `data.profiles`, the profiles it allows; or a repo was removed from it
     /// (`project_repo_remove`): `data.repoRemoved`, its name; or its picture (`project_avatar_set`): `data.avatar`, the
-    /// new one's id, null once removed; or its icon (`project_icon_set`): `data.icon`.
+    /// new one's id, null once removed; or its icon (`project_icon_set`): `data.icon`; or a linked hub was removed from it
+    /// (`hub_link_remove`): `data.hubLinkRemoved`, the link's id; or its Telegram bridge unpaired or removed
+    /// (`telegram_unpair`, `telegram_remove`): `data.telegram`.
     #[serde(rename = "project.settings")]
     ProjectSettings,
     #[serde(rename = "thread.started")]
@@ -290,7 +292,8 @@ pub enum HubEventType {
     #[serde(rename = "machine_add.step")]
     MachineAddStep,
     /// An MCP server's sign-in changed: one started, finished or failed, or its token couldn't be renewed
-    /// (`data.projectRef`, `data.name`, `data.status`). mcp_servers_get reads the rest; never a token.
+    /// (`data.projectRef`, `data.name`, `data.status`), or the server was removed (`data.removed`, no status).
+    /// mcp_servers_get reads the rest; never a token.
     #[serde(rename = "mcp.oauth")]
     McpOauth,
 }

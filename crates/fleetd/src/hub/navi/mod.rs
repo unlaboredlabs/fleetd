@@ -371,6 +371,17 @@ pub async fn archive(
     })
 }
 
+/// Ends the leads of `person`'s Only-me projects, archived as they were removed from the hub.
+pub async fn stop_left(hub: &Hub, person: &fleetd_contracts::people::PersonId) {
+    let left = hub.db.with(|c| Ok(store::left(c)?)).unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "a removed person's projects not read");
+        Vec::new()
+    });
+    for (r, _) in left.iter().filter(|(_, owner)| owner == person) {
+        stop_lead(hub, r).await;
+    }
+}
+
 /// Ends the lead's process, its turn first. Best effort: a lead on an offline machine stays stopped there, since an
 /// archived project's lead never starts.
 async fn stop_lead(hub: &Hub, r: &ProjectRef) {

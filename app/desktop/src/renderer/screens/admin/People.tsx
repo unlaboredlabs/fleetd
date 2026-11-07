@@ -1,10 +1,12 @@
 // Settings › Hub › People: everyone on the hub, with their role, devices, and the Claude and GitHub their work runs on
 // (claude_accounts_get and github_app_get answer an admin with everyone's), any usage pause on their account included. An owner or admin changes a role in place
 // (person_set) or removes someone (person_remove, once confirmed: their devices are signed out at once). What a row
-// offers comes from model.ts; the hub checks it all again. Below them, Invite someone and the invites still open
-// (Invites.tsx), then every hub link minted here, which acts as its person (hubLinks/AllLinks.tsx).
+// offers comes from model.ts; the hub checks it all again. A removed person's Only-me projects, archived with them,
+// are listed below by name alone, each with Delete (people_list `left`; nobody else opens them). Then Invite someone
+// and the invites still open (Invites.tsx), then every hub link minted here, which acts as its person
+// (hubLinks/AllLinks.tsx).
 import { useState } from "react";
-import type { HubRole, PeopleListOutput, Person } from "../../../shared/contracts";
+import type { HubRole, LeftProject, PeopleListOutput, Person } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { Button, Dialog, Select, Text } from "../../ui";
@@ -16,6 +18,7 @@ import { Invites } from "./Invites";
 import { useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
+import { RemoveProjectDialog } from "../projects/RemoveProjectDialog";
 import { pauseLine } from "../settings/claudeModel";
 import { accountsLine, devicesLine, peopleRows, roleWord, type PersonRow } from "./model";
 import { usePeople } from "./usePeople";
@@ -89,7 +92,46 @@ function PeopleList({ list, me }: { list: PeopleListOutput; me: Person | undefin
         ))}
       </div>
       <RemoveDialog row={removing} onClose={() => setRemoving(null)} />
+      <LeftProjects left={list.left ?? []} />
     </>
+  );
+}
+
+/** The Only-me projects removed people left, archived: by name and whose, each with Delete, never opened. */
+function LeftProjects({ left }: { left: ReadonlyArray<LeftProject> }) {
+  const live = useLive();
+  const refetch = useRefetch();
+  const [deleting, setDeleting] = useState<LeftProject | null>(null);
+  if (left.length === 0) return null;
+  return (
+    <section className={a.section} aria-labelledby="people-left">
+      <Text strong id="people-left">
+        Left by removed people
+      </Text>
+      <Text size="xs" tone="quiet">
+        Their own projects, archived when they were removed: nothing runs in them, and only their owner could open them.
+      </Text>
+      <div className={a.list} role="list" aria-label="Left by removed people">
+        {left.map((p) => (
+          <div key={`${p.machineId}/${p.projectId}`} className={a.row} role="listitem" aria-label={p.title}>
+            <div className={a.who}>
+              <Text strong>{p.title}</Text>
+              <Text size="xs" tone="quiet">{`${p.owner.name}'s`}</Text>
+            </div>
+            <div className={a.controls}>
+              <Button size="sm" variant="ghost" disabled={!live} onClick={() => setDeleting(p)}>
+                Delete
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <RemoveProjectDialog
+        project={deleting === null ? null : { machineId: deleting.machineId, projectId: deleting.projectId, title: deleting.title, path: deleting.path }}
+        onClose={() => setDeleting(null)}
+        onRemoved={() => refetch(["people_list"])}
+      />
+    </section>
   );
 }
 
@@ -199,7 +241,7 @@ function RemoveDialog({ row, onClose }: { row: PersonRow | null; onClose: () => 
       open={row !== null}
       onOpenChange={(open) => !open && close()}
       title={`Remove ${name}?`}
-      description={`${n === 0 ? "They have no device yet, and their open invites close." : `Their ${devicesLine(n).toLowerCase()} ${n === 1 ? "is" : "are"} signed out at once.`} What they did keeps their name.`}
+      description={`${n === 0 ? "They have no device yet, and their open invites close." : `Their ${devicesLine(n).toLowerCase()} ${n === 1 ? "is" : "are"} signed out at once.`} What they did keeps their name, and their own projects are archived.`}
       footer={
         <>
           {error === undefined ? null : (

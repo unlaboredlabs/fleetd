@@ -25,7 +25,7 @@ use crate::model::{
     ActionItem, Machine, ProjectIcon, ProjectOutcome, ProjectSummary, ThreadSummary,
 };
 use crate::people::{
-    DEVICES_MAX, HubRole, Invite, InviteId, PEOPLE_MAX, Person, PersonId, PersonName,
+    DEVICES_MAX, HubRole, Invite, InviteId, LeftProject, PEOPLE_MAX, Person, PersonId, PersonName,
 };
 use crate::prim::{
     Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
@@ -2736,6 +2736,9 @@ output!(PeopleListOutput {
     invites: List<Invite, 0, PEOPLE_MAX>,
     /// The caller's person; absent for an agent key.
     me: Option<PersonId>,
+    /// The Only-me projects of people removed from the hub, by name alone: for an owner's or admin's human key,
+    /// absent for anyone else's and from older hubs.
+    left: Option<List<LeftProject, 0, PEOPLE_MAX>>,
 });
 
 // invite_create: an owner or admin invites someone. Without personId it adds a person, who needs a name (role: member
