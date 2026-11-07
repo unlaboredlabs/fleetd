@@ -12,6 +12,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "postinstall": "patch-package",
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
     "native": "expo prebuild --clean --no-install",
@@ -51,6 +52,7 @@
     "react-native-reanimated": "4.7.1",
     "react-native-safe-area-context": "~5.10.1",
     "react-native-screens": "~4.30.0",
+    "react-native-webview": "14.0.1",
     "react-native-worklets": "0.13.0",
     "tweetnacl": "^1.0.3"
   },
@@ -59,6 +61,8 @@
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^24.19.2",
     "@types/react": "~19.3.0",
+    "patch-package": "8.0.1",
+    "playwright-core": "1.64.1",
     "structured-headers": "^0.4.1",
     "typescript": "~6.0.3",
     "vitest": "5.0.5"

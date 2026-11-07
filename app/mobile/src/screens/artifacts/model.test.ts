@@ -1,0 +1,106 @@
+import { describe, expect, it } from "vitest";
+import type { HubEvent } from "../../desktop";
+import { touchesArtifacts } from "./api";
+import { ARTIFACT_CSP, ARTIFACT_LINK, artifactPage, cardLine, FENCE, fileLine, first, linkOf, linkTarget, loadsOnly, rowLine } from "./model";
+
+const directives = (csp: string): Map<string, string> => new Map(csp.split(";").map((d) => d.trim().split(/\s+/u)).map(([name, ...values]) => [name ?? "", values.join(" ")]));
+
+describe("an HTML artifact on the phone", () => {
+  it("gets the CSP ahead of anything it says, its doctype kept first", () => {
+    const page = artifactPage("<!DOCTYPE html><html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src *\"></head><body><script>1</script></body></html>", "k1");
+    expect(page.startsWith(`<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="${ARTIFACT_CSP}"><meta http-equiv="x-dns-prefetch-control" content="off">`)).toBe(true);
+    // The page's own looser policy comes after ours, and a second policy can only narrow the first.
+    expect(page.indexOf(ARTIFACT_CSP)).toBeLessThan(page.indexOf("default-src *"));
+    // The first script runs before any of the page's own.
+    expect(page.indexOf(first("k1"))).toBeLessThan(page.indexOf("<script>1</script>"));
+    // Its own frame tags are inert, whatever their case or what follows them.
+    const framed = artifactPage("<IFRAME srcdoc='x'></iframe><iframe\nsrc=x><frameset><frame/><object data=x><embed>", "k1");
+    expect(framed).not.toMatch(/<(iframe|frameset|frame|object|embed)[\s/>]/iu);
+    expect(artifactPage("<h1>Sweep</h1>", "k1").startsWith(`<!doctype html><meta http-equiv="Content-Security-Policy" content="${ARTIFACT_CSP}">`)).toBe(true);
+  });
+
+  it("runs its own scripts and styles and loads nothing from anywhere", () => {
+    const d = directives(ARTIFACT_CSP);
+    expect(d.get("default-src")).toBe("'none'");
+    expect(d.get("connect-src")).toBe("'none'");
+    expect(d.get("frame-src")).toBe("'none'");
+    // Every HTML string and script through the first script's one policy.
+    expect(d.get("require-trusted-types-for")).toBe("'script'");
+    expect(d.get("trusted-types")).toBe("default");
+    for (const [name, values] of d) {
+      if (name === "require-trusted-types-for" || name === "trusted-types") continue;
+      for (const value of values.split(" ")) expect(["'none'", "'unsafe-inline'", "'unsafe-eval'", "data:", "blob:"], `${name} ${value}`).toContain(value);
+    }
+  });
+
+  it("loads only itself: no link, form or redirect out", () => {
+    expect(loadsOnly("about:blank")).toBe(true);
+    expect(loadsOnly("about:blank#totals")).toBe(true);
+    for (const url of ["https://example.com/", "http://127.0.0.1:4790/", "file:///etc/hosts", "fleetd://pair?x", "data:text/html,x", "javascript:alert(1)", "about:srcdoc"]) expect(loadsOnly(url), url).toBe(false);
+  });
+
+  it("takes WebRTC away, which no CSP stops, and hides its key from the page", () => {
+    const script = first("k1");
+    expect(() => new Function(script.slice("<script>".length, -"</script>".length))).not.toThrow();
+    expect(script).toContain("document.currentScript.remove()");
+    for (const name of ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel"]) expect(script).toContain(`"${name}"`);
+    expect(script).toContain("e.isTrusted");
+  });
+
+  it("opens only a tapped web link that carries the page's key", () => {
+    const msg = (href: unknown, key: unknown) => JSON.stringify({ [ARTIFACT_LINK]: href, key });
+    expect(linkOf(msg("https://github.com/x/pull/1", "k1"), "k1")).toBe("https://github.com/x/pull/1");
+    expect(linkOf(msg("mailto:a@b.dev", "k1"), "k1")).toBe("mailto:a@b.dev");
+    expect(linkOf(msg("https://github.com/", "k2"), "k1")).toBeUndefined();
+    expect(linkOf(msg("https://github.com/", undefined), "k1")).toBeUndefined();
+    for (const href of ["fleetd://pair?x", "javascript:alert(1)", "file:///etc/hosts", "tel:1", 7]) expect(linkOf(msg(href, "k1"), "k1"), String(href)).toBeUndefined();
+    for (const data of ["", "not json", "null", "\"https://github.com/\""]) expect(linkOf(data, "k1"), data).toBeUndefined();
+  });
+
+  it("has no storage, cookies, files, camera or popups", () => {
+    expect(FENCE).toMatchObject({
+      javaScriptEnabled: true,
+      domStorageEnabled: false,
+      incognito: true,
+      sharedCookiesEnabled: false,
+      thirdPartyCookiesEnabled: false,
+      allowFileAccess: false,
+      allowFileAccessFromFileURLs: false,
+      allowUniversalAccessFromFileURLs: false,
+      javaScriptCanOpenWindowsAutomatically: false,
+      setSupportMultipleWindows: false,
+      originWhitelist: ["*"],
+      mediaCapturePermissionGrantType: "deny",
+    });
+    for (const bridge of ["injectedJavaScript", "injectedJavaScriptBeforeContentLoaded", "injectedJavaScriptObject"]) expect(FENCE).not.toHaveProperty(bridge);
+  });
+});
+
+describe("artifact words and links", () => {
+  it("reads a link's artifact and version, and nothing else", () => {
+    expect(linkTarget("artifact:dependency-sweep")).toEqual({ name: "dependency-sweep", version: undefined });
+    expect(linkTarget("artifact:dependency-sweep@2")).toEqual({ name: "dependency-sweep", version: 2 });
+    for (const url of ["artifact:", "artifact:Sweep", "artifact:a@0", "https://x.dev", "artifact:a b"]) expect(linkTarget(url), url).toBeUndefined();
+  });
+
+  it("words a row and a card plainly, with no ids", () => {
+    const v = { version: 2, title: "Dependency sweep", format: "md", by: "Lead", at: "2026-11-03T09:00:00.000Z", bytes: 10 } as const;
+    expect(rowLine(v, "9:00")).toBe("Markdown · Lead · 9:00 · Version 2");
+    expect(cardLine({ name: "build-times", version: 1, title: "Build times", format: "html", by: "Lead" })).toBe("HTML · Lead");
+  });
+});
+
+describe("the files sent in the chat", () => {
+  it("each read as its kind, size and when", () => {
+    expect(fileLine({ attachmentId: "F7", name: "itinerary.pdf", mime: "application/pdf", bytes: 2048, at: "2026-11-03T10:00:00.000Z" }, "Yesterday")).toBe("PDF · 2 KB · Yesterday");
+  });
+
+  it("read again on a message in this chat, which may carry one, and on a publish", () => {
+    const p = { machineId: "devbox", projectId: "app" };
+    const event = (type: string, extra: Partial<HubEvent> = {}) => ({ eventId: "e1", at: "2026-11-03T10:00:00.000Z", type, summary: "", ...extra }) as HubEvent;
+    expect(touchesArtifacts(event("chat.message", p), p)).toBe(true);
+    expect(touchesArtifacts(event("chat.message", { machineId: "devbox", projectId: "shop" }), p)).toBe(false);
+    expect(touchesArtifacts(event("artifacts.changed", { data: { projectRef: p } }), p)).toBe(true);
+    expect(touchesArtifacts(event("task.started", p), p)).toBe(false);
+  });
+});
