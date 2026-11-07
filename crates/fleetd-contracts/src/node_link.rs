@@ -245,6 +245,10 @@ pub const CAP_AGENTS_MAC: &str = "agents_mac";
 /// other direction.
 pub const CAP_LINK_DEFLATE: &str = "link_deflate";
 
+/// `gated_run` with `requestId`: an approved command outlives a dropped link and the node's result of it is kept on disk,
+/// so the hub asks for it with `gated_resume` once the link is back, after its own restart too.
+pub const CAP_GATED_RESUME: &str = "gated_resume";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -632,9 +636,23 @@ pub struct GatedRun {
     pub timeout_sec: GatedTimeoutSec,
     /// Read from the node's own sinks and scrubbed from the output.
     pub secret_env: Option<SecretEnv>,
+    /// The approval it runs for. A node listing [`CAP_GATED_RESUME`] keeps the run going and its result kept under it
+    /// when the link drops, for a `gated_resume`; it never runs one request twice.
+    pub request_id: Option<crate::chat::ChatRequestId>,
 }
 
-/// Node -> hub, one per `gated_run`.
+/// Hub -> node, only to nodes listing [`CAP_GATED_RESUME`]: the result of the approved command it ran for
+/// `requestId`, whose `gated_result` the hub lost to a dropped link or its own restart. Answered by a `gated_result`
+/// once the command ends, at once when it already did, and with `unknown` when the node has no result for it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GatedResume {
+    pub id: NonEmpty,
+    pub request_id: crate::chat::ChatRequestId,
+    pub timeout_sec: GatedTimeoutSec,
+}
+
+/// Node -> hub, one per `gated_run` or `gated_resume`.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -649,6 +667,9 @@ pub struct GatedResult {
     pub timed_out: bool,
     /// Why it did not run: a cwd outside the command roots, a missing secret, a start error.
     pub error: Option<FrameError>,
+    /// Only answering a `gated_resume`: why the node has no result for it (it restarted while the command ran, or
+    /// never got it). The command may have run.
+    pub unknown: Option<FrameError>,
 }
 
 /// `probe` reads the commit email the node's service uses and the free space on the filesystem holding its home
@@ -819,6 +840,8 @@ pub enum HubToNode {
     CmdCheck(CmdCheck),
     SecretDeliver(SecretDeliver),
     GatedRun(GatedRun),
+    /// Only to nodes listing [`CAP_GATED_RESUME`].
+    GatedResume(GatedResume),
     NodeAction(NodeAction),
     SessionCall(SessionCallFrame),
     SpansAck(SpansAck),

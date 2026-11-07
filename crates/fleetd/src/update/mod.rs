@@ -4,8 +4,9 @@
 //! that restarts one, checks it came up on the new build and puts the previous one back if not (`finish`).
 //!
 //! A restart never waits for work to finish: a lead's turn and running agents carry on by themselves afterwards in
-//! their threads and worktrees, the merge train takes up what it was merging, and an approved command it cut off goes
-//! back to the person as interrupted, never run again.
+//! their threads and worktrees, the merge train takes up what it was merging, and an approved command runs on through
+//! a hub restart and reports its result once its node is linked again (node/gated.rs). One its node's restart cut off
+//! goes back to the person as may have run, never run again.
 //!
 //! Release assets (built by .github/workflows/build-release.yml) have version-less names next to `SHA256SUMS` and
 //! `release.json`, at `releases/download/edge/` or `releases/latest/download/`. Those are CDN downloads, not the

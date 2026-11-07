@@ -22,7 +22,7 @@ use super::cmd::run_cmd_check_from;
 use super::identity::{NodeBoxKey, NodeIdentity};
 use super::lead::LeadRelay;
 use super::power::Wakes;
-use super::secrets::{SecretsContext, deliver_secret, run_gated};
+use super::secrets::{SecretsContext, deliver_secret};
 use super::sessions::SessionService;
 use super::util::now_iso;
 use super::wire::{
@@ -137,6 +137,8 @@ struct Shared {
     hosted: crate::node::session_route::Hosted,
     agents_mac: Option<crate::node::agents_mac::AgentsMac>,
     mac_host: Option<Arc<crate::node::mac_tool::host::Host>>,
+    /// Approved commands, which outlive the link they came on (node/gated.rs).
+    gated: Arc<super::gated::GatedRuns>,
 }
 
 impl Shared {
@@ -155,7 +157,10 @@ impl Shared {
 
 /// The node's main loop: keep a link to the hub, reconnecting with backoff. Only ends by returning the hub's refusal.
 pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
+    let gated =
+        super::gated::GatedRuns::new(&options.node_sessions.home(), &options.settings.machine_id);
     let shared = Arc::new(Shared {
+        gated,
         settings: options.settings,
         identity: options.identity,
         node_sessions: options.node_sessions,
@@ -254,6 +259,7 @@ fn tag(frame: &HubToNode) -> &'static str {
         HubToNode::CmdCheck(_) => "cmd_check",
         HubToNode::SecretDeliver(_) => "secret_deliver",
         HubToNode::GatedRun(_) => "gated_run",
+        HubToNode::GatedResume(_) => "gated_resume",
         HubToNode::NodeAction(_) => "node_action",
         HubToNode::SessionCall(_) => "session_call",
         HubToNode::SpansAck(_) => "spans_ack",
@@ -638,6 +644,7 @@ async fn run_link_once(
             fleetd_contracts::node_link::CAP_NO_ASK_FILL.to_owned(),
             fleetd_contracts::node_link::CAP_PROJECT_SIGNINS.to_owned(),
             fleetd_contracts::node_link::CAP_LINK_DEFLATE.to_owned(),
+            fleetd_contracts::node_link::CAP_GATED_RESUME.to_owned(),
         ]
         .into_iter()
         .chain(
@@ -794,6 +801,7 @@ async fn run_link_once(
                     output_tail: Text::unchecked(""),
                     timed_out: false,
                     error: Some(Text::unchecked(crate::node::agents_mac::TOOL_ONLY)),
+                    unknown: None,
                 }))
             }
             HubToNode::SessionCall(call)
@@ -837,11 +845,19 @@ async fn run_link_once(
                 &deliver,
                 &shared.secrets_ctx(),
             ))),
+            // Not one of the link's tasks: an approved command runs to its end when the link drops, and the hub asks
+            // for its kept result on the next (`gated_resume`).
             HubToNode::GatedRun(gated) => {
-                let shared = shared.clone();
-                let tx = tx.clone();
+                let (shared, tx, hub_id) = (shared.clone(), tx.clone(), hub_id.clone());
+                tokio::spawn(async move {
+                    let result = shared.gated.run(gated, &hub_id, &shared.secrets_ctx()).await;
+                    let _ = tx.send(to_json(&NodeToHub::GatedResult(result)));
+                });
+            }
+            HubToNode::GatedResume(resume) => {
+                let (shared, tx, hub_id) = (shared.clone(), tx.clone(), hub_id.clone());
                 tasks.spawn(async move {
-                    let result = run_gated(gated, &shared.secrets_ctx()).await;
+                    let result = shared.gated.resume(resume, &hub_id).await;
                     let _ = tx.send(to_json(&NodeToHub::GatedResult(result)));
                 });
             }

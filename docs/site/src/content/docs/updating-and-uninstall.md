@@ -98,8 +98,10 @@ cuts off carries on by itself:
   of its own that the restarted node picks up again. Agents whose process ended while their node was down resume in
   their threads and worktrees once their machine is back.
 - The merge train takes up the change it was merging.
-- An approved command that was running goes back to you as interrupted, with its result unknown. It never runs again
-  by itself: check whether it ran before you approve it again.
+- An approved command that was running runs on through the hub's restart, and its node keeps the result: once the
+  node links again, the command reports its real exit code and output. So does an approved `fleetd update`, which
+  restarts its own hub; it restarts its node only once it has ended. Only a command its node's restart cut off goes
+  back to you, saying it may have run and what to check before you approve it again. It never runs again by itself.
 
 ### From a terminal {#cli}
 
