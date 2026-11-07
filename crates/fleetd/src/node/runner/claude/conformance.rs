@@ -82,11 +82,7 @@ pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
         self_update: Some(!super::install::autoupdater_off(
             &setup::config_dir(env).join("settings.json"),
         )),
-        // It starts bwrap and waits: on a blocking thread.
-        sandbox: tokio::task::spawn_blocking(super::super::sandbox::describe)
-            .await
-            .ok()
-            .flatten(),
+        sandbox: None,
         account_overrides: Some(setup::account_overrides(env)),
     };
     if let Some((url, source)) = setup::proxy_of(env) {

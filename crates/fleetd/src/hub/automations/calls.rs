@@ -33,7 +33,7 @@ pub const OPS: [&str; 8] = [
     "automation_confirm",
 ];
 
-/// `automation_confirm` as a Navi's session asks for it: always a card for the person (the node's `ASSISTANT_ASK`, and
+/// `automation_confirm` as a Navi's session asks for it: always a card for the person (the node's `LEAD_ASK`, and
 /// the relay's person-only rule), never the checker's or YOLO's to answer.
 pub const CONFIRM_TOOL: &str = "mcp__fleetd__automation_confirm";
 

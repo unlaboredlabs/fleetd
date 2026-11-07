@@ -412,12 +412,15 @@ async fn a_navis_allowed_sites_are_listed_and_a_revoked_one_asks_again() {
         hub.ops.navi_site(&r, Some("dentist.example")).await,
         Some(false)
     );
-    // A project of code has no site gate.
+    // A project of code has the same site gate (D310): a site nobody allowed there asks.
     let p1 = crate::hub::usage::ports::ProjectRef {
         machine_id: "devbox".into(),
         project_id: "p1".into(),
     };
-    assert_eq!(hub.ops.navi_site(&p1, Some("dentist.example")).await, None);
+    assert_eq!(
+        hub.ops.navi_site(&p1, Some("dentist.example")).await,
+        Some(false)
+    );
 }
 
 /// Forget sign-ins (D221) asks the Navi's node to delete the browser profile it keeps; a node too old to keep one is
@@ -558,70 +561,27 @@ fn hosts_mac(hub: &Hub, host: fleetd_contracts::machine_roles::SessionHost, mac:
     hub.link.observe_load(&devbox(), Some(load), AT);
 }
 
-/// D299: no Navi is made on a Mac, picked or by default; one made there before doesn't start, and says how to have it
-/// elsewhere; the Navi dialog shows the Mac's sandbox as missing, with why.
+/// D310: a Mac takes a Navi like any machine, picked or by default; one already there starts; the Navi dialog shows no
+/// sandbox for it.
 #[tokio::test]
-async fn a_mac_gets_no_navi_and_one_already_there_doesnt_start() {
+async fn a_mac_takes_a_navi_and_its_lead_starts_there() {
     let (hub, _home) = hub();
     let _calls = node(&hub, &[CAP_REPOS, CAP_ASSISTANT]).await;
-    use fleetd_contracts::machine_roles::SessionHost;
-    hosts_mac(&hub, SessionHost::Ios, false);
-    assert!(
-        !hub.link.is_mac(&devbox()),
-        "a Linux machine, from an older node"
+    hosts_mac(
+        &hub,
+        fleetd_contracts::machine_roles::SessionHost::Mac,
+        true,
     );
-    hosts_mac(&hub, SessionHost::Mac, false);
-    assert!(!hub.link.is_mac(&devbox()), "a Linux machine");
-    let navi = ok(&hub, "navi_create", json!({ "name": "Ada" })).await["navi"].clone();
-    let r = ProjectRef {
-        machine_id: devbox(),
-        project_id: ProjectId::unchecked(navi["projectId"].as_str().unwrap()),
-    };
-
-    hosts_mac(&hub, SessionHost::Ios, true);
-    assert!(hub.link.is_mac(&devbox()), "a Mac, from an older node");
-    hosts_mac(&hub, SessionHost::Mac, true);
     assert!(hub.link.is_mac(&devbox()));
     for input in [
         json!({ "name": "Grace", "machineId": "devbox" }),
-        json!({ "name": "Grace" }),
+        json!({ "name": "Ada" }),
     ] {
-        let Err(CallError::Tool(e)) = call(&hub, "navi_create", input.clone()).await else {
-            panic!("made a Navi on a Mac: {input}")
-        };
-        assert!(e.message.contains("Mac"), "{}", e.message);
+        ok(&hub, "navi_create", input).await;
     }
-    assert_eq!(names(&ok(&hub, "navi_list", json!({})).await), ["Ada"]);
-
-    let crate::hub::leads::lead::AutoStart::Held(why) =
-        hub.leads.leads.auto_start(&r, Some("hi")).await
-    else {
-        panic!("a Navi's lead started on a Mac")
-    };
-    assert!(
-        why.message
-            .starts_with("Navis don't run on a Mac, and devbox is one"),
-        "{}",
-        why.message
-    );
-    assert!(
-        why.fix
-            .as_deref()
-            .unwrap()
-            .contains("Make a Navi on a Linux machine"),
-        "{why:?}"
-    );
-
+    assert_eq!(names(&ok(&hub, "navi_list", json!({})).await).len(), 2);
     let roles = ok(&hub, "machine_roles", json!({})).await;
-    let sandbox = &roles["machines"][0]["naviSandbox"];
-    assert_eq!(sandbox["status"], "missing", "{roles}");
-    assert!(
-        sandbox["line"]
-            .as_str()
-            .unwrap()
-            .contains("macOS's sandbox"),
-        "{sandbox}"
-    );
+    assert!(roles["machines"][0].get("naviSandbox").is_none(), "{roles}");
 }
 
 /// Deleting a Navi erases it (D287 navi.delete-erases): its node is asked to erase it, folder too when ticked, and the

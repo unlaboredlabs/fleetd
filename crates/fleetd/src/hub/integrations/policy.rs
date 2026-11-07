@@ -481,13 +481,17 @@ fn split<'a>(tool_name: &'a str, servers: &[McpServer]) -> Option<(&'a str, &'a 
 
 /// The hub's answer to a permission prompt for `tool_name` with `input`, given the session's MCP servers (its
 /// project's and the global ones it gets). `None` for anything but a configured or the person's own MCP server's
-/// tool: fleetd's own tools and claude's are not this table's.
+/// tool: fleetd's own tools and claude's are not this table's. A server saved without `integration` is one whose tools
+/// all run unasked, as under full access (D310): only an integration's and the person's own servers' are judged.
 pub fn verdict(tool_name: &str, input: &Value, servers: &[McpServer]) -> Option<Verdict> {
     let (server_name, tool) = split(tool_name, servers)?;
     if server_name.eq_ignore_ascii_case(FLEETD_SERVER) {
         return None;
     }
     let server = servers.iter().find(|s| s.name.as_str() == server_name);
+    if server.is_some_and(|s| s.integration.is_none()) {
+        return Some(Verdict::Allow);
+    }
     Some(match rule(reads_of(server), tool, input) {
         Rule::Read => Verdict::Allow,
         Rule::Blocked(n) => Verdict::Block(n.why()),
@@ -527,9 +531,9 @@ fn holds_credential(input: &Value) -> bool {
     shows(&input.to_string()) || all.into_iter().any(shows)
 }
 
-/// What a session's claude gets at launch: the read tools in `--allowedTools`, so it never asks for them, and a tool
-/// a person marked as reading but the blocked list refuses in `--disallowedTools`. The hub's [`verdict`] still answers
-/// every prompt that comes; these only save the asks.
+/// What a session's claude gets at launch: the read tools in `--allowedTools`, so it never asks for them, every tool of
+/// a server saved without `integration` too, and a tool a person marked as reading but the blocked list refuses in
+/// `--disallowedTools`. The hub's [`verdict`] still answers every prompt that comes; these only save the asks.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LaunchRules {
     pub allowed: Vec<String>,
@@ -539,6 +543,10 @@ pub struct LaunchRules {
 pub fn launch_rules(servers: &[McpServer]) -> LaunchRules {
     let mut out = LaunchRules::default();
     for s in servers.iter().filter(|s| s.enabled && s.roles.lead) {
+        if s.integration.is_none() {
+            out.allowed.push(format!("mcp__{}", s.name));
+            continue;
+        }
         for tool in reads_of(Some(s)).iter().map(|t| t.as_str()) {
             let rule = format!("mcp__{}__{tool}", s.name);
             if never(tool).is_some() {

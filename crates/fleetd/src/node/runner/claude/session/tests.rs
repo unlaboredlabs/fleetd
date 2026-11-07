@@ -108,7 +108,6 @@ impl Fake {
                 ("FIFO".into(), path("fifo")),
                 ("NODE_PID".into(), std::process::id().to_string()),
             ],
-            sandbox: None,
             host_dir: None,
             isolated: false,
         };

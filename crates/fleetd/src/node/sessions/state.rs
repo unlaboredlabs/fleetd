@@ -226,12 +226,9 @@ pub fn start_mode(
 }
 
 /// How the node answers a permission prompt itself, or None when it goes on to the hub: a session held to its allowed
-/// tools refuses every ask first, whatever a Navi's own rules would allow, then a Navi's rules
-/// ([`claude::role_answer`]), then [`auto_answer`].
+/// tools refuses every ask first, then a lead's commands ([`claude::role_answer`]), then [`auto_answer`].
 pub fn node_answer(
     role: SessionRole,
-    cwd: &Path,
-    fence: &crate::node::runner::sandbox::Fence,
     mode: RuntimeMode,
     allowed_only: bool,
     tool_name: &str,
@@ -241,7 +238,7 @@ pub fn node_answer(
     if allowed_only {
         return auto();
     }
-    claude::role_answer(role, cwd, fence, tool_name, input).or_else(auto)
+    claude::role_answer(role, mode, tool_name, input).or_else(auto)
 }
 
 /// A permission prompt the node answers without asking anyone: everything under full access (bypassPermissions
@@ -639,39 +636,25 @@ mod tests {
     }
 
     #[test]
-    fn a_navi_held_to_its_allowed_tools_is_refused_before_its_own_rules_allow_anything() {
-        let dir = tempfile::tempdir().unwrap();
-        let folder = dir.path().join("ada");
-        std::fs::create_dir_all(&folder).unwrap();
-        let read = serde_json::json!({ "file_path": folder.join("notes.md") });
+    fn a_lead_held_to_its_allowed_tools_is_refused_before_its_own_rules_allow_anything() {
         let screen = serde_json::json!({ "command": "agent-browser snapshot -i" });
-        let answer = |held, tool, input| {
+        let answer = |held| {
             node_answer(
                 SessionRole::Assistant,
-                &folder,
-                &crate::node::runner::sandbox::Fence::folder_only(&folder, dir.path()),
                 RuntimeMode::ApprovalRequired,
                 held,
-                tool,
-                input,
+                "Bash",
+                &screen,
             )
         };
-        for (tool, input) in [("Read", &read), ("Bash", &screen)] {
-            assert!(
-                matches!(
-                    answer(false, tool, input),
-                    Some(PermissionDecision::Allow { .. })
-                ),
-                "{tool}"
-            );
-            assert!(
-                matches!(
-                    answer(true, tool, input),
-                    Some(PermissionDecision::Deny { .. })
-                ),
-                "{tool}"
-            );
-        }
+        assert!(matches!(
+            answer(false),
+            Some(PermissionDecision::Allow { .. })
+        ));
+        assert!(matches!(
+            answer(true),
+            Some(PermissionDecision::Deny { .. })
+        ));
     }
 
     #[test]

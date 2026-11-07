@@ -28,8 +28,8 @@ pub trait LeadPorts: Send + Sync {
         message: String,
         client_request_id: String,
     ) -> BoxFuture<Result<bool, LeadError>>;
-    /// Whether the machine is a Mac, where Navis don't run (`NodeLinkServer::is_mac`).
-    fn is_mac(&self, _machine_id: &MachineId) -> bool {
+    /// Whether the machine's node runs every lead in one mode (`CAP_ONE_LEAD_MODE`, D310); none says so but the hub's.
+    fn one_lead_mode(&self, _machine_id: &MachineId) -> bool {
         false
     }
     /// Open secret and approval requests, in one project or all, newest first.

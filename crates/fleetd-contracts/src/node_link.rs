@@ -209,6 +209,12 @@ pub const CAP_SCREEN_SETTINGS: &str = "screen_settings";
 /// them and the attachments in its folder, and the folder itself when asked (D287 navi.delete-erases).
 pub const CAP_NAVI_ERASE: &str = "navi_erase";
 
+/// Every lead runs in `manual` permission mode without a sandbox (D310): the node allows unasked what a full-access
+/// lead does (`LEAD_ALLOWED`), answers its commands itself, and sends only a fetch, a first site visit and a send on to
+/// the hub; the assistant role is a lead that does its own work (a project with no repo). The hub starts every lead
+/// so on a node listing it, and as before on one that doesn't.
+pub const CAP_ONE_LEAD_MODE: &str = "one_lead_mode";
+
 /// `mac_tool`: the node is the agents' Mac (D298), a macOS node, in any account (D309), with the Mac turned on.
 /// It takes `mac_call`, and the hub sends agents' `fleetd mac` steps to the online node that lists it.
 pub const CAP_MAC_TOOL: &str = "mac_tool";

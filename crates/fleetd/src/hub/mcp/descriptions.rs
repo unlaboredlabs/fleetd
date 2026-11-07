@@ -70,11 +70,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "navi_create",
-        "Make a Navi: a personal assistant with its own chat, memory, nightly memory refresh, automations, screens, checklist and approvals. It is a project of kind assistant in a new plain folder under its machine's fleetd home (navi/<name>); machineId defaults to the best worker. Its lead starts with the first chat message, in the assistant role: it reads and writes only inside its own folder, searches the web unasked, fetches or opens a site unasked once a person allowed that site at its first visit (navi_sites), and asks a person in the chat before anything else (a command, a send). Make as many as you like; the key that made it is recorded as createdBy.",
+        "Make a Navi: a personal assistant with its own chat, memory, nightly memory refresh, automations, screens, checklist and approvals. It is an Only me project (onlyMe) in a new plain folder under its machine's fleetd home (navi/<name>); machineId defaults to the best worker, a Mac included. Its lead starts with the first chat message and runs like any lead with no repo, with full access: it runs commands, reads and writes files and searches the web unasked, can start agents, fetches or opens a site unasked once a person allowed that site at its first visit (navi_sites), and asks a person in the chat before an integration's send. Make as many as you like; the key that made it is recorded as createdBy.",
     ),
     (
         "navi_list",
-        "The Navis, oldest first, each a project summary with kind assistant, createdBy and, once archived, archivedAt. archived: true includes the archived ones.",
+        "The Navis, oldest first, each a project summary with onlyMe, its owner, createdBy and, once archived, archivedAt. archived: true includes the archived ones.",
     ),
     (
         "navi_rename",

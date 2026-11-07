@@ -11,7 +11,6 @@ use fleetd_contracts::mcp::{
 };
 use fleetd_contracts::node_link::CAP_SCREEN_SETTINGS;
 use fleetd_contracts::prim::{Line, List};
-use fleetd_contracts::sessions::{NaviSandbox, SandboxStatus};
 
 use super::{entry, roles_on, runners, set_roles};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, readable, require};
@@ -59,19 +58,8 @@ fn for_caller(hub: &Hub, caller: &Caller, entry: MachineRolesEntry) -> MachineRo
         mac: super::mac::tool(hub, m),
         screen_settings: (can || old).then_some(can),
         node_restart: setup.map(|s| Line::unchecked(node_restart(s.machines.get(m.as_str())))),
-        // A Mac takes no Navi (D299), whatever its older node says of its sandbox: the dialog says why.
-        navi_sandbox: if hub.link.is_mac(m) {
-            let (line, fix) = crate::hub::navi::on_mac(m);
-            Some(NaviSandbox {
-                status: SandboxStatus::Missing,
-                line,
-                fix: Some(fix),
-            })
-        } else {
-            hub.executors
-                .cached_runner(&entry.machine_id)
-                .and_then(|info| info.sandbox)
-        },
+        // No sandbox any more (D310): every machine hosts any project, whatever an older node says.
+        navi_sandbox: None,
         operates: Some(allows(caller, Role::Operate, Some(&entry.machine_id))),
         ..entry
     }

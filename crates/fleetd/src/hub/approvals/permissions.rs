@@ -1,14 +1,13 @@
-//! A session's permission prompt as an approval (W97). A session in `manual` mode (a Navi's lead) asks before any tool
-//! off its allow-list. The ask reaches the hub as `thread.waiting` carrying `data.permission`, and the tool's input is
-//! read off the thread (`PendingPermission.input`). The integrations policy (`hub/integrations/policy.rs`) decides first
-//! for an MCP server's tool: a read answers the prompt at once, a blocked tool is denied with why and nothing is filed,
-//! and an asking one opens an approval with its preview (who it reaches, what it says). Any other tool (a command, an
-//! edit) opens an approval showing the tool, its summary and its input. A Navi's fetch or browser visit goes through
-//! its site gate first: a site the person allowed (or linked in their own message) goes through, and approving a first
-//! visit allows its site. Any other command runs unasked (D208), but only because the OS sandbox fences it: the node
-//! answers it itself, and a command that still reaches this relay comes from a node with no sandbox, so it asks.
-//! Approved, the tool runs with exactly the input the approval showed; denied, the session hears who
-//! said no. A prompt that goes away (answered elsewhere, or its run ended) closes its request.
+//! A session's permission prompt as an approval (W97). Every lead runs in `manual` mode (D310) and asks before any
+//! tool off its allow-list. The ask reaches the hub as `thread.waiting` carrying `data.permission`, and the tool's input
+//! is read off the thread (`PendingPermission.input`). The integrations policy (`hub/integrations/policy.rs`) decides
+//! first for an MCP server's tool: a read, or any tool of a server saved without `integration`, answers the prompt at
+//! once, a blocked tool is denied with why and nothing is filed, and an asking one opens an approval with its preview
+//! (who it reaches, what it says). Any other tool opens an approval showing the tool, its summary and its input. A
+//! fetch or browser visit goes through the site gate first: a site the person allowed (or linked in their own message)
+//! goes through, and approving a first visit allows its site. Any other command runs unasked (D208): the node answers
+//! it itself. Approved, the tool runs with exactly the input the approval showed; denied, the session hears who said
+//! no. A prompt that goes away (answered elsewhere, or its run ended) closes its request.
 use std::sync::Arc;
 
 use fleetd_contracts::chat::ChatRequestId;
@@ -128,7 +127,7 @@ impl Approvals {
             machine_id: machine_id.to_owned(),
             project_id: project_id.to_string(),
         };
-        // Only a Navi's lead runs with prompts; any other session's are not this relay's to answer.
+        // Only a lead runs with prompts; any other session's are not this relay's to answer.
         if !self.deps.hub.navi_lead(&project, thread_id).await {
             return;
         }

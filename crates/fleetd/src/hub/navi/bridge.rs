@@ -15,7 +15,7 @@
 //! calls go there (`hub_links::client`).
 //!
 //! The lead it writes to may open an order whose agents work with full access, so a Navi's `project_message` is a send:
-//! its lead is always asked for the call (the node's `ASSISTANT_ASK`), and the approvals relay decides it by the Navi's
+//! its lead is always asked for the call (the node's `LEAD_ASK`), and the approvals relay decides it by the Navi's
 //! approval mode ([`preview`] is its card, with the exact text): the checker's go, the person's approval or YOLO.
 use std::collections::HashSet;
 use std::sync::{Arc, Weak};

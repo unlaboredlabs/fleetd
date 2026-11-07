@@ -1690,15 +1690,13 @@ impl Executors {
             tracing::warn!(profile = %input.profile, "the profiles were not read; the runner's own runs");
         }
         let fixed_mcp = options.mcp.is_some();
-        // A Navi's lead gets no allow rules from the policy file in its own folder, which it could write: only its
-        // denials hold.
-        if options.role == fleetd_contracts::sessions::SessionRole::Assistant {
-            rules.allow.clear();
-        }
-        // A Navi's lead never asks for its integrations' reads, and never gets a tool the blocked list refuses
+        // A lead never asks for its integrations' reads, and never gets a tool the blocked list refuses
         // (hub/integrations); the hub's verdict still answers every prompt that comes.
-        if options.role == fleetd_contracts::sessions::SessionRole::Assistant
-            && let Some(db) = self.mcp_servers.get()
+        if matches!(
+            options.role,
+            fleetd_contracts::sessions::SessionRole::Lead
+                | fleetd_contracts::sessions::SessionRole::Assistant
+        ) && let Some(db) = self.mcp_servers.get()
         {
             let r = ProjectRef {
                 machine_id: machine_id.clone(),

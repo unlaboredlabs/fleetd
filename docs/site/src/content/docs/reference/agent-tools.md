@@ -1504,13 +1504,16 @@ fleetd also blocks any tool like these that a newer Claude Code adds: a session 
 | `ReportFindings` | Leads and task agents | Agents report a review with fleetd's own `report`. |
 | `DesignSync`, `NotebookEdit` | Leads and task agents | Unused by fleetd's agents, and tool schemas ride on every request. |
 | `Bash(git push *--no-verify*)`, `Bash(git *core.hooksPath*)`, `Bash(git *core.hookspath*)` | Task agents | A writer pushes only a tree the repo's pre-push check passed on (`.fleetd/pre-push.json`): run the check, and push again. A person's push can still skip it. |
-| `Edit`, `Write` | Leads | The lead never changes files: its agents do. |
-| `WebFetch`, `WebSearch` | Leads | The lead's agents read the web; the lead routes. |
+| `Edit`, `Write` | Leads | A lead with repos never changes files: its agents do. A lead with no repo keeps them. |
+| `WebFetch`, `WebSearch` | Leads | A lead with repos has its agents read the web; a lead with no repo keeps it. |
 
-**A Navi's lead** keeps `Edit`, `Write`, `WebFetch` and `WebSearch`, and runs in `manual` permission mode: any tool not below asks first. Its file tools and fetches always ask, in its settings' `permissions.ask`, whatever your own settings allow. The node answers a file tool as the Navi's sandbox has it: allowed but where the sandbox hides or keeps read-only (and for its `.claude`, `.mcp.json` and `.fleetd`), refused there whoever approves it ([Navi sandbox](/docs/security#navi-sandbox), D234). A policy file's allow rules don't apply to it. The node also answers a shell command: it runs, held by the OS sandbox (decision `navi.shell-unasked`, D208), unless it opens a site in the browser. A fetch or `agent-browser open` goes through without asking to a site the person allowed at its first visit or linked in their own chat message. Any other ask reaches the person as an approval in the Navi's chat, showing the tool and exactly what it would get.
+**Every lead** runs in `manual` permission mode with no sandbox (D310): it does unasked what full access does, and any tool not below asks first ([How leads run](/docs/security#how-leads-run)). A lead whose project has no repo does its own work: it keeps `Edit`, `Write`, `WebFetch` and `WebSearch`, re-read at each lead start, so adding a repo takes them away. The node answers a shell command: it runs (decision `navi.shell-unasked`, D208), unless it would wipe the machine or opens a site in the browser. A fetch or `agent-browser open` goes through without asking to a site the person allowed at its first visit or linked in their own chat message. A tool of an MCP server saved without `integration` runs unasked; an integration's send reaches the person as an approval in the project's chat, showing the tool and exactly what it would get.
 
 | Allowed without asking | Why |
 |---|---|
+| `Read` | A lead reads what the person can, as under full access. |
+| `Edit` | A lead that does its own work writes what the person can; a lead with repos has no Edit. |
+| `Write` | A lead that does its own work writes what the person can; a lead with repos has no Write. |
 | `WebSearch` | A search sends only its query, to the search provider. |
 | `Skill` | Loads a skill's instructions; runs nothing. |
 | `mcp__fleetd` | fleetd's own tools, which the hub checks on every call. |
@@ -1518,12 +1521,10 @@ fleetd also blocks any tool like these that a newer Claude Code adds: a session 
 
 | Always asked | Why |
 |---|---|
-| `Read`, `Glob`, `Grep` | A Navi reads anything but what its sandbox hides. |
-| `Edit`, `Write`, `NotebookEdit` | A Navi writes anything but what its sandbox hides or keeps read-only. |
-| `WebFetch` | A Navi fetches a site unasked only once the person allowed or linked it. |
-| `mcp__fleetd__confirm_step` | A Navi's final Confirm on a site goes through its approval mode, like a send. |
+| `WebFetch` | A lead fetches a site unasked only once the person allowed or linked it. |
+| `mcp__fleetd__confirm_step` | A final Confirm on a site goes through the project's approval mode, like a send. |
 | `mcp__fleetd__automation_confirm` | Only the person lets an automation run on its own, on its card. |
-| `mcp__fleetd__project_message` | A Navi's message to another project's lead, who may open full-access work for it, goes through its approval mode, like a send. |
+| `mcp__fleetd__project_message` | A message to another project's lead, who may open work for it, goes through the project's approval mode, like a send. |
 
 ## Settings fleetd forces
 
@@ -1542,7 +1543,7 @@ Set in the claude process's environment. "In settings" marks the ones also in fl
 | `DISABLE_AUTOUPDATER` | `1` | Sessions | yes | Keeps the claude fleetd checked. An update mid-run would swap the binary under a live session. |
 | `CLAUDE_CODE_STARTUP_FAILURE_RESULTS` | `1` | Sessions | no | A refusal at startup arrives as a result fleetd can read, not only as stderr. |
 | `ENABLE_TOOL_SEARCH` | `true` unless your environment or `claude.env` sets it | Every claude fleetd starts | no | Tool schemas load when a tool is used, not on every request. fleetd's own tools always load at start. |
-| `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless your environment or `claude.env` sets it | Navis' leads | yes | A Navi's lead idles between a person's messages, like a lead between wakes. |
+| `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless your environment or `claude.env` sets it | Navis' leads | yes | A lead doing its own work idles between a person's messages, like a lead between wakes. |
 | `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless your environment or `claude.env` sets it | Leads | yes | A lead idles between wakes, often more than 5 minutes while reviews and CI run, and would otherwise rewrite its whole context to the prompt cache on those wakes. |
 | `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless your environment or `claude.env` sets it | Threads you start | yes | A person's thread idles while they read and reply. |
 | `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `5m` unless your environment or `claude.env` sets it | Task agents | yes | A task's agent (writer, reader, reviewer, CI fix) works in one burst and ends, so a 1-hour write pays for an hour it never uses. |

@@ -145,8 +145,9 @@ impl LeadPorts for HubPorts {
         })
     }
 
-    fn is_mac(&self, machine_id: &MachineId) -> bool {
-        self.link.is_mac(machine_id)
+    fn one_lead_mode(&self, machine_id: &MachineId) -> bool {
+        self.link
+            .node_can(machine_id, fleetd_contracts::node_link::CAP_ONE_LEAD_MODE)
     }
 
     fn open_requests(

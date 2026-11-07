@@ -259,7 +259,8 @@ mod tests {
             "{text}"
         );
         assert!(text.contains(folder) && text.contains("devbox/p1"));
-        assert!(!text.contains("spawn_agent") && !text.contains("## Task profiles"));
+        // It may start an agent for bigger work, but runs no task profiles of its own.
+        assert!(text.contains("spawn_agent") && !text.contains("## Task profiles"));
         // The approvals it asks for, and what it never does even if approved.
         assert!(text.contains("Ask first, every time") && text.contains("even if they approve"));
         // Its own voice, a personal assistant's, not the factory lead's, and its own automations' rules alone.

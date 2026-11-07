@@ -230,9 +230,6 @@ fn eligible(hub: &Hub, task: &Task, checkout: &ProjectRef) -> Result<(), Option<
     if !s.enabled || !s.has_key || !s.projects.contains(&task.project_ref) {
         return Err(None);
     }
-    if crate::hub::integrations::is_navi(&hub.db, &task.project_ref).unwrap_or(true) {
-        return Err(None);
-    }
     if !kind_may(task.kind, s.writers) {
         return Err(Some(
             "writers don't run on cloud machines unless a hub admin turns them on in Settings › Hub › Machines".into(),

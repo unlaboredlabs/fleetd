@@ -50,7 +50,6 @@ use super::runner::claude::{
     PROMPT_CACHE_TTL_VARS, SESSION_ENV, default_cache_ttl, subagents_off_settings_env,
 };
 use super::runner::host;
-use super::runner::sandbox;
 use super::runner::{
     ExitInfo, RunOutcome, Runner, RunnerError, RunnerEvent, SessionCommand, SessionSpec,
 };
@@ -427,7 +426,6 @@ fn runner_error(e: RunnerError) -> SessionError {
         RunnerError::Missing { .. } => Some(
             "Install a supported claude: curl -fsSL https://claude.ai/install.sh | bash".into(),
         ),
-        RunnerError::Sandbox { fix, .. } => Some(fix.clone()),
         _ => None,
     };
     SessionError {
@@ -542,20 +540,31 @@ fn isolated_dir(home: &Path) -> PathBuf {
     home.join("isolated")
 }
 
-/// The tools a session may use without asking: its launch's rules and its role's.
-fn allowed_tools(local: &SessionLocal) -> Vec<String> {
-    local
-        .allowed_tools
-        .iter()
-        .cloned()
-        .chain(claude::role_allowed(local.role))
-        .collect()
+/// The tools a session may use without asking: its launch's rules, and its role's in `mode` unless it is held to its
+/// launch's.
+fn allowed_tools(local: &SessionLocal, mode: fleetd_contracts::model::RuntimeMode) -> Vec<String> {
+    let role = match local.allowed_only {
+        true => Vec::new(),
+        false => claude::role_allowed(local.role, mode),
+    };
+    local.allowed_tools.iter().cloned().chain(role).collect()
+}
+
+/// Deletes what a Navi kept under the node's home before Navis became projects (D310): its own home, `navis/<id>`.
+/// Nothing there is no error.
+fn forget_navi_home(home: &Path, project_id: &str) {
+    let own = home.join("navis").join(project_id);
+    if let Err(e) = std::fs::remove_dir_all(&own)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(dir = %own.display(), "a Navi's home was not removed: {e}");
+    }
 }
 
 /// A session held to allowed tools that name none of claude's own, such as a hub's approval check: claude starts it
 /// with no tools at all (`--tools ""`), and its init lists none.
 fn toolless(local: &SessionLocal) -> bool {
-    local.allowed_only && claude::runtime_tools(&allowed_tools(local)).is_empty()
+    local.allowed_only && claude::runtime_tools(&local.allowed_tools).is_empty()
 }
 
 fn permission_item_id(request_id: &str) -> String {
@@ -584,8 +593,6 @@ struct Live {
     order_digest: Option<String>,
     /// The secrets the process was started with, for masking what it reports and the fleetd calls it makes.
     spawned: Arc<super::mask::Secrets>,
-    /// A Navi's sandbox, which its file tools' prompts are answered by too.
-    fence: Option<sandbox::Fence>,
     /// The process runs under a host of its own, which the node lets go of at its shutdown ([`super::runner::host`]).
     link: Option<host::Link>,
     /// Its tool calls running now, by tool_use id: while there is one, it is mid-step ([`SessionService::hold`]).
@@ -1004,7 +1011,6 @@ impl SessionService {
                 row.local.cwd.display()
             )));
         }
-        self.checkout_unchanged(row.local.role, &row.local.workspace_root)?;
         // What the process holds, for masking what it reports: its files are written again as they were.
         let (_, secrets, order_digest) = self.spec(row, true, false).map_err(|e| {
             error(
@@ -1032,7 +1038,6 @@ impl SessionService {
                     slept: None,
                     order_digest,
                     spawned: secrets.clone(),
-                    fence: None,
                     link: handle.link.clone(),
                     tools: HashSet::new(),
                 },
@@ -1773,19 +1778,6 @@ impl SessionService {
         Some(self.store().session(id).ok()??.local.cwd)
     }
 
-    /// Refuses a lead or agent the project's checkout `root` once something replaced it since the node last ran work
-    /// there (`checkouts`): they run outside any sandbox, and a Navi may write the person's checkouts. A Navi's own
-    /// folder isn't checked.
-    fn checkout_unchanged(&self, role: SessionRole, root: &Path) -> Result<(), SessionError> {
-        if role == SessionRole::Assistant {
-            return Ok(());
-        }
-        super::checkouts::check(&self.inner.config.home, root).map_err(|r| SessionError {
-            fix: Some(r.fix),
-            ..error(SessionErrorCode::RunnerUnavailable, r.message)
-        })
-    }
-
     fn project_root(&self, project_id: &str) -> Result<PathBuf, SessionError> {
         let project = self
             .store()
@@ -2038,7 +2030,6 @@ impl SessionService {
             )));
         }
         let root = self.project_root(&launch.project_id)?;
-        self.checkout_unchanged(launch.role, &root)?;
         // A checkout fleetd cloned with a token (a cloud machine's) fetches with its order's, which the hub delivered
         // before this launch.
         if let Some(order) = &launch.order_id {
@@ -2603,7 +2594,6 @@ impl SessionService {
         // a later message alone (a recovery note) would leave it with no idea of its task. Refused, so the hub restarts
         // it with its brief and a handoff. Only its first message itself may start over.
         let must_resume = resume && !opening && row.local.role == SessionRole::Worker;
-        self.checkout_unchanged(row.local.role, &row.local.workspace_root)?;
         let (mut spec, secrets, order_digest) =
             self.spec(&row, resume, must_resume).map_err(|e| {
                 error(
@@ -2625,9 +2615,6 @@ impl SessionService {
         };
         let secrets = Arc::new(secrets);
         stages.done("spec");
-        self.inner.runner.fence(&spec).await.map_err(runner_error)?;
-        let fence = spec.sandbox.clone();
-        stages.done("fence");
         // A host's start waits for it to register (a few ms, polled): on a blocking thread, not an async worker.
         let runner = self.inner.runner.clone();
         let handle = blocking(move || runner.spawn(spec))
@@ -2661,7 +2648,6 @@ impl SessionService {
                     slept: None,
                     order_digest,
                     spawned: secrets.clone(),
-                    fence,
                     link: link.clone(),
                     tools: HashSet::new(),
                 },
@@ -2898,7 +2884,10 @@ impl SessionService {
                 &role_env,
                 skills.overrides(),
                 &helper_model,
-                claude::role_ask(row.local.role),
+                match row.local.allowed_only {
+                    true => &[],
+                    false => claude::role_ask(row.local.role, row.summary.runtime_mode),
+                },
                 row.local.fast,
                 &super::hold::hook_command(&self_command(), &config.home),
             ),
@@ -2917,15 +2906,9 @@ impl SessionService {
         // Its order's variables as they are at each Bash command, not only as its claude started: a GitHub token the
         // hub renews mid-turn reaches the agent's next command. The file names the order's script, no value.
         env.retain(|(k, _)| k != ORDER_ENV_FILE_ENV);
-        let mut sourced = row.local.order_id.as_deref().and_then(|order| {
+        let sourced = row.local.order_id.as_deref().and_then(|order| {
             super::order_env::env_file(&config.home, row.summary.project_id.as_str(), order)
         });
-        // A Navi's commands run in its own home, with what it installed there on the PATH (D234).
-        if row.local.role == SessionRole::Assistant {
-            let own = sandbox::navi_dir(&config.home, row.summary.project_id.as_str());
-            let navi = sandbox::navi_env(&own, &super::util::home_dir());
-            sourced = Some(navi + sourced.as_deref().unwrap_or_default());
-        }
         if let Some(sourced) = sourced {
             let at = dir.join("order-env.sh");
             std::fs::write(&at, sourced)?;
@@ -2961,10 +2944,8 @@ impl SessionService {
             &env,
             super::load::build_jobs_here(&config.home),
         ));
-        // Its cargo builds take turns for the machine's build slots; a Navi's sandbox keeps its own PATH.
-        if row.local.role != SessionRole::Assistant {
-            super::build_slots::add_to_path(&config.home, &self_command(), &mut env);
-        }
+        // Its cargo builds take turns for the machine's build slots.
+        super::build_slots::add_to_path(&config.home, &self_command(), &mut env);
         let scratch = share::scratch_dir(&config.home, id);
         super::config::mkdir_private(&scratch)?;
         let scratch = share::scratch_env(&scratch);
@@ -2989,32 +2970,12 @@ impl SessionService {
             env.extend(browser_env);
             plugin_dirs.extend(browser.plugin_dirs());
         }
-        // A Navi's agent-browser reads only a config fleetd keeps, outside its folder: never `./agent-browser.json` in
-        // the folder it writes, nor `~/.agent-browser/config.json`, either of which could add scripts, headers or a proxy
-        // to every page.
-        let mut sandbox = None;
-        if row.local.role == SessionRole::Assistant {
-            let browser_config = dir.join(claude::ASSISTANT_BROWSER_CONFIG);
-            std::fs::write(&browser_config, "{}\n")?;
-            // Its agent-browser daemon listens in its scratch dir: the sandbox hides every other socket dir.
-            let sockets = share::scratch_dir(&config.home, id).join("agent-browser");
-            env.retain(|(k, _)| k != "AGENT_BROWSER_CONFIG" && k != "AGENT_BROWSER_SOCKET_DIR");
-            env.extend([
-                (
-                    "AGENT_BROWSER_CONFIG".to_owned(),
-                    browser_config.to_string_lossy().into_owned(),
-                ),
-                (
-                    "AGENT_BROWSER_SOCKET_DIR".to_owned(),
-                    sockets.to_string_lossy().into_owned(),
-                ),
-            ]);
-            env.retain(|(k, _)| !sandbox::NO_ENV.contains(&k.as_str()));
-            sandbox = Some(self.navi_fence(row, &dir, &env));
-            // Its browser sessions run on the profile this Navi keeps (D221), which its sandbox hides.
-            if let Some(browser) = self.inner.browser.get() {
-                browser.navi(id, row.summary.project_id.as_str(), &row.local.cwd);
-            }
+        // A lead that does its own work keeps its browser's sign-ins between sessions, on the profile its project
+        // keeps (D221).
+        if row.local.role == SessionRole::Assistant
+            && let Some(browser) = self.inner.browser.get()
+        {
+            browser.navi(id, row.summary.project_id.as_str(), &row.local.cwd);
         }
         let spec = SessionSpec {
             session_id: id.to_owned(),
@@ -3026,7 +2987,7 @@ impl SessionService {
             effort: row.summary.effort,
             helper_model,
             runtime_mode: row.summary.runtime_mode,
-            allowed_tools: allowed_tools(&row.local),
+            allowed_tools: allowed_tools(&row.local, row.summary.runtime_mode),
             allowed_only: row.local.allowed_only,
             system_prompt,
             disallowed_tools: ALWAYS_DISALLOWED
@@ -3041,67 +3002,10 @@ impl SessionService {
             settings: Some(settings),
             plugin_dirs,
             env,
-            host_dir: sandbox.is_none().then(|| hosts_dir(&config.home).join(id)),
-            sandbox,
+            host_dir: Some(hosts_dir(&config.home).join(id)),
             isolated,
         };
         Ok((spec, secrets, order_digest))
-    }
-
-    /// The sandbox of a Navi's session in `dir`, whose claude gets `env`: what it may write and read
-    /// (`runner::sandbox`).
-    fn navi_fence(&self, row: &SessionRow, dir: &Path, env: &[(String, String)]) -> sandbox::Fence {
-        let home = &self.inner.config.home;
-        let id = row.summary.session_id.as_str();
-        // The binary fleetd's MCP server runs as (`fleetd_server`).
-        let exe = super::self_exe::pinned().map_or_else(
-            || PathBuf::from(agent_exe(std::env::current_exe(), std::process::id())),
-            Path::to_path_buf,
-        );
-        let projects = self
-            .inner
-            .store
-            .projects()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|p| PathBuf::from(p.workspace_root))
-            .filter(|r| r.is_absolute())
-            .collect();
-        let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| format!("/run/user/{}", nix::unistd::getuid()).into());
-        let claude_dir = setup::config_dir(env);
-        // claude keeps its global config beside its config dir, or in the one a person chose.
-        let claude_json = if env
-            .iter()
-            .any(|(k, v)| k == "CLAUDE_CONFIG_DIR" && !v.is_empty())
-        {
-            claude_dir.join(".claude.json")
-        } else {
-            super::util::home_dir().join(".claude.json")
-        };
-        sandbox::navi_fence(&sandbox::NaviPaths {
-            user_home: &super::util::home_dir(),
-            fleetd_dir: &crate::home::fleetd_dir(),
-            node_home: home,
-            folder: &row.local.cwd,
-            scratch: &share::scratch_dir(home, id),
-            session_dir: dir,
-            session_id: id,
-            claude_dir: &claude_dir,
-            claude_json: &claude_json,
-            exe: &exe,
-            socket: &super::lead::lead_socket_path(home),
-            runtime_dir: Some(&runtime_dir),
-            own: &sandbox::navi_dir(home, row.summary.project_id.as_str()),
-            projects,
-            claude_bin: &super::claude_binary(),
-            path: env
-                .iter()
-                .find(|(k, _)| k == "PATH")
-                .map(|(_, v)| std::env::split_paths(v).collect())
-                .unwrap_or_default(),
-        })
     }
 
     /// Applies one process's events in order until it exits. Text deltas go only to followers, at most one frame
@@ -3636,15 +3540,9 @@ impl SessionService {
         summary: String,
         run_id: &Option<String>,
     ) {
-        let scratch = share::scratch_dir(&self.inner.config.home, id);
-        let fence = self.st().live.get(id).and_then(|l| l.fence.clone());
-        let fence =
-            |cwd: &Path| fence.unwrap_or_else(|| sandbox::Fence::folder_only(cwd, &scratch));
         let decision = self.update(id, |c| {
             let decision = state::node_answer(
                 c.row.local.role,
-                &c.row.local.cwd,
-                &fence(&c.row.local.cwd),
                 c.row.summary.runtime_mode,
                 c.row.local.allowed_only,
                 &tool_name,
@@ -4404,7 +4302,7 @@ impl SessionService {
         blocking(move || {
             super::project_env::forget(&home, &id);
             super::mcp_servers::forget(&home, &id);
-            sandbox::forget_navi(&sandbox::navi_dir(&home, &id));
+            forget_navi_home(&home, &id);
             if erase {
                 erase_navi(&folder, &transcripts, remove_folder);
             }
