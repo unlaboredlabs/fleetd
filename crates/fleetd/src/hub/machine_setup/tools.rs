@@ -364,8 +364,9 @@ async fn machine_join(
     .map_err(|message| ToolError::new(ErrorCode::Failed, message))?;
     let next = match input.mac == Some(true) {
         true => format!(
-            "Paste the line on {} in its standard agents user, never an admin: it installs fleetd and joins as the \
-             agents' Mac. The code works once, until {}; the Mac must reach the hub at {}, and needs no claude.",
+            "Paste the line in Terminal on {}, logged in at its screen (an admin's account is fine): it installs fleetd \
+             and joins as the agents' Mac. The code works once, until {}; the Mac must reach the hub at {}, and needs no \
+             claude.",
             input.machine_id, join.expires_at, join.hub
         ),
         false => format!(

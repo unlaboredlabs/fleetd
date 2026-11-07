@@ -90,10 +90,11 @@ const MAC_STEP = {
   need: { kind: "optional" },
   status: "todo",
   parts: [
-    macPart("In your own account: make the agents' user", "sudo sysadminctl -addUser agents"),
-    macPart("Log in as fleetd agents and join", "curl …"),
+    macPart("Xcode, once", "sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch"),
+    macPart("Join, at the Mac's screen", "curl …"),
     macPart("Two clicks at the Mac", "open Privacy_Accessibility"),
-    macPart("Moving a Mac that runs fleetd in your account", "launchctl bootout gui/$(id -u)/sh.fleetd.node"),
+    macPart("A Mac that runs fleetd already", "fleetd machine remove <old name>"),
+    macPart("Optional: a user of its own for agents", "sudo sysadminctl -addUser agents"),
   ],
   fields: [],
   ways: [],
@@ -497,34 +498,36 @@ it("waits on a repair of a machine still online until its node links again, then
   expect(button("Open devbox")).toBeDefined();
 });
 
-it("sets up a Mac for agents between the hub's own guide, and moves one that is a machine already", async () => {
+it("sets up a Mac for agents between the hub's own guide, and replaces one that is a machine already", async () => {
   await render();
   expect(host.textContent).toContain("A Mac for agents");
   await click("Set up…");
   expect(state()).toBe("line");
-  // The admin block first, from the hub's guide; the name defaults to mac.
-  expect(host.textContent).toContain("sudo sysadminctl -addUser agents");
+  // The Xcode block first, from the hub's guide; the name defaults to mac. A user of its own is only pointed to.
+  expect(host.textContent).toContain("sudo xcodebuild -license accept");
+  expect(host.textContent).not.toContain("sudo sysadminctl -addUser agents");
+  expect(host.textContent).toContain("give them a user of its own");
   expect(host.textContent).not.toContain("open Privacy_Accessibility");
   expect(host.querySelector<HTMLInputElement>("form[aria-label='Name the machine'] input")?.value).toBe("mac");
   await click("Make the line");
   expect(calls.filter((c) => c.tool === "machine_join").map((c) => c.input)).toEqual([{ machineId: "mac", mac: true }]);
-  expect(host.textContent).toContain("it refuses an admin");
+  expect(host.textContent).toContain("logged in at its screen (su and ssh won't do)");
   // Then the two clicks at the Mac; a new Mac has nothing to move.
   expect(host.textContent).toContain("open Privacy_Accessibility");
-  expect(host.textContent).not.toContain("launchctl bootout");
+  expect(host.textContent).not.toContain("fleetd machine remove");
   await snapshot([DEVBOX, { ...DEVBOX, machineId: "mac", name: "mac" }]);
   await click("Open the Mac's checks");
   expect(window.location.hash).toBe("#/setup/mac");
 
-  // A machine of that name already: its line moves it into the agents' user, and says how to retire the old node.
+  // A machine of that name already: its line makes it the agents' Mac, and says what to do about one of another name.
   act(() => root.unmount());
   root = createRoot(host);
   calls = [];
   await render();
   await snapshot([DEVBOX, { ...DEVBOX, machineId: "mac", name: "mac" }]);
   await click("Set up…");
-  expect(host.textContent).toContain("its line moves it into the agents' user");
+  expect(host.textContent).toContain("its line makes it the agents' Mac");
   await click("Make the line");
   expect(calls.filter((c) => c.tool === "machine_join").map((c) => c.input)).toEqual([{ machineId: "mac", rejoin: true, mac: true }]);
-  expect(host.textContent).toContain("launchctl bootout");
+  expect(host.textContent).toContain("fleetd machine remove");
 });

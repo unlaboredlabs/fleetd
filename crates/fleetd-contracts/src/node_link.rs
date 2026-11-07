@@ -209,7 +209,7 @@ pub const CAP_SCREEN_SETTINGS: &str = "screen_settings";
 /// them and the attachments in its folder, and the folder itself when asked (D287 navi.delete-erases).
 pub const CAP_NAVI_ERASE: &str = "navi_erase";
 
-/// `mac_tool`: the node is the agents' Mac (D298), a macOS node running as a standard user with the Mac turned on.
+/// `mac_tool`: the node is the agents' Mac (D298), a macOS node, in any account (D309), with the Mac turned on.
 /// It takes `mac_call`, and the hub sends agents' `fleetd mac` steps to the online node that lists it.
 pub const CAP_MAC_TOOL: &str = "mac_tool";
 
@@ -325,13 +325,14 @@ pub struct NodeLoad {
 #[serde(rename_all = "snake_case")]
 #[schemars(extend("x-open" = true))]
 pub enum MacCheckId {
-    /// The node's user is a standard user: not in `admin`, and `sudo -n true` fails.
+    /// Legacy: older nodes checked their user was a standard one. The Mac may run in any account now, an admin's
+    /// included (D309); these four are read from an older node and shown, but no longer in [`MacCheckId::ALL`].
     StandardUser,
-    /// No other user's home under /Users opens for it.
+    /// Legacy: no other user's home under /Users opened for it.
     OtherHomes,
-    /// No Apple ID is signed in for it.
+    /// Legacy: no Apple ID was signed in for it.
     NoAppleId,
-    /// It holds no FileVault secure token, so its password can't unlock the disk.
+    /// Legacy: it held no FileVault secure token.
     NoSecureToken,
     /// It is in `_developer`, so simulators and debugging need no admin prompt.
     Developer,
@@ -352,11 +353,8 @@ pub enum MacCheckId {
 }
 
 impl MacCheckId {
-    pub const ALL: [MacCheckId; 12] = [
-        Self::StandardUser,
-        Self::OtherHomes,
-        Self::NoAppleId,
-        Self::NoSecureToken,
+    /// The checks a node runs now, in the order the guide shows them.
+    pub const ALL: [MacCheckId; 8] = [
         Self::Developer,
         Self::Xcode,
         Self::IosRuntime,
@@ -405,7 +403,7 @@ pub struct MacCheck {
     pub state: MacCheckState,
     /// Plain words: what the node found.
     pub message: Text<0, 500>,
-    /// What the person does about it, and where: in their own (admin) account, or at the Mac as the agents user.
+    /// What the person does about it, and where: in their own (admin) account, or at the Mac, in the account it joined from.
     pub fix: Option<Text<0, 300>>,
     /// The exact command `fix` runs, to paste where it says, when there is one.
     pub command: Option<Text<0, 300>>,

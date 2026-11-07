@@ -10,9 +10,9 @@ use sha2::{Digest, Sha256};
 use super::super::args::{self, Kind, Spec};
 use super::super::hub_key::{HubAccess, open_hub, resolve_home};
 use super::machine_plan::{
-    Facts, MachineAddInput, MachineLayout, MachinePlan, Stdin, Step, fresh_facts, local_target,
-    login_command, login_status_command, parse_facts, plan_machine_add, plan_machine_remove,
-    probe_command,
+    Facts, MachineAddInput, MachineLayout, MachinePlan, Stdin, Step, fresh_facts,
+    gui_session_problem, local_target, login_command, login_status_command, no_gui_session,
+    parse_facts, plan_machine_add, plan_machine_remove, probe_command, step_needs_gui_session,
 };
 use super::ssh::{RunResult, SshTarget, run_ssh, show_ssh};
 use super::state::{GitIdentity, MachineRecord, SetupState, read_setup, write_setup};
@@ -652,7 +652,7 @@ pub struct AddArgs {
     pub no_service: bool,
     /// `--claude-config-dir`: the node runs claude with this CLAUDE_CONFIG_DIR instead of the user's own.
     pub claude_config_dir: Option<String>,
-    /// `fleetd init --join … --mac`: this machine is the agents' Mac, joined from its own standard user.
+    /// `fleetd init --join … --mac`: this machine is the agents' Mac, joined from the account at its screen.
     pub mac: bool,
 }
 
@@ -1044,6 +1044,9 @@ pub async fn prepare(
         input.binary_digest = wanted;
         input.binary_target = target;
     }
+    if let Some(message) = gui_session_problem(&facts, input.service, r.joining) {
+        return Err(Stop::fail(format!("{message}, then run {}.", r.again)));
+    }
     let plan = plan_machine_add(&facts, &input)
         .map_err(|message| Stop::fail(format!("{message}, then run {}", r.again)))?;
     // Never stop or re-enrol a joined node without a fresh code: that is what --join with --rejoin is for.
@@ -1137,6 +1140,13 @@ pub async fn execute(
             },
         };
         let result = runner.run(&r.target, &step.command, stdin.as_deref()).await;
+        if result.code != 0 && step_needs_gui_session(plan.platform, result.code) {
+            return Err(Stop::fail(format!(
+                "{}, then run {}; finished steps are skipped.",
+                no_gui_session(&facts.user, r.joining),
+                r.again
+            )));
+        }
         if result.code != 0 {
             let fix = if step.stdin == Some(Stdin::EnrollToken) && r.joining {
                 "the code is single use and lasts 15 minutes: on the hub, run fleetd pair --worker for a new one".to_owned()

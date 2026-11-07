@@ -9,6 +9,7 @@ import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
 import { isObject, type JsonObject } from "../kit/json.ts";
 import { cloudAtWork, cloudNew, cloudSignIn, cloudSnapshotMachines } from "../kit/cloud.ts";
+import steps from "../setup/steps.json" with { type: "json" };
 
 const RUN = "M0123456789abcdef0123456789abcdef";
 const AGAIN = "Mfedcba9876543210fedcba9876543210";
@@ -57,6 +58,10 @@ const run = (f: Fixture, over: JsonObject): JsonObject => ({
 });
 
 const LINE = `curl -fsSL https://fleetd.sh | sh -s -- --join ${HUB} --code K7QM-4XWD --machine-id laptop --git-identity 'dev <dev@example.com>'`;
+
+const MAC_LINE = `curl -fsSL https://fleetd.sh | sh -s -- --join ${HUB} --code R3TN-8JPV --machine-id mac --mac`;
+/** A Mac for agents: the hub's own guide for it (setup's catalog, as setup_list gives it). */
+const MAC_GUIDE = (steps.guides as unknown as ReadonlyArray<JsonObject & { readonly id: string }>).filter((g) => g.id === "mac");
 
 const laptop = (f: Fixture): JsonObject => ({ machineId: "laptop", name: "laptop", nodeVersion: "0.9.0", status: "online", lastSeenAt: f.now, tags: [] });
 
@@ -118,6 +123,15 @@ function hub(from: Fixture, name: string, note: string, runs: (f: Fixture) => Js
     code: "K7QM-4XWD",
     expiresAt: "2026-10-19T10:45:00.000Z",
     line: `${LINE} --rejoin`,
+  });
+  f.answer("setup_list", undefined, { steps: MAC_GUIDE, requiredLeft: 0 });
+  f.answer("machine_join", { machineId: "mac", mac: true }, {
+    machineId: "mac",
+    hubUrl: HUB,
+    code: "R3TN-8JPV",
+    expiresAt: "2026-10-19T10:45:00.000Z",
+    line: MAC_LINE,
+    next: "Paste the line in Terminal on mac, logged in at its screen.",
   });
   f.answer("machine_remove", undefined, { machineId: "mac-mini", steps: [], revoked: true, next: "revoked mac-mini's node key; the hub refuses that node from now on." });
   f.answer("machine_claude_login", undefined, {

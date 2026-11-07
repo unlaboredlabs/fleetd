@@ -158,9 +158,9 @@ describe("why a kind can't open", () => {
     });
   });
 
-  it("says the agents' Mac needs a Mac set aside for agents, not a Linux machine", () => {
+  it("says the agents' Mac needs a Mac joined as the agents' Mac, not a Linux machine", () => {
     const reason = whyOff([off("devbox", { mac: "unsupported" })], "mac");
-    expect(reason).toEqual({ why: "The agents’ Mac screen needs a Mac set aside for agents, whose node runs as its standard agents user.", short: "Needs a Mac", fix: "add" });
+    expect(reason).toEqual({ why: "The agents’ Mac screen needs a Mac joined as the agents’ Mac.", short: "Needs a Mac", fix: "add" });
     expect(askLine(must(reason), "mac", ["Ana"])).toBe("Ask Ana to add a Mac set aside for agents.");
     expect(askLine(must(reason), "android", ["Ana"])).toBe("Ask Ana to add a Linux machine.");
     expect(askLine(must(reason), "mac", [])).toBe("Ask a hub admin to add a Mac set aside for agents.");

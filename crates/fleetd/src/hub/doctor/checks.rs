@@ -1410,6 +1410,35 @@ pub fn mac_setup(machine_id: &str, offline: bool, health: Option<&MacHealth>) ->
         .collect()
 }
 
+/// `<mac>/mac_one_node`: no other machine of this hub runs on the agents' Mac, as the nodes' computer fingerprints say.
+/// One that does is an older node there, joined under another name: in another account, or in this one before it
+/// joined again. Its fix revokes it on the hub, and stops it where it ran in another account.
+pub fn mac_one_node(machine_id: &str, others: &[String]) -> Entry {
+    let Some(other) = others.first() else {
+        return machine_entry(
+            machine_id,
+            "mac_one_node",
+            Pass,
+            "No other fleetd node of this hub runs on this Mac.",
+            None,
+        );
+    };
+    machine_entry(
+        machine_id,
+        "mac_one_node",
+        Fail,
+        &format!(
+            "{} is enrolled from this Mac too, under another name: the hub would take it for another machine.",
+            others.join(", ")
+        ),
+        Some(on_hub(manual(
+            "On the hub (push its agents' work first). If it ran in another account on this Mac, stop it there too: \
+             launchctl bootout gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node",
+            Some(format!("fleetd machine remove {other}")),
+        ))),
+    )
+}
+
 /// Whether the machine can host Linux desktop sessions, and in what (a container or Xvfb), from its heartbeat; None
 /// where they are off (or the machine is offline, or its node is older).
 pub fn desktop_sessions(

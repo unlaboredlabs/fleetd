@@ -9273,7 +9273,7 @@
           "type": "boolean"
         },
         "ready": {
-          "description": "Its node offers the tool now (`mac_tool`): online, a standard user, the tool on in its node.json.",
+          "description": "Its node offers the tool now (`mac_tool`): online, on macOS, the tool on in its node.json.",
           "type": "boolean"
         }
       },

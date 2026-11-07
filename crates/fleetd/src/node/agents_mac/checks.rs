@@ -1,8 +1,8 @@
-//! The agents' Mac's setup checks (docs: agents-mac.md), run by the node as its own user with no admin, so each tests what a
+//! The agents' Mac's setup checks (docs: agents-mac.md), run by the node as its own user, so each tests what a
 //! process of that user can do. Each is a pure verdict on what a [`Probe`] read; [`Live`] reads the Mac, tests fake it.
-//! A failing check says exactly what the person does, and where: in their own (admin) account, or at the Mac as
-//! fleetd agents.
-use std::path::{Path, PathBuf};
+//! A failing check says exactly what the person does, and where: in an admin's Terminal, or at the Mac in the account
+//! the node runs in (yours, an admin's, or a user of its own for agents: D309).
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use fleetd_contracts::node_link::{MacCheck, MacCheckId, MacCheckState, MacHealth};
@@ -29,10 +29,6 @@ pub trait Probe {
     fn user(&self) -> String;
     /// A command, never through a shell.
     fn run(&self, program: &str, args: &[&str]) -> Ran;
-    /// Whether the node's user is a standard user that can't sudo (node/mac_tool's `admin_check`).
-    fn admin(&self) -> Result<(), String>;
-    /// Every other user's home under /Users, and whether it opens for this user; Err when /Users can't be listed.
-    fn homes(&self) -> Result<Vec<(PathBuf, bool)>, String>;
     /// `AXIsProcessTrusted()`; None where it can't be asked.
     fn accessibility(&self) -> Option<bool>;
     /// `CGPreflightScreenCaptureAccess()`; None where it can't be asked.
@@ -48,16 +44,6 @@ pub trait Probe {
 pub fn run(probe: &dyn Probe) -> MacHealth {
     let user = probe.user();
     let checks = vec![
-        standard_user(&user, probe.admin()),
-        other_homes(probe.homes()),
-        no_apple_id(
-            &user,
-            &probe.run("defaults", &["read", "MobileMeAccounts", "Accounts"]),
-        ),
-        no_secure_token(
-            &user,
-            &probe.run("sysadminctl", &["-secureTokenStatus", &user]),
-        ),
         developer(
             &user,
             &probe.run(
@@ -116,131 +102,6 @@ fn yours(command: impl Into<String>) -> Option<Fix> {
         label: "In your own (admin) account's Terminal".into(),
         command: Some(command.into()),
     })
-}
-
-pub fn standard_user(user: &str, admin: Result<(), String>) -> MacCheck {
-    match admin {
-        Ok(()) => check(
-            MacCheckId::StandardUser,
-            Pass,
-            &format!("{user} is a standard user and can't sudo."),
-            None,
-        ),
-        Err(why) => check(
-            MacCheckId::StandardUser,
-            Fail,
-            &format!("{why}: agents would act as an admin of this Mac, so its tool stays off."),
-            said(format!(
-                "In your own account: System Settings › Users & Groups › {user} › turn off \"Allow this user to \
-                 administer this computer\", and take {user} out of any sudoers file. Then restart its node."
-            )),
-        ),
-    }
-}
-
-pub fn other_homes(homes: Result<Vec<(PathBuf, bool)>, String>) -> MacCheck {
-    let homes = match homes {
-        Ok(homes) => homes,
-        Err(why) => {
-            return check(
-                MacCheckId::OtherHomes,
-                Unknown,
-                &format!("Couldn't list /Users: {why}."),
-                None,
-            );
-        }
-    };
-    let open: Vec<&Path> = homes
-        .iter()
-        .filter(|(_, opens)| *opens)
-        .map(|(p, _)| p.as_path())
-        .collect();
-    match open.first() {
-        None => check(
-            MacCheckId::OtherHomes,
-            Pass,
-            &format!(
-                "No other user's home opens for agents ({} checked).",
-                homes.len()
-            ),
-            None,
-        ),
-        Some(_) => {
-            let shown: Vec<String> = open.iter().map(|p| p.display().to_string()).collect();
-            let owners: Vec<String> = open
-                .iter()
-                .filter_map(|p| p.file_name())
-                .map(|n| n.to_string_lossy().into_owned())
-                .collect();
-            check(
-                MacCheckId::OtherHomes,
-                Fail,
-                &format!("fleetd agents can read {}.", shown.join(", ")),
-                Some(Fix {
-                    label: format!(
-                        "In {}'s own Terminal (only the home folder itself, not -R)",
-                        owners.join("'s, and in ")
-                    ),
-                    command: Some("chmod 700 ~".into()),
-                }),
-            )
-        }
-    }
-}
-
-/// `defaults read MobileMeAccounts Accounts`: the domain is missing, or lists no account, without an Apple ID.
-pub fn no_apple_id(user: &str, ran: &Ran) -> MacCheck {
-    if ran.ok() && ran.out.contains("AccountID") {
-        return check(
-            MacCheckId::NoAppleId,
-            Fail,
-            &format!(
-                "An Apple ID is signed in for {user}: agents could reach its iCloud data and keychain."
-            ),
-            said(format!(
-                "At the Mac, logged in as {user}: System Settings › your name › Sign Out. The agents' user keeps no Apple ID."
-            )),
-        );
-    }
-    check(
-        MacCheckId::NoAppleId,
-        Pass,
-        &format!("No Apple ID is signed in for {user}."),
-        None,
-    )
-}
-
-/// `sysadminctl -secureTokenStatus <user>`, which says ENABLED or DISABLED (on stderr) without admin.
-pub fn no_secure_token(user: &str, ran: &Ran) -> MacCheck {
-    if ran.out.contains("DISABLED") {
-        check(
-            MacCheckId::NoSecureToken,
-            Pass,
-            &format!("{user} holds no secure token: its password can't unlock the disk."),
-            None,
-        )
-    } else if ran.out.contains("ENABLED") {
-        check(
-            MacCheckId::NoSecureToken,
-            Fail,
-            &format!(
-                "{user} holds a FileVault secure token: its password unlocks this Mac's disk."
-            ),
-            yours(format!(
-                "sudo sysadminctl -secureTokenOff {user} -password - -adminUser $(whoami) -adminPassword -"
-            )),
-        )
-    } else {
-        check(
-            MacCheckId::NoSecureToken,
-            Unknown,
-            &format!(
-                "sysadminctl didn't say whether {user} holds a secure token: {}",
-                ran.out.trim()
-            ),
-            None,
-        )
-    }
 }
 
 /// `dseditgroup -o checkmember`: "yes <user> is a member of _developer", or "no ...".
@@ -363,7 +224,7 @@ pub fn grant(id: MacCheckId, granted: Option<bool>) -> MacCheck {
             &format!("fleetd doesn't have {what}, so {why}."),
             Some(Fix {
                 label: format!(
-                    "At the Mac, logged in as fleetd agents: System Settings › Privacy & Security › {what}, turn on \
+                    "At the Mac: System Settings › Privacy & Security › {what}, turn on \
                      fleetd. macOS asks again from time to time: turn it on again then. This opens the pane there"
                 ),
                 command: Some(format!("open \"{}\"", pane(id))),
@@ -456,11 +317,6 @@ pub struct Live {
     pub tools: ToolsState,
 }
 
-/// Names under /Users that are nobody's home.
-fn not_a_home(name: &str) -> bool {
-    name.starts_with('.') || matches!(name, "Shared" | "Guest")
-}
-
 impl Probe for Live {
     fn user(&self) -> String {
         super::user()
@@ -485,25 +341,6 @@ impl Probe for Live {
                 out: e.to_string(),
             },
         }
-    }
-
-    fn admin(&self) -> Result<(), String> {
-        crate::node::mac_tool::admin_check()
-    }
-
-    fn homes(&self) -> Result<Vec<(PathBuf, bool)>, String> {
-        let own = std::env::home_dir();
-        let entries = std::fs::read_dir("/Users").map_err(|e| e.to_string())?;
-        Ok(entries
-            .flatten()
-            .filter(|e| !not_a_home(&e.file_name().to_string_lossy()))
-            .map(|e| e.path())
-            .filter(|p| p.is_dir() && Some(p.as_path()) != own.as_deref())
-            .map(|p| {
-                let opens = std::fs::read_dir(&p).is_ok();
-                (p, opens)
-            })
-            .collect())
     }
 
     fn accessibility(&self) -> Option<bool> {

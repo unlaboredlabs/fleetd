@@ -384,7 +384,7 @@ kind that turns it on or off there ([Turn screens on in Settings](/docs/browser-
 | Browser | Chrome: the node's own, which it installs as it starts, or the one `browser.chrome` names in node.json. |
 | Android emulator | fleetd's own pinned emulator: Linux on x86_64, opted in with `"device": {"enabled": true}` in node.json (the first screen installs it) or installed already, and a `/dev/kvm` this user can open read-write. See [Android screens](/docs/browser-sessions#android-setup). |
 | Desktop | Linux with docker or Xvfb. |
-| Agents' Mac | [The agents' Mac](/docs/agents-mac): its agents user at the Mac's screen, unlocked, with Accessibility and Screen Recording. Elsewhere it says `Needs a Mac`. See [the agents' Mac's screen](/docs/browser-sessions#mac). |
+| Agents' Mac | [The agents' Mac](/docs/agents-mac): the node's account at the Mac's screen (yours is fine), unlocked, with Accessibility and Screen Recording. Elsewhere it says `Needs a Mac`. See [the agents' Mac's screen](/docs/browser-sessions#mac). |
 
 When an agent starts a screen, the hub places it: on the agent's own machine when it hosts screens, can run that kind
 and has a free screen slot; else on the online machine that can with the most free slots. When none can, the agent is

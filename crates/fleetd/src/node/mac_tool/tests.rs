@@ -55,12 +55,6 @@ fn frame(thread: &str, sealed: String) -> MacCallFrame {
     }
 }
 
-#[test]
-fn only_a_standard_user_lends_the_mac() {
-    assert!(admin_in("staff everyone admin _developer"));
-    assert!(!admin_in("staff everyone _developer administrators"));
-}
-
 #[tokio::test]
 async fn a_step_runs_only_sealed_to_this_mac_for_the_session_the_hub_names_once_and_lately() {
     let dir = tempfile::tempdir().unwrap();
