@@ -13,6 +13,9 @@ describe("an HTML artifact on the phone", () => {
     expect(page.indexOf(ARTIFACT_CSP)).toBeLessThan(page.indexOf("default-src *"));
     // The first script runs before any of the page's own.
     expect(page.indexOf(first("k1"))).toBeLessThan(page.indexOf("<script>1</script>"));
+    // Its own frame tags are inert, whatever their case or what follows them.
+    const framed = artifactPage("<IFRAME srcdoc='x'></iframe><iframe\nsrc=x><frameset><frame/><object data=x><embed>", "k1");
+    expect(framed).not.toMatch(/<(iframe|frameset|frame|object|embed)[\s/>]/iu);
     expect(artifactPage("<h1>Sweep</h1>", "k1").startsWith(`<!doctype html><meta http-equiv="Content-Security-Policy" content="${ARTIFACT_CSP}">`)).toBe(true);
   });
 
@@ -21,7 +24,11 @@ describe("an HTML artifact on the phone", () => {
     expect(d.get("default-src")).toBe("'none'");
     expect(d.get("connect-src")).toBe("'none'");
     expect(d.get("frame-src")).toBe("'none'");
+    // Every HTML string and script through the first script's one policy.
+    expect(d.get("require-trusted-types-for")).toBe("'script'");
+    expect(d.get("trusted-types")).toBe("default");
     for (const [name, values] of d) {
+      if (name === "require-trusted-types-for" || name === "trusted-types") continue;
       for (const value of values.split(" ")) expect(["'none'", "'unsafe-inline'", "'unsafe-eval'", "data:", "blob:"], `${name} ${value}`).toContain(value);
     }
   });

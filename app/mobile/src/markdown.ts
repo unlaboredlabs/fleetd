@@ -113,8 +113,9 @@ export const parseMarkdown = (source: string): Block[] => {
   return blocks;
 };
 
+const SAFE_URL = /^(https?:\/\/|mailto:)/iu;
 // An artifact link (`[Title](artifact:<name>)`) opens it in the chat's Artifacts (ui/Markdown's ArtifactLinks).
-const SAFE_URL = /^(https?:\/\/|mailto:|artifact:[a-z0-9])/u;
+const ARTIFACT_URL = /^artifact:[a-z0-9]/u;
 const BARE_URL = /^https?:\/\/[^\s<>]+/iu;
 /** Trailing punctuation that ends a sentence, not the URL; a ")" stays when the URL opened one. */
 const trimUrl = (url: string): string => {
@@ -177,7 +178,7 @@ export const parseInline = (source: string): Inline[] => {
         const url = link[2] ?? "";
         flush();
         const children = parseInline(link[1] ?? "");
-        out.push(...(SAFE_URL.test(url) ? [{ t: "link", url, children } as const] : children));
+        out.push(...(SAFE_URL.test(url) || ARTIFACT_URL.test(url) ? [{ t: "link", url, children } as const] : children));
         i += link[0].length;
         continue;
       }

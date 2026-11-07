@@ -194,10 +194,11 @@ key or another artifact, keep cookies or storage, or open a window or frame (its
 page can only show what it carries. A link you click in it opens in your browser; the page itself can't open one. On
 Telegram a link to an artifact shows as its title.
 
-On the phone, a chat's Info has **Artifacts**, with the files sent in the chat under the reports; a card or a link opens
-one the same way, and **Versions** at the top picks an older one. An HTML artifact there is fenced the same way (on
-iPhone; Android's fence against preconnects comes next), and a link you tap in it opens in Safari. HTML artifacts need
-an app build from this release on: an over-the-air update doesn't bring them.
+On the phone, a project's Info has **Artifacts**, with the files sent in the chat under the reports; a card or a link
+opens one the same way, and **Versions** at the top picks an older one. On iPhone an HTML artifact is fenced the same
+way, with no frames inside it, and a link you tap in it opens in Safari. Android shows where to open an HTML artifact
+instead of running it: its web view can't yet be kept off the network the same way. HTML artifacts need an app build
+from this release on: an over-the-air update doesn't bring them.
 
 Agents publish with the [`publish_artifact`](/docs/reference/agent-tools#publish_artifact) tool and link with
 `[Title](artifact:name)`.

@@ -31,6 +31,11 @@ describe("parseInline", () => {
     ]);
   });
 
+  it("links http and mailto whatever their case", () => {
+    expect(parseInline("[x](HTTPS://Example.com)")).toEqual([{ t: "link", url: "HTTPS://Example.com", children: [{ t: "text", text: "x" }] }]);
+    expect(parseInline("[y](MAILTO:a@b.dev)")).toEqual([{ t: "link", url: "MAILTO:a@b.dev", children: [{ t: "text", text: "y" }] }]);
+  });
+
   it("links an artifact, which the chat opens in its Artifacts", () => {
     expect(parseInline("see [Build times](artifact:build-times@2)")).toEqual([
       { t: "text", text: "see " },

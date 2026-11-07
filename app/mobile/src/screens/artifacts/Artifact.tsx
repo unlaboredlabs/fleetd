@@ -1,9 +1,10 @@
 // One artifact, pushed from the chat's Artifacts, its card or a link in a message: its newest version, or the one they
 // named. Markdown reads as the chat's own formatted text, raw HTML dropped; an HTML page runs in its fenced WebView
-// (ArtifactFrame), and a link to another of the chat's artifacts opens that one. With more than one version, the bar's Versions menu picks one, and an older one says so over the
-// page with the way back to the newest.
+// (ArtifactFrame) on iPhone, and Android says where to open it. A link to another of the chat's artifacts opens that
+// one. With more than one version, the bar's Versions picks one (a menu on iOS, a pushed list on Android:
+// ArtifactVersions), and an older one says so over the page with the way back to the newest.
 import { useCallback, useLayoutEffect } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { listTime } from "../../chatView";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { space, type, useTheme } from "../../theme";
@@ -65,14 +66,17 @@ export function Artifact({ navigation, route }: ChatInfoProps<"Artifact">) {
                   accessibilityRole="button"
                   accessibilityLabel="Versions"
                   hitSlop={12}
-                  onPress={() => Alert.alert("Versions", undefined, [...versions.map((x) => ({ text: `${label(x)} · ${detail(x)}`, onPress: () => pick(x.version) })), { text: "Cancel", style: "cancel" as const }])}
+                  onPress={() => {
+                    haptics.tap();
+                    navigation.navigate("ArtifactVersions", { key, name, shown });
+                  }}
                 >
                   <Symbol ios="clock.arrow.circlepath" android="history" size={22} color={t.accent} />
                 </Pressable>
               ) : null,
           }),
     });
-  }, [navigation, t, v?.artifact.title, versions, shown, now]);
+  }, [navigation, t, v?.artifact.title, versions, shown, now, key, name]);
 
   // A link in a report to another of the chat's artifacts opens it over this one.
   const openLink = useCallback(
@@ -106,6 +110,16 @@ export function Artifact({ navigation, route }: ChatInfoProps<"Artifact">) {
         <Button label="Show Newest" kind="plain" onPress={() => navigation.setParams({ version: undefined })} />
       </View>
     );
+  // Android's WebView can't be kept off the network as iOS's is (a preconnect, which no CSP covers, has no proxy to
+  // meet there), so it doesn't run a report's page yet.
+  if (a.format === "html" && Platform.OS === "android") {
+    return (
+      <View style={[styles.grow, { backgroundColor: t.bg }]}>
+        {older}
+        <EmptyState icon="fileDoc" title="Open on iPhone or Desktop" body="HTML reports run on iPhone and in the desktop app. Android doesn't run them yet: its web view can't be kept off the network the same way." />
+      </View>
+    );
+  }
   if (a.format === "html") {
     return (
       <View style={[styles.grow, { backgroundColor: t.bg }]}>
