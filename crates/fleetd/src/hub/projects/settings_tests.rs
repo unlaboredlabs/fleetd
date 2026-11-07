@@ -118,7 +118,7 @@ async fn node(hub: &Arc<Hub>, capable: bool) -> mpsc::UnboundedReceiver<SessionC
                     json!({ "ok": { "kind": "project_worktrees",
                     "dir": "/home/w/.fleetd/node/worktrees/p1", "baseBranch": "main",
                     "worktrees": [{ "sessionId": "t1", "path": "/home/w/.fleetd/node/worktrees/p1/t1",
-                        "branch": "fleetd/T1-x", "uncommitted": true }] } })
+                        "branch": "fleetd/T1-x", "uncommitted": true }], "signinsKept": true } })
                 }
                 _ => json!({ "ok": { "kind": "done" } }),
             };
@@ -375,6 +375,9 @@ async fn the_name_saves_and_a_delete_removes_the_worktrees_and_the_settings() {
     assert_eq!(s["title"], "app");
     assert_eq!(s["worktrees"]["baseBranch"], "main");
     assert_eq!(s["worktrees"]["worktrees"][0]["uncommitted"], true);
+    // Whether its browser keeps sign-ins is the project's, not its worktrees'.
+    assert_eq!(s["signinsKept"], true);
+    assert!(s["worktrees"].get("signinsKept").is_none());
     assert!(matches!(
         calls.recv().await,
         Some(SessionCall::ProjectWorktrees { .. })

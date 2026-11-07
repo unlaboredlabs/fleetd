@@ -17314,6 +17314,10 @@
           "$ref": "#/$defs/WorktreeSetup",
           "description": "What runs in each new worktree before its agent starts; no commands when none are set."
         },
+        "signinsKept": {
+          "description": "Whether its machine keeps a browser profile of its sign-ins now, so Forget sign-ins has something to forget.\nAbsent when its machine can't say (offline, or an older node).",
+          "type": "boolean"
+        },
         "title": {
           "type": "string"
         },
@@ -17670,6 +17674,10 @@
         "dir": {
           "description": "`<node home>/worktrees/<project>`: every new worktree of the project goes here, one per session.",
           "type": "string"
+        },
+        "signinsKept": {
+          "description": "Whether the node keeps a browser profile of the project's sign-ins (D221) now. Absent from an older node; the\nhub moves it to `ProjectSettings.signinsKept`.",
+          "type": "boolean"
         },
         "worktrees": {
           "items": {

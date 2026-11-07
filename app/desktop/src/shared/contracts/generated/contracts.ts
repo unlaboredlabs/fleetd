@@ -5987,6 +5987,11 @@ export type ProjectSettings = {
   repo?: RepoName;
   /** What runs in each new worktree before its agent starts; no commands when none are set. */
   setup: WorktreeSetup;
+  /**
+   * Whether its machine keeps a browser profile of its sign-ins now, so Forget sign-ins has something to forget.
+   * Absent when its machine can't say (offline, or an older node).
+   */
+  signinsKept?: boolean;
   title: string;
   workspaceRoot: string;
   /** From the node, now: absent while it is offline or too old to say. */
@@ -6156,6 +6161,11 @@ export type ProjectWorktrees = {
   baseBranch?: string;
   /** `<node home>/worktrees/<project>`: every new worktree of the project goes here, one per session. */
   dir: string;
+  /**
+   * Whether the node keeps a browser profile of the project's sign-ins (D221) now. Absent from an older node; the
+   * hub moves it to `ProjectSettings.signinsKept`.
+   */
+  signinsKept?: boolean;
   worktrees: ProjectWorktree[];
 };
 

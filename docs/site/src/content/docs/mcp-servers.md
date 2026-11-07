@@ -6,14 +6,15 @@ description: Give agents more tools, globally or per project, from a command on 
 You can give fleetd's agents more tools through MCP servers: a GitHub or database server, your docs search, an internal
 API. Configure them in the desktop app, for every project or for one, and pick which agents get each.
 
-A server whose tools ask before they write, and which reaches a project's lead alone, is connected under the
-project's [Integrations](/docs/integrations) instead. That is also where a server that signs you in with your account ([OAuth](/docs/integrations#sign-in)) is
-connected.
+A project has one list of its MCP servers, on its Project page under **MCP servers**. A server for its lead alone asks
+before it writes ([Integrations](/docs/integrations)), and may sign you in with your account
+([OAuth](/docs/integrations#sign-in)); one its agents get too runs every tool unasked, for the roles you pick.
 
 ## Add a server {#add}
 
-Global servers are in Settings › **Hub** › **Every project** › **Tools & skills**, for the hub's owners and admins only; a
-project's own are in Settings › the project › **Agents** › **MCP servers**. Click **Add server**, then fill in:
+Global servers are in Settings › **Hub** › **Every project** › **Tools & skills**, for the hub's owners and admins only:
+click **Add server**. A project's own are in Settings › the project › **Project** › **MCP servers**: click **Add an MCP
+server** and turn on **Agents get it too**, then **Edit** it on its row to pick its roles. The editor has:
 
 | Field | Is |
 |---|---|

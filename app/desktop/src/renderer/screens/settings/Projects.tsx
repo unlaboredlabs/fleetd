@@ -162,7 +162,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <Separator />
       <McpServersSection projectRef={ref} />
       <Separator />
-      <SigninsSetting projectRef={ref} />
+      <SigninsSetting projectRef={ref} kept={settings.signinsKept} />
       <Separator />
       <SkillsSetting projectRef={ref} />
       <Separator />

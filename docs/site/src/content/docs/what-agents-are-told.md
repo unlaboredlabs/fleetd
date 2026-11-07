@@ -255,8 +255,8 @@ Read, edit or delete your own memory in Settings › Your memory, and each proje
 Instructions & memory. Nobody else
 reads or edits yours, owners and admins included; an owner or admin can only delete the memory of someone removed from
 the hub. A hub from before people kept one shared `user.md`: its owner got a copy as their own memory, and the old
-file stays, read by no agent, as Shared memory, which an owner or admin reads and retires under Settings › Hub › Every
-project › Instructions & memory.
+file stays, read by no agent, as Shared memory, which an owner or admin reads and empties under Settings › Hub › Every
+project › Instructions & memory. Once it is empty, that part is gone.
 
 The files are plain markdown in the hub's home (`memory/`, yours in `memory/people/`), in no repo. Each file has a
 cap: 16,000 characters for each person's memory and each `MEMORY.md`, 32,000 per topic and 128,000 per project. A
@@ -311,7 +311,7 @@ no longer holds stops misleading the agents:
   a minute apart.
 - **Which projects:** each one with the refresh on (the default; turn it off in its
   [settings](/docs/projects#settings)) and with chat from you or the lead, or a changed order, since its last refresh.
-  A quiet project costs nothing. Its [row on the Automations page](/docs/automations#the-nightly-memory-refresh)
+  A quiet project costs nothing. Its [switch on Instructions & memory](/docs/automations#the-nightly-memory-refresh)
   shows its next and last run, and its Run now refreshes the project at once.
 - **What it reads:** the chat since the last refresh (your messages and the lead's, newest kept, up to about 40,000
   characters), the active decisions and every memory file of the project, plus the memory of the person whose chat it

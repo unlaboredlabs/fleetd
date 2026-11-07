@@ -418,8 +418,16 @@ describe("Settings → Projects", () => {
     expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true, removeFolder: true });
   });
 
+  it("offers no Forget sign-ins where its machine keeps none", async () => {
+    answers = [{ ...settings, signinsKept: false }];
+    await render();
+    expect(document.body.textContent).toContain("No sign-ins kept yet.");
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Forget sign-ins…")).toBe(false);
+  });
+
   it("forgets a project's sign-ins after asking, a project of code's too", async () => {
     repos = [web];
+    answers = [{ ...settings, signinsKept: true }];
     await render();
     expect(document.body.textContent).toContain("stays signed in to the sites it signed into");
     await click(button("Forget sign-ins…"));
@@ -593,7 +601,9 @@ describe("Settings → Projects → Repos", () => {
     expect(text).not.toContain("github.com");
     expect(text).toContain("main");
     expect(text).toContain("/home/w/src/storefront on devbox");
-    expect(text).toContain("Uses the default: pnpm install");
+    // Its setup is the project's, shown once, below: the row doesn't repeat it, and there is no "default" to explain.
+    expect(text).not.toContain("pnpm install");
+    expect(section().querySelector("#default-setup")?.textContent).toBe("Setup");
     expect(calls).toContainEqual({ tool: "project_settings_get", input: { machineId: "devbox", projectId: "p1", repo: "web" } });
   });
 
@@ -606,14 +616,15 @@ describe("Settings → Projects → Repos", () => {
     };
     await renderRepos();
     expect([...section().querySelectorAll('[role="listitem"]')].map((x) => x.getAttribute("aria-label"))).toEqual(["web", "api"]);
-    expect(row("web")).toContain("Uses the default: pnpm install");
+    expect(row("web")).not.toContain("pnpm install");
     const text = row("api");
     expect(text).toContain("team/api on gitlab.example.com");
     expect(text).toContain("Not known yet");
     // Its checkout isn't a listed project: shown by its id, on its machine.
     expect(text).toContain("p9 on devbox");
     expect(text).toContain("go mod download; make gen");
-    expect(text).not.toContain("Uses the default");
+    // One repo has its own, so the project's is the default for the rest.
+    expect(section().querySelector("#default-setup")?.textContent).toBe("Default setup");
   });
 
   it("adds a repo by its path on the machine, or clones one from GitHub", async () => {

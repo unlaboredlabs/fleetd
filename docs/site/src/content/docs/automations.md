@@ -5,8 +5,9 @@ description: Run a stored prompt on a schedule, from a webhook, or with Run now.
 
 An automation is a prompt you keep for a project, plus what starts it:
 
-- **Schedule**: a 5-field cron read in an IANA time zone, such as `0 9 * * 1-5` in `Europe/Berlin` (09:00 on
-  weekdays, Berlin time). `@daily`, `@hourly`, `@weekly`, `@monthly` and `@yearly` work too. Or one date and time,
+- **Schedule**: a 5-field cron read in a time zone, such as `0 9 * * 1-5` in `Europe/Berlin` (09:00 on
+  weekdays, Berlin time). The app uses your computer's zone (an edited automation keeps the one it was saved with);
+  the lead and `automation_create` take any IANA zone as `tz`. `@daily`, `@hourly`, `@weekly`, `@monthly` and `@yearly` work too. Or one date and time,
   for a [one-time run](#one-time) such as a reminder.
 - **Webhook**: a secret URL. A `POST` to it starts a run, and the request body goes to the lead with the prompt.
 - **Run now**: from the app, or by the lead.
@@ -17,7 +18,8 @@ lead starts the work without asking you first. Reviews, the [merge train](/docs/
 run starts one.
 
 The nightly [memory refresh](/docs/what-agents-are-told#memory-refresh) is built in, not an automation: it opens
-no order. It is listed with a project's automations anyway, as a [built-in row](#the-nightly-memory-refresh).
+no order, and it is on the project's Instructions & memory, beside the memory it tidies (see
+[below](#the-nightly-memory-refresh)).
 
 ## Manage them in the app
 
@@ -34,19 +36,19 @@ Open **Settings → Projects → Automations** and pick a project. There you can
 
 ## The nightly memory refresh
 
-The list ends with **Nightly memory refresh**, marked **Built-in**. It's the hub's own job, so it has no prompt to
-edit, no webhook and no Delete. Its row shows:
+It isn't in the Automations list. **Refresh memory every night**, on the project's Instructions & memory, is the
+hub's own job, so it has no prompt to edit, no webhook and no Delete. It shows:
 
 - **Its hour**, such as "Every night at 04:00 (Europe/Berlin)". The hour is the hub's, the same for every project.
   An admin sets it with the `policy.memory_refresh_at` decision, in the zone of `policy.tz`.
 - **Next run** and **Last run**: what the last refresh changed in memory, as its chat line counts it ("2 added, 1
   updated, 1 removed"), or that it was skipped and why. A quiet day, with no chat and no order changes, is skipped.
-- **On for this project**: the same switch as **Refresh memory every night** on the project's Instructions & memory.
+- **Refresh memory every night**: the project's switch, on by default.
 - **Run now**: refreshes the project's memory at once, the way the night's refresh does. It doesn't start, and says
   why, while the refresh is off for the project, one is already running, nothing is new since the last one, the
   lead is mid-turn, or the project's machine is offline, out of usage or too old.
 
-From an MCP client, `automation_list` returns the row as `memoryRefresh`, and `memory_refresh_run` is its Run now.
+From an MCP client, `automation_list` returns it as `memoryRefresh`, and `memory_refresh_run` is its Run now.
 
 You can also ask the lead in the chat ("check the dependencies every Monday morning"). It manages a project's
 automations with its own tools, listed under [Agent tools](/docs/reference/agent-tools#lead-tools).

@@ -380,6 +380,9 @@ async fn settings_of(
             Err(e) => (None, Some(from_executor(e).message)),
         }
     };
+    // The node says it with the worktrees; the settings say it of the project.
+    let mut worktrees = worktrees;
+    let signins_kept = worktrees.as_mut().and_then(|w| w.signins_kept.take());
     Ok(ProjectSettings {
         machine_id: r.machine_id.clone(),
         project_id: r.project_id.clone(),
@@ -391,6 +394,7 @@ async fn settings_of(
         setup: store.setup_in(r, repo_id)?.unwrap_or_default(),
         worktrees,
         worktrees_unknown,
+        signins_kept,
     })
 }
 

@@ -1269,6 +1269,7 @@ impl SessionService {
                 let root = self.project_root(&project_id)?;
                 let dir = self.worktrees_dir(&project_id);
                 let held = self.worktrees_of(&project_id)?;
+                let kept = super::browser::chrome::kept_dir(&self.inner.config.home, &project_id);
                 let worktrees = blocking(move || {
                     let base_branch = worktree::has_commit(&root)
                         .then(|| worktree::default_branch(&root))
@@ -1288,6 +1289,7 @@ impl SessionService {
                         dir: dir.to_string_lossy().into_owned(),
                         base_branch,
                         worktrees,
+                        signins_kept: Some(kept.is_some_and(|d| d.is_dir())),
                     }
                 })
                 .await;

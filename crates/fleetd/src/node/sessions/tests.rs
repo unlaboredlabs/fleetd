@@ -2984,6 +2984,18 @@ async fn project_env_reaches_a_new_session_and_deleting_the_project_leaves_the_c
     assert_eq!(listed.worktrees.len(), 1);
     assert_eq!(listed.worktrees[0].branch.as_deref(), Some(branch));
     assert!(listed.worktrees[0].uncommitted);
+    // No browser has kept a profile for it yet; once one has, Forget sign-ins has something to forget.
+    assert_eq!(listed.signins_kept, Some(false));
+    std::fs::create_dir_all(crate::node::browser::chrome::kept_dir(&home, "p1").unwrap()).unwrap();
+    let again = hub
+        .ok(SessionCall::ProjectWorktrees {
+            project_id: ProjectId::unchecked("p1"),
+        })
+        .await;
+    let SessionOutput::ProjectWorktrees(again) = again else {
+        panic!("{again:?}")
+    };
+    assert_eq!(again.signins_kept, Some(true));
 
     // The person's own worktree, on a drive that isn't mounted now: git's record of it must stay.
     let theirs = dir.path().join("usb/storefront-hotfix");

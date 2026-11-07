@@ -123,26 +123,26 @@ Open a project's settings in the desktop app: Settings → Projects, then pick t
 | Icon | The circle its chat shows in the sidebar, the chat and on the phone. Pick one of nine glass faces and one of twelve colors: the large icon shows what the pointer is over, and a pick takes effect at once everywhere. One nobody picked is made from its id. Or **Upload image…** (or drop a png, jpeg or webp on the icon); **Move and scale** lets you drag and zoom it before **Save**. The hub keeps only the circle's square, at most 512 px, without the file's metadata. **Remove image** brings the icon back. |
 | Name | How fleetd shows the project. Its folder keeps its own name. |
 | Only me | Who sees and uses it. See [Only me](#only-me). |
-| Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and the setup it runs with: its own, or the default. A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, **Default setup**: what runs in each new worktree of a repo without setup of its own. See [Setup commands](#setup). |
+| Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and its own setup if it has one. A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, **Setup**: what runs in each new worktree (called **Default setup** once a repo has its own). See [Setup commands](#setup). |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
 | Telegram | Talk to its lead from Telegram. See [Telegram](#telegram). |
 | Linked hubs | Hubs its lead opens and follows work on. See [Hub links](#hub-links). |
 | Approvals | Who approves its lead's sends and first visits, and what ran without asking. See [What the lead asks first](#approvals). |
-| Integrations | The accounts its lead reads and sends through. See [Integrations](/docs/integrations). |
-| Sign-ins | **Forget sign-ins…** signs its browser out of every site. See [Sign-ins](#sign-ins). |
+| MCP servers | One list of the project's MCP servers: the ones its lead reaches for you, which follow Approvals and may sign in with your account ([Integrations](/docs/integrations)), and the ones its agents get too, by role ([MCP servers](/docs/mcp-servers)). Below them, the global ones it gets. |
+| Sign-ins | **Forget sign-ins…** signs its browser out of every site. It shows once its machine keeps sign-ins for it; until then the row says "No sign-ins kept yet." See [Sign-ins](#sign-ins). |
 | Skills | What its lead learned and what was installed for it. See [Skills](#skills). |
 | Payments | The card it pays with, and its purchases. See [Purchases](#purchases). |
-| MCP servers | The project's own MCP servers for its agents, and the global ones it gets. See [MCP servers](/docs/mcp-servers). |
 | Archive | See [Archive](#archive). |
 | Delete project | See [Delete a project](#delete). |
 
 Its **Instructions & memory** page has **Refresh memory every night**: on (the default), around 04:00 on a day with
 chat or orders, the lead tidies the project's memory and the chat shows one line of its changes, with Undo; off,
-memory changes only as the lead and you write it. See [The nightly refresh](/docs/what-agents-are-told#memory-refresh).
+memory changes only as the lead and you write it. Beside the switch are the refresh's hour, its next and last run,
+and **Run now**. See [The nightly refresh](/docs/what-agents-are-told#memory-refresh).
 
-The page also shows where the project's worktrees live on its machine (`~/.fleetd/node/worktrees/<project>/`, one per
-agent), the branch new ones start from (the repo's default branch, freshly fetched; see [Which branch](#branches)),
-and how many are there now. That part needs the machine online.
+The project's worktrees live on its machine in `~/.fleetd/node/worktrees/<project>/`, one per agent, each starting
+from the repo's default branch, freshly fetched (see [Which branch](#branches)). The chat lists any the nightly
+[cleanup](#cleanup) keeps, and Delete lists any with uncommitted changes.
 
 ### Environment variables {#env}
 
@@ -205,8 +205,8 @@ From an MCP client: `project_settings_get` reads a project's settings, `project_
 
 ### Setup commands {#setup}
 
-The project's **Default setup**, under its repos: commands that run in each new worktree of a repo without setup of
-its own, before its agent starts: install dependencies, generate code. One a line, in
+The project's **Setup**, under its repos (**Default setup** once a repo has setup of its own): commands that run in
+each new worktree of a repo without setup of its own, before its agent starts: install dependencies, generate code. One a line, in
 order; each runs with `sh -c` in the worktree, with the project's variables (and the order's), the machine's build
 jobs and the agent's own `$TMPDIR`. The first that fails, or runs past the time limit (10 minutes unless you set
 another, up to an hour), stops the rest.
@@ -383,8 +383,8 @@ from then on.
 
 The checker runs on your own Claude ([Claude accounts](/docs/people#claude)), as a session with no tools at all, in
 an empty folder of fleetd's own rather than the project's (so no `CLAUDE.md`, settings or skills the lead wrote reach
-it), on **Sonnet 5.5 at medium effort** by default. Pick another model (Opus 5.5, Haiku 5.5, Fable 5.1) or effort in
-the same setting. It reads only:
+it), on **Sonnet 5.5 at medium effort**, the hub's choice for every project: a weaker model would quietly weaken the
+guard. It reads only:
 
 - the action exactly as it runs: the tool, the recipients or the link, the full text;
 - where each part came from: your messages (`person`), text you pasted (`person (pasted text)`), your contacts,
@@ -424,8 +424,8 @@ same input, it runs without the checker. **Keep it blocked** leaves it refused.
 
 **Ran without asking**, under Approvals, lists every action the checker let through or YOLO ran, newest first:
 when, what, the checker's reason, and **Show in chat**, which opens its line. `project_approvals {machineId,
-projectId}` reads the mode and the log; `project_approvals_set {machineId, projectId, mode, model?, effort?}` sets
-them, from your own key only.
+projectId}` reads the mode and the log; `project_approvals_set {machineId, projectId, mode}` sets
+the mode, from your own key only (an older app's `model` and `effort` are taken and ignored).
 
 ### Automations you set up {#automations-go-ahead}
 
@@ -535,7 +535,7 @@ does, on a fresh profile.
   one on another machine.
 
 **To sign it out of everything,** open the project's settings (**Open settings** in its right-click menu), find
-**Sign-ins** and click **Forget sign-ins…**. A browser session it has open now ends, and the profile is deleted. Its
+**Sign-ins** and click **Forget sign-ins…** (shown once its machine keeps sign-ins for the project). A browser session it has open now ends, and the profile is deleted. Its
 chat, memory, folder and allowed sites stay. Deleting the project deletes its sign-ins too. To sign out of one site
 only, ask the lead to sign out there.
 
@@ -562,10 +562,10 @@ minutes, with no terminal:
    for 15 minutes.
 
 Once paired, the setting shows the bot, the account it answers and its status: *Connected*, *Paused*, *Retrying* (with
-what went wrong and when it tries again) or *Stopped* (a revoked token: paste a new one). **Pause** stops reading and
-sending until you resume, and what the lead says meanwhile stays in the app. **Unpair** disconnects your account;
-**Pair with Telegram** connects one again. **Replace token** takes a new bot's token, and **Remove** makes the machine
-forget it. To delete the bot itself, send `/deletebot` to @BotFather.
+what went wrong and when it tries again) or *Stopped* (a revoked token: paste a new one). **Replace token** takes a new
+bot's token, and **Remove** makes the machine forget it; to pair another account, remove it and set it up again. A
+bridge paused from the CLI or an agent's `telegram_pause` shows **Resume**. To delete the bot itself, send
+`/deletebot` to @BotFather.
 
 ### What goes through
 

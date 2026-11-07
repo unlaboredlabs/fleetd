@@ -1617,6 +1617,9 @@ pub struct ProjectSettings {
     pub worktrees: Option<crate::project_settings::ProjectWorktrees>,
     /// Why `worktrees` is absent.
     pub worktrees_unknown: Option<String>,
+    /// Whether its machine keeps a browser profile of its sign-ins now, so Forget sign-ins has something to forget.
+    /// Absent when its machine can't say (offline, or an older node).
+    pub signins_kept: Option<bool>,
 }
 output!(ProjectSettingsGetOutput {
     settings: ProjectSettings

@@ -254,6 +254,9 @@ pub struct ProjectWorktrees {
     /// repo with no commit yet.
     pub base_branch: Option<String>,
     pub worktrees: Vec<ProjectWorktree>,
+    /// Whether the node keeps a browser profile of the project's sign-ins (D221) now. Absent from an older node; the
+    /// hub moves it to `ProjectSettings.signinsKept`.
+    pub signins_kept: Option<bool>,
 }
 
 #[cfg(test)]

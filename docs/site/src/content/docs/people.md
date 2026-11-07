@@ -93,8 +93,8 @@ configuration**. They can switch at any time.
 In the app:
 
 - **Settings › Your accounts › Claude** is each person's own. *In use* says what your orders and your Only me projects run on now, or "Connect
-  your Claude to start orders" with what to do. *Runs on* picks your subscription or the hub's API key; the hub's key
-  is offered only when you may use it. *Your subscription* takes the token: paste it and press Connect and test. The
+  your Claude to start orders" with what to do. *Runs on* picks your subscription or the hub's API key, and shows only
+  when the hub's key is yours to pick. *Your subscription* takes the token: paste it and press Connect and test. The
   app seals it on your computer to every machine and never shows it again. Test, Replace and Disconnect are beside it.
 - **Settings › Hub accounts › Claude** is for owners and admins. *Hub API key* takes the key and an optional endpoint
   (Save and test), then shows the machines that hold it, its last Test, and Test, Change and Remove. A change to the
