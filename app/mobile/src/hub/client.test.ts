@@ -58,6 +58,10 @@ describe("HubClient", () => {
     const refused = client.call("approval_answer", { requestId: "r1", decision: "approve" });
     hub.fail("approval_answer", "forbidden", "Not yours");
     await expect(refused).resolves.toMatchObject({ ok: false, error: { code: "forbidden", message: "Not yours" } });
+    // The hub's reason, where it gives one, comes with its fix.
+    const why = client.call("memory_import", { text: "Ada" });
+    hub.fail("memory_import", "invalid", "No project of yours.", { fix: "Make one.", reason: "no_only_me_project" });
+    await expect(why).resolves.toEqual({ ok: false, error: { code: "invalid", message: "No project of yours.", fix: "Make one.", reason: "no_only_me_project" } });
     const cut = client.call("chat_send", { projectRef: { machineId: "m", projectId: "p" }, text: "hi", clientRequestId: "x" });
     hub.link.close(1006);
     await expect(cut).resolves.toMatchObject({ ok: false, error: { code: "disconnected" } });

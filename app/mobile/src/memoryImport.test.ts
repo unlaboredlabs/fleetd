@@ -76,15 +76,17 @@ describe("Add to Memory", () => {
 });
 
 describe("when the hub can't import", () => {
-  const NONE = { code: NO_ONLY_ME_PROJECT, message: "Import memory runs in a project that's only yours, so nobody else can read what you paste, and you have none yet.", fix: "Make a project with Only me on, then import again." };
+  const NONE = { code: "invalid", reason: NO_ONLY_ME_PROJECT, message: "Import memory runs in a project that's only yours, so nobody else can read what you paste, and you have none yet.", fix: OLD_NO_NAVI_FIX };
 
   it("offers New Project without one of your own, and keeps the paste for after", () => {
     const s = run({ t: "typed", text: "Ada, Berlin" }, { t: "add" }, { t: "added", result: { ok: false, error: NONE } });
     expect(s.phase.t === "failed" && needsOwnProject(s.phase.error)).toBe(true);
     expect(s.text).toBe("Ada, Berlin");
     expect(canAdd(s)).toBe(true);
-    // An older hub says it by its fix.
+    // An older hub says it by its fix alone; a newer one's fix may change, its reason stays.
     expect(needsOwnProject({ code: "invalid", message: "Import memory runs in your own Navi.", fix: OLD_NO_NAVI_FIX })).toBe(true);
+    expect(needsOwnProject({ code: "invalid", reason: NO_ONLY_ME_PROJECT, message: "No project of yours.", fix: "Make a project with Only me on, then import again." })).toBe(true);
+    expect(needsOwnProject({ code: "invalid", reason: "other", message: "Too long." })).toBe(false);
     // Another refusal, or its machine offline, is said as it is.
     expect(needsOwnProject({ code: "invalid", message: "Too long." })).toBe(false);
     expect(needsOwnProject({ code: "machine_offline", message: "devbox is offline." })).toBe(false);
