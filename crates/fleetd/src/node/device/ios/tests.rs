@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 use super::pool::{self, Golden};
 use super::simctl::{self, Simctl};
 use super::{IosConfig, PrepState, Simulators, health_from, xcode_from};
+use crate::node::agents_mac::xcode::Located;
 use crate::node::browser::SessionHooks;
 use crate::node::device::Router;
 use crate::node::device::agent_device;
@@ -37,26 +38,40 @@ fn opted_in() -> IosConfig {
 
 #[test]
 fn the_doctor_reads_xcode_and_says_what_fixes_it() {
+    let selected = Located::Selected("/Applications/Xcode.app/Contents/Developer".into());
     assert_eq!(
-        xcode_from(Ok(RUNTIMES.into()), None, true),
+        xcode_from(Some(RUNTIMES.into()), &selected),
         Ok("iOS 27.0".into())
     );
-    let no_runtime = xcode_from(Ok(r#"{ "runtimes": [] }"#.into()), None, true).unwrap_err();
+    let no_runtime = xcode_from(Some(r#"{ "runtimes": [] }"#.into()), &selected).unwrap_err();
     assert_eq!(
         no_runtime.1.as_deref(),
         Some("xcodebuild -downloadPlatform iOS")
     );
+    // Only the command line tools, an Xcode under another name there: the switch to it.
     let tools = xcode_from(
-        Err("xcrun: error: unable to find utility \"simctl\"".into()),
-        Some("/Library/Developer/CommandLineTools"),
-        true,
+        None,
+        &Located::Unselected {
+            found: "/Applications/Xcode-beta.app".into(),
+            why: "only the Command Line Tools are selected".into(),
+        },
     )
     .unwrap_err();
     assert_eq!(
         tools.1.as_deref(),
-        Some("sudo xcode-select --switch /Applications/Xcode.app")
+        Some("sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer")
     );
-    let none = xcode_from(Err("not found".into()), None, false).unwrap_err();
+    assert!(
+        tools.0.starts_with("Xcode-beta.app is in /Applications"),
+        "{tools:?}"
+    );
+    // Selected, but simctl doesn't run: its licence and first launch, not xcrun's error.
+    let unaccepted = xcode_from(None, &selected).unwrap_err();
+    assert_eq!(
+        unaccepted.1.as_deref(),
+        Some("sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch")
+    );
+    let none = xcode_from(None, &Located::Missing).unwrap_err();
     assert!(none.0.contains("no Xcode"), "{none:?}");
     // A way that works over SSH, and the App Store's page for someone at the Mac.
     assert_eq!(none.1.as_deref(), Some(super::XCODE_FIX));
@@ -89,8 +104,7 @@ fn the_doctor_hears_of_macs_with_xcode_and_of_macs_opted_in() {
         .unwrap();
     assert_eq!(unavailable.state, IosState::Unavailable);
     // A Mac turned on without Xcode: the line under its switch, with the command to copy.
-    let no_xcode =
-        || xcode_from(Err("not found".into()), None, false).map(|_| "iOS 27.0".to_owned());
+    let no_xcode = || xcode_from(None, &Located::Missing).map(|_| "iOS 27.0".to_owned());
     let turned_on = health_from(&opted_in(), None, &idle, no_xcode, || true)
         .map(|(h, _)| h)
         .unwrap();

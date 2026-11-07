@@ -9,6 +9,7 @@ use fleetd_contracts::node_link::{MacCheck, MacCheckId, MacCheckState, MacHealth
 use fleetd_contracts::prim::Text;
 
 use super::tools::ToolsState;
+use super::xcode::{self, Located};
 
 /// What a command said: its exit code (None when it didn't run or was killed), stdout and stderr together.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -29,6 +30,9 @@ pub trait Probe {
     fn user(&self) -> String;
     /// A command, never through a shell.
     fn run(&self, program: &str, args: &[&str]) -> Ran;
+    /// The Xcode bundles in /Applications ([`xcode::in_applications`]).
+    fn xcodes(&self) -> Vec<String>;
+    fn is_dir(&self, path: &str) -> bool;
     /// `AXIsProcessTrusted()`; None where it can't be asked.
     fn accessibility(&self) -> Option<bool>;
     /// `CGPreflightScreenCaptureAccess()`; None where it can't be asked.
@@ -43,6 +47,22 @@ pub trait Probe {
 /// Every check, in the order the guide shows them.
 pub fn run(probe: &dyn Probe) -> MacHealth {
     let user = probe.user();
+    // xcodebuild runs only once an Xcode is selected: before that it says xcode-select's error, not what to do.
+    let selected = probe.run("xcode-select", &["-p"]);
+    let located = xcode::locate(
+        selected.ok().then_some(selected.out.as_str()),
+        &probe.xcodes(),
+        |p| probe.is_dir(p),
+    );
+    let xcode = match located {
+        Located::Selected(path) => xcode_ready(
+            &path,
+            &probe.run("xcodebuild", &["-license", "check"]),
+            &probe.run("xcodebuild", &["-checkFirstLaunchStatus"]),
+            &probe.run("xcodebuild", &["-version"]),
+        ),
+        other => no_xcode(&other),
+    };
     let checks = vec![
         developer(
             &user,
@@ -51,13 +71,12 @@ pub fn run(probe: &dyn Probe) -> MacHealth {
                 &["-o", "checkmember", "-m", &user, "_developer"],
             ),
         ),
-        xcode(
-            &probe.run("xcode-select", &["-p"]),
-            &probe.run("xcodebuild", &["-license", "check"]),
-            &probe.run("xcodebuild", &["-checkFirstLaunchStatus"]),
-            &probe.run("xcodebuild", &["-version"]),
-        ),
-        ios_runtime(&probe.run("xcrun", &["simctl", "list", "runtimes"])),
+        xcode.clone(),
+        if xcode.state == Pass {
+            ios_runtime(&probe.run("xcrun", &["simctl", "list", "runtimes"]))
+        } else {
+            waits_for_xcode()
+        },
         grant(MacCheckId::Accessibility, probe.accessibility()),
         grant(MacCheckId::ScreenRecording, probe.screen_recording()),
         gui_session(&user, probe.console_user().as_deref()),
@@ -133,34 +152,48 @@ pub fn developer(user: &str, ran: &Ran) -> MacCheck {
     }
 }
 
-pub fn xcode(selected: &Ran, license: &Ran, first_launch: &Ran, version: &Ran) -> MacCheck {
-    let path = selected.out.trim();
-    if !selected.ok() || !path.contains(".app/Contents/Developer") {
-        return check(
+/// Xcode isn't usable yet: not installed, or not the one selected. Only iOS simulators and builds wait for it, so it
+/// warns, and setup finishes; the node checks again every [`super::CHECK_EVERY`].
+pub fn no_xcode(located: &Located) -> MacCheck {
+    match located {
+        Located::Unselected { found, why } => check(
             MacCheckId::Xcode,
-            Fail,
-            "No full Xcode is selected (only the command line tools, or nothing).",
+            Warn,
+            &format!(
+                "{} is in /Applications, but {why}. iOS simulators and builds wait for it; everything else works.",
+                xcode::name(found)
+            ),
+            yours(xcode::switch(found)),
+        ),
+        _ => check(
+            MacCheckId::Xcode,
+            Warn,
+            "Xcode isn't installed. iOS simulators and builds wait for it; everything else works.",
             Some(Fix {
-                label: "Install Xcode from the App Store in your own account, then in its Terminal"
+                label: "Install Xcode from the App Store (this opens its page); this check looks again by itself"
                     .into(),
-                command: Some("sudo xcode-select -s /Applications/Xcode.app".into()),
+                command: Some(format!("open \"{}\"", xcode::APP_STORE)),
             }),
-        );
+        ),
     }
+}
+
+/// A full Xcode selected at `path`: its licence, then its first launch.
+pub fn xcode_ready(path: &str, license: &Ran, first_launch: &Ran, version: &Ran) -> MacCheck {
     if !license.ok() {
         return check(
             MacCheckId::Xcode,
-            Fail,
-            "Xcode's licence isn't accepted, so xcodebuild and simctl refuse to run.",
-            yours("sudo xcodebuild -license accept"),
+            Warn,
+            "Xcode's licence isn't accepted, so xcodebuild and simctl refuse to run. iOS simulators wait for it.",
+            yours(xcode::ACCEPT),
         );
     }
     if !first_launch.ok() {
         return check(
             MacCheckId::Xcode,
-            Fail,
-            "Xcode's first launch hasn't run: its system components aren't installed.",
-            yours("sudo xcodebuild -runFirstLaunch"),
+            Warn,
+            "Xcode's first launch hasn't run: its system components aren't installed. iOS simulators wait for it.",
+            yours(xcode::FIRST_LAUNCH),
         );
     }
     let name = version.out.lines().next().unwrap_or("Xcode").trim();
@@ -168,6 +201,16 @@ pub fn xcode(selected: &Ran, license: &Ran, first_launch: &Ran, version: &Ran) -
         MacCheckId::Xcode,
         Pass,
         &format!("{name} at {path}, licence accepted."),
+        None,
+    )
+}
+
+/// The simulator check while Xcode isn't usable: the Xcode check says what to do.
+pub fn waits_for_xcode() -> MacCheck {
+    check(
+        MacCheckId::IosRuntime,
+        Warn,
+        "Waits for Xcode: the Xcode check says what it needs.",
         None,
     )
 }
@@ -341,6 +384,14 @@ impl Probe for Live {
                 out: e.to_string(),
             },
         }
+    }
+
+    fn xcodes(&self) -> Vec<String> {
+        xcode::in_applications(std::path::Path::new("/Applications"))
+    }
+
+    fn is_dir(&self, path: &str) -> bool {
+        std::path::Path::new(path).is_dir()
     }
 
     fn accessibility(&self) -> Option<bool> {

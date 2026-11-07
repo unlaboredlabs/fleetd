@@ -160,6 +160,16 @@ pub fn open_checks(health: &MacHealth) -> Vec<&MacCheck> {
         .collect()
 }
 
+/// The warnings with something to do (Xcode not installed yet, or not selected): setup finishes without them, and
+/// only what needs them waits.
+pub fn waiting_checks(health: &MacHealth) -> Vec<&MacCheck> {
+    health
+        .checks
+        .iter()
+        .filter(|c| c.state == MacCheckState::Warn && (c.fix.is_some() || c.command.is_some()))
+        .collect()
+}
+
 /// The checks the node is still at (installing its tools, making its golden simulator) or couldn't tell.
 pub fn pending_checks(health: &MacHealth) -> Vec<&MacCheck> {
     health

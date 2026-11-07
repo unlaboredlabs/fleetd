@@ -251,9 +251,12 @@ async fn mac_grants_and_checks(list: &mut Checklist, node_home: &Path) {
     };
     let open = mac_finish::open_checks(&checked.health);
     let pending = mac_finish::pending_checks(&checked.health);
+    let waiting = mac_finish::waiting_checks(&checked.health);
     if open.is_empty() && pending.is_empty() {
-        if checked.settled {
+        if checked.settled && waiting.is_empty() {
             list.done("checks", "every check passes");
+        } else if checked.settled {
+            list.done("checks", "setup is done; what still waits on you is below");
         } else {
             list.warn(
                 "checks",
@@ -262,17 +265,26 @@ async fn mac_grants_and_checks(list: &mut Checklist, node_home: &Path) {
             );
         }
     }
+    let fix_of = |check: &fleetd_contracts::node_link::MacCheck| match (&check.fix, &check.command)
+    {
+        (Some(fix), Some(command)) => format!("{fix}: {command}"),
+        (Some(fix), None) => fix.to_string(),
+        (None, Some(command)) => command.to_string(),
+        (None, None) => test.into(),
+    };
     for check in open {
-        let fix = match (&check.fix, &check.command) {
-            (Some(fix), Some(command)) => format!("{fix}: {command}"),
-            (Some(fix), None) => fix.to_string(),
-            (None, Some(command)) => command.to_string(),
-            (None, None) => test.into(),
-        };
         list.failed(
             &format!("mac_{}", check.id.as_str()),
             check.message.as_str(),
-            &fix,
+            &fix_of(check),
+        );
+    }
+    // A warning with a fix (Xcode not installed yet, say) holds up only what needs it: said, never failed.
+    for check in waiting {
+        list.warn(
+            &format!("mac_{}", check.id.as_str()),
+            check.message.as_str(),
+            Some(&fix_of(check)),
         );
     }
     // Still at it (its tools installing): not a failure, and the setup step shows it once done.

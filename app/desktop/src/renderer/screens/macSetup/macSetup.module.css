@@ -286,6 +286,11 @@
   white-space: nowrap;
 }
 
+/* A fix that is a page to open (Xcode in the App Store): its button. */
+.opens {
+  margin-top: 2px;
+}
+
 .waiting {
   display: flex;
   align-items: center;
