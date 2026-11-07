@@ -106,7 +106,7 @@ set up a machine that runs agents, over SSH (`--local`: this machine): copies th
 fleetd machine remove <id> [--purge]
 ```
 
-stop and remove the node's service on the machine and revoke its key on the hub; `--purge` also deletes `~/.fleetd/node` and `~/.fleetd/claude.env` there, and what an older fleetd installed for T3 Code
+stop and remove the node's service on the machine, revoke its key on the hub and forget its rows there (run again, it clears what an older remove left); `--purge` also deletes `~/.fleetd/node` and `~/.fleetd/claude.env` there, and what an older fleetd installed for T3 Code
 
 ### fleetd machine set {#machine-set}
 

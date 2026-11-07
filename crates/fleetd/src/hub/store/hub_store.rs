@@ -20,6 +20,83 @@ pub struct StoredThread {
     pub last_run_status: Option<String>,
 }
 
+/// The tables [`HubStore::machine_remove`] clears by `machine_id`: the machine itself, what its node reported (its
+/// projects, sessions, checkouts) and what the hub holds for them (chats, settings, secrets, leads, slots, Navis).
+pub(super) const MACHINE_TABLES: &[&str] = &[
+    "machines",
+    "node_keys",
+    "enroll_tokens",
+    "machine_roles",
+    "slot_machine_caps",
+    "slot_shares",
+    "slot_claims",
+    "shell_cursors",
+    "cloud_outbox",
+    "projects",
+    "project_settings",
+    "project_env",
+    "project_avatars",
+    "project_icons",
+    "project_profiles",
+    "work_projects",
+    "metric_project_repos",
+    "threads",
+    "thread_accounts",
+    "task_threads",
+    "session_prompts",
+    "queued_writes",
+    "wakes",
+    "steers",
+    "chat_projects",
+    "chat_messages",
+    "checklists",
+    "leads",
+    "lead_mcp",
+    "approval_checks",
+    "automations",
+    "trains",
+    "train_watches",
+    "order_env",
+    "github_order_tokens",
+    "hub_links",
+    "mcp_servers",
+    "mcp_oauth",
+    "mcp_secret_forgets",
+    "memory_imports",
+    "memory_refreshes",
+    "memory_refresh_lines",
+    "assistants",
+    "navi_approvals",
+    "navi_auto_approved",
+    "navi_sites",
+    "skill_versions",
+    "skill_uses",
+    "artifact_versions",
+    "telegram_bridges",
+    "telegram_cards",
+    "browser_sessions",
+    "screen_waits",
+];
+
+/// Tables with a `machine_id` that [`HubStore::machine_remove`] keeps. The event log, the time inspector and the
+/// factory metrics are the record of work done, which each prunes by its own retention; its orders and their train
+/// changes and reviews are what the metrics and the train name by id. `navi_erases` is a Navi's delete still to
+/// finish (`navi::erase`), which also removes its files. A test holds every table to one list or the other.
+#[cfg(test)]
+pub(super) const MACHINE_KEEPS: &[&str] = &[
+    "events",
+    "time_spans",
+    "time_orders",
+    "time_lead_runs",
+    "time_wakes",
+    "metric_merges",
+    "metric_touches",
+    "workstreams",
+    "tasks",
+    "changes",
+    "navi_erases",
+];
+
 /// Caches of what the hub has seen of each machine. Reads return what was written; staleness is the reader's call.
 pub struct HubStore {
     db: Arc<HubDb>,
@@ -143,12 +220,32 @@ impl HubStore {
         })
     }
 
-    /// Drops the machine's record (`fleetd machine remove`); its projects and threads stay cached.
-    pub fn machine_remove(&self, machine_id: &MachineId) -> Result<(), StoreError> {
-        self.db.with(|conn| {
-            conn.prepare_cached("DELETE FROM machines WHERE machine_id = ?")?
-                .execute([&machine_id.as_str()])?;
-            Ok(())
+    /// Forgets the machine (`fleetd machine remove`): every row of its in [`MACHINE_TABLES`], keyed by its id, so
+    /// another machine's rows under the same project ids stay. What `MACHINE_KEEPS` holds is history and stays.
+    /// Safe to run again: it clears what an older remove left behind. How many rows went.
+    pub fn machine_remove(&self, machine_id: &MachineId) -> Result<usize, StoreError> {
+        let m = machine_id.as_str();
+        self.db.transaction(|conn| {
+            let mut n = conn
+                .prepare_cached(
+                    "DELETE FROM automation_runs WHERE automation_id IN
+                       (SELECT automation_id FROM automations WHERE machine_id = ?)",
+                )?
+                .execute([m])?;
+            for table in MACHINE_TABLES {
+                n += conn
+                    .prepare_cached(&format!("DELETE FROM {table} WHERE machine_id = ?"))?
+                    .execute([m])?;
+            }
+            // As `project_remove` does for each project: a repo whose checkout was on it goes too.
+            for sql in [
+                "DELETE FROM repos WHERE machine_id = ?1 OR checkout_machine_id = ?1",
+                "DELETE FROM navi_asks WHERE from_machine_id = ?",
+                "DELETE FROM session_places WHERE origin_machine = ?",
+            ] {
+                n += conn.prepare_cached(sql)?.execute([m])?;
+            }
+            Ok(n)
         })
     }
 
