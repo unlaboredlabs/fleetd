@@ -503,6 +503,23 @@ describe("A chat's picture", () => {
   });
 });
 
+describe("A message's file", () => {
+  it("that couldn't be read says the hub's why, and is read again on the next ask, not kept", async () => {
+    const { hub, session } = setup();
+    const reads = () => hub.sentOf("call").filter((c) => c.tool === "attachment_get");
+    const first = session.attachment(KEY, "att1");
+    hub.fail("attachment_get", "not_found", "The hub no longer has that file.");
+    await expect(first).resolves.toMatchObject({ ok: false, error: { message: "The hub no longer has that file." } });
+    const again = session.attachment(KEY, "att1");
+    expect(reads()).toHaveLength(2);
+    hub.answer("attachment_get", { attachmentId: "att1", name: "lease.png", mime: "image/png", dataB64: "iVBORw==" });
+    await expect(again).resolves.toMatchObject({ ok: true, output: { name: "lease.png" } });
+    // Read once it's had.
+    await expect(session.attachment(KEY, "att1")).resolves.toMatchObject({ ok: true });
+    expect(reads()).toHaveLength(2);
+  });
+});
+
 describe("a chat's screens", () => {
   const live = (control: string, takeoverReason?: string) => ({
     sessionId: "B0123456789abcdef0123456789abcdef",

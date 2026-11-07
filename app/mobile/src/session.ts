@@ -4,7 +4,7 @@
 // person's pinned chats sync with the hub on each snapshot (pins.ts). A project's or agent's live screen is watched one
 // at a time: its frames go to the live view's listener alone (onFrame), never through the state, which would draw the
 // whole app again with each.
-import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
+import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
 import type { Navigation } from "./screen";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { memoryPins, Pins, type PinStore } from "./pins";
@@ -213,17 +213,19 @@ export class Session {
     void this.#send(key, row);
   }
 
-  readonly #files = new Map<string, Promise<AttachmentGetOutput | null>>();
+  readonly #files = new Map<string, Promise<Typed<"attachment_get">>>();
 
-  /** A message's file, read once (attachment_get) and kept while the app runs; null when the hub can't give it. */
-  attachment(key: Key, attachmentId: string): Promise<AttachmentGetOutput | null> {
+  /**
+   * A message's file, read once (attachment_get) and kept while the app runs; the hub's or the link's error when it
+   * can't be had, which isn't kept: the next ask reads it again.
+   */
+  attachment(key: Key, attachmentId: string): Promise<Typed<"attachment_get">> {
     const known = this.#files.get(attachmentId);
     if (known !== undefined) return known;
-    const read = this.#client.call("attachment_get", { projectRef: refOf(key), attachmentId }, 60_000).then((r) => (r.ok ? r.output : null));
+    const read = this.#client.call("attachment_get", { projectRef: refOf(key), attachmentId }, 60_000);
     this.#files.set(attachmentId, read);
-    // A failed read is tried again next time.
-    void read.then((out) => {
-      if (out === null) this.#files.delete(attachmentId);
+    void read.then((r) => {
+      if (!r.ok) this.#files.delete(attachmentId);
     });
     return read;
   }

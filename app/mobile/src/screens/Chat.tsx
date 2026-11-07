@@ -1026,7 +1026,7 @@ function MediaView({
       presents: true,
       onPress: () =>
         void session.attachment(chatKey, bubble.attachmentId).then((a) => {
-          if (a !== null) void shareFile(a).catch(() => undefined);
+          if (a.ok) void shareFile(a.output).catch(() => undefined);
         }),
     },
   ];

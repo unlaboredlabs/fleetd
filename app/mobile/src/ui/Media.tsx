@@ -2,13 +2,14 @@
 // full screen to pinch, zoom and share; and any other file, as a card with its kind, name and size that opens the
 // share sheet (Save to Files, another app). Each is read from the hub once (attachment_get) as its bubble shows.
 import { File, Paths } from "expo-file-system";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { bubble, bubbleMax, photoSize } from "../bubble";
 import { fileSize } from "../chatView";
 import { glyphOf, kindOf, type AttachmentGetOutput, type FileGlyph } from "../desktop";
 import { useSession } from "../hubContext";
+import type { Typed } from "../hub/client";
 import type { Key } from "../store";
 import { space, type, useTheme, type Palette } from "../theme";
 import { Glass } from "./Glass";
@@ -17,20 +18,28 @@ import { Tail, TAIL_REACH } from "./Bubble";
 import { Icon, type IconName } from "./Icon";
 import { SkeletonBlock } from "./Skeleton";
 
-/** A message's file, read from the hub; undefined while it comes, null when it couldn't be. */
-export const useAttachment = (chatKey: Key, attachmentId: string): AttachmentGetOutput | null | undefined => {
+/**
+ * A message's file, read from the hub: undefined while it comes, else the file or why it couldn't be had. One that
+ * couldn't is read again on `retry` (a tap) and each time the link is live again, never kept as it failed.
+ */
+export const useAttachment = (chatKey: Key, attachmentId: string): { got: Typed<"attachment_get"> | undefined; retry: () => void } => {
   const session = useSession();
-  const [got, setGot] = useState<AttachmentGetOutput | null | undefined>(undefined);
+  const [got, setGot] = useState<Typed<"attachment_get"> | undefined>(undefined);
+  const [tries, setTries] = useState(0);
   useEffect(() => {
     let on = true;
+    setGot(undefined);
     void session.attachment(chatKey, attachmentId).then((out) => {
       if (on) setGot(out);
     });
     return () => {
       on = false;
     };
-  }, [session, chatKey, attachmentId]);
-  return got;
+  }, [session, chatKey, attachmentId, tries]);
+  const failed = got?.ok === false;
+  const retry = useCallback(() => setTries((n) => n + 1), []);
+  useEffect(() => (failed ? session.onLive(retry) : undefined), [session, failed, retry]);
+  return { got, retry };
 };
 
 const uriOf = (a: AttachmentGetOutput): string => `data:${a.mime};base64,${a.dataB64}`;
@@ -64,18 +73,23 @@ export function ImageBubble({
 }) {
   const t = useTheme();
   const screen = useWindowDimensions();
-  const got = useAttachment(chatKey, attachmentId);
+  const { got: read, retry } = useAttachment(chatKey, attachmentId);
+  const got = read?.ok === true ? read.output : undefined;
   const [aspect, setAspect] = useState<number | undefined>(undefined);
   useEffect(() => {
-    if (got === undefined || got === null) return;
+    if (got === undefined) return;
     Image.getSize(uriOf(got), (w, h) => setAspect(w / h), () => setAspect(4 / 3));
   }, [got]);
-  if (got === null)
+  if (read?.ok === false)
+    // Why the hub couldn't give it, and a tap reads it again.
     return (
-      <View style={[styles.missing, { backgroundColor: t.fillQuiet }]}>
+      <Pressable accessibilityRole="button" accessibilityHint="Reads it again" onPress={retry} style={({ pressed }) => [styles.missing, { backgroundColor: t.fillQuiet }, pressed && styles.pressed]}>
         <Icon name="photos" size={18} color={t.secondary} />
-        <Text style={[type.footnote, { color: t.secondary }]}>{name} couldn't be read</Text>
-      </View>
+        <Text style={[type.footnote, styles.missingText, { color: t.secondary }]}>
+          {`${name} couldn't be read. ${read.error.message} `}
+          <Text style={{ color: t.accent }}>Try Again</Text>
+        </Text>
+      </Pressable>
     );
   const { width, height } = photoSize(screen.width, aspect ?? 4 / 3);
   if (got === undefined || aspect === undefined) return <SkeletonBlock width={width} height={height} radius={bubble.radius} />;
@@ -117,20 +131,23 @@ const GLYPHS: Readonly<Record<FileGlyph, { readonly icon: IconName; readonly tin
  */
 export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine, tail = false }: { chatKey: Key; attachmentId: string; name: string; mime: string; bytes: number; mine: boolean; tail?: boolean }) {
   const t = useTheme();
-  const got = useAttachment(chatKey, attachmentId);
+  const { got: read, retry } = useAttachment(chatKey, attachmentId);
+  const got = read?.ok === true ? read.output : undefined;
+  const failed = read?.ok === false ? read.error : undefined;
   const screen = useWindowDimensions();
   const ink = mine ? t.onAccent : t.label;
   const fill = mine ? t.accentFill : t.bubble;
   const glyph = GLYPHS[glyphOf(mime)];
-  const meta = got === null ? "Couldn't be read" : bytes > 0 ? `${kindOf(mime)} · ${fileSize(bytes)}` : kindOf(mime);
+  const meta = failed !== undefined ? `Couldn't be read: ${failed.message} Tap to try again.` : bytes > 0 ? `${kindOf(mime)} · ${fileSize(bytes)}` : kindOf(mime);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${kindOf(mime)}, ${name}${bytes > 0 ? `, ${fileSize(bytes)}` : ""}`}
-      accessibilityHint="Opens the share sheet to save it or open it in another app"
-      disabled={got === undefined || got === null}
+      accessibilityHint={failed !== undefined ? "Reads it again" : "Opens the share sheet to save it or open it in another app"}
+      disabled={read === undefined}
       onPress={() => {
-        if (got === undefined || got === null) return;
+        if (failed !== undefined) return retry();
+        if (got === undefined) return;
         haptics.tap();
         void shareFile(got).catch(() => undefined);
       }}
@@ -144,7 +161,7 @@ export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine, tai
         <Text style={[type.subhead, styles.strong, { color: ink }]} numberOfLines={1} ellipsizeMode="middle">
           {name}
         </Text>
-        <Text style={[type.caption, { color: ink, opacity: 0.7 }]} numberOfLines={1}>
+        <Text style={[type.caption, { color: ink, opacity: 0.7 }]} numberOfLines={failed !== undefined ? 3 : 1}>
           {meta}
         </Text>
       </View>
@@ -211,6 +228,7 @@ const styles = StyleSheet.create({
   image: { borderRadius: bubble.radius, borderCurve: "continuous", overflow: "hidden" },
   pressed: { opacity: 0.8 },
   // A bubble's corners, side padding and widest (FileBubble); a file's icon sits 10 in.
+  missingText: { flexShrink: 1 },
   missing: { flexDirection: "row", alignItems: "center", gap: space.sm, borderRadius: bubble.radius, borderCurve: "continuous", paddingHorizontal: bubble.padX, paddingVertical: bubble.padY },
   file: { flexDirection: "row", alignItems: "center", gap: space.md, borderRadius: bubble.radius, borderCurve: "continuous", paddingVertical: 10, paddingLeft: 10, paddingRight: bubble.padX },
   fileIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
