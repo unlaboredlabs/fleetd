@@ -2938,16 +2938,24 @@ impl SessionService {
         env.retain(|(k, _)| k != key);
         env.push((key.to_owned(), value.to_owned()));
         env.extend(compile_cache_env(&env));
-        // A writer's commits name its task, so its work merged by hand is found from git alone.
+        // A writer's commits name its task, so its work merged by hand is found from git alone, and it pushes only a
+        // tree its repo's pre-push check passed on.
         if let Some(task) = row
             .local
             .branch
             .as_deref()
             .and_then(super::landed::branch_task)
             && row.local.cwd.is_dir()
-            && let Err(e) = super::landed::trailer_hooks(&row.local.cwd, &task)
         {
-            tracing::warn!(session = id, "commits won't name their task: {e}");
+            if let Err(e) = super::landed::trailer_hooks(&row.local.cwd, &task) {
+                tracing::warn!(session = id, "commits won't name their task: {e}");
+            }
+            if let Err(e) = super::pre_push::gate(&row.local.cwd, &mut env) {
+                tracing::warn!(
+                    session = id,
+                    "pushes won't wait for the repo's pre-push check: {e}"
+                );
+            }
         }
         env.extend(share::jobs_env(
             &env,

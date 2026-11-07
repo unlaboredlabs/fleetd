@@ -110,6 +110,20 @@ explained! {
     ]
 }
 
+const WHY_PRE_PUSH: &str = "A writer pushes only a tree the repo's pre-push check passed on (`.fleetd/pre-push.json`): \
+                            run the check, and push again. A person's push can still skip it.";
+
+explained! {
+    /// Denied to a task's agent, on top of [`AGENT_DISALLOWED`]: the ways past fleetd's pre-push gate
+    /// (`node::pre_push`) an agent reaches for first. Like the nested-claude rules, they keep agents honest; they are
+    /// not a sandbox.
+    TASK_DISALLOWED, TASK_DISALLOWED_WHY: &str = [
+        "Bash(git push *--no-verify*)" => WHY_PRE_PUSH,
+        "Bash(git *core.hooksPath*)" => WHY_PRE_PUSH,
+        "Bash(git *core.hookspath*)" => WHY_PRE_PUSH,
+    ]
+}
+
 explained! {
     /// Denied to a lead, on top of [`AGENT_DISALLOWED`].
     LEAD_DISALLOWED, LEAD_DISALLOWED_WHY: &str = [
@@ -123,12 +137,13 @@ explained! {
 /// The tools denied to a session of `role` beyond [`ALWAYS_DISALLOWED`]. A Navi's lead keeps Edit, Write and the web:
 /// [`role_answer`] decides its file tools, and the hub's site gate its fetches.
 pub fn role_disallowed(role: SessionRole) -> impl Iterator<Item = &'static str> {
-    let (agent, lead): (&[&str], &[&str]) = match role {
+    let (agent, own): (&[&str], &[&str]) = match role {
         SessionRole::Plain => (&[], &[]),
-        SessionRole::Worker | SessionRole::Assistant => (AGENT_DISALLOWED, &[]),
+        SessionRole::Worker => (AGENT_DISALLOWED, TASK_DISALLOWED),
+        SessionRole::Assistant => (AGENT_DISALLOWED, &[]),
         SessionRole::Lead => (AGENT_DISALLOWED, LEAD_DISALLOWED),
     };
-    agent.iter().chain(lead).copied()
+    agent.iter().chain(own).copied()
 }
 
 const WHY_DEVICE: &str = "Screens work as they do for every lead; a final Send or Pay click is the person's, through \
@@ -930,6 +945,8 @@ mod tests {
         let worker = denied(SessionRole::Worker);
         // Skills are fleetd's own (`node::skills`): every agent keeps the Skill tool.
         assert!(!worker.contains(&"Skill") && !worker.contains(&"Edit"));
+        // A task's agent can't push past the repo's pre-push check; a lead never pushes.
+        assert!(worker.contains(&"Bash(git push *--no-verify*)"));
         let lead = denied(SessionRole::Lead);
         assert!(!lead.contains(&"Skill") && lead.contains(&"Edit") && lead.contains(&"WebFetch"));
         // Every name is a tool claude 2.1.302 offers, and none overlaps the list every session gets.
