@@ -212,7 +212,7 @@ it("never says your memory already has it when nothing fit, or only secrets were
 });
 
 it.each([
-  ["this hub's code", { code: NO_ONLY_ME, message: "Import memory runs in a project of yours with Only me on.", fix: "Make a project with Only me on, then import again." }],
+  ["this hub's reason", { code: "invalid", reason: NO_ONLY_ME, message: "Import memory runs in a project of yours with Only me on.", fix: "Create a Navi first, then import again." }],
   ["an older hub's fix", { code: "invalid", message: "Import memory runs in your own Navi, so nobody else can read what you paste, and you have no Navi yet.", fix: "Create a Navi first, then import again." }],
 ])("offers someone with no Only-me project to make one, since imports run only there (%s)", async (_, refusal) => {
   await mount(undefined, refusal);
