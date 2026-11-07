@@ -105,7 +105,7 @@ export function Avatar({ name, navi, size = 52, picture, icon }: { name: string;
   if (glass !== undefined) {
     return (
       <View accessible={false} style={[styles.base, box]}>
-        <Image source={glass} style={{ width: size, height: size }} fadeDuration={0} />
+        <Image source={glass} style={{ width: size, height: size }} fadeDuration={0} accessibilityIgnoresInvertColors />
         {shown.uri === undefined || icon !== undefined ? null : <Picture key={shown.uri} uri={shown.uri} fade={shown.fresh} />}
       </View>
     );
@@ -134,6 +134,7 @@ function Picture({ uri, fade }: { uri: string; fade: boolean }) {
         style={StyleSheet.absoluteFill}
         resizeMode="cover"
         fadeDuration={0}
+        accessibilityIgnoresInvertColors
         onLoad={() => {
           if (fade) Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }).start();
         }}

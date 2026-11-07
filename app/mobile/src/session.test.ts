@@ -168,9 +168,11 @@ describe("Session", () => {
     expect(session.state.answering).toEqual({ r1: true });
     expect(hub.sentOf("call").at(-1)).toMatchObject({ tool: "approval_answer", input: { requestId: "r1", decision: "approve" } });
     hub.answer("approval_answer", { request: { ...approval("r1"), state: "approved" } });
-    await answer;
+    expect(await answer).toBe(true);
     expect(session.state.requests?.map((r) => r.requestId)).toEqual(["r2"]);
     expect(session.state.answering).toEqual({});
+    // Its chat says how it went before the message's own update arrives.
+    expect(session.state.decided.r1?.state).toBe("approved");
   });
 
   it("keeps a request whose answer failed, with why", async () => {
@@ -179,7 +181,9 @@ describe("Session", () => {
     await flush();
     const answer = session.answer("r1", "deny");
     hub.fail("approval_answer", "conflict", "Already answered on the desktop.");
-    await answer;
+    // False, so the card buzzes a warning rather than success.
+    expect(await answer).toBe(false);
+    expect(session.state.decided).toEqual({});
     expect(session.state.requests?.map((r) => r.requestId)).toEqual(["r1"]);
     expect(session.state.answerErrors.r1).toMatchObject({ message: "Already answered on the desktop." });
   });

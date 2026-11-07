@@ -87,7 +87,7 @@ export function ImageBubble({
       onPress={() => onOpen(got)}
     >
       {({ pressed }) => {
-        const picture = <Image source={{ uri: uriOf(got) }} style={{ width, height: height + TAIL_REACH }} resizeMode="cover" />;
+        const picture = <Image source={{ uri: uriOf(got) }} style={{ width, height: height + TAIL_REACH }} resizeMode="cover" accessibilityIgnoresInvertColors />;
         return (
           <View style={pressed && styles.pressed}>
             <View style={[styles.image, { width, height, backgroundColor: t.fillQuiet }]}>{picture}</View>
@@ -164,7 +164,7 @@ export function ImageViewer({ image, onClose }: { image: AttachmentGetOutput | n
   if (image === null) return null;
   return (
     <Modal visible animationType="fade" presentationStyle="overFullScreen" transparent onRequestClose={onClose} statusBarTranslucent>
-      <View style={styles.viewer} accessibilityViewIsModal>
+      <View style={styles.viewer} accessibilityViewIsModal onAccessibilityEscape={onClose}>
         <ScrollView
           maximumZoomScale={4}
           minimumZoomScale={1}
@@ -174,7 +174,7 @@ export function ImageViewer({ image, onClose }: { image: AttachmentGetOutput | n
           contentContainerStyle={styles.zoom}
         >
           <Pressable onPress={() => setChrome((c) => !c)} accessible={false}>
-            <Image source={{ uri: uriOf(image) }} style={{ width: screen.width, height: screen.height }} resizeMode="contain" accessibilityLabel={image.name} />
+            <Image source={{ uri: uriOf(image) }} style={{ width: screen.width, height: screen.height }} resizeMode="contain" accessibilityLabel={image.name} accessibilityIgnoresInvertColors />
           </Pressable>
         </ScrollView>
         {chrome ? (

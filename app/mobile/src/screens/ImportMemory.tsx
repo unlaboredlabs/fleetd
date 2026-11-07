@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHub, type SettingsProps } from "../hubContext";
 import { addedWords, canAdd, IMPORT_MAX, importClient, importStep, initialImport, lostAnswer, needsNavi, oldHub } from "../memoryImport";
 import { shape, space, type, useTheme } from "../theme";
+import { useAnnounce } from "../ui/announce";
 import { Button } from "../ui/Button";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
@@ -26,6 +27,8 @@ const BOX_MIN = 168;
 /** A step's number badge, and how far it grows with the text. */
 const BADGE = 20;
 const BADGE_SCALE = 1.4;
+
+const WORKING_NOTE = "Picking out what to remember. This takes about a minute.";
 
 export function ImportMemory({ navigation }: SettingsProps<"ImportMemory">) {
   const t = useTheme();
@@ -72,6 +75,7 @@ export function ImportMemory({ navigation }: SettingsProps<"ImportMemory">) {
 
   const done = s.phase.t === "done" ? addedWords(s.phase.imported) : null;
   const working = s.phase.t === "working";
+  useAnnounce(working ? WORKING_NOTE : done?.title);
   // Pressed to go further: back to Settings once added.
   const button = done !== null ? { label: "Done", onPress: () => navigation.goBack(), disabled: false } : { label: "Add to Memory", onPress: () => void add(), disabled: !canAdd(s) };
   const lift = Math.max(insets.bottom - space.sm, 0);
@@ -163,7 +167,7 @@ export function ImportMemory({ navigation }: SettingsProps<"ImportMemory">) {
         <View style={[styles.dockRow, { paddingBottom: Math.max(insets.bottom, space.lg) }]} onLayout={(e) => setDock(e.nativeEvent.layout.height)}>
           {working ? (
             <Animated.Text entering={FadeIn.duration(reduce ? 0 : dur.quick).easing(ease.snap)} style={[type.footnote, styles.center, styles.note, { color: t.secondary }]} accessibilityLiveRegion="polite">
-              Picking out what to remember. This takes about a minute.
+              {WORKING_NOTE}
             </Animated.Text>
           ) : null}
           <Button size="large" label={button.label} onPress={button.onPress} disabled={button.disabled} busy={working} />

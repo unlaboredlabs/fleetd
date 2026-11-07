@@ -1,5 +1,5 @@
 // The composer, as iOS 26's Messages and Telegram draw it: floating over the thread in Liquid Glass, an attach button
-// (photos, the camera, files) beside a glass field that grows with the text, and a round send button inside it that
+// (photos, the camera, files; iOS's own menu on iOS 26, MenuButton) beside a glass field that grows with the text, and a round send button inside it that
 // shows once there is something to send. Picked files upload at once (upload.ts), each a thumbnail with its progress;
 // a reply shows what it quotes above the field. Return makes a new line; the button sends.
 import * as DocumentPicker from "expo-document-picker";
@@ -14,7 +14,7 @@ import { mimeOf, pickedName, refusal, type Uploaded } from "../upload";
 import { Glass, GlassGroup } from "./Glass";
 import { haptics } from "./haptics";
 import { Icon } from "./Icon";
-import { Menu, type Rect } from "./Menu";
+import { MenuButton } from "./MenuButton";
 import { grows, quick, useReduceMotion } from "./motion";
 
 export type Upload = (bytes: Uint8Array, name: string, mime: NonNullable<ReturnType<typeof mimeOf>>, progress: (done: number) => void) => Promise<Uploaded>;
@@ -66,9 +66,7 @@ export function Composer({
   const reduce = useReduceMotion();
   const [text, setText] = useState("");
   const [files, setFiles] = useState<readonly Attaching[]>([]);
-  const [menu, setMenu] = useState<Rect | null>(null);
   const input = useRef<ComponentRef<typeof TextInput>>(null);
-  const plus = useRef<ComponentRef<typeof View>>(null);
   const uploading = files.some((f) => f.ref === undefined && f.error === undefined);
   const ready = (text.trim() !== "" || files.some((f) => f.ref !== undefined)) && !uploading;
 
@@ -173,22 +171,17 @@ export function Composer({
         </Glass>
       )}
       <GlassGroup style={styles.row} spacing={10}>
-        <View ref={plus} collapsable={false}>
-          <Glass interactive style={styles.circle}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Attach"
-              accessibilityHint="Photos, the camera or a file"
-              style={styles.circleHit}
-              onPress={() => {
-                haptics.tap();
-                plus.current?.measureInWindow((x: number, y: number, width: number, height: number) => setMenu({ x, y, width, height }));
-              }}
-            >
-              <Icon name="plus" size={20} color={t.label} weight="medium" />
-            </Pressable>
-          </Glass>
-        </View>
+        <MenuButton
+          icon="plus"
+          label="Attach"
+          hint="Photos, the camera or a file"
+          size={44}
+          items={[
+            { label: "Photos", icon: "photos", presents: true, onPress: () => void pickPhotos() },
+            { label: "Camera", icon: "takePhoto", presents: true, onPress: () => void takePhoto() },
+            { label: "File", icon: "file", presents: true, onPress: () => void pickFiles() },
+          ]}
+        />
         <Animated.View {...grows(reduce)} style={styles.grow}>
           <Glass style={styles.field}>
             {files.length === 0 ? null : (
@@ -228,16 +221,6 @@ export function Composer({
           </Glass>
         </Animated.View>
       </GlassGroup>
-      <Menu
-        above
-        at={menu}
-        onClose={() => setMenu(null)}
-        items={[
-          { label: "Photos", icon: "photos", presents: true, onPress: () => void pickPhotos() },
-          { label: "Camera", icon: "takePhoto", presents: true, onPress: () => void takePhoto() },
-          { label: "File", icon: "file", presents: true, onPress: () => void pickFiles() },
-        ]}
-      />
     </View>
   );
 }
@@ -288,8 +271,6 @@ function Thumb({ file, onRemove }: { file: Attaching; onRemove: () => void }) {
 const styles = StyleSheet.create({
   bar: { paddingHorizontal: space.md, paddingTop: space.sm, gap: space.sm },
   row: { flexDirection: "row", alignItems: "flex-end", gap: space.sm },
-  circle: { width: 44, height: 44, borderRadius: 22 },
-  circleHit: { flex: 1, alignItems: "center", justifyContent: "center" },
   grow: { flex: 1 },
   field: { borderRadius: 22, borderCurve: "continuous", minHeight: 44, justifyContent: "center" },
   inputRow: { flexDirection: "row", alignItems: "flex-end", paddingLeft: space.lg, paddingRight: 6 },

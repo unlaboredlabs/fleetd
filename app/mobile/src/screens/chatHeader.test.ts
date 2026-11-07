@@ -23,7 +23,7 @@ describe("the chat's top bar", () => {
   });
 
   it("is drawn in the chat on iOS, with Back and Info either side of the title", () => {
-    expect(chat).toMatch(/Platform\.OS === "ios" \? \(\s*<ChatBar top=\{insets\.top\} onBack=\{\(\) => navigation\.goBack\(\)\} onInfo=\{openInfo\}>\s*<ChatTitle /u);
+    expect(chat).toMatch(/Platform\.OS === "ios" \? \([^]*?<EdgeEffect[^]*?>\s*<ChatBar top=\{insets\.top\} onBack=\{\(\) => navigation\.goBack\(\)\} onInfo=\{openInfo\}>\s*<ChatTitle /u);
     const bar = fn(chat, "ChatBar");
     expect(bar).toContain('button("Back", "chevron.left", onBack)');
     expect(bar).toContain('button("Info", "info.circle", onInfo)');
