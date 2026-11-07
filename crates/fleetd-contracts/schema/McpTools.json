@@ -1847,6 +1847,62 @@
         }
       ]
     },
+    "BoatSignIn": {
+      "description": "\"Sign in with boat\": boat.dev's agent sign-in, which the hub runs in place of a pasted key. Once the person signs\nin, boat hands the hub a full-access key; the hub uses it once to make the narrow key the setup step lists, seals\nonly that one, and revokes the full-access key. Neither key, nor boat's claim token, is ever shown.",
+      "properties": {
+        "email": {
+          "description": "The boat.dev account's email it signs in to.",
+          "type": "string"
+        },
+        "expiresAtMs": {
+          "description": "When the code lapses (ms), while waiting.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "said": {
+          "description": "What happened, in one line: the key made and the sign-in's key revoked, or the step that failed and why.",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/BoatSignInState"
+        },
+        "userCode": {
+          "description": "The 6-digit code they type on that page once signed in, while waiting.",
+          "type": "string"
+        },
+        "verificationUri": {
+          "description": "boat.dev's page the person opens and signs in on, while waiting.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "email"
+      ],
+      "type": "object"
+    },
+    "BoatSignInState": {
+      "description": "Where \"Sign in with boat\" is (cloud_sign_in).",
+      "oneOf": [
+        {
+          "enum": [
+            "failed"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "waiting",
+          "description": "The person opens the link, signs in to boat.dev and types the code; the hub asks boat every few seconds.",
+          "type": "string"
+        },
+        {
+          "const": "done",
+          "description": "The hub's narrow key is sealed and the sign-in's own key revoked.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "BoxPublicKey": {
       "type": "string"
     },
@@ -5031,6 +5087,32 @@
       ],
       "type": "object"
     },
+    "CloudSignInInput": {
+      "properties": {
+        "email": {
+          "description": "The boat.dev account's email: starts \"Sign in with boat\" (cloud_get's signIn shows the link and code).\nAbsent: stops the one under way.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "CloudSignInOutput": {
+      "properties": {
+        "cloud": {
+          "$ref": "#/$defs/CloudView"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cloud"
+      ],
+      "type": "object"
+    },
     "CloudSize": {
       "description": "A size boat.dev offers, with its list price.",
       "properties": {
@@ -5189,6 +5271,10 @@
             "$ref": "#/$defs/ProjectRef"
           },
           "type": "array"
+        },
+        "signIn": {
+          "$ref": "#/$defs/BoatSignIn",
+          "description": "The admin's \"Sign in with boat\", since the hub started."
         },
         "sizes": {
           "items": {
@@ -10836,6 +10922,12 @@
         "cloud_set.output": {
           "$ref": "#/$defs/CloudSetOutput"
         },
+        "cloud_sign_in.input": {
+          "$ref": "#/$defs/CloudSignInInput"
+        },
+        "cloud_sign_in.output": {
+          "$ref": "#/$defs/CloudSignInOutput"
+        },
         "cloud_stop.input": {
           "$ref": "#/$defs/CloudStopInput"
         },
@@ -11858,6 +11950,8 @@
         "cloud_resume.output",
         "cloud_set.input",
         "cloud_set.output",
+        "cloud_sign_in.input",
+        "cloud_sign_in.output",
         "cloud_stop.input",
         "cloud_stop.output",
         "cloud_test.input",

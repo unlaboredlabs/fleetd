@@ -747,6 +747,30 @@ export type BaseError = {
 /** Why a worktree's base may be behind its remote's default branch. */
 export type BaseErrorKind = "offline" | "auth" | "no_access" | "no_ssh" | "no_default_branch" | "no_remote" | "failed";
 
+/**
+ * "Sign in with boat": boat.dev's agent sign-in, which the hub runs in place of a pasted key. Once the person signs
+ * in, boat hands the hub a full-access key; the hub uses it once to make the narrow key the setup step lists, seals
+ * only that one, and revokes the full-access key. Neither key, nor boat's claim token, is ever shown.
+ */
+export type BoatSignIn = {
+  /** The boat.dev account's email it signs in to. */
+  email: string;
+  /** When the code lapses (ms), while waiting. */
+  expiresAtMs?: number;
+  /** What happened, in one line: the key made and the sign-in's key revoked, or the step that failed and why. */
+  said?: string;
+  state: BoatSignInState;
+  /** The 6-digit code they type on that page once signed in, while waiting. */
+  userCode?: string;
+  /** boat.dev's page the person opens and signs in on, while waiting. */
+  verificationUri?: string;
+};
+
+/** Where "Sign in with boat" is (cloud_sign_in). */
+export type KnownBoatSignInState = "failed" | "waiting" | "done";
+/** KnownBoatSignInState, or a value from a newer hub. */
+export type BoatSignInState = KnownBoatSignInState | (string & {});
+
 export type BoxPublicKey = string;
 
 export type BreakerState = "closed" | "open";
@@ -1968,6 +1992,20 @@ export type CloudSetOutput = {
   truncated?: boolean;
 };
 
+export type CloudSignInInput = {
+  /**
+   * The boat.dev account's email: starts "Sign in with boat" (cloud_get's signIn shows the link and code).
+   * Absent: stops the one under way.
+   */
+  email?: string;
+};
+
+export type CloudSignInOutput = {
+  cloud: CloudView;
+  next?: string;
+  truncated?: boolean;
+};
+
 /** A size boat.dev offers, with its list price. */
 export type CloudSize = {
   /** boat's `type`: `small`, `default`, `large`, `xlarge`. */
@@ -2032,6 +2070,8 @@ export type CloudView = {
   poolSize: number;
   /** The projects whose work may run on cloud machines. */
   projects: ProjectRef[];
+  /** The admin's "Sign in with boat", since the hub started. */
+  signIn?: BoatSignIn;
   sizes: CloudSize[];
   /**
    * The public half of the hub's own SSH key (OpenSSH format), which boat.dev puts on each cloud machine so the
@@ -8922,6 +8962,7 @@ export interface ToolMap {
   cloud_reset: { input: CloudResetInput; output: CloudResetOutput };
   cloud_resume: { input: CloudResumeInput; output: CloudResumeOutput };
   cloud_set: { input: CloudSetInput; output: CloudSetOutput };
+  cloud_sign_in: { input: CloudSignInInput; output: CloudSignInOutput };
   cloud_stop: { input: CloudStopInput; output: CloudStopOutput };
   cloud_test: { input: CloudTestInput; output: CloudTestOutput };
   decisions_list: { input: DecisionsListInput; output: DecisionsListOutput };
