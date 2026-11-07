@@ -159,6 +159,10 @@ made and when it expires, but never the code itself. To take one back before it 
 
 To repair the worker later, run the same command again. `--rejoin` enrolls it again with a new code.
 
+A node keeps the machine id it joined with. The hub refuses to enroll a node home (its key in `node-key.pem`)
+already enrolled under another id, since that would put all its projects and chats on a second machine. To repair it, rejoin it under its own id: run `fleetd pair --worker <id>` on the hub and the line it prints.
+To give it a new id, remove the old machine first (`fleetd machine remove <old id>`), then join under the new one.
+
 ## Log in Claude on a worker {#claude}
 
 Sessions use the worker's own claude setup in `~/.claude`. If `claude` works in your shell there, it works for
