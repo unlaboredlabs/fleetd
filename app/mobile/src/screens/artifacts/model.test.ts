@@ -1,17 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { HubEvent } from "../../desktop";
 import { touchesArtifacts } from "./api";
-import { ARTIFACT_CSP, artifactPage, cardLine, FENCE, fileLine, linkTarget, loadsOnly, rowLine } from "./model";
+import { ARTIFACT_CSP, ARTIFACT_LINK, artifactPage, cardLine, FENCE, fileLine, first, linkOf, linkTarget, loadsOnly, rowLine } from "./model";
 
 const directives = (csp: string): Map<string, string> => new Map(csp.split(";").map((d) => d.trim().split(/\s+/u)).map(([name, ...values]) => [name ?? "", values.join(" ")]));
 
 describe("an HTML artifact on the phone", () => {
   it("gets the CSP ahead of anything it says, its doctype kept first", () => {
-    const page = artifactPage("<!DOCTYPE html><html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src *\"></head><body><script>1</script></body></html>");
-    expect(page.startsWith(`<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="${ARTIFACT_CSP}">`)).toBe(true);
+    const page = artifactPage("<!DOCTYPE html><html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src *\"></head><body><script>1</script></body></html>", "k1");
+    expect(page.startsWith(`<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="${ARTIFACT_CSP}"><meta http-equiv="x-dns-prefetch-control" content="off">`)).toBe(true);
     // The page's own looser policy comes after ours, and a second policy can only narrow the first.
     expect(page.indexOf(ARTIFACT_CSP)).toBeLessThan(page.indexOf("default-src *"));
-    expect(artifactPage("<h1>Sweep</h1>").startsWith(`<!doctype html><meta http-equiv="Content-Security-Policy" content="${ARTIFACT_CSP}">`)).toBe(true);
+    // The first script runs before any of the page's own.
+    expect(page.indexOf(first("k1"))).toBeLessThan(page.indexOf("<script>1</script>"));
+    expect(artifactPage("<h1>Sweep</h1>", "k1").startsWith(`<!doctype html><meta http-equiv="Content-Security-Policy" content="${ARTIFACT_CSP}">`)).toBe(true);
   });
 
   it("runs its own scripts and styles and loads nothing from anywhere", () => {
@@ -30,7 +32,25 @@ describe("an HTML artifact on the phone", () => {
     for (const url of ["https://example.com/", "http://127.0.0.1:4790/", "file:///etc/hosts", "fleetd://pair?x", "data:text/html,x", "javascript:alert(1)", "about:srcdoc"]) expect(loadsOnly(url), url).toBe(false);
   });
 
-  it("has no bridge, storage, cookies, files or popups", () => {
+  it("takes WebRTC away, which no CSP stops, and hides its key from the page", () => {
+    const script = first("k1");
+    expect(() => new Function(script.slice("<script>".length, -"</script>".length))).not.toThrow();
+    expect(script).toContain("document.currentScript.remove()");
+    for (const name of ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel"]) expect(script).toContain(`"${name}"`);
+    expect(script).toContain("e.isTrusted");
+  });
+
+  it("opens only a tapped web link that carries the page's key", () => {
+    const msg = (href: unknown, key: unknown) => JSON.stringify({ [ARTIFACT_LINK]: href, key });
+    expect(linkOf(msg("https://github.com/x/pull/1", "k1"), "k1")).toBe("https://github.com/x/pull/1");
+    expect(linkOf(msg("mailto:a@b.dev", "k1"), "k1")).toBe("mailto:a@b.dev");
+    expect(linkOf(msg("https://github.com/", "k2"), "k1")).toBeUndefined();
+    expect(linkOf(msg("https://github.com/", undefined), "k1")).toBeUndefined();
+    for (const href of ["fleetd://pair?x", "javascript:alert(1)", "file:///etc/hosts", "tel:1", 7]) expect(linkOf(msg(href, "k1"), "k1"), String(href)).toBeUndefined();
+    for (const data of ["", "not json", "null", "\"https://github.com/\""]) expect(linkOf(data, "k1"), data).toBeUndefined();
+  });
+
+  it("has no storage, cookies, files, camera or popups", () => {
     expect(FENCE).toMatchObject({
       javaScriptEnabled: true,
       domStorageEnabled: false,
@@ -43,8 +63,9 @@ describe("an HTML artifact on the phone", () => {
       javaScriptCanOpenWindowsAutomatically: false,
       setSupportMultipleWindows: false,
       originWhitelist: ["about:blank"],
+      mediaCapturePermissionGrantType: "deny",
     });
-    for (const bridge of ["onMessage", "injectedJavaScript", "injectedJavaScriptBeforeContentLoaded", "injectedJavaScriptObject"]) expect(FENCE).not.toHaveProperty(bridge);
+    for (const bridge of ["injectedJavaScript", "injectedJavaScriptBeforeContentLoaded", "injectedJavaScriptObject"]) expect(FENCE).not.toHaveProperty(bridge);
   });
 });
 

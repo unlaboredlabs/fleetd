@@ -1,16 +1,25 @@
-// An HTML artifact in a WebView fenced as model.ts says: the page with the CSP ahead of it, its scripts on, and no
-// bridge (no onMessage and nothing injected, so window.ReactNativeWebView never exists in it), no storage, cookies or
-// files, and nothing loaded past the page itself. White behind it unless the page paints its own, as a browser would.
-import { StyleSheet } from "react-native";
+// An HTML artifact in a WebView fenced as model.ts says: the page with the CSP and its first script ahead of it, its
+// scripts on, no storage, cookies or files, and nothing loaded past the page itself. Nothing is injected; the one
+// message taken from it is a person's tap on a link, carrying the key only the first script holds, which opens in the
+// browser as a Markdown link does. White behind it unless the page paints its own, as a browser would.
+import { getRandomBytes } from "expo-crypto";
+import { useMemo } from "react";
+import { Linking, StyleSheet } from "react-native";
 import { WebView } from "react-native-webview";
-import { artifactPage, FENCE, loadsOnly } from "./model";
+import { artifactPage, FENCE, linkOf, loadsOnly } from "./model";
 
 export function ArtifactFrame({ html, title }: { html: string; title: string }) {
+  const key = useMemo(() => Array.from(getRandomBytes(16), (b) => b.toString(16).padStart(2, "0")).join(""), []);
+  const page = useMemo(() => artifactPage(html, key), [html, key]);
   return (
     <WebView
       {...FENCE}
-      source={{ html: artifactPage(html), baseUrl: "about:blank" }}
+      source={{ html: page, baseUrl: "about:blank" }}
       onShouldStartLoadWithRequest={(request) => loadsOnly(request.url)}
+      onMessage={(e) => {
+        const href = linkOf(e.nativeEvent.data, key);
+        if (href !== undefined) void Linking.openURL(href);
+      }}
       accessibilityLabel={title}
       style={styles.page}
       containerStyle={styles.page}
