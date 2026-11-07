@@ -21,8 +21,8 @@ export const repairOf = (machineId: string, hosts: ReadonlyArray<MachineHost> | 
 /** What Remove does to it: the hub undoes what it set up; a machine that joined by itself only loses its key. */
 export const removeLine = (machineId: string, hosts: ReadonlyArray<MachineHost> | undefined): string =>
   hosts?.some((h) => h.machineId === machineId && (h.source === "set_up" || h.source === "hub"))
-    ? `The hub stops and removes ${machineId}'s node service, then revokes its key. Its agents stop; its repos and worktrees stay.`
-    : `The hub revokes ${machineId}'s key and forgets it. It joined by itself, so stop its node on it by hand.`;
+    ? `The hub stops and removes ${machineId}'s node service, then revokes its key. Its agents stop, and its projects are deleted from fleetd with their chats, memory, skills, files and orders; its repos and worktrees stay.`
+    : `The hub revokes ${machineId}'s key and forgets it, and its projects are deleted from fleetd with their chats, memory, skills, files and orders. It joined by itself, so stop its node on it by hand.`;
 
 /**
  * What a machine that isn't simply online needs, under its name in the list: why it is degraded and where its fix

@@ -5,7 +5,7 @@
 //! appended under `<home>/attachments/uploads/<id>`. Every file's bytes must fit its type
 //! ([`AttachmentMime::fits`]), its name carries an extension of that type, and text is kept as UTF-8 (a bank's
 //! Windows-1252 CSV, Excel's UTF-16 text).
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
@@ -40,7 +40,12 @@ struct Row {
 }
 
 pub fn dir(hub: &Hub) -> PathBuf {
-    hub.config.home.join("attachments")
+    dir_in(&hub.config.home)
+}
+
+/// [`dir`] under the hub home `home`.
+pub fn dir_in(home: &Path) -> PathBuf {
+    home.join("attachments")
 }
 
 fn mime_of(mime: &str) -> Option<AttachmentMime> {

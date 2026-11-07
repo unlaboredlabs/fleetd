@@ -205,10 +205,11 @@ fleetd machine remove builder-1
 ```
 
 It stops and removes the node's service on that machine, revokes its key on the hub, and forgets everything the hub
-held of it, keyed by its id: its projects, sessions, checkouts, chats, settings and slots. Another machine's rows stay,
-even under the same project ids. Its orders, the event log, and the time and factory metrics stay as history, until
-their own retention prunes them. A node that is still linked is cut off at its next heartbeat (within 15 s), and
-what it reported in the meantime is forgotten too. To clear what an older fleetd's remove left behind, run the same
+held of it, keyed by its id: its sessions, checkouts, settings and slots, and its projects, each erased as deleting it
+would: its chat, memory, skills, files, orders and tasks. A machine that joins again under the same id starts its
+projects afresh. Another machine's rows stay, even under the same project ids. The factory metrics stay as history,
+until their own retention prunes them. Open apps drop the machine and its projects at once. A node that is still linked
+is cut off at its next heartbeat (within 15 s), and what it reported in the meantime is forgotten too. To clear what an older fleetd's remove left behind, run the same
 command again. The projects it left are also listed under **Left from removed machines** in Settings › Hub ›
 Machines, each with Remove, and Delete in Settings › Projects works for them too: no machine holds their files, so
 either only forgets the project in fleetd. The hub never forgets them on its own.
@@ -228,7 +229,8 @@ For a machine that joined with `fleetd pair --worker`, only the key is revoked:
 ```text
 laptop was not set up by fleetd machine add from this hub, so only its key is revoked here; stop its node by hand.
 revoked laptop's node key; the hub refuses that node from now on.
-the hub forgot laptop's projects, sessions, chats and settings (214 rows); its orders, event log and metrics stay as history.
+erased laptop's 2 projects: their chats, memory, skills, files, orders and tasks.
+the hub forgot laptop's sessions, checkouts and settings (214 rows); the factory metrics stay as history.
 ```
 
 Stop its node on that machine yourself:

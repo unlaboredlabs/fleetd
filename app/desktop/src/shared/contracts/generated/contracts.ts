@@ -2819,6 +2819,7 @@ export type KnownHubEventType =
   | "machine.hosts"
   | "machine.guard"
   | "machine.recovery_paused"
+  | "machine.removed"
   | "thread.orphaned"
   | "project.removed"
   | "project.added"

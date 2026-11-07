@@ -88,6 +88,8 @@ describe("event effects", () => {
     // A known machine's status is patched in place; only one the snapshot lacks resyncs.
     expect(effectsOf(e("machine.offline", undefined, { machineId: "devbox" }), { devbox: {} }).resync).toBe(false);
     expect(effectsOf(e("machine.online", undefined, { machineId: "buildbox" }), { devbox: {} }).resync).toBe(true);
+    // A removed machine, known here, goes from the list with its projects at once, not at the next connect.
+    expect(effectsOf(e("machine.removed", undefined, { machineId: "devbox" }), { devbox: {} }).resync).toBe(true);
     expect(effectsOf(e("rocket.launched"))).toEqual({ invalidate: [], resync: false });
     expect(tools(e("prompt.changed"))).toContain("prompt_get");
     // A lead's remember, an Undo or an edit elsewhere: Settings → Projects → Instructions & memory reads the files again, and Automations the

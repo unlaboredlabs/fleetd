@@ -42,6 +42,11 @@ pub enum HubEventType {
     /// resumes them again; `data` is `RecoveryPausedData`, and the summary says why.
     #[serde(rename = "machine.recovery_paused")]
     MachineRecoveryPaused,
+    /// The machine was removed: the hub forgot it and erased its projects, so the app drops it and them. Sent by
+    /// `machine_remove`, and when a removed node's link ends (`fleetd machine remove` runs outside the hub), so a node
+    /// still linked at its removal may bring a second one.
+    #[serde(rename = "machine.removed")]
+    MachineRemoved,
     /// The machine's node runs a session no task or lead of this hub owns; `data` is `ThreadOrphanedData`.
     #[serde(rename = "thread.orphaned")]
     ThreadOrphaned,
@@ -311,6 +316,7 @@ impl HubEventType {
             Self::MachineHosts => "machine.hosts",
             Self::MachineGuard => "machine.guard",
             Self::MachineRecoveryPaused => "machine.recovery_paused",
+            Self::MachineRemoved => "machine.removed",
             Self::ThreadOrphaned => "thread.orphaned",
             Self::ProjectRemoved => "project.removed",
             Self::ProjectAdded => "project.added",

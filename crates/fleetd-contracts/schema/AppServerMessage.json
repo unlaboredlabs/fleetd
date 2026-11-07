@@ -899,6 +899,11 @@
           "type": "string"
         },
         {
+          "const": "machine.removed",
+          "description": "The machine was removed: the hub forgot it and erased its projects, so the app drops it and them. Sent by\n`machine_remove`, and when a removed node's link ends (`fleetd machine remove` runs outside the hub), so a node\nstill linked at its removal may bring a second one.",
+          "type": "string"
+        },
+        {
           "const": "thread.orphaned",
           "description": "The machine's node runs a session no task or lead of this hub owns; `data` is `ThreadOrphanedData`.",
           "type": "string"

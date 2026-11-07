@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use fleetd_contracts::hello::PROTOCOL_VERSION;
-use fleetd_contracts::ids::MachineId;
+use fleetd_contracts::ids::{MachineId, ProjectRef};
 use fleetd_contracts::model::MachineStatus;
 use sha2::{Digest, Sha256};
 
@@ -1417,6 +1417,22 @@ pub async fn remove(
         }
     }
 
+    // Its projects go as deleting each would (`navi::erase`): their chats, memory, skills, files and orders, so one
+    // that joins again under the same id never comes back half restored.
+    let erased = hub
+        .store
+        .projects_list(Some(machine), None)
+        .and_then(|projects| {
+            for project in &projects {
+                let r = ProjectRef {
+                    machine_id: machine.clone(),
+                    project_id: project.project_id.clone(),
+                };
+                crate::hub::navi::erase::erase_in(hub.store.db(), home, &r)?;
+            }
+            Ok(projects.len())
+        })
+        .map_err(|error| Stop::fail(error.to_string()))?;
     let (revoked, rows) = hub
         .auth
         .revoke_node(machine)
@@ -1431,9 +1447,18 @@ pub async fn remove(
     } else {
         format!("the hub held no node key for {machine_id}.")
     });
+    match erased {
+        0 => {}
+        1 => progress.say(&format!(
+            "erased {machine_id}'s project: its chat, memory, skills, files, orders and tasks."
+        )),
+        n => progress.say(&format!(
+            "erased {machine_id}'s {n} projects: their chats, memory, skills, files, orders and tasks."
+        )),
+    }
     if rows > 0 {
         progress.say(&format!(
-            "the hub forgot {machine_id}'s projects, sessions, chats and settings ({rows} rows); its orders, event log and metrics stay as history."
+            "the hub forgot {machine_id}'s sessions, checkouts and settings ({rows} rows); the factory metrics stay as history."
         ));
     }
     if let (Some(mut state), Some(_)) = (state, &record) {
@@ -1452,7 +1477,7 @@ pub async fn remove(
 }
 
 /// What removing the machine stops, when it runs projects' leads: "devbox runs the leads of 2 projects (app, site):
-/// removing it stops them, and their chats wait until it joins again". None when it runs none. `machine remove` and
+/// removing it stops them and erases its projects, with their chats and history". None when it runs none. `machine remove` and
 /// the app's Remove refuse it unless forced, so a misclick never takes every project's lead with it.
 pub fn leads_on(hub: HubSide<'_>, machine: &MachineId) -> Result<Option<String>, Stop> {
     const NAMED: usize = 5;
@@ -1472,8 +1497,8 @@ pub fn leads_on(hub: HubSide<'_>, machine: &MachineId) -> Result<Option<String>,
         n => format!("{n} projects"),
     };
     Ok(Some(format!(
-        "{machine} runs the leads of {projects} ({named}): removing it stops them, and their chats wait until it \
-         joins again"
+        "{machine} runs the leads of {projects} ({named}): removing it stops them and erases its projects, with their \
+         chats and history"
     )))
 }
 

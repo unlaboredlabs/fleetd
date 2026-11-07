@@ -32,6 +32,21 @@ const KEEP: usize = 20;
 /// A step's output, at most.
 const OUTPUT_MAX: usize = 4000;
 
+/// machine.removed: the hub forgot `machine_id` and erased its projects, so the open apps drop it and them now
+/// instead of at their next connect.
+pub fn removed_event(machine_id: &MachineId, at: String) -> NewEvent {
+    NewEvent {
+        at: at.into(),
+        r#type: HubEventType::MachineRemoved,
+        machine_id: Some(machine_id.clone()),
+        project_id: None,
+        thread_id: None,
+        summary: format!("{machine_id} was removed from the hub"),
+        data: None,
+        attention: None,
+    }
+}
+
 /// What adding a machine reaches outside the hub: the machine, the fleetd it gets, and where hosts are found. Tests
 /// stand in fakes.
 pub trait SetupPorts: Send + Sync {

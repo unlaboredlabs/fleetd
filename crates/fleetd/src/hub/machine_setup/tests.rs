@@ -753,6 +753,113 @@ async fn removes_a_machine_it_set_up() {
     );
 }
 
+/// A removed machine's projects went from the hub's rows, but open apps were never told, so every desktop and phone
+/// kept the machine and its projects in their lists until they connected again; and the hub kept each project's
+/// memory, skills and chat files, which came back with no chat when the machine joined again. Its removal says
+/// machine.removed, and erases its projects as deleting each would (`navi::erase`); another machine's stay.
+#[tokio::test]
+async fn removing_a_machine_tells_open_apps_and_erases_its_projects() {
+    use fleetd_contracts::ids::{ProjectId, ProjectRef};
+    use fleetd_contracts::skills::{SkillName, SkillScope};
+
+    let (hub, _machine, _home) = hub();
+    let out = call(&hub, "machine_add", json!({ "host": "builder-1" })).await;
+    finished(&hub, out["run"]["runId"].as_str().unwrap()).await;
+    let gone = ProjectRef {
+        machine_id: MachineId::unchecked("builder-1"),
+        project_id: ProjectId::unchecked("p1"),
+    };
+    let kept = ProjectRef {
+        machine_id: MachineId::unchecked("laptop"),
+        project_id: ProjectId::unchecked("p1"),
+    };
+    let mut files = Vec::new();
+    for r in [&gone, &kept] {
+        hub.store
+            .projects_upsert_many(
+                &r.machine_id,
+                &[serde_json::from_value(json!({
+                    "machineId": r.machine_id, "projectId": "p1", "title": "storefront",
+                    "workspaceRoot": "/work/storefront",
+                    "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+                }))
+                .unwrap()],
+            )
+            .unwrap();
+        let sha = format!("{:0>64}", r.machine_id.as_str().len());
+        let key = format!("{}/p1", r.machine_id);
+        hub.db
+            .with(|c| {
+                c.execute(
+                    "INSERT INTO attachments (sha256, name, mime, bytes, by, created_ms, project)
+                     VALUES (?, 'invoice.pdf', 'application/pdf', 3, 'k1', 1, ?)",
+                    [&sha, &key],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        let blob = crate::hub::intake::attachments::dir(&hub).join(&sha);
+        let memory = hub.db.memory().project_dir(r).unwrap().join("MEMORY.md");
+        for file in [&blob, &memory] {
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, "kept").unwrap();
+        }
+        hub.db
+            .skills()
+            .set(
+                SkillScope::Project,
+                Some(r),
+                &SkillName::new("invoices").unwrap(),
+                "---\nname: invoices\ndescription: Get the invoices.\n---\n\n# invoices\n",
+                false,
+                &crate::hub::skills::Who::person("ada", None, 1),
+            )
+            .unwrap();
+        let skill = hub
+            .db
+            .skills()
+            .scope_dir(SkillScope::Project, Some(r))
+            .unwrap();
+        files.push([blob, memory, skill]);
+    }
+    let attachments = |key: &str| -> i64 {
+        hub.db
+            .with(|c| {
+                Ok(c.query_row(
+                    "SELECT COUNT(*) FROM attachments WHERE project = ?",
+                    [key],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap()
+    };
+
+    call(
+        &hub,
+        "machine_remove",
+        json!({ "machineId": "builder-1", "force": true }),
+    )
+    .await;
+
+    let events = hub.events.page(0, None, None).unwrap().events;
+    let removed: Vec<Value> = events
+        .iter()
+        .map(|e| serde_json::to_value(e).unwrap())
+        .filter(|e| e["type"] == "machine.removed")
+        .collect();
+    assert_eq!(removed.len(), 1, "{events:?}");
+    assert_eq!(removed[0]["machineId"], "builder-1");
+    for file in &files[0] {
+        assert!(!file.exists(), "{} stayed", file.display());
+    }
+    assert_eq!(attachments("builder-1/p1"), 0);
+    // Another machine's project under the same id keeps everything.
+    for file in &files[1] {
+        assert!(file.exists(), "{} went", file.display());
+    }
+    assert_eq!(attachments("laptop/p1"), 1);
+}
+
 /// Remove on a machine that runs projects' leads, or one a machine_add run is still adding, would stop every lead on
 /// it or undo the run halfway: on the devbox it took the hub's own machine, its leads and chats, while its add hung.
 /// It is refused, naming what it would undo and how to repair instead, and goes only with force (Remove anyway).
@@ -803,8 +910,8 @@ async fn removing_a_machine_that_runs_leads_or_is_being_added_takes_force() {
     assert_eq!(e.code, ErrorCode::Invalid);
     assert_eq!(
         e.message,
-        "builder-1 runs the leads of 1 project (storefront): removing it stops them, and their chats wait until it \
-         joins again."
+        "builder-1 runs the leads of 1 project (storefront): removing it stops them and erases its projects, with \
+         their chats and history."
     );
     let fix = e.fix.unwrap();
     assert!(fix.contains("fleetd pair --worker builder-1"), "{fix}");
