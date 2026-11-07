@@ -1,12 +1,13 @@
 // The panel's sections, in everyday words: Agents (the agents, and the browsers they use); Shipping (its pull requests,
-// and the merge line they land in); Plan (the lead's checklist, and the work it asked other projects for); Skills (what
-// the lead has learned to do); Artifacts (the reports published in its chat, once the hub serves them); History (what
-// happened, and what was decided). One compact row of tabs, each its icon beside its word and its count on the word's
-// baseline, a tooltip saying what it is; under the row that same line,
-// and in a section of two views a second, smaller row of tabs between them (ui/DESIGN.md). The views are tabs.ts's,
-// each with its route; a section remembers the view you last had in it while the app runs. A view the hub doesn't
-// serve (tabs.ts `feature`) isn't there: Agents without Sessions is one view, with its own line, and a section whose
-// every view needs one shows once it is served. Every project's panel is the same.
+// and the merge line they land in); Plan (the lead's checklist, and the work it asked other projects for); History (what
+// happened, and what was decided); and Artifacts (the reports published in its chat), which joins the row once the
+// project has one and the hub serves them, or while it is open. One skill (`skills/<name>`, from a chat line or
+// Settings › Agents › Skills, where the list is) opens in the panel with no tab of its own. One compact row of tabs,
+// each its icon beside its word and its count on the word's baseline, a tooltip saying what it is; under the row that
+// same line, and in a section of two views a second, smaller row of tabs between them (ui/DESIGN.md). The views are
+// tabs.ts's, each with its route; a section remembers the view you last had in it while the app runs. A view the hub
+// doesn't serve (tabs.ts `feature`) isn't there: Agents without Sessions is one view, with its own line, and a section
+// whose every view needs one shows once it is served.
 import { BookOpen, Bot, FileText, History, ListChecks, Ship, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Tab, TabList, Tooltip } from "../../ui";
@@ -24,6 +25,8 @@ export interface Section {
   readonly lineAlone?: string;
   /** Its views, in the inner row's order, with the inner row's words. */
   readonly views: readonly (readonly [PanelTab, string])[];
+  /** Off the row unless the panel asks for it (`shownSections`' `extra`): Artifacts, once there is one or it's open. */
+  readonly tucked?: true;
 }
 
 export const SECTIONS: readonly Section[] = [
@@ -58,8 +61,14 @@ export const SECTIONS: readonly Section[] = [
       ["asked", "Asked"],
     ],
   },
-  { id: "skills", label: "Skills", icon: BookOpen, line: "What the lead has learned to do: see, edit and undo every change.", views: [["skills", "Skills"]] },
-  { id: "artifacts", label: "Artifacts", icon: FileText, line: "Reports the lead and its agents published here, every version kept, and the files sent in the chat.", views: [["artifacts", "Artifacts"]] },
+  {
+    id: "artifacts",
+    label: "Artifacts",
+    icon: FileText,
+    line: "Reports the lead and its agents published here, every version kept, and the files sent in the chat.",
+    views: [["artifacts", "Artifacts"]],
+    tucked: true,
+  },
   {
     id: "history",
     label: "History",
@@ -72,12 +81,19 @@ export const SECTIONS: readonly Section[] = [
   },
 ];
 
+/** One skill's, which has no tab: its list is in the project's settings. */
+export const SKILL: Section = { id: "skills", label: "Skills", icon: BookOpen, line: "What the lead has learned to do: see, edit and undo every change.", views: [["skills", "Skills"]] };
+
 const AGENTS = SECTIONS[0] as Section;
 
-/** The sections a hub shows: a section whose every view needs a feature, only once it is served. */
-export const shownSections = (features: readonly string[]): readonly Section[] => SECTIONS.filter((g) => g.views.some(([tab]) => served(tab, features)));
+/**
+ * The sections the row shows: a section whose every view needs a feature, only once it is served; a tucked one only
+ * when `extra` names it (the open section, Artifacts once there is one).
+ */
+export const shownSections = (features: readonly string[], extra: readonly string[] = []): readonly Section[] =>
+  SECTIONS.filter((g) => (g.tucked !== true || extra.includes(g.id)) && g.views.some(([tab]) => served(tab, features)));
 
-export const sectionOf = (tab: PanelTab): Section => SECTIONS.find((g) => g.views.some(([t]) => t === tab)) ?? AGENTS;
+export const sectionOf = (tab: PanelTab): Section => (tab === "skills" ? SKILL : (SECTIONS.find((g) => g.views.some(([t]) => t === tab)) ?? AGENTS));
 
 export const isSection = (id: string): boolean => SECTIONS.some((g) => g.id === id);
 
@@ -107,12 +123,12 @@ export const forgetViews = (): void => lastView.clear();
 
 /**
  * The sections, as the panel's tabs (inside its Tabs, whose value is a section's id), each tooltip the line for the
- * views the hub serves.
+ * views the hub serves; `extra` names the tucked ones to show.
  */
-export function SectionTabs({ count, features }: { count: (tab: PanelTab) => ReactNode; features: readonly string[] }) {
+export function SectionTabs({ count, features, extra }: { count: (tab: PanelTab) => ReactNode; features: readonly string[]; extra: readonly string[] }) {
   return (
     <TabList aria-label="Panel" className={s.bar}>
-      {shownSections(features).map((section) => {
+      {shownSections(features, extra).map((section) => {
         const g = servedSection(section, features);
         const Icon = g.icon;
         const first = g.views[0]?.[0] ?? "agents";

@@ -104,12 +104,11 @@ const tabs = () => [...host.querySelectorAll("[data-section]")].map((t) => t.get
 
 it("gives every project the same sections, Asked work under Plan", async () => {
   await mount(<ProjectPanel project={ADA} view={{ tab: "asked" }} onWide={() => undefined} />);
-  expect(tabs()).toEqual(["agents", "shipping", "plan", "skills", "history"]);
+  expect(tabs()).toEqual(["agents", "shipping", "plan", "history"]);
   expect(host.querySelector("[aria-selected=true][data-section]")?.getAttribute("data-section")).toBe("plan");
   expect([...host.querySelectorAll("[data-tab]")].map((t) => t.getAttribute("data-tab"))).toEqual(["checklist", "asked"]);
   act(() => root.unmount());
   root = createRoot(host);
-  await mount(<ProjectPanel project={SHOP} view={{ tab: "skills", skill: null }} onWide={() => undefined} />, undefined, "devbox/shop");
-  expect(tabs()).toEqual(["agents", "shipping", "plan", "skills", "history"]);
-  expect(host.querySelector("[aria-selected=true][data-section]")?.getAttribute("data-section")).toBe("skills");
+  await mount(<ProjectPanel project={SHOP} view={{ tab: "checklist" }} onWide={() => undefined} />, undefined, "devbox/shop");
+  expect(tabs()).toEqual(["agents", "shipping", "plan", "history"]);
 });

@@ -1,30 +1,7 @@
-// A project's Skills, kept pure: which group a skill is in (what it learned, what was installed for it, every project's,
-// its folder's), the line under each, what the person may change, and a SKILL.md's body without its frontmatter.
+// One of a project's skills, kept pure: the line under its name, what the person may change, and a SKILL.md's body
+// without its frontmatter.
 import type { SkillSummary, SkillVersion } from "../../../shared/contracts";
 import { when } from "../status/view";
-
-export type SkillGroup = "learned" | "installed" | "every" | "folder";
-
-export const GROUP_LABEL: Readonly<Record<SkillGroup, string>> = {
-  learned: "Learned",
-  installed: "Installed",
-  every: "From every project",
-  folder: "In its folder",
-};
-
-const ORDER: readonly SkillGroup[] = ["learned", "installed", "every", "folder"];
-
-/** Its own, written by it or the person; its own, installed from a source; the hub-wide ones; its folder's. */
-export const groupOf = (s: SkillSummary): SkillGroup =>
-  s.origin === "project" ? (s.install ? "installed" : "learned") : s.origin === "global" ? "every" : "folder";
-
-/** The skills in their groups, in order, each by name; a skill another of its name outranks is left out. */
-export function grouped(skills: readonly SkillSummary[]): { group: SkillGroup; rows: SkillSummary[] }[] {
-  const shown = skills.filter((s) => s.shadowedBy === undefined);
-  return ORDER.map((group) => ({ group, rows: shown.filter((s) => groupOf(s) === group).sort((a, b) => a.name.localeCompare(b.name)) })).filter(
-    (g) => g.rows.length > 0,
-  );
-}
 
 /** Whose a version is, in a line's words: its project's name for its lead, "you" for the person reading. */
 export const byWord = (v: Pick<SkillVersion, "author" | "by">, me: string | undefined): string => (v.author === "person" && v.by === me ? "you" : v.by);

@@ -7,7 +7,8 @@ import { Button, Dialog, Text } from "../../ui";
 import { useData } from "../../src/data/react";
 import { errorText, useHubCall, useLive } from "./hub";
 import { navigate } from "../shell/navigation";
-import { panelRoute } from "../shell/routes";
+import { projectSkills } from "../shell/routes";
+import { revealNext } from "./search";
 import { Setting } from "./parts";
 import { PROJECT_TOOLS } from "../projects/model";
 import s from "./settings.module.css";
@@ -105,7 +106,7 @@ function ForgetDialog(props: { projectRef: Ref; machine: string; onClose: (forgo
   );
 }
 
-/** What the lead has learned to do: its skills live in its panel, each change with who, when and why. */
+/** What the lead has learned to do: its skills are listed in Agents' Skills, each one's history in the panel. */
 export function SkillsSetting({ projectRef }: { projectRef: Ref }) {
   return (
     <Setting
@@ -114,7 +115,14 @@ export function SkillsSetting({ projectRef }: { projectRef: Ref }) {
       help="What this project's lead has learned to do. It saves and improves its own skills as it works; you see every change, edit, undo or turn one off."
     >
       <div className={s.inline}>
-        <Button onClick={() => navigate(panelRoute(projectRef, { tab: "skills", skill: null }))}>Open its skills</Button>
+        <Button
+          onClick={() => {
+            revealNext("agents.skills");
+            navigate(projectSkills(projectRef));
+          }}
+        >
+          Open its skills
+        </Button>
       </div>
     </Setting>
   );

@@ -122,7 +122,7 @@ describe("routes", () => {
   });
 
   it("gives every tab of the panel's list a route of its own name, its list with no item", () => {
-    for (const tab of PANEL_TABS) {
+    for (const tab of PANEL_TABS.filter((t) => t.id !== "skills")) {
       const route = panelRoute(storefront, listView(tab.id));
       expect(toHash(route)).toBe(`#/project/devbox/storefront/${tab.id}`);
       expect(parseHash(toHash(route))).toEqual(route);
@@ -132,6 +132,10 @@ describe("routes", () => {
     expect(hasItem({ tab: "agents", agent: "T1" })).toBe(true);
     expect(hasItem({ tab: "sessions", session: "bs-checkout" })).toBe(true);
     expect(hasItem({ tab: "artifacts", artifact: "dependency-sweep" })).toBe(true);
+    // Skills is one skill only: an older link to their list opens them in the project's settings.
+    const taxes = panelRoute(storefront, { tab: "skills", skill: "taxes" });
+    expect(parseHash(toHash(taxes))).toEqual(taxes);
+    expect(parseHash("#/project/devbox/storefront/skills")).toEqual({ id: "settings", tab: "agents", for: "devbox/storefront" });
     expect(toHash(panelRoute(storefront, { tab: "artifacts", artifact: "dependency-sweep", version: 2 }))).toBe("#/project/devbox/storefront/artifacts/dependency-sweep/2");
   });
 });

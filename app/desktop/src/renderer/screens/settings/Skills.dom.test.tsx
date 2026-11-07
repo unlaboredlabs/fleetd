@@ -134,6 +134,16 @@ it("shows a member a project's skills and only names the hub-wide ones", async (
   expect(document.body.textContent).not.toMatch(/Global/u);
 });
 
+it("opens one of the project's own skills' history in the panel, which has no Skills list of its own", async () => {
+  await render("settings", false);
+  await click(rowNamed("triage") as HTMLElement);
+  // A repo skill's history is the repo's.
+  expect(texts()).not.toContain("History, restore or turn off");
+  await click(rowNamed("checkout-qa") as HTMLElement);
+  await click([...document.querySelectorAll("button")].find((b) => b.textContent === "History, restore or turn off") as HTMLElement);
+  expect(window.location.hash).toBe("#/project/devbox/storefront/skills/checkout-qa");
+});
+
 it("writes a member's install into the project, never hub-wide", async () => {
   await render("settings", false);
   await click([...document.querySelectorAll("button")].find((b) => b.textContent === "Install from a source…") as HTMLElement);

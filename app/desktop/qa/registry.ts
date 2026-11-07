@@ -902,17 +902,8 @@ export const screens: readonly Screen[] = [
       }
     },
   },
-  // A project's Skills (skills/SkillsPane): what it learned, installed and gets from every project; one skill
+  // One of a project's skills (skills/SkillsPane), with no tab of its own (the list is Settings › Agents › Skills):
   // rendered, in the wide panel; its history, the newest version open to its diff.
-  {
-    id: "chat",
-    route: `${ADA_ROUTE}/skills`,
-    fixtures: ["only-me-chats"],
-    variant: "skills",
-    open: async (page) => {
-      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="skills"]').waitFor();
-    },
-  },
   {
     id: "chat",
     route: `${ADA_ROUTE}/skills/weekly-invoices`,

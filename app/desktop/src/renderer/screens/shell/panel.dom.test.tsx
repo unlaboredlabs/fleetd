@@ -76,7 +76,11 @@ const decision = (decisionId: string, state: Decision["state"]): Decision => ({
   at: AT,
 });
 
+// storefront's chat has no artifacts until a test publishes one.
+let artifacts: unknown[];
+
 const ANSWERS: Readonly<Record<string, unknown>> = {
+  skills_list: { skills: [] },
   decisions_list: { decisions: [decision("D2", "active"), decision("D1", "superseded")], orders: [] },
   events_list: { events: [], more: false },
   pr_list: { at: AT, prs: [pr] },
@@ -127,6 +131,7 @@ beforeEach(() => {
   vi.stubGlobal("fleetd", { platform: "darwin", fixture: null });
   window.localStorage.clear();
   forgetViews();
+  artifacts = [];
   checklist = listOf([
     todo(1, "done", "Receipts in the shop's time zone", { pr: "https://github.com/acme/storefront/pull/11" }),
     todo(2, "doing", "Dark mode", { taskId: "T1" }),
@@ -166,6 +171,7 @@ const mount = async ({ online = true, features }: { online?: boolean; features?:
         const state = (input as { state?: string }).state;
         return Promise.resolve({ ok: true, output: { changes: TRAIN.filter((c) => c.state === state) } });
       }
+      if (tool === "artifacts_list") return Promise.resolve({ ok: true, output: { artifacts, files: [] } });
       return Promise.resolve({ ok: true, output: tool === "checklist_get" ? checklist : (ANSWERS[tool] ?? {}) });
     },
     subscribe: (l) => ((send = l), () => undefined),
@@ -203,6 +209,8 @@ const settle = async () => {
 };
 
 const panel = () => host.querySelector("aside[aria-label='Project panel']");
+/** The row of sections' tabs. */
+const outer = () => [...(panel()?.querySelectorAll<HTMLElement>("[role='tab'][data-section]") ?? [])];
 const button = (name: string) => [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === name || b.textContent === name);
 const click = async (name: string) => {
   const b = button(name);
@@ -399,14 +407,15 @@ const pointer = (el: Element | null, type: string, clientX: number) =>
   });
 
 it("shows its sections as tabs, each view a route of its own under its section, two-view sections with tabs inside", async () => {
-  // A hub that serves every view, browser sessions and artifacts too.
+  // A hub that serves every view, browser sessions and artifacts too; storefront has none published.
   await mount({ features: ["browser_sessions", "artifacts"] });
-  const outer = () => [...(panel()?.querySelectorAll<HTMLElement>("[role='tab'][data-section]") ?? [])];
-  expect(outer().map((tab) => tab.dataset["section"])).toEqual(SECTIONS.map((g) => g.id));
-  expect(outer().map((tab) => tab.textContent.replace(/[0-9]+$/u, ""))).toEqual(["Agents", "Shipping", "Plan", "Skills", "Artifacts", "History"]);
-  for (const tab of PANEL_TABS) {
+  expect(outer().map((tab) => tab.textContent.replace(/[0-9]+$/u, ""))).toEqual(["Agents", "Shipping", "Plan", "History"]);
+  // Skills has no tab of its own (below).
+  for (const tab of PANEL_TABS.filter((t) => t.id !== "skills")) {
     await go(`${CHAT}/${tab.id}`);
     const section = sectionOf(tab.id);
+    // Artifacts with none shows while it's open, so a link to it lands on a tab.
+    expect(outer().map((t) => t.dataset["section"])).toEqual(SECTIONS.filter((g) => g.tucked !== true || g.id === section.id).map((g) => g.id));
     const selected = panel()?.querySelector<HTMLElement>(`[role='tab'][data-section='${section.id}']`);
     expect(selected?.getAttribute("aria-selected")).toBe("true");
     // Each tab names its panel, and the panel is labelled by it.
@@ -421,6 +430,42 @@ it("shows its sections as tabs, each view a route of its own under its section, 
       expect(inner).toBeNull();
     }
   }
+  // Away from Artifacts, its tab goes again.
+  await go(`${CHAT}/agents`);
+  expect(outer().map((tab) => tab.dataset["section"])).toEqual(["agents", "shipping", "plan", "history"]);
+});
+
+it("opens one skill with no tab of its own, and sends a link to the skills' list to the project's settings", async () => {
+  await mount();
+  await go(`${CHAT}/skills/taxes`);
+  expect(panel()?.querySelector("[data-screen^='skill']")).not.toBeNull();
+  expect(outer().map((tab) => tab.dataset["section"])).toEqual(["agents", "shipping", "plan", "history"]);
+  expect(panel()?.querySelector("[role='tab'][aria-selected='true'][data-section]")).toBeNull();
+  await go(`${CHAT}/skills`);
+  expect(panel()).toBeNull();
+});
+
+it("opens on Agents when it was last left on the skills' list", async () => {
+  window.localStorage.setItem("fleetd.panel", JSON.stringify({ open: true, tab: "skills" }));
+  await mount();
+  expect(panel()?.querySelector("[role='tab'][aria-selected='true'][data-section]")?.getAttribute("data-section")).toBe("agents");
+});
+
+it("shows Artifacts once the project has one, the moment its first is published", async () => {
+  await mount({ features: ["artifacts"] });
+  expect(panel()?.querySelector("[role='tab'][data-section='artifacts']")).toBeNull();
+  artifacts = [{ name: "dependency-sweep", newest: { version: 1, title: "Dependency sweep", format: "md", by: "the lead", at: AT } }];
+  act(() => send(event(2, "artifacts.changed", { projectRef: STORE, name: "dependency-sweep", version: 1 })));
+  // Events coalesce for a moment before their reads go out.
+  await act(() => new Promise((done) => setTimeout(done, 150)));
+  await settle();
+  expect(outer().map((tab) => tab.dataset["section"])).toEqual(["agents", "shipping", "plan", "artifacts", "history"]);
+});
+
+it("never shows Artifacts from a hub that doesn't serve them, whatever the project has", async () => {
+  artifacts = [{ name: "dependency-sweep", newest: { version: 1, title: "Dependency sweep", format: "md", by: "the lead", at: AT } }];
+  await mount();
+  expect(outer().map((tab) => tab.dataset["section"])).toEqual(["agents", "shipping", "plan", "history"]);
 });
 
 it("gives one screen the section's whole height: no section line, inner tabs or back row, its own line going back", async () => {

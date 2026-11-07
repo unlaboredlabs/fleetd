@@ -1,5 +1,6 @@
 // Skills: the SKILL.md workflows fleetd's agents get. Settings → Projects › Agents has a project's (its repo's
-// .agents/skills and .claude/skills, and its own), with the hub-wide ones only named; Settings › Hub › Every project
+// .agents/skills and .claude/skills, and its own, each of its own opening its history in the panel: no other list of
+// them), with the hub-wide ones only named; Settings › Hub › Every project
 // (HubSkills) has the hub-wide ones, for owners and admins alone. Each views every one, edits, creates and deletes the ones the hub keeps
 // (skill_set, skill_delete, a human key's writes), installs from a skills.sh source pinned to a commit (skill_install)
 // and updates it (skill_update). Repo skills change in the repo.
@@ -12,7 +13,7 @@ import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { scopeName, useProjects } from "./parts";
 import { useReveal } from "./search";
 import { useAdministers } from "../admin/role";
-import { toHash } from "../shell/routes";
+import { panelRoute, toHash } from "../shell/routes";
 import { ORIGIN_LABEL, groups, installLine, nameProblem, rowKey, shadowLine, slug, template } from "./skillsModel";
 import s from "./settings.module.css";
 import k from "./skills.module.css";
@@ -199,6 +200,14 @@ function SkillEditor({ skill, scope, onGone }: { skill: SkillSummary; scope: Sco
               {installLine(skill)}
             </Text>
             <IdChip label="Commit" id={skill.install.commit} kind="commit" size="xs" tone="quiet" />
+          </div>
+        ) : null}
+        {/* The project's own: every version, who and why, Restore and turning it off, in the panel beside its chat. */}
+        {skill.origin === "project" && ref ? (
+          <div>
+            <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash(panelRoute(ref, { tab: "skills", skill: skill.name })))}>
+              History, restore or turn off
+            </Button>
           </div>
         ) : null}
       </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SECTIONS, servedSection, shownSections } from "./Sections";
+import { SECTIONS, SKILL, sectionOf, servedSection, shownSections } from "./Sections";
 
 const agents = SECTIONS[0];
 
@@ -22,7 +22,19 @@ describe("a section the hub serves in part", () => {
 
 describe("a section the hub doesn't serve at all", () => {
   it("isn't there until the hub serves its view", () => {
-    expect(shownSections([]).map((g) => g.id)).toEqual(["agents", "shipping", "plan", "skills", "history"]);
-    expect(shownSections(["artifacts"]).map((g) => g.id)).toContain("artifacts");
+    expect(shownSections([], ["artifacts"]).map((g) => g.id)).not.toContain("artifacts");
+    expect(shownSections(["artifacts"], ["artifacts"]).map((g) => g.id)).toContain("artifacts");
+  });
+});
+
+describe("a tucked section", () => {
+  it("stays off the row unless the panel asks for it: Artifacts once there is one or while it's open", () => {
+    expect(shownSections(["artifacts"]).map((g) => g.id)).toEqual(["agents", "shipping", "plan", "history"]);
+    expect(shownSections(["artifacts"], ["plan", "artifacts"]).map((g) => g.id)).toEqual(["agents", "shipping", "plan", "artifacts", "history"]);
+  });
+
+  it("never has a Skills tab: one skill opens with no tab, its list in the project's settings", () => {
+    expect(shownSections(["artifacts"], ["skills"]).map((g) => g.id)).toEqual(["agents", "shipping", "plan", "history"]);
+    expect(sectionOf("skills")).toBe(SKILL);
   });
 });

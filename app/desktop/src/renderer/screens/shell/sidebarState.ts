@@ -67,7 +67,8 @@ const readPanel = (): SavedPanel => {
   try {
     const v: unknown = JSON.parse(window.localStorage.getItem(PANEL) ?? "null");
     if (typeof v === "object" && v !== null && "open" in v && "tab" in v) {
-      return { open: v.open === true, tab: isPanelTab(v.tab) ? v.tab : "agents" };
+      // Skills' list moved to the project's settings.
+      return { open: v.open === true, tab: isPanelTab(v.tab) && v.tab !== "skills" ? v.tab : "agents" };
     }
   } catch {
     // Unreadable: it starts open, as on a first launch.

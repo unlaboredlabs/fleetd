@@ -1,5 +1,5 @@
-/* A project's Skills: groups under a quiet heading, a skill a row apart by space; one skill's head, its toolbar, then its
-   SKILL.md or its history, each version a row apart by a hairline. No cards, no coloured edges (ui/DESIGN.md). */
+/* One of a project's skills: its head, its toolbar, then its SKILL.md or its history, each version a row apart by a
+   hairline. No cards, no coloured edges (ui/DESIGN.md). */
 .screen {
   --pad: var(--space-4);
   flex: 1;
@@ -41,59 +41,6 @@
 }
 .skeleton > span:nth-child(2) {
   width: 70%;
-}
-
-.group + .group {
-  margin-top: var(--space-3);
-}
-.groupHead {
-  margin: 0;
-  padding: var(--space-3) var(--pad) var(--space-1);
-  font-weight: 500;
-}
-.rows {
-  list-style: none;
-  margin: 0;
-  padding: 0 var(--space-2);
-}
-.row {
-  all: unset;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background var(--dur-quick) var(--ease-snap);
-}
-.row:hover {
-  background: var(--hover);
-}
-.row:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-.off .name {
-  color: var(--quiet);
-}
-.name {
-  font-weight: 500;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.description {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.foot {
-  display: flex;
-  padding: var(--space-2) var(--pad);
-  border-top: 1px solid var(--hairline);
 }
 
 .head {

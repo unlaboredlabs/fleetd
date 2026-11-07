@@ -242,7 +242,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
         },
       },
       // One per panel tab, from its list: a new tab is in the palette too, once the hub serves it.
-      ...PANEL_TABS.map(
+      ...PANEL_TABS.filter((tab) => !("itemOnly" in tab)).map(
         (tab): Command => ({
           id: `go:${tab.id}`,
           title: tab.label,
