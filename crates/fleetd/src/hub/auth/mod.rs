@@ -45,6 +45,53 @@ pub struct Unauthorized {
     pub fix: Option<String>,
 }
 
+impl Unauthorized {
+    /// The refusal in one line, as a node reads it in the link's close reason: "<message>. Fix: <fix>".
+    pub fn reason(&self) -> String {
+        match &self.fix {
+            Some(fix) => format!("{}. Fix: {fix}", self.message),
+            None => self.message.clone(),
+        }
+    }
+}
+
+/// A node's refusal, from `forms` of (message, fix), fullest first: the first that fits the link's close reason, where
+/// the node reads it. The last one fits for any machine ids (at most 32 characters).
+fn refusal(forms: &[(String, String)]) -> Unauthorized {
+    let of = |(message, fix): &(String, String)| Unauthorized {
+        code: ErrorCode::Forbidden,
+        message: message.clone(),
+        fix: Some(fix.clone()),
+    };
+    forms
+        .iter()
+        .map(of)
+        .find(|r| r.reason().len() <= fleetd_contracts::node_link::close::REASON_MAX_BYTES)
+        .unwrap_or_else(|| of(&forms[forms.len() - 1]))
+}
+
+/// A node already enrolled as `theirs` asked to enroll under another id: both ways out, a code to rejoin as `theirs`
+/// (`fleetd pair --worker`; the code it holds is for the other id) or `theirs` removed first for a new id.
+fn enrolled_as(theirs: &str) -> Unauthorized {
+    let message = format!("enrolled as {theirs}");
+    refusal(&[
+        (
+            message.clone(),
+            format!(
+                "fleetd pair --worker {theirs} and run its line, or fleetd machine remove {theirs} first"
+            ),
+        ),
+        (
+            message.clone(),
+            format!("fleetd pair --worker {theirs}, or fleetd machine remove {theirs}"),
+        ),
+        (
+            message,
+            format!("fleetd pair --worker {theirs}, or remove it"),
+        ),
+    ])
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AuthError {
     #[error(transparent)]
@@ -613,23 +660,27 @@ impl Auth {
                 .query_row([&hash], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
                 .optional()?)
         })?;
-        let why = match row {
-            None => "unknown enrollment token".to_owned(),
-            Some((_, _, Some(_))) => "enrollment token was already used".to_owned(),
-            Some((_, expires, None)) if expires <= now => "enrollment token expired".to_owned(),
-            Some((machine, _, None)) => format!(
-                "enrollment token is for machine {machine}, not {}",
-                machine_id.as_str()
+        let m = machine_id.as_str();
+        let (why, short) = match row {
+            None => ("unknown enrollment token".to_owned(), None),
+            Some((_, _, Some(_))) => ("enrollment token was already used".to_owned(), None),
+            Some((_, expires, None)) if expires <= now => {
+                ("enrollment token expired".to_owned(), None)
+            }
+            Some((machine, _, None)) => (
+                format!("enrollment token is for machine {machine}, not {m}"),
+                Some(format!("the code is for {machine}")),
             ),
         };
-        Err(Unauthorized {
-            code: ErrorCode::Forbidden,
-            message: why,
-            fix: Some(format!(
-                "on the hub, run `fleetd pair --worker {}` and run the command it prints within 15 minutes",
-                machine_id.as_str()
-            )),
-        }
+        let short = short.unwrap_or_else(|| why.clone());
+        Err(refusal(&[
+            (
+                why.clone(),
+                format!("on the hub, run fleetd pair --worker {m} for a new code"),
+            ),
+            (why, format!("fleetd pair --worker {m} on the hub")),
+            (short, format!("fleetd pair --worker {m} on the hub")),
+        ])
         .into())
     }
 
@@ -646,7 +697,9 @@ impl Auth {
     /// computer's (whatever its name, its code or its folders), else the token is burned and the node's key and
     /// computer recorded. A node with no fingerprint (an older one) is held to its token only. The one exception: a
     /// pool machine's id enrolls from a new computer with a pool enroll token the hub minted for it (its VM was
-    /// recreated); a fixed machine's never does, whatever the token.
+    /// recreated); a fixed machine's never does, whatever the token. A node key is one machine's too: a node enrolled
+    /// under one id never enrolls under a second one while the first is enrolled, which would put every project and
+    /// chat of the first on a second machine.
     pub fn enroll_node(
         &self,
         token: &str,
@@ -655,18 +708,24 @@ impl Auth {
         fingerprint: Option<&str>,
     ) -> Result<(), AuthError> {
         let m = machine_id.as_str();
+        if let Some(theirs) = self.machine_of_key(pub_key, machine_id)? {
+            return Err(enrolled_as(&theirs).into());
+        }
         if let Some(theirs) = fingerprint
             && let Some(ours) = self.node_fingerprint(machine_id)?
             && theirs != ours
             && !(self.is_pool(machine_id)? && self.pool_token_open(token, machine_id)?)
         {
-            return Err(Unauthorized {
-                code: ErrorCode::Forbidden,
-                message: format!("{m} is another computer's machine id"),
-                fix: Some(format!(
-                    "join this computer under a machine id of its own, or remove {m} first (fleetd machine remove {m})"
-                )),
-            }
+            return Err(refusal(&[
+                (
+                    format!("{m} is another computer's machine id"),
+                    format!("use an id of its own, or fleetd machine remove {m} first"),
+                ),
+                (
+                    "this id is another computer's".to_owned(),
+                    format!("use another id, or fleetd machine remove {m} first"),
+                ),
+            ])
             .into());
         }
         self.consume_enroll_token(token, machine_id, pub_key)?;
@@ -674,6 +733,22 @@ impl Auth {
             self.set_node_fingerprint(machine_id, fingerprint)?;
         }
         Ok(())
+    }
+
+    /// The machine other than `machine_id` that `pub_key` is enrolled as, if any.
+    fn machine_of_key(
+        &self,
+        pub_key: &str,
+        machine_id: &MachineId,
+    ) -> Result<Option<String>, StoreError> {
+        self.db.with(|conn| {
+            Ok(conn
+                .prepare_cached(
+                    "SELECT machine_id FROM node_keys WHERE pub_key = ? AND machine_id != ? LIMIT 1",
+                )?
+                .query_row(params![pub_key, machine_id.as_str()], |row| row.get(0))
+                .optional()?)
+        })
     }
 
     /// The fingerprint of the computer the machine's node runs on, as its hellos gave it.
