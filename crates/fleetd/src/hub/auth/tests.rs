@@ -418,6 +418,88 @@ fn a_machine_id_belongs_to_one_computer() {
     );
 }
 
+/// A node key is one machine's: the node enrolled as devbox, joining again as worker (`init --join --machine-id
+/// worker` on its home), is refused with both ways out, rather than forking devbox's projects and chats under a second
+/// id. Once devbox is removed, the node may take the new name.
+#[test]
+fn a_node_enrolled_under_one_id_never_enrolls_under_a_second() {
+    let (auth, _, _) = setup();
+    let code = |auth: &Auth, id: &str| auth.create_enroll_token(&m(id)).unwrap().token;
+    auth.enroll_node(
+        &code(&auth, "devbox"),
+        &m("devbox"),
+        "pub-hub",
+        Some("fp-hub"),
+    )
+    .unwrap();
+
+    let other = code(&auth, "worker");
+    let refused = unauthorized(auth.enroll_node(&other, &m("worker"), "pub-hub", Some("fp-hub")));
+    assert_eq!(refused.code, ErrorCode::Forbidden);
+    assert_eq!(
+        refused.reason(),
+        "enrolled as devbox. Fix: fleetd pair --worker devbox and run its line, or fleetd machine remove devbox first"
+    );
+    // Nothing changed: worker holds no key, devbox keeps its own, and the code is not burned.
+    assert_eq!(auth.node_pub_key(&m("worker")).unwrap(), None);
+    assert_eq!(
+        auth.node_pub_key(&m("devbox")).unwrap().as_deref(),
+        Some("pub-hub")
+    );
+    // The same node rejoining as devbox is the repair it always was.
+    auth.enroll_node(
+        &code(&auth, "devbox"),
+        &m("devbox"),
+        "pub-hub",
+        Some("fp-hub"),
+    )
+    .unwrap();
+
+    auth.revoke_node(&m("devbox")).unwrap();
+    auth.enroll_node(&other, &m("worker"), "pub-hub", Some("fp-hub"))
+        .unwrap();
+    assert_eq!(
+        auth.node_pub_key(&m("worker")).unwrap().as_deref(),
+        Some("pub-hub")
+    );
+}
+
+/// A node reads its refusal in the link's close reason, which carries 123 bytes: every refusal to enroll fits there
+/// whole, with its fix, for machine ids of any length (at most 32 characters).
+#[test]
+fn every_enroll_refusal_fits_the_close_reason() {
+    for n in [6, 16, 32] {
+        let (auth, _, clock) = setup();
+        let id = |c: &str| m(&c.repeat(n));
+        let (a, b, c) = (id("a"), id("b"), id("c"));
+        let code = |id: &MachineId| auth.create_enroll_token(id).unwrap().token;
+        auth.enroll_node(&code(&a), &a, "pub-a", Some("fp-a"))
+            .unwrap();
+        let used = code(&b);
+        auth.enroll_node(&used, &b, "pub-b", Some("fp-b")).unwrap();
+        let late = code(&c);
+        clock.advance(Duration::from_secs(16 * 60));
+        let refusals = [
+            // Another computer under a's id, a's node under c's, a code for b used by c, used, expired, unknown.
+            auth.enroll_node(&code(&a), &a, "pub-x", Some("fp-x")),
+            auth.enroll_node(&code(&c), &c, "pub-a", Some("fp-a")),
+            auth.enroll_node(&code(&b), &c, "pub-c", Some("fp-c")),
+            auth.enroll_node(&used, &b, "pub-b", Some("fp-b")),
+            auth.enroll_node(&late, &c, "pub-c", Some("fp-c")),
+            auth.enroll_node("fle_bogus", &c, "pub-c", Some("fp-c")),
+        ];
+        for refused in refusals {
+            let reason = unauthorized(refused).reason();
+            assert!(
+                reason.len() <= fleetd_contracts::node_link::close::REASON_MAX_BYTES,
+                "{} bytes: {reason}",
+                reason.len()
+            );
+            assert!(reason.contains(". Fix: "), "{reason}");
+        }
+    }
+}
+
 /// A cloud machine's slot (hub/pool) enrolls with a pool token the hub minted, no person in the loop, and is a pool
 /// machine from then on. Its VM recreated is a new computer under the same id: only a fresh pool token enrolls it, and
 /// a pool token never moves a fixed machine's id to another computer.

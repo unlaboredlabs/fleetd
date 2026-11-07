@@ -17,7 +17,7 @@ use fleetd_contracts::sessions::SessionCall;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
-use super::{Setup, Whose, whose_for_lead, whose_for_task};
+use super::{NodeAccounts, Setup, Whose, whose_for_lead, whose_for_task};
 use crate::hub::api::{CallError, Caller, Hub, HubConfig, Listen, registry};
 use crate::hub::leads::records::NewWorkstream;
 use crate::hub::people::People;
@@ -263,17 +263,42 @@ fn a_launch_refuses_an_account_on_a_node_too_old_to_run_one() {
         hub_api: Some(api(&["lab"])),
         ..team()
     };
-    let refused = super::launch_account(&setup, &Whose::Hub, &lab(), || false).unwrap_err();
+    let refused =
+        super::launch_account(&setup, &Whose::Hub, &lab(), || NodeAccounts::TooOld).unwrap_err();
     assert!(refused.message.contains("too old"), "{refused:?}");
     assert_eq!(
-        super::launch_account(&setup, &Whose::Hub, &lab(), || true),
+        super::launch_account(&setup, &Whose::Hub, &lab(), || NodeAccounts::Runs),
         Ok(Some(ClaudeAccount::Hub))
     );
     // The machine's own login needs nothing new of the node.
     assert_eq!(
-        super::launch_account(&team(), &Whose::Hub, &lab(), || false),
+        super::launch_account(&team(), &Whose::Hub, &lab(), || NodeAccounts::TooOld),
         Ok(None)
     );
+}
+
+/// A node that isn't linked has said nothing of accounts: its work is refused as offline, never as too old. Only a
+/// hello that leaves accounts out is too old.
+#[tokio::test]
+async fn a_node_offline_is_never_called_too_old_to_run_an_account() {
+    let (hub, _home) = hub();
+    owner(&hub);
+    let cy = member(&hub, "Cy");
+    hub.db
+        .claude_accounts()
+        .put_subscription(&cy, &subscription(&["lab"]))
+        .unwrap();
+    let cys = order(&hub, &project(), Some(&cy));
+    let launch = || super::for_task(&hub.db, &hub.link, &project(), Some(&cys), &lab());
+    let offline = launch().unwrap_err();
+    assert_eq!(
+        offline.message,
+        "lab's node is offline, so no work starts there."
+    );
+    hub.link.set_capabilities(&lab(), &[]);
+    assert!(launch().unwrap_err().message.contains("too old"));
+    hub.link.set_capabilities(&lab(), &[CAP_CLAUDE_ACCOUNTS]);
+    assert!(launch().unwrap().is_some());
 }
 
 // Over a real hub.

@@ -56,6 +56,13 @@ CI runs. Run it after your last commit and rebase: it checks the worktree agains
 so a migration main gained since, stale generated contracts, a fixture with no answer for a screen's new call, or the
 host name in a new file fails there instead of in CI.
 
+A fleetd writer can't push a tree it hasn't passed on (`.fleetd/pre-push.json`): a pass records the tree it checked,
+so commit exactly that. Its last line says how it went: `check.sh: pushable <tree>`, or `check.sh: failed <checks>`.
+Too long for one command: start `scripts/check.sh --background`, then wait with Claude's Monitor tool running
+`scripts/check.sh --wait`, which prints that last line once the run ends (never a sleep loop). The tree passes once
+every check its changes touch has passed on it, in one run or several, so after a failure rerun only that check
+(`scripts/check.sh rust-tests`).
+
 `crates/fleetd` must not link macOS frameworks, because the darwin binaries are cross-built on Linux. The
 `darwin-deps` CI job checks this: rusqlite takes only named features such as `bundled`, chrono has no `clock`, and
 TLS uses webpki roots.
