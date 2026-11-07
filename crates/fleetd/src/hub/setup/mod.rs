@@ -482,12 +482,14 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                     ],
                 ),
                 part(
-                    "Make the hub's API key",
+                    "Sign in with boat, for the hub's API key",
                     Some(
-                        "Only what the hub needs to make, wake, stop and delete its machines, and ssh for its tunnel: \
-                         the hub dials each machine it wakes and holds an SSH tunnel its node reaches the hub through, \
-                         so the hub needs no public address. No exec, file or snapshot actions: the hub never runs \
-                         anything on a cloud machine.",
+                        "Sign in with boat below: you open boat.dev, sign in and type the code fleetd shows, then the \
+                         hub makes this key on your account itself, keeps only it, and revokes the sign-in's own \
+                         full-access key. Or make it in boat.dev › API keys and paste it. Only what the hub needs to \
+                         make, wake, stop and delete its machines, and ssh for its tunnel: the hub dials each machine \
+                         it wakes and holds an SSH tunnel its node reaches the hub through, so the hub needs no public \
+                         address. No exec, file or snapshot actions: the hub never runs anything on a cloud machine.",
                     ),
                     vec![link("API key scopes", "https://docs.boat.dev/api-keys/scopes")],
                     vec![
@@ -498,15 +500,19 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                             "Not the presets: ci and admin give far more.",
                         ),
                         value("Scope: environment", format!("fleetd-{host}")),
-                        plain("Expires", "365 days"),
+                        noted(
+                            "Expires",
+                            "364 days",
+                            "Signing in makes it so: boat makes no key that outlives the sign-in's own year.",
+                        ),
                     ],
                 ),
                 part(
                     "Choose the pool, the budgets and the projects",
                     Some(
-                        "Paste the key, Test it, then pick these and turn cloud machines on. Before you do, fleetd \
-                         shows the most the pool can cost a day and a typical day. Work goes to a cloud machine only \
-                         when every machine of yours is at its agent limit.",
+                        "Once the key is saved and Test passes, pick these and turn cloud machines on. Before you do, \
+                         fleetd shows the most the pool can cost a day and a typical day. Work goes to a cloud machine \
+                         only when every machine of yours is at its agent limit.",
                     ),
                     vec![],
                     vec![
@@ -526,8 +532,8 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 ),
             ],
             fields_note: Some(
-                "Cloud machines run on boat.dev: boat.dev can see what runs on them, as any host can. Paste the key, \
-                 set the pool and turn it on in Settings › Hub › Machines › Cloud machines."
+                "Cloud machines run on boat.dev: boat.dev can see what runs on them, as any host can. Sign in with \
+                 boat (or paste a key), set the pool and turn it on in Settings › Hub › Machines › Cloud machines."
                     .into(),
             ),
             place: Some("cloud".into()),
