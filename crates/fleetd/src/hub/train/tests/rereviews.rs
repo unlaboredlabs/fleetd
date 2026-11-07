@@ -340,3 +340,52 @@ async fn the_lead_hears_once_when_a_blocked_pr_sits_with_nothing_moving() {
     kit.train.step(REPO).await;
     assert_eq!(told(), 1, "once per head");
 }
+
+/// #1087: held behind #1086 (`after`) with a blocking review at its head, it was reviewed again each time its writer's
+/// turn ended, as that turn's result named the PR and put it on the train again. Only a lead's enqueue clears the
+/// findings: a writer's result starts no review until a new head, or until the `after` PR merges.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_writers_result_never_reviews_a_blocked_head_again() {
+    let kit = Kit::with_reviews();
+    kit.running_task("T1", "write");
+    let upstream = kit.open_pr(8, "fleetd/T2", &[add("a2.txt", "b\n")]);
+    let pr = kit.open_pr(7, "fleetd/T1", &[add("a1.txt", "a\n")]);
+    let head = kit.head_of("fleetd/T1");
+    let mut call = enqueue_call(pr.clone());
+    call.task_id = Some(TaskId::unchecked("T1"));
+    call.after = Some(fleetd_contracts::prim::UniqueList::unchecked(vec![
+        GitHubPrUrl::unchecked(upstream),
+    ]));
+    let change = kit.train.enqueue(&project(), call).await.expect("enqueued");
+    assert_eq!(kit.spawned(), 1);
+    kit.verdict("T50", &head, 1);
+    eventually("blocked", || {
+        kit.get(&change.change_id)
+            .last_error
+            .is_some_and(|e| e.starts_with(crate::hub::reviews::service::BLOCKED))
+    })
+    .await;
+
+    // The writer ends its turn without a push, again and again: each result names the PR.
+    {
+        let mut tasks = kit.host.tasks.lock().unwrap();
+        let writer = tasks.get_mut("T1").unwrap();
+        writer.state = "done".into();
+        writer.pr_url = Some(pr.clone());
+    }
+    for _ in 0..3 {
+        kit.train.on_task_pr("T1").await;
+        kit.train.step(REPO).await;
+    }
+    assert_eq!(kit.spawned(), 1, "no new head, no new review");
+    assert_eq!(state_of(&kit, &change), ChangeState::Reviewing);
+    assert!(
+        kit.get(&change.change_id)
+            .last_error
+            .is_some_and(|e| e.starts_with(crate::hub::reviews::service::BLOCKED))
+    );
+
+    // A lead's enqueue still starts a fresh full review.
+    kit.enqueue(pr).await;
+    assert_eq!(kit.spawned(), 2);
+}
