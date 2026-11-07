@@ -18,8 +18,8 @@ describe("your order", () => {
     expect(keys(ordered(rows("m/a", "m/b"), ["m/gone", "m/b"]))).toEqual(["m/b", "m/a"]);
   });
 
-  it("saves a move in one section with the other where it is", () => {
-    // Two Navis, then three projects; the projects moved.
+  it("saves a move with the rows it didn't touch where they are", () => {
+    // Five rows, three of them moved.
     const hub = rows("m/ada", "m/home", "m/api", "m/docs", "m/web");
     expect(keys(withMoved(hub, ["m/web", "m/api", "m/docs"]))).toEqual(["m/ada", "m/home", "m/web", "m/api", "m/docs"]);
     expect(keys(withMoved(hub, ["m/home", "m/ada"]))).toEqual(["m/home", "m/ada", "m/api", "m/docs", "m/web"]);

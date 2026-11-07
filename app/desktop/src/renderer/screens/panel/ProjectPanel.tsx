@@ -27,9 +27,9 @@ const COUNTS: Readonly<Partial<Record<PanelTab, Lazy<CountProps>>>> = Object.fro
 
 export function ProjectPanel({ project, view: asked, onWide }: { project: ProjectKey; view: PanelView; onWide: (wide: boolean) => void }) {
   const features = useData((st) => st.features);
-  // A link to a view this hub doesn't serve opens its section's first.
-  const fallback = sectionOf(asked.tab).views[0]?.[0] ?? "agents";
-  const view = served(asked.tab, features) ? asked : listView(fallback);
+  // A link to a view this hub doesn't serve opens its section's first, or Agents when the hub serves none of it.
+  const first = sectionOf(asked.tab).views[0]?.[0] ?? "agents";
+  const view = served(asked.tab, features) ? asked : listView(served(first, features) ? first : "agents");
   const entry = tabEntry(view.tab);
   const section = servedSection(sectionOf(view.tab), features);
   const Pane = PANES[view.tab];
