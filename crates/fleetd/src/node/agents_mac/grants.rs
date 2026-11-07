@@ -108,32 +108,58 @@ fn marker(home: &Path) -> PathBuf {
     super::tools_dir(home).join("restarted-for-grants")
 }
 
-/// Where the node writes the version it last ran with both grants on, to tell an update that lost one.
-fn held_file(home: &Path) -> PathBuf {
-    super::tools_dir(home).join("granted-under")
+/// Where the node writes what it last saw: its version, then the grants a fresh process had ([`Grants::line`]), to
+/// tell an update that lost a grant.
+fn seen_file(home: &Path) -> PathBuf {
+    super::tools_dir(home).join("grants-seen")
 }
 
-/// The grants an update lost: on under the version that last had both (`held`), off now under another (`version`).
-/// Release signing keeps fleetd's identity across updates, so this is a build signed otherwise (one built locally).
-/// The same version with a grant off is the person's doing, and the plain check says so.
-pub fn lost(grants: Grants, held: Option<&str>, version: &str) -> Vec<MacCheckId> {
-    if held.is_none_or(|h| h == version) {
+/// What the node last saw, as [`seen_file`] holds it: the version, and the grants under it.
+pub fn parse_seen(text: &str) -> Option<(String, Grants)> {
+    let (version, line) = text.trim().split_once('\n')?;
+    Some((version.trim().to_owned(), Grants::parse(line.trim())?))
+}
+
+fn seen(home: &Path) -> Option<(String, Grants)> {
+    parse_seen(&std::fs::read_to_string(seen_file(home)).ok()?)
+}
+
+/// The grants an update lost: on when the node last looked, under another version (`seen`), off now under `version`.
+/// Release signing keeps fleetd's identity across updates, so this is a build signed otherwise (one built locally). A
+/// grant already off before the update (turned off, or macOS's periodic ask not answered) isn't one, nor one turned
+/// off under the same version: the plain check says those.
+pub fn lost(grants: Grants, seen: Option<&(String, Grants)>, version: &str) -> Vec<MacCheckId> {
+    let Some((_, before)) = seen.filter(|(was, _)| was != version) else {
         return Vec::new();
-    }
+    };
     [
-        (MacCheckId::Accessibility, grants.accessibility),
-        (MacCheckId::ScreenRecording, grants.screen_recording),
+        (
+            MacCheckId::Accessibility,
+            before.accessibility,
+            grants.accessibility,
+        ),
+        (
+            MacCheckId::ScreenRecording,
+            before.screen_recording,
+            grants.screen_recording,
+        ),
     ]
     .into_iter()
-    .filter(|(_, granted)| *granted == Some(false))
-    .map(|(id, _)| id)
+    .filter(|(_, before, now)| *before == Some(true) && *now == Some(false))
+    .map(|(id, _, _)| id)
     .collect()
 }
 
-fn held(home: &Path) -> Option<String> {
-    std::fs::read_to_string(held_file(home))
-        .ok()
-        .map(|h| h.trim().to_owned())
+/// Notes what a fresh process had under this version, unless a grant is lost: then what the node saw before the update
+/// stays, so the check keeps saying so until the grant is back.
+fn note_seen(home: &Path, grants: Grants, lost: &[MacCheckId]) {
+    let text = format!("{}\n{}", crate::version(), grants.line());
+    if lost.is_empty()
+        && std::fs::read_to_string(seen_file(home)).ok().as_deref() != Some(text.as_str())
+    {
+        let _ = std::fs::create_dir_all(super::tools_dir(home))
+            .and_then(|()| std::fs::write(seen_file(home), text));
+    }
 }
 
 /// Where setup asks the node to ask macOS for a grant: the grant's id (`accessibility`, `screen_recording`), which
@@ -172,7 +198,7 @@ pub fn answer(home: &Path) {
 
 /// At the node's start: asks macOS again for each grant an update lost, so its prompt is at the Mac.
 pub fn ask_lost(home: &Path) {
-    for id in lost(Grants::own(), held(home).as_deref(), crate::version()) {
+    for id in lost(Grants::own(), seen(home).as_ref(), crate::version()) {
         tracing::warn!(
             "the agents' Mac lost {} with an update to {}: it asks macOS again",
             id.as_str(),
@@ -211,18 +237,11 @@ fn fresh() -> Option<Grants> {
 /// the node's jobs, as any does; grants change only while the person sets the Mac up. What the fresh process had.
 pub fn take_up(home: &Path) -> Option<Fresh> {
     let grants = fresh()?;
-    let held = held(home);
     let fresh = Fresh {
         grants,
-        lost: lost(grants, held.as_deref(), crate::version()),
+        lost: lost(grants, seen(home).as_ref(), crate::version()),
     };
-    if grants.accessibility == Some(true)
-        && grants.screen_recording == Some(true)
-        && held.as_deref() != Some(crate::version())
-    {
-        let _ = std::fs::create_dir_all(super::tools_dir(home))
-            .and_then(|()| std::fs::write(held_file(home), crate::version()));
-    }
+    note_seen(home, grants, &fresh.lost);
     let last = std::fs::read_to_string(marker(home)).ok();
     let last = last.as_deref().map(str::trim);
     let Some(line) = restart_for(Grants::own(), grants, last) else {
@@ -300,24 +319,57 @@ mod tests {
         );
     }
 
-    /// A grant off under another version than the one that last had both is one an update lost; the same version, or
-    /// none held yet, is a grant the person hasn't turned on (or turned off).
+    /// A grant on when the node last looked, under another version, and off now is one an update lost; one already off
+    /// before the update, or off under the same version, or nothing seen yet, is the plain missing grant.
     #[test]
-    fn a_grant_off_after_an_update_is_lost() {
+    fn a_grant_on_before_an_update_and_off_after_is_lost() {
         let (yes, no) = (Some(true), Some(false));
+        let seen = |v: &str, grants| Some((v.to_owned(), grants));
         assert_eq!(
-            lost(g(yes, no), Some("0.4.0"), "0.4.1"),
+            lost(g(yes, no), seen("0.4.0", g(yes, yes)).as_ref(), "0.4.1"),
             [MacCheckId::ScreenRecording]
         );
         assert_eq!(
-            lost(g(no, no), Some("0.4.0"), "0.4.1"),
+            lost(g(no, no), seen("0.4.0", g(yes, yes)).as_ref(), "0.4.1"),
             [MacCheckId::Accessibility, MacCheckId::ScreenRecording]
         );
-        assert!(lost(g(yes, no), Some("0.4.1"), "0.4.1").is_empty());
+        // Turned off (or its periodic ask unanswered) before the update: not the update's doing.
+        assert!(lost(g(yes, no), seen("0.4.0", g(yes, no)).as_ref(), "0.4.1").is_empty());
+        assert!(lost(g(yes, no), seen("0.4.1", g(yes, yes)).as_ref(), "0.4.1").is_empty());
         assert!(lost(g(no, no), None, "0.4.1").is_empty());
         assert!(
-            lost(g(None, None), Some("0.4.0"), "0.4.1").is_empty(),
+            lost(g(None, None), seen("0.4.0", g(yes, yes)).as_ref(), "0.4.1").is_empty(),
             "can't be asked"
+        );
+        let text = format!("0.4.0\n{}", g(yes, no).line());
+        assert_eq!(parse_seen(&text), Some(("0.4.0".to_owned(), g(yes, no))));
+        assert_eq!(parse_seen("0.4.0"), None);
+    }
+
+    /// While a grant is lost, what the node saw before the update stays, so the check keeps saying so; once it's back,
+    /// the node notes the new version.
+    #[test]
+    fn a_lost_grant_stays_lost_until_it_is_back() {
+        let home = tempfile::tempdir().unwrap();
+        let (yes, no) = (Some(true), Some(false));
+        std::fs::create_dir_all(crate::node::agents_mac::tools_dir(home.path())).unwrap();
+        std::fs::write(
+            seen_file(home.path()),
+            format!("0.0.0-old\n{}", g(yes, yes).line()),
+        )
+        .unwrap();
+        let now = g(yes, no);
+        let first = lost(now, seen(home.path()).as_ref(), crate::version());
+        assert_eq!(first, [MacCheckId::ScreenRecording]);
+        note_seen(home.path(), now, &first);
+        assert_eq!(
+            lost(now, seen(home.path()).as_ref(), crate::version()),
+            first
+        );
+        note_seen(home.path(), g(yes, yes), &[]);
+        assert_eq!(
+            seen(home.path()),
+            Some((crate::version().to_owned(), g(yes, yes)))
         );
     }
 

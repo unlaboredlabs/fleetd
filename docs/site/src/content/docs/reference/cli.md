@@ -485,10 +485,10 @@ restart this machine's node service (launchd or systemd)
 ### fleetd node grants {#node-grants}
 
 ```text
-fleetd node grants [--ask accessibility|screen_recording] [--home <dir>]
+fleetd node grants [--ask accessibility|screen_recording] [--wait <seconds>] [--home <dir>]
 ```
 
-on the agents' Mac: the Accessibility and Screen Recording grants macOS gives a node started now; `--ask` has the running node ask macOS for one, then opens its pane
+on the agents' Mac: the Accessibility and Screen Recording grants macOS gives a node started now; `--ask` has the running node ask macOS for one (waiting up to `--wait`, default 30, for it to), then opens its pane
 
 ### fleetd node flush {#node-flush}
 

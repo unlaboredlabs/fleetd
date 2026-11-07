@@ -232,9 +232,9 @@ macOS keeps a grant for fleetd's binary by its path (`~/.fleetd/bin/fleetd`) and
 Release builds are signed with fleetd's Developer ID as `sh.fleetd.cli`, and an update writes the new binary over the
 same path, so the requirement and the path stay the same and grants outlive updates. A binary signed otherwise (one you
 built yourself, which is signed ad hoc by its exact contents) loses both grants with each update: the switch still
-reads on, but macOS no longer counts it. The node notices at its start (it notes the version that last had both
-grants), asks macOS again, and the grant's check says that the update took it: turn fleetd off and on again in that
-pane.
+reads on, but macOS no longer counts it. The node notices at its start (it notes the grants it saw and the version it
+ran then, so only a grant on before the update counts), asks macOS again, and the grant's check, and the setup
+window's row, say that the update took it: turn fleetd off and on again in that pane.
 
 ### A user of its own, optional {#own-user}
 

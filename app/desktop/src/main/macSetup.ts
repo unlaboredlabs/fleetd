@@ -335,9 +335,17 @@ export async function readHealth(ports: MacSetupPorts, hubUrl: string | undefine
   return { health, writtenAt: file?.writtenAt ?? null, checkedAt: checked?.writtenAt ?? null, now: ports.now(), hubAnswers: answers, hubBehind };
 }
 
-/** `fleetd node grants --ask <grant>`: the running node asks macOS for it within 2 s, and the pane opens either way. */
-export async function askGrant(ports: MacSetupPorts, grant: "accessibility" | "screen_recording"): Promise<void> {
-  await ports.run(path.join(ports.fleetdDir, "bin", "fleetd"), ["node", "grants", "--ask", grant, "--home", path.join(ports.fleetdDir, "node")]);
+/** How long the CLI waits for the node to take the ask: it reads it every 2 s while a grant is off. */
+export const ASK_WAIT_S = 5;
+
+/**
+ * `fleetd node grants --ask <grant>`: the running node asks macOS for it within 2 s, and the pane opens either way.
+ * A node that didn't take the ask in time isn't running: the page says so, with its Restart.
+ */
+export async function askGrant(ports: MacSetupPorts, grant: "accessibility" | "screen_recording"): Promise<MacRestartOutcome> {
+  const ran = await ports.run(path.join(ports.fleetdDir, "bin", "fleetd"), ["node", "grants", "--ask", grant, "--wait", String(ASK_WAIT_S), "--home", path.join(ports.fleetdDir, "node")]);
+  if (ran.code === 0) return { ok: true };
+  return { ok: false, failure: { message: cliFailure(ran.output).message, fix: "Restart the node: it asks macOS once it runs." } };
 }
 
 /** `fleetd node restart`: launchd starts the node again in this login. */
@@ -469,9 +477,10 @@ export class MacSetup {
   }
 
   /** A grant: the node asks macOS for it (its prompt, and fleetd in the list), then the CLI opens its pane. Else the link. */
-  async openPane(pane: MacPane): Promise<void> {
-    if (pane === "accessibility" || pane === "screen_recording") await askGrant(this.#ports, pane);
-    else await this.#ports.openPane(PANE_URLS[pane]);
+  async openPane(pane: MacPane): Promise<MacRestartOutcome> {
+    if (pane === "accessibility" || pane === "screen_recording") return askGrant(this.#ports, pane);
+    await this.#ports.openPane(PANE_URLS[pane]);
+    return { ok: true };
   }
 
   restart(): Promise<MacRestartOutcome> {

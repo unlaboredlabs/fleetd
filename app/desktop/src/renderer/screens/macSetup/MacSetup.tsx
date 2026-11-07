@@ -403,9 +403,15 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
   const view = checkView(state, now);
   // The grant the node is asking macOS for: within 2 s, then macOS's prompt and the pane, with fleetd in its list.
   const [asking, setAsking] = useState<MacPane | undefined>(undefined);
+  // The node didn't take the ask: it isn't running, so the page says so with its Restart.
+  const [askFailure, setAskFailure] = useState<MacSetupFailure | undefined>(undefined);
   const allow = (pane: MacPane) => {
     setAsking(pane);
-    void window.fleetd.macSetup.openPane(pane).finally(() => setAsking(undefined));
+    setAskFailure(undefined);
+    void window.fleetd.macSetup
+      .openPane(pane)
+      .then((outcome) => setAskFailure(outcome.ok ? undefined : outcome.failure))
+      .finally(() => setAsking(undefined));
   };
   const restart = (
     <Button variant="secondary" size="md" disabled={state.restarting} onClick={() => dispatch({ type: "restart" })}>
@@ -448,7 +454,7 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
                   {grant.title}
                 </Text>
                 <Text size="xs" tone="quiet">
-                  {`${grant.why.charAt(0).toUpperCase()}${grant.why.slice(1)}.`}
+                  {grant.lost === undefined ? `${grant.why.charAt(0).toUpperCase()}${grant.why.slice(1)}.` : `${grant.lost} Allow, then turn fleetd off and on again in the list.`}
                 </Text>
               </span>
               {grant.granted ? (
@@ -464,6 +470,12 @@ function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "ch
             </li>
           ))}
         </ul>
+        {askFailure === undefined ? null : (
+          <>
+            <Failure failure={askFailure} />
+            <div className={s.actions}>{restart}</div>
+          </>
+        )}
         {state.restartFailure === undefined ? null : <Failure failure={state.restartFailure} />}
       </>
     );

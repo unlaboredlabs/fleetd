@@ -149,7 +149,7 @@ const api: FleetdApi = {
       return () => macJoinListeners.delete(listener);
     },
     health: (hub) => ipcRenderer.invoke(IPC.macSetupHealth, hub) as Promise<MacHealthRead>,
-    openPane: (pane) => ipcRenderer.invoke(IPC.macSetupPane, pane) as Promise<void>,
+    openPane: (pane) => ipcRenderer.invoke(IPC.macSetupPane, pane) as Promise<MacRestartOutcome>,
     restart: () => ipcRenderer.invoke(IPC.macSetupRestart) as Promise<MacRestartOutcome>,
     status: () => ipcRenderer.invoke(IPC.macSetupStatus) as Promise<MacSetupStatus>,
     cancel: () => ipcRenderer.invoke(IPC.macSetupCancel) as Promise<void>,

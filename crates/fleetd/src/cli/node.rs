@@ -113,8 +113,14 @@ pub async fn node_command(argv: &[String]) -> u8 {
                 else {
                     return usage("--ask takes accessibility or screen_recording");
                 };
+                // The app asks for less: its grants view shows only while the node rewrites its checks every 2 s.
+                let wait = match v.str("wait").map(str::parse::<u64>) {
+                    None => mac_finish::ASK_WAIT,
+                    Some(Ok(secs)) => std::time::Duration::from_secs(secs),
+                    Some(Err(_)) => return usage("--wait takes a number of seconds"),
+                };
                 let home = home.unwrap_or_else(crate::node::config::default_node_home);
-                let asked = mac_finish::ask_node(&home, grant.id, mac_finish::ASK_WAIT).await;
+                let asked = mac_finish::ask_node(&home, grant.id, wait).await;
                 mac_finish::open_pane(&grant);
                 if asked {
                     println!(

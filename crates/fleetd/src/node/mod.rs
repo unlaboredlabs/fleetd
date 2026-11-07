@@ -69,9 +69,10 @@ pub const NODE_USAGE: &str = "  node join --hub <url> (--token <token> | --token
              keep the link up for a machine that has joined
   node restart
              restart this machine's node service (launchd or systemd)
-  node grants [--ask accessibility|screen_recording] [--home <dir>]
+  node grants [--ask accessibility|screen_recording] [--wait <seconds>] [--home <dir>]
              on the agents' Mac: the Accessibility and Screen Recording grants macOS gives a
-             node started now; --ask has the running node ask macOS for one, then opens its pane
+             node started now; --ask has the running node ask macOS for one (waiting up to --wait,
+             default 30, for it to), then opens its pane
   node flush [--home <dir>] [--wait <seconds>]
              ahead of a cloud machine's stop: hold the agents between steps, wait up to --wait (default 50)
              for recordings to reach the hub, checkpoint the node's database and sync the disk

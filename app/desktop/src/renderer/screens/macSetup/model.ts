@@ -183,7 +183,12 @@ export interface GrantRow {
   readonly title: string;
   readonly why: string;
   readonly granted: boolean;
+  /** macOS stopped counting it with an update (the node's own words): its switch may still read on. */
+  readonly lost?: string;
 }
+
+/** The node's fix for a grant an update lost (agents_mac/checks.rs `lost_grant`) says this; the plain one doesn't. */
+const LOST_FIX = "off and on again";
 
 export interface CheckRow {
   readonly id: string;
@@ -255,7 +260,11 @@ export function checkView(state: Extract<State, { step: "check" }>, now: number)
   if (read === undefined || !current(read, state.since)) return { kind: "starting", late: now - (state.waitFrom ?? state.since) > START_MS };
   const checks = read.health.checks;
   const granted = (id: MacPane) => checks.find((c) => c.id === id)?.state === "ok";
-  const grants = GRANTS.map((g) => ({ ...g, granted: granted(g.id) }));
+  const lost = (id: MacPane) => checks.find((c) => c.id === id && c.state === "fail" && c.fix?.includes(LOST_FIX) === true)?.message;
+  const grants = GRANTS.map((g) => {
+    const said = lost(g.id);
+    return { ...g, granted: granted(g.id), ...(said === undefined ? {} : { lost: said }) };
+  });
   if (grants.some((g) => !g.granted)) return { kind: "grants", grants };
   const rows = checks.map(rowOf);
   const settled = state.grantedAt !== undefined && read.checkedAt > state.grantedAt;
