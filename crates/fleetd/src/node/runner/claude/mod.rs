@@ -327,6 +327,29 @@ pub const AUTO_MEMORY_OFF_WHY: &str = "fleetd owns an agent's context (briefs, d
 /// The same as a `--settings` value, for the one-shot claude runs that take no overlay file.
 pub const AUTO_MEMORY_OFF_SETTINGS: &str = r#"{"autoMemoryEnabled":false}"#;
 
+/// Language-server plugins for claude's LSP tool that index a whole worktree and hold gigabytes each for as long as
+/// their claude runs (rust-analyzer 4 to 5 GB on fleetd's own repo), outside the build slots and the memory an agent
+/// is sized for ([`crate::node::load::MEM_PER_AGENT_GB`]). Off in every session fleetd starts, whatever the user's or
+/// the repo's settings enable, unless [`HEAVY_LSP_ENV`] is `1`. Lighter servers (TypeScript, Python, Go) stay as the
+/// user set them.
+pub const HEAVY_LSP_PLUGINS: &[&str] = &[
+    "rust-analyzer-lsp@claude-plugins-official",
+    "clangd-lsp@claude-plugins-official",
+    "jdtls-lsp@claude-plugins-official",
+    "kotlin-lsp@claude-plugins-official",
+];
+/// `1` in a session's environment (a project variable, or the node's `claude.env`) leaves [`HEAVY_LSP_PLUGINS`] as
+/// the user's settings have them.
+pub const HEAVY_LSP_ENV: &str = "HEAVY_LANGUAGE_SERVERS";
+
+/// Whether `env` turns [`HEAVY_LSP_PLUGINS`] back on: its last [`HEAVY_LSP_ENV`] is `1`.
+pub fn heavy_lsp_on(env: &[(String, String)]) -> bool {
+    env.iter()
+        .rev()
+        .find(|(k, _)| k == HEAVY_LSP_ENV)
+        .is_some_and(|(_, v)| v.trim() == "1")
+}
+
 explained! {
     /// Defaults for every claude fleetd starts, unlike the forced lists: the node's own environment or `claude.env`
     /// sets any of them otherwise (`SessionConfig::runner_env`).

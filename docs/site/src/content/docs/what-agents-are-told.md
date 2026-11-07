@@ -116,6 +116,30 @@ Claude Code can keep its own notes per folder ("auto memory"). fleetd turns that
 what an agent knows comes from its brief, the decisions, your instructions and fleetd's own [memory](#memory), all of
 which you can read here.
 
+### Heavy language servers are off {#language-servers}
+
+Claude Code's LSP tool starts a language server for each session, in its worktree. Some index the whole worktree and
+hold gigabytes for as long as the agent runs: rust-analyzer took 4 to 5 GB per agent on fleetd's own repo. That memory
+sits outside the [build slots](/docs/machines#fair-share) and the 2 GB an agent is [sized for](/docs/projects#max-agents), so a few agents can push a machine
+into swap. fleetd turns these plugins off in every `claude` it starts, even when your `~/.claude/settings.json` or the
+repo's settings enable them:
+
+| Plugin | Server |
+|---|---|
+| `rust-analyzer-lsp@claude-plugins-official` | rust-analyzer |
+| `clangd-lsp@claude-plugins-official` | clangd |
+| `jdtls-lsp@claude-plugins-official` | Eclipse JDT (Java) |
+| `kotlin-lsp@claude-plugins-official` | Kotlin |
+
+Lighter servers (TypeScript, Pyright, gopls and the rest) stay as you set them. Agents still build, test and read
+code; they lose only the LSP tool's go-to-definition and diagnostics for those languages.
+
+To turn them back on for a project, add the [project variable](/docs/projects#env) `HEAVY_LANGUAGE_SERVERS` with the
+value `1`; for every project on a machine, put `HEAVY_LANGUAGE_SERVERS=1` in its
+[`claude.env`](/docs/config-and-files). Each agent's next start uses the plugins your settings enable. Plan on about
+5 GB more per running agent for rust-analyzer (clangd and the JVM servers are in the same range), and set node.json's
+`memPerAgentGb` to match, so the machine starts fewer agents at once.
+
 ### Claude's own subagents are off {#no-subagents}
 
 Every agent in fleetd is a fleetd agent, with its own session, slot, worktree, lane, steering and receipts. So fleetd

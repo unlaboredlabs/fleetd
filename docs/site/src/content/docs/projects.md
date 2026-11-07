@@ -181,6 +181,9 @@ Names are letters, digits and `_`. fleetd sets `HOME`, `PATH`, `USER`, `TMPDIR` 
 refused. A variable the node already gives every session, from its own environment or
 [`claude.env`](/docs/config-and-files), keeps the node's value.
 
+`HEAVY_LANGUAGE_SERVERS=1` turns Claude Code's heavy language servers (rust-analyzer and the like) back on for the
+project's agents, at about 5 GB each: see [Heavy language servers are off](/docs/what-agents-are-told#language-servers).
+
 | Limit | Is |
 |---|---|
 | Variables in a project | 100 |

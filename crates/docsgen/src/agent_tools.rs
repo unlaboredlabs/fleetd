@@ -934,6 +934,7 @@ fn switches() -> Result<String, String> {
         HELPER_MODEL_ENV.1,
         &[],
         false,
+        false,
         "",
     ))
     .map_err(|e| format!("agent tools: the settings overlay: {e}"))?;
