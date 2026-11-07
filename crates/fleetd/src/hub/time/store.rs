@@ -69,6 +69,7 @@ pub enum Wrote {
     Unchanged,
 }
 
+/// How many days spans are kept: the default, or what a hub set before the setting went (`fleetd time --retention`).
 pub fn retention_days(conn: &Connection) -> Result<i64, StoreError> {
     let v: Option<i64> = conn
         .query_row(
@@ -80,6 +81,8 @@ pub fn retention_days(conn: &Connection) -> Result<i64, StoreError> {
     Ok(v.unwrap_or(DEFAULT_RETENTION_DAYS))
 }
 
+/// A value an older hub stored.
+#[cfg(test)]
 pub fn set_retention_days(conn: &Connection, days: i64) -> Result<(), StoreError> {
     conn.execute(
         "INSERT INTO time_settings (key, value) VALUES ('retention_days', ?1)

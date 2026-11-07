@@ -2,15 +2,17 @@
 //!
 //! - CPU: one agent per logical CPU less a reserve of one in eight (at least one). Most of an agent's time is spent
 //!   waiting on the model, and the guard's load clause catches the builds that do line up.
-//! - Memory: 2 GB per agent (the node's `memPerAgentGb`) after a quarter of it, 4 to 16 GB, is left to the OS and the
-//!   human's own apps. Too many agents on memory fail rather than slow down, so this is usually the term that binds.
+//! - Memory: 2 GB per agent, 4 GB on one of the hub's cloud machines, after a quarter of it, 4 to 16 GB, is left to
+//!   the OS and the human's own apps. Too many agents on memory fail rather than slow down, so this is usually the term that binds.
 //! - At most [`HARD_TOP`] without a person's setting: past that the login's rate limit binds anyway.
 //!
 //! This is only the default cap, for a machine no person set a number for: a setting replaces it outright, and no
 //! agent ever waits for memory it is estimated to take. What does hold new agents back is memory really in use, the
 //! guard's pause (`hub::link::guard`).
 //!
-//! Disk is room, not a cap: the new agents its free space takes above the guard's floor, 5 GB each (`diskPerAgentGb`).
+//! Disk is room, not a cap: the new agents its free space takes above the guard's floor, 5 GB each.
+//!
+//! An older node may still send its node.json's `memPerAgentGb` and `diskPerAgentGb`, which count in place of these.
 use fleetd_contracts::node_link::NodeLoad;
 
 const GIB: i64 = 1 << 30;
@@ -21,7 +23,7 @@ const UNKNOWN_MEM_TERM: i64 = 4;
 /// A machine whose node has reported nothing yet: as many as an older node's memory term allows.
 pub const UNMEASURED: i64 = UNKNOWN_MEM_TERM;
 pub const UNMEASURED_WHY: &str = "not measured yet";
-/// The node applies its own default; these stand in for an older node that sends none. node.json speaks in decimal GB.
+/// Decimal GB, as node.json spoke them.
 const MEM_PER_AGENT: i64 = 2_000_000_000;
 const DISK_PER_AGENT: i64 = 5_000_000_000;
 
@@ -54,15 +56,17 @@ fn gb(n: f64) -> String {
     }
 }
 
-pub fn auto_cap(load: &NodeLoad) -> Auto {
+/// `cloud`: one of the hub's cloud machines, sized for builds ([`crate::hub::cloud::setup::MEM_PER_AGENT_GB`]).
+pub fn auto_cap(load: &NodeLoad, cloud: bool) -> Auto {
     let cpus = load.cpus.get();
     let cpu_term = (cpus - (cpus + 7) / 8).max(1);
+    let default = if cloud {
+        crate::hub::cloud::setup::MEM_PER_AGENT_GB as i64 * 1_000_000_000
+    } else {
+        MEM_PER_AGENT
+    };
     // Both read as the GB a person means: an 18 GB machine at 2 GB an agent fits (18 − 4.5) / 2 = 6.
-    let per_agent_gb = load
-        .mem_per_agent_bytes
-        .map_or(MEM_PER_AGENT, |b| b.get())
-        .max(1) as f64
-        / 1e9;
+    let per_agent_gb = load.mem_per_agent_bytes.map_or(default, |b| b.get()).max(1) as f64 / 1e9;
     let (mem_term, mem_why) = match load.mem_total_bytes.map(|b| sold_gb(b.get())) {
         Some(total) => {
             let term = ((usable_gb(total) / per_agent_gb).floor() as i64).max(1);
@@ -149,28 +153,37 @@ mod tests {
     fn the_example_machines() {
         // MacBook Air, 8 CPU, 8 GB: (8 − 4) / 2.
         assert_eq!(
-            auto_cap(&machine(8, Some(8))),
+            auto_cap(&machine(8, Some(8)), false),
             auto(2, "memory 8 GB, about 2 GB an agent")
         );
         // MacBook Pro, 12 CPU, 18 GB: (18 − 4.5) / 2.
         assert_eq!(
-            auto_cap(&machine(12, Some(18))),
+            auto_cap(&machine(12, Some(18)), false),
             auto(6, "memory 18 GB, about 2 GB an agent")
         );
         // Linux laptop, 16 threads, 32 GB: (32 − 8) / 2 under 14 CPUs.
         assert_eq!(
-            auto_cap(&machine(16, Some(32))),
+            auto_cap(&machine(16, Some(32)), false),
             auto(12, "memory 32 GB, about 2 GB an agent")
         );
         // Workstation, 32 threads, 128 GB: the CPUs bind.
-        assert_eq!(auto_cap(&machine(32, Some(128))), auto(28, "28 of 32 CPUs"));
+        assert_eq!(
+            auto_cap(&machine(32, Some(128)), false),
+            auto(28, "28 of 32 CPUs")
+        );
         // Big server, 64 threads, 256 GB.
-        assert_eq!(auto_cap(&machine(64, Some(256))), auto(56, "56 of 64 CPUs"));
+        assert_eq!(
+            auto_cap(&machine(64, Some(256)), false),
+            auto(56, "56 of 64 CPUs")
+        );
         // 128 threads, 512 GB: the hard top.
-        assert_eq!(auto_cap(&machine(128, Some(512))), auto(64, "top of 64"));
+        assert_eq!(
+            auto_cap(&machine(128, Some(512)), false),
+            auto(64, "top of 64")
+        );
         // Small VM, 2 vCPU, 4 GB: never below one.
         assert_eq!(
-            auto_cap(&machine(2, Some(4))),
+            auto_cap(&machine(2, Some(4)), false),
             auto(1, "memory 4 GB, about 2 GB an agent")
         );
     }
@@ -181,35 +194,50 @@ mod tests {
         // What /proc/meminfo says on a 32 GB machine.
         linux.mem_total_bytes = Some(Count::unchecked(33_520_000_000));
         assert_eq!(
-            auto_cap(&linux),
+            auto_cap(&linux, false),
             auto(12, "memory 32 GB, about 2 GB an agent")
         );
     }
 
     #[test]
     fn an_older_node_without_memory_counts_four() {
-        assert_eq!(auto_cap(&machine(16, None)), auto(4, "memory unknown"));
-        assert_eq!(auto_cap(&machine(2, None)), auto(1, "1 of 2 CPUs"));
+        assert_eq!(
+            auto_cap(&machine(16, None), false),
+            auto(4, "memory unknown")
+        );
+        assert_eq!(auto_cap(&machine(2, None), false), auto(1, "1 of 2 CPUs"));
     }
 
     #[test]
-    fn the_nodes_memory_per_agent_replaces_two_gb() {
-        // What a node sends by default: the same 2 GB.
+    fn a_cloud_machine_takes_4_gb_an_agent() {
+        // boat's `large`: 8 vCPUs, 15,991 MiB as measured, 3 agents (a fleetd build peaks at 7.3 GB).
+        let mut large = machine(8, None);
+        large.mem_total_bytes = Some(Count::unchecked(15_991 << 20));
+        assert_eq!(
+            auto_cap(&large, true),
+            auto(3, "memory 16 GB, about 4 GB an agent")
+        );
+        assert_eq!(auto_cap(&large, false).cap, 6);
+    }
+
+    #[test]
+    fn an_older_nodes_memory_per_agent_replaces_two_gb() {
+        // What an older node sends by default: the same 2 GB.
         let mut load = machine(12, Some(18));
         load.mem_per_agent_bytes = Some(Count::unchecked(2 * GB));
         assert_eq!(
-            auto_cap(&load),
+            auto_cap(&load, false),
             auto(6, "memory 18 GB, about 2 GB an agent")
         );
         let mut load = machine(16, Some(32));
         load.mem_per_agent_bytes = Some(Count::unchecked(4 * GB));
         assert_eq!(
-            auto_cap(&load),
+            auto_cap(&load, false),
             auto(6, "memory 32 GB, about 4 GB an agent")
         );
         load.mem_per_agent_bytes = Some(Count::unchecked(2_500_000_000));
         assert_eq!(
-            auto_cap(&load),
+            auto_cap(&load, false),
             auto(9, "memory 32 GB, about 2.5 GB an agent")
         );
     }

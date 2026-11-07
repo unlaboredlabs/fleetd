@@ -1764,7 +1764,7 @@
           "description": "The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read."
         },
         "diskPerAgentBytes": {
-          "description": "Disk to allow per new agent's worktree: node.json's `diskPerAgentGb`, else 5 GB. Absent from older nodes.",
+          "description": "Disk to allow per new agent's worktree: an older node's node.json `diskPerAgentGb`, or its 5 GB default. A\nnode now sends none: the hub counts 5 GB.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -1800,7 +1800,7 @@
           "description": "The agents' Mac's setup checks, run by its node as its own user with no admin; absent on any other machine and\nfrom older nodes."
         },
         "memPerAgentBytes": {
-          "description": "Memory to allow per agent when sizing the machine's cap: node.json's `memPerAgentGb`, else 2 GB. Absent from\nolder nodes.",
+          "description": "Memory to allow per agent when sizing the machine's cap: an older node's node.json `memPerAgentGb`, or its\n2 GB default. A node now sends none: the hub sizes it.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"

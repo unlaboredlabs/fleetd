@@ -600,27 +600,9 @@ async fn the_prune_keeps_what_the_retention_says() {
     assert!(!hub.db.transaction(|c| store::prune(c, now)).unwrap());
     assert_eq!(units(&hub).len(), 3);
 
-    let only_here = caller(json!([{ "role": "admin", "machines": ["devbox"] }]));
-    let Err(CallError::Tool(e)) = registry()
-        .call(
-            &hub,
-            &only_here,
-            "metrics_retention_set",
-            json!({ "retentionDays": 30 }),
-        )
-        .await
-    else {
-        panic!("one machine's admin set the fleet's retention");
-    };
-    assert_eq!(e.code, ErrorCode::Forbidden);
-    registry()
-        .call(
-            &hub,
-            &admin(),
-            "metrics_retention_set",
-            json!({ "retentionDays": 30 }),
-        )
-        .await
+    // A hub that set 30 days before the setting went keeps it.
+    hub.db
+        .transaction(|c| store::set_retention_days(c, 30))
         .unwrap();
     // The hourly loop prunes.
     let loops = super::start(&hub);

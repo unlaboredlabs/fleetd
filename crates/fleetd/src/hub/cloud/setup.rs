@@ -16,9 +16,9 @@
 //!   then joins the hub through it with the ordinary join line, on the hub's release channel (a stable hub pins its
 //!   exact release; an edge machine starts on the newest edge build, never older than the hub, and its catch-up evens
 //!   it out);
-//! - sizes the node for builds (`memPerAgentGb`, `warmBuilds`, desktops in Xvfb), puts sccache on the disk that
-//!   survives a stop, runs `gh auth setup-git` so `git push` uses the order's `GH_TOKEN`, and writes boat's pre-stop
-//!   hook (`fleetd node flush`).
+//! - sizes the node for builds (`warmBuilds`, desktops in Xvfb; the hub sizes its cap at [`MEM_PER_AGENT_GB`]), puts
+//!   sccache on the disk that survives a stop, runs `gh auth setup-git` so `git push` uses the order's `GH_TOKEN`, and
+//!   writes boat's pre-stop hook (`fleetd node flush`).
 //!
 //! Each failing step exits with one line naming it, which boat shows as the sandbox's `setupError`.
 use fleetd_contracts::ids::MachineId;
@@ -34,7 +34,8 @@ const TEMPLATE: &str = include_str!("setup.sh");
 pub const TOKEN_FILE: &str = "/tmp/fleetd-enroll-token";
 /// The user the node and its agents run as on a cloud machine, with no sudo.
 pub const AGENT_USER: &str = "fleetd";
-/// Memory per agent on a cloud machine: on `large` (8 vCPUs, 16 GB) that is 3 agents with 2 build jobs each. Measured
+/// Memory per agent on a cloud machine, as the hub sizes its cap (`hub/slots/sizing`): on `large` (8 vCPUs, 16 GB)
+/// that is 3 agents with 2 build jobs each. Measured
 /// on `large`: one build of fleetd peaks at 7.3 GB, so 3 agents and a build fit, and 2, 4 and 8 jobs build it equally
 /// fast.
 pub const MEM_PER_AGENT_GB: u64 = 4;
@@ -102,7 +103,6 @@ pub fn render(s: &SetupScript) -> String {
         ("@IDENTITY@", s.git_identity.clone().unwrap_or_default()),
         ("@TOKEN_FILE@", TOKEN_FILE.to_owned()),
         ("@AGENT@", AGENT_USER.to_owned()),
-        ("@MEM_PER_AGENT_GB@", MEM_PER_AGENT_GB.to_string()),
         ("@WARM_BUILDS@", WARM_BUILDS.to_string()),
         ("@GH_VERSION@", GH.0.to_owned()),
         ("@GH_SHA256@", GH.1.to_owned()),

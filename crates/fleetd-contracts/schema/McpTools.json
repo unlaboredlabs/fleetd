@@ -11280,12 +11280,6 @@
         "metrics_get.output": {
           "$ref": "#/$defs/MetricsGetOutput"
         },
-        "metrics_retention_set.input": {
-          "$ref": "#/$defs/MetricsRetentionSetInput"
-        },
-        "metrics_retention_set.output": {
-          "$ref": "#/$defs/MetricsRetentionSetOutput"
-        },
         "navi_approvals.input": {
           "$ref": "#/$defs/NaviApprovalsInput"
         },
@@ -11868,12 +11862,6 @@
         "time_insights.output": {
           "$ref": "#/$defs/TimeInsightsOutput"
         },
-        "time_retention_set.input": {
-          "$ref": "#/$defs/TimeRetentionSetInput"
-        },
-        "time_retention_set.output": {
-          "$ref": "#/$defs/TimeRetentionSetOutput"
-        },
         "time_spans.input": {
           "$ref": "#/$defs/TimeSpansInput"
         },
@@ -12140,8 +12128,6 @@
         "memory_undo.output",
         "metrics_get.input",
         "metrics_get.output",
-        "metrics_retention_set.input",
-        "metrics_retention_set.output",
         "navi_approvals.input",
         "navi_approvals.output",
         "navi_approvals_set.input",
@@ -12336,8 +12322,6 @@
         "time_breakdown.output",
         "time_insights.input",
         "time_insights.output",
-        "time_retention_set.input",
-        "time_retention_set.output",
         "time_spans.input",
         "time_spans.output",
         "usage_resume.input",
@@ -13550,38 +13534,6 @@
         "mergedPerDay",
         "n",
         "spark"
-      ],
-      "type": "object"
-    },
-    "MetricsRetentionSetInput": {
-      "properties": {
-        "retentionDays": {
-          "maximum": 400,
-          "minimum": 30,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "retentionDays"
-      ],
-      "type": "object"
-    },
-    "MetricsRetentionSetOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "retentionDays": {
-          "maximum": 400,
-          "minimum": 30,
-          "type": "integer"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "retentionDays"
       ],
       "type": "object"
     },
@@ -23273,38 +23225,6 @@
       },
       "required": [
         "insights"
-      ],
-      "type": "object"
-    },
-    "TimeRetentionSetInput": {
-      "properties": {
-        "retentionDays": {
-          "maximum": 365,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "retentionDays"
-      ],
-      "type": "object"
-    },
-    "TimeRetentionSetOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "retentionDays": {
-          "maximum": 365,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "retentionDays"
       ],
       "type": "object"
     },

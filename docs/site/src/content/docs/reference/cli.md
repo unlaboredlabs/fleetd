@@ -88,7 +88,7 @@ run every setup check on the hub now: the setup steps first, then each other pro
 fleetd uninstall [--purge]
 ```
 
-stop and remove the hub's service; its data stays unless `--purge`, which also removes what an older fleetd installed for T3 Code
+stop and remove the hub's service; its data stays unless `--purge`
 
 ### fleetd machine add {#machine-add}
 
@@ -106,7 +106,7 @@ set up a machine that runs agents, over SSH (`--local`: this machine): copies th
 fleetd machine remove <id> [--purge] [--force]
 ```
 
-stop and remove the node's service on the machine, revoke its key on the hub and forget its rows there (run again, it clears what an older remove left); `--purge` also deletes `~/.fleetd/node` and `~/.fleetd/claude.env` there, and what an older fleetd installed for T3 Code; refused while the machine runs projects' leads, unless `--force`
+stop and remove the node's service on the machine, revoke its key on the hub and forget its rows there (run again, it clears what an older remove left); `--purge` also deletes `~/.fleetd/node` and `~/.fleetd/claude.env` there; refused while the machine runs projects' leads, unless `--force`
 
 ### fleetd machine set {#machine-set}
 
@@ -572,15 +572,7 @@ hubs send phone notifications through https://push.fleetd.sh, the relay for the 
 fleetd time [<order>|<project>] [--since 7d] [--json] [--hub <url> --key-file <path>]
 ```
 
-where agents' time went: an order's critical path, agent time by category, the slowest commands and the findings; a project by id or title (\<machine\>/\<project\> when two machines have one), the whole fleet with neither. `--since` takes 1h to 400d, a date or an ISO time. On the hub machine it needs no `--hub` or `--key-file`
-
-### fleetd time {#time-retention}
-
-```text
-fleetd time --retention <days> [--hub <url> --key-file <path>]
-```
-
-keep 1-365 days of timelines (admin key); daily totals are kept 400 days
+where agents' time went: an order's critical path, agent time by category, the slowest commands and the findings; a project by id or title (\<machine\>/\<project\> when two machines have one), the whole fleet with neither. `--since` takes 1h to 400d, a date or an ISO time. Timelines are kept 30 days, daily totals 400. On the hub machine it needs no `--hub` or `--key-file`
 
 ### fleetd metrics {#metrics}
 
@@ -588,15 +580,7 @@ keep 1-365 days of timelines (admin key); daily totals are kept 400 days
 fleetd metrics [--project <p>] [--days 30] [--json] [--hub <url> --key-file <path>]
 ```
 
-what the factory turned out: PRs merged per day by route, time from order to merged, your minutes per merged PR and the share through fleetd, over the last `--days` calendar days (1-400, today included) in this machine's zone; one project by id or title (\<machine\>/\<project\> when two machines have one), the whole fleet without one. On the hub machine it needs no `--hub` or `--key-file`
-
-### fleetd metrics {#metrics-retention}
-
-```text
-fleetd metrics --retention <days> [--hub <url> --key-file <path>]
-```
-
-keep 30-400 days of landed changes (admin key on every machine)
+what the factory turned out: PRs merged per day by route, time from order to merged, your minutes per merged PR and the share through fleetd, over the last `--days` calendar days (1-400, today included) in this machine's zone; one project by id or title (\<machine\>/\<project\> when two machines have one), the whole fleet without one. Landed changes are kept 400 days. On the hub machine it needs no `--hub` or `--key-file`
 
 ### fleetd status {#status}
 
@@ -633,10 +617,10 @@ the kill switch: turn cloud machines (boat.dev) off and stop every machine boat.
 ### fleetd steer {#steer}
 
 ```text
-fleetd steer <W|T> "<text>" [--now] [--wait] --key-file <human key> [--hub <url>]
+fleetd steer T<n> "<text>" [--now] [--wait] --key-file <human key> [--hub <url>]
 ```
 
-steer an order's lead (W41) or one agent (T88) mid-run. Plain: it lands at the agent's next step, after the tool it is running returns. `--now` stops that step and delivers at once. `--wait` follows the receipt: exit 0 acknowledged, 1 not acknowledged, withdrawn or failed. Without `--hub` it uses the hub on this machine
+steer one agent (T88) mid-run. Plain: it lands at the agent's next step, after the tool it is running returns. `--now` stops that step and delivers at once. `--wait` follows the receipt: exit 0 acknowledged, 1 not acknowledged, withdrawn or failed. Without `--hub` it uses the hub on this machine. To reach a project's lead, use `fleetd chat`
 
 ### fleetd steer withdraw {#steer-withdraw}
 

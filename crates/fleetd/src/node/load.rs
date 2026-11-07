@@ -10,10 +10,8 @@ use fleetd_contracts::prim::{Count, Int, List, NonNegative};
 
 use super::config::NodeConfig;
 
-/// Memory to allow per agent when node.json sets none.
-pub const MEM_PER_AGENT_GB: u64 = 2;
-/// Disk to allow per new agent's worktree when node.json sets none: roughly a Rust worktree with sccache.
-pub const DISK_PER_AGENT_GB: u64 = 5;
+/// Memory to allow per agent, as the hub sizes a machine's cap (`hub/slots/sizing`): 2 GB.
+const MEM_PER_AGENT: u64 = 2_000_000_000;
 
 /// Physical memory and how much of it is available, with swap, in bytes. macOS reports no swap here.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -161,13 +159,6 @@ pub(crate) fn mem_total() -> Option<u64> {
     }
 }
 
-/// node.json's per-agent figure in bytes, else the default. 0 counts as unset: the hub divides by it.
-pub fn per_agent_bytes(gb: Option<u64>, default_gb: u64) -> u64 {
-    gb.filter(|&gb| gb > 0)
-        .unwrap_or(default_gb)
-        .saturating_mul(1_000_000_000)
-}
-
 /// The agents this machine fits by its own measure, as the hub sizes its cap (5-throughput §1): one per CPU less a
 /// reserve of one in eight, and the memory left after a quarter of it (4 to 16 GB) at `mem_per_agent` bytes each, at
 /// most 64. An unknown total counts as 4 on memory, as the hub counts it.
@@ -188,12 +179,10 @@ pub fn build_jobs(cpus: u64, agents: u64) -> u64 {
     (cpus / agents.max(1)).max(2)
 }
 
-/// [`build_jobs`] for this machine now, with node.json's `memPerAgentGb`. Blocking on macOS (`sysctl` once).
-pub fn build_jobs_here(home: &Path) -> u64 {
+/// [`build_jobs`] for this machine now. Blocking on macOS (`sysctl` once).
+pub fn build_jobs_here() -> u64 {
     let cpus = std::thread::available_parallelism().map_or(1, |n| n.get() as u64);
-    let config = super::config::read_config(home).ok().flatten();
-    let per_agent = per_agent_bytes(config.and_then(|c| c.mem_per_agent_gb), MEM_PER_AGENT_GB);
-    build_jobs(cpus, agents_fit(cpus, mem_total(), per_agent))
+    build_jobs(cpus, agents_fit(cpus, mem_total(), MEM_PER_AGENT))
 }
 
 fn count(n: u64) -> Option<Count> {
@@ -242,14 +231,9 @@ pub fn read(limits: Vec<LoginLimit>, home: &Path) -> Option<NodeLoad> {
             .and_then(Memory::swap_used_pct)
             .and_then(|p| Int::new(p).ok()),
         mem_pressure_pct: mem_pressure().and_then(|p| NonNegative::new(p).ok()),
-        mem_per_agent_bytes: count(per_agent_bytes(
-            setting(|c| c.mem_per_agent_gb),
-            MEM_PER_AGENT_GB,
-        )),
-        disk_per_agent_bytes: count(per_agent_bytes(
-            setting(|c| c.disk_per_agent_gb),
-            DISK_PER_AGENT_GB,
-        )),
+        // Only an older node sends its node.json's figures; the hub has its own.
+        mem_per_agent_bytes: None,
+        disk_per_agent_bytes: None,
         limits: List::unchecked(limits.into_iter().take(4).collect()),
         disk: disk(home, setting(|c| c.min_free_gb)),
         hosts: Some(super::hosts::checks(home, config.as_ref())),
@@ -357,14 +341,6 @@ Pages occupied by compressor:            273395.
             parse_vm_stat("Pages free: 100.\nPages inactive: 900.\n", 8_192_000),
             None
         );
-    }
-
-    #[test]
-    fn per_agent_sizes_default_to_2_gb_of_memory_and_5_gb_of_disk() {
-        assert_eq!(per_agent_bytes(None, MEM_PER_AGENT_GB), 2_000_000_000);
-        assert_eq!(per_agent_bytes(None, DISK_PER_AGENT_GB), 5_000_000_000);
-        assert_eq!(per_agent_bytes(Some(3), MEM_PER_AGENT_GB), 3_000_000_000);
-        assert_eq!(per_agent_bytes(Some(0), DISK_PER_AGENT_GB), 5_000_000_000);
     }
 
     /// The design's example machines, and the one of 08:39: 20 agents at once on 32 cores and 59 GB.

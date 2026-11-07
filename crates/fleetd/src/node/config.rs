@@ -26,12 +26,6 @@ pub struct NodeConfig {
     /// volume or 20 GB, whichever is larger. 0 turns the disk pause off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_free_gb: Option<u64>,
-    /// GB of memory to allow per agent when the hub sizes this machine's cap. Absent or 0: 2 GB.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mem_per_agent_gb: Option<u64>,
-    /// GB of disk to allow per new agent's worktree when the hub decides how many more fit. Absent or 0: 5 GB.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub disk_per_agent_gb: Option<u64>,
     /// Warm cargo builds each checkout keeps for its next readers and reviewers (node/warm). Absent: 2. 0 keeps none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warm_builds: Option<u64>,

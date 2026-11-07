@@ -1,5 +1,4 @@
-//! `fleetd time`: where agents' time went, over the hub's MCP endpoint (time_breakdown, time_insights,
-//! time_retention_set). It only lays out what the hub computed as plain tables; `--json` prints it as the hub sent it.
+//! `fleetd time`: where agents' time went, over the hub's MCP endpoint (time_breakdown, time_insights). It only lays out what the hub computed as plain tables; `--json` prints it as the hub sent it.
 
 use std::time::Duration;
 
@@ -18,9 +17,8 @@ pub const TIME_USAGE: &str = r#"  time [<order>|<project>] [--since 7d] [--json]
              where agents' time went: an order's critical path, agent time by category, the
              slowest commands and the findings; a project by id or title (<machine>/<project>
              when two machines have one), the whole fleet with neither. --since takes 1h to
-             400d, a date or an ISO time. On the hub machine it needs no --hub or --key-file
-  time --retention <days> [--hub <url> --key-file <path>]
-             keep 1-365 days of timelines (admin key); daily totals are kept 400 days
+             400d, a date or an ISO time. Timelines are kept 30 days, daily totals 400. On the
+             hub machine it needs no --hub or --key-file
 "#;
 
 #[derive(Debug, PartialEq)]
@@ -33,7 +31,6 @@ pub struct TimeArgs {
     pub target: String,
     pub since: String,
     pub json: bool,
-    pub retention: Option<u32>,
 }
 
 impl TimeArgs {
@@ -83,7 +80,6 @@ pub fn parse_time_args(argv: &[String], now: DateTime<Utc>, zone: Tz) -> Result<
         ("key-file", Kind::Str),
         ("since", Kind::Str),
         ("json", Kind::Bool),
-        ("retention", Kind::Str),
     ];
     let v = args::parse(
         argv,
@@ -107,22 +103,12 @@ pub fn parse_time_args(argv: &[String], now: DateTime<Utc>, zone: Tz) -> Result<
             v.positionals.join(" ")
         ));
     }
-    let retention = match v.str("retention") {
-        None => None,
-        Some(days) => Some(
-            days.parse::<u32>()
-                .ok()
-                .filter(|d| (1..=365).contains(d))
-                .ok_or_else(|| format!("--retention must be 1 to 365 days, got '{days}'"))?,
-        ),
-    };
     Ok(TimeArgs {
         hub,
         home: None,
         target: v.positionals.first().cloned().unwrap_or_default(),
         since: parse_since(v.str("since").unwrap_or("7d"), now, zone)?,
         json: v.flag("json"),
-        retention,
     })
 }
 
@@ -524,13 +510,6 @@ pub async fn time_command(argv: &[String]) -> u8 {
 }
 
 async fn run(hub: &mut Hub, args: &TimeArgs) -> Result<(), u8> {
-    if let Some(days) = args.retention {
-        let set = hub
-            .call("time_retention_set", json!({ "retentionDays": days }))
-            .await?;
-        println!("timelines are kept {} days", set["retentionDays"]);
-        return Ok(());
-    }
     let scope = if args.target.is_empty() {
         json!({ "kind": "fleet" })
     } else if args.is_order() {
@@ -613,7 +592,8 @@ mod tests {
             &["--since", "0d"][..],
             &["--since", "401d"],
             &["--since", "7w"],
-            &["--retention", "366"],
+            // Timelines keep a fixed 30 days.
+            &["--retention", "30"],
             &["a", "b"],
         ] {
             assert!(parse(bad).is_err(), "{bad:?}");

@@ -11,13 +11,13 @@ use std::time::{Duration, Instant};
 use fleetd_contracts::artifacts::{ARTIFACT_TEXT_CAP, ArtifactFormat, ArtifactPublishCall};
 use fleetd_contracts::automations::{
     AutomationConfirmCall, AutomationCreateCall, AutomationDeleteCall, AutomationListCall,
-    AutomationPauseCall, AutomationRunCall, AutomationRunsCall, AutomationUpdateCall,
+    AutomationRunCall, AutomationRunsCall, AutomationUpdateCall,
 };
 use fleetd_contracts::browser::{
     BrowserCall, DesktopCall, FillCredentialCall, RequestTakeoverCall, SessionEndCall,
     SessionStartCall,
 };
-use fleetd_contracts::chat::{ChatFileCall, ChatImageCall, NudgeCall};
+use fleetd_contracts::chat::{ChatFileCall, NudgeCall};
 use fleetd_contracts::checklist::ChecklistCall;
 use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, BriefReadCall, ChangeEnqueueCall, CloseCall, DecideCall,
@@ -254,15 +254,10 @@ static TOOLS: &[Tool] = &[
     lead(
         "automation_update",
         "automation_update",
-        "Change an automation's name, prompt or schedule (removeSchedule: true takes it off); fields left out stay.",
+        "Change an automation's name, prompt or schedule (removeSchedule: true takes it off), or pause it (paused: \
+         true) or resume it (false); fields left out stay. Paused, its schedule and webhook start nothing; resumed, \
+         the schedule goes on from now.",
         inline_schema::<AutomationUpdateCall>,
-    ),
-    lead(
-        "automation_pause",
-        "automation_pause",
-        "Pause (paused: true) or resume an automation. Paused, its schedule and webhook start nothing; resumed, the \
-         schedule goes on from now.",
-        inline_schema::<AutomationPauseCall>,
     ),
     lead(
         "automation_delete",
@@ -363,7 +358,7 @@ static TOOLS: &[Tool] = &[
         "confirm_step",
         "A lead's call, right before the final Confirm or Submit click on a site that doesn't pay or order (booking a \
          table, cancelling a subscription, sending a form, an expense, a return, a post): site, the button's label, \
-         what clicking it does, the page's details and a screenshot from chat_image. It goes through your approval \
+         what clicking it does, the page's details and a screenshot from chat_file. It goes through your approval \
          mode like a send: once it returns, click that button, once. Denied, don't click it. A payment, order or \
          trade never goes through here: hand that click to the person with request_takeover.",
         inline_schema::<ConfirmStepCall>,
@@ -448,27 +443,17 @@ static TOOLS: &[Tool] = &[
     Tool {
         worker: true,
         ..lead(
-            "chat_image",
-            "chat_image",
-            "Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. \
-             path is a png, jpeg, webp or gif file inside your working directory (relative, or absolute inside it; \
-             nothing outside it is read), at most 25 MiB. Returns its attachmentId. A lead shows it in its message \
-             with an image block ({\"v\":1,\"kind\":\"image\",\"attachmentId\":\"F12\",\"caption\":\"…\"}); a task \
-             puts the id in its result for its lead to show. Unshown, it is deleted after 24 h.",
-            inline_schema::<ChatImageCall>,
-        )
-    },
-    Tool {
-        worker: true,
-        ..lead(
             "chat_file",
             "chat_file",
-            "Send the person a file you made (a PDF, a CSV, a document) in this project's chat, as a card they open \
-             or save on their computer or phone, and as a document on Telegram. path is a file inside your working \
-             directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB: an image, PDF, \
-             text or CSV, .docx, .xlsx, .pptx or .zip, its bytes what its name says. Returns its attachmentId. A lead \
-             shows it in its message with a file block ({\"v\":1,\"kind\":\"file\",\"attachmentId\":\"F12\"}); \
-             a task puts the id in its result for its lead to show. Unshown, it is deleted after 24 h.",
+            "Put a file you made in this project's chat: a screenshot of a UI change (instead of a link), a PDF, a \
+             CSV, a document. path is a file inside your working directory (relative, or absolute inside it; nothing \
+             outside it is read), at most 25 MiB: a png, jpeg, webp or gif image, PDF, text or CSV, .docx, .xlsx, \
+             .pptx or .zip, its bytes what its name says. Returns its attachmentId and the block that shows it: an \
+             image block for an image, shown inline \
+             ({\"v\":1,\"kind\":\"image\",\"attachmentId\":\"F12\",\"caption\":\"…\"}), a file block for \
+             anything else, a card the person opens or saves on their computer or phone and gets as a document on \
+             Telegram ({\"v\":1,\"kind\":\"file\",\"attachmentId\":\"F12\"}). A task puts the id and its block \
+             kind in its result for its lead to show. Unshown, it is deleted after 24 h.",
             inline_schema::<ChatFileCall>,
         )
     },
@@ -547,7 +532,7 @@ static TOOLS: &[Tool] = &[
             "A lead's call: record a payment at the checkout open in your browser session, with the card the person \
              picked for you. Call it on the checkout page once the basket and total are final: shop is its domain \
              (the page's host) and name, total the amount (`129.90`) and currency (`EUR`) with everything in it, \
-             items what is being bought. Nobody is asked (D310): it goes in the person's purchases log, and you call \
+             items what is being bought. Nobody is asked: it goes in the person's purchases log, and you call \
              purchase_fill right away. Never type card details yourself. Trading, moving money between accounts and \
              crypto stay refused.",
             inline_schema::<PurchaseRequestCall>,
@@ -602,6 +587,13 @@ fn report_schema() -> Value {
     schema
 }
 
+/// Tools that left the list, and the listed tool each one's calls go to with the same arguments: an older lead or
+/// skill may still name them. One release, then they go.
+pub const ALIASES: &[(&str, &str)] = &[
+    ("automation_pause", "automation_update"),
+    ("chat_image", "chat_file"),
+];
+
 pub fn tools_for(role: Role) -> impl Iterator<Item = &'static Tool> {
     TOOLS.iter().filter(move |t| match role {
         Role::Lead => t.lead,
@@ -619,7 +611,11 @@ pub fn tool_list(role: Role) -> Value {
 
 /// The lead call a `tools/call` makes, or why its arguments are not one.
 pub fn call_of(role: Role, name: &str, arguments: Value) -> Result<Value, String> {
-    let Some(tool) = tools_for(role).find(|t| t.name == name) else {
+    let listed = ALIASES
+        .iter()
+        .find(|(old, _)| *old == name)
+        .map_or(name, |(_, new)| new);
+    let Some(tool) = tools_for(role).find(|t| t.name == listed) else {
         return Err(format!("No tool {name} here."));
     };
     let mut call = match arguments {
@@ -1148,7 +1144,6 @@ mod tests {
                 "brief_read",
                 "wait_ci",
                 "review_read",
-                "chat_image",
                 "chat_file",
                 "publish_artifact",
                 "session_start",
@@ -1182,12 +1177,29 @@ mod tests {
             "chat_read",
             "confirm_step",
             "review_read",
-            "chat_image",
             "chat_file",
             "publish_artifact",
         ] {
             assert!(lead.contains(&tool.to_owned()), "{tool}");
         }
+        // Gone from the list, still answered for an older lead or skill that names them.
+        for (gone, _) in ALIASES {
+            assert!(!lead.contains(&gone.to_string()), "{gone}");
+        }
+        assert_eq!(
+            call_of(Role::Worker, "chat_image", json!({ "path": "shot.png" })).unwrap(),
+            json!({ "op": "chat_file", "path": "shot.png" })
+        );
+        assert_eq!(
+            call_of(
+                Role::Lead,
+                "automation_pause",
+                json!({ "automationId": "au_k3Jd8sQp2xYz", "paused": true })
+            )
+            .unwrap(),
+            json!({ "op": "automation_update", "automationId": "au_k3Jd8sQp2xYz", "paused": true })
+        );
+        assert!(call_of(Role::Worker, "automation_pause", json!({})).is_err());
         assert!(!lead.contains(&"report".to_owned()) && !lead.contains(&"ask_lead".to_owned()));
         // A worker calling a lead's tool by name gets nothing sent.
         assert_eq!(
@@ -1220,9 +1232,9 @@ mod tests {
         let why = read_artifact_path(&mut missing, dir.path()).unwrap_err();
         assert!(why.starts_with("Can't read nope.md"), "{why}");
         // Other calls pass through untouched.
-        let mut other = json!({ "op": "chat_image", "path": "nope.png" });
+        let mut other = json!({ "op": "chat_file", "path": "nope.png" });
         read_artifact_path(&mut other, dir.path()).unwrap();
-        assert_eq!(other, json!({ "op": "chat_image", "path": "nope.png" }));
+        assert_eq!(other, json!({ "op": "chat_file", "path": "nope.png" }));
     }
 
     #[test]

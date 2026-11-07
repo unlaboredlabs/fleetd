@@ -4534,16 +4534,6 @@ export type MetricsRepoRow = {
   throughFleetdPct?: number;
 };
 
-export type MetricsRetentionSetInput = {
-  retentionDays: number;
-};
-
-export type MetricsRetentionSetOutput = {
-  next?: string;
-  retentionDays: number;
-  truncated?: boolean;
-};
-
 /** The KPI row: all four, equal. */
 export type MetricsTiles = {
   human: HumanTile;
@@ -4815,7 +4805,10 @@ export type NodeLoad = {
   desktop?: DesktopHealth;
   /** The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read. */
   disk?: NodeDisk;
-  /** Disk to allow per new agent's worktree: node.json's `diskPerAgentGb`, else 5 GB. Absent from older nodes. */
+  /**
+   * Disk to allow per new agent's worktree: an older node's node.json `diskPerAgentGb`, or its 5 GB default. A
+   * node now sends none: the hub counts 5 GB.
+   */
   diskPerAgentBytes?: number;
   /**
    * What the machine can host for sessions (a browser, an Android emulator, an iOS simulator, a desktop); absent
@@ -4840,8 +4833,8 @@ export type NodeLoad = {
    */
   mac?: MacHealth;
   /**
-   * Memory to allow per agent when sizing the machine's cap: node.json's `memPerAgentGb`, else 2 GB. Absent from
-   * older nodes.
+   * Memory to allow per agent when sizing the machine's cap: an older node's node.json `memPerAgentGb`, or its
+   * 2 GB default. A node now sends none: the hub sizes it.
    */
   memPerAgentBytes?: number;
   /**
@@ -8203,16 +8196,6 @@ export type TimeInsightsOutput = {
   truncated?: boolean;
 };
 
-export type TimeRetentionSetInput = {
-  retentionDays: number;
-};
-
-export type TimeRetentionSetOutput = {
-  next?: string;
-  retentionDays: number;
-  truncated?: boolean;
-};
-
 /** What the numbers cover. */
 export type TimeScope = {
   kind: "fleet";
@@ -9070,7 +9053,6 @@ export interface ToolMap {
   memory_shared_set: { input: MemorySharedSetInput; output: MemorySharedSetOutput };
   memory_undo: { input: MemoryUndoInput; output: MemoryUndoOutput };
   metrics_get: { input: MetricsGetInput; output: MetricsGetOutput };
-  metrics_retention_set: { input: MetricsRetentionSetInput; output: MetricsRetentionSetOutput };
   navi_approvals: { input: NaviApprovalsInput; output: NaviApprovalsOutput };
   navi_approvals_set: { input: NaviApprovalsSetInput; output: NaviApprovalsSetOutput };
   navi_archive: { input: NaviArchiveInput; output: NaviArchiveOutput };
@@ -9168,7 +9150,6 @@ export interface ToolMap {
   thread_window: { input: ThreadWindowInput; output: ThreadWindowOutput };
   time_breakdown: { input: TimeBreakdownInput; output: TimeBreakdownOutput };
   time_insights: { input: TimeInsightsInput; output: TimeInsightsOutput };
-  time_retention_set: { input: TimeRetentionSetInput; output: TimeRetentionSetOutput };
   time_spans: { input: TimeSpansInput; output: TimeSpansOutput };
   usage_resume: { input: UsageResumeInput; output: UsageResumeOutput };
   usage_status: { input: UsageStatusInput; output: UsageStatusOutput };

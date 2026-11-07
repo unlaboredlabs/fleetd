@@ -208,9 +208,12 @@ pub struct AutomationUpdateCall {
     pub schedule: Option<AutomationScheduleCall>,
     /// true: take its schedule off.
     pub remove_schedule: Option<bool>,
+    /// true: its schedule and webhook start nothing; false: resume it, its schedule going on from now.
+    pub paused: Option<bool>,
 }
 
-/// `automation_pause`: paused true stops its schedule and webhook; false resumes them.
+/// `automation_pause`: paused true stops its schedule and webhook; false resumes them. Only an older node sends it:
+/// agent-mcp lists `automation_update {paused}` instead, and sends a lead's `automation_pause` there.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationPauseCall {

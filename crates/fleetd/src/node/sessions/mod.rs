@@ -2313,7 +2313,7 @@ impl SessionService {
                 let home = self.inner.config.home.clone();
                 let (n, slots) = blocking(move || {
                     (
-                        super::load::build_jobs_here(&home),
+                        super::load::build_jobs_here(),
                         super::build_slots::slots_here(&home),
                     )
                 })
@@ -3025,10 +3025,7 @@ impl SessionService {
                 );
             }
         }
-        env.extend(share::jobs_env(
-            &env,
-            super::load::build_jobs_here(&config.home),
-        ));
+        env.extend(share::jobs_env(&env, super::load::build_jobs_here()));
         // Its cargo builds take turns for the machine's build slots.
         super::build_slots::add_to_path(&config.home, &self_command(), &mut env);
         let scratch = share::scratch_dir(&config.home, id);

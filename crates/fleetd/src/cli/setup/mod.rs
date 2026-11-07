@@ -52,8 +52,7 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--listen <host:port>] [--url <u
              run every setup check on the hub now: the setup steps first, then each other
              problem with its fix
   uninstall [--purge]
-             stop and remove the hub's service; its data stays unless --purge, which also removes
-             what an older fleetd installed for T3 Code
+             stop and remove the hub's service; its data stays unless --purge
 "#;
 
 /// While the wizard runs a step that prints as it goes (`machine add`), its lines are kept here instead of
@@ -888,16 +887,6 @@ async fn uninstall_command(argv: &[String]) -> u8 {
         return fail(&format!("cannot delete {home_text}: {error}"));
     }
     say(&format!("deleted {home_text}"));
-    // What an older fleetd installed for T3 Code belongs to the user's own fleet, never a second one.
-    if let Some(platform) = local_platform().filter(|_| crate::home::relocated().is_none()) {
-        let dirs = local_dirs();
-        let step =
-            machine_plan::old_t3_removal(platform, &dirs.home, &dirs.config_home, local_uid());
-        let out = run_local("/bin/sh", &["-c".to_owned(), step.command], None).await;
-        if !out.stdout.trim().is_empty() {
-            say(out.stdout.trim());
-        }
-    }
     0
 }
 

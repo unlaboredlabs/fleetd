@@ -79,8 +79,6 @@ after you change it.
 | `cmdRoots` | Folders the node may run commands in, and below. Absent: your home directory. |
 | `claudeConfigDir` | A dedicated claude profile for this machine's sessions. See [below](#claude-profile). |
 | `minFreeGb` | New agents wait while the disk holding the worktrees has less than this many GB free. Absent: 10% of the disk or 20 GB, whichever is larger. `0` turns it off. Read with every heartbeat, no restart needed. See [Disk and load](/docs/machines#guard). |
-| `memPerAgentGb` | GB of memory to allow per agent when the hub works out how many agents this machine runs at once by default. It sizes the default only: no agent waits for the memory it might take. Absent or `0`: 2 GB. Read with every heartbeat. |
-| `diskPerAgentGb` | GB of disk to allow per new agent's worktree when the hub works out how many more fit above `minFreeGb`. Absent or `0`: 5 GB, about a Rust worktree with a build cache; a JS project needs 1 to 2. Read with every heartbeat. |
 | `warmBuilds` | Warm cargo builds each checkout keeps for its next readers and reviewers: a finished reviewer's `target/` goes to the next one. Absent: 2; `0` keeps none. Each is a whole target, often many GB; the node prunes them to this many once a day and drops any older than a week. |
 | `buildSlots` | Agents' cargo builds (`build`, `check`, `clippy`, `test` and the like) that run at once on this machine; one more waits its turn and says it is queued. Absent: one per 8 GB of memory left after a quarter of it (4 to 16 GB) is kept back, at least 1. `0` turns the turns off. Read by each build, no restart needed. See [Build turns](/docs/machines#fair-share). |
 | `browser` | How this machine runs [browser screens](/docs/browser-sessions#setup): `enabled`, `chrome`, `ffmpeg`, `pool`, `sandbox`, `idleMinutes`. |
@@ -280,7 +278,7 @@ one agent's work or wait, such as a tool call or a CI check.
 
 | Data | Kept |
 |---|---|
-| Spans | 30 days (1 to 365 with `fleetd time --retention <days>`) |
+| Spans | 30 days |
 | Daily totals and each piece of work's critical path | 400 days |
 
 Each node holds timings it hasn't sent yet in `sessions.sqlite`. While the hub is away, it keeps up to 7 days or

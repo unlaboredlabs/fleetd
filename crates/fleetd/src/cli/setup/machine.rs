@@ -37,8 +37,8 @@ pub fn machine_usage() -> String {
   machine remove <id> [--purge] [--force]
              stop and remove the node's service on the machine, revoke its key on the hub and forget
              its rows there (run again, it clears what an older remove left); --purge also deletes
-             ~/.fleetd/node and ~/.fleetd/claude.env there, and what an older fleetd installed for
-             T3 Code; refused while the machine runs projects' leads, unless --force
+             ~/.fleetd/node and ~/.fleetd/claude.env there; refused while the machine runs
+             projects' leads, unless --force
 {}",
         crate::cli::project::MACHINE_SET_USAGE
     )

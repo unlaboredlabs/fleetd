@@ -314,7 +314,7 @@ pub struct ConfirmStepCall {
     pub does: Line<1, 500>,
     /// What the page shows around the button: the details being confirmed.
     pub page: Option<crate::prim::Text<0, 4000>>,
-    /// A screenshot of the page from `chat_image`, for the person's card.
+    /// A screenshot of the page from `chat_file`, for the person's card.
     pub screenshot: Option<crate::mcp::AttachmentId>,
 }
 

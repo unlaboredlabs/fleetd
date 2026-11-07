@@ -743,11 +743,11 @@ whole fleet. The hub enforces all of them; the lead plans to them.
 
 | Cap | Counts | Default | Set it |
 |---|---|---|---|
-| Per machine | Every project's agents on the machine. Not the leads. | Auto, what it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12, a 60 GB one 22. | Settings › Hub › Machines → Max agents, up to the fleet cap; "Use auto" goes back. Owners and admins only. node.json's `memPerAgentGb` changes the 2 GB of auto. |
+| Per machine | Every project's agents on the machine. Not the leads. | Auto, what it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12, a 60 GB one 22; a [cloud machine](/docs/machines#cloud) counts 4 GB each. | Settings › Hub › Machines → Max agents, up to the fleet cap; "Use auto" goes back. Owners and admins only. |
 | Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap, within the fleet cap: it follows a change to either at once | Click "max 12" beside the working count in the panel's Agents tab, or use Settings → Projects → Agents, up to the fleet cap. Once set it is the project's own, which no fleet or machine change moves; "Use the default" goes back. Past its machine's cap, the slider says the machine holds it there until an admin raises the machine. A max you set counts the project's agents on [cloud machines](/docs/machines#cloud) too; the default counts only those on its own machine. |
 | Fleet-wide | Every project's agents together. Not the leads. | None: the machines' caps added up | Settings › Hub › Machines → Max agents. Owners and admins only. A fleet cap saved before stays until you change it. |
 
-New agents on a machine also wait for disk: 5 GB each (`diskPerAgentGb`) above the free-space floor, with agents started
+New agents on a machine also wait for disk: 5 GB each above the free-space floor (`minFreeGb`), with agents started
 in the last 10 minutes still counted, since their worktrees haven't grown yet. The lead's state line names what sets
 its cap, e.g. "agents: 4 running of 6 (auto: memory 18 GB, about 2 GB an agent), 2 queued, 0 free", or "fleet cap
 set", "machine cap set" and "max agents set". When slots have sat free for 10 minutes, with no agent starting or ending,

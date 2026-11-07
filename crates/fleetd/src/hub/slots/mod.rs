@@ -367,13 +367,15 @@ impl Slots {
 
     /// A heartbeat's facts about the machine (`name` for the reasons people read): what it fits and its disk room.
     /// When it takes more than before, starts the queued agents that now fit and runs the listeners.
+    /// `cloud`: one of the hub's cloud machines, which it sizes for builds.
     pub fn observe_machine(
         &self,
         machine_id: &MachineId,
         name: &str,
         load: &NodeLoad,
+        cloud: bool,
     ) -> Result<(), StoreError> {
-        let (auto, disk_room) = (sizing::auto_cap(load), sizing::disk_room(load));
+        let (auto, disk_room) = (sizing::auto_cap(load, cloud), sizing::disk_room(load));
         self.locked(|b| ((), b.observe_machine(machine_id, name, auto, disk_room)))
     }
 
@@ -734,7 +736,7 @@ mod tests {
         }))
         .unwrap();
         slots
-            .observe_machine(&r.machine_id, "builder-1", &load)
+            .observe_machine(&r.machine_id, "builder-1", &load, false)
             .unwrap();
         slots
             .set_cap(CapInput {

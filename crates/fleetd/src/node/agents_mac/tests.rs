@@ -581,8 +581,6 @@ fn only_agents_mac_makes_the_node_the_agents_mac() {
         cmd_roots: None,
         claude_config_dir: None,
         min_free_gb: None,
-        mem_per_agent_gb: None,
-        disk_per_agent_gb: None,
         warm_builds: None,
         build_slots: None,
         enrolled: true,

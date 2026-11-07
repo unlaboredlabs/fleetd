@@ -123,7 +123,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "pair" => pair::PAIR_USAGE.to_owned(),
         "invite" | "people" => people::PEOPLE_USAGE.to_owned(),
         "github-app" => github_app::GITHUB_APP_USAGE.to_owned(),
-        "project" | "projects" => project::PROJECT_USAGE.to_owned(),
+        "project" => project::PROJECT_USAGE.to_owned(),
         "navi" | "navis" => navi::NAVI_USAGE.to_owned(),
         "hub" => match rest.first().map(String::as_str) {
             Some("start") => node::HUB_START_USAGE.to_owned(),
@@ -209,7 +209,6 @@ fn is_long_running(argv: &[String]) -> bool {
                 | "machine"
                 | "github-app"
                 | "project"
-                | "projects"
                 | "navi"
                 | "navis"
                 | "node"
@@ -234,7 +233,7 @@ async fn run_long_running(argv: &[String]) -> u8 {
         "init" | "doctor" | "uninstall" => setup::setup_command(&argv[0], rest).await,
         "machine" => setup::machine::machine_command(rest).await,
         "github-app" => github_app::github_app_command(rest).await,
-        "project" | "projects" => project::project_command(rest).await,
+        "project" => project::project_command(rest).await,
         "navi" | "navis" => navi::navi_command(rest).await,
         "node" => node::node_command(rest).await,
         "time" => time::time_command(rest).await,

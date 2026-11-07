@@ -1,4 +1,4 @@
-//! `fleetd steer`: a person redirects an order's lead or one of its agents mid-run, over the hub's MCP endpoint
+//! `fleetd steer`: a person redirects one of an order's agents mid-run, over the hub's MCP endpoint
 //! (steer_send, steer_withdraw, and order_get for an order's steers). A steer speaks for the human, so it needs a human key the person made
 //! ([`human_key_required`]). `--wait` follows the receipt the hub records from claude's own frames, through events_wait.
 
@@ -10,11 +10,12 @@ use serde_json::{Value, json};
 use super::args::{self, Kind, Spec};
 use super::mcp_client::{McpClient, McpError};
 
-pub const STEER_USAGE: &str = r#"  steer <W|T> "<text>" [--now] [--wait] --key-file <human key> [--hub <url>]
-             steer an order's lead (W41) or one agent (T88) mid-run. Plain: it lands at the
-             agent's next step, after the tool it is running returns. --now stops that step and
-             delivers at once. --wait follows the receipt: exit 0 acknowledged, 1 not
-             acknowledged, withdrawn or failed. Without --hub it uses the hub on this machine
+pub const STEER_USAGE: &str = r#"  steer T<n> "<text>" [--now] [--wait] --key-file <human key> [--hub <url>]
+             steer one agent (T88) mid-run. Plain: it lands at the agent's next step, after the
+             tool it is running returns. --now stops that step and delivers at once. --wait
+             follows the receipt: exit 0 acknowledged, 1 not acknowledged, withdrawn or failed.
+             Without --hub it uses the hub on this machine. To reach a project's lead, use
+             fleetd chat
   steer withdraw S<n> --key-file <human key> [--hub <url>]
              take back a steer the agent has not taken in yet
   steers <W|T> --key-file <human key> [--hub <url>]
@@ -65,7 +66,7 @@ fn is_numbered(id: &str, prefix: char) -> bool {
     })
 }
 
-/// `W41` is an order (its lead), `T88` one task.
+/// `W41` is an order (whose steers `fleetd steers` lists), `T88` one task.
 pub fn target_of(id: &str) -> Result<Value, String> {
     if is_numbered(id, 'W') {
         Ok(json!({ "workstreamId": id }))
@@ -125,11 +126,17 @@ pub fn parse_steer_args(argv: &[String], list: bool) -> Result<SteerArgs, String
         }
     } else {
         let [id, words @ ..] = p.as_slice() else {
-            return Err(r#"expected fleetd steer <W|T> "<text>""#.into());
+            return Err(r#"expected fleetd steer T<n> "<text>""#.into());
         };
         let text = words.join(" ");
         if text.trim().is_empty() {
-            return Err(r#"expected fleetd steer <W|T> "<text>""#.into());
+            return Err(r#"expected fleetd steer T<n> "<text>""#.into());
+        }
+        // A project's lead is reached in its chat, as the app does; the hub still takes `{workstreamId}` from older clients.
+        if is_numbered(id, 'W') {
+            return Err(format!(
+                "{id} is an order: to reach its project's lead, use fleetd chat <machine>/<project> \"<text>\" [--now]"
+            ));
         }
         SteerCommand::Send {
             target: target_of(id)?,
@@ -501,16 +508,16 @@ mod tests {
     }
 
     #[test]
-    fn enter_is_queue_and_now_is_now_for_a_lead_or_a_task() {
+    fn enter_is_queue_and_now_is_now_for_a_task() {
         let sent = parse_steer_args(
-            &argv(&["W41", "skip", "the docs", "--key-file", "k"]),
+            &argv(&["T41", "skip", "the docs", "--key-file", "k"]),
             false,
         )
         .unwrap();
         assert_eq!(
             sent.command,
             SteerCommand::Send {
-                target: json!({ "workstreamId": "W41" }),
+                target: json!({ "taskId": "T41" }),
                 text: "skip the docs".into(),
                 mode: "queue",
                 wait: false
@@ -535,6 +542,16 @@ mod tests {
         assert!(err(&["W41", "--key-file", "k"], false).starts_with("expected"));
         assert!(err(&["P3", "x", "--key-file", "k"], false).contains("not an order"));
         assert!(err(&["W0", "x", "--key-file", "k"], false).contains("not an order"));
+        // A lead is reached with fleetd chat; an order's steers still list.
+        assert!(err(&["W41", "x", "--key-file", "k"], false).contains("use fleetd chat"));
+        assert_eq!(
+            parse_steer_args(&argv(&["W41", "--key-file", "k"]), true)
+                .unwrap()
+                .command,
+            SteerCommand::List {
+                target: json!({ "workstreamId": "W41" })
+            }
+        );
         assert!(err(&["withdraw", "12", "--key-file", "k"], false).contains("withdraw S<n>"));
         assert!(
             err(&["withdraw", "S12", "--now", "--key-file", "k"], false).contains("not withdraw")

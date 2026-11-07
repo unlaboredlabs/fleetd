@@ -101,7 +101,7 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
                 .with_fix(
                     "A task reports its review verdict (report), asks its lead (ask_lead), reads its brief \
                      (brief_read), decisions (decisions_search) and its PRs' reviews (review_read), and may upload an \
-                     image or file for your lead to show (chat_image, chat_file), publish a report \
+                     image or file for your lead to show (chat_file), publish a report \
                      (publish_artifact) or wait on CI (wait_ci). Put anything else in your result or ask your lead.",
                 ));
             }

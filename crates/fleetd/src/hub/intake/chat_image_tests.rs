@@ -268,16 +268,22 @@ async fn a_lead_and_a_task_put_a_png_in_the_chat_and_a_lead_message_shows_it() {
         lead.next
     );
     let absolute = rig.dirs["task-1"].join("shot.png").display().to_string();
-    let task = chat_image(
+    // chat_file, the one tool agents see, takes an image too and names the block that shows it.
+    let task = lead_call(
         hub,
         "app",
         CallerAgent::Task(TaskId::unchecked("T1")),
+        "chat_file",
         &absolute,
     )
     .await
     .unwrap();
+    assert_eq!(task.mime, AttachmentMime::Png);
     assert!(
-        task.next.as_deref().unwrap().contains("in your result"),
+        task.next
+            .as_deref()
+            .unwrap()
+            .contains("in your result for your lead to show in an image block"),
         "{:?}",
         task.next
     );

@@ -671,10 +671,34 @@ async fn the_lead_makes_lists_edits_pauses_runs_and_deletes_its_projects_automat
         "fields left out stay"
     );
 
-    let LeadCallResult::AutomationPause(paused) = call(
+    let LeadCallResult::AutomationUpdate(paused) = call(
+        &autos,
+        &me,
+        "automation_update",
+        json!({ "automationId": id, "paused": true }),
+    )
+    .await
+    .unwrap() else {
+        panic!()
+    };
+    assert!(paused.automation.paused && paused.automation.next_run_at.is_none());
+    assert_eq!(paused.automation.name.as_str(), "Weekly report");
+    // An older node still sends automation_pause.
+    let LeadCallResult::AutomationPause(resumed) = call(
         &autos,
         &me,
         "automation_pause",
+        json!({ "automationId": id, "paused": false }),
+    )
+    .await
+    .unwrap() else {
+        panic!()
+    };
+    assert!(!resumed.automation.paused);
+    let LeadCallResult::AutomationUpdate(paused) = call(
+        &autos,
+        &me,
+        "automation_update",
         json!({ "automationId": id, "paused": true }),
     )
     .await

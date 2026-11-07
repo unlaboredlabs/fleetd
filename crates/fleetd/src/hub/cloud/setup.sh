@@ -12,7 +12,6 @@ CLAUDE=@CLAUDE@
 IDENTITY=@IDENTITY@
 TOKEN_FILE=@TOKEN_FILE@
 AGENT=@AGENT@
-MEM_PER_AGENT_GB=@MEM_PER_AGENT_GB@
 WARM_BUILDS=@WARM_BUILDS@
 GH_VERSION=@GH_VERSION@
 GH_SHA256=@GH_SHA256@
@@ -157,9 +156,9 @@ sudo rm -f "$TOKEN_FILE"
 unset CODE
 
 step "the node's settings"
-# A cloud machine's cap and disk sized for builds, and desktops in Xvfb with no Docker image to build.
-as_agent "f=~/.fleetd/node/node.json && jq --argjson mem $MEM_PER_AGENT_GB --argjson warm $WARM_BUILDS \
-  '. + {memPerAgentGb: \$mem, warmBuilds: \$warm, desktop: ((.desktop // {}) + {backend: \"xvfb\"})}' \"\$f\" > \"\$f.new\" \
+# A cloud machine's disk sized for builds (the hub sizes its cap), and desktops in Xvfb with no Docker image to build.
+as_agent "f=~/.fleetd/node/node.json && jq --argjson warm $WARM_BUILDS \
+  '. + {warmBuilds: \$warm, desktop: ((.desktop // {}) + {backend: \"xvfb\"})}' \"\$f\" > \"\$f.new\" \
   && chmod 600 \"\$f.new\" && mv \"\$f.new\" \"\$f\""
 as_agent "systemctl --user restart fleetd-node.service"
 
