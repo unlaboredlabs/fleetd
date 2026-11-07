@@ -56,7 +56,11 @@ export function TypedDelete({ words, name, onCancel, onDelete }: { words: Delete
             </ListSection>
           ) : null}
           <ListSection footer={words.folder.note}>
-            <ListRow title={words.folder.label} accessory={<Switch value={folderToo} onValueChange={setFolderToo} accessibilityLabel={words.folder.label} />} />
+            <ListRow
+              title={words.folder.label}
+              detail={words.folder.path}
+              accessory={<Switch value={folderToo} onValueChange={setFolderToo} accessibilityLabel={`${words.folder.label}, ${words.folder.path}`} />}
+            />
           </ListSection>
           {/* A footnote, not a header: headers are capitals, and the name is typed as it is. */}
           <ListSection footer={`Type “${name}” to delete it.`}>

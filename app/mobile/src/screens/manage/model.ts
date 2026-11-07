@@ -159,8 +159,11 @@ export interface DeleteWords {
   readonly button: string;
   /** Its worktrees with uncommitted changes, which the delete loses: each named. */
   readonly unsaved: readonly string[];
-  /** The tickbox that deletes its folder too, off by default, and its note. */
-  readonly folder: { readonly label: string; readonly note: string };
+  /**
+   * The tickbox that deletes its folder too, off by default, and its note: the desktop's label, its folder on a line of
+   * its own under it, as a phone's row is too narrow for both.
+   */
+  readonly folder: { readonly label: string; readonly path: string; readonly note: string };
 }
 
 /**
@@ -170,8 +173,10 @@ export interface DeleteWords {
  */
 export const deleteWords = (p: ProjectSummary, settings: ProjectSettings, machine: string): DeleteWords => {
   const unsaved = (settings.worktrees?.worktrees ?? []).filter((w) => w.uncommitted).map((w) => w.branch ?? tilde(w.path));
-  const words = eraseWords(p.title, machine, tilde(settings.workspaceRoot));
-  return { title: `Delete ${p.title}?`, message: words.message, button: "Delete Project", unsaved, folder: { label: words.folder, note: words.folderNote } };
+  const path = tilde(settings.workspaceRoot);
+  const words = eraseWords(p.title, machine, path);
+  const label = words.folder.endsWith(`, ${path}`) ? words.folder.slice(0, -(path.length + 2)) : words.folder;
+  return { title: `Delete ${p.title}?`, message: words.message, button: "Delete Project", unsaved, folder: { label, path, note: words.folderNote } };
 };
 
 /** A delete is confirmed by typing its name, as on the desktop: exactly, around spaces. */

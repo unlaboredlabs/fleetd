@@ -59,7 +59,7 @@ export function Approvals({ navigation, route }: ChatInfoProps<"Approvals">) {
       <Problem text={read.value?.ok === false ? errorWords(read.value.error) : error === null ? undefined : `Not changed: ${errorWords(error)}`} />
       {saved?.mode === "checker" && view !== undefined ? (
         <ListSection footer="It sees the action and where each part came from, never the mail or pages it read. Pick its model and effort in the desktop app.">
-          <ListRow title="Checker" value={checkerLine(view.models, saved)} />
+          <ListRow title="Checker" detail={checkerLine(view.models, saved)} />
         </ListSection>
       ) : null}
       {saved === undefined ? null : <Note>{FLOORS}</Note>}

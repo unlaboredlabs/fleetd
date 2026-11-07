@@ -148,9 +148,10 @@ describe("Delete", () => {
       expect(w.button).toBe("Delete Project");
       const desktop = desktopDeleteWords(p.title, "devbox", root.replace("/home/ada", "~"));
       expect(w.message).toBe(desktop.message);
-      expect(w.folder).toEqual({ label: desktop.folder, note: desktop.folderNote });
+      expect(`${w.folder.label}, ${w.folder.path}`).toBe(desktop.folder);
+      expect(w.folder.note).toBe(desktop.folderNote);
     }
-    expect(deleteWords(own(), settings({ workspaceRoot: "/home/ada/.fleetd/navi/ada" }), "devbox").folder.label).toBe("Also delete its folder, ~/.fleetd/navi/ada");
+    expect(deleteWords(own(), settings({ workspaceRoot: "/home/ada/.fleetd/navi/ada" }), "devbox").folder).toMatchObject({ label: "Also delete its folder", path: "~/.fleetd/navi/ada" });
   });
 
   it("names the worktrees with uncommitted changes, a worktree without a branch by its path", () => {
