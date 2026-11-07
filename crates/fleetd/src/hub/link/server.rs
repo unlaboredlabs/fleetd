@@ -357,12 +357,12 @@ fn refuse<T>(code: u16, reason: impl Into<String>) -> Result<T, Refused> {
     })
 }
 
-/// WebSocket close reasons are capped at 123 bytes.
+/// WebSocket close reasons are capped at 123 bytes (close::REASON_MAX_BYTES).
 fn close_reason(reason: &str) -> String {
-    if reason.len() <= 123 {
+    if reason.len() <= close::REASON_MAX_BYTES {
         return reason.to_owned();
     }
-    let mut end = 119;
+    let mut end = close::REASON_MAX_BYTES - 4;
     while !reason.is_char_boundary(end) {
         end -= 1;
     }
@@ -786,13 +786,7 @@ impl NodeLinkServer {
                 fingerprint,
             ) {
                 Ok(()) => Ok(hello),
-                Err(AuthError::Unauthorized(e)) => refuse(
-                    close::UNAUTHORIZED,
-                    match e.fix {
-                        Some(fix) => format!("{}. Fix: {fix}", e.message),
-                        None => e.message,
-                    },
-                ),
+                Err(AuthError::Unauthorized(e)) => refuse(close::UNAUTHORIZED, e.reason()),
                 Err(e) => {
                     tracing::error!(error = %e, "node link: enroll token check failed");
                     refuse(
@@ -1218,6 +1212,46 @@ mod tests {
     use crate::hub::api::{HubConfig, Listen};
     use crate::hub::store::HubDb;
     use crate::hub::store::test_clock::ManualClock;
+
+    /// A refusal reaches the node as the link's close reason, cut at 123 bytes: the one for a node enrolled under
+    /// another id arrives whole, both ways out in it, whatever the ids' length.
+    #[test]
+    fn a_node_enrolled_under_another_id_reads_its_whole_fix() {
+        let auth = crate::hub::auth::Auth::new(
+            HubDb::open_memory().unwrap(),
+            ManualClock::at(1_792_000_000_000),
+        );
+        for (theirs, ours) in [("devbox", "worker"), (&*"d".repeat(32), &*"w".repeat(32))] {
+            let token = auth
+                .create_enroll_token(&MachineId::unchecked(theirs))
+                .unwrap()
+                .token;
+            auth.enroll_node(&token, &MachineId::unchecked(theirs), "pub-1", None)
+                .unwrap();
+            let token = auth
+                .create_enroll_token(&MachineId::unchecked(ours))
+                .unwrap()
+                .token;
+            let Err(crate::hub::auth::AuthError::Unauthorized(refused)) =
+                auth.enroll_node(&token, &MachineId::unchecked(ours), "pub-1", None)
+            else {
+                panic!("{ours} enrolled with {theirs}'s key");
+            };
+            let sent = refused.reason();
+            let read = super::close_reason(&sent);
+            assert_eq!(read, sent, "cut short");
+            assert!(
+                read.starts_with(&format!("enrolled as {theirs}. Fix: ")),
+                "{read}"
+            );
+            assert!(read.contains("--rejoin"), "{read}");
+            assert!(
+                read.contains(&format!("fleetd machine remove {theirs}")),
+                "{read}"
+            );
+            auth.revoke_node(&MachineId::unchecked(theirs)).unwrap();
+        }
+    }
 
     /// A node that links again while its machine still counts as online (it restarted onto a new build) logs
     /// machine.linked, so the app reads what its link says again; its first link after a hub start doesn't, since

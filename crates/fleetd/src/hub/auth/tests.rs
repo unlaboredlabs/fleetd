@@ -348,17 +348,8 @@ fn a_node_enrolled_under_one_id_never_enrolls_under_a_second() {
     let refused = unauthorized(auth.enroll_node(&other, &m("worker"), "pub-hub", Some("fp-hub")));
     assert_eq!(refused.code, ErrorCode::Forbidden);
     assert_eq!(
-        refused.message,
-        "this node is already enrolled as devbox, so it can't join as worker too"
-    );
-    let fix = refused.fix.unwrap();
-    assert!(
-        fix.contains("`fleetd pair --worker devbox`") && fix.contains("--rejoin"),
-        "{fix}"
-    );
-    assert!(
-        fix.contains("remove devbox first (fleetd machine remove devbox)"),
-        "{fix}"
+        refused.reason(),
+        "enrolled as devbox. Fix: rejoin with --rejoin, or for a new id run fleetd machine remove devbox first"
     );
     // Nothing changed: worker holds no key, devbox keeps its own, and the code is not burned.
     assert_eq!(auth.node_pub_key(&m("worker")).unwrap(), None);

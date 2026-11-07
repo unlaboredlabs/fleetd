@@ -40,6 +40,35 @@ pub struct Unauthorized {
     pub fix: Option<String>,
 }
 
+impl Unauthorized {
+    /// The refusal in one line, as a node reads it in the link's close reason: "<message>. Fix: <fix>".
+    pub fn reason(&self) -> String {
+        match &self.fix {
+            Some(fix) => format!("{}. Fix: {fix}", self.message),
+            None => self.message.clone(),
+        }
+    }
+}
+
+/// A node already enrolled as `theirs` asked to enroll under another id: both ways out, rejoin as `theirs` or remove
+/// it first for a new id. The node reads this in the link's close reason, so the plainest wording that fits there.
+fn enrolled_as(theirs: &str) -> Unauthorized {
+    let forms = [
+        format!("rejoin with --rejoin, or for a new id run fleetd machine remove {theirs} first"),
+        format!("--rejoin, or fleetd machine remove {theirs}"),
+    ];
+    let refusal = |fix: &String| Unauthorized {
+        code: ErrorCode::Forbidden,
+        message: format!("enrolled as {theirs}"),
+        fix: Some(fix.clone()),
+    };
+    forms
+        .iter()
+        .map(refusal)
+        .find(|r| r.reason().len() <= fleetd_contracts::node_link::close::REASON_MAX_BYTES)
+        .unwrap_or_else(|| refusal(&forms[1]))
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AuthError {
     #[error(transparent)]
@@ -584,16 +613,7 @@ impl Auth {
     ) -> Result<(), AuthError> {
         let m = machine_id.as_str();
         if let Some(theirs) = self.machine_of_key(pub_key, machine_id)? {
-            return Err(Unauthorized {
-                code: ErrorCode::Forbidden,
-                message: format!("this node is already enrolled as {theirs}, so it can't join as {m} too"),
-                fix: Some(format!(
-                    "to keep it as {theirs}, run `fleetd pair --worker {theirs}` on the hub and run what it prints here \
-                     with --rejoin; to give it the new name {m}, remove {theirs} first (fleetd machine remove {theirs}), \
-                     then join as {m}"
-                )),
-            }
-            .into());
+            return Err(enrolled_as(&theirs).into());
         }
         if let Some(theirs) = fingerprint
             && let Some(ours) = self.node_fingerprint(machine_id)?

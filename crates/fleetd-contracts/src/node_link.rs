@@ -34,6 +34,8 @@ pub mod close {
     pub const REPLACED: u16 = 4003;
     /// No frame for 45 s.
     pub const HEARTBEAT_TIMEOUT: u16 = 4008;
+    /// The longest close reason a WebSocket carries; the hub cuts a longer one short.
+    pub const REASON_MAX_BYTES: usize = 123;
 }
 
 /// Both directions every 15 s.

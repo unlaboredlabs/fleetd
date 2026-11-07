@@ -155,8 +155,8 @@ The code works once, for 15 minutes. The new machine must reach the hub's addres
 
 To repair the worker later, run the same command again. `--rejoin` enrolls it again with a new code.
 
-A machine keeps its machine id. The hub refuses to enroll a node that is already enrolled under another id, since
-that would put all its projects and chats on a second machine. To repair it, rejoin under its own id with `--rejoin`.
+A node keeps the machine id it joined with. The hub refuses to enroll a node home (its key in `node-key.pem`)
+already enrolled under another id, since that would put all its projects and chats on a second machine. To repair it, rejoin under its own id with `--rejoin`.
 To give it a new id, remove the old machine first (`fleetd machine remove <old id>`), then join under the new one.
 
 ## Log in Claude on a worker {#claude}
