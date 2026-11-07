@@ -544,7 +544,7 @@ static TOOLS: &[Tool] = &[
         worker: false,
         ..browser(
             "purchase_request",
-            "An Only me project's lead's call: record a payment at the checkout open in your browser session, with the card the person \
+            "A lead's call: record a payment at the checkout open in your browser session, with the card the person \
              picked for you. Call it on the checkout page once the basket and total are final: shop is its domain \
              (the page's host) and name, total the amount (`129.90`) and currency (`EUR`) with everything in it, \
              items what is being bought. Nobody is asked (D310): it goes in the person's purchases log, and you call \
@@ -557,7 +557,7 @@ static TOOLS: &[Tool] = &[
         worker: false,
         ..browser(
             "purchase_fill",
-            "An Only me project's lead's call: fill a purchase's card into the checkout's card fields (the shop's page and its payment \
+            "A lead's call: fill a purchase's card into the checkout's card fields (the shop's page and its payment \
              provider's frames, such as Stripe's) without seeing it: requestId is what purchase_request returned. \
              Call it on that checkout with its card form showing, within 15 minutes of the request; it fills once, \
              and the chat says what was paid. Then check the total and click Pay or Book yourself. A bank's \
@@ -570,7 +570,7 @@ static TOOLS: &[Tool] = &[
         worker: false,
         ..browser(
             "request_secure_input",
-            "An Only me project's lead's call: when a page needs something only the person may give and you must never see (a passport \
+            "A lead's call: when a page needs something only the person may give and you must never see (a passport \
              or ID number, a code texted to them), ask for it here, on that page: site is its domain and name, target \
              the field's CSS selector (in the page or one of its frames), label what it is in their words (\"Passport \
              number\"), why one line. The person types it in a sealed field in the app, and fleetd types it into that \
@@ -585,7 +585,7 @@ static TOOLS: &[Tool] = &[
         worker: false,
         ..browser(
             "secure_input_fill",
-            "An Only me project's lead's call: fill a secure input from 1Password into its field: requestId is what \
+            "A lead's call: fill a secure input from 1Password into its field: requestId is what \
              request_secure_input returned. Call it on that page within 15 minutes of the request; it fills once, and from then on the session refuses reading values back.",
             inline_schema::<SecureInputFillCall>,
         )
