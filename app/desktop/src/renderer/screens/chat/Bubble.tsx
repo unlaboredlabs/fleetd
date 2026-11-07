@@ -336,9 +336,9 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
             </Text>
           </div>
         ) : null}
-        {via !== undefined ? (
-          <div className={cx(s.via, quote.className)} style={quote.style} data-via={via.forwarded ? "forward" : i.message?.client}>
-            {via.forwarded ? <Forward size={12} aria-hidden /> : <Send size={12} aria-hidden />}
+        {via?.forwarded === true ? (
+          <div className={cx(s.via, quote.className)} style={quote.style} data-via="forward">
+            <Forward size={12} aria-hidden />
             <Text size="xs" tone="quiet">
               {via.text}
             </Text>
@@ -386,6 +386,14 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
             {i.attachments.map((a) => (
               <Attachment key={a.attachmentId} project={actions.project} file={a} />
             ))}
+          </div>
+        ) : null}
+        {via !== undefined && !via.forwarded ? (
+          <div className={cx(s.via, tail.className)} style={tail.style} data-via={i.message?.client}>
+            <Send size={12} aria-hidden />
+            <Text size="xs" tone="quiet">
+              {via.text}
+            </Text>
           </div>
         ) : null}
         {mine && actions !== undefined ? <MessageReceipt project={actions.project} item={i} latest={mineLatest} /> : null}
