@@ -173,6 +173,7 @@ fn a_second_fleet_never_touches_the_first_fleets_services() {
     std::fs::write(&hub_unit, &real_hub).unwrap();
     std::fs::write(&node_unit, &real_node).unwrap();
     std::fs::create_dir_all(user.join(".fleetd/t3")).unwrap();
+    std::fs::create_dir_all(user.join(".local/share/fleetd/bin")).unwrap();
 
     let stubs = m.root.join("stubs");
     std::fs::create_dir_all(&stubs).unwrap();
@@ -229,6 +230,10 @@ fn a_second_fleet_never_touches_the_first_fleets_services() {
     assert!(
         user.join(".fleetd/t3").exists(),
         "the first fleet's T3 leftovers stay"
+    );
+    assert!(
+        user.join(".local/share/fleetd/bin").exists(),
+        "the first fleet's install stays"
     );
     let calls = std::fs::read_to_string(&log).unwrap_or_default();
     assert!(
