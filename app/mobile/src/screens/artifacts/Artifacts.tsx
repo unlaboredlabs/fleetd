@@ -1,4 +1,4 @@
-// A chat's Artifacts, pushed from its Info: the reports its lead, agents or Navi published, the newest first, each a row
+// A chat's Artifacts, pushed from its Info: the reports its lead and agents published, the newest first, each a row
 // with its title and a line of its format, who, when and its version. Tapping one opens it (Artifact.tsx). Under them,
 // the files sent in the chat: tapping one opens the share sheet, as its bubble does. The list reads again on
 // artifacts.changed and on a message in the chat, so a new one shows while it is open.
