@@ -209,7 +209,7 @@ pub struct MachineRolesEntry {
 pub struct MacTool {
     /// "Agents may use this Mac": the admin's switch, on unless set off.
     pub on: bool,
-    /// Its node offers the tool now (`mac_tool`): online, a standard user, the tool on in its node.json.
+    /// Its node offers the tool now (`mac_tool`): online, on macOS, the tool on in its node.json.
     pub ready: bool,
     /// Why agents can't use it now, in plain words, while they can't.
     pub note: Option<Line<1, 300>>,

@@ -105,33 +105,32 @@ fn ioreg_says_which_session_has_the_screen() {
 #[test]
 fn the_gate_says_exactly_why_and_how_to_fix_it() {
     let on = Console::OnScreen;
-    assert_eq!(blocked_by("agents", false, &on, true, true), None);
-    let admin = blocked_by("ana", true, &on, true, true).unwrap();
-    assert!(admin.message.contains("ana, an administrator"), "{admin:?}");
-    assert!(admin.message.contains("standard user"), "{admin:?}");
+    assert_eq!(blocked_by("agents", &on, true, true), None);
+    // An admin's own account lends its screen too.
+    assert_eq!(blocked_by("ana", &on, true, true), None);
     let background = Console::Background {
         who: Some("ana".into()),
     };
-    let away = blocked_by("agents", false, &background, true, true).unwrap();
+    let away = blocked_by("agents", &background, true, true).unwrap();
     assert!(
         away.message.contains("ana has the Mac's screen"),
         "{away:?}"
     );
     assert!(away.message.contains("black frames"), "{away:?}");
-    let locked = blocked_by("agents", false, &Console::Locked, true, true).unwrap();
+    let locked = blocked_by("agents", &Console::Locked, true, true).unwrap();
     assert!(locked.message.contains("locked"), "{locked:?}");
     assert!(
         locked.message.contains("Require password: Never"),
         "{locked:?}"
     );
-    let out = blocked_by("agents", false, &Console::NotLoggedIn, true, true).unwrap();
+    let out = blocked_by("agents", &Console::NotLoggedIn, true, true).unwrap();
     assert!(out.message.contains("log in as agents"), "{out:?}");
-    let capture = blocked_by("agents", false, &on, false, true).unwrap();
+    let capture = blocked_by("agents", &on, false, true).unwrap();
     assert!(capture.message.contains("Screen Recording"), "{capture:?}");
     let fix = capture.fix.unwrap();
     assert!(fix.contains("Privacy_ScreenCapture"), "{fix}");
     assert!(fix.contains("launchctl kickstart -k"), "{fix}");
-    let ax = blocked_by("agents", false, &on, true, false).unwrap();
+    let ax = blocked_by("agents", &on, true, false).unwrap();
     assert!(ax.fix.unwrap().contains("Privacy_Accessibility"));
 }
 

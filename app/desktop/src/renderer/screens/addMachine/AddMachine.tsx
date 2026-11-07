@@ -47,10 +47,10 @@ import { GuideParts, RunOn } from "../setup/Guide";
 import { toHash } from "../shell/routes";
 import s from "./addMachine.module.css";
 
-const MAC_LINE = "A dedicated Mac every project's agents use for builds and iOS simulators, in a standard user of its own: never a runner.";
+const MAC_LINE = "A Mac every project's agents use for builds and iOS simulators: a tool, never a runner.";
 
 const MAC_HEAD =
-  "Its fleetd runs in a standard user of its own, fleetd agents, which holds none of your accounts or keys: it runs no claude and no Navi, and takes no secret. Paste the first part in your own account, then log in as fleetd agents.";
+  "Its fleetd runs in the account logged in at the Mac's screen, yours included: it runs no claude and no Navi, and takes no secret. Paste both parts in Terminal there.";
 
 export type View =
   | { readonly kind: "choose" }
@@ -628,8 +628,10 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
             label="Name"
             description={
               mac && exists && made === undefined
-                ? `${name.trim()} is a machine already: its line moves it into the agents' user, keeping its name and history.`
-                : "Its machine id: lower-case letters, digits and dashes."
+                ? `${name.trim()} is a machine already: its line makes it the agents' Mac, keeping its name and history.`
+                : mac
+                  ? "Its machine id. If this Mac runs fleetd already, give that machine's name: its line replaces it, keeping its history."
+                  : "Its machine id: lower-case letters, digits and dashes."
             }
             error={tried ? (problem ?? (taken ? `${name.trim()} is a machine already: Repair it from the list.` : undefined)) : undefined}>
             <Input value={name} placeholder="laptop" autoComplete="off" mono onChange={(e) => setName(e.target.value)} disabled={made !== undefined && state !== "expired"} />
@@ -656,7 +658,7 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
           </div>
           <Text size="xs" tone="quiet">
             {mac
-              ? `${untilLine(made.join.expiresAt)} Paste it in fleetd agents' Terminal, logged in as that user: it refuses an admin.`
+              ? `${untilLine(made.join.expiresAt)} Paste it in Terminal on the Mac, logged in at its screen (su and ssh won't do). It opens Privacy & Security and waits for each grant.`
               : `${untilLine(made.join.expiresAt)} It joins as ${made.join.machineId}${made.join.gitIdentity === undefined ? "" : `, committing as ${made.join.gitIdentity}`}.`}
           </Text>
           {copied === false ? (
@@ -667,6 +669,11 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
         </div>
       )}
       {mac && made !== undefined ? <GuideParts parts={guide?.slice(2, rejoin ? 4 : 3) ?? []} from={2} /> : null}
+      {mac ? (
+        <Text size="xs" tone="quiet">
+          {"Agents act as the account the node runs in. To keep them out of yours, give them a user of its own: Settings › Hub › Setup › A Mac for agents, last part."}
+        </Text>
+      ) : null}
       {state === undefined ? null : (
         <div className={s.wait} data-line={state}>
           <StateGlyph state={state === "joined" ? "done" : state === "expired" ? "failed" : "queued"} size="sm" />

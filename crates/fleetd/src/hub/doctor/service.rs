@@ -209,6 +209,7 @@ impl Doctor {
         if machine.agents_mac == Some(true) {
             let mut out = vec![checks::machine_online(machine, setup, None)];
             out.extend(checks::mac_setup(id, !online, fleet.mac(id).as_ref()));
+            out.push(checks::mac_one_node(id, &fleet.same_computer(id)));
             out.push(checks::disk_space(
                 id,
                 !online,

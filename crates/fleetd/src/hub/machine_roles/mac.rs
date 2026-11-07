@@ -67,13 +67,13 @@ pub fn tool(hub: &Hub, m: &MachineId) -> Option<MacTool> {
     let name = machine.name;
     let note = if machine.status == MachineStatus::Offline {
         Some(format!(
-            "{name} is offline. After a restart, log in as fleetd agents on it (at the Mac or over Screen Sharing) to \
-             bring it back."
+            "{name} is offline. After a restart, log in on it again as the account it joined from (at the Mac or over \
+             Screen Sharing) to bring it back."
         ))
     } else if !ready {
         Some(format!(
-            "{name}'s node doesn't offer the tool: its user must be a standard user that can't sudo, on macOS. Its \
-             checks in Settings › Hub › Setup › A Mac for agents say what to fix."
+            "{name}'s node doesn't offer the tool: it runs on macOS only. Its checks in Settings › Hub › Setup › A Mac \
+             for agents say what to fix."
         ))
     } else if !on {
         Some("Off: agents' mac commands answer that the Mac is turned off.".to_owned())

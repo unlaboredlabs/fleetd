@@ -68,6 +68,11 @@ pub const NODE_USAGE: &str = "  node join --hub <url> (--token <token> | --token
              dedicated one
   node run [--home <dir>]
              keep the link up for a machine that has joined
+  node restart
+             restart this machine's node service (launchd or systemd)
+  node grants
+             on the agents' Mac: the Accessibility and Screen Recording grants macOS gives a
+             node started now
   node trust <dir>
              start work again in a project's checkout fleetd refused as replaced, once you checked it
   node flush [--home <dir>] [--wait <seconds>]
@@ -266,12 +271,8 @@ async fn run_node(
     // and it checks its own setup for the doctor.
     let agents_mac = agents_mac::is_agents_mac(&config);
     relay.set_tool_only(agents_mac);
-    // Its tool is on while its user is a standard one (mac_tool's admin check runs id and sudo, so off the async threads).
-    let tool = agents_mac
-        && cfg!(target_os = "macos")
-        && tokio::task::spawn_blocking(|| mac_tool::admin_check().is_ok())
-            .await
-            .unwrap_or(false);
+    // Its tool is on on macOS, in whatever account it runs: an admin's too (D309).
+    let tool = agents_mac && cfg!(target_os = "macos");
     let mac = agents_mac.then(|| agents_mac::AgentsMac::start(home, tool));
     let identify: lead::Identify = {
         let sessions = node_sessions.clone();
@@ -319,12 +320,7 @@ async fn run_node(
         ),
         false => None,
     };
-    let mut ios_config = config.ios.clone().unwrap_or_default();
-    // The agents' Mac lends agents iOS simulators (`mac sim`): with its tool on, it makes its golden simulator unless
-    // node.json turns iOS off.
-    if tool && ios_config.enabled.is_none() {
-        ios_config.enabled = Some(true);
-    }
+    let ios_config = agents_mac::ios_config(config.ios.clone(), tool);
     let ios = match ios_config.enabled() {
         true => Some(
             device::ios::Simulators::start(

@@ -32,6 +32,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+// What a person runs in the node's account after granting a permission: macOS gives a running process its new grant only
+// once it starts again.
+use crate::node::agents_mac::RESTART_NODE;
+
 use fleetd_contracts::browser::{
     BrowserCallResult, BrowserControl, BrowserSessionId, BrowserSessionState, DesktopAction,
     DesktopBackend, DesktopCall, SessionKind, SessionStarted,
@@ -90,35 +94,21 @@ pub struct Blocked {
     pub fix: Option<String>,
 }
 
-/// What a person runs in a terminal of the agents session after granting a permission: macOS gives a running process
-/// its new grant only once it starts again.
-const RESTART_NODE: &str = "launchctl kickstart -k gui/$(id -u)/sh.fleetd.node";
-
-/// Why the node's user can't lend its screen, from what macOS says about it: an administrator never does, its session
-/// must be on the screen, unlocked, and the node needs Screen Recording and Accessibility.
+/// Why the node's user can't lend its screen, from what macOS says about it: its session must be on the screen,
+/// unlocked, and the node needs Screen Recording and Accessibility. Any account may lend it, an admin's included (D309).
 pub fn blocked_by(
     user: &str,
-    admin: bool,
     console: &console::Console,
     screen_recording: bool,
     accessibility: bool,
 ) -> Option<Blocked> {
-    if admin {
-        return Some(Blocked {
-            message: format!(
-                "fleetd's node runs as {user}, an administrator of this Mac: the Mac screen is lent only from a \
-                 standard user set aside for agents (agents), so no agent ever drives a person's own account"
-            ),
-            fix: None,
-        });
-    }
     if let Some(message) = console.blocked(user) {
         return Some(Blocked { message, fix: None });
     }
     let grant = |what: &str, pane: &str| Blocked {
         message: format!(
             "fleetd needs {what} in {user}'s session: at the Mac, in System Settings › Privacy & Security › {what}, \
-             turn fleetd on, then restart its node"
+             turn fleetd on; the node restarts itself within a minute to take it up"
         ),
         fix: Some(format!(
             "open 'x-apple.systempreferences:com.apple.preference.security?{pane}' && {RESTART_NODE}"
@@ -142,16 +132,6 @@ pub fn blocked() -> Option<Blocked> {
             .ok()
             .flatten()
             .map_or_else(|| uid.to_string(), |u| u.name);
-        let admin = Command::new("/usr/bin/id")
-            .arg("-Gn")
-            .stdin(Stdio::null())
-            .output()
-            .map(|o| {
-                String::from_utf8_lossy(&o.stdout)
-                    .split_whitespace()
-                    .any(|g| g == "admin")
-            })
-            .unwrap_or(true);
         let state = match console::read() {
             Ok(users) => console::state(uid.as_raw(), &users),
             Err(why) => {
@@ -178,7 +158,7 @@ pub fn blocked() -> Option<Blocked> {
                 });
             }
         };
-        blocked_by(&user, admin, &state, screen_recording, accessibility)
+        blocked_by(&user, &state, screen_recording, accessibility)
     }
     #[cfg(not(target_os = "macos"))]
     {

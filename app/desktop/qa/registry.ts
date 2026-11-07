@@ -1551,6 +1551,8 @@ export const screens: readonly Screen[] = [
       await page.locator('[data-way="untested"]').waitFor();
     },
   },
+  // The optional Mac step: from the account at the Mac's screen, with a user of its own last and optional (D309).
+  { id: "setup", route: "#/setup/mac", fixtures: ["setup-fresh"], variant: "mac" },
   { id: "setup.done", route: "#/setup/done", fixtures: ["setup-done"] },
   // F8: Add project (the pick list, its empty and loading states, gh and machine problems).
   { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },
@@ -2248,6 +2250,18 @@ export const screens: readonly Screen[] = [
       await page.getByRole("textbox", { name: "Name" }).fill("laptop");
       await page.getByRole("button", { name: "Make the line" }).click();
       await page.getByText("laptop joined.").waitFor();
+    },
+  },
+  // A Mac for agents (D309): the Xcode block from the hub's guide, the name, then its line and the two clicks.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-add"],
+    variant: "mac",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Set up…" }).click();
+      await page.getByRole("button", { name: "Make the line" }).click();
+      await page.getByText("Waiting for mac…").waitFor();
     },
   },
   // The machine list's Remove asks first.

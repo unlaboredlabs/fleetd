@@ -47,6 +47,10 @@ struct FakeMachine {
     linux_arm: Mutex<bool>,
     /// What its node was asked to log in with: None to start, else the code.
     logins: Mutex<Vec<Option<String>>>,
+    /// The probe's `gui` line (a Mac's login at its screen), when set.
+    gui: Mutex<Option<&'static str>>,
+    /// `launchctl bootstrap`'s exit code, when not 0.
+    bootstrap_exit: Mutex<Option<i32>>,
 }
 
 impl FakeMachine {
@@ -62,6 +66,8 @@ impl FakeMachine {
             builds: Arc::default(),
             linux_arm: Mutex::new(false),
             logins: Mutex::default(),
+            gui: Mutex::default(),
+            bootstrap_exit: Mutex::default(),
         })
     }
 
@@ -96,6 +102,9 @@ impl FakeMachine {
              claude /home/ada/.local/bin/claude\nclaude_version {} (Claude Code)\nlinger yes\n",
             crate::node::runner::claude::version::TESTED
         );
+        if let Some(gui) = *self.gui.lock().unwrap() {
+            out += &format!("gui {gui}\n");
+        }
         if *self.installed.lock().unwrap() {
             let bytes = if *self.other_os.lock().unwrap() {
                 other_asset().into_bytes()
@@ -163,6 +172,17 @@ impl Runner for FakeMachine {
             }
             if command.contains(r#"echo "home $H""#) {
                 return ok(self.probe());
+            }
+            if let Some(code) = *self.bootstrap_exit.lock().unwrap()
+                && command.contains("launchctl bootstrap")
+            {
+                return RunResult {
+                    code,
+                    stdout: String::new(),
+                    stderr: format!(
+                        "Bootstrap failed: {code}: Domain does not support specified action"
+                    ),
+                };
             }
             if command.contains("auth status --json") {
                 return ok(json!({ "loggedIn": self.logged_in }).to_string());
@@ -539,6 +559,52 @@ async fn a_failed_step_shows_its_output_and_retry_skips_what_is_done() {
     );
     let all = call(&hub, "machine_add_status", json!({})).await;
     assert_eq!(all["runs"].as_array().unwrap().len(), 2);
+}
+
+/// A Mac whose user isn't logged in at its screen has no launchd gui domain for the node: the run stops before any
+/// step with where to log in, never launchctl's own "Bootstrap failed: 125".
+#[tokio::test]
+async fn a_mac_with_no_login_at_its_screen_says_to_log_in_there() {
+    let (hub, machine, _home) = hub();
+    *machine.other_os.lock().unwrap() = local_target().0 != "darwin";
+    *machine.gui.lock().unwrap() = Some("no");
+    let out = call(&hub, "machine_add", json!({ "host": "builder-1" })).await;
+    let run = finished(&hub, out["run"]["runId"].as_str().unwrap()).await;
+    assert_eq!(run["state"], "failed");
+    assert_eq!(
+        run["message"],
+        "ada isn't logged in on this Mac's screen, and launchd runs fleetd's node only inside that login (su and ssh \
+         don't make one)."
+    );
+    assert_eq!(
+        run["fix"],
+        "log in as ada at the Mac (Apple menu › Lock Screen, then pick ada; or over Screen Sharing), then run fleetd \
+         machine add builder-1."
+    );
+    assert!(
+        machine.commands().iter().all(|c| !c.contains("mkdir")),
+        "nothing changed on the machine"
+    );
+
+    // Logged out between the read and the node's start: launchctl's 125 says the same.
+    *machine.gui.lock().unwrap() = Some("yes");
+    *machine.bootstrap_exit.lock().unwrap() = Some(125);
+    let out = call(&hub, "machine_add", json!({ "host": "builder-1" })).await;
+    let run = finished(&hub, out["run"]["runId"].as_str().unwrap()).await;
+    assert_eq!(run["state"], "failed", "{run:#}");
+    let message = run["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("ada isn't logged in on this Mac's screen"),
+        "{message}"
+    );
+    assert!(!message.contains("Bootstrap failed"), "{message}");
+    assert!(
+        run["fix"]
+            .as_str()
+            .unwrap()
+            .ends_with("finished steps are skipped."),
+        "{run:#}"
+    );
 }
 
 #[tokio::test]

@@ -129,7 +129,12 @@ async fn mac_calls_go_to_the_agents_mac_while_its_switch_is_on() {
     let listed = tool(&hub, "machine_roles", json!({})).await.unwrap();
     let mac = &row(&listed, "mac1")["mac"];
     assert_eq!(mac["ready"], false);
-    assert!(mac["note"].as_str().unwrap().contains("standard user"));
+    assert!(
+        mac["note"]
+            .as_str()
+            .unwrap()
+            .contains("it runs on macOS only")
+    );
 
     // Any other machine has no switch.
     let refused = tool(
@@ -203,4 +208,52 @@ fn the_macs_checks_are_the_doctors_with_where_and_what_to_run() {
             .starts_with("In your own (admin) account's Terminal")
     );
     assert!(crate::hub::doctor::checks::mac_setup("mac1", true, Some(&health)).is_empty());
+}
+
+/// An older node on the agents' Mac, enrolled under another name (in another account, or in this one before it joined
+/// again), runs on the same computer: its fingerprint names it, and the Mac's `mac_one_node` check fails with how to
+/// revoke it. Once revoked, nothing else runs there.
+#[test]
+fn another_node_on_the_agents_mac_fails_its_one_node_check() {
+    let (hub, _home) = hub();
+    let enroll = |id: &str, fingerprint: &str| {
+        let machine = serde_json::from_value(json!({
+            "machineId": id, "name": id, "tags": [], "status": "online", "lastSeenAt": AT, "nodeVersion": "0.1.0",
+        }))
+        .unwrap();
+        hub.store.machine_upsert(&machine, None).unwrap();
+        let token = hub.auth.create_enroll_token(&mid(id)).unwrap().token;
+        hub.auth
+            .enroll_node(&token, &mid(id), &format!("key-{id}"), Some(fingerprint))
+            .unwrap();
+    };
+    let same = |id| crate::hub::usage::wire::same_computer(&hub, id);
+    enroll("mac1", "the-mac");
+    enroll("macbook", "the-mac");
+    enroll("devbox", "another-computer");
+    assert_eq!(same("mac1"), ["macbook"]);
+
+    let failing = crate::hub::doctor::checks::mac_one_node("mac1", &same("mac1"));
+    assert_eq!(failing.check.id.as_str(), "mac1/mac_one_node");
+    assert_eq!(failing.check.status.as_str(), "fail");
+    assert!(
+        failing
+            .check
+            .message
+            .starts_with("macbook is enrolled from this Mac too"),
+        "{}",
+        failing.check.message
+    );
+    let fix = failing.check.fix.as_ref().unwrap();
+    assert_eq!(
+        fix.command.as_deref(),
+        Some("fleetd machine remove macbook")
+    );
+    assert_eq!(fix.on.as_deref(), Some("hub"));
+    assert!(fix.label.contains("launchctl bootout"), "{}", fix.label);
+
+    hub.auth.revoke_node(&mid("macbook")).unwrap();
+    assert!(same("mac1").is_empty());
+    let passing = crate::hub::doctor::checks::mac_one_node("mac1", &[]);
+    assert_eq!(passing.check.status.as_str(), "ok");
 }

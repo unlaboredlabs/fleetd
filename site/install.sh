@@ -13,8 +13,8 @@
 # With a terminal it then runs `fleetd init` (the setup wizard) on it; --no-init, or no terminal, only installs.
 # With --join and --code (the command `fleetd pair --worker` prints) it runs `fleetd init --join` instead, which
 # makes this machine a worker of that hub without asking for its address or code, with or without a terminal.
-# --mac joins the agents' Mac (docs: agents-mac.md): run as its standard agents user, never an admin, which it checks
-# before it downloads anything; it installs no app there.
+# --mac joins the agents' Mac (docs: agents-mac.md): run in Terminal logged in at the Mac's screen (an admin's account
+# is fine), which it checks before it downloads anything; it installs no app there.
 #
 # FLEETD_CHANNEL=edge|stable picks the release (default edge, the newest build of main; nightly, its name until
 # D203, is edge too). FLEETD_BASE_URL points at another directory of release assets.
@@ -41,7 +41,7 @@ Usage: curl -fsSL https://fleetd.sh | sh -s -- [options]
   --join <url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin] [--mac]
                 join that hub as a worker (fleetd init --join) after installing: the
                 command fleetd pair --worker prints on the hub; --mac joins the agents'
-                Mac, as its standard (non-admin) agents user
+                Mac, from Terminal logged in at its screen
   --uninstall   remove the CLI and the app (fleetd's data in ~/.fleetd stays)
 
 Environment: FLEETD_CHANNEL=edge|stable (default edge), FLEETD_BASE_URL=<asset directory>
@@ -186,17 +186,15 @@ uninstall() {
   say "removed the fleetd CLI and app. Your data in ~/.fleetd is still there; delete it yourself if you want it gone."
 }
 
-# agents_mac_user: --mac joins the agents' Mac only from a standard user of its own on macOS: agents act as that user,
-# so it must not be an admin or able to sudo. No app goes there.
+# agents_mac_user: --mac joins the agents' Mac from the account logged in at its screen (an admin's is fine), where
+# launchd runs its node. No app goes there.
 agents_mac_user() {
-  [ "$(uname -s)" = Darwin ] || die "--mac is for the agents' Mac: run the join line on a Mac, as its agents user"
-  if id -Gn | tr ' ' '\n' | grep -qx admin; then
-    die "$(id -un) is an administrator, and agents on this Mac would act as one. Log in as the standard user
-agents (see https://fleetd.sh/docs/agents-mac/#setup) and paste the join line there; nothing was changed."
-  fi
-  if sudo -n true 2>/dev/null; then
-    die "$(id -un) can run sudo without a password, and agents on this Mac would too. Take it out of the sudoers file
-in your own account, then paste the join line again as agents; nothing was changed."
+  [ "$(uname -s)" = Darwin ] || die "--mac is for the agents' Mac: run the join line on a Mac, logged in at its screen"
+  # launchd runs the node in the user's gui domain, which only a login at the Mac's screen makes (su and ssh don't).
+  if ! launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
+    die "$(id -un) isn't logged in on this Mac's screen, and launchd runs fleetd's node only inside that login (su
+and ssh don't make one). Log in as $(id -un) at the Mac (Apple menu › Lock Screen, then pick $(id -un); or over
+Screen Sharing), open Terminal there, and paste the join line again; nothing was changed."
   fi
   want_app=no
 }

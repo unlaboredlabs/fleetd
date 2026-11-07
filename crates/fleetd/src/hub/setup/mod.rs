@@ -94,16 +94,20 @@ pub(crate) fn host_of(hub: &str) -> String {
     host.split('.').next().unwrap_or("hub").to_owned()
 }
 
-/// What the person pastes in their own (admin) account on the agents' Mac: each line commented with why.
+/// What an admin pastes once on the agents' Mac, in the account it joins from: each line commented with why.
 pub const MAC_ADMIN_BLOCK: &str = "\
-# A standard (non-admin) user of its own for agents. You choose its password and keep it.
-sudo sysadminctl -addUser agents -fullName \"fleetd agents\" -password -
-# Simulators and debugging for that user, with no admin prompt.
-sudo dseditgroup -o edit -a agents -t user _developer
-sudo DevToolsSecurity -enable
 # Xcode's licence and its system components, which only an admin can accept and install.
 sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch
-# Your own home closed to every other user, agents included.
+# Simulators and debugging with no password prompt, for this account.
+sudo DevToolsSecurity -enable
+sudo dseditgroup -o edit -a \"$(id -un)\" -t user _developer";
+
+/// Optional (D309): a standard user of its own for agents, made from an admin's account, so they act as it, not as you.
+pub const MAC_USER_BLOCK: &str = "\
+# A standard user of its own for agents. You choose its password and keep it.
+sudo sysadminctl -addUser agents -fullName \"fleetd agents\" -password -
+sudo dseditgroup -o edit -a agents -t user _developer
+# Your own home closed to other users, agents included.
 chmod 700 ~";
 
 /// The actions the hub's boat.dev key needs, and no more: `ssh` lets the hub's own SSH key in on each machine it wakes,
@@ -325,63 +329,58 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 SetupNeed::Optional,
             )
         },
-        // A Mac for agents (D298, docs: agents-mac.md): optional. The admin steps happen in the person's own account; the rest
-        // in the agents user, which the node then checks as itself.
+        // A Mac for agents (D298, D309, docs: agents-mac.md): optional. It joins from the account logged in at its screen,
+        // an admin's included; a user of its own for agents is the last part, and optional.
         HubSetupStep {
             parts: vec![
                 part(
-                    "In your own account: make the agents' user",
+                    "Xcode, once",
                     Some(
-                        "On the Mac, in your own (admin) account's Terminal: the only step that needs an admin. Paste it \
-                         as it is; sysadminctl asks for the new user's password, which you keep (agents never get it). \
-                         A Mac nobody else uses is best: then there's no Apple ID or browser login on it at all.",
+                        "In Terminal on the Mac, in the account it joins from (yours is fine). Xcode itself comes from \
+                         the App Store, and an iOS simulator runtime with xcodebuild -downloadPlatform iOS.",
                     ),
                     vec![],
                     vec![command(
-                        "In your own account's Terminal",
+                        "In Terminal on the Mac",
                         MAC_ADMIN_BLOCK,
-                        Some(
-                            "Each line says why. It never pipes anything from the network into sudo.",
-                        ),
+                        Some("Each line says why. It never pipes anything from the network into sudo."),
                     )],
                 ),
                 part(
-                    "Log in as fleetd agents and join",
+                    "Join, at the Mac's screen",
                     Some(
-                        "Log out (or switch user) and log in as fleetd agents, then paste the join line in its Terminal. \
-                         It refuses an admin user, installs fleetd for that user only, and joins as the agents' Mac: a \
-                         tool every project's agents use, which runs no claude and no Navi and takes no secret. \
-                         Settings › Hub › Machines › Add machine › A Mac for agents makes the line with its one-time code.",
+                        "Paste the join line in Terminal on the Mac, logged in at its screen: launchd runs the node only \
+                         inside that login, so su and ssh won't do. It installs fleetd for that account and joins as the \
+                         agents' Mac: a tool every project's agents use, which runs no claude and no Navi and takes no \
+                         secret. Settings › Hub › Machines › Add machine › A Mac for agents makes the line with its \
+                         one-time code; if this Mac runs fleetd already, give it that machine's name, and the line \
+                         replaces it. After a restart, log that account in again: with FileVault on, macOS logs no one in \
+                         by itself.",
                     ),
                     vec![],
                     vec![command(
-                        "In fleetd agents' Terminal",
+                        "In Terminal, logged in at the Mac's screen",
                         format!(
                             "curl -fsSL https://fleetd.sh | sh -s -- --join {base} --code <code> --machine-id mac --mac"
                         ),
-                        Some(
-                            "Or on the hub: fleetd pair --worker mac, then add --mac to the line it prints.",
-                        ),
+                        Some("Or on the hub: fleetd pair --worker mac, then add --mac to the line it prints."),
                     )],
                 ),
                 part(
                     "Two clicks at the Mac",
                     Some(
-                        "Still logged in as fleetd agents: turn on fleetd in Accessibility and in Screen Recording, so \
-                         agents can drive the Mac's apps and you can watch them. macOS may ask for an administrator's \
-                         name and password: type yours in that System Settings dialog at the Mac itself, never through \
-                         fleetd's view of its screen. Then restart its node (launchctl kickstart -k \
-                         gui/$(id -u)/sh.fleetd.node): macOS gives a running process a new grant only once it starts \
-                         again. It asks again from time to time; the check says when.",
+                        "Turn on fleetd in Accessibility and in Screen Recording, so agents can drive the Mac's apps and \
+                         you can watch them. The join opens each pane and waits for it, and the node restarts itself \
+                         within seconds to take up each grant. macOS may ask for an administrator's name and password: \
+                         type it in that System Settings dialog at the Mac itself, never through fleetd's view of its \
+                         screen. macOS asks again from time to time; the check says when.",
                     ),
                     vec![],
                     vec![
                         command(
                             "Accessibility, at the Mac",
                             "open \"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility\"",
-                            Some(
-                                "In fleetd agents' Terminal: it opens the pane. Turn on fleetd there.",
-                            ),
+                            Some("In Terminal there: it opens the pane. Turn on fleetd there."),
                         ),
                         command(
                             "Screen Recording, at the Mac",
@@ -391,26 +390,38 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                     ],
                 ),
                 part(
-                    "Moving a Mac that runs fleetd in your account",
+                    "A Mac that runs fleetd already",
                     Some(
-                        "First let the agents running on it finish (or stop them), and push any work they left: \
-                         removing the old node deletes its worktrees. Join it again from fleetd agents with the same \
-                         name and --rejoin (Add machine offers the line), so its history stays. Then, in your own \
-                         account, stop and remove its old node: \
-                         your account runs no fleetd node after. The rejoin gave the Mac a new key, so the old node \
-                         would be refused anyway.",
+                        "Give the join line the name it has, in the same account, and it becomes the agents' Mac in \
+                         place, keeping its history. Let the agents running there finish (or stop them) first. Joined \
+                         under another name or from another account, the old machine stays until you remove it: the \
+                         Mac's checks say so, and how.",
                     ),
                     vec![],
                     vec![command(
-                        "Then, in your own account's Terminal",
-                        "launchctl bootout gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node",
-                        Some("The fleetd app can stay: it is a client, not a node."),
+                        "On the hub, for an old machine of another name",
+                        "fleetd machine remove <old name>",
+                        Some("Where it ran in another account on the Mac, stop it there too: launchctl bootout gui/$(id -u)/sh.fleetd.node"),
+                    )],
+                ),
+                part(
+                    "Optional: a user of its own for agents",
+                    Some(
+                        "Agents act as the account the node runs in, so they can read what it can. To keep them out of \
+                         yours, make a standard user for them, log in as it at the Mac's screen, and join from there \
+                         instead.",
+                    ),
+                    vec![],
+                    vec![command(
+                        "In your own (admin) account's Terminal",
+                        MAC_USER_BLOCK,
+                        Some("sysadminctl asks for the new user's password, which you keep; agents never get it."),
                     )],
                 ),
             ],
             place: Some("machines".into()),
             test: Some(
-                "Read the Mac's checks, which its node runs as fleetd agents every 30 seconds"
+                "Read the Mac's checks, which its node runs every 30 seconds (its grants every 2 while one is off)"
                     .into(),
             ),
             ways: vec![SetupWay {
@@ -418,14 +429,16 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 checks: fleetd_contracts::node_link::MacCheckId::ALL
                     .iter()
                     .map(|id| format!("*/mac_{}", id.as_str()))
+                    // The hub's own: no other node on the same computer (doctor/checks.rs).
+                    .chain(["*/mac_one_node".to_owned()])
                     .collect(),
             }],
             ..step(
                 SetupStepId::Mac,
                 SetupGroup::Hub,
                 "A Mac for agents",
-                "Agents on every machine build, test and drive iOS simulators on one Mac, in a standard user of its \
-                 own that holds none of your accounts or keys.",
+                "Agents on every machine build, test and drive iOS simulators on one Mac: a tool, never a runner, \
+                 joined from the account at its screen.",
                 SetupNeed::Optional,
             )
         },

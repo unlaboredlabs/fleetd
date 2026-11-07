@@ -3,6 +3,7 @@
 mod checklist;
 pub mod detect;
 pub mod doctor;
+pub mod mac_finish;
 pub mod machine;
 pub mod machine_plan;
 pub mod ssh;
@@ -42,7 +43,7 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--listen <host:port>] [--url <u
              make this machine a worker of that hub, without SSH from the hub: the command
              fleetd pair --worker prints on the hub. Run again, it keeps the node's enrolment
              and repairs the rest; --rejoin enrols again with a new code; --mac joins the
-             agents' Mac, from its standard agents user (no claude there)
+             agents' Mac, from Terminal logged in at its screen (no claude there)
   init --step <address|machines|claude|github|people|mac>
              open one of the hub's setup steps: why, the values to paste and the pages to open,
              then Test it, or put it off for later. The app's Settings › Hub › Setup has the same
@@ -348,7 +349,7 @@ pub struct InitOptions {
     pub machine_id: Option<String>,
     /// `--rejoin`: enrol again with the code even though this machine's node is enrolled with that hub.
     pub rejoin: bool,
-    /// `--mac`: join as the agents' Mac, from its standard agents user (docs: agents-mac.md).
+    /// `--mac`: join as the agents' Mac, from the account at its screen (docs: agents-mac.md).
     pub mac: bool,
     /// `--claude-config-dir`: the CLAUDE_CONFIG_DIR this machine's node runs claude with (default: the user's own).
     pub claude_config_dir: Option<String>,

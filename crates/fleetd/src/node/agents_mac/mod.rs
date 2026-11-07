@@ -1,6 +1,7 @@
-//! The agents' Mac (D298, docs: agents-mac.md): a dedicated Mac whose node runs in a standard, non-admin user of its
-//! own (`agents`), joined with the installer's `--mac`, which sets node.json's `agentsMac` (no screen switch does). It is a
-//! tool every project's agents use from their own machines, never a runner:
+//! The agents' Mac (D298, docs: agents-mac.md): a Mac whose node runs in the account logged in at its screen (the
+//! person's own, an admin's included, or a user set aside for agents: D309), joined with the installer's `--mac`, which
+//! sets node.json's `agentsMac` (no screen switch does). It is a tool every project's agents use from their own machines,
+//! never a runner:
 //!
 //! - it runs no claude, no lead, no task and no Navi: [`session_call_allowed`] refuses every session call but the few
 //!   a hub sends any machine, and the lead socket relays no lead call (lead.rs);
@@ -9,9 +10,10 @@
 //! - its hello lists only the calls a tool needs ([`capabilities`]), with [`CAP_AGENTS_MAC`] whatever its checks say,
 //!   so the hub keeps its agents role off and clients seal nothing to it.
 //!
-//! The node checks the Mac's setup as its own user, with no admin (checks.rs), holds a keep-awake assertion for as
+//! The node checks the Mac's setup as its own user (checks.rs), takes up a new privacy grant by restarting (grants.rs), holds a keep-awake assertion for as
 //! long as it runs, and installs the pinned Node.js and agent-desktop beside agent-device (tools.rs).
 pub mod checks;
+pub mod grants;
 pub mod tools;
 
 #[cfg(target_os = "macos")]
@@ -51,24 +53,35 @@ pub fn is_agents_mac(config: &NodeConfig) -> bool {
     config.agents_mac == Some(true)
 }
 
-/// Whether this user may join as the agents' Mac: on macOS, as a standard user that can't sudo. The installer's
+/// Whether this user may join as the agents' Mac: on macOS, in any account (an admin's too, D309). The installer's
 /// `--mac` asks the same first.
 pub fn may_join() -> Result<(), String> {
     if !cfg!(target_os = "macos") {
-        return Err("--mac is for the agents' Mac: run it on a Mac, as its agents user".into());
+        return Err(
+            "--mac is for the agents' Mac: run it on a Mac, logged in at its screen".into(),
+        );
     }
-    super::mac_tool::admin_check().map_err(|why| {
-        format!(
-            "{why}. The agents' Mac's node runs as a standard user of its own, so agents never act as an admin: log \
-             in as the `agents` user (the guide's first step makes it) and paste the join line there"
-        )
-    })
+    Ok(())
+}
+
+/// node.json's `ios` as the node runs it. The agents' Mac lends agents iOS simulators (`mac sim`): with its tool on, it
+/// makes its golden simulator whatever `enabled` says. A Mac that once turned iOS screens off (`"enabled": false`, from
+/// before the iOS screen kind went) would otherwise keep `mac sim` off with no switch in the app to turn it on.
+pub fn ios_config(
+    config: Option<super::device::ios::IosConfig>,
+    tool: bool,
+) -> super::device::ios::IosConfig {
+    let mut config = config.unwrap_or_default();
+    if tool {
+        config.enabled = Some(true);
+    }
+    config
 }
 
 /// The calls the agents' Mac lists at its hello: updates, screens it hosts for agents elsewhere, and a project's
-/// removal (a project that lived on the Mac before it moved into the agents user goes cleanly). Nothing that carries a
+/// removal (a project that lived on the Mac before it became the agents' Mac goes cleanly). Nothing that carries a
 /// secret, a claude or a Navi, which the hub then never sends. `others` are the session kinds the node found it can
-/// host. `tool`: the Mac's tool is on (macOS, and node/mac_tool's `admin_check` passes: a standard user that can't sudo),
+/// host. `tool`: the Mac's tool is on (macOS),
 /// so it lists [`CAP_MAC_TOOL`] too, once.
 pub fn capabilities(others: impl IntoIterator<Item = String>, tool: bool) -> Vec<String> {
     const KEPT: [&str; 11] = [
@@ -105,6 +118,10 @@ pub fn session_call_allowed(call: &SessionCall) -> bool {
     )
 }
 
+/// What a person runs in the node's account to restart it, which [`grants::take_up`] runs itself for a new grant.
+/// `fleetd node restart` does the same for any node service.
+pub const RESTART_NODE: &str = "launchctl kickstart -k gui/$(id -u)/sh.fleetd.node";
+
 /// How often the node checks the Mac's setup again.
 pub const CHECK_EVERY: Duration = Duration::from_secs(30);
 
@@ -112,6 +129,9 @@ pub const CHECK_EVERY: Duration = Duration::from_secs(30);
 #[derive(Clone, Default)]
 pub struct AgentsMac {
     health: Arc<Mutex<Option<MacHealth>>>,
+    /// What a fresh process of the node was granted last (grants.rs): the grant checks say this, not the running
+    /// process's own reads, which macOS updates only once it starts again.
+    fresh: Arc<Mutex<Option<grants::Grants>>>,
     /// Its tool is on, as the node found at its start: its hello lists `mac_tool`.
     tool: bool,
 }
@@ -128,7 +148,16 @@ impl AgentsMac {
             .clone()
     }
 
-    fn set(&self, health: MacHealth) {
+    /// Holds `health`, with the grants a fresh process found, for the heartbeat and in [`health_file`] for setup.
+    fn publish(&self, home: &Path, mut health: MacHealth) {
+        if let Some(fresh) = *self
+            .fresh
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        {
+            grants::overlay(&mut health, fresh);
+        }
+        write_health(home, &health);
         *self
             .health
             .lock()
@@ -136,7 +165,8 @@ impl AgentsMac {
     }
 
     /// Holds the keep-awake assertion, installs the pinned tools, and checks the setup every [`CHECK_EVERY`] until
-    /// dropped. Asks once for the two grants the person then turns on in System Settings, so fleetd is in their lists.
+    /// dropped. Asks once for the two grants the person then turns on in System Settings, so fleetd is in their lists,
+    /// and restarts the node once a fresh process has a grant it lacks (grants.rs).
     pub fn start(home: &Path, tool: bool) -> (Self, super::util::AbortOnDrop) {
         let mac = Self {
             tool,
@@ -152,6 +182,29 @@ impl AgentsMac {
                     e
                 });
             tcc::ask_once();
+            // A new grant is taken up within seconds while the person is at System Settings (grants.rs).
+            if cfg!(target_os = "macos") {
+                let (home, running) = (home.clone(), running.clone());
+                tokio::spawn(async move {
+                    loop {
+                        let h = home.clone();
+                        let fresh = tokio::task::spawn_blocking(move || grants::take_up(&h))
+                            .await
+                            .ok()
+                            .flatten();
+                        if fresh.is_some() {
+                            *running
+                                .fresh
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner) = fresh;
+                            if let Some(health) = running.health() {
+                                running.publish(&home, health);
+                            }
+                        }
+                        tokio::time::sleep(grants::every(fresh)).await;
+                    }
+                });
+            }
             let tools = tools::Installing::default();
             {
                 let (home, tools) = (home.clone(), tools.clone());
@@ -164,13 +217,50 @@ impl AgentsMac {
                     tools: tools.state(),
                 };
                 if let Ok(health) = tokio::task::spawn_blocking(move || checks::run(&probe)).await {
-                    running.set(health);
+                    running.publish(&home, health);
+                    // A run of every check, not the grants alone republished: setup counts only these.
+                    let _ = std::fs::write(checked_file(&home), b"");
                 }
                 tokio::time::sleep(CHECK_EVERY).await;
             }
         });
         (mac, super::util::AbortOnDrop(task))
     }
+}
+
+/// Where the node writes its last checks (the contracts' `MacHealth`), after each run and each new read of the grants,
+/// for setup to read on the Mac itself ([`read_health`]): the app's "Set up this Mac for agents" and `fleetd init --mac`.
+pub fn health_file(home: &Path) -> PathBuf {
+    home.join("mac-health.json")
+}
+
+fn write_health(home: &Path, health: &MacHealth) {
+    if let Ok(json) = serde_json::to_vec(health) {
+        // Whole or not at all, for a reader polling it.
+        let tmp = home.join("mac-health.json.tmp");
+        let _ = std::fs::write(&tmp, json).and_then(|()| std::fs::rename(&tmp, health_file(home)));
+    }
+}
+
+/// Touched after each run of every check (not when the grants loop republishes [`health_file`]), so setup can wait for
+/// one by the node as it runs now ([`last_full_check`]).
+pub fn checked_file(home: &Path) -> PathBuf {
+    home.join("mac-health.checked")
+}
+
+/// When the node at `home` last ran every check; None before its first.
+pub fn last_full_check(home: &Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(checked_file(home))
+        .and_then(|m| m.modified())
+        .ok()
+}
+
+/// The node's last checks at `home`, and when it wrote them; None before its first.
+pub fn read_health(home: &Path) -> Option<(MacHealth, std::time::SystemTime)> {
+    let file = health_file(home);
+    let written = std::fs::metadata(&file).and_then(|m| m.modified()).ok()?;
+    let health = serde_json::from_slice(&std::fs::read(&file).ok()?).ok()?;
+    Some((health, written))
 }
 
 /// The macOS user the node runs as.

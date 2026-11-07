@@ -198,6 +198,25 @@ fn machine(m: &str) -> Option<fleetd_contracts::ids::MachineId> {
     convert(&m)
 }
 
+/// The other enrolled machines whose nodes run on the same computer as `machine_id`'s, as their hellos' fingerprints
+/// say: on the agents' Mac, an older node there (`mac_one_node`).
+pub fn same_computer(hub: &Hub, machine_id: &str) -> Vec<String> {
+    let print = |id: &str| machine(id).and_then(|m| hub.auth.node_fingerprint(&m).ok().flatten());
+    let Some(ours) = print(machine_id) else {
+        return Vec::new();
+    };
+    let mut others: Vec<String> = hub
+        .store
+        .machines_list()
+        .unwrap_or_default()
+        .iter()
+        .map(|m| m.machine_id.as_str().to_owned())
+        .filter(|id| id != machine_id && print(id).as_deref() == Some(ours.as_str()))
+        .collect();
+    others.sort();
+    others
+}
+
 impl OpsPorts {
     /// The machine's login, from its runner; fails (with the executor's message) when the machine is offline.
     pub fn read(&self, machine_id: &str) -> BoxFut<'_, Result<UsageReading, String>> {
@@ -278,6 +297,10 @@ impl OpsPorts {
     pub fn mac(&self, machine_id: &str) -> Option<fleetd_contracts::node_link::MacHealth> {
         let m = machine(machine_id)?;
         self.hub().link.load(&m).and_then(|l| l.mac)
+    }
+    /// The other machines whose nodes run on the same computer as this one's ([`same_computer`]).
+    pub fn same_computer(&self, machine_id: &str) -> Vec<String> {
+        same_computer(&self.hub(), machine_id)
     }
     pub fn desktop(&self, machine_id: &str) -> Option<fleetd_contracts::node_link::DesktopHealth> {
         let m = machine(machine_id)?;
