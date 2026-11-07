@@ -253,11 +253,6 @@ lead, with **Undo** in the notice. Its chat, memory, folder and settings stay. A
 Settings › Projects, with **Bring back**; it comes back as it was, and its lead starts with your next message. A
 message to an archived project waits until you bring it back.
 
-```sh
-fleetd project archive devbox/taxes
-fleetd project unarchive devbox/taxes
-```
-
 ### Delete a project {#delete}
 
 **Delete project…** stops the project's agents, removes the worktrees they worked in, and erases the project: one rule
