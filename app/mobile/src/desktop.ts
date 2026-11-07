@@ -56,9 +56,9 @@ export { glyphOf, kindOf, mimeOfFile, TAKES, type FileGlyph } from "../../deskto
 export { ICON_COLORS, ICON_FACES } from "../../desktop/src/shared/botIcons";
 export { baseScale, clampPan, clampZoom, cropOf, MAX_ZOOM, zoomAbout } from "../../desktop/src/shared/crop";
 export * from "../../desktop/src/renderer/src/data/chat";
-export { canHost, deleteWords, firstHome, isArchived, isOnlyMe, isYours, NAME_MAX, nameProblem, projectHomes, PROJECT_TOOLS } from "../../desktop/src/renderer/screens/projects/model";
-// The phone's names from before projects/model.ts, until its screens move to the new ones (W457).
-export { deleteWords as naviDeleteWords, isOnlyMe as isNavi, projectHomes as naviHomes } from "../../desktop/src/renderer/screens/projects/model";
+export { deleteWords, isArchived, isOnlyMe, isYours, NAME_MAX, nameProblem, projectHomes, PROJECT_TOOLS } from "../../desktop/src/renderer/screens/projects/model";
+// The phone's Navi helpers as they were, until its screens move to the new ones (W457).
+export { canHost, firstHome, isNavi, naviDeleteWords, naviHomes } from "./naviCompat";
 export { addSource, baseName, otherHost, tilde } from "../../desktop/src/renderer/screens/projects/source";
 export {
   discovery,

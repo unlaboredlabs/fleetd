@@ -1,5 +1,5 @@
-// Removing a project: project_remove stops its claude processes and forgets it; its files, branches and worktrees
-// stay. Settings → Projects opens it to delete, one rule for every project (D287): the name typed to confirm, everything
+// Deleting a project: project_remove stops its claude processes and erases it. Settings → Projects opens it, one rule
+// for every project (D287): the name typed to confirm, everything
 // fleetd keeps for it erased with its fleetd worktrees (`removeWorktrees`), and a tickbox, off by default, naming its
 // folder that deletes the folder too (`removeFolder`). Its branches and pull requests stay either way. The phone's
 // sheet says the same words (projects/model.ts `deleteWords`).
@@ -45,7 +45,8 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
   const [error, setError] = useState<{ message: string; fix?: string } | null>(null);
   const machine = useData((d) => (project ? (d.machines[project.machineId]?.name ?? project.machineId) : ""));
   const gone = useData((d) => project !== null && d.fresh && d.machines[project.machineId] === undefined);
-  const deleting = gone ? undefined : project?.deleting;
+  // Every project's removal erases it now: without a worktree list (a caller that has none), the delete says so all the same.
+  const deleting = gone || project === null ? undefined : (project.deleting ?? { unsaved: [] });
 
   const close = () => {
     setBusy(false);
@@ -63,8 +64,8 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
       {
         machineId: p.machineId,
         projectId: p.projectId,
-        ...(p.deleting && !gone ? { removeWorktrees: true } : {}),
-        ...(p.deleting && !gone && folderToo ? { removeFolder: true } : {}),
+        ...(gone ? {} : { removeWorktrees: true }),
+        ...(!gone && folderToo ? { removeFolder: true } : {}),
       },
       { timeoutMs: REMOVE_MS },
     );
@@ -79,15 +80,15 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
       toast({ title: `${p.title} forgotten`, description: `${machine} is no longer in this hub, so fleetd no longer lists it.` });
       return;
     }
-    if (p.deleting && folderToo) {
+    if (folderToo) {
       toast({ title: `${p.title} deleted`, description: `Its folder is gone from ${machine} too.` });
       return;
     }
-    // The way back in: the folder is still there, so adding it again is one click.
+    // Its folder is still there, so a new project can start in it again: as a new one, with nothing it had.
     toast({
-      title: p.deleting ? `${p.title} deleted` : `${p.title} removed from ${machine}`,
-      description: p.deleting ? (p.deleting.plain ? `Its folder stays on ${machine}.` : `Its checkout and branches stay on ${machine}.`) : "Its files, branches and worktrees stay.",
-      action: { label: "Add it again", onClick: () => openAddProject({ text: p.path, machine: p.machineId }) },
+      title: `${p.title} deleted`,
+      description: p.deleting?.plain === false ? `Its checkout and branches stay on ${machine}.` : `Its folder stays on ${machine}.`,
+      action: { label: "Add the folder again", onClick: () => openAddProject({ text: p.path, machine: p.machineId }) },
     });
   };
 
@@ -98,13 +99,13 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
       onOpenChange={(open) => {
         if (!open && !busy) close();
       }}
-      title={project ? (gone ? `Forget ${project.title}?` : deleting ? `Delete ${project.title}?` : `Remove ${project.title} from ${machine}?`) : ""}
+      title={project ? (gone ? `Forget ${project.title}?` : `Delete ${project.title}?`) : ""}
       description={
         gone
           ? `${machine} is no longer in this hub, so no machine holds its files. This only forgets the project, its chat and its settings in fleetd.`
           : deleting && project
-          ? `${deleteWords(project.title, machine, tilde(project.path)).message}${deleting.plain ? "" : " The worktrees its agents worked in are removed; its branches and pull requests stay."}`
-          : "Its agents stop now. Its files, branches and worktrees stay on the machine; you can add the folder again any time."
+            ? `${deleteWords(project.title, machine, tilde(project.path)).message}${deleting.plain === false ? " The worktrees its agents worked in are removed; its branches and pull requests stay." : ""}`
+            : ""
       }
       footer={
         <>
@@ -112,7 +113,7 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
             Cancel
           </Button>
           <Button variant="danger" disabled={busy || !ready} onClick={() => project && void remove(project)}>
-            {busy ? (gone ? "Forgetting…" : deleting ? "Deleting…" : "Removing…") : gone ? "Forget project" : deleting ? "Delete project" : "Remove project"}
+            {busy ? (gone ? "Forgetting…" : "Deleting…") : gone ? "Forget project" : "Delete project"}
           </Button>
         </>
       }

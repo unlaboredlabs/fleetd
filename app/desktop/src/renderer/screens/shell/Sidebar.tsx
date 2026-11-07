@@ -7,7 +7,7 @@
 // agents and PRs are in the panel beside its chat); then any update to make, and the hub (HubStatus), which says how
 // many machines are down and opens Machines. Holding ⌘ (Ctrl) shows jump numbers on the first nine rows, which ⌘1..9
 // open. A project's right-click menu opens it or its settings, renames it, copies its path, archives it (Undo in the
-// toast) or removes it (RemoveProjectDialog asks first).
+// toast) or deletes it (from its settings, which list its worktrees and ask for its name first).
 //
 // With several hubs each hub's projects are a group under its name, which collapses; the footer has a row per hub.
 // With one, there is no name and no group, as before.
@@ -35,7 +35,7 @@ import {
   useReorder,
 } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
-import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
+import { revealNext } from "../settings/reveal";
 import { UpdatesLine } from "../updates";
 import { HubStatus } from "./HubStatus";
 import { useHubState } from "./hubFeed";
@@ -282,7 +282,6 @@ function ProjectGroup(props: {
   const hub = useHub();
   const state = useHubState();
   const asOf = useOfflineAsOf();
-  const [removing, setRemoving] = useState<RemoveTarget | null>(null);
   const [renaming, setRenaming] = useState<ProjectTarget | null>(null);
   const layer = useDataLayer();
   const rowsByKey = useMemo(() => byKey(rows ?? []), [rows]);
@@ -304,8 +303,15 @@ function ProjectGroup(props: {
         <ContextMenuCopy text={workspaceRoot}>Copy path</ContextMenuCopy>
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={() => void archiveProject(layer, { machineId, projectId, title })}>Archive</ContextMenuItem>
-        <ContextMenuItem danger onSelect={() => setRemoving({ machineId, projectId, title, path: workspaceRoot })}>
-          Remove project…
+        {/* Delete erases everything fleetd keeps for it: its settings' Delete lists its worktrees and asks for its name. */}
+        <ContextMenuItem
+          danger
+          onSelect={() => {
+            revealNext("projects.delete");
+            go({ id: "settings", tab: "projects", for: `${machineId}/${projectId}`, ...at });
+          }}
+        >
+          Delete project…
         </ContextMenuItem>
       </>
     );
@@ -373,7 +379,6 @@ function ProjectGroup(props: {
       <span role="status" className={s.srOnly}>
         {reorder.status}
       </span>
-      <RemoveProjectDialog project={removing} onClose={() => setRemoving(null)} />
       <RenameProjectDialog project={renaming} onClose={() => setRenaming(null)} />
     </SidebarSection>
   );

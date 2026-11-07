@@ -118,7 +118,7 @@ export function SectionTabs({ count, features }: { count: (tab: PanelTab) => Rea
         const first = g.views[0]?.[0] ?? "agents";
         return (
           <Tooltip key={g.id} content={g.line} side="bottom">
-            <Tab value={g.id} className={s.section} data-section={g.id}>
+            <Tab value={g.id} className={s.section} data-section={g.id} aria-label={g.label}>
               <Icon aria-hidden className={s.icon} />
               <span className={s.words}>
                 <span className={s.label}>{g.label}</span>

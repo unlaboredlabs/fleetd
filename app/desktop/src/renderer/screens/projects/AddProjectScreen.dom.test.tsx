@@ -135,6 +135,23 @@ describe("Add project's new project", () => {
     expect(button("Create project")?.disabled).toBe(false);
   });
 
+  it("starts Only me on for a new folder, and sends it off when the person turns it off", async () => {
+    await render();
+    await type(field("New project name, GitHub URL, folder path, or filter"), "Field notes");
+    const only = document.querySelector<HTMLButtonElement>('[role="switch"]');
+    expect(only?.getAttribute("aria-checked")).toBe("true");
+    await act(async () => {
+      only?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      button("Create project")?.click();
+      await Promise.resolve();
+    });
+    await settle();
+    expect(calls.find((c) => c.tool === "project_add")?.input).toMatchObject({ create: true, onlyMe: false });
+  });
+
   it("creates it where the folder says, git init only when ticked, and opens it once the hub lists it", async () => {
     const send = await render();
     await type(field("New project name, GitHub URL, folder path, or filter"), "Field notes");
