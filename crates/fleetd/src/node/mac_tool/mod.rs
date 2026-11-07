@@ -87,7 +87,11 @@ pub enum Step {
         path: String,
         offset: u64,
     },
-    SimStart,
+    /// `device`: a device type of the agent's choosing; absent, the golden's (an older agent's node sends none).
+    SimStart {
+        #[serde(default)]
+        device: Option<String>,
+    },
     SimEnd,
 }
 

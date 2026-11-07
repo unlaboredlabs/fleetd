@@ -33,8 +33,12 @@ mac: the agents' Mac, from wherever you run (fleetd's shared Mac for builds and 
   mac ps                           your jobs
   mac kill <job>                   ends a job
   mac pull <path> [to]             a file or folder from your folder on the Mac into your worktree
-  mac sim start                    an iOS simulator of your own on the Mac, booted; from then on agent-device drives
-                                   it, running on the Mac (its files land in your folder there: mac pull them)
+  mac sim start [--device <type>]  an iOS simulator of your own on the Mac, booted (a plain iPhone; --device \"iPad
+                                   Pro 13-inch (M5)\" another type, as xcrun simctl list devicetypes names it, booted
+                                   from nothing: a minute or two). From then on agent-device drives it, running on
+                                   the Mac (its files land in your folder there: mac pull them). In
+                                   mac run, $FLEETD_MAC_SIM is its udid and $FLEETD_MAC_SIM_SET the device set plain
+                                   simctl needs: xcrun simctl --set \"$FLEETD_MAC_SIM_SET\" <command> \"$FLEETD_MAC_SIM\"
   mac sim end                      ends it (30 minutes with no mac command ends it too)
 
 Your folder there is $FLEETD_MAC_DIR, the pushed worktree $FLEETD_MAC_REPO; xcodebuild builds into your own
@@ -77,9 +81,15 @@ pub fn run(args: &[String]) -> u8 {
             None => usage("mac pull <path> [to]"),
         },
         Some("sim") => match args.get(1).map(String::as_str) {
-            Some("start") => print_done(call(json!({ "step": "sim_start" }), STEP_WAIT)),
+            Some("start") => match sim_device(&args[2..]) {
+                Ok(device) => print_done(call(
+                    json!({ "step": "sim_start", "device": device }),
+                    STEP_WAIT,
+                )),
+                Err(why) => usage(why),
+            },
             Some("end") => print_done(call(json!({ "step": "sim_end" }), STEP_WAIT)),
-            _ => usage("mac sim start | mac sim end"),
+            _ => usage("mac sim start [--device <type>] | mac sim end"),
         },
         // The forwarding agent-device's while the session holds a simulator on the Mac (node/mac_tool/client.rs).
         Some("agent-device") => {
@@ -88,6 +98,23 @@ pub fn run(args: &[String]) -> u8 {
             run_command(line, Vec::new(), false)
         }
         Some(other) => usage(&format!("mac has no command {other}")),
+    }
+}
+
+/// `mac sim start`'s arguments: nothing, or `--device <type>` (`--device=<type>`).
+pub fn sim_device(args: &[String]) -> Result<Option<String>, &'static str> {
+    const USAGE: &str =
+        "mac sim start [--device <type>], a type as xcrun simctl list devicetypes names it";
+    match args {
+        [] => Ok(None),
+        [flag, device] if flag == "--device" && !device.trim().is_empty() => {
+            Ok(Some(device.clone()))
+        }
+        [one] => match one.strip_prefix("--device=") {
+            Some(device) if !device.trim().is_empty() => Ok(Some(device.to_owned())),
+            _ => Err(USAGE),
+        },
+        _ => Err(USAGE),
     }
 }
 
@@ -224,7 +251,9 @@ pub fn shown(result: &Value) -> String {
         ),
         Some("run") => format!("job {}\n", result["job"]),
         Some("sim_start") => format!(
-            "your simulator: {} ({}). Drive it with agent-device, which runs on the Mac now; end it with mac sim end\n",
+            "your simulator: {} ({}). Drive it with agent-device, which runs on the Mac now; end it with mac sim end. \
+             Plain simctl there needs fleetd's device set: mac run -- 'xcrun simctl --set \"$FLEETD_MAC_SIM_SET\" \
+             install \"$FLEETD_MAC_SIM\" <app>'\n",
             result["device"].as_str().unwrap_or("?"),
             result["udid"].as_str().unwrap_or("?")
         ),
@@ -320,6 +349,28 @@ mod tests {
         assert_eq!((line, env.len(), bg), (strings(&["ls", "--bg"]), 0, false));
         assert!(parse_run_with(&strings(&["--env", "NOPE", "ls"]), var).is_err());
         assert!(parse_run_with(&strings(&["--bg"]), var).is_err());
+    }
+
+    #[test]
+    fn sim_start_takes_a_device_type_or_nothing() {
+        assert_eq!(sim_device(&[]), Ok(None));
+        let ipad = Some("iPad Pro 13-inch (M5)".to_owned());
+        assert_eq!(
+            sim_device(&strings(&["--device", "iPad Pro 13-inch (M5)"])),
+            Ok(ipad.clone())
+        );
+        assert_eq!(
+            sim_device(&strings(&["--device=iPad Pro 13-inch (M5)"])),
+            Ok(ipad)
+        );
+        for wrong in [
+            &["--device"][..],
+            &["iPad"],
+            &["--device", ""],
+            &["--device", "a", "b"],
+        ] {
+            assert!(sim_device(&strings(wrong)).is_err(), "{wrong:?}");
+        }
     }
 
     #[test]

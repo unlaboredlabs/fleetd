@@ -55,11 +55,37 @@ files it reads and writes are there: `mac push` what it installs, `mac pull` wha
 simulator; asking again gives the same one. `mac sim end` deletes it with everything done in it, and so does 30
 minutes with no `mac` command from that agent.
 
+The simulator is a plain iPhone. An agent that needs another device type names it as `xcrun simctl list devicetypes`
+does, and gets a simulator of that type made and booted for it alone (a first boot, so a minute or two, without the
+warm clone's head start):
+
+```sh
+mac sim start --device "iPad Pro 13-inch (M5)"
+```
+
+Each agent's simulator is its own clone with its own agent-device daemon, so two agents install, launch and drive
+their apps at the same time. For plain `simctl`, which doesn't know the node's device set (it says "Invalid device"
+without it), a `mac run` job gets the simulator's udid as `$FLEETD_MAC_SIM` and the set as `$FLEETD_MAC_SIM_SET`:
+
+```sh
+mac run -- 'xcrun simctl --set "$FLEETD_MAC_SIM_SET" launch "$FLEETD_MAC_SIM" com.example.app'
+```
+
+Simulators need Developer Mode on (`sudo DevToolsSecurity -enable`, in [the Xcode step](#xcode)). With it off, each
+simulator's agent-device runner waits on a "Developer Tools Access" password prompt at the Mac's screen, and every
+install and launch into that simulator hangs behind it. The `mac_developer` check fails then, and `mac sim start`
+refuses with that command instead of lending a simulator that hangs. Turning it on (and cancelling a prompt still on
+the screen) frees simulators already stuck: an install tried again goes through.
+
 The Mac makes its golden simulator by itself once its tool is on (minutes, the first time: a boot to settle, then
 agent-device's runner built with `xcodebuild`); until then `mac sim start` says it's still being made. It needs an iOS
 runtime (the `mac_ios_runtime` check), and the doctor's `ios` check says where the golden stands. The simulators live
 in a device set of the node's own (`~/.fleetd/node/device/ios/set`), apart from the ones in Xcode, and the golden is
-the newest iOS runtime on a plain iPhone. The node keeps a clone booted for the next `mac sim start`, with
+chosen on purpose: the plain iPhone with the highest number ("iPhone 17", not a Pro, Plus or a foldable) on the newest
+iOS runtime that runs one. Xcode can install a runtime made for one device beside the general one of the same
+version (`iOS-27-2-iPhone19-4`, which runs only the multi-display "iPhone Duo", where input, alerts and screenshots
+don't work); that runtime is never picked unless `deviceType` names its device. A golden that isn't what this picks now
+is made again when the node starts. The node keeps a clone booted for the next `mac sim start`, with
 agent-device's runner already started in it, and boots another behind it; when boots keep failing it waits before the
 next one, a minute doubling up to half an hour. It deletes the clones a stopped node left behind each time it starts.
 They're always on: an older `"ios": {"enabled": false}` in its node.json is ignored. `"mac": {"simulators": N}` caps
@@ -297,7 +323,7 @@ with no check still in progress (its tools installing), and lists one still in p
 
 | Check | Passes when | Fix |
 |---|---|---|
-| `mac_developer` | The account is in `_developer`. | `sudo dseditgroup -o edit -a "$(id -un)" -t user _developer` |
+| `mac_developer` | The account is in `_developer`, and Developer Mode is on (`DevToolsSecurity -status`). While it fails, `mac sim start` refuses: [simulators would hang](#sim). | `sudo DevToolsSecurity -enable`, `sudo dseditgroup -o edit -a "$(id -un)" -t user _developer`: the ones it names |
 | `mac_xcode` | A full Xcode is selected, its licence accepted and its first launch run. Otherwise it warns: setup still ends, and only simulators wait. | The one command for [what it found](#no-xcode): the App Store, `sudo xcode-select -s` to the Xcode in /Applications, or the licence |
 | `mac_ios_runtime` | `xcrun simctl list runtimes` has an available iOS runtime. While Xcode isn't usable it warns that it waits for it. | `xcodebuild -downloadPlatform iOS` |
 | `mac_accessibility`, `mac_screen_recording` | macOS has given fleetd's node each grant (asked of a fresh process, `fleetd node grants`; reading never prompts). One an update took away [says so](#grants-updates). | `fleetd node grants --ask <grant>` at the Mac, then turn on fleetd in the pane it opens; the node restarts itself to take it up. |
@@ -352,4 +378,4 @@ read the node's own key, as on any worker. Loopback ports are shared between mac
 | `"agentsMac": true` | This machine is the agents' Mac: a tool, never a runner. Only `--mac` sets it; no switch in the app turns it off. The node offers agents its tool on macOS, in whatever account it runs. |
 | `"mac": {"enabled": true}` | Its own screen, which one agent at a time drives ([the Mac's screen](/docs/browser-sessions#mac)). Settings › Hub › Machines › Screens turns it off and on; the Mac stays a tool either way. |
 | `"mac": {"simulators": N}` | How many [iOS simulators](#sim) agents may have booted at once. Absent: from the Mac's memory. Not written by `--mac`. |
-| `"ios": {…}` | The [simulators](#sim)' golden and warm pool, by hand only: `enabled` (`false` turns them off; absent, on), `pool` (clones kept booted, absent 1, each 1–2 GB of memory) and `deviceType` (such as `iPhone 17 Pro`; absent, the newest plain iPhone of the newest iOS runtime; a change takes effect when the golden is made again: delete `device/ios/golden.json`). Not written by `--mac`. |
+| `"ios": {…}` | The [simulators](#sim)' golden and warm pool, by hand only: `enabled` (`false` turns them off; absent, on), `pool` (clones kept booted, absent 1, each 1–2 GB of memory) and `deviceType` (such as `iPhone 17 Pro`; absent, the newest plain iPhone on the newest iOS runtime that runs one; the node makes the golden again when it starts with another). Not written by `--mac`. |
