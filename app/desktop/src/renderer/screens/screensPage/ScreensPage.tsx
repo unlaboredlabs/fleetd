@@ -227,7 +227,6 @@ const keyOf = (p: { machineId: string; projectId: string }) => `${p.machineId}/$
 /** The kind in the sentence's words. */
 const KIND_PHRASE: Readonly<Record<ScreenKind, string>> = {
   browser: "a browser",
-  ios: "an iOS simulator",
   android: "an Android emulator",
   linux_desktop: "a Linux desktop",
   mac: "the agents’ Mac",

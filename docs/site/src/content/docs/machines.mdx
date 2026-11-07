@@ -57,7 +57,7 @@ again** runs them now.
 | Claude | `claude` is installed at the version fleetd was tested with, and logged in. |
 | Git identity | The node's commits carry the hub's identity. |
 | GitHub access | git could fetch each project's remote at the last agent start there. It waits until an agent has started in one of its projects. |
-| Capabilities | What screens it hosts besides browsers: Android, iOS, Linux desktop. Each one that's set up but not ready says why. |
+| Capabilities | What screens it hosts besides browsers: Android, Linux desktop. Each one that's set up but not ready says why. |
 
 An item that wants a look shows its fix: a command to copy, or for Claude's login, **Log in…**.
 
@@ -152,6 +152,10 @@ to repair the hub machine's node.
    address and code, without asking for them.
 
 The code works once, for 15 minutes. The new machine must reach the hub's address.
+
+To see the codes that still work, run `fleetd pair --worker-codes`. It lists each code's id, machine, when it was
+made and when it expires, but never the code itself. To take one back before it is used, run
+`fleetd pair --worker-revoke <id>`. The hub drops used and expired codes a day later.
 
 To repair the worker later, run the same command again. `--rejoin` enrolls it again with a new code.
 
@@ -336,7 +340,7 @@ The lead's list of tasks shows "on boat-2, a cloud machine" for a task running t
 
 ## Machine roles {#roles}
 
-Each machine runs **agents**, hosts **screens** (an agent's [browser, emulator, simulator or desktop](/docs/browser-sessions)),
+Each machine runs **agents**, hosts **screens** (an agent's [browser, emulator or desktop](/docs/browser-sessions), or the agents' Mac's screen),
 or **both**, the default. An owner or admin sets it in **Settings › Hub › Machines** in the app, or with an admin key, where the screens role
 is named `sessions`:
 
@@ -360,8 +364,8 @@ kind that turns it on or off there ([Turn screens on in Settings](/docs/browser-
 |---|---|
 | Browser | Chrome: the node's own, which it installs as it starts, or the one `browser.chrome` names in node.json. |
 | Android emulator | fleetd's own pinned emulator: Linux on x86_64, opted in with `"device": {"enabled": true}` in node.json (the first screen installs it) or installed already, and a `/dev/kvm` this user can open read-write. See [Android screens](/docs/browser-sessions#android-setup). |
-| iOS simulator | fleetd's own golden simulator and its clones: macOS with Xcode, an iOS simulator runtime and Node.js, and opted in with `"ios": {"enabled": true}` in node.json (or the golden made already). While the node makes its golden (minutes), or after making it failed, the hub still sends it iOS screens: the node says it is still making it, and the next screen tries a failed one again. The doctor's `ios` check says where it stands. See [iOS screens](/docs/browser-sessions#ios-setup). |
 | Desktop | Linux with docker or Xvfb. |
+| Agents' Mac | [The agents' Mac](/docs/agents-mac): its agents user at the Mac's screen, unlocked, with Accessibility and Screen Recording. Elsewhere it says `Needs a Mac`. See [the agents' Mac's screen](/docs/browser-sessions#mac). |
 
 When an agent starts a screen, the hub places it: on the agent's own machine when it hosts screens, can run that kind
 and has a free screen slot; else on the online machine that can with the most free slots. When none can, the agent is

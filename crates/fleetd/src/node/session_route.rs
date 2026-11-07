@@ -29,7 +29,7 @@ use zeroize::Zeroize;
 
 use fleetd_contracts::browser::{
     BrowserCall, BrowserCallFrame, BrowserCallResult, BrowserResultFrame, BrowserSessionState,
-    DeviceCall, DeviceDone, DeviceFile, SessionKind,
+    DeviceCall, DeviceDone, DeviceFile, IOS_GONE, SessionKind,
 };
 use fleetd_contracts::ids::{MachineId, ThreadId};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallFrame, LeadCallResult};
@@ -306,12 +306,8 @@ async fn ask(
     }
 }
 
-/// What an agent's `session_start` kind `ios` gets: iOS simulators are the agents' Mac's (`mac sim`). `ios` stays a value
-/// the contracts read, for old recordings and a person's own iPhone screens.
-pub const IOS_GONE: &str = "iOS screens are gone: start an iOS simulator of your own on the agents' Mac with `mac sim \
-                            start`, then drive it with agent-device as before.";
-
 async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> BrowserResultFrame {
+    // An agent's `session_start` kind `ios`: iOS simulators are the agents' Mac's (`mac sim`), so the hub isn't asked.
     if let BrowserCall::SessionStart(start) = &frame.call
         && start.kind == Some(SessionKind::Ios)
     {

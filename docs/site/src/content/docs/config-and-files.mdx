@@ -38,7 +38,7 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     mcp-secrets/         the secrets of the MCP servers agents get, global and per project (mode 0600; Settings › Hub › Every project › Tools & skills, and a project's Agents)
     browser/             browser screens: the pinned Chrome, ffmpeg and agent-browser, and recordings not yet on the hub
     device/              Android screens: the pinned SDK, emulator, snapshot and agent-device, and recordings not yet on the hub
-      ios/               iOS screens: the node's simulator set, its golden, agent-device's runner, and recordings not yet on the hub
+      ios/               the agents' Mac's iOS simulators: the node's simulator set, its golden and agent-device's runner
     desktop/             Linux desktop screens: each display's folder, and recordings not yet on the hub;
                          mac/ the agents' Mac screen's agent-desktop and each session's folder
   claude.env             optional extra environment for every claude fleetd starts
@@ -86,7 +86,7 @@ after you change it.
 | `buildSlots` | Agents' cargo builds (`build`, `check`, `clippy`, `test` and the like) that run at once on this machine; one more waits its turn and says it is queued. Absent: one per 8 GB of memory left after a quarter of it (4 to 16 GB) is kept back, at least 1. `0` turns the turns off. Read by each build, no restart needed. See [Build turns](/docs/machines#fair-share). |
 | `browser` | How this machine runs [browser screens](/docs/browser-sessions#setup): `enabled`, `chrome`, `ffmpeg`, `pool`, `sandbox`, `idleMinutes`. |
 | `device` | How this machine runs [Android screens](/docs/browser-sessions#android-setup): `enabled`, `pool`, `idleMinutes`. |
-| `ios` | How this Mac runs [iOS screens](/docs/browser-sessions#ios-setup): `enabled`, `pool`, `idleMinutes`, `deviceType`. |
+| `ios` | How [the agents' Mac](/docs/agents-mac#node-json) keeps the iOS simulators it lends agents: `enabled`, `pool`, `deviceType`. |
 | `desktop` | How this machine runs [Linux desktop screens](/docs/browser-sessions#desktop-setup): `enabled`, `backend`, `runtime`, `image`, `xvfb`, `ffmpeg`, `pool`, `idleMinutes`. |
 | `mac` | Whether this Mac lends [its agents user's screen](/docs/browser-sessions#mac-setup): `enabled`, `idleMinutes`; and `simulators`, how many iOS simulators [the agents' Mac](/docs/agents-mac#sim) boots for agents at once. |
 | `agentsMac` | `true` makes this Mac [the agents' Mac](/docs/agents-mac#setup), a tool for agents on other machines that runs none itself. Set by the installer's `--mac`. |
@@ -114,7 +114,6 @@ fleetd adds its own settings on top of yours, per session:
 | A `--settings` overlay | Pins claude's version, turns claude's auto memory and its own subagents off ([why](/docs/what-agents-are-told#no-subagents)), and denies tools agents never get: plan mode, worktrees, cron. |
 | agent-browser on `PATH`, its `AGENT_BROWSER_*` variables and its skill | A lead's and a task's [browser screen](/docs/browser-sessions#use). |
 | agent-device on `PATH` (it alone: the node's SDK and adb stay inside it), its `AGENT_DEVICE_*` variables and its skill, on a machine with Android screens | A lead's and a task's [Android screen](/docs/browser-sessions#android). |
-| agent-device on `PATH` (it alone: the node's simulator set and runner stay inside it), its `AGENT_DEVICE_*` variables and its skill, on a Mac with iOS screens | A lead's and a task's [iOS screen](/docs/browser-sessions#ios). |
 | A folder first on `PATH` that holds a forwarding agent-device only while the session holds a simulator on the agents' Mac, then `mac` | A lead's and a task's [agents' Mac](/docs/agents-mac). |
 
 ### A dedicated claude profile {#claude-profile}

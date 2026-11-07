@@ -498,6 +498,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     )));
     loops.push(tokio::spawn(crate::hub::tasks::ci_wait::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::memory::refresh::run(hub.clone())));
+    crate::hub::pair::prune_on_sweep(hub);
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
     loops.push(crate::hub::queue::start_loops(hub));
     loops.extend(crate::hub::usage::wire::start(hub));

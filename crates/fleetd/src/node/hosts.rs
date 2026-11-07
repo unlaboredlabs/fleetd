@@ -1,15 +1,14 @@
 //! What this machine can host for sessions (machine roles, W46), sent with each heartbeat's load: a browser (the
 //! broker's Chrome, or its install on the first session), an Android emulator (fleetd's own pinned one, node/device,
-//! with KVM), iOS simulators (fleetd's own golden and its clones, node/device/ios, with Xcode on macOS) and a Linux
-//! desktop (docker or Xvfb), and the agents' Mac's own screen (its agents session on the screen, unlocked, with
-//! fleetd's grants). Each says why in plain words. Read at most every few minutes: `xcrun simctl` takes a
-//! second.
+//! with KVM), a Linux desktop (docker or Xvfb), and the agents' Mac's own screen (its agents session on the screen,
+//! unlocked, with fleetd's grants). Each says why in plain words. Read at most every few minutes. iOS simulators are no
+//! screen any more (D298): the agents' Mac lends them with `mac sim`, and the doctor's `ios` check says how they are.
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use fleetd_contracts::machine_roles::{HostCheck, HostChecks, HostOff, SessionHost};
-use fleetd_contracts::node_link::{AndroidHealth, AndroidState, DesktopState, IosState};
+use fleetd_contracts::node_link::{AndroidHealth, AndroidState, DesktopState};
 use fleetd_contracts::prim::{Int, Line, List};
 
 use super::browser::BrowserConfig;
@@ -17,7 +16,6 @@ use super::browser::chrome;
 use super::config::NodeConfig;
 use super::desktop::mac::{self, MacConfig};
 use super::desktop::{self, DesktopConfig};
-use super::device::ios::IosConfig;
 use super::device::{self, DeviceConfig};
 
 const FRESH: Duration = Duration::from_secs(300);
@@ -146,66 +144,6 @@ fn android_check(config: &DeviceConfig, health: Option<AndroidHealth>) -> HostCh
     }
 }
 
-/// fleetd's own iOS simulators (node/device/ios): ready once the node's golden simulator is made, else what stands in
-/// the way, as the doctor says it.
-pub fn ios(home: &Path, config: &IosConfig) -> HostCheck {
-    let host = SessionHost::Ios;
-    if !device::ios::supported() {
-        return with(
-            check(
-                host,
-                Some(HostOff::Unsupported),
-                "iOS simulators need macOS",
-            ),
-            false,
-            config.idle_minutes,
-        );
-    }
-    if !config.enabled() {
-        return with(
-            check(host, Some(HostOff::Off), "iOS screens are off in node.json"),
-            false,
-            config.idle_minutes,
-        );
-    }
-    // Ready where the golden is made, and also on a Mac opted in while it is made or after it failed, so the hub sends
-    // the session there: the node says it is still making it, and the next session_start tries a failed one again.
-    let (checked, on) = match device::ios::host(home, config) {
-        Some((health, placeable)) => {
-            let off = match (placeable, health.state) {
-                (true, _) => None,
-                (false, IosState::Wanted) => Some(HostOff::Off),
-                (false, IosState::Preparing) => Some(HostOff::Installing),
-                (false, _) => Some(HostOff::Missing),
-            };
-            (
-                fixed(
-                    check(host, off, health.message.as_str()),
-                    health.fix.as_ref().map(|f| f.as_str()),
-                ),
-                config.opted_in() || health.state == IosState::Ready,
-            )
-        }
-        None => (
-            fixed(
-                check(host, Some(HostOff::Missing), no_xcode()),
-                Some(device::ios::XCODE_FIX),
-            ),
-            config.opted_in(),
-        ),
-    };
-    with(checked, on, config.idle_minutes)
-}
-
-/// What a Mac without Xcode lacks, with the two ways to install it (device::ios::no_xcode); once iOS is on, its health
-/// says it, so here it is a Mac not turned on yet: Xcode, then the switch.
-fn no_xcode() -> String {
-    format!(
-        "{}, then turn iOS on for this Mac in Settings › Hub › Machines › Screens",
-        device::ios::no_xcode()
-    )
-}
-
 /// The desktop sessions' own word (node/desktop): what preparing found, else what is on the PATH.
 fn desktop(home: &Path, config: &DesktopConfig) -> HostCheck {
     let host = SessionHost::Desktop;
@@ -258,7 +196,7 @@ pub fn mac_screen(config: &MacConfig) -> HostCheck {
         check(
             host,
             Some(HostOff::Off),
-            "off: on a Mac set aside for agents, whose node runs as its standard agents user, turn the Mac screen on              in Settings › Hub › Machines › Screens",
+            "off: on a Mac set aside for agents, whose node runs as its standard agents user, turn the Mac screen on in Settings › Hub › Machines › Screens",
         )
     } else {
         match mac::blocked() {
@@ -314,10 +252,6 @@ fn cached(home: &Path, config: Option<&NodeConfig>) -> Vec<HostCheck> {
         android(
             home,
             &config.and_then(|c| c.device.clone()).unwrap_or_default(),
-        ),
-        ios(
-            home,
-            &config.and_then(|c| c.ios.clone()).unwrap_or_default(),
         ),
         desktop(
             home,
@@ -377,41 +311,6 @@ mod tests {
         }
         std::fs::write(&state, r#"{"installing":true,"failed":null}"#).unwrap();
         assert!(!android(home.path(), &opted_in).ready, "installing now");
-    }
-
-    #[test]
-    fn ios_is_fleetds_own_simulator_and_only_where_set_up() {
-        let home = tempfile::tempdir().unwrap();
-        let off = IosConfig {
-            enabled: Some(false),
-            ..IosConfig::default()
-        };
-        assert!(!ios(home.path(), &off).ready);
-        let opted_in = IosConfig {
-            enabled: Some(true),
-            ..IosConfig::default()
-        };
-        // Which states a Mac opted in is placed in: node/device/ios's tests, where they can be set up anywhere.
-        if !device::ios::supported() {
-            let asked = ios(home.path(), &opted_in);
-            assert!(!asked.ready);
-            assert_eq!(asked.detail.as_str(), "iOS simulators need macOS");
-        }
-    }
-
-    #[test]
-    fn a_mac_without_xcode_not_turned_on_says_both_ways_then_the_switch() {
-        let said = no_xcode();
-        assert!(said.contains("turn iOS on"), "{said}");
-        assert!(said.len() <= 300, "{said}");
-        assert!(
-            said.contains("over SSH") && said.contains(device::ios::XCODE_PAGE),
-            "{said}"
-        );
-        assert!(
-            !device::ios::XCODE_FIX.contains("open "),
-            "works without the Mac's screen"
-        );
     }
 
     #[test]

@@ -57,7 +57,8 @@ pub enum SessionHost {
     Browser,
     /// An Android emulator: the Android SDK, with KVM on Linux.
     Android,
-    /// An iOS simulator: Xcode on macOS.
+    /// An iOS simulator: legacy (D298). No node reports it any more, and the hub places none: the agents' Mac lends
+    /// simulators with `mac sim`.
     Ios,
     /// A Linux desktop: docker or Xvfb.
     Desktop,

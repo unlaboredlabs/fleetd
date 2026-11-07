@@ -147,7 +147,7 @@ async fn mac_calls_go_to_the_agents_mac_while_its_switch_is_on() {
 async fn a_screen_on_the_agents_mac_is_sealed_its_relay_key_alone() {
     let (hub, _home) = hub();
     let _devbox = remote(&hub);
-    let first = route_once(&hub, "th-1", SessionHost::Ios, start(), None)
+    let first = route_once(&hub, "th-1", SessionHost::Mac, start(), None)
         .await
         .unwrap();
     assert_eq!(first.runner, mid("mac1"));

@@ -2,7 +2,7 @@
 // machine it starts on, and each machine's slots in words, a full one offering to wait.
 import { describe, expect, it } from "vitest";
 import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
-import { adminNames, askLine, canOpen, fixLabel, fixReveal, hostsFor, idleFor, idleWords, newScreenOf, openingLine, openWord, pickHost, prChoices, slotLine, startingLine, takesBuild, whyOff } from "./pickScreen";
+import { KINDS, adminNames, askLine, canOpen, fixLabel, fixReveal, hostsFor, idleFor, idleWords, newScreenOf, openingLine, openWord, pickHost, prChoices, slotLine, startingLine, takesBuild, whyOff } from "./pickScreen";
 
 const machine = (machineId: string, ready: readonly string[], more: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({
   machineId,
@@ -13,22 +13,22 @@ const machine = (machineId: string, ready: readonly string[], more: Partial<Mach
   maxSessionsWhy: "set",
   sessionsLive: 0,
   hostsOthers: true,
-  hosts: ["browser", "android", "ios", "desktop"].map((host) => ({ host, ready: ready.includes(host), detail: "as tested" })),
+  hosts: ["browser", "android", "desktop", "mac"].map((host) => ({ host, ready: ready.includes(host), detail: "as tested" })),
   ...more,
 });
 
 const MACHINES = [
   machine("devbox", ["browser", "desktop", "android"]),
-  machine("mac", ["browser", "ios"], { sessionsLive: 2 }),
+  machine("mac", ["browser", "mac"], { sessionsLive: 2 }),
   machine("lab", ["browser"], { online: false }),
-  machine("agents-only", ["browser", "ios"], { roles: ["agents"] }),
+  machine("agents-only", ["browser", "mac"], { roles: ["agents"] }),
   machine("older", ["browser"], { hostsOthers: false }),
 ];
 
 describe("hostsFor", () => {
   it("lists only machines that can host the kind, online first", () => {
     expect(hostsFor(MACHINES, "browser").map((h) => h.machineId)).toEqual(["devbox", "mac", "lab"]);
-    expect(hostsFor(MACHINES, "ios").map((h) => h.machineId)).toEqual(["mac"]);
+    expect(hostsFor(MACHINES, "mac").map((h) => h.machineId)).toEqual(["mac"]);
     expect(hostsFor(MACHINES, "linux_desktop").map((h) => h.machineId)).toEqual(["devbox"]);
     expect(canOpen(MACHINES, "android")).toBe(true);
     expect(canOpen([MACHINES[1] as MachineRolesEntry], "android")).toBe(false);
@@ -63,7 +63,7 @@ describe("prChoices", () => {
       ["acme/app#3", "#3 PR 3"],
       ["acme/app#1", "#1 PR 1"],
     ]);
-    expect(["browser", "ios", "android", "linux_desktop"].filter((k) => takesBuild(k as never))).toEqual(["android"]);
+    expect(["browser", "android", "linux_desktop", "mac"].filter((k) => takesBuild(k as never))).toEqual(["android"]);
   });
 });
 
@@ -78,7 +78,7 @@ describe("openingLine", () => {
 describe("startingLine", () => {
   it("names what is starting", () => {
     expect(startingLine("browser")).toBe("Starting the browser…");
-    expect(startingLine("ios")).toBe("Starting the simulator…");
+    expect(startingLine("mac")).toBe("Opening the Mac’s screen…");
     expect(startingLine("android")).toBe("Starting the emulator…");
     expect(startingLine("linux_desktop")).toBe("Starting the desktop…");
   });
@@ -121,7 +121,7 @@ describe("why a kind can't open", () => {
   const off = (machineId: string, offs: Partial<Record<string, string>>, more: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({
     ...machine(machineId, []),
     screenSettings: true,
-    hosts: ["browser", "android", "ios", "desktop", "mac"].map((host) => {
+    hosts: ["browser", "android", "desktop", "mac"].map((host) => {
       const why = offs[host];
       return why === undefined ? { host, ready: true, detail: "ready", on: true } : { host, ready: false, detail: `${host} ${why} on the node`, off: why, on: why !== "off" };
     }),
@@ -158,28 +158,28 @@ describe("why a kind can't open", () => {
     });
   });
 
-  it("says a Mac is needed where no machine can ever run iOS", () => {
-    const reason = whyOff([off("devbox", { ios: "unsupported" }), off("lab", { ios: "unsupported" })], "ios");
-    expect(reason).toEqual({ why: "iOS simulators need a Mac with Xcode, and no Mac here hosts screens.", short: "Needs a Mac", fix: "add" });
-    expect(askLine(must(reason), "ios", [])).toBe("Ask a hub admin to add a Mac.");
-    expect(fixLabel("add")).toBe("Add machine");
-  });
-
   it("says the agents' Mac needs a Mac set aside for agents, not a Linux machine", () => {
     const reason = whyOff([off("devbox", { mac: "unsupported" })], "mac");
     expect(reason).toEqual({ why: "The agents’ Mac screen needs a Mac set aside for agents, whose node runs as its standard agents user.", short: "Needs a Mac", fix: "add" });
     expect(askLine(must(reason), "mac", ["Ana"])).toBe("Ask Ana to add a Mac set aside for agents.");
     expect(askLine(must(reason), "android", ["Ana"])).toBe("Ask Ana to add a Linux machine.");
+    expect(askLine(must(reason), "mac", [])).toBe("Ask a hub admin to add a Mac set aside for agents.");
+    expect(fixLabel("add")).toBe("Add machine");
   });
 
-  it("prefers the nearest fix: a Mac installing before one that's offline, before a Linux box", () => {
-    const machines = [off("devbox", { ios: "unsupported" }), off("mac-old", { ios: "off" }, { online: false }), off("mac", { ios: "installing" })];
-    const reason = whyOff(machines, "ios");
-    expect(reason?.why).toBe("mac is installing what iOS simulators need.");
+  it("offers no iOS screen: the agents' Mac is the one Apple kind", () => {
+    expect(KINDS.map((k) => k.kind)).toEqual(["browser", "android", "linux_desktop", "mac"]);
+    expect(KINDS.find((k) => k.kind === "mac")?.label).toBe("Agents’ Mac");
+  });
+
+  it("prefers the nearest fix: a machine installing before one that's offline, before a Mac", () => {
+    const machines = [off("mac", { android: "unsupported" }), off("lab-old", { android: "off" }, { online: false }), off("lab", { android: "installing" })];
+    const reason = whyOff(machines, "android");
+    expect(reason?.why).toBe("lab is installing what Android emulators need.");
     expect(reason?.fix).toBe("none");
-    expect(askLine(must(reason), "ios", ["Ana"])).toBeNull();
+    expect(askLine(must(reason), "android", ["Ana"])).toBeNull();
     expect(fixLabel("none")).toBeNull();
-    expect(whyOff(machines.slice(0, 2), "ios")).toMatchObject({ why: "mac-old is offline.", short: "Offline" });
+    expect(whyOff(machines.slice(0, 2), "android")).toMatchObject({ why: "lab-old is offline.", short: "Offline" });
   });
 
   it("says a kind turned on waits for its node's restart", () => {

@@ -389,3 +389,32 @@ async fn a_key_limited_to_some_machines_cannot_pair_a_phone_that_reaches_them_al
     assert_eq!(refused.code, fleetd_contracts::mcp::ErrorCode::Forbidden);
     assert_eq!(codes(&hub), before);
 }
+
+#[tokio::test]
+async fn the_sweep_drops_codes_spent_a_day_ago_and_keeps_open_ones() {
+    let (hub, clock, _home) = hub_at(None);
+    prune_on_sweep(&hub);
+    let count = |table: &str| -> i64 {
+        hub.db
+            .with(|c| Ok(c.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))?))
+            .unwrap()
+    };
+    let codes = PairCodes::new(hub.db.clone(), hub.clock.clone());
+    let used = codes.create(None, Role::Operate).unwrap();
+    codes.redeem(&used.code).unwrap();
+    codes.create(None, Role::Operate).unwrap();
+    let worker = fleetd_contracts::ids::MachineId::new("worker").unwrap();
+    hub.auth.create_enroll_token(&worker).unwrap();
+    clock.advance(Duration::from_secs(23 * 3600));
+    hub.sweep.run_once().await;
+    assert_eq!((count("pair_codes"), count("enroll_tokens")), (2, 1));
+
+    // A day after the unused ones expired, every spent one goes; the ones made a minute before stay.
+    clock.advance(Duration::from_secs(3600 + 15 * 60));
+    let open = codes.create(None, Role::Operate).unwrap();
+    hub.auth.create_enroll_token(&worker).unwrap();
+    clock.advance(Duration::from_secs(61));
+    hub.sweep.run_once().await;
+    assert_eq!((count("pair_codes"), count("enroll_tokens")), (1, 1));
+    codes.redeem(&open.code).unwrap();
+}

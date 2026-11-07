@@ -1,6 +1,6 @@
 ---
 title: Screens
-description: Agents open a fresh Chrome, Android emulator, iOS simulator or Linux desktop of their own, or borrow the agents' Mac's screen, drive it with agent-browser, agent-device, agent-desktop or their desktop tool, and leave a recording on the hub.
+description: Agents open a fresh Chrome, Android emulator or Linux desktop of their own, or borrow the agents' Mac's screen, drive it with agent-browser, agent-device, agent-desktop or their desktop tool, and leave a recording on the hub.
 ---
 
 An agent that needs a web page (to check a signup form on staging, read a dashboard, reproduce a bug) opens a browser
@@ -9,8 +9,8 @@ screen. It gets a fresh Chrome on its machine that no other screen shares, drive
 app and take it over. The node records the screen and uploads the recording to the hub.
 
 A screen is any of these an agent opens: a browser, an [Android emulator](#android), a
-[Linux desktop](#desktop), or the [agents' Mac's own screen](#mac), which agents take turns on. An agent's iOS
-simulator is on [the agents' Mac](/docs/agents-mac#sim), and a person opens [iOS screens](#ios) of their own. You can
+[Linux desktop](#desktop), or the [agents' Mac's own screen](#mac), which agents take turns on. iOS simulators aren't
+screens: agents start their own on [the agents' Mac](/docs/agents-mac#sim) ([iOS screens are gone](#ios)). You can
 [open one yourself](#yours) too. The app shows every project's and Navi's on the [Screens page](#page), and each
 project's under **Agents › Screens**. The agent tools that open and close one keep their names, `session_start` and
 `session_end`.
@@ -100,7 +100,7 @@ You can open a screen of your own: **New screen** at the top of a project's or a
 [Screens page](#page), or **New screen…** in the command palette (⌘K) for the project on screen. On the phone, **New Screen** is on a project's
 or Navi's ⓘ page ([Phone app](/docs/mobile#screens)).
 
-1. **Pick the kind**: a browser, an iOS simulator, an Android emulator or a Linux desktop. A kind no machine can host
+1. **Pick the kind**: a browser, an Android emulator, a Linux desktop or the agents' Mac. A kind no machine can host
    says why under its name (`Turned off`, `Needs a Mac`, `Installing`, `Offline`, `Needs an update`). Pick it for the
    reason in full, from the machines' nodes, and its one fix: an owner or admin gets **Turn on** where the kind is only
    switched off on a machine (it turns it on there, as [Settings](#settings) does), or a button to the part of
@@ -108,8 +108,7 @@ or Navi's ⓘ page ([Phone app](/docs/mobile#screens)).
 2. **Pick the machine.** The list has only the machines that can host that kind (the sessions role, the kind set up,
    and a current fleetd), each with its screens in use: `1 of 2 screens in use`.
 3. **Pick a PR** (optional, Android): one of the project's open PRs, whose CI build is installed before you get
-   it ([below](#yours-pr)). If the PRs can't be read, the picker says why, with Retry. An iOS screen takes no PR build
-   for now, and the picker says why.
+   it ([below](#yours-pr)). If the PRs can't be read, the picker says why, with Retry.
 4. **Open screen.** It opens in the panel's live view with you in control from the start, and lists under Screens as
    yours. **End screen** closes it. It also ends after the machine's idle timeout without your input: 30 minutes
    unless set in [Settings](#settings). The picker says the machine's own.
@@ -132,11 +131,7 @@ many people wait. An agent's running screen is never ended to make room. A wait 
 ### A PR's build {#yours-pr}
 
 An Android emulator can open with a PR's build installed. The hub takes the newest artifact of a CI run on the PR's
-head whose name says what it's for: `android` or `apk` for an `.apk` (`fleetd-android-apk`).
-
-An iOS simulator takes none until the shared Mac (decision `mac.interim-lockdown`, D299): an app installed in the
-Mac's simulator runs as the Mac's own user, outside the iOS sandbox. `screen_open` with a PR
-for an iOS screen is refused at once, and nothing starts. It downloads it with its
+head whose name says what it's for: `android` or `apk` for an `.apk` (`fleetd-android-apk`). It downloads it with its
 `gh` (as the [GitHub App](/docs/github/) where it's installed), starts the screen, sends the file to the screen's
 machine sealed with that screen's key, and runs `agent-device install` there. Then the screen is yours.
 
@@ -275,16 +270,17 @@ purpose, state (`live`, `uploading`, `recorded`, `lost` or `expired`) and files.
 
 **Settings › Hub › Machines › Screens**, for a hub's owners and admins, lists each machine that hosts screens:
 
-- **A switch per kind**: Browser, iOS, Android, Linux desktop and Agents' Mac. Under each, what the machine's node says: ready, off,
-  installing, or what stands in the way (no Xcode, no KVM, no docker or Xvfb). A kind the machine can't run at all
-  (iOS on Linux) can't be switched on.
+- **A switch per kind**: Browser, Android, Linux desktop and Agents' Mac. Under each, what the machine's node says:
+  ready, off, installing, or what stands in the way (no KVM, no docker or Xvfb, no grants). A kind the machine can't
+  run at all (the agents' Mac on Linux) can't be switched on, and says why. There's no iOS switch: the agents' Mac
+  lends its [simulators](/docs/agents-mac#sim) to agents.
 - **Idle screens end after**: the minutes without a command before a screen there ends, for every kind but the
   agents' Mac, whose screen goes back after 5 minutes so the next agent isn't kept waiting.
 - **Recordings**: how long the hub keeps them and how much per project, for every project
   ([On the hub](#hub)).
 
 A switch writes the machine's node.json for you: the kind's `enabled`, or every kind's `idleMinutes`; the rest of the
-file stays as it is. Turning Android or iOS on opts the machine in, so it installs what it needs, as the setting
+file stays as it is. Turning Android on opts the machine in, so it installs what it needs, as the setting
 below does by hand. A node reads its screen settings as it starts, so it restarts itself to apply a change once no
 screen is live on it. As for an [update](/docs/updating-and-uninstall), it first holds its agents' tool calls and
 waits for the ones mid-step to finish (10 minutes at most), so the restart finds them between steps; they carry on
@@ -400,53 +396,16 @@ Settings go under `device` in [node.json](/docs/config-and-files#node-json):
 | `pool` | Emulators kept booted for the next screens. Absent: 1. Each takes about 2 GB of memory. |
 | `idleMinutes` | End a person's screen after this many minutes without a tap or key. Absent: 30. |
 
-## iOS screens {#ios}
+## iOS screens are gone {#ios}
 
-Agents don't open iOS screens any more: each one starts an iOS simulator of its own on
-[the agents' Mac](/docs/agents-mac#sim) with `mac sim start`, and drives it with
-[agent-device](https://github.com/callstack/agent-device) as before. `session_start` with `kind` `ios` answers with
-that, for one release; old iOS recordings still open.
+iOS simulators aren't a kind of screen any more (decision `mac.shared-mac`, D298). An agent starts one of its own on
+[the agents' Mac](/docs/agents-mac#sim) with `mac sim start` and drives it with
+[agent-device](https://github.com/callstack/agent-device) as before. New screen and Settings › Hub › Machines › Screens
+offer no iOS; the agents' Mac is the one Apple kind there, and says `Needs a Mac` with its fix while none is set up.
 
-A person still opens an iOS screen of their own on a Mac, from [New screen](#yours). It gets a fresh iOS simulator,
-driven by the person through live view. No app goes into it from another machine: a simulator
-app runs as the Mac's user.
-
-- **A fresh simulator per screen.** The node keeps its simulators in a device set of its own
-  (`~/.fleetd/node/device/ios/set`), apart from the ones in Xcode. It makes one golden simulator there: the newest iOS
-  runtime on a plain iPhone. It boots the golden once, waits for its first-boot work to settle, has agent-device build
-  its XCTest runner for it, and shuts it down. Each screen, and each agent's `mac sim start`, gets a clone of the golden
-  (`simctl clone`), which is deleted when it ends along with everything done in it.
-- **Starts from a warm pool.** The node keeps one clone booted for the next one, with agent-device's XCTest runner
-  already started in it, and clones, boots and starts another behind it. With no clone ready, the start answers at
-  once that one is starting and about how long it takes. When boots keep failing, the pool waits before the next one:
-  a minute, doubling up to half an hour, and back to normal after a boot that works.
-- **Recorded by the simulator.** A screen's video is `simctl io recordVideo`'s H.264 MP4 (`video_mp4`), at the
-  screen's full size.
-- **Live view and takeover.** `simctl` can't stream, so a person watching gets screenshots in a loop, which runs only
-  while someone watches. Their taps, drags, scrolls and typing go through agent-device, one command at a time.
-
-### On each Mac {#ios-setup}
-
-iOS screens need macOS with Xcode (from the App Store at the Mac, or over SSH with
-`brew install xcodesorg/made/xcodes && xcodes install --latest --select`, which asks for an Apple ID), an iOS simulator runtime (Xcode > Settings > Components, or
-`xcodebuild -downloadPlatform iOS`), and Node.js 22.12 or later for agent-device. The doctor's `ios` check shows on
-every Mac with Xcode. It fails with the fix when something is missing (`sudo xcode-select --switch
-/Applications/Xcode.app` when only the command line tools are selected). A Mac lists `session_ios` to the hub only once
-its golden simulator is made.
-
-Nothing is made until a person opts a Mac in: iOS's switch in [Settings](#settings), or `"ios": {"enabled": true}`
-in its node.json. The node then installs
-agent-device 0.21.31 (the same pin Android screens use) and makes the golden. That takes minutes: the boot that
-settles, and an `xcodebuild` of agent-device's runner. Until it's done, a start says the Mac is still making it. The node deletes clones that a stopped node left behind each time it starts.
-
-Settings go under `ios` in [node.json](/docs/config-and-files#node-json):
-
-| Key | Means |
-|---|---|
-| `enabled` | `true` opts this Mac in: the node makes its golden simulator and keeps clones booted. `false` turns iOS screens off. Absent: on only where the golden is made already. |
-| `pool` | Clones kept booted for the next screens. Absent: 1. Each takes 1–2 GB of memory. |
-| `idleMinutes` | End a person's screen after this many minutes without a tap or key. Absent: 30. |
-| `deviceType` | The simulator's device type by name, such as `iPhone 17 Pro`. Absent: the newest plain iPhone of the newest iOS runtime. A change takes effect when the golden is made again (delete `device/ios/golden.json`). |
+For one release, `ios` stays as a legacy value. `session_start` with `kind` `ios` answers with the way to
+`mac sim start`, and so does the hub, to an older node or app asking for an iOS screen (`screen_open`); nothing starts.
+Past iOS screens still list, and their recordings still play.
 
 ## Linux desktop screens {#desktop}
 

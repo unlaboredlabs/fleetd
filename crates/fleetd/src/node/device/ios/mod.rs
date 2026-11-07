@@ -1,7 +1,10 @@
-//! iOS sessions (W46): a person opens one (a screen of their own, a PR's build) on a Mac with Xcode; agents get a clone
-//! from the same pool through the agents' Mac instead (`mac sim`, node/mac_tool). The node lends a session a booted
-//! clone of its settled golden simulator from a warm pool (pool.rs), points its agent-device at the clone's udid
-//! (wrapper.rs) and records the screen with `simctl io recordVideo` (session.rs); `session_end` deletes the clone. The simulators live in a device set of the node's own (simctl.rs), apart from a person's in Xcode.
+//! iOS simulators (W46): the agents' Mac lends agents a clone from its warm pool (`mac sim`, node/mac_tool, through
+//! [`Simulators::lend`]). iOS screens are gone (D298): the node no longer says it hosts them and the node's and the
+//! hub's routes refuse a new one, so the session side here is legacy for one release, still run by the macOS CI job.
+//! The node lends a session a booted clone of its settled golden simulator from a warm pool (pool.rs), points its
+//! agent-device at the clone's udid (wrapper.rs) and records the screen with `simctl io recordVideo` (session.rs);
+//! `session_end` deletes the clone. The simulators live in a device set of the node's own (simctl.rs), apart from a
+//! person's in Xcode.
 //! Sessions share the browser sessions' tools, action log, upload and hub storage, as android sessions do; the
 //! [`Router`](super::Router) sends each call to the broker of its kind.
 //!

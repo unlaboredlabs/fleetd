@@ -1,24 +1,24 @@
-// What the New screen picker shows, as plain view data (D239): the four kinds of screen a person can open, the machines
+// What the New screen picker shows, as plain view data (D239): the kinds of screen a person can open, the machines
 // that can host each (from machine_roles: the sessions role, the kind ready there, and a node that hosts screens the hub
 // places), and each machine's slots in words, full ones offering to wait. A Navi's browser runs only on the Navi's own
-// machine, where it keeps its sign-ins. An iOS or Android screen can take an open PR's CI build, installed before the
-// person gets it. A kind no machine can host says why, from what the machines' nodes report, and what fixes it: an
+// machine, where it keeps its sign-ins. An Android screen can take an open PR's CI build, installed before the person
+// gets it. iOS screens are gone (D298): iOS simulators are the agents' Mac's (`mac sim`), and the agents' Mac is the one
+// Apple kind here. A kind no machine can host says why, from what the machines' nodes report, and what fixes it: an
 // admin's Turn on where it is only switched off, else who to ask. Pure, so it is unit-tested. The phone app runs it
 // too, on Hermes, which has no Array toSorted: each list here sorts its own fresh copy instead.
 import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
 
-export type ScreenKind = "browser" | "ios" | "android" | "linux_desktop" | "mac";
+export type ScreenKind = "browser" | "android" | "linux_desktop" | "mac";
 
 export const KINDS: readonly { readonly kind: ScreenKind; readonly label: string; readonly line: string }[] = [
   { kind: "browser", label: "Browser", line: "A fresh Chrome" },
-  { kind: "ios", label: "iOS", line: "An iPhone simulator" },
   { kind: "android", label: "Android", line: "An Android emulator" },
   { kind: "linux_desktop", label: "Linux desktop", line: "A desktop with a terminal" },
   { kind: "mac", label: "Agents’ Mac", line: "The Mac agents share, one at a time" },
 ];
 
 /** A kind's word in machine_roles' host checks. */
-const HOST: Readonly<Record<ScreenKind, string>> = { browser: "browser", ios: "ios", android: "android", linux_desktop: "desktop", mac: "mac" };
+const HOST: Readonly<Record<ScreenKind, string>> = { browser: "browser", android: "android", linux_desktop: "desktop", mac: "mac" };
 
 /** A machine as the picker lists it. */
 export interface HostChoice {
@@ -65,7 +65,6 @@ export interface OffReason {
 /** A kind as the sentences say it. */
 const PLURAL: Readonly<Record<ScreenKind, string>> = {
   browser: "Browser screens",
-  ios: "iOS simulators",
   android: "Android emulators",
   linux_desktop: "Linux desktops",
   mac: "Agents’ Mac screens",
@@ -77,7 +76,6 @@ const LOWER: Readonly<Record<ScreenKind, string>> = { ...PLURAL, browser: "brows
 /** What a kind needs, where no machine can run it at all. */
 const NEEDS: Readonly<Record<ScreenKind, string>> = {
   browser: "Browser screens need a machine that hosts screens.",
-  ios: "iOS simulators need a Mac with Xcode, and no Mac here hosts screens.",
   android: "Android emulators need a Linux x86_64 machine with KVM, and none here hosts screens.",
   linux_desktop: "Linux desktops need a Linux machine, and none here hosts screens.",
   mac: "The agents’ Mac screen needs a Mac set aside for agents, whose node runs as its standard agents user.",
@@ -107,7 +105,7 @@ const machineOff = (m: MachineRolesEntry, kind: ScreenKind): (OffReason & { read
     case "installing":
       return { rank: 2, why: `${m.name} is installing what ${LOWER[kind]} need.`, short: "Installing", fix: "none", machine };
     case "unsupported":
-      return { rank: 7, why: NEEDS[kind], short: kind === "ios" || kind === "mac" ? "Needs a Mac" : "No machine for it", fix: "add" };
+      return { rank: 7, why: NEEDS[kind], short: kind === "mac" ? "Needs a Mac" : "No machine for it", fix: "add" };
     default:
       // Missing, failed, or a node before reasons: its own words.
       return { rank: 3, why: `${m.name}: ${sentence(check.detail)}`, short: check.off === "failed" ? "Setup failed" : "Not set up", fix: "none", machine };
@@ -166,7 +164,6 @@ export const adminWho = (admins: readonly string[]): string => {
 /** The machine a kind no machine here can run needs. */
 const ADD: Readonly<Record<ScreenKind, string>> = {
   browser: "a machine",
-  ios: "a Mac",
   android: "a Linux machine",
   linux_desktop: "a Linux machine",
   mac: "a Mac set aside for agents",
@@ -224,14 +221,8 @@ export const slotLine = (h: HostChoice): string => {
 /** What the picker's button says for the machine picked. */
 export const openWord = (h: HostChoice | undefined): string => (h?.full === true ? "Wait for a slot" : "Open screen");
 
-/**
- * Whether a PR's build can go into a screen of `kind`: an Android emulator's. Not an iOS simulator's until the shared
- * Mac (D299): an app there runs as the Mac's own user, so the hub refuses it, and the picker says why ({@link NO_IOS_BUILD}).
- */
+/** Whether a PR's build can go into a screen of `kind`: an Android emulator's. */
 export const takesBuild = (kind: ScreenKind): boolean => kind === "android";
-
-/** What an iOS screen's picker says in place of the PR build. */
-export const NO_IOS_BUILD = "PR builds go into Android screens for now: an app in the Mac’s simulator would run as the Mac’s own user.";
 
 /** A PR the picker offers, its build to install. */
 export interface PrChoice {
@@ -268,8 +259,6 @@ export const openingLine = (stage: string | undefined, pr: number, machine: stri
 /** What the picker says while an open is slow (past its first second or so): what is starting. */
 export const startingLine = (kind: ScreenKind): string => {
   switch (kind) {
-    case "ios":
-      return "Starting the simulator…";
     case "android":
       return "Starting the emulator…";
     case "linux_desktop":

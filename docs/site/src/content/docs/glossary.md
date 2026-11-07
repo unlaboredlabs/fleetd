@@ -119,7 +119,7 @@ A Claude session that reviews a pull request. Reviewers don't read the PR descri
 
 ## Screen {#screen}
 
-A browser, Android emulator, iOS simulator or Linux desktop an agent opens with `session_start`. You can watch it live,
+A browser, Android emulator or Linux desktop an agent opens with `session_start`, or the agents' Mac's screen it borrows. You can watch it live,
 take it over and replay its recording. See [Screens](/docs/browser-sessions).
 
 ## Secret {#secret}

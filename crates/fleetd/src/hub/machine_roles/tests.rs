@@ -36,7 +36,7 @@ pub(super) fn app() -> ProjectRef {
     }
 }
 
-/// A hub with devbox (Linux: Chrome and docker) and mac1 (macOS: Chrome and iOS simulators) online, both on a node
+/// A hub with devbox (Linux: Chrome and docker) and mac1 (macOS: Chrome and its Mac screen) online, both on a node
 /// that hosts others' sessions, and project app on devbox.
 fn hub() -> (Arc<Hub>, tempfile::TempDir) {
     hub_at(ManualClock::at(NOW_MS))
@@ -78,7 +78,7 @@ pub(super) fn hub_at(
         "devbox",
         &[SessionHost::Browser, SessionHost::Desktop],
     );
-    report_hosts(&hub, "mac1", &[SessionHost::Browser, SessionHost::Ios]);
+    report_hosts(&hub, "mac1", &[SessionHost::Browser, SessionHost::Mac]);
     (hub, home)
 }
 
@@ -258,12 +258,27 @@ async fn a_session_runs_on_its_agents_machine_when_it_can_host_it() {
     assert!(end.here);
 }
 
+/// iOS screens are gone (D298): a node before them that still asks to place one gets the way to `mac sim`, and nothing
+/// starts anywhere.
+#[tokio::test]
+async fn an_ios_start_from_an_older_node_gets_the_agents_macs_way() {
+    let (hub, _home) = hub();
+    let _devbox = remote(&hub);
+    let (_link, mut seen) = mac1_node(&hub);
+    let refused = route(&hub, "th-1", SessionHost::Ios, start())
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code, fleetd_contracts::mcp::ErrorCode::Invalid);
+    assert_eq!(refused.message, fleetd_contracts::browser::IOS_GONE);
+    assert!(seen.try_recv().is_err(), "nothing starts on mac1");
+}
+
 #[tokio::test]
 async fn a_session_its_machine_cannot_host_goes_to_one_that_can_and_its_calls_follow() {
     let (hub, _home) = hub();
     let _devbox = remote(&hub);
     let (_link, mut seen) = mac1_node(&hub);
-    let routed = route(&hub, "th-1", SessionHost::Ios, start())
+    let routed = route(&hub, "th-1", SessionHost::Mac, start())
         .await
         .unwrap();
     assert!(!routed.here);
@@ -319,7 +334,7 @@ async fn a_session_its_machine_cannot_host_goes_to_one_that_can_and_its_calls_fo
     assert_eq!(mac1["sessionsLive"], 1);
 
     // A second start while it is open is refused; its end goes to mac1 and frees the slot.
-    let again = route(&hub, "th-1", SessionHost::Ios, start())
+    let again = route(&hub, "th-1", SessionHost::Mac, start())
         .await
         .unwrap_err();
     assert!(
@@ -330,7 +345,7 @@ async fn a_session_its_machine_cannot_host_goes_to_one_that_can_and_its_calls_fo
     let end = route(
         &hub,
         "th-1",
-        SessionHost::Ios,
+        SessionHost::Mac,
         json!({ "op": "session_end" }),
     )
     .await
@@ -344,14 +359,14 @@ async fn a_session_its_machine_cannot_host_goes_to_one_that_can_and_its_calls_fo
     assert_eq!(live, 0);
 }
 
-/// An agent's agent-device steps go to its own iOS screen's runner, as they came; another agent session's go nowhere,
+/// An agent's agent-device steps go to its own screen's runner, as they came; another agent session's go nowhere,
 /// whatever they say: the hub knows a screen by the session that started it.
 #[tokio::test]
 async fn an_agents_device_steps_reach_its_own_screen_and_no_one_elses() {
     let (hub, _home) = hub();
     let _devbox = remote(&hub);
     let (_link, mut seen) = mac1_node(&hub);
-    let routed = route(&hub, "th-1", SessionHost::Ios, start())
+    let routed = route(&hub, "th-1", SessionHost::Mac, start())
         .await
         .unwrap();
     assert_eq!(routed.runner, mid("mac1"));
@@ -389,7 +404,7 @@ pub(super) async fn heard(link: &mut mpsc::UnboundedReceiver<HubToNode>) -> HubT
         .unwrap()
 }
 
-/// A person watching an iOS screen mac1 hosts for an agent on devbox: the watch goes to mac1 (the session's row names
+/// A person watching a screen mac1 hosts for an agent on devbox: the watch goes to mac1 (the session's row names
 /// devbox), mac1's frames reach the watcher, and a takeover and its taps go to mac1 too.
 #[tokio::test]
 async fn a_hosted_screen_shows_live_from_its_runner_and_takes_a_persons_taps() {
@@ -398,7 +413,7 @@ async fn a_hosted_screen_shows_live_from_its_runner_and_takes_a_persons_taps() {
     let (hub, _home) = hub();
     let _devbox = remote(&hub);
     let (_link, mut seen) = mac1_node(&hub);
-    route(&hub, "th-1", SessionHost::Ios, start())
+    route(&hub, "th-1", SessionHost::Mac, start())
         .await
         .unwrap();
     let (key, _) = seen.recv().await.unwrap();
@@ -410,7 +425,7 @@ async fn a_hosted_screen_shows_live_from_its_runner_and_takes_a_persons_taps() {
         serde_json::from_value(json!({
             "id": "browser", "cwd": "/work/app", "threadId": key,
             "call": {
-                "op": "browser_session", "sessionId": SESSION, "kind": "ios", "threadId": key,
+                "op": "browser_session", "sessionId": SESSION, "kind": "mac", "threadId": key,
                 "purpose": "Check the signup form", "state": "live", "control": control,
                 "startedAt": crate::hub::store::iso_ms(NOW_MS as i64),
             },
@@ -772,7 +787,7 @@ async fn a_hosted_session_its_runner_ended_or_lost_no_longer_blocks_the_next() {
     let (hub, _home) = hub();
     let _devbox = remote(&hub);
     let (link, mut seen) = mac1_node(&hub);
-    route(&hub, "th-1", SessionHost::Ios, start())
+    route(&hub, "th-1", SessionHost::Mac, start())
         .await
         .unwrap();
     let (key, _) = seen.recv().await.unwrap();
@@ -801,7 +816,7 @@ async fn a_hosted_session_its_runner_ended_or_lost_no_longer_blocks_the_next() {
         .handle(caller, call)
         .await
         .unwrap();
-    let again = route(&hub, "th-1", SessionHost::Ios, start())
+    let again = route(&hub, "th-1", SessionHost::Mac, start())
         .await
         .unwrap();
     assert_eq!(
@@ -815,7 +830,7 @@ async fn a_hosted_session_its_runner_ended_or_lost_no_longer_blocks_the_next() {
     let end = route(
         &hub,
         "th-1",
-        SessionHost::Ios,
+        SessionHost::Mac,
         json!({ "op": "session_end" }),
     )
     .await
@@ -840,7 +855,7 @@ async fn the_runner_reports_a_hosted_session_in_the_agents_name_and_no_one_else_
     let (hub, _home) = hub();
     let _devbox = remote(&hub);
     let (_link, mut seen) = mac1_node(&hub);
-    route(&hub, "th-1", SessionHost::Ios, start())
+    route(&hub, "th-1", SessionHost::Mac, start())
         .await
         .unwrap();
     let (key, _) = seen.recv().await.unwrap();
@@ -883,13 +898,13 @@ async fn with_remote_placement_off_a_session_runs_only_on_its_agents_machine() {
     assert!(hub.db.with(super::remote_on).unwrap(), "on by default");
     hub.db.transaction(|c| super::set_remote(c, false)).unwrap();
     let (_link, _seen) = mac1_node(&hub);
-    // mac1 could host an iOS simulator, but sessions stay on their agent's machine: a plain refusal instead.
-    let ios = route(&hub, "th-1", SessionHost::Ios, start())
+    // mac1 could host its Mac screen, but sessions stay on their agent's machine: a plain refusal instead.
+    let refused = route(&hub, "th-1", SessionHost::Mac, start())
         .await
         .unwrap_err();
     assert_eq!(
-        ios.message,
-        "devbox can't host an iOS simulator session: as tested."
+        refused.message,
+        "devbox can't host the agents' Mac screen session: as tested."
     );
     // Full: refused, not sent elsewhere.
     tool(
@@ -961,7 +976,7 @@ async fn a_remote_start_with_no_answer_is_cancelled_and_holds_no_slot() {
             }
         });
     }
-    let refused = route(&hub, "th-1", SessionHost::Ios, start())
+    let refused = route(&hub, "th-1", SessionHost::Mac, start())
         .await
         .unwrap_err();
     assert!(
@@ -1072,15 +1087,15 @@ async fn an_agents_node_that_cant_seal_keeps_its_sessions_at_home() {
     let (hub, _home) = hub();
     let _devbox = remote(&hub);
     let (_link, _seen) = mac1_node(&hub);
-    // devbox's node is older: it can't seal its session's secrets to mac1, which could host an iOS simulator.
+    // devbox's node is older: it can't seal its session's secrets to mac1, which could host its Mac screen.
     hub.link
         .set_capabilities(&mid("devbox"), &[CAP_SESSION_HOST]);
-    let refused = route(&hub, "th-1", SessionHost::Ios, start())
+    let refused = route(&hub, "th-1", SessionHost::Mac, start())
         .await
         .unwrap_err();
     assert_eq!(
         refused.message,
-        "devbox can't host an iOS simulator session: as tested."
+        "devbox can't host the agents' Mac screen session: as tested."
     );
 }
 
@@ -1100,7 +1115,7 @@ async fn a_sealed_start_goes_only_to_the_runner_it_was_sealed_for_while_it_can_t
     let wrong = route_once(
         &hub,
         "th-1",
-        SessionHost::Ios,
+        SessionHost::Mac,
         start(),
         Some(json!({ "runner": "devbox", "dataB64": SEALED })),
     )
@@ -1108,13 +1123,13 @@ async fn a_sealed_start_goes_only_to_the_runner_it_was_sealed_for_while_it_can_t
     .unwrap_err();
     assert_eq!(wrong.message, "devbox can't take this session any more.");
     // mac1 fills up between the two steps: the second is refused, and nothing started.
-    route(&hub, "th-2", SessionHost::Ios, start())
+    route(&hub, "th-2", SessionHost::Mac, start())
         .await
         .unwrap();
     let late = route_once(
         &hub,
         "th-1",
-        SessionHost::Ios,
+        SessionHost::Mac,
         start(),
         Some(json!({ "runner": "mac1", "dataB64": SEALED })),
     )

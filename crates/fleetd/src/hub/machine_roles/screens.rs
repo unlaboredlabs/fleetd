@@ -347,6 +347,14 @@ async fn screen_open(
     if hub.store.project_get(&r)?.is_none() {
         return Err(crate::hub::api::unknown_project(&r));
     }
+    // iOS screens are gone (D298): an app before them still offers one.
+    if input.kind == SessionKind::Ios {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            "iOS screens are gone: iOS simulators are the agents' Mac's now, where agents start their own with `mac sim`.",
+        )
+        .with_fix("Open the Agents' Mac screen to watch it, or an Android screen for a PR's build."));
+    }
     let runner_id = input.machine_id;
     require(&caller, Role::Read, Some(&runner_id))?;
     let navi = is_navi(&hub, &r)?;
@@ -851,21 +859,12 @@ async fn find_build(
     kind: SessionKind,
     pr: &ScreenPr,
 ) -> Result<Found, ToolError> {
-    if !matches!(kind, SessionKind::Ios | SessionKind::Android) {
+    if kind != SessionKind::Android {
         return Err(ToolError::new(
             ErrorCode::Invalid,
-            "A PR's build goes into an iOS or Android screen.",
+            "A PR's build goes into an Android screen.",
         )
-        .with_fix("Pick iOS or Android, or leave the PR out."));
-    }
-    // D299 mac.interim-lockdown: an app installed in a simulator runs as the Mac's own user, outside the iOS sandbox.
-    if kind == SessionKind::Ios {
-        return Err(ToolError::new(
-            ErrorCode::Invalid,
-            "A PR's build doesn't go into an iOS screen for now: an app installed in the Mac's simulator runs as the \
-             Mac's own user, outside the iOS sandbox, so fleetd installs none until the shared Mac.",
-        )
-        .with_fix("Open the iOS screen without a PR, or put the build into an Android screen."));
+        .with_fix("Pick Android, or leave the PR out."));
     }
     let repos = project_repos(hub, r);
     if !repos

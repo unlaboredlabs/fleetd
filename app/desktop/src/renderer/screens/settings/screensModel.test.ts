@@ -16,7 +16,7 @@ const devbox: MachineRolesEntry = {
   hosts: [
     { host: "browser", ready: true, detail: "Chrome at /usr/bin/google-chrome", on: true, idleMinutes: 45 },
     { host: "android", ready: false, detail: "Android screens are off in node.json", off: "off", on: false, idleMinutes: 45 },
-    { host: "ios", ready: false, detail: "iOS simulators need macOS", off: "unsupported", on: false },
+    { host: "mac", ready: false, detail: "the Mac screen is a Mac's own", off: "unsupported", on: false },
     { host: "desktop", ready: false, detail: "turned on: it starts when this machine's node restarts", off: "restarting", on: true },
   ],
 };
@@ -36,7 +36,7 @@ describe("a kind's switch", () => {
 
   it("can't move where the machine can't run it, is offline, or its node is too old", () => {
     expect(lockedWhy(devbox, check("android"))).toBeNull();
-    expect(lockedWhy(devbox, check("ios"))).toBe("iOS simulators need macOS");
+    expect(lockedWhy(devbox, check("mac"))).toBe("the Mac screen is a Mac's own");
     expect(lockedWhy({ ...devbox, online: false }, check("android"))).toBe("Offline");
     expect(lockedWhy({ ...devbox, screenSettings: false }, check("android"))).toContain("too old");
     // Its node between two links, as after an update: restarting, never too old.
