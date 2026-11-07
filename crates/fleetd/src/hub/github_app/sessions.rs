@@ -18,7 +18,8 @@
 //! [`UNRENEWED_TOKEN`], until a sweep renews it; the agents' brief says never to fall back to the machine's login.
 //! Only where the App doesn't reach (no App, or a repository it isn't installed on) do agents use the machine's own
 //! login, as before the App.
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
@@ -51,6 +52,37 @@ pub const BLOCKED_TOKEN: &str = "fleetd-github-not-connected-connect-it-in-setti
 /// What an order's agents hold as `GH_TOKEN` once theirs ended before the hub could renew it: refused like
 /// [`BLOCKED_TOKEN`], until a sweep renews it.
 pub const UNRENEWED_TOKEN: &str = "fleetd-github-token-not-renewed-ask-your-lead";
+
+/// The last problem logged for each order's token at a checkout, by what failed (its log line's words): the sweep
+/// tries again every 5 minutes, and a node offline for a day would otherwise say the same line hundreds of times.
+pub(super) type Warned = Mutex<HashMap<(ProjectRef, WorkstreamId, &'static str), String>>;
+
+/// Logs that `what` failed for the order's token at `checkout`, once per change of why: the same `e` as last time
+/// logs nothing. `None` is a try that worked, so the next failure is logged again.
+fn warn_once(
+    hub: &Hub,
+    checkout: &ProjectRef,
+    order: &WorkstreamId,
+    what: &'static str,
+    e: Option<&str>,
+) {
+    let key = (checkout.clone(), order.clone(), what);
+    let mut warned = hub
+        .github_app
+        .warned
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    match e {
+        Some(e) if warned.get(&key).map(String::as_str) != Some(e) => {
+            tracing::warn!(order = order.as_str(), "github: {what}: {e}");
+            warned.insert(key, e.to_owned());
+        }
+        Some(_) => {}
+        None => {
+            warned.remove(&key);
+        }
+    }
+}
 
 /// Why an order's agents hold a placeholder in place of their token.
 enum Block {
@@ -114,6 +146,11 @@ pub(super) fn keep(hub: &Hub, kept: &Kept) -> Result<(), String> {
 }
 
 fn forget(hub: &Hub, checkout: &ProjectRef, order: &WorkstreamId) {
+    hub.github_app
+        .warned
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|(c, o, _), _| !(c == checkout && o == order));
     let gone = hub.db.with(|c| {
         c.execute(
             "DELETE FROM github_order_tokens
@@ -458,10 +495,12 @@ async fn withdraw_at(hub: &Hub, checkout: &ProjectRef, order: &WorkstreamId) {
             }
             forget(hub, checkout, order);
         }
-        Err(e) => tracing::warn!(
-            order = order.as_str(),
-            machine = %checkout.machine_id,
-            "github: the order's token not withdrawn yet: {e}"
+        Err(e) => warn_once(
+            hub,
+            checkout,
+            order,
+            "the order's token not withdrawn yet",
+            Some(&e.to_string()),
         ),
     }
 }
@@ -470,6 +509,7 @@ async fn withdraw_at(hub: &Hub, checkout: &ProjectRef, order: &WorkstreamId) {
 /// ([`BLOCKED_TOKEN`], [`UNRENEWED_TOKEN`]), never the machine's login, and the order's lead is told why and what fixes
 /// it. A node offline leaves the record as it was, and the next sweep tries again.
 async fn block_at(hub: &Hub, k: &Kept, why: Block) {
+    const TAKEN_BACK: &str = "the order's token not taken back yet";
     if k.blocked {
         return;
     }
@@ -485,12 +525,10 @@ async fn block_at(hub: &Hub, k: &Kept, why: Block) {
     )
     .await
     {
-        tracing::warn!(
-            order = k.order.as_str(),
-            "github: the order's token not taken back yet: {e}"
-        );
+        warn_once(hub, &k.checkout, &k.order, TAKEN_BACK, Some(&e));
         return;
     }
+    warn_once(hub, &k.checkout, &k.order, TAKEN_BACK, None);
     let blocked = Kept {
         blocked: true,
         ..k.clone()
@@ -591,9 +629,27 @@ async fn put(
     token: &Zeroizing<String>,
 ) -> Result<(), String> {
     let m = &r.machine_id;
-    if !hub.link.node_can(m, CAP_ORDER_ENV) {
+    // Too old only when its node's hello says so: a node not linked has said nothing, and a machine the hub no longer
+    // lists may be back under another id.
+    if hub
+        .store
+        .machine_get(m)
+        .map_err(|e| e.to_string())?
+        .is_none()
+    {
+        return Err(format!(
+            "{m} isn't one of the hub's machines now (removed, or enrolled again under another id): the token waits \
+             until it's back"
+        ));
+    }
+    if hub.link.node_lacks(m, CAP_ORDER_ENV) {
         return Err(format!(
             "{m}'s node is too old to hand agents a GitHub token: update fleetd there"
+        ));
+    }
+    if !hub.link.node_can(m, CAP_ORDER_ENV) {
+        return Err(format!(
+            "{m}'s node is offline: it gets the token at the first sweep after it links again"
         ));
     }
     let frame: SecretDeliver = serde_json::from_value(serde_json::json!({
@@ -678,17 +734,16 @@ pub async fn renew(hub: &Hub) {
         if !kept.blocked && kept.expires_ms - now >= kept.margin_ms {
             continue;
         }
+        const RENEWED: &str = "the order's token not renewed";
         let on = Some(&kept.checkout);
-        if let Err(e) =
-            deliver_on(hub, &kept.r, &kept.order, kept.repo_id.as_ref(), false, on).await
-        {
-            tracing::warn!(
-                order = kept.order.as_str(),
-                "github: the order's token not renewed: {e}"
-            );
-            // Ended unrenewed: the agents are told so, never left to fall back to the machine's login.
-            if kept.expires_ms <= now {
-                block_at(hub, &kept, Block::NotRenewed(e)).await;
+        match deliver_on(hub, &kept.r, &kept.order, kept.repo_id.as_ref(), false, on).await {
+            Ok(()) => warn_once(hub, &kept.checkout, &kept.order, RENEWED, None),
+            Err(e) => {
+                warn_once(hub, &kept.checkout, &kept.order, RENEWED, Some(&e));
+                // Ended unrenewed: the agents are told so, never left to fall back to the machine's login.
+                if kept.expires_ms <= now {
+                    block_at(hub, &kept, Block::NotRenewed(e)).await;
+                }
             }
         }
     }
