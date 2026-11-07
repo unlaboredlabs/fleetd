@@ -188,7 +188,10 @@ fn the_hubs_version_picks_its_build_and_says_when_edge_moved_on() {
             "{out}"
         );
         if says {
-            assert!(out.contains("press Update in the app on your main machine"), "{out}");
+            assert!(
+                out.contains("press Update in the app on your main machine"),
+                "{out}"
+            );
             assert!(!out.contains("mismatch"), "{out}");
         }
     }

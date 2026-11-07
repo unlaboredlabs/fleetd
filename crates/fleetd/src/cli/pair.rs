@@ -501,7 +501,11 @@ pub fn worker_join(
             machine.as_str(),
             git_identity.as_deref(),
         ) + if rejoin { " --rejoin" } else { "" }
-            + &if mac { mac_flags(crate::version()) } else { String::new() },
+            + &if mac {
+                mac_flags(crate::version())
+            } else {
+                String::new()
+            },
         hub: urls[0].clone(),
         code: token.token,
         expires_at: token.expires_at,

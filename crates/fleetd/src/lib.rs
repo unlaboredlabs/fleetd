@@ -171,12 +171,24 @@ mod tests {
     #[test]
     fn a_protocol_difference_names_the_side_out_of_date_in_words() {
         let hub_behind = protocol_behind(1, 2);
-        assert!(hub_behind.starts_with("the hub runs an older fleetd"), "{hub_behind}");
-        assert!(hub_behind.contains(". Fix: update the hub (Updates in the app"), "{hub_behind}");
+        assert!(
+            hub_behind.starts_with("the hub runs an older fleetd"),
+            "{hub_behind}"
+        );
+        assert!(
+            hub_behind.contains(". Fix: update the hub (Updates in the app"),
+            "{hub_behind}"
+        );
         let node_behind = protocol_behind(2, 1);
-        assert!(node_behind.starts_with("this machine runs an older fleetd"), "{node_behind}");
+        assert!(
+            node_behind.starts_with("this machine runs an older fleetd"),
+            "{node_behind}"
+        );
         for said in [hub_behind, node_behind] {
-            assert!(!said.contains("protocol") && !said.contains("mismatch") && !said.contains('1'), "{said}");
+            assert!(
+                !said.contains("protocol") && !said.contains("mismatch") && !said.contains('1'),
+                "{said}"
+            );
         }
     }
 
