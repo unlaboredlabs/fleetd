@@ -1321,6 +1321,11 @@ fn a_follower_backs_off_from_a_second_to_half_a_minute() {
     );
     assert_eq!(retry_delay(0, 0.8), Duration::from_millis(800));
     assert_eq!(retry_delay(40, 1.2), Duration::from_secs(36));
+    // Refused at once, or no connection: the count grows. Cut off mid-wait: the other hub was up, start again.
+    use super::client::failed_reads;
+    assert_eq!(failed_reads(4, Duration::from_millis(5)), 5);
+    assert_eq!(failed_reads(4, Duration::from_secs(5)), 5);
+    assert_eq!(failed_reads(4, Duration::from_secs(35)), 1);
 }
 
 #[tokio::test]
