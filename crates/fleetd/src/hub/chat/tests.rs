@@ -1013,7 +1013,7 @@ async fn the_share_sheet_and_shortcuts_say_where_a_message_came_from() {
             None,
             "",
             "Sam",
-            "",
+            "Tue 3 Nov 2026, 18:05 Europe/Berlin",
         )
     };
     let shortcut = tools
@@ -1030,7 +1030,9 @@ async fn the_share_sheet_and_shortcuts_say_where_a_message_came_from() {
     assert!(
         line.starts_with("Sam, via Shortcuts on their phone (")
             && line.contains("content the shortcut pulled from elsewhere")
-            && line.ends_with("writes in your chat:\n\nI'm home"),
+            && line.ends_with(
+                "writes in your chat (Tue 3 Nov 2026, 18:05 Europe/Berlin):\n\nI'm home"
+            ),
         "{line}"
     );
     let shared = tools
