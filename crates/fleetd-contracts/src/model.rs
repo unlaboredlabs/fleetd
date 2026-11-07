@@ -125,20 +125,24 @@ pub struct ProjectSummary {
     /// The git repos it holds, from the hub; none for a plain directory, from a node, and from an older hub.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub repos: Vec<crate::repos::ProjectRepo>,
-    /// What the project is, from the hub: `assistant` for a Navi. Absent for a project of code, from a node, and
-    /// from an older hub.
+    /// Deprecated: `assistant` for an Only me project (`only_me`), sent for one release so older apps still show it
+    /// as a Navi. New apps read `only_me`. Absent otherwise, from a node, and from an older hub.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<ProjectKind>,
-    /// A Navi's: the key that created it, from the hub. Absent for other projects, and for a Navi made before it was
-    /// recorded.
+    /// Only me (D310), from the hub: only its `owner` sees and uses it. On for every former Navi. Absent: off, and
+    /// from a node.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub only_me: bool,
+    /// The key that created it, from the hub. Absent for a project the hub didn't make, and for a Navi made before it
+    /// was recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_by: Option<ProjectCreator>,
-    /// A Navi's: the person it belongs to (D215), from the hub, which shows it and lets it be used by them alone.
-    /// Absent for other projects, on a hub without people, and from an older hub.
+    /// The person it belongs to (D215), from the hub; an Only me project is theirs alone. Absent for a project with
+    /// no owner, on a hub without people, and from an older hub.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<crate::people::PersonId>,
-    /// A Navi's: when it was archived. An archived Navi keeps its chat, memory and folder, and its lead doesn't
-    /// start until it is brought back (`navi_archive` with `archived: false`).
+    /// When it was archived. An archived project keeps its chat, memory and folder, and its lead doesn't start until
+    /// it is brought back (`navi_archive` with `archived: false`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archived_at: Option<Timestamp>,
     /// Its picture's id, from the hub, once a person gave it one (`project_avatar_set`): it changes with each new

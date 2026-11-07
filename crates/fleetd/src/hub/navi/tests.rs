@@ -356,6 +356,7 @@ async fn a_plain_folder_with_no_git_is_added_as_a_project_with_no_repo() {
         last_activity_at: AT.into(),
         repos: vec![],
         kind: None,
+        only_me: false,
         created_by: None,
         owner: None,
         archived_at: None,

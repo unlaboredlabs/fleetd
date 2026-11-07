@@ -118,6 +118,7 @@ pub(crate) fn hub(runner_usable: bool) -> Hub {
                 last_activity_at: Timestamp::from(iso_ms(T0_MS as i64)),
                 repos: Vec::new(),
                 kind: None,
+                only_me: false,
                 created_by: None,
                 owner: None,
                 archived_at: None,

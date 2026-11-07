@@ -1,6 +1,6 @@
 //! A Navi's purchases (D265 navi.purchases): the card it pays with, the person's purchase log, and its node's calls.
 //! - `navi_card_set`, from the owner's own device: the Credit Card item in their 1Password the Navi pays with, kept as
-//!   its `op://vault/item` reference only (the `assistants` table's `card_ref`).
+//!   its `op://vault/item` reference only (its project's `project_settings.card_ref`).
 //! - `navi_purchases`: the card and every purchase the Navi asked for, newest first, with what the person said.
 //! - `purchase_open`, `purchase_claim`, `purchase_filled`: its node's calls for its lead's `purchase_request` and
 //!   `purchase_fill` (node/browser/cards.rs). Only a Navi's lead buys; the approval itself is approvals/purchases.rs.

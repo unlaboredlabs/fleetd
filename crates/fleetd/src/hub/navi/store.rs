@@ -1,5 +1,5 @@
-//! The `assistants` table: one row per Navi, the project it is, the key that made it, its owner and when it was
-//! archived.
+//! What the hub keeps of a Navi, in its project's own `project_settings` columns (D310): only_me (the Navi mark),
+//! the key that made it, its owner, when it was archived and the card it pays with.
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::model::ProjectCreator;
 use fleetd_contracts::people::PersonId;
@@ -18,18 +18,18 @@ pub struct Navi {
 
 pub fn of(db: &Connection, r: &ProjectRef) -> rusqlite::Result<Option<Navi>> {
     db.prepare_cached(
-        "SELECT created_by_key, created_by_name, created_ms, archived_ms, owner_person FROM assistants
-         WHERE machine_id = ? AND project_id = ?",
+        "SELECT created_by_key, created_by_name, created_ms, archived_ms, owner_person FROM project_settings
+         WHERE machine_id = ? AND project_id = ? AND only_me = 1",
     )?
     .query_row(
         params![r.machine_id.as_str(), r.project_id.as_str()],
         |row| {
             Ok(Navi {
                 created_by: ProjectCreator {
-                    key_id: row.get(0)?,
-                    name: row.get(1)?,
+                    key_id: row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                    name: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
                 },
-                created_ms: row.get(2)?,
+                created_ms: row.get::<_, Option<i64>>(2)?.unwrap_or_default(),
                 archived_at: row.get::<_, Option<i64>>(3)?.map(|ms| iso_ms(ms).into()),
                 owner: row.get::<_, Option<String>>(4)?.map(PersonId::unchecked),
             })
@@ -46,8 +46,11 @@ pub fn put(
     at_ms: i64,
 ) -> rusqlite::Result<()> {
     db.prepare_cached(
-        "INSERT INTO assistants (machine_id, project_id, created_ms, created_by_key, created_by_name, owner_person)
-         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (machine_id, project_id) DO NOTHING",
+        "INSERT INTO project_settings (machine_id, project_id, only_me, created_ms, created_by_key, created_by_name,
+           owner_person) VALUES (?, ?, 1, ?, ?, ?, ?)
+         ON CONFLICT (machine_id, project_id) DO UPDATE SET only_me = 1, created_ms = excluded.created_ms,
+           created_by_key = excluded.created_by_key, created_by_name = excluded.created_by_name,
+           owner_person = excluded.owner_person WHERE only_me = 0",
     )?
     .execute(params![
         r.machine_id.as_str(),
@@ -60,8 +63,9 @@ pub fn put(
     Ok(())
 }
 
+/// Unmarks a Navi whose folder couldn't be made: its project has nothing else yet.
 pub fn remove(db: &Connection, r: &ProjectRef) -> rusqlite::Result<()> {
-    db.prepare_cached("DELETE FROM assistants WHERE machine_id = ? AND project_id = ?")?
+    db.prepare_cached("DELETE FROM project_settings WHERE machine_id = ? AND project_id = ?")?
         .execute(params![r.machine_id.as_str(), r.project_id.as_str()])?;
     Ok(())
 }
@@ -69,7 +73,7 @@ pub fn remove(db: &Connection, r: &ProjectRef) -> rusqlite::Result<()> {
 /// `None` brings it back.
 pub fn set_archived(db: &Connection, r: &ProjectRef, at_ms: Option<i64>) -> rusqlite::Result<()> {
     db.prepare_cached(
-        "UPDATE assistants SET archived_ms = ? WHERE machine_id = ? AND project_id = ?",
+        "UPDATE project_settings SET archived_ms = ? WHERE machine_id = ? AND project_id = ?",
     )?
     .execute(params![at_ms, r.machine_id.as_str(), r.project_id.as_str()])?;
     Ok(())
@@ -78,7 +82,7 @@ pub fn set_archived(db: &Connection, r: &ProjectRef, at_ms: Option<i64>) -> rusq
 /// Every Navi, oldest first.
 pub fn all(db: &Connection) -> rusqlite::Result<Vec<ProjectRef>> {
     let mut stmt = db.prepare_cached(
-        "SELECT machine_id, project_id FROM assistants ORDER BY created_ms, rowid",
+        "SELECT machine_id, project_id FROM project_settings WHERE only_me = 1 ORDER BY created_ms, rowid",
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(ProjectRef {
@@ -92,8 +96,8 @@ pub fn all(db: &Connection) -> rusqlite::Result<Vec<ProjectRef>> {
 /// The Navis with an owner other than `person` (every owned one for `None`): those a caller may not see or use.
 pub fn others(db: &Connection, person: Option<&PersonId>) -> rusqlite::Result<Vec<ProjectRef>> {
     let mut stmt = db.prepare_cached(
-        "SELECT machine_id, project_id FROM assistants
-         WHERE owner_person IS NOT NULL AND (?1 IS NULL OR owner_person != ?1)",
+        "SELECT machine_id, project_id FROM project_settings
+         WHERE only_me = 1 AND owner_person IS NOT NULL AND (?1 IS NULL OR owner_person != ?1)",
     )?;
     let rows = stmt.query_map([person.map(PersonId::as_str)], |row| {
         Ok(ProjectRef {
@@ -106,8 +110,10 @@ pub fn others(db: &Connection, person: Option<&PersonId>) -> rusqlite::Result<Ve
 
 /// Gives every Navi with no owner to `person`: a hub's first owner takes the Navis from before people.
 pub fn adopt(db: &Connection, person: &PersonId) -> rusqlite::Result<()> {
-    db.prepare_cached("UPDATE assistants SET owner_person = ? WHERE owner_person IS NULL")?
-        .execute([person.as_str()])?;
+    db.prepare_cached(
+        "UPDATE project_settings SET owner_person = ? WHERE only_me = 1 AND owner_person IS NULL",
+    )?
+    .execute([person.as_str()])?;
     Ok(())
 }
 
@@ -171,7 +177,9 @@ pub fn sites(
 /// The card the Navi pays with, as its `op://vault/item` reference.
 pub fn card(db: &Connection, r: &ProjectRef) -> rusqlite::Result<Option<String>> {
     Ok(db
-        .prepare_cached("SELECT card_ref FROM assistants WHERE machine_id = ? AND project_id = ?")?
+        .prepare_cached(
+            "SELECT card_ref FROM project_settings WHERE machine_id = ? AND project_id = ?",
+        )?
         .query_row(
             params![r.machine_id.as_str(), r.project_id.as_str()],
             |row| row.get::<_, Option<String>>(0),
@@ -183,7 +191,7 @@ pub fn card(db: &Connection, r: &ProjectRef) -> rusqlite::Result<Option<String>>
 /// `None`: the Navi has no card.
 pub fn set_card(db: &Connection, r: &ProjectRef, card: Option<&str>) -> rusqlite::Result<()> {
     db.prepare_cached(
-        "UPDATE assistants SET card_ref = ? WHERE machine_id = ? AND project_id = ?",
+        "UPDATE project_settings SET card_ref = ? WHERE machine_id = ? AND project_id = ?",
     )?
     .execute(params![card, r.machine_id.as_str(), r.project_id.as_str()])?;
     Ok(())

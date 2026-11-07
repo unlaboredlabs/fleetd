@@ -415,6 +415,130 @@ fn the_migration_gives_each_navi_its_makers_person_else_the_hubs_owner() {
     assert!(owners(&conn).iter().all(|(_, owner)| owner.is_none()));
 }
 
+/// D310: each Navi becomes an Only me project, keeping its owner, maker, archive and card, and its other settings;
+/// each owner's sidebar puts their own Navis first (the ones the order named in its order, then the rest oldest first),
+/// and nothing keyed by the project moves.
+#[test]
+fn the_migration_makes_each_navi_an_only_me_project_first_in_its_owners_sidebar() {
+    use crate::hub::store::migrations::MIGRATIONS;
+    let at = MIGRATIONS
+        .iter()
+        .position(|m| m.name.ends_with("_navis_are_projects"))
+        .expect("the Navis-are-projects migration");
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    for m in &MIGRATIONS[..at] {
+        conn.execute_batch(m.sql).unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO assistants (machine_id, project_id, created_ms, created_by_key, created_by_name, archived_ms,
+             owner_person, card_ref) VALUES
+           ('devbox', 'home', 1, 'k_ann', 'desk', NULL, 'p_aaaaaaaa', 'op://Personal/Visa'),
+           ('devbox', 'mail', 2, 'k_ann', 'desk', 7, 'p_aaaaaaaa', NULL),
+           ('devbox', 'bobs', 3, 'k_bob', 'laptop', NULL, 'p_bbbbbbbb', NULL),
+           ('devbox', 'cli', 4, 'k_cli', 'fleetd-cli', NULL, NULL, NULL);
+         INSERT INTO project_settings (machine_id, project_id, memory_refresh) VALUES ('devbox', 'mail', 0),
+           ('devbox', 'code', 1);
+         INSERT INTO navi_sites (machine_id, project_id, site, allowed_ms, allowed_by) VALUES
+           ('devbox', 'home', 'example.com', 1, 'Ann');
+         INSERT INTO sidebar_orders (person_id, refs) VALUES
+           ('p_aaaaaaaa', '[{"machineId":"devbox","projectId":"code"},{"machineId":"devbox","projectId":"mail"},
+             {"machineId":"devbox","projectId":"bobs"}]'),
+           ('p_cccccccc', '[{"machineId":"devbox","projectId":"code"}]');"#,
+    )
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[at].sql).unwrap();
+
+    type Row = (
+        String,
+        bool,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+        Option<String>,
+        bool,
+    );
+    let rows: Vec<Row> = conn
+        .prepare(
+            "SELECT project_id, only_me, owner_person, archived_ms, card_ref, created_by_key, memory_refresh
+             FROM project_settings ORDER BY project_id",
+        )
+        .unwrap()
+        .query_map([], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    let some = |s: &str| Some(s.to_owned());
+    assert_eq!(
+        rows,
+        [
+            (
+                "bobs".into(),
+                true,
+                some("p_bbbbbbbb"),
+                None,
+                None,
+                some("k_bob"),
+                true
+            ),
+            ("cli".into(), true, None, None, None, some("k_cli"), true),
+            ("code".into(), false, None, None, None, None, true),
+            (
+                "home".into(),
+                true,
+                some("p_aaaaaaaa"),
+                None,
+                some("op://Personal/Visa"),
+                some("k_ann"),
+                true
+            ),
+            (
+                "mail".into(),
+                true,
+                some("p_aaaaaaaa"),
+                Some(7),
+                None,
+                some("k_ann"),
+                false
+            ),
+        ]
+    );
+    let order = |person: &str| -> Vec<String> {
+        let refs: String = conn
+            .query_row(
+                "SELECT refs FROM sidebar_orders WHERE person_id = ?",
+                [person],
+                |r| r.get(0),
+            )
+            .unwrap();
+        serde_json::from_str::<Vec<fleetd_contracts::ids::ProjectRef>>(&refs)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.project_id.to_string())
+            .collect()
+    };
+    assert_eq!(order("p_aaaaaaaa"), ["mail", "home", "code", "bobs"]);
+    assert_eq!(order("p_bbbbbbbb"), ["bobs"]);
+    assert_eq!(order("p_cccccccc"), ["code"]);
+    let kept: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM navi_sites WHERE project_id = 'home'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(kept, 1);
+    let gone: bool = conn
+        .query_row(
+            "SELECT NOT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'assistants')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(gone);
+}
+
 #[tokio::test]
 async fn only_its_owner_watches_takes_over_or_replays_a_navis_screen() {
     use fleetd_contracts::browser::{BrowserInput, BrowserSession, BrowserSessionId};

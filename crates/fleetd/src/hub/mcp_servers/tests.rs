@@ -633,7 +633,7 @@ fn integration(key: Value) -> Value {
         "integration": {} })
 }
 
-/// Marks p1 a Navi, as creating one from the app does: a row in `assistants`, while the node's report of the project
+/// Marks p1 a Navi, as creating one from the app does: its project marked Only me, while the node's report of the project
 /// keeps no kind.
 fn make_navi(hub: &Hub) {
     hub.db
@@ -689,7 +689,7 @@ async fn an_integration_connects_to_a_navi_only() {
         .unwrap();
 }
 
-/// The person's case: a Navi made in the app (so only `assistants` says it is one), and a URL server with its
+/// The person's case: a Navi made in the app (so only the hub says it is one), and a URL server with its
 /// Authorization key, saved from the Navi's Integrations as the app sends it. It once failed as "not a Navi".
 #[tokio::test]
 async fn a_navi_made_in_the_app_takes_a_url_server_with_its_key() {

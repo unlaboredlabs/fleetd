@@ -122,8 +122,8 @@ pub fn guard(hub: &Hub, caller: &Caller, tool: &str, input: &Value) -> Result<()
 fn owner_removed(db: &HubDb, r: &ProjectRef) -> Result<bool, StoreError> {
     db.with(|c| {
         Ok(c.prepare_cached(
-            "SELECT 1 FROM assistants a JOIN people p ON p.person_id = a.owner_person
-             WHERE a.machine_id = ? AND a.project_id = ? AND p.removed_ms IS NOT NULL",
+            "SELECT 1 FROM project_settings s JOIN people p ON p.person_id = s.owner_person
+             WHERE s.machine_id = ? AND s.project_id = ? AND s.only_me = 1 AND p.removed_ms IS NOT NULL",
         )?
         .query_row(
             params![r.machine_id.as_str(), r.project_id.as_str()],

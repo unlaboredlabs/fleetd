@@ -1999,7 +1999,7 @@
       "properties": {
         "archivedAt": {
           "$ref": "#/$defs/Timestamp",
-          "description": "A Navi's: when it was archived. An archived Navi keeps its chat, memory and folder, and its lead doesn't\nstart until it is brought back (`navi_archive` with `archived: false`)."
+          "description": "When it was archived. An archived project keeps its chat, memory and folder, and its lead doesn't start until\nit is brought back (`navi_archive` with `archived: false`)."
         },
         "avatar": {
           "description": "Its picture's id, from the hub, once a person gave it one (`project_avatar_set`): it changes with each new\npicture, whose bytes come from `project_avatar_get`. Absent: its letters show.",
@@ -2007,7 +2007,7 @@
         },
         "createdBy": {
           "$ref": "#/$defs/ProjectCreator",
-          "description": "A Navi's: the key that created it, from the hub. Absent for other projects, and for a Navi made before it was\nrecorded."
+          "description": "The key that created it, from the hub. Absent for a project the hub didn't make, and for a Navi made before it\nwas recorded."
         },
         "icon": {
           "$ref": "#/$defs/ProjectIcon",
@@ -2015,7 +2015,7 @@
         },
         "kind": {
           "$ref": "#/$defs/ProjectKind",
-          "description": "What the project is, from the hub: `assistant` for a Navi. Absent for a project of code, from a node, and\nfrom an older hub."
+          "description": "Deprecated: `assistant` for an Only me project (`only_me`), sent for one release so older apps still show it\nas a Navi. New apps read `only_me`. Absent otherwise, from a node, and from an older hub."
         },
         "lastActivityAt": {
           "$ref": "#/$defs/Timestamp"
@@ -2023,9 +2023,13 @@
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
+        "onlyMe": {
+          "description": "Only me (D310), from the hub: only its `owner` sees and uses it. On for every former Navi. Absent: off, and\nfrom a node.",
+          "type": "boolean"
+        },
         "owner": {
           "$ref": "#/$defs/PersonId",
-          "description": "A Navi's: the person it belongs to (D215), from the hub, which shows it and lets it be used by them alone.\nAbsent for other projects, on a hub without people, and from an older hub."
+          "description": "The person it belongs to (D215), from the hub; an Only me project is theirs alone. Absent for a project with\nno owner, on a hub without people, and from an older hub."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"

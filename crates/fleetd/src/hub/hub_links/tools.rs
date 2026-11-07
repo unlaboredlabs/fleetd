@@ -12,7 +12,6 @@ use fleetd_contracts::mcp::{
     HubLinksGetInput, HubLinksGetOutput,
 };
 use fleetd_contracts::people::PersonRef;
-use rusqlite::OptionalExtension;
 
 use super::{box_key, check_url, client, issued, issued_get, keep, kept, kept_get, mint};
 use crate::hub::api::{
@@ -43,7 +42,8 @@ fn person_only(caller: &Caller) -> Result<(), ToolError> {
 /// checks the owner itself. A Navi with no owner (a hub without people): the device that made it, or an admin.
 fn may_manage(hub: &Hub, caller: &Caller, navi: &ProjectRef) -> Result<(), ToolError> {
     require(caller, Role::Operate, Some(&navi.machine_id))?;
-    if crate::hub::navi::of(&hub.db, navi)?.is_some_and(|n| n.owner.is_some()) {
+    let kept = crate::hub::navi::of(&hub.db, navi)?;
+    if kept.as_ref().is_some_and(|n| n.owner.is_some()) {
         return match crate::hub::navi::owner::may_use(&hub.db, caller, navi)? {
             true => Ok(()),
             false => Err(crate::hub::navi::owner::refused(navi)),
@@ -52,22 +52,7 @@ fn may_manage(hub: &Hub, caller: &Caller, navi: &ProjectRef) -> Result<(), ToolE
     if allows_everywhere(caller, Role::Admin) {
         return Ok(());
     }
-    let maker: Option<String> = hub.db.with(|c| {
-        let table: bool = c.query_row(
-            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'assistants')",
-            [],
-            |row| row.get(0),
-        )?;
-        if !table {
-            return Ok(None);
-        }
-        Ok(c.query_row(
-            "SELECT created_by_key FROM assistants WHERE machine_id = ? AND project_id = ?",
-            [navi.machine_id.as_str(), navi.project_id.as_str()],
-            |row| row.get(0),
-        )
-        .optional()?)
-    })?;
+    let maker = kept.map(|n| n.created_by.key_id);
     let own = match maker {
         Some(key) if key == caller.key_id.as_str() => true,
         Some(key) => {

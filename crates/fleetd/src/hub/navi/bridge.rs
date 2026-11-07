@@ -137,7 +137,7 @@ async fn answer(
     }
 }
 
-/// Only a Navi works with other projects: a project the hub keeps in `assistants` (Navi core), not archived. A coding
+/// Only a Navi works with other projects: a project the hub keeps as one (Navi core), not archived. A coding
 /// project's lead keeps to its own. A hub without that table yet has no Navi.
 pub fn may_use(db: &HubDb, r: &ProjectRef) -> Result<(), McpToolError> {
     let navi = is_navi(db, r, false).map_err(failed)?;
@@ -151,26 +151,10 @@ pub fn may_use(db: &HubDb, r: &ProjectRef) -> Result<(), McpToolError> {
     .with_fix("Ask the person to give it to their Navi, or to the other project's chat."))
 }
 
-/// Whether the hub keeps `r` as a Navi in `assistants` (Navi core); an archived one only with `archived`. A hub without
-/// that table yet has none.
+/// Whether the hub keeps `r` as a Navi (Navi core); an archived one only with `archived`.
 pub fn is_navi(db: &HubDb, r: &ProjectRef, archived: bool) -> Result<bool, StoreError> {
-    db.with(|c| {
-        let table: bool = c.query_row(
-            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'assistants')",
-            [],
-            |row| row.get(0),
-        )?;
-        if !table {
-            return Ok(false);
-        }
-        Ok(c.query_row(
-            "SELECT 1 FROM assistants WHERE machine_id = ? AND project_id = ? AND (? OR archived_ms IS NULL)",
-            params![r.machine_id.as_str(), r.project_id.as_str(), archived],
-            |_| Ok(()),
-        )
-        .optional()?
-        .is_some())
-    })
+    let navi = db.with(|c| Ok(super::store::of(c, r)?))?;
+    Ok(navi.is_some_and(|n| archived || n.archived_at.is_none()))
 }
 
 /// Who asks: a Navi on this hub, or a link minted here, for a Navi on another hub.
