@@ -531,7 +531,8 @@ async fn a_dead_token_drops_its_device_and_a_signed_out_one_gets_nothing() {
         .iter()
         .map(|d| d["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["cc33 phone", "dd44 phone"]);
+    // The signed-out tablet's phone isn't listed: it gets nothing more.
+    assert_eq!(names, ["cc33 phone"]);
     assert!(listed["devices"][0]["lastSentAt"].is_string());
     assert_eq!(listed["relay"], true);
 
