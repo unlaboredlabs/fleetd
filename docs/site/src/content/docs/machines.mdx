@@ -209,6 +209,12 @@ command again.
 | Option | Also does |
 |---|---|
 | `--purge` | Deletes `~/.fleetd/node` and `~/.fleetd/claude.env` on that machine. Your own `~/.claude` stays. |
+| `--force` | Removes it even while it runs projects' leads. |
+
+A machine that runs projects' leads, or one the app is still adding, isn't removed. Removing it would stop those leads
+or undo the add halfway. The refusal names the projects, and says how to repair the machine instead
+(`fleetd pair --worker <id>` and the line it prints, with `--rejoin`). To remove it anyway, press **Remove anyway** in
+the app, or pass `--force`.
 
 For a machine that joined with `fleetd pair --worker`, only the key is revoked:
 

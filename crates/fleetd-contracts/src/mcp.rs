@@ -2263,6 +2263,8 @@ input!(MachineRemoveInput {
     machine_id: MachineId,
     /// Also delete the node's files and fleetd's claude.env on the machine.
     purge: Option<bool>,
+    /// Remove it even while it runs projects' leads, or a machine_add run for it is going; refused without.
+    force: Option<bool>,
 });
 output!(MachineRemoveOutput {
     machine_id: MachineId,

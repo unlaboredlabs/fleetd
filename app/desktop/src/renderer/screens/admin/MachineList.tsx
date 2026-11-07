@@ -1,7 +1,7 @@
 // Settings › Hub › Machines: the hub's machines, each a row between hairlines with its state (and, unless online, what
 // it needs), a link to its page (the checklist), Repair and Remove. Repair goes again over SSH when the hub reaches
 // the machine, else it makes a line that enrolls it again (machine_join with rejoin); Remove asks first, then runs
-// machine_remove. The hub sends no event when it forgets a machine, so a removed one leaves the list here at once and
+// machine_remove, and offers Remove anyway when the hub refuses one that runs projects' leads or is being added. The hub sends no event when it forgets a machine, so a removed one leaves the list here at once and
 // the store's next snapshot. Cloud machines (boat.dev) are listed apart, as their own group under these (Cloud.tsx).
 import { useState } from "react";
 import type { Machine } from "../../../shared/contracts";
@@ -9,6 +9,7 @@ import { useData, useToolQuery } from "../../src/data/react";
 import { selectMachines } from "../../src/data/selectors";
 import { Button, Dialog, Text, toast } from "../../ui";
 import { machineOrder } from "../projects/machineText";
+import { CallError } from "../../src/data/queries";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { toHash } from "../shell/routes";
 import { MACHINE_WAIT_MS, removeLine, repairOf, statusLine, type Repair } from "./machines";
@@ -94,11 +95,14 @@ function RemoveDialog(props: { machine: Machine; line: string; onClose: () => vo
   const live = useLive();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  // The hub refused because removing it would stop its projects' leads or undo an add still going: the error says
+  // which, and Remove anyway sends force.
+  const [refused, setRefused] = useState(false);
   const m = props.machine;
-  const remove = () => {
+  const remove = (force: boolean) => {
     setBusy(true);
     setError(undefined);
-    call("machine_remove", { machineId: m.machineId }, { timeoutMs: MACHINE_WAIT_MS })
+    call("machine_remove", force ? { machineId: m.machineId, force: true } : { machineId: m.machineId }, { timeoutMs: MACHINE_WAIT_MS })
       .then(
         (out) => {
           props.onRemoved(m.machineId);
@@ -111,7 +115,10 @@ function RemoveDialog(props: { machine: Machine; line: string; onClose: () => vo
             tone: failed === undefined ? "success" : "warning",
           });
         },
-        (e: unknown) => setError(errorText(e)),
+        (e: unknown) => {
+          setError(errorText(e));
+          setRefused(!force && e instanceof CallError && e.error.code === "invalid");
+        },
       )
       .finally(() => setBusy(false));
   };
@@ -126,8 +133,8 @@ function RemoveDialog(props: { machine: Machine; line: string; onClose: () => vo
           <Button variant="ghost" disabled={busy} onClick={props.onClose}>
             Cancel
           </Button>
-          <Button variant="danger" disabled={busy || !live} onClick={remove}>
-            {busy ? "Removing…" : `Remove ${m.name}`}
+          <Button variant="danger" disabled={busy || !live} onClick={() => remove(refused)}>
+            {busy ? "Removing…" : refused ? "Remove anyway" : `Remove ${m.name}`}
           </Button>
         </>
       }

@@ -646,7 +646,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "machine_remove",
-        "Remove a machine: fleetd machine remove, run by the hub. Stops and removes the node's service on a machine the hub set up (purge: also its files and claude.env), then revokes its node key and forgets it. A machine that joined by itself only has its key revoked: stop its node there by hand. A step that fails says what to run by hand; the key is revoked anyway. A person's device with Admin on every machine.",
+        "Remove a machine: fleetd machine remove, run by the hub. Stops and removes the node's service on a machine the hub set up (purge: also its files and claude.env), then revokes its node key and forgets it. A machine that joined by itself only has its key revoked: stop its node there by hand. A step that fails says what to run by hand; the key is revoked anyway. Refused while the machine runs projects' leads or a machine_add run for it is going, naming them and how to repair it instead; force: true removes it anyway. A person's device with Admin on every machine.",
     ),
     (
         "machine_join",

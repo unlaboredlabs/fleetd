@@ -687,6 +687,94 @@ async fn removes_a_machine_it_set_up() {
     );
 }
 
+/// Remove on a machine that runs projects' leads, or one a machine_add run is still adding, would stop every lead on
+/// it or undo the run halfway: on the devbox it took the hub's own machine, its leads and chats, while its add hung.
+/// It is refused, naming what it would undo and how to repair instead, and goes only with force (Remove anyway).
+#[tokio::test]
+async fn removing_a_machine_that_runs_leads_or_is_being_added_takes_force() {
+    let (hub, _machine, _home) = hub();
+    let out = call(&hub, "machine_add", json!({ "host": "builder-1" })).await;
+    finished(&hub, out["run"]["runId"].as_str().unwrap()).await;
+    let builder = MachineId::unchecked("builder-1");
+    hub.store
+        .projects_upsert_many(
+            &builder,
+            &[serde_json::from_value(json!({
+                "machineId": "builder-1", "projectId": "p1", "title": "storefront", "workspaceRoot": "/work/storefront",
+                "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+            }))
+            .unwrap()],
+        )
+        .unwrap();
+    hub.leads
+        .records
+        .lead_put(&crate::hub::leads::records::StoredLead {
+            project_ref: fleetd_contracts::ids::ProjectRef {
+                machine_id: builder.clone(),
+                project_id: fleetd_contracts::ids::ProjectId::unchecked("p1"),
+            },
+            thread_id: fleetd_contracts::ids::ThreadId::unchecked("lead-thread"),
+            started_at: AT.into(),
+            last_wake_at: None,
+            session_generation: 1,
+        })
+        .unwrap();
+    let refused = async |hub: &Arc<Hub>| {
+        let Err(CallError::Tool(e)) = call_as(
+            hub,
+            &person("admin"),
+            "machine_remove",
+            json!({ "machineId": "builder-1" }),
+        )
+        .await
+        else {
+            panic!("removed a machine that runs a lead");
+        };
+        e
+    };
+
+    let e = refused(&hub).await;
+    assert_eq!(e.code, ErrorCode::Invalid);
+    assert_eq!(
+        e.message,
+        "builder-1 runs the leads of 1 project (storefront): removing it stops them, and their chats wait until it \
+         joins again."
+    );
+    let fix = e.fix.unwrap();
+    assert!(fix.contains("fleetd pair --worker builder-1"), "{fix}");
+    assert!(
+        fix.contains("force: true (Remove anyway in the app)"),
+        "{fix}"
+    );
+    assert!(hub.store.machine_get(&builder).unwrap().is_some());
+
+    // An add still going for it is named too.
+    hub.machine_setup
+        .start(&builder, Some("builder-1".into()), AT.into())
+        .unwrap();
+    let e = refused(&hub).await;
+    assert!(
+        e.message
+            .starts_with("builder-1 is being added right now (run M"),
+        "{}",
+        e.message
+    );
+    assert!(
+        e.message
+            .contains("; builder-1 runs the leads of 1 project"),
+        "{}",
+        e.message
+    );
+
+    call(
+        &hub,
+        "machine_remove",
+        json!({ "machineId": "builder-1", "force": true }),
+    )
+    .await;
+    assert!(hub.store.machine_get(&builder).unwrap().is_none());
+}
+
 #[tokio::test]
 async fn a_join_code_comes_with_the_line_to_paste() {
     let (hub, _machine, _home) = hub();

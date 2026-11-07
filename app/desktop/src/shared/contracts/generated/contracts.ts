@@ -3771,6 +3771,8 @@ export type MachineLive = {
 };
 
 export type MachineRemoveInput = {
+  /** Remove it even while it runs projects' leads, or a machine_add run for it is going; refused without. */
+  force?: boolean;
   machineId: MachineId;
   /** Also delete the node's files and fleetd's claude.env on the machine. */
   purge?: boolean;
