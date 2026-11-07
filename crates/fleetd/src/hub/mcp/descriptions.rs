@@ -650,7 +650,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "machine_join",
-        "A one-time code (15 minutes) for machineId to join the hub by itself, as fleetd pair --worker prints it: the hub's address, the code, its commit identity, and line, the one command that installs fleetd on that machine and joins. For a machine the hub can't reach over SSH. rejoin: true for a machine that joined before, whose line enrolls it again and so repairs it. A person's device with Admin on every machine.",
+        "A one-time code (15 minutes) for machineId to join the hub by itself, as fleetd pair --worker prints it: the hub's address, the code, its commit identity, and line, the one command that installs fleetd on that machine and joins. For a machine the hub can't reach over SSH. A new code replaces the machine's open one: only the newest line works, so call it once and reuse its line. rejoin: true for a machine that joined before, whose line enrolls it again and so repairs it. A person's device with Admin on every machine.",
     ),
     (
         "machine_claude_login",

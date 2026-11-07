@@ -508,9 +508,15 @@ impl Auth {
         rows.iter().map(KeyRow::info).collect()
     }
 
-    /// One-time, valid for 15 minutes.
-    pub fn create_enroll_token(&self, machine_id: &MachineId) -> Result<EnrollToken, StoreError> {
-        self.mint_enroll_token(machine_id, false)
+    /// One-time, valid for 15 minutes. It replaces the machine's open one, if any: a machine has at most one code
+    /// that works, however often a caller asks. `by` names the caller (the tool and its key, or the CLI command) in
+    /// the hub log's line for the mint.
+    pub fn create_enroll_token(
+        &self,
+        machine_id: &MachineId,
+        by: &str,
+    ) -> Result<EnrollToken, StoreError> {
+        self.mint_enroll_token(machine_id, false, by)
     }
 
     /// A pool enroll token: [`Self::create_enroll_token`]'s, minted by the hub itself for one of its cloud machine slots
@@ -520,23 +526,38 @@ impl Auth {
         &self,
         machine_id: &MachineId,
     ) -> Result<EnrollToken, StoreError> {
-        self.mint_enroll_token(machine_id, true)
+        self.mint_enroll_token(machine_id, true, "a cloud machine slot")
     }
 
     fn mint_enroll_token(
         &self,
         machine_id: &MachineId,
         pool: bool,
+        by: &str,
     ) -> Result<EnrollToken, StoreError> {
-        let expires = self.now() + ENROLL_TTL_MS;
+        let now = self.now();
+        let expires = now + ENROLL_TTL_MS;
         let token = secret(ENROLL_PREFIX);
-        self.db.with(|conn| {
+        let replaced = self.db.transaction(|conn| {
+            let replaced = conn
+                .prepare_cached(
+                    "DELETE FROM enroll_tokens WHERE machine_id = ? AND used_ms IS NULL AND expires_ms > ?",
+                )?
+                .execute(params![machine_id.as_str(), now])?;
             conn.prepare_cached(
                 "INSERT INTO enroll_tokens (hash, machine_id, expires_ms, pool) VALUES (?, ?, ?, ?)",
             )?
             .execute(params![sha256(&token), machine_id.as_str(), expires, pool])?;
-            Ok(())
+            Ok(replaced)
         })?;
+        // Never the code: its id is what `fleetd pair --worker-codes` lists.
+        tracing::info!(
+            machine_id = machine_id.as_str(),
+            by,
+            id = &sha256(&token)[..ENROLL_CODE_ID_LEN],
+            replaced,
+            "enroll code minted"
+        );
         Ok(EnrollToken {
             token,
             expires_at: iso_ms(expires),
@@ -662,7 +683,10 @@ impl Auth {
         })?;
         let m = machine_id.as_str();
         let (why, short) = match row {
-            None => ("unknown enrollment token".to_owned(), None),
+            None => (
+                "unknown, replaced or revoked enrollment token".to_owned(),
+                None,
+            ),
             Some((_, _, Some(_))) => ("enrollment token was already used".to_owned(), None),
             Some((_, expires, None)) if expires <= now => {
                 ("enrollment token expired".to_owned(), None)

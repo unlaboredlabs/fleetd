@@ -409,6 +409,9 @@ impl Stop {
 pub struct HubSide<'a> {
     pub auth: &'a Auth,
     pub store: &'a HubStore,
+    /// Who runs it (a hub tool and its caller's key, or the CLI): the hub log's line for an enroll code it mints names
+    /// them.
+    pub by: &'a str,
 }
 
 impl HubAccess {
@@ -416,6 +419,7 @@ impl HubAccess {
         HubSide {
             auth: &self.auth,
             store: &self.store,
+            by: "the fleetd CLI (machine add or init)",
         }
     }
 }
@@ -1130,10 +1134,12 @@ pub async fn execute(
             Some(Stdin::Binary) => Some(binary.clone()),
             Some(Stdin::EnrollToken) => match (&r.enroll, hub) {
                 (Enroll::Token(token), _) => Some(format!("{token}\n").into_bytes()),
-                (Enroll::Hub, Some(hub)) => match hub.auth.create_enroll_token(&r.machine) {
-                    Ok(token) => Some(format!("{}\n", token.token).into_bytes()),
-                    Err(error) => return Err(Stop::fail(error.to_string())),
-                },
+                (Enroll::Hub, Some(hub)) => {
+                    match hub.auth.create_enroll_token(&r.machine, hub.by) {
+                        Ok(token) => Some(format!("{}\n", token.token).into_bytes()),
+                        Err(error) => return Err(Stop::fail(error.to_string())),
+                    }
+                }
                 (Enroll::Hub, None) | (Enroll::Keep, _) => {
                     unreachable!("only a hub or a code enrolls")
                 }

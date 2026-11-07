@@ -263,7 +263,10 @@ pub fn handle(
         Ok(found) => found.is_some(),
         Err(error) => return store_failed(&error),
     };
-    let token = match hub.auth.create_enroll_token(&machine) {
+    let token = match hub
+        .auth
+        .create_enroll_token(&machine, "POST /pair/mac (the agents' Mac's setup code)")
+    {
         Ok(token) => token,
         Err(error) => return store_failed(&error),
     };

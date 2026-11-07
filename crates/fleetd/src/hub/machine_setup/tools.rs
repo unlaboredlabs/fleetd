@@ -102,11 +102,18 @@ fn resolve(
     machine::resolve(&args, &exe).map_err(stopped)
 }
 
-fn side(hub: &Hub) -> HubSide<'_> {
+/// `by`: the tool and the caller's key, in the hub log's line for an enroll code it mints.
+fn side<'a>(hub: &'a Hub, by: &'a str) -> HubSide<'a> {
     HubSide {
         auth: &hub.auth,
         store: &hub.store,
+        by,
     }
+}
+
+/// The tool and the key that called it: who minted an enroll code, so a burst of them shows its caller in the log.
+fn by(tool: &str, caller: &Caller) -> String {
+    format!("{tool}, key {} ({})", caller.key_id.as_str(), caller.name)
 }
 
 fn joined(hub: &Hub, machine_id: &str) -> Result<bool, ToolError> {
@@ -153,7 +160,7 @@ async fn machine_add_plan(
     let builds = hub.machine_setup.ports().builds();
     let prepared = machine::prepare(
         &r,
-        Some(side(&hub)),
+        Some(side(&hub, &by("machine_add_plan", &caller))),
         runner.as_ref(),
         builds.as_ref(),
         false,
@@ -203,7 +210,7 @@ async fn machine_add(
         .with_fix("machine_add_status follows it."));
     };
     super::emit(&hub, &run);
-    spawn_add(hub, run.clone(), r);
+    spawn_add(hub, run.clone(), r, by("machine_add", &caller));
     Ok(MachineAddOutput {
         next: Some(format!(
             "Adding {machine}: each step sends a machine_add.step event with runId {}; machine_add_status reads the run.",
@@ -294,7 +301,7 @@ async fn machine_remove(
         &hub.config.home,
         &input.machine_id,
         input.purge == Some(true),
-        side(&hub),
+        side(&hub, &by("machine_remove", &caller)),
         runner.as_ref(),
         &collect,
     )
@@ -334,7 +341,9 @@ fn refuse_removal(hub: &Hub, machine_id: &MachineId) -> Result<(), ToolError> {
             run.run_id, run.started_at
         ));
     }
-    if let Some(leads) = machine::leads_on(side(hub), machine_id).map_err(stopped)? {
+    if let Some(leads) =
+        machine::leads_on(side(hub, "machine_remove"), machine_id).map_err(stopped)?
+    {
         why.push(leads);
     }
     if why.is_empty() {
@@ -360,6 +369,7 @@ async fn machine_join(
         &input.machine_id,
         input.rejoin == Some(true),
         input.mac == Some(true),
+        &by("machine_join", &caller),
     )
     .map_err(|message| ToolError::new(ErrorCode::Failed, message))?;
     let next = match input.mac == Some(true) {

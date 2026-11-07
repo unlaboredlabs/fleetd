@@ -20,7 +20,8 @@ pub const PAIR_USAGE: &str = r#"  pair [--name <device>] [--role <read|operate|a
              changes the hub's settings) on every machine
   pair --worker <machine-id>
              print the one command that makes another machine a worker of this hub, with
-             a one-time code (15 min): for a machine the hub can't reach over SSH
+             a one-time code (15 min): for a machine the hub can't reach over SSH. A new
+             code replaces the machine's open one, so only the newest works
   pair --worker-codes
              list the worker codes that can still be used, the agents' Mac's 6-digit setup code
              among them: each one's id, machine, when it was made and until when it works, never
@@ -374,7 +375,14 @@ pub fn worker_command(home: Option<&str>, machine: &str) -> Result<String, Strin
         .map_err(|_| format!("'{machine}' is not a machine id ([a-z0-9-]{{1,32}})"))?;
     let home = super::hub_key::resolve_home(home)?;
     let hub = super::hub_key::open_hub(&home)?;
-    let join = worker_join(&home, &hub.auth, &machine_id, false, false)?;
+    let join = worker_join(
+        &home,
+        &hub.auth,
+        &machine_id,
+        false,
+        false,
+        "fleetd pair --worker",
+    )?;
     Ok(format!(
         "On {machine}, run:\n\n  {}\n\nThe code works once, until {}. {machine} needs claude installed and must reach the hub at that address.\n",
         join.line, join.expires_at
@@ -469,18 +477,19 @@ pub struct WorkerJoin {
 
 /// Mints the one-time code `fleetd pair --worker` prints, and the app's Add machine shows. `rejoin`: the line enrolls
 /// a machine that joined before again (`--rejoin`), repairing it. `mac`: the line joins the agents' Mac (`--mac`),
-/// pasted in Terminal at its screen.
+/// pasted in Terminal at its screen. `by` names the caller in the hub log's line for the mint.
 pub fn worker_join(
     home: &Path,
     auth: &crate::hub::auth::Auth,
     machine: &fleetd_contracts::ids::MachineId,
     rejoin: bool,
     mac: bool,
+    by: &str,
 ) -> Result<WorkerJoin, String> {
     let setup = super::setup::state::read_setup(home)?;
     let urls = local_hub_urls(home)?;
     let token = auth
-        .create_enroll_token(machine)
+        .create_enroll_token(machine, by)
         .map_err(|error| error.to_string())?;
     let git_identity = setup
         .and_then(|s| s.git_identity)
@@ -683,7 +692,7 @@ mod tests {
         );
         let hub = super::super::hub_key::open_hub(home.path()).unwrap();
         let laptop = fleetd_contracts::ids::MachineId::new("laptop").unwrap();
-        let minted = hub.auth.create_enroll_token(&laptop).unwrap();
+        let minted = hub.auth.create_enroll_token(&laptop, "test").unwrap();
         let listed = worker_codes(Some(h)).unwrap();
         let id = listed.split_whitespace().next().unwrap().to_owned();
         assert_eq!(id.len(), crate::hub::auth::ENROLL_CODE_ID_LEN);

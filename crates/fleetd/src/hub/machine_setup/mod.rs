@@ -361,7 +361,13 @@ fn emit(hub: &Hub, run: &MachineAddRun) {
 }
 
 /// Runs `machine add` for the resolved machine in the background, recording each step in `run`.
-fn spawn_add(hub: Arc<Hub>, run: MachineAddRun, resolved: crate::cli::setup::machine::Resolved) {
+/// `by`: the tool and key that started it, for the hub log's line on the enroll code it mints.
+fn spawn_add(
+    hub: Arc<Hub>,
+    run: MachineAddRun,
+    resolved: crate::cli::setup::machine::Resolved,
+    by: String,
+) {
     use crate::cli::setup::machine::{HubSide, execute, prepare};
     let runner = hub.machine_setup.ports().runner();
     let builds = hub.machine_setup.ports().builds();
@@ -374,6 +380,7 @@ fn spawn_add(hub: Arc<Hub>, run: MachineAddRun, resolved: crate::cli::setup::mac
         let side = HubSide {
             auth: &hub.auth,
             store: &hub.store,
+            by: &by,
         };
         let result = match prepare(
             &resolved,
