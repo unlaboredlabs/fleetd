@@ -164,20 +164,10 @@ final class ShareModel: ObservableObject {
         } else if let text = out.textFile {
           file = text
         } else { continue }
-        var uploadId: String?
-        var offset = 0
-        let ranges = file.pieceRanges
-        for range in ranges.dropLast() {
-          uploadId = try await link.call("attachment_part", Calls.part(file.data.subdata(in: range), uploadId: uploadId, offset: offset))["uploadId"] as? String
-          offset += range.count
-          done += range.count
+        uploaded[i] = try await link.upload(file) { bytes in
+          done += bytes
           phase = .sending(min(1, Double(done) / Double(total)))
         }
-        let last = ranges.last.map { file.data.subdata(in: $0) } ?? Data()
-        guard let id = try await link.call("attachment_put", Calls.put(file, last: last, uploadId: uploadId))["attachmentId"] as? String else {
-          throw Problem.hub(code: "", message: "The hub didn't store \(file.name).", fix: nil)
-        }
-        uploaded[i] = id
         done = sizes.indices.filter { uploaded[$0] != nil }.reduce(0) { $0 + sizes[$1] }
         phase = .sending(min(1, Double(done) / Double(total)))
         Self.log.info("sent \(file.name, privacy: .public) (\(file.data.count) bytes); footprint \(Self.footprint()) MB")

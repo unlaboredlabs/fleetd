@@ -1,6 +1,6 @@
 // The Shortcuts actions' decisions (Actions.swift): their links, the pickers' chats and automations, Send Message
-// and its errors and wait, the latest messages and the waiting approvals, against a fake hub. mobile.yml runs it (it
-// builds on Linux too):
+// and its files, errors and wait, the latest messages and the waiting approvals, against a fake hub. mobile.yml runs
+// it (it builds on Linux too):
 //   swiftc plugins/share-extension/Shared.swift plugins/app-intents/Actions.swift plugins/app-intents/test/main.swift \
 //     -o actions-test && ./actions-test
 import Foundation
@@ -161,6 +161,33 @@ hub = FakeHub([inbox])
 hub.answers["chat_send"] = { _ in throw Problem.hub(code: "forbidden", message: "This key can't write to Inbox.", fix: "Ask its owner.") }
 let refused = await problem { _ = try await Run.send(link, pairing: devbox, chat: "m1/p2", text: "hi", wait: nil, requestId: "s") }
 check(refused?.message == "This key can't write to Inbox. Ask its owner." && hub.calls.count == 1, "the hub's refusal, as it said it")
+
+// Files: each stored in pieces before the message, which carries their ids; only files, no text, is a message too.
+hub = FakeHub([inbox])
+hub.answers["chat_send"] = sent
+hub.answers["attachment_part"] = { _ in ["uploadId": "U1"] }
+var stored = 0
+hub.answers["attachment_put"] = { _ in stored += 1; return ["attachmentId": "F\(stored)"] }
+let pdf = Files.upload(name: "Receipt.pdf", data: Data("%PDF-1.7 ...".utf8), index: 0)!
+let big = Upload(name: "scan.zip", mime: .zip, data: Data(repeating: 1, count: Limits.pieceBytes + 10))
+check(try await Run.send(link, pairing: devbox, chat: "m1/p2", text: "", files: [pdf, big], wait: nil, requestId: "s") == nil, "files alone")
+check(hub.calls.map(\.tool) == ["attachment_put", "attachment_part", "attachment_put", "chat_send"], "uploads first: \(hub.calls.map(\.tool))")
+check(object(hub.calls[3].input) == #"{"attachments":["F1","F2"],"client":"shortcuts","clientRequestId":"s","projectRef":{"machineId":"m1","projectId":"p2"},"text":""}"#, object(hub.calls[3].input))
+hub = FakeHub([inbox])
+let tooMany = Array(repeating: pdf, count: Limits.files + 1)
+check(await problem { _ = try await Run.send(link, pairing: devbox, chat: "m1/p2", text: "hi", files: tooMany, wait: nil, requestId: "s") } == .tooManyFiles && hub.calls.isEmpty, "too many files")
+let huge = Upload(name: "film.zip", mime: .zip, data: Data(count: Limits.fileBytes + 1))
+check(await problem { _ = try await Run.send(link, pairing: devbox, chat: "m1/p2", text: "hi", files: [huge], wait: nil, requestId: "s") }?.title == "Too large to send" && hub.calls.isEmpty, "a file past 25 MB")
+
+// A file's type, as the hub decides it: an image by its bytes, a name its bytes agree with, any UTF-8 text.
+let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0])
+check(Files.upload(name: "photo.HEIC", data: png, index: 2) == Upload(name: "photo.png", mime: .png, data: png), "an image by its bytes, named for them")
+check(Files.upload(name: "photo.heic", data: Data([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70]), index: 0) == nil, "a HEIC photo isn't taken as it is")
+check(Mime.ofFile(name: "notes.md", data: Data("# Hi\n".utf8)) == .text && Mime.ofFile(name: "Makefile", data: Data("all:\n".utf8)) == .text, "text")
+check(Mime.ofFile(name: "bank.csv", data: Data([0x63, 0xE9, 0x2C, 0x31])) == .csv, "Windows-1252 CSV")
+check(Mime.ofFile(name: "blob.bin", data: Data([0x63, 0xE9, 0x2C, 0x31])) == nil && Mime.ofFile(name: "a.out", data: Data([0x7F, 0x45, 0, 0])) == nil, "not text")
+check(Mime.ofFile(name: "fake.pdf", data: Data("hello".utf8)) == nil && Mime.ofFile(name: "deck.pptx", data: Data([0x50, 0x4B, 0x03, 0x04, 1])) == .pptx, "a name its bytes must agree with")
+check(Files.upload(name: "Q3 report.docx", data: Data([0x50, 0x4B, 0x03, 0x04]), index: 0)?.name == "Q3 report.docx", "a document keeps its name")
 
 // A hub from before Shortcuts' client takes it as from the app, once, with the same request id.
 hub = FakeHub([inbox])

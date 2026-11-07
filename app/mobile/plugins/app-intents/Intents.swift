@@ -9,6 +9,8 @@
 // as any link, and the app goes to the chat or the list (src/shortcutLink.ts).
 import AppIntents
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 extension HubLink {
   /// A link on the phone's pairing; what's wrong with the pairing as a Problem.
@@ -88,22 +90,21 @@ struct ChatEntity: AppEntity {
   /// "machineId/projectId".
   let id: String
   let title: String
+  /// Its machine, or "Only me" for a project of the person's own.
   let subtitle: String
-  let navi: Bool
 
   init(_ chat: ChatTarget) {
     id = chat.id
     title = chat.title
-    subtitle = chat.subtitle
-    navi = chat.navi
+    subtitle = chat.navi ? "Only me" : chat.machine ?? "Project"
   }
 
   var displayRepresentation: DisplayRepresentation {
-    DisplayRepresentation(title: "\(title)", subtitle: "\(subtitle)", image: DisplayRepresentation.Image(systemName: navi ? "sparkles" : "folder"))
+    DisplayRepresentation(title: "\(title)", subtitle: "\(subtitle)", image: DisplayRepresentation.Image(systemName: "bubble.left"))
   }
 }
 
-/// The person's Navis and projects, who spoke last first, as the share sheet lists them.
+/// The person's projects' chats, who spoke last first, as the share sheet lists them.
 @available(iOS 18.0, *)
 struct ChatQuery: EntityStringQuery {
   @MainActor
@@ -202,7 +203,7 @@ struct AutomationQuery: EntityStringQuery {
 @available(iOS 18.0, *)
 struct OpenChat: AppIntent {
   static let title: LocalizedStringResource = "Open Chat"
-  static let description = IntentDescription("Opens a Navi's or a project's chat in fleetd.")
+  static let description = IntentDescription("Opens a project's chat in fleetd.")
 
   @Parameter(title: "Chat")
   var chat: ChatEntity
@@ -231,14 +232,17 @@ struct OpenApprovals: AppIntent {
 struct SendMessage: AppIntent {
   static let title: LocalizedStringResource = "Send Message"
   static let description = IntentDescription(
-    "Sends a message to a Navi or a project as you, without opening fleetd. With Wait for Reply, returns the reply's text for the next action."
+    "Sends a message, with files if you like, to a project as you, without opening fleetd. With Wait for Reply, returns the reply's text for the next action."
   )
 
   @Parameter(title: "Chat")
   var chat: ChatEntity
 
   @Parameter(title: "Message", inputOptions: String.IntentInputOptions(multiline: true))
-  var text: String
+  var text: String?
+
+  @Parameter(title: "Files", supportedContentTypes: [.item])
+  var files: [IntentFile]?
 
   @Parameter(title: "Wait for Reply", default: false)
   var wait: Bool
@@ -249,11 +253,13 @@ struct SendMessage: AppIntent {
   static var parameterSummary: some ParameterSummary {
     When(\.$wait, .equalTo, true) {
       Summary("Send \(\.$text) to \(\.$chat)") {
+        \.$files
         \.$wait
         \.$seconds
       }
     } otherwise: {
       Summary("Send \(\.$text) to \(\.$chat)") {
+        \.$files
         \.$wait
       }
     }
@@ -261,8 +267,9 @@ struct SendMessage: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-    let (wait, seconds, chat, text) = (wait, seconds, chat, text)
+    let (wait, seconds, chat, text, given) = (wait, seconds, chat, text, files ?? [])
     let reply = try await ActionError.shown {
+      let files = try given.enumerated().map { i, file in try Self.upload(file, index: i) }
       let (link, p) = try HubLink.paired()
       var first: HubLink? = link
       // The first link, then a fresh one for a read after the wait ran out.
@@ -274,10 +281,33 @@ struct SendMessage: AppIntent {
         guard let fresh = HubLink(p) else { throw Problem.unreachable(p) }
         return fresh
       }
-      return try await Run.send(next, pairing: p, chat: chat.id, text: text, wait: wait ? seconds : nil, requestId: "shortcut-" + UUID().uuidString.lowercased())
+      return try await Run.send(next, pairing: p, chat: chat.id, text: text ?? "", files: files, wait: wait ? seconds : nil, requestId: "shortcut-" + UUID().uuidString.lowercased())
     }
     guard let reply else { return .result(value: "", dialog: "Sent to \(chat.title).") }
     return .result(value: reply, dialog: "\(reply)")
+  }
+
+  /// A shortcut's file as the hub takes it; an image of another type (a HEIC photo) as a JPEG, as the share sheet
+  /// sends it.
+  private static func upload(_ file: IntentFile, index: Int) throws -> Upload {
+    let data = file.data
+    if let upload = Files.upload(name: file.filename, data: data, index: index) { return upload }
+    guard file.type?.conforms(to: .image) ?? true, let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else {
+      throw Problem.unsupported(file.filename)
+    }
+    for side in [4096, 2048] {
+      let out = NSMutableData()
+      guard let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: side,
+      ] as CFDictionary), let dest = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil) else { break }
+      CGImageDestinationAddImage(dest, decoded, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+      guard CGImageDestinationFinalize(dest) else { break }
+      let upload = Upload(name: Upload.name(file.filename, mime: .jpeg, index: index), mime: .jpeg, data: out as Data)
+      if upload.tooLarge == nil || side == 2048 { return upload }
+    }
+    throw Problem.unsupported(file.filename)
   }
 }
 

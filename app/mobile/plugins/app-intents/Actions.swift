@@ -1,7 +1,7 @@
 // What fleetd's Shortcuts actions decide (Intents.swift), apart from App Intents itself: the links Open Chat and Open
-// Approvals open, the chats and automations their pickers list, Send Message and its wait for the reply, the latest
-// messages and the waiting approvals they return, and what each failure says. Foundation only, with the share
-// extension's Shared.swift: test/main.swift checks it, on Linux too.
+// Approvals open, the chats and automations their pickers list, Send Message with its files and its wait for the
+// reply, the latest messages and the waiting approvals they return, and what each failure says. Foundation only, with
+// the share extension's Shared.swift: test/main.swift checks it, on Linux too.
 import Foundation
 
 /// The app's own links (src/shortcutLink.ts reads them): a chat, and Chats' Needs You list.
@@ -59,7 +59,24 @@ extension Problem {
     )
   }
 
-  static let empty = Problem(title: "Nothing to send", message: "The message is empty: give the action some text.", retry: false, symbol: "text.bubble")
+  static let empty = Problem(title: "Nothing to send", message: "The message is empty: give the action some text or a file.", retry: false, symbol: "text.bubble")
+
+  static let tooManyFiles = Problem(
+    title: "Too many files",
+    message: "fleetd takes up to \(Limits.files) files in one message. Send the rest in another.",
+    retry: false,
+    symbol: "doc.on.doc"
+  )
+
+  /// A file the hub doesn't take.
+  static func unsupported(_ name: String) -> Problem {
+    Problem(
+      title: "fleetd doesn't take \(name)",
+      message: "Send images, PDFs, text or CSV files, Word, Excel or PowerPoint documents, or zip archives.",
+      retry: false,
+      symbol: "doc.questionmark"
+    )
+  }
 
   static func noReply(_ chat: String, seconds: Int) -> Problem {
     Problem(
@@ -125,6 +142,19 @@ enum Chats {
       guard let m = r["machineId"] as? String, let p = r["projectId"] as? String, let title = r["title"] as? String else { return nil }
       return ChatTarget(machineId: m, projectId: p, title: title, navi: r["navi"] as? Bool == true, machine: r["machine"] as? String, at: r["at"] as? String ?? "")
     }
+  }
+}
+
+/// The files a shortcut hands Send Message, as they go up.
+enum Files {
+  /// One as the hub takes it, its type by its name and bytes; nil for one it doesn't, which Intents.swift sends as a
+  /// JPEG when it is an image (a HEIC photo), and refuses otherwise.
+  static func upload(name: String, data: Data, index: Int) -> Upload? {
+    guard let mime = Mime.ofFile(name: name, data: data) else { return nil }
+    let kept = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    // An image goes with its type's extension; any other keeps its own name, the hub's limit permitting.
+    if Mime.ofImage(data) != nil || kept.isEmpty || kept.count > 120 { return Upload(name: Upload.name(kept, mime: mime, index: index), mime: mime, data: data) }
+    return Upload(name: kept, mime: mime, data: data)
   }
 }
 
@@ -286,19 +316,22 @@ enum Run {
   /// The longest Wait for Reply: past this the reply shows in the chat.
   static let waitMax = 600
 
-  /// Sends `text` to the chat as the person, from Shortcuts; with `wait`, the lead's reply, waited for up to that many
-  /// seconds. nil without a wait.
-  static func send(_ link: Link, pairing p: Pairing, chat id: String, text: String, wait: Int?, requestId: String) async throws -> String? {
+  /// Sends `text` and `files` to the chat as the person, from Shortcuts; with `wait`, the lead's reply, waited for up
+  /// to that many seconds. nil without a wait.
+  static func send(_ link: Link, pairing p: Pairing, chat id: String, text: String, files: [Upload] = [], wait: Int?, requestId: String) async throws -> String? {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    if text.isEmpty { throw Problem.empty }
+    if text.isEmpty && files.isEmpty { throw Problem.empty }
+    if files.count > Limits.files { throw Problem.tooManyFiles }
+    if let tooLarge = files.lazy.compactMap(\.tooLarge).first { throw Problem.tooLarge(tooLarge) }
     guard let ref = ChatRef(id) else { throw Problem.noChat(p) }
     let hub = try link()
     defer { hub.close() }
     let chats = try await hub.open()
     guard let chat = chats.first(where: { $0.id == id }) else { throw Problem.noChat(p) }
     if wait != nil { try await hub.subscribe() }
-    let input: [String: Any] = ["projectRef": ref.projectRef, "text": text, "clientRequestId": requestId, "client": Client.shortcuts.rawValue]
-    let sent = try await hub.chatSend(input, client: .shortcuts)
+    var attachments: [String] = []
+    for file in files { attachments.append(try await hub.upload(file)) }
+    let sent = try await hub.chatSend(Calls.send(chat, text: text, attachments: attachments, requestId: requestId, client: .shortcuts), client: .shortcuts)
     guard let wait else { return nil }
     let seconds = min(max(wait, 1), waitMax)
     let seq = (sent["message"] as? [String: Any])?["seq"] as? Int ?? 0
