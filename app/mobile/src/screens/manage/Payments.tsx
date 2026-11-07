@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView } from "react-native";
 import { listTime } from "../../chatView";
-import { cardLabel, cardOptions, NO_CARD, PROJECT_TOOLS, purchaseLine, purchaseState, type HubError, type OnePasswordCardsOutput, type ProjectRef, type PurchasesOutput } from "../../desktop";
+import { cardLabel, cardOptions, NO_CARD, PAYMENTS_HELP, PROJECT_TOOLS, purchaseLine, purchaseState, type HubError, type OnePasswordCardsOutput, type ProjectRef, type PurchasesOutput } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { refOf } from "../../store";
 import { space, useTheme } from "../../theme";
@@ -18,8 +18,6 @@ import { CheckRow, errorWords, Problem, useRead } from "./parts";
 
 /** Listing the cards may install the 1Password SDK on the machine first. */
 const CARDS_MS = 240_000;
-
-const HELP = "The card it pays with at a checkout, from your 1Password. fleetd fills it in at the checkout, and the project never sees it. Each purchase is listed below, with the shop and the total.";
 
 const ref = (p: ProjectRef): ProjectRef => ({ machineId: p.machineId, projectId: p.projectId });
 
@@ -82,7 +80,7 @@ export function Payments({ route }: ChatInfoProps<"Payments">) {
       style={{ backgroundColor: t.grouped }}
       refreshControl={<RefreshControl refreshing={false} onRefresh={read.reload} tintColor={t.secondary} />}
     >
-      <ListSection footer={HELP}>
+      <ListSection footer={PAYMENTS_HELP}>
         {view === undefined ? (
           <ListRow title={read.value?.ok === false ? "Couldn't read its payments" : "Reading…"} {...(read.value === undefined ? { accessory: spinner } : {})} />
         ) : (
