@@ -261,9 +261,16 @@ export const createDataLayer = (
       refetchWhere(() => true);
       return;
     }
-    // A snapshot after a (re)connect, or the link dropping: every cached answer describes a connection that is gone.
+    // A reconnect that resumed: the replayed events make stale what changed meanwhile; what failed while the link was
+    // down, or never landed, goes out again.
+    if (effects.resumed === true) {
+      refetchWhere((q) => q.state.status !== "success");
+      return;
+    }
+    // A snapshot after a (re)connect that couldn't resume: every cached answer describes a connection that is gone.
     // Reset drops it (screens show skeletons, not old data as live); reads run again once the connection is fresh.
-    if (effects.refetchAll === true || (prev.fresh && !next.fresh)) {
+    // While the link is down the answers stay, under the offline banner, for the reconnect to resume onto.
+    if (effects.refetchAll === true) {
       reset();
       return;
     }

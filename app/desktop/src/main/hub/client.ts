@@ -1,8 +1,10 @@
 // One hub connection: auth on every (re)connect, then a fresh snapshot and the event stream from its cursor, so the
-// renderer always resyncs and never shows data from a dead link as live. Reconnects with backoff until the key is
-// refused (close 4401, or an error before `ready`) or the client is stopped. The hub never pings and the event
-// long-poll is silent when nothing happens, so the client pings and drops a link that goes quiet: a half-open socket
-// (Wi-Fi or tailnet gone without a sleep) must not keep showing as live.
+// renderer always resyncs and never shows data from a dead link as live. After a drop, the stream picks up after the
+// last event the old link applied, when few enough were missed (RESUME_MAX_EVENTS): the renderer keeps what it read
+// and the missed events make stale only what they touch, rather than every read going out again. Reconnects with backoff until the key is
+// refused (close 4401, or an error before `ready`) or the client is stopped. The event long-poll is silent when
+// nothing happens, so the client pings and drops a link whose ping goes unanswered: a half-open socket (Wi-Fi or
+// tailnet gone without a sleep, a NAT that forgot it) must not keep showing as live, nor wait on TCP's own retries.
 import type { BrowserInput } from "../../shared/contracts";
 import type { CallOutcome, HubError, HubFrame, HubState } from "../../shared/hub";
 import { MAX_CALL_INPUT_BYTES, type CallRequest, type ChatScope, type OrderFocus } from "../../shared/ipc";
@@ -16,10 +18,14 @@ export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 /** From dialling to `ready`: covers a TCP connect into a black hole, a stalled upgrade and an unanswered auth. */
 export const READY_TIMEOUT_MS = 15_000;
 export const PING_EVERY_MS = 15_000;
-/** Nothing heard (no frame, no pong) for this long: the link is dead. */
-export const SILENT_DEAD_MS = 30_000;
+/** A ping with nothing heard since (no byte, no pong) for this long: the link is dead. */
+export const PONG_WAIT_MS = 10_000;
 /** A link must stay up this long before the backoff starts over, so a hub that accepts and drops isn't hammered. */
 export const STABLE_MS = 30_000;
+/** A reconnect that missed more events than this reads everything again: replaying them would cost more. */
+export const RESUME_MAX_EVENTS = 200;
+/** What this client reads compressed: the hub then sends frames as permessage-deflate Binary (transport.ts). */
+export const CLIENT_FEATURES = ["deflate"] as const;
 /** A call frame over this is refused before it's sent. */
 export const MAX_FRAME_BYTES = MAX_CALL_INPUT_BYTES + 4096;
 /** Presence frames' ids: `p1`, `p2`… (calls' are `c1`, `c2`…). */
@@ -52,6 +58,10 @@ export class HubClient implements HubSource {
   #stopped = true;
   /** The newest event seq applied on this connection; the stream resumes after it. */
   #cursor: number | null = null;
+  /** The newest seq the last link applied, kept through the drop: the next link's first snapshot may resume after it. */
+  #resumeFrom: number | null = null;
+  /** This link's first snapshot (the one sent with auth) hasn't come yet. */
+  #firstSnapshot = false;
   #resumeAttempt = 0;
   #resumeTimer: ReturnType<typeof setTimeout> | null = null;
   #nextCallId = 0;
@@ -65,6 +75,7 @@ export class HubClient implements HubSource {
   #heardAt = 0;
   #readyTimer: ReturnType<typeof setTimeout> | null = null;
   #heartbeat: ReturnType<typeof setInterval> | null = null;
+  #pongTimer: ReturnType<typeof setTimeout> | null = null;
   /** This connection's hub reads presence: its `ready` named it, and it hasn't refused a presence frame since. */
   #presence = false;
   /** The hub serves browser sessions (ready's `browser_sessions`): only then go browser_watch and browser_input. */
@@ -206,14 +217,20 @@ export class HubClient implements HubSource {
         if (this.#connection !== connection) return;
         opened = true;
         this.#heardAt = Date.now();
-        this.#send({ t: "auth", key: this.#options.key });
+        // The hub reads frames in order, so the snapshot and the subscriptions every hub reads go with the auth rather
+        // than a round trip after `ready`; refused, the hub closes before it reads them.
+        this.#send({ t: "auth", key: this.#options.key, features: [...CLIENT_FEATURES] });
+        this.#firstSnapshot = true;
+        this.#send({ t: "snapshot" });
+        this.#sendLive();
+        if (this.#chat !== null) this.#sendChat();
       },
       onText: (text) => {
         if (this.#connection !== connection) return;
         this.#heardAt = Date.now();
         this.#onFrame(parseServerFrame(text));
       },
-      onPong: () => {
+      onHeard: () => {
         if (this.#connection === connection) this.#heardAt = Date.now();
       },
       onClose: (code, reason, error) => {
@@ -229,11 +246,16 @@ export class HubClient implements HubSource {
     }, READY_TIMEOUT_MS);
   }
 
-  /** Every PING_EVERY_MS: a ping, or, when nothing was heard for SILENT_DEAD_MS, the link is given up. */
+  /** Every PING_EVERY_MS a ping; when nothing at all is heard in the PONG_WAIT_MS after it, the link is given up. */
   #startHeartbeat(): void {
     this.#heartbeat = setInterval(() => {
-      if (Date.now() - this.#heardAt >= SILENT_DEAD_MS) this.#abandon(explainAbandon(this.#options.hub, "silent"));
-      else this.#connection?.ping();
+      const pingAt = Date.now();
+      this.#connection?.ping();
+      if (this.#pongTimer !== null) clearTimeout(this.#pongTimer);
+      this.#pongTimer = setTimeout(() => {
+        this.#pongTimer = null;
+        if (this.#heardAt < pingAt) this.#abandon(explainAbandon(this.#options.hub, "silent"));
+      }, PONG_WAIT_MS);
     }, PING_EVERY_MS);
   }
 
@@ -265,19 +287,21 @@ export class HubClient implements HubSource {
           ...(frame.version === undefined ? {} : { version: frame.version }),
           ...(frame.features === undefined ? {} : { features: frame.features }),
         });
-        this.#send({ t: "snapshot" });
-        this.#sendLive();
-        if (this.#chat !== null) this.#sendChat();
         if (this.#browser && this.#watch !== null) this.#sendWatch();
         if (this.#thumbsServed && this.#thumbs) this.#send({ t: "screen_thumbs", on: true });
         return;
       }
       case "snapshot": {
         const { t: _t, ...snapshot } = frame;
-        // A snapshot covers everything up to its cursor, so the stream restarts there.
-        this.#cursor = snapshot.cursor;
-        this.#send({ t: "events", cursor: snapshot.cursor });
-        this.#options.emit({ t: "snapshot", snapshot });
+        // A snapshot covers everything up to its cursor, so the stream restarts there; the reconnect's own, after the
+        // last event the old link applied, when the gap is small: those events then say what changed meanwhile.
+        const from = this.#firstSnapshot ? this.#resumeFrom : null;
+        this.#firstSnapshot = false;
+        this.#resumeFrom = null;
+        const resume = from !== null && snapshot.cursor >= from && snapshot.cursor - from <= RESUME_MAX_EVENTS;
+        this.#cursor = resume ? from : snapshot.cursor;
+        this.#send({ t: "events", cursor: this.#cursor });
+        this.#options.emit(resume ? { t: "snapshot", snapshot, resumed: true } : { t: "snapshot", snapshot });
         return;
       }
       case "event": {
@@ -372,7 +396,9 @@ export class HubClient implements HubSource {
   #dropLink(): boolean {
     const wasReady = this.#ready;
     this.#ready = false;
+    if (this.#cursor !== null) this.#resumeFrom = this.#cursor;
     this.#cursor = null;
+    this.#firstSnapshot = false;
     this.#failPending("disconnected", "The connection to the hub dropped before it answered.");
     return wasReady;
   }
@@ -405,6 +431,8 @@ export class HubClient implements HubSource {
     if (this.#resumeTimer !== null) clearTimeout(this.#resumeTimer);
     if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
     if (this.#heartbeat !== null) clearInterval(this.#heartbeat);
+    if (this.#pongTimer !== null) clearTimeout(this.#pongTimer);
+    this.#pongTimer = null;
     this.#retryTimer = null;
     this.#resumeTimer = null;
     this.#readyTimer = null;

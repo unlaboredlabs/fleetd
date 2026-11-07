@@ -119,6 +119,20 @@ describe("chat history", () => {
     expect(selectChat(KEY)(layer.store.getState())?.held).toBe(false);
   });
 
+  it("a resumed reconnect keeps the chat as read: the missed message comes as its event, and a queued one goes", async () => {
+    const { fake, layer } = await connected();
+    fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } });
+    expect(await layer.chat.send(KEY, { text: "hold the release" }, "c1")).toBe("pending");
+    fake.send(live());
+    fake.send({ ...(snapshot(5) as Extract<HubFrame, { t: "snapshot" }>), resumed: true });
+    fake.send(messageEvent(2, msg(3)));
+    await vi.waitFor(() => expect(fake.of("chat_send")).toHaveLength(1));
+    // Not read again: what it held plus the replayed message, current, not marked as last known.
+    expect(fake.of("chat_history")).toHaveLength(1);
+    expect(items(layer)).toEqual([["m1", "sent"], ["m2", "sent"], ["m3", "sent"], ["c1", "pending"]]);
+    expect(selectChat(KEY)(layer.store.getState())).toMatchObject({ held: false, offline: false });
+  });
+
   it("after a reconnect, a failed read keeps the chat marked as last known, with the error; Retry catches it up", async () => {
     const { fake, layer } = await connected();
     fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } });
