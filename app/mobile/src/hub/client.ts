@@ -1,6 +1,8 @@
 // One hub connection, as the desktop app's (app/desktop/src/main/hub/client.ts) but for a phone: auth on every
-// (re)connect with the snapshot asked for in the same breath (the hub reads them in order, so it costs no round trip),
-// then the event stream from its cursor, so the screens always resync and never show a dead link as live. The phone
+// (re)connect with the snapshot and the open chat's stream asked for in the same breath (the hub reads them in order, so
+// it costs no round trip), then the event stream: from the snapshot's cursor, or, back from a drop that missed only a
+// few, from the last event applied, so what was missed replays rather than everything being read again (the
+// desktop's resume too). The screens always resync and never show a dead link as live. The phone
 // asks for compressed frames (inflate.ts); a hub that offers them sends them, an older one plain text. Reconnects with backoff until the key is refused (close 4401, or an error before `ready`) or
 // the client is stopped. React Native's WebSocket can't ping, so a quiet link is probed with a small call (hub_info)
 // and dropped when it goes unanswered: a phone that changed networks must not keep showing as live. Coming back to the
@@ -33,6 +35,8 @@ export const WAKE_PROBE_MS = 2_500;
 export const FRONT_BACKOFF_CAP_MS = 5_000;
 /** A link must stay up this long before the backoff starts over. */
 export const STABLE_MS = 30_000;
+/** Back from a drop, the stream replays from the last event applied when the snapshot is at most this many past it. */
+export const REPLAY_MAX = 200;
 /** The hub's close code for a refused key. */
 export const CLOSE_UNAUTHORIZED = 4401;
 /** Probe calls' ids: `h1`, `h2`… (calls' are `c1`, `c2`…); their answers are only proof of life. */
@@ -58,8 +62,10 @@ export type Transport = (url: string, events: ConnectionEvents) => Connection;
 /** What the client hands the app. After a `state` with phase `live`, a `snapshot` always precedes events. */
 export type HubFrame =
   | { readonly t: "state"; readonly state: HubState }
-  | { readonly t: "snapshot"; readonly snapshot: FleetStatus }
-  | { readonly t: "event"; readonly event: HubEvent }
+  /** `replay`: the events since the last one applied before a drop follow it, so what they touch needn't be read again. */
+  | { readonly t: "snapshot"; readonly snapshot: FleetStatus; readonly replay?: true }
+  /** `replayed`: one the snapshot before it already covers (seq at or before its cursor), missed while the link was down. */
+  | { readonly t: "event"; readonly event: HubEvent; readonly replayed?: true }
   | { readonly t: "chat_delta"; readonly delta: ChatDelta }
   /** The open chat's lead lane: what it does this moment. */
   | { readonly t: "live"; readonly frame: LiveFrame }
@@ -139,6 +145,10 @@ export class HubClient {
   #front = true;
   /** The newest event seq applied on this connection; the stream resumes after it. */
   #cursor: number | null = null;
+  /** The last event applied before the link dropped: the next snapshot's stream may replay from it. */
+  #resumeFrom: number | null = null;
+  /** The snapshot's cursor, while the events up to it replay. */
+  #replayTo = -1;
   #resumeAttempt = 0;
   #nextId = 0;
   #chat: ProjectRef | null = null;
@@ -180,6 +190,8 @@ export class HubClient {
     this.#connection = null;
     connection?.close();
     this.#dropLink("The app disconnected from the hub.");
+    // Started again (another hub, or after a Disconnect), it reads everything.
+    this.#resumeFrom = null;
   }
 
   /**
@@ -287,6 +299,7 @@ export class HubClient {
         this.#heardAt = Date.now();
         this.#send(this.#plain ? { t: "auth", key: this.#options.key } : { t: "auth", key: this.#options.key, features: [DEFLATE_FEATURE] });
         this.#send({ t: "snapshot" });
+        if (this.#chat !== null) this.#sendChat();
       },
       onText: (text) => {
         if (this.#connection !== connection) return;
@@ -371,16 +384,20 @@ export class HubClient {
           ...(frame.features === undefined ? {} : { features: frame.features }),
         });
         this.#screens = frame.features?.includes(SCREENS_FEATURE) === true;
-        if (this.#chat !== null) this.#sendChat();
         if (this.#watching !== null && this.#screens) this.#sendWatch();
         return;
       }
       case "snapshot": {
         const { t: _t, ...snapshot } = frame;
-        // A snapshot covers everything up to its cursor, so the stream restarts there.
-        this.#cursor = snapshot.cursor;
-        this.#send({ t: "events", cursor: snapshot.cursor });
-        this.#options.emit({ t: "snapshot", snapshot });
+        // A snapshot covers everything up to its cursor, so the stream restarts there; back from a drop that missed
+        // only a few, after the last one applied, so the ones missed replay.
+        const from = this.#resumeFrom;
+        this.#resumeFrom = null;
+        const replay = from !== null && snapshot.cursor >= from && snapshot.cursor - from <= REPLAY_MAX;
+        this.#cursor = replay ? from : snapshot.cursor;
+        this.#replayTo = replay ? snapshot.cursor : -1;
+        this.#send({ t: "events", cursor: this.#cursor });
+        this.#options.emit(replay ? { t: "snapshot", snapshot, replay: true } : { t: "snapshot", snapshot });
         return;
       }
       case "event": {
@@ -389,7 +406,7 @@ export class HubClient {
         if (this.#cursor !== null && event.seq <= this.#cursor) return;
         this.#cursor = event.seq;
         this.#resumeAttempt = 0;
-        this.#options.emit({ t: "event", event });
+        this.#options.emit(event.seq <= this.#replayTo ? { t: "event", event, replayed: true } : { t: "event", event });
         return;
       }
       case "chat_delta": {
@@ -455,6 +472,8 @@ export class HubClient {
 
   #dropLink(message: string): void {
     this.#ready = false;
+    // A link that dropped before its snapshot applied nothing: the one before it is still where to resume.
+    if (this.#cursor !== null) this.#resumeFrom = this.#cursor;
     this.#cursor = null;
     for (const id of [...this.#pending.keys()]) this.#settle(id, fail("disconnected", message));
   }
