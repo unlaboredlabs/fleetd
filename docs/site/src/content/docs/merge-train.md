@@ -196,7 +196,8 @@ Blocking findings hold a PR until its next commit. Sometimes the lead resolves a
 narrowing the brief the reviewer judged against. In that case, enqueue the PR again with `change_enqueue`. The
 findings on its current patch stop counting, and a fresh, full review of the same patch starts. No approval carries
 over to it. The PR lands only on that review's clean verdict. If the review finds blockers again, they hold the PR as
-before. Enqueuing a PR that nothing blocks starts nothing.
+before. Enqueuing a PR that nothing blocks starts nothing. Only the lead's `change_enqueue` does this: a writer whose
+turn ends without a push, its result naming the same PR, starts no review.
 
 When blocking findings have held a PR at the same commit for 30 minutes with no push, the lead hears once. The message
 says how to start a fresh review, and to check on the writer otherwise.

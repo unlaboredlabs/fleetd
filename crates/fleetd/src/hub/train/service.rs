@@ -3402,8 +3402,10 @@ impl Train {
                 return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
             }
             let existing = self.add_after(existing, &after);
-            // Enqueued again while its review's findings block it: the lead resolved them without a new patch.
-            if existing.state == ChangeState::Reviewing
+            // Enqueued again while its review's findings block it: the lead resolved them without a new patch. Never a
+            // task's result: a writer's turn that ends without a push names the same PR, and resolves nothing.
+            if !result
+                && existing.state == ChangeState::Reviewing
                 && self.gate.resolved(existing.clone()).await
             {
                 self.note(&existing.change_id, RESOLVED);
