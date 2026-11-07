@@ -231,6 +231,10 @@ pub enum BoatError {
     IdempotencyKeyReused,
     /// Any other 409.
     Conflict { code: String },
+    /// 400 `unknown_environment`: the account has no environment by the name the create sent, for the wallet it bills
+    /// (an organization's environments count only for a sandbox billed to that organization). The pool fills in the
+    /// name it sent.
+    UnknownEnvironment { name: String },
     /// Any other 4xx.
     Refused { status: u16, code: String },
     /// 5xx.
@@ -265,12 +269,31 @@ impl BoatError {
             BoatError::IdempotencyInProgress => "boat.dev is still making this machine".into(),
             BoatError::IdempotencyKeyReused => "boat.dev refused a changed retry".into(),
             BoatError::Conflict { code } => format!("boat.dev refused it ({code})"),
+            BoatError::UnknownEnvironment { name } => format!(
+                "boat.dev has no environment named {name} on the account the hub's key is from (unknown_environment): \
+                 make it in boat.dev › Environments on your own account, not an organization's, with Safe for third \
+                 parties on, or save the name of the one the key is scoped to in Settings › Hub › Machines › Cloud \
+                 machines; then Create again"
+            ),
             BoatError::Refused { status, code } => format!("boat.dev refused it ({status} {code})"),
             BoatError::Server { .. } | BoatError::Network(_) => {
                 "boat.dev unreachable, retrying".into()
             }
             BoatError::NoKey(why) => why.clone(),
         }
+    }
+
+    /// A refusal of what this one request asked (its environment, its size, a changed retry), which says nothing about
+    /// starts in general: it fails its own machine and holds no other start. Asking again unchanged gets it again, so
+    /// nothing retries it by itself.
+    pub fn about_the_request(&self) -> bool {
+        matches!(
+            self,
+            BoatError::UnknownEnvironment { .. }
+                | BoatError::Refused { .. }
+                | BoatError::Conflict { .. }
+                | BoatError::IdempotencyKeyReused
+        )
     }
 }
 
@@ -441,6 +464,9 @@ pub fn refusal(status: u16, body: &Value, retry_after: Option<u64>) -> BoatError
         (403, c) if c.starts_with("api_key_") || c == "forbidden" || c == "unauthorized" => {
             BoatError::KeyRefused { code }
         }
+        (400, "unknown_environment") => BoatError::UnknownEnvironment {
+            name: String::new(),
+        },
         (404, _) => BoatError::NotFound,
         (409, "snapshot_data_expired") => BoatError::DataExpired,
         (409, "idempotency_in_progress") => BoatError::IdempotencyInProgress,

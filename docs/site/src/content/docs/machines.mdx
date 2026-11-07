@@ -324,8 +324,6 @@ A task may go to a cloud machine only when all of these hold:
 
 - Cloud machines are on, and the hub has checked boat.dev since it started.
 - Its project is opted in to cloud machines.
-- It is a review or a reader. Writers go too once a hub admin turns writers on for cloud machines; it is off until
-  then.
 - Its project has no secret variables (those are kept only on its own machine). Plain variables,
   the worktree setup and the project's rules come from its own machine's checkout.
 
@@ -356,7 +354,7 @@ The queued line puts the project's machine first, then the cloud's part:
 | …; the cloud machines are busy (3 of 3 awake) | Every cloud machine is awake and full. |
 | …; cloud paused: today's boat.dev budget ($3.00) is spent; work runs on your own machines when there's room | No cloud machine takes new work until the budget allows it. |
 | …; fleetd's boat.dev start budget is used (6 of 6 this minute): next start at 14:32 | No more wakes until then. |
-| …; writers don't run on cloud machines unless a hub admin turns them on in Settings › Hub › Machines | This task may not go. |
+| …; not for cloud: its project's secret variables are only on its own machine | This task may not go. |
 | …; its repo didn't clone on boat-1, a cloud machine (…); tried again at 14:40 UTC | No cloud machine takes or wakes for it until then. |
 | waiting for boat-2 to wake: its work is there | A follow-up waking its own cloud machine. |
 
@@ -389,7 +387,7 @@ kind that turns it on or off there ([Turn screens on in Settings](/docs/browser-
 | Browser | Chrome: the node's own, which it installs as it starts, or the one `browser.chrome` names in node.json. |
 | Android emulator | fleetd's own pinned emulator: Linux on x86_64, opted in with `"device": {"enabled": true}` in node.json (the first screen installs it) or installed already, and a `/dev/kvm` this user can open read-write. See [Android screens](/docs/browser-sessions#android-setup). |
 | Desktop | Linux with docker or Xvfb. |
-| Agents' Mac | [The agents' Mac](/docs/agents-mac): the node's account at the Mac's screen (yours is fine), unlocked, with Accessibility and Screen Recording. Elsewhere it says `Needs a Mac`. See [the agents' Mac's screen](/docs/browser-sessions#mac). |
+| Agents' Mac | [The agents' Mac](/docs/agents-mac): the node's account at the Mac's screen (yours is fine), unlocked, with Accessibility and Screen Recording. Elsewhere it says `Needs a Mac`. The agents' Mac hosts only this kind. See [the agents' Mac's screen](/docs/browser-sessions#mac). |
 
 When an agent starts a screen, the hub places it: on the agent's own machine when it hosts screens, can run that kind
 and has a free screen slot; else on the online machine that can with the most free slots. When none can, the agent is

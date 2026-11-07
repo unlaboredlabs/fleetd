@@ -299,7 +299,7 @@ fn health_from(
         return health(
             IosState::Ready,
             format!(
-                "iOS screens are ready: {} on {}, agent-device {}.",
+                "iOS simulators are ready: {} on {}, agent-device {}.",
                 golden.runtime_name,
                 golden.device_type_name,
                 agent_device::VERSION
@@ -323,7 +323,7 @@ fn health_from(
         Err((why, fix)) if config.opted_in() => {
             return health(
                 IosState::Unavailable,
-                format!("No iOS screens: {why}."),
+                format!("No iOS simulators: {why}."),
                 fix,
                 false,
             );
@@ -334,8 +334,8 @@ fn health_from(
         return health(
             IosState::Wanted,
             format!(
-                "Xcode with {runtime}; iOS screens are off until this Mac is turned on in Settings › Hub › \
-                 Machines › Screens (or \"ios\": {{\"enabled\": true}} in its node.json)."
+                "Xcode with {runtime}; iOS simulators are the agents' Mac's: Settings › Hub › Setup › A Mac for \
+                 agents joins one."
             ),
             None,
             false,
@@ -344,7 +344,7 @@ fn health_from(
     if !node() {
         return health(
             IosState::Unavailable,
-            "No iOS screens: agent-device needs Node.js 22.12 or later on the node's PATH."
+            "No iOS simulators: agent-device needs Node.js 22.12 or later on the node's PATH."
                 .to_owned(),
             Some("brew install node".to_owned()),
             false,

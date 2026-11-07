@@ -40,6 +40,24 @@ describe("hostsFor", () => {
   });
 });
 
+describe("the agents' Mac", () => {
+  // An older hub or node of it still says a browser is ready there: it is offered for its own screen only.
+  const studio = machine("studio", ["browser", "android", "desktop", "mac"], { roles: ["sessions"], mac: { on: true, ready: true } });
+
+  it("hosts only its own screen", () => {
+    const all = [MACHINES[0] as MachineRolesEntry, studio];
+    expect(hostsFor(all, "browser").map((h) => h.machineId)).toEqual(["devbox"]);
+    expect(hostsFor(all, "linux_desktop").map((h) => h.machineId)).toEqual(["devbox"]);
+    expect(hostsFor(all, "mac").map((h) => h.machineId)).toEqual(["studio"]);
+  });
+
+  it("isn't why another kind can't open", () => {
+    expect(whyOff([studio], "browser")).toEqual({ why: "Browser screens need a machine that hosts screens.", short: "No machine for it", fix: "add" });
+    expect(whyOff([studio], "android")?.fix).toBe("add");
+    expect(whyOff([studio], "mac")).toBeNull();
+  });
+});
+
 describe("a machine's slots", () => {
   it("starts on the picked machine, else the first online one with a free slot", () => {
     const hosts = hostsFor(MACHINES, "browser");

@@ -261,3 +261,65 @@ fn another_node_on_the_agents_mac_fails_its_one_node_check() {
     let passing = crate::hub::doctor::checks::mac_one_node("mac1", &[]);
     assert_eq!(passing.check.status.as_str(), "ok");
 }
+
+/// The agents' Mac offers only its own screen: an older node of it that still lists a browser, an emulator and a Linux
+/// desktop ready has them left out of machine_roles and placement, and their switches and the idle timeout are refused
+/// before its node is asked.
+#[tokio::test]
+async fn the_agents_mac_offers_only_its_own_screen_whatever_an_older_node_lists() {
+    let (hub, _home) = hub();
+    let _devbox = remote(&hub);
+    super::tests::report_hosts(&hub, "devbox", &[]);
+    super::tests::report_hosts(&hub, "mac1", &SessionHost::ALL);
+    let listed = tool(&hub, "machine_roles", json!({})).await.unwrap();
+    let hosts = |m: &str| -> Vec<serde_json::Value> {
+        listed["machines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["machineId"] == m)
+            .unwrap()["hosts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h["host"].clone())
+            .collect()
+    };
+    assert_eq!(hosts("mac1"), [json!("mac")]);
+    assert_eq!(
+        hosts("devbox").len(),
+        SessionHost::ALL.len(),
+        "other machines list every kind"
+    );
+
+    // A browser an agent starts never goes to it; its own screen does.
+    let refused = route_once(&hub, "th-1", SessionHost::Browser, start(), None)
+        .await
+        .unwrap_err();
+    assert!(
+        refused.message.contains("No machine can host a browser"),
+        "{}",
+        refused.message
+    );
+    let mac = route_once(&hub, "th-2", SessionHost::Mac, start(), None)
+        .await
+        .unwrap();
+    assert_eq!(mac.runner, mid("mac1"));
+
+    for input in [
+        json!({ "machineId": "mac1", "host": "browser", "on": true }),
+        json!({ "machineId": "mac1", "host": "android", "on": false }),
+        json!({ "machineId": "mac1", "host": "desktop", "on": true }),
+        json!({ "machineId": "mac1", "idleMinutes": 45 }),
+    ] {
+        let refused = message(
+            tool(&hub, "machine_screens_set", input.clone())
+                .await
+                .unwrap_err(),
+        );
+        assert!(
+            refused.contains("mac1 didn't change: the agents' Mac"),
+            "{input}: {refused}"
+        );
+    }
+}

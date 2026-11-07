@@ -52,6 +52,8 @@ export const fixtures = [
   "settings-default-profile-only",
   // A machine past its memory estimate, and a project set past its machine (fixtures/settings).
   "settings-machines",
+  // ...and the fleet's second machine as the agents' Mac, ready: its Screens row has only its own screen (fixtures/settings).
+  "settings-agents-mac",
   // Settings' Hub group (fixtures/admin): an owner's hub with three people and an invite waiting, as its owner, an admin and
   // a member.
   "admin-owner",
@@ -74,8 +76,6 @@ export const fixtures = [
   "machines-checklist",
   // ...and cloud machines on boat.dev beside the hub's own: one awake, one asleep, one broken (W407).
   "machines-cloud",
-  // ...and Sign in with boat under way: the link to open, then the code to type on boat.dev's page (W448).
-  "machines-cloud-sign-in",
   // F2: the lead chat's live strip with 0, 3 and 20 agents at work (fixtures/live).
   "live-0",
   "live-3",
@@ -1664,15 +1664,14 @@ export const screens: readonly Screen[] = [
   { id: "setup.welcome", route: "#/setup/welcome", fixtures: ["setup-fresh"] },
   { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"], variant: "claude" },
   { id: "setup", route: "#/setup/github", fixtures: ["setup-github"], variant: "github" },
-  // The optional cloud step: its parts, then Sign in with boat (pasting a key behind it) and the way to the hub inline
-  // (nothing to set up).
+  // The optional cloud step: its parts, then the key's sealed field and the way to the hub inline (nothing to set up).
   {
     id: "setup",
     route: "#/setup/cloud",
     fixtures: ["setup-fresh"],
     variant: "cloud",
     open: async (page) => {
-      await page.getByRole("button", { name: "Sign in with boat" }).waitFor();
+      await page.getByRole("textbox", { name: "boat.dev API key" }).waitFor();
       await page.locator('[data-way="untested"]').waitFor();
     },
   },
@@ -2306,20 +2305,6 @@ export const screens: readonly Screen[] = [
       await part.evaluate((el) => el.scrollIntoView({ block: "start" }));
     },
   },
-  // Sign in with boat in place of a pasted key: the link first, then, once they are signed in, the code to type there.
-  {
-    id: "settings.hub.machines",
-    route: "#/settings/hub/machines",
-    fixtures: ["machines-cloud-sign-in"],
-    variant: "cloud-sign-in",
-    open: async (page) => {
-      const part = page.locator('[data-part="hub.cloud"]');
-      await part.waitFor();
-      await page.getByRole("button", { name: "I'm signed in" }).click();
-      await page.locator("[data-sign-in-code]").waitFor();
-      await part.evaluate((el) => el.scrollIntoView({ block: "start" }));
-    },
-  },
   // The kill switch asks first, naming the machines awake.
   {
     id: "settings.hub.machines",
@@ -2496,6 +2481,20 @@ export const screens: readonly Screen[] = [
       await screens.scrollIntoViewIfNeeded();
       await page.getByRole("switch", { name: /^Agents’ Mac screens on /u }).first().waitFor();
       await expect(page.getByRole("switch", { name: /^iOS screens on /u })).toHaveCount(0);
+    },
+  },
+  // Machines › Screens on the agents' Mac: its own screen's switch alone, and how soon an idle one ends.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["settings-agents-mac"],
+    variant: "agents-mac",
+    open: async (page) => {
+      const mac = page.locator("[data-screens]").nth(1);
+      await mac.scrollIntoViewIfNeeded();
+      await mac.getByRole("switch", { name: /^Agents’ Mac screens on /u }).waitFor();
+      await expect(mac.getByRole("switch")).toHaveCount(1);
+      await mac.getByText(/^An idle Mac screen ends after 5 minutes/u).waitFor();
     },
   },
   // storefront set to 30 on devbox, which holds it at 22: the line, and for an admin the way to Hub › Machines.

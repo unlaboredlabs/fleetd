@@ -607,6 +607,13 @@ impl Auth {
         })
     }
 
+    /// Takes back the open enroll code `token` itself: one the hub minted for a create boat never took. Whether it was
+    /// still open.
+    pub fn revoke_enroll_secret(&self, token: &str) -> Result<bool, StoreError> {
+        let id = &sha256(token)[..ENROLL_CODE_ID_LEN];
+        Ok(self.revoke_enroll_token(id)?.is_some())
+    }
+
     /// Drops enroll codes used or expired more than [`SPENT_CODE_KEPT_MS`] ago; how many went.
     pub fn prune_enroll_tokens(&self) -> Result<usize, StoreError> {
         let cutoff = self.now() - SPENT_CODE_KEPT_MS;

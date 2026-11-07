@@ -8,7 +8,7 @@
 import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
 import { isObject, type JsonObject } from "../kit/json.ts";
-import { cloudAtWork, cloudNew, cloudSignIn, cloudSnapshotMachines } from "../kit/cloud.ts";
+import { cloudAtWork, cloudSnapshotMachines } from "../kit/cloud.ts";
 import steps from "../setup/steps.json" with { type: "json" };
 
 const RUN = "M0123456789abcdef0123456789abcdef";
@@ -184,20 +184,9 @@ function cloud(from: Fixture): Fixture {
   return f;
 }
 
-/** "Sign in with boat" under way (W448): boat.dev's link, and the code to type there once signed in. */
-function signIn(from: Fixture): Fixture {
-  const f = hub(from, "machines-cloud-sign-in", "Sign in with boat: the link to open, then the code to type on boat.dev's page", () => []);
-  const view = cloudNew({ signIn: cloudSignIn(f.now) });
-  f.answer("cloud_get", undefined, { cloud: view });
-  f.answer("cloud_sign_in", { email: "person@example.com" }, { cloud: view }, 400);
-  f.answer("cloud_sign_in", {}, { cloud: cloudNew() }, 200);
-  return f;
-}
-
 export default defineGroup({
   fixtures: (base) => [
     cloud(base("typical")),
-    signIn(base("typical")),
     hub(base("typical"), "machines-add", "Add machine's three ways in, on an admin's hub that sees builder-1 and mac-mini", () => []),
     joined(base("typical")),
     checklist(base("typical")),

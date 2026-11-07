@@ -1131,3 +1131,27 @@ async fn a_wait_with_a_pr_gets_its_build_when_its_slot_frees() {
     );
     yours(&hub, &bee, &thread).await;
 }
+
+/// A person opens only the agents' Mac's own screen there, whatever an older node of it lists ready.
+#[tokio::test]
+async fn the_agents_mac_opens_only_its_own_screen_for_a_person() {
+    let (hub, _home, _clock) = setup();
+    let _mac1 = runner(&hub, "mac1");
+    // Its hello said it is the agents' Mac.
+    let mut machine = hub.store.machine_get(&mid("mac1")).unwrap().unwrap();
+    machine.agents_mac = Some(true);
+    hub.store.machine_upsert(&machine, None).unwrap();
+    report_hosts(&hub, "mac1", &SessionHost::ALL);
+    let (_, desk) = person(&hub, "Ada", "operate");
+    for kind in ["browser", "android", "linux_desktop"] {
+        let (code, message) = refusal(call(&hub, &desk, "screen_open", open("mac1", kind)).await);
+        assert_eq!(code, ErrorCode::Invalid, "{kind}");
+        assert!(
+            message.contains("mac1 is the agents' Mac: its only screen is its own"),
+            "{kind}: {message}"
+        );
+    }
+    call(&hub, &desk, "screen_open", open("mac1", "mac"))
+        .await
+        .unwrap();
+}

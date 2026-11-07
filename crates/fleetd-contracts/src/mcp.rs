@@ -3409,10 +3409,9 @@ output!(CloudStopOutput {
     unlisted: Option<String>,
 });
 
-// cloud_get, cloud_set, cloud_key_set, cloud_sign_in, cloud_test, cloud_create, cloud_reset, cloud_resume: the hub's
-// cloud machines (hub/pool) as Settings › Hub › Machines and the setup step show and change them. Anyone signed in reads
-// them; the rest are an admin's. The boat key is sealed in the app to the hub's own box key, or made by the hub itself
-// once the admin signs in with boat: nothing returns it.
+// cloud_get, cloud_set, cloud_key_set, cloud_test, cloud_create, cloud_reset, cloud_resume: the hub's cloud machines
+// (hub/pool) as Settings › Hub › Machines and the setup step show and change them. Anyone signed in reads them; the
+// rest are an admin's. The boat key is sealed in the app to the hub's own box key: nothing returns it.
 input!(CloudGetInput {});
 output!(CloudGetOutput {
     cloud: crate::cloud::CloudView,
@@ -3429,14 +3428,6 @@ input!(CloudKeySetInput {
     sealed: crate::secrets::SealedSecret,
 });
 output!(CloudKeySetOutput {
-    cloud: crate::cloud::CloudView,
-});
-input!(CloudSignInInput {
-    /// The boat.dev account's email: starts "Sign in with boat" (cloud_get's signIn shows the link and code).
-    /// Absent: stops the one under way.
-    email: Option<String>,
-});
-output!(CloudSignInOutput {
     cloud: crate::cloud::CloudView,
 });
 input!(CloudTestInput {});
@@ -3861,7 +3852,6 @@ tools! {
     // Owners' and admins' keys (the handlers check): the hub's own boat.dev account.
     cloud_set => CloudSet, Admin, CloudSetInput, CloudSetOutput;
     cloud_key_set => CloudKeySet, Admin, CloudKeySetInput, CloudKeySetOutput;
-    cloud_sign_in => CloudSignIn, Admin, CloudSignInInput, CloudSignInOutput;
     cloud_test => CloudTest, Admin, CloudTestInput, CloudTestOutput;
     cloud_create => CloudCreate, Admin, CloudCreateInput, CloudCreateOutput;
     cloud_reset => CloudReset, Admin, CloudResetInput, CloudResetOutput;

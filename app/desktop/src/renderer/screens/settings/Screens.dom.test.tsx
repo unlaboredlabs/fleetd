@@ -188,3 +188,32 @@ it("shows what a kind that can't run is missing as the command to run on that ma
   // Where every kind runs or is simply off, no command.
   expect(row("devbox")?.querySelector("dt")).toBeNull();
 });
+
+// The agents' Mac offers only its own screen: an older node of it still reports a browser, an emulator and a desktop,
+// and none of them shows, nor an idle timeout to pick, as its screen ends after its own few idle minutes.
+it("the agents' Mac shows only its own screen's switch", async () => {
+  const agentsMac: MachineRolesEntry = {
+    ...devbox,
+    machineId: "studio",
+    name: "studio",
+    roles: ["sessions"],
+    mac: { on: true, ready: true },
+    hosts: [
+      { host: "browser", ready: true, detail: "Chrome at /Applications/Google Chrome.app", on: true, idleMinutes: 30 },
+      { host: "android", ready: false, detail: "Android screens run on Linux x86_64 with KVM", off: "unsupported", on: false, idleMinutes: 30 },
+      { host: "desktop", ready: false, detail: "desktop screens run on Linux (docker or Xvfb)", off: "unsupported", on: true, idleMinutes: 30 },
+      { host: "mac", ready: true, detail: "the node's session is on the Mac's screen", on: true, idleMinutes: 5 },
+    ],
+  };
+  listed = [devbox, agentsMac];
+  await render();
+  const mac = row("studio");
+  expect([...(mac?.querySelectorAll('button[role="switch"]') ?? [])].map((b) => b.getAttribute("aria-label"))).toEqual(["Agents’ Mac screens on studio"]);
+  expect(toggle(mac, "Agents’ Mac")?.disabled).toBe(false);
+  expect(mac?.textContent).not.toContain("Idle screens end after");
+  expect(mac?.textContent).toContain("An idle Mac screen ends after 5 minutes, so the next agent gets it.");
+  expect(mac?.textContent).not.toContain("Chrome");
+  // Another machine keeps every kind.
+  expect(toggle(row("devbox"), "Browser")).not.toBeNull();
+  expect(toggle(row("devbox"), "Linux desktop")).not.toBeNull();
+});

@@ -378,6 +378,16 @@ async fn screen_open(
     let Some((runner, _, _)) = all.into_iter().find(|(m, _, _)| m.machine_id == runner_id) else {
         return Err(crate::hub::api::unknown_machine(&runner_id));
     };
+    if host != SessionHost::Mac && super::mac::is_agents_mac(&hub, &runner_id) {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            format!(
+                "{} is the agents' Mac: its only screen is its own.",
+                runner.name
+            ),
+        )
+        .with_fix("Pick another machine for it: machine_roles lists what each can host."));
+    }
     if let Some(why) = unable(&runner, host) {
         return Err(ToolError::new(ErrorCode::Failed, why)
             .with_fix("Pick a machine that can host it: machine_roles lists what each can."));

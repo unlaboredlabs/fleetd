@@ -3,7 +3,7 @@
 // places), and each machine's slots in words, full ones offering to wait. A project's browser runs only on the project's
 // own machine, where it keeps its sign-ins. An Android screen can take an open PR's CI build, installed before the
 // person gets it. iOS screens are gone (D298): iOS simulators are the agents' Mac's (`mac sim`), and the agents' Mac is
-// the one Apple kind here. A kind no machine can host says why, from what the machines' nodes report, and what fixes it: an
+// the one Apple kind here, the only kind the agents' Mac offers. A kind no machine can host says why, from what the machines' nodes report, and what fixes it: an
 // admin's Turn on where it is only switched off, else who to ask. Pure, so it is unit-tested. The phone app runs it
 // too, on Hermes, which has no Array toSorted: each list here sorts its own fresh copy instead.
 import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
@@ -32,8 +32,11 @@ export interface HostChoice {
   readonly full: boolean;
 }
 
+/** The agents' Mac offers only its own screen, whatever an older hub or node of it says it has ready. */
+const offers = (m: Pick<MachineRolesEntry, "mac">, kind: ScreenKind): boolean => kind === "mac" || m.mac === undefined;
+
 const ready = (m: MachineRolesEntry, kind: ScreenKind): boolean =>
-  m.roles.includes("sessions") && m.hostsOthers && (m.hosts ?? []).some((h) => h.host === HOST[kind] && h.ready);
+  offers(m, kind) && m.roles.includes("sessions") && m.hostsOthers && (m.hosts ?? []).some((h) => h.host === HOST[kind] && h.ready);
 
 /**
  * The machines that can host a screen of `kind`, online ones first, then by name. A project's browser (`home` its
@@ -127,8 +130,10 @@ const sentence = (s: string): string => {
  */
 export const whyOff = (machines: readonly MachineRolesEntry[], kind: ScreenKind, home?: string): OffReason | null => {
   if (canOpen(machines, kind, home)) return null;
-  const mine = machines.filter((m) => onHome(m, kind, home));
-  if (mine.length === 0) return { why: "No machine has joined this hub yet.", short: "No machine", fix: "add" };
+  const joined = machines.filter((m) => onHome(m, kind, home));
+  if (joined.length === 0) return { why: "No machine has joined this hub yet.", short: "No machine", fix: "add" };
+  const mine = joined.filter((m) => offers(m, kind));
+  if (mine.length === 0) return { why: NEEDS[kind], short: "No machine for it", fix: "add" };
   const hosting = mine.filter((m) => m.roles.includes("sessions"));
   if (hosting.length === 0) {
     return mine.length === 1 && mine[0] !== undefined

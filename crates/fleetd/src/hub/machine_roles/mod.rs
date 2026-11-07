@@ -484,7 +484,9 @@ pub fn runners(hub: &Hub) -> Result<Vec<(Runner, Roles, String)>, StoreError> {
                 Runner {
                     online: m.status != MachineStatus::Offline,
                     sessions: roles.sessions,
-                    hosts: load.and_then(|l| l.hosts),
+                    hosts: load
+                        .and_then(|l| l.hosts)
+                        .map(|hosts| offered(hosts, m.agents_mac == Some(true))),
                     // It opens what an agent's node seals to it, with the key it gave the hub.
                     hosts_others: others_note.is_none(),
                     others_note,
@@ -501,6 +503,21 @@ pub fn runners(hub: &Hub) -> Result<Vec<(Runner, Roles, String)>, StoreError> {
         }
         Ok(out)
     })
+}
+
+/// What a machine offers of what its node reported: the agents' Mac only its own screen, as its node says since it
+/// stopped listing the rest (node/hosts.rs), though an older one still lists a browser, an emulator and a desktop.
+fn offered(hosts: HostChecks, agents_mac: bool) -> HostChecks {
+    match agents_mac {
+        true => List::unchecked(
+            hosts
+                .iter()
+                .filter(|h| h.host == SessionHost::Mac)
+                .cloned()
+                .collect(),
+        ),
+        false => hosts,
+    }
 }
 
 pub fn entry(runner: Runner, roles: Roles, why: String) -> MachineRolesEntry {

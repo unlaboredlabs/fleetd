@@ -618,3 +618,17 @@ fn a_pool_token_enrolls_a_recreated_cloud_machine_and_nothing_else() {
         Some("pub-hub")
     );
 }
+
+/// A pool code whose create boat never took is revoked by the code itself: no node enrolls with it after.
+#[test]
+fn a_pool_code_is_revoked_by_its_secret() {
+    let (auth, _, _) = setup();
+    let code = auth.create_pool_enroll_token(&m("boat-1")).unwrap();
+    assert!(auth.revoke_enroll_secret(&code.token).unwrap());
+    assert!(auth.open_enroll_tokens().unwrap().is_empty());
+    assert!(!auth.revoke_enroll_secret(&code.token).unwrap());
+    assert!(
+        auth.consume_enroll_token(&code.token, &m("boat-1"), "pub")
+            .is_err()
+    );
+}

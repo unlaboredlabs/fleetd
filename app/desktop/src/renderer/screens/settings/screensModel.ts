@@ -11,6 +11,9 @@ export const SCREEN_KINDS: ReadonlyArray<{ readonly host: SessionHost; readonly 
   { host: "mac", label: "Agents’ Mac" },
 ];
 
+/** The kinds a machine's row lists: the agents' Mac offers only its own screen, whatever an older node of it reports. */
+export const kindsOf = (m: Pick<MachineRolesEntry, "mac">): typeof SCREEN_KINDS => (m.mac === undefined ? SCREEN_KINDS : SCREEN_KINDS.filter((k) => k.host === "mac"));
+
 /** A kind's switch: on as node.json has it (a node before switches: on where it can host it). */
 export const switchOn = (check: HostCheck | undefined): boolean => check?.on ?? check?.ready ?? false;
 
