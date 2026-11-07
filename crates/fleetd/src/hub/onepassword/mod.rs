@@ -274,6 +274,7 @@ async fn remove(
 ) -> Result<OnePasswordRemoveOutput, ToolError> {
     let person = me(&hub, &caller)?;
     forget_person(&hub, &person.person_id).await;
+    crate::hub::people::tools::account_removed(&hub, &person.as_ref(), "1Password token");
     Ok(OnePasswordRemoveOutput {
         ok: True,
         next: Some(

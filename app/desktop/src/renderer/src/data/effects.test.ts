@@ -70,6 +70,20 @@ describe("event effects", () => {
     expect(effectsOf(e("mcp.oauth", { name: "mail", status: "connected" }))).toEqual({ invalidate: [{ tool: "mcp_servers_get" }], resync: false });
   });
 
+  it("a remove elsewhere reaches every open page that showed it", () => {
+    // An MCP server removed: Integrations drops it.
+    expect(effectsOf(e("mcp.oauth", { name: "mail", removed: true }))).toEqual({ invalidate: [{ tool: "mcp_servers_get" }], resync: false });
+    // A linked hub removed from a project, or its Telegram bridge unpaired or removed.
+    const settings = tools(e("project.settings", { telegram: "removed" }, { machineId: "devbox", projectId: "app" }));
+    expect(settings).toContain("telegram_get");
+    expect(settings).toContain("hub_links_get");
+    // Someone's Claude subscription, 1Password token or GitHub connection removed, or a hub link of theirs revoked.
+    for (const change of ["account_removed", "link_revoked"]) {
+      const people = tools(e("people.changed", { change }));
+      for (const read of ["people_list", "claude_accounts_get", "onepassword_get", "github_app_get", "hub_links_get"]) expect(people, `${change} ${read}`).toContain(read);
+    }
+  });
+
   it("your sidebar order moved on another desktop: this one reads it again, and nothing else", () => {
     expect(effectsOf(e("sidebar.order"))).toEqual({ invalidate: [{ tool: "sidebar_order_get" }], resync: false });
   });
