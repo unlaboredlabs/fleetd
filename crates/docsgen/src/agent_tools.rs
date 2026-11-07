@@ -328,10 +328,6 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
 /// The roles that are offered a tool making call `op` and that the hub lets make it.
 fn who_may_call(tool: &Tool) -> String {
     let op = tool.op;
-    // The hub refuses them to every lead but a Navi's (`hub/navi/bridge.rs`).
-    if fleetd::hub::navi::bridge::OPS.contains(&op) {
-        return "a Navi's lead".into();
-    }
     let mut who = Vec::new();
     for (role, caller, name) in [
         (Role::Lead, CallerAgent::Lead, "a lead"),
@@ -996,8 +992,8 @@ fn switches() -> Result<String, String> {
     }
     for ((role, ttl), why) in PROMPT_CACHE_TTL_WHY {
         let who = match role {
-            SessionRole::Lead => "Leads",
-            SessionRole::Assistant => "Navis' leads",
+            SessionRole::Lead => "Leads with repos",
+            SessionRole::Assistant => "Leads with no repo",
             SessionRole::Worker => "Task agents",
             SessionRole::Plain => "Threads you start",
         };

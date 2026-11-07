@@ -51,7 +51,7 @@ pub struct ProjectMessageResult {
 pub struct FactoryStatusCall {
     /// One project, by title or project id; absent, every project but this one.
     pub project: Option<Line<1, 200>>,
-    /// A linked hub, by its label: its projects this Navi reaches through the link. Absent: this hub.
+    /// A linked hub, by its label: its projects this project reaches through the link. Absent: this hub.
     pub hub: Option<HubLabel>,
 }
 

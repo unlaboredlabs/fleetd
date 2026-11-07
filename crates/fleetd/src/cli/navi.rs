@@ -13,15 +13,16 @@ use super::setup::doctor::connect_to;
 
 pub const NAVI_USAGE: &str =
     "  navi ...   the old name of fleetd project (project add --new <name> --only-me,
-             project list, project archive|unarchive), kept for one release
+             project list, project archive, project unarchive), kept for one release
   navi create <name> [--machine <id>] [--hub <url>]
-             make a Navi: a personal assistant with its own chat, memory and folder
-             (navi/<name> under the machine's fleetd home; the least busy worker by default)
+             the old project add --new <name> --only-me: a project only you see, in its own
+             folder (navi/<name> under the machine's fleetd home; the least busy worker by default)
   navi list [--archived] [--machine <id>] [--hub <url>]
-  navi rename <machine>/<navi> <name> [--hub <url>]
-  navi archive|unarchive <machine>/<navi> [--hub <url>]
-             archived, its lead stops and its chat, memory and folder stay; <navi> is
-             its id or its name
+  navi rename <machine>/<project> <name> [--hub <url>]
+  navi archive <machine>/<project> [--hub <url>]
+             the old project archive; <project> is its id or its name
+  navi unarchive <machine>/<project> [--hub <url>]
+             the old project unarchive
 ";
 
 const SPEC: Spec = Spec {
@@ -199,7 +200,7 @@ async fn archive(
     let navi = find(client, v.positionals.first()).await?;
     let mut input = key(&navi);
     input["archived"] = json!(archived);
-    call(client, "project_archive", input).await?;
+    super::project::archive_call(client, input).await?;
     let title = s(&navi, "/title");
     out.success(&if archived {
         format!("{title} is archived; its chat, memory and folder stay")

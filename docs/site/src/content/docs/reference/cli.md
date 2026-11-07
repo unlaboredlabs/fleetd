@@ -245,26 +245,19 @@ forget it; the hub's gh goes back to this machine's own login
 
 ```text
 fleetd project add [<path|github-url>] [--machine <id>] [--title <t>] [--dest <dir>]
-    [--use-existing] [--yes] [--hub <url>]
+    [--use-existing] [--only-me | --no-only-me] [--yes] [--hub <url>]
 ```
 
-add a project: a checkout or a plain folder on a machine (this one by default), or a GitHub repo cloned onto one (the least busy worker by default), with progress; then its CI, merge rules and what the lead will need. No argument: pick one
+add a project: a checkout or a plain folder on a machine (this one by default), or a GitHub repo cloned onto one (the least busy worker by default), with progress; then its CI, merge rules and what the lead will need. No argument: pick one. `--only-me`: only you see and use it; without it or `--no-only-me`, on for a plain folder, off for a clone or a repo folder
 
 ### fleetd project add {#project-add-new}
 
 ```text
-fleetd project add --new <name> [--machine <id>] [--dest <dir>] [--git-init] [--hub <url>]
+fleetd project add --new <name> [--machine <id>] [--dest <dir>] [--git-init]
+    [--only-me | --no-only-me] [--hub <url>]
 ```
 
-start a new, empty project: the machine makes its folder (`~/fleetd/projects/<name>` by default, or `--dest`; one that holds files is refused). A plain folder with no repo, unless `--git-init`; add a repo later with project repo add
-
-### fleetd project add {#project-add-only-me|--no-only-me}
-
-```text
-fleetd project add ... --only-me|--no-only-me
-```
-
-Only me: only you see and use it. Without either, on for a new project with no repo, off for a clone or a repo folder
+start a new, empty project: the machine makes its folder (`~/fleetd/projects/<name>` by default, or `--dest`; one that holds files is refused). A plain folder with no repo, unless `--git-init`; add a repo later with project repo add. Only me unless `--git-init` or `--no-only-me`
 
 ### fleetd project list {#project-list}
 
@@ -272,13 +265,21 @@ Only me: only you see and use it. Without either, on for a new project with no r
 fleetd project list [--archived] [--machine <id>] [--hub <url>]
 ```
 
-### fleetd project {#project}
+### fleetd project archive {#project-archive}
 
 ```text
-fleetd project archive|unarchive <machine>/<project> [--hub <url>]
+fleetd project archive <machine>/<project> [--hub <url>]
 ```
 
-archived, its lead stops and its chat, memory and folder stay
+its lead stops and doesn't start again; its chat, memory and folder stay
+
+### fleetd project unarchive {#project-unarchive}
+
+```text
+fleetd project unarchive <machine>/<project> [--hub <url>]
+```
+
+bring it back: its lead starts with your next message
 
 ### fleetd project stop {#project-stop}
 
@@ -294,7 +295,7 @@ stop its lead's turn and its agents, as you; the lead and its chat stay, and the
 fleetd project remove <machine>/<project> [--yes] [--hub <url>]
 ```
 
-stop its agents and forget it; its files, branches and worktrees stay
+stop its agents and erase it: its chat, memory, skills, approvals, orders, automations, sign-ins and Telegram link; its files, branches and worktrees stay
 
 ### fleetd project repo list {#project-repo-list}
 
@@ -365,7 +366,7 @@ create or change a task profile (owner or admin), or delete one. A new one needs
 fleetd navi ...
 ```
 
-the old name of `fleetd project` (project add `--new` \<name\> `--only-me`, project list, project archive\|unarchive), kept for one release
+the old name of `fleetd project` (project add `--new` \<name\> `--only-me`, project list, project archive, project unarchive), kept for one release
 
 ### fleetd navi create {#navi-create}
 
@@ -373,7 +374,7 @@ the old name of `fleetd project` (project add `--new` \<name\> `--only-me`, proj
 fleetd navi create <name> [--machine <id>] [--hub <url>]
 ```
 
-make a Navi: a personal assistant with its own chat, memory and folder (navi/\<name\> under the machine's fleetd home; the least busy worker by default)
+the old project add `--new` \<name\> `--only-me`: a project only you see, in its own folder (navi/\<name\> under the machine's fleetd home; the least busy worker by default)
 
 ### fleetd navi list {#navi-list}
 
@@ -384,16 +385,24 @@ fleetd navi list [--archived] [--machine <id>] [--hub <url>]
 ### fleetd navi rename {#navi-rename}
 
 ```text
-fleetd navi rename <machine>/<navi> <name> [--hub <url>]
+fleetd navi rename <machine>/<project> <name> [--hub <url>]
 ```
 
-### fleetd navi {#navi-hub}
+### fleetd navi archive {#navi-archive}
 
 ```text
-fleetd navi archive|unarchive <machine>/<navi> [--hub <url>]
+fleetd navi archive <machine>/<project> [--hub <url>]
 ```
 
-archived, its lead stops and its chat, memory and folder stay; \<navi\> is its id or its name
+the old project archive; \<project\> is its id or its name
+
+### fleetd navi unarchive {#navi-unarchive}
+
+```text
+fleetd navi unarchive <machine>/<project> [--hub <url>]
+```
+
+the old project unarchive
 
 
 ## Running by hand {#running-by-hand}

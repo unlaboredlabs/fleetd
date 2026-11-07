@@ -48,7 +48,7 @@ brand!(
     Currency, name = "Currency", pattern = r"^[A-Z]{3}$"
 );
 
-/// The shop the Navi buys from.
+/// The shop the lead buys from.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PurchaseShop {
     /// The checkout page's host: `shop.example.com`. The card fills only on it (and its subdomains) and in its

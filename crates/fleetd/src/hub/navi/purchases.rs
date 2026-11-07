@@ -169,8 +169,8 @@ async fn answer(
                 .map_err(|e| McpToolError::new(ErrorCode::Failed, e.to_string()))?
                 .ok_or_else(|| {
                     McpToolError::new(ErrorCode::Invalid, "You have no card to pay with.").with_fix(
-                        "ask the person to pick one: the Navi's Settings › Payments, from a Credit Card item in their \
-                         1Password; then ask again",
+                        "ask the person to pick one: the project's Settings › Payments, from a Credit Card item in \
+                         their 1Password; then ask again",
                     )
                 })?;
             let opened = hub
@@ -314,8 +314,8 @@ async fn purchases(
         .collect();
     let next = match (&card, purchases.is_empty()) {
         (None, _) => Some(
-            "No card yet: pick a Credit Card item from your 1Password (onepassword_cards, then navi_card_set) so the \
-             Navi can pay, after you approve each purchase."
+            "No card yet: pick a Credit Card item from your 1Password (onepassword_cards, then project_card_set) so \
+             the project can pay; each purchase is recorded, with no ask."
                 .to_owned(),
         ),
         (Some(_), true) => Some("No purchases yet.".to_owned()),
