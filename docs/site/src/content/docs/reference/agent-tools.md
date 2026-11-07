@@ -934,7 +934,7 @@ Send the person a file you made (a PDF, a CSV, a document) in this project's cha
 
 ### publish_artifact
 
-Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. name is its name in this project (lowercase words with hyphens: sweep-report); title what the human reads. Give content, or path to a file (relative to your working directory, or absolute; .html and .htm are html unless format says otherwise). The chat shows a card that opens it in the Artifacts tab beside it. Publishing the same name again keeps a new version, older ones stay. Link to it in any chat text as [Title](artifact:name), or to one version as artifact:name@2. HTML runs sandboxed: its scripts run, but it has no network, so inline any script, style, font and image (data: URLs).
+Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. name is its name in this project (lowercase words with hyphens: sweep-report); title what the human reads. Give content, or path to a file (relative to your working directory, or absolute; .html and .htm are html unless format says otherwise). The chat shows a card that opens it in the Artifacts tab beside it. Publishing the same name again keeps a new version, older ones stay. Link to it in any chat text as `[Title](artifact:name)`, or to one version as `artifact:name@2`. HTML runs sandboxed: its scripts run, but it has no network, so inline any script, style, font and image (data: URLs).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1348,7 +1348,7 @@ Send the person a file you made (a PDF, a CSV, a document) in this project's cha
 
 ### publish_artifact (task)
 
-Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. name is its name in this project (lowercase words with hyphens: sweep-report); title what the human reads. Give content, or path to a file (relative to your working directory, or absolute; .html and .htm are html unless format says otherwise). The chat shows a card that opens it in the Artifacts tab beside it. Publishing the same name again keeps a new version, older ones stay. Link to it in any chat text as [Title](artifact:name), or to one version as artifact:name@2. HTML runs sandboxed: its scripts run, but it has no network, so inline any script, style, font and image (data: URLs).
+Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. name is its name in this project (lowercase words with hyphens: sweep-report); title what the human reads. Give content, or path to a file (relative to your working directory, or absolute; .html and .htm are html unless format says otherwise). The chat shows a card that opens it in the Artifacts tab beside it. Publishing the same name again keeps a new version, older ones stay. Link to it in any chat text as `[Title](artifact:name)`, or to one version as `artifact:name@2`. HTML runs sandboxed: its scripts run, but it has no network, so inline any script, style, font and image (data: URLs).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
