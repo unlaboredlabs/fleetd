@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-// Hub links in the app: a Navi's Linked hubs (none yet; working, can't reach and revoked there; a key pasted with its
-// address, sealed in main and never in a hub call; removed), a person's Links to this hub (none yet; a key made for
+// Hub links in the app: a project's Linked hubs (none yet; working, can't reach and revoked there; a key pasted with
+// its address, sealed in main and never in a hub call; removed), a person's Links to this hub (none yet; a key made for
 // chosen projects, shown once and copied with the address; only their own even for an admin; revoked), Hub › People's
-// list of everyone's, a hub too old to link hubs, and You › Hubs listing the linked hubs of the person's own Navis only.
+// list of everyone's, a hub too old to link hubs, and You › Hubs, which leaves each project's linked hubs to its
+// settings.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,7 +27,7 @@ const AT = "2026-10-27T10:00:00.000Z";
 const BOX = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
 const KEY = `flk_${"abcd".repeat(13)}`;
 const HUB = "http://devbox:4790";
-const NAVI = { machineId: "devbox", projectId: "ada" };
+const ADA = { machineId: "devbox", projectId: "ada" };
 const SHOP = { machineId: "devbox", projectId: "shop" };
 const BILLING = { machineId: "devbox", projectId: "billing" };
 const ALEX = { personId: "p_aaaaaaaa", name: "Alex" };
@@ -34,7 +35,7 @@ const SAM = { personId: "p_bbbbbbbb", name: "Sam" };
 
 const kept = (label: string, extra: Partial<HubLink> = {}): HubLink => ({
   linkId: `hl_${label.padEnd(8, "a").slice(0, 8)}`,
-  navi: NAVI,
+  navi: ADA,
   label,
   url: `https://${label}.example`,
   state: "ok",
@@ -63,8 +64,6 @@ let old: boolean;
 let reachable: string | undefined;
 /** Holds hub_info's answer until released. */
 let info: Promise<void>;
-/** Navis in the snapshot besides Ada, which has no owner. */
-let navis: Array<{ ref: typeof NAVI; title: string; owner: string }>;
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -76,7 +75,6 @@ beforeEach(() => {
   old = false;
   reachable = "https://hub.devbox.example";
   info = Promise.resolve();
-  navis = [];
   answer = { links: [], issued: [], boxPubKey: BOX };
   vi.stubGlobal("fleetd", {
     platform: "linux",
@@ -139,14 +137,14 @@ const render = async (page: React.ReactNode) => {
   });
   await act(async () => {
     listener({ t: "state", state: { phase: "live", hub: HUB, protocol: 1 } });
-    const project = (ref: typeof SHOP, title: string, kind?: string) => ({ ...ref, title, workspaceRoot: `/home/dev/${ref.projectId}`, lastActivityAt: AT, threads: { failed: 0, idle: 0, running: 0, waiting: 0 }, ...(kind ? { kind } : {}) });
+    const project = (ref: typeof SHOP, title: string, onlyMe = false) => ({ ...ref, title, workspaceRoot: `/home/dev/${ref.projectId}`, lastActivityAt: AT, threads: { failed: 0, idle: 0, running: 0, waiting: 0 }, ...(onlyMe ? { onlyMe: true as const } : {}) });
     listener({
       t: "snapshot",
       snapshot: {
         cursor: 1,
         attention: [],
         machines: [],
-        projects: [project(SHOP, "Shop"), project(BILLING, "Billing"), project(NAVI, "Ada", "assistant"), ...navis.map((n) => ({ ...project(n.ref, n.title, "assistant"), owner: n.owner }))],
+        projects: [project(SHOP, "Shop"), project(BILLING, "Billing"), project(ADA, "Ada", true)],
       },
     });
     await new Promise((r) => setTimeout(r, 0));
@@ -181,17 +179,17 @@ const row = (label: string) => {
   return r;
 };
 
-describe("a Navi's Linked hubs", () => {
+describe("a project's Linked hubs", () => {
   it("with none yet, says so in one line with a button", async () => {
-    await render(<LinkedHubs navi={NAVI} />);
-    expect(calls).toContainEqual({ tool: "hub_links_get", input: { navi: NAVI } });
+    await render(<LinkedHubs project={ADA} />);
+    expect(calls).toContainEqual({ tool: "hub_links_get", input: { navi: ADA } });
     expect(text()).toContain("No linked hubs yet.");
     expect(button("Link a hub")).toBeTruthy();
     expect(document.querySelector("form")).toBeNull();
   });
 
   it("adds a link from a pasted key and address: main seals the key, and no hub call carries it", async () => {
-    await render(<LinkedHubs navi={NAVI} />);
+    await render(<LinkedHubs project={ADA} />);
     await click(button("Link a hub"));
     const key = document.querySelector<HTMLTextAreaElement>("textarea[data-secret]");
     if (key === null) throw new Error("the key isn't a masked field");
@@ -200,23 +198,23 @@ describe("a Navi's Linked hubs", () => {
     expect(address?.value).toBe("https://acme.example:4790");
     await type(label as HTMLInputElement, "acme");
     await click(button("Link hub"));
-    expect(sealed).toEqual([{ navi: NAVI, label: "acme", url: "https://acme.example:4790", boxPubKey: BOX, key: KEY }]);
+    expect(sealed).toEqual([{ project: ADA, label: "acme", url: "https://acme.example:4790", boxPubKey: BOX, key: KEY }]);
     expect(JSON.stringify(calls)).not.toContain(KEY);
-    expect(text()).toContain("Linked to acme: this Navi reaches 2 projects there.");
+    expect(text()).toContain("Linked to acme: this project reaches 2 projects there.");
     expect(row("acme").textContent).toContain("Working");
     expect(document.querySelector("textarea")).toBeNull();
   });
 
-  it("refuses a label this Navi already uses before anything is sent", async () => {
+  it("refuses a label this project already uses before anything is sent", async () => {
     answer = { ...answer, links: [kept("acme")] };
-    await render(<LinkedHubs navi={NAVI} />);
+    await render(<LinkedHubs project={ADA} />);
     await click(button("Link another hub"));
     const key = document.querySelector<HTMLTextAreaElement>("textarea[data-secret]");
     await type(key as HTMLTextAreaElement, KEY);
     const [address, label] = [...document.querySelectorAll<HTMLInputElement>("form input")];
     await type(address as HTMLInputElement, "https://acme.example");
     await type(label as HTMLInputElement, "ACME");
-    expect(text()).toContain("This Navi has a linked hub called that already");
+    expect(text()).toContain("This project has a linked hub called that already");
     expect(button("Link hub").disabled).toBe(true);
   });
 
@@ -229,7 +227,7 @@ describe("a Navi's Linked hubs", () => {
         kept("oldjob", { state: "revoked", who: "Alex" }),
       ],
     };
-    await render(<LinkedHubs navi={NAVI} />);
+    await render(<LinkedHubs project={ADA} />);
     const acme = row("acme").textContent;
     expect(acme).toContain("https://acme.example");
     expect(acme).toContain("As Alex · only Shop");
@@ -246,7 +244,7 @@ describe("a Navi's Linked hubs", () => {
 
   it("removes a link, saying when the other hub didn't hear of it", async () => {
     answer = { ...answer, links: [kept("acme")] };
-    await render(<LinkedHubs navi={NAVI} />);
+    await render(<LinkedHubs project={ADA} />);
     answer = { ...answer, links: [] };
     await click(button("Remove", row("acme")));
     expect(calls).toContainEqual({ tool: "hub_link_remove", input: { linkId: "hl_acmeaaaa" } });
@@ -255,7 +253,7 @@ describe("a Navi's Linked hubs", () => {
 
   it("on a hub from before hub links, says it needs updating", async () => {
     old = true;
-    await render(<LinkedHubs navi={NAVI} />);
+    await render(<LinkedHubs project={ADA} />);
     expect(text()).toContain("This hub needs updating to link hubs.");
     expect(button("Update the hub")).toBeTruthy();
   });
@@ -275,9 +273,9 @@ describe("Links to this hub, in a person's settings", () => {
     await type(label as HTMLInputElement, "home");
     const some = [...document.querySelectorAll('[role="radio"]')].find((r) => r.getAttribute("value") === "some");
     await click(some as Element);
-    // A Navi is no project to send work to.
+    // Every project in use is one to send work to, an Only-me one too.
     const boxes = [...document.querySelectorAll('[role="group"] label')].map((l) => l.textContent);
-    expect(boxes).toEqual(["Billing", "Shop"]);
+    expect(boxes).toEqual(["Ada", "Billing", "Shop"]);
     expect(button("Make link key").disabled).toBe(true);
     const shop = [...document.querySelectorAll('[role="group"] label')].find((l) => l.textContent === "Shop");
     await click(shop?.querySelector('[role="checkbox"]') as Element);
@@ -359,17 +357,12 @@ describe("Hub › People's hub links", () => {
 });
 
 describe("You › Hubs › Hub links", () => {
-  it("lists the linked hubs of the person's own Navis, never a teammate's", async () => {
-    navis = [
-      { ref: { machineId: "devbox", projectId: "bee" }, title: "Bee", owner: SAM.personId },
-      { ref: { machineId: "devbox", projectId: "cal" }, title: "Cal", owner: ALEX.personId },
-    ];
+  it("lists the links to each hub, and leaves each project's linked hubs to its settings", async () => {
     await render(<HubLinksSettings />);
-    // Ada, made before people, and Cal are Alex's; Bee is Sam's.
-    expect(text()).toContain("Hubs Ada reaches");
-    expect(text()).toContain("Hubs Cal reaches");
-    expect(text()).not.toContain("Bee");
+    expect(text()).toContain("Links to this hub");
+    expect(text()).toContain("Paste one into a project’s Linked hubs, in its settings.");
+    expect(text()).not.toContain("Ada");
     const asked = calls.filter((c) => c.tool === "hub_links_get").map((c) => (c.input as { navi?: { projectId: string } }).navi?.projectId);
-    expect(asked).not.toContain("bee");
+    expect(asked.filter((id) => id !== undefined)).toEqual([]);
   });
 });

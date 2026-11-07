@@ -10,6 +10,8 @@ import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { Instructions } from "./Instructions";
 import { ProjectSettings } from "./Projects";
+import { sectionRead } from "./projectReads.test-util";
+import { PROJECT_TOOLS } from "../projects/model";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 // Settings search reads the platform when it loads, before any test runs.
@@ -43,7 +45,7 @@ const settings: Settings = {
   },
 };
 
-const snapshotWith = (repos: ProjectRepo[], navi = false): HubFrame => ({
+const snapshotWith = (repos: ProjectRepo[], onlyMe = false): HubFrame => ({
   t: "snapshot",
   snapshot: {
     cursor: 1,
@@ -58,7 +60,7 @@ const snapshotWith = (repos: ProjectRepo[], navi = false): HubFrame => ({
         threads: { running: 0, waiting: 0, idle: 0, failed: 0 },
         lastActivityAt: AT,
         ...(repos.length > 0 ? { repos } : {}),
-        ...(navi ? { kind: "assistant" as const } : {}),
+        ...(onlyMe ? { onlyMe: true as const } : {}),
       },
     ],
   },
@@ -67,7 +69,7 @@ const snapshotWith = (repos: ProjectRepo[], navi = false): HubFrame => ({
 let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
-/** A Navi's approvals as navi_approvals answers them, and what ran without asking. */
+/** A project's approvals as its approvals read answers them, and what ran without asking. */
 let approvals: { mode: string; model: string; effort: string; defaults: boolean };
 const approvedLog = [
   {
@@ -91,9 +93,9 @@ const api: ProjectRepo = { repoId: "R2", name: "api", checkout: { machineId: "de
 let repos: ProjectRepo[];
 /** What project_settings_get answers for a repo; a repo not here is refused, as a hub before per-repo settings does. */
 let repoAnswers: Record<string, Settings>;
-/** The project is a Navi. */
-let navi: boolean;
-/** navi_approvals fails this many more times. */
+/** The project is Only me. */
+let onlyMe: boolean;
+/** The approvals read fails this many more times. */
 let approvalsFail: number;
 /** A frame from the hub, once rendered. */
 let send: (frame: HubFrame) => void;
@@ -110,7 +112,7 @@ beforeEach(() => {
   envRequests = [];
   repos = [];
   repoAnswers = {};
-  navi = false;
+  onlyMe = false;
   approvalsFail = 0;
   readMs = 0;
   window.location.hash = "#/settings/projects?for=devbox/p1";
@@ -146,12 +148,12 @@ const render = async (page: "project" | "instructions" = "project") => {
       }
       const now = (tool === "project_settings_get" && answers.length > 1 ? answers.shift() : answers[0]) ?? settings;
       if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
-      if (tool === "navi_approvals" && approvalsFail > 0) {
+      if (tool === PROJECT_TOOLS.approvals && approvalsFail > 0) {
         approvalsFail -= 1;
-        return Promise.resolve({ ok: false, error: { code: "not_found", message: "navi_approvals: no navi_approvals row for project p1 on devbox" } });
+        return Promise.resolve({ ok: false, error: { code: "not_found", message: `${PROJECT_TOOLS.approvals}: no approvals row for project p1 on devbox` } });
       }
-      if (tool === "navi_approvals") return Promise.resolve({ ok: true, output: { approvals, log: approvedLog } });
-      if (tool === "navi_approvals_set") {
+      if (tool === PROJECT_TOOLS.approvals) return Promise.resolve({ ok: true, output: { approvals, log: approvedLog } });
+      if (tool === PROJECT_TOOLS.approvalsSet) {
         const set = input as { mode: string; model?: string; effort?: string };
         approvals = { mode: set.mode, model: set.model ?? "claude-sonnet-5-5", effort: set.effort ?? "medium", defaults: set.model === undefined };
         return Promise.resolve({ ok: true, output: { approvals } });
@@ -179,13 +181,15 @@ const render = async (page: "project" | "instructions" = "project") => {
       if (tool === "project_repo_remove") {
         return Promise.resolve({ ok: true, output: { removed: api, cancelled: [], next: "Its checkout stays at /home/w/src/api on devbox, files and all." } });
       }
+      const section = sectionRead(tool);
+      if (section !== undefined) return Promise.resolve(section);
       const outcome: CallOutcome = { ok: true, output: tool === "project_settings_get" || tool === "project_settings_set" ? { settings: now } : { ok: true } };
       return readMs === 0 ? Promise.resolve(outcome) : new Promise((r) => setTimeout(() => r(outcome), readMs));
     },
     subscribe: (l) => ((listener = l), () => undefined),
     // As main's hub client: a resync asks for a snapshot, which comes on the same link.
     resync: () => {
-      setTimeout(() => listener(snapshotWith(repos, navi)), 0);
+      setTimeout(() => listener(snapshotWith(repos, onlyMe)), 0);
       return Promise.resolve();
     },
     focus: () => Promise.resolve(),
@@ -209,7 +213,7 @@ const render = async (page: "project" | "instructions" = "project") => {
   });
   await act(async () => {
     listener({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } });
-    listener(snapshotWith(repos, navi));
+    listener(snapshotWith(repos, onlyMe));
     await new Promise((r) => setTimeout(r, 0));
   });
   // project_settings_get's answer.
@@ -345,11 +349,13 @@ describe("Settings → Projects", () => {
   it("deletes only once the name is typed, names the worktree with uncommitted changes, and removes the worktrees", async () => {
     repos = [web];
     await render();
-    expect(document.body.textContent).toContain("Its checkout, its branches and its pull requests stay as they are.");
+    expect(document.body.textContent).toContain("Its checkout stays unless you tick it when you delete; its branches and pull requests stay either way.");
     await click(button("Delete project…"));
     expect(dialog().textContent).toContain("fleetd/T1-cart");
     expect(dialog().textContent).not.toContain("fleetd/T2-tax");
-    expect(dialog().textContent).toContain("Its checkout at /home/w/src/storefront");
+    expect(dialog().textContent).toContain("storefront stops now, and everything fleetd keeps for it is erased from fleetd and devbox");
+    expect(dialog().textContent).toContain("its branches and pull requests stay.");
+    expect(dialog().textContent).toContain("Also delete its folder, ~/src/storefront");
     const confirm = button("Delete project");
     expect(confirm.disabled).toBe(true);
     const field = dialog().querySelector("input");
@@ -363,17 +369,17 @@ describe("Settings → Projects", () => {
     expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true });
   });
 
-  it("says a plain folder's delete keeps its folder, with no checkout, branches or pull requests", async () => {
+  it("says a plain folder's delete keeps its folder unless ticked, with no branches or pull requests", async () => {
     // No repo of its own: a folder, not a git repo.
-    const folder = "/home/w/.fleetd/node/navi/adri";
+    const folder = "/home/w/.fleetd/node/projects/adri";
     answers = [{ ...settings, title: "Adri", workspaceRoot: folder, worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
     await render();
-    expect(document.body.textContent).toContain("Its folder stays as it is.");
+    expect(document.body.textContent).toContain("Its folder stays unless you tick it when you delete.");
     await click(button("Delete project…"));
     const text = dialog().textContent;
     expect(text).toContain("Delete Adri?");
-    expect(text).toContain(`Its agents stop now and fleetd forgets it and its settings. Its folder at ${folder} stays as it is`);
-    expect(text).not.toMatch(/checkout|branch|pull request|worktree/i);
+    expect(text).toContain("Adri stops now, and everything fleetd keeps for it is erased");
+    expect(text).not.toMatch(/branch|pull request|worktrees its agents/i);
     const field = dialog().querySelector("input");
     if (field === null) throw new Error("no confirm field");
     await type(field, "Adri");
@@ -382,16 +388,16 @@ describe("Settings → Projects", () => {
     expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true });
   });
 
-  it("erases a Navi, saying what goes, and deletes its folder only when that is ticked", async () => {
-    navi = true;
-    const folder = "/home/w/.fleetd/node/navi/adri";
+  it("erases an Only-me project as any other, saying what goes, and deletes its folder only when that is ticked", async () => {
+    onlyMe = true;
+    const folder = "/home/w/.fleetd/node/projects/adri";
     answers = [{ ...settings, title: "Adri", workspaceRoot: folder, worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
     await render();
-    await click(button("Delete Navi…"));
+    await click(button("Delete project…"));
     const text = dialog().textContent;
     expect(text).toContain("Delete Adri?");
-    expect(text).toContain("Adri stops now, and everything it had is erased from fleetd and devbox: its chat, memory, skills, approvals and purchases");
-    expect(text).toContain("Also delete its folder, ~/.fleetd/node/navi/adri");
+    expect(text).toContain("Adri stops now, and everything fleetd keeps for it is erased from fleetd and devbox: its chat, memory, skills, approvals, purchases, automations, sign-ins and its Telegram link");
+    expect(text).toContain("Also delete its folder, ~/.fleetd/node/projects/adri");
     const field = dialog().querySelector("input");
     if (field === null) throw new Error("no confirm field");
     await type(field, "Adri");
@@ -399,36 +405,30 @@ describe("Settings → Projects", () => {
     if (tick === null) throw new Error("no folder tickbox");
     expect(tick.getAttribute("aria-checked")).toBe("false");
     await click(tick);
-    await click(button("Delete Navi"));
+    await click(button("Delete project"));
     await settle();
     expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true, removeFolder: true });
   });
 
-  it("forgets a Navi's sign-ins after asking, and shows no sign-ins on a project of code", async () => {
-    await render();
-    expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Forget sign-ins…")).toBe(false);
-    act(() => root.unmount());
-    root = createRoot(host);
-
-    navi = true;
-    answers = [{ ...settings, title: "Adri", workspaceRoot: "/home/w/.fleetd/node/navi/adri", worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
+  it("forgets a project's sign-ins after asking, a project of code's too", async () => {
+    repos = [web];
     await render();
     expect(document.body.textContent).toContain("stays signed in to the sites it signed into");
     await click(button("Forget sign-ins…"));
     expect(dialog().textContent).toContain("its browser profile is deleted from devbox");
     await click(button("Cancel"));
-    expect(calls.some((c) => c.tool === "navi_signins_forget")).toBe(false);
+    expect(calls.some((c) => c.tool === PROJECT_TOOLS.signinsForget)).toBe(false);
     await click(button("Forget sign-ins…"));
     await click(button("Forget sign-ins"));
     await settle();
-    expect(calls.find((c) => c.tool === "navi_signins_forget")?.input).toEqual({ machineId: "devbox", projectId: "p1" });
+    expect(calls.find((c) => c.tool === PROJECT_TOOLS.signinsForget)?.input).toEqual({ machineId: "devbox", projectId: "p1" });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.body.textContent).toContain("Its next browser session starts signed out of every site.");
   });
 
-  it("sets a Navi's approval mode and lists what ran without asking, each with its chat line", async () => {
-    navi = true;
-    answers = [{ ...settings, title: "Adri", workspaceRoot: "/home/w/.fleetd/node/navi/adri", worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
+  it("sets a project's approval mode and lists what ran without asking, each with its chat line", async () => {
+    onlyMe = true;
+    answers = [{ ...settings, title: "Adri", workspaceRoot: "/home/w/.fleetd/node/projects/adri", worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
     await render();
     await settle();
     const part = document.querySelector('section[aria-label="Approvals"]');
@@ -443,23 +443,63 @@ describe("Settings → Projects", () => {
     if (!yolo) throw new Error("no YOLO choice");
     await click(yolo);
     await settle();
-    expect(calls.find((c) => c.tool === "navi_approvals_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", mode: "yolo" });
+    expect(calls.find((c) => c.tool === PROJECT_TOOLS.approvalsSet)?.input).toEqual({ machineId: "devbox", projectId: "p1", mode: "yolo" });
   });
 
-  it("says plainly when a Navi's approvals can't be read, never the lookup's error, and tries again", async () => {
-    navi = true;
+  it("says plainly when a project's approvals can't be read, never the lookup's error, and tries again", async () => {
+    onlyMe = true;
     approvalsFail = 1;
-    answers = [{ ...settings, title: "Adri", workspaceRoot: "/home/w/.fleetd/node/navi/adri", worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
+    answers = [{ ...settings, title: "Adri", workspaceRoot: "/home/w/.fleetd/node/projects/adri", worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
     await render();
     await settle();
     const part = () => document.querySelector('section[aria-label="Approvals"]');
-    expect(part()?.textContent).toContain("Navi's approval settings couldn't be loaded.");
-    expect(part()?.textContent).not.toContain("navi_approvals");
+    expect(part()?.textContent).toContain("The approval settings couldn't be loaded.");
+    expect(part()?.textContent).not.toContain(PROJECT_TOOLS.approvals);
     expect(part()?.textContent).not.toContain("p1");
     await click(button("Try again"));
     await settle();
     expect(part()?.textContent).toContain("Checker decides");
     expect(part()?.textContent).not.toContain("couldn't be loaded");
+  });
+
+  it("shares a project or keeps it to its owner with Only me, saved on the project", async () => {
+    await render();
+    const part = document.querySelector('section[aria-label="Only me"]');
+    expect(part?.textContent).toContain("Everyone on this hub sees it.");
+    const toggle = part?.querySelector<HTMLElement>('[role="switch"]');
+    if (!toggle) throw new Error("no Only me switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    await click(toggle);
+    await settle();
+    expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", onlyMe: true });
+    act(() => root.unmount());
+    root = createRoot(host);
+    calls = [];
+    onlyMe = true;
+    await render();
+    const again = document.querySelector('section[aria-label="Only me"]');
+    expect(again?.textContent).toContain("Only you see it.");
+    await click(again?.querySelector<HTMLElement>('[role="switch"]') as HTMLElement);
+    await settle();
+    expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", onlyMe: false });
+  });
+
+  it("archives a project, and brings an archived one back", async () => {
+    await render();
+    await click(button("Archive"));
+    await settle();
+    expect(calls.find((c) => c.tool === PROJECT_TOOLS.archive)?.input).toEqual({ machineId: "devbox", projectId: "p1", archived: true });
+    const archived = snapshotWith(repos, onlyMe);
+    if (archived.t !== "snapshot") throw new Error("not a snapshot");
+    await act(async () => {
+      send({ ...archived, snapshot: { ...archived.snapshot, projects: archived.snapshot.projects.map((p) => ({ ...p, archivedAt: AT })) } });
+      await Promise.resolve();
+    });
+    await settle();
+    expect(document.querySelector('section[aria-label="Archive"]')?.textContent).toContain("Its lead doesn’t start until you bring it back.");
+    await click(button("Bring back"));
+    await settle();
+    expect(calls.filter((c) => c.tool === PROJECT_TOOLS.archive).at(-1)?.input).toEqual({ machineId: "devbox", projectId: "p1", archived: false });
   });
 
   it("keeps Delete off while the machine can't list the worktrees, and refuses when a fresh listing fails", async () => {

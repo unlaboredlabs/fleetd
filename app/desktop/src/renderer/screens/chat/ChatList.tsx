@@ -22,7 +22,6 @@ import { useNow, useOnScreen } from "../live";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
 import { ArtifactCard } from "../artifacts/ArtifactCard";
 import { InlineChatItem } from "../inline";
-import { isNavi } from "../settings/integrationsModel";
 import type { ProjectRef } from "./slots";
 import { InlineText } from "./text";
 import s from "./view.module.css";
@@ -73,10 +72,10 @@ function Top({ state, onLoadOlder }: { state: TopState; onLoadOlder: () => void 
  */
 function Inline({ item, enter }: { item: ChatItem; enter: Arrival | undefined }) {
   const inline = (item.message as { readonly item?: InlineItem } | undefined)?.item;
-  // In a Navi's chat, an integration's card names the Navi: "Ada wants to send an email".
+  // An integration's card names the project: "Ada wants to send an email".
   const ref = (item.message as { readonly projectRef?: ProjectRef } | undefined)?.projectRef;
   const project = useData((d) => (ref === undefined ? undefined : d.projects[projectKey(ref)]));
-  const asker = isNavi(project) ? project?.title : undefined;
+  const asker = project?.title;
   const e = useEnter(enter);
   return (
     <div className={cx(s.message, e.className)} style={e.style} data-entry="inline">
@@ -222,7 +221,7 @@ const RowView = memo(function RowView(props: {
           </div>
         );
       }
-      // A Navi saved or changed one of its skills: the line names it, linked to it in the panel's Skills.
+      // The lead saved or changed one of its skills: the line names it, linked to it in the panel's Skills.
       if (r.item.message?.skillSaved !== undefined) {
         return (
           <div className={cx(s.quietRow, s.event)} data-entry="event">

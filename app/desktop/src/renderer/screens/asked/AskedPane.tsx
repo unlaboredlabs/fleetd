@@ -1,13 +1,13 @@
-// A Navi's panel, Asked work: each message it sent another project's lead (project_message), newest first, as one
-// row: the ask in a line, how its order is going as a chip, the project and how long ago. A row opens in place to the
-// Navi's whole message and the orders opened for it, each by its title, linked to its page; the project's name opens
-// its chat. No fleetd ids. Read from the hub's navi_asks for this Navi (#649), again whenever the order board
-// changes, since the same events move both. The tab shows only on a hub that serves it (the `navi_asks` feature); a
-// link to it on another hub gets a plain sentence, never a guess.
+// A project's panel, Asked work: each message its lead sent another project's lead (project_message), newest first,
+// as one row: the ask in a line, how its order is going as a chip, the project and how long ago. A row opens in place
+// to the whole message and the orders opened for it, each by its title, linked to its page; the project's name opens
+// its chat. No fleetd ids. Read from the hub's project_asks for this project (#649), again whenever the order board
+// changes, since the same events move both.
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useMemo, useState } from "react";
 import { callKey } from "../../src/data/queries";
 import { useData, useToolQuery } from "../../src/data/react";
+import { PROJECT_TOOLS } from "../projects/model";
 import { Button, EmptyState, StatusChip, Text, cx } from "../../ui";
 import { orderHref } from "../automations/model";
 import { navigate } from "../shell/navigation";
@@ -16,44 +16,29 @@ import { age, fullWhen } from "../status/view";
 import { ASK_STATE, askRows, orderState, type AskRow } from "./askedModel";
 import s from "./asked.module.css";
 
-/** The hub feature that says it serves navi_asks. */
-export const ASKED_FEATURE = "navi_asks";
-
 const BOARD = {} as const;
 
-/** This Navi's asks, once the hub serves them; `served` false otherwise. */
-export const useAskedWork = (navi: ProjectKey) => {
+/** This project's asks. */
+export const useAskedWork = (project: ProjectKey) => {
   const client = useQueryClient();
-  const served = useData((st) => st.features.includes(ASKED_FEATURE));
-  const input = useMemo(() => ({ navi: { machineId: navi.machineId, projectId: navi.projectId } }), [navi.machineId, navi.projectId]);
-  const query = useToolQuery("navi_asks", input, { enabled: served });
+  const input = useMemo(() => ({ navi: { machineId: project.machineId, projectId: project.projectId } }), [project.machineId, project.projectId]);
+  const query = useToolQuery(PROJECT_TOOLS.asks, input);
   // An order opening, merging or closing moves the board and this read alike: read again when the board does.
   const board = useToolQuery("orders_board", BOARD).dataUpdatedAt;
   useEffect(() => {
-    if (served && board > 0) void client.invalidateQueries({ queryKey: callKey("navi_asks", input), exact: true });
-  }, [client, input, served, board]);
-  return { served, query };
+    if (board > 0) void client.invalidateQueries({ queryKey: callKey(PROJECT_TOOLS.asks, input), exact: true });
+  }, [client, input, board]);
+  return query;
 };
 
 export function AskedPane({ project }: { project: ProjectKey }) {
   const fresh = useData((st) => st.fresh);
-  const { served, query } = useAskedWork(project);
+  const query = useAskedWork(project);
   const asks = query.data?.asks;
   const rows = useMemo(() => (asks === undefined ? undefined : askRows(asks)), [asks]);
   // "2d ago": read once a mount.
   const [now] = useState(() => Date.now());
 
-  if (!served) {
-    return (
-      <div className={s.screen} data-screen="asked.unserved">
-        <div className={s.empty}>
-          <EmptyState title="This hub doesn’t share asked work with the app">
-            Your Navi still asks your projects for work and tells you in its chat when it lands.
-          </EmptyState>
-        </div>
-      </div>
-    );
-  }
   return (
     <div className={s.screen} data-screen={asks !== undefined ? "asked" : query.isError ? "asked.error" : "asked.loading"}>
       {asks === undefined ? (
@@ -75,7 +60,7 @@ export function AskedPane({ project }: { project: ProjectKey }) {
       ) : asks.length === 0 ? (
         <div className={s.empty}>
           <EmptyState title="Nothing asked yet">
-            Ask this Navi to get something done in one of your projects. Its message goes to that project’s lead, and the order shows here as it moves.
+            Ask this project’s lead to get something done in another of your projects. Its message goes to that project’s lead, and the order shows here as it moves.
           </EmptyState>
         </div>
       ) : (

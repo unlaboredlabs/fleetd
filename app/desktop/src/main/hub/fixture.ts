@@ -14,7 +14,7 @@ import type { HubSource } from "./source";
 const jsonValue = z.custom<z.core.util.JSONType>((value) => value !== undefined);
 
 const delay = z.int().min(0).max(600_000).optional();
-const hubError = z.object({ code: z.string(), message: z.string(), fix: z.string().optional() });
+const hubError = z.object({ code: z.string(), message: z.string(), fix: z.string().optional(), reason: z.string().optional() });
 
 const State = z.discriminatedUnion("phase", [
   z.object({ phase: z.literal("unpaired"), note: z.string().optional() }),

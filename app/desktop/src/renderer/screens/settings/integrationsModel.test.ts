@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { McpServer } from "../../../shared/contracts";
 import { emptyDraft } from "./mcpModel";
-import { byPolicy, connectionsOf, customRequest, emptyNote, isNavi, markOf, policyLine, signInLine, signInOutcome, statusOf, testProblem } from "./integrationsModel";
+import { byPolicy, connectionsOf, customRequest, emptyNote, markOf, policyLine, signInLine, signInOutcome, statusOf, testProblem } from "./integrationsModel";
 
-const scope = { kind: "project" as const, machineId: "devbox", projectId: "navi" };
+const scope = { kind: "project" as const, machineId: "devbox", projectId: "ada" };
 const boxes = [{ machineId: "devbox", boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" }];
 
-describe("a Navi's integrations model", () => {
+describe("a project's integrations model", () => {
   it("saves a server for the lead only, with the tools marked as reading", () => {
     const draft = { ...emptyDraft(), name: "crm", kind: "http" as const, url: "https://mcp.example.com/mcp" };
     const built = customRequest(draft, ["list_contacts"], scope, boxes);
@@ -19,8 +19,6 @@ describe("a Navi's integrations model", () => {
     const s = (name: string, integration?: object) => ({ name, ...(integration === undefined ? {} : { integration }) }) as unknown as McpServer;
     const c = connectionsOf([s("plain"), s("crm", {}), s("docs", { kind: "custom", readTools: ["search"] })]);
     expect(c.map((x) => x.name)).toEqual(["crm", "docs"]);
-    expect(isNavi({ kind: "assistant" } as never)).toBe(true);
-    expect(isNavi({} as never)).toBe(false);
   });
   it("says what a test found by policy, and where a failure happened", () => {
     const p = byPolicy([{ name: "a", policy: "read" }, { name: "b" }, { name: "c", policy: "blocked" }]);
@@ -42,7 +40,7 @@ describe("a Navi's integrations model", () => {
     expect(statusOf({ ...server, oauth: { status: "signed_out", issuer } })).toEqual({ text: "Signed out", tone: "danger" });
     expect(statusOf({ ...server, oauth: { status: "signed_out", issuer, signingIn: true } }).text).toBe("Signing in…");
     expect(signInLine({ status: "connected", issuer, clientId: "mine" }).text).toBe(
-      "Signed in with `auth.example.com`, with your own app. fleetd renews the sign-in by itself, and Navi never sees it.",
+      "Signed in with `auth.example.com`, with your own app. fleetd renews the sign-in by itself, and it never goes in the chat.",
     );
     // A renewal failing past the token's end is said on a server still signed in.
     expect(signInLine({ status: "connected", issuer, problem: "fleetd can't renew its sign-in." })).toEqual({ text: "fleetd can't renew its sign-in.", tone: "danger" });

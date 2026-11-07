@@ -1,12 +1,12 @@
-// "Add project…" (#/projects/add): one sheet that clones a GitHub repo onto a worker, adds a folder already on one,
-// or starts a new, empty project in a folder the hub makes. One field (paste a URL, type a path, filter, or name a new
-// project), the repos the hub found, the machine it goes to; then the clone's progress, the ready state with what the
+// "New project…" (#/projects/add): one sheet that starts a new project in a folder the hub makes, clones a GitHub repo
+// onto a worker, or adds a folder already on one. One field (name a new project, paste a URL, type a path, or filter),
+// the repos the hub found, the machine it goes to, and Only me (on for a project with no repo); then the clone's progress, the ready state with what the
 // lead will need (a new project opens at once), or the error and its fix. Up/Down pick, Enter adds, Esc closes (a
 // clone carries on).
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Button, Checkbox, Dot, Input, Sheet, Text, Truncate, copyText, cx } from "../../ui";
-import { clonePath, discovery as discoveryOf, newPath, orList, plan, rows as rowsFor, target, type Discovery, type Failure, type Found, type Plan, type Ready, type Request, type Row, type Worker } from "./discovery";
+import { Button, Checkbox, Dot, Input, Sheet, Switch, Text, Truncate, copyText, cx } from "../../ui";
+import { clonePath, discovery as discoveryOf, newPath, onlyMeFirst, orList, plan, rows as rowsFor, target, type Discovery, type Failure, type Found, type Plan, type Ready, type Request, type Row, type Worker } from "./discovery";
 import { CallError, callKey } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import type { Job, Phase } from "./flow";
@@ -21,6 +21,7 @@ import {
   pickMachine,
   setFolder,
   setGitInit,
+  setOnlyMe,
   setText,
   sheetHidden,
   sheetShown,
@@ -44,7 +45,7 @@ export function AddProjectScreen() {
   }, [data]);
 
   const title =
-    phase.kind === "working" ? `Adding ${phase.job.what}` : phase.kind === "ready" ? `${phase.ready.title} is ready` : phase.kind === "failed" ? `Couldn't add ${phase.what}` : phase.kind === "unlisted" ? `${phase.what} isn't on the hub yet` : "Add a project";
+    phase.kind === "working" ? `Adding ${phase.job.what}` : phase.kind === "ready" ? `${phase.ready.title} is ready` : phase.kind === "failed" ? `Couldn't add ${phase.what}` : phase.kind === "unlisted" ? `${phase.what} isn't on the hub yet` : "New project";
 
   return (
     <Sheet
@@ -119,7 +120,15 @@ const usePick = () => {
 const newFolder = (p: Extract<Plan, { kind: "new" }>, d: Discovery | null, ui: AddUi): string | null =>
   ui.folder ?? newPath(d?.workers.find((w) => w.machineId === p.machineId), p.name);
 
+/** Only me for this add: as the person set it, else where it starts for this kind of add. */
+const onlyMeOf = (p: Plan, ui: AddUi): boolean => ui.onlyMe ?? onlyMeFirst(p);
+
 const requestFor = (p: Plan, to: Worker | null, folder: string | null, ui: AddUi): { request: Request; path: string } | null => {
+  const r = kindRequest(p, to, folder, ui);
+  return r === null ? null : { ...r, request: { ...r.request, onlyMe: onlyMeOf(p, ui) } };
+};
+
+const kindRequest = (p: Plan, to: Worker | null, folder: string | null, ui: AddUi): { request: Request; path: string } | null => {
   switch (p.kind) {
     case "new": {
       const name = p.name.trim();
@@ -171,8 +180,8 @@ function Pick({ pick }: { pick: PickData }) {
     <>
       <Input
         autoFocus
-        aria-label="GitHub URL, folder path, or filter"
-        placeholder="Paste a GitHub URL, type a folder's path, or name a new project"
+        aria-label="New project name, GitHub URL, folder path, or filter"
+        placeholder="Name a new project, paste a GitHub URL, or type a folder's path"
         value={ui.text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKey}
@@ -448,6 +457,14 @@ function PickFooter({ pick }: { pick: PickData }) {
     <div className={s.footer} {...(p.kind === "new" ? { "data-screen": "projects.add.new" } : {})}>
       {picker && workers.length > 0 ? <MachinePicker workers={workers} chosen={p.kind === "folder" || p.kind === "new" ? p.machineId : to?.machineId} best={d?.best} /> : null}
       {p.kind === "new" && folder !== null && p.name.trim() !== "" ? <NewFolder folder={folder} gitInit={ui.gitInit === true} /> : null}
+      {p.kind === "new" || p.kind === "folder" || p.kind === "clone" ? (
+        <Switch
+          label="Only me"
+          description="Only you see and use it: its chat, its agents and its settings. Off, everyone on this hub can."
+          checked={onlyMeOf(p, ui)}
+          onCheckedChange={setOnlyMe}
+        />
+      ) : null}
       {note ? (
         <Text size="sm" tone="quiet">
           {note}

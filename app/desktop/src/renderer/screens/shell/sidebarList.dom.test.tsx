@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The sidebar's Navi section: one Meet Navi row with none yet; the Navis pinned above the projects, numbered first; a Navi's
+// The sidebar's one Projects list: every project in the order it is given, numbered in it, with New; a project's
 // right-click menu renames it (after a small dialog) or archives it at once, with Undo.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -9,9 +9,10 @@ import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import type { SidebarProject } from "../shell/model";
-import type { Screen } from "../shell/routes";
-import { Sidebar } from "../shell/Sidebar";
+import { PROJECT_TOOLS } from "../projects/model";
+import type { SidebarProject } from "./model";
+import type { Screen } from "./routes";
+import { Sidebar } from "./Sidebar";
 
 vi.hoisted(() => {
   (window as unknown as { fleetd: object }).fleetd = {
@@ -30,7 +31,7 @@ const row = (title: string, extra: Partial<ProjectSummary> = {}): SidebarProject
     machineId: "devbox",
     projectId: title.toLowerCase(),
     title,
-    workspaceRoot: `/home/dev/.fleetd/navi/${title.toLowerCase()}`,
+    workspaceRoot: `/home/dev/projects/${title.toLowerCase()}`,
     lastActivityAt: "2026-10-26T09:00:00.000Z",
     threads: { failed: 0, idle: 0, running: 0, waiting: 0 },
     ...extra,
@@ -43,8 +44,8 @@ const row = (title: string, extra: Partial<ProjectSummary> = {}): SidebarProject
   unread: false,
 });
 
-const ADA = row("Ada", { kind: "assistant" });
-const HOME = row("Home", { kind: "assistant" });
+const ADA = row("Ada", { onlyMe: true });
+const HOME = row("Home", { onlyMe: true });
 const STOREFRONT = row("storefront");
 
 let host: HTMLDivElement;
@@ -113,20 +114,11 @@ const rightClick = (el: HTMLElement) =>
     el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
   });
 
-describe("with no Navi yet", () => {
-  it("offers one quiet row to meet it, with no heading, above the projects", () => {
-    mount([STOREFRONT]);
-    expect(sections().slice(0, 2)).toEqual(["", "ProjectsAdd"]);
-    expect(host.querySelector("section")?.getAttribute("aria-label")).toBe("Navi");
-    expect(host.textContent).not.toContain("New");
-    act(() => button("Meet Navi").click());
-    expect(went).toEqual([{ id: "navi" }]);
-  });
-});
-
-describe("with two Navis", () => {
-  it("pins them above the projects and numbers them first", () => {
+describe("one list", () => {
+  it("has every project in one Projects section, in its order, numbered in it, and no other section above", () => {
     mount([ADA, HOME, STOREFRONT], true);
+    expect(sections()[0]).toBe("ProjectsNew");
+    expect(host.textContent).not.toMatch(/Navi/u);
     const labels = [...host.querySelectorAll("button")].map((b) => b.textContent);
     const at = (t: string) => labels.findIndex((l) => l.startsWith(t));
     expect(at("Ada")).toBeLessThan(at("Home"));
@@ -135,14 +127,18 @@ describe("with two Navis", () => {
     expect(button("storefront").textContent).toBe("storefront3");
     act(() => button("Ada").click());
     expect(went).toEqual([{ id: "project", project: { machineId: "devbox", projectId: "ada" }, message: null }]);
-    act(() => host.querySelector<HTMLElement>("[aria-label='New Navi']")?.click());
-    expect(went.at(-1)).toEqual({ id: "navi" });
+    act(() => host.querySelector<HTMLElement>("[aria-label='New project']")?.click());
+    expect(went.at(-1)).toEqual({ id: "projects.add" });
   });
 
-  it("a Navi's menu renames it after asking for the name, and archives it at once with Undo", async () => {
+  it("a project's menu renames it after asking for the name, and archives it at once with Undo", async () => {
     mount([ADA, HOME, STOREFRONT]);
+    rightClick(button("storefront"));
+    expect(items()).toEqual(["Open", "Rename…", "Open settings", "Copy path", "Archive", "Delete project…"]);
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
     rightClick(button("Ada"));
-    expect(items()).toEqual(["Open", "Rename…", "Open settings", "Copy folder path", "Archive"]);
     await choose("Rename…");
     const dialog = document.querySelector("[role='dialog']");
     expect(dialog?.textContent).toContain("Rename Ada");
@@ -155,28 +151,22 @@ describe("with two Navis", () => {
     const rename = [...(dialog?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((b) => b.textContent === "Rename");
     act(() => rename?.click());
     await settle();
-    expect(calls).toContainEqual({ tool: "navi_rename", input: { machineId: "devbox", projectId: "ada", name: "Ada Lovelace" } });
+    expect(calls).toContainEqual({ tool: "project_settings_set", input: { machineId: "devbox", projectId: "ada", title: "Ada Lovelace" } });
 
     rightClick(button("Home"));
     await choose("Archive");
-    expect(calls).toContainEqual({ tool: "navi_archive", input: { machineId: "devbox", projectId: "home", archived: true } });
+    expect(calls).toContainEqual({ tool: PROJECT_TOOLS.archive, input: { machineId: "devbox", projectId: "home", archived: true } });
     expect(document.body.textContent).toContain("Home archived");
     const undo = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Undo");
     act(() => undo?.click());
     await settle();
-    expect(calls).toContainEqual({ tool: "navi_archive", input: { machineId: "devbox", projectId: "home", archived: false } });
-  });
-
-  it("a project keeps its own menu", () => {
-    mount([ADA, STOREFRONT]);
-    rightClick(button("storefront"));
-    expect(items()).toEqual(["Open", "Open settings", "Copy path", "Remove project…"]);
+    expect(calls).toContainEqual({ tool: PROJECT_TOOLS.archive, input: { machineId: "devbox", projectId: "home", archived: false } });
   });
 });
 
 describe("each row's avatar", () => {
   it("is a circle of its letters, its picture once it has one, read once for that row alone", async () => {
-    const pictured = row("Home", { kind: "assistant", avatar: "a1b2c3d4e5f60718" });
+    const pictured = row("Home", { onlyMe: true, avatar: "a1b2c3d4e5f60718" });
     let listener: (frame: HubFrame) => void = () => undefined;
     const hub: HubApi = {
       call: (tool, input) => {

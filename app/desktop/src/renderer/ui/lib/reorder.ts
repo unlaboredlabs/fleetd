@@ -78,17 +78,6 @@ export const shiftOf = (i: number, from: number, over: number, size: number): nu
   return 0;
 };
 
-/** The indexes a row may go to: the run of rows in its group around it (a Navi stays among its hub's). */
-export const boundsOf = <K>(keys: readonly K[], at: number, group: ((key: K) => string) | undefined): readonly [number, number] => {
-  if (group === undefined) return [0, keys.length - 1];
-  const g = group(keys[at] as K);
-  let lo = at;
-  let hi = at;
-  while (lo > 0 && group(keys[lo - 1] as K) === g) lo--;
-  while (hi < keys.length - 1 && group(keys[hi + 1] as K) === g) hi++;
-  return [lo, hi];
-};
-
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 
 const reduced = (): boolean => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -138,8 +127,6 @@ export interface ReorderOptions<K extends string> {
   readonly onMove: (order: K[], key: K, from: number, to: number) => void;
   /** The row's name, for the announcement. */
   readonly name: (key: K) => string;
-  /** Rows move only within their group's run. */
-  readonly group?: ((key: K) => string) | undefined;
 }
 
 interface Press<K> {
@@ -204,7 +191,7 @@ export interface Reorder<K extends string> {
 }
 
 export function useReorder<K extends string>(options: ReorderOptions<K>): Reorder<K> {
-  const { keys, name, group } = options;
+  const { keys, name } = options;
   const els = useRef(new Map<K, HTMLElement>());
   const press = useRef<Press<K> | null>(null);
   const swallow = useRef(false);
@@ -400,7 +387,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
       p.y = ev.clientY;
       if (!p.lifted) {
         if (Math.abs(p.y - p.startY) < LIFT_PX) return;
-        const { shown: order, showing: now, group: groupOf } = latest.current;
+        const { shown: order, showing: now } = latest.current;
         const from = order.indexOf(key);
         if (from < 0) return p.stop();
         p.from = from;
@@ -410,7 +397,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
         p.tops = rects.map((r) => r?.top ?? 0);
         p.heights = rects.map((r) => r?.height ?? 0);
         p.centres = rects.map((r) => (r === undefined ? 0 : r.top + r.height / 2));
-        p.bounds = boundsOf(order, from, groupOf);
+        p.bounds = [0, order.length - 1];
         p.scroller = scrollerOf(el);
         p.scroll0 = p.scroller?.scrollTop ?? 0;
         p.scroller?.addEventListener("scroll", place);
@@ -479,8 +466,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
         if (!e.altKey || e.metaKey || e.ctrlKey || e.shiftKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown") || moving !== null) return;
         e.preventDefault();
         const up = e.key === "ArrowUp";
-        const [lo, hi] = boundsOf(shown, at, group);
-        const to = clamp(at + (up ? -1 : 1), lo, hi);
+        const to = clamp(at + (up ? -1 : 1), 0, shown.length - 1);
         if (to === at) {
           setStatus(`${name(key)} is already ${up ? "first" : "last"}`);
           return;

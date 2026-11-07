@@ -119,7 +119,10 @@ export const requestWhat = (r: Request): string => (r.kind === "clone" ? r.repo 
 const failure = (message: string, fix: string | undefined): Failure => (fix?.trim() ? { message, fix } : { message });
 
 
-const addInput = (r: Request): ProjectAddInput => {
+// Only me goes either way whenever the sheet showed it: the hub reads a missing one as on for a project with no repo.
+const addInput = (r: Request): ProjectAddInput => ({ ...kindInput(r), ...(r.onlyMe === undefined ? {} : { onlyMe: r.onlyMe }) });
+
+const kindInput = (r: Request): ProjectAddInput => {
   switch (r.kind) {
     case "clone":
       return { machineId: r.machineId, url: r.repo, ...(r.useExisting ? { useExisting: true } : {}) };

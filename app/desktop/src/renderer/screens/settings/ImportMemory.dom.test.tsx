@@ -11,7 +11,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { live, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
-import { ImportMemory, NO_NAVI_FIX } from "./ImportMemory";
+import { ImportMemory, NO_ONLY_ME, NO_PROJECT_TEXT } from "./ImportMemory";
 import { YourMemory } from "./Memory";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -211,22 +211,22 @@ it("never says your memory already has it when nothing fit, or only secrets were
   expect(status()).toBe("Nothing was added. Skipped 1 holding a secret.");
 });
 
-it("sends someone with no Navi to create one, since imports run only there", async () => {
-  await mount(undefined, {
-    code: "invalid",
-    message: "Import memory runs in your own Navi, so nobody else can read what you paste, and you have no Navi yet.",
-    fix: NO_NAVI_FIX,
-  });
+it.each([
+  ["this hub's reason", { code: "invalid", reason: NO_ONLY_ME, message: "Import memory runs in a project of yours with Only me on.", fix: "Create a Navi first, then import again." }],
+  ["an older hub's fix", { code: "invalid", message: "Import memory runs in your own Navi, so nobody else can read what you paste, and you have no Navi yet.", fix: "Create a Navi first, then import again." }],
+])("offers someone with no Only-me project to make one, since imports run only there (%s)", async (_, refusal) => {
+  await mount(undefined, refusal);
   const box = paste("[2024-03-02] - Keep answers short.");
   await act(async () => {
     button("Add to Memory").click();
     await Promise.resolve();
   });
   await settle();
-  expect(status()).toBe("Import memory runs in your own Navi, so nobody else can read what you paste, and you have no Navi yet. Create a Navi, then import again.");
-  const link = document.querySelector<HTMLAnchorElement>('section[aria-label="Import memory"] [role="status"] a');
-  expect(link?.getAttribute("href")).toBe("#/navi");
-  expect(link?.textContent).toBe("Create a Navi");
+  // In the app's words, whatever the hub said.
+  expect(status()).toBe(`${NO_PROJECT_TEXT} Make a project with Only me on, then import again.`);
+  expect(status()).not.toMatch(/Navi/u);
+  act(() => button("Make a project with Only me on").click());
+  expect(window.location.hash).toBe("#/projects/add");
   // What was pasted stays for after.
   expect(box.value).toBe("[2024-03-02] - Keep answers short.");
 });

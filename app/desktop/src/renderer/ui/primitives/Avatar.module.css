@@ -1,6 +1,5 @@
 /* A chat's avatar: a circle, its picture or its letters (Avatar.tsx). Its tints are iOS's own colors in the phone's
-   order (app/mobile/src/theme.ts `tints`), picked by name: a Navi's letters are white on a soft gradient of its tint, a
-   project's are its tint on a wash of it. */
+   order (app/mobile/src/theme.ts `tints`), picked by name: its letters are its tint on a wash of it. */
 .avatar {
   --wash: 16%;
   position: relative;
@@ -23,13 +22,8 @@
 .avatar::before {
   content: attr(data-letters);
 }
-.navi {
-  color: #ffffff;
-  background: linear-gradient(color-mix(in srgb, var(--tint), #ffffff 32%), var(--tint));
-}
 /* A built-in icon is its own round field, drawn to the circle's edge. */
-.iconOnly,
-.navi.iconOnly {
+.iconOnly {
   background: none;
 }
 .picture {

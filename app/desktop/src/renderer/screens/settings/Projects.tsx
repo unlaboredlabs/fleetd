@@ -1,10 +1,10 @@
 // Settings › Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
-// picture (Picture.tsx), its name, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx), its
-// worktrees, its agents' environment variables, a Navi's Telegram (Telegram.tsx), approvals (NaviApprovals.tsx) and
-// integrations (its MCP servers; its linked hubs are in You › Hubs), its browser's sign-ins and a way to its skills
-// (NaviSignins.tsx), its card and purchases (NaviPayments.tsx), and deleting it. Its memory refresh is on its
+// picture (Picture.tsx), its name, Only me, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx),
+// its worktrees, its agents' environment variables, its Telegram (Telegram.tsx), linked hubs (LinkedHubs.tsx),
+// approvals (Approvals.tsx) and integrations (its MCP servers), its browser's sign-ins and a way to its skills
+// (Signins.tsx), its card and purchases (Payments.tsx), archiving it and deleting it. Its memory refresh is on its
 // Instructions & memory. Reads project_settings_get; writes project_settings_set, project_env_set (through main, which
-// seals each secret to the project machine's key) and project_remove. A secret's value is write-only: typed here once,
+// seals each secret to the project machine's key), project_archive and project_remove. A secret's value is write-only: typed here once,
 // sealed in main, and only its fingerprint ever comes back.
 import { useEffect, useState } from "react";
 import { Button, Dialog, Field, Input, Radio, RadioGroup, Separator, Switch, Text, Textarea, Truncate } from "../../ui";
@@ -14,14 +14,17 @@ import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
+import { archiveProject } from "../projects/actions";
+import { isOnlyMe } from "../projects/model";
+import { LinkedHubs } from "../hubLinks/LinkedHubs";
+import { when } from "../status/view";
 import { navigate } from "../shell/navigation";
 import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { IntegrationsSection } from "./Integrations";
-import { isNavi } from "./integrationsModel";
-import { ApprovalsSetting } from "./NaviApprovals";
-import { PaymentsSetting } from "./NaviPayments";
-import { NaviSkillsSetting, SigninsSetting } from "./NaviSignins";
+import { ApprovalsSetting } from "./Approvals";
+import { PaymentsSetting } from "./Payments";
+import { SigninsSetting, SkillsSetting } from "./Signins";
 import { TelegramSetting } from "./Telegram";
 import { NoProject, PageHead, Setting } from "./parts";
 import { PictureSetting } from "./Picture";
@@ -85,7 +88,7 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
   return (
     <div className={s.scroll} data-screen="settings.projects">
       <div className={s.column}>
-        <PageHead title="Project">Its icon, name, repos, worktrees, its agents&apos; environment and setup, and its merge train.</PageHead>
+        <PageHead title="Project">Its icon and name, who sees it, its repos and worktrees, its agents&apos; environment, and what its lead reaches and may do.</PageHead>
         {ref === undefined ? <NoProject /> : null}
         {read.isLoadingError ? (
           <div className={s.inline}>
@@ -111,9 +114,8 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
 function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; refresh: () => Promise<Settings | undefined>; onDeleted: () => void }) {
   const ref = { machineId: settings.machineId, projectId: settings.projectId };
   const summary = useData((d) => d.projects[projectKey(ref)]);
-  const navi = isNavi(summary);
-  // A folder rather than a git repo: the hub knows no repo of its own (a Navi's never has one).
-  const plain = navi || !(summary?.repos ?? []).some((r) => isOwn(r, ref));
+  // A folder rather than a git repo: the hub knows no repo of its own.
+  const plain = !(summary?.repos ?? []).some((r) => isOwn(r, ref));
   const [deleting, setDeleting] = useState<RemoveTarget | null>(null);
   const [checking, setChecking] = useState(false);
   const [blocked, setBlocked] = useState<string | null>(null);
@@ -121,7 +123,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
   const unknown = gone || settings.worktrees !== undefined ? null : (settings.worktreesUnknown ?? "its machine hasn't listed its worktrees.");
   const open = async () => {
     if (gone) {
-      setDeleting({ ...ref, title: settings.title, path: settings.workspaceRoot, deleting: { unsaved: [], plain, navi } });
+      setDeleting({ ...ref, title: settings.title, path: settings.workspaceRoot, deleting: { unsaved: [], plain } });
       return;
     }
     setChecking(true);
@@ -136,7 +138,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       ...ref,
       title: fresh.title,
       path: fresh.workspaceRoot,
-      deleting: { unsaved: unsavedWorktrees(fresh).map((w) => ({ path: w.path, branch: w.branch })), plain, navi },
+      deleting: { unsaved: unsavedWorktrees(fresh).map((w) => ({ path: w.path, branch: w.branch })), plain },
     });
   };
   return (
@@ -145,46 +147,45 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <Separator />
       <NameSetting settings={settings} />
       <Separator />
+      <OnlyMeSetting settings={settings} onlyMe={isOnlyMe(summary)} />
+      <Separator />
       <RepoSetting settings={settings} />
       <Separator />
       <WorktreeSetting settings={settings} />
       <Separator />
       <EnvSetting env={settings.env} projectRef={ref} />
       <Separator />
-      {navi ? (
-        <>
-          <TelegramSetting projectRef={ref} />
-          <Separator />
-          <ApprovalsSetting projectRef={ref} />
-          <Separator />
-          <IntegrationsSection projectRef={ref} />
-          <Separator />
-          <SigninsSetting projectRef={ref} />
-          <Separator />
-          <NaviSkillsSetting projectRef={ref} />
-          <Separator />
-          <PaymentsSetting projectRef={ref} />
-          <Separator />
-        </>
-      ) : null}
+      <TelegramSetting projectRef={ref} />
+      <Separator />
+      <LinkedHubs project={ref} />
+      <Separator />
+      <ApprovalsSetting projectRef={ref} />
+      <Separator />
+      <IntegrationsSection projectRef={ref} />
+      <Separator />
+      <SigninsSetting projectRef={ref} />
+      <Separator />
+      <SkillsSetting projectRef={ref} />
+      <Separator />
+      <PaymentsSetting projectRef={ref} />
+      <Separator />
+      <ArchiveSetting projectRef={ref} title={settings.title} archivedAt={summary?.archivedAt} />
       <Separator />
       <Setting
         reveal="projects.delete"
-        label={navi ? "Delete Navi" : "Delete project"}
-        help={navi ? "Stops it and erases everything it had: its chat, memory, skills and the rest." : "Stops its agents and removes it from fleetd, with its fleetd worktrees."}
+        label="Delete project"
+        help="Stops it and erases everything fleetd keeps for it: its chat, memory, skills, approvals, purchases, automations, sign-ins and its Telegram link, and its fleetd worktrees."
       >
         <Text size="sm" tone="quiet">
           {gone
             ? `${settings.machineId} was removed from this hub, so no machine holds its files: deleting only forgets it in fleetd.`
-            : navi
+            : plain
               ? "Its folder stays unless you tick it when you delete."
-              : plain
-                ? "Its folder stays as it is."
-                : "Its checkout, its branches and its pull requests stay as they are."}
+              : "Its checkout stays unless you tick it when you delete; its branches and pull requests stay either way."}
         </Text>
         <div className={s.inline}>
           <Button variant="danger" disabled={unknown !== null || checking} onClick={() => void open()}>
-            {checking ? "Checking its worktrees…" : navi ? "Delete Navi…" : "Delete project…"}
+            {checking ? "Checking its worktrees…" : "Delete project…"}
           </Button>
         </div>
         {unknown !== null ? (
@@ -262,6 +263,57 @@ function NameSetting({ settings }: { settings: Settings }) {
         </Button>
       </div>
       <EchoLine echo={echo} />
+    </Setting>
+  );
+}
+
+/** Only me: only its owner sees and uses it. Its owner, or an admin, may change it; the hub says so to anyone else. */
+function OnlyMeSetting({ settings, onlyMe }: { settings: Settings; onlyMe: boolean }) {
+  const { busy, echo, save } = useSave();
+  return (
+    <Setting reveal="projects.only-me" label="Only me" help="Who on this hub sees and uses the project: its chat, its agents and its settings.">
+      <Switch
+        label="Only me"
+        description={onlyMe ? "Only you see it. Turn it off to share it with everyone on this hub." : "Everyone on this hub sees it. Turn it on to keep it to yourself."}
+        checked={onlyMe}
+        disabled={busy}
+        onCheckedChange={(on) =>
+          save({ machineId: settings.machineId, projectId: settings.projectId, onlyMe: on }, on ? "Only you see it now." : "Everyone on this hub sees it now.")
+        }
+      />
+      <EchoLine echo={echo} />
+    </Setting>
+  );
+}
+
+/** Archive: out of the sidebar with its lead stopped and everything kept; Bring back puts it back as it was. */
+function ArchiveSetting({ projectRef, title, archivedAt }: { projectRef: Ref; title: string; archivedAt: string | undefined }) {
+  const layer = useDataLayer();
+  const [busy, setBusy] = useState(false);
+  // Day-grained, so nothing ticks.
+  const [now] = useState(() => Date.now());
+  const archived = archivedAt !== undefined;
+  const act = async () => {
+    setBusy(true);
+    await archiveProject(layer, { ...projectRef, title }, !archived);
+    setBusy(false);
+  };
+  return (
+    <Setting
+      reveal="projects.archive"
+      label="Archive"
+      help="Takes it out of the sidebar and stops its lead. Its chat, memory, folder and settings stay, and it comes back as it was."
+    >
+      {archived ? (
+        <Text size="sm" tone="quiet">
+          {`Archived ${when(archivedAt, now)}. Its lead doesn’t start until you bring it back.`}
+        </Text>
+      ) : null}
+      <div className={s.inline}>
+        <Button variant={archived ? "primary" : "secondary"} disabled={busy} onClick={() => void act()}>
+          {busy ? (archived ? "Bringing it back…" : "Archiving…") : archived ? "Bring back" : "Archive"}
+        </Button>
+      </div>
     </Setting>
   );
 }

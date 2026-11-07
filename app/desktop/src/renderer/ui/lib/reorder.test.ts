@@ -1,6 +1,6 @@
 // The reorder's arithmetic: where a lifted row drops, how far the rows it passes slide aside, and the run of its group.
 import { describe, expect, it } from "vitest";
-import { ARM_PX, boundsOf, dropIndex, EDGE_PX, edgeSpeed, headedFor, MAX_SCROLL_PX, moved, shiftOf } from "./reorder";
+import { ARM_PX, dropIndex, EDGE_PX, edgeSpeed, headedFor, MAX_SCROLL_PX, moved, shiftOf } from "./reorder";
 
 describe("a lifted row", () => {
   // Four 28 px rows: centres at 14, 42, 70, 98.
@@ -30,14 +30,6 @@ describe("a lifted row", () => {
   it("takes its new place in the list", () => {
     expect(moved(["a", "b", "c", "d"], 0, 2)).toEqual(["b", "c", "a", "d"]);
     expect(moved(["a", "b", "c", "d"], 3, 0)).toEqual(["d", "a", "b", "c"]);
-  });
-
-  it("stays in its group's run", () => {
-    const hub = (k: string) => k.split(":")[0] ?? "";
-    const keys = ["one:a", "one:b", "two:c", "two:d", "two:e"];
-    expect(boundsOf(keys, 0, hub)).toEqual([0, 1]);
-    expect(boundsOf(keys, 3, hub)).toEqual([2, 4]);
-    expect(boundsOf(keys, 3, undefined)).toEqual([0, 4]);
   });
 });
 

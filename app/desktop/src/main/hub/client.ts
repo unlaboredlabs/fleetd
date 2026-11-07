@@ -316,7 +316,7 @@ export class HubClient implements HubSource {
         return;
       }
       case "error": {
-        const error: HubError = { code: frame.code, message: frame.message, fix: frame.fix };
+        const error: HubError = { code: frame.code, message: frame.message, fix: frame.fix, ...(frame.reason === undefined ? {} : { reason: frame.reason }) };
         if (frame.id?.startsWith(PRESENCE_ID) === true) {
           // The hub couldn't read a presence frame: none more on this connection, and the stream is fine as it is.
           this.#presence = false;

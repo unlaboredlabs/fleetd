@@ -14,7 +14,6 @@ import type { AttachmentMime, IconColor, IconFace, ProjectIcon, ProjectSummary }
 import { useDataLayer } from "../../src/data/react";
 import { Avatar, Button, Dialog, Text } from "../../ui";
 import { upload } from "../chat/drafts";
-import { isNavi } from "../navi/model";
 import { iconImage } from "../projects/icons";
 import { usePicture } from "../projects/ProjectAvatar";
 import { errorText, useHubCall } from "./hub";
@@ -172,7 +171,6 @@ export function PictureSetting({ project }: { project: Pictured }) {
         >
           <Avatar
             name={project.title}
-            navi={isNavi(project)}
             size={PREVIEW}
             src={hasPicture && !peeking ? picture : undefined}
             icon={iconImage(shownIcon, PREVIEW)}

@@ -230,7 +230,7 @@ describe("Settings → MCP servers", () => {
   });
 });
 
-describe("a Navi's MCP section", () => {
+describe("a project's MCP section", () => {
   it("leaves its integrations to the Integrations section, and keeps their names taken", async () => {
     project = [{ ...github, scope: { kind: "project", machineId: "devbox", projectId: "p1" }, name: "crm", integration: {} }];
     await render(<McpSection projectRef={{ machineId: "devbox", projectId: "p1" }} />);

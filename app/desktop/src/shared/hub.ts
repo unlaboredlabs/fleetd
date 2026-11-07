@@ -25,6 +25,8 @@ export interface HubError {
   readonly code: string;
   readonly message: string;
   readonly fix?: string | undefined;
+  /** Which refusal it is, for an app that acts on one (`no_only_me_project`); absent from most errors and older hubs. */
+  readonly reason?: string | undefined;
 }
 
 export type CallOutcome = { readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: HubError };

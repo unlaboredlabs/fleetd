@@ -1,5 +1,5 @@
 // Hub links (D194) as plain view data. A link key minted on one hub acts as its person there; a
-// Navi on another hub keeps it sealed and reaches that hub's projects through it. Here: what a pasted key text holds,
+// project on another hub keeps it sealed and reaches that hub's projects through it. Here: what a pasted key text holds,
 // the words for a kept link's state, and the lines for a minted link. Pure, so it is unit-tested.
 import type { HubLink, IssuedLink, ProjectRef } from "../../../shared/contracts";
 
@@ -27,7 +27,7 @@ export const labelProblem = (label: string, taken: ReadonlyArray<string> = []): 
   const t = label.trim();
   if (t.length > LABEL_MAX) return `Keep it under ${String(LABEL_MAX)} characters`;
   if (/[\r\n]/u.test(label)) return "One line";
-  if (taken.some((x) => x.toLowerCase() === t.toLowerCase())) return "This Navi has a linked hub called that already";
+  if (taken.some((x) => x.toLowerCase() === t.toLowerCase())) return "This project has a linked hub called that already";
   return undefined;
 };
 
@@ -60,14 +60,14 @@ export const linkState = (link: Pick<HubLink, "label" | "url" | "state" | "error
       return {
         word: "Can’t reach",
         line: link.error ?? `Can’t reach ${link.label} at ${link.url}.`,
-        fix: `A hub link needs ${link.label}’s hub reachable from this hub, over a tailnet or HTTPS. The Navi’s requests there fail until it is.`,
+        fix: `A hub link needs ${link.label}’s hub reachable from this hub, over a tailnet or HTTPS. The project’s requests there fail until it is.`,
         tone: "danger",
       };
     case "revoked":
       return {
         word: "Revoked",
         // The other hub's reason is in its own words ("revoked on this hub"), so it is quoted as that hub's.
-        line: `Revoked on ${link.label}: this Navi can’t use it any more.${link.error === undefined ? "" : ` ${link.label} says: “${withoutId(link.error)}”`}`,
+        line: `Revoked on ${link.label}: this project can’t use it any more.${link.error === undefined ? "" : ` ${link.label} says: “${withoutId(link.error)}”`}`,
         fix: `Remove it, or make a new link key on ${link.label} and add that.`,
         tone: "danger",
       };

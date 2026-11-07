@@ -1,8 +1,10 @@
-/* The panel's sections (Sections.tsx), by ui/DESIGN.md: one compact row of four tabs, 26 px, icon beside word and
-   centred, the count bare figures on the word's baseline; the open one a soft fill. Under it the section's line and,
+/* The panel's sections (Sections.tsx), by ui/DESIGN.md: one compact row of tabs, 26 px, icon beside word and
+   centred, the count bare figures on the word's baseline; the open one a soft fill. Too narrow for every word, the
+   row folds to icons and counts, each tab's name in its tooltip and its accessible name. Under it the section's line and,
    for a section of two views, a 22 px segmented row of their tabs. Rules are doubled up (.bar .section) to outrank
    the Tabs primitive's underlined tabs. */
 .bar.bar {
+  container-type: inline-size;
   display: flex;
   gap: 2px;
   border: none;
@@ -58,6 +60,12 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+/* Six tabs need about 80 px each for their words. */
+@container (max-width: 480px) {
+  .label {
+    display: none;
+  }
 }
 .count {
   flex: none;

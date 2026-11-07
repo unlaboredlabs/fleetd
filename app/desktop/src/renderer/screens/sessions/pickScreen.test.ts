@@ -1,4 +1,4 @@
-// The New screen picker's model: which machines can host each kind, a Navi's browser only on its own machine, the
+// The New screen picker's model: which machines can host each kind, a project's browser only on its own machine, the
 // machine it starts on, and each machine's slots in words, a full one offering to wait.
 import { describe, expect, it } from "vitest";
 import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
@@ -34,7 +34,7 @@ describe("hostsFor", () => {
     expect(canOpen([MACHINES[1] as MachineRolesEntry], "android")).toBe(false);
   });
 
-  it("keeps a Navi's browser on its own machine, and its devices anywhere", () => {
+  it("keeps a project's browser on its own machine, and its devices anywhere", () => {
     expect(hostsFor(MACHINES, "browser", "mac").map((h) => h.machineId)).toEqual(["mac"]);
     expect(hostsFor(MACHINES, "linux_desktop", "mac").map((h) => h.machineId)).toEqual(["devbox"]);
   });
@@ -199,7 +199,7 @@ describe("why a kind can't open", () => {
     expect(whyOff([], "browser")).toMatchObject({ why: "No machine has joined this hub yet.", fix: "add" });
   });
 
-  it("keeps a Navi's browser to its own machine's reason", () => {
+  it("keeps a project's browser to its own machine's reason", () => {
     expect(whyOff([off("devbox", {}), off("home", { browser: "off" })], "browser", "home")?.why).toBe("Browser screens are turned off on home.");
   });
 

@@ -54,7 +54,7 @@ export function Meta({ screen: p, now, project = true, machine = true, time = tr
           {STATE_WORD[x.state]}
         </Text>
       </span>
-      {p.project.navi && !mine ? null : mine ? (
+      {mine ? (
         x.state === "yours" ? null : (
           <Text size="xs" tone="quiet">
             {x.openedBy}

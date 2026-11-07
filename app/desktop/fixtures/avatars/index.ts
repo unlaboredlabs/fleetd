@@ -1,7 +1,7 @@
-// Chats' pictures (project_avatar_set). avatars-set: Ada and Home, Navis, with a portrait and a landscape, and
+// Chats' pictures (project_avatar_set). avatars-set: Ada and Home, Only-me projects, with a portrait and a landscape, and
 // storefront with its logo, in the sidebar, the chat's title and Settings › Projects › Icon; the other projects keep
 // their letters. The pictures are the JPEGs beside this file, as the hub keeps one: 512 px square. avatars-icons: every
-// project and Navi wears a built-in icon, as a hub sends them (project_icon_set, or one derived from its id), and
+// project wears a built-in icon, as a hub sends them (project_icon_set, or one derived from its id), and
 // storefront's settings page has the picker.
 import fs from "node:fs";
 import path from "node:path";
@@ -11,8 +11,8 @@ import { defineGroup } from "../kit/group.ts";
 import { at } from "../kit/ids.ts";
 import { asText, isObject } from "../kit/json.ts";
 import { arr } from "../kit/stress.ts";
-import { navi } from "../navi/index.ts";
-import { ADA, HOME } from "../navi/ids.ts";
+import { ownProject } from "../only-me/index.ts";
+import { ADA, HOME } from "../only-me/ids.ts";
 
 const picture = (name: string): string => fs.readFileSync(path.join(import.meta.dirname, `${name}.jpg`)).toString("base64");
 
@@ -27,7 +27,7 @@ const give = (f: Fixture, ref: Ref, avatar: string, file: string): void => {
 const avatars = (base: Fixture): Fixture => {
   const f = Fixture.from(base, "avatars-set", "Chats' pictures: Ada, Home and storefront have one; the other projects their letters.");
   if (f.snapshot === undefined) throw new Error("avatars needs a snapshot");
-  f.snapshot["projects"] = [...arr(f.snapshot["projects"]), navi(f, ADA, "Ada", "ada"), navi(f, HOME, "Home", "home")];
+  f.snapshot["projects"] = [...arr(f.snapshot["projects"]), ownProject(f, ADA, "Ada", "ada"), ownProject(f, HOME, "Home", "home")];
   writeChat(f, ADA, [
     { author: "human", text: "Ana asked about lunch on Tuesday. Say yes, 12:30 at the usual place." },
     { author: "lead", text: "Tuesday 12:30 is free on your calendar. I said yes and booked the usual table for two." },
@@ -67,9 +67,9 @@ const ICONS: readonly (readonly [string, string])[] = [
 ];
 
 const icons = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "avatars-icons", "Chats' icons: every project and Navi wears a built-in one.");
+  const f = Fixture.from(base, "avatars-icons", "Chats' icons: every project wears a built-in one.");
   if (f.snapshot === undefined) throw new Error("icons needs a snapshot");
-  f.snapshot["projects"] = [...arr(f.snapshot["projects"]), navi(f, ADA, "Ada", "ada"), navi(f, HOME, "Home", "home")];
+  f.snapshot["projects"] = [...arr(f.snapshot["projects"]), ownProject(f, ADA, "Ada", "ada"), ownProject(f, HOME, "Home", "home")];
   arr(f.snapshot["projects"])
     .filter(isObject)
     .forEach((p, i) => {

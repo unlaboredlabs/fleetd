@@ -4,6 +4,7 @@ import { selectProjects } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
 import type { ProjectSummary } from "./contracts";
 import { HUB, scopeKey, type Scope } from "./editor";
+import { isArchived } from "../projects/model";
 import { useReveal } from "./search";
 import s from "./settings.module.css";
 
@@ -35,7 +36,9 @@ export function ScopeSelect(props: {
     ...projects.map((p) => {
       const key = `${p.machineId}/${p.projectId}`;
       // Two projects can share a title (one repo on two machines); the machine tells them apart.
-      return { value: key, label: same(p) ? `${p.title} on ${p.machineId}` : p.title };
+      const label = same(p) ? `${p.title} on ${p.machineId}` : p.title;
+      // An archived one is out of the sidebar: here is where it comes back.
+      return { value: key, label: isArchived(p) ? `${label} (archived)` : label };
     }),
   ];
   const value = props.value ? scopeKey(props.value) : undefined;

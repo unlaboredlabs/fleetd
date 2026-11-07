@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
-// Reordering the sidebar (W214): a project or a Navi dragged, or moved with ⌥↑ / ⌥↓, takes its new place within its own
-// section, says so to a screen reader, and the hub keeps the order for you (sidebar_order_set) with the other section
-// as it was. A press that doesn't move is still a click; Esc puts a lifted row back.
+// Reordering the sidebar (W214): a project dragged, or moved with ⌥↑ / ⌥↓, takes its new place in the one list, says
+// so to a screen reader, and the hub keeps the order for you (sidebar_order_set). A press that doesn't move is still a click; Esc puts a lifted row back.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -46,7 +45,7 @@ const row = (title: string, extra: Partial<ProjectSummary> = {}): SidebarProject
   unread: false,
 });
 
-const ROWS = [row("ada", { kind: "assistant" }), row("home", { kind: "assistant" }), row("api"), row("docs"), row("web")];
+const ROWS = [row("api"), row("docs"), row("web")];
 
 let host: HTMLDivElement;
 let root: Root;
@@ -187,22 +186,18 @@ describe("dragging a row", () => {
 
     expect(titles("Projects")).toEqual(["docs", "web", "api"]);
     expect(section("Projects").querySelector("[data-lifted], [data-reorder]")).toBeNull();
-    // The hub keeps the whole order: the Navis as they were, then the projects as dragged.
-    expect(saved()).toEqual([["ada", "home", "docs", "web", "api"]]);
+    // The hub keeps the whole order.
+    expect(saved()).toEqual([["docs", "web", "api"]]);
     expect(announced("Projects")).toBe("api moved to 3 of 3");
     // The release was the drop's, not a click on the row.
     expect(went).toEqual([]);
   });
 
-  it("moves a Navi among the Navis only", async () => {
-    mount();
-    await drag("home", -ROW);
-    expect(titles("Navi")).toEqual(["home", "ada"]);
-    expect(titles("Projects")).toEqual(["api", "docs", "web"]);
-    expect(saved()).toEqual([["home", "ada", "api", "docs", "web"]]);
-    // Far down: it stops at the last Navi, never among the projects.
-    await drag("home", 10 * ROW);
-    expect(titles("Navi")).toEqual(["ada", "home"]);
+  it("moves an Only-me project among the others: one list", async () => {
+    mount([row("ada", { onlyMe: true }), ...ROWS]);
+    await drag("ada", 10 * ROW);
+    expect(titles("Projects")).toEqual(["api", "docs", "web", "ada"]);
+    expect(saved()).toEqual([["api", "docs", "web", "ada"]]);
   });
 
   it("is still a click when it doesn't move, and Esc puts a lifted row back", async () => {
@@ -242,7 +237,7 @@ describe("letting go", () => {
     // Raised until it lands; the others no longer make way.
     expect(api?.hasAttribute("data-lifted")).toBe(true);
     expect(section("Projects").querySelector("[data-reorder]")).toBeNull();
-    expect(saved()).toEqual([["ada", "home", "docs", "api", "web"]]);
+    expect(saved()).toEqual([["docs", "api", "web"]]);
 
     await settle(SETTLE_MS + 20);
     expect(section("Projects").querySelector("[data-lifted]")).toBeNull();
@@ -290,7 +285,7 @@ describe("letting go", () => {
     styles.observe(section("Projects"), { attributes: true, attributeFilter: ["style"], subtree: true });
     // The order the hub kept, as the sidebar's rows after the read: the same rows drawn again, then in that order.
     mount();
-    mount([...ROWS.slice(0, 2), ROWS[3], ROWS[2], ROWS[4]].filter((r) => r !== undefined));
+    mount([ROWS[1], ROWS[0], ROWS[2]].filter((r) => r !== undefined));
     await settle(SETTLE_MS + 20);
     expect(styles.takeRecords()).toEqual([]);
     styles.disconnect();
@@ -300,7 +295,7 @@ describe("letting go", () => {
 
 describe("a list that changes under a drag", () => {
   // A new project, first by title among the projects.
-  const WITH_NEW = [...ROWS.slice(0, 2), row("aaa"), ...ROWS.slice(2)];
+  const WITH_NEW = [row("aaa"), ...ROWS];
 
   it("puts a lifted row back, and moves nothing, when another desktop's move or a new project arrives", async () => {
     mount();
@@ -326,7 +321,7 @@ describe("a list that changes under a drag", () => {
     pointer(window, "pointermove", ROW / 2 + 10);
     pointer(window, "pointermove", 2 * ROW + 2);
     pointer(window, "pointerup", 2 * ROW + 2);
-    expect(saved()).toEqual([["ada", "home", "docs", "api", "web"]]);
+    expect(saved()).toEqual([["docs", "api", "web"]]);
     // Another desktop's order arrives mid-glide, with a new project: they turn toward their places in it.
     const was = onScreen("Projects");
     mount(WITH_NEW);
@@ -346,7 +341,7 @@ describe("a list that changes under a drag", () => {
     pointer(window, "pointerup", 0);
     await settle(SETTLE_MS + 20);
     expect(titles("Projects")).toEqual(["web", "docs"]);
-    expect(saved()).toEqual([["ada", "home", "web", "docs"]]);
+    expect(saved()).toEqual([["web", "docs"]]);
   });
 });
 
@@ -371,7 +366,7 @@ describe("a section that goes mid-drag", () => {
     expect(timers).toHaveBeenCalled();
     timers.mockRestore();
     await settle(SETTLE_MS + 20);
-    expect(saved()).toEqual([["ada", "home", "docs", "api", "web"]]);
+    expect(saved()).toEqual([["docs", "api", "web"]]);
   });
 });
 
@@ -497,7 +492,7 @@ describe("the keyboard", () => {
     await settle();
     expect(document.activeElement).toBe(button("docs"));
     expect(announced("Projects")).toBe("docs moved to 1 of 3");
-    expect(saved().at(-1)).toEqual(["ada", "home", "docs", "api", "web"]);
+    expect(saved().at(-1)).toEqual(["docs", "api", "web"]);
 
     // At the top it stays, and says so.
     key("ArrowUp");

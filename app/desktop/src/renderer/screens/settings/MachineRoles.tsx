@@ -89,7 +89,7 @@ function MachineRow({ machine: m }: { machine: MachineRolesEntry }) {
         <div className={s.machineControls}>
           <Switch
             label="Agents may use this Mac"
-            description="The agents' Mac: every project's agents build and run iOS simulators here with mac commands. It never runs agents, leads or Navis itself."
+            description="The agents' Mac: every project's agents build and run iOS simulators here with mac commands. It never runs agents or leads itself."
             checked={m.mac.on}
             disabled={disabled}
             onCheckedChange={(macTool) => set({ macTool })}

@@ -4,7 +4,7 @@ import { direct, type Step } from "./camera.ts";
 const view = { width: 1400, height: 900 };
 const o = { view, cap: 1.5, fade: 600 };
 const box = (x: number, y: number, width = 80, height = 28) => ({ x, y, width, height });
-// A navi-like scene: a sidebar click that changes the whole window, then a small button, in one 5 s take.
+// A scene like opening a project: a sidebar click that changes the whole window, then a small button, in one 5 s take.
 const steps: Step[] = [
   { kind: "click", at: 1700, until: 1700, box: box(10, 40, 200), effect: box(0, 0, 1400, 900) },
   { kind: "click", at: 3900, until: 3900, box: box(240, 560), effect: box(230, 470, 600, 160) },

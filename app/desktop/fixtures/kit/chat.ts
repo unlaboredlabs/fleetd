@@ -20,7 +20,7 @@ export interface Draft {
   readonly attachments?: ReadonlyArray<Attachment>;
   readonly state?: "streaming" | "final";
   readonly item?: JsonObject;
-  /** More of the message's fields, as the hub sets them on a line of its own (a Navi's `skillSaved`). */
+  /** More of the message's fields, as the hub sets them on a line of its own (a lead's `skillSaved`). */
   readonly extra?: JsonObject;
   readonly history?: "order" | "note" | "steer" | "lead_message" | "order_outcome";
   /** A lead message's bubbles, as the hub splits it (ChatPart: start, end, block). */
