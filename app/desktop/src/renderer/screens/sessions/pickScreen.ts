@@ -78,7 +78,7 @@ const NEEDS: Readonly<Record<ScreenKind, string>> = {
   browser: "Browser screens need a machine that hosts screens.",
   android: "Android emulators need a Linux x86_64 machine with KVM, and none here hosts screens.",
   linux_desktop: "Linux desktops need a Linux machine, and none here hosts screens.",
-  mac: "The agents’ Mac screen needs a Mac set aside for agents, whose node runs as its standard agents user.",
+  mac: "The agents’ Mac screen needs a Mac joined as the agents’ Mac.",
 };
 
 /** One machine's reason, ranked: the one that fixes it soonest first. */

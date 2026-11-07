@@ -159,18 +159,83 @@ fn join_options_that_cannot_work_stop_before_anything_is_downloaded() {
     }
 }
 
-/// `--mac` joins the agents' Mac only from a standard user of its own on macOS: anywhere else, or from an admin (as CI's
-/// Mac runner's user is), it stops before anything is downloaded.
+/// `--mac` joins the agents' Mac only on macOS: anywhere else it stops before anything is downloaded.
 #[test]
-fn the_agents_mac_join_refuses_any_other_os_and_an_admin() {
+fn the_agents_mac_join_refuses_any_other_os() {
+    if cfg!(target_os = "macos") {
+        return;
+    }
     let release = Release::new();
     let output = release.run("sh \"$INSTALLER\" --join http://hub:4790 --code c --mac");
     assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
-    let says = if cfg!(target_os = "macos") {
-        "is an administrator"
-    } else {
-        "run the join line on a Mac"
-    };
-    assert!(stderr(&output).contains(says), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("run the join line on a Mac"),
+        "{}",
+        stderr(&output)
+    );
     assert!(!release.home().join(".fleetd").exists(), "installed anyway");
+}
+
+/// An admin at a Mac, faked on any OS: `uname`, `id`, `sudo` and `launchctl` on PATH say so, with launchd's
+/// `gui/<uid>` domain there (a login at the Mac's screen) or not (`su`, ssh).
+fn fake_mac(release: &Release, logged_in_at_screen: bool) -> String {
+    let bin = release.dir.path().join("fake-mac");
+    std::fs::create_dir_all(&bin).unwrap();
+    for (tool, body) in [
+        ("uname", "[ \"$1\" = -m ] && echo arm64 || echo Darwin".to_owned()),
+        (
+            "id",
+            "case \"$1\" in -Gn) echo staff everyone admin ;; -un) echo ada ;; -u) echo 502 ;; esac"
+                .to_owned(),
+        ),
+        ("sudo", "exit 0".to_owned()),
+        (
+            "launchctl",
+            format!(
+                "[ \"$*\" = 'print gui/502' ] && exit {}; exit 64",
+                if logged_in_at_screen { 0 } else { 113 }
+            ),
+        ),
+    ] {
+        let path = bin.join(tool);
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+    }
+    format!("PATH=\"{}:$PATH\"", bin.display())
+}
+
+/// `--mac` from a shell with no login at the Mac's screen (su or ssh) stops before anything is downloaded, with where
+/// to log in instead of launchctl's "Bootstrap failed: 125" later; logged in there, it joins, an admin's account too.
+#[test]
+fn the_agents_mac_join_needs_a_login_at_the_macs_screen() {
+    let release = Release::new();
+    let path = fake_mac(&release, false);
+    let output = release.run(&format!(
+        "{path} sh \"$INSTALLER\" --join http://hub:4790 --code c --mac"
+    ));
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    let said = stderr(&output);
+    assert!(
+        said.contains("ada isn't logged in on this Mac's screen"),
+        "{said}"
+    );
+    assert!(
+        said.contains("open Terminal there, and paste the join line again"),
+        "{said}"
+    );
+    assert!(!release.home().join(".fleetd").exists(), "installed anyway");
+
+    let path = fake_mac(&release, true);
+    let output = release.run(&format!(
+        "{path} sh \"$INSTALLER\" --join http://hub:4790 --code c --mac"
+    ));
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(
+        release
+            .fleetd_args()
+            .is_some_and(|args| args.contains(&"--mac".to_owned())),
+        "{}",
+        stderr(&output)
+    );
 }

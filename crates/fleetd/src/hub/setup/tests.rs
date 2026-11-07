@@ -124,17 +124,13 @@ fn the_macs_step_is_its_own_checks_and_a_failing_one_wants_a_look() {
     };
     let passing: Vec<_> = fleetd_contracts::node_link::MacCheckId::ALL
         .iter()
-        .map(|id| {
-            check(
-                &format!("studio/mac_{}", id.as_str()),
-                DoctorStatus::Ok,
-                "fine",
-            )
-        })
+        .map(|id| format!("studio/mac_{}", id.as_str()))
+        .chain(["studio/mac_one_node".to_owned()])
+        .map(|id| check(&id, DoctorStatus::Ok, "fine"))
         .collect();
     assert_eq!(mac(&passing).status, SetupStatus::Done);
     let mut failing = passing.clone();
-    failing[5] = check(
+    failing[1] = check(
         "studio/mac_xcode",
         DoctorStatus::Fail,
         "Xcode's licence isn't accepted, so xcodebuild and simctl refuse to run.",
@@ -145,20 +141,23 @@ fn the_macs_step_is_its_own_checks_and_a_failing_one_wants_a_look() {
         step.said.as_deref(),
         Some("Xcode's licence isn't accepted, so xcodebuild and simctl refuse to run.")
     );
-    // The admin block is one paste in the person's own account, each line said why, and never curl into sudo.
+    // The Xcode block is one paste in the account the Mac joins from, each line said why, and never curl into sudo.
     let block = &step.parts[0].values[0].value;
     assert_eq!(block, super::MAC_ADMIN_BLOCK);
     for line in [
-        "sudo sysadminctl -addUser agents",
-        "sudo dseditgroup -o edit -a agents -t user _developer",
         "sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch",
-        "chmod 700 ~",
+        "sudo DevToolsSecurity -enable",
+        "sudo dseditgroup -o edit -a \"$(id -un)\" -t user _developer",
     ] {
         assert!(block.contains(line), "{line}");
     }
-    assert!(!block.contains("curl"));
-    // Each command has the comment saying why above it.
+    assert!(!block.contains("curl") && !block.contains("sysadminctl"));
     assert!(block.lines().next().unwrap().starts_with('#'));
+    // A user of its own for agents is offered last, and optional (D309).
+    let own = step.parts.last().unwrap();
+    assert!(own.title.starts_with("Optional"), "{}", own.title);
+    assert_eq!(own.values[0].value, super::MAC_USER_BLOCK);
+    assert!(super::MAC_USER_BLOCK.contains("sudo sysadminctl -addUser agents"));
     assert!(
         step.parts[1].values[0]
             .value

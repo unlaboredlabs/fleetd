@@ -64,7 +64,7 @@ fleetd init --join <hub url> --code <code> [--machine-id <id>] [--git-identity "
     [--claude-config-dir <dir>] [--mac]
 ```
 
-make this machine a worker of that hub, without SSH from the hub: the command `fleetd pair --worker` prints on the hub. Run again, it keeps the node's enrolment and repairs the rest; `--rejoin` enrols again with a new code; `--mac` joins the agents' Mac, from its standard agents user (no claude there)
+make this machine a worker of that hub, without SSH from the hub: the command `fleetd pair --worker` prints on the hub. Run again, it keeps the node's enrolment and repairs the rest; `--rejoin` enrols again with a new code; `--mac` joins the agents' Mac, from Terminal logged in at its screen (no claude there)
 
 ### fleetd init {#init-step}
 
@@ -440,6 +440,22 @@ fleetd node run [--home <dir>]
 ```
 
 keep the link up for a machine that has joined
+
+### fleetd node restart {#node-restart}
+
+```text
+fleetd node restart
+```
+
+restart this machine's node service (launchd or systemd)
+
+### fleetd node grants {#node-grants}
+
+```text
+fleetd node grants
+```
+
+on the agents' Mac: the Accessibility and Screen Recording grants macOS gives a node started now
 
 ### fleetd node trust {#node-trust}
 

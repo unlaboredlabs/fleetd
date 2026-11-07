@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use fleetd_contracts::node_link::{
     CAP_AGENTS_MAC, CAP_CLAUDE_ACCOUNTS, CAP_MAC_TOOL, CAP_MCP_SERVERS, CAP_ONEPASSWORD,
@@ -11,9 +10,7 @@ use super::tools::ToolsState;
 
 /// A Mac set up as the guide says, unless a test changes it.
 struct Fake {
-    admin: Result<(), String>,
     runs: HashMap<String, Ran>,
-    homes: Result<Vec<(PathBuf, bool)>, String>,
     accessibility: Option<bool>,
     screen: Option<bool>,
     console: Option<String>,
@@ -31,11 +28,6 @@ fn ran(code: i32, out: &str) -> Ran {
 impl Default for Fake {
     fn default() -> Self {
         let runs = [
-            ("defaults read MobileMeAccounts Accounts", ran(1, "Domain MobileMeAccounts does not exist")),
-            (
-                "sysadminctl -secureTokenStatus agents",
-                ran(0, "2026-11-03 sysadminctl[1:2] Secure token is DISABLED for user fleetd agents"),
-            ),
             (
                 "dseditgroup -o checkmember -m agents _developer",
                 ran(0, "yes agents is a member of _developer\n"),
@@ -56,9 +48,7 @@ impl Default for Fake {
         .map(|(k, v)| (k.to_owned(), v))
         .collect();
         Self {
-            admin: Ok(()),
             runs,
-            homes: Ok(vec![(PathBuf::from("/Users/ada"), false)]),
             accessibility: Some(true),
             screen: Some(true),
             console: Some("agents".into()),
@@ -78,12 +68,6 @@ impl Probe for Fake {
             .collect::<Vec<_>>()
             .join(" ");
         self.runs.get(&key).cloned().unwrap_or_default()
-    }
-    fn admin(&self) -> Result<(), String> {
-        self.admin.clone()
-    }
-    fn homes(&self) -> Result<Vec<(PathBuf, bool)>, String> {
-        self.homes.clone()
     }
     fn accessibility(&self) -> Option<bool> {
         self.accessibility
@@ -133,73 +117,6 @@ fn a_mac_set_up_as_the_guide_says_passes_every_check() {
         );
         assert!(c.fix.is_none() && c.command.is_none(), "{:?}", c.id);
     }
-}
-
-#[test]
-fn an_admin_or_sudo_user_fails_and_says_where_to_turn_it_off() {
-    let fake = Fake {
-        admin: Err("agents is an administrator".into()),
-        ..Fake::default()
-    };
-    let (state, message, fix) = verdict(&fake, MacCheckId::StandardUser);
-    assert_eq!(state, MacCheckState::Fail);
-    assert!(
-        message.starts_with("agents is an administrator"),
-        "{message}"
-    );
-    assert!(
-        fix.unwrap()
-            .contains("Allow this user to administer this computer")
-    );
-}
-
-#[test]
-fn another_users_readable_home_names_the_chmod_its_owner_runs() {
-    let fake = Fake {
-        homes: Ok(vec![
-            (PathBuf::from("/Users/ada"), true),
-            (PathBuf::from("/Users/bo"), false),
-        ]),
-        ..Fake::default()
-    };
-    let (state, message, fix) = verdict(&fake, MacCheckId::OtherHomes);
-    assert_eq!(state, MacCheckState::Fail);
-    assert_eq!(message, "fleetd agents can read /Users/ada.");
-    let fix = fix.unwrap();
-    assert!(fix.starts_with("In ada's own Terminal"), "{fix}");
-    assert!(fix.ends_with(": chmod 700 ~"), "never recursive: {fix}");
-}
-
-#[test]
-fn an_apple_id_or_a_secure_token_fails() {
-    let mut fake = Fake::default();
-    fake.runs.insert(
-        "defaults read MobileMeAccounts Accounts".into(),
-        ran(
-            0,
-            "(\n    {\n        AccountID = \"ada@icloud.com\";\n    }\n)",
-        ),
-    );
-    fake.runs.insert(
-        "sysadminctl -secureTokenStatus agents".into(),
-        ran(0, "Secure token is ENABLED for user fleetd agents"),
-    );
-    assert_eq!(verdict(&fake, MacCheckId::NoAppleId).0, MacCheckState::Fail);
-    let (state, _, fix) = verdict(&fake, MacCheckId::NoSecureToken);
-    assert_eq!(state, MacCheckState::Fail);
-    assert!(
-        fix.unwrap()
-            .contains("sudo sysadminctl -secureTokenOff agents")
-    );
-    // sysadminctl saying neither: unknown, not passing.
-    fake.runs.insert(
-        "sysadminctl -secureTokenStatus agents".into(),
-        ran(1, "must be run as root"),
-    );
-    assert_eq!(
-        verdict(&fake, MacCheckId::NoSecureToken).0,
-        MacCheckState::Unknown
-    );
 }
 
 #[test]
@@ -271,7 +188,7 @@ fn a_missing_grant_deep_links_its_pane() {
     assert_eq!(state, MacCheckState::Fail);
     let fix = fix.unwrap();
     assert!(fix.contains("Privacy_Accessibility"), "{fix}");
-    assert!(fix.contains("logged in as fleetd agents"), "{fix}");
+    assert!(fix.starts_with("At the Mac: System Settings"), "{fix}");
     assert_eq!(
         verdict(&fake, MacCheckId::ScreenRecording).0,
         MacCheckState::Unknown
@@ -403,4 +320,18 @@ fn only_agents_mac_makes_the_node_the_agents_mac() {
     assert!(super::is_agents_mac(&on));
     let text = serde_json::to_string(&on).unwrap();
     assert!(text.contains(r#""agentsMac":true"#), "{text}");
+}
+
+/// `mac sim` works on the agents' Mac whatever an older node.json says: a legacy `"ios": {"enabled": false}` (from when
+/// the iOS screen kind could be turned off) is ignored, and its other settings kept. Elsewhere `enabled` stands.
+#[test]
+fn the_agents_mac_ignores_a_legacy_ios_off() {
+    let off: crate::node::device::ios::IosConfig =
+        serde_json::from_value(serde_json::json!({ "enabled": false, "pool": 2 })).unwrap();
+    let on = super::ios_config(Some(off.clone()), true);
+    assert_eq!(on.enabled, Some(true));
+    assert_eq!(on.pool, Some(2));
+    assert_eq!(super::ios_config(None, true).enabled, Some(true));
+    assert_eq!(super::ios_config(Some(off), false).enabled, Some(false));
+    assert_eq!(super::ios_config(None, false).enabled, None);
 }

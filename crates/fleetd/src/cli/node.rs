@@ -98,6 +98,35 @@ pub async fn node_command(argv: &[String]) -> u8 {
                 .await
                 .map_err(|error| error.to_string()),
         ),
+        // What a node started now would be granted; the agents' Mac's node asks it to take up a new grant (agents_mac/grants.rs).
+        Some("grants") => {
+            println!("{}", crate::node::agents_mac::grants::Grants::own().line());
+            0
+        }
+        // The node service fleetd init made for this binary, restarted: `launchctl kickstart -k` or `systemctl --user
+        // restart`. The agents' Mac's node runs it to take up a new grant; setup runs it to retry.
+        Some("restart") => {
+            let node = crate::cli::setup::current_exe().ok().and_then(|exe| {
+                crate::update::service::services(&exe)
+                    .into_iter()
+                    .find(|s| !s.hub())
+            });
+            match node {
+                None => exit(Err(
+                    "no node service of this fleetd here. Fix: fleetd init --join sets one up"
+                        .into(),
+                )),
+                Some(service) => match crate::update::service::restart(&service) {
+                    Ok(()) => {
+                        println!("restarted {}", service.name);
+                        0
+                    }
+                    Err(why) => exit(Err(format!(
+                        "{why}. Fix: log in as this user at the machine's screen, then run fleetd node restart again"
+                    ))),
+                },
+            }
+        }
         Some("trust") => {
             let [dir] = v.positionals.as_slice() else {
                 return usage("node trust takes the checkout's folder");

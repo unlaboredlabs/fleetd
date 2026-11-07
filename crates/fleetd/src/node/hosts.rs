@@ -181,7 +181,7 @@ fn desktop(home: &Path, config: &DesktopConfig) -> HostCheck {
     with(checked, config.enabled(), config.idle_minutes)
 }
 
-/// The agents' Mac's own screen (node/desktop/mac): ready while the node's standard user is on the Mac's screen,
+/// The agents' Mac's own screen (node/desktop/mac): ready while the node's user is on the Mac's screen,
 /// unlocked, with Screen Recording and Accessibility allowed; else exactly what stands in the way and how to clear it.
 /// Each start checks it again.
 pub fn mac_screen(config: &MacConfig) -> HostCheck {
@@ -196,14 +196,14 @@ pub fn mac_screen(config: &MacConfig) -> HostCheck {
         check(
             host,
             Some(HostOff::Off),
-            "off: on a Mac set aside for agents, whose node runs as its standard agents user, turn the Mac screen on in Settings › Hub › Machines › Screens",
+            "off: on the agents' Mac, turn the Mac screen on in Settings › Hub › Machines › Screens",
         )
     } else {
         match mac::blocked() {
             None => check(
                 host,
                 None,
-                "the agents session is on the Mac's screen, unlocked, with Screen Recording and Accessibility",
+                "the node's session is on the Mac's screen, unlocked, with Screen Recording and Accessibility",
             ),
             Some(blocked) => fixed(
                 check(host, Some(HostOff::Missing), blocked.message),

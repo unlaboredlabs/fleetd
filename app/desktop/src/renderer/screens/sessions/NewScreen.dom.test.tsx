@@ -396,7 +396,7 @@ it("says why a kind can't open, and an admin turns it on from there", async () =
   expect(tile("Android")?.disabled).toBe(false);
   act(() => tile("Agents’ Mac")?.click());
   await settle();
-  expect(document.querySelector("[data-off-reason]")?.textContent).toContain("needs a Mac set aside for agents");
+  expect(document.querySelector("[data-off-reason]")?.textContent).toContain("needs a Mac joined as the agents’ Mac");
   expect(button("Add machine")).toBeDefined();
   act(() => tile("Android")?.click());
   await settle();

@@ -488,27 +488,28 @@ ends. Apps the agent opened otherwise stay open on the Mac, as yours would.
 
 What the screen is, and isn't:
 
-- **It's the agents' account, never yours.** The viewer is badged **Agents' Mac**. Agents can read and draw anything
-  there, a fake sign-in dialog included: never type your own passwords, an Apple ID or an admin password into it.
+- **It's the node's account at the Mac's screen**: yours, when the Mac joined from your account, or a [user of its
+  own](/docs/agents-mac#own-user). The viewer is badged **Agents' Mac**. Agents can read and draw anything there, a
+  fake sign-in dialog included: never type your own passwords, an Apple ID or an admin password into it.
   `fill_credential` isn't offered on it, and the Mac's node is sent none of an agent's secrets.
-- **It needs the agents session on the screen, unlocked.** macOS gives a session that is switched to the background or
-  locked only black frames, and drops its input. So the kind is offered only while the agents user is the one logged in
-  at the Mac's screen, unlocked, and the node checks it again at every start. Otherwise Settings and New screen say
-  exactly what stands in the way: the screen is locked, another user has it, nobody is logged in, a grant is missing,
-  or the node runs as an administrator (it never lends an administrator's screen).
+- **It needs the node's session on the screen, unlocked.** macOS gives a session that is switched to the background or
+  locked only black frames, and drops its input. So the kind is offered only while the node's account is the one
+  logged in at the Mac's screen, unlocked, and the node checks it again at every start. Otherwise Settings and New
+  screen say exactly what stands in the way: the screen is locked, another user has it, nobody is logged in, or a grant
+  is missing.
 - **Recorded as any screen**: the video while a session holds the screen, and its action log, a line per action and
   agent-desktop command. Recordings go to the hub's storage, under the same retention.
 - **No Navi** ever uses it.
 
 ### On the Mac {#mac-setup}
 
-On a Mac set aside for agents, with the node running as its standard `agents` user:
+On the [agents' Mac](/docs/agents-mac#setup):
 
-1. Log in as `agents` at the Mac and keep that session on the screen. Turn its screen lock off (System Settings ›
-   Lock Screen › Require password: Never), and its screen saver and display sleep: a locked screen is blind.
-2. Allow fleetd in System Settings › Privacy & Security › **Screen Recording** and **Accessibility**, in the agents
-   session, then restart its node (`launchctl kickstart -k gui/$(id -u)/sh.fleetd.node`). The Screens setting's fix
-   opens the right pane. macOS asks again for Screen Recording about once a month.
+1. Keep the node's account logged in at the Mac's screen. Turn its screen lock off (System Settings › Lock Screen ›
+   Require password: Never), and its screen saver and display sleep: a locked screen is blind.
+2. Allow fleetd in System Settings › Privacy & Security › **Screen Recording** and **Accessibility** in that session;
+   the join opens both, and the node restarts itself to take each up. The Screens setting's fix opens the right pane.
+   macOS asks again for Screen Recording about once a month.
 3. Turn **Agents' Mac** on in Settings › Hub › Machines › Screens. The node installs agent-desktop as it starts.
 
 Settings go under `mac` in [node.json](/docs/config-and-files#node-json):

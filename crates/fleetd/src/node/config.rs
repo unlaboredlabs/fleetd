@@ -54,8 +54,8 @@ pub struct NodeConfig {
     /// `enabled` is false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub desktop: Option<super::desktop::DesktopConfig>,
-    /// The agents' Mac's own screen (node/desktop/mac): off unless `enabled` is true, on a Mac whose node runs as a
-    /// standard user set aside for agents; and `simulators`, the iOS simulators it lends agents at once (node/mac_tool).
+    /// The agents' Mac's own screen (node/desktop/mac): off unless `enabled` is true, on a Mac whose node runs in the
+    /// account at its screen; and `simulators`, the iOS simulators it lends agents at once (node/mac_tool).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mac: Option<super::desktop::mac::MacConfig>,
     /// The agents' Mac (node/agents_mac, D298): set only by the installer's `--mac`, never by a screen's switch. The

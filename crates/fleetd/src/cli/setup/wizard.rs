@@ -221,6 +221,52 @@ fn tilde(path: &Path) -> String {
     }
 }
 
+/// The end of a `--mac` join at the Mac: each grant's pane opened and waited for, then the node's checks, each a line.
+async fn mac_grants_and_checks(list: &mut Checklist, node_home: &Path) {
+    use super::mac_finish::{self, CHECKS_WAIT, GRANT_WAIT};
+    let since = std::time::SystemTime::now();
+    for grant in mac_finish::grants(node_home) {
+        let title = grant.name.to_lowercase();
+        if grant.granted != Some(true) {
+            mac_finish::open_pane(&grant);
+            list.note(&mac_finish::ask(&grant));
+            list.start(&format!("waiting for {}", grant.name));
+            if !mac_finish::wait_for_grant(node_home, grant.id, GRANT_WAIT).await {
+                list.failed(&title, "not on yet", &mac_finish::not_yet(&grant));
+                return;
+            }
+        }
+        list.done(&title, "fleetd has it");
+    }
+    list.start("the node takes up its grants and checks the Mac");
+    match mac_finish::wait_for_checks(node_home, since, CHECKS_WAIT).await {
+        None => list.failed(
+            "checks",
+            "the node wrote none",
+            "fleetd node restart, then Test in Settings › Hub › Setup › A Mac for agents",
+        ),
+        Some(health) => {
+            let open = mac_finish::open_checks(&health);
+            if open.is_empty() {
+                list.done("checks", "every check passes");
+            }
+            for check in open {
+                let fix = match (&check.fix, &check.command) {
+                    (Some(fix), Some(command)) => format!("{fix}: {command}"),
+                    (Some(fix), None) => fix.to_string(),
+                    (None, Some(command)) => command.to_string(),
+                    (None, None) => "Test in Settings › Hub › Setup › A Mac for agents".into(),
+                };
+                list.failed(
+                    &format!("mac_{}", check.id.as_str()),
+                    check.message.as_str(),
+                    &fix,
+                );
+            }
+        }
+    }
+}
+
 /// "… Fix: <command>" split into the why and the command.
 fn split_fix(problem: &str) -> (String, String) {
     match problem.split_once(" Fix: ") {
@@ -520,12 +566,17 @@ async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u
             node_line(list, &title, &added, &format!("joined {}", hub.trim()));
             notes(list, &said);
             if opts.mac {
-                // The agents' Mac runs no claude: what's left is the person's two clicks at the Mac.
-                list.note(
-                    "This is the agents' Mac now. At this Mac, as fleetd agents: System Settings › Privacy & \
-                     Security › Accessibility and › Screen Recording, turn on fleetd. Settings › Hub › Setup › A Mac \
-                     for agents in the app shows each check.",
-                );
+                // The agents' Mac runs no claude: what's left is the person's two clicks at the Mac, each pane opened
+                // and waited for, then its checks (mac_finish.rs, which the app drives too).
+                if ui.interactive {
+                    mac_grants_and_checks(list, Path::new(&added.layout.node_home)).await;
+                } else {
+                    list.note(
+                        "This is the agents' Mac now. Last, at this Mac: in System Settings › Privacy & Security, turn \
+                         on fleetd in Accessibility and in Screen Recording; the node restarts itself to take up each. \
+                         Settings › Hub › Setup › A Mac for agents in the app shows each check.",
+                    );
+                }
                 return Ok(worker_end(list, "This Mac is the agents' Mac now."));
             }
             worker_claude(ui, list, &added, None).await?;

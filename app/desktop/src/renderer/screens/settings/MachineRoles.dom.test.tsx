@@ -48,7 +48,7 @@ const agentsMac: MachineRolesEntry = {
   ...mac1,
   machineId: "studio",
   name: "studio",
-  mac: { on: true, ready: false, note: "studio's node doesn't offer the tool: its user must be a standard user that can't sudo." },
+  mac: { on: true, ready: false, note: "studio's node doesn't offer the tool: it runs on macOS only." },
 };
 
 const machine = (id: string) => ({ machineId: id, name: id, nodeVersion: "1", status: "online" as const, lastSeenAt: AT, tags: [] });
@@ -135,7 +135,7 @@ it("gives the agents' Mac its switch instead of roles, and says why agents can't
   const mac = row("studio");
   expect(pressed(mac)).toBeUndefined();
   expect(mac?.textContent).toContain("Agents may use this Mac");
-  expect(mac?.textContent).toContain("its user must be a standard user");
+  expect(mac?.textContent).toContain("it runs on macOS only");
   const toggle = mac?.querySelector<HTMLButtonElement>('button[role="switch"]');
   expect(toggle?.getAttribute("aria-checked")).toBe("true");
   await act(async () => {

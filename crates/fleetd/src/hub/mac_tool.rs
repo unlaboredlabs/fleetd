@@ -79,8 +79,8 @@ fn the_mac(
     let machine_id = crate::hub::machine_roles::mac_machine(hub).ok_or_else(|| {
         McpToolError::new(
             ErrorCode::MachineOffline,
-            "No agents' Mac is online: none joined this hub, it's turned off, or it's waiting for its agents login \
-             after a restart.",
+            "No agents' Mac is online: none joined this hub, it's turned off, or it's waiting for its account to log in \
+             again after a restart.",
         )
         .with_fix(
             "do without the Mac and say so in your result; an admin connects one in Settings › Hub › Machines",

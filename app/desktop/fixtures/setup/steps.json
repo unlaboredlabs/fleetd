@@ -256,25 +256,25 @@
       "parts": [
         {
           "links": [],
-          "note": "On the Mac, in your own (admin) account's Terminal: the only step that needs an admin. Paste it as it is; sysadminctl asks for the new user's password, which you keep (agents never get it). A Mac nobody else uses is best: then there's no Apple ID or browser login on it at all.",
-          "title": "In your own account: make the agents' user",
+          "note": "In Terminal on the Mac, in the account it joins from (yours is fine). Xcode itself comes from the App Store, and an iOS simulator runtime with xcodebuild -downloadPlatform iOS.",
+          "title": "Xcode, once",
           "values": [
             {
               "command": true,
-              "label": "In your own account's Terminal",
+              "label": "In Terminal on the Mac",
               "note": "Each line says why. It never pipes anything from the network into sudo.",
-              "value": "# A standard (non-admin) user of its own for agents. You choose its password and keep it.\nsudo sysadminctl -addUser agents -fullName \"fleetd agents\" -password -\n# Simulators and debugging for that user, with no admin prompt.\nsudo dseditgroup -o edit -a agents -t user _developer\nsudo DevToolsSecurity -enable\n# Xcode's licence and its system components, which only an admin can accept and install.\nsudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch\n# Your own home closed to every other user, agents included.\nchmod 700 ~"
+              "value": "# Xcode's licence and its system components, which only an admin can accept and install.\nsudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch\n# Simulators and debugging with no password prompt, for this account.\nsudo DevToolsSecurity -enable\nsudo dseditgroup -o edit -a \"$(id -un)\" -t user _developer"
             }
           ]
         },
         {
           "links": [],
-          "note": "Log out (or switch user) and log in as fleetd agents, then paste the join line in its Terminal. It refuses an admin user, installs fleetd for that user only, and joins as the agents' Mac: a tool every project's agents use, which runs no claude and no Navi and takes no secret. Settings › Hub › Machines › Add machine › A Mac for agents makes the line with its one-time code.",
-          "title": "Log in as fleetd agents and join",
+          "note": "Paste the join line in Terminal on the Mac, logged in at its screen: launchd runs the node only inside that login, so su and ssh won't do. It installs fleetd for that account and joins as the agents' Mac: a tool every project's agents use, which runs no claude and no Navi and takes no secret. Settings › Hub › Machines › Add machine › A Mac for agents makes the line with its one-time code; if this Mac runs fleetd already, give it that machine's name, and the line replaces it. After a restart, log that account in again: with FileVault on, macOS logs no one in by itself.",
+          "title": "Join, at the Mac's screen",
           "values": [
             {
               "command": true,
-              "label": "In fleetd agents' Terminal",
+              "label": "In Terminal, logged in at the Mac's screen",
               "note": "Or on the hub: fleetd pair --worker mac, then add --mac to the line it prints.",
               "value": "curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox:4790 --code <code> --machine-id mac --mac"
             }
@@ -282,13 +282,13 @@
         },
         {
           "links": [],
-          "note": "Still logged in as fleetd agents: turn on fleetd in Accessibility and in Screen Recording, so agents can drive the Mac's apps and you can watch them. macOS may ask for an administrator's name and password: type yours in that System Settings dialog at the Mac itself, never through fleetd's view of its screen. Then restart its node (launchctl kickstart -k gui/$(id -u)/sh.fleetd.node): macOS gives a running process a new grant only once it starts again. It asks again from time to time; the check says when.",
+          "note": "Turn on fleetd in Accessibility and in Screen Recording, so agents can drive the Mac's apps and you can watch them. The join opens each pane and waits for it, and the node restarts itself within seconds to take up each grant. macOS may ask for an administrator's name and password: type it in that System Settings dialog at the Mac itself, never through fleetd's view of its screen. macOS asks again from time to time; the check says when.",
           "title": "Two clicks at the Mac",
           "values": [
             {
               "command": true,
               "label": "Accessibility, at the Mac",
-              "note": "In fleetd agents' Terminal: it opens the pane. Turn on fleetd there.",
+              "note": "In Terminal there: it opens the pane. Turn on fleetd there.",
               "value": "open \"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility\""
             },
             {
@@ -301,29 +301,38 @@
         },
         {
           "links": [],
-          "note": "First let the agents running on it finish (or stop them), and push any work they left: removing the old node deletes its worktrees. Join it again from fleetd agents with the same name and --rejoin (Add machine offers the line), so its history stays. Then, in your own account, stop and remove its old node: your account runs no fleetd node after. The rejoin gave the Mac a new key, so the old node would be refused anyway.",
-          "title": "Moving a Mac that runs fleetd in your account",
+          "note": "Give the join line the name it has, in the same account, and it becomes the agents' Mac in place, keeping its history. Let the agents running there finish (or stop them) first. Joined under another name or from another account, the old machine stays until you remove it: the Mac's checks say so, and how.",
+          "title": "A Mac that runs fleetd already",
           "values": [
             {
               "command": true,
-              "label": "Then, in your own account's Terminal",
-              "note": "The fleetd app can stay: it is a client, not a node.",
-              "value": "launchctl bootout gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node"
+              "label": "On the hub, for an old machine of another name",
+              "note": "Where it ran in another account on the Mac, stop it there too: launchctl bootout gui/$(id -u)/sh.fleetd.node",
+              "value": "fleetd machine remove <old name>"
+            }
+          ]
+        },
+        {
+          "links": [],
+          "note": "Agents act as the account the node runs in, so they can read what it can. To keep them out of yours, make a standard user for them, log in as it at the Mac's screen, and join from there instead.",
+          "title": "Optional: a user of its own for agents",
+          "values": [
+            {
+              "command": true,
+              "label": "In your own (admin) account's Terminal",
+              "note": "sysadminctl asks for the new user's password, which you keep; agents never get it.",
+              "value": "# A standard user of its own for agents. You choose its password and keep it.\nsudo sysadminctl -addUser agents -fullName \"fleetd agents\" -password -\nsudo dseditgroup -o edit -a agents -t user _developer\n# Your own home closed to other users, agents included.\nchmod 700 ~"
             }
           ]
         }
       ],
       "place": "machines",
       "status": "todo",
-      "test": "Read the Mac's checks, which its node runs as fleetd agents every 30 seconds",
+      "test": "Read the Mac's checks, which its node runs every 30 seconds (its grants every 2 while one is off)",
       "title": "A Mac for agents",
       "ways": [
         {
           "checks": [
-            "*/mac_standard_user",
-            "*/mac_other_homes",
-            "*/mac_no_apple_id",
-            "*/mac_no_secure_token",
             "*/mac_developer",
             "*/mac_xcode",
             "*/mac_ios_runtime",
@@ -331,11 +340,12 @@
             "*/mac_screen_recording",
             "*/mac_gui_session",
             "*/mac_tools",
-            "*/mac_keep_awake"
+            "*/mac_keep_awake",
+            "*/mac_one_node"
           ]
         }
       ],
-      "why": "Agents on every machine build, test and drive iOS simulators on one Mac, in a standard user of its own that holds none of your accounts or keys."
+      "why": "Agents on every machine build, test and drive iOS simulators on one Mac: a tool, never a runner, joined from the account at its screen."
     },
     {
       "fields": [],

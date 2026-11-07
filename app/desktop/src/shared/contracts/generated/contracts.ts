@@ -3521,7 +3521,7 @@ export type LoopbackUri = string;
 export type MacCheck = {
   /** The exact command `fix` runs, to paste where it says, when there is one. */
   command?: string;
-  /** What the person does about it, and where: in their own (admin) account, or at the Mac as the agents user. */
+  /** What the person does about it, and where: in their own (admin) account, or at the Mac, in the account it joined from. */
   fix?: string;
   id: MacCheckId;
   /** Plain words: what the node found. */
@@ -3566,7 +3566,7 @@ export type MacTool = {
   note?: string;
   /** "Agents may use this Mac": the admin's switch, on unless set off. */
   on: boolean;
-  /** Its node offers the tool now (`mac_tool`): online, a standard user, the tool on in its node.json. */
+  /** Its node offers the tool now (`mac_tool`): online, on macOS, the tool on in its node.json. */
   ready: boolean;
 };
 

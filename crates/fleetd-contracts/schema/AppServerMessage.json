@@ -1453,7 +1453,7 @@
           "type": "string"
         },
         "fix": {
-          "description": "What the person does about it, and where: in their own (admin) account, or at the Mac as the agents user.",
+          "description": "What the person does about it, and where: in their own (admin) account, or at the Mac, in the account it joined from.",
           "maxLength": 300,
           "type": "string"
         },
@@ -1481,22 +1481,22 @@
       "oneOf": [
         {
           "const": "standard_user",
-          "description": "The node's user is a standard user: not in `admin`, and `sudo -n true` fails.",
+          "description": "Legacy: older nodes checked their user was a standard one. The Mac may run in any account now, an admin's\nincluded (D309); these four are read from an older node and shown, but no longer in [`MacCheckId::ALL`].",
           "type": "string"
         },
         {
           "const": "other_homes",
-          "description": "No other user's home under /Users opens for it.",
+          "description": "Legacy: no other user's home under /Users opened for it.",
           "type": "string"
         },
         {
           "const": "no_apple_id",
-          "description": "No Apple ID is signed in for it.",
+          "description": "Legacy: no Apple ID was signed in for it.",
           "type": "string"
         },
         {
           "const": "no_secure_token",
-          "description": "It holds no FileVault secure token, so its password can't unlock the disk.",
+          "description": "Legacy: it held no FileVault secure token.",
           "type": "string"
         },
         {

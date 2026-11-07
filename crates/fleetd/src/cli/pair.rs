@@ -449,7 +449,7 @@ pub struct WorkerJoin {
 
 /// Mints the one-time code `fleetd pair --worker` prints, and the app's Add machine shows. `rejoin`: the line enrolls
 /// a machine that joined before again (`--rejoin`), repairing it. `mac`: the line joins the agents' Mac (`--mac`),
-/// pasted in its standard agents user.
+/// pasted in Terminal at its screen.
 pub fn worker_join(
     home: &Path,
     auth: &crate::hub::auth::Auth,

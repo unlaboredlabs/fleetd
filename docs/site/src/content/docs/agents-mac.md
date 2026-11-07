@@ -4,8 +4,8 @@ description: One Mac that every agent uses from wherever it runs, for its shell,
 ---
 
 Browsers, Linux desktops and Android emulators are cheap to start anywhere; Macs aren't. So fleetd lends one real Mac
-to every agent at once. Its node runs as a standard macOS user of its own (`agents`: no admin, no Apple ID, no keys),
-never in your account, and it runs no agents or [Navis](/docs/navi) itself. Agents stay on the machines their projects
+to every agent at once. Its node runs in the account logged in at the Mac's screen (yours is fine, an admin's too, or
+a [user of its own](#own-user)), and it runs no agents or [Navis](/docs/navi) itself. Agents stay on the machines their projects
 live on and reach the Mac with the `mac` command, through the hub.
 
 ## How an agent uses it {#use}
@@ -29,7 +29,7 @@ mac run -- xcodebuild -scheme App -destination 'platform=iOS Simulator,name=iPho
 mac pull ../DerivedData/Logs/Test out/test-logs
 ```
 
-When `mac` can't reach a Mac (none joined, it's turned off, or it restarted and waits for its agents login), it says so
+When `mac` can't reach a Mac (none joined, it's turned off, or it restarted and waits for its account to log in again), it says so
 in one line and exits with 69; the agent carries on without it and says so.
 
 ## iOS simulators {#sim}
@@ -62,7 +62,8 @@ in a device set of the node's own (`~/.fleetd/node/device/ios/set`), apart from 
 the newest iOS runtime on a plain iPhone. The node keeps a clone booted for the next `mac sim start`, with
 agent-device's runner already started in it, and boots another behind it; when boots keep failing it waits before the
 next one, a minute doubling up to half an hour. It deletes the clones a stopped node left behind each time it starts.
-There's no switch for them in the app: `"ios": {"enabled": false}` in its node.json turns simulators off.
+They're always on: an older `"ios": {"enabled": false}` in its node.json is ignored. `"mac": {"simulators": N}` caps
+them.
 
 The Mac boots at most as many simulators at once as its memory allows: one for every 3 GB past the 8 GB the Mac keeps
 for itself (2 on 16 GB, 8 on 32 GB), at least one. `"mac": {"simulators": N}` in its node.json sets another number. When all are
@@ -96,8 +97,8 @@ A folder nothing touched for 3 days goes. Jobs end with the Mac's node: a restar
   back with no links), and the Mac reads only the agent's own folder for it.
 - **Every `mac run` is in the agent's action log**, with its exit code once it ends. One whose `mac` stopped
   following it (a timeout, Ctrl-C) ends on the Mac a minute later, and its line closes with what the Mac says.
-- **Agents share one macOS user** ([what stays shared](#shared)), which is why the Mac is a tool, never a
-  runner ([turn it on](#setup)).
+- **Agents share one macOS account**, the node's ([what stays shared](#shared)), which is why the Mac is a tool, never
+  a runner ([turn it on](#setup)).
 
 ## Turn it on {#setup}
 
@@ -109,104 +110,115 @@ The agents' Mac is a tool, never a runner:
   project's variable or a browser fill to it, and its node refuses one that comes anyway.
 - Its node relays no `fleetd` call made on the Mac (every process there is some project's job): `fleetd` commands
   typed there answer "this Mac is a tool for agents elsewhere: run fleetd from your own machine".
-- Your own account on the Mac runs no fleetd node.
-
-A Mac nobody else uses (a Mac mini) is best: then there's no Apple ID, iCloud keychain or browser login on its disk at
-all. Release signing stays in CI.
-
+A Mac nobody else uses (a Mac mini) is best. Release signing stays in CI.
 
 The setup is the optional **A Mac for agents** step in **Settings › Hub › Setup** (and `fleetd init --step mac`), and
-**Settings › Hub › Machines › Add machine › A Mac for agents**. You do three things; fleetd does the rest.
+**Settings › Hub › Machines › Add machine › A Mac for agents**. You paste two things at the Mac and click two
+switches; fleetd does the rest, and ends at the checks.
 
-### 1. In your own account: make the agents' user {#admin}
+### 1. Xcode, once {#xcode}
 
-On the Mac, in your own (admin) account's Terminal, paste:
+In Terminal on the Mac, in the account it joins from (yours is fine), paste:
 
 ```sh
-# A standard (non-admin) user of its own for agents. You choose its password and keep it.
-sudo sysadminctl -addUser agents -fullName "fleetd agents" -password -
-# Simulators and debugging for that user, with no admin prompt.
-sudo dseditgroup -o edit -a agents -t user _developer
-sudo DevToolsSecurity -enable
 # Xcode's licence and its system components, which only an admin can accept and install.
 sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch
-# Your own home closed to every other user, agents included.
-chmod 700 ~
+# Simulators and debugging with no password prompt, for this account.
+sudo DevToolsSecurity -enable
+sudo dseditgroup -o edit -a "$(id -un)" -t user _developer
 ```
 
-| Line | Why |
-|---|---|
-| `sysadminctl -addUser` | Agents act as this user. A standard user can't install system software, change settings for others or read your files. Made without `-adminUser`, it gets no FileVault secure token, so its password can't unlock the disk. Keep its password in your password manager: you log it in after the Mac restarts. |
-| `dseditgroup … _developer`, `DevToolsSecurity -enable` | Simulators, `xcodebuild test` and debugging without asking for an admin's password, which agents don't have. |
-| `xcodebuild -license accept`, `-runFirstLaunch` | Until an admin accepts Xcode's licence and installs its components, `xcodebuild` and `simctl` refuse to run. |
-| `chmod 700 ~` | macOS leaves homes readable by other users (`drwxr-xr-x`, or `drwxr-x---` with group `staff`, which every user is in). This closes yours. Not `-R`: only the folder itself. |
+Until an admin accepts Xcode's licence and installs its components, `xcodebuild` and `simctl` refuse to run. The
+`_developer` group and `DevToolsSecurity` let simulators, `xcodebuild test` and debugging run without a password
+prompt nobody is there to answer. Xcode itself comes from the App Store, and an iOS simulator runtime with
+`xcodebuild -downloadPlatform iOS`.
 
-Xcode itself comes from the App Store in your account, and an iOS simulator runtime with `xcodebuild
--downloadPlatform iOS` there.
+### 2. Join, at the Mac's screen {#join}
 
-### 2. Log in as fleetd agents and join {#join}
-
-Log out (or switch user), log in as **fleetd agents**, and paste the join line in its Terminal. Add machine › A Mac for
-agents makes it, with a one-time code that works for 15 minutes:
+Paste the join line in Terminal on the Mac, logged in at its screen (or over Screen Sharing). `su` and ssh won't do:
+launchd runs the node only inside a login at the screen, and the installer says so, before it changes anything, when
+there's none. Add machine › A Mac for agents makes the line, with a one-time code that works for 15 minutes:
 
 ```sh
 curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox.example.ts.net:4790 --code <code> --machine-id mac --mac
 ```
 
-`--mac` makes it the agents' Mac. The installer refuses an admin user, or one that can `sudo` without a password,
-before it downloads anything; it installs no app there, and needs no `claude`. The node runs as a LaunchAgent of
-`agents`, and installs for itself, each pinned and checked by its digest:
+If this Mac runs fleetd already, give the line that machine's name: it [becomes the agents' Mac](#move) with its
+history. `--mac` makes it the agents' Mac. It installs no app and needs no `claude`. The node runs as a LaunchAgent of
+that account, and installs for itself, each pinned and checked by its digest:
 
 - Node.js 24 (for agent-device), first on the node's `PATH`;
 - [agent-device](https://github.com/callstack/agent-device), which drives iOS simulators;
 - [agent-desktop](https://github.com/vercel-labs/agent-desktop), which drives the Mac's own apps.
 
-Nothing comes from your Homebrew, which agents can't write. The node also keeps the Mac from sleeping while idle
-(an IOKit assertion, as `caffeinate` takes); a closed laptop lid still sleeps.
+Nothing comes from Homebrew. The node also keeps the Mac from sleeping while idle (an IOKit assertion, as `caffeinate`
+takes); a closed laptop lid still sleeps.
 
 ### 3. Two clicks at the Mac {#permissions}
 
-Still logged in as fleetd agents, open **System Settings › Privacy & Security** and turn on **fleetd** in
-**Accessibility** (agents click and type in the Mac's apps) and **Screen Recording** (you and agents see the screen).
-The node asked macOS for both when it started, so fleetd is in each list. macOS may ask for an administrator's
-name and password: type yours in that System Settings dialog at the Mac itself, never through fleetd's view of its
-screen. Then restart the node in fleetd agents' Terminal, since macOS gives a running process a new grant only once
-it starts again:
+Right after it joins, the line opens **System Settings › Privacy & Security › Accessibility** and waits; once fleetd
+is on there, it opens **Screen Recording** and waits again. Turn on **fleetd** in each: Accessibility lets agents
+click and type in the Mac's apps, Screen Recording lets you and agents see the screen. The node asked macOS for both
+when it started, so fleetd is in each list. macOS may ask for an administrator's name and password: type it in that
+System Settings dialog at the Mac itself, never through fleetd's view of its screen.
+
+macOS gives a running process a new grant only once it starts again, so the node restarts itself within seconds of
+each grant. While a grant is off, every 2 seconds, it asks a fresh process of its own (`fleetd node grants`) what
+macOS has granted it, and when that one has a grant the node lacks, restarts (`fleetd node restart`), once for each
+change. The restart ends any `mac run` jobs then running. The line then waits for the node's checks and lists any that
+still fail, each with its fix. Should a grant still read off, restart the node yourself:
 
 ```sh
-launchctl kickstart -k gui/$(id -u)/sh.fleetd.node
+fleetd node restart
 ```
 
-macOS asks again from time to time: the check says when.
+macOS asks again from time to time: the check says when. The setup step's **Test** reads every check; done means each
+is green.
 
-Never grant Terminal, an editor or any app you use yourself in the agents' user: a grant reaches everything that app
-runs.
+### A user of its own, optional {#own-user}
+
+Agents act as the account the node runs in: their `mac run` commands can read what it can, your files and logins
+included when it's yours. To keep them out of yours, give them a standard user of their own. In your own (admin)
+account's Terminal:
+
+```sh
+# A standard user of its own for agents. You choose its password and keep it.
+sudo sysadminctl -addUser agents -fullName "fleetd agents" -password -
+sudo dseditgroup -o edit -a agents -t user _developer
+# Your own home closed to other users, agents included.
+chmod 700 ~
+```
+
+Made without `-adminUser`, it gets no FileVault secure token, so its password can't unlock the disk. `chmod 700 ~`
+closes your home, which macOS leaves readable to other users (not `-R`: only the folder itself). Then log in as fleetd
+agents at the Mac's screen (Apple menu › Lock Screen, then fleetd agents) and do steps 2 and 3 there.
 
 ## The checks {#checks}
 
-The node checks the Mac every 30 seconds, as agents with no admin, so each check tests what a process of that
-user can do. The setup step and the doctor show them as `<machine>/mac_<check>`; Test reads them again.
+The node checks the Mac every 30 seconds as its own account, and its grants every 2 seconds while one is off; the hub
+adds `mac_one_node`. The setup step and the doctor show them as `<machine>/mac_<check>`; Test reads them again. On the
+Mac itself the node writes its last checks to `~/.fleetd/node/mac-health.json`, which setup reads while it waits.
 
 | Check | Passes when | Fix |
 |---|---|---|
-| `mac_standard_user` | The user isn't in `admin`, and `sudo -n true` fails. While it fails, the node offers agents no tool. | Users & Groups in your account: turn off "Allow this user to administer this computer". |
-| `mac_other_homes` | No other `/Users/*` home opens for it. | `chmod 700 ~` in that person's account. |
-| `mac_no_apple_id` | No Apple ID is signed in for it. | Sign out in System Settings, as fleetd agents. |
-| `mac_no_secure_token` | `sysadminctl -secureTokenStatus` says DISABLED. | `sudo sysadminctl -secureTokenOff agents …` in your account. |
-| `mac_developer` | It is in `_developer`. | `sudo dseditgroup -o edit -a agents -t user _developer` |
-| `mac_xcode` | A full Xcode is selected, its licence accepted and its first launch run. | The admin block's Xcode lines, or `sudo xcode-select -s /Applications/Xcode.app` |
-| `mac_ios_runtime` | `xcrun simctl list runtimes` has an available iOS runtime. | `xcodebuild -downloadPlatform iOS` in your account. |
-| `mac_accessibility`, `mac_screen_recording` | macOS says the node has each grant (`AXIsProcessTrusted`, `CGPreflightScreenCaptureAccess`; reading never prompts). | Turn on fleetd in that pane, as fleetd agents. |
-| `mac_gui_session` | fleetd agents is the user at the Mac's screen (`console`). Behind someone else's session (`background`) it warns: builds and simulators work, the Mac's own apps need fleetd agents at the screen. | Switch to fleetd agents at the Mac, or use a Mac nobody sits at. |
+| `mac_developer` | The account is in `_developer`. | `sudo dseditgroup -o edit -a "$(id -un)" -t user _developer` |
+| `mac_xcode` | A full Xcode is selected, its licence accepted and its first launch run. | [Step 1](#xcode)'s Xcode line, or `sudo xcode-select -s /Applications/Xcode.app` |
+| `mac_ios_runtime` | `xcrun simctl list runtimes` has an available iOS runtime. | `xcodebuild -downloadPlatform iOS` |
+| `mac_accessibility`, `mac_screen_recording` | macOS has given fleetd's node each grant (asked of a fresh process, `fleetd node grants`; reading never prompts). | Turn on fleetd in that pane at the Mac; the node restarts itself to take it up. |
+| `mac_gui_session` | The node's account is the one at the Mac's screen (`console`). Behind someone else's session (`background`) it warns: builds and simulators work, the Mac's own apps need that account at the screen. | Switch to that account at the Mac, or use a Mac nobody sits at. |
 | `mac_tools` | The pinned Node.js, agent-device and agent-desktop are installed. | The Mac must reach nodejs.org and registry.npmjs.org. |
-| `mac_keep_awake` | The node holds its keep-awake assertion. | `sudo pmset -a sleep 0` in your account. |
+| `mac_keep_awake` | The node holds its keep-awake assertion. | `sudo pmset -a sleep 0` |
+| `mac_one_node` | No other machine of the hub is enrolled from this Mac (the hub compares the computer each node says it runs on). One that is: an older node there, joined under another name. | `fleetd machine remove <name>` on the hub. Where it ran in another account on the Mac, stop it there too: `launchctl bootout gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node`. |
+
+A node from before the Mac could join from any account may still report `mac_standard_user`, `mac_other_homes`,
+`mac_no_apple_id` and `mac_no_secure_token`; the setup step no longer counts them.
 
 ## After a restart {#restart}
 
-The node runs inside fleetd agents' login session, so it starts only once that user logs in. With FileVault on, macOS
-has no automatic login: after a restart the Mac shows offline, and its row says to log in as fleetd agents (at the Mac
-or over Screen Sharing). Turning on automatic login for fleetd agents means turning FileVault off: unattended restarts
-against a disk anyone holding the Mac can read. That's your call.
+The node runs inside its account's login session, so it starts only once that account logs in. With FileVault on,
+macOS has no automatic login: after a restart the Mac shows offline, and its row says to log in again (at the Mac or
+over Screen Sharing). Turning on automatic login means turning FileVault off: unattended restarts against a disk anyone
+holding the Mac can read. That's your call.
 
 ## Agents may use this Mac {#switch}
 
@@ -214,31 +226,26 @@ against a disk anyone holding the Mac can read. That's your call.
 every project's agents (Navis never). Off, agents' `mac` commands answer that the Mac is turned off. Under it, the row
 says why agents can't use the Mac now, when they can't: offline, or a node that doesn't offer the tool.
 
-## Move a Mac that runs fleetd in your account {#move}
+## A Mac that runs fleetd already {#move}
 
-A Mac already joined from your own account moves into the agents' user under the same name, so its history stays:
+A Mac joined as an ordinary machine becomes the agents' Mac under the same name, so its history stays:
 
-1. Let the agents running on it finish, or stop them, and push any work they left: removing the old node in step 4
-   deletes its worktrees, uncommitted and unpushed work included.
-2. Do [steps 1 and 3](#setup) as above.
-3. As fleetd agents, paste the line **Add machine › A Mac for agents** makes for its name: a machine of that name
-   gets `--rejoin`, which enrolls it again with a new key.
-4. In your own account, stop and remove the old node:
+1. Let the agents running on it finish, or stop them, and push any work they left.
+2. In the same account, paste the line **Add machine › A Mac for agents** makes for its name: a machine of that name
+   gets `--rejoin`, which enrolls it again with a new key, as the agents' Mac.
 
-   ```sh
-   launchctl bootout gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node
-   ```
-
-The new key means the old node would be refused anyway. The fleetd app can stay in your account: it's a client, not a
-node. A project that lived on the Mac runs no agents there any more: add it on another machine, whose agents then use
-the Mac.
+Joining under another name, or from another account (a [user of its own](#own-user)), leaves the old machine
+enrolled: the `mac_one_node` check fails until you remove it with `fleetd machine remove <name>` on the hub, and, in
+the account it ran in, `launchctl bootout gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node` (which deletes its
+worktrees, unpushed work included). The fleetd app can stay: it's a client, not a node. A project that lived on the
+Mac runs no agents there any more: add it on another machine, whose agents then use the Mac.
 
 ## What stays shared {#shared}
 
-Every project's agents act as the same `agents` user, so they can see each other's files, processes and
-simulators on the Mac. Put nothing there you wouldn't give every project. The same user can read the node's own key,
-as on any worker. Loopback ports are shared between macOS users too: a server you run in your own account on the same
-Mac is reachable from the agents' user.
+Every project's agents act as the node's account, so they can see each other's files, processes and simulators on the
+Mac, and whatever that account can read: in your own account, your files, keychain prompts and browser logins too.
+Put nothing there you wouldn't give every project, or give agents a [user of their own](#own-user). That account can
+read the node's own key, as on any worker. Loopback ports are shared between macOS users too.
 
 ## node.json {#node-json}
 
@@ -246,7 +253,7 @@ Mac is reachable from the agents' user.
 
 | Key | What it does |
 |---|---|
-| `"agentsMac": true` | This machine is the agents' Mac: a tool, never a runner. Only `--mac` sets it; no switch in the app turns it off. The node offers agents its tool only on macOS and while its user is a standard one (not in `admin`, and `sudo -n` fails); otherwise its `mac_standard_user` check says why. |
+| `"agentsMac": true` | This machine is the agents' Mac: a tool, never a runner. Only `--mac` sets it; no switch in the app turns it off. The node offers agents its tool on macOS, in whatever account it runs. |
 | `"mac": {"enabled": true}` | Its own screen, which one agent at a time drives ([the Mac's screen](/docs/browser-sessions#mac)). Settings › Hub › Machines › Screens turns it off and on; the Mac stays a tool either way. |
 | `"mac": {"simulators": N}` | How many [iOS simulators](#sim) agents may have booted at once. Absent: from the Mac's memory. Not written by `--mac`. |
 | `"ios": {…}` | The [simulators](#sim)' golden and warm pool, by hand only: `enabled` (`false` turns them off; absent, on), `pool` (clones kept booted, absent 1, each 1–2 GB of memory) and `deviceType` (such as `iPhone 17 Pro`; absent, the newest plain iPhone of the newest iOS runtime; a change takes effect when the golden is made again: delete `device/ios/golden.json`). Not written by `--mac`. |

@@ -73,6 +73,9 @@ pub struct Facts {
     /// What `claude --version` printed.
     pub claude_version: Option<String>,
     pub linger: String,
+    /// macOS: `yes` while launchd has the user's `gui/<uid>` domain (they are logged in at the Mac's screen), `no`
+    /// when it hasn't; empty or `unknown` elsewhere.
+    pub gui: String,
     pub files: HashMap<String, Option<String>>,
     /// Size in bytes: for files whose content the probe must not read (the login).
     pub sizes: HashMap<String, Option<u64>>,
@@ -121,6 +124,7 @@ pub fn probe_command(fleetd: Option<&str>) -> String {
         r#"CL=$(command -v claude || true); for c in "$H/.local/bin/claude" "$H/.claude/local/claude" /opt/homebrew/bin/claude /usr/local/bin/claude; do [ -n "$CL" ] && break; [ -x "$c" ] && CL=$c; done"#.into(),
         r#"if [ -n "$CL" ]; then echo "claude $CL"; echo "claude_version $("$CL" --version 2>/dev/null | head -n 1)"; fi"#.into(),
         r#"L=unknown; if command -v loginctl >/dev/null 2>&1; then L=$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null || true); fi; echo "linger ${L:-unknown}""#.into(),
+        r#"G=unknown; if [ "$(uname -s)" = Darwin ]; then if launchctl print "gui/$(id -u)" >/dev/null 2>&1; then G=yes; else G=no; fi; fi; echo "gui $G""#.into(),
         format!(r#"for f in {}; do if [ -f "$f" ]; then printf 'file %s ' "$f"; base64 < "$f" | tr -d '\n'; echo; fi; done"#, quoted(&reads)),
         format!(r#"for f in {}; do if [ -e "$f" ]; then echo "size $f $(wc -c < "$f" | tr -d ' ')"; fi; done"#, quoted(std::slice::from_ref(&l.env_file))),
         format!(r#"for f in {}; do if [ -f "$f" ]; then echo "digest $f $( (sha256sum "$f" 2>/dev/null || shasum -a 256 "$f") | cut -d ' ' -f 1)"; fi; done"#, quoted(std::slice::from_ref(&l.bin))),
@@ -159,6 +163,7 @@ pub fn parse_facts(output: &str) -> Result<Facts, String> {
                 facts.claude_version = Some(rest.trim().into()).filter(|v: &String| !v.is_empty())
             }
             "linger" => facts.linger = rest.trim().into(),
+            "gui" => facts.gui = rest.trim().into(),
             "file" => {
                 let (path, data) = rest.split_once(' ').unwrap_or((rest, ""));
                 let bytes = base64::engine::general_purpose::STANDARD
@@ -305,6 +310,36 @@ fn write_file(title: &str, file: &str, text: String, mode: &str) -> Step {
         }),
         writes: Some(file.into()),
     }
+}
+
+/// launchd runs fleetd's LaunchAgent in the user's `gui/<uid>` domain, which exists only while they are logged in at the
+/// Mac's screen: `su` and ssh make none, and `launchctl bootstrap` then fails with 125 ("Domain does not support
+/// specified action"). What to tell instead, with its fix; `terminal`: the person runs a join line, in a Terminal
+/// there. The caller adds how to run it again.
+pub fn no_gui_session(user: &str, terminal: bool) -> String {
+    format!(
+        "{user} isn't logged in on this Mac's screen, and launchd runs fleetd's node only inside that login (su and ssh \
+         don't make one). Fix: log in as {user} at the Mac (Apple menu › Lock Screen, then pick {user}; or over Screen \
+         Sharing){}",
+        if terminal {
+            ", open Terminal there"
+        } else {
+            ""
+        }
+    )
+}
+
+/// Whether the node's service can't start for want of the user's login at the Mac's screen ([`no_gui_session`]):
+/// checked before any step runs, so nothing changes on the machine first.
+pub fn gui_session_problem(facts: &Facts, service: bool, terminal: bool) -> Option<String> {
+    (service && facts.platform == "darwin" && facts.gui == "no")
+        .then(|| no_gui_session(&facts.user, terminal))
+}
+
+/// A step that failed on a Mac for want of the user's GUI login, which the probe can miss (they logged out since):
+/// `launchctl bootstrap`'s exit 125.
+pub fn step_needs_gui_session(platform: Platform, code: i32) -> bool {
+    platform == Platform::Darwin && code == 125
 }
 
 /// Every command `fleetd machine add` runs, in order, for a machine in the state `facts` describes. Steps whose
@@ -566,7 +601,7 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
     }
     if platform == Platform::Darwin {
         notes.push(format!(
-            "launchd runs the node while {} is logged in; keep that user logged in on this Mac.",
+            "launchd runs the node while {} is logged in at this Mac's screen; after a restart, log that user in again.",
             facts.user
         ));
     }
@@ -969,6 +1004,98 @@ mod tests {
             String::from_utf8_lossy(&out.stdout).trim(),
             "own|https://gw|none"
         );
+    }
+
+    /// The probe asks launchd for the user's gui domain on a Mac only: `launchctl print gui/<uid>` failing (no login at
+    /// the screen, as after su or ssh) reads `gui no`. Fake `uname` and `launchctl` stand in for macOS's.
+    #[test]
+    fn the_probe_reads_whether_the_user_is_logged_in_at_the_macs_screen() {
+        let gui = |os: &str, launchctl_exit: u8| {
+            let dir = tempfile::tempdir().unwrap();
+            let d = dir.path().to_str().unwrap();
+            for (tool, body) in [
+                (
+                    "uname",
+                    format!("[ \"$1\" = -m ] && echo arm64 || echo {os}"),
+                ),
+                (
+                    "launchctl",
+                    format!("echo \"$*\" >> {d}/asked; exit {launchctl_exit}"),
+                ),
+            ] {
+                let path = format!("{d}/{tool}");
+                std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+                std::fs::set_permissions(
+                    &path,
+                    std::os::unix::fs::PermissionsExt::from_mode(0o755),
+                )
+                .unwrap();
+            }
+            let out = std::process::Command::new("/bin/sh")
+                .args(["-c", &probe_command(None)])
+                .env("HOME", d)
+                .env("PATH", format!("{d}:/usr/bin:/bin"))
+                .output()
+                .unwrap();
+            let facts = parse_facts(&String::from_utf8_lossy(&out.stdout)).unwrap();
+            let asked = std::fs::read_to_string(format!("{d}/asked")).unwrap_or_default();
+            (facts.gui, asked.trim().to_owned())
+        };
+        let uid = String::from_utf8(
+            std::process::Command::new("id")
+                .arg("-u")
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        assert_eq!(
+            gui("Darwin", 0),
+            ("yes".into(), format!("print gui/{}", uid.trim()))
+        );
+        assert_eq!(gui("Darwin", 113).0, "no");
+        assert_eq!(gui("Linux", 0), ("unknown".into(), String::new()));
+    }
+
+    /// No login at the Mac's screen stops a run before any step, with the fix: where to log in, and (for a join line)
+    /// to run it from Terminal there. Only a Mac that runs the node as a service needs one.
+    #[test]
+    fn a_mac_with_no_login_at_its_screen_stops_with_the_fix() {
+        let mac = |gui: &str| Facts {
+            user: "agents".into(),
+            platform: "darwin".into(),
+            gui: gui.into(),
+            ..Facts::default()
+        };
+        let stop = gui_session_problem(&mac("no"), true, true).unwrap();
+        assert!(
+            stop.starts_with("agents isn't logged in on this Mac's screen"),
+            "{stop}"
+        );
+        assert!(
+            stop.contains(
+                " Fix: log in as agents at the Mac (Apple menu › Lock Screen, then pick agents; or over Screen Sharing), open Terminal there"
+            ),
+            "{stop}"
+        );
+        assert!(
+            !gui_session_problem(&mac("no"), true, false)
+                .unwrap()
+                .contains("Terminal")
+        );
+        assert_eq!(gui_session_problem(&mac("yes"), true, true), None);
+        // An older probe, Linux, and --no-service never stop for it.
+        assert_eq!(gui_session_problem(&mac(""), true, true), None);
+        assert_eq!(gui_session_problem(&mac("no"), false, true), None);
+        let linux = Facts {
+            platform: "linux".into(),
+            ..mac("no")
+        };
+        assert_eq!(gui_session_problem(&linux, true, true), None);
+        // launchctl bootstrap's own 125, should the login go between the probe and the step.
+        assert!(step_needs_gui_session(Platform::Darwin, 125));
+        assert!(!step_needs_gui_session(Platform::Darwin, 1));
+        assert!(!step_needs_gui_session(Platform::Linux, 125));
     }
 
     #[test]
