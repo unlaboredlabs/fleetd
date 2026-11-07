@@ -332,17 +332,29 @@ pub fn main() -> ExitCode {
         return update::run_claude();
     }
     if is_long_running(&argv) {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("a tokio runtime starts");
-        return ExitCode::from(runtime.block_on(run_long_running(&argv)));
+        return ExitCode::from(block_on_bounded(run_long_running(&argv)));
     }
     let result = run(&argv);
     use std::io::Write;
     let _ = std::io::stdout().write_all(result.stdout.as_bytes());
     let _ = std::io::stderr().write_all(result.stderr.as_bytes());
     ExitCode::from(result.code)
+}
+
+/// How long a finished command waits for tasks still running before it exits anyway.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(3);
+
+/// Runs `command` on a fresh runtime, then exits within [`SHUTDOWN_GRACE`]: dropping the runtime instead waits on
+/// every worker with no limit, so one task stuck in a poll (or a blocking call) kept a finished command alive forever.
+/// Long-running commands (`node run`) stop gracefully inside `command`, before this grace starts.
+fn block_on_bounded(command: impl std::future::Future<Output = u8>) -> u8 {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("a tokio runtime starts");
+    let code = runtime.block_on(command);
+    runtime.shutdown_timeout(SHUTDOWN_GRACE);
+    code
 }
 
 /// SIGINT/SIGTERM as a flag that long-running loops check at the points where stopping is safe.
@@ -416,6 +428,28 @@ mod tests {
         );
         assert_eq!(run(&argv(&["hub", "device", "add"])).code, 2);
         assert!(!usage_text().contains("hub device"));
+    }
+
+    #[test]
+    fn a_finished_command_exits_with_a_task_stuck_in_a_poll() {
+        let (done, finished) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let code = block_on_bounded(async {
+                // A task that never yields: its worker never comes back to the runtime.
+                let (started, running) = tokio::sync::oneshot::channel();
+                tokio::spawn(async move {
+                    let _ = started.send(());
+                    loop {
+                        std::thread::sleep(Duration::from_secs(1));
+                    }
+                });
+                let _ = running.await;
+                7
+            });
+            let _ = done.send(code);
+        });
+        let code = finished.recv_timeout(SHUTDOWN_GRACE + Duration::from_secs(10));
+        assert_eq!(code, Ok(7), "the command's runtime never let it exit");
     }
 
     #[test]
