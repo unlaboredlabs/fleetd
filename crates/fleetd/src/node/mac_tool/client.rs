@@ -244,7 +244,7 @@ impl Client {
                     .await
             }
             // While it holds a simulator, the session's `agent-device` runs on the Mac (`fleetd mac agent-device`).
-            MacCall::SimStart => match step(Step::SimStart).await? {
+            MacCall::SimStart { device } => match step(Step::SimStart { device }).await? {
                 Done::SimStart { udid, device } => {
                     install_forwarder(&self.home, thread, &crate::node::sessions::self_command())
                         .map_err(|e| failed(format!("agent-device wasn't put on your PATH: {e}")))?;

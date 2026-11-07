@@ -40,9 +40,13 @@ pub enum MacCall {
     Kill { job: u32 },
     /// `mac pull <path> [to]`: a file or folder from the agent's folder on the Mac into its worktree here.
     Pull { path: String, to: Option<String> },
-    /// `mac sim start`: an iOS simulator of the agent's own on the Mac, booted, which `agent-device` drives from then
-    /// on. One per agent; the same one again while it holds it.
-    SimStart,
+    /// `mac sim start [--device <type>]`: an iOS simulator of the agent's own on the Mac, booted, which `agent-device`
+    /// drives from then on. One per agent; the same one again while it holds it. `device` names a device type
+    /// ("iPad Pro 13-inch (M5)"); absent, the Mac's plain iPhone.
+    SimStart {
+        #[serde(default)]
+        device: Option<String>,
+    },
     /// `mac sim end`: the simulator goes. Nothing touched for 30 minutes, it goes on its own.
     SimEnd,
 }
@@ -197,5 +201,19 @@ mod tests {
             done,
             json!({ "step": "logs", "dataB64": "", "offset": 3, "done": true, "exitCode": 0 })
         );
+        // An older `mac` sends sim_start without a device: the golden's.
+        for (sent, device) in [
+            (json!({ "step": "sim_start" }), None),
+            (json!({ "step": "sim_start", "device": null }), None),
+            (
+                json!({ "step": "sim_start", "device": "iPad Air 11-inch" }),
+                Some("iPad Air 11-inch".to_owned()),
+            ),
+        ] {
+            assert_eq!(
+                serde_json::from_value::<MacCall>(sent).unwrap(),
+                MacCall::SimStart { device }
+            );
+        }
     }
 }

@@ -230,6 +230,21 @@ pub fn xcode_from(runtimes: Option<String>, located: &located::Located) -> Xcode
         })
 }
 
+/// An iOS session's error, said for the agents' Mac's `mac sim start`.
+fn sim_words(mut e: McpToolError) -> McpToolError {
+    if e.message.contains("isn't set up") {
+        return refuse(
+            ErrorCode::Failed,
+            "The agents' Mac has iOS simulators turned off (\"ios\": {\"enabled\": false} in its node.json).",
+            "do without a simulator and say so in your result; an admin turns them on (fleetd docs: The \
+             agents' Mac)",
+        );
+    }
+    e.message = e.message.replace("iOS sessions", "iOS simulators");
+    e.fix = e.fix.map(|f| f.replace("session_start", "mac sim start"));
+    e
+}
+
 /// Whether Node.js runs (agent-device needs it), blocking.
 fn node_runs() -> bool {
     std::process::Command::new("node")
@@ -256,7 +271,7 @@ pub fn host(home: &Path, config: &IosConfig) -> Option<(IosHealth, bool)> {
     }
     health_from(
         config,
-        pool::find(home).as_ref(),
+        pool::find(home, config.device_type.as_deref()).as_ref(),
         &read_state(home),
         xcode,
         node_runs,
@@ -387,7 +402,7 @@ pub fn capabilities(home: &Path) -> Vec<String> {
         .flatten()
         .and_then(|c| c.ios)
         .unwrap_or_default();
-    match config.enabled() && pool::find(home).is_some() {
+    match config.enabled() && pool::find(home, config.device_type.as_deref()).is_some() {
         true => vec![CAP_SESSION_IOS.to_owned()],
         false => Vec::new(),
     }
@@ -435,7 +450,7 @@ impl Simulators {
             // The node stopped while making it; it starts again below.
             write_state(home, &PrepState::default());
         }
-        match pool::find(home) {
+        match pool::find(home, simulators.config.device_type.as_deref()) {
             Some(golden) => {
                 *lock(&simulators.prep) = Prep::Starting;
                 let this = simulators.clone();
@@ -567,29 +582,36 @@ impl Simulators {
     /// A booted clone from the warm pool for the agents' Mac's `mac sim start` (node/mac_tool), with no session around
     /// it, and its device and runtime's names. Dropping it deletes the clone.
     pub fn lend(self: &Arc<Self>) -> Result<(pool::Lent, String), McpToolError> {
-        let words = |mut e: McpToolError| {
-            if e.message.contains("isn't set up") {
-                return refuse(
-                    ErrorCode::Failed,
-                    "The agents' Mac has iOS simulators turned off (\"ios\": {\"enabled\": false} in its node.json).",
-                    "do without a simulator and say so in your result; an admin turns them on (fleetd docs: The \
-                     agents' Mac)",
-                );
-            }
-            e.message = e.message.replace("iOS sessions", "iOS simulators");
-            e.fix = e.fix.map(|f| f.replace("session_start", "mac sim start"));
-            e
-        };
-        let pool = self.pool().map_err(words)?;
+        let pool = self.pool().map_err(sim_words)?;
         let lent = pool.take().map_err(|waiting| {
             let (message, fix) = waiting_words(&waiting);
-            words(refuse(ErrorCode::Failed, message, &fix))
+            sim_words(refuse(ErrorCode::Failed, message, &fix))
         })?;
         let device = format!(
             "{} on {}",
             pool.golden.device_type_name, pool.golden.runtime_name
         );
         Ok((lent, device))
+    }
+
+    /// [`Self::lend`] of the device type `wanted` (`mac sim start --device`): the golden's type is a warm clone, any
+    /// other a simulator made and booted for this agent alone.
+    pub async fn lend_type(
+        self: &Arc<Self>,
+        wanted: &str,
+    ) -> Result<(pool::Lent, String), McpToolError> {
+        let pool = self.pool().map_err(sim_words)?;
+        if wanted == pool.golden.device_type_name || wanted == pool.golden.device_type {
+            return self.lend();
+        }
+        pool.make(wanted).await.map_err(|why| {
+            refuse(
+                ErrorCode::Failed,
+                format!("No {wanted} simulator was made: {why}."),
+                "check the name against xcrun simctl list devicetypes (mac run), or use mac sim start without \
+                 --device for the Mac's iPhone",
+            )
+        })
     }
 
     /// Clones booted for the next sessions.
