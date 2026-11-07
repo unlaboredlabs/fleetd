@@ -660,6 +660,7 @@ fn the_settings_overlay_holds_tool_calls_with_the_hook() {
         "haiku",
         &[],
         false,
+        false,
         "test -e /n/update/hold || exit 0",
     ))
     .unwrap();
@@ -673,6 +674,61 @@ fn the_settings_overlay_holds_tool_calls_with_the_hook() {
         hook["hooks"][0]["timeout"],
         crate::node::hold::HOOK_TIMEOUT_SECS
     );
+}
+
+/// An agent's claude starts with the heavy language servers (rust-analyzer) off, whatever the user's settings
+/// enable; the project's `HEAVY_LANGUAGE_SERVERS=1` leaves them as the user set them from its next start.
+#[tokio::test]
+async fn heavy_language_servers_are_off_until_the_project_turns_them_on() {
+    use fleetd_contracts::project_settings::{EnvValue, EnvVarName, EnvVarSet};
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(dir.path()).await;
+    let rust_analyzer = "rust-analyzer-lsp@claude-plugins-official";
+
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.settled("r1").await;
+    let off = overlay(&hub.runner.spawned()[0]);
+    assert_eq!(off["enabledPlugins"][rust_analyzer], false, "{off}");
+    for plugin in crate::node::runner::claude::HEAVY_LSP_PLUGINS {
+        assert_eq!(off["enabledPlugins"][plugin], false, "{plugin}");
+    }
+    assert!(
+        off["enabledPlugins"]
+            .get("typescript-lsp@claude-plugins-official")
+            .is_none(),
+        "a light server stays as the user set it"
+    );
+
+    hub.ok(SessionCall::ProjectEnv {
+        project_id: ProjectId::unchecked("p1"),
+        set: vec![EnvVarSet::Plain {
+            name: EnvVarName::new("HEAVY_LANGUAGE_SERVERS").unwrap(),
+            value: EnvValue::new("1").unwrap(),
+        }],
+        remove: vec![],
+    })
+    .await;
+    let SessionCall::Launch(mut next) =
+        launch("s2", RuntimeMode::FullAccess, SessionWorkspace::Root)
+    else {
+        unreachable!()
+    };
+    next.run_id = NonEmpty::unchecked("q1");
+    hub.ok(SessionCall::Launch(next)).await;
+    hub.settled("q1").await;
+    let on = overlay(&hub.runner.spawned()[1]);
+    assert!(on.get("enabledPlugins").is_none(), "{on}");
 }
 
 #[tokio::test]

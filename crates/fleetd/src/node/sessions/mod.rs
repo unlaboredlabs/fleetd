@@ -345,13 +345,14 @@ fn agent_exe(exe: std::io::Result<PathBuf>, pid: u32) -> String {
 /// (the session's prompt cache TTL and role defaults such as a task agent's command timeout). `skills` turns off
 /// claude's own skills of the names fleetd's plugin gives the session (`node::skills`). `ask` are the role's ask rules
 /// (`claude::role_ask`), which outrank every allow rule. `hold_hook` holds a tool call while the node holds its agents
-/// for an update (node/hold.rs).
+/// for an update (node/hold.rs). The heavy language servers ([`claude::HEAVY_LSP_PLUGINS`]) are off unless `heavy_lsp`.
 pub fn settings_overlay(
     extra_env: &[(String, String)],
     skills: serde_json::Map<String, serde_json::Value>,
     helper_model: &str,
     ask: &[&str],
     fast: bool,
+    heavy_lsp: bool,
     hold_hook: &str,
 ) -> String {
     let mut env = subagents_off_settings_env();
@@ -382,6 +383,13 @@ pub fn settings_overlay(
     }
     if !ask.is_empty() {
         overlay["permissions"]["ask"] = ask.into();
+    }
+    if !heavy_lsp {
+        overlay["enabledPlugins"] = claude::HEAVY_LSP_PLUGINS
+            .iter()
+            .map(|p| ((*p).to_owned(), false.into()))
+            .collect::<serde_json::Map<_, _>>()
+            .into();
     }
     format!("{overlay}\n")
 }
@@ -2954,6 +2962,7 @@ impl SessionService {
                     false => claude::role_ask(row.local.role, row.summary.runtime_mode),
                 },
                 row.local.fast,
+                claude::heavy_lsp_on(&env),
                 &super::hold::hook_command(&self_command(), &config.home),
             ),
         )?;
