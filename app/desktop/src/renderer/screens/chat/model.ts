@@ -373,8 +373,8 @@ export function arrivalsOf(prev: Arrivals | undefined, items: readonly ChatItem[
 const VIA: Partial<Record<string, string>> = { telegram: "Telegram", share: "the Share Sheet", shortcuts: "Shortcuts" };
 
 /**
- * Where a person's message was written, when not here: "From Telegram", "From Shortcuts" (a shortcut or one of their
- * phone's automations), "From the Share Sheet", or for a message they forwarded on Telegram, who it came from
+ * Where a person's message was written, when not here: "via Telegram", "via Shortcuts" (a shortcut or one of their
+ * phone's automations), "via the Share Sheet", or for a message they forwarded on Telegram, who it came from
  * ("Forwarded from Mallory on Telegram"), whose words the lead reads as someone else's.
  */
 export const viaOf = (item: ChatItem): { text: string; forwarded: boolean } | undefined => {
@@ -383,5 +383,5 @@ export const viaOf = (item: ChatItem): { text: string; forwarded: boolean } | un
   const telegram = m.client === "telegram";
   if (m.forwardedFrom !== undefined) return { text: `Forwarded from ${m.forwardedFrom}${telegram ? " on Telegram" : ""}`, forwarded: true };
   const via = m.client === undefined ? undefined : VIA[m.client];
-  return via === undefined ? undefined : { text: `From ${via}`, forwarded: false };
+  return via === undefined ? undefined : { text: `via ${via}`, forwarded: false };
 };

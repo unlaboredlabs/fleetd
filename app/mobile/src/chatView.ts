@@ -153,10 +153,10 @@ export const sendWait = (item: Pick<ChatItem, "state" | "at">, nowMs: number): {
 /** Where a person's message came from when it wasn't typed in an app or the CLI, as the desktop says it. */
 const VIA: Partial<Record<string, string>> = { telegram: "Telegram", share: "the Share Sheet", shortcuts: "Shortcuts" };
 
-/** The quiet line under a person's message sent from outside the app: "From Shortcuts", "From Telegram". */
+/** The quiet line under a person's message sent from outside the app: "via Shortcuts", "via Telegram". */
 export const viaNote = (item: Pick<ChatItem, "author" | "message">): string | undefined => {
   const via = item.author === "human" && item.message?.client !== undefined ? VIA[item.message.client] : undefined;
-  return via === undefined ? undefined : `From ${via}`;
+  return via === undefined ? undefined : `via ${via}`;
 };
 
 /** A message as the chats list's one line: its text without markdown, or what its card is. */

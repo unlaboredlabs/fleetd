@@ -186,8 +186,8 @@ app shares with its extensions, and keeps no copy. If the phone isn't paired, or
 says so and offers **Open fleetd**. If the hub can't be reached, it offers **Try Again** as well. Android doesn't have
 it yet.
 
-A message sent from the share sheet shows **From the Share Sheet** in the chat, on the phone and the desktop, and the
-Navi or lead is told it came that way: what another app shared is content to read, not your instructions.
+A message sent from the share sheet shows **via the Share Sheet** in the chat, on the phone and the desktop, and the
+lead is told it came that way: what another app shared is content to read, not your instructions.
 
 ## Shortcuts and the Action Button {#shortcuts}
 
@@ -196,20 +196,25 @@ of them can go on the Action Button. They sign in to your hub as the app does, w
 
 | Action | What it does | Returns |
 | --- | --- | --- |
-| **Open Chat** | Opens a Navi's or project's chat. | |
-| **Send Message** | Sends text to a chat as you, without opening the app. Optionally waits for the reply. | The reply's text, with **Wait for Reply** on |
+| **Open Chat** | Opens a project's chat. | |
+| **Send Message** | Sends text, files or both to a chat as you, without opening the app. Optionally waits for the reply. | The reply's text, with **Wait for Reply** on |
 | **Run Automation** | Runs one of your [automations](/docs/automations) now, as **Run now** does. | |
 | **Open Approvals** | Opens Chats on **Needs You**. | |
 | **Get Latest Messages** | Reads a chat's newest messages: a count, or the ones since a date. | Each message's author, text and date |
 | **Get Waiting Approvals** | Reads what is waiting on you. | How many, and each with its chat |
 
 None of them approves, denies, enters a secret or pays: those stay in the app. **Wait for Reply** is off by default;
-with it on, the action waits up to **Wait Up To** seconds (60 by default, at most 600) for the Navi's or lead's turn to
-end, then returns everything it said. If no reply comes in time, the action fails with **No reply yet**: the message is
-still sent, and the reply shows in the chat.
+with it on, the action waits up to **Wait Up To** seconds (60 by default, at most 600) for the lead's turn to end, then
+returns everything it said. If no reply comes in time, the action fails with **No reply yet**: the message is still
+sent, and the reply shows in the chat.
 
-A message from **Send Message** shows **From Shortcuts** under it, on the phone and the desktop, and the Navi or lead is
-told it came from Shortcuts: it may hold content the shortcut pulled from elsewhere, such as a web page or the
+**Files** on Send Message take what an earlier action hands it: a photo, a PDF, a scanned document, a text file. The
+hub takes images, PDFs, text and CSV files, Word, Excel and PowerPoint documents and zip archives, up to 25 MB each and
+20 in one message. Photos of another type, such as HEIC, go as JPEG; any other file makes the action fail with
+**fleetd doesn't take** and its name, before anything is sent.
+
+A message from **Send Message** shows **via Shortcuts** under it, on the phone and the desktop, and the lead is told it
+came from Shortcuts: it may hold content the shortcut pulled from elsewhere, such as a web page or the
 clipboard, which it reads as content, not as your instructions. Approvals and notifications work as for a message you
 typed.
 
@@ -232,12 +237,15 @@ If an action can't run, it says why:
 
 ### Automation ideas {#automation-ideas}
 
-In the Shortcuts app's **Automation** tab:
+In the Shortcuts app's **Automation** tab, or on the Action Button:
 
-- **Arrive home → Send Message:** "I'm home" to your Navi, which can turn the lights on or post your evening plan.
+- **Arrive home → Send Message:** "I'm home" to an Only me project, which can turn the lights on or post your evening
+  plan.
+- **Action Button → Take Screenshot, then Send Message with it as Files:** what's on screen goes to a project with
+  "What's wrong here?".
 - **Work Focus → Focus filter:** only your projects notify while you work.
 - **NFC tag → Run Automation:** tap a tag on your desk to start your morning brief.
-- **CarPlay connects → Get Latest Messages, then Speak Text:** hear your Navi's last replies on the drive.
+- **CarPlay connects → Get Latest Messages, then Speak Text:** hear a project's last replies on the drive.
 - **Time of day, 9:00 → Get Waiting Approvals, then If Count is greater than 0, Show Notification:** a morning nudge
   when something waits on you.
 
