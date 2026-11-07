@@ -4,6 +4,16 @@
       "oneOf": [
         {
           "properties": {
+            "features": {
+              "description": "What the client takes beyond the base protocol: [`APP_DEFLATE`]. An older hub ignores it.",
+              "items": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[^\\r\\n]*$",
+                "type": "string"
+              },
+              "type": "array"
+            },
             "key": {
               "minLength": 1,
               "type": "string"

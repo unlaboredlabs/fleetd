@@ -37,6 +37,10 @@ const SILENCE_TIMEOUT: Duration = Duration::from_secs(HEARTBEAT_TIMEOUT_SECS);
 pub const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 /// How many heartbeats apart the hub re-reads the runner's state, so a fixed or expired login shows within a minute.
 const RUNNER_CHECK_EVERY: u32 = 4;
+/// How often a link checks that bytes still arrive while no whole frame has (one large frame coming in slowly).
+const PROGRESS_EVERY: Duration = Duration::from_secs(5);
+/// The most one compressed node frame may inflate to: the socket's own message cap, a put_file's 64 MiB.
+const MAX_INFLATED: usize = 64 << 20;
 
 pub struct LinkDeps {
     pub hub_id: String,
@@ -61,6 +65,9 @@ enum Announced {
 enum Out {
     Frame(Box<HubToNode>),
     Close(u16, String),
+    /// Every frame after this one goes compressed (`link_deflate`): sent right after the welcome, to a node whose
+    /// hello listed it.
+    Deflate,
 }
 
 type LinkTx = mpsc::UnboundedSender<Out>;
@@ -906,7 +913,12 @@ impl NodeLinkServer {
         }
     }
 
-    async fn serve(self: &Arc<Self>, ws: &mut Rx, tx: &LinkTx) -> Result<(), Refused> {
+    async fn serve(
+        self: &Arc<Self>,
+        ws: &mut Rx,
+        tx: &LinkTx,
+        read: Option<crate::hub::http::ReadCount>,
+    ) -> Result<(), Refused> {
         let hello = self.handshake(ws, tx).await?;
         let machine_id = hello.machine_id.clone();
 
@@ -975,11 +987,24 @@ impl NodeLinkServer {
             HubToNode::Welcome(
                 serde_json::from_value(json!({
                     "hubId": self.deps.hub_id, "protocol": ProtocolVersion::CURRENT,
-                    "capabilities": [fleetd_contracts::node_link::HUB_CAP_SESSION_ROUTE],
+                    "capabilities": [
+                        fleetd_contracts::node_link::HUB_CAP_SESSION_ROUTE,
+                        fleetd_contracts::node_link::HUB_CAP_LINK_DEFLATE,
+                    ],
                 }))
                 .expect("welcome"),
             ),
         );
+        // Compressed both ways from here on, for a node that asked: the hub sends so after its welcome, and reads what
+        // the node sends after it.
+        let deflate = hello
+            .capabilities
+            .iter()
+            .any(|c| c == fleetd_contracts::node_link::CAP_LINK_DEFLATE);
+        let mut inflater = deflate.then(crate::link_deflate::Inflater::default);
+        if deflate {
+            let _ = tx.send(Out::Deflate);
+        }
         let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<HubToNode>();
         let forward = {
             let tx = tx.clone();
@@ -1030,11 +1055,30 @@ impl NodeLinkServer {
             })
         };
         let _heartbeat = AbortOnDrop(heartbeat);
+        // Bytes still arriving keep the link alive while one large frame comes in slowly, as frames would.
+        let progress = read.map(|read| {
+            let this = self.clone();
+            let machine_id = machine_id.clone();
+            AbortOnDrop(tokio::spawn(async move {
+                let mut seen = read.load(std::sync::atomic::Ordering::Relaxed);
+                loop {
+                    this.deps.clock.sleep(PROGRESS_EVERY).await;
+                    let now = read.load(std::sync::atomic::Ordering::Relaxed);
+                    if now != seen && this.link_id(&machine_id) == Some(id) {
+                        this.touch(&machine_id);
+                    }
+                    seen = now;
+                }
+            }))
+        });
+        let _progress = progress;
         let mut beats: u32 = 0;
 
         loop {
-            let Some(text) = next_text(ws).await else {
-                return Ok(());
+            let text = match next_frame(ws, inflater.as_mut()).await {
+                None => return Ok(()),
+                Some(Err(e)) => return refuse(close::BAD_FRAME, e),
+                Some(Ok(text)) => text,
             };
             let frame = match serde_json::from_str::<NodeToHub>(&text) {
                 Ok(f) => f,
@@ -1136,15 +1180,35 @@ impl NodeLinkServer {
     /// Runs one node link until the socket ends (the framework's node WebSocket route calls this). Never fails:
     /// refusals close the socket with a NodeLinkClose code.
     pub async fn handle(self: &Arc<Self>, socket: WebSocket) {
+        self.handle_counted(socket, None).await
+    }
+
+    /// [`Self::handle`], with the count of bytes its connection read (see `hub::http`), which keeps a link whose frame
+    /// is still coming in alive.
+    pub async fn handle_counted(
+        self: &Arc<Self>,
+        socket: WebSocket,
+        read: Option<crate::hub::http::ReadCount>,
+    ) {
         let (mut sink, mut stream) = socket.split();
         let (tx, mut rx) = mpsc::unbounded_channel::<Out>();
         let writer = tokio::spawn(async move {
+            let mut deflater: Option<crate::link_deflate::Deflater> = None;
             while let Some(out) = rx.recv().await {
                 let message = match out {
                     Out::Frame(frame) => match serde_json::to_string(&*frame) {
-                        Ok(text) => Message::Text(text.into()),
+                        Ok(text) => match deflater.as_mut() {
+                            Some(d) if text.len() >= crate::link_deflate::MIN_DEFLATE_BYTES => {
+                                Message::Binary(d.deflate(&text).into())
+                            }
+                            _ => Message::Text(text.into()),
+                        },
                         Err(_) => continue,
                     },
+                    Out::Deflate => {
+                        deflater = Some(Default::default());
+                        continue;
+                    }
                     Out::Close(code, reason) => {
                         let reason = Utf8Bytes::from(close_reason(&reason));
                         let _ = sink
@@ -1158,7 +1222,7 @@ impl NodeLinkServer {
                 }
             }
         });
-        let result = self.serve(&mut stream, &tx).await;
+        let result = self.serve(&mut stream, &tx, read).await;
         if let Err(refused) = result
             && refused.code != 0
         {
@@ -1171,6 +1235,26 @@ impl NodeLinkServer {
 }
 
 type Rx = futures_util::stream::SplitStream<WebSocket>;
+
+/// The next frame's text, a Binary one inflated once the link is compressed; None once the socket closes or fails, an
+/// error for a frame that won't inflate.
+async fn next_frame(
+    rx: &mut Rx,
+    inflater: Option<&mut crate::link_deflate::Inflater>,
+) -> Option<Result<String, String>> {
+    let Some(inflater) = inflater else {
+        return next_text(rx).await.map(Ok);
+    };
+    while let Some(message) = rx.next().await {
+        match message {
+            Ok(Message::Text(text)) => return Some(Ok(text.to_string())),
+            Ok(Message::Binary(bytes)) => return Some(inflater.inflate(&bytes, MAX_INFLATED)),
+            Ok(Message::Ping(_) | Message::Pong(_)) => {}
+            Ok(Message::Close(_)) | Err(_) => return None,
+        }
+    }
+    None
+}
 
 /// The next text frame; None once the socket closes or fails.
 async fn next_text(rx: &mut Rx) -> Option<String> {

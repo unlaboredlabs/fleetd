@@ -32,9 +32,10 @@ pub type AppCallId = Text<1, 64>;
 /// - `screen_thumbs`: the Screens page's pictures: `screen_thumbs` is read, the hub sends `screen_thumb`s,
 ///   `browser_sessions` names each screen's machine and latest step, and the `screens_count` tool exists.
 /// - `artifacts`: the `artifacts_list` and `artifact_get` tools and the `artifacts.changed` event: a chat's Artifacts.
+/// - `deflate` ([`APP_DEFLATE`]): compressed frames, both ways, for a client whose `auth` asked for them.
 ///
 /// The desktop app's `features.test.ts` checks that every feature it gates on is named here.
-pub const APP_FEATURES: [&str; 8] = [
+pub const APP_FEATURES: [&str; 9] = [
     "presence",
     "browser_sessions",
     "navi_asks",
@@ -43,13 +44,26 @@ pub const APP_FEATURES: [&str; 8] = [
     "browser_navigate",
     "screen_thumbs",
     "artifacts",
+    APP_DEFLATE,
 ];
+
+/// Compressed /app frames, the node link's `link_deflate` scheme (node_link.rs): a client lists this in its `auth`'s
+/// `features`, and a hub that reads it lists it in `ready`'s. Every hub frame after `ready` may then come as a Binary
+/// message of RFC 7692 permessage-deflate data, one raw-DEFLATE stream (15-bit window, context takeover) for the
+/// connection, each message sync-flushed with its trailing 00 00 ff ff removed; the client inflates each with one
+/// inflater for the connection, after putting the tail back. Text frames stay plain JSON and may come any time. The
+/// client may send its own frames compressed the same way, only once `ready` listed this: an older hub reads Binary as
+/// text. A message inflating past 64 MiB, or not at all, ends the connection.
+pub const APP_DEFLATE: &str = "deflate";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "t", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum AppClientMessage {
     Auth {
         key: NonEmpty,
+        /// What the client takes beyond the base protocol: [`APP_DEFLATE`]. An older hub ignores it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        features: Option<Vec<Line<1, 64>>>,
     },
     Snapshot {},
     /// Stream HubEvents after `cursor` as they happen.
@@ -191,6 +205,21 @@ mod tests {
             AppServerMessage::Ready { version: None, .. }
         ));
         assert_eq!(serde_json::to_value(&ready).unwrap(), older);
+    }
+
+    #[test]
+    fn auth_may_name_features_and_reads_without_them() {
+        let older = json!({ "t": "auth", "key": "fld_x" });
+        let auth: AppClientMessage = serde_json::from_value(older.clone()).unwrap();
+        assert!(matches!(
+            &auth,
+            AppClientMessage::Auth { features: None, .. }
+        ));
+        assert_eq!(serde_json::to_value(&auth).unwrap(), older);
+        let newer = json!({ "t": "auth", "key": "fld_x", "features": [APP_DEFLATE] });
+        let auth: AppClientMessage = serde_json::from_value(newer.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&auth).unwrap(), newer);
+        assert!(APP_FEATURES.contains(&APP_DEFLATE));
     }
 
     #[test]

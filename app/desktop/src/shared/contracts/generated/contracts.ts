@@ -258,6 +258,8 @@ export type KnownAndroidState = "installing" | "ready" | "wanted" | "unavailable
 export type AndroidState = KnownAndroidState | (string & {});
 
 export type AppClientMessage = {
+  /** What the client takes beyond the base protocol: [`APP_DEFLATE`]. An older hub ignores it. */
+  features?: string[];
   key: string;
   t: "auth";
 } | {
