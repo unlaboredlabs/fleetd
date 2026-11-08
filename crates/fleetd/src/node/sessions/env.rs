@@ -5,7 +5,7 @@ use fleetd_contracts::github_app::GITHUB_TOKEN_ENV;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::project_settings::WorktreeSetup;
 use fleetd_contracts::sessions::{
-    FailureClass, ItemKind, ItemStatus, SendMode, SessionError, SessionRole, ThreadItem,
+    FailureClass, ItemKind, ItemStatus, RunInfo, SendMode, SessionError, SessionRole, ThreadItem,
 };
 
 use super::super::browser::onepassword::TOKEN_ENV;
@@ -363,10 +363,16 @@ impl SessionService {
         st.setting_up.get(id).cloned()
     }
 
-    fn run_active(&self, id: &str, run_id: &NonEmpty) -> bool {
-        self.store()
-            .runs(id)
-            .is_ok_and(|runs| runs.iter().any(|r| r.id == *run_id && r.status.is_active()))
+    /// Whether `run_id` of session `id` is still active, as the session's cached runs or the store have it.
+    pub(super) fn run_active(&self, id: &str, run_id: &str) -> bool {
+        let active = |runs: &[RunInfo]| {
+            runs.iter()
+                .any(|r| r.id.as_str() == run_id && r.status.is_active())
+        };
+        if let Some(runs) = self.st().runs.get(id) {
+            return active(runs);
+        }
+        self.store().runs(id).is_ok_and(|runs| active(&runs))
     }
 
     /// Brings a lost worktree back, runs the setup commands, each shown as an item of the run, and sends the run's
@@ -547,7 +553,7 @@ impl SessionService {
             None => text,
         };
         // Ended while setup ran (an interrupt, a stop, the watchdog): no claude for it.
-        if *cancelled.borrow() || !self.run_active(id, run_id) {
+        if *cancelled.borrow() || !self.run_active(id, run_id.as_str()) {
             return false;
         }
         self.send_run(id, run_id, &text, mode).await.is_ok()
