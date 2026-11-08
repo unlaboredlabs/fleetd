@@ -1,6 +1,7 @@
 // `fleetd node …` (crates/fleetd/src/node/mod.rs): the node's link to its hub, its sessions, the lead socket, cmd
 // checks, sealed secrets, approved commands and node actions. A session's claude runs under the Rust binary's
 // `fleetd session-host` (FLEETD_NATIVE_BIN, else `fleetd` on PATH), which outlives the node.
+import { refreshOwnUnit } from "../cli/setup/units.ts";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
@@ -161,6 +162,7 @@ export async function run(args: { home?: string }): Promise<number> {
     process.stderr.write(`fleetd: this node has not joined a hub (no enrolled config in ${home}): run fleetd node join first\n`);
     return 1;
   }
+  refreshOwnUnit();
   return runNodeProcess(home, config, undefined, false);
 }
 
