@@ -41,6 +41,12 @@ first. The app knows the hub's own computer the same way, wherever the hub keeps
 Under Add machine, **This hub's machines** lists every machine with its state, each with **Remove**, and **Repair**
 while it is degraded or offline. Open one for its own page: its checklist, then its role, its screens and its max agents.
 
+A machine is degraded while its claude can't run sessions, or while it has no IPv4 network and git there can't reach
+GitHub. For the second, a Linux node checks its own network hardware (not Tailscale, docker or loopback) with each heartbeat:
+an interface with only a 169.254 link-local address, which is what's left when DHCP times out, counts as none. The
+hub shows "no IPv4 network on enp3s0, so GitHub can't be reached" with the fix, `sudo networkctl reconfigure enp3s0`
+or `sudo netplan apply`, and its agents keep running. It shows online again at the first heartbeat with an address.
+
 - **Repair** on a machine the hub reaches over SSH (one it set up, its own, or one in its `~/.ssh/config` or tailnet)
   opens its plan in Add machine: adding it again repairs it and skips what is in place. On a machine that joined by
   itself, Repair makes a line that enrolls it again (`--rejoin`): run it on that machine.
@@ -441,7 +447,7 @@ off can't start one anywhere: it has no proxy to drive it through.
 fleetd doctor
 ```
 
-It checks the hub and every machine: online, claude version and login, commit identity, disk space and
-the usage breaker. Each problem comes with the command that fixes it.
+It checks the hub and every machine: online (or degraded, with its claude's or its network's cause), claude version
+and login, commit identity, disk space and the usage breaker. Each problem comes with the command that fixes it.
 
 Every finding and its fix: [Troubleshooting](/docs/troubleshooting).

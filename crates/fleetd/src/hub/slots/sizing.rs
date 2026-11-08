@@ -120,6 +120,7 @@ mod tests {
             limits: List::unchecked(Vec::new()),
             hosts: None,
             disk: None,
+            network: None,
             android: None,
             ios: None,
             desktop: None,
