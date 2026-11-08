@@ -1,7 +1,8 @@
 // Artifacts (W367, D292; crates/fleetd/src/hub/artifacts/mod.rs): the reports a lead, task or Navi publishes for the
 // person with `artifact_publish`, a Markdown or HTML document under a name in its project. Each publish keeps a version
 // in `artifact_versions` (the newest ARTIFACT_VERSIONS_KEPT of a name), posts a system line with the artifact as a card
-// in the project's chat, and announces `artifacts.changed`. The content is stored and served as written.
+// in the project's chat, and announces `artifacts.changed`. The content is stored and served as written. A lead, task or
+// Navi reads one of its own project's back with `artifact_read`, cut at ARTIFACT_READ_CAP.
 import type { Database } from "bun:sqlite";
 import type { ArtifactFormat, ArtifactSummary, ArtifactVersion, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
@@ -16,6 +17,8 @@ import { isoMs, nowMs } from "../store/time.ts";
 
 export const ARTIFACT_VERSIONS_KEPT = 50;
 export const ARTIFACTS_LISTED = 500;
+/** What `artifact_read` returns of one artifact's content, in UTF-16 units; a longer one is cut with a note saying so. */
+export const ARTIFACT_READ_CAP = 64 * 1024;
 
 export const formatOfPath = (path: string): ArtifactFormat => (/\.html?$/i.test(path) ? "html" : "md");
 
@@ -162,4 +165,47 @@ export function publish(hub: Hub, caller: LeadCaller, raw: LeadCall): Record<str
       ? `Published as version ${version}: the chat shows a card and its Artifacts tab has it. Put ${link} in your result, so your lead can link to it.`
       : `Published as version ${version}: the chat shows a card and its Artifacts tab has it. Link to it in any message as ${link} (artifact:${call.name}@${version} for this version). Publish the same name again for a new version; older ones stay.`;
   return { name: call.name, version, next };
+}
+
+/** `content`, whole when it fits in `cap` UTF-16 units, else its first `cap` and a last line saying where it was cut. */
+export function cut(content: string, cap: number): { content: string; truncated: boolean } {
+  const units = content.length;
+  if (units <= cap) return { content, truncated: false };
+  let kept = 0;
+  let head = "";
+  for (const c of content) {
+    kept += c.length;
+    if (kept > cap) break;
+    head += c;
+  }
+  return { content: `${head}\n\n[cut at ${cap / 1024} KB of ${Math.ceil(units / 1024)} KB]`, truncated: true };
+}
+
+/** `artifact_read`: one of the caller's own project's artifacts, `version` or the newest, as published. */
+export function read(hub: Hub, caller: LeadCaller, raw: LeadCall): Record<string, unknown> {
+  const r = caller.projectRef;
+  const { name, version } = raw as unknown as { name: string; version?: number };
+  const found = get(hub.db, r, name, version);
+  if (!found) {
+    const names = list(hub.db, r)
+      .slice(0, 20)
+      .map((a) => a.name);
+    const fix =
+      names.length === 0
+        ? "This project has no artifacts yet: only its own are readable here."
+        : `This project's newest artifacts: ${names.join(", ")}.`;
+    throw new ToolError(
+      "not_found",
+      version !== undefined ? `${name} has no version ${version} in this project.` : `No artifact ${name} in this project.`,
+      fix,
+    );
+  }
+  const { content, truncated } = cut(found.content, ARTIFACT_READ_CAP);
+  return {
+    name,
+    artifact: found.artifact,
+    content,
+    ...(truncated ? { truncated: true } : {}),
+    versions: versions(hub.db, r, name).map((v) => v.version),
+  };
 }

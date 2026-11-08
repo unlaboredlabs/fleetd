@@ -38,8 +38,8 @@ server, auth, keys, people, devices, links, settings, store.
 
 - [x] `events_wait` → `src/hub/api` (read) <!-- tool:`events_wait` -->
 - [x] `events_list` → `src/hub/api` (read) <!-- tool:`events_list` -->
-- [ ] `person_avatar_set` → `src/hub/people` (read) <!-- tool:`person_avatar_set` -->
-- [ ] `person_avatar_get` → `src/hub/people` (read) <!-- tool:`person_avatar_get` -->
+- [x] `person_avatar_set` → `src/hub/people` (read) <!-- tool:`person_avatar_set` -->
+- [x] `person_avatar_get` → `src/hub/people` (read) <!-- tool:`person_avatar_get` -->
 - [x] `sidebar_order_get` → `src/hub/sidebar_order` (read) <!-- tool:`sidebar_order_get` -->
 - [x] `sidebar_order_set` → `src/hub/sidebar_order` (read) <!-- tool:`sidebar_order_set` -->
 - [x] `chat_pins_get` → `src/hub/chat_pins` (read) <!-- tool:`chat_pins_get` -->
@@ -639,7 +639,7 @@ every `fleetd` command.
 - [x] lead call `chat_image` → `src/hub/lead_calls` <!-- lead:lead call `chat_image` -->
 - [x] lead call `chat_file` → `src/hub/lead_calls` <!-- lead:lead call `chat_file` -->
 - [x] lead call `artifact_publish` → `src/hub/lead_calls` <!-- lead:lead call `artifact_publish` -->
-- [ ] lead call `artifact_read` → `src/hub/lead_calls` <!-- lead:lead call `artifact_read` -->
+- [x] lead call `artifact_read` → `src/hub/lead_calls` <!-- lead:lead call `artifact_read` -->
 - [x] lead call `automation_create` → `src/hub/lead_calls` <!-- lead:lead call `automation_create` -->
 - [x] lead call `automation_list` → `src/hub/lead_calls` <!-- lead:lead call `automation_list` -->
 - [x] lead call `automation_update` → `src/hub/lead_calls` <!-- lead:lead call `automation_update` -->
@@ -713,7 +713,7 @@ every `fleetd` command.
 - [x] agent-mcp tool `review_read` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `review_read` -->
 - [x] agent-mcp tool `chat_file` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `chat_file` -->
 - [x] agent-mcp tool `publish_artifact` → `src/cli/agent_mcp` (op artifact_publish) <!-- agent-mcp:agent-mcp tool `publish_artifact` -->
-- [ ] agent-mcp tool `artifact_read` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `artifact_read` -->
+- [x] agent-mcp tool `artifact_read` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `artifact_read` -->
 - [x] agent-mcp tool `session_start` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `session_start` -->
 - [x] agent-mcp tool `desktop` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `desktop` -->
 - [x] agent-mcp tool `session_end` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `session_end` -->
