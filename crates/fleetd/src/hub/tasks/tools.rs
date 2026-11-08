@@ -6,7 +6,7 @@ use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult, TaskListResult, TaskResultFrame};
 use fleetd_contracts::mcp::{CapSetInput, ErrorCode, TaskGetInput, TasksListInput};
-use fleetd_contracts::prim::List;
+use fleetd_contracts::prim::{List, Text};
 use fleetd_contracts::repos::ProjectRepo;
 use fleetd_contracts::tasks::{Task, TaskState};
 use serde_json::{Value, json};
@@ -228,9 +228,15 @@ pub async fn lead_call(
             if let Some(id) = &c.task_id {
                 return match tasks.get(id).map_err(internal)? {
                     Some(task) if task.project_ref == *r => {
+                        // Its whole result, when the tail cuts it: only this per-task read carries it.
+                        let full_result = tasks
+                            .full_result(&task.task_id)
+                            .map_err(internal)?
+                            .map(Text::unchecked);
                         Ok(LeadCallResult::TaskList(TaskListResult {
                             next: list_next(tasks, r, std::slice::from_ref(&task)),
                             tasks: List::unchecked(vec![task]),
+                            full_result,
                             truncated: None,
                         }))
                     }
@@ -253,6 +259,7 @@ pub async fn lead_call(
             Ok(LeadCallResult::TaskList(TaskListResult {
                 next: list_next(tasks, r, &listed),
                 tasks: List::unchecked(listed),
+                full_result: None,
                 truncated: truncated.then_some(true),
             }))
         }

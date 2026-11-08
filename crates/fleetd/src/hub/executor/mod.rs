@@ -3057,6 +3057,16 @@ impl Executors {
         }
     }
 
+    /// The thread's latest assistant message whole, read from its followed view (the summary keeps only its ends).
+    pub async fn latest_text(
+        self: &Arc<Self>,
+        r: &ThreadRef,
+    ) -> Result<Option<String>, ExecutorError> {
+        let watch = self.view(r).await?;
+        let text = thread_view::latest_assistant_text(&watch.state.lock().unwrap().view);
+        Ok(text)
+    }
+
     /// What the thread is waiting on a human for, if anything: its open permission prompt.
     pub async fn pending_question(&self, r: &ThreadRef) -> Result<Option<String>, ExecutorError> {
         Ok(self

@@ -1626,10 +1626,17 @@ impl Tasks {
         let task = &stored.task;
         let thread_ref = task.thread_ref.clone().expect("a live task has a thread");
         let thread = self.d.store.thread_get(&thread_ref)?;
-        let text = thread
+        let mut text = thread
             .as_ref()
             .map_or("", |t| t.thread.latest_message_tail.as_str())
             .to_owned();
+        // The summary keeps only the ends of a long reply: the lead reads it whole with `agents` and its taskId.
+        if render::full_result_text(&text).is_some()
+            && let Some(whole) = self.d.ports.latest_text(&thread_ref).await
+            && whole.trim().len() > text.trim().len()
+        {
+            text = whole;
+        }
         let error = why.unwrap_or_else(|| match (&thread, status) {
             (Some(t), TaskResultStatus::Failed) => t
                 .thread
@@ -1668,6 +1675,7 @@ impl Tasks {
         .copied()
         .collect::<Vec<_>>()
         .join("\n\n");
+        let full_result = render::full_result_text(&tail);
         let result = TaskResult {
             status,
             tail: Text::unchecked(render::result_text(&tail, render::TAIL_MAX)),
@@ -1696,7 +1704,7 @@ impl Tasks {
             pending_message: None,
         };
         let look_up = task.kind == TaskKind::Write;
-        self.db(|c| TaskRecords::put_ended(c, &stored_next, look_up))?;
+        self.db(|c| TaskRecords::put_ended(c, &stored_next, look_up, full_result.as_deref()))?;
 
         self.release_all(task)?;
         self.wake_result(&next, &result, escalated.is_some());
@@ -3311,6 +3319,11 @@ impl Tasks {
         Ok(self.db(|c| TaskRecords::get(c, task_id))?.map(|s| s.task))
     }
 
+    /// The task's whole final result, when its `result.tail` cuts it.
+    pub fn full_result(&self, task_id: &TaskId) -> Result<Option<String>, StoreError> {
+        self.db(|c| TaskRecords::full_result(c, task_id))
+    }
+
     /// The task whose agent runs in `thread`, if one does.
     pub fn task_of_thread(&self, thread: &ThreadRef) -> Result<Option<Task>, StoreError> {
         Ok(self
@@ -3658,7 +3671,7 @@ mod tests {
     use fleetd_contracts::effort::ProfileName;
     use fleetd_contracts::ids::{MachineId, ProjectId, ThreadId};
     use fleetd_contracts::lead_calls::TaskResultFrame;
-    use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult, TaskSpawnCall};
+    use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult, TaskListCall, TaskSpawnCall};
     use fleetd_contracts::ledger::{Brief, Workstream};
     use fleetd_contracts::repos::RepoName;
     use fleetd_contracts::sessions::BaseErrorKind;
@@ -3720,6 +3733,8 @@ mod tests {
         wakes_asked: Mutex<Vec<Option<String>>>,
         wake_answer: Mutex<Option<Result<String, String>>>,
         down: Mutex<HashSet<String>>,
+        /// The thread's latest assistant message whole, as `latest_text` reads it from the node.
+        latest: Mutex<Option<String>>,
     }
 
     impl Node {
@@ -3831,6 +3846,10 @@ mod tests {
         }
         fn pending_question<'a>(&'a self, _: &'a ThreadRef) -> BoxFut<'a, Option<String>> {
             Box::pin(async { None })
+        }
+        fn latest_text<'a>(&'a self, _: &'a ThreadRef) -> BoxFut<'a, Option<String>> {
+            let latest = self.latest.lock().unwrap().clone();
+            Box::pin(async move { latest })
         }
         fn pr_found(&self, task_id: &TaskId) {
             self.pr_found.lock().unwrap().push(task_id.clone());
@@ -4952,6 +4971,115 @@ mod tests {
         assert!(!pending(&tasks, &reader), "no lookup for a reader");
         assert!(node.looked_up.lock().unwrap().is_empty());
         assert!(node.pr_found.lock().unwrap().is_empty());
+    }
+
+    /// A 10 KB final result: the stored tail keeps its ends around a "…" line and the wake says how to read it whole;
+    /// `agents` with its taskId returns it whole, read from the node past the summary's 4 KB, and a list doesn't.
+    #[tokio::test]
+    async fn a_lead_reads_a_long_result_whole_by_its_task_id() {
+        let (tasks, node) = tasks();
+        let reader: TaskSpawnCall = serde_json::from_value(json!({
+            "workstreamId": "W1", "title": "audit the stalls", "kind": "read", "prompt": "find them",
+        }))
+        .unwrap();
+        let reader = tasks.spawn(&lead(), reader).await.unwrap();
+        let whole: String = (1..=100)
+            .map(|n| {
+                format!(
+                    "Cause {n:03}: the node dropped its link and nothing woke the agent again.\n"
+                )
+            })
+            .collect::<String>()
+            .trim()
+            .to_owned();
+        assert!(
+            whole.len() > 7_000 && whole.len() < 10_500,
+            "{}",
+            whole.len()
+        );
+        let whole = format!(
+            "{whole}\n{}",
+            "Fix: one bad frame drops only itself. ".repeat(80).trim()
+        );
+        assert!(whole.len() >= 10_000, "{}", whole.len());
+        let thread = reader.thread_ref.clone().unwrap();
+        tasks
+            .d
+            .store
+            .thread_upsert(&crate::hub::store::StoredThread {
+                thread: serde_json::from_value(json!({
+                    "machineId": thread.machine_id, "threadId": thread.thread_id, "projectId": "p1",
+                    "title": "audit", "status": "completed", "headline": "Cause 001",
+                    "latestMessageTail": render::result_text(
+                        &whole, crate::hub::executor::shell_mapper::MESSAGE_KEPT),
+                    "lastProgressAt": AT, "stale": false, "asOf": AT,
+                }))
+                .unwrap(),
+                last_sequence: None,
+                last_run_id: None,
+                last_run_status: None,
+            })
+            .unwrap();
+        *node.latest.lock().unwrap() = Some(whole.clone());
+        complete(&tasks, &reader).await;
+
+        let ended = tasks.get(&reader.task_id).unwrap().unwrap();
+        let tail = ended.result.as_ref().unwrap().tail.as_str().to_owned();
+        assert!(
+            tail.contains("\n…\n") && tail.chars().count() <= 2000,
+            "{tail}"
+        );
+        let lines = render::task_result_lines(
+            reader.task_id.as_str(),
+            "audit the stalls",
+            ended.result.as_ref().unwrap(),
+            false,
+        );
+        assert!(
+            lines.contains(&format!(
+                "`agents` with taskId {} has it whole",
+                reader.task_id.as_str()
+            )),
+            "{lines}"
+        );
+
+        let one: TaskListCall =
+            serde_json::from_value(json!({ "taskId": reader.task_id })).unwrap();
+        let Ok(LeadCallResult::TaskList(got)) =
+            tools::lead_call(&tasks, &lead(), LeadCall::TaskList(one)).await
+        else {
+            panic!("no task list")
+        };
+        assert_eq!(
+            got.full_result.as_ref().map(|t| t.as_str()),
+            Some(whole.as_str())
+        );
+        let all: TaskListCall = serde_json::from_value(json!({})).unwrap();
+        let Ok(LeadCallResult::TaskList(listed)) =
+            tools::lead_call(&tasks, &lead(), LeadCall::TaskList(all)).await
+        else {
+            panic!("no task list")
+        };
+        assert_eq!(listed.full_result, None);
+        assert!(
+            !serde_json::to_string(&listed)
+                .unwrap()
+                .contains("Cause 050")
+        );
+    }
+
+    /// A short result is whole in its tail: nothing more is kept, and the wake adds no hint.
+    #[test]
+    fn a_short_or_huge_result_keeps_what_it_should() {
+        assert_eq!(render::full_result_text("Done: PR #12."), None);
+        let huge = "y".repeat(40 * 1024);
+        let cut = render::full_result_text(&huge).unwrap();
+        assert!(cut.starts_with(&"y".repeat(32 * 1024)));
+        assert!(
+            cut.ends_with("\n\n[cut at 32 KB of 40 KB]"),
+            "{}",
+            &cut[cut.len() - 40..]
+        );
     }
 
     /// The host refusing the lookup (gh not logged in, a 404) ends it at once with one quiet line saying why: it is
