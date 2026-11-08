@@ -193,7 +193,8 @@ hub into a team hub. You make it on the hub it reaches and add it to the project
 
 - **Installs are checksummed.** The installer and `fleetd update` refuse any file whose SHA-256 doesn't match the
   release's `SHA256SUMS`.
-- **`fleetd machine add` copies the hub's own binary** to a worker over SSH.
+- **`fleetd machine add` copies the hub's own binary** to a worker over SSH; for another OS or CPU, the same
+  version's release build, checked against its `SHA256SUMS`.
 - **Models only through the `claude` CLI**, with the machine user's own claude setup. fleetd never calls a model or
   usage API itself.
 

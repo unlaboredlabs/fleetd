@@ -12,8 +12,8 @@ not stop it, such as a Read member's, has no Stop). What you were writing in a c
 reply quote) stays there as you go between chats and when the app starts again; a file still uploading when the app
 closes is left out. Notifications show the full text,
 end-to-end encrypted. You can [watch and take over](#screens) a lead's or agent's screen when it needs
-you (a captcha, a bank's check, a sign-in only you can do), open a screen of your own, make, rename, archive and
-delete projects, and on an iPhone
+you (a captcha, a bank's check, a sign-in only you can do), open a screen of your own, read a chat's
+[artifacts](#artifacts), make, rename, archive and delete projects, and on an iPhone
 [share](#share) text, links and images into a chat from any app. An admin can update fleetd. Secrets, machines, people
 and the hub's other admin pages stay in the desktop app.
 
@@ -41,11 +41,11 @@ saying so. Run `fleetd init` again on the hub and pick its tailnet or LAN addres
 hub listens says how), then pair again. A phone paired from the desktop app is yours and gets your device's role. A
 phone paired with `fleetd pair` gets that code's `--role`.
 
-The key stays in the phone's secure storage (the Keychain on iOS, the Keystore on Android). **Disconnect**, in the
-app's Settings tab, asks first,
-then signs the phone out on the hub, which revokes its key and stops its notifications, and forgets the hub. If the hub
-can't be reached, you can forget it anyway and sign the phone out later: **Sign out** on its row under Settings ›
-You › Your devices in the desktop app.
+The key stays in the phone's secure storage (the Keychain on iOS, the Keystore on Android). Settings, behind your
+avatar at the top of Chats, shows the hub, its address and version, and this phone. **Disconnect**, at its end, asks
+first, then signs the phone out on the hub, which revokes its key and stops its notifications, and forgets the hub. If
+the hub can't be reached, you can forget it anyway and sign the phone out later: **Sign out** on its row under
+Settings › You › Your devices in the desktop app.
 
 Hubs on a tailnet often answer plain HTTP. The app allows that on both platforms, so turn Tailscale on in the phone
 and use the hub's tailnet name or address: `devbox`, `devbox.<tailnet>.ts.net` or its `100.x` address. A hub at any
@@ -87,9 +87,11 @@ The **ⓘ** at the top of a chat opens its project's page:
 - **Agent profiles**, when the hub has more than one: the profiles its lead may run agents on. The hub's default is
   always allowed.
 - **Only Me**: who sees and uses it, as in the desktop app.
+- **Machine** and **Folder**: where it runs, read only.
 - **Approvals**, **Payments**, **Telegram**, **Linked Hubs** and **Skills**: the project's
   [approval mode](/docs/projects#approvals) and what ran without asking, its card and purchases, its Telegram bot, the
-  hubs it reaches and what it learned, as in the desktop app's settings. The checker's model, setting up a Telegram
+  hubs it reaches and what it learned, as in the desktop app's settings.
+- **Artifacts**: the chat's [artifacts](#artifacts). The checker's model, setting up a Telegram
   bot and linking a hub are done in the desktop app.
 - **Forget Sign-ins…**: signs it out of every site its browser kept, after a confirm.
 - **Archive Project** sets it aside with everything kept, under the **Archived** filter in Chats (it shows in the list
@@ -135,6 +137,16 @@ sign in to there stays signed in for its lead. On a full machine, **Wait** keeps
 screen opens once it has one. A PR's build opens from the desktop app. See
 [Open one yourself](/docs/browser-sessions#yours).
 
+## Artifacts {#artifacts}
+
+The reports a lead or its agents [publish](/docs/chat#artifacts) in a chat show there as a card; tapping it, or a link
+to it in a message, opens it. **Artifacts**, on the project's ⓘ page, lists them newest first, each with its format,
+who published it, when and its version, then the files sent in the chat (tapping one opens the share sheet). A
+Markdown artifact reads as the chat's own formatted text. An HTML one runs on an iPhone fenced as on the desktop: its
+scripts on, nothing loaded past the page itself, no storage, cookies or files; a link in it opens in your browser.
+Android doesn't run HTML artifacts yet and says to open them on an iPhone or the desktop app. With more than one
+version, **Versions** picks an older one, which says so over the page with the way back to the newest.
+
 ## Update fleetd {#update}
 
 An admin sees **Update** in Settings when the hub has a newer fleetd ready, or a machine runs an older one than the
@@ -145,7 +157,7 @@ and the hub refuses them anyway.
 ## Import memory {#import-memory}
 
 **Settings › Import Memory** brings what another assistant knows about you into your own memory, as the desktop app's
-Settings › Memory does.
+Settings › Your memory › Import memory does.
 
 1. Tap **Copy Prompt** and paste it into a chat with ChatGPT, Claude, Grok or another assistant.
 2. Paste its answer into the box and tap **Add to Memory**.

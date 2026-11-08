@@ -98,7 +98,7 @@ async fn answer(
         installed: List::unchecked(names),
         commit: Line::unchecked(commit),
         next: Some(format!(
-            "Installed {list}, pinned to this commit; the human updates it from Settings > Skills. Sessions started \
+            "Installed {list}, pinned to this commit; the human updates it on the project's Settings › Agents. Sessions started \
              from now get it (yours from its next start): name it in a brief and the agent uses it."
         )),
     }))

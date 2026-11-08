@@ -48,10 +48,10 @@ To add another hub, or rename or remove one, open Settings (⌘,) → Hubs. See 
 
 | Part | Shows |
 |---|---|
-| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise "CI red" while a check fails on main (which blocks nothing), or how many agents are working. A project in bold has a new message from its lead. Drag a project to move it, or press ⌥↑ / ⌥↓ on one you've tabbed to. The hub keeps your order, so it's the same after a restart and on your other computers, and only your sidebar changes. Your own Only me projects come first, and new projects go at the end. Below them: Status, [Screens](/docs/browser-sessions#page) ("needs you" when a screen asks for you, else how many are live), Factory and Settings, which for an admin says how many setup steps are left. The hub's row at the bottom says how many machines are down and opens Machines. |
+| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise "CI red" while a check fails on main (which blocks nothing), or how many agents are working. A project in bold has a new message from its lead. Drag a project to move it, or press ⌥↑ / ⌥↓ on one you've tabbed to. The hub keeps your order, so it's the same after a restart and on your other computers, and only your sidebar changes. Your own Only me projects come first, and new projects go at the end. Below them: Status, [Screens](/docs/browser-sessions#page) ("needs you" when a screen asks for you, else how many are live), Factory and Settings, which for an admin says how many setup steps are left, then any update to make. The hub's row at the bottom says how many machines are down and opens Machines. |
 | The top row | The page's title and its controls, then the command palette (⌘K) and the panel's toggle. In a chat: the project's name, then only [what needs you](#chat), if anything. The panel starts at the window's top, so its tabs share this row. |
 | The chat | The selected project's conversation with its lead. |
-| The panel | Beside a chat, on the right, four tabs: **Agents** (the project's [agents](#agents) and the screens they use), **Shipping** (its [pull requests](/docs/chat#prs) and its [merge train](#train)), **Plan** (its [checklist](#checklist) and the work it asked other projects for) and **History** (its [activity](#activity) and its [decisions](#decisions)). **Artifacts**, the reports published in its chat and the files sent in it ([Artifacts](/docs/chat#artifacts)), joins them once there is either. The project's [skills](/docs/skills) are in its settings, on its **Agents** page; one skill's history opens in the panel. Open it with the toggle at the top right or ⌥⌘B. |
+| The panel | Beside a chat, on the right, four tabs, each with a line saying what it is and, where it has two views, a row to switch them: **Agents** (the project's [agents](#agents) and the [screens](/docs/browser-sessions) they use), **Shipping** (its [pull requests](/docs/chat#prs) and its [merge line](#train)), **Plan** (its [to-do](#checklist) and the work it asked other projects for) and **History** (what happened in it, [activity](#activity), and its [decisions](#decisions)). **Artifacts**, the reports published in its chat and the files sent in it ([Artifacts](/docs/chat#artifacts)), joins them once there is either. The project's [skills](/docs/skills) are in its settings, on its **Agents** page; one skill's history opens in the panel. Open it with the toggle at the top right or ⌥⌘B. |
 
 In a window narrower than about 1000 px the sidebar and the panel hide themselves; ⌘B and ⌥⌘B show them again. The
 app remembers whether you left the panel open, the tab you had and its width. On macOS the Dock icon shows how many
@@ -64,13 +64,14 @@ to the edge, then ← widens it and → narrows it (with Shift, in bigger steps)
 widest, and Enter resets it. Reading a pull request's changes widens the panel so the diff has room; that wide width
 is set the same way and kept apart from the other. The panel never grows so wide that the chat loses its room.
 
-When the tabs don't fit, they show as icons with their counts (point at one for its name), and if even those don't
-fit, the rest go under **More** (···). The tab you're on always stays in view. Each tab is a link too:
-`#/project/<machine>/<project>/checklist` opens the checklist, as the palette's **Checklist** does, and `/train`,
-`/activity` and `/decisions` open those tabs the same way.
+In a narrow panel the tabs show only their icons and counts; point at one for what it is. Each tab remembers the
+view you last had in it while the app runs. Each view is a link too: `#/project/<machine>/<project>/checklist` opens
+the to-do, as the palette's **Checklist** does, and `/agents`, `/sessions`, `/prs`, `/train`, `/asked`, `/artifacts`,
+`/activity` and `/decisions` open theirs the same way.
 
-Click a project to open its chat. ⌥⌘A jumps to the next project that wants you. To add a project, click "Add" next to Projects, then paste a GitHub URL or
-`owner/repo`, or type a name to start a new, empty project. You can also drop a folder or a GitHub link anywhere on the window, a chat included. Other files dropped
+Click a project to open its chat. ⌥⌘A jumps to the next project that wants you. To add a project, click **New** next to Projects (one more per hub with
+[several hubs](/docs/several-hubs)), then paste a GitHub URL or `owner/repo`, type a folder's path, or type a name to
+start a new, empty project. You can also drop a folder or a GitHub link anywhere on the window, a chat included. Other files dropped
 on a chat attach to your message. See [Add a project](/docs/projects#add-a-project) and [Start a new project](/docs/projects#start-a-new-project).
 
 ![The Add project sheet cloning acme/checkout-v2: the clone at 42%, then inspect and register still to come.](/docs/img/add-project.png)
@@ -103,7 +104,7 @@ How to work with the lead: [Chat with the lead](/docs/chat).
 
 ## Agents {#agents}
 
-The Agents tab of the panel beside a chat (⌥⌘B) lists the project's agents at work, those waiting on you first: each
+The panel's Agents tab beside a chat (⌥⌘B) lists the project's agents at work, those waiting on you first: each
 one's role, its task, what it's doing and for how long. Click one to watch its work as it happens: what it was told,
 the commands it ran, the files it edited and what it's writing. Watching doesn't interrupt it. To change what it does,
 tell the lead in the chat. Its PR number opens [the PR](/docs/chat#prs), and **What it was told** shows the exact
@@ -116,9 +117,9 @@ agent waiting on you first. Click an agent of another project to open its work b
 Beside the count of agents working, **max** is the project's [Max agents](/docs/projects#max-agents) ("4 working · max
 20"). Click it to change it in Settings › Projects › Agents.
 
-## Train {#train}
+## Merge line {#train}
 
-The Train tab shows the project's merge train: the pull request merging now and its stage (rebasing onto the base,
+Shipping's **Merge line** shows the project's [merge train](/docs/merge-train): the pull request merging now and its stage (rebasing onto the base,
 running CI, merging) with the checks it waits on, then the pull requests in line, in the order they'll merge. Each
 one says whether it's waiting for review, in review, ready, or blocked, and what blocks it: a `hold` label, a conflict
 with the base, or failed checks that sent it back to the agent that wrote it. Pull requests that go through together
@@ -127,31 +128,32 @@ a refusal asks for. Click any of them to open the pull request. The tab follows 
 each thing happened and never guesses how long something will take. Its count is the pull requests merging or in
 line. It only reads: the train itself decides what merges.
 
-## Checklist {#checklist}
+## To-do {#checklist}
 
-The Checklist tab shows the project's to-dos as its lead keeps them: how many are done, then what's being done now,
+Plan's **To-do** shows the project's checklist as its lead keeps them: how many are done, then what's being done now,
 what's still to do and, folded away, what's done. An item's pull request or agent opens in the panel. The lead
-updates the list as the work moves, and the tab follows along as it does. The tab's count is the items still open.
+updates the list as the work moves, and the tab follows along as it does. Its count is the items still open.
 
 You can tidy the list yourself. Point at an item for its delete button, or right-click it and choose **Delete**;
 **Clear done**, beside the progress, takes off every done item at once and shows only while something is done.
 Neither asks first: the items go at once, and **Undo** in the toast puts them back for a few seconds after, held
 while you point at it. Quitting before then still removes them. The lead's next wake tells it what you took off,
 and it leaves those off unless you ask again. To add or change an item, tell the lead in the chat. A project's lead
-starts a checklist when it plans work; until then the tab says there is none yet.
+starts a checklist when it plans work; until then it says there is none yet. Plan's other view, **Asked**, lists the
+work this project's lead asked your other projects for, and how each order is going.
 
-## Activity {#activity}
+## What happened {#activity}
 
-The Activity tab shows what happened in the project while you were away, newest first: agents starting and
+History's **What happened** shows what happened in the project while you were away, newest first: agents starting and
 finishing, reviews, merges, what was asked of you and what you answered. A line marks what came in since you last
 looked, and a run of the same thing (a pull request reviewed again and again) folds into one row. A line that names
-an agent or a pull request opens it. The tab's count is what came in since you last looked.
+an agent or a pull request opens it. Its count is what came in since you last looked.
 
 ## Decisions {#decisions}
 
-The Decisions tab lists what the lead and you have decided in the project, one row per question with the answer in
+History's **Decisions** lists what the lead and you have decided in the project, one row per question with the answer in
 force first. What it replaced, or that you revoked it, folds under it. Search, or narrow the list to who decided and
-where it applies; open a row for its why and history, and change or revoke the decision there. The tab's count is
+where it applies; open a row for its why and history, and change or revoke the decision there. Its count is
 the decisions in force.
 
 ## Status {#status}
@@ -188,8 +190,9 @@ changes a teammate's work outside your project is in Hub.
 | Page | Has |
 |---|---|
 | You › General | Appearance (light, dark, match system) and time in the app. **Notifications**: which alerts show (the lead asks you something, a command or secret waits, the lead finishes what you asked, a machine problem, anything else), whether they play a sound, the Dock badge, and a test. There is never an alert for the chat in front of you, and in quiet hours only urgent ones show. **Version**: this app's version and channel with Check for updates, and one read-only line saying whether the hub and its machines are up to date; owners and admins also get the way to Hub › Updates, where the update is; members are told which owner or admin to ask. |
-| You › Your accounts | **Claude**: which Claude account the orders you start and your Only me projects run on, your own subscription (paste the token `claude setup-token` prints, then Connect and test) or the hub's API key when the hub's admins allow it (see [Claude accounts](/docs/people#claude)). **GitHub**: the GitHub account your PRs open as. |
+| You › Your accounts | **Claude**: which Claude account the orders you start and your Only me projects run on, your own subscription (paste the token `claude setup-token` prints, then Connect and test) or the hub's API key when the hub's admins allow it (see [Claude accounts](/docs/people#claude)). **GitHub**: the GitHub account your PRs open as. **1Password**: your own service account token, which agents fill sign-ins from in the work you start and your Only me projects (a project's own `OP_SERVICE_ACCOUNT_TOKEN` wins), sealed to every machine, with Test, which lists the vaults it reads: it should read one (see [What an agent can reach](/docs/security#agent-reach)). |
 | You › Your memory | How you work, as the leads remember it: read by the agents of work you start and by your Only me projects' leads, and edited only by you. See [Memory](/docs/what-agents-are-told#memory). |
+| You › Your devices | The devices signed in as you on each hub, each other one with **Sign out**, and **Pair a phone**: a one-time code (15 minutes) shown as a QR code for the [phone app](/docs/mobile#pair), with the hub's address and the code under it. |
 | You › Hubs | Each hub this app is paired with, with its address, its connection, its name and colour, Pair again and Remove; Add a hub pairs one more (see [Several hubs](/docs/several-hubs)). Then **Hub links**, both halves in one place: the link keys made as you on each hub, and the other hubs your projects reach (see [Hub links](/docs/projects#hub-links)). |
 | Projects | One project, picked at the top of the group. **Project**: its icon and name, [Only me](/docs/projects#only-me), its repos with the default setup for those without their own, worktrees, its agents' environment variables (plain and secret), Telegram, linked hubs, approvals, integrations, sign-ins, skills, payments, archive and deleting it (see [Project settings](/docs/projects#settings)). **Agents**: its [max agents](/docs/projects#max-agents) (the slider applies when you let go, with Undo, and "Use the default" goes back), the [task profiles](/docs/projects#models) its lead may use (the default is always checked), its own MCP servers and its [skills](/docs/skills). **Instructions & memory**: its own instructions, added to its agents' system prompt after the hub-wide ones, then what its leads remember about the project, and **Refresh memory every night**. **Automations**: its [automations](/docs/automations). **Prompts**: the prompts fleetd sends its agents, listed under Prompts in the sidebar, to read and edit for this project, and any of its edits that no longer apply. A prompt with one text for the whole hub shows read only. See [What agents are told](/docs/what-agents-are-told). |
 
@@ -203,9 +206,9 @@ hubs](/docs/several-hubs#admin), the group manages one at a time.
 | Page | Has |
 |---|---|
 | People | Everyone on the hub, with their role, devices, and the Claude and GitHub their work runs on, with any usage pause. Change a role in place, or remove someone: their devices are signed out at once, and what they did keeps their name. An admin can't change or remove an owner, and nobody changes their own role here. Below, Invite someone: a name and a role (member or admin) make an invite link, shown once with Copy; their fleetd app opens it and joins as them, once, within 7 days. Then the invites still waiting, each with Revoke, and every hub link minted on the hub. |
-| Machines | Add machine, the hub's machines with Repair and Remove, each one's page with its checklist, [machine roles](/docs/machines#roles), [max agents](/docs/projects#max-agents) for each machine and for all of them together. |
+| Machines | Add machine, the hub's machines with Repair and Remove, each one's page with its checklist, [machine roles](/docs/machines#roles), **Screens** (which kinds of [screen](/docs/browser-sessions) each machine opens, when an idle one ends, how long recordings are kept), [max agents](/docs/projects#max-agents) for each machine and for all of them together, and [cloud machines](/docs/cloud-machines) (the boat.dev key, the way to the hub, the pool, budgets, the projects that may use them, and turning them on). |
 | Updates | Whether the hub and its machines are up to date, with **Update now** when a newer build is ready (it updates the hub, then every machine, then this app). **Update automatically** (off by default; at most once an hour), with when it last updated, to which build and how that went, what it installs next and when (or its next check), and why it holds back. Then the hub's and each machine's fleetd. The same switch and lines are in the update sheet. |
-| Every project › Profiles | The hub's [task profiles](/docs/projects#models): each one's model, reasoning level, fast mode and note. New profile, Edit (rename, change, mark as the default) and Delete. |
+| Every project › Profiles | **Lead runs on**: the profile every project's lead starts on. Then the hub's [task profiles](/docs/projects#models): each one's model, reasoning level, fast mode and note. New profile, Edit (rename, change, mark as the default) and Delete. |
 | Every project › Tools & skills | The global [MCP servers](/docs/mcp-servers) and whether agents also get their own, and the hub-wide [skills](/docs/skills). |
 | Every project › Instructions & memory | The instructions for every project, and **Shared memory**: the one memory every lead read before each person had their own, read by no agent now, to read and retire. |
 | Every project › Prompts | The hub-wide prompts, listed under it in the sidebar. A project's own edits come after them. |
@@ -233,8 +236,11 @@ The command palette (⌘K) opens on the project you're in. Type a setting's own 
 | ⌘[ / ⌘] | Previous / next project |
 | ⌥⌘A | Next project that wants you |
 | ⌘. | Status |
+| ⌘; | Factory |
 | ⌘, | Settings |
 | ⌘⇧A | Attach a file |
 | Enter / Shift+Enter | Send the message / new line |
+| ⌘↩ (in the message box) | Stop the lead's current step and send now |
+| ⌘⇧↩ | Hand a screen you took over back to its agent |
 | ↑ (empty box) | Bring back your last message |
 | Esc | Close the menu, panel or sheet |
