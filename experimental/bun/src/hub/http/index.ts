@@ -97,10 +97,14 @@ export function serve(hub: Hub, tools: Registry, port = hub.config.listen.port):
       return new Response(null, { status: 404 });
     },
     websocket: {
+      // Bun sets this per server, not per route: the session relay carries CDP frames of up to 128 MB
+      // (machine_roles/relay.ts MAX_MESSAGE), as the Rust relay allows.
+      maxPayloadLength: 128 << 20,
       open: (ws) => ws.data.handler.open?.(ws),
       message: (ws, message) => ws.data.handler.message(ws, message),
       close: (ws, code, reason) => ws.data.handler.close?.(ws, code, reason),
       drain: (ws) => ws.data.handler.drain?.(ws),
+      pong: (ws, data) => ws.data.handler.pong?.(ws, data),
     },
   });
 }
