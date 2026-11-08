@@ -11,6 +11,8 @@ import * as checks from "./checks.ts";
 import { type MachineSetup, readHubSetup, restartCommand } from "./config.ts";
 import { type DoctorSources, hubSources } from "./sources.ts";
 
+export type { DoctorCheck } from "../../shared/contracts.ts";
+
 export const DOCTOR_EVERY_MS = 15 * 60_000;
 /** How often the loop looks: a moved machine is checked again within this. */
 export const DOCTOR_TICK_MS = 60_000;
@@ -347,5 +349,5 @@ export class Doctor {
   }
 }
 
-/** The hub's one doctor. */
+/** The hub's one doctor (Rust's `hub.doctor`): `list(rerun)`, `setupChecks()`, `rerunHub()`, `fix(checkId)`. */
 export const doctor = (hub: Hub) => hub.area("doctor", (h) => new Doctor(h));
