@@ -7,6 +7,7 @@ import { executors } from "../src/hub/executor/index.ts";
 import { link } from "../src/hub/link/server.ts";
 import * as navis from "../src/hub/navi/store.ts";
 import { AVATAR_PX, render, square } from "../src/hub/projects/avatar.ts";
+import { pngRows } from "../src/hub/projects/avatar-render.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { CAP_ASSISTANT, CAP_REPOS } from "../src/shared/node_link.ts";
@@ -53,6 +54,22 @@ test("a picture is kept upright, cropped, at most AVATAR_PX a side, on white, as
   const small = await render(png(40, 40, () => [0, 128, 255]), { x: 10, y: 10, size: 20 });
   expect((await new Bun.Image(small).metadata()).width).toBe(20);
   await expect(render(new TextEncoder().encode("GIF89a not really"), undefined)).rejects.toThrow("That picture can't be used");
+});
+
+test("a big picture is shrunk whole before its crop, and the crop still lands where it was named", async () => {
+  // Red left of x = 1500, blue right of it: the crop's middle column sits on the seam, a quarter of the way down.
+  const photo = await new Bun.Image(png(3000, 2000, (x) => (x < 1500 ? [255, 0, 0] : [0, 0, 255]))).jpeg({ quality: 95 }).bytes();
+  const jpeg = await render(photo, { x: 1000, y: 500, size: 1000 });
+  const kept = await new Bun.Image(jpeg).png().bytes();
+  const seen: number[][] = [];
+  const { width } = pngRows(kept, (y, row) => {
+    if (y === 256) for (const x of [100, 400]) seen.push([...row.subarray(x * 3, x * 3 + 3)]);
+    return y < 256;
+  });
+  expect(width).toBe(AVATAR_PX);
+  const [left, right] = seen as [number[], number[]];
+  expect(left[0]! > 200 && left[2]! < 60).toBe(true);
+  expect(right[2]! > 200 && right[0]! < 60).toBe(true);
 });
 
 test("project_avatar_set keeps the rendered picture, forgets the upload, and says so; none removes it", async () => {
