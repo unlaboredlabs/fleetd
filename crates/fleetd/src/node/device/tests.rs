@@ -405,12 +405,13 @@ async fn an_agent_opens_settings_on_an_android_session_and_its_recording_is_on_t
     };
     assert_eq!(recorded["sessionId"], id.as_str());
     assert_eq!(recorded["kind"], "android");
-    assert!(
-        !super::session::recordings_dir(node_home.path())
-            .join(&id)
-            .exists(),
-        "the node let it go"
-    );
+    // The node lets its copy go once the hub has said so.
+    let kept = super::session::recordings_dir(node_home.path()).join(&id);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while kept.exists() {
+        assert!(Instant::now() < deadline, "the node never let it go");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     let actions = String::from_utf8(read_file(&hub, &id, "actions").await).unwrap();
     let lines: Vec<Value> = actions
         .lines()
