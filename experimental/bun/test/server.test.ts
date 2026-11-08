@@ -36,8 +36,8 @@ test("/mcp checks the key on every request", async () => {
 
   const key = insertKey(hub.db, [{ role: "read", machines: "*" }]);
   const known = await fetch(`${base}/mcp`, { method: "POST", headers: { authorization: `Bearer ${key}` } });
-  expect(known.status).toBe(501);
-  expect(((await known.json()) as { message: string }).message).toContain("src/hub/mcp");
+  // Past the key check: a POST without a JSON body is the endpoint's own 415 (test/mcp.test.ts).
+  expect(known.status).toBe(415);
   hub.db.conn.run("UPDATE agent_keys SET revoked_ms = 1");
   const revoked = await fetch(`${base}/mcp`, { method: "POST", headers: { authorization: `Bearer ${key}` } });
   expect(revoked.status).toBe(401);
