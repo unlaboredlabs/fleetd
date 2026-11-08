@@ -579,7 +579,7 @@ every `fleetd` command.
 
 ### HTTP routes
 
-- [ ] ANY `/mcp` → `src/hub/mcp` (mcp) <!-- http:ANY `/mcp` -->
+- [x] ANY `/mcp` → `src/hub/mcp` (mcp) <!-- http:ANY `/mcp` -->
 
 ### Node link messages
 
