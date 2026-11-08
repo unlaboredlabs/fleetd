@@ -361,29 +361,19 @@ impl Socket {
     }
 }
 
-/// `machine/project` as given, or a bare project id the hub has on exactly one machine.
+/// The project `given` names, as `fleetd status` finds one: its id, title or folder, `<machine>/` first when two
+/// machines have one.
 async fn project_ref(socket: &mut Socket, given: &str) -> Result<Value, Failure> {
-    if let Some((machine_id, project_id)) = given.split_once('/') {
-        return Ok(json!({ "machineId": machine_id, "projectId": project_id }));
-    }
     let listed = socket.call("project_get", json!({})).await?;
-    let matches: Vec<&Value> = listed["projects"]
-        .as_array()
-        .map(|all| {
-            all.iter()
-                .filter(|p| st(p, "projectId") == Some(given))
-                .collect()
-        })
-        .unwrap_or_default();
-    match matches.as_slice() {
-        [one] => Ok(json!({ "machineId": one["machineId"], "projectId": given })),
-        [] => Err(Failure::Refused(format!(
-            "no project {given}; `fleetd status` lists them"
-        ))),
-        _ => Err(Failure::Refused(format!(
-            "{given} is on more than one machine; name it as <machine>/{given}"
-        ))),
-    }
+    let projects = listed["projects"].as_array().cloned().unwrap_or_default();
+    pick_project(given, &projects).map_err(Failure::Refused)
+}
+
+fn pick_project(given: &str, projects: &[Value]) -> Result<Value, String> {
+    super::time::resolve_project(given, projects).map_err(|why| match projects {
+        [] => format!("no project {given}: the hub has none yet"),
+        _ => why.replacen("no order or project", "no project", 1),
+    })
 }
 
 fn client_request_id() -> String {
@@ -668,6 +658,36 @@ mod tests {
         assert!(matches!(now.command, ChatCommand::Send { now: true, .. }));
         assert!(err(&["history", "app", "--page", "0"]).contains("page number"));
         assert!(err(&["devbox/app", "hi", "--page", "2"]).contains("for history"));
+    }
+
+    /// Bug hunt: `fleetd chat devbox/storefront …`, as the docs write it, was refused ("No project storefront"):
+    /// project ids are generated, and chat took only an id while status, time and project take the title too.
+    #[test]
+    fn a_chat_names_its_project_by_title_or_folder_as_status_does() {
+        let projects = [
+            json!({ "machineId": "devbox", "projectId": "f0d0d1a4", "title": "storefront", "workspaceRoot": "/w/shop" }),
+            json!({ "machineId": "buildbox", "projectId": "9c1e", "title": "storefront", "workspaceRoot": "/w/shop" }),
+            json!({ "machineId": "devbox", "projectId": "77ab", "title": "Docs site", "workspaceRoot": "/w/docs" }),
+        ];
+        let at = |m: &str, p: &str| Ok(json!({ "machineId": m, "projectId": p }));
+        assert_eq!(
+            pick_project("devbox/storefront", &projects),
+            at("devbox", "f0d0d1a4")
+        );
+        assert_eq!(
+            pick_project("devbox/f0d0d1a4", &projects),
+            at("devbox", "f0d0d1a4")
+        );
+        assert_eq!(pick_project("Docs site", &projects), at("devbox", "77ab"));
+        assert_eq!(pick_project("docs", &projects), at("devbox", "77ab"));
+        assert!(
+            pick_project("storefront", &projects)
+                .unwrap_err()
+                .contains("devbox/storefront, buildbox/storefront")
+        );
+        let none = pick_project("devbox/nope", &projects).unwrap_err();
+        assert!(none.starts_with("no project 'devbox/nope'"), "{none}");
+        assert!(pick_project("app", &[]).unwrap_err().contains("none yet"));
     }
 
     #[test]

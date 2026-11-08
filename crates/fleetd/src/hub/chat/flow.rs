@@ -437,6 +437,12 @@ async fn go(
     mut message: fleetd_contracts::chat::ChatMessage,
     now: bool,
 ) -> (fleetd_contracts::chat::ChatMessage, Option<String>) {
+    // One at a time: a message whose send started the lead was still held when lead.started sent the held ones.
+    let _turn = hub.chat.sending(r).await;
+    if !hub.chat.is_held(&message).unwrap_or(true) {
+        let sent = hub.chat.by_id(message.message_id.as_str()).ok().flatten();
+        return (sent.unwrap_or(message), None);
+    }
     // Files that can't be placed yet leave the message to `deliver`, which says why it waits. A lead due a fresh session
     // (cold, or its MCP servers changed) takes it as the first message of one, as a lead that doesn't exist yet does.
     let starts = match hub.leads.leads.get(r) {

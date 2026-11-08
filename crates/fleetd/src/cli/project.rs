@@ -64,7 +64,7 @@ pub const PROJECT_USAGE: &str =
              the project allows
   project profile <name> [--model <model>] [--effort low|medium|high|xhigh|max]
          [--fast on|off] [--note <text>] [--rename <new>] [--default] [--lead]
-         [--delete] [--hub <url>]
+         [--delete] --key-file <human key> [--hub <url>]
              create or change a task profile (owner or admin), or delete one. A new
              one needs --model and --effort. --default makes it the one every review,
              helper call and task naming no profile runs on; --lead the one leads
@@ -287,6 +287,22 @@ pub async fn project_command(argv: &[String]) -> u8 {
     let Some(verb) = argv.first().map(String::as_str) else {
         return usage("missing project command");
     };
+    // Before the hub: a typo, or a flag ahead of the verb, is a usage mistake, not an unreachable hub.
+    if !matches!(
+        verb,
+        "add"
+            | "list"
+            | "remove"
+            | "archive"
+            | "unarchive"
+            | "stop"
+            | "set"
+            | "profiles"
+            | "profile"
+            | "repo"
+    ) {
+        return usage(&format!("unknown project command '{verb}'"));
+    }
     let v = match args::parse(&argv[1..], &SPEC) {
         Ok(v) => v,
         Err(message) => return usage(&message),
@@ -297,16 +313,20 @@ pub async fn project_command(argv: &[String]) -> u8 {
     };
     let tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal() && !v.flag("yes");
     let out = Out { tty };
-    // A stop speaks for the person, so it goes with their human key.
+    // A stop and a profile change speak for the person, so they go with their human key: the hub takes a profile
+    // change only from an owner or admin, never from the CLI's own key.
     let connected = match (verb, v.str("key-file").filter(|f| !f.is_empty())) {
         ("stop", None) => return usage(&super::steer::human_key_required("a stop")),
-        ("stop", Some(file)) => match std::fs::read_to_string(file) {
+        ("profile", None) => {
+            return usage(&super::steer::human_key_required("a profile change"));
+        }
+        ("stop" | "profile", Some(file)) => match std::fs::read_to_string(file) {
             Ok(key) => connect_with(&home, v.str("hub"), "fleetd-project", key.trim()).await,
             Err(error) => {
                 return out.fail(&Stop(3, format!("cannot read --key-file: {error}"), None));
             }
         },
-        (_, Some(_)) => return usage("--key-file is for project stop"),
+        (_, Some(_)) => return usage("--key-file is for project stop and project profile"),
         (_, None) => connect_to(&home, v.str("hub"), "fleetd-project").await,
     };
     let mut client = match connected {
@@ -1414,6 +1434,20 @@ fn finish(out: &Out) -> Result<(), Stop> {
 mod tests {
     use super::*;
 
+    /// Bug hunt: `fleetd project --hub <url> list` (a flag ahead of the verb) or `fleetd project lst` said "no hub
+    /// set up" and exited 4, since the verb was read only after connecting; `fleetd navi` did the same.
+    #[tokio::test]
+    async fn an_unknown_verb_is_a_usage_mistake_before_any_hub() {
+        let argv = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let nowhere = "http://127.0.0.1:9";
+        assert_eq!(project_command(&argv(&["lst"])).await, 2);
+        assert_eq!(project_command(&argv(&["--hub", nowhere, "list"])).await, 2);
+        assert_eq!(
+            super::super::navi::navi_command(&argv(&["--hub", nowhere])).await,
+            2
+        );
+    }
+
     #[test]
     fn profile_flags_make_a_create_or_an_update() {
         assert_eq!(
@@ -1510,5 +1544,72 @@ mod tests {
         assert_eq!(r("./storefront/"), "/home/me/work/storefront");
         assert_eq!(r("../src/storefront"), "/home/me/src/storefront");
         assert_eq!(r("/srv/storefront"), "/srv/storefront");
+    }
+}
+
+#[cfg(test)]
+mod against_a_hub {
+    use std::sync::Arc;
+
+    use crate::clock::SystemClock;
+    use crate::hub::api::{self, HubConfig, Listen};
+    use crate::hub::store::HubDb;
+    use fleetd_contracts::auth::{Grant, KeyKind};
+    use serde_json::json;
+
+    /// Bug hunt: `fleetd project profile …` always went with the CLI's own key, which the hub refuses ("Only the
+    /// hub's owners and admins change task profiles"), and refused --key-file: no profile could change from a
+    /// terminal. It takes the person's human key now, as project stop does.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_profile_changes_with_the_persons_human_key() {
+        let home = tempfile::tempdir().unwrap();
+        let config = HubConfig {
+            home: home.path().to_path_buf(),
+            listen: Listen::default(),
+            url: None,
+        };
+        let hub = crate::hub::serve::build_on(
+            HubDb::open_memory().unwrap(),
+            config,
+            Arc::new(SystemClock),
+        )
+        .unwrap();
+        let grants: Vec<Grant> =
+            serde_json::from_value(json!([{ "role": "admin", "machines": "*" }])).unwrap();
+        let key = hub
+            .auth
+            .create_key("laptop", &grants, KeyKind::Human)
+            .unwrap()
+            .key;
+        let key_file = home.path().join("human.key");
+        std::fs::write(&key_file, format!("{key}\n")).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let served = tokio::spawn(crate::hub::http::serve(
+            listener,
+            hub.clone(),
+            Arc::new(api::registry()),
+        ));
+        let profile = |extra: &[&str]| {
+            let mut argv: Vec<String> = [
+                "profile",
+                "high",
+                "--note",
+                "For the hard parts.",
+                "--hub",
+                &url,
+            ]
+            .map(str::to_owned)
+            .to_vec();
+            argv.extend(extra.iter().map(|s| s.to_string()));
+            async move { super::project_command(&argv).await }
+        };
+        assert_eq!(profile(&[]).await, 2, "no key: it says to give one");
+        assert_eq!(
+            profile(&["--key-file", key_file.to_str().unwrap()]).await,
+            0,
+            "the person's key changes the profile"
+        );
+        served.abort();
     }
 }
