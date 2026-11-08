@@ -356,3 +356,30 @@ test("a person's takeover and input keep a session from idling out", async () =>
   await broker.housekeep();
   expect(broker.live("t6")).toBeUndefined();
 });
+
+
+test("an agent's claude launches with agent-browser at this node's proxy, under a policy that denies other browsers", async () => {
+  const t = testNode();
+  type Part = { env?: (thread: string, path: string | undefined) => [string, string][]; pluginDirs?: () => string[] };
+  const parts: Part[] = [];
+  // The node core's launch area (#1275): its own once it is built in, this stand-in before.
+  const area = t.node.area("launch" as never, () => ({ contribute: (p: Part) => parts.push(p) })) as unknown as {
+    env?: (thread: string, path: string | undefined) => [string, string][];
+  };
+  const broker = start(t.node, new Broker(t.node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
+  cleanups.push(async () => {
+    await broker.shutdown();
+    t.done();
+  });
+  const envOf = (thread: string) =>
+    Object.fromEntries(area.env ? area.env(thread, "/usr/bin") : parts.flatMap((p) => p.env?.(thread, "/usr/bin") ?? []));
+  const env = envOf("t7");
+  expect(env).toEqual({
+    PATH: `${join(t.node.home, "browser", "agent-browser", "bin")}:/usr/bin`,
+    AGENT_BROWSER_CDP: broker.proxy.url("t7"),
+    AGENT_BROWSER_SESSION: "fleetd-t7",
+    AGENT_BROWSER_ACTION_POLICY: join(t.node.home, "sessions", "t7", "agent-browser-policy.json"),
+  });
+  await t.local.call("session_start", { purpose: "look" }, "t7");
+  expect(JSON.parse(await Bun.file(env.AGENT_BROWSER_ACTION_POLICY!).text())).toEqual({ default: "allow", deny: ["connect"] });
+});
