@@ -8,6 +8,8 @@ import { CAP } from "./wire.ts";
 import { runNodeAction } from "./actions/index.ts";
 import { Node } from "./api.ts";
 import { registerAreas, stopAreas } from "./areas.ts";
+import { agentsMac, isAgentsMac } from "./agents_mac/index.ts";
+import { helloCapabilities, refusedOnMac } from "./link/tool_only.ts";
 import { findHelper } from "./runner/helper.ts";
 import { runCmdCheck } from "./cmd/index.ts";
 import { defaultNodeHome, isMachineId, readConfig, writeConfig, type NodeConfig } from "./config.ts";
@@ -188,6 +190,9 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   sessions.launch = node.area("launch");
   node.area("sessions", () => ({ maskFor: (thread: string) => sessions.maskFor(thread), sessionCwd: (thread: string) => sessions.sessionCwd(thread) }));
   registerAreas(node);
+  // The agents' Mac is a tool, never a runner: no lead call leaves it, and its hello lists only a tool's calls.
+  const mac = isAgentsMac(config) ? agentsMac(node) : undefined;
+  relay.toolOnly = isAgentsMac(config);
   const link = node.area("link");
   const local = node.area("local");
   const stopSocket = await serveLeadSocket(leadSocketPath(home), {
@@ -227,6 +232,8 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     };
 
   const handle = (frame: HubFrame, ctx: LinkContext) => {
+    const refused = relay.toolOnly ? refusedOnMac(frame) : undefined;
+    if (refused) return ctx.send(refused);
     const own = link.handler(frame.t);
     if (own) return own(frame, ctx);
     switch (frame.t) {
@@ -317,7 +324,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   // What the last hello listed: an area's capabilities that changed since go to the hub in a new hello.
   let hello: string[] = [];
   node.area("caps").onChanged(() => {
-    const now = [...CAPABILITIES, ...node.area("caps").list().filter((c) => !CAPABILITIES.includes(c as never))];
+    const now = helloCapabilities(CAPABILITIES, node.area("caps").list(), mac);
     const current = link.current;
     if (current && JSON.stringify(now) !== JSON.stringify(hello)) current.relink("this machine's capabilities changed");
   });
@@ -328,7 +335,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     machineFingerprint: machineFingerprint(),
     ...(enrollToken ? { enrollToken } : {}),
     ...(enrolled ? { onEnrolled: enrolled } : {}),
-    capabilities: () => (hello = [...CAPABILITIES, ...node.area("caps").list().filter((c) => !CAPABILITIES.includes(c as never))]),
+    capabilities: () => (hello = helloCapabilities(CAPABILITIES, node.area("caps").list(), mac)),
     heartbeat: async () => {
       const parts = { load: readLoad(sessions.loginLimits() as never, home), steps: [] as unknown[], busy: { threads: sessions.running(), screens: 0, uploads: 0, hosted: 0 } };
       await hb.fill(parts);
