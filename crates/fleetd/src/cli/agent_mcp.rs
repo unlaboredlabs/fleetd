@@ -863,12 +863,15 @@ pub fn tool_result(answer: &Value) -> Value {
         return json!({ "content": [{ "type": "text", "text": text }], "isError": false });
     }
     let error = answer.get("error").cloned().unwrap_or_default();
-    let mut text = format!(
-        "Refused: {}",
-        error["message"]
-            .as_str()
-            .unwrap_or("the hub refused the call")
-    );
+    let message = error["message"]
+        .as_str()
+        .unwrap_or("the hub refused the call");
+    // The node couldn't reach a restarting hub: nothing refused the call.
+    let mut text = if message == crate::node::lead::HUB_UNREACHABLE {
+        message.to_owned()
+    } else {
+        format!("Refused: {message}")
+    };
     if let Some(fix) = error["fix"].as_str() {
         text.push_str(&format!("\nNext: {fix}"));
     }
@@ -924,16 +927,48 @@ pub fn node_socket_path(env_sock: Option<&str>) -> PathBuf {
     }
 }
 
-/// One frame out, one frame back over the node's socket. The node answers within ~35 s; `timeout` is a backstop.
-/// `Err` is why the node could not be asked or did not answer.
+/// How long a call waits for the node's socket to listen again: a node restarting for an update is back within
+/// seconds. Nothing was sent yet, so retrying the connect can't run a call twice.
+const CONNECT_WAIT: Duration = Duration::from_secs(20);
+const CONNECT_RETRY: Duration = Duration::from_millis(250);
+/// Why a call failed when no node listened within [`CONNECT_WAIT`].
+const NODE_RESTARTING: &str = "fleetd is restarting; try again";
+
+/// One frame out, one frame back over the node's socket, waiting [`CONNECT_WAIT`] for a node that isn't listening.
+/// The node answers within ~65 s; `timeout` is a backstop. `Err` is why the node could not be asked or did not answer.
 pub fn send_to_node(socket: &Path, frame: &Value, timeout: Duration) -> Result<Value, String> {
+    send_to_node_within(socket, frame, timeout, CONNECT_WAIT)
+}
+
+/// [`send_to_node`], retrying the connect every [`CONNECT_RETRY`] for up to `connect_wait`.
+pub fn send_to_node_within(
+    socket: &Path,
+    frame: &Value,
+    timeout: Duration,
+    connect_wait: Duration,
+) -> Result<Value, String> {
     let shown = socket.display();
-    let mut conn = UnixStream::connect(socket).map_err(|error| match error.kind() {
-        std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused => format!(
-            "fleetd hub unreachable: no fleetd node is listening at {shown} (set FLEETD_NODE_SOCK if it is elsewhere) — tell the human the node is down and carry on"
-        ),
-        _ => format!("cannot reach the fleetd node at {shown}: {error}"),
-    })?;
+    let deadline = Instant::now() + connect_wait;
+    let mut conn = loop {
+        match UnixStream::connect(socket) {
+            Ok(conn) => break conn,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+                ) =>
+            {
+                let left = deadline.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    return Err(format!(
+                        "{NODE_RESTARTING} (no fleetd node is listening at {shown}; set FLEETD_NODE_SOCK if it is elsewhere)"
+                    ));
+                }
+                std::thread::sleep(CONNECT_RETRY.min(left));
+            }
+            Err(error) => return Err(format!("cannot reach the fleetd node at {shown}: {error}")),
+        }
+    };
     let started = Instant::now();
     let timed_out = || {
         format!(
@@ -1051,6 +1086,9 @@ pub fn handle(role: Role, message: &Value, deps: &LeadDeps) -> Option<Value> {
                         browser_result(&answer)
                     }
                     Ok(answer) => tool_result(&answer),
+                    Err(restarting) if restarting.starts_with(NODE_RESTARTING) => {
+                        error_result(&restarting)
+                    }
                     Err(unreachable) => error_result(&format!(
                         "{unreachable}. Carry on without this call and say so in your result."
                     )),
@@ -1077,7 +1115,7 @@ pub fn run(argv: &[String]) -> u8 {
             return 2;
         }
     };
-    let send = |socket: &Path, frame: &Value| send_to_node(socket, frame, Duration::from_secs(60));
+    let send = |socket: &Path, frame: &Value| send_to_node(socket, frame, Duration::from_secs(90));
     let deps = env_deps(&send);
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
@@ -1412,20 +1450,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn talks_to_a_node_socket_and_says_when_none_listens() {
-        let dir = std::env::temp_dir().join(format!("fleetd-cli-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let socket = dir.join("node.sock");
-        let _ = std::fs::remove_file(&socket);
-        let down = send_to_node(&socket, &json!({}), Duration::from_secs(5)).unwrap_err();
-        assert!(down.starts_with(&format!(
-            "fleetd hub unreachable: no fleetd node is listening at {}",
-            socket.display()
-        )));
-
-        let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
-        let server = std::thread::spawn(move || {
+    /// A node answering one `decisions_search` frame at `socket`, once it binds `after` from now.
+    fn node_answering(socket: &Path, after: Duration) -> std::thread::JoinHandle<Value> {
+        let socket = socket.to_owned();
+        std::thread::spawn(move || {
+            std::thread::sleep(after);
+            let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
             let (conn, _) = listener.accept().unwrap();
             let mut line = String::new();
             BufReader::new(&conn).read_line(&mut line).unwrap();
@@ -1433,12 +1463,85 @@ mod tests {
             let answer = json!({ "t": "lead_result", "id": frame["id"], "result": { "op": "decisions_search", "decisions": [] } });
             (&conn).write_all(format!("{answer}\n").as_bytes()).unwrap();
             frame
-        });
+        })
+    }
+
+    fn socket_in(name: &str) -> (PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("fleetd-cli-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let socket = dir.join("node.sock");
+        let _ = std::fs::remove_file(&socket);
+        (dir, socket)
+    }
+
+    #[test]
+    fn talks_to_a_node_socket() {
+        let (dir, socket) = socket_in("up");
+        let server = node_answering(&socket, Duration::ZERO);
         let frame = json!({ "t": "lead_call", "id": "cli-1", "cwd": "/w", "call": { "op": "decisions_search", "query": "health" } });
         let answer = send_to_node(&socket, &frame, Duration::from_secs(5)).unwrap();
         assert_eq!(server.join().unwrap(), frame);
         assert_eq!(answer["result"]["op"], "decisions_search");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A node restarting for an update has no socket for a moment: the call waits for it and is answered.
+    #[test]
+    fn a_call_waits_for_a_restarting_node() {
+        let (dir, socket) = socket_in("restart");
+        let server = node_answering(&socket, Duration::from_secs(1));
+        let frame = json!({ "t": "lead_call", "id": "cli-1", "cwd": "/w", "call": { "op": "decisions_search", "query": "health" } });
+        let answer = send_to_node(&socket, &frame, Duration::from_secs(5)).unwrap();
+        assert_eq!(server.join().unwrap(), frame);
+        assert_eq!(answer["result"]["op"], "decisions_search");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A node that doesn't come back within the wait (here a short one, [`CONNECT_WAIT`] for real): the call says
+    /// fleetd is restarting, without the "carry on" a call that may have run gets.
+    #[test]
+    fn a_node_that_stays_down_is_reported_restarting() {
+        let (dir, socket) = socket_in("down");
+        let started = Instant::now();
+        let down = send_to_node_within(
+            &socket,
+            &json!({}),
+            Duration::from_secs(5),
+            Duration::from_secs(1),
+        )
+        .unwrap_err();
+        assert!(started.elapsed() >= Duration::from_secs(1));
+        assert_eq!(
+            down,
+            format!(
+                "fleetd is restarting; try again (no fleetd node is listening at {}; set FLEETD_NODE_SOCK if it is \
+                 elsewhere)",
+                socket.display()
+            )
+        );
+        let deps = LeadDeps {
+            pwd: None,
+            sock: None,
+            thread: None,
+            cwd: dir.clone(),
+            send: &|_, _| Err(down.clone()),
+        };
+        let call = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": "decisions_search", "arguments": { "query": "x" } } });
+        let answer = handle(Role::Lead, &call, &deps).unwrap();
+        assert_eq!(answer["result"]["content"][0]["text"], down);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The node relaying a call while the hub restarts says so, not that the call was refused.
+    #[test]
+    fn a_restarting_hub_is_no_refusal() {
+        let answer = tool_result(&json!({ "t": "lead_result", "id": "cli-1", "error": {
+            "code": "machine_offline", "message": crate::node::lead::HUB_UNREACHABLE,
+        } }));
+        assert_eq!(
+            answer["content"][0]["text"],
+            "fleetd hub is restarting; try again shortly"
+        );
     }
 
     #[test]

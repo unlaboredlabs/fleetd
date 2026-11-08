@@ -65,6 +65,20 @@ export const setPicture = async (hub: Hub, p: ProjectRef, bytes: Uint8Array, mim
   return r.ok ? { ok: true, value: r.output.project } : r;
 };
 
+/** The person's own picture, as picked with the square to keep, as a project's (setPicture). */
+export const setMyPicture = async (hub: Hub, bytes: Uint8Array, mime: AttachmentMime, crop: AvatarCrop): Promise<Result<null>> => {
+  const sent = await upload((tool, input, ms) => hub.call(tool, input, ms), bytes, mime === "image/png" ? "picture.png" : "picture.jpg", mime);
+  if (!sent.ok) return { ok: false, error: { code: "failed", message: sent.message } };
+  const r = await hub.call("person_avatar_set", { attachmentId: sent.ref.attachmentId, crop }, UPLOAD_TIMEOUT_MS);
+  return r.ok ? { ok: true, value: null } : r;
+};
+
+/** The person's own picture taken away: their initials show again. */
+export const removeMyPicture = async (hub: Hub): Promise<Result<null>> => {
+  const r = await hub.call("person_avatar_set", {});
+  return r.ok ? { ok: true, value: null } : r;
+};
+
 /** A built-in icon picked: it takes the place of its picture. */
 export const setIcon = async (hub: Hub, p: ProjectRef, icon: ProjectIcon): Promise<Result<ProjectSummary>> => {
   const r = await hub.call("project_icon_set", { ...ref(p), icon });

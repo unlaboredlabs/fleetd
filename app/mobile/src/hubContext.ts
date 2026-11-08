@@ -64,8 +64,8 @@ type ManageParams = {
   ChatInfo: NavigatorScreenParams<ChatInfoParams>;
   /** Its icon: a built-in face and color, or a photo (IconPicker.tsx). */
   Icon: { key: Key };
-  /** A photo as picked, moved and scaled in a circle to become the chat's picture. */
-  Photo: { key: Key; uri: string; width: number; height: number; mime: "image/jpeg" | "image/png" | "image/webp" };
+  /** A photo as picked, moved and scaled in a circle to become the chat's picture; with no `key`, the person's own. */
+  Photo: { key?: Key | undefined; uri: string; width: number; height: number; mime: "image/jpeg" | "image/png" | "image/webp" };
 };
 export type ChatInfoParams = {
   Info: { key: Key };

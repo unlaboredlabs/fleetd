@@ -12,4 +12,9 @@ describe("what an event reads again", () => {
     expect(effectsOf(event("machine.removed", { machineId: "devbox" })).snapshot).toBe(true);
     expect(effectsOf(event("machine.offline", { machineId: "devbox" })).snapshot).toBe(false);
   });
+
+  it("a change to the hub's people (a new picture) reads who the person is again", () => {
+    expect(effectsOf(event("people.changed")).info).toBe(true);
+    expect(effectsOf(event("project.settings")).info).toBe(false);
+  });
 });

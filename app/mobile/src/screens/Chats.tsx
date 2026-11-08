@@ -162,7 +162,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
       swiped.close();
       root.navigate("Settings");
     };
-    const avatar = <MeButton initial={me.initial} tone={me.tone} label={me.label} onPress={openSettings} />;
+    const avatar = <MeButton initial={me.initial} tone={me.tone} label={me.label} picture={state.me === undefined ? undefined : { personId: state.me, avatar: state.meAvatar }} onPress={openSettings} />;
     const filters = filterMenu(choices, filter, pick);
     const add = newChatItem(() => root.navigate("NewProject"));
     const options: Partial<NativeStackNavigationOptions> =
@@ -174,7 +174,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
         : { headerLeft: () => avatar };
     navigation.setOptions(options);
     // The choices by their value, as they're made again each render; `pick` changes with the filter.
-  }, [navigation, root, swiped, me.initial, me.tone, me.label, filter, choicesKey]);
+  }, [navigation, root, swiped, me.initial, me.tone, me.label, state.me, state.meAvatar, filter, choicesKey]);
 
   const empty =
     shown === undefined && unreachable(state.hub) ? (
@@ -284,15 +284,15 @@ const filterMenu = (choices: readonly FilterChoice[], filter: Filter, onPick: (f
 const DOT: Record<LinkTone, "success" | "warning" | "tertiary"> = { live: "success", busy: "warning", down: "tertiary" };
 
 /**
- * The person's avatar at the top left, as the account button of iOS 26's apps: their initial on a round color in the
- * bar's glass, and a dot at its foot for the link to the hub. It opens Settings.
+ * The person's avatar at the top left, as the account button of iOS 26's apps: their photo, else their initial on a
+ * neutral round, in the bar's glass, and a dot at its foot for the link to the hub. It opens Settings.
  */
-function MeButton({ initial, tone, label, onPress }: { initial: string; tone: LinkTone; label: string; onPress: () => void }) {
+function MeButton({ initial, tone, label, picture, onPress }: { initial: string; tone: LinkTone; label: string; picture: Pictured | undefined; onPress: () => void }) {
   const t = useTheme();
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} hitSlop={6} style={styles.me}>
       <View style={styles.meFace}>
-        <Avatar name={initial} size={ME} />
+        <Avatar person name={initial} size={ME} picture={picture} />
         <View style={[styles.meDot, { backgroundColor: t[DOT[tone]], borderColor: t.bg }]} />
       </View>
     </Pressable>

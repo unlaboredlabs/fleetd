@@ -1499,6 +1499,20 @@ output!(ProjectAvatarGetOutput {
     data_b64: String,
 });
 
+// person_avatar_set, person_avatar_get: a person's own picture, shown in place of their initials, kept as a project's
+// is (the crop, at most 512 px square, re-encoded as JPEG without the original's metadata). A person names it by
+// `avatar`; person_avatar_get answers as project_avatar_get does.
+input!(PersonAvatarSetInput {
+    /// The picture, uploaded with attachment_put (png, jpeg or webp). Absent removes the picture: the initials again.
+    attachment_id: Option<AttachmentId>,
+    /// The square of it to keep; absent: the largest square in its middle. Clamped to the picture.
+    crop: Option<AvatarCrop>,
+});
+output!(PersonAvatarSetOutput { person: Person });
+input!(PersonAvatarGetInput {
+    person_id: PersonId,
+});
+
 // project_icon_set: the built-in icon a project's or Navi's chat shows (a summary's `icon`). Picking one takes the
 // place of its picture, if it had one.
 input!(ProjectIconSetInput {
@@ -3753,6 +3767,9 @@ tools! {
     project_archive => ProjectArchive, Operate, NaviArchiveInput, NaviArchiveOutput;
     project_avatar_set => ProjectAvatarSet, Operate, ProjectAvatarSetInput, ProjectAvatarSetOutput;
     project_avatar_get => ProjectAvatarGet, Read, ProjectAvatarGetInput, ProjectAvatarGetOutput;
+    // Human keys only (the handler checks): a person sets their own.
+    person_avatar_set => PersonAvatarSet, Read, PersonAvatarSetInput, PersonAvatarSetOutput;
+    person_avatar_get => PersonAvatarGet, Read, PersonAvatarGetInput, ProjectAvatarGetOutput;
     project_icon_set => ProjectIconSet, Operate, ProjectIconSetInput, ProjectIconSetOutput;
     navi_sites => NaviSites, Read, NaviSitesInput, NaviSitesOutput;
     project_sites => ProjectSites, Read, NaviSitesInput, NaviSitesOutput;

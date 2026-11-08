@@ -30,4 +30,12 @@ describe("the cache", () => {
     expect(parseCached("nonsense", HUB)).toBeNull();
     expect(parseCached({ hub: HUB, chatStates: {}, latest: { k: "x" }, sends: {} }, HUB)?.latest).toEqual({});
   });
+
+  it("keeps who the person is, their picture and role too, so the avatar shows at once on the next launch", () => {
+    const s = { ...initial(hub), projects: {}, me: "p_1", meName: "Sam", meAvatar: "0123456789abcdef", meRole: "owner" as const };
+    const kept = parseCached(JSON.parse(JSON.stringify(cachedOf(HUB, s))) as unknown, HUB);
+    expect(kept).toMatchObject({ me: "p_1", meName: "Sam", meAvatar: "0123456789abcdef", meRole: "owner" });
+    if (kept === null) throw new Error("not read back");
+    expect(withCached(initial(hub), kept)).toMatchObject({ meAvatar: "0123456789abcdef", meRole: "owner" });
+  });
 });
