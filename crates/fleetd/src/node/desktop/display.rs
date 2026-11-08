@@ -220,7 +220,7 @@ impl Display {
         let auth = dir.join("xauth");
         write_private(&auth, &xauth(&cookie))
             .map_err(|e| format!("cannot write the X cookie: {e}"))?;
-        for home in ["home", "run"] {
+        for home in ["home", "run", "tmp"] {
             crate::node::config::mkdir_private(&dir.join(home))
                 .map_err(|e| format!("cannot make the display's {home}: {e}"))?;
         }
@@ -232,7 +232,9 @@ impl Display {
             let log = dir.join("xvfb.log");
             let out = File::create(&log).map_err(|e| e.to_string())?;
             let (w, h) = SIZE;
-            let mut child = Command::new(xvfb)
+            let mut xvfb_cmd = Command::new(xvfb);
+            crate::oom::agent(&mut xvfb_cmd);
+            let mut child = xvfb_cmd
                 .arg(format!(":{number}"))
                 .args(["-screen", "0", &format!("{w}x{h}x24")])
                 .args(["-nolisten", "tcp", "-nolisten", "local", "-noreset"])
@@ -380,6 +382,10 @@ impl Display {
         if let Some(path) = std::env::var_os("PATH") {
             env.push(("PATH".to_owned(), path.to_string_lossy().into_owned()));
         }
+        // Its apps' temp files (an AppImage unpacks 300 MB) go with the desktop's dir, on disk and gone when it ends,
+        // never to a /tmp that may be held in memory.
+        let tmp = self.dir.join("tmp").to_string_lossy().into_owned();
+        env.extend(["TMPDIR", "TMP", "TEMP"].map(|k| (k.to_owned(), tmp.clone())));
         env
     }
 
@@ -395,6 +401,7 @@ impl Display {
             .stdout(out.try_clone().map_err(|e| e.to_string())?)
             .stderr(out)
             .process_group(0);
+        crate::oom::agent(&mut cmd);
         let child = cmd.spawn().map_err(|e| format!("cannot start it: {e}"))?;
         let pid = child.id();
         lock(&self.apps).push(child);

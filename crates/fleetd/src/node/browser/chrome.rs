@@ -36,6 +36,11 @@ pub fn install_dir(home: &Path) -> PathBuf {
     home.join("browser").join("ms-playwright")
 }
 
+/// The temp dir of an install in progress, beside the install itself.
+pub fn install_tmp(home: &Path) -> PathBuf {
+    home.join("browser").join("install-tmp")
+}
+
 /// The newest `<prefix>-<revision>` directory under `root` that finished installing.
 fn newest(root: &Path, prefix: &str) -> Option<PathBuf> {
     let mut found: Vec<(u64, PathBuf)> = std::fs::read_dir(root)
@@ -81,18 +86,14 @@ pub fn find_ffmpeg(root: &Path) -> Option<PathBuf> {
 pub fn install(home: &Path) -> Result<(), String> {
     let root = install_dir(home);
     std::fs::create_dir_all(&root).map_err(|e| format!("cannot make {}: {e}", root.display()))?;
-    let out = std::process::Command::new("npx")
-        .args([
-            "--yes",
-            &format!("playwright@{PLAYWRIGHT_VERSION}"),
-            "install",
-            "chromium-headless-shell",
-            "ffmpeg",
-        ])
-        .env("PLAYWRIGHT_BROWSERS_PATH", &root)
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|e| format!("cannot run npx (Node.js) to install the browser: {e}"))?;
+    // Its downloads (a 120 MB zip) go to a temp dir of the install's own on disk, never a /tmp held in memory: a node
+    // started without TMPDIR left hundreds of them there on the devbox. One a killed install left is cleared first.
+    let tmp = install_tmp(home);
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).map_err(|e| format!("cannot make {}: {e}", tmp.display()))?;
+    let out = install_command(&root, &tmp).output();
+    let _ = std::fs::remove_dir_all(&tmp);
+    let out = out.map_err(|e| format!("cannot run npx (Node.js) to install the browser: {e}"))?;
     if !out.status.success() {
         let tail = String::from_utf8_lossy(&out.stderr);
         let tail: String = tail
@@ -106,6 +107,22 @@ pub fn install(home: &Path) -> Result<(), String> {
         return Err(format!("installing the browser failed: {tail}"));
     }
     Ok(())
+}
+
+/// Playwright's installer, its builds going to `root` and its downloads to `tmp`.
+fn install_command(root: &Path, tmp: &Path) -> std::process::Command {
+    let mut cmd = std::process::Command::new("npx");
+    cmd.args([
+        "--yes",
+        &format!("playwright@{PLAYWRIGHT_VERSION}"),
+        "install",
+        "chromium-headless-shell",
+        "ffmpeg",
+    ])
+    .env("PLAYWRIGHT_BROWSERS_PATH", root)
+    .envs(["TMPDIR", "TMP", "TEMP"].map(|k| (k, tmp)))
+    .stdin(Stdio::null());
+    cmd
 }
 
 /// How the node launches Chrome.
@@ -258,6 +275,7 @@ pub async fn launch(
         .stderr(Stdio::piped())
         .process_group(0)
         .kill_on_drop(true);
+    crate::oom::agent(cmd.as_std_mut());
     let mut child = match cmd.spawn() {
         Ok(child) => child,
         Err(e) => {
@@ -640,6 +658,24 @@ pub fn wipe_dir(dir: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    /// The installer's 120 MB downloads land beside the install on disk, never in a /tmp that may be memory, whatever
+    /// TMPDIR the node itself has.
+    #[test]
+    fn the_install_downloads_to_its_own_temp_dir_on_disk() {
+        let home = Path::new("/home/ada/.fleetd/node");
+        let cmd = install_command(&install_dir(home), &install_tmp(home));
+        let env: Vec<_> = cmd
+            .get_envs()
+            .filter_map(|(k, v)| Some((k.to_str()?, v?.to_str()?)))
+            .collect();
+        for key in ["TMPDIR", "TMP", "TEMP"] {
+            assert!(
+                env.contains(&(key, "/home/ada/.fleetd/node/browser/install-tmp")),
+                "{key} in {env:?}"
+            );
+        }
+    }
+
     use super::*;
 
     #[test]

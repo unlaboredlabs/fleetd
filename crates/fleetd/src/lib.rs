@@ -7,6 +7,7 @@ pub mod home;
 pub mod hub;
 pub mod link_deflate;
 pub mod node;
+pub mod oom;
 pub mod push_relay;
 pub mod stages;
 pub mod tiles;
