@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { Subprocess } from "bun";
 import { Cdp, type Transport } from "./cdp.ts";
 import { HEIGHT, WIDTH } from "./session.ts";
+import { agentScoreLine } from "../oom.ts";
 
 const LAUNCH_TIMEOUT = 20_000;
 const CLOSE_WAIT = 5_000;
@@ -130,7 +131,8 @@ export async function launch(chrome: string, profiles: string, sandboxed: boolea
   const profile = mkdtempSync(join(profiles, "profile-"));
   let child: Subprocess<"pipe", "pipe", "pipe">;
   try {
-    child = Bun.spawn(["/bin/sh", "-c", 'exec "$0" "$@" 3<&0 4>&1 </dev/null >/dev/null', chrome, ...args(chrome, profile, sandboxed)], {
+    // At the agent OOM score, so memory pressure takes the browser before the node (oom.ts).
+    child = Bun.spawn(["/bin/sh", "-c", `${agentScoreLine()}exec "$0" "$@" 3<&0 4>&1 </dev/null >/dev/null`, chrome, ...args(chrome, profile, sandboxed)], {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",

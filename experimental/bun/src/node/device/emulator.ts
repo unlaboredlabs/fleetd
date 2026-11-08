@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { Subprocess } from "bun";
 import { adb, AVD, kvm, type KvmCheck, quoted, type Sdk, sdkEnv } from "./sdk.ts";
 import { pushServer } from "./scrcpy.ts";
+import { agentSpawn } from "../oom.ts";
 
 /** A copy from the snapshot boots in about 8 s; this allows a loaded machine. */
 export const BOOT_TIMEOUT = 120_000;
@@ -111,7 +112,9 @@ export function spawnEmulator(sdk: Sdk, port: number, readOnly: boolean, kvmChec
   const how = "ok" in k ? k.ok : undefined;
   let child: Subprocess<"ignore", "pipe", "pipe">;
   try {
-    child = Bun.spawn(emulatorCommand(sdk, emulatorArgs(port, readOnly), how), {
+    // At the agent OOM score, so memory pressure takes the emulator before the node (oom.ts).
+    const [exe, ...rest] = emulatorCommand(sdk, emulatorArgs(port, readOnly), how);
+    child = Bun.spawn(agentSpawn(exe!, rest).flat(), {
       env: { ...process.env, ...sdkEnv(sdk) },
       stdin: "ignore",
       stdout: "pipe",
