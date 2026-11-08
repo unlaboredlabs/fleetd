@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { cachedOf, parseCached, withCached } from "./cache";
-import type { ChatSend } from "./desktop";
+import { cachedOf, parseCached, withCached, type Cached } from "./cache";
+import type { ChatSend, HumanRequest } from "./desktop";
 import { initial } from "./store";
 
 const HUB = "http://devbox:4790";
@@ -21,6 +21,13 @@ describe("the cache", () => {
   it("shows no lead working until the hub says so again", () => {
     const kept = cachedOf(HUB, { ...initial(hub), projects: {}, chatStates: { "m1/navi": { projectRef: REF, lastSeq: 3, leadWorking: true, needsYou: true } } });
     expect(withCached(initial(hub), kept).chatStates["m1/navi"]).toMatchObject({ leadWorking: false, needsYou: true, lastSeq: 3 });
+  });
+
+  it("keeps the open approvals, so their chats open with their counts and in their place", () => {
+    const open = { requestId: "Q1", projectRef: REF, kind: "approval", text: "Run it", state: "open", createdAt: "2026-10-28T10:00:00Z" } as unknown as HumanRequest;
+    const kept = JSON.parse(JSON.stringify(cachedOf(HUB, { ...initial(hub), projects: {}, requests: [open] }))) as unknown;
+    expect(withCached(initial(hub), parseCached(kept, HUB) as Cached).requests).toEqual([open]);
+    expect(parseCached({ hub: HUB, chatStates: {}, latest: {}, sends: {} }, HUB)?.requests).toBeUndefined();
   });
 
   it("reads back only this hub's, of the right shape", () => {

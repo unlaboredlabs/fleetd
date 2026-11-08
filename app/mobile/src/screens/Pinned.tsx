@@ -31,7 +31,8 @@ const pinOut = (_: ExitAnimationsValues) => {
   return { initialValues: { opacity: 1, transform: [{ scale: 1 }] }, animations: { opacity: to(0), transform: [{ scale: to(0.86) }] } };
 };
 
-export function PinnedGrid({ rows, onOpen, menu, label }: { rows: readonly ChatRow[]; onOpen: (row: ChatRow) => void; menu: (row: ChatRow) => readonly MenuItem[]; label: (row: ChatRow) => string }) {
+/** `arrived`: the pins that weren't there when the grid was last drawn, which grow in; the ones it opens with stand still. */
+export function PinnedGrid({ rows, arrived, onOpen, menu, label }: { rows: readonly ChatRow[]; arrived: ReadonlySet<string>; onOpen: (row: ChatRow) => void; menu: (row: ChatRow) => readonly MenuItem[]; label: (row: ChatRow) => string }) {
   const t = useTheme();
   const reduce = useReduceMotion();
   const { cell, avatar } = gridSize(useWindowDimensions().width);
@@ -43,7 +44,7 @@ export function PinnedGrid({ rows, onOpen, menu, label }: { rows: readonly ChatR
         // The bubble's slot: as wide as the cell, its foot 22 pt into the avatar.
         const slot = { bottom: avatar - 22, left: -(cell - avatar) / 2 + 6, right: -(cell - avatar) / 2 + 6 };
         return (
-          <Animated.View key={row.key} style={{ width: cell }} entering={pinIn(reduce)} exiting={pinOut} {...(reduce ? {} : { layout: rowMove })}>
+          <Animated.View key={row.key} style={{ width: cell }} {...(arrived.has(row.key) ? { entering: pinIn(reduce) } : {})} exiting={pinOut} {...(reduce ? {} : { layout: rowMove })}>
             <HoldMenu
               items={menu(row)}
               radius={CELL_RADIUS}
