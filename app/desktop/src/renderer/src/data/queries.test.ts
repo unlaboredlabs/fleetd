@@ -1,6 +1,6 @@
 import { QueryObserver } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDataLayer, type HubApi } from "./queries";
+import { ATTACHMENT_GC_MS, createDataLayer, type HubApi } from "./queries";
 import { card, event, live, snapshot } from "./fixtures.test-util";
 import type { HubFrame } from "../../../shared/hub";
 
@@ -141,6 +141,24 @@ describe("data layer", () => {
     expect(fake.calls).toEqual(["orders_board", "status_get", "status_get", "orders_board"]);
     boardStop();
     statusStop();
+  });
+
+  it("lets a file's bytes go soon after nothing shows them, while other answers stay", async () => {
+    vi.useFakeTimers();
+    const fake = fakeHub();
+    const layer = createDataLayer(fake.hub);
+    layer.start();
+    fake.send(live());
+    fake.send(snapshot(1));
+    const file = ["call", "attachment_get", { projectRef: { machineId: "devbox", projectId: "p1" }, attachmentId: "F1" }];
+    const status = ["call", "status_get", { projectRef: { machineId: "devbox", projectId: "p1" } }];
+    const shown = [new QueryObserver(layer.queryClient, { queryKey: file, queryFn: () => ({ dataB64: "AAAA" }) }), new QueryObserver(layer.queryClient, { queryKey: status, queryFn: () => ({ doc: {} }) })];
+    const stop = shown.map((o) => o.subscribe(() => undefined));
+    await vi.advanceTimersByTimeAsync(0);
+    for (const s of stop) s();
+    await vi.advanceTimersByTimeAsync(ATTACHMENT_GC_MS + 1);
+    expect(layer.queryClient.getQueryData(file)).toBeUndefined();
+    expect(layer.queryClient.getQueryData(status)).toBeDefined();
   });
 
   it("coalesces a burst of events into one refetch, and refetches nothing for a repeat", async () => {
