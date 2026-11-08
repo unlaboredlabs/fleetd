@@ -8,9 +8,15 @@
 // - `node.area("hb")`: `contribute(fn)`, each heartbeat's fields added to (`steps`, `load.hosts`, `busy.screens`);
 // - `node.area("items")`: `on(fn)`, each step a session stores as completed or failed (Rust's browser
 //   `SessionHooks::item`), for the screens' step lines;
+// - `node.area("caps")`: `contribute(fn)`, the capabilities an area adds to the hello (`browser`,
+//   `session_linux_desktop` once its health is ready, …), and `changed()` once they may differ: the node links again,
+//   so the hub reads them in a new hello, as the Rust node lists a kind from its next link;
+// - `node.area("sessions")`: `maskFor(thread)` (the masker for a session's secrets) and `sessionCwd(thread)` (the
+//   folder this node started it in), for the screens' sessions of an agent;
 // - `node.config`: node.json, its screens' sections typed by their areas.
 import type { NodeLoad } from "../shared/contracts.ts";
 import type { ThreadItem } from "./sessions/types.ts";
+import type { Masker } from "./mask.ts";
 import type { NodeConfig } from "./config.ts";
 import type { LeadRelay, LeadResultFrame } from "./lead/index.ts";
 import type { LinkContext } from "./link/index.ts";
@@ -118,7 +124,44 @@ export class ItemsArea {
   }
 }
 
-type Builtin = { link: LinkArea; local: LocalArea; hb: HbArea; items: ItemsArea };
+/** The capabilities the areas add to the hello. */
+export class CapsArea {
+  readonly #parts: (() => string[])[] = [];
+  readonly #changed: (() => void)[] = [];
+  contribute(fn: () => string[]): void {
+    this.#parts.push(fn);
+  }
+  /** Every contributed capability now, each once. */
+  list(): string[] {
+    const out: string[] = [];
+    for (const part of this.#parts) {
+      try {
+        for (const cap of part()) if (!out.includes(cap)) out.push(cap);
+      } catch (error) {
+        console.warn(`${new Date().toISOString()} WARN a capabilities part failed {"error":${JSON.stringify(String(error))}}`);
+      }
+    }
+    return out;
+  }
+  /** An area's capabilities may have changed: the node core sends a new hello when they did. */
+  changed(): void {
+    for (const fn of this.#changed) fn();
+  }
+  /** The node core's. */
+  onChanged(fn: () => void): void {
+    this.#changed.push(fn);
+  }
+}
+
+/** What the screens' sessions read of an agent's session on this node. */
+export type SessionsArea = {
+  /** The masker for the session's secrets (its project's and order's); throws why there is none. */
+  maskFor: (thread: string) => Masker;
+  /** The folder this node started the session in; undefined for a session it doesn't have. */
+  sessionCwd: (thread: string) => string | undefined;
+};
+
+type Builtin = { link: LinkArea; local: LocalArea; hb: HbArea; items: ItemsArea; caps: CapsArea; sessions: SessionsArea };
 
 export class Node {
   readonly #areas = new Map<string, unknown>();
@@ -131,6 +174,7 @@ export class Node {
     this.#areas.set("local", new LocalArea());
     this.#areas.set("hb", new HbArea());
     this.#areas.set("items", new ItemsArea());
+    this.#areas.set("caps", new CapsArea());
   }
 
   /** The node core's areas by name, or any other area's service, made on first use: `node.area("browser", make)`. */

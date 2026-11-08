@@ -43,7 +43,7 @@ export class LinkFatal extends Error {
   }
 }
 
-type LinkEnd = { kind: "lost"; why: string } | { kind: "fatal"; fatal: LinkFatal } | { kind: "woke" };
+type LinkEnd = { kind: "lost"; why: string } | { kind: "fatal"; fatal: LinkFatal } | { kind: "woke" } | { kind: "relink"; why: string };
 
 /** `<hub>/node/link` as a ws(s) URL. */
 export function linkUrl(hub: string): string {
@@ -84,6 +84,8 @@ export type LinkContext = {
   flush: () => Promise<void>;
   /** Aborted when this link ends: work the link started ends with it. */
   signal: AbortSignal;
+  /** Ends this link and dials again at once, for a new hello (its capabilities changed). */
+  relink: (why: string) => void;
 };
 
 export type LinkSettings = { hub: string; machineId: string; name: string; nodeVersion: string };
@@ -150,6 +152,10 @@ export async function runNode(options: RunNodeOptions): Promise<LinkFatal | unde
     if (end.kind === "fatal") return end.fatal;
     if (end.kind === "woke") {
       log("info", "the machine woke; linking to the hub again");
+      continue;
+    }
+    if (end.kind === "relink") {
+      log("info", "linking to the hub again", { why: end.why });
       continue;
     }
     if (options.signal?.aborted) break;
@@ -234,6 +240,7 @@ function runLinkOnce(options: RunNodeOptions, enrollToken: string | undefined, o
       send,
       flush: () => writes,
       signal: linkAbort.signal,
+      relink: (why) => void writes.then(() => finish({ kind: "relink", why })),
     });
 
     const connectTimer = after(CONNECT_TIMEOUT_MS, () =>
