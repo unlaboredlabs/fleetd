@@ -14,6 +14,9 @@ const SOURCE_MAX_PX: u32 = 12_000;
 const SOURCE_MAX_ALLOC: u64 = 512 * 1024 * 1024;
 /// A preview's JPEG quality: a bubble's photo or screenshot, its text still crisp.
 const QUALITY: u8 = 82;
+/// Pictures decoded for previews at once: each may take up to SOURCE_MAX_ALLOC, and a chat's bubbles all ask together,
+/// so the rest wait their turn rather than hold gigabytes on a small hub.
+pub static TURNS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
 
 /// The picture in `bytes` shrunk to at most `side` pixels a side, and its type; None when the file itself is the
 /// better answer.

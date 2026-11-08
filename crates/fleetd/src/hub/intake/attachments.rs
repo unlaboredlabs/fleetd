@@ -573,6 +573,15 @@ pub async fn get(
         }
         None => {
             let side = input.max_side.map(|s| s.get() as u32);
+            let _turn = match side {
+                Some(_) => Some(
+                    super::preview::TURNS
+                        .acquire()
+                        .await
+                        .map_err(|_| crate::hub::api::internal_error())?,
+                ),
+                None => None,
+            };
             let (bytes, shrunk) = tokio::task::spawn_blocking(move || {
                 let bytes = std::fs::read(path)?;
                 let shrunk = side.and_then(|side| super::preview::shrink(&bytes, mime, side));
