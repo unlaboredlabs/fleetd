@@ -37,10 +37,10 @@ export type InitOptions = {
 };
 
 /** The person pressed Esc or Ctrl-C at a prompt. */
-class Stopped extends Error {}
+export class Stopped extends Error {}
 
 /** Prompts, one at a time. Without a terminal (or with --yes) each answers its default. */
-class Ui {
+export class Ui {
   constructor(readonly interactive: boolean) {}
   async confirm(list: Checklist, prompt: string, fallback: boolean): Promise<boolean> {
     if (!this.interactive) return fallback;
@@ -66,6 +66,17 @@ class Ui {
         validate: (s) => check(s.trim()),
       });
       return answer.trim();
+    } catch {
+      throw new Stopped();
+    } finally {
+      list.prompted();
+    }
+  }
+  async multi<T>(list: Checklist, prompt: string, items: [T, string, string][], fallback: T[]): Promise<T[]> {
+    if (!this.interactive) return fallback;
+    list.stopSpinner();
+    try {
+      return await tty.multiselect(prompt, items.map(([value, label, hint]) => ({ value, label, hint })), fallback);
     } catch {
       throw new Stopped();
     } finally {
@@ -198,6 +209,8 @@ async function steps(opts: InitOptions, ui: Ui, list: Checklist): Promise<number
   list.setSections(6);
   list.sectionHeader("This machine");
   if (role === "ask") {
+    const handed = await (await import("./hub_wizard.ts")).offerApp(ui, list);
+    if (handed !== undefined) return handed;
     const hub = await ui.select(
       list,
       "What is this machine?",
@@ -212,7 +225,7 @@ async function steps(opts: InitOptions, ui: Ui, list: Checklist): Promise<number
       return joinHub(opts, ui, list);
     }
   }
-  throw new NotImplemented("src/cli/setup: fleetd init's hub setup (where it listens, its logins, workers, a first project, the app)");
+  return (await import("./hub_wizard.ts")).hubSteps(opts, ui, list);
 }
 
 type PastedJoin = { hub: string; code: string; machineId?: string; identity?: GitIdentity };
@@ -371,7 +384,7 @@ async function repairWorker(opts: InitOptions, ui: Ui, list: Checklist, joined: 
 }
 
 /** The tail of what a captured step printed, as its ✗ line with its own fix where it gave one. */
-function failedWithLog(list: Checklist, title: string, what: string, said: string[], fix: string) {
+export function failedWithLog(list: Checklist, title: string, what: string, said: string[], fix: string) {
   const last = [...said].reverse().find((l) => l.startsWith("fleetd: "));
   if (last === undefined) {
     list.failed(title, what, fix);
@@ -382,7 +395,7 @@ function failedWithLog(list: Checklist, title: string, what: string, said: strin
 }
 
 /** `machine add`'s notes (linger, an untested claude, …) as ! lines; the login note is the claude line's. */
-function notes(list: Checklist, said: string[]) {
+export function notes(list: Checklist, said: string[]) {
   for (const line of said) {
     if (!line.startsWith("note: ")) continue;
     const note = line.slice(6);
@@ -393,7 +406,7 @@ function notes(list: Checklist, said: string[]) {
 }
 
 /** A worker's line: done when its node runs as a service; with --no-service, left to the user with its command. */
-function nodeLine(list: Checklist, title: string, added: Added, done: string) {
+export function nodeLine(list: Checklist, title: string, added: Added, done: string) {
   if (added.runByHand === undefined) list.done(title, done);
   else {
     list.todo(
@@ -419,7 +432,7 @@ function workerEnd(list: Checklist, ok: string, enrolled: boolean): number {
 }
 
 /** The worker's claude login: done, or offered at a terminal, else failed with how to log in. */
-async function workerClaude(ui: Ui, list: Checklist, added: Added) {
+export async function workerClaude(ui: Ui, list: Checklist, added: Added) {
   const title = `claude on ${added.machineId}`;
   const login = loginCommand(added.claude, added.claudeConfigDir);
   const fix = added.target.local ? login : `ssh -t ${added.target.host} ${q(login)}`;
@@ -478,7 +491,7 @@ async function inviteStep(opts: InitOptions, ui: Ui, list: Checklist) {
 }
 
 /** One step, open: its guide, then Test until it passes or the person goes on. */
-async function walk(opts: InitOptions, ui: Ui, list: Checklist, client: import("../mcp_client.ts").McpClient, step: any): Promise<string> {
+export async function walk(opts: InitOptions, ui: Ui, list: Checklist, client: import("../mcp_client.ts").McpClient, step: any): Promise<string> {
   const steps = await import("./steps.ts");
   list.heading(`${step.title} · ${steps.needWords(step.need)}`);
   list.note(steps.guide(step));

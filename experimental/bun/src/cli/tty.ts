@@ -119,3 +119,21 @@ export function progressBar(total: number) {
     error: (text: string) => line(color(31, "■"), text),
   };
 }
+
+/** Several of `items`, as numbers separated by commas or spaces; Enter keeps the preselected ones. */
+export async function multiselect<T>(question: string, items: Item<T>[], initial: T[]): Promise<T[]> {
+  out(`${bar}\n${color(36, "◆")}  ${question}\n`);
+  items.forEach((item, i) =>
+    out(`${bar}  ${i + 1}. [${initial.includes(item.value) ? "x" : " "}] ${item.label}${item.hint ? color(90, `  ${item.hint}`) : ""}\n`),
+  );
+  for (;;) {
+    out(`${bar}  ${color(90, "numbers (Enter keeps the marked ones, - for none):")} `);
+    const answer = await readLine();
+    if (answer === undefined) throw new Cancelled();
+    const a = answer.trim();
+    if (a === "") return initial;
+    if (a === "-") return [];
+    const picked = a.split(/[\s,]+/).map(Number);
+    if (picked.every((n) => Number.isInteger(n) && items[n - 1] !== undefined)) return picked.map((n) => items[n - 1]!.value);
+  }
+}
