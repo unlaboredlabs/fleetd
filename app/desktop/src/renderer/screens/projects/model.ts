@@ -1,7 +1,7 @@
 // Projects as plain view data, shared with the phone: whose a project is (Only me), whether it is archived, the
 // sidebar's default order (Only-me projects first, so former Navis stay where they were), a name the hub would take,
-// where a new one could live, a delete's words, and the hub tools the project calls go by. Pure, so it is unit-tested.
-import type { MachineRolesEntry, ProjectSummary } from "../../../shared/contracts";
+// a delete's words, and the hub tools the project calls go by. Pure, so it is unit-tested.
+import type { ProjectSummary } from "../../../shared/contracts";
 
 /**
  * The hub's names for a project's own calls, in one place: the hub takes `navi_*` as aliases of `project_*` for one
@@ -52,16 +52,6 @@ export const nameProblem = (name: string): string | undefined => {
   if (/[\r\n]/u.test(name)) return "One line";
   return undefined;
 };
-
-/** The machines a new project could live on, as machine_roles lists them: linked now, and where the person may work. */
-export const projectHomes = (machines: ReadonlyArray<MachineRolesEntry>): MachineRolesEntry[] => machines.filter(canHost);
-
-/** A project can start there: its node is linked, and the person may work there. A hub that doesn't say leaves it open. */
-export const canHost = (m: Pick<MachineRolesEntry, "online" | "operates">): boolean => m.online && m.operates !== false;
-
-/** Where the choice starts: where the hub would put the project unasked (`best`), else the first machine that can host one. */
-export const firstHome = (homes: ReadonlyArray<MachineRolesEntry>, best: string | undefined): string | undefined =>
-  (homes.find((m) => m.machineId === best && canHost(m)) ?? homes.find(canHost))?.machineId;
 
 /**
  * A project's delete (D287), the same for every project and word for word on the desktop's dialog and the phone's

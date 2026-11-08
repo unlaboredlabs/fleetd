@@ -1,4 +1,4 @@
-// Settings → Projects → Agents' rules, kept pure: where a skill comes from in words, which ones the page can edit, the name a new
+// Settings → Projects → Agents' rules, kept pure: where a skill comes from in words, the name a new
 // one may have, its first SKILL.md, and the line an installed one shows.
 import type { SkillOrigin, SkillSummary } from "../../../shared/contracts";
 
@@ -8,9 +8,6 @@ export const ORIGIN_LABEL: Readonly<Record<SkillOrigin, string>> = {
   project: "This project",
   global: "Hub-wide",
 };
-
-/** Kept by the hub, so edited here; the repo's change in the repo. */
-export const editable = (origin: SkillOrigin): origin is "project" | "global" => origin === "project" || origin === "global";
 
 /** The Agent Skills spec's name: lowercase letters, digits and single hyphens, at most 64 characters. */
 export const isSkillName = (name: string): boolean => name.length <= 64 && /^[a-z0-9]+(-[a-z0-9]+)*$/u.test(name);

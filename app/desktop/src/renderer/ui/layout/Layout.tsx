@@ -1,7 +1,5 @@
-import { ChevronRight } from "lucide-react";
 import {
   createContext,
-  Fragment,
   useCallback,
   useContext,
   useLayoutEffect,
@@ -182,37 +180,6 @@ export function FrameTitle(props: { title?: string | undefined; detail?: ReactNo
       {props.children}
     </>,
     slot,
-  );
-}
-
-export interface Crumb {
-  label: string;
-  onClick?: () => void;
-}
-
-/** Where you are: each crumb truncates (tooltip has the full name), earlier crumbs give way first. */
-export function Breadcrumb({ items, className }: { items: ReadonlyArray<Crumb>; className?: string }) {
-  return (
-    <nav aria-label="Breadcrumb" className={cx(s.crumbs, className)}>
-      {items.map((c, i) => (
-        <Fragment key={`${String(i)}:${c.label}`}>
-          {i > 0 ? <ChevronRight size={12} className={s.crumbSep} aria-hidden /> : null}
-          <span className={s.crumb} {...(i === items.length - 1 ? { "aria-current": "page" as const } : {})}>
-            {c.onClick ? (
-              <button type="button" className={s.crumbLink} onClick={c.onClick}>
-                <Truncate expand="none" tone="inherit" strong={i === items.length - 1}>
-                  {c.label}
-                </Truncate>
-              </button>
-            ) : (
-              <Truncate tone="inherit" strong={i === items.length - 1}>
-                {c.label}
-              </Truncate>
-            )}
-          </span>
-        </Fragment>
-      ))}
-    </nav>
   );
 }
 

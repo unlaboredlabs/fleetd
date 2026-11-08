@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { MachineRolesEntry, ProjectSummary } from "../../../shared/contracts";
-import { canHost, deleteWords, firstHome, isYours, nameProblem, projectHomes, sidebarOrder } from "./model";
+import type { ProjectSummary } from "../../../shared/contracts";
+import { deleteWords, isYours, nameProblem, sidebarOrder } from "./model";
 
 const project = (title: string, extra: Partial<ProjectSummary> = {}): { project: ProjectSummary } => ({
   project: {
@@ -49,17 +49,6 @@ describe("a project's name", () => {
     expect(nameProblem("Ada")).toBeUndefined();
     expect(nameProblem("a".repeat(81))).toMatch(/80/u);
     expect(nameProblem("Ada\nLovelace")).toBe("One line");
-  });
-});
-
-describe("where a new project lives", () => {
-  const m = (machineId: string, extra: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({ machineId, name: machineId, online: true, roles: [], ...extra }) as MachineRolesEntry;
-  it("offers the linked machines you may work on, starting where the hub would put it", () => {
-    const homes = projectHomes([m("devbox"), m("laptop"), m("off", { online: false }), m("theirs", { operates: false })]);
-    expect(homes.map((h) => h.machineId)).toEqual(["devbox", "laptop"]);
-    expect(firstHome(homes, "laptop")).toBe("laptop");
-    expect(firstHome(homes, "off")).toBe("devbox");
-    expect(canHost(m("x", { online: false }))).toBe(false);
   });
 });
 
