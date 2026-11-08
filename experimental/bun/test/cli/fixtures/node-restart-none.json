@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "fleetd: no node service of this fleetd here. Fix: fleetd init --join sets one up\n"
+}

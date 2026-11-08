@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "fleetd push-relay: FLEETD_APNS_KEY_ID is not set\n"
+}

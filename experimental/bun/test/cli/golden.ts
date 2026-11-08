@@ -109,10 +109,14 @@ export function normalize(text: string, fleet: Fleet): string {
   return t
     // A QR encodes the run's own code: test/cli/qr.test.ts checks it against the Rust one.
     .replace(/(^[█▀▄ ]+$\n?)+/gm, "<QR>\n")
+    // A test's own server (a release feed) is on a port of its own each run.
+    .replace(/http:\/\/127\.0\.0\.1:\d+\//g, "http://127.0.0.1:PORT/")
     .replace(/fld_[a-z2-7]{52}/g, "fld_KEY")
     .replace(/fle_[a-z2-7]{52}/g, "fle_CODE")
     .replace(/fld_[a-z2-7]{6}/g, "fld_PFX")
     .replace(/key_[a-z2-7]{8}/g, "key_ID")
+    // The fleetd a machine gets is each side's own binary.
+    .replace(/\(stdin: the fleetd binary .+ \(\d+ bytes\)\)/g, "(stdin: the fleetd binary)")
     .replace(/^[0-9a-f]{12}  /gm, "CODEID  ")
     .replace(/\bp_[a-z2-7]{8}\b/g, "p_ID")
     .replace(/\binv_[a-z2-7]{8}\b/g, "inv_ID")

@@ -1,3 +1,5 @@
 cli:`fleetd doctor`
+cli:`fleetd machine add`
+cli:`fleetd machine remove`
 cli:`fleetd machine set`
 cli:`fleetd uninstall`

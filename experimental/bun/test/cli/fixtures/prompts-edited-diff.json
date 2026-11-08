@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+\n+Always answer in French.\n",
+  "stderr": ""
+}

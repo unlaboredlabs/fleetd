@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "fleetd: couldn't read the release: GET `http://127.0.0.1:PORT/gone/release.json`: 404 Not Found\n"
+}
