@@ -955,6 +955,51 @@ async fn a_navi_removed_without_its_answer_is_still_erased_once_the_hub_sees_it_
     assert!(!memory.exists());
 }
 
+/// The erase runs right after the node's `project.removed` lands, and keeps that event: the apps' sidebars, the merge
+/// train, approvals, automations and Status all wait on it, and missed it while the erase took it with the rest.
+/// Only the removal stays, without the project's name.
+#[tokio::test]
+async fn erasing_a_project_keeps_its_removal_for_whoever_waits_on_it() {
+    use crate::hub::store::NewEvent;
+    use fleetd_contracts::events::HubEventType;
+    let (hub, _home) = hub();
+    let r = ProjectRef {
+        machine_id: devbox(),
+        project_id: ProjectId::unchecked("p-secret-diary"),
+    };
+    let event = |r#type, summary: &str| NewEvent {
+        at: AT.into(),
+        r#type,
+        machine_id: Some(r.machine_id.clone()),
+        project_id: Some(r.project_id.clone()),
+        thread_id: None,
+        summary: summary.into(),
+        data: Some(json!({ "title": "Secret diary" })),
+        attention: None,
+    };
+    let from = hub.events.head();
+    hub.events
+        .append(event(HubEventType::ProjectSettings, "Secret diary renamed"))
+        .unwrap();
+    hub.events
+        .append(event(
+            HubEventType::ProjectRemoved,
+            "Project \"Secret diary\" on devbox was removed",
+        ))
+        .unwrap();
+
+    crate::hub::navi::erase::erase(&hub, &r).unwrap();
+
+    let left = hub.events.page(from, None, None).unwrap().events;
+    assert_eq!(
+        left.iter().map(|e| e.r#type).collect::<Vec<_>>(),
+        vec![HubEventType::ProjectRemoved]
+    );
+    let removed = serde_json::to_string(&left[0]).unwrap();
+    assert!(removed.contains("p-secret-diary"), "{removed}");
+    assert!(!removed.contains("Secret diary"), "{removed}");
+}
+
 /// D310: approvals, sites, purchases, sign-ins and asks work on a shared project too, by their project_* names and
 /// their navi_* ones, as on an Only me one; nothing answers "not an Only me project".
 #[tokio::test]
