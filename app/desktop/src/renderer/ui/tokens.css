@@ -2,9 +2,10 @@
  * fleetd design tokens.
  *
  * Principles, in order: work is quiet and decisions are loud; hierarchy comes from weight, grey and space, not
- * from cards, borders or size jumps; mono is only for machine text; one accent, used for focus, links, unread and
- * the primary button, nowhere else. Every colour below passes AA for text on every surface it sits on, except
- * --faint, which is never for text anyone has to read (placeholders, disabled items, dots).
+ * from cards, borders or size jumps; mono is only for machine text; one accent, a neutral one (near-black in light,
+ * near-white in dark), used for focus, selection, unread and the primary button, nowhere else; links and a switch
+ * that's on keep their blue. Every colour below passes AA for text on every surface it sits on, except --faint, which
+ * is never for text anyone has to read (placeholders, disabled items, dots).
  *
  * The theme is chosen by data-theme on <html> (see theme.ts), which follows the system unless overridden.
  */
@@ -21,7 +22,7 @@
   --hairline: #e6e6e2;
   --border: #cfcfca;
   /* The lead's chat bubbles: a grey step under --hover's, so a bubble reads as one without a border. Yours are
-     --accent-fill. */
+     --accent-deep. */
   --bubble: #ececea;
   /* The only edge of a control that has no label inside it (field, checkbox, radio, switch off): 3:1 or more
      on every surface (WCAG 1.4.11). --border stays for buttons and panels, whose label or content marks them. */
@@ -29,9 +30,16 @@
   --text: #1c1c1a;
   --quiet: #63635d;
   --faint: #96968f;
-  --accent: #2360c4;
-  --accent-fill: #2360c4;
+  --accent: #1d1d1f;
+  --accent-fill: #1d1d1f;
   --on-accent: #ffffff;
+  /* The accent as a large fill under white: your chat bubbles. The same near-black here; a quiet grey in dark, where
+     a near-white bubble would glare. */
+  --accent-deep: #1d1d1f;
+  --on-accent-deep: #ffffff;
+  --link: #2360c4;
+  /* A switch that's on keeps the blue it had before the accent went neutral, under its white thumb. */
+  --switch-on: #2360c4;
   --success: #287142;
   --warning: #8c5a00;
   --danger: #b63531;
@@ -64,7 +72,7 @@
   --shiki-token-function: #6a4fc0;
   --shiki-token-parameter: #8a4b14;
   --shiki-token-punctuation: #63635d;
-  --shiki-token-link: var(--accent);
+  --shiki-token-link: var(--link);
   --shiki-token-inserted: var(--success);
   --shiki-token-deleted: var(--danger);
   --shiki-token-changed: var(--warning);
@@ -84,9 +92,13 @@
   --text: #ededea;
   --quiet: #ababa5;
   --faint: #74746e;
-  --accent: #79abf5;
-  --accent-fill: #2e69cc;
-  --on-accent: #ffffff;
+  --accent: #f5f5f7;
+  --accent-fill: #f5f5f7;
+  --on-accent: #1d1d1f;
+  --accent-deep: #4c4c49;
+  --on-accent-deep: #ffffff;
+  --link: #79abf5;
+  --switch-on: #2e69cc;
   --success: #6cc28a;
   --warning: #e3aa4a;
   --danger: #f38c88;

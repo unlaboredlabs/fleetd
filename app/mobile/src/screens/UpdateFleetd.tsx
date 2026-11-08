@@ -58,8 +58,7 @@ export function UpdateFleetd() {
   return (
     <ListSection header="Update" {...(section.offer === null ? {} : { footer: UPDATE_NOTE })}>
       {told === null || section.progress !== null ? null : <ToldRow {...told} />}
-      {/* TODO(T2570): t.accentDeep once the neutral accent lands: a white glyph vanishes on dark mode's near-white accentFill. */}
-      {section.offer === null ? null : <ListRow icon="update" tint={t.accentFill} title={section.offer.title} detail={section.offer.detail} onPress={confirm} />}
+      {section.offer === null ? null : <ListRow icon="update" tint={t.accentDeep} title={section.offer.title} detail={section.offer.detail} onPress={confirm} />}
       {section.progress === null ? null : (
         <View style={styles.progress} accessibilityLiveRegion="polite">
           {section.going ? (

@@ -220,6 +220,7 @@ export function Pair({ route, onPaired }: NativeStackScreenProps<PairParams, "Pa
           <View style={styles.fieldRow}>
             <TextInput
               style={[field, styles.input]}
+              selectionColor={t.accent}
               value={hub}
               onChangeText={setHub}
               placeholder="http://devbox:4790"
@@ -242,6 +243,7 @@ export function Pair({ route, onPaired }: NativeStackScreenProps<PairParams, "Pa
             <TextInput
               ref={codeField}
               style={[field, styles.input, styles.code, styles.grow]}
+              selectionColor={t.accent}
               value={code}
               onChangeText={setCode}
               placeholder="ABCD-2345"

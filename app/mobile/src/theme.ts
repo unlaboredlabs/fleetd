@@ -1,8 +1,9 @@
 // The app's look, as iOS draws it: Apple's system colors for light and dark (the scheme follows the phone's), its type
-// scale for the system font (SF on iOS), and one accent, the desktop app's calmer blue rather than system blue (its
-// --accent and --accent-fill in app/desktop/src/renderer/ui/tokens.css). Text scales with Dynamic Type, as React
-// Native's Text does by default. With Increase Contrast on (iOS), each scheme takes its stronger variant: darker greys
-// and separators, and Apple's accessible system colors, as its own apps do.
+// scale for the system font (SF on iOS), and one accent, a neutral one: near-black in light and near-white in dark (the
+// desktop app's --accent and --accent-fill in app/desktop/src/renderer/ui/tokens.css). Only links are blue, the desktop
+// app's calmer blue rather than system blue (its --link). Text scales with Dynamic Type, as React Native's Text does by
+// default. With Increase Contrast on (iOS), each scheme takes its stronger variant: darker greys and separators, and
+// Apple's accessible system colors, as its own apps do.
 import { DarkTheme, DefaultTheme, type Theme as NavigationTheme } from "@react-navigation/native";
 import { useSyncExternalStore } from "react";
 import { AccessibilityInfo, Platform, useColorScheme, type TextStyle } from "react-native";
@@ -22,14 +23,20 @@ export interface Palette {
   /** systemFill and tertiarySystemFill: a search field, a skeleton, a quiet button. */
   readonly fill: string;
   readonly fillQuiet: string;
-  /** The accent as text and icons: links, unread, the header's buttons. */
+  /** The accent as text and icons: unread, the header's buttons, a check mark. */
   readonly accent: string;
-  /** The accent as a fill under onAccent: a sent bubble, the selected chip, a filled button, a badge. Dark mode's
-   * accent is too light for white on it, so this is a deeper blue there; light mode's is the accent itself. */
+  /** The accent as a fill under onAccent: the selected chip, a filled button, a badge, the send button. */
   readonly accentFill: string;
   /** The accent at a tenth: an ask's options, a selected row. */
   readonly accentSoft: string;
+  /** Text and icons on accentFill: white in light, near-black in dark, where the fill is near-white. */
   readonly onAccent: string;
+  /** The accent as a large fill under white: the person's own bubble, an icon tile. Near-black in light; in dark a
+   * quiet grey, as a near-white bubble would glare at night. */
+  readonly accentDeep: string;
+  readonly onAccentDeep: string;
+  /** A link's blue, the one blue left. */
+  readonly link: string;
   /** iMessage's grey bubble. */
   readonly bubble: string;
   /** A card on a plain ground: an approval or a pull request in a chat. */
@@ -67,10 +74,13 @@ const light: Palette = {
   separator: "rgba(60,60,67,0.29)",
   fill: "rgba(120,120,128,0.2)",
   fillQuiet: "rgba(118,118,128,0.12)",
-  accent: "#2360C4",
-  accentFill: "#2360C4",
-  accentSoft: "rgba(35,96,196,0.1)",
+  accent: "#1D1D1F",
+  accentFill: "#1D1D1F",
+  accentSoft: "rgba(29,29,31,0.07)",
   onAccent: "#FFFFFF",
+  accentDeep: "#1D1D1F",
+  onAccentDeep: "#FFFFFF",
+  link: "#2360C4",
   bubble: "#E9E9EB",
   surface: "#F2F2F7",
   danger: "#FF3B30",
@@ -99,10 +109,13 @@ const dark: Palette = {
   separator: "rgba(84,84,88,0.6)",
   fill: "rgba(120,120,128,0.36)",
   fillQuiet: "rgba(118,118,128,0.24)",
-  accent: "#79ABF5",
-  accentFill: "#2E69CC",
-  accentSoft: "rgba(121,171,245,0.18)",
-  onAccent: "#FFFFFF",
+  accent: "#F5F5F7",
+  accentFill: "#F5F5F7",
+  accentSoft: "rgba(245,245,247,0.12)",
+  onAccent: "#1D1D1F",
+  accentDeep: "#464648",
+  onAccentDeep: "#FFFFFF",
+  link: "#79ABF5",
   bubble: "#262628",
   surface: "#1C1C1E",
   danger: "#FF453A",
@@ -128,9 +141,11 @@ const lightContrast: Palette = {
   separator: "rgba(60,60,67,0.55)",
   fill: "rgba(120,120,128,0.3)",
   fillQuiet: "rgba(118,118,128,0.2)",
-  accent: "#1A4A9E",
-  accentFill: "#1A4A9E",
-  accentSoft: "rgba(26,74,158,0.14)",
+  accent: "#000000",
+  accentFill: "#000000",
+  accentSoft: "rgba(0,0,0,0.12)",
+  accentDeep: "#000000",
+  link: "#1A4A9E",
   bubble: "#DCDCE0",
   surface: "#EBEBF0",
   danger: "#D70015",
@@ -148,9 +163,11 @@ const darkContrast: Palette = {
   separator: "rgba(110,110,115,0.9)",
   fill: "rgba(120,120,128,0.5)",
   fillQuiet: "rgba(118,118,128,0.36)",
-  accent: "#A3C6FA",
-  accentFill: "#245BB8",
-  accentSoft: "rgba(163,198,250,0.22)",
+  accent: "#FFFFFF",
+  accentFill: "#FFFFFF",
+  accentSoft: "rgba(255,255,255,0.18)",
+  accentDeep: "#545456",
+  link: "#A3C6FA",
   bubble: "#3A3A3C",
   surface: "#2C2C2E",
   danger: "#FF6961",

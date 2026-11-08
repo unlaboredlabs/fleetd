@@ -58,10 +58,16 @@ describe("the accent", () => {
       expect(t.accentSoft).toMatch(new RegExp(`^rgba\\(${String(r)},${String(g)},${String(b)},0\\.\\d+\\)$`));
     });
 
-    it(`keeps white on a sent bubble at WCAG AA in ${s} mode`, () => {
+    it(`keeps words on a filled button and a sent bubble at WCAG AA in ${s} mode`, () => {
       scheme = s;
       const t = useTheme();
       expect(contrast(t.onAccent, t.accentFill)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(t.onAccentDeep, t.accentDeep)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it(`keeps links the desktop app's blue in ${s} mode`, () => {
+      scheme = s;
+      expect(useTheme().link).toBe(desktop(s, "link"));
     });
   }
 

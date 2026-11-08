@@ -135,8 +135,8 @@ export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine, tai
   const [got, setGot] = useState<"reading" | HubError | undefined>(undefined);
   const failed = typeof got === "object" ? got : undefined;
   const screen = useWindowDimensions();
-  const ink = mine ? t.onAccent : t.label;
-  const fill = mine ? t.accentFill : t.bubble;
+  const ink = mine ? t.onAccentDeep : t.label;
+  const fill = mine ? t.accentDeep : t.bubble;
   const glyph = GLYPHS[glyphOf(mime)];
   const meta = failed !== undefined ? `Couldn't be read: ${failed.message} Tap to try again.` : bytes > 0 ? `${kindOf(mime)} · ${fileSize(bytes)}` : kindOf(mime);
   return (

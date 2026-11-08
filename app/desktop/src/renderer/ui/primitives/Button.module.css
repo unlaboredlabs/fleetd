@@ -90,13 +90,13 @@
   background: color-mix(in srgb, var(--danger) 88%, black);
 }
 
-/* An action inside a line of text ("… asked at 09:02 Show"): the accent's words, at the line's own size. */
+/* An action inside a line of text ("… asked at 09:02 Show"): a link's blue words, at the line's own size. */
 .link {
   height: auto;
   padding: 0;
   font-size: inherit;
   line-height: inherit;
-  color: var(--accent);
+  color: var(--link);
 }
 .link:hover:not(:disabled) {
   text-decoration: underline;
