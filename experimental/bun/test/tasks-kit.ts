@@ -72,6 +72,12 @@ export class FakePorts implements TaskPorts {
     if (error) throw error;
     this.sends.push({ thread, message, id });
   };
+  /** The brief sends, which also land in `sends`. */
+  briefs: string[] = [];
+  sendBrief = async (thread: ThreadRef, message: string, id: string) => {
+    this.briefs.push(message);
+    await this.send(thread, message, id);
+  };
   sendSteer = (thread: ThreadRef, message: string, id: string) => this.send(thread, message, id);
   recreatedFrom = () => undefined;
   startedRun = (thread: ThreadRef) => this.runs.get(thread.threadId);

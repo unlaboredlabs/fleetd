@@ -1902,6 +1902,9 @@ export class Tasks {
         case "running": {
           this.asking.delete(taskId);
           const thread = task.threadRef as ThreadRef;
+          // A busy node may take a while to take it (the executor's `callPatient`): other tasks' calls go on.
+          handedOver = true;
+          release();
           try {
             await this.ports.send(thread, text, requestId(task, ["msg", crypto.randomUUID()]));
           } catch (error) {
@@ -2139,15 +2142,18 @@ export class Tasks {
   async githubReach(machine: MachineId, reached: boolean): Promise<void> {
     const [text, part] = reached ? [GITHUB_BACK, "github-back"] : [GITHUB_DOWN, "github-down"];
     const at = String(this.now());
-    for (const task of TaskRecords.runningOn(this.db, machine)) {
-      const thread = task.threadRef;
-      if (!thread || thread.machineId !== machine) continue;
-      try {
-        await this.ports.send(thread, text, requestId(task, [part, at]));
-      } catch (error) {
-        console.warn(`the GitHub notice not delivered (${task.taskId}):`, error);
-      }
-    }
+    // All at once, each waiting at most 15 s: a notice is best-effort, and the landing pass awaits them.
+    await Promise.all(
+      TaskRecords.runningOn(this.db, machine).map(async (task) => {
+        const thread = task.threadRef;
+        if (!thread || thread.machineId !== machine) return;
+        try {
+          await this.ports.sendBrief(thread, text, requestId(task, [part, at]));
+        } catch (error) {
+          console.warn(`the GitHub notice not delivered (${task.taskId}):`, error);
+        }
+      }),
+    );
   }
 
   /** A task waiting for a slot, as its spawn answers. */
@@ -2256,7 +2262,8 @@ export class Tasks {
         const set = prompts(this.hub.db).forThread(thread.machineId, thread.threadId);
         const pause = set.render("task.pause", { maxAgents });
         try {
-          await this.ports.send(thread, pause, requestId(task, ["pause", String(task.attempt)]));
+          // Under the tasks lock: a busy node holds it up 15 s at most, not two minutes.
+          await this.ports.sendBrief(thread, pause, requestId(task, ["pause", String(task.attempt)]));
         } catch (error) {
           console.warn(`pause not delivered; the agent keeps running (${holder}):`, error);
           continue;

@@ -66,7 +66,7 @@ export async function leadCall(hub: Hub, t: Tasks, caller: LeadCaller, call: Lea
     case "wait_ci":
       if (agent.kind !== "task") return refusedFor(agent, "wait_ci");
       try {
-        return waitCi(t, hub.db.conn, hub.clock.now(), agent.taskId, String(c.url));
+        return waitCi(t, hub.db.conn, hub.clock.now(), agent.taskId, String(c.url), c.merged === true);
       } catch (error) {
         throw internal(error);
       }
