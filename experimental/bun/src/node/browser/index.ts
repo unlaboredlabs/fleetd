@@ -16,6 +16,7 @@ import { ToolError } from "../../shared/errors.ts";
 import type { BrowserControlFrame, BrowserInputFrame, BrowserWatchFrame, SessionEndFrame } from "../../shared/screens_wire.ts";
 import { type Browser, findChrome, installDir, launch } from "./chrome.ts";
 import { CAP_BROWSER, CAP_SESSION_END, CAP_SESSION_HOST, CAP_SESSION_SEAL } from "../../shared/screens_wire.ts";
+import { env as agentBrowserEnv, pluginDirs as agentBrowserPlugins, writePolicy } from "./agent_browser.ts";
 import { Proxy } from "./proxy.ts";
 import { files as recordedFiles, findFfmpeg, GIVE_UP_MS, giveUp, readMeta, recordingsDir, Scrub, Steps, upload, VideoSink, writeMeta } from "./record.ts";
 import { HEIGHT, Session, WIDTH } from "./session.ts";
@@ -100,6 +101,8 @@ export class Broker {
           "do without it and say so in your result; a person can check this machine's browser screens in Settings › Hub › Machines",
         );
       }
+      // The agent's agent-browser may connect to no other browser (agent_browser.rs `write_policy`).
+      writePolicy(this.node.home, thread, false);
       const session = new Session(newId(), thread, browser.cdp);
       session.onControl = () => void this.report(session, "live");
       const dir = join(recordingsDir(this.node.home), session.id);
@@ -338,6 +341,14 @@ export function start(node: Node, given?: Broker): Broker {
   // no browser (mac_tool lists its own).
   if ((node.config as { agentsMac?: boolean }).agentsMac !== true) {
     node.area("caps").contribute(() => [CAP_BROWSER, CAP_SESSION_HOST, CAP_SESSION_SEAL, CAP_SESSION_END]);
+  }
+  // An agent's claude drives its browser through agent-browser, at this node's proxy (Rust's `SessionHooks::env`
+  // and `plugin_dirs`), through the node core's launch area.
+  if ((node.config as { agentsMac?: boolean }).agentsMac !== true) {
+    node.area("launch").contribute({
+      env: (thread, path) => agentBrowserEnv(node.home, thread, b.proxy.url(thread), path),
+      pluginDirs: () => agentBrowserPlugins(node.home),
+    });
   }
   node.area("hb").contribute((hb) => {
     hb.steps.push(...b.steps());
