@@ -27,13 +27,13 @@ test("only an owner or admin changes profiles; create, rename, default, lead, de
   const own = owner(k);
   const r = { machineId: "devbox", projectId: "app" };
   project(k.hub, r);
-  expect(await k.refused(key("admin"), "profile_create", { name: "quick", model: "claude-haiku-5-5", effort: "low" })).toBe("forbidden");
-  expect(await k.refused(own, "profile_create", { name: "x", model: "gpt-9", effort: "low" })).toBe("invalid");
-  expect(await k.refused(own, "profile_create", { name: "x", model: "claude-haiku-5-5", effort: "low", fast: true })).toBe("invalid");
-  const made = await k.ok(own, "profile_create", { name: "quick", model: "claude-haiku-5-5", effort: "low", lead: true });
+  expect(await k.refused(key("admin"), "profile_create", { name: "quick", note: "", model: "claude-haiku-5-5", effort: "low" })).toBe("forbidden");
+  expect(await k.refused(own, "profile_create", { name: "x", note: "", model: "gpt-9", effort: "low" })).toBe("invalid");
+  expect(await k.refused(own, "profile_create", { name: "x", note: "", model: "claude-haiku-5-5", effort: "low", fast: true })).toBe("invalid");
+  const made = await k.ok(own, "profile_create", { name: "quick", note: "", model: "claude-haiku-5-5", effort: "low", lead: true });
   expect(made.profile).toMatchObject({ name: "quick", model: "claude-haiku-5-5", effort: "low", lead: true, default: false });
   expect(made.next).toContain("Leads start on quick (claude-haiku-5-5 at low) from each lead's next start.");
-  expect(await k.refused(own, "profile_create", { name: "quick", model: "claude-haiku-5-5", effort: "low" })).toBe("invalid");
+  expect(await k.refused(own, "profile_create", { name: "quick", note: "", model: "claude-haiku-5-5", effort: "low" })).toBe("invalid");
   // A rename carries the tasks not yet ended.
   k.hub.db.conn.run(
     `INSERT INTO tasks (machine_id, project_id, workstream_id, state, data) VALUES ('devbox', 'app', 'W1', 'running', '{"profile":"quick"}')`,
