@@ -329,8 +329,12 @@ test("an android session: lent a warm copy, recorded, watched, taken over and ha
   expect(capabilities(t.node.home, {}, kvm)).toEqual(["session_android"]);
   expect(health(t.node.home, { enabled: false }, kvm)).toBeUndefined();
   await until(() => devices.warm() === 1);
-  // Not in the hello yet: an agent's claude doesn't get agent-device's env from the node core yet (index.ts's TODO).
-  expect(t.node.area("caps").list()).not.toContain("session_android");
+  expect(t.node.area("caps").list()).toContain("session_android");
+  // An agent's claude launches with agent-device's wrapper first on its PATH, pointed at its own home and control file.
+  const launched = new Map(t.node.area("launch").env("t1", "/usr/bin"));
+  expect(launched.get("PATH")).toBe(`${t.node.home}/device/agent-device/bin:/usr/bin`);
+  expect(launched.get("AGENT_DEVICE_HOME")).toBe(sessionDir(t.node.home, "t1"));
+  expect(launched.get("FLEETD_DEVICE_CONTROL")).toBe(controlPath(t.node.home, "t1"));
 
   const r = router(t.node);
   const started = await r.handle("t1", { id: "1", cwd: "/w", call: { op: "session_start", purpose: "Settings", kind: "android" } });
