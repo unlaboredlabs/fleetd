@@ -18,13 +18,15 @@ export interface MarkdownProps {
    * small chip, never its JSON. Off for words a person wrote, where it is code like any other.
    */
   blocks?: boolean;
+  /** A chat's words: each line break inside a paragraph shows, as written. Off, markdown's own rule (a space). */
+  breaks?: boolean;
 }
 
 /**
  * Rendered markdown (GFM: tables, task lists, strikethrough, autolinks). Raw HTML is dropped, never rendered.
  * Memoized on its props, so a message parses once and re-renders of the list around it cost nothing.
  */
-export const Markdown = memo(function Markdown({ source, className, rawToggle, initialRaw = false, blocks = true }: MarkdownProps) {
+export const Markdown = memo(function Markdown({ source, className, rawToggle, initialRaw = false, blocks = true, breaks = false }: MarkdownProps) {
   const [raw, setRaw] = useState(initialRaw);
   const body =
     raw && rawToggle ? (
@@ -35,7 +37,7 @@ export const Markdown = memo(function Markdown({ source, className, rawToggle, i
       <div className={cx(s.root, !rawToggle && className)} data-text="wrap">
         {/* aria-busy until the parser has loaded, which the QA gate waits out. */}
         <Suspense fallback={<div aria-busy="true" />}>
-          <MarkdownBody source={source} blocks={blocks} />
+          <MarkdownBody source={source} blocks={blocks} breaks={breaks} />
         </Suspense>
       </div>
     );
