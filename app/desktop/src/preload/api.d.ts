@@ -6,6 +6,7 @@ import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
 import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, TelegramRequest, CloudKeyRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
+import type { MacMenuBarRead } from "../shared/macMenuBar";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
 
@@ -188,6 +189,16 @@ export interface FleetdApi {
     cancel(): Promise<void>;
     /** Starts the hub's own Update with this app's key for it, when that is an admin's. Never rejects. */
     updateHub(hub: string): Promise<MacHubUpdateOutcome>;
+  };
+  /** The agents' Mac's menu bar popover (src/main/menuBar.ts). */
+  readonly menuBar: {
+    /** What the popover shows of this Mac; null until it is joined as the agents' Mac. */
+    read(): Promise<MacMenuBarRead | null>;
+    /** The page's height as laid out: the popover takes it. */
+    fit(height: number): Promise<void>;
+    hide(): Promise<void>;
+    /** The icon's menu: Open fleetd, Open at Login, Quit. */
+    menu(): Promise<void>;
   };
   readonly projects: {
     /** A native folder picker; null when cancelled. */

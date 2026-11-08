@@ -474,6 +474,7 @@ async fn run_node(
                 key,
                 util::home_dir().join("work"),
                 mac_simulators.map(|s| mac_tool::host::Sims::new(home.to_path_buf(), s)),
+                home.to_path_buf(),
             )
         }),
         false => None,

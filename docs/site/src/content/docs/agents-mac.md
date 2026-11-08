@@ -335,6 +335,22 @@ with no check still in progress (its tools installing), and lists one still in p
 A node from before the Mac could join from any account may still report `mac_standard_user`, `mac_other_homes`,
 `mac_no_apple_id` and `mac_no_secure_token`; the setup step no longer counts them.
 
+## In the Mac's menu bar {#menu-bar}
+
+Once the Mac is joined, the fleetd app on it keeps an icon in the menu bar for as long as it runs, and opens at login
+(right-click the icon to turn **Open at Login** off, open the app or quit). Its popover has three parts:
+
+- **Now**: who has the Mac's screen, with **Take over** (the screen opens in its own window with you in control) and
+  **Hand back**; each simulator an agent holds and each build or command an agent runs, with its agent, its project
+  and how long. The node writes these to `~/.fleetd/node/mac-activity.json` as they change; who has the screen, and
+  the agents' and projects' names, come from the hub, so they show once the app is signed in to it on the Mac.
+- **Health**: the node, the two permissions, Xcode, CocoaPods and the disk, a word each. One that isn't green says
+  what the node found and its fix: **Restart the node**, **Allow in System Settings**, **Open the App Store**, or the
+  exact command with Copy and where to run it. The disk warns under 30 GB free and fails under 10 GB. Any other
+  [check](#checks) shows only while it isn't green.
+- **Update**, only while the Mac's fleetd is older than the hub's: an admin signed in on the Mac presses it (the hub's
+  own Update, which brings every machine level with the hub); anyone else is told where.
+
 ## After a restart {#restart}
 
 The node runs inside its account's login session, so it starts only once that account logs in. With FileVault on,

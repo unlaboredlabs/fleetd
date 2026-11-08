@@ -350,6 +350,71 @@ async fn kill_ends_a_background_job_and_its_children() {
     );
 }
 
+#[tokio::test]
+async fn the_activity_file_lists_running_jobs_with_their_project_masked_and_drops_them_once_they_end()
+ {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, _) = mac(dir.path());
+    let agent = host.agent(&caller("s1")).unwrap();
+    let run = Step::Run {
+        args: vec!["sleep 30 # NPM_TOKEN=s3cret".into()],
+        env: vec![MacEnv {
+            name: "NPM_TOKEN".into(),
+            value: "s3cret".into(),
+        }],
+        background: true,
+    };
+    let Done::Run { job } = host.step(&agent, run).await.unwrap() else {
+        panic!()
+    };
+    let now = host.activity();
+    assert!(now.simulators.is_empty());
+    let [running] = now.jobs.as_slice() else {
+        panic!("{now:?}")
+    };
+    assert_eq!(
+        (
+            running.agent.as_str(),
+            running.project_id.as_str(),
+            running.job
+        ),
+        ("T1", "app", job)
+    );
+    assert!(!running.command.contains("s3cret"), "{}", running.command);
+
+    // Written whole, in the names the app reads (app/desktop/src/main/menuBar.ts), and only when it changed.
+    let home = dir.path().join("node");
+    let mut last = None;
+    activity::write(&home, &now, &mut last);
+    let file = activity::file(&home);
+    let json: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(json["jobs"][0]["projectId"], "app");
+    assert!(json["jobs"][0]["startedMs"].is_i64());
+    assert_eq!(json["simulators"], serde_json::json!([]));
+    std::fs::remove_file(&file).unwrap();
+    activity::write(&home, &now, &mut last);
+    assert!(!file.exists(), "unchanged, so not written again");
+
+    host.step(&agent, Step::Kill { job }).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(20), follow(&host, &agent, job))
+        .await
+        .unwrap();
+    assert!(host.activity().jobs.is_empty());
+    activity::write(&home, &host.activity(), &mut last);
+    let json: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(json["jobs"], serde_json::json!([]));
+}
+
+#[test]
+fn a_long_command_is_clipped_for_the_activity_file() {
+    let long = "x".repeat(activity::COMMAND_MAX + 50);
+    assert_eq!(
+        activity::clip_command(&long).chars().count(),
+        activity::COMMAND_MAX + 1
+    );
+    assert_eq!(activity::clip_command("xcodebuild test"), "xcodebuild test");
+}
+
 #[test]
 fn a_job_gets_its_folders_and_the_named_variables_and_nothing_else_of_the_nodes() {
     let agent = host::Agent {

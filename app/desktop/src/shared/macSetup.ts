@@ -4,6 +4,7 @@
 // the CLI's join; the page then watches the node's checks (mac-health.json) until every one is green.
 import type { MacHealth } from "./contracts";
 import type { JoinStep, ThisComputer } from "./joinHere";
+import type { MacBehind } from "./macMenuBar";
 
 /** A failure in words: what went wrong, what to do, and which field it is about. */
 export interface MacSetupFailure {
@@ -58,6 +59,8 @@ export interface MacHealthRead {
   readonly hubAnswers: boolean;
   /** The hub runs an older fleetd than this Mac's node; null when it doesn't, or either can't say. */
   readonly hubBehind: HubBehind | null;
+  /** This Mac's node runs an older fleetd than the hub: the menu bar offers the hub's Update. Absent from older apps' reads. */
+  readonly macBehind?: MacBehind | null;
 }
 
 /**

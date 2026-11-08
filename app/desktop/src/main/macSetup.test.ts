@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MacJoin } from "../shared/macSetup";
 import type { CallOutcome } from "../shared/hub";
-import { APP_BEHIND, ASK_ROLE_AGAIN_MS, cliFailure, findHubs, hubOrigin, joinMac, MacSetup, PANE_URLS, readHealth, redeemMac, signedInPorts, tailnetPeers, type MacSetupPorts } from "./macSetup";
+import { APP_BEHIND, ASK_ROLE_AGAIN_MS, cliFailure, findHubs, hubOrigin, joinMac, MacSetup, PANE_URLS, parseActivity, readHealth, redeemMac, signedInPorts, tailnetPeers, type MacSetupPorts } from "./macSetup";
 
 const BUILD = new TextEncoder().encode("#!/bin/sh\necho fleetd\n");
 const SUM = createHash("sha256").update(BUILD).digest("hex");
@@ -97,6 +97,7 @@ function ports(
       updates.push(hub);
       return Promise.resolve({ ok: true });
     },
+    disk: () => Promise.resolve({ freeBytes: 182e9, totalBytes: 994e9 }),
   };
   return { p, dir, ran, traded, opened, fetched, updates, roles };
 }
@@ -436,5 +437,46 @@ describe("a version difference", () => {
     expect(await elsewhere.hubRole(ANSWER.hubUrl)).toBe("unknown");
     const refused = await elsewhere.updateHub(ANSWER.hubUrl);
     expect(refused.ok ? "" : refused.failure.fix).toContain("Settings › Hub › Updates");
+  });
+});
+
+describe("the menu bar", () => {
+  const NODE = { enrolled: true, agentsMac: true, machineId: "mac", hub: "http://devbox.example.ts.net:4790" };
+  const write = (dir: string, file: string, text: string) => {
+    fs.mkdirSync(path.dirname(path.join(dir, "node", file)), { recursive: true });
+    fs.writeFileSync(path.join(dir, "node", file), text);
+  };
+
+  it("shows nothing until this Mac is joined as the agents' Mac", async () => {
+    const { p } = ports({ node: { ...NODE, agentsMac: false } });
+    expect(await new MacSetup(p, () => undefined).menuBar(() => null)).toBeNull();
+  });
+
+  it("reads what agents do on the Mac, its checks, its disk and the hub this app is signed in to there", async () => {
+    const { p, dir } = ports({ node: NODE });
+    const activity = {
+      simulators: [{ agent: "T12", projectId: "p1", device: "iPhone 17 Pro", sinceMs: 1 }],
+      jobs: [{ agent: "T10", projectId: "p1", job: 3, command: "xcodebuild test", startedMs: 2 }],
+    };
+    write(dir, "mac-activity.json", JSON.stringify(activity));
+    write(dir, "mac-health.json", JSON.stringify({ user: "ada", checks: [{ id: "xcode", state: "ok", message: "Xcode 26.1 is selected." }] }));
+    const read = await new MacSetup(p, () => undefined).menuBar((url) => (url === NODE.hub ? "h1" : null));
+    expect(read).toMatchObject({ found: { machineId: "mac", hubUrl: NODE.hub }, hubId: "h1", activity, disk: { freeBytes: 182e9, totalBytes: 994e9 }, macBehind: null });
+    expect(read?.health.health?.checks[0]?.id).toBe("xcode");
+  });
+
+  it("says when this Mac's node runs an older build than its hub", async () => {
+    const { p, dir } = ports({ node: NODE, hubVersion: "0.9.2", role: "admin" });
+    write(dir, path.join("update", "up"), "0.9.0\n");
+    const read = await new MacSetup(p, () => undefined).menuBar(() => null);
+    expect(read?.macBehind).toEqual({ macVersion: "0.9.0", hubVersion: "0.9.2", who: "admin" });
+    expect(read?.health.hubBehind).toBeNull();
+  });
+
+  it("reads no activity from an older node, a half-written file or one in other words", () => {
+    expect(parseActivity(undefined)).toBeNull();
+    expect(parseActivity('{"simulators": [')).toBeNull();
+    expect(parseActivity(JSON.stringify({ simulators: [{ agent: "T1" }], jobs: [] }))).toBeNull();
+    expect(parseActivity(JSON.stringify({ simulators: [], jobs: [], more: 1 }))).toEqual({ simulators: [], jobs: [] });
   });
 });

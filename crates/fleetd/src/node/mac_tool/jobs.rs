@@ -55,6 +55,8 @@ struct Job {
 #[derive(Default)]
 struct AgentJobs {
     next: u32,
+    /// The project of the agent's latest job.
+    project: String,
     jobs: HashMap<u32, Job>,
 }
 
@@ -199,6 +201,7 @@ impl Jobs {
             let mut all = self.lock();
             let mine = all.entry(agent.name.clone()).or_default();
             mine.next += 1;
+            mine.project.clone_from(&agent.project);
             mine.next
         };
         let log = agent.dir.join("jobs").join(format!("{job}.log"));
@@ -351,6 +354,29 @@ impl Jobs {
             }
             let _ = tokio::time::timeout(Duration::from_millis(200), exit.changed()).await;
         }
+    }
+
+    /// Every agent's jobs running now, oldest first: the Mac's menu bar's builds (activity.rs).
+    pub fn running(&self) -> Vec<super::activity::JobActivity> {
+        let all = self.lock();
+        let mut running: Vec<super::activity::JobActivity> = all
+            .iter()
+            .flat_map(|(agent, a)| {
+                a.jobs
+                    .iter()
+                    .filter(|(_, j)| j.exit.borrow().is_none())
+                    .map(|(n, j)| super::activity::JobActivity {
+                        agent: agent.clone(),
+                        project_id: a.project.clone(),
+                        job: *n,
+                        command: super::activity::clip_command(&j.command),
+                        started_ms: j.started_ms,
+                    })
+            })
+            .collect();
+        running
+            .sort_by(|a, b| (a.started_ms, &a.agent, a.job).cmp(&(b.started_ms, &b.agent, b.job)));
+        running
     }
 
     pub fn list(&self, agent: &str) -> Vec<MacJob> {

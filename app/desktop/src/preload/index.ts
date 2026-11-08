@@ -4,6 +4,7 @@ import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubEntry, HubId } from "../shared/hubs";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
+import type { MacMenuBarRead } from "../shared/macMenuBar";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacRedeemOutcome, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
 import type { KeyStore, PairOutcome, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
@@ -154,6 +155,12 @@ const api: FleetdApi = {
     status: () => ipcRenderer.invoke(IPC.macSetupStatus) as Promise<MacSetupStatus>,
     cancel: () => ipcRenderer.invoke(IPC.macSetupCancel) as Promise<void>,
     updateHub: (hub) => ipcRenderer.invoke(IPC.macSetupUpdateHub, hub) as Promise<MacHubUpdateOutcome>,
+  },
+  menuBar: {
+    read: () => ipcRenderer.invoke(IPC.menuBarRead) as Promise<MacMenuBarRead | null>,
+    fit: (height) => ipcRenderer.invoke(IPC.menuBarFit, height) as Promise<void>,
+    hide: () => ipcRenderer.invoke(IPC.menuBarHide) as Promise<void>,
+    menu: () => ipcRenderer.invoke(IPC.menuBarMenu) as Promise<void>,
   },
   machines: {
     joinHere: (hub, machineId) => ipcRenderer.invoke(IPC.machinesJoinHere, hub, machineId) as Promise<JoinHere>,

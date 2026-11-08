@@ -93,6 +93,8 @@ impl Sims {
 struct Held {
     lent: crate::node::device::ios::pool::Lent,
     device: String,
+    project: String,
+    since_ms: i64,
     used: Instant,
 }
 
@@ -116,18 +118,30 @@ impl Agent {
 
 impl Host {
     /// The host, sweeping old folders now and every [`SWEEP_EVERY`], and ending simulators nobody used for
-    /// [`SIM_IDLE`], while the node runs.
+    /// [`SIM_IDLE`], while the node runs. What agents do on the Mac goes to `home`'s activity file (activity.rs).
     pub fn start(
         config: MacToolConfig,
         key: NodeBoxKey,
         root: PathBuf,
         sims: Option<Sims>,
+        home: PathBuf,
     ) -> Arc<Self> {
         let mut host = Self::new(config, key, root);
         host.sims = sims;
         let host = Arc::new(host);
         let weak = Arc::downgrade(&host);
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let writer = weak.clone();
+            runtime.spawn(async move {
+                let mut last = None;
+                loop {
+                    let Some(host) = writer.upgrade() else { return };
+                    let now = host.activity();
+                    drop(host);
+                    super::activity::write(&home, &now, &mut last);
+                    tokio::time::sleep(super::activity::EVERY).await;
+                }
+            });
             runtime.spawn(async move {
                 let mut swept: Option<Instant> = None;
                 loop {
@@ -234,6 +248,8 @@ impl Host {
             Held {
                 lent,
                 device: device.clone(),
+                project: agent.project.clone(),
+                since_ms: super::now_ms(),
                 used: Instant::now(),
             },
         );
@@ -248,6 +264,28 @@ impl Host {
             tracing::info!(agent, "an agent's simulator ended");
         }
         gone.is_some()
+    }
+
+    /// What agents do on the Mac now: the simulators they hold and the jobs they run.
+    pub fn activity(&self) -> super::activity::Activity {
+        let mut simulators: Vec<super::activity::SimActivity> = self
+            .held()
+            .map(|h| {
+                h.iter()
+                    .map(|(agent, held)| super::activity::SimActivity {
+                        agent: agent.clone(),
+                        project_id: held.project.clone(),
+                        device: held.device.clone(),
+                        since_ms: held.since_ms,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        simulators.sort_by(|a, b| (a.since_ms, &a.agent).cmp(&(b.since_ms, &b.agent)));
+        super::activity::Activity {
+            simulators,
+            jobs: self.jobs.running(),
+        }
     }
 
     /// Ends the simulators of agents that sent no step for `idle`.
