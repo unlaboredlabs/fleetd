@@ -169,3 +169,28 @@ test.skipIf(!wired)("a node's thread events reach a live lane through the execut
   node.close();
   await node.closed;
 });
+
+test("live frames carry the slot board, cut to what the key may see", async () => {
+  const { slots } = await import("../src/hub/app_ws/live/lanes.ts");
+  const { state } = await import("../src/hub/slots/index.ts");
+  const board = state(hub);
+  const rows = [
+    { projectRef: { machineId: "devbox", projectId: "p1" } },
+    { projectRef: { machineId: "devbox", projectId: "theirs" } },
+    { projectRef: { machineId: "other", projectId: "p9" } },
+  ];
+  const fake = { ...board, perProject: rows, perMachine: [{ machineId: "devbox" }, { machineId: "other" }] } as never;
+  const area = (hub as unknown as { areas: Map<string, { state(): unknown }> }).areas.get("slots");
+  if (!area) throw new Error("no slot board");
+  const real = area.state.bind(area);
+  area.state = () => fake;
+  hub.db.conn.run(
+    "INSERT INTO people (person_id, name, role, created_ms) VALUES ('p_ownerown', 'Own', 'owner', 1), ('p_otherrrr', 'Oth', 'member', 2)",
+  );
+  hub.db.conn.run("INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES ('devbox', 'theirs', 1, 'p_otherrrr')");
+  const reader = { keyId: "k", name: "r", prefix: "fld_aaaaaa", createdAt: "2026-11-08T00:00:00.000Z", grants: [{ role: "read" as const, machines: ["devbox"] }] };
+  const cut = slots(hub, reader);
+  area.state = real;
+  expect(cut?.perProject as unknown).toEqual([{ projectRef: { machineId: "devbox", projectId: "p1" } }]);
+  expect(cut?.perMachine as unknown).toEqual([{ machineId: "devbox" }]);
+});
