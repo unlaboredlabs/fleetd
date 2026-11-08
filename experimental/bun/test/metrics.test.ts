@@ -1,122 +1,22 @@
 // The metrics over a fresh hub (crates/fleetd/src/hub/metrics/tests.rs, touch_tests.rs): the projector's routes and
 // stamps from the train's events, replays, the person's touches, metrics_get's figures by calendar day in a zone, its
-// bounds and grants, and the prune.
+// bounds and grants, the prune, and reviews and comments on the git host (host_acts.rs).
 import { afterEach, expect, test } from "bun:test";
-import { registerAll } from "../src/gen/areas.ts";
-import { Registry, type Caller } from "../src/hub/api/registry.ts";
 import * as compute from "../src/hub/metrics/compute.ts";
+import { BACKFILL_MS, type HostAct, type HostActs, HostReadError, read as readActs } from "../src/hub/metrics/host_acts.ts";
 import * as human from "../src/hub/metrics/human.ts";
 import { weeks } from "../src/hub/metrics/index.ts";
 import { start } from "../src/hub/metrics/loops.ts";
 import { step } from "../src/hub/metrics/project.ts";
+import { noSources } from "../src/hub/metrics/source.ts";
 import * as store from "../src/hub/metrics/store.ts";
 import { dayStart } from "../src/hub/metrics/zone.ts";
 import { events } from "../src/hub/store/events.ts";
 import { isoMs } from "../src/hub/store/time.ts";
 import { cursor as readCursor } from "../src/hub/time/store.ts";
-import type { HubEventType, MetricsGetOutput } from "../src/shared/contracts.ts";
-import { testHub } from "./hub-helpers.ts";
+import { DAY, HOUR, MIN, NOW, REPO, admin, caller, change, done, event, get, hub, ms, orders, projectFrom, rows, sql, type H } from "./metrics-helpers.ts";
 
-const HOUR = 3_600_000;
-const DAY = 24 * HOUR;
-const MIN = 60_000;
-const NOW = "2026-10-25T12:00:00.000Z";
-const REPO = "github.com/acme/web";
-const ms = (t: string) => Date.parse(t);
-
-let cleanup: (() => void) | undefined;
-afterEach(() => {
-  cleanup?.();
-  cleanup = undefined;
-});
-
-function hub() {
-  const t = testHub(ms(NOW));
-  cleanup = t.done;
-  return t;
-}
-type H = ReturnType<typeof hub>["hub"];
-
-const caller = (grants: Caller["grants"]): Caller => ({
-  keyId: "k1",
-  name: "desk",
-  prefix: "fld_abcdef",
-  createdAt: NOW,
-  grants,
-  kind: "human",
-});
-const admin = () => caller([{ role: "admin", machines: "*" }]);
-
-const sql = (h: H, statement: string, ...args: (string | number)[]) => h.db.conn.query(statement).run(...args);
-
-/** W1 the person submitted in the app; W2 the lead opened from the chat. */
-function orders(h: H) {
-  for (const [n, channel, at] of [
-    [1, "app", "2026-10-20T08:00:00.000Z"],
-    [2, "lead", "2026-10-21T09:00:00.000Z"],
-  ] as const) {
-    const w = {
-      workstreamId: `W${n}`,
-      projectRef: { machineId: "devbox", projectId: "web" },
-      title: "Checkout",
-      source: { text: "Checkout", channel, by: "human", at },
-      state: "open",
-      createdAt: at,
-      updatedAt: at,
-    };
-    sql(h, "INSERT INTO workstreams (n, machine_id, project_id, state, data) VALUES (?1, 'devbox', 'web', 'open', ?2)", n, JSON.stringify(w));
-  }
-}
-
-function change(h: H, n: number, pr: number, w: string, task: string | undefined, state: string, created: string) {
-  const c: Record<string, unknown> = {
-    changeId: `X${n}`,
-    projectRef: { machineId: "devbox", projectId: "web" },
-    repo: "acme/web",
-    prNumber: pr,
-    prUrl: `https://github.com/acme/web/pull/${pr}`,
-    branch: `fleetd/T${n}-x`,
-    workstreamId: w,
-    headSha: "b".repeat(40),
-    state,
-    reviews: [],
-    createdAt: created,
-    updatedAt: created,
-  };
-  if (task) c.taskId = task;
-  sql(
-    h,
-    `INSERT INTO changes (n, repo, pr_number, state, machine_id, project_id, train_order, data)
-     VALUES (?1, 'acme/web', ?2, ?3, 'devbox', 'web', ?1, ?4)`,
-    n,
-    pr,
-    state,
-    JSON.stringify(c),
-  );
-}
-
-function event(h: H, at: string, type: string, data: unknown) {
-  events(h).append({ at, type: type as HubEventType, machineId: "devbox", projectId: "web", summary: type, data });
-}
-
-/** Projects every page from `cursor`, as the projector's loop does; the cursor it ends on. */
-function projectFrom(h: H, cursor: number): number {
-  for (;;) {
-    const [next, more] = step(h.db, events(h), cursor);
-    cursor = next;
-    if (!more) return cursor;
-  }
-}
-
-const rows = (h: H) => store.merges(h.db.conn, 0, Number.MAX_SAFE_INTEGER);
-
-async function get(h: H, who: Caller, input: unknown): Promise<MetricsGetOutput> {
-  const r = new Registry();
-  registerAll(r);
-  const out = await r.call(h, who, "metrics_get", input);
-  if ("output" in out) return out.output as MetricsGetOutput;
-  throw out.error.kind === "tool" ? out.error.error : new Error(JSON.stringify(out.error));
-}
+afterEach(done);
 
 /** A week on acme/web: the train's change, two fleetd PRs merged by hand, one from outside, and a bot's PR. */
 function aWeek(h: H) {
@@ -329,7 +229,7 @@ test("the prune keeps what the retention says, and the hourly loop prunes", asyn
   expect(h.db.transaction((c) => store.prune(c, clock.now()))).toBe(false);
   expect(units()).toEqual(["pr:3"]);
   // The loops start and stop with the hub.
-  start(h);
+  start(h, noSources());
   h.shutdown.abort();
 });
 
@@ -347,7 +247,7 @@ test("the saved cursor only moves forward", () => {
 test("the projector folds each append as it lands", async () => {
   const { hub: h } = hub();
   orders(h);
-  start(h);
+  start(h, noSources());
   event(h, "2026-10-24T09:00:00.000Z", "pr.merged_outside", { repo: "acme/web", prNumber: 21 });
   await Bun.sleep(5);
   expect(rows(h).map((r) => [r.unitKey, r.route])).toEqual([["pr:21", "outside"]]);
@@ -518,4 +418,87 @@ test("minutes per merged PR are the sessions over fleetd work, with the low boun
     { source: "chat", ms: 3 * MIN, touches: 2 },
     { source: "other", ms: 3 * MIN + 20_000, touches: 1 },
   ]);
+});
+
+/** Stands in for the host sweep's reader: answers with `acts`, and remembers each `since` it was asked. */
+function host(acts: HostAct[] | string) {
+  const asked: number[] = [];
+  const reader: HostActs = {
+    async actsSince(_repo, sinceMs) {
+      asked.push(sinceMs);
+      if (typeof acts === "string") throw new Error(acts);
+      return acts;
+    },
+  };
+  return { reader, asked };
+}
+
+const act = (kind: HostAct["kind"], id: string, pr: number, at: string, more: Partial<HostAct> = {}): HostAct => ({
+  kind,
+  id,
+  prNumber: pr,
+  atMs: ms(at),
+  login: "reviewer",
+  bot: false,
+  ...more,
+});
+
+/** A review on PR 7 (W1's Change, 250 lines), a comment on PR 9 (from outside) and a bot's review. */
+const reviews = (): HostAct[] => [
+  act("review", "r1", 7, "2026-10-21T10:00:00.000Z", { lines: 250 }),
+  act("comment", "c1", 9, "2026-10-22T10:30:00.000Z"),
+  act("review", "r2", 11, "2026-10-23T12:00:00.000Z", { bot: true, login: "renovate[bot]" }),
+];
+
+test("only the person's own reviews count, and with no identity none do", async () => {
+  const { hub: h } = hub();
+  aWeek(h);
+  projectFrom(h, 0);
+  const { reader } = host([
+    act("review", "r1", 7, "2026-10-21T10:00:00.000Z", { lines: 250 }),
+    // A colleague's review on the same shared repo.
+    act("review", "r3", 7, "2026-10-21T12:00:00.000Z", { login: "colleague" }),
+  ]);
+  await readActs(h.db, reader, REPO, ms(NOW));
+  const read = async () => {
+    const out = await get(h, admin(), { since: "2026-10-19T00:00:00.000Z", tz: "UTC" });
+    return [out.tiles.human.totalMs, out.merges.find((m) => m.prNumber === 7)?.touches];
+  };
+  // No identity known: no review is the person's. Only W1, submitted in the app, counts.
+  expect(await read()).toEqual([MIN, 0]);
+  h.db.transaction((c) => store.addIdentity(c, "Reviewer", "host_login"));
+  // Theirs counts (5 minutes for 250 lines); the colleague's never does.
+  expect(await read()).toEqual([6 * MIN, 1]);
+});
+
+test("reviews and comments on the git host are estimated touches on their PRs", async () => {
+  const { hub: h } = hub();
+  aWeek(h);
+  projectFrom(h, 0);
+  const now = ms(NOW);
+  const first = host(reviews());
+  expect(await readActs(h.db, first.reader, REPO, now)).toBe(2);
+  // A second read goes from where the first one ended; the same acts rewrite the same two touches.
+  expect(await readActs(h.db, first.reader, REPO, now + HOUR)).toBe(2);
+  expect(first.asked).toEqual([now - BACKFILL_MS, now]);
+
+  const onHost = () => store.touches(h.db.conn, 0, Number.MAX_SAFE_INTEGER).filter((t) => t.src === "host");
+  expect(onHost().map((t) => [t.kind, t.prNumber, t.creditMs, t.estimated, t.outside, t.workstreamId])).toEqual([
+    ["host.review", 7, 5 * MIN, true, false, "W1"],
+    ["host.comment", 9, 30_000, true, true, undefined],
+  ]);
+  expect(onHost()[0]?.keyId).toBe("reviewer");
+
+  // A `fleetd/` head names its task's order even with no Change.
+  const fleetdHead = host([act("comment", "c2", 10, "2026-10-23T09:00:00.000Z", { head: "fleetd/T3-fix-totals" })]);
+  await readActs(h.db, fleetdHead.reader, REPO, now + 2 * HOUR);
+  const c2 = onHost().find((t) => t.srcKey.endsWith(":c2"))!;
+  expect([c2.outside, c2.workstreamId]).toEqual([false, "W2"]);
+
+  // A failed read says why and keeps the cursor.
+  const down = host("gh is signed out");
+  const failed = await readActs(h.db, down.reader, REPO, now + 3 * HOUR).catch((e: unknown) => e);
+  expect(failed).toBeInstanceOf(HostReadError);
+  expect((failed as HostReadError).why).toBe("gh is signed out");
+  expect(store.reviewsCursor(h.db.conn, REPO)).toBe(now + 2 * HOUR);
 });
