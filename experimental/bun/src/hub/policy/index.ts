@@ -1,8 +1,8 @@
 // The optional repo policy file `.fleetd/policy.yaml` (crates/fleetd/src/hub/policy.rs), read from the working tree
 // of the project's checkout through the node (so an uncommitted file counts). Cached per project for 60 s;
 // `invalidate` drops an entry at once. No file is the default policy. A broken file is an error with a fix, never a
-// silent fallback, so a typo can't drop a deny rule. `hub.area("policy")`: `policy(hub).branchPrefix(ref)` for the
-// train, `policy(hub).get(ref)` for a launch's tool rules.
+// silent fallback, so a typo can't drop a deny rule. `hub.area("policy")`, whose contract is `get(ref)`: the train
+// reads `branchPrefix` from it (DEFAULT_BRANCH_PREFIX when unset), a launch its tool rules (`toolRules`).
 import type { ProjectRef } from "../../shared/contracts.ts";
 import type { Clock } from "../../shared/clock.ts";
 import { ToolError } from "../../shared/errors.ts";
@@ -110,8 +110,6 @@ const keyOf = (r: ProjectRef) => `${r.machineId}/${r.projectId}`;
 
 export class Policies {
   private readonly cache = new Map<string, [number, PolicyFile | ToolError]>();
-  /** Projects whose last read for the branch prefix failed, so a failing read is logged once. */
-  private readonly unread = new Map<string, string>();
 
   constructor(
     private readonly source: PolicySource,
@@ -139,32 +137,20 @@ export class Policies {
     return result;
   }
 
-  /** A launch's session rules, `tools.allow` and `tools.deny` (executor mod.rs `ToolPolicy::tools`): a file that
-   * doesn't decode refuses the launch rather than drop its denies. */
-  async tools(r: ProjectRef): Promise<SessionRules> {
-    const t = (await this.get(r)).tools;
-    return { allow: [...(t?.allow ?? [])], deny: [...(t?.deny ?? [])] };
-  }
-
   /** Forgets the cached policy, so the next `get` reads the file again. */
   invalidate(r: ProjectRef): void {
     this.cache.delete(keyOf(r));
   }
+}
 
-  /** What the project's branches start with (train hub_host.rs `branch_prefix`): undefined when the file can't be read. */
-  async branchPrefix(r: ProjectRef): Promise<string | undefined> {
-    const k = keyOf(r);
-    try {
-      const p = await this.get(r);
-      if (this.unread.delete(k)) console.info(`train: policy of ${k} read again for the branch prefix`);
-      return p.branchPrefix ?? DEFAULT_BRANCH_PREFIX;
-    } catch (e) {
-      const why = (e as Error).message;
-      if (this.unread.get(k) !== why) console.warn(`train: policy of ${k} not read for the branch prefix: ${why}`);
-      this.unread.set(k, why);
-      return undefined;
-    }
-  }
+/** The policy area's contract: the project's policy file, decoded. */
+export type PolicyReader = { get(r: ProjectRef): Promise<PolicyFile> };
+
+/** A launch's session rules, `tools.allow` and `tools.deny` (executor mod.rs `ToolPolicy::tools`): a file that
+ * doesn't decode refuses the launch rather than drop its denies. */
+export async function toolRules(p: PolicyReader, r: ProjectRef): Promise<SessionRules> {
+  const t = (await p.get(r)).tools;
+  return { allow: [...(t?.allow ?? [])], deny: [...(t?.deny ?? [])] };
 }
 
 /** The hub's policies, `hub.area("policy")`. */

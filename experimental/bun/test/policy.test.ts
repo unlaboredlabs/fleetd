@@ -1,6 +1,6 @@
 // Ports crates/fleetd/src/hub/policy.rs's tests: the repo policy file, its checks, and its 60 s cache.
 import { expect, test } from "bun:test";
-import { DEFAULT_BRANCH_PREFIX, parsePolicy, Policies, ReadFailure } from "../src/hub/policy/index.ts";
+import { parsePolicy, Policies, ReadFailure, toolRules } from "../src/hub/policy/index.ts";
 import { ToolError } from "../src/shared/errors.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { found } from "../src/hub/executor/sessions.ts";
@@ -42,19 +42,17 @@ test("the default when absent, a 60 s cache, and an offline machine read again",
     { now: () => now },
   );
   const a = { machineId: "lab-a", projectId: "pa" };
-  expect(await p.branchPrefix(a)).toBe(DEFAULT_BRANCH_PREFIX);
+  expect(await p.get(a)).toEqual({});
   text = "branchPrefix: team/\n";
-  expect(await p.branchPrefix(a)).toBe(DEFAULT_BRANCH_PREFIX);
+  expect(await p.get(a)).toEqual({});
   expect(reads).toBe(1);
   now += 60_001;
-  expect(await p.branchPrefix(a)).toBe("team/");
+  expect((await p.get(a)).branchPrefix).toBe("team/");
   p.invalidate(a);
   offline = true;
-  const quiet = console.warn;
-  console.warn = () => {};
-  expect(await p.branchPrefix(a)).toBeUndefined();
-  expect(await p.branchPrefix(a)).toBeUndefined();
-  console.warn = quiet;
+  // A read that fails isn't cached: the next one asks the machine again.
+  await expect(p.get(a)).rejects.toMatchObject({ code: "machine_offline" });
+  await expect(p.get(a)).rejects.toMatchObject({ code: "machine_offline" });
   expect(reads).toBe(4);
 });
 
@@ -63,13 +61,13 @@ test("a launch's tool rules come from the file, none without one, and a broken f
   let now = 1_792_231_200_000;
   const p = new Policies(async () => text, { now: () => now });
   const a = { machineId: "lab-a", projectId: "pa" };
-  expect(await p.tools(a)).toEqual({ allow: [], deny: [] });
+  expect(await toolRules(p, a)).toEqual({ allow: [], deny: [] });
   text = 'tools:\n  allow: ["Bash(npm test:*)"]\n  deny: ["Bash(git push:*)", "WebFetch"]\n';
   p.invalidate(a);
-  expect(await p.tools(a)).toEqual({ allow: ["Bash(npm test:*)"], deny: ["Bash(git push:*)", "WebFetch"] });
+  expect(await toolRules(p, a)).toEqual({ allow: ["Bash(npm test:*)"], deny: ["Bash(git push:*)", "WebFetch"] });
   text = "tools: [oops]\n";
   now += 60_001;
-  await expect(p.tools(a)).rejects.toBeInstanceOf(ToolError);
+  await expect(toolRules(p, a)).rejects.toBeInstanceOf(ToolError);
 });
 
 test("the hub's start fills the launch hook with the policy file's rules", async () => {
