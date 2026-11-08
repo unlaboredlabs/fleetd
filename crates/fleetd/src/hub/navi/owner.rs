@@ -12,7 +12,7 @@ use std::collections::HashSet;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::events::HubEvent;
-use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
+use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId};
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::model::ProjectSummary;
 use fleetd_contracts::people::PersonId;
@@ -73,16 +73,29 @@ pub fn among(navis: &HashSet<ProjectRef>, project: &ProjectSummary) -> bool {
         })
 }
 
-/// Whether `event` is about one of `navis`: what a list of events leaves out for a caller they aren't theirs.
-pub fn about(navis: &HashSet<ProjectRef>, event: &HubEvent) -> bool {
+/// Whether `event` is about one of `navis`: what a list of events leaves out for a caller they aren't theirs. An event
+/// that names a thread but no project (a steer's, a wake's, a queued message's) is its thread's project's; one whose
+/// thread can't be read is left out too.
+pub fn about(db: &HubDb, navis: &HashSet<ProjectRef>, event: &HubEvent) -> bool {
+    if navis.is_empty() {
+        return false;
+    }
+    match (&event.machine_id, &event.project_id, &event.thread_id) {
+        (Some(m), Some(p), _) => navis.contains(&ProjectRef {
+            machine_id: m.clone(),
+            project_id: p.clone(),
+        }),
+        (Some(m), None, Some(t)) => thread_among(db, navis, m, t),
+        _ => false,
+    }
+}
+
+/// Whether thread `t` on `m` is one of `navis`'s. One whose project can't be read counts as one.
+pub fn thread_among(db: &HubDb, navis: &HashSet<ProjectRef>, m: &MachineId, t: &ThreadId) -> bool {
     !navis.is_empty()
-        && match (&event.machine_id, &event.project_id) {
-            (Some(m), Some(p)) => navis.contains(&ProjectRef {
-                machine_id: m.clone(),
-                project_id: p.clone(),
-            }),
-            _ => false,
-        }
+        && db
+            .with(|c| thread_project(c, m.as_str(), t.as_str()))
+            .map_or(true, |r| r.is_some_and(|r| navis.contains(&r)))
 }
 
 /// The refusal for a call that names another person's Navi.

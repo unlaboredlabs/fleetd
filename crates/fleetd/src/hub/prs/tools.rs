@@ -199,7 +199,8 @@ async fn pr_list(
     })
 }
 
-/// The project whose PRs `repo` holds, refused unless the key may read it.
+/// The project whose PRs `repo` holds, refused unless the key may read it: on its machine, and not another person's
+/// Only me project.
 fn owner(hub: &Hub, caller: &Caller, repo: &GitHubRepo) -> Result<ProjectRef, ToolError> {
     let project = super::owner_of(hub, repo).ok_or_else(|| {
         ToolError::new(
@@ -209,6 +210,9 @@ fn owner(hub: &Hub, caller: &Caller, repo: &GitHubRepo) -> Result<ProjectRef, To
         .with_fix("pr_list shows a project's PRs.")
     })?;
     require(caller, Role::Read, Some(&project.machine_id))?;
+    if !crate::hub::navi::owner::may_use(&hub.db, caller, &project)? {
+        return Err(crate::hub::navi::owner::refused(&project));
+    }
     Ok(project)
 }
 

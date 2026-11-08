@@ -1,4 +1,5 @@
 //! wake_set, wake_list and wake_cancel.
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
@@ -9,7 +10,8 @@ use fleetd_contracts::mcp::{
 use fleetd_contracts::prim::{NonEmpty, True};
 
 use super::{WakeFilter, WakeSet, thread_ref};
-use fleetd_contracts::ids::ThreadRef;
+use fleetd_contracts::ids::{ProjectRef, ThreadRef};
+use fleetd_contracts::wakes::Wake;
 
 use crate::hub::api::{
     Caller, Hub, Registry, ToolError, cap, limits, readable, require, unknown_machine,
@@ -68,6 +70,16 @@ async fn wake_set(
     })
 }
 
+/// Whether `wake` wakes a thread of another person's Only me project (`navis`): theirs alone to see and cancel.
+fn theirs(hub: &Hub, navis: &HashSet<ProjectRef>, wake: &Wake) -> bool {
+    crate::hub::navi::owner::thread_among(
+        &hub.db,
+        navis,
+        &wake.target.machine_id,
+        &wake.target.thread_id,
+    )
+}
+
 async fn wake_list(
     hub: Arc<Hub>,
     caller: Caller,
@@ -76,6 +88,7 @@ async fn wake_list(
     if let Some(m) = &input.machine_id {
         require(&caller, Role::Read, Some(m))?;
     }
+    let navis = crate::hub::navi::owner::others(&hub.db, &caller)?;
     let filter = WakeFilter {
         machine_id: input.machine_id,
         thread_id: input.thread_id,
@@ -85,7 +98,7 @@ async fn wake_list(
         .wakes
         .list(&filter)
         .into_iter()
-        .filter(|w| readable(&caller, &w.target.machine_id))
+        .filter(|w| readable(&caller, &w.target.machine_id) && !theirs(&hub, &navis, w))
         .collect();
     let shown = cap(all, limits::WAKES);
     Ok(WakeListOutput {
@@ -102,10 +115,11 @@ async fn wake_cancel(
     caller: Caller,
     input: WakeCancelInput,
 ) -> Result<WakeCancelOutput, ToolError> {
+    let navis = crate::hub::navi::owner::others(&hub.db, &caller)?;
     let Some(wake) = hub
         .wakes
         .get(&input.wake_id)
-        .filter(|w| readable(&caller, &w.target.machine_id))
+        .filter(|w| readable(&caller, &w.target.machine_id) && !theirs(&hub, &navis, w))
     else {
         return Err(
             McpToolError::new(ErrorCode::NotFound, format!("No wake {}.", input.wake_id))

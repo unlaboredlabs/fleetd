@@ -551,7 +551,9 @@ only, ask the lead to sign out there.
 Talk to a project's lead from Telegram, on your phone or anywhere else you use it. It's the same chat as in the app:
 what you send there lands in the project's chat, and its replies, photos, files and approvals come back to both places.
 The bot is yours and answers only you; nothing runs in a fleetd cloud, and your hub needs no public address. Pairing
-makes the project yours when it has no owner, so what you send there is your own message.
+makes an Only me project yours when it has no owner, so what you send there is your own message. A shared project
+nobody owns becomes yours this way only when you're an admin: its owner could turn Only me on and shut everyone else
+out.
 
 ### Set it up
 

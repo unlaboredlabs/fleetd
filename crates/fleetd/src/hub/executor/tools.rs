@@ -142,7 +142,7 @@ fn attention(hub: &Hub, caller: &Caller, head: i64) -> Result<Vec<Value>, ToolEr
         for e in page
             .events
             .iter()
-            .filter(|e| can_read(caller, e) && !crate::hub::navi::owner::about(&navis, e))
+            .filter(|e| can_read(caller, e) && !crate::hub::navi::owner::about(&hub.db, &navis, e))
         {
             latest.push(serde_json::to_value(e).unwrap_or_default());
         }
