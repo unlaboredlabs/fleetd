@@ -21,6 +21,9 @@ import { configFor, runnerEnv, SessionService } from "./sessions/index.ts";
 import { RealClaude, turnAutoupdaterOff } from "./runner/install.ts";
 import { LOGINS } from "./runner/login.ts";
 import { notRestarted, run as runUpdate, runFetch } from "./update/index.ts";
+import { holdForScreens, ScreensRestart } from "./restart.ts";
+import { apply as applyScreens } from "./screens/index.ts";
+import { broker } from "./browser/index.ts";
 import { ANSWER_WAIT_MS, HEALTH_WAIT_SECS, markAnswered, markUp } from "../update/finish.ts";
 import { rmSync } from "node:fs";
 import { configDir } from "./runner/claude.ts";
@@ -39,10 +42,9 @@ export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-fi
              keep the link up for a machine that has joined
 `;
 
-/** Every capability the Bun node lists in its hello: what its modules take. Screen settings aren't taken yet, so
- * `screen_settings` isn't listed. */
+/** Every capability the Bun node lists in its hello: what its modules take. */
 export const CAPABILITIES = [
-  CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.WORKTREE_SETUP, CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
+  CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.WORKTREE_SETUP, CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH, CAP.SCREEN_SETTINGS, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
   CAP.SESSION_SEAL, CAP.PROFILE_NAMES, CAP.SYSTEM_PROMPT, CAP.ASSISTANT, CAP.FOLDER_MAKE, CAP.ISOLATED, CAP.NAVI_ERASE,
   CAP.PROJECT_ERASE, CAP.ONE_LEAD_MODE, CAP.LINK_DEFLATE, CAP.GATED_RESUME, CAP.HAS_FILE,
   CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.NAVI_SIGNINS, CAP.CLAUDE_ACCOUNTS, CAP.CLAUDE_RESEAL, CAP.ONEPASSWORD,
@@ -204,6 +206,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     identify: (pid) => sessions.peerSession(pid),
     maskFor: (session) => sessions.maskFor(session),
     ...(local.any ? { browser: (session: string, frame: Record<string, unknown>) => local.answer(session, frame) } : {}),
+    ...(local.has("mac") ? { mac: (session: string, frame: Record<string, unknown>) => local.answer(session, frame) } : {}),
   });
   const shutdown = new AbortController();
   const wakes = new Wakes();
@@ -214,6 +217,15 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   let resolveDone!: (code: number) => void;
   const done = new Promise<number>((r) => (resolveDone = r));
   let enrolled: (() => void) | undefined;
+  const screensRestart = new ScreensRestart(home, {
+    live: () => broker(node).count(),
+    hold: () => {
+      holdForScreens(home);
+      return sessions.midStep();
+    },
+    // A screen setting changed: the node stops as for SIGTERM, and its service manager starts it again.
+    restart: () => resolveDone(0),
+  });
   if (enrollToken)
     enrolled = () => {
       try {
@@ -245,6 +257,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
         return;
       case "node_action":
         if (frame.action === "update" || frame.action === "fetch") return void nodeUpdate(frame as unknown as NodeAction, ctx);
+        if (frame.action === "screens") return void screensAction(frame as unknown as NodeAction, ctx);
         void runNodeAction(frame as unknown as NodeAction, {
           hold: () => sessions.hold(),
           claude: {
@@ -294,6 +307,21 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     // Still running once the watcher decided: the restart was refused, and the hub hears so now.
     const refused = await notRestarted(answer.watch.verdict, (HEALTH_WAIT_SECS + 10) * 1000);
     if (refused) ctx.send(failed(refused));
+  };
+
+  /** `screens`: written into node.json, and the node restarts to apply it once no screen is live here. Answered at
+   * once; the restart waits for the answer to be on the link. */
+  const screensAction = async (frame: NodeAction, ctx: LinkContext) => {
+    const answered = screensRestart.ask();
+    try {
+      if (!frame.screens) throw new Error("the hub named no screen settings");
+      applyScreens(home, frame.screens as never);
+      ctx.send({ t: "node_action_result", id: frame.id, ok: true, message: screensRestart.schedule() });
+    } catch (error) {
+      ctx.send({ t: "node_action_result", id: frame.id, ok: false, message: (error as Error).message.slice(0, 500) });
+    }
+    await Promise.race([ctx.flush(), Bun.sleep(ANSWER_WAIT_MS)]);
+    answered();
   };
 
   const hb = node.area("hb");
