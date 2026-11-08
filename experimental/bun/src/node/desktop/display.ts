@@ -15,6 +15,7 @@ import { NAME_PREFIX } from "./container.ts";
 import { onPath, SIZE } from "./paths.ts";
 import type { Launched, Lent } from "./screen.ts";
 import { CONNECT_TIMEOUT, X } from "./x11.ts";
+import { agentScoreLine, agentSpawn } from "../oom.ts";
 
 /** Window managers the xvfb backend starts when the host has one, first found first. */
 const WINDOW_MANAGERS = ["openbox", "xfwm4", "fluxbox", "twm"];
@@ -218,7 +219,8 @@ export class Display implements Lent {
         let child: Child;
         try {
           const args = [`:${number}`, "-screen", "0", `${SIZE[0]}x${SIZE[1]}x24`, "-nolisten", "tcp", "-nolisten", "local", "-noreset", "-auth", auth];
-          child = track(spawn(xvfb, args, { stdio: ["ignore", out, out], detached: true }));
+          // At the agent OOM score, so memory pressure takes the desktop before the node (oom.ts).
+          child = track(spawn(...agentSpawn(xvfb, args), { stdio: ["ignore", out, out], detached: true }));
         } finally {
           closeSync(out);
         }
@@ -328,7 +330,7 @@ export class Display implements Lent {
     let child: Child;
     try {
       const at = cwd && isDir(cwd) ? cwd : join(this.dir, "home");
-      child = track(spawn("/bin/sh", ["-c", command], { cwd: at, env: this.hostEnv(), stdio: ["ignore", out, out], detached: true }));
+      child = track(spawn("/bin/sh", ["-c", `${agentScoreLine()}${command}`], { cwd: at, env: this.hostEnv(), stdio: ["ignore", out, out], detached: true }));
     } catch (e) {
       throw new Error(`cannot start it: ${(e as Error).message}`);
     } finally {

@@ -48,14 +48,3 @@ export type GatedRun = Omit<link.GatedRun, "secretEnv"> & { secretEnv?: SecretEn
 /** `text` held to `max` UTF-16 units from its start (a message), as the Rust `head_text`. */
 export { headUtf16 as headText, tailUtf16 as tailText } from "./util.ts";
 
-/** A hub frame, or undefined for anything that isn't one (no object, no known `t`). */
-export function decodeHubFrame(raw: string, tags: readonly string[]): HubFrame | undefined {
-  try {
-    const frame = JSON.parse(raw) as unknown;
-    if (typeof frame !== "object" || frame === null || Array.isArray(frame)) return undefined;
-    const t = (frame as Obj).t;
-    return typeof t === "string" && tags.includes(t) ? (frame as HubFrame) : undefined;
-  } catch {
-    return undefined;
-  }
-}

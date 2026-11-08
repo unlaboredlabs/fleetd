@@ -35,6 +35,8 @@ import { homeDir } from "./util.ts";
 import type { CmdCheck, GatedResume, GatedRun, HubFrame, NodeAction, SecretDeliver } from "./wire.ts";
 import { fleetdDir } from "../shared/home.ts";
 import { VERSION } from "../shared/version.ts";
+import { protect } from "./oom.ts";
+import { uploads } from "./flush.ts";
 
 export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id>
             [--home <dir>] [--enroll-only] [--claude-config-dir <dir>]
@@ -151,20 +153,55 @@ export async function join_(args: JoinArgs): Promise<number> {
 /** Keeps the link up for a node that has joined. */
 export async function run(args: { home?: string }): Promise<number> {
   const home = args.home ?? defaultNodeHome();
-  let config: NodeConfig | undefined;
-  try {
-    config = readConfig(home);
-  } catch {
-    process.stderr.write(`fleetd: node config in ${home} is unreadable\n`);
-    return 1;
-  }
-  if (!config?.enrolled) {
-    process.stderr.write(`fleetd: this node has not joined a hub (no enrolled config in ${home}): run fleetd node join first\n`);
-    return 1;
-  }
+  // Run by hand, it says what's wrong at once; as a service it waits.
+  const config = await enrolled(home, !process.stderr.isTTY);
+  if (typeof config === "number") return config;
   refreshOwnUnit();
   return runNodeProcess(home, config, undefined, false);
 }
+
+/** The node's enrolled config, or the exit code without one. A service that finds none (a boot that reads the home
+ * before it is all there, a join still writing it) tries again after enrolledRetry's wait rather than exiting: systemd
+ * gives up on a unit that exits five times in five minutes, and the node then stayed down until someone started it.
+ * SIGINT or SIGTERM ends the wait. */
+export async function enrolled(home: string, retry: boolean, signal?: AbortSignal): Promise<NodeConfig | number> {
+  const stop = new AbortController();
+  const end = () => stop.abort();
+  signal?.addEventListener("abort", end);
+  process.once("SIGINT", end);
+  process.once("SIGTERM", end);
+  try {
+    for (let attempt = 0; ; attempt++) {
+      let error: string;
+      try {
+        const config = readConfig(home);
+        if (config?.enrolled) return config;
+        error = `this node has not joined a hub (no enrolled config in ${home}): run fleetd node join first`;
+      } catch {
+        error = `node config in ${home} is unreadable`;
+      }
+      if (!retry) {
+        process.stderr.write(`fleetd: ${error}\n`);
+        return 1;
+      }
+      const wait = enrolledRetry(attempt);
+      process.stderr.write(`fleetd: ${error}; trying again in ${wait / 1000} s\n`);
+      const slept = await new Promise<boolean>((resolve) => {
+        if (stop.signal.aborted) return resolve(false);
+        const t = setTimeout(() => resolve(true), wait);
+        stop.signal.addEventListener("abort", () => (clearTimeout(t), resolve(false)), { once: true });
+      });
+      if (!slept) return 0;
+    }
+  } finally {
+    signal?.removeEventListener("abort", end);
+    process.off("SIGINT", end);
+    process.off("SIGTERM", end);
+  }
+}
+
+/** The wait in ms before attempt `attempt + 1` of reading the config: 5 s, doubling up to 5 minutes. */
+export const enrolledRetry = (attempt: number) => Math.min(5_000 * 2 ** Math.min(attempt, 6), 300_000);
 
 /** A running node, for tests and the CLI: its parts, and `stop()`, which lets go of its sessions' hosts. */
 export type RunningNode = { node: Node; sessions: SessionService; stop: () => Promise<void>; done: Promise<number> };
@@ -339,7 +376,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     ...(enrolled ? { onEnrolled: enrolled } : {}),
     capabilities: () => (hello = helloCapabilities(CAPABILITIES, node.area("caps").list(), mac)),
     heartbeat: async () => {
-      const parts = { load: readLoad(sessions.loginLimits() as never, home), steps: [] as unknown[], busy: { threads: sessions.running(), screens: 0, uploads: 0, hosted: 0 } };
+      const parts = { load: readLoad(sessions.loginLimits() as never, home), steps: [] as unknown[], busy: { threads: sessions.running(), screens: 0, uploads: uploads(home), hosted: 0 } };
       await hb.fill(parts);
       return { ...(parts.load ? { load: parts.load } : {}), ...(parts.steps.length ? { steps: parts.steps } : {}), busy: parts.busy };
     },
@@ -376,6 +413,8 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
 }
 
 async function runNodeProcess(home: string, config: NodeConfig, enrollToken: string | undefined, exitWhenEnrolled: boolean): Promise<number> {
+  // The last process the kernel kills when memory runs out.
+  protect("node");
   let running: RunningNode;
   try {
     running = await startNode(home, config, enrollToken, exitWhenEnrolled);

@@ -1,10 +1,11 @@
 // What the node reports about its machine with each heartbeat (crates/fleetd/src/node/load.rs, busy.rs): CPUs, the
-// 1-minute load, memory, free disk where its worktrees live, and the claude.ai usage windows its sessions last saw.
+// 1-minute load, memory, free disk where its worktrees live, its IPv4 (./network.ts), and the claude.ai usage windows its sessions last saw.
 // The screens' health (hosts, android, ios, desktop, mac) is the screens' modules' to add (`extra`).
 import { availableParallelism, loadavg } from "node:os";
 import { readFileSync, statfsSync } from "node:fs";
 import type { LoginLimit, NodeDisk, NodeLoad } from "../../shared/contracts.ts";
 import { readConfig } from "../config.ts";
+import { read as network } from "./network.ts";
 
 export type Memory = { total: number; available: number };
 
@@ -66,6 +67,8 @@ export function read(limits: LoginLimit[], home: string, extra?: (load: NodeLoad
   if (mem) load.memTotalBytes = mem.total;
   const d = disk(home, config?.minFreeGb);
   if (d) load.disk = d;
+  const net = network();
+  if (net) load.network = net;
   extra?.(load);
   return load;
 }

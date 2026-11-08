@@ -1,0 +1,11 @@
+hb:heartbeat `at`
+hb:heartbeat `busy`
+hb:heartbeat `load.cpus`
+hb:heartbeat `load.diskPerAgentBytes`
+hb:heartbeat `load.disk`
+hb:heartbeat `load.limits`
+hb:heartbeat `load.load1`
+hb:heartbeat `load.memPerAgentBytes`
+hb:heartbeat `load.memTotalBytes`
+hb:heartbeat `load.memUsedPct`
+hb:heartbeat `load.network`
