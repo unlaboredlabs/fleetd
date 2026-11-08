@@ -2,9 +2,12 @@
 //! person; a hub has at least one owner, made at its first start with people from the machine's user, and an older
 //! hub's human keys all bind to it, so a one-person hub reads exactly as before. Invites are pairing codes bound to a
 //! person (hub/pair); the app's tools are in tools.rs.
+pub mod avatar;
 pub mod tools;
 pub mod zone;
 
+#[cfg(test)]
+mod avatar_tests;
 #[cfg(test)]
 mod tests;
 
@@ -65,7 +68,9 @@ fn new_id() -> PersonId {
     PersonId::unchecked(format!("p_{}", base32(&rand::random::<[u8; 5]>())))
 }
 
-const COLUMNS: &str = "person_id, name, role, created_ms, removed_ms";
+/// Read from `people`; the last, their picture's id, from `person_avatars`.
+const COLUMNS: &str = "person_id, name, role, created_ms, removed_ms, \
+    (SELECT avatar FROM person_avatars a WHERE a.person_id = people.person_id)";
 
 fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Person> {
     let name: String = row.get(1)?;
@@ -77,6 +82,7 @@ fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Person> {
         role: role_of(&role),
         created_at: iso_ms(row.get(3)?).into(),
         removed_at: removed.map(|ms| iso_ms(ms).into()),
+        avatar: row.get(5)?,
     })
 }
 
@@ -183,6 +189,7 @@ impl People {
             role,
             created_at: iso_ms(now).into(),
             removed_at: None,
+            avatar: None,
         };
         self.db.with(|c| {
             c.prepare_cached(
@@ -219,8 +226,8 @@ impl People {
         })
     }
 
-    /// Removes a person: their devices are revoked, their open invites closed, and their Only-me projects archived
-    /// (an owner or admin may delete them, never open them). Returns the person and how many devices it revoked; None
+    /// Removes a person: their devices are revoked, their open invites closed, their picture forgotten, and their
+    /// Only-me projects archived (an owner or admin may delete them, never open them). Returns the person and how many devices it revoked; None
     /// when there is no such person.
     pub fn remove(&self, id: &PersonId) -> Result<Option<(Person, usize)>, StoreError> {
         let now = self.now();
@@ -238,6 +245,8 @@ impl People {
                 "UPDATE pair_codes SET revoked_ms = ?2 WHERE person_id = ?1 AND used_ms IS NULL AND revoked_ms IS NULL",
             )?
             .execute(params![id.as_str(), now])?;
+            c.prepare_cached("DELETE FROM person_avatars WHERE person_id = ?1")?
+                .execute([id.as_str()])?;
             crate::hub::navi::store::archive_of(c, id, now)?;
             Ok(get_on(c, id.as_str())?.map(|person| (person, revoked)))
         })

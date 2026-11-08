@@ -153,6 +153,14 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "A project's picture, base64 JPEG, with its id: the one its summary names in avatar. NotFound when it has none (its letters show).",
     ),
     (
+        "person_avatar_set",
+        "Set your own picture, shown in place of your initials: attachmentId is the picture as picked (png, jpeg or webp, from attachment_put), crop the square to keep in its pixels as it shows (absent: the largest one in its middle). Kept as a project's picture is (project_avatar_set): only that square, at most 512 px a side, re-encoded as JPEG without the original's metadata, and the upload is forgotten. No attachmentId removes it. Every open app sees it at once (people.changed). A person's device (a human key) only.",
+    ),
+    (
+        "person_avatar_get",
+        "A person's picture, base64 JPEG, with its id: the one their person names in avatar (hub_info's me, people_list). NotFound when they have none (their initials show).",
+    ),
+    (
         "project_icon_set",
         "Give a project the built-in icon its chat shows: icon is a face (a glass being: mo, wee, peep, nap, cy, wink, joy, huh, wow) and the color of its round field. It takes the place of its picture, if it had one. One never picked is derived from its id; every summary's icon says which it wears. Every open app sees it at once (project.settings). Anyone who may change the project's settings; a project's, its owner.",
     ),

@@ -2265,6 +2265,11 @@
           "const": "link_revoked",
           "description": "A hub link minted as them was revoked.",
           "type": "string"
+        },
+        {
+          "const": "picture_changed",
+          "description": "They set or removed their own picture (person_avatar_set).",
+          "type": "string"
         }
       ],
       "x-open": true

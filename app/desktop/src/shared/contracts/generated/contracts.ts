@@ -5174,7 +5174,8 @@ export type KnownPeopleChange =
   | "removed"
   | "device_revoked"
   | "account_removed"
-  | "link_revoked";
+  | "link_revoked"
+  | "picture_changed";
 /** KnownPeopleChange, or a value from a newer hub. */
 export type PeopleChange = KnownPeopleChange | (string & {});
 
@@ -5228,12 +5229,31 @@ export type PeriodBreakdown = {
 };
 
 export type Person = {
+  /** Their picture's id (person_avatar_get), which changes with each new picture; absent while their initials show. */
+  avatar?: string;
   createdAt: Timestamp;
   name: string;
   personId: PersonId;
   /** Removed people keep their id and name, so what they did still names them; their devices are revoked. */
   removedAt?: Timestamp;
   role: HubRole;
+};
+
+export type PersonAvatarGetInput = {
+  personId: PersonId;
+};
+
+export type PersonAvatarSetInput = {
+  /** The picture, uploaded with attachment_put (png, jpeg or webp). Absent removes the picture: the initials again. */
+  attachmentId?: AttachmentId;
+  /** The square of it to keep; absent: the largest square in its middle. Clamped to the picture. */
+  crop?: AvatarCrop;
+};
+
+export type PersonAvatarSetOutput = {
+  next?: string;
+  person: Person;
+  truncated?: boolean;
 };
 
 /** One person's Claude setup. */
@@ -9037,6 +9057,8 @@ export interface ToolMap {
   orders_board: { input: OrdersBoardInput; output: OrdersBoardOutput };
   pair_code_create: { input: PairCodeCreateInput; output: PairCodeCreateOutput };
   people_list: { input: PeopleListInput; output: PeopleListOutput };
+  person_avatar_get: { input: PersonAvatarGetInput; output: ProjectAvatarGetOutput };
+  person_avatar_set: { input: PersonAvatarSetInput; output: PersonAvatarSetOutput };
   person_remove: { input: PersonRemoveInput; output: PersonRemoveOutput };
   person_set: { input: PersonSetInput; output: PersonSetOutput };
   pr_diff: { input: PrDiffInput; output: PrDiffOutput };
