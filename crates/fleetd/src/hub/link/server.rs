@@ -380,6 +380,36 @@ impl NodeLinkServer {
         self.browser_live.frame(machine_id, frame);
     }
 
+    /// The hub stops (SIGTERM): lead calls that come in from now on are answered as not run, the ones being answered
+    /// get up to `wait` to finish and send their answers, and then every link closes with [`close::RESTART`], so each
+    /// node redials at once rather than find its socket reset.
+    pub async fn stop(&self, wait: Duration) {
+        self.stopping
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let mut calls = self.calls.subscribe();
+        let _ = tokio::time::timeout(wait, calls.wait_for(|n| *n == 0)).await;
+        let links: Vec<LinkTx> = self
+            .state
+            .lock()
+            .unwrap()
+            .links
+            .values()
+            .map(|(_, tx)| tx.clone())
+            .collect();
+        for tx in links {
+            let _ = tx.send(Out::Close(close::RESTART, "hub restarting".into()));
+        }
+    }
+
+    /// One lead call being answered, counted until the guard drops; None once the hub is stopping.
+    pub(crate) fn call_started(self: &Arc<Self>) -> Option<CallInFlight> {
+        if self.stopping.load(std::sync::atomic::Ordering::SeqCst) {
+            return None;
+        }
+        self.calls.send_modify(|n| *n += 1);
+        Some(CallInFlight(Arc::clone(self)))
+    }
+
     /// The machine's live link, by its id: a new one each time its node links.
     pub fn link_id(&self, machine_id: &MachineId) -> Option<u64> {
         self.state
@@ -412,6 +442,10 @@ fn retired_frame(text: &str) -> bool {
 pub struct NodeLinkServer {
     deps: LinkDeps,
     state: Mutex<State>,
+    /// Lead calls being answered now, across every link: the hub's stop waits for them ([`Self::stop`]).
+    calls: tokio::sync::watch::Sender<usize>,
+    /// The hub is stopping: lead calls that come in now aren't run, and say so.
+    stopping: std::sync::atomic::AtomicBool,
     /// Browser sessions' live view: who watches which, and their frames.
     pub browser_live: Arc<crate::hub::browser::live::Live>,
     heartbeat_every: Duration,
@@ -422,6 +456,30 @@ pub struct NodeLinkServer {
 struct Refused {
     code: u16,
     reason: String,
+}
+
+/// A lead call being answered ([`NodeLinkServer::call_started`]).
+pub(crate) struct CallInFlight(Arc<NodeLinkServer>);
+
+impl Drop for CallInFlight {
+    fn drop(&mut self) {
+        self.0.calls.send_modify(|n| *n = n.saturating_sub(1));
+    }
+}
+
+/// The answer to a lead call that came in while the hub stops: not run, so trying it again can't run it twice.
+fn stopping_call(id: fleetd_contracts::prim::NonEmpty) -> LeadResultFrame {
+    LeadResultFrame {
+        id,
+        result: None,
+        error: Some(
+            McpToolError::new(
+                ErrorCode::Failed,
+                "fleetd hub is restarting, so this call didn't run",
+            )
+            .with_fix("try it again in a few seconds"),
+        ),
+    }
 }
 
 /// The hub's answer to a node's lead call it couldn't read, so the agent behind it isn't left waiting.
@@ -519,6 +577,8 @@ impl NodeLinkServer {
         Arc::new(Self {
             deps,
             state: Mutex::default(),
+            calls: tokio::sync::watch::Sender::new(0),
+            stopping: std::sync::atomic::AtomicBool::new(false),
             browser_live: Arc::default(),
             heartbeat_every,
             silence_timeout,
@@ -1285,6 +1345,10 @@ impl NodeLinkServer {
                     );
                 }
                 NodeToHub::LeadCall(call) => {
+                    let Some(in_flight) = self.call_started() else {
+                        send(tx, HubToNode::LeadResult(stopping_call(call.id)));
+                        continue;
+                    };
                     // Off the frame loop: a slow call must not hold up heartbeats or other calls.
                     let this = self.clone();
                     let tx = tx.clone();
@@ -1292,6 +1356,8 @@ impl NodeLinkServer {
                     tokio::spawn(async move {
                         let result = this.answer_lead_call(&machine_id, call).await;
                         send(&tx, HubToNode::LeadResult(result));
+                        // Counted until its answer is queued ahead of the link's close.
+                        drop(in_flight);
                     });
                 }
                 reply @ (NodeToHub::CmdResult(_)

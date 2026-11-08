@@ -69,6 +69,8 @@ impl std::fmt::Display for LinkFatal {
 
 enum LinkEnd {
     Lost(String),
+    /// The hub closed the link as a restart (`close::RESTART`): it is back within a moment.
+    Restarting(String),
     Fatal(LinkFatal),
     /// The machine woke from sleep: reconnect now, without backoff.
     Woke,
@@ -176,7 +178,7 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
     });
     let mut enroll_token = options.enroll_token;
     let mut on_enrolled = options.on_enrolled;
-    let mut attempt: u32 = 0;
+    let mut redial = Redial::default();
     // One line when the link goes and one when it is back: the tries between log only at debug.
     let mut down = LinkDown::default();
     loop {
@@ -185,7 +187,7 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
             &shared,
             token_now.as_ref().map(|t| t.as_str()),
             &mut |hub_id: &str| {
-                attempt = 0;
+                redial.linked();
                 down.back(hub_id, &shared.settings.machine_id);
                 if enroll_token.take().is_some()
                     && let Some(enrolled) = on_enrolled.take()
@@ -195,17 +197,17 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
             },
         )
         .await;
-        let lost = match end {
+        let (lost, restarting) = match end {
             LinkEnd::Fatal(fatal) => return fatal,
             LinkEnd::Woke => {
                 tracing::info!("the machine woke; linking to the hub again");
                 continue;
             }
-            LinkEnd::Lost(why) => why,
+            LinkEnd::Lost(why) => (why, false),
+            LinkEnd::Restarting(why) => (why, true),
         };
         let jitter: f64 = rand::thread_rng().gen_range(0.8..1.2);
-        let delay = reconnect_delay(attempt, jitter);
-        attempt = attempt.saturating_add(1);
+        let delay = redial.next(restarting, std::time::Instant::now(), jitter);
         down.lost(&lost, delay);
         tokio::time::sleep(delay).await;
     }
@@ -242,6 +244,40 @@ impl LinkDown {
             // A relink after a wake, which reconnects without counting as a loss.
             tracing::info!(%hub_id, %machine_id, "linked to hub again");
         }
+    }
+}
+
+/// How long the node redials every [`RESTART_REDIAL`] after the hub closed its link as a restart.
+const RESTART_WINDOW: Duration = Duration::from_secs(60);
+/// The wait between redials while the hub restarts: it is down for a moment, so a backoff would only relink late.
+const RESTART_REDIAL: Duration = Duration::from_millis(250);
+
+/// When the node redials: right behind a hub that said it restarts (`close::RESTART`), for [`RESTART_WINDOW`];
+/// otherwise, and once that window is over, with the backoff of [`reconnect_delay`].
+#[derive(Default)]
+struct Redial {
+    attempt: u32,
+    restart_until: Option<std::time::Instant>,
+}
+
+impl Redial {
+    /// The wait before the next try, after one that ended at `now` (`restarting`: with the hub's restart close).
+    fn next(&mut self, restarting: bool, now: std::time::Instant, jitter: f64) -> Duration {
+        if restarting {
+            self.restart_until = Some(now + RESTART_WINDOW);
+        }
+        if self.restart_until.is_some_and(|until| now < until) {
+            return RESTART_REDIAL;
+        }
+        self.restart_until = None;
+        let delay = reconnect_delay(self.attempt, jitter);
+        self.attempt = self.attempt.saturating_add(1);
+        delay
+    }
+
+    /// A welcome: the next loss starts over.
+    fn linked(&mut self) {
+        *self = Self::default();
     }
 }
 
@@ -382,11 +418,13 @@ fn decode_message(message: Message, inflater: &mut Inflater) -> Result<Option<Re
                 };
                 return Err(LinkEnd::Fatal(LinkFatal { reason }));
             }
-            return Err(LinkEnd::Lost(
-                format!("hub closed the link ({code} {reason})")
-                    .trim()
-                    .to_owned(),
-            ));
+            let why = format!("hub closed the link ({code} {reason})")
+                .trim()
+                .to_owned();
+            if code == close::RESTART {
+                return Err(LinkEnd::Restarting(why));
+            }
+            return Err(LinkEnd::Lost(why));
         }
         // Pings are answered by tungstenite; neither counts as a frame.
         Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => return Ok(None),
@@ -1273,6 +1311,57 @@ mod tests {
         );
         assert_eq!(reconnect_delay(u32::MAX, 1.2), Duration::from_secs(36));
         assert_eq!(reconnect_delay(0, 0.8), Duration::from_millis(200));
+    }
+
+    /// After the hub's restart close the node redials every 250 ms, through the failed dials while the hub is down,
+    /// for a minute; after any other close, and once that minute is over, it backs off as before. A link back starts
+    /// over.
+    #[test]
+    fn after_a_restart_close_redials_are_250_ms_apart_for_a_minute() {
+        let at = std::time::Instant::now();
+        let mut redial = Redial::default();
+        let waits: Vec<u64> = (0..4)
+            .map(|_| redial.next(false, at, 1.0).as_millis() as u64)
+            .collect();
+        assert_eq!(waits, [250, 500, 1_000, 2_000], "any other close backs off");
+
+        let mut redial = Redial::default();
+        assert_eq!(redial.next(true, at, 1.0), RESTART_REDIAL);
+        // The dials while the hub is still down fail as lost links.
+        for s in [1, 10, 59] {
+            let now = at + Duration::from_secs(s);
+            assert_eq!(
+                redial.next(false, now, 1.2),
+                Duration::from_millis(250),
+                "{s} s in"
+            );
+        }
+        let late = at + Duration::from_secs(61);
+        assert_eq!(redial.next(false, late, 1.0), Duration::from_millis(250));
+        assert_eq!(redial.next(false, late, 1.0), Duration::from_millis(500));
+        redial.linked();
+        assert_eq!(redial.next(false, late, 1.0), Duration::from_millis(250));
+        assert!(redial.restart_until.is_none());
+    }
+
+    /// The hub's restart close reads as a restart, not a lost link or a refusal.
+    #[test]
+    fn a_1012_close_is_the_hubs_restart() {
+        let mut inflater = Inflater::default();
+        let frame = |code: u16| {
+            Message::Close(Some(tokio_tungstenite::tungstenite::protocol::CloseFrame {
+                code: code.into(),
+                reason: "hub restarting".into(),
+            }))
+        };
+        assert!(matches!(
+            decode_message(frame(close::RESTART), &mut inflater),
+            Err(LinkEnd::Restarting(_))
+        ));
+        assert!(matches!(
+            decode_message(frame(1001), &mut inflater),
+            Err(LinkEnd::Lost(_))
+        ));
     }
 
     /// A hub on a local socket: its side of the link, once the node dialled it with [`connect`].

@@ -35,6 +35,9 @@ pub mod close {
     pub const REPLACED: u16 = 4003;
     /// No frame for 45 s.
     pub const HEARTBEAT_TIMEOUT: u16 = 4008;
+    /// WebSocket's "Service Restart": the hub is stopping (an update, a restart) and comes back within a moment, so the
+    /// node redials every 250 ms for a minute rather than back off.
+    pub const RESTART: u16 = 1012;
     /// The longest close reason a WebSocket carries; the hub cuts a longer one short.
     pub const REASON_MAX_BYTES: usize = 123;
 }
