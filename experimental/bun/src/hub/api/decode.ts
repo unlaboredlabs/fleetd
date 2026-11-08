@@ -8,6 +8,9 @@
 // Read as text, as src/hub/mcp/endpoint.ts reads it: the bundler keeps one module per file, so a second loader for the
 // same file makes the binary's copy a string or an object depending on which import it resolves first.
 import schemaText from "../../../../../crates/fleetd-contracts/schema/McpTools.json" with { type: "text" };
+// The node's lead calls (crates/fleetd-contracts/src/lead_calls.rs `LeadCall`), rendered the same way; its defs join
+// McpTools' (test/lead_calls_decode.test.ts holds every name the two share to one schema).
+import leadCallText from "../../../../../crates/fleetd-contracts/schema/LeadCall.json" with { type: "text" };
 
 type Schema = {
   $ref?: string;
@@ -35,6 +38,9 @@ type Schema = {
 };
 
 const DEFS = (JSON.parse(schemaText) as { $defs: Record<string, Schema> }).$defs;
+/** LeadCall.json's own defs, as rendered, for the test that holds shared names to one schema. */
+export const LEAD_CALL_DEFS = (JSON.parse(leadCallText) as { $defs: Record<string, Schema> }).$defs;
+for (const [name, def] of Object.entries(LEAD_CALL_DEFS)) DEFS[name] ??= def;
 const TOOLS = (DEFS.McpTools?.properties ?? {}) as Record<string, Schema>;
 /** Rust's `Line`: a Text that refuses `\r` and `\n`. */
 const SINGLE_LINE = "^[^\\r\\n]*$";
@@ -305,4 +311,9 @@ export function decodeInput(tool: string, input: unknown): unknown {
   const schema = TOOLS[`${tool}.input`];
   if (!schema) return input ?? {};
   return decoder(schema)(input ?? {});
+}
+
+/** A node's lead call decoded against `LeadCall` (an internally tagged enum on `op`); throws a DecodeError. */
+export function decodeLeadCall(call: unknown): unknown {
+  return decoder(DEFS.LeadCall as Schema)(call);
 }
