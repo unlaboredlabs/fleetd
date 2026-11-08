@@ -49,10 +49,15 @@ fn values_are_computed_for_this_hub_and_work_on_plain_http() {
     assert_eq!(ids, SetupStepId::ALL);
     let address = &steps[0].parts[0].values[0];
     assert_eq!(address.value, HUB);
-    let machines = &steps[1].parts[0].values[1];
+    // The hub's own machine and another one, each with what runs where: no `fleetd init` to send you back to.
+    let machines: Vec<_> = steps[1].parts[0]
+        .values
+        .iter()
+        .map(|v| v.value.as_str())
+        .collect();
     assert_eq!(
-        machines.value,
-        format!("fleetd init --join {HUB} --code <code>")
+        machines,
+        ["fleetd machine add --local", "fleetd pair --worker <name>"]
     );
     // The Claude key is named for this hub, and a hub reached by address names itself "hub".
     let key_name = |steps: &[fleetd_contracts::setup::HubSetupStep]| {
