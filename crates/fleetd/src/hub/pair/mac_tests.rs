@@ -181,6 +181,26 @@ async fn an_admin_mints_a_code_the_mac_trades_for_a_token_that_enrolls_it() {
     assert_eq!(again, StatusCode::UNAUTHORIZED, "single use");
 }
 
+/// A hub only at a loopback address says how to give it one the Mac reaches. It used to borrow the phone's words and
+/// end with "then pair the phone again", in Add machine › A Mac for agents.
+#[tokio::test]
+async fn a_loopback_only_hub_says_what_the_mac_needs_not_the_phone() {
+    let (hub, _home) = hub();
+    let out = crate::hub::api::registry()
+        .call(
+            &hub,
+            &admin(&hub, Role::Admin),
+            "mac_code_create",
+            serde_json::json!({ "hubUrl": "http://127.0.0.1:4790" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(out.get("hubUrl"), None);
+    let next = out["next"].as_str().unwrap();
+    assert!(next.contains("which the Mac can't reach"), "{next}");
+    assert!(!next.contains("phone"), "{next}");
+}
+
 #[tokio::test]
 async fn only_an_admin_mints_one() {
     let (hub, _home) = hub();
