@@ -730,6 +730,18 @@ impl Pool {
         lock(&self.warm).len()
     }
 
+    /// About how long until the `nth` clone from now (1 is the next) is ready, in seconds: a warm one at once, the rest
+    /// one boot after another behind the one under way.
+    pub fn ready_in(&self, nth: usize) -> u64 {
+        let warm = self.warm();
+        if nth <= warm {
+            return 0;
+        }
+        let refill = lock(&self.refill);
+        let behind = (nth - warm - 1) as u64;
+        refill.wait(Instant::now()).secs + behind * refill.last_boot.as_secs().max(1)
+    }
+
     /// The last boot's error, while the pool's boots keep failing.
     pub fn failing(&self) -> Option<String> {
         lock(&self.refill).last_error.clone()
