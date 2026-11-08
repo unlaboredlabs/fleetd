@@ -104,16 +104,31 @@ fn write_app_pair(file: &Path, hub: &str, code: &str, expires_at: &str) -> Resul
 
 /// The hub's listen address and URL from `setup.json`, or the defaults when `fleetd init` never ran.
 pub(crate) fn local_hub_urls(home: &Path) -> Result<Vec<String>, String> {
+    hub_urls_at(home, None)
+}
+
+/// [`local_hub_urls`], asked by the hub itself: `listening` is its own listen address. A hub started by hand (no
+/// setup.json) can't find its own process among those holding its database, and used to give the default address.
+pub(crate) fn hub_urls_at(
+    home: &Path,
+    listening: Option<&crate::hub::api::Listen>,
+) -> Result<Vec<String>, String> {
     let setup = super::setup::state::read_setup(home)?;
-    // Without init's setup.json, the hub someone started by hand tells its address in its own command line.
-    let running = setup.is_none().then(|| running_listen(home)).flatten();
-    let listen_text = setup
-        .as_ref()
-        .map(|s| s.listen.as_str())
-        .or(running.as_deref())
-        .unwrap_or(DEFAULT_LISTEN);
-    let (host, port) = parse_listen(listen_text)
-        .ok_or_else(|| format!("the hub's listen address '{listen_text}' is not host:port"))?;
+    let (host, port) = match (&setup, listening) {
+        (None, Some(own)) => (own.host.clone(), own.port),
+        _ => {
+            // Without init's setup.json, the hub someone started by hand tells its address in its own command line.
+            let running = setup.is_none().then(|| running_listen(home)).flatten();
+            let listen_text = setup
+                .as_ref()
+                .map(|s| s.listen.as_str())
+                .or(running.as_deref())
+                .unwrap_or(DEFAULT_LISTEN);
+            parse_listen(listen_text).ok_or_else(|| {
+                format!("the hub's listen address '{listen_text}' is not host:port")
+            })?
+        }
+    };
     let host_ip = host.parse::<IpAddr>().ok();
     let everywhere = host_ip.is_some_and(|ip| ip.is_unspecified());
     let configured = setup
@@ -224,10 +239,17 @@ pub fn phone_url<'a>(urls: impl IntoIterator<Item = &'a str>) -> Option<&'a str>
     })
 }
 
-/// What to do when the hub has no address a phone can reach.
-pub fn loopback_only_fix() -> &'static str {
-    "Give the hub an address your phone reaches, its tailnet or LAN address: run `fleetd init` again on the hub and \
-     pick it (Settings › Hub › Setup › Where the hub listens says how), then pair the phone again."
+/// What to do when the hub has no address `device` ("your phone", "the Mac") can reach, `then` once it has one.
+pub fn loopback_only_fix(device: &str, then: &str) -> String {
+    format!(
+        "Give the hub an address {device} reaches, its tailnet or LAN address: run `fleetd init` again on the hub and \
+         pick it (Settings › Hub › Setup › Where the hub listens says how), then {then}."
+    )
+}
+
+/// [`loopback_only_fix`] for a phone.
+pub fn phone_loopback_fix() -> String {
+    loopback_only_fix("your phone", "pair the phone again")
 }
 
 /// `text` as a QR in Unicode half-blocks, two rows of modules a line, with its quiet zone. Light modules are drawn,
@@ -377,6 +399,7 @@ pub fn worker_command(home: Option<&str>, machine: &str) -> Result<String, Strin
     let hub = super::hub_key::open_hub(&home)?;
     let join = worker_join(
         &home,
+        None,
         &hub.auth,
         &machine_id,
         false,
@@ -478,8 +501,10 @@ pub struct WorkerJoin {
 /// Mints the one-time code `fleetd pair --worker` prints, and the app's Add machine shows. `rejoin`: the line enrolls
 /// a machine that joined before again (`--rejoin`), repairing it. `mac`: the line joins the agents' Mac (`--mac`),
 /// pasted in Terminal at its screen. `by` names the caller in the hub log's line for the mint.
+/// `listening`: the hub's own listen address, when the hub itself asks (see [`hub_urls_at`]).
 pub fn worker_join(
     home: &Path,
+    listening: Option<&crate::hub::api::Listen>,
     auth: &crate::hub::auth::Auth,
     machine: &fleetd_contracts::ids::MachineId,
     rejoin: bool,
@@ -487,7 +512,7 @@ pub fn worker_join(
     by: &str,
 ) -> Result<WorkerJoin, String> {
     let setup = super::setup::state::read_setup(home)?;
-    let urls = local_hub_urls(home)?;
+    let urls = hub_urls_at(home, listening)?;
     let token = auth
         .create_enroll_token(machine, by)
         .map_err(|error| error.to_string())?;
@@ -542,9 +567,12 @@ pub fn join_line(hub: &str, code: &str, machine: &str, identity: Option<&str>) -
 /// What `fleetd pair` prints: with `qr`, the link a phone can open as a QR above the code, or why there is none.
 fn describe(minted: &Minted, qr: bool) -> String {
     let mut out = String::new();
-    if qr {
-        out += &phone_qr(minted);
-    }
+    let (shown, scan) = if qr {
+        phone_qr(minted)
+    } else {
+        (String::new(), false)
+    };
+    out += &shown;
     out += &format!(
         "Pairing code: {}  (single use, valid until {})\nGrants:       {} on every machine\nHub address:  {}\n",
         minted.code,
@@ -555,26 +583,35 @@ fn describe(minted: &Minted, qr: bool) -> String {
     if minted.urls.len() > 1 {
         out += &format!("  or:         {}\n", minted.urls[1..].join(", "));
     }
+    // Only a QR that was printed is one to scan (--no-qr, or a hub no phone reaches, prints none).
+    let phone = match scan {
+        true => "On a phone, scan the QR with the\nfleetd app. On another device, enter",
+        false => "On a phone or another device,\nenter",
+    };
     out += &format!(
-        "Pairing link: {}\n\nThe fleetd app on this machine pairs by itself when it opens. On a phone, scan the QR with the\nfleetd app. On another device, enter the code and hub address above in the app, or open the link there.\n",
+        "Pairing link: {}\n\nThe fleetd app on this machine pairs by itself when it opens. {phone} the code and hub address above in the app, or open the link there.\n",
         minted.deep_link
     );
     out
 }
 
 /// The QR of the pairing link for a phone, with the hub at an address a phone reaches; or, when the hub has none,
-/// why there is no QR and how to give it one.
-fn phone_qr(minted: &Minted) -> String {
+/// why there is no QR and how to give it one. True when it has the QR.
+fn phone_qr(minted: &Minted) -> (String, bool) {
     let Some(hub) = phone_url(minted.urls.iter().map(String::as_str)) else {
-        return format!(
+        let why = format!(
             "No QR for a phone: the hub is only at {}, which a phone can't reach. {}\n\n",
             minted.urls.join(", "),
-            loopback_only_fix()
+            phone_loopback_fix()
         );
+        return (why, false);
     };
     match terminal_qr(&deep_link(hub, &minted.code)) {
-        Some(qr) => format!("Scan with the fleetd app on your phone:\n\n{qr}\n\n"),
-        None => String::new(),
+        Some(qr) => (
+            format!("Scan with the fleetd app on your phone:\n\n{qr}\n\n"),
+            true,
+        ),
+        None => (String::new(), false),
     }
 }
 
@@ -888,6 +925,13 @@ mod tests {
         );
         assert!(plain.starts_with("Pairing code: ABCD-EFGH"), "{plain}");
         assert!(!plain.contains('█'));
+        // Bug hunt: --no-qr still said to scan the QR it left out.
+        assert!(out.contains("On a phone, scan the QR"), "{out}");
+        assert!(!plain.contains("QR"), "{plain}");
+        assert!(
+            plain.contains("On a phone or another device,\nenter the code"),
+            "{plain}"
+        );
     }
 
     #[test]
@@ -901,6 +945,7 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("Pairing code: ABCD-EFGH"));
+        assert!(!out.contains("scan the QR"), "{out}");
     }
 
     #[test]

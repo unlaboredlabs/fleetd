@@ -829,8 +829,8 @@ profile.
 | To change | Do |
 |---|---|
 | Which profiles a project allows | Settings → Projects → Agents → **Allowed profiles**: a checkbox each, the default checked for good. Or `fleetd project set <machine>/<project> --profiles medium,quick` (`none`: the default alone). |
-| A profile's model, effort, fast mode or note, or which is the default | Settings → Hub → Every project → **Profiles** (owners and admins): New profile, Edit and Delete. Or `fleetd project profile <name> --model claude-sonnet-5-5 --effort xhigh`: a name that doesn't exist yet makes a new profile; `--delete` removes one. |
-| Which profile leads run on | Settings → Hub → Every project → Profiles → **Lead runs on** (owners and admins): any of the hub's profiles, the default until another is picked. Or `fleetd project profile <name> --lead`. Every project's lead starts on it at its next start; reviews and tasks that name no profile stay on the default. Members see it on a project's Agents page, under Allowed profiles, with who to ask. |
+| A profile's model, effort, fast mode or note, or which is the default | Settings → Hub → Every project → **Profiles** (owners and admins): New profile, Edit and Delete. Or `fleetd project profile <name> --model claude-sonnet-5-5 --effort xhigh --key-file <your human key>`: a name that doesn't exist yet makes a new profile; `--delete` removes one. |
+| Which profile leads run on | Settings → Hub → Every project → Profiles → **Lead runs on** (owners and admins): any of the hub's profiles, the default until another is picked. Or `fleetd project profile <name> --lead --key-file <your human key>`. Every project's lead starts on it at its next start; reviews and tasks that name no profile stay on the default. Members see it on a project's Agents page, under Allowed profiles, with who to ask. |
 | How the lead picks | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told), or a profile's note. It takes effect at the lead's next start. |
 
 ### What a profile runs on {#profile-settings}
@@ -864,7 +864,7 @@ and effort it started on (`lead_start {fresh: true}` starts it again now). Each 
 lane, and its time by profile, name the profile its session started on.
 
 ```text
-$ fleetd project profile lead --model claude-opus-5-5 --effort xhigh --lead
+$ fleetd project profile lead --model claude-opus-5-5 --effort xhigh --lead --key-file ~/.fleetd/human.key
 ✓ Projects allow lead once they pick it on their Agents page (project_set); new agents on it run claude-opus-5-5 at xhigh. Leads start on lead (claude-opus-5-5 at xhigh) from each lead's next start.
 ```
 

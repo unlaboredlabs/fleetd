@@ -604,6 +604,125 @@ async fn the_message_that_starts_the_lead_goes_in_with_its_start() {
     );
 }
 
+/// Bug hunt: the message that starts the lead went in twice, in the lead's first message and again as a turn, when
+/// the held messages were sent while that start ran (on its lead.started, or the minute's sweep): the message is held
+/// until its start returns.
+#[tokio::test]
+async fn the_message_that_starts_the_lead_goes_in_once_while_held_ones_are_sent() {
+    use fleetd_contracts::node_link::{HubToNode, NodeToHub};
+    use fleetd_contracts::sessions::SessionCall;
+    let (hub, _home) = hub();
+    let machine = project().machine_id;
+    // A node that holds its launches' answers until `go` says so.
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    hub.executors
+        .attach(
+            &machine,
+            crate::hub::executor::NodeSessions {
+                link_id: 1,
+                send: tx,
+            },
+        )
+        .await;
+    let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let go = Arc::new(tokio::sync::Notify::new());
+    let (seen, executors, gate) = (calls.clone(), hub.executors.clone(), go.clone());
+    tokio::spawn(async move {
+        let mut open = false;
+        while let Some(HubToNode::SessionCall(f)) = rx.recv().await {
+            let result = match &f.call {
+                SessionCall::Follow { .. } => {
+                    json!({ "err": { "code": "not_found", "message": "-" } })
+                }
+                SessionCall::Send { run_id, .. } => {
+                    json!({ "ok": { "kind": "sent", "runId": run_id.as_str(), "queued": false } })
+                }
+                SessionCall::ReadFile { .. } => json!({ "ok": { "kind": "file" } }),
+                _ => json!({ "ok": { "kind": "done" } }),
+            };
+            let launch = matches!(f.call, SessionCall::Launch(_));
+            seen.lock().unwrap().push(f.call);
+            if launch && !open {
+                gate.notified().await;
+                open = true;
+            }
+            let frame: NodeToHub = serde_json::from_value(
+                json!({ "t": "session_reply", "id": f.id, "result": result }),
+            )
+            .unwrap();
+            executors.handle_frame(&machine, frame);
+        }
+    });
+    hub.executors.set_runner_ready(&project().machine_id, true);
+    hub.executors.await_ready(&project().machine_id).await;
+    let sending = {
+        let hub = hub.clone();
+        tokio::spawn(async move {
+            crate::hub::api::registry()
+                .call(
+                    &hub,
+                    &person(),
+                    "chat_send",
+                    say_to_app("add dark mode", "s1", None),
+                )
+                .await
+                .unwrap()
+        })
+    };
+    let launched = || {
+        calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| matches!(c, SessionCall::Launch(_)))
+    };
+    for _ in 0..1000 {
+        if launched() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    assert!(
+        launched(),
+        "the message started no lead: {:?}",
+        calls.lock().unwrap()
+    );
+    // The lead's start is under way, its message still held: the held messages go meanwhile.
+    let held = {
+        let hub = hub.clone();
+        tokio::spawn(async move { flow::send_held(&hub, &project()).await })
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    go.notify_one();
+    let within = std::time::Duration::from_secs(30);
+    let sent = tokio::time::timeout(within, sending)
+        .await
+        .expect("the send that starts the lead returns")
+        .unwrap();
+    tokio::time::timeout(within, held)
+        .await
+        .expect("the held messages go")
+        .unwrap();
+    assert_eq!(sent["message"]["delivery"], "turn", "{sent}");
+    let calls = calls.lock().unwrap();
+    let launches = calls
+        .iter()
+        .filter(|c| matches!(c, SessionCall::Launch(_)))
+        .count();
+    let sends: Vec<_> = calls
+        .iter()
+        .filter_map(|c| match c {
+            SessionCall::Send { text, .. } => Some(text.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        (launches, sends.len()),
+        (1, 0),
+        "the message went in again: {sends:?}"
+    );
+}
+
 /// What the lead's session took first when `input` started it.
 async fn lead_reads(input: Value, hub: &Arc<Hub>) -> String {
     use fleetd_contracts::sessions::SessionCall;

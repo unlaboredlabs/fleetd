@@ -5,7 +5,7 @@ use std::io::{BufRead, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId};
+use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId};
 use fleetd_contracts::prompts::PromptScope;
 use serde_json::json;
 
@@ -16,7 +16,7 @@ use crate::clock::SystemClock;
 use crate::hub::prompts::registry::{ENTRIES, Entry, INSTRUCTIONS};
 use crate::hub::prompts::render::warnings;
 use crate::hub::prompts::store::entry;
-use crate::hub::store::{EventLog, HubDb, iso_ms, now_ms};
+use crate::hub::store::{EventLog, HubDb, HubStore, iso_ms, now_ms};
 
 pub const PROMPTS_USAGE: &str = r#"  prompts list [--project <machine>/<project>]
              every prompt fleetd sends a model, which text is in effect, and
@@ -90,15 +90,17 @@ pub fn prompts_command(argv: &[String]) -> CliResult {
     };
     let project = match v.str("project").map(|p| split_ref(p, "--project")) {
         None => None,
-        Some(Ok((machine_id, p))) => Some(ProjectRef {
-            machine_id,
-            project_id: ProjectId::unchecked(p),
-        }),
+        Some(Ok(named)) => Some(named),
         Some(Err(message)) => return usage(&message),
     };
     let db = match resolve_home(None).and_then(|home| open(&home)) {
         Ok(db) => db,
         Err(message) => return CliResult::err(1, format!("fleetd: {message}\n")),
+    };
+    let project = match project.map(|(machine_id, which)| find_project(&db, machine_id, &which)) {
+        None => None,
+        Some(Ok(r)) => Some(r),
+        Some(Err(message)) => return CliResult::err(2, format!("fleetd: {message}\n")),
     };
     let id = v.positionals.first().map(String::as_str);
     if verb == "list" {
@@ -174,6 +176,29 @@ pub fn prompts_command(argv: &[String]) -> CliResult {
         Ok(text) if text.ends_with('\n') || text.is_empty() => ok(text),
         Ok(text) => ok(text + "\n"),
         Err(message) => CliResult::err(1, format!("fleetd: {message}\n")),
+    }
+}
+
+/// `--project <machine>/<id or title>` as the project it names on this hub. One it doesn't have is refused: its edit
+/// would be kept where no lead ever reads it.
+fn find_project(db: &Arc<HubDb>, machine_id: MachineId, which: &str) -> Result<ProjectRef, String> {
+    let projects = HubStore::new(db.clone())
+        .projects_list(Some(&machine_id), None)
+        .map_err(|e| e.to_string())?;
+    let by_id = projects.iter().find(|p| p.project_id.as_str() == which);
+    let by_title: Vec<_> = projects.iter().filter(|p| p.title == which).collect();
+    let found = by_id.or(match by_title.as_slice() {
+        [one] => Some(*one),
+        _ => None,
+    });
+    match found {
+        Some(p) => Ok(ProjectRef {
+            machine_id,
+            project_id: p.project_id.clone(),
+        }),
+        None => Err(format!(
+            "no single project '{which}' on {machine_id}; fleetd project list --machine {machine_id} shows their ids"
+        )),
     }
 }
 
@@ -348,7 +373,35 @@ fn confirm(question: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::scratch_file;
+    use super::*;
+
+    /// Bug hunt: `prompts edit lead.wake --project devbox/inventory` said "Saved" for the project titled inventory,
+    /// but kept the edit under a project id `inventory`, which no lead reads; a typo did the same.
+    #[test]
+    fn a_projects_prompt_names_a_project_the_hub_has() {
+        let home = tempfile::tempdir().unwrap();
+        let db = HubDb::open(home.path()).unwrap();
+        let machine = MachineId::new("devbox").unwrap();
+        HubStore::new(db.clone())
+            .projects_upsert_many(
+                &machine,
+                &[serde_json::from_value(json!({
+                    "machineId": "devbox", "projectId": "f0d0d1a4", "title": "inventory", "workspaceRoot": "/w/inv",
+                    "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 },
+                    "lastActivityAt": "2026-11-08T00:00:00.000Z",
+                }))
+                .unwrap()],
+            )
+            .unwrap();
+        let found = |which: &str| find_project(&db, machine.clone(), which);
+        assert_eq!(found("f0d0d1a4").unwrap().project_id.as_str(), "f0d0d1a4");
+        assert_eq!(found("inventory").unwrap().project_id.as_str(), "f0d0d1a4");
+        let typo = found("inventroy").unwrap_err();
+        assert!(
+            typo.contains("no single project 'inventroy' on devbox"),
+            "{typo}"
+        );
+    }
 
     #[test]
     fn the_edit_file_is_private_unguessable_and_removed() {

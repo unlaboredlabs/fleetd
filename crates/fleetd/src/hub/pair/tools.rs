@@ -11,7 +11,7 @@ use fleetd_contracts::mcp::{
 };
 
 use super::PairCodes;
-use crate::cli::pair::{deep_link, local_hub_urls, loopback_only_fix, phone_url};
+use crate::cli::pair::{deep_link, hub_urls_at, loopback_only_fix, phone_loopback_fix, phone_url};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows_everywhere, error, is_human};
 
 pub fn register(tools: &mut Registry) {
@@ -31,7 +31,7 @@ fn role_everywhere(caller: &Caller) -> Option<Role> {
 /// Where a phone reaches the hub: the address the app reaches it at, else the hub's own (its `--url`, the one setup
 /// saved, its tailnet and LAN addresses), never a loopback one. None when it has only those.
 pub fn phone_hub_url(hub: &Hub, app_url: Option<&str>) -> Option<String> {
-    let own = local_hub_urls(&hub.config.home).unwrap_or_default();
+    let own = hub_urls_at(&hub.config.home, Some(&hub.config.listen)).unwrap_or_default();
     let candidates = app_url
         .into_iter()
         .chain(hub.config.url.as_deref())
@@ -76,7 +76,7 @@ async fn pair_code_create(
                 "The hub is only at {}, which a phone can't reach.",
                 app_url.map_or_else(|| hub.config.url(), str::to_owned)
             ),
-            loopback_only_fix(),
+            phone_loopback_fix(),
         )
     })?;
     let minted =
@@ -111,7 +111,7 @@ async fn mac_code_create(
         ),
         None => format!(
             "The hub is only at a loopback address, which the Mac can't reach. {}",
-            loopback_only_fix()
+            loopback_only_fix("the Mac", "make a new code here")
         ),
     };
     Ok(MacCodeCreateOutput {

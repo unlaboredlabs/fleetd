@@ -863,6 +863,32 @@ async fn a_join_code_comes_with_the_line_to_paste() {
     assert_eq!(out["hubUrl"], "http://devbox.example.ts.net:4790");
 }
 
+/// A hub started by hand (`fleetd hub start --listen`, no setup.json) gives its own address in the line: it used to
+/// look for its listen address among the other processes holding its database, never found itself, and gave the
+/// default 127.0.0.1:4790 instead.
+#[tokio::test]
+async fn a_hand_started_hubs_join_line_has_its_own_address() {
+    let home = tempfile::tempdir().unwrap();
+    let config = HubConfig {
+        home: home.path().to_path_buf(),
+        listen: Listen {
+            host: "127.0.0.1".into(),
+            port: 47911,
+        },
+        url: None,
+    };
+    let hub = crate::hub::serve::build_on(
+        HubDb::open_memory().unwrap(),
+        config,
+        ManualClock::at(NOW_MS),
+    )
+    .unwrap();
+    let out = call(&hub, "machine_join", json!({ "machineId": "laptop" })).await;
+    assert_eq!(out["hubUrl"], "http://127.0.0.1:47911");
+    let line = out["line"].as_str().unwrap();
+    assert!(line.contains("--join http://127.0.0.1:47911 "), "{line}");
+}
+
 #[tokio::test]
 async fn a_repair_connects_with_the_ssh_config_it_was_set_up_with() {
     let (hub, machine, home) = hub();

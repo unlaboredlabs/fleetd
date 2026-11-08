@@ -10,7 +10,33 @@ import { BLOCK_FENCE } from "../../../shared/contracts";
 import { Code, InlineCode, Unshown } from "./Code";
 import s from "./Markdown.module.css";
 
+/** A markdown tree's node, as far as `softBreaks` reads it. */
+interface Node {
+  type: string;
+  value?: string;
+  children?: Node[];
+}
+
+/**
+ * Each line break inside a paragraph shows as one, as a chat writes it (remark-breaks' rule, and the phone's bubbles):
+ * the text's newlines become `break` nodes. Code keeps its own lines; it is never a `text` node.
+ */
+const softBreaks = () => (tree: Node) => {
+  const walk = (node: Node): void => {
+    if (node.children === undefined) return;
+    node.children = node.children.flatMap((child): Node[] => {
+      if (child.type !== "text" || child.value?.includes("\n") !== true) {
+        walk(child);
+        return [child];
+      }
+      return child.value.split(/\r?\n/u).flatMap((line, i): Node[] => [...(i === 0 ? [] : [{ type: "break" }]), ...(line === "" ? [] : [{ type: "text", value: line }])]);
+    });
+  };
+  walk(tree);
+};
+
 const REMARK = [remarkGfm];
+const REMARK_BREAKS = [remarkGfm, softBreaks];
 
 const openLink = (href: string): void => {
   void window.fleetd.openExternal(href).then((outcome) => {
@@ -93,17 +119,17 @@ const COMPONENTS: Components = {
 
 const WITH_BLOCKS: Components = { ...COMPONENTS, pre: pre(true) };
 
-const Block = memo(function Block({ source, blocks }: { source: string; blocks: boolean }) {
+const Block = memo(function Block({ source, blocks, breaks }: { source: string; blocks: boolean; breaks: boolean }) {
   return (
-    <ReactMarkdown remarkPlugins={REMARK} components={blocks ? WITH_BLOCKS : COMPONENTS} skipHtml>
+    <ReactMarkdown remarkPlugins={breaks ? REMARK_BREAKS : REMARK} components={blocks ? WITH_BLOCKS : COMPONENTS} skipHtml>
       {source}
     </ReactMarkdown>
   );
 });
 
 /** Block by block: a reply streaming in re-parses only its last block, the one still growing. */
-export default function MarkdownBody({ source, blocks = true }: { source: string; blocks?: boolean }) {
+export default function MarkdownBody({ source, blocks = true, breaks = false }: { source: string; blocks?: boolean; breaks?: boolean }) {
   const parts = useMemo(() => markdownBlocks(source), [source]);
   // By position: a streaming message only grows at its end, so every block before the last keeps its key and text.
-  return parts.map((b, i) => <Block key={i} source={b} blocks={blocks} />);
+  return parts.map((b, i) => <Block key={i} source={b} blocks={blocks} breaks={breaks} />);
 }

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // A bubble's right-click menu: copy its words plain or as written, and on the lead's, reply to it or react.
-import { act } from "react";
+import { act, useEffect, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ChatItem } from "../../src/data/chat";
@@ -100,6 +100,38 @@ it("the lead's bubble copies its words plain or as markdown, and replies", async
   rightClick(bubble());
   await choose("Reply");
   expect(reply).toHaveBeenCalledWith({ id: "m1", part: 0, quote: "Merged the fix. Shall I release it?" });
+});
+
+it("Reply leaves the cursor in the box, where the reply goes, once the menu has closed", async () => {
+  // As ChatScreen and its composer do: Reply sets the reply, and the box takes the focus for it.
+  const i = item("lead");
+  function Chat() {
+    const [to, setTo] = useState<ReplyTarget>();
+    const box = useRef<HTMLTextAreaElement>(null);
+    useEffect(() => {
+      if (to !== undefined) box.current?.focus();
+    }, [to]);
+    return (
+      <BubbleActionsContext.Provider value={{ ...actions, reply: setTo }}>
+        <MessageView row={{ kind: "message", key: i.id, item: i, run: true, end: true, head: false, history: false }} mineLatest={false} />
+        <textarea ref={box} />
+      </BubbleActionsContext.Provider>
+    );
+  }
+  act(() =>
+    root.render(
+      <DataProvider layer={createDataLayer(HUB)}>
+        <TooltipProvider>
+          <Chat />
+        </TooltipProvider>
+      </DataProvider>,
+    ),
+  );
+  await act(() => new Promise((done) => setTimeout(done, 0)));
+  rightClick(bubble());
+  await choose("Reply");
+  for (let n = 0; n < 3; n++) await act(() => new Promise((done) => setTimeout(done, 0)));
+  expect(document.activeElement).toBe(host.querySelector("textarea"));
 });
 
 it("React puts a tapback on the lead's bubble", async () => {

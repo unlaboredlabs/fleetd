@@ -43,6 +43,10 @@ pub async fn navi_command(argv: &[String]) -> u8 {
     let Some(verb) = argv.first().map(String::as_str) else {
         return usage("missing navi command");
     };
+    // Before the hub: a typo, or a flag ahead of the verb, is a usage mistake, not an unreachable hub.
+    if !matches!(verb, "create" | "list" | "rename" | "archive" | "unarchive") {
+        return usage(&format!("unknown navi command '{verb}'"));
+    }
     let v = match args::parse(&argv[1..], &SPEC) {
         Ok(v) => v,
         Err(message) => return usage(&message),

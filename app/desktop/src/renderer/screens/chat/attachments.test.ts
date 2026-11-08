@@ -1,7 +1,7 @@
 // An image sent with a message shows at its size in points, within IMAGE_MAX, keeping its shape: a small one as it is,
 // a wide or tall one shrunk to the box, a Retina screenshot at half its pixels.
 import { expect, it } from "vitest";
-import { IMAGE_MAX, imageFit, pngDensity } from "./attachments";
+import { IMAGE_MAX, imageFit, looksText, pngDensity } from "./attachments";
 
 /** A PNG's head: the signature, IHDR, then pHYs at `ppm` pixels per metre when given (CRCs left zero). */
 const png = (width: number, height: number, ppm?: number): string => {
@@ -39,4 +39,14 @@ it("fits a small, a wide, a tall and a Retina image in the box, keeping their sh
   expect(imageFit(600, 200, 2)).toEqual({ width: 300, height: 100 });
   // Nothing known yet: the box.
   expect(imageFit(0, 0)).toEqual(IMAGE_MAX);
+});
+
+it("calls a file text as the hub does: no NUL byte, or UTF-16's mark", () => {
+  const bytes = (...b: number[]) => new Uint8Array(b).buffer;
+  // Valid UTF-8, but a NUL says binary: the hub refuses it as text, so it isn't offered as text.
+  expect(looksText(bytes(0x00, 0x01, 0x62, 0x69, 0x6e))).toBe(false);
+  // Windows-1252 ("café" from a bank's export) and UTF-16 with its mark are text the hub takes.
+  expect(looksText(bytes(0x63, 0x61, 0x66, 0xe9))).toBe(true);
+  expect(looksText(bytes(0xff, 0xfe, 0x61, 0x00, 0x62, 0x00))).toBe(true);
+  expect(looksText(new TextEncoder().encode("plain words\n").buffer)).toBe(true);
 });

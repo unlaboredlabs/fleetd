@@ -355,7 +355,7 @@ the hub's task profiles: model, effort, fast mode and note, and which the projec
 ```text
 fleetd project profile <name> [--model <model>] [--effort low|medium|high|xhigh|max]
     [--fast on|off] [--note <text>] [--rename <new>] [--default] [--lead]
-    [--delete] [--hub <url>]
+    [--delete] --key-file <human key> [--hub <url>]
 ```
 
 create or change a task profile (owner or admin), or delete one. A new one needs `--model` and `--effort`. `--default` makes it the one every review, helper call and task naming no profile runs on; `--lead` the one leads start on (on the default: leads follow the default), from each lead's next start. Deleting the lead's puts leads back on the default

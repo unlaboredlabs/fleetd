@@ -315,6 +315,27 @@ fn a_folder_name_is_plain_lowercase_words() {
     assert_eq!(super::slug(&"x".repeat(90)).len(), 40);
 }
 
+/// Bug hunt: a folder added with a title typed with a space after it kept the space ("What should the lead do in
+/// Project 01 ?"); a new folder's title was trimmed, an existing one's wasn't.
+#[tokio::test]
+async fn an_added_folders_title_is_trimmed_as_a_new_ones_is() {
+    let (hub, _home) = hub();
+    let mut calls = node(&hub, &[CAP_REPOS]).await;
+    ok(
+        &hub,
+        "project_add",
+        json!({ "machineId": "devbox", "path": "/home/me/notes", "title": " Project 01 " }),
+    )
+    .await;
+    let mut titles = vec![];
+    while let Ok(c) = calls.try_recv() {
+        if let SessionCall::ProjectUpsert { title, .. } = c {
+            titles.push(title.to_string());
+        }
+    }
+    assert_eq!(titles, ["Project 01"]);
+}
+
 #[tokio::test]
 async fn a_plain_folder_with_no_git_is_added_as_a_project_with_no_repo() {
     let (hub, _home) = hub();
@@ -953,6 +974,52 @@ async fn a_navi_removed_without_its_answer_is_still_erased_once_the_hub_sees_it_
     assert_eq!(crate::hub::navi::erase::finish_pending(&hub).unwrap(), 1);
     assert_eq!((chat(&hub), marks(&hub)), (0, 0));
     assert!(!memory.exists());
+}
+
+/// The erase runs right after the node's `project.removed` lands, and keeps that event: the apps' sidebars, the merge
+/// train, approvals, automations and Status all wait on it, and missed it while the erase took it with the rest.
+/// Only the removal stays, and without the project's name (its title was in the summary and `data`), as nothing else
+/// of it does (D310).
+#[tokio::test]
+async fn erasing_a_project_keeps_its_removal_for_whoever_waits_on_it() {
+    use crate::hub::store::NewEvent;
+    use fleetd_contracts::events::HubEventType;
+    let (hub, _home) = hub();
+    let r = ProjectRef {
+        machine_id: devbox(),
+        project_id: ProjectId::unchecked("p-secret-diary"),
+    };
+    let event = |r#type, summary: &str| NewEvent {
+        at: AT.into(),
+        r#type,
+        machine_id: Some(r.machine_id.clone()),
+        project_id: Some(r.project_id.clone()),
+        thread_id: None,
+        summary: summary.into(),
+        data: Some(json!({ "title": "Secret diary" })),
+        attention: None,
+    };
+    let from = hub.events.head();
+    hub.events
+        .append(event(HubEventType::ProjectSettings, "Secret diary renamed"))
+        .unwrap();
+    hub.events
+        .append(event(
+            HubEventType::ProjectRemoved,
+            "Project \"Secret diary\" on devbox was removed",
+        ))
+        .unwrap();
+
+    crate::hub::navi::erase::erase(&hub, &r).unwrap();
+
+    let left = hub.events.page(from, None, None).unwrap().events;
+    assert_eq!(
+        left.iter().map(|e| e.r#type).collect::<Vec<_>>(),
+        vec![HubEventType::ProjectRemoved]
+    );
+    let removed = serde_json::to_string(&left[0]).unwrap();
+    assert!(removed.contains("p-secret-diary"), "{removed}");
+    assert!(!removed.contains("Secret diary"), "{removed}");
 }
 
 /// D310: approvals, sites, purchases, sign-ins and asks work on a shared project too, by their project_* names and

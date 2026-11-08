@@ -46,7 +46,11 @@ export interface Discovery {
   readonly problems: ReadonlyArray<Problem>;
 }
 
-const problem = (p: ProjectProblem): Problem => (p.fix?.trim() ? { message: p.message, fix: p.fix } : { message: p.message });
+/** A reason as a sentence, as onboarding's: this module is the phone's too, whose bundle has no onboarding folder. */
+const sentence = (text: string): string => (/[.?!…]$/u.test(text.trim()) ? text.trim() : `${text.trim()}.`);
+
+/** The hub's words end without a stop, and the screen says the fix right after the problem: each as a sentence. */
+const problem = (p: ProjectProblem): Problem => (p.fix?.trim() ? { message: sentence(p.message), fix: sentence(p.fix) } : { message: sentence(p.message) });
 
 /** Each machine's checkouts, then GitHub. Machine ids read as names. */
 export const discovery = (out: ProjectDiscoverOutput, name: (machineId: string) => string): Discovery => {

@@ -53,11 +53,11 @@ const kept = (avatar: string): string | undefined => {
   }
 };
 
-/** Writes a picture read from the hub to the cache folder; its bytes inline when that fails. */
+/** Writes a picture read from the hub to the cache folder, before its uri shows; its bytes inline when that fails. */
 const keep = (avatar: string, dataB64: string): string => {
   try {
     const file = fileOf(avatar);
-    file.write(dataB64, { encoding: "base64" });
+    file.writeSync(dataB64, { encoding: "base64" });
     onDisk.set(avatar, file.uri);
     return file.uri;
   } catch {

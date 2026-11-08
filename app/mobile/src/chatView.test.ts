@@ -71,6 +71,16 @@ describe("sendNote", () => {
     expect(sendNote({ state: "reconnecting" })).toBeUndefined();
     expect(sendNote({ state: "sent" })).toBeUndefined();
   });
+
+  it("drops why the lead didn't have a message once the lead writes after it", () => {
+    // Sent while devbox was offline: the hub's copy keeps saying queued after the offline queue gave it to the lead.
+    const mine: ChatMessage = { ...message("node is down"), author: "human", delivery: "queued" };
+    const sent: Chat = { ...emptyChat, messages: [mine], leadWaiting: { m1: "devbox is offline." } };
+    const note = (chat: Chat) => sendNote(chatItems(chat, []).find((i) => i.id === "m1") ?? { state: "sent" });
+    expect(note(sent)).toBe("devbox is offline.");
+    const answered: Chat = { ...sent, messages: [mine, { ...message("On it."), messageId: "m2", seq: 2 }] };
+    expect(note(answered)).toBeUndefined();
+  });
 });
 
 describe("sendWait", () => {

@@ -152,6 +152,8 @@ pub struct Chat {
     agent_sends: Mutex<HashMap<String, Vec<i64>>>,
     /// Nudges for lead replies not in the chat yet, by their source: the reason, and when (`nudges`).
     pending_nudges: Mutex<HashMap<String, (Line<1, 200>, i64)>>,
+    /// One held message on its way to the lead at a time, per project (`flow::go`).
+    sending: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl Chat {
@@ -166,6 +168,7 @@ impl Chat {
             reading: tokio::sync::Mutex::new(()),
             agent_sends: Mutex::default(),
             pending_nudges: Mutex::default(),
+            sending: Mutex::default(),
         })
     }
 
@@ -470,6 +473,19 @@ impl Chat {
             )?;
             Ok(())
         })
+    }
+
+    /// The project's turn to send a held message: while one goes in (a lead's start can take a while), the sweep and
+    /// a lead.started wait, then find it sent instead of sending it again.
+    pub async fn sending(&self, r: &ProjectRef) -> tokio::sync::OwnedMutexGuard<()> {
+        let lock = self
+            .sending
+            .lock()
+            .unwrap()
+            .entry(format!("{}/{}", r.machine_id, r.project_id))
+            .or_default()
+            .clone();
+        lock.lock_owned().await
     }
 
     pub fn is_held(&self, message: &ChatMessage) -> Result<bool, StoreError> {
