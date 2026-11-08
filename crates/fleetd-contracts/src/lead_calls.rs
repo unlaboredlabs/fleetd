@@ -263,7 +263,8 @@ pub struct ChangeEnqueueCall {
     pub pr_url: GitHubPrUrl,
     pub workstream_id: Option<WorkstreamId>,
     /// PRs, in this repo or any other, that must merge first: the train holds this one until each has merged.
-    /// Enqueuing a PR already on the train adds these to it, unless it is already being merged.
+    /// Enqueuing a PR already on the train adds these to it, unless it is already being merged. Only PRs of projects
+    /// your person can see: one of another person's Only me project is refused.
     pub after: Option<UniqueList<GitHubPrUrl, 0, 20>>,
 }
 

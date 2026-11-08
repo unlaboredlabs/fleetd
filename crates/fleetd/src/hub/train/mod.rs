@@ -22,6 +22,8 @@ pub mod tools;
 pub mod watch;
 
 #[cfg(test)]
+mod hub_host_tests;
+#[cfg(test)]
 mod tests;
 
 pub use service::{Train, TrainOptions};

@@ -3364,6 +3364,13 @@ impl Train {
             let refusal = Refusal::new("It names itself in `after`.", "drop it from `after`");
             return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
         }
+        if let Some(unseen) = after.iter().find(|u| !self.sees_pr(project_ref, u)) {
+            let refusal = Refusal::new(
+                format!("You can't hold on a PR of a project you can't see, and {unseen} is one."),
+                format!("drop {unseen} from `after`; that project's own lead orders its PRs"),
+            );
+            return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
+        }
         // One enqueue with `after` at a time, from the loop check until its Change records them, so two at once can't
         // each wait on the other.
         let _order = if after.is_empty() {

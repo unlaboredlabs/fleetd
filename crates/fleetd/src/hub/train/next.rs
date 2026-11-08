@@ -13,7 +13,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
-use super::contract::{Change, ChangeId, ChangeState, GitHubPrUrl, parse_pr_url};
+use super::contract::{Change, ChangeId, ChangeState, GitHubPrUrl, ProjectRef, parse_pr_url};
 use super::github::{CheckRun, GhError, NEXT_LABEL, Pull};
 use super::records::{HEAD_STATES, QUEUED_STATES};
 use super::service::{Train, lock, timed_out};
@@ -901,6 +901,21 @@ impl Train {
         None
     }
 
+    /// Whether `project_ref`'s person sees the project `url`'s PR belongs to (D338): the one its Change on the train is
+    /// in, else each project with its repo. A PR of a repo no project has goes, as before: the train reads only its
+    /// state on GitHub, which the lead reads too.
+    pub(super) fn sees_pr(&self, project_ref: &ProjectRef, url: &GitHubPrUrl) -> bool {
+        let Some(parsed) = parse_pr_url(url.as_str()) else {
+            return true;
+        };
+        let repo = parsed.repo.to_lowercase();
+        let projects = match self.records.latest_for(&repo, parsed.pr_number) {
+            Some(change) => vec![change.project_ref],
+            None => self.host.repo_projects(&repo),
+        };
+        projects.is_empty() || projects.iter().any(|p| self.host.sees(project_ref, p))
+    }
+
     /// Where the upstream PR stands: None once it merged. Its Change on the train says, else GitHub.
     async fn upstream(&self, url: &GitHubPrUrl) -> Option<Waiting> {
         let parsed = parse_pr_url(url.as_str())?;
@@ -996,7 +1011,7 @@ impl Train {
     /// branch (under the project's branch prefix, never the train's own) whose head is among its commits since the
     /// default branch, as when it is based on that PR's branch or built on it. It then waits for them by itself, as for
     /// `change_enqueue`'s `after`. A fork's PR, a standing `develop` → `main` one and the default branch never count,
-    /// nor a PR that already waits on this one (`loops_back`).
+    /// nor a PR that already waits on this one (`loops_back`), nor one of a project its person can't see (`sees_pr`).
     pub(super) async fn stack(&self, change: &Change, pull: &Pull) -> Result<Change, GhError> {
         let repo = change.repo.as_str();
         let head = pull.head.sha.to_lowercase();
@@ -1035,6 +1050,7 @@ impl Train {
             if other.head.ref_ != default
                 && commits.contains(&other.head.sha.to_lowercase())
                 && !change.after.contains(&url)
+                && self.sees_pr(&change.project_ref, &url)
                 && self
                     .loops_back(change.pr_url.as_str(), std::slice::from_ref(&url))
                     .is_none()
