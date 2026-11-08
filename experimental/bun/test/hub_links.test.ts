@@ -1,7 +1,9 @@
 import { afterAll, expect, test } from "bun:test";
 import { publicKeyOf, seal } from "../src/shared/sealed_box.ts";
 import { serve, stop } from "../src/hub/http/index.ts";
-import { naviBridge } from "../src/hub/hub_links/bridge.ts";
+import { setNaviBridge } from "../src/hub/hub_links/bridge.ts";
+import { start as startLinks } from "../src/hub/hub_links/loops.ts";
+import { found } from "../src/hub/navi/bridge.ts";
 import { boxKey, checkUrl, linkGrants, reachableUrl, verify } from "../src/hub/hub_links/store.ts";
 import { followOnce, retryDelayMs, failedReads } from "../src/hub/hub_links/client.ts";
 import { leadWakes } from "../src/hub/api/leads.ts";
@@ -27,8 +29,8 @@ const project = (hub: Hub, machineId: string, projectId: string, title: string) 
 const there = testHub({ home: homes[0]?.dir });
 project(there.hub, "lab-a", "p1", "Site");
 let feedItems = [{ handle: "A7", title: "Site", what: "order opened" }];
-Object.assign(naviBridge(there.hub), {
-  factoryStatus: () => ({ projects: [{ projectRef: { machineId: "lab-a", projectId: "p1" }, title: "Site", openOrders: [], asks: [] }] }),
+setNaviBridge(there.hub, {
+  factoryStatus: () => ({ projects: [{ projectRef: { machineId: "lab-a", projectId: "p1" }, title: "Site", state: "idle", agentsRunning: 0, checklist: [], openOrders: [], asks: [] }] }),
   projectMessage: async () => ({ handle: "A7", projectRef: { machineId: "lab-a", projectId: "p1" }, title: "Site" }),
   feed: (_: string, after: number) => {
     const items = feedItems;
@@ -44,10 +46,10 @@ const THERE = `http://127.0.0.1:${server.port}`;
 const here = testHub({ home: homes[1]?.dir });
 project(here.hub, "devbox", "navi", "Navi");
 const sent = new Map<string, string>();
-Object.assign(naviBridge(here.hub), {
+setNaviBridge(here.hub, {
   mayUse: () => {},
   recordSent: (_from: unknown, _link: string, s: { handle: string }) => (sent.set(s.handle, "H1"), "H1"),
-  askSent: (_link: string, remote: string) => (sent.has(remote) ? { handle: sent.get(remote), from: { machineId: "devbox", projectId: "navi" } } : undefined),
+  askSent: (_link: string, remote: string) => (sent.has(remote) ? { handle: sent.get(remote) as string, from: { machineId: "devbox", projectId: "navi" } } : undefined),
 });
 const wakes: string[] = [];
 leadWakes(here.hub).trigger = (_r, t) => {
@@ -103,6 +105,11 @@ test("a link added to a project here, sealed to this hub, follows the feed there
   expect((await refusal(here.call(me, "hub_link_add", { project: { machineId: "devbox", projectId: "navi" }, label: "work", url: THERE, sealed }))).message).toBe(
     "This project has a linked hub called work already.",
   );
+
+  // What the navi bridge lists as the project's linked hubs, through the hooks this area's start sets.
+  startLinks(here.hub);
+  expect(found.linked?.(here.hub, { machineId: "devbox", projectId: "navi" })).toEqual([{ label: "Work", state: "ok" }]);
+  expect(typeof found.ask).toBe("function");
 
   sent.set("A7", "H1");
   feedItems = [{ handle: "A7", title: "Site", what: "order opened" }];

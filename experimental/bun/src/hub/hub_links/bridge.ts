@@ -1,73 +1,26 @@
-// The seam with the navi area's bridge (crates/fleetd/src/hub/navi/bridge.rs, T2246's): what /link/v1 and the Navi
-// side's client call. The navi area assigns the real methods onto this object when it starts
-// (`Object.assign(naviBridge(hub), …)`); until then each throws NotImplemented.
+// What /link/v1 and the Navi side's client reach in the navi area's bridge (src/hub/navi/bridge.ts, T2246's): its
+// `bridgeOf(hub)`, imported, never an area made here (D354). A test hands its own bridge to `setNaviBridge`.
 import type { ProjectRef } from "../../shared/contracts.ts";
-import { NotImplemented } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
-import type { Issued } from "./store.ts";
+import { bridgeOf, type NaviBridge } from "../navi/bridge.ts";
 
-/** Who asks: a Navi on this hub, or a link minted here, for a Navi on another hub. */
-export type Asker = { kind: "navi"; navi: ProjectRef } | { kind: "link"; link: Issued };
+export type {
+  Asker,
+  FactoryStatusCall,
+  FactoryStatusResult,
+  LinkFeedItem,
+  NaviBridge,
+  ProjectMessageCall,
+  ProjectMessageResult,
+} from "../navi/bridge.ts";
 
-/** `FactoryStatusCall` / `ProjectMessageCall`, as navi.rs has them. */
-export type FactoryStatusCall = { project?: string; hub?: string };
-export type ProjectMessageCall = { project: string; text: string; hub?: string };
+const overrides = new WeakMap<Hub, Partial<NaviBridge>>();
 
-/** What `project_message` answers (`ProjectMessageResult`). */
-export type ProjectMessageResult = {
-  handle: string;
-  projectRef: ProjectRef;
-  title: string;
-  leadWaiting?: string;
-  hub?: string;
-  next?: string;
-};
-
-/** What `factory_status` answers (`FactoryStatusResult`), the parts the link reads by name. */
-export type FactoryStatusResult = {
-  projects: {
-    projectRef: ProjectRef;
-    title: string;
-    openOrders: { asked?: string; [k: string]: unknown }[];
-    asks: { handle: string; [k: string]: unknown }[];
-    [k: string]: unknown;
-  }[];
-  hubs?: unknown;
-  next?: string;
-  [k: string]: unknown;
-};
-
-/** One item of a link's feed (`LinkFeedItem`). */
-export type LinkFeedItem = { handle: string; title: string; what: string };
-
-/** An ask a Navi here sent through a kept link: its handle here and who sent it. */
-export type SentAsk = { handle: string; from: ProjectRef };
-
-export type NaviBridge = {
-  factoryStatus(asker: Asker, call: FactoryStatusCall): FactoryStatusResult | Promise<FactoryStatusResult>;
-  projectMessage(asker: Asker, call: ProjectMessageCall): Promise<ProjectMessageResult>;
-  /** What happened to the link's asks after `after`: `[cursor, more, items]`. */
-  feed(linkId: string, after: number): { cursor: number; more: boolean; items: LinkFeedItem[] };
-  /** Refuses (throws) when links can't be added to `navi`. */
-  mayUse(navi: ProjectRef): void;
-  askSent(linkId: string, remote: string): SentAsk | undefined;
-  recordSent(from: ProjectRef, linkId: string, sent: { handle: string; projectRef: ProjectRef; title: string; leadWaiting?: string }, text: string, nowMs: number): string;
-};
-
-const missing = (what: string) => () => {
-  throw new NotImplemented(`src/hub/navi (bridge ${what})`);
-};
+/** For tests: `bridge`'s methods in place of the navi area's, on this hub only. */
+export const setNaviBridge = (hub: Hub, bridge: Partial<NaviBridge>) => overrides.set(hub, bridge);
 
 /** The hub's navi bridge: `naviBridge(hub).factoryStatus(…)`. */
-export const naviBridge = (hub: Hub): NaviBridge =>
-  hub.area<NaviBridge>("navi_bridge", () => ({
-    factoryStatus: missing("factory_status"),
-    projectMessage: missing("project_message"),
-    feed: missing("feed"),
-    mayUse: missing("may_use"),
-    askSent: missing("ask_sent"),
-    recordSent: missing("record_sent"),
-  }));
+export const naviBridge = (hub: Hub): NaviBridge => ({ ...bridgeOf(hub), ...overrides.get(hub) });
 
 /** Whether `r` is a project here, an archived one only when `archived` (bridge.rs `is_project`). */
 export const isProject = (hub: Hub, r: ProjectRef, archived: boolean) =>
