@@ -309,13 +309,30 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
                 .filter(|resets| resets.is_none_or(|at| at > now))
                 .max()
         });
+        // A machine degraded only for its network still runs agents: its cause is a warning, not a block.
+        let network = hub
+            .link
+            .network_problem(&r.machine_id)
+            .filter(|why| {
+                machine.is_some_and(|m| {
+                    m.status == MachineStatus::Degraded && m.degraded_reason.as_ref() == Some(why)
+                })
+            })
+            .map(|why| {
+                let cause = why
+                    .split_once(" Fix: ")
+                    .map_or(why.as_str(), |(cause, _)| cause);
+                format!("{mname}: {} (see Machines)", cause.trim_end_matches('.'))
+            });
         // A red main stops nothing (the train keeps merging): a warning, never a block.
-        let warning = repos.iter().find_map(|repo| {
-            let note = hub.train.main_ci_note(repo)?;
-            Some(if repos.len() > 1 {
-                format!("{note} in {repo}")
-            } else {
-                note
+        let warning = network.clone().or_else(|| {
+            repos.iter().find_map(|repo| {
+                let note = hub.train.main_ci_note(repo)?;
+                Some(if repos.len() > 1 {
+                    format!("{note} in {repo}")
+                } else {
+                    note
+                })
             })
         });
         // Why it can't, where the machine says (claude is not logged in), so the row names the fix's subject.
@@ -328,7 +345,8 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
             }
             _ => format!("{mname} can't run agents (see Machines)"),
         };
-        let blocked = match machine.map(|m| m.status) {
+        let status = machine.map(|m| m.status).filter(|_| network.is_none());
+        let blocked = match status {
             Some(MachineStatus::Offline) => Some(format!("{mname} is offline")),
             Some(MachineStatus::Degraded) if usage_paused.is_some() => {
                 Some(format!("{cant}, and its usage is paused"))

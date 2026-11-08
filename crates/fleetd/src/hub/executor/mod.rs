@@ -990,6 +990,12 @@ impl Executors {
         });
     }
 
+    /// What the link last set with [`Self::set_runner_ready`], live or not.
+    #[cfg(test)]
+    pub fn runner_ready(&self, machine_id: &MachineId) -> bool {
+        *self.ready_slot(machine_id).borrow()
+    }
+
     /// Live, and announced online: what the offline queue waits for before it delivers anything.
     pub fn is_ready(&self, machine_id: &MachineId) -> bool {
         self.is_connected(machine_id) && *self.ready_slot(machine_id).borrow()

@@ -773,6 +773,12 @@ pub fn machine_online(
             // gets the restart.
             let fix = match (runner.and_then(|info| runner_fix(id, info)), embedded) {
                 (Some(fix), _) => Some(fix),
+                // A fix in words naming its commands in backticks ("run `a` or `b`") is the label, and the first is
+                // the one to paste.
+                (None, Some(fix)) if fix.contains('`') => Some(manual(
+                    &format!("On {id}: {fix}"),
+                    fix.split('`').nth(1).map(str::to_owned),
+                )),
                 (None, Some(command)) => {
                     Some(manual(&format!("On {id}"), Some(command.to_owned())))
                 }
@@ -2026,6 +2032,36 @@ mod tests {
         assert_eq!(
             entry.check.fix.and_then(|f| f.command).as_deref(),
             Some("systemctl --user restart fleetd-node.service")
+        );
+        // No IPv4 (link/network.rs): the fix in words, and its first command to paste.
+        let offline = MachineView {
+            machine_id: "devbox".into(),
+            degraded_reason: crate::hub::link::network::problem(
+                Some(&fleetd_contracts::node_link::NodeNetwork {
+                    ipv4: false,
+                    iface: Some(fleetd_contracts::prim::Text::unchecked("enp3s0")),
+                }),
+                true,
+            ),
+            ..degraded.clone()
+        };
+        let entry = machine_online(
+            &offline,
+            None,
+            Some(&runner(ok, LoginStatus::LoggedIn, None)),
+        );
+        assert_eq!(
+            entry.check.message,
+            "devbox is degraded: no IPv4 network on enp3s0, so GitHub can't be reached."
+        );
+        let fix = entry.check.fix.unwrap();
+        assert_eq!(
+            fix.label,
+            "On devbox: run `sudo networkctl reconfigure enp3s0` or `sudo netplan apply`"
+        );
+        assert_eq!(
+            fix.command.as_deref(),
+            Some("sudo networkctl reconfigure enp3s0")
         );
     }
 

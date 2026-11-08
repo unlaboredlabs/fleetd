@@ -258,6 +258,8 @@ pub async fn scan(hub: &Hub, ports: &dyn LandingPorts) {
     }
     ask_the_rest(hub, ports, &scopes, &reach).await;
     for (machine, reached) in reach.into_inner().unwrap() {
+        // With no IPv4 there too, the machine shows degraded until either is back.
+        hub.link.github_reached(&machine, reached);
         if hub.work.github_reached(&machine, reached)
             && let Err(error) = hub.tasks.github_reach(&machine, reached).await
         {
