@@ -427,6 +427,10 @@ impl TaskPorts for HubTaskPorts {
         tokio::spawn(async move { hub.train.on_task_pr(task_id.as_str()).await });
     }
 
+    fn latest_text<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<String>> {
+        Box::pin(async move { self.executors.latest_text(thread).await.ok().flatten() })
+    }
+
     fn pending_question<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<String>> {
         Box::pin(async move { self.executors.pending_question(thread).await.ok().flatten() })
     }

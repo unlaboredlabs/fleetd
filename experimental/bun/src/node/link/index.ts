@@ -15,12 +15,12 @@ import {
   HEARTBEAT_INTERVAL_SECS,
   HEARTBEAT_TIMEOUT_SECS,
   HUB_CAP,
-  decodeHubFrame,
   protocolBehind,
   type HubFrame,
   type NodeFrame,
 } from "../wire.ts";
 import { Deflater, Inflater, MIN_DEFLATE_BYTES } from "./deflate.ts";
+import { BadFrames, knownBy, readHubFrame, refusal } from "./frames.ts";
 
 const HEARTBEAT_EVERY_MS = HEARTBEAT_INTERVAL_SECS * 1000;
 const SILENCE_TIMEOUT_MS = HEARTBEAT_TIMEOUT_SECS * 1000;
@@ -198,6 +198,7 @@ function runLinkOnce(options: RunNodeOptions, enrollToken: string | undefined, o
     let writes: Promise<void> = Promise.resolve();
     // Frames in arrival order, each decoded (inflated) before the next is handled.
     let reads: Promise<void> = Promise.resolve();
+    const badFrames = new BadFrames();
 
     const finish = (end: LinkEnd) => {
       if (ended) return;
@@ -318,7 +319,11 @@ function runLinkOnce(options: RunNodeOptions, enrollToken: string | undefined, o
           try {
             options.handle(frame, live!);
           } catch (error) {
+            // A request its handler can't take (a field it can't read) is answered as one that doesn't decode, so the
+            // hub's wait for it ends now.
             (options.log ?? defaultLog)("warn", "a hub frame's handler threw", { t: frame.t, error: String(error) });
+            const answer = refusal(knownBy(frame, String(error)));
+            if (answer) send(answer);
           }
           return;
         case "connect":
@@ -361,8 +366,23 @@ function runLinkOnce(options: RunNodeOptions, enrollToken: string | undefined, o
             return finish({ kind: "lost", why: (error as Error).message });
           }
         }
-        const frame = decodeHubFrame(raw, HUB_TO_NODE);
-        if (!frame) return finish({ kind: "lost", why: "hub sent a frame that does not decode" });
+        const read = readHubFrame(raw, HUB_TO_NODE);
+        if ("bad" in read) {
+          const { bad } = read;
+          // The handshake has no room for a frame it can't read.
+          if (stage !== "live") return finish({ kind: "lost", why: `hub sent a ${bad.tag} frame that does not decode: ${bad.error}` });
+          const log = options.log ?? defaultLog;
+          // Refused alone on a live link: the frames around it still read. Only a flood of them ends the link.
+          if (!badFrames.take(Date.now())) {
+            log("warn", "too many hub frames that do not decode; dropping the link", { tag: bad.tag, bytes: raw.length, error: bad.error });
+            return finish({ kind: "lost", why: "the hub sent too many frames that do not decode" });
+          }
+          log("warn", "a hub frame does not decode; refused it alone", { tag: bad.tag, bytes: raw.length, error: bad.error });
+          const answer = refusal(bad);
+          if (answer) send(answer);
+          return;
+        }
+        const { frame } = read;
         if (!sizeAllowed(frame, raw.length)) {
           (options.log ?? defaultLog)("warn", "hub frame over the cap for anything but a file transfer; ignored", {
             kind: frame.t,

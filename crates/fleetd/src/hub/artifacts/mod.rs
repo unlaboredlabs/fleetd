@@ -4,15 +4,17 @@
 //! the artifact as a card in the project's chat; and announces `artifacts.changed`. The app reads them with
 //! `artifacts_list` (with the files sent in the chat, from the attachment store) and `artifact_get` for the chat's
 //! Artifacts tab. The content is stored and served as written: the app renders Markdown itself and HTML only in its
-//! sandboxed frame, never in its own page.
+//! sandboxed frame, never in its own page. A lead, task or Navi reads one of its own project's back with
+//! `artifact_read`, cut at [`ARTIFACT_READ_CAP`].
 #[cfg(test)]
 mod tests;
 
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::artifacts::{
-    ARTIFACT_VERSIONS_KEPT, ARTIFACTS_LISTED, ArtifactFormat, ArtifactName, ArtifactPublishCall,
-    ArtifactPublishResult, ArtifactPublished, ArtifactSummary, ArtifactVersion,
+    ARTIFACT_READ_CAP, ARTIFACT_VERSIONS_KEPT, ARTIFACTS_LISTED, ArtifactFormat, ArtifactName,
+    ArtifactPublishCall, ArtifactPublishResult, ArtifactPublished, ArtifactReadCall,
+    ArtifactReadResult, ArtifactSummary, ArtifactVersion,
 };
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::chat::ChatAuthor;
@@ -33,7 +35,7 @@ use crate::hub::link::LeadCaller;
 use crate::hub::link::lead_calls::{CallerAgent, LeadCallFuture, op_of};
 use crate::hub::store::{HubDb, NewEvent, StoreError, iso_ms, now_ms};
 
-pub const OPS: [&str; 1] = ["artifact_publish"];
+pub const OPS: [&str; 2] = ["artifact_publish", "artifact_read"];
 
 pub fn register(tools: &mut Registry) {
     tools.add("artifacts_list", artifacts_list);
@@ -52,6 +54,9 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
                 match call {
                     LeadCall::ArtifactPublish(call) => {
                         publish(&hub, &caller, call).map(LeadCallResult::ArtifactPublish)
+                    }
+                    LeadCall::ArtifactRead(call) => {
+                        read(&hub, &caller, call).map(LeadCallResult::ArtifactRead)
                     }
                     other => Err(McpToolError::new(
                         ErrorCode::Invalid,
@@ -330,6 +335,78 @@ fn publish(
         name: call.name,
         version: Int::unchecked(version),
         next: Some(next),
+    })
+}
+
+/// `content`, whole when it fits in `cap` UTF-16 units, else its first `cap` and a last line saying where it was cut.
+fn cut(content: &str, cap: usize) -> (String, bool) {
+    let units = content.encode_utf16().count();
+    if units <= cap {
+        return (content.to_owned(), false);
+    }
+    let mut kept = 0;
+    let head: String = content
+        .chars()
+        .take_while(|c| {
+            kept += c.len_utf16();
+            kept <= cap
+        })
+        .collect();
+    let note = format!(
+        "\n\n[cut at {} KB of {} KB]",
+        cap / 1024,
+        units.div_ceil(1024)
+    );
+    (head + &note, true)
+}
+
+/// `artifact_read`: one of the caller's own project's artifacts, `version` or the newest, as published.
+fn read(
+    hub: &Hub,
+    caller: &LeadCaller,
+    call: ArtifactReadCall,
+) -> Result<ArtifactReadResult, McpToolError> {
+    let r = &caller.project_ref;
+    let version = call.version.map(|v| v.get());
+    let read_failed = |e: StoreError| {
+        tracing::error!(error = %e, "artifact_read store");
+        McpToolError::new(ErrorCode::Failed, "The hub failed to read the artifact.")
+    };
+    let Some((artifact, content)) = get(&hub.db, r, &call.name, version).map_err(read_failed)?
+    else {
+        let names = list(&hub.db, r)
+            .map_err(read_failed)?
+            .into_iter()
+            .take(20)
+            .map(|a| a.name.as_str().to_owned())
+            .collect::<Vec<_>>();
+        let fix = if names.is_empty() {
+            "This project has no artifacts yet: only its own are readable here.".to_owned()
+        } else {
+            format!("This project's newest artifacts: {}.", names.join(", "))
+        };
+        return Err(McpToolError::new(
+            ErrorCode::NotFound,
+            match version {
+                Some(v) => format!("{} has no version {v} in this project.", call.name),
+                None => format!("No artifact {} in this project.", call.name),
+            },
+        )
+        .with_fix(fix));
+    };
+    let versions = versions(&hub.db, r, &call.name)
+        .map_err(read_failed)?
+        .into_iter()
+        .map(|v| v.version)
+        .collect();
+    let (content, truncated) = cut(&content, ARTIFACT_READ_CAP);
+    Ok(ArtifactReadResult {
+        name: call.name,
+        artifact,
+        content: Text::unchecked(content),
+        truncated: truncated.then_some(true),
+        versions,
+        next: None,
     })
 }
 

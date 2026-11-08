@@ -16,6 +16,7 @@ import { ran } from "../skills/versions.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs, nowMs } from "../store/time.ts";
+import { trainDigest } from "../train/index.ts";
 import { wakes } from "../wakes/index.ts";
 import { registerLeadCalls as leadCallsOfLeads } from "./calls.ts";
 import { end } from "./cut_off.ts";
@@ -102,6 +103,8 @@ export function start(hub: Hub): void {
   const area = leads(hub);
   // The executor's launch and the write queue behind the lead's ports.
   wirePorts(hub);
+  // The digest's Merge train section: the project's PRs on the train, and what moved since the last wake.
+  leadWiring(hub).hooks.trainLines = (r, since) => trainDigest(hub, r, since);
   leadRemovals(hub);
   // The real wakes behind the seam other areas trigger.
   leadWakes(hub).trigger = (r, t) => area.wakes.trigger(r, t);

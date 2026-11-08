@@ -424,17 +424,17 @@ link, sessions, runner, worktrees, PTY through the Rust session-host.
 
 ### Heartbeat fields (node → hub `hb`)
 
-- [ ] heartbeat `at` → `src/node/load` <!-- hb:heartbeat `at` -->
-- [ ] heartbeat `busy` → `src/node/load` <!-- hb:heartbeat `busy` -->
-- [ ] heartbeat `load.cpus` → `src/node/load` <!-- hb:heartbeat `load.cpus` -->
-- [ ] heartbeat `load.load1` → `src/node/load` <!-- hb:heartbeat `load.load1` -->
-- [ ] heartbeat `load.memUsedPct` → `src/node/load` <!-- hb:heartbeat `load.memUsedPct` -->
-- [ ] heartbeat `load.memTotalBytes` → `src/node/load` <!-- hb:heartbeat `load.memTotalBytes` -->
-- [ ] heartbeat `load.memPerAgentBytes` → `src/node/load` <!-- hb:heartbeat `load.memPerAgentBytes` -->
-- [ ] heartbeat `load.diskPerAgentBytes` → `src/node/load` <!-- hb:heartbeat `load.diskPerAgentBytes` -->
-- [ ] heartbeat `load.limits` → `src/node/load` <!-- hb:heartbeat `load.limits` -->
-- [ ] heartbeat `load.disk` → `src/node/load` <!-- hb:heartbeat `load.disk` -->
-- [ ] heartbeat `load.network` → `src/node/load` <!-- hb:heartbeat `load.network` -->
+- [x] heartbeat `at` → `src/node/load` <!-- hb:heartbeat `at` -->
+- [x] heartbeat `busy` → `src/node/load` <!-- hb:heartbeat `busy` -->
+- [x] heartbeat `load.cpus` → `src/node/load` <!-- hb:heartbeat `load.cpus` -->
+- [x] heartbeat `load.load1` → `src/node/load` <!-- hb:heartbeat `load.load1` -->
+- [x] heartbeat `load.memUsedPct` → `src/node/load` <!-- hb:heartbeat `load.memUsedPct` -->
+- [x] heartbeat `load.memTotalBytes` → `src/node/load` <!-- hb:heartbeat `load.memTotalBytes` -->
+- [x] heartbeat `load.memPerAgentBytes` → `src/node/load` <!-- hb:heartbeat `load.memPerAgentBytes` -->
+- [x] heartbeat `load.diskPerAgentBytes` → `src/node/load` <!-- hb:heartbeat `load.diskPerAgentBytes` -->
+- [x] heartbeat `load.limits` → `src/node/load` <!-- hb:heartbeat `load.limits` -->
+- [x] heartbeat `load.disk` → `src/node/load` <!-- hb:heartbeat `load.disk` -->
+- [x] heartbeat `load.network` → `src/node/load` <!-- hb:heartbeat `load.network` -->
 
 ## node-browser+screens
 
@@ -552,7 +552,7 @@ every `fleetd` command.
 - [x] `fleetd navi list` → `src/cli/navi` <!-- cli:`fleetd navi list` -->
 - [x] `fleetd navi rename` → `src/cli/navi` <!-- cli:`fleetd navi rename` -->
 - [x] `fleetd navi unarchive` → `src/cli/navi` <!-- cli:`fleetd navi unarchive` -->
-- [ ] `fleetd node flush` → `src/cli/node` <!-- cli:`fleetd node flush` -->
+- [x] `fleetd node flush` → `src/cli/node` <!-- cli:`fleetd node flush` -->
 - [ ] `fleetd node grants` → `src/cli/node` <!-- cli:`fleetd node grants` -->
 - [x] `fleetd node join` → `src/cli/node` <!-- cli:`fleetd node join` -->
 - [x] `fleetd node restart` → `src/cli/node` <!-- cli:`fleetd node restart` -->
@@ -637,6 +637,7 @@ every `fleetd` command.
 - [x] lead call `chat_image` → `src/hub/lead_calls` <!-- lead:lead call `chat_image` -->
 - [x] lead call `chat_file` → `src/hub/lead_calls` <!-- lead:lead call `chat_file` -->
 - [x] lead call `artifact_publish` → `src/hub/lead_calls` <!-- lead:lead call `artifact_publish` -->
+- [ ] lead call `artifact_read` → `src/hub/lead_calls` <!-- lead:lead call `artifact_read` -->
 - [x] lead call `automation_create` → `src/hub/lead_calls` <!-- lead:lead call `automation_create` -->
 - [x] lead call `automation_list` → `src/hub/lead_calls` <!-- lead:lead call `automation_list` -->
 - [x] lead call `automation_update` → `src/hub/lead_calls` <!-- lead:lead call `automation_update` -->
@@ -710,6 +711,7 @@ every `fleetd` command.
 - [x] agent-mcp tool `review_read` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `review_read` -->
 - [x] agent-mcp tool `chat_file` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `chat_file` -->
 - [x] agent-mcp tool `publish_artifact` → `src/cli/agent_mcp` (op artifact_publish) <!-- agent-mcp:agent-mcp tool `publish_artifact` -->
+- [ ] agent-mcp tool `artifact_read` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `artifact_read` -->
 - [x] agent-mcp tool `session_start` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `session_start` -->
 - [x] agent-mcp tool `desktop` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `desktop` -->
 - [x] agent-mcp tool `session_end` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `session_end` -->
