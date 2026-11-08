@@ -1,18 +1,20 @@
 // Mounted once by the shell: the updates sheet, the one "ready" notice, and the commands that reach the sheet (the
 // palette, the app menu's "Check for Updates…"). It asks the hub on connect and every few minutes whether a newer
 // build is downloaded and ready. The sheet's one Update button updates the hub, then every machine, then this app,
-// and closes itself once everything came through, leaving "Updated to …" in the sidebar.
-import { useEffect, useMemo, useRef } from "react";
+// and closes itself once everything came through, leaving "Updated to …" in the sidebar. Update automatically sits in
+// it too, as on Hub › Updates.
+import { useEffect, useRef } from "react";
 import { Dialog, toast } from "../../ui";
-import { useData, useDataLayer } from "../../src/data/react";
+import { useData } from "../../src/data/react";
 import { useCommands } from "../palette";
-import { useUpdatesView } from "./hooks";
-import { loadRun, READY_EVERY_MS, retryMachine, startOver, startUpdate, updateNow, useFlow, type FlowDeps } from "./flow";
+import { useFlowDeps, useUpdatesView } from "./hooks";
+import { loadRun, READY_EVERY_MS, retryMachine, startOver, startUpdate, updateNow, useFlow } from "./flow";
 import type { AppAction, Notice, Retry } from "./model";
 import { noticeOnce, storedNotice } from "./notice";
 import { appUpdate, setUpdatesOpen, useAppUpdate, useUpdatesOpen } from "./state";
 import { Notes, UpdatesSheet } from "./UpdatesSheet";
 import { Boundary } from "../../src/Boundary";
+import { AutoUpdates } from "./AutoUpdates";
 
 export const runApp = (action: AppAction): void => {
   if (action === "check") void window.fleetd.updates.check();
@@ -31,20 +33,7 @@ export function UpdatesHost() {
   const open = useUpdatesOpen();
   const view = useUpdatesView();
   const ready = useAppUpdate()?.app.kind === "ready";
-  const layer = useDataLayer();
-  const deps = useMemo(
-    (): FlowDeps => ({
-      call: layer.call,
-      retry: () => layer.retryNow(),
-      sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
-      app: {
-        state: appUpdate,
-        check: () => void window.fleetd.updates.check(),
-        install: () => void window.fleetd.updates.install(),
-      },
-    }),
-    [layer],
-  );
+  const deps = useFlowDeps();
   // The hub's last run: one going on (the app restarted mid-update, or another window started it) is followed.
   useEffect(() => {
     if (open) void loadRun(deps);
@@ -128,6 +117,7 @@ export function UpdatesHost() {
           onUpdateNow={() => void updateNow(deps)}
           onRetry={retry}
           onApp={(a: AppAction) => runApp(a)}
+          auto={<AutoUpdates />}
         />
       </Dialog>
     </Boundary>

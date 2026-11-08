@@ -129,7 +129,7 @@ function ScreensRow({ machine: m }: { machine: MachineRolesEntry }) {
       {wait === "old" ? (
         <>
           <Text size="xs" tone="quiet">
-            {`${m.name}'s fleetd is too old to change these from here: press Update under Updates below.`}
+            {`${m.name}'s fleetd is too old to change these from here: press Update in Settings › Hub › Updates.`}
           </Text>
           {m.nodeRestart === undefined ? null : (
             <>

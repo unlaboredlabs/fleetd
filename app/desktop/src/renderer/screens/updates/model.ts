@@ -210,7 +210,7 @@ const STAGE: Readonly<Record<string, string>> = {
 const clocks = new Map<string, Intl.DateTimeFormat>();
 
 /** "23:20", in `timeZone` (the person's own when absent). */
-const clockAt = (iso: string, timeZone?: string): string => {
+export const clockAt = (iso: string, timeZone?: string): string => {
   const key = timeZone ?? "";
   let f = clocks.get(key);
   if (f === undefined) {
@@ -606,27 +606,15 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
 
 /**
  * The hub and its machines in one read-only line, for General's Version (D211): everyone sees where they stand; the
- * update itself is on Hub › Machines, for owners and admins. Null without a hub.
+ * update itself is on Hub › Updates, for owners and admins. Null without a hub.
  */
 export const hubStanding = (view: Pick<UpdatesView, "hub" | "nodes" | "update" | "progress">): Line | null => {
   if (view.hub === null) return null;
   if (view.progress !== null) return view.progress;
   const rows = [view.hub, ...view.nodes];
-  if (rows.some((r) => r.tone === "danger")) return { tone: "danger", text: "The hub or a machine didn't update. An admin retries it in Settings › Hub › Machines." };
+  if (rows.some((r) => r.tone === "danger")) return { tone: "danger", text: "The hub or a machine didn't update. An admin retries it in Settings › Hub › Updates." };
   if (view.update !== null || rows.some((r) => r.tone === "accent")) return { tone: "accent", text: "An update is ready for the hub and its machines." };
   // Offline, or a version it never said: nothing to claim for it.
   if (!rows.every((r) => /^(Up to date|Updated)\b/u.test(r.status))) return { tone: "quiet", text: "Not every machine has said which fleetd it runs." };
   return { tone: "quiet", text: "The hub and its machines are up to date." };
-};
-
-/** What automatic updates do, when the build that is ready goes in, or that they skip one that was put back. */
-export const autoWords = (drainMinutes: number, at: string | null, skips: string | null = null, timeZone?: string): string => {
-  const wait = drainMinutes === 0 ? "without waiting for agents" : `once agents finish their step (${String(drainMinutes)} minutes at most)`;
-  const when =
-    at === null
-      ? ""
-      : ` The build that's ready goes in at ${clockAt(at, timeZone)}.`;
-  const skipped =
-    skips === null ? "" : ` It skips ${versionLabel(skips)}: the hub didn't come up healthy on it and put it back. A newer build installs as usual; Update installs this one.`;
-  return `New builds install by themselves, at most once an hour, each machine ${wait}.${when}${skipped}`;
 };

@@ -138,7 +138,7 @@ it("lists each machine that hosts screens with a switch per kind and what its no
   // An older node: what it hosts shows, and why it can't be switched from here.
   expect(toggle(row("mac1"), "Agents’ Mac")?.getAttribute("aria-checked")).toBe("true");
   expect(toggle(row("mac1"), "Agents’ Mac")?.disabled).toBe(true);
-  expect(row("mac1")?.textContent).toContain("mac1's fleetd is too old to change these from here: press Update under Updates below.");
+  expect(row("mac1")?.textContent).toContain("mac1's fleetd is too old to change these from here: press Update in Settings › Hub › Updates.");
   // And if an update didn't restart it: the command, to copy, and where to run it.
   expect(row("mac1")?.textContent).toContain("run this on mac1");
   expect(row("mac1")?.textContent).toContain("launchctl kickstart -k gui/501/sh.fleetd.node");

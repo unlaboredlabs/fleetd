@@ -1,7 +1,7 @@
 // New Screen, a sheet from a project's Info: a screen of the person's own, as the desktop's picker opens one
 // (screen_open). A browser unless they pick another kind; a kind no machine can host says why in its row, and picked,
 // says why in full with its fix: an admin's Turn On where it is only switched off on a machine (machine_screens_set),
-// a member's who to ask. Other fixes are on the desktop (Settings › Hub › Machines). The machine, when
+// a member's who to ask. Other fixes are on the desktop (Settings › Hub › Machines, or Updates for an update). The machine, when
 // more than one can (its browser is only its own machine's, on the profile that keeps its sign-ins), each with its
 // slots in words. Open puts them in its live view, in control, with End Screen; a full machine offers Wait for a Slot,
 // which this sheet follows until the screen opens (or Cancel gives it up). A PR's build is the desktop's.
@@ -186,7 +186,8 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
 /** Under why a kind can't open: a member's who to ask, or where an admin fixes what isn't a switch; none for Turn On. */
 const offFooter = (off: OffReason, admin: boolean, ask: string | null): { footer?: string } => {
   if (!admin) return ask === null ? {} : { footer: ask };
-  return off.fix === "turn_on" || off.fix === "none" ? {} : { footer: "Fix it in the desktop app, under Settings › Hub › Machines." };
+  if (off.fix === "turn_on" || off.fix === "none") return {};
+  return { footer: `Fix it in the desktop app, under Settings › Hub › ${off.fix === "update" ? "Updates" : "Machines"}.` };
 };
 
 const styles = StyleSheet.create({

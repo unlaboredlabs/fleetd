@@ -201,6 +201,7 @@ it("lists the Hub group's pages, Every project's nested, and Setup only while a 
   expect(rows()).toEqual([
     "People",
     "Machines",
+    "Updates",
     "Every project",
     "Profiles",
     "Tools & skills",

@@ -256,6 +256,8 @@ export const fixtures = [
   "updates-run-updated",
   "updates-refused",
   "updates-run-left-over",
+  "updates-auto-on",
+  "updates-auto-held",
   // Only-me projects (fixtures/only-me): Ada and Home first in the sidebar and Taxes archived, Ada asking to book a
   // table and following work it asked for.
   "only-me-chats",
@@ -1355,6 +1357,8 @@ export const screens: readonly Screen[] = [
       "updates-hub-ready",
       "updates-run-hub",
       "updates-run-nodes",
+      "updates-auto-on",
+      "updates-auto-held",
     ],
     open: openUpdates,
   },
@@ -2277,6 +2281,9 @@ export const screens: readonly Screen[] = [
       await page.getByRole("region", { name: "Invite link for Eve Park" }).getByRole("button", { name: "Copy link" }).waitFor();
     },
   },
+  // W469: Hub › Updates: Update now beside the ready build, Update automatically with its last update and next one,
+  // and one holding back with why; each machine's version below.
+  { id: "settings.hub.updates", route: "#/settings/hub/updates", fixtures: ["updates-auto-on", "updates-auto-held", "updates-hub-current"] },
   // Machines: Add machine's three ways in; a host the hub can reach and its plan; a run going; a failed step with Retry.
   { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-add", "machines-running", "machines-failed"] },
   // Cloud machines: the boat.dev group under the hub's own, then its settings with what the pool can cost.
@@ -2436,7 +2443,7 @@ export const screens: readonly Screen[] = [
     variant: "skills-installed",
     open: async (page) => {
       await page.getByRole("button", { name: /^pr-review/u }).click();
-      await expect(page.getByRole("button", { name: "Update" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Update", exact: true })).toBeVisible();
     },
   },
   {

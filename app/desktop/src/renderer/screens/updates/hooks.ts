@@ -1,8 +1,8 @@
 import { useMemo } from "react";
-import { useData } from "../../src/data/react";
-import { useFlow, useReady, useRun } from "./flow";
+import { useData, useDataLayer } from "../../src/data/react";
+import { useFlow, useReady, useRun, type FlowDeps } from "./flow";
 import { updatesView, type MachineInput, type UpdatesView } from "./model";
-import { useAppUpdate } from "./state";
+import { appUpdate, useAppUpdate } from "./state";
 
 /** Everything the updates surfaces say, from main's update state, the hub's ready frame, its machines, its run and the
  * build it has ready. */
@@ -21,4 +21,22 @@ export const useUpdatesView = (): UpdatesView => {
     [known],
   );
   return useMemo(() => updatesView({ app, hub: { url, version }, machines, run, flow, ready }), [app, url, version, machines, run, flow, ready]);
+};
+
+/** The update flow's effects in this window: the hub's calls, its timers and this app's own updater. */
+export const useFlowDeps = (): FlowDeps => {
+  const layer = useDataLayer();
+  return useMemo(
+    (): FlowDeps => ({
+      call: layer.call,
+      retry: () => layer.retryNow(),
+      sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+      app: {
+        state: appUpdate,
+        check: () => void window.fleetd.updates.check(),
+        install: () => void window.fleetd.updates.install(),
+      },
+    }),
+    [layer],
+  );
 };

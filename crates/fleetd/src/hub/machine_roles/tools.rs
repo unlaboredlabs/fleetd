@@ -193,7 +193,7 @@ async fn machine_screens_set(
                 ErrorCode::Failed,
                 format!("{name}'s fleetd is too old to take screen settings from the hub."),
                 format!(
-                    "Update it from Settings › Hub › Machines › Updates, or set it in {name}'s node.json by hand."
+                    "Update it from Settings › Hub › Updates, or set it in {name}'s node.json by hand."
                 ),
             ),
         };
