@@ -15,7 +15,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { NativeStackHeaderItemMenu, NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
-import { filterChoices, filterLabel, meAvatar, type FilterChoice, type LinkTone } from "../chatsBar";
+import { filterChoices, filterLabel, meAvatar, type FilterChoice, type MeTone } from "../chatsBar";
 import { listTime } from "../chatView";
 import { useHub, type ChatsParams, type RootParams } from "../hubContext";
 import { chatList, rowLine, type ChatRow, type Filter } from "../lists";
@@ -295,13 +295,13 @@ const filterMenu = (choices: readonly FilterChoice[], filter: Filter, onPick: (f
   },
 });
 
-const DOT: Record<LinkTone, "success" | "warning" | "tertiary" | "secondary"> = { live: "success", busy: "warning", down: "tertiary", restarting: "secondary" };
+const DOT: Record<MeTone, "success" | "warning" | "tertiary" | "secondary"> = { live: "success", busy: "warning", down: "tertiary", restarting: "secondary" };
 
 /**
  * The person's avatar at the top left, as the account button of iOS 26's apps: their photo, else their initial on a
  * neutral round, in the bar's glass, and a dot at its foot for the link to the hub. It opens Settings.
  */
-function MeButton({ initial, tone, label, picture, onPress }: { initial: string; tone: LinkTone; label: string; picture: Pictured | undefined; onPress: () => void }) {
+function MeButton({ initial, tone, label, picture, onPress }: { initial: string; tone: MeTone; label: string; picture: Pictured | undefined; onPress: () => void }) {
   const t = useTheme();
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} hitSlop={6} style={styles.me}>

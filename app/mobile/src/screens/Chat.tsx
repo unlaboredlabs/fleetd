@@ -165,11 +165,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   }, [gone, navigation]);
 
   const link = linkStatus(state.hub);
-  // "Connecting…", or "Updating…" while the hub restarts for an update (hubWord.ts).
+  // "Connecting…", "Updating…" while the hub restarts for an update, or nothing for a restart's first seconds (hubWord.ts).
   const linkWord = useHubWord().word;
   // Always a line under the name, as a chat app's "online": the title never jumps when the lead starts or stops.
   const quiet = project === undefined ? undefined : `on ${machineName(state.machines, project.machineId)}`;
-  const status = link?.busy === true ? (linkWord?.text ?? link.text) : link !== undefined ? "Offline" : working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : quiet;
+  const status = link?.busy === true ? (linkWord?.text ?? quiet) : link !== undefined ? "Offline" : working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : quiet;
   const openInfo = useCallback(() => navigation.navigate("ChatInfo", { screen: "Info", params: { key: chatKey } }), [navigation, chatKey]);
   // Android's stack draws the bar.
   useEffect(() => {

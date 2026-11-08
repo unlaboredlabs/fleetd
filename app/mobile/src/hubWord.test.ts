@@ -41,9 +41,14 @@ describe("a planned restart", () => {
     expect(s.projects?.["m1/shop"]).toBeDefined();
   });
 
-  it("is said as a restart when the hub didn't say it was to update, and as an update when an admin's run goes on", () => {
-    const s = restartedAt("hub shutting down");
-    expect(hubWord(at(s, T + 1000))?.text).toBe("Restarting…");
+  it("says nothing for 10 s of a restart that isn't an update, holding what it shows, then is any drop; Updating… when an admin's run goes on", () => {
+    const s = restartedAt("hub restarting");
+    expect(s.projects?.["m1/shop"]?.title).toBe("storefront");
+    expect(hubWord(at(s, T + 1000))).toBeUndefined();
+    expect(holding(at(s, T + 1000))).toBe(true);
+    expect(hubWord(at(s, T + RESTART_HOLD_MS))).toEqual({ text: "Connecting…", tone: "quiet", busy: true });
+    expect(holding(at(s, T + RESTART_HOLD_MS))).toBe(false);
+    expect(slowLine({ ...at(s, T + SLOW_RESTART_MS), hubName: "devbox" })).toBeUndefined();
     expect(hubWord(at(s, T + 1000, run({})))?.text).toBe("Updating…");
   });
 

@@ -1,10 +1,11 @@
 // What the chats list's bar says about the hub, the phone's quiet hub row (the desktop's sidebar footer): one word in
-// the title's place, only while there is something to say. "Updating…" while the hub restarts for an update or an
-// admin's run goes on, "Updated" for a while after it came back on a new build, "Put back" when a machine didn't take
-// it, and today's "Connecting…" for a link that dropped by itself. A planned restart isn't an outage: the screens keep
-// what they show, nothing says the hub can't be reached for RESTART_HOLD_MS, and one calm line under the bar says it
-// is taking a while only past SLOW_RESTART_MS. Members see the same words; the run (an admin's) only adds to them. Pure,
-// so tested (hubWord.test.ts).
+// the title's place, only while there is something to say. "Updating…" while the hub restarts for an update (its
+// close said "updating to <version>") or an admin's run goes on, "Updated" for a while after it came back on a new
+// build, "Put back" when a machine didn't take it, and today's "Connecting…" for a link that dropped by itself. A
+// planned restart isn't an outage: the screens keep what they show and nothing says the hub can't be reached for
+// RESTART_HOLD_MS (a restart that isn't an update says nothing at all till then), and one calm line under the bar
+// says an update is taking a while only past SLOW_RESTART_MS. Members see the same words; the run (an admin's) only
+// adds to them. Pure, so tested (hubWord.test.ts).
 import type { HubState, UpdateRun } from "./desktop";
 import type { Restart } from "./store";
 
@@ -59,8 +60,10 @@ export const hubWord = (input: WordInput): HubWord | undefined => {
     case "connecting":
     case "retrying": {
       const planned = restarting(input);
-      if (planned === null) return { text: "Connecting…", tone: "quiet", busy: true };
-      return { text: planned.update ? "Updating…" : "Restarting…", tone: "quiet", busy: true, restart: true };
+      if (planned?.update === true) return { text: "Updating…", tone: "quiet", busy: true, restart: true };
+      // A restart that isn't an update says nothing while the hub is back in a moment, then what any drop says.
+      if (planned !== null && planned.ms < RESTART_HOLD_MS) return undefined;
+      return { text: "Connecting…", tone: "quiet", busy: true };
     }
     case "live":
       break;
@@ -94,12 +97,12 @@ export interface SlowLine {
 export const slowLine = (input: WordInput & { readonly hubName: string }): SlowLine | undefined => {
   const { hub, restart, run, now, hubName } = input;
   if (hub.phase !== "connecting" && hub.phase !== "retrying") return undefined;
-  if (restart?.t !== "down" || (!restart.planned && !going(run))) return undefined;
+  if (restart?.t !== "down" || !(restart.update || going(run))) return undefined;
   const ms = now - restart.since;
   if (ms < SLOW_RESTART_MS) return undefined;
   if (ms >= LONG_RESTART_MS) return { text: `${hubName} hasn't come back after ${String(Math.round(LONG_RESTART_MS / 60_000))} minutes`, tone: "warning" };
   // One line on a phone's width: the bar already says what is going on.
-  return { text: `Still ${restart.update || going(run) ? "updating" : "restarting"}. What you send goes once it's back.`, tone: "quiet" };
+  return { text: "Still updating. What you send goes once it's back.", tone: "quiet" };
 };
 
 /** When the bar's word next changes by itself (epoch ms), so a screen wakes for it; undefined when nothing will. */
