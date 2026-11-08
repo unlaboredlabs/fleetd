@@ -19,6 +19,7 @@ import type {
 import { jsPrefix } from "../../shared/text.ts";
 import type { Hub } from "../api/hub.ts";
 import { ProfileStore } from "../projects/profiles.ts";
+import { executorHooks } from "./hooks.ts";
 import { events, type NewEvent } from "../store/events.ts";
 import { type StoredThread as StoreThread, store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
@@ -56,6 +57,12 @@ export type NodeToHubSession =
 export type NodeSessions = { linkId: number; send(frame: HubToNodeSession): boolean | void };
 
 /** Resubscribe delay: doubles from 1 s to a 30 s cap, ±25 % jitter so machines don't retry in step. */
+/** A finished command whose output holds a GitHub pull URL, such as `gh pr create`'s (executor/mod.rs `names_a_pr`). */
+export function namesAPr(item: { status: string; kind: { type: string; output?: string } }): boolean {
+  const output = item.kind.type === "command" ? item.kind.output : undefined;
+  return item.status === "completed" && output !== undefined && output.includes("github.com/") && output.includes("/pull/");
+}
+
 export function backoffMs(attempt: number, random: number): number {
   const base = 1000 * 2 ** Math.min(attempt, 5) * (0.75 + random * 0.5);
   return Math.min(Math.round(base), 30_000);
@@ -379,6 +386,7 @@ export class Executors {
         const { t: _t, ...thread } = frame;
         this.views.applyFrame(machineId, thread);
         this.feedActivity(machineId, thread);
+        if (thread.event.type === "item" && namesAPr(thread.event)) executorHooks(this.hub).foundPr({ machineId, threadId: thread.sessionId });
         return;
       }
       case "clone_progress": {
