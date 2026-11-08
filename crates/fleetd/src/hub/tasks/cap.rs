@@ -351,7 +351,8 @@ impl Tasks {
                 .for_thread(&thread.machine_id, thread.thread_id.as_str());
             let pause = set.render("task.pause", &[("maxAgents", &max_agents)]);
             let id = request_id(task, &["pause", &task.attempt.get().to_string()]);
-            if let Err(error) = self.d.ports.send(thread, &pause, &id).await {
+            // Under the lock: a node that doesn't take it in 15 s leaves this agent running, and the rest go on.
+            if let Err(error) = self.d.ports.send_brief(thread, &pause, &id).await {
                 tracing::warn!(task_id = %holder, ?error, "pause not delivered; the agent keeps running");
                 continue;
             }

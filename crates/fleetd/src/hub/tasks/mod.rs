@@ -2457,9 +2457,11 @@ impl Tasks {
                     task: next.clone(),
                     pending_message: None,
                 })?;
-                // What was sent to it while it waited goes to the run that continued it, never dropped.
+                // What was sent to it while it waited goes to the run that continued it, never dropped. Off the lock: a
+                // busy node may take a while to take it (`Executors::call_patient`).
                 if let Some(text) = held {
-                    self.deliver(&next, &thread_ref, &text).await;
+                    let tasks = self.clone();
+                    tokio::spawn(async move { tasks.deliver(&next, &thread_ref, &text).await });
                 }
             }
             HubEventType::ThreadWaiting => {
