@@ -1,7 +1,6 @@
 // The hub's answers turned into what the Add project screen lists and says. Pure, so its behaviour is pinned by tests.
 
 import type { CloneProgressData, CloneTarget, ProjectDiscoverOutput, ProjectInspect, ProjectProblem } from "./contracts";
-import { sentence } from "../onboarding/form";
 import { addSource, baseName, folderName, otherHost, tilde } from "./source";
 
 export interface ProjectKey {
@@ -46,6 +45,9 @@ export interface Discovery {
   readonly ghOn?: string;
   readonly problems: ReadonlyArray<Problem>;
 }
+
+/** A reason as a sentence, as onboarding's: this module is the phone's too, whose bundle has no onboarding folder. */
+const sentence = (text: string): string => (/[.?!…]$/u.test(text.trim()) ? text.trim() : `${text.trim()}.`);
 
 /** The hub's words end without a stop, and the screen says the fix right after the problem: each as a sentence. */
 const problem = (p: ProjectProblem): Problem => (p.fix?.trim() ? { message: sentence(p.message), fix: sentence(p.fix) } : { message: sentence(p.message) });
