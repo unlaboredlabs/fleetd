@@ -131,12 +131,12 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `project_repo_add` → `src/hub/projects` (operate) <!-- tool:`project_repo_add` -->
 - [x] `project_repo_list` → `src/hub/projects` (read) <!-- tool:`project_repo_list` -->
 - [x] `project_repo_remove` → `src/hub/projects` (operate) <!-- tool:`project_repo_remove` -->
-- [ ] `navi_create` → `src/hub/navi` (operate) <!-- tool:`navi_create` -->
+- [x] `navi_create` → `src/hub/navi` (operate) <!-- tool:`navi_create` -->
 - [x] `navi_list` → `src/hub/navi` (read) <!-- tool:`navi_list` -->
 - [ ] `navi_rename` → `src/hub/navi` (operate) <!-- tool:`navi_rename` -->
 - [x] `navi_archive` → `src/hub/navi` (operate) <!-- tool:`navi_archive` -->
 - [x] `project_archive` → `src/hub/navi` (operate) <!-- tool:`project_archive` -->
-- [ ] `project_avatar_set` → `src/hub/projects` (operate) <!-- tool:`project_avatar_set` -->
+- [x] `project_avatar_set` → `src/hub/projects` (operate) <!-- tool:`project_avatar_set` -->
 - [x] `project_avatar_get` → `src/hub/projects` (read) <!-- tool:`project_avatar_get` -->
 - [x] `project_icon_set` → `src/hub/projects` (operate) <!-- tool:`project_icon_set` -->
 - [x] `navi_sites` → `src/hub/navi` (read) <!-- tool:`navi_sites` -->
