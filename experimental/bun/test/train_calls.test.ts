@@ -98,7 +98,7 @@ test("the hub's host fails gracefully while Tasks and the intake aren't in the h
   // With the owners' areas made, the host goes through them.
   const sent: string[] = [];
   hub.area("tasks", () => ({ message: async (_c: unknown, id: string, text: string) => sent.push(`${id}: ${text}`), spawn: async () => ({}), cancel: async () => ({}) }));
-  hub.area("policy", () => ({ branchPrefix: () => "slot/1/fleetd/" }));
+  hub.area("policy", () => ({ get: async () => ({ branchPrefix: "slot/1/fleetd/" }) }));
   await host.messageTask(PROJECT, "hub:train", "T1", "hi");
   expect(sent).toEqual(["T1: hi"]);
   expect(await host.branchPrefix(PROJECT)).toBe("slot/1/fleetd/");

@@ -27,7 +27,8 @@ export type IntakePort = {
   submit(input: { projectRef: ProjectRef; text: string; clientRequestId: string; channel: "train"; by: string }): Promise<{ workstreamId: string }> | { workstreamId: string };
 };
 
-export type PolicyPort = { branchPrefix(r: ProjectRef): Promise<string | undefined> | string | undefined };
+/** `hub.peek("policy")`, the project policy file (T2256's integrations/policy). */
+export type PolicyPort = { get(r: ProjectRef): Promise<{ branchPrefix?: string }> };
 export type WorkPort = { watches(scope: { repoKey: string; base: string }): boolean };
 export type MachineRolesPort = { agents(machineId: string): boolean };
 
@@ -63,7 +64,7 @@ export class HubHost implements TrainHost {
     if (!policy) return DEFAULT_BRANCH_PREFIX;
     const key = seams.refKey(r);
     try {
-      const prefix = await policy.branchPrefix(r);
+      const prefix = (await policy.get(r)).branchPrefix;
       if (this.policyUnread.delete(key)) console.info(`train: policy of ${key} read again for the branch prefix`);
       return prefix ?? DEFAULT_BRANCH_PREFIX;
     } catch (error) {
