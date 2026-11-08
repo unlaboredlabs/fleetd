@@ -1058,3 +1058,124 @@ async fn an_old_links_supervisor_slow_to_stop_leaves_the_new_link_live() {
         "the old supervisor applied its link's next event after the new link took over"
     );
 }
+
+/// A busy node (load high, swap full) that takes 20 s to answer a steer: the hub doesn't fail it at 15 s but sends the
+/// same call again, and takes the first answer. Every copy carries the one run id the node dedupes on, so the steer
+/// runs once.
+#[tokio::test(start_paused = true)]
+async fn a_send_a_busy_node_answers_after_20_s_goes_through_once() {
+    let mut node = Node::start(None).await;
+    node.subscribe(json!([session("s1", json!({}))])).await;
+    let executors = node.executors.clone();
+    let target = node.thread("s1");
+    let started = tokio::time::Instant::now();
+    let sent = tokio::spawn(async move {
+        let opts = crate::hub::queue::ports::SendOpts {
+            steer: Some(fleetd_contracts::steer::SteerId::unchecked("S1")),
+            ..Default::default()
+        };
+        executors
+            .send_with(&target, "use the other port", "req-1", &opts)
+            .await
+    });
+    let (first, call) = node.call_after_follows().await;
+    let run_of = |call: &SessionCall| match call {
+        SessionCall::Send { run_id, steer, .. } => {
+            (run_id.to_string(), steer.as_ref().map(|s| s.id.to_string()))
+        }
+        other => panic!("not a send: {other:?}"),
+    };
+    let (run, steer) = run_of(&call);
+    assert_eq!(steer.as_deref(), Some("S1"));
+    // No answer in 15 s: the same call again, under the same frame id.
+    let (again, copy) = node.call_after_follows().await;
+    assert_eq!(started.elapsed().as_secs(), 15);
+    assert_eq!(
+        (again.as_str(), run_of(&copy)),
+        (first.as_str(), (run.clone(), steer))
+    );
+    // The node answers the first copy at 20 s, and the copy with the run it already has.
+    tokio::time::sleep_until(started + Duration::from_secs(20)).await;
+    node.reply(
+        &first,
+        json!({ "ok": { "kind": "sent", "runId": run, "queued": true } }),
+    );
+    assert_eq!(
+        sent.await.unwrap().unwrap(),
+        SendOutcome {
+            run_id: Some(run.clone()),
+            queued: true
+        }
+    );
+    node.reply(
+        &again,
+        json!({ "ok": { "kind": "sent", "runId": run, "queued": true } }),
+    );
+    // Nothing more goes out once it is answered.
+    tokio::time::sleep(Duration::from_secs(300)).await;
+    while let Ok(frame) = node.rx.try_recv() {
+        assert!(
+            matches!(&frame, HubToNode::SessionCall(f) if matches!(f.call, SessionCall::Follow { .. })),
+            "{frame:?}"
+        );
+    }
+}
+
+/// A node that refuses a send fails it at once with its own words, with no second copy; one that stays silent fails
+/// it after two minutes, and one whose link drops meanwhile is offline, which its caller waits out.
+#[tokio::test(start_paused = true)]
+async fn a_refused_send_fails_at_once_and_a_silent_node_after_two_minutes() {
+    let mut node = Node::start(None).await;
+    node.subscribe(json!([session("s1", json!({}))])).await;
+    let (executors, target) = (node.executors.clone(), node.thread("s1"));
+    let send = |request: &'static str| {
+        let (executors, target) = (executors.clone(), target.clone());
+        tokio::spawn(async move { executors.send(&target, "go on", request).await })
+    };
+
+    let started = tokio::time::Instant::now();
+    let refused = send("req-1");
+    let (id, _) = node.call_after_follows().await;
+    node.reply(
+        &id,
+        json!({ "err": { "code": "invalid", "message": "session s1 is stopping" } }),
+    );
+    match refused.await.unwrap() {
+        Err(ExecutorError::NodeRequestFailed { message, .. }) => {
+            assert_eq!(message, "session s1 is stopping")
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(started.elapsed().as_secs(), 0);
+
+    let started = tokio::time::Instant::now();
+    let silent = send("req-2");
+    let mut copies = vec![];
+    for _ in 0..4 {
+        let (id, _) = node.call_after_follows().await;
+        copies.push((id, started.elapsed().as_secs()));
+    }
+    // At doubling gaps, every copy the same call.
+    assert_eq!(
+        copies.iter().map(|(_, at)| *at).collect::<Vec<_>>(),
+        [0, 15, 45, 105]
+    );
+    assert!(copies.iter().all(|(id, _)| *id == copies[0].0));
+    match silent.await.unwrap() {
+        Err(ExecutorError::NodeRequestFailed { message, .. }) => {
+            assert_eq!(message, "no answer within 120 s")
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(started.elapsed().as_secs(), 120);
+
+    let dropped = send("req-3");
+    node.call_after_follows().await;
+    node.executors.detach(&node.machine).await;
+    assert_eq!(
+        dropped.await.unwrap(),
+        Err(ExecutorError::MachineNotConnected {
+            machine_id: node.machine.clone()
+        })
+    );
+}

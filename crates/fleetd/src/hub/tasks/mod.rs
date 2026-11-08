@@ -3124,6 +3124,8 @@ impl Tasks {
                     .as_ref()
                     .expect("a running task has a thread");
                 let uuid = random_uuid();
+                // A busy node may take a while to take it (`Executors::call_patient`): other tasks' calls go on.
+                drop(guard);
                 self.d
                     .ports
                     .send(thread, text, &request_id(&task, &["msg", &uuid]))
