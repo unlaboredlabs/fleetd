@@ -1014,7 +1014,6 @@ async fn an_upgrade_that_carries_the_key_gets_ready_and_the_snapshot_before_any_
         json!({ "t": "auth", "key": reader }),
         json!({ "t": "snapshot" }),
         json!({ "t": "call", "id": "c1", "tool": "events_wait", "input": { "timeoutSec": 0 } }),
-        json!({ "t": "snapshot" }),
     ] {
         app.send(Message::text(frame.to_string())).await.unwrap();
     }
@@ -1024,6 +1023,9 @@ async fn an_upgrade_that_carries_the_key_gets_ready_and_the_snapshot_before_any_
         (Some("result"), Some("c1"))
     );
     // A snapshot asked for later (a resync) is answered.
+    app.send(Message::text(json!({ "t": "snapshot" }).to_string()))
+        .await
+        .unwrap();
     assert_eq!(read(&mut app).await["t"], "snapshot");
 
     // A different key in the frame is a new auth, answered as always.
