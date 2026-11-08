@@ -68,7 +68,9 @@ const ajv = new Ajv2020({ strict: false, allErrors: false, validateFormats: fals
 const validator = (file: string, ref: string, shape: "closed" | "partial" = "closed"): ValidateFunction => {
   const id = `${shape}:${file}`;
   if (ajv.getSchema(id) === undefined) {
-    const doc = closeDoc(load(file));
+    // Without the root's `$ref` (McpTools.json's is every tool's input and output): a fragment's lookup compiles the
+    // root first, and that root took 0.7 s, more than every test that needed one fragment of it.
+    const { $ref: _root, ...doc } = closeDoc(load(file));
     ajv.addSchema((shape === "partial" ? partial(doc) : doc) as JsonObject, id);
   }
   const fn = ajv.getSchema(`${id}${ref}`);
