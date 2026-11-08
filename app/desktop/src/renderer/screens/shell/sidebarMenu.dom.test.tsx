@@ -66,7 +66,7 @@ beforeEach(() => {
         <TooltipProvider>
           <Sidebar
             projects={[{ ...PROJECT, hub: "hub" }]}
-            screen={{ id: "status", at: "hub" }}
+            screen={{ id: "home", at: "hub" }}
             jumpHints={false}
             collapsed={new Set()}
             onToggleHub={() => undefined}

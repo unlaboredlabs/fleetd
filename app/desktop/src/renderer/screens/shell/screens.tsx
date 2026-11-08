@@ -11,7 +11,6 @@ const OnboardingScreen = lazy(() => import("../onboarding/OnboardingScreen").the
 const SettingsScreen = lazy(() => import("../settings/SettingsScreen").then((m) => ({ default: m.SettingsScreen })));
 const AddProjectScreen = lazy(() => import("../projects/AddProjectScreen").then((m) => ({ default: m.AddProjectScreen })));
 const ScreensPage = lazy(() => import("../screensPage/ScreensPage").then((m) => ({ default: m.ScreensPage })));
-const StatusScreen = lazy(() => import("../status/StatusScreen").then((m) => ({ default: m.StatusScreen })));
 const FactoryScreen = lazy(() => import("../factory/FactoryScreen").then((m) => ({ default: m.FactoryScreen })));
 const TimeScreen = lazy(() => import("../time/TimeScreen").then((m) => ({ default: m.TimeScreen })));
 const SetupScreen = lazy(() => import("../setup/SetupScreen").then((m) => ({ default: m.SetupScreen })));
@@ -24,8 +23,6 @@ export const screenPart = (screen: Screen): { key: string; words: string } => {
   switch (screen.id) {
     case "project":
       return { key: `project:${screen.project.machineId}/${screen.project.projectId}`, words: "the chat" };
-    case "status":
-      return { key: "status", words: "Status" };
     case "screens":
       return { key: "screens", words: "Screens" };
     case "factory":
@@ -67,8 +64,6 @@ function screenFor(screen: Screen): ReactNode {
           {...(screen.message !== null ? { message: screen.message } : {})}
         />
       );
-    case "status":
-      return <StatusScreen />;
     case "screens":
       return <ScreensPage open={screen.open} />;
     case "factory":

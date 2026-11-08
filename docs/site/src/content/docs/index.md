@@ -22,7 +22,7 @@ opens pull requests it has checked, and asks you only about real decisions.
 | Add a repo | [Projects](/docs/projects) |
 | Give a project work | [Chat with the lead](/docs/chat) |
 | Change what an agent is doing | [Steering](/docs/steering) |
-| See how far along work is | [Status](/docs/status) |
+| See how far along work is from the terminal | [Status](/docs/status) |
 | Find a command or option | [CLI reference](/docs/reference/cli) |
 | Find a file or setting | [Config & files](/docs/config-and-files) |
 | Fix something `fleetd doctor` reported | [Troubleshooting](/docs/troubleshooting) |

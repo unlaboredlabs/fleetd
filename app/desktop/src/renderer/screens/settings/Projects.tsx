@@ -18,7 +18,7 @@ import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjec
 import { archiveProject } from "../projects/actions";
 import { isOnlyMe } from "../projects/model";
 import { LinkedHubs } from "../hubLinks/LinkedHubs";
-import { when } from "../status/view";
+import { when } from "../live/when";
 import { navigate } from "../shell/navigation";
 import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";

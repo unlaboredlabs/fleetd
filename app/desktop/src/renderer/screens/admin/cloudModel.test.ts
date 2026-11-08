@@ -61,7 +61,7 @@ describe("Settings › Hub › Machines' cloud model", () => {
     expect(machineLine(machine("boat-1", "creating", { sinceMs: at }), now)).toBe("Setting up since 14:05: it joins in a few minutes, then sleeps");
   });
 
-  it("puts the day's spend and the machines awake on one Status line, and none before the pool is set up", () => {
+  it("puts the day's spend and the machines awake on one line, and none before the pool is set up", () => {
     expect(cloudStatusLine(view())).toBe("Cloud today: $0.41 of $3.00 · 2 awake");
     expect(cloudStatusLine(view({ enabled: false }))).toBe("Cloud today: $0.41 of $3.00 · off");
     expect(cloudStatusLine(view({ hasKey: false }))).toBeNull();
