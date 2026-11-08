@@ -10,12 +10,11 @@ import { leadCalls } from "../src/hub/lead_calls/index.ts";
 import type { LeadCaller } from "../src/hub/lead_calls/types.ts";
 import type { Linked } from "../src/hub/link/index.ts";
 import { events } from "../src/hub/store/events.ts";
-import { HubDb } from "../src/hub/store/db.ts";
 import { ToolError } from "../src/shared/errors.ts";
 import type { HubEvent, Machine, Role } from "../src/shared/contracts.ts";
 import type { NodeLoad } from "../src/shared/node_link.ts";
 import type { HubToNodeFrame, McpToolError, NodeToHubFrame } from "../src/shared/screens_wire.ts";
-import { tempHome } from "./helpers.ts";
+import { openHubDb, tempHome } from "./helpers.ts";
 
 /** The hub's node link as this area uses it (src/hub/link's Link), with its nodes driven by the test. */
 export class FakeLink {
@@ -107,7 +106,7 @@ export class TestClock {
 export function testHub() {
   const home = tempHome();
   const clock = new TestClock();
-  const hub = new Hub({ home: home.dir, listen: { host: "127.0.0.1", port: 0 } }, HubDb.open(home.dir), clock);
+  const hub = new Hub({ home: home.dir, listen: { host: "127.0.0.1", port: 0 } }, openHubDb(home.dir), clock);
   // This area's node link, before anything makes the real one.
   const fake = hub.area("link", () => new FakeLink() as never) as unknown as FakeLink;
   const appended: HubEvent[] = [];

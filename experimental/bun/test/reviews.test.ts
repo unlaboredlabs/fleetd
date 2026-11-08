@@ -1,11 +1,15 @@
 // The review gate over the train kit (crates/fleetd/src/hub/reviews tests): one fresh reviewer per patch, verdicts
 // bound to the patch they reviewed, blocking findings back to the author, a reviewer ending without a verdict asked
 // once then replaced, tools failing not counted against the retries, and findings the lead resolved.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { withReviews } from "../src/hub/reviews/service.ts";
 import { compare } from "../src/hub/reviews/rebase.ts";
 import { gate, reviewTitle, toolsFailed } from "../src/hub/reviews/rules.ts";
 import { Kit, PROJECT } from "./train_kit.ts";
+
+// The train's kit merges and pushes through a real git origin, a git process each: a loaded machine (CI, or a busy
+// devbox) takes longer than bun's 5 s default.
+setDefaultTimeout(30_000);
 
 let kits: Kit[] = [];
 afterEach(() => {

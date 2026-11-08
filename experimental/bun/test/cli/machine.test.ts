@@ -3,7 +3,8 @@
 import { afterEach, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { HubDb } from "../../src/hub/store/db.ts";
+import type { HubDb } from "../../src/hub/store/db.ts";
+import { openHubDb } from "../helpers.ts";
 import {
   type Begin,
   candidates,
@@ -31,7 +32,7 @@ beforeEach(() => {
   home = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-machine-"));
   hubHome = join(home, "hub");
   process.env.FLEETD_HOME = home;
-  db = HubDb.open(hubHome);
+  db = openHubDb(hubHome);
   writeFileSync(
     join(hubHome, "setup.json"),
     JSON.stringify({ listen: "127.0.0.1:1", url: "http://devbox.example:4790", gitIdentity: { name: "Dev", email: "dev@example.com" }, machines: {} }),

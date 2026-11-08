@@ -11,7 +11,7 @@ import { store } from "../src/hub/store/hub_store.ts";
 import type { LaneStatus, LiveFrame, Task } from "../src/shared/contracts.ts";
 import type { ThreadEvent } from "../src/shared/sessions.ts";
 import { FakeApp } from "./fake-app.ts";
-import { insertKey, tempHome } from "./helpers.ts";
+import { hubHome, insertKey } from "./helpers.ts";
 
 const lane = (id: string, status: LaneStatus, cmd: string | undefined, samples: number[]): LaneNow => ({
   lane: {
@@ -77,7 +77,7 @@ test("lane statuses follow the task's state and its thread", () => {
   expect(leadLaneStatus("idle", true, "running")).toBe("parked");
 });
 
-const home = tempHome();
+const home = hubHome();
 const { hub, tools } = build(home.dir, { host: "127.0.0.1", port: 0 });
 const server = serve(hub, tools, 0);
 afterAll(async () => {

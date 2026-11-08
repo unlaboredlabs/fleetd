@@ -1,7 +1,7 @@
 // The session service over a session host (test/node/fake-host.ts, the Rust `session-host`'s socket protocol):
 // projects, launches in the root and a worktree, the machine and thread streams, a permission asked and answered,
 // a stop that removes its worktree, and a session re-adopted from its host after the node restarted.
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -33,7 +33,10 @@ const ok = async (op: string, args: Record<string, unknown> = {}) => {
   if (!("ok" in reply.result)) throw new Error(`${op}: ${JSON.stringify(reply.result)}`);
   return reply.result.ok as Record<string, any>;
 };
-const until = async <T>(what: string, fn: () => T | undefined, ms = 5000): Promise<T> => {
+// Each launch starts a host process (sh, then bun), and a run goes through it: a loaded machine (CI, or a busy devbox)
+// takes longer than bun's 5 s default.
+setDefaultTimeout(30_000);
+const until = async <T>(what: string, fn: () => T | undefined, ms = 20_000): Promise<T> => {
   const end = Date.now() + ms;
   for (;;) {
     const got = fn();

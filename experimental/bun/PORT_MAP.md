@@ -434,6 +434,7 @@ link, sessions, runner, worktrees, PTY through the Rust session-host.
 - [ ] heartbeat `load.diskPerAgentBytes` → `src/node/load` <!-- hb:heartbeat `load.diskPerAgentBytes` -->
 - [ ] heartbeat `load.limits` → `src/node/load` <!-- hb:heartbeat `load.limits` -->
 - [ ] heartbeat `load.disk` → `src/node/load` <!-- hb:heartbeat `load.disk` -->
+- [ ] heartbeat `load.network` → `src/node/load` <!-- hb:heartbeat `load.network` -->
 
 ## node-browser+screens
 
