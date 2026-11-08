@@ -1082,15 +1082,6 @@ impl Broker {
             pool.drain();
         }
     }
-
-    /// The socket's handler for browser tool calls.
-    pub fn handler(self: &Arc<Self>) -> BrowserHandler {
-        let broker = self.clone();
-        Arc::new(move |thread, frame| {
-            let broker = broker.clone();
-            Box::pin(async move { broker.handle(thread, frame).await })
-        })
-    }
 }
 
 impl SessionHooks for Broker {

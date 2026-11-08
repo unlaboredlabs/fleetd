@@ -43,9 +43,6 @@ pub const GITHUB_TOKEN_ENV: &str = "GH_TOKEN";
 /// The refusal for a writer whose order's starter hasn't connected GitHub, on a repository the App reaches.
 pub const GITHUB_CONNECT_REFUSAL: &str = "Connect your GitHub to open this order's PRs.";
 
-/// Where people sign in to GitHub through the App: each person's own loopback port, under this path.
-pub const GITHUB_CALLBACK_PATH: &str = "/github/callback";
-
 brand!(
     /// The code GitHub's manifest flow redirects with: an hour to trade it, once.
     GithubManifestCode,

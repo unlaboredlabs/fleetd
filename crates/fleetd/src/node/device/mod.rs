@@ -41,7 +41,7 @@ use self::emulator::Pool;
 use self::scrcpy::{Frame, Input};
 use self::session::{Opened, Session};
 use super::browser::upload::{self, HubCalls};
-use super::browser::{Broker, BrowserHandler, SecretsFor, SessionHooks};
+use super::browser::{Broker, SecretsFor, SessionHooks};
 use super::desktop::Desktops;
 use super::util::AbortOnDrop;
 
@@ -799,15 +799,6 @@ pub struct Router {
 }
 
 impl Router {
-    /// The socket's handler for session tool calls.
-    pub fn handler(self: &Arc<Self>) -> BrowserHandler {
-        let router = self.clone();
-        Arc::new(move |thread, frame| {
-            let router = router.clone();
-            Box::pin(async move { router.handle(thread, frame).await })
-        })
-    }
-
     /// How many screens of every kind are live here.
     pub fn count(&self) -> usize {
         self.browser.as_ref().map_or(0, |b| b.count())

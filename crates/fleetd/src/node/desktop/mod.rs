@@ -623,7 +623,6 @@ impl Desktops {
                 ffmpeg: self.ffmpeg(),
                 secrets,
                 kind: SessionKind::LinuxDesktop,
-                backend,
                 observing: false,
             },
         );
