@@ -12,7 +12,7 @@ server, auth, keys, people, devices, links, settings, store.
 ### HTTP routes
 
 - [x] GET `/healthz` → `src/hub/http` (healthz) <!-- http:GET `/healthz` -->
-- [ ] GET `/app` → `src/hub/app_ws` (app) <!-- http:GET `/app` -->
+- [x] GET `/app` → `src/hub/app_ws` (app) <!-- http:GET `/app` -->
 - [x] POST `/pair` → `src/hub/pair` (pair) <!-- http:POST `/pair` -->
 - [x] POST `/pair/mac` → `src/hub/pair` (mac_pair) <!-- http:POST `/pair/mac` -->
 - [x] GET `/node/link` → `src/hub/link` (node_link) <!-- http:GET `/node/link` -->
@@ -20,27 +20,27 @@ server, auth, keys, people, devices, links, settings, store.
 
 ### /app websocket messages
 
-- [ ] /app client `auth` → `src/hub/app_ws` <!-- app:/app client `auth` -->
-- [ ] /app client `snapshot` → `src/hub/app_ws` <!-- app:/app client `snapshot` -->
-- [ ] /app client `events` → `src/hub/app_ws` <!-- app:/app client `events` -->
-- [ ] /app client `call` → `src/hub/app_ws` <!-- app:/app client `call` -->
+- [x] /app client `auth` → `src/hub/app_ws` <!-- app:/app client `auth` -->
+- [x] /app client `snapshot` → `src/hub/app_ws` <!-- app:/app client `snapshot` -->
+- [x] /app client `events` → `src/hub/app_ws` <!-- app:/app client `events` -->
+- [x] /app client `call` → `src/hub/app_ws` <!-- app:/app client `call` -->
 - [ ] /app client `live` → `src/hub/app_ws` <!-- app:/app client `live` -->
-- [ ] /app client `presence` → `src/hub/app_ws` <!-- app:/app client `presence` -->
-- [ ] /app server `ready` → `src/hub/app_ws` <!-- app:/app server `ready` -->
-- [ ] /app server `snapshot` → `src/hub/app_ws` <!-- app:/app server `snapshot` -->
-- [ ] /app server `event` → `src/hub/app_ws` <!-- app:/app server `event` -->
-- [ ] /app server `result` → `src/hub/app_ws` <!-- app:/app server `result` -->
-- [ ] /app server `error` → `src/hub/app_ws` <!-- app:/app server `error` -->
+- [x] /app client `presence` → `src/hub/app_ws` <!-- app:/app client `presence` -->
+- [x] /app server `ready` → `src/hub/app_ws` <!-- app:/app server `ready` -->
+- [x] /app server `snapshot` → `src/hub/app_ws` <!-- app:/app server `snapshot` -->
+- [x] /app server `event` → `src/hub/app_ws` <!-- app:/app server `event` -->
+- [x] /app server `result` → `src/hub/app_ws` <!-- app:/app server `result` -->
+- [x] /app server `error` → `src/hub/app_ws` <!-- app:/app server `error` -->
 - [ ] /app server `live` → `src/hub/app_ws` <!-- app:/app server `live` -->
 
 ### MCP tools (/mcp and /app `call`)
 
-- [ ] `events_wait` → `src/hub/api` (read) <!-- tool:`events_wait` -->
-- [ ] `events_list` → `src/hub/api` (read) <!-- tool:`events_list` -->
-- [ ] `sidebar_order_get` → `src/hub/sidebar_order` (read) <!-- tool:`sidebar_order_get` -->
-- [ ] `sidebar_order_set` → `src/hub/sidebar_order` (read) <!-- tool:`sidebar_order_set` -->
-- [ ] `chat_pins_get` → `src/hub/chat_pins` (read) <!-- tool:`chat_pins_get` -->
-- [ ] `chat_pins_set` → `src/hub/chat_pins` (read) <!-- tool:`chat_pins_set` -->
+- [x] `events_wait` → `src/hub/api` (read) <!-- tool:`events_wait` -->
+- [x] `events_list` → `src/hub/api` (read) <!-- tool:`events_list` -->
+- [x] `sidebar_order_get` → `src/hub/sidebar_order` (read) <!-- tool:`sidebar_order_get` -->
+- [x] `sidebar_order_set` → `src/hub/sidebar_order` (read) <!-- tool:`sidebar_order_set` -->
+- [x] `chat_pins_get` → `src/hub/chat_pins` (read) <!-- tool:`chat_pins_get` -->
+- [x] `chat_pins_set` → `src/hub/chat_pins` (read) <!-- tool:`chat_pins_set` -->
 - [ ] `hub_links_get` → `src/hub/hub_links` (read) <!-- tool:`hub_links_get` -->
 - [ ] `hub_link_mint` → `src/hub/hub_links` (operate) <!-- tool:`hub_link_mint` -->
 - [ ] `hub_link_revoke` → `src/hub/hub_links` (operate) <!-- tool:`hub_link_revoke` -->

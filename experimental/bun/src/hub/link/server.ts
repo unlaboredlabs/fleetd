@@ -19,6 +19,7 @@ import { events, type NewEvent } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { NodeCommandError, NodeCommands, type RequestOptions } from "./commands.ts";
 import { Deflater, Inflater, MIN_DEFLATE_BYTES } from "./deflate.ts";
+import type { NodeToHubSession } from "../executor/index.ts";
 import { executorsOf, SESSION_FRAMES } from "./executor.ts";
 import { pausedText, why as guardWhy } from "./guard.ts";
 import {
@@ -502,7 +503,7 @@ export class Link {
     }
     state.detach = this.commands.attach(machineId, id, (frame) => this.write(ws, state, frame));
     try {
-      executorsOf(this.hub)?.attach(machineId, { linkId: id, send: (frame) => this.write(ws, state, frame) });
+      executorsOf(this.hub).attach(machineId, { linkId: id, send: (frame) => this.write(ws, state, frame) });
     } catch (error) {
       console.error("node link: the executor did not take the link:", error);
     }
@@ -568,7 +569,7 @@ export class Link {
     }
     if (SESSION_FRAMES.has(tag)) {
       try {
-        executorsOf(this.hub)?.handleFrame(machineId, frame);
+        executorsOf(this.hub).handleFrame(machineId, frame as unknown as NodeToHubSession);
       } catch (error) {
         console.error(`node link: the executor failed on ${tag}:`, error);
       }
@@ -795,7 +796,7 @@ export class Link {
     if (detach) {
       detach();
       try {
-        executorsOf(this.hub)?.detachLink(machineId, id);
+        executorsOf(this.hub).detachLink(machineId, id);
       } catch (error) {
         console.error("node link: the executor did not let the link go:", error);
       }
