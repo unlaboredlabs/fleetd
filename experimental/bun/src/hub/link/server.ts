@@ -21,6 +21,8 @@ import { NodeCommandError, NodeCommands, type RequestOptions } from "./commands.
 import { Deflater, Inflater, MIN_DEFLATE_BYTES } from "./deflate.ts";
 import { type NodeToHubSession, READ_TIMEOUT_MS } from "../executor/index.ts";
 import { executorsOf, SESSION_FRAMES } from "./executor.ts";
+import { BadFrames, FrameError, undecodable } from "./frames.ts";
+import { problem as networkProblemOf } from "./network.ts";
 import { brake, brakeText } from "../usage/state.ts";
 import { pausedText, why as guardWhy } from "./guard.ts";
 import {
@@ -74,6 +76,8 @@ type LinkSocket = {
   beats: number;
   inflater?: Inflater;
   deflater?: Deflater;
+  /** This link's frames that didn't decode, per minute. */
+  badFrames: BadFrames;
   /** Frames in, one at a time in order (an inflate is async). */
   inbox: Promise<void>;
   /** Frames out, in order, once compression is on. */
@@ -179,6 +183,10 @@ export class Link {
   private readonly unlinkedHooks = new Set<(machineId: string, linkId: number) => void>();
   private readonly readyHooks = new Set<(machineId: string, ready: boolean) => void>();
   private readonly readyBy = new Map<string, boolean>();
+  /** The runner's problem as its link's last check found it (undefined: usable); absent until that check answers. */
+  private readonly runnerBy = new Map<string, string | undefined>();
+  /** Machines git can't reach GitHub from, as the landing scanner last found. */
+  private readonly githubDown = new Set<string>();
   /** The socket handler `GET /node/link` upgrades to. */
   readonly socket: SocketHandler;
 
@@ -274,6 +282,25 @@ export class Link {
     return this.pausedBy.get(machineId)?.text;
   }
 
+  /**
+   * Why the machine is degraded for its network ("no IPv4 network on enp3s0, …"), with the fix; undefined while it
+   * has IPv4 or GitHub answers it.
+   */
+  networkProblem(machineId: string): string | undefined {
+    return networkProblemOf(this.loads.get(machineId)?.network, this.githubDown.has(machineId));
+  }
+
+  /**
+   * What the landing scanner found of git on the machine reaching GitHub: with no IPv4 there too, the machine is
+   * degraded until either is back.
+   */
+  githubReached(machineId: string, reached: boolean): void {
+    const before = this.networkProblem(machineId);
+    if (reached) this.githubDown.delete(machineId);
+    else this.githubDown.add(machineId);
+    if (this.networkProblem(machineId) !== before) this.settle(machineId);
+  }
+
   /** Whether the machine is a Mac, as its node last said what it can host. False before its first heartbeat. */
   isMac(machineId: string): boolean {
     const hosts = this.loads.get(machineId)?.hosts;
@@ -342,7 +369,14 @@ export class Link {
   }
 
   private open(ws: Socket): void {
-    const state: LinkSocket = { nonce: nonce(), phase: "hello", beats: 0, inbox: Promise.resolve(), outbox: Promise.resolve() };
+    const state: LinkSocket = {
+      nonce: nonce(),
+      phase: "hello",
+      beats: 0,
+      badFrames: new BadFrames(),
+      inbox: Promise.resolve(),
+      outbox: Promise.resolve(),
+    };
     ws.data.state = state;
     this.write(ws, state, { t: "challenge", nonce: state.nonce });
     state.helloTimer = setTimeout(
@@ -447,6 +481,8 @@ export class Link {
     const caps = hello.capabilities ?? [];
     const id = ++this.nextLinkId;
     this.capabilities.set(machineId, new Set(caps));
+    // Until this link's runner check answers.
+    this.runnerBy.delete(machineId);
     const previous = this.links.get(machineId);
     this.links.set(machineId, { id, ws, state });
     state.phase = "linked";
@@ -521,20 +557,52 @@ export class Link {
     console.info(`node link: welcomed machine_id=${machineId} link_id=${id}`);
   }
 
+  /**
+   * One frame after the welcome. A frame that doesn't decode is refused alone: logged by its tag, id, size and why
+   * (never its contents), a lead call answered with an error so its agent isn't left waiting, and the link carries
+   * on, unless more than BAD_FRAMES_PER_MINUTE came within a minute.
+   */
   private linkedFrame(ws: Socket, state: LinkSocket, text: string): void {
+    try {
+      this.decodedFrame(ws, state, text);
+    } catch (error) {
+      if (!(error instanceof FrameError)) throw error;
+      const machineId = state.machineId as string;
+      const bad = undecodable(text, error.message);
+      const where = `machine_id=${machineId} link_id=${state.id} tag=${bad.tag} bytes=${Buffer.byteLength(text)} error=${bad.error}`;
+      if (!state.badFrames.take(this.hub.clock.now())) {
+        console.warn(`node link: too many frames that do not decode; closing the link ${where}`);
+        throw new Refused(CLOSE.BAD_FRAME, "too many frames that do not decode");
+      }
+      console.warn(`node link: a frame does not decode; refused it alone ${where}`);
+      if (bad.tag === "lead_call" && bad.id !== undefined) {
+        this.write(ws, state, {
+          t: "lead_result",
+          id: bad.id,
+          error: {
+            code: "invalid",
+            message: `the hub could not read this call: ${bad.error}`,
+            fix: "this machine and the hub may run different fleetd versions: carry on without this call and say so in your result",
+          },
+        });
+      }
+    }
+  }
+
+  private decodedFrame(ws: Socket, state: LinkSocket, text: string): void {
     const machineId = state.machineId as string;
     const id = state.id as number;
     let frame: NodeFrame;
     try {
       frame = JSON.parse(text) as NodeFrame;
-    } catch {
-      throw new Refused(CLOSE.BAD_FRAME, "frame does not decode");
+    } catch (error) {
+      throw new FrameError((error as Error).message);
     }
-    const tag = frame && typeof frame === "object" ? frame.t : undefined;
+    const tag = frame && typeof frame === "object" && !Array.isArray(frame) ? frame.t : undefined;
     if (typeof tag !== "string" || !NODE_TAGS.has(tag)) {
       // An older node's word on a preview it still runs: previews are gone from the hub.
       if (typeof tag === "string" && tag.startsWith("preview_")) return;
-      throw new Refused(CLOSE.BAD_FRAME, "frame does not decode");
+      throw new FrameError(typeof tag === "string" ? `unknown variant \`${tag}\`` : "missing field `t`");
     }
     // A replaced or timed-out link must not keep the machine alive.
     if (this.links.get(machineId)?.id !== id) return;
@@ -558,6 +626,10 @@ export class Link {
         break;
       }
       case "lead_call":
+        // The frame's own fields, as LeadCallFrame decodes them; the call itself is decoded by lead_calls.
+        if (typeof frame.id !== "string" || frame.id === "") throw new FrameError("missing field `id`");
+        if (typeof frame.cwd !== "string") throw new FrameError("missing field `cwd`");
+        if (!frame.call || typeof frame.call !== "object" || Array.isArray(frame.call)) throw new FrameError("missing field `call`");
         // Off the frame loop: a slow call must not hold up heartbeats or other calls. Its answer goes back on this
         // link, which may have closed by then.
         onLeadCallFrame(this.hub, machineId, frame as unknown as LeadCallFrame, (result) => {
@@ -621,8 +693,10 @@ export class Link {
       load?.hosts !== undefined && JSON.stringify(this.loads.get(machineId)?.hosts) !== JSON.stringify(load.hosts);
     const why = load ? guardWhy(load, was?.guard ?? false) : undefined;
     const braked = load ? brake(load.limits ?? [], was?.brake ?? false, now, nodeNow) : undefined;
+    const network = this.networkProblem(machineId);
     if (load) this.loads.set(machineId, load);
     else this.loads.delete(machineId);
+    if (this.networkProblem(machineId) !== network) this.settle(machineId);
     if (hostsChanged) this.append("machine.hosts", machineId, `${machineId} said what it can host`);
     if (why === undefined && braked === undefined && !was) return;
     let name = machineId;
@@ -641,9 +715,8 @@ export class Link {
   private slept(machineId: string, frame: NodeFrame): void {
     const fromMs = Number(frame.fromMs);
     const toMs = Number(frame.toMs);
-    if (!(Number.isInteger(fromMs) && Number.isInteger(toMs) && fromMs >= 0 && toMs > fromMs)) {
-      throw new Refused(CLOSE.BAD_FRAME, "frame does not decode");
-    }
+    if (!(Number.isInteger(fromMs) && Number.isInteger(toMs) && fromMs >= 0)) throw new FrameError("fromMs and toMs must be counts");
+    if (toMs <= fromMs) throw new FrameError("toMs must be after fromMs");
     const hubStore = store(this.hub);
     const stored = hubStore.machineGet(machineId);
     if (!stored) return;
@@ -722,21 +795,37 @@ export class Link {
       .then((problem) => this.applyRunner(machineId, problem));
   }
 
-  /** Online when `problem` is undefined, else degraded with it. */
+  /** Keeps the runner's verdict (`problem`: undefined when usable) and announces the machine by it. */
   private applyRunner(machineId: string, problem: string | undefined): void {
     // A link that went away meanwhile must not announce anything.
     if (!this.links.has(machineId)) return;
     // The agents' Mac runs no claude: it is online whatever its runner says.
-    if (this.can(machineId, CAP_AGENTS_MAC)) problem = undefined;
-    if (problem === undefined) {
+    this.runnerBy.set(machineId, this.can(machineId, CAP_AGENTS_MAC) ? undefined : problem);
+    this.settle(machineId);
+  }
+
+  /**
+   * Online while the runner is usable and the network is fine, else degraded with the runner's problem, or the
+   * network's. Only the runner decides whether sessions start there: without IPv4, claude may still reach its API
+   * over IPv6. Nothing before the link's first runner check answers.
+   */
+  private settle(machineId: string): void {
+    if (!this.links.has(machineId) || !this.runnerBy.has(machineId)) return;
+    const runner = this.runnerBy.get(machineId);
+    const network = this.networkProblem(machineId);
+    if (runner !== undefined) {
+      this.setReady(machineId, false);
+      this.writeStatus(machineId, "degraded", runner);
+      this.announce(machineId, "degraded", runner);
+    } else if (network !== undefined) {
+      this.writeStatus(machineId, "degraded", network);
+      this.announce(machineId, "degraded", network);
+      this.setReady(machineId, true);
+    } else {
       this.writeStatus(machineId, "online");
       this.announce(machineId, "online");
       // After machine.online is logged, so no queued write reaches the machine before it.
       this.setReady(machineId, true);
-    } else {
-      this.setReady(machineId, false);
-      this.writeStatus(machineId, "degraded", problem);
-      this.announce(machineId, "degraded", problem);
     }
   }
 
@@ -750,6 +839,7 @@ export class Link {
     this.loads.delete(machineId);
     this.busyBy.delete(machineId);
     this.pausedBy.delete(machineId);
+    this.runnerBy.delete(machineId);
     const seconds = Math.floor(this.timings.silenceMs / 1000);
     this.writeStatus(machineId, "offline");
     // It needs the human only while runs were going there: nobody is watching them now.
