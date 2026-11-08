@@ -9,10 +9,10 @@
 //! drops a lock when its holder exits however it ends, so a slot never stays taken by a build that's gone, and nothing
 //! running is ever stopped: a build only ever waits before it starts.
 //!
-//! How many slots: node.json's `buildSlots`, else one per [`MEM_PER_BUILD_GB`] of memory left once a quarter of it (4
-//! to 16 GB) is kept back, at least one. `buildSlots: 0` turns the turns off. A slot is sized for one of the
-//! workspace's biggest rustc at a time; a test build that may compile a lib's tests beside its lib takes two
-//! ([`slots_taken`]), so every slot busy still fits.
+//! How many slots: node.json's `buildSlots`, which the admin sets, else one per [`MEM_PER_SLOT_GB`] of the machine's
+//! memory, at least one: a fixed budget per build, never a reading of the load. `buildSlots: 0` turns the turns off. A
+//! slot's budget holds one of the workspace's biggest builds and its share of what runs beside the builds; a test
+//! build that may compile a lib's tests beside its lib takes two ([`slots_taken`]).
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -21,9 +21,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 /// The hidden subcommand the wrapper runs: `fleetd build-slot <node home> <cargo's arguments>`.
 pub const COMMAND: &str = "build-slot";
 
-/// Memory to allow per build slot when node.json sets no `buildSlots`: the peak of one build of the workspace's
-/// biggest crate, fleetd's lib tests (10.6 GB at most on the devbox), with a little to spare.
-pub const MEM_PER_BUILD_GB: u64 = 11;
+/// The memory each build slot stands for when node.json sets no `buildSlots`: one build at its peak (fleetd's lib
+/// tests, 10.6 GB at most on the devbox) and a third of the machine kept for everything that runs beside the builds
+/// (agents' claude, browsers, test runners, a tmpfs /tmp), which took 19 to 22 GB of the devbox's 60.
+pub const MEM_PER_SLOT_GB: u64 = 16;
 
 /// The cargo commands that wait for a slot: those that compile. `run` builds first ([`build_first`]).
 const HEAVY: &[&str] = &[
@@ -50,16 +51,12 @@ pub fn bin_dir(home: &Path) -> PathBuf {
     dir(home).join("bin")
 }
 
-/// The slots that fit `mem_total` bytes of memory, as [`super::load::agents_fit`] counts it: a quarter (4 to 16 GB)
-/// kept back, then one per [`MEM_PER_BUILD_GB`], at least one. An unknown total counts as 2.
+/// The slots that fit `mem_total` bytes of memory: one per [`MEM_PER_SLOT_GB`], at least one. An unknown total
+/// counts as 2.
 pub fn slots_fit(mem_total: Option<u64>) -> u64 {
     const GIB: u64 = 1 << 30;
-    mem_total.map_or(2, |total| {
-        // As sold: a 64 GB machine whose kernel reports 62.7 counts as 64.
-        let total = total.div_ceil(GIB);
-        let reserve = (total / 4).clamp(4, 16);
-        (total.saturating_sub(reserve) / MEM_PER_BUILD_GB).max(1)
-    })
+    // As sold: a 64 GB machine whose kernel reports 62.7 counts as 64.
+    mem_total.map_or(2, |total| (total.div_ceil(GIB) / MEM_PER_SLOT_GB).max(1))
 }
 
 /// This machine's slot count: node.json's `buildSlots`, else [`slots_fit`]. None when `buildSlots` is 0: no turns.
@@ -779,41 +776,47 @@ mod tests {
     }
 
     #[test]
-    fn the_default_is_one_slot_per_11_gb_left_after_the_reserve() {
+    fn the_default_is_one_slot_per_16_gb_of_memory() {
         const GIB: u64 = 1 << 30;
-        // The devbox: 60 GB, 15 kept back, 45 left.
-        assert_eq!(slots_fit(Some(59 * GIB + GIB / 2)), 4);
+        // The devbox: 59.5 GB as the kernel counts it, 60 as sold.
+        assert_eq!(slots_fit(Some(59 * GIB + GIB / 2)), 3);
+        assert_eq!(slots_fit(Some(64 * GIB)), 4);
         assert_eq!(slots_fit(Some(32 * GIB)), 2);
         assert_eq!(slots_fit(Some(16 * GIB)), 1);
         assert_eq!(slots_fit(Some(8 * GIB)), 1);
-        assert_eq!(slots_fit(Some(256 * GIB)), 21);
+        assert_eq!(slots_fit(Some(128 * GIB)), 8);
+        assert_eq!(slots_fit(Some(256 * GIB)), 16);
         assert_eq!(slots_fit(None), 2);
     }
 
-    /// The most rustc memory at once a build used on the devbox (Nov 2026, 2 jobs, line-tables-only debug info), in
-    /// one slot: fleetd's lib tests, the biggest rustc seen there (another agent's build, by its high-water mark). In
-    /// two: check.sh's tests of lib modules and an integration test, fleetd's lib tests beside its lib, as #1117 builds
-    /// them. Each slot busy at its peak still leaves the machine its reserve.
+    /// The most memory one cargo's compilers took at once on the devbox (Nov 2026, 2 jobs, line-tables-only debug
+    /// info): in one slot, fleetd's lib tests (10.6 GB by another build's high-water mark; 8.5 to 8.7 GB sampled in a
+    /// check.sh run's process trees, and the rustc the OOM killer took had 9.2 GB); in two, fleetd's lib tests beside its
+    /// lib and integration tests (13.1 GB at most; 9.6 GB sampled). Beside the builds, the rest of the devbox (claude,
+    /// browsers, the desktop, a tmpfs /tmp) took 19 GB at the OOMs of Nov 8 and 22 GB with swap full later that day.
     const ONE_SLOT_PEAK_GB: f64 = 10.6;
     const TWO_SLOT_PEAK_GB: f64 = 13.1;
+    const BESIDE_BUILDS_GB: f64 = 22.0;
 
     #[test]
     fn every_slot_busy_at_its_measured_peak_fits_the_machine() {
         const GIB: u64 = 1 << 30;
-        let budget = MEM_PER_BUILD_GB as f64;
+        let budget = MEM_PER_SLOT_GB as f64;
         assert!(ONE_SLOT_PEAK_GB <= budget && TWO_SLOT_PEAK_GB <= 2.0 * budget);
+        // Every slot busy at its peak leaves a third of the machine to what runs beside the builds.
         for total in [16, 24, 32, 48, 60, 64, 96, 128, 256] {
             let slots = slots_fit(Some(total * GIB));
-            let left = (total - (total / 4).clamp(4, 16)) as f64;
+            let builds = slots as f64 * ONE_SLOT_PEAK_GB;
             assert!(
-                slots as f64 * ONE_SLOT_PEAK_GB <= left,
-                "{total} GB: {slots} slots at {ONE_SLOT_PEAK_GB} GB is over the {left} GB left"
+                builds <= total as f64 * 2.0 / 3.0,
+                "{total} GB: {slots} slots at {ONE_SLOT_PEAK_GB} GB leave less than a third"
             );
         }
-        // The devbox's 59.5 GB: 4 slots, at worst 4 builds at their one-slot peak in the 45 GB left.
+        // The devbox's 59.5 GB: 3 slots at their peak beside the most seen beside them. One more, #1131's 4, didn't fit.
         let devbox = slots_fit(Some(59 * GIB + GIB / 2));
-        assert_eq!(devbox, 4);
-        assert!(devbox as f64 * ONE_SLOT_PEAK_GB <= 45.0);
+        assert_eq!(devbox, 3);
+        assert!(devbox as f64 * ONE_SLOT_PEAK_GB + BESIDE_BUILDS_GB <= 59.5);
+        assert!((devbox + 1) as f64 * ONE_SLOT_PEAK_GB + BESIDE_BUILDS_GB > 59.5);
     }
 
     #[test]
