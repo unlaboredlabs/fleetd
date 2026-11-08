@@ -1,0 +1,51 @@
+{
+  "impl": "rust",
+  "bench": "sessions",
+  "version": "fleetd 0.0.0 (protocol 1)",
+  "machine": {
+    "cpus": 32,
+    "cpuModel": "AMD Ryzen 9 9955HX 16-Core Processor",
+    "memGb": 59,
+    "kernel": "7.0.0-42-generic",
+    "loadavg": [
+      3.3,
+      4.3,
+      3.67
+    ],
+    "at": "2026-11-08T14:49:24.176Z"
+  },
+  "data": {
+    "sessions": 20,
+    "callsPerSession": 250,
+    "followed": 5,
+    "turnsFailed": 0,
+    "wallMs": 6205,
+    "spawnMs": 5945,
+    "hub": {
+      "peakRssMb": 78.3,
+      "lastRssMb": 78.3,
+      "cpuMs": 730,
+      "cpuPct": 11.7
+    },
+    "node": {
+      "peakRssMb": 35.5,
+      "lastRssMb": 35.5,
+      "cpuMs": 980,
+      "cpuPct": 15.8
+    },
+    "hosts": {
+      "peakRssMb": 310.3,
+      "lastRssMb": 310.3,
+      "cpuMs": 10,
+      "cpuPct": 0.2
+    },
+    "framesPerWatcher": {
+      "n": 5,
+      "median": 95,
+      "p90": 96,
+      "min": 95,
+      "max": 96
+    },
+    "benchWallS": 18
+  }
+}

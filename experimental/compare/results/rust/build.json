@@ -1,0 +1,102 @@
+{
+  "impl": "rust",
+  "bench": "build",
+  "machine": {
+    "cpus": 32,
+    "cpuModel": "AMD Ryzen 9 9955HX 16-Core Processor",
+    "memGb": 59,
+    "kernel": "7.0.0-42-generic",
+    "loadavg": [
+      4.99,
+      5.17,
+      3.83
+    ],
+    "at": "2026-11-08T14:47:13.281Z"
+  },
+  "data": {
+    "steps": {
+      "build": {
+        "clean": {
+          "code": 0,
+          "wallMs": 562366,
+          "toolMs": 562000,
+          "waitedForSlot": false
+        },
+        "incremental": {
+          "code": 0,
+          "wallMs": 450969,
+          "toolMs": 450000,
+          "waitedForSlot": false
+        },
+        "artifactBytes": 58549808
+      },
+      "check": {
+        "clean": {
+          "code": 0,
+          "wallMs": 114075,
+          "toolMs": 114000,
+          "waitedForSlot": false
+        },
+        "incremental": {
+          "code": 0,
+          "wallMs": 10866,
+          "toolMs": 10820,
+          "waitedForSlot": false
+        }
+      },
+      "testBuild": {
+        "clean": {
+          "code": 0,
+          "wallMs": 225363,
+          "toolMs": 225000,
+          "waitedForSlot": false
+        },
+        "incremental": {
+          "code": 0,
+          "wallMs": 20590,
+          "toolMs": 20550,
+          "waitedForSlot": false
+        }
+      },
+      "test": {
+        "warm": {
+          "code": 0,
+          "wallMs": 217780,
+          "toolMs": 19250,
+          "waitedForSlot": false,
+          "runMs": 198530
+        }
+      }
+    },
+    "commands": {
+      "build": {
+        "run": "cargo build --release -p fleetd",
+        "env": {
+          "CARGO_TARGET_DIR": "$SCRATCH"
+        },
+        "artifact": "$SCRATCH/release/fleetd"
+      },
+      "check": {
+        "run": "cargo check -p fleetd --all-targets",
+        "env": {
+          "CARGO_TARGET_DIR": "$SCRATCH"
+        }
+      },
+      "testBuild": {
+        "run": "cargo test -p fleetd -p fleetd-contracts --no-run",
+        "env": {
+          "CARGO_TARGET_DIR": "$SCRATCH"
+        }
+      },
+      "test": {
+        "run": "cargo test -p fleetd -p fleetd-contracts",
+        "env": {
+          "CARGO_TARGET_DIR": "$SCRATCH",
+          "RUST_TEST_THREADS": "4"
+        },
+        "after": "testBuild"
+      }
+    },
+    "touch": "crates/fleetd/src/hub/tasks/tools.rs"
+  }
+}

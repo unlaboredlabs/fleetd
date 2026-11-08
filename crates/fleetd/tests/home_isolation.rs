@@ -3,6 +3,12 @@
 use std::path::Path;
 use std::process::{Command, Output};
 
+/// The fleetd under test: `FLEETD_BIN` when set (another build of it, run side by side by experimental/compare),
+/// else this build's own binary.
+fn fleetd_bin() -> std::path::PathBuf {
+    std::env::var_os("FLEETD_BIN").map_or_else(|| env!("CARGO_BIN_EXE_fleetd").into(), Into::into)
+}
+
 struct Machine {
     _dir: tempfile::TempDir,
     root: std::path::PathBuf,
@@ -25,7 +31,7 @@ impl Machine {
     }
 
     fn fleetd(&self, args: &[&str], fleetd_home: Option<&Path>) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_fleetd"));
+        let mut command = Command::new(fleetd_bin());
         command
             .args(args)
             .env("HOME", self.root.join("user"))
@@ -194,7 +200,7 @@ fn a_second_fleet_never_touches_the_first_fleets_services() {
     );
     let fleet = m.root.join("second");
     let run = |args: &[&str]| {
-        let out = Command::new(env!("CARGO_BIN_EXE_fleetd"))
+        let out = Command::new(fleetd_bin())
             .args(args)
             .env("HOME", &user)
             .env("XDG_CONFIG_HOME", m.root.join("xdg"))

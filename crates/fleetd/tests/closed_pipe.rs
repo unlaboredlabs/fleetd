@@ -5,6 +5,12 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 
+/// The fleetd under test: `FLEETD_BIN` when set (another build of it, run side by side by experimental/compare),
+/// else this build's own binary.
+fn fleetd_bin() -> std::path::PathBuf {
+    std::env::var_os("FLEETD_BIN").map_or_else(|| env!("CARGO_BIN_EXE_fleetd").into(), Into::into)
+}
+
 struct Fleet {
     dir: tempfile::TempDir,
     listen: String,
@@ -32,7 +38,7 @@ impl Fleet {
     }
 
     fn fleetd(&self, args: &[&str]) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_fleetd"));
+        let mut command = Command::new(fleetd_bin());
         command
             .args(args)
             .env("HOME", self.path("user"))
