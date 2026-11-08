@@ -331,6 +331,8 @@ pub struct Pool {
     filling: tokio::sync::Mutex<()>,
     /// The host refused Chrome's sandbox once: launches go without it.
     no_sandbox: std::sync::atomic::AtomicBool,
+    /// Why the last refill gave up, until a launch works again.
+    refill_failed: Mutex<Option<String>>,
 }
 
 impl Pool {
@@ -341,6 +343,7 @@ impl Pool {
             warm: Mutex::default(),
             filling: tokio::sync::Mutex::new(()),
             no_sandbox: std::sync::atomic::AtomicBool::new(false),
+            refill_failed: Mutex::default(),
         })
     }
 
@@ -411,7 +414,13 @@ impl Pool {
                 return;
             };
             while pool.lock().len() < pool.size {
-                match pool.launch_one(None).await {
+                let launched = pool.launch_one(None).await;
+                *pool
+                    .refill_failed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                    launched.as_ref().err().cloned();
+                match launched {
                     Ok(browser) => pool.lock().push_back(browser),
                     Err(e) => {
                         tracing::warn!(error = %e, "browser pool not refilled");
@@ -424,6 +433,14 @@ impl Pool {
 
     pub fn warm(&self) -> usize {
         self.lock().len()
+    }
+
+    /// Why the last refill gave up, if it did and no launch has worked since.
+    pub fn refill_failed(&self) -> Option<String> {
+        self.refill_failed
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// Kills every waiting browser.

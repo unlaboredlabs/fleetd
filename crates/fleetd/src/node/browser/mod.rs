@@ -564,6 +564,14 @@ impl Broker {
         }
     }
 
+    /// Why the pool's last refill gave up, if it did.
+    pub fn refill_failed(&self) -> Option<String> {
+        match &*lock(&self.install) {
+            Install::Ready(pool) => pool.refill_failed(),
+            _ => None,
+        }
+    }
+
     /// How many of its sessions are live.
     pub fn count(&self) -> usize {
         lock(&self.sessions).len()
