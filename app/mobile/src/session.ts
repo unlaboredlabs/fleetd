@@ -181,7 +181,7 @@ export class Session {
     const chat = this.#state.chats[key];
     const oldest = chat?.messages[0];
     if (chat === undefined || oldest === undefined || !chat.hasOlder || chat.loadingOlder) return;
-    this.#dispatch({ t: "history", key, page: { messages: [], moreAfter: false, moreBefore: true, state: this.#chatState(key) }, direction: "older" });
+    this.#dispatch({ t: "loading_older", key });
     const r = await this.#client.call("chat_history", { projectRef: refOf(key), before: oldest.seq, limit: CHAT_PAGE });
     if (r.ok) this.#dispatch({ t: "history", key, page: r.output, direction: "older" });
     else this.#dispatch({ t: "history_failed", key, error: r.error });
@@ -381,10 +381,6 @@ export class Session {
       if (!r.ok) return;
       this.#setChat(key, (chat) => mergeMessages(chat, r.output.messages));
     }
-  }
-
-  #chatState(key: Key) {
-    return this.#state.chatStates[key] ?? { projectRef: refOf(key), lastSeq: 0, leadWorking: false, needsYou: false };
   }
 
   #setChat(key: Key, update: (chat: NonNullable<State["chats"][Key]>) => NonNullable<State["chats"][Key]>): void {

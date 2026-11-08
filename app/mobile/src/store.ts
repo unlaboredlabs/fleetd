@@ -115,6 +115,8 @@ export type Action =
   | { readonly t: "chat_open"; readonly key: Key }
   | { readonly t: "history"; readonly key: Key; readonly page: ChatHistoryOutput; readonly direction: "latest" | "older" }
   | { readonly t: "history_failed"; readonly key: Key; readonly error: HubError }
+  /** An older page asked for: one at a time, its spinner at the top. */
+  | { readonly t: "loading_older"; readonly key: Key }
   | { readonly t: "latest"; readonly key: Key; readonly messages: readonly ChatMessage[] }
   | { readonly t: "corpus"; readonly key: Key; readonly messages: readonly ChatMessage[] }
   | { readonly t: "admin"; readonly admin: boolean; readonly me?: string | undefined; readonly meName?: string | undefined }
@@ -154,6 +156,8 @@ export const reduce = (s: State, a: Action): State => {
       return s.chats[a.key] === undefined ? withChat(s, a.key, emptyChat) : s;
     case "history":
       return withChat(s, a.key, applyHistory(chatOf(s, a.key), a.page, a.direction));
+    case "loading_older":
+      return withChat(s, a.key, { ...chatOf(s, a.key), loadingOlder: true });
     case "history_failed":
       return withChat(s, a.key, { ...chatOf(s, a.key), error: a.error, loadingOlder: false });
     case "latest":

@@ -366,6 +366,28 @@ describe("Session", () => {
     expect(reads()).toBe(2);
   });
 
+  it("reads an older page once at a time, showing it's on its way", async () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    hub.answer("chat_history", { ...page([message(51, "Fifty-one"), message(52, "Fifty-two")]), moreBefore: true });
+    await flush();
+    const older = () => hub.sentOf("call").filter((c) => c.tool === "chat_history" && (c.input as { before?: number }).before !== undefined);
+    void session.loadOlder(KEY);
+    // The list's end reached again, or a landing looking further back, while the page is out: no second read.
+    void session.loadOlder(KEY);
+    expect(older()).toHaveLength(1);
+    expect(session.state.chats[KEY]?.loadingOlder).toBe(true);
+    hub.answer("chat_history", { ...page([message(50, "Fifty")]), moreBefore: true });
+    await flush();
+    expect(session.state.chats[KEY]).toMatchObject({ loadingOlder: false, hasOlder: true });
+    expect(session.state.chats[KEY]?.messages.map((m) => m.seq)).toEqual([50, 51, 52]);
+    void session.loadOlder(KEY);
+    expect(older()).toHaveLength(2);
+    hub.fail("chat_history", "unavailable", "The machine is offline.");
+    await flush();
+    expect(session.state.chats[KEY]).toMatchObject({ loadingOlder: false, error: { message: "The machine is offline." } });
+  });
+
   it("reads a message too big for its event by seq", async () => {
     const { hub, session } = setup();
     session.openChat(KEY);
