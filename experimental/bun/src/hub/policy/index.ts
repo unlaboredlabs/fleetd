@@ -8,6 +8,7 @@ import type { Clock } from "../../shared/clock.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { ExecutorError, executors } from "../executor/index.ts";
+import type { SessionRules } from "../executor/sessions.ts";
 
 export const POLICY_FILE_PATH = ".fleetd/policy.yaml";
 export const DEFAULT_BRANCH_PREFIX = "fleetd/";
@@ -136,6 +137,13 @@ export class Policies {
     this.cache.set(keyOf(r), [now, result]);
     if (result instanceof ToolError) throw result;
     return result;
+  }
+
+  /** A launch's session rules, `tools.allow` and `tools.deny` (executor mod.rs `ToolPolicy::tools`): a file that
+   * doesn't decode refuses the launch rather than drop its denies. */
+  async tools(r: ProjectRef): Promise<SessionRules> {
+    const t = (await this.get(r)).tools;
+    return { allow: [...(t?.allow ?? [])], deny: [...(t?.deny ?? [])] };
   }
 
   /** Forgets the cached policy, so the next `get` reads the file again. */
