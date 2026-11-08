@@ -5,7 +5,7 @@ message, session and lead call, agent-mcp tool, CLI command and background loop,
 (the Rust module's path under `src/`). Tick an item (`- [x]`) when its module does it and a test covers it;
 `bun run gen` keeps the ticks. Don't add items by hand: a new one comes from the Rust code.
 
-**0 / 574 done.**
+**2 / 574 done.**
 
 ## hub-core
 
@@ -577,7 +577,7 @@ every `fleetd` command. 0 / 77 done.
 
 ## mcp
 
-/mcp, agent-mcp and the lead calls it makes. 0 / 106 done.
+/mcp, agent-mcp and the lead calls it makes. 2 / 106 done.
 
 ### HTTP routes
 
@@ -585,8 +585,8 @@ every `fleetd` command. 0 / 77 done.
 
 ### Node link messages
 
-- [ ] node→hub `lead_call` handle → `src/hub/lead_calls` <!-- link:node→hub `lead_call` handle -->
-- [ ] hub→node `lead_result` send → `src/hub/lead_calls` <!-- link:hub→node `lead_result` send -->
+- [x] node→hub `lead_call` handle → `src/hub/lead_calls` <!-- link:node→hub `lead_call` handle -->
+- [x] hub→node `lead_result` send → `src/hub/lead_calls` <!-- link:hub→node `lead_result` send -->
 
 ### Lead calls (agent-mcp → node → hub)
 
