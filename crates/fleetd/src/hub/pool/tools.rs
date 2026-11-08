@@ -1,7 +1,8 @@
-//! The cloud machines' tools: `cloud_get` for anyone signed in (Settings › Hub › Machines, Status), and for admin keys
-//! the settings, the boat key (sealed in the app to the hub's own box key), Test (the key, then the whole way from a
-//! cloud machine to the hub), Create, Reset, Resume and `cloud_stop`, the kill switch (`fleetd cloud stop`, and "Stop
-//! all cloud machines"). No key or secret comes back; the hub's SSH key shows only its public half.
+//! The cloud machines' tools: `cloud_get` for anyone signed in (Settings › Hub › Machines, Status), and for keys with
+//! admin on every machine the settings, the boat key (sealed in the app to the hub's own box key), Test (the key, then
+//! the whole way from a cloud machine to the hub), Create, Reset, Resume and `cloud_stop`, the kill switch (`fleetd
+//! cloud stop`, and "Stop all cloud machines"). No key or secret comes back; the hub's SSH key shows only its public
+//! half.
 use std::sync::Arc;
 
 use base64::Engine;
@@ -19,7 +20,10 @@ use fleetd_contracts::mcp::{
 use super::boat::File;
 use super::view;
 use super::{CreateSpec, Why, ledger::State};
-use crate::hub::api::{Caller, Hub, Registry, ToolError, error, internal_error, require};
+use crate::hub::api::{
+    Caller, Hub, Registry, ToolError, admin_everywhere_fix, allows_everywhere, error,
+    internal_error,
+};
 
 pub fn register(tools: &mut Registry) {
     tools.add("cloud_stop", stop);
@@ -30,6 +34,19 @@ pub fn register(tools: &mut Registry) {
     tools.add("cloud_create", create);
     tools.add("cloud_reset", reset);
     tools.add("cloud_resume", resume);
+}
+
+/// Cloud machines are the hub's, as its other Hub settings are: their account, money and kill switch take admin on every
+/// machine, never on some.
+fn hub_admin(caller: &Caller) -> Result<(), ToolError> {
+    if allows_everywhere(caller, Role::Admin) {
+        return Ok(());
+    }
+    Err(error(
+        ErrorCode::Forbidden,
+        "Cloud machines are the hub's: changing them takes admin on every machine.",
+        admin_everywhere_fix(caller),
+    ))
 }
 
 fn failed(e: impl std::fmt::Display) -> ToolError {
@@ -105,7 +122,7 @@ async fn set(
     caller: Caller,
     input: CloudSetInput,
 ) -> Result<CloudSetOutput, ToolError> {
-    require(&caller, Role::Admin, None)?;
+    hub_admin(&caller)?;
     let s = &input.settings;
     if s.enabled && !hub.pool.ledger().settings()?.has_key {
         return Err(error(
@@ -129,7 +146,7 @@ async fn key_set(
     caller: Caller,
     input: CloudKeySetInput,
 ) -> Result<CloudKeySetOutput, ToolError> {
-    require(&caller, Role::Admin, None)?;
+    hub_admin(&caller)?;
     let refused = || {
         error(
             ErrorCode::Invalid,
@@ -172,7 +189,7 @@ async fn test(
     caller: Caller,
     _: CloudTestInput,
 ) -> Result<CloudTestOutput, ToolError> {
-    require(&caller, Role::Admin, None)?;
+    hub_admin(&caller)?;
     let test = hub.pool.test().await;
     if test.ok {
         test_path(&hub).await;
@@ -282,7 +299,7 @@ async fn create(
     caller: Caller,
     _: CloudCreateInput,
 ) -> Result<CloudCreateOutput, ToolError> {
-    require(&caller, Role::Admin, None)?;
+    hub_admin(&caller)?;
     // The key is scoped to the environment: a create outside it is refused, and would count against the starts.
     if hub.pool.ledger().settings()?.environment.is_none() {
         return Err(error(
@@ -322,7 +339,7 @@ async fn reset(
     caller: Caller,
     input: CloudResetInput,
 ) -> Result<CloudResetOutput, ToolError> {
-    require(&caller, Role::Admin, None)?;
+    hub_admin(&caller)?;
     let slot = input.machine_id.as_str();
     let row = hub.pool.ledger().slot(slot)?.ok_or_else(|| {
         error(
@@ -359,7 +376,7 @@ async fn resume(
     caller: Caller,
     _: CloudResumeInput,
 ) -> Result<CloudResumeOutput, ToolError> {
-    require(&caller, Role::Admin, None)?;
+    hub_admin(&caller)?;
     hub.pool.resume_bursting()?;
     Ok(CloudResumeOutput {
         cloud: cloud_view(&hub)?,
@@ -373,7 +390,7 @@ async fn stop(
     caller: Caller,
     _: CloudStopInput,
 ) -> Result<CloudStopOutput, ToolError> {
-    require(&caller, Role::Admin, None)?;
+    hub_admin(&caller)?;
     let kill = hub
         .pool
         .kill()

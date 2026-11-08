@@ -415,8 +415,12 @@ async fn pair(
     let r = input.project_ref();
     navi_of(&hub, &caller, r, Role::Operate)?;
     // The paired account is one person's: the project becomes theirs when it has no owner, so what they send there is
-    // their own message and approval.
-    if let Some(person) = caller.person.as_ref() {
+    // their own message and approval. A shared project nobody owns becomes someone's as for Only me, by an admin's
+    // hand only (projects::settings::set_only_me): its owner turns Only me on, which would lock out the rest.
+    let only_me = hub.store.project_get(r)?.is_some_and(|p| p.only_me);
+    if let Some(person) = caller.person.as_ref()
+        && (only_me || crate::hub::api::allows(&caller, Role::Admin, Some(&r.machine_id)))
+    {
         hub.db
             .with(|c| Ok(crate::hub::navi::store::claim(c, r, &person.person_id)?))?;
     }

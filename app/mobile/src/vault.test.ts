@@ -3,10 +3,16 @@ import { randomBytes } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const store = new Map<string, string>();
+/** How each item was last written: its keychainAccessible. */
+const access = new Map<string, number | undefined>();
 vi.mock("expo-secure-store", () => ({
   AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: 0,
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 1,
   getItemAsync: async (k: string, o?: { keychainService?: string }) => store.get(`${o?.keychainService ?? ""}/${k}`) ?? null,
-  setItemAsync: async (k: string, v: string, o?: { keychainService?: string }) => void store.set(`${o?.keychainService ?? ""}/${k}`, v),
+  setItemAsync: async (k: string, v: string, o?: { keychainService?: string; keychainAccessible?: number }) => {
+    store.set(`${o?.keychainService ?? ""}/${k}`, v);
+    access.set(`${o?.keychainService ?? ""}/${k}`, o?.keychainAccessible);
+  },
   deleteItemAsync: async (k: string, o?: { keychainService?: string }) => void store.delete(`${o?.keychainService ?? ""}/${k}`),
 }));
 vi.mock("expo-crypto", () => ({ getRandomBytes: (n: number) => new Uint8Array(randomBytes(n)) }));
@@ -14,7 +20,24 @@ vi.mock("expo-crypto", () => ({ getRandomBytes: (n: number) => new Uint8Array(ra
 const { forgetPaired, forgetPush, loadPaired, loadPushDevice, loadPushKeys, pairWith, pushKeys, saveMuted, savePushDevice } = await import("./vault");
 const { toBase64 } = await import("./seal");
 
-beforeEach(() => store.clear());
+beforeEach(() => {
+  store.clear();
+  access.clear();
+});
+
+describe("the hub's key", () => {
+  it("stays on this phone: never in a backup, nor restored onto another one", async () => {
+    await pairWith({ hub: "http://devbox:4790", key: "fleetd_a", hubName: "devbox" });
+    expect(access.get("/fleetd.hub")).toBe(1);
+  });
+
+  it("moves there from an older version's keychain item as it is read", async () => {
+    store.set("/fleetd.hub", JSON.stringify({ hub: "http://devbox:4790", key: "fleetd_a", hubName: "devbox" }));
+    expect((await loadPaired())?.key).toBe("fleetd_a");
+    expect(access.get("/fleetd.hub")).toBe(1);
+    expect(store.get("/fleetd.hub")).toContain("fleetd_a");
+  });
+});
 
 describe("the notification key pair", () => {
   it("is a new one for each hub paired, the last hub's gone", async () => {

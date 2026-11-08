@@ -359,8 +359,24 @@ pub struct Limiter {
     failures: Mutex<HashMap<Option<IpAddr>, Vec<i64>>>,
 }
 
+/// Whose attempts count together: an IPv6 address's /64, which one client holds whole and picks any address in, and an
+/// IPv4 address as itself, however it reached the listener (`::ffff:a.b.c.d` on a dual-stack one).
+fn bucket(addr: Option<IpAddr>) -> Option<IpAddr> {
+    addr.map(|ip| match ip {
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => {
+                let s = v6.segments();
+                IpAddr::V6(std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0))
+            }
+        },
+        v4 => v4,
+    })
+}
+
 impl Limiter {
     pub fn blocked(&self, addr: Option<IpAddr>, now: i64) -> bool {
+        let addr = bucket(addr);
         let mut failures = self.failures.lock().unwrap_or_else(|p| p.into_inner());
         let Some(times) = failures.get_mut(&addr) else {
             return false;
@@ -370,6 +386,7 @@ impl Limiter {
     }
 
     pub fn failed(&self, addr: Option<IpAddr>, now: i64) {
+        let addr = bucket(addr);
         let mut failures = self.failures.lock().unwrap_or_else(|p| p.into_inner());
         if failures.len() > 1024 {
             failures.retain(|_, times| times.iter().any(|&at| now - at < FAILURE_WINDOW_MS));

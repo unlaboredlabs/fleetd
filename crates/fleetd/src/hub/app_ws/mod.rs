@@ -227,6 +227,10 @@ impl Session {
                 }
             };
         }
+        // Every frame goes on the key as it is now: one revoked from the CLI since the last recheck reads nothing more.
+        if self.key_refused() {
+            return After::Close(CLOSE_UNAUTHORIZED, "unauthorized");
+        }
         let Some((key, info)) = self.caller.clone() else {
             let id = match &message {
                 AppClientMessage::Call { id, .. } => Some(id.as_str().to_owned()),
@@ -251,10 +255,23 @@ impl Session {
                 match crate::hub::browser::live::start_watch(&self.hub, &info, &session) {
                     Ok(mut watch) => {
                         let slot = self.browser_slot.clone();
+                        let hub = self.hub.clone();
+                        let project = hub
+                            .db
+                            .with(|c| crate::hub::navi::owner::screen_project(c, session.as_str()))
+                            .ok()
+                            .flatten();
                         self.browser = Some(tokio::spawn(async move {
                             loop {
                                 match watch.frames.recv().await {
                                     Ok(frame) if frame.session_id == session => {
+                                        // Its project turned Only me since, by another person: theirs alone to watch.
+                                        if let Some(p) = &project
+                                            && !crate::hub::navi::owner::may_use(&hub.db, &info, p)
+                                                .unwrap_or(false)
+                                        {
+                                            return;
+                                        }
                                         let mut value =
                                             serde_json::to_value(&frame).unwrap_or_default();
                                         value["t"] = json!("browser_frame");
@@ -321,10 +338,24 @@ impl Session {
                 }
                 let mut deltas = self.hub.chat.subscribe();
                 let out = self.out.clone();
+                let hub = self.hub.clone();
                 self.chat = Some(tokio::spawn(async move {
                     loop {
                         match deltas.recv().await {
                             Ok(delta) if delta.project_ref == project => {
+                                // Turned Only me since by another person: its chat streams to them alone.
+                                if !crate::hub::navi::owner::may_use(&hub.db, &info, &project)
+                                    .unwrap_or(false)
+                                {
+                                    out.push(
+                                        error_frame(
+                                            &crate::hub::navi::owner::refused(&project),
+                                            None,
+                                        )
+                                        .to_string(),
+                                    );
+                                    return;
+                                }
                                 let mut frame = serde_json::to_value(&delta).unwrap_or_default();
                                 frame["t"] = json!("chat_delta");
                                 if !out.push(frame.to_string()) {

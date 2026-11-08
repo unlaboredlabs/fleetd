@@ -78,12 +78,29 @@ fn tasks_in(hub: &Hub, project: Option<&ProjectRef>, state: TaskState, limit: us
         })
 }
 
+/// Whether the key may read `task`: a grant on its machine, and its project not another person's Only me one
+/// (`navis`, from `navi::owner::others`).
+fn task_readable(caller: &Caller, navis: &HashSet<ProjectRef>, task: &Task) -> bool {
+    allows(caller, Role::Read, Some(&task.project_ref.machine_id))
+        && !navis.contains(&task.project_ref)
+}
+
+/// Another person's Only me projects, for leaving their tasks out; None when they can't be read, which shows none.
+fn others(hub: &Hub, caller: &Caller) -> Option<HashSet<ProjectRef>> {
+    crate::hub::navi::owner::others(&hub.db, caller)
+        .inspect_err(|error| tracing::warn!(%error, "agents: Navi owners not read"))
+        .ok()
+}
+
 /// Every queued, running or idle task the key may read.
 pub fn live_tasks(hub: &Hub, caller: &Caller, project: Option<&ProjectRef>) -> Vec<Task> {
+    let Some(navis) = others(hub, caller) else {
+        return Vec::new();
+    };
     [TaskState::Running, TaskState::Queued, TaskState::Idle]
         .into_iter()
         .flat_map(|state| tasks_in(hub, project, state, TASK_SCAN))
-        .filter(|t| allows(caller, Role::Read, Some(&t.project_ref.machine_id)))
+        .filter(|t| task_readable(caller, &navis, t))
         .collect()
 }
 
@@ -95,11 +112,14 @@ pub fn ended_tasks(
     since: &str,
     scan: usize,
 ) -> Vec<Task> {
+    let Some(navis) = others(hub, caller) else {
+        return Vec::new();
+    };
     [TaskState::Done, TaskState::Failed, TaskState::Cancelled]
         .into_iter()
         .flat_map(|state| tasks_in(hub, project, state, scan))
         .filter(|t| t.ended_at.as_ref().is_some_and(|e| e.0.as_str() >= since))
-        .filter(|t| allows(caller, Role::Read, Some(&t.project_ref.machine_id)))
+        .filter(|t| task_readable(caller, &navis, t))
         .collect()
 }
 

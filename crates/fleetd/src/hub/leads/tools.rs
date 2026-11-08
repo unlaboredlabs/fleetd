@@ -116,6 +116,8 @@ impl Area {
             }),
             _ => None,
         };
+        // Another person's Only me project's orders are theirs alone.
+        let navis = crate::hub::navi::owner::others(&self.ctx.db, caller)?;
         let all: Vec<_> = self
             .workstreams
             .list(&WorkstreamFilter {
@@ -127,6 +129,7 @@ impl Area {
             .into_iter()
             .filter(|w| {
                 allows(caller, Role::Read, Some(&w.project_ref.machine_id))
+                    && !navis.contains(&w.project_ref)
                     && input
                         .machine_id
                         .as_ref()

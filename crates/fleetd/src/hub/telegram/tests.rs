@@ -1057,3 +1057,53 @@ async fn unpair_and_remove_tell_every_open_app() {
         ]
     );
 }
+
+/// A shared project nobody owns stays nobody's when a member pairs its Telegram: owning it, they could turn Only me on
+/// and lock everyone else out, which for a project nobody owns only an admin does.
+#[tokio::test]
+async fn a_members_pairing_makes_no_shared_project_theirs() {
+    let (hub, _home, _bob, _node) = setup().await;
+    hub.db
+        .with(|c| {
+            c.execute(
+                "UPDATE project_settings SET owner_person = NULL, only_me = 0 WHERE machine_id = 'lab' AND project_id = 'ada'",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let cy = device(&hub, &member(&hub, "Cy"), "operate");
+    call(
+        &hub,
+        &cy,
+        "telegram_set",
+        json!({ "navi": r(), "sealed": sealed(TOKEN) }),
+    )
+    .await
+    .unwrap();
+    call(&hub, &cy, "telegram_test", json!({ "navi": r() }))
+        .await
+        .unwrap();
+    call(&hub, &cy, "telegram_pair", json!({ "navi": r() }))
+        .await
+        .unwrap();
+    let owner: Option<String> = hub
+        .db
+        .with(|c| {
+            Ok(c.query_row(
+                "SELECT owner_person FROM project_settings WHERE machine_id = 'lab' AND project_id = 'ada'",
+                [],
+                |row| row.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(owner, None);
+    let only_me = call(
+        &hub,
+        &cy,
+        "project_settings_set",
+        json!({ "machineId": "lab", "projectId": "ada", "onlyMe": true }),
+    )
+    .await;
+    assert!(only_me.is_err(), "{only_me:?}");
+}

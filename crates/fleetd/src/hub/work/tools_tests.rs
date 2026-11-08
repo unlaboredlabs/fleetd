@@ -9,6 +9,7 @@ use fleetd_contracts::auth::{Grant, KeyKind};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::mcp::{WorkClaimInput, WorkClaimStatus, WorkListInput};
+use fleetd_contracts::people::{HubRole, PersonId, PersonName};
 use fleetd_contracts::prim::Line;
 use fleetd_contracts::tasks::Task;
 use fleetd_contracts::work::{RepoKey, WorkScope};
@@ -732,4 +733,100 @@ async fn a_repo_no_project_is_bound_to_reads_the_callers_unbound_projects_first(
         .unwrap();
     assert_eq!(listed.warning, None);
     assert!(listed.items.iter().any(|i| i.id.as_str() == "T1"));
+}
+
+/// Another person's Only me project's work is theirs alone: work_list leaves it out, a claim it stops names it by its
+/// id alone, and work_done doesn't find its claim. While the project is shared, all of it shows.
+#[tokio::test]
+async fn another_persons_only_me_projects_work_is_neither_listed_named_nor_ended() {
+    let (hub, _clock, _home) = hub();
+    let people = crate::hub::people::People::new(hub.db.clone(), hub.clock.clone());
+    let ann = people.ensure_owner().unwrap().person_id;
+    let bob = people
+        .create(&PersonName::unchecked("Bob"), HubRole::Member)
+        .unwrap()
+        .person_id;
+    let device = |person: &PersonId| {
+        let grants: Vec<Grant> =
+            serde_json::from_value(json!([{ "role": "operate", "machines": "*" }])).unwrap();
+        hub.auth
+            .create_key_for("desk", &grants, KeyKind::Human, Some(person))
+            .unwrap()
+            .info
+    };
+    let (ann_d, bob_d) = (device(&ann), device(&bob));
+    hub.store
+        .projects_upsert_many(
+            &project().machine_id,
+            &[serde_json::from_value(json!({
+                "machineId": "devbox", "projectId": "shop", "title": "shop", "workspaceRoot": "/work/shop",
+                "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+            }))
+            .unwrap()],
+        )
+        .unwrap();
+    lead_task(&hub, "the surprise party page", "fleetd/T1-party");
+    let claimed = call(
+        &hub,
+        &ann_d,
+        "work_claim",
+        json!({ "repo": REMOTE, "projectRef": project(), "title": "gift list", "branch": "ann/gifts" }),
+    )
+    .await
+    .unwrap();
+    let claim_id = claimed["claim"]["claimId"].as_str().unwrap().to_owned();
+    let listed = |who: &Caller| {
+        let who = who.clone();
+        let hub = hub.clone();
+        async move {
+            let v = call(&hub, &who, "work_list", json!({ "repo": REMOTE }))
+                .await
+                .unwrap();
+            let mut ids: Vec<String> = v["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|i| i["id"].as_str().unwrap().to_owned())
+                .collect();
+            ids.sort();
+            ids
+        }
+    };
+    assert_eq!(listed(&bob_d).await, [claim_id.clone(), "T1".to_owned()]);
+
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO project_settings (machine_id, project_id, only_me, owner_person, created_ms, created_by_key, created_by_name)
+                 VALUES ('devbox', 'shop', 1, ?, 0, 'k', 'desk')
+                 ON CONFLICT (machine_id, project_id) DO UPDATE SET only_me = 1, owner_person = excluded.owner_person",
+                [ann.as_str()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    assert!(listed(&bob_d).await.is_empty());
+    assert_eq!(listed(&ann_d).await, [claim_id.clone(), "T1".to_owned()]);
+    // A claim on Ann's branch is still stopped, but her work is named by its id alone.
+    let stopped = call(
+        &hub,
+        &bob_d,
+        "work_claim",
+        json!({ "repo": REMOTE, "title": "party", "branch": "fleetd/T1-party" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(stopped["status"], "taken");
+    let said = stopped.to_string();
+    assert!(!said.contains("surprise party"), "{said}");
+    let ended = refused(
+        call(
+            &hub,
+            &bob_d,
+            "work_done",
+            json!({ "claimId": claim_id, "outcome": "dropped" }),
+        )
+        .await,
+    );
+    assert_eq!(ended.code, fleetd_contracts::mcp::ErrorCode::NotFound);
 }

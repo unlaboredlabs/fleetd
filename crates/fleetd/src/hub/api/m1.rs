@@ -52,8 +52,6 @@ async fn events_wait(
         require(&caller, Role::Read, Some(machine_id))?;
     }
     let mut cursor = input.cursor.map_or_else(|| hub.events.head(), |c| c.get());
-    // Another person's Navi's events are theirs alone (D215).
-    let navis = crate::hub::navi::owner::others(&hub.db, &caller)?;
     let deadline = now_ms(hub.clock.as_ref()) + input.timeout_sec.get() * 1000;
     loop {
         let remaining = ((deadline - now_ms(hub.clock.as_ref())).max(0) as u64).div_ceil(1000);
@@ -67,13 +65,16 @@ async fn events_wait(
             })
             .await?;
         cursor = cursor.max(page.cursor);
+        // Another person's Only me project's events are theirs alone (D215), read again as each page comes: one turned
+        // Only me during a long wait is left out from then on.
+        let navis = crate::hub::navi::owner::others(&hub.db, &caller)?;
         let total = page.events.len();
         let visible: Vec<_> = page
             .events
             .into_iter()
             .filter(|e| {
                 can_read(&caller, e)
-                    && !crate::hub::navi::owner::about(&navis, e)
+                    && !crate::hub::navi::owner::about(&hub.db, &navis, e)
                     // Another person's sidebar order and pins are theirs alone (W214, W232).
                     && !crate::hub::sidebar_order::someone_elses(&caller, e)
             })

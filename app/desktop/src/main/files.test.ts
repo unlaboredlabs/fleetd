@@ -52,3 +52,9 @@ it("says why when the hub can't give it or nothing opens it", async () => {
   const pdf = () => Promise.resolve({ ok: true as const, output: { name: "plan.pdf", mime: "application/pdf", dataB64: "JVBERi0=" } });
   expect(await openFile(pdf, request, dir)).toEqual({ ok: false, message: "plan.pdf didn't open: No application knows how to open it" });
 });
+
+it("opens a script as text, never as itself", async () => {
+  const py = () => Promise.resolve({ ok: true as const, output: { name: "tool.py", mime: "text/plain", dataB64: Buffer.from("print(1)").toString("base64") } });
+  expect(await openFile(py, request, dir)).toEqual({ ok: true });
+  expect(basename(opened[0] ?? "")).toBe("tool.py.txt");
+});

@@ -3,6 +3,7 @@
 //! (someone else's issue, PR, branch or item) refuses it, and only a person's session may claim it `anyway`, so a lead
 //! or an agent never overrides a person's claim; a strong match refuses it once, until `notDuplicateOf` names it with a
 //! reason; weak matches are only listed.
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -163,11 +164,12 @@ fn owner_of(caller: &Caller) -> ClaimOwner {
     }
 }
 
-/// Items on machines the key can't read are left out of what it is shown.
-fn visible(caller: &Caller, item: &WorkItem) -> bool {
+/// Items on machines the key can't read, and those of another person's Only me project (`navis`), are left out of
+/// what it is shown.
+fn visible(caller: &Caller, navis: &HashSet<ProjectRef>, item: &WorkItem) -> bool {
     item.project_ref
         .as_ref()
-        .is_none_or(|r| readable(caller, &r.machine_id))
+        .is_none_or(|r| readable(caller, &r.machine_id) && !navis.contains(r))
 }
 
 fn is_mine(caller: &Caller, item: &WorkItem) -> bool {
@@ -346,20 +348,25 @@ pub(super) async fn claim_on(
 /// that refuses it.
 fn decide(
     caller: &Caller,
+    navis: &HashSet<ProjectRef>,
     person: bool,
     input: &WorkClaimInput,
     found: &[WorkMatch],
 ) -> Result<Option<String>, Box<WorkClaimOutput>> {
     let others: Vec<&WorkMatch> = found.iter().filter(|m| !is_mine(caller, &m.item)).collect();
     let name_of = |m: &WorkMatch| {
-        if visible(caller, &m.item) {
+        if visible(caller, navis, &m.item) {
             describe(&m.item)
         } else {
-            format!("{} (on a machine this key can't read)", m.item.id)
+            format!(
+                "{} (on a machine or project this key can't read)",
+                m.item.id
+            )
         }
     };
-    let refuse =
-        |status, message: String, next: String| answer(caller, found, status, None, message, next);
+    let refuse = |status, message: String, next: String| {
+        answer(caller, navis, found, status, None, message, next)
+    };
     if let Some(exact) = others.iter().find(|m| m.strength == MatchStrength::Exact) {
         let held = name_of(exact);
         if person && input.anyway == Some(true) {
@@ -418,6 +425,7 @@ fn decide(
 /// The answer, with the matches the caller may see (not its own), strongest first.
 fn answer(
     caller: &Caller,
+    navis: &HashSet<ProjectRef>,
     found: &[WorkMatch],
     status: WorkClaimStatus,
     claim: Option<Claim>,
@@ -426,7 +434,7 @@ fn answer(
 ) -> WorkClaimOutput {
     let shown: Vec<WorkMatch> = found
         .iter()
-        .filter(|m| visible(caller, &m.item) && !is_mine(caller, &m.item))
+        .filter(|m| visible(caller, navis, &m.item) && !is_mine(caller, &m.item))
         .cloned()
         .collect();
     let matches = cap(shown, MATCHES_MAX);
@@ -453,6 +461,7 @@ pub(super) fn settle(
 ) -> Result<WorkClaimOutput, ToolError> {
     let owner = owner_of(caller);
     let person = owner.kind == ClaimOwnerKind::HumanSession;
+    let navis = crate::hub::navi::owner::others(&hub.db, caller)?;
     let work = &hub.work;
     let intent = intent_of(&owner, input, scope);
     let now = crate::hub::store::now_ms(hub.clock.as_ref());
@@ -485,6 +494,7 @@ pub(super) fn settle(
         let found: Vec<WorkMatch> = found.into_iter().filter(|m| m.item.id != task.id).collect();
         return Ok(answer(
             caller,
+            &navis,
             &found,
             WorkClaimStatus::Yours,
             None,
@@ -524,7 +534,7 @@ pub(super) fn settle(
                 paths: added_paths,
             };
             let found = matches_in(items, &added, scope);
-            if let Err(refused) = decide(caller, person, input, &found) {
+            if let Err(refused) = decide(caller, &navis, person, input, &found) {
                 return Ok(*refused);
             }
         }
@@ -534,6 +544,7 @@ pub(super) fn settle(
         let id = claim.claim_id.clone();
         return Ok(answer(
             caller,
+            &navis,
             &found,
             WorkClaimStatus::Renewed,
             Some(claim),
@@ -541,7 +552,7 @@ pub(super) fn settle(
             next_done(&id),
         ));
     }
-    if let Err(refused) = decide(caller, person, input, &found) {
+    if let Err(refused) = decide(caller, &navis, person, input, &found) {
         return Ok(*refused);
     }
     let saved = work.claim_if(
@@ -549,7 +560,7 @@ pub(super) fn settle(
         observed_of(input, now),
         |claims| -> Result<_, Box<WorkClaimOutput>> {
             let found = matches_in(&with_claims(items, claims), &intent, scope);
-            let note = decide(caller, person, input, &found)?;
+            let note = decide(caller, &navis, person, input, &found)?;
             Ok((note.clone(), (note, found)))
         },
     )?;
@@ -564,6 +575,7 @@ pub(super) fn settle(
     };
     Ok(answer(
         caller,
+        &navis,
         &found,
         WorkClaimStatus::Claimed,
         Some(claim),
@@ -601,7 +613,11 @@ pub(super) async fn list_on(
     } else {
         hub.work.in_flight(&scope).await?
     };
-    let items: Vec<WorkItem> = items.into_iter().filter(|i| visible(caller, i)).collect();
+    let navis = crate::hub::navi::owner::others(&hub.db, caller)?;
+    let items: Vec<WorkItem> = items
+        .into_iter()
+        .filter(|i| visible(caller, &navis, i))
+        .collect();
     let next = if items.is_empty() {
         "Nothing is in flight here. Before a code change, call work_claim with a one-line title."
     } else {
@@ -651,7 +667,8 @@ async fn work_done(
     };
     let claim = hub.work.get(id)?.ok_or_else(not_found)?;
     if let Some(r) = &claim.project_ref
-        && !readable(&caller, &r.machine_id)
+        && (!readable(&caller, &r.machine_id)
+            || !crate::hub::navi::owner::may_use(&hub.db, &caller, r)?)
     {
         return Err(not_found());
     }

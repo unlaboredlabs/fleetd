@@ -715,3 +715,317 @@ async fn only_its_owner_watches_takes_over_or_replays_a_navis_screen() {
         "owner's watch"
     );
 }
+
+/// What a call that names another person's Only me project by its order, task or steer reads as: refused by the
+/// gate, or (a handler that checks first) not found. Either way it never runs.
+async fn kept_out(hub: &Arc<Hub>, who: &Caller, tool: &str, input: Value) {
+    match call(hub, who, tool, input).await {
+        Err(CallError::Tool(e)) if matches!(e.code, ErrorCode::Forbidden | ErrorCode::NotFound) => {
+        }
+        other => panic!("{tool}: not refused: {other:?}"),
+    }
+}
+
+/// An Only me project's orders, agents, steers, changes and decisions are its owner's too: another person reaches
+/// them neither by their own ids (an order's W, a task's T, a steer's S, a decision's D) nor in any list.
+#[tokio::test]
+async fn an_only_me_projects_orders_agents_steers_changes_and_decisions_are_its_owners_alone() {
+    let (hub, _home) = hub();
+    let _calls = node(&hub, &[CAP_REPOS, CAP_ASSISTANT]).await;
+    let ann = people(&hub).ensure_owner().unwrap().person_id;
+    let bob = people(&hub)
+        .create(&PersonName::unchecked("Bob"), HubRole::Member)
+        .unwrap()
+        .person_id;
+    let (ann_d, bob_d) = (
+        device(&hub, Some(&ann), "admin"),
+        device(&hub, Some(&bob), "operate"),
+    );
+    let p1 = json!({ "machineId": "devbox", "projectId": "p1" });
+    let at = "2026-11-08T10:00:00.000Z";
+    hub.db
+        .with(|c| {
+            let order = json!({
+                "workstreamId": "W1", "projectRef": p1, "title": "Ann's plans",
+                "source": { "text": "Ann's plans", "channel": "app", "by": "human", "at": at },
+                "state": "open", "createdAt": at, "updatedAt": at,
+            });
+            c.execute(
+                "INSERT INTO workstreams (n, machine_id, project_id, state, data) VALUES (1, 'devbox', 'p1', 'open', ?)",
+                [order.to_string()],
+            )?;
+            let task = json!({
+                "taskId": "T1", "projectRef": p1, "workstreamId": "W1", "title": "Ann's errand",
+                "kind": "write", "prompt": "Book it.", "model": "claude-opus-5-5", "effort": "high",
+                "state": "running", "attempt": 1, "createdAt": at, "startedAt": at,
+            });
+            c.execute(
+                "INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, data) VALUES (1, 'devbox', 'p1', 'W1', 'running', ?)",
+                [task.to_string()],
+            )?;
+            let change = json!({
+                "changeId": "X1", "projectRef": p1, "repo": "acme/app", "prNumber": 7,
+                "prUrl": "https://github.com/acme/app/pull/7", "branch": "fleetd/T1", "taskId": "T1",
+                "workstreamId": "W1", "headSha": "b".repeat(40), "state": "queued", "reviews": [],
+                "createdAt": at, "updatedAt": at,
+            });
+            c.execute(
+                "INSERT INTO changes (n, repo, pr_number, state, machine_id, project_id, train_order, data)
+                 VALUES (1, 'acme/app', 7, 'queued', 'devbox', 'p1', 1, ?)",
+                [change.to_string()],
+            )?;
+            let steer = json!({
+                "id": "S1", "target": { "workstreamId": "W1" }, "workstreamId": "W1",
+                "thread": { "machineId": "devbox", "threadId": "th1" }, "runId": "r1",
+                "by": { "kind": "human", "keyName": "desk" }, "mode": "queue", "text": "Window seat.",
+                "stage": "queued", "queuedAt": at,
+            });
+            c.execute(
+                "INSERT INTO steers (n, workstream_id, machine_id, thread_id, run_id, by, mode, stage, queued_ms, data)
+                 VALUES (1, 'W1', 'devbox', 'th1', 'r1', ?, 'queue', 'queued', 0, ?)",
+                [format!("key:{}", ann_d.key_id), steer.to_string()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let decision = ok(
+        &hub,
+        &ann_d,
+        "decisions_record",
+        json!({ "key": "trip.seat", "value": "aisle", "scope": { "kind": "project", "projectRef": p1 } }),
+    )
+    .await["decision"]["decisionId"]
+        .clone();
+
+    // While p1 is everyone's, Bob sees all of it.
+    let orders = |v: &Value| v["orders"].as_array().unwrap().len();
+    let tasks = |v: &Value| v["tasks"].as_array().unwrap().len();
+    let changes = |v: &Value| v["changes"].as_array().unwrap().len();
+    let decisions = |v: &Value| v["decisions"].as_array().unwrap().len();
+    assert_eq!(
+        orders(&ok(&hub, &bob_d, "orders_board", json!({})).await),
+        1
+    );
+    assert_eq!(tasks(&ok(&hub, &bob_d, "tasks_list", json!({})).await), 1);
+    assert_eq!(
+        changes(&ok(&hub, &bob_d, "changes_list", json!({})).await),
+        1
+    );
+    let search = json!({ "query": "aisle" });
+    assert_eq!(
+        decisions(&ok(&hub, &bob_d, "decisions_search", search.clone()).await),
+        1
+    );
+    ok(&hub, &bob_d, "order_get", json!({ "workstreamId": "W1" })).await;
+    ok(&hub, &bob_d, "task_get", json!({ "taskId": "T1" })).await;
+    let live = |who: &Caller| {
+        let board = crate::hub::app_ws::live::board_lanes(&hub, who);
+        let agent = crate::hub::app_ws::live::agent_lanes(&hub, who, "T1");
+        (board.len(), agent.len())
+    };
+    assert_eq!(live(&bob_d), (1, 1));
+
+    // Ann turns Only me on: none of it is Bob's to see or steer any more, by any id or in any list.
+    ok(
+        &hub,
+        &ann_d,
+        "project_settings_set",
+        json!({ "machineId": "devbox", "projectId": "p1", "onlyMe": true }),
+    )
+    .await;
+    assert_eq!(
+        orders(&ok(&hub, &bob_d, "orders_board", json!({})).await),
+        0
+    );
+    assert_eq!(tasks(&ok(&hub, &bob_d, "tasks_list", json!({})).await), 0);
+    assert_eq!(
+        changes(&ok(&hub, &bob_d, "changes_list", json!({})).await),
+        0
+    );
+    assert_eq!(
+        decisions(&ok(&hub, &bob_d, "decisions_search", search.clone()).await),
+        0
+    );
+    assert_eq!(live(&bob_d), (0, 0));
+    for (tool, input) in [
+        ("order_get", json!({ "workstreamId": "W1" })),
+        ("task_get", json!({ "taskId": "T1" })),
+        (
+            "steer_send",
+            json!({ "target": { "workstreamId": "W1" }, "text": "Cancel the trip.", "clientRequestId": "s1" }),
+        ),
+        (
+            "steer_send",
+            json!({ "target": { "taskId": "T1" }, "text": "Cancel the trip.", "clientRequestId": "s2" }),
+        ),
+        ("steer_withdraw", json!({ "steerId": "S1" })),
+        (
+            "decisions_record",
+            json!({ "key": "trip.seat", "value": "middle", "scope": { "kind": "workstream", "workstreamId": "W1" } }),
+        ),
+        (
+            "decisions_overturn",
+            json!({ "decisionId": decision, "value": "middle", "why": "I like it." }),
+        ),
+    ] {
+        kept_out(&hub, &bob_d, tool, input).await;
+    }
+
+    // Ann still has all of it.
+    assert_eq!(
+        orders(&ok(&hub, &ann_d, "orders_board", json!({})).await),
+        1
+    );
+    assert_eq!(tasks(&ok(&hub, &ann_d, "tasks_list", json!({})).await), 1);
+    assert_eq!(
+        changes(&ok(&hub, &ann_d, "changes_list", json!({})).await),
+        1
+    );
+    assert_eq!(
+        decisions(&ok(&hub, &ann_d, "decisions_search", search).await),
+        1
+    );
+    ok(&hub, &ann_d, "order_get", json!({ "workstreamId": "W1" })).await;
+    ok(&hub, &ann_d, "task_get", json!({ "taskId": "T1" })).await;
+    assert_eq!(live(&ann_d), (1, 1));
+}
+
+/// What round 2 found past the ids the gate reads: an Only me project's PRs (by repo and number), its orders in
+/// workstream_list, its wakes (by wake id), and the events that name its thread but no project (a steer's, a wake's)
+/// are its owner's alone too. While the project is shared, Bob sees them.
+#[tokio::test]
+async fn an_only_me_projects_prs_order_list_wakes_and_thread_events_are_its_owners_alone() {
+    let (hub, _home) = hub();
+    let _calls = node(&hub, &[CAP_REPOS, CAP_ASSISTANT]).await;
+    let ann = people(&hub).ensure_owner().unwrap().person_id;
+    let bob = people(&hub)
+        .create(&PersonName::unchecked("Bob"), HubRole::Member)
+        .unwrap()
+        .person_id;
+    let (ann_d, bob_d) = (
+        device(&hub, Some(&ann), "admin"),
+        device(&hub, Some(&bob), "operate"),
+    );
+    let p1 = json!({ "machineId": "devbox", "projectId": "p1" });
+    let at = "2026-11-08T10:00:00.000Z";
+    hub.db
+        .with(|c| {
+            let order = json!({
+                "workstreamId": "W1", "projectRef": p1, "title": "Ann's plans",
+                "source": { "text": "Ann's plans", "channel": "app", "by": "human", "at": at },
+                "state": "open", "createdAt": at, "updatedAt": at,
+            });
+            c.execute(
+                "INSERT INTO workstreams (n, machine_id, project_id, state, data) VALUES (1, 'devbox', 'p1', 'open', ?)",
+                [order.to_string()],
+            )?;
+            let change = json!({
+                "changeId": "X1", "projectRef": p1, "repo": "acme/app", "prNumber": 7,
+                "prUrl": "https://github.com/acme/app/pull/7", "branch": "fleetd/T1", "taskId": "T1",
+                "workstreamId": "W1", "headSha": "b".repeat(40), "state": "queued", "reviews": [],
+                "createdAt": at, "updatedAt": at,
+            });
+            c.execute(
+                "INSERT INTO changes (n, repo, pr_number, state, machine_id, project_id, train_order, data)
+                 VALUES (1, 'acme/app', 7, 'queued', 'devbox', 'p1', 1, ?)",
+                [change.to_string()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    hub.store
+        .thread_upsert(&crate::hub::store::StoredThread {
+            thread: serde_json::from_value(json!({
+                "machineId": "devbox", "threadId": "th1", "projectId": "p1", "title": "lead", "status": "idle",
+                "headline": "", "latestMessageTail": "", "lastProgressAt": at, "stale": false, "asOf": at,
+            }))
+            .unwrap(),
+            last_sequence: None,
+            last_run_id: None,
+            last_run_status: None,
+        })
+        .unwrap();
+    let wake = ok(
+        &hub,
+        &ann_d,
+        "wake_set",
+        json!({
+            "target": { "machineId": "devbox", "threadId": "th1" },
+            "schedule": { "kind": "at", "at": "2026-12-01T10:00:00.000Z", "tz": "UTC" },
+            "message": "Check in for the flight.", "clientRequestId": "w1",
+        }),
+    )
+    .await["wakeId"]
+        .clone();
+    // A steer's event names the thread it went to, not its project.
+    hub.events
+        .append(crate::hub::store::NewEvent {
+            at: fleetd_contracts::ids::Timestamp(at.into()),
+            r#type: fleetd_contracts::events::HubEventType::SteerQueued,
+            machine_id: Some(fleetd_contracts::ids::MachineId::unchecked("devbox")),
+            project_id: None,
+            thread_id: Some(fleetd_contracts::ids::ThreadId::unchecked("th1")),
+            summary: "Cancel the trip.".into(),
+            data: None,
+            attention: None,
+        })
+        .unwrap();
+
+    let orders = |v: &Value| v["workstreams"].as_array().unwrap().len();
+    let wakes = |v: &Value| v["wakes"].as_array().unwrap().len();
+    let steers = |v: &Value| {
+        v["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["type"] == "steer.queued")
+            .count()
+    };
+    let events = json!({ "cursor": 0, "timeoutSec": 0, "types": ["steer.queued"] });
+    assert_eq!(
+        orders(&ok(&hub, &bob_d, "workstream_list", json!({})).await),
+        1
+    );
+    assert_eq!(wakes(&ok(&hub, &bob_d, "wake_list", json!({})).await), 1);
+    assert_eq!(
+        steers(&ok(&hub, &bob_d, "events_wait", events.clone()).await),
+        1
+    );
+
+    ok(
+        &hub,
+        &ann_d,
+        "project_settings_set",
+        json!({ "machineId": "devbox", "projectId": "p1", "onlyMe": true }),
+    )
+    .await;
+    assert_eq!(
+        orders(&ok(&hub, &bob_d, "workstream_list", json!({})).await),
+        0
+    );
+    assert_eq!(wakes(&ok(&hub, &bob_d, "wake_list", json!({})).await), 0);
+    assert_eq!(
+        steers(&ok(&hub, &bob_d, "events_wait", events.clone()).await),
+        0
+    );
+    // The PR tools refuse before they read GitHub.
+    for (tool, input) in [
+        ("pr_get", json!({ "repo": "acme/app", "number": 7 })),
+        ("pr_files", json!({ "repo": "acme/app", "number": 7 })),
+        (
+            "pr_diff",
+            json!({ "repo": "acme/app", "number": 7, "path": "src/main.rs" }),
+        ),
+    ] {
+        refused(&hub, &bob_d, tool, input).await;
+    }
+    kept_out(&hub, &bob_d, "wake_cancel", json!({ "wakeId": wake })).await;
+
+    assert_eq!(
+        orders(&ok(&hub, &ann_d, "workstream_list", json!({})).await),
+        1
+    );
+    assert_eq!(wakes(&ok(&hub, &ann_d, "wake_list", json!({})).await), 1);
+    assert_eq!(steers(&ok(&hub, &ann_d, "events_wait", events).await), 1);
+    ok(&hub, &ann_d, "wake_cancel", json!({ "wakeId": wake })).await;
+}
