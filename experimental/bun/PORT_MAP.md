@@ -16,7 +16,7 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] POST `/pair` → `src/hub/pair` (pair) <!-- http:POST `/pair` -->
 - [x] POST `/pair/mac` → `src/hub/pair` (mac_pair) <!-- http:POST `/pair/mac` -->
 - [x] GET `/node/link` → `src/hub/link` (node_link) <!-- http:GET `/node/link` -->
-- [ ] ANY `/link/v1/{op}` → `src/hub/hub_links` (hub_link) <!-- http:ANY `/link/v1/{op}` -->
+- [x] ANY `/link/v1/{op}` → `src/hub/hub_links` (hub_link) <!-- http:ANY `/link/v1/{op}` -->
 
 ### /app websocket messages
 
@@ -41,11 +41,11 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] `sidebar_order_set` → `src/hub/sidebar_order` (read) <!-- tool:`sidebar_order_set` -->
 - [x] `chat_pins_get` → `src/hub/chat_pins` (read) <!-- tool:`chat_pins_get` -->
 - [x] `chat_pins_set` → `src/hub/chat_pins` (read) <!-- tool:`chat_pins_set` -->
-- [ ] `hub_links_get` → `src/hub/hub_links` (read) <!-- tool:`hub_links_get` -->
-- [ ] `hub_link_mint` → `src/hub/hub_links` (operate) <!-- tool:`hub_link_mint` -->
-- [ ] `hub_link_revoke` → `src/hub/hub_links` (operate) <!-- tool:`hub_link_revoke` -->
-- [ ] `hub_link_add` → `src/hub/hub_links` (operate) <!-- tool:`hub_link_add` -->
-- [ ] `hub_link_remove` → `src/hub/hub_links` (operate) <!-- tool:`hub_link_remove` -->
+- [x] `hub_links_get` → `src/hub/hub_links` (read) <!-- tool:`hub_links_get` -->
+- [x] `hub_link_mint` → `src/hub/hub_links` (operate) <!-- tool:`hub_link_mint` -->
+- [x] `hub_link_revoke` → `src/hub/hub_links` (operate) <!-- tool:`hub_link_revoke` -->
+- [x] `hub_link_add` → `src/hub/hub_links` (operate) <!-- tool:`hub_link_add` -->
+- [x] `hub_link_remove` → `src/hub/hub_links` (operate) <!-- tool:`hub_link_remove` -->
 - [ ] `doctor_list` → `src/hub/doctor` (read) <!-- tool:`doctor_list` -->
 - [ ] `doctor_fix` → `src/hub/doctor` (operate) <!-- tool:`doctor_fix` -->
 - [ ] `setup_list` → `src/hub/setup` (admin) <!-- tool:`setup_list` -->
@@ -62,11 +62,11 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] `person_remove` → `src/hub/people` (admin) <!-- tool:`person_remove` -->
 - [x] `device_revoke` → `src/hub/people` (operate) <!-- tool:`device_revoke` -->
 - [x] `pair_code_create` → `src/hub/pair` (read) <!-- tool:`pair_code_create` -->
-- [ ] `push_device_register` → `src/hub/push` (operate) <!-- tool:`push_device_register` -->
-- [ ] `push_devices_list` → `src/hub/push` (read) <!-- tool:`push_devices_list` -->
-- [ ] `push_device_remove` → `src/hub/push` (operate) <!-- tool:`push_device_remove` -->
-- [ ] `push_badge` → `src/hub/push` (read) <!-- tool:`push_badge` -->
-- [ ] `push_relay_set` → `src/hub/push` (admin) <!-- tool:`push_relay_set` -->
+- [x] `push_device_register` → `src/hub/push` (operate) <!-- tool:`push_device_register` -->
+- [x] `push_devices_list` → `src/hub/push` (read) <!-- tool:`push_devices_list` -->
+- [x] `push_device_remove` → `src/hub/push` (operate) <!-- tool:`push_device_remove` -->
+- [x] `push_badge` → `src/hub/push` (read) <!-- tool:`push_badge` -->
+- [x] `push_relay_set` → `src/hub/push` (admin) <!-- tool:`push_relay_set` -->
 
 ### Node link messages
 
@@ -95,11 +95,11 @@ server, auth, keys, people, devices, links, settings, store.
 
 ### Background loops
 
-- [ ] hub loop `hub_links::client::run` → `src/hub/hub_links` <!-- loop:hub loop `hub_links::client::run` -->
+- [x] hub loop `hub_links::client::run` → `src/hub/hub_links` <!-- loop:hub loop `hub_links::client::run` -->
 - [x] hub loop `link.start` → `src/hub/link` <!-- loop:hub loop `link.start` -->
 - [ ] hub loop `metrics::start` → `src/hub/metrics` <!-- loop:hub loop `metrics::start` -->
 - [x] hub loop `pair::prune_on_sweep` → `src/hub/pair` <!-- loop:hub loop `pair::prune_on_sweep` -->
-- [ ] hub loop `push::run` → `src/hub/push` <!-- loop:hub loop `push::run` -->
+- [x] hub loop `push::run` → `src/hub/push` <!-- loop:hub loop `push::run` -->
 - [ ] hub loop `queue::start_loops` → `src/hub/queue` <!-- loop:hub loop `queue::start_loops` -->
 - [ ] hub loop `status.run` → `src/hub/status` <!-- loop:hub loop `status.run` -->
 - [x] hub loop `sweep.start` → `src/hub/sweep` <!-- loop:hub loop `sweep.start` -->
