@@ -44,16 +44,25 @@ setTimeout(() => { R.framesLeft = frames.length; R.done = true; }, 300);
 </script></body>`;
 
 describe.skipIf(missing)("an HTML artifact in a real engine", () => {
-  it("reaches no window with WebRTC, and sends no STUN", async () => {
+  it("reaches no window with WebRTC, and sends no STUN", async ({ onTestFailed }) => {
+    // A failure says how far it got and when: a CI run timed out at 30 s, its page waits 6 s at most, with no more said.
+    const started = Date.now();
+    const steps: string[] = [];
+    const step = (name: string) => steps.push(`${name} at ${String(Date.now() - started)} ms`);
+    onTestFailed(() => console.error(`the engine test's steps: ${steps.join(", ") || "none done"}`));
     const udp = createSocket("udp4");
     const packets: Buffer[] = [];
     udp.on("message", (m) => packets.push(m));
     await new Promise<void>((resolve) => udp.bind(0, "127.0.0.1", resolve));
     const browser = await chromium.launch({ executablePath: chrome, headless: true });
+    step("launched");
     try {
       const page = await browser.newPage();
+      step("page open");
       await page.setContent(artifactPage(attacks(udp.address().port), "k1"));
+      step("content set");
       await page.waitForFunction(() => (window as unknown as { R?: { done?: boolean } }).R?.done === true, null, { timeout: 5000 });
+      step("page done");
       await new Promise((resolve) => setTimeout(resolve, 1000));
       const r = await page.evaluate(() => (window as unknown as { R: Record<string, unknown> }).R);
       const { innerHTMLWorks, evalWorks, staticFrames, staticSrcdoc, framesLeft, ...tries } = r;
@@ -65,7 +74,9 @@ describe.skipIf(missing)("an HTML artifact in a real engine", () => {
       expect(evalWorks).toBe(2);
       expect(packets).toHaveLength(0);
     } finally {
+      step("closing");
       await browser.close();
+      step("closed");
       udp.close();
     }
   }, 30_000);

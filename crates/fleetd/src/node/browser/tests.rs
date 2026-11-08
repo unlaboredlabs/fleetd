@@ -306,12 +306,17 @@ async fn rig_with(secrets: Vec<(String, String)>) -> Option<Rig> {
     .await;
     broker.ready(chrome);
     // A cold runner's first Chromes can use a sandboxed launch's whole 20s LAUNCH_TIMEOUT and then the unsandboxed
-    // retry's: wait out both.
+    // retry's: wait out both, or until the pool gave up, and say why it did (CI's runs that failed here said nothing).
     let deadline = Instant::now() + Duration::from_secs(60);
-    while broker.warm() == 0 && Instant::now() < deadline {
+    while broker.warm() == 0 && broker.refill_failed().is_none() && Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    assert_eq!(broker.warm(), 1, "the pool launched its browser");
+    assert_eq!(
+        broker.warm(),
+        1,
+        "the pool launched its browser: {:?}",
+        broker.refill_failed()
+    );
     Some(Rig {
         broker,
         hub,

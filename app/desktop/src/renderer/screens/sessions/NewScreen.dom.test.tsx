@@ -336,9 +336,17 @@ it("says plainly when the project's PRs can't be read, and reads them again on R
   await mount();
   act(() => button("New screen")?.click());
   await settle();
-  act(() => button("Android")?.click());
+  // The read asks three times, backing off 1 s and then 2 s: the fake clock runs past those 3 s, which, waited out for
+  // real, took 3 of the test's 5 s.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    act(() => button("Android")?.click());
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+  } finally {
+    vi.useRealTimers();
+  }
   await settle();
-  await vi.waitFor(() => expect(picker()?.textContent).toContain("The project’s PRs couldn’t be read"), { timeout: 10_000 });
+  expect(picker()?.textContent).toContain("The project’s PRs couldn’t be read");
   prsFail = 0;
   act(() => button("Retry")?.click());
   await settle();
