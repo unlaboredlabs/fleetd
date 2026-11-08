@@ -2005,7 +2005,7 @@
         },
         "hub": {
           "$ref": "#/$defs/UpdateState",
-          "description": "The hub's own part: `restarting` while the hub restarts onto the new build (the apps' sockets close with\n`APP_CLOSE_RESTART`, 1012), `done` once it runs it."
+          "description": "The hub's own part: `restarting` while the hub restarts onto the new build (the apps' sockets close with\n`APP_CLOSE_RESTART`, 1001), `done` once it runs it."
         },
         "machines": {
           "description": "Each machine's node, by name: `restarting` while it restarts, `done` once it is back on the new build.",
@@ -2016,7 +2016,7 @@
           "type": "array"
         },
         "message": {
-          "description": "With `failed` or `put_back`: what happened, in one sentence (the hub's part's message).",
+          "description": "With `failed` or `put_back`: what happened, in one sentence (the hub's, or the machine's that missed the build).",
           "maxLength": 200,
           "type": "string"
         },
@@ -2097,12 +2097,12 @@
         },
         {
           "const": "failed",
-          "description": "The hub didn't update and nothing changed: the download, the checksum or the install failed (`message`).",
+          "description": "Nothing changed: the hub didn't update (the download, the checksum or the install failed), or it already ran\n`to` and a machine behind it didn't get it. `message` says why.",
           "type": "string"
         },
         {
           "const": "current",
-          "description": "Finished with nothing to do: the hub and every machine already ran `to`.",
+          "description": "Finished with nothing to do: the hub and every machine online already ran `to`.",
           "type": "string"
         }
       ],

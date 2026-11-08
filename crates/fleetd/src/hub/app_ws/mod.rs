@@ -25,7 +25,7 @@ use tokio::task::JoinSet;
 pub const CLOSE_UNAUTHORIZED: u16 = 4401;
 /// Calls one connection may have running at once; more are refused rather than queued without bound.
 pub const MAX_CALLS_IN_FLIGHT: usize = 32;
-/// "Service Restart": the hub is stopping and comes back within a moment; the reason says when an update restarts it.
+/// "Going Away": the hub is stopping and comes back within a moment; the reason says when an update restarts it.
 const CLOSE_RESTART: u16 = fleetd_contracts::app::APP_CLOSE_RESTART;
 /// [`CLOSE_RESTART`]'s reason when no update restarts the hub.
 const RESTARTING: &str = "hub restarting";
@@ -271,16 +271,22 @@ impl Session {
             .call(&self.hub, info, "fleetd_status", json!({}))
             .await
         {
-            Ok(status) => self.send(json!({
-                "t": "snapshot",
-                "machines": status["machines"],
-                "projects": status["projects"],
-                "attention": status["attention"],
-                "cursor": status["cursor"],
-                "slots": status["slots"],
-                "chats": status["chats"],
-                "update": self.hub.updates.signal(),
-            })),
+            Ok(status) => {
+                let mut frame = json!({
+                    "t": "snapshot",
+                    "machines": status["machines"],
+                    "projects": status["projects"],
+                    "attention": status["attention"],
+                    "cursor": status["cursor"],
+                    "slots": status["slots"],
+                    "chats": status["chats"],
+                });
+                // Absent, not null, when the hub never updated itself.
+                if let Some(update) = self.hub.updates.signal() {
+                    frame["update"] = json!(update);
+                }
+                self.send(frame);
+            }
             Err(CallError::Tool(error)) => self.send(error_frame(&error, None)),
             Err(other) => tracing::error!(?other, "app snapshot failed"),
         }

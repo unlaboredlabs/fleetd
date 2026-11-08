@@ -1755,7 +1755,8 @@ fn last_auto(run: &UpdateRun) -> LastAutoUpdate {
 }
 
 /// How `run` looks from the hub row ([`HubUpdateData`]): updating until every part has its result; then put back or
-/// failed by the hub's part, updated when the hub or a machine moved, else current.
+/// failed by the hub's part, updated when the hub or a machine moved, current when every machine already ran the hub's
+/// build (or was offline), and failed when a machine the hub's build was for didn't get it and none did.
 pub fn signal(run: &UpdateRun) -> HubUpdateData {
     let hub = run.parts.iter().find(|p| p.part == UpdatePartKind::Hub);
     let hub_state = hub.map_or(UpdateState::Waiting, |p| p.state);
@@ -1764,6 +1765,12 @@ pub fn signal(run: &UpdateRun) -> HubUpdateData {
         .iter()
         .filter(|p| p.part == UpdatePartKind::Node)
         .collect();
+    // A machine that didn't get the hub's build: not one that already ran it, nor one offline when the update started.
+    let missed = nodes.iter().find(|p| match p.state {
+        UpdateState::Done | UpdateState::Current => false,
+        UpdateState::Skipped => p.message.as_ref().is_none_or(|m| m.as_str() != OFFLINE),
+        _ => true,
+    });
     let state = if run.finished_at.is_none() {
         HubUpdatePhase::Updating
     } else {
@@ -1773,16 +1780,21 @@ pub fn signal(run: &UpdateRun) -> HubUpdateData {
             UpdateState::Current if nodes.iter().any(|p| p.state == UpdateState::Done) => {
                 HubUpdatePhase::Updated
             }
-            UpdateState::Current => HubUpdatePhase::Current,
+            UpdateState::Current if missed.is_none() => HubUpdatePhase::Current,
             _ => HubUpdatePhase::Failed,
         }
     };
-    let message = matches!(state, HubUpdatePhase::PutBack | HubUpdatePhase::Failed)
-        .then(|| {
-            hub.and_then(|p| p.message.as_ref())
-                .map(|m| text(m.as_str()))
-        })
-        .flatten();
+    // Failed with the hub current: the machine that missed says why, as `last_auto` words it.
+    let message = match (state, hub_state) {
+        (HubUpdatePhase::Failed, UpdateState::Current) => missed.map(|p| {
+            let why = p.message.as_ref().map_or("didn't update", |m| m.as_str());
+            text(&format!("{}: {why}", p.name))
+        }),
+        (HubUpdatePhase::PutBack | HubUpdatePhase::Failed, _) => hub
+            .and_then(|p| p.message.as_ref())
+            .map(|m| text(m.as_str())),
+        _ => None,
+    };
     let machines = nodes
         .iter()
         .take(HUB_UPDATE_MACHINES_MAX)

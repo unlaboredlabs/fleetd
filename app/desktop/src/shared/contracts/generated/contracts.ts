@@ -4,8 +4,8 @@
 /** The /app protocol this build speaks. */
 export const PROTOCOL_VERSION = 1;
 
-/** The /app close code when the hub stops (Service Restart): redial at once, it comes back within a moment. */
-export const APP_CLOSE_RESTART = 1012;
+/** The /app close code when the hub stops (Going Away): redial at once, it comes back within a moment. */
+export const APP_CLOSE_RESTART = 1001;
 
 /** The start of that close's reason while an update restarts the hub: "updating to <version>". */
 export const APP_CLOSE_UPDATING = "updating to ";
@@ -3125,12 +3125,12 @@ export type HubUpdateData = {
   from: string;
   /**
    * The hub's own part: `restarting` while the hub restarts onto the new build (the apps' sockets close with
-   * `APP_CLOSE_RESTART`, 1012), `done` once it runs it.
+   * `APP_CLOSE_RESTART`, 1001), `done` once it runs it.
    */
   hub: UpdateState;
   /** Each machine's node, by name: `restarting` while it restarts, `done` once it is back on the new build. */
   machines: HubUpdateMachine[];
-  /** With `failed` or `put_back`: what happened, in one sentence (the hub's part's message). */
+  /** With `failed` or `put_back`: what happened, in one sentence (the hub's, or the machine's that missed the build). */
   message?: string;
   /** Machines past `machines`, not named here. */
   moreMachines?: number;

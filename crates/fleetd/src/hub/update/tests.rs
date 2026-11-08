@@ -694,13 +694,36 @@ fn a_finished_run_reads_put_back_failed_updated_or_current() {
         .state,
         HubUpdatePhase::Updated
     );
+    let mut offline = node("b", UpdateState::Skipped);
+    offline.message = Some(Text::unchecked(super::OFFLINE.to_owned()));
     assert_eq!(
         signal(&run(
             UpdateState::Current,
-            vec![node("a", UpdateState::Current)]
+            vec![node("a", UpdateState::Current), offline.clone()]
         ))
         .state,
         HubUpdatePhase::Current
+    );
+    // An update that brought nothing to a machine left behind isn't "already runs it": the hub row says what failed.
+    for missed in [
+        UpdateState::Failed,
+        UpdateState::RolledBack,
+        UpdateState::Skipped,
+    ] {
+        let behind = signal(&run(
+            UpdateState::Current,
+            vec![node("a", missed), offline.clone()],
+        ));
+        assert_eq!(behind.state, HubUpdatePhase::Failed, "{missed:?}");
+        assert_eq!(behind.message.as_ref().map(|m| m.as_str()), Some("a: said"));
+    }
+    assert_eq!(
+        signal(&run(
+            UpdateState::Current,
+            vec![node("a", UpdateState::Done), node("b", UpdateState::Failed)]
+        ))
+        .state,
+        HubUpdatePhase::Updated
     );
     let mut going = run(UpdateState::Restarting, vec![]);
     going.finished_at = None;
