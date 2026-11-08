@@ -38,6 +38,7 @@ export { toast, type ToastInput, type ToastTone } from "./primitives/Toast";
 export { StateGlyph, type GlyphState } from "./primitives/StateGlyph";
 export { Dot, StatusChip, RoleTag, roleTint, Separator, type StatusTone } from "./primitives/Chips";
 export { Avatar, type AvatarProps } from "./primitives/Avatar";
+export { BotFace } from "./primitives/BotFace";
 export { ROLE_WORD, type AgentRole } from "./primitives/roles";
 export { profileLine, profileWord } from "./primitives/profiles";
 

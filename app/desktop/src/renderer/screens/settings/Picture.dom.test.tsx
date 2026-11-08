@@ -172,11 +172,8 @@ const pick = async (file: File) => {
 
 const png = () => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "logo.png", { type: "image/png" });
 
-/** The large icon's image's file: `wink-fleet-96.webp`. */
-const previewFile = () => {
-  const src = section().querySelector<HTMLImageElement>('button[aria-label^="Upload an image"] [data-avatar="icon"] img')?.getAttribute("src") ?? "";
-  return src.split("/").pop()?.split("?")[0];
-};
+/** The large icon's face and color: `wink-fleet`. */
+const previewFile = () => section().querySelector('button[aria-label^="Upload an image"] [data-avatar="icon"] svg')?.getAttribute("data-icon");
 
 const radio = (group: string, name: string) => {
   const el = section().querySelector<HTMLElement>(`[aria-label="${group}"] [role="radio"][aria-label="${name}"]`);
@@ -191,7 +188,7 @@ const wait = (ms: number) => act(async () => new Promise((r) => setTimeout(r, ms
 describe("Settings → Projects → Icon", () => {
   it("shows its icon, its letters from a hub that sends none, and its picture once it has one", async () => {
     await render(undefined);
-    expect(previewFile()).toBe("wink-fleet-96.webp");
+    expect(previewFile()).toBe("wink-fleet");
     expect(radio("Face", "Wink").getAttribute("aria-checked")).toBe("true");
     expect(radio("Color", "Fleet").getAttribute("aria-checked")).toBe("true");
     expect(section().querySelectorAll('[aria-label="Face"] [role="radio"]')).toHaveLength(9);
@@ -218,11 +215,11 @@ describe("Settings → Projects → Icon", () => {
   it("shows a face or color picked at once and sends the last of a quick run a moment later", async () => {
     await render(undefined);
     await click(radio("Face", "Joy"));
-    expect(previewFile()).toBe("joy-fleet-96.webp");
-    await click(radio("Color", "Sun"));
-    expect(previewFile()).toBe("joy-sun-96.webp");
+    expect(previewFile()).toBe("joy-fleet");
+    await click(radio("Color", "Butter"));
+    expect(previewFile()).toBe("joy-sun");
     // The grid's faces wear the color picked.
-    expect(radio("Face", "Mo").querySelector("img")?.getAttribute("src")).toContain("mo-sun-96.webp");
+    expect(radio("Face", "Mo").querySelector("svg")?.getAttribute("data-icon")).toBe("mo-sun");
     expect(sent()).toEqual([]);
     await wait(SEND_AFTER_MS + 50);
     expect(sent()).toEqual([{ machineId: "devbox", projectId: "p1", icon: { face: "joy", color: "sun" } }]);
@@ -234,18 +231,18 @@ describe("Settings → Projects → Icon", () => {
       radio("Face", "Huh").dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
       await Promise.resolve();
     });
-    expect(previewFile()).toBe("huh-fleet-96.webp");
+    expect(previewFile()).toBe("huh-fleet");
     await act(async () => {
       radio("Color", "Rose").dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
       await Promise.resolve();
     });
-    expect(previewFile()).toBe("wink-rose-96.webp");
+    expect(previewFile()).toBe("wink-rose");
     const picker = section().querySelector('[aria-label="Face"]')?.parentElement?.parentElement;
     await act(async () => {
       picker?.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, relatedTarget: document.body }));
       await Promise.resolve();
     });
-    expect(previewFile()).toBe("wink-fleet-96.webp");
+    expect(previewFile()).toBe("wink-fleet");
     expect(sent()).toEqual([]);
   });
 
@@ -256,14 +253,14 @@ describe("Settings → Projects → Icon", () => {
     await wait(SEND_AFTER_MS + 50);
     expect(sent()).toEqual([{ machineId: "devbox", projectId: "p1", icon: { face: "wink", color: "fleet" } }]);
     await push(snapshot(undefined, { face: "mo", color: "mint" }));
-    expect(previewFile()).toBe("mo-mint-96.webp");
+    expect(previewFile()).toBe("mo-mint");
     expect(radio("Face", "Mo").getAttribute("aria-checked")).toBe("true");
   });
 
   it("picks a face over a picture, which takes its place", async () => {
     await render(AVATAR);
     await click(radio("Face", "Wink"));
-    expect(previewFile()).toBe("wink-fleet-96.webp");
+    expect(previewFile()).toBe("wink-fleet");
     await wait(SEND_AFTER_MS + 50);
     expect(sent()).toEqual([{ machineId: "devbox", projectId: "p1", icon: { face: "wink", color: "fleet" } }]);
   });
