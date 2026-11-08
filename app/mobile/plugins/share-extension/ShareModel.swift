@@ -169,7 +169,8 @@ final class ShareModel: ObservableObject {
         } else if let text = out.textFile {
           file = text
         } else { continue }
-        let resume = partial.flatMap { $0.index == i ? (uploadId: $0.uploadId, offset: $0.offset) : nil }
+        var resume: (uploadId: String, offset: Int)?
+        if let partial, partial.index == i { resume = (partial.uploadId, partial.offset) }
         uploaded[i] = try await link.upload(file, from: resume, took: { id, offset in self.partial = (i, file, id, offset) }) { bytes in
           done += bytes
           phase = .sending(min(1, Double(done) / Double(total)))
