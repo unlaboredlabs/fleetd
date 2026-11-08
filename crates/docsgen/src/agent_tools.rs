@@ -743,6 +743,7 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "title": "Dependency sweep, November",
             "path": "reports/sweep.html",
         }),
+        (_, "artifact_read") => json!({ "name": "dependency-sweep", "version": 2 }),
         (_, "session_start") => json!({
             "purpose": "Check that signup works on the staging site",
         }),

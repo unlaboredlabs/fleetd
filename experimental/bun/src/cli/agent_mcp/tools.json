@@ -1,5 +1,5 @@
 {
- "rust": "fleetd Edge · Nov 8, 13:41 UTC · e4509af (0.0.0-edge.202611081341+e4509af, protocol 1)",
+ "rust": "fleetd 0.0.0 (protocol 1)",
  "tools": [
   {
    "name": "spawn_agent",
@@ -126,7 +126,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "The project's tasks as stored (state, queued reason, thread, result), newest first: one by taskId, or filtered by state or workstream.",
+   "description": "The project's tasks as stored (state, queued reason, thread, result), newest first: one by taskId, or filtered by state or workstream. A result's tail keeps its head and end around a \"…\" line; with taskId, fullResult holds the whole final result (up to 32 KB) when that tail is cut.",
    "inputSchema": {
     "properties": {
      "state": {
@@ -1415,6 +1415,33 @@
    }
   },
   {
+   "name": "artifact_read",
+   "op": "artifact_read",
+   "lead": true,
+   "worker": true,
+   "browser": false,
+   "description": "Read a report published in this project (publish_artifact), yours or another agent's or the lead's: its Markdown or HTML source as published, with its title, who published it and every version kept. name is its name (`sweep-report` from a link `artifact:sweep-report`); version one of them (`artifact:sweep-report@2`), else the newest. Past 64 KB it is cut, and ends with a line saying so. Another project's are refused.",
+   "inputSchema": {
+    "properties": {
+     "name": {
+      "description": "Its name in the project: `sweep-report`, as in a link `artifact:sweep-report`.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+     },
+     "version": {
+      "description": "One version (`artifact:sweep-report@2`); absent, the newest.",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "type": "object"
+   }
+  },
+  {
    "name": "session_start",
    "op": "session_start",
    "lead": true,
@@ -2409,6 +2436,17 @@
    },
    "/title": {
     "expected": "a string"
+   }
+  },
+  "artifact_read": {
+   "/name": {
+    "expected": "a string",
+    "pattern": "expected lowercase letters, digits and single hyphens, at most 64 characters, got {got}"
+   },
+   "/version": {
+    "expected": "a JSON number",
+    "fraction": "expected an integer",
+    "range": "expected an integer between 1 and 9007199254740991"
    }
   },
   "session_start": {

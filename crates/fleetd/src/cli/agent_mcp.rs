@@ -8,7 +8,9 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use fleetd_contracts::artifacts::{ARTIFACT_TEXT_CAP, ArtifactFormat, ArtifactPublishCall};
+use fleetd_contracts::artifacts::{
+    ARTIFACT_TEXT_CAP, ArtifactFormat, ArtifactPublishCall, ArtifactReadCall,
+};
 use fleetd_contracts::automations::{
     AutomationConfirmCall, AutomationCreateCall, AutomationDeleteCall, AutomationListCall,
     AutomationRunCall, AutomationRunsCall, AutomationUpdateCall,
@@ -130,7 +132,8 @@ static TOOLS: &[Tool] = &[
         "agents",
         "task_list",
         "The project's tasks as stored (state, queued reason, thread, result), newest first: one by taskId, or \
-         filtered by state or workstream.",
+         filtered by state or workstream. A result's tail keeps its head and end around a \"…\" line; with taskId, \
+         fullResult holds the whole final result (up to 32 KB) when that tail is cut.",
         inline_schema::<TaskListCall>,
     ),
     lead(
@@ -472,6 +475,19 @@ static TOOLS: &[Tool] = &[
              as `artifact:name@2`. HTML runs sandboxed: its scripts run, but it has no network, so inline any script, \
              style, font and image (data: URLs).",
             inline_schema::<ArtifactPublishCall>,
+        )
+    },
+    Tool {
+        worker: true,
+        ..lead(
+            "artifact_read",
+            "artifact_read",
+            "Read a report published in this project (publish_artifact), yours or another agent's or the lead's: its \
+             Markdown or HTML source as published, with its title, who published it and every version kept. name is \
+             its name (`sweep-report` from a link `artifact:sweep-report`); version one of them \
+             (`artifact:sweep-report@2`), else the newest. Past 64 KB it is cut, and ends with a line saying so. \
+             Another project's are refused.",
+            inline_schema::<ArtifactReadCall>,
         )
     },
     browser(
@@ -1191,6 +1207,7 @@ mod tests {
                 "review_read",
                 "chat_file",
                 "publish_artifact",
+                "artifact_read",
                 "session_start",
                 "desktop",
                 "session_end",
@@ -1224,6 +1241,7 @@ mod tests {
             "review_read",
             "chat_file",
             "publish_artifact",
+            "artifact_read",
         ] {
             assert!(lead.contains(&tool.to_owned()), "{tool}");
         }

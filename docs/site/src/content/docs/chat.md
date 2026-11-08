@@ -200,7 +200,8 @@ instead of running it: its web view can't yet be kept off the network the same w
 from this release on: an over-the-air update doesn't bring them.
 
 Agents publish with the [`publish_artifact`](/docs/reference/agent-tools#publish_artifact) tool and link with
-`[Title](artifact:name)`.
+`[Title](artifact:name)`. The lead and its agents read one of their project's back with
+[`artifact_read`](/docs/reference/agent-tools#artifact_read), so a task picks up an earlier report itself.
 
 ## Read a pull request {#prs}
 

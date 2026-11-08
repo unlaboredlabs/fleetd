@@ -228,6 +228,11 @@ pub trait TaskPorts: Send + Sync {
     ) -> BoxFut<'a, Result<Option<String>, BranchPrError>>;
     /// Train.on_task_pr: a finished task's PR was set after its `task.completed`; the train queues it as the task's.
     fn pr_found(&self, task_id: &TaskId);
+    /// Executors' view of the thread: its latest assistant message whole, which its summary keeps only the ends of.
+    /// `None` when the node could not say; plain ports never can.
+    fn latest_text<'a>(&'a self, _thread: &'a ThreadRef) -> BoxFut<'a, Option<String>> {
+        Box::pin(async { None })
+    }
     /// ThreadWorkspace.pendingQuestion; `None` when there is none or the node could not say.
     fn pending_question<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<String>>;
     /// NodeCommands.run (cmd_check); `None` when the node could not run it.
