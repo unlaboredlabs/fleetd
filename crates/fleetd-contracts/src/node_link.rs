@@ -24,7 +24,8 @@ use crate::tasks::AbsolutePath;
 
 /// WebSocket close codes the hub ends a link with.
 pub mod close {
-    /// A frame that does not decode, or arrives out of order.
+    /// A handshake frame that does not decode or arrives out of order, compressed data that does not inflate, or more
+    /// frames that do not decode than a link takes in a minute. One such frame alone is refused, not the link.
     pub const BAD_FRAME: u16 = 4000;
     /// Bad signature, unknown key, or an invalid, used or expired enroll token. Retrying will not help.
     pub const UNAUTHORIZED: u16 = 4001;
