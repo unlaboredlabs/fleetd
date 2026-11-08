@@ -266,9 +266,28 @@ fn new_id() -> BrowserSessionId {
 pub struct FrameSlot {
     frames: Mutex<std::collections::BTreeMap<String, String>>,
     pub notify: tokio::sync::Notify,
+    /// Each watched session's frame budget, as the hub's latest `browser_watch` gave it.
+    budgets: Mutex<HashMap<String, u32>>,
 }
 
 impl FrameSlot {
+    /// What the hub's slowest watcher of `session` takes, in kbit/s of frames ([`BrowserWatchFrame::kbps`]); `None`
+    /// from an older hub or before its first estimate: a good link's settings. Each kind's encoder reads it per frame.
+    ///
+    /// [`BrowserWatchFrame::kbps`]: fleetd_contracts::browser::BrowserWatchFrame::kbps
+    pub fn budget(&self, session: &str) -> Option<u32> {
+        lock(&self.budgets).get(session).copied()
+    }
+
+    /// A `browser_watch` from the hub: its budget for the session, kept while it is watched.
+    pub fn set_budget(&self, session: &str, kbps: Option<u32>) {
+        let mut budgets = lock(&self.budgets);
+        match kbps {
+            Some(kbps) => budgets.insert(session.to_owned(), kbps),
+            None => budgets.remove(session),
+        };
+    }
+
     /// A session's newest frame, in place of one not sent yet.
     pub fn replace(&self, session: &str, frame: String) {
         lock(&self.frames).insert(session.to_owned(), frame);

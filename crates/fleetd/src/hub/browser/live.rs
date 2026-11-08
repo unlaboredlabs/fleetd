@@ -69,6 +69,7 @@ fn watch_frame(session: &BrowserSessionId, on: bool) -> HubToNode {
     HubToNode::BrowserWatch(BrowserWatchFrame {
         session_id: session.clone(),
         on,
+        kbps: None,
     })
 }
 
