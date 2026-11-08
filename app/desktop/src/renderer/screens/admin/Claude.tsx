@@ -92,7 +92,8 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
       }
       setKey("");
       setEditing(false);
-      if (out.tried !== null) setTried(out.tried);
+      // A save the hub took forgets the last Test of what it replaced: so does the screen, unless it tried the new one.
+      setTried(out.tried ?? undefined);
     });
   };
   const runTest = () => {

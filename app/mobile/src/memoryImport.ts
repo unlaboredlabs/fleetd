@@ -89,6 +89,8 @@ export interface ImportState {
 export type ImportMsg =
   | { readonly t: "prompt"; readonly result: Result<string> }
   | { readonly t: "reloadPrompt" }
+  /** The link is live again (Session.onLive): a prompt that failed while it was down loads again. */
+  | { readonly t: "live" }
   | { readonly t: "copied" }
   | { readonly t: "copiedShown" }
   | { readonly t: "typed"; readonly text: string }
@@ -103,6 +105,8 @@ export const importStep = (s: ImportState, m: ImportMsg): ImportState => {
       return { ...s, prompt: m.result.ok ? { t: "ready", text: m.result.value } : { t: "failed", error: m.result.error } };
     case "reloadPrompt":
       return { ...s, prompt: { t: "loading" } };
+    case "live":
+      return s.prompt.t === "failed" ? { ...s, prompt: { t: "loading" } } : s;
     case "copied":
       return s.prompt.t === "ready" ? { ...s, copied: true } : s;
     case "copiedShown":

@@ -6,6 +6,7 @@ import { SymbolView, type AndroidSymbol, type SFSymbol } from "expo-symbols";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ActionSheetIOS, ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, TextInput, View, type TextInputProps } from "react-native";
 import type { HubError } from "../../desktop";
+import { useSession } from "../../hubContext";
 import { shape, space, type, useTheme, type Palette } from "../../theme";
 import { haptics } from "../../ui/haptics";
 
@@ -123,8 +124,12 @@ export const confirmDestructive = (o: { title: string; message: string; button: 
   ]);
 };
 
-/** A read that runs on mount and again on `reload`, keeping what it had while it reads again. */
+/**
+ * A read that runs on mount, again on `reload`, and again each time the link is live again (one that failed while it
+ * was down never keeps saying so), keeping what it had while it reads again.
+ */
 export const useRead = <T,>(read: () => Promise<T>, deps: readonly unknown[]): { value: T | undefined; reading: boolean; reload: () => void } => {
+  const session = useSession();
   const [value, setValue] = useState<T | undefined>(undefined);
   const [reading, setReading] = useState(true);
   const gen = useRef(0);
@@ -145,6 +150,7 @@ export const useRead = <T,>(read: () => Promise<T>, deps: readonly unknown[]): {
       gen.current++;
     };
   }, [reload]);
+  useEffect(() => session.onLive(reload), [session, reload]);
   return { value, reading, reload };
 };
 

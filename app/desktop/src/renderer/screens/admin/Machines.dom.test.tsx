@@ -238,6 +238,13 @@ it("shows a joined machine's checklist, each item waiting until the hub has chec
   expect(host.textContent).toContain("Checked when an agent first starts in one of its projects.");
 });
 
+it("says when the hub last checked the machine, beside its checklist: its own run, not a later one of another's", async () => {
+  // The answer's checkedAt (Oct 27 10:00) moves with every machine's run; laptop's own ran on Oct 25.
+  checks = LOGGED_OUT.map((c) => ({ ...c, checkedAt: "2026-10-25T10:00:00.000Z" }));
+  await render(<MachinePage machineId="laptop" />);
+  expect(host.textContent).toContain("Offline · fleetd 0.9.0 · checked Oct 25");
+});
+
 it("checks a machine the hub hasn't checked yet as its page opens, once", async () => {
   checks = [];
   await render(<MachinePage machineId="builder-1" />);

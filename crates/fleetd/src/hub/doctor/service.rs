@@ -28,7 +28,10 @@ pub struct DoctorRefused {
 #[serde(rename_all = "camelCase")]
 pub struct DoctorResults {
     pub checks: Vec<DoctorCheck>,
+    /// When the last group ran: the hub's own checks or any machine's.
     pub checked_at: String,
+    /// When each machine's checks last ran: a machine's own time, which another's run doesn't move.
+    pub machines_checked_at: BTreeMap<String, String>,
 }
 
 /// What a node action answered (node-link `NodeActionResult`).
@@ -74,7 +77,11 @@ struct State {
     /// Latest entry per check id, hub checks first, then machines in id order.
     latest: Vec<Entry>,
     checked_at: Option<String>,
+    /// When each machine's checks last ran.
+    machines_at: BTreeMap<String, String>,
     last_run_ms: Option<i64>,
+    /// Each machine's status when its checks last ran: one that has changed since is checked again at the next minute.
+    checked_as: HashMap<String, String>,
 }
 
 pub struct Doctor {
@@ -365,7 +372,30 @@ impl Doctor {
         state.latest = hub;
         self.emit_changes(&before, &fresh, state.checked_at.is_none())
             .await;
-        state.checked_at = Some(iso_ms(self.now_ms()));
+        let at = iso_ms(self.now_ms());
+        let ran: Vec<String> = match machine_ids {
+            // Every machine there is now: one gone keeps no time.
+            None => {
+                state.machines_at.clear();
+                fresh
+                    .iter()
+                    .filter_map(|e| e.check.machine_id.clone())
+                    .collect()
+            }
+            Some(ids) => ids.to_vec(),
+        };
+        for id in ran {
+            state.machines_at.insert(id, at.clone());
+        }
+        state.checked_at = Some(at);
+    }
+
+    fn results(state: &State) -> DoctorResults {
+        DoctorResults {
+            checks: state.latest.iter().map(|e| e.check.clone()).collect(),
+            checked_at: state.checked_at.clone().unwrap_or_else(|| iso_ms(0)),
+            machines_checked_at: state.machines_at.clone(),
+        }
     }
 
     async fn run_all(&self, state: &mut State) {
@@ -386,6 +416,38 @@ impl Doctor {
         fresh.extend(per_machine);
         self.record(state, fresh, None).await;
         state.last_run_ms = Some(self.now_ms());
+        state.checked_as = machines
+            .into_iter()
+            .map(|m| (m.machine_id, m.status))
+            .collect();
+    }
+
+    /// Checks again each machine whose status moved since its checks ran (back online, gone offline, degraded): its
+    /// checks said how it was then.
+    async fn run_moved(&self, state: &mut State) {
+        let moved: Vec<MachineView> = self
+            .deps
+            .fleet
+            .machines()
+            .await
+            .into_iter()
+            .filter(|m| state.checked_as.get(&m.machine_id) != Some(&m.status))
+            .collect();
+        if moved.is_empty() {
+            return;
+        }
+        let mut fresh = Vec::new();
+        // At most 8 machines at once, as a full run.
+        for chunk in moved.chunks(8) {
+            for entries in futures_join_all(chunk.iter().map(|m| self.machine_checks(m))).await {
+                fresh.extend(entries);
+            }
+        }
+        let ids: Vec<String> = moved.iter().map(|m| m.machine_id.clone()).collect();
+        self.record(state, fresh, Some(&ids)).await;
+        for m in moved {
+            state.checked_as.insert(m.machine_id, m.status);
+        }
     }
 
     /// Runs the hub's own checks now, leaving the machines' as they were; every check when nothing has run yet.
@@ -397,10 +459,7 @@ impl Doctor {
             let fresh = self.hub_checks().await;
             self.record(&mut state, fresh, Some(&[])).await;
         }
-        DoctorResults {
-            checks: state.latest.iter().map(|e| e.check.clone()).collect(),
-            checked_at: state.checked_at.clone().unwrap_or_else(|| iso_ms(0)),
-        }
+        Self::results(&state)
     }
 
     /// The latest results; runs every check first when `rerun` is set or nothing has run yet.
@@ -409,13 +468,11 @@ impl Doctor {
         if rerun || state.checked_at.is_none() {
             self.run_all(&mut state).await;
         }
-        DoctorResults {
-            checks: state.latest.iter().map(|e| e.check.clone()).collect(),
-            checked_at: state.checked_at.clone().unwrap_or_else(|| iso_ms(0)),
-        }
+        Self::results(&state)
     }
 
-    /// The sweep's hook: runs every check when the last run is 15 min old.
+    /// The sweep's hook, each minute: runs every check when the last run is 15 min old, else those of the machines
+    /// whose status moved since.
     pub async fn run_if_due(&self) {
         let mut state = self.state.lock().await;
         let now = self.now_ms();
@@ -424,6 +481,8 @@ impl Doctor {
             .is_none_or(|last| now - last >= DOCTOR_EVERY_MS)
         {
             self.run_all(&mut state).await;
+        } else {
+            self.run_moved(&mut state).await;
         }
     }
 

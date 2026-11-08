@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 use crate::brand;
-use crate::ids::MachineId;
+use crate::ids::{MachineId, Timestamp};
 use crate::prim::Text;
 
 brand!(
@@ -64,4 +64,7 @@ pub struct DoctorCheck {
     pub message: Text<0, 500>,
     /// Absent when there is nothing to do.
     pub fix: Option<DoctorFix>,
+    /// A machine's check: when that machine's checks last ran, which another machine's run doesn't move. Absent on the
+    /// hub's own checks and from older hubs.
+    pub checked_at: Option<Timestamp>,
 }

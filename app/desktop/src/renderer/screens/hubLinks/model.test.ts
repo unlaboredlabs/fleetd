@@ -47,6 +47,14 @@ describe("a kept link", () => {
     expect(linkState({ ...link, state: "revoked", error: "The link hl_aaaaaaaa was revoked on this hub." }).line).toContain("acme says: “The link was revoked on this hub.”");
   });
 
+  it("says since when it can't reach the hub or was revoked", () => {
+    const at = "2026-10-27T10:00:00.000Z";
+    const now = Date.parse("2026-11-07T12:00:00.000Z");
+    expect(linkState({ ...link, state: "unreachable", checkedAt: at }, now).line).toBe("Can’t reach acme at https://acme.example. Since Oct 27.");
+    expect(linkState({ ...link, state: "revoked", checkedAt: at }, now).line).toBe("Revoked on acme: this project can’t use it any more. Since Oct 27.");
+    expect(linkState({ ...link, state: "ok", checkedAt: at }, now).line).toBeNull();
+  });
+
   it("names the person it acts as and the projects it is limited to", () => {
     expect(reachLine({})).toBeNull();
     expect(reachLine({ who: "Alex" })).toBe("As Alex · every project of theirs");

@@ -4,7 +4,7 @@
 // person's pinned chats sync with the hub on each snapshot (pins.ts). A project's or agent's live screen is watched one
 // at a time: its frames go to the live view's listener alone (onFrame), never through the state, which would draw the
 // whole app again with each.
-import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
+import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
 import type { Navigation } from "./screen";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { memoryPins, Pins, type PinStore } from "./pins";
@@ -52,6 +52,7 @@ export class Session {
   readonly #eventListeners = new Set<(event: HubEvent) => void>();
   readonly #frameListeners = new Set<(frame: BrowserFrame) => void>();
   readonly #inputErrorListeners = new Set<(error: HubError) => void>();
+  readonly #liveListeners = new Set<() => void>();
   readonly #now: () => number;
   readonly #newId: () => string;
   /** The chat on screen, which gets streamed text and is reloaded on each connection. */
@@ -132,6 +133,15 @@ export class Session {
     return () => this.#eventListeners.delete(listener);
   }
 
+  /**
+   * Each time the link is live again after it was down (and the first time): a screen's own read that failed while
+   * it was down reads again, rather than keep saying it couldn't (screens/manage/parts.tsx useRead).
+   */
+  onLive(listener: () => void): () => void {
+    this.#liveListeners.add(listener);
+    return () => this.#liveListeners.delete(listener);
+  }
+
   /** Disconnect, on the hub: this phone's push registration removed and its key revoked. */
   signOut(): ReturnType<typeof signOut> {
     return signOut(this.#client, { loadDevice: this.#push?.loadDevice ?? (async () => null) }, this.#key);
@@ -192,7 +202,7 @@ export class Session {
     this.#dispatch({ t: "loading_older", key });
     const r = await this.#client.call("chat_history", { projectRef: refOf(key), before: oldest.seq, limit: CHAT_PAGE });
     if (r.ok) this.#dispatch({ t: "history", key, page: r.output, direction: "older" });
-    else this.#dispatch({ t: "history_failed", key, error: r.error });
+    else this.#dispatch({ t: "history_failed", key, error: r.error, direction: "older" });
   }
 
   /**
@@ -211,17 +221,19 @@ export class Session {
     void this.#send(key, row);
   }
 
-  readonly #files = new Map<string, Promise<AttachmentGetOutput | null>>();
+  readonly #files = new Map<string, Promise<Typed<"attachment_get">>>();
 
-  /** A message's file, read once (attachment_get) and kept while the app runs; null when the hub can't give it. */
-  attachment(key: Key, attachmentId: string): Promise<AttachmentGetOutput | null> {
+  /**
+   * A message's file, read once (attachment_get) and kept while the app runs; the hub's or the link's error when it
+   * can't be had, which isn't kept: the next ask reads it again.
+   */
+  attachment(key: Key, attachmentId: string): Promise<Typed<"attachment_get">> {
     const known = this.#files.get(attachmentId);
     if (known !== undefined) return known;
-    const read = this.#client.call("attachment_get", { projectRef: refOf(key), attachmentId }, 60_000).then((r) => (r.ok ? r.output : null));
+    const read = this.#client.call("attachment_get", { projectRef: refOf(key), attachmentId }, 60_000);
     this.#files.set(attachmentId, read);
-    // A failed read is tried again next time.
-    void read.then((out) => {
-      if (out === null) this.#files.delete(attachmentId);
+    void read.then((r) => {
+      if (!r.ok) this.#files.delete(attachmentId);
     });
     return read;
   }
@@ -331,7 +343,7 @@ export class Session {
   async #loadLatest(key: Key): Promise<void> {
     const r = await this.#client.call("chat_history", { projectRef: refOf(key), limit: CHAT_PAGE });
     if (r.ok) this.#dispatch({ t: "history", key, page: r.output, direction: "latest" });
-    else if (r.error.code !== "offline") this.#dispatch({ t: "history_failed", key, error: r.error });
+    else if (r.error.code !== "offline") this.#dispatch({ t: "history_failed", key, error: r.error, direction: "latest" });
   }
 
   /**
@@ -409,8 +421,9 @@ export class Session {
     }
     const before = this.#state.chats[this.#open ?? ""];
     if (frame.t === "state" && frame.state.phase !== "live" && this.#state.hub.phase === "live") this.#resumable = before?.loaded === true ? this.#open : null;
+    const wasLive = this.#state.hub.phase === "live";
     this.#dispatch({ t: "frame", frame, nowMs: this.#now() });
-    if (frame.t === "state") this.#onState(frame.state);
+    if (frame.t === "state") this.#onState(frame.state, wasLive);
     if (frame.t === "snapshot") {
       void this.#readRequests();
       // After the snapshot: an older build's pins go up only for this hub's own chats.
@@ -446,8 +459,9 @@ export class Session {
     }
   }
 
-  #onState(state: HubState): void {
+  #onState(state: HubState, wasLive: boolean): void {
     if (state.phase === "live") void this.#readInfo();
+    if (state.phase === "live" && !wasLive) for (const listener of this.#liveListeners) listener();
     if (state.phase !== "live" || this.#registered) return;
     this.#registered = true;
     void this.#register();

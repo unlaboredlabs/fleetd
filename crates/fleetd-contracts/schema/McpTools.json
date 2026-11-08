@@ -6002,6 +6002,10 @@
     },
     "DoctorCheck": {
       "properties": {
+        "checkedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "A machine's check: when that machine's checks last ran, which another machine's run doesn't move. Absent on the\nhub's own checks and from older hubs."
+        },
         "fix": {
           "$ref": "#/$defs/DoctorFix",
           "description": "Absent when there is nothing to do."
@@ -6118,7 +6122,7 @@
       "properties": {
         "checkedAt": {
           "$ref": "#/$defs/Timestamp",
-          "description": "When these results were taken."
+          "description": "When these results were taken: the latest run of any of them, the hub's own or a machine's. A machine's own\ntime is on its checks."
         },
         "checks": {
           "description": "Hub checks first, then each machine's, in a fixed order.",
