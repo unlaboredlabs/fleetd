@@ -1,7 +1,8 @@
 import { afterAll, expect, test } from "bun:test";
-import { serve, stop } from "../src/hub/http/index.ts";
+import { onError, serve, stop } from "../src/hub/http/index.ts";
 import { build, parseHubArgs, parseListen } from "../src/hub/serve/index.ts";
 import { PROTOCOL_VERSION } from "../src/shared/contracts.ts";
+import { internalError } from "../src/shared/errors.ts";
 import { insertKey, tempHome } from "./helpers.ts";
 
 const home = tempHome();
@@ -53,6 +54,20 @@ test("websocket routes want an upgrade; unknown paths and methods are refused", 
   expect((await fetch(`${base}/pair`)).status).toBe(405);
   expect((await fetch(`${base}/pair`, { method: "POST" })).status).toBe(501);
   expect((await fetch(`${base}/hooks/a1/s3cret`, { method: "POST" })).status).toBe(501);
+});
+
+test("a malformed escape is a 400 and a crash is JSON, never Bun's error page", async () => {
+  for (const [method, path] of [["POST", "/hooks/%E0%A4%A/x"], ["GET", "/relay/%ZZ"]] as const) {
+    const res = await fetch(`${base}${path}`, { method });
+    expect(res.status).toBe(400);
+    expect(await res.text()).not.toContain("<html");
+  }
+  const quiet = console.error;
+  console.error = () => {};
+  const crashed = onError(new Error("boom"));
+  console.error = quiet;
+  expect(crashed.status).toBe(500);
+  expect(await crashed.json()).toEqual(internalError().toJSON());
 });
 
 test("hub start's flags, with the Rust hub's messages", () => {

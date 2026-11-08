@@ -48,11 +48,29 @@ function compile(path: string): { pattern: RegExp; names: string[] } {
 
 const compiled: Compiled[] = ROUTES.map(([method, path, route]) => ({ method, route, ...compile(path) }));
 
+/** What escapes a route (and Bun.serve's own failures): logged, and answered `failed` as JSON. */
+export function onError(error: Error): Response {
+  console.error("hub http:", error);
+  return json(internalError().toJSON(), 500);
+}
+
+/** The path's `{name}` segments, decoded; undefined when one isn't valid percent-encoding. */
+function decodeParams(names: string[], match: RegExpExecArray): Record<string, string> | undefined {
+  try {
+    return Object.fromEntries(names.map((name, i) => [name, decodeURIComponent(match[i + 1] ?? "")]));
+  } catch {
+    return undefined;
+  }
+}
+
 /** Serves `hub` on its `--listen` address until `stop` is called. */
 export function serve(hub: Hub, tools: Registry, port = hub.config.listen.port): Server<SocketData> {
   return Bun.serve<SocketData>({
     hostname: hub.config.listen.host,
     port,
+    // Never Bun's development error page (stack, source, cwd) to a client: anything that escapes a route is `failed`.
+    development: false,
+    error: onError,
     async fetch(req, server) {
       const path = new URL(req.url).pathname;
       for (const r of compiled) {
@@ -62,7 +80,9 @@ export function serve(hub: Hub, tools: Registry, port = hub.config.listen.port):
         if (r.method !== "ANY" && r.method !== req.method && !(r.method === "GET" && req.method === "HEAD")) {
           return new Response(null, { status: 405 });
         }
-        const params = Object.fromEntries(r.names.map((name, i) => [name, decodeURIComponent(match[i + 1] ?? "")]));
+        const params = decodeParams(r.names, match);
+        // A malformed escape is the client's, as axum's Path extractor answers it.
+        if (!params) return new Response("Invalid URL: a path segment is not valid percent-encoding", { status: 400 });
         const ctx: RouteContext = { hub, tools, server, params, ip: server.requestIP(req)?.address };
         try {
           return await r.route(req, ctx);
