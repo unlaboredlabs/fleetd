@@ -1,15 +1,16 @@
 // Prompts: every text fleetd sends a model. Under a project, its own texts (the project picked under Projects); under
-// Hub › Every project, the hub-wide ones every project gets, which only owners and admins change (D209, D211). The
-// prompts are listed in the sidebar (SettingsSidebar), so the editor has the window's width. Warnings come from the hub's dry run
-// as you type and never block a save. A running session keeps the text it started with.
+// Hub › Every project, the hub-wide ones every project gets, which only owners and admins change (D209, D211). The page
+// lists the prompts, grouped, and one opens in the editor with the way back to the list above it. Warnings come from
+// the hub's dry run as you type and never block a save. A running session keeps the text it started with.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Dialog, Dot, IdChip, Tab, TabList, TabPanel, Tabs, Text, Textarea, copyText } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
-import { describe } from "./catalog";
+import { describe, sections } from "./catalog";
 import {
   type ProjectRef,
   type ProjectSummary,
   type PromptDetail,
+  type PromptSummary,
   type PromptScope,
   type PromptWarning,
   type RetiredPromptOverride,
@@ -39,6 +40,7 @@ import {
   type Scope,
 } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
+import { OpenList, OpenRow } from "./Frames";
 import { ConfirmDiscard, PageHead, scopeName, useProjects } from "./parts";
 import { oldPromptName, orphanAdvice, orphanHeadline, targetName, whyLine } from "./orphans";
 import { hashFor } from "../shell/navigation";
@@ -264,7 +266,11 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
 
   const here = scopeName(scope, projects);
   const pendingWhy =
-    pending && pending.id !== selected ? "Opening another prompt drops them." : `Showing ${pending ? scopeName(pending.scope, projects) : here} drops them.`;
+    pending && pending.id === null
+      ? "Going back to the list drops them."
+      : pending && pending.id !== selected
+        ? "Opening another prompt drops them."
+        : `Showing ${pending ? scopeName(pending.scope, projects) : here} drops them.`;
   const listed = list.data?.prompts?.find((p) => p.id === selected);
   // Each place deletes only the edits it may change: a project's on its page, the hub-wide ones on Every project's.
   const orphans = (list.data?.orphans ?? []).filter((o) => (o.scope === "project") === (where === "project"));
@@ -287,20 +293,41 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
           <Orphans orphans={orphans} projects={projects} onOpen={(id) => request({ scope, id })} onDeleted={refetchPrompts} />
         ) : null}
         {selected === null ? (
-          <div className={s.stack}>
-            <Text strong>Pick a prompt</Text>
-            <Text tone="quiet">Each one says when fleetd sends it. Edit it here; fleetd's default stays one click away.</Text>
-            <Text size="xs" tone="quiet">
-              What the lead hears when a PR merges, a task ends or a check fails is a fixed event line that fleetd writes, so it isn't a
-              prompt and isn't listed.
-            </Text>
-            <div>
-              <Button size="sm" variant="ghost" onClick={() => void window.fleetd.openExternal(EVENTS_DOC)}>
-                How event lines read
-              </Button>
-            </div>
-          </div>
-        ) : detail.isLoadingError ? (
+          where === "project" && scope.kind === "hub" ? null : (
+            <>
+              {list.data === undefined ? (
+                list.isError ? (
+                  <div className={s.inline}>
+                    <Text tone="danger">{errorText(list.error)}</Text>
+                    <Button size="sm" onClick={() => void list.refetch()}>
+                      Try again
+                    </Button>
+                  </div>
+                ) : (
+                  <Text tone="quiet">Loading prompts…</Text>
+                )
+              ) : (
+                <PromptList prompts={list.data.prompts ?? []} scope={scope} onOpen={(id) => request({ scope, id })} />
+              )}
+              <div className={s.inline}>
+                <Text size="xs" tone="quiet">
+                  What the lead hears when a PR merges, a task ends or a check fails is a fixed event line that fleetd writes, so it isn&apos;t
+                  a prompt and isn&apos;t listed.
+                </Text>
+                <Button size="sm" variant="link" onClick={() => void window.fleetd.openExternal(EVENTS_DOC)}>
+                  How event lines read
+                </Button>
+              </div>
+            </>
+          )
+        ) : (
+          <span>
+            <Button variant="link" size="sm" onClick={() => request({ scope, id: null })}>
+              ← Prompts
+            </Button>
+          </span>
+        )}
+        {selected === null ? null : detail.isLoadingError ? (
           <Text tone="danger">{errorText(detail.error)}</Text>
         ) : where === "project" && scope.kind === "hub" ? null : !d || !onScreen ? (
           <Text tone="quiet">Loading…</Text>
@@ -371,6 +398,48 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
 }
 
 const EVENTS_DOC = "https://fleetd.sh/docs/what-agents-are-told#wake-events";
+
+function badge(summary: PromptSummary, scope: Scope): { label: string; update?: true } | null {
+  if (summary.stale) return { label: "update", update: true };
+  if (summary.scope === "project") return { label: "edited" };
+  if (summary.scope === "global") return { label: scope.kind === "project" ? "hub-wide edit" : "edited" };
+  return null;
+}
+
+/** The prompts, grouped, each with when fleetd sends it and its edited or update mark for the scope on screen. */
+function PromptList({ prompts, scope, onOpen }: { prompts: ReadonlyArray<PromptSummary>; scope: Scope; onOpen: (id: string) => void }) {
+  return (
+    <div className={s.promptGroups}>
+      {sections(prompts).map(({ group, rows }) => (
+        <section key={group.key} className={s.stack} aria-label={group.title}>
+          <Text as="h2" size="sm" tone="quiet" strong>
+            {group.title}
+          </Text>
+          <OpenList label={group.title}>
+            {rows.map((row) => {
+              const b = badge(row.summary, scope);
+              return (
+                <OpenRow
+                  key={row.summary.id}
+                  title={row.name}
+                  detail={row.description}
+                  trailing={
+                    b ? (
+                      <Text size="xs" tone={b.update ? "warning" : "quiet"}>
+                        {b.label}
+                      </Text>
+                    ) : undefined
+                  }
+                  onOpen={() => onOpen(row.summary.id)}
+                />
+              );
+            })}
+          </OpenList>
+        </section>
+      ))}
+    </div>
+  );
+}
 
 /** A prompt without a project level, in Settings: the hub-wide text in effect, which owners and admins change. */
 function HubOnly({ d }: { d: PromptDetail }) {

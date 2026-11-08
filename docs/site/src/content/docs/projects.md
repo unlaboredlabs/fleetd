@@ -258,7 +258,7 @@ Windows) open the first nine.
 
 **Archive**, in a project's right-click menu or at the end of its settings, takes it out of the sidebar and stops its
 lead, with **Undo** in the notice. Its chat, memory, folder and settings stay. An archived project is still in
-Settings › Projects' picker, marked *(archived)*, and its **Archive** setting says **Bring back**; it comes back as it
+Settings › Projects, last and marked *Archived*, and its **Archive** setting says **Bring back**; it comes back as it
 was, and its lead starts with your next message. A message to an archived project waits until you bring it back.
 
 ```sh

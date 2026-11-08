@@ -199,22 +199,11 @@ it("shows Settings' Hub group to an owner or admin, and to nobody else; the main
   }
 });
 
-it("lists the Hub group's pages, Every project's nested, and Setup always, saying how many required steps are left", async () => {
+it("lists the Hub group's pages flat, and Setup always, saying how many required steps are left", async () => {
   setupLeft = 2;
   await render({ me: sam, admin: true }, "settings");
   const rows = () => [...(hubGroup()?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
-  expect(rows()).toEqual([
-    "People",
-    "Machines",
-    "Updates",
-    "Every project",
-    "Profiles",
-    "Tools & skills",
-    "Instructions & memory",
-    "Prompts",
-    "Hub accounts",
-    "Setup2 left",
-  ]);
+  expect(rows()).toEqual(["People", "Machines", "Updates", "Every project", "Hub accounts", "Setup2 left"]);
   act(() => root.unmount());
   root = createRoot(host);
   setupLeft = 0;

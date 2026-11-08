@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-// Settings in one window (D211): You (General, Your accounts, Hubs) and Projects (the project picker and the picked
-// project's Project, Agents, Instructions & memory, Automations and Prompts, each a click away and all of that one
-// project) for everyone; the Hub group for owners and admins only (admin/Admin.dom.test.tsx). Old links land on the
+// Settings in one window (D211), its sidebar one flat list: You (General, Your accounts, Hubs) and Projects (the list
+// of projects, each opening its Project, Agents, Instructions & memory, Automations and Prompts under tabs, all of that
+// one project) for everyone; the Hub group for owners and admins only (admin/Admin.dom.test.tsx). Old links land on the
 // page that has their option now. General's Version & updates says which fleetd this app,
 // the hub and each machine run, with Check for updates for everyone and the updates sheet for an owner or admin only.
 import { act } from "react";
@@ -83,7 +83,7 @@ function Sheet() {
   return useUpdatesOpen() ? <div data-sheet /> : null;
 }
 
-const render = async (hash: string, admin: boolean) => {
+const render = async (hash: string, admin: boolean, live = true) => {
   window.location.hash = hash;
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
@@ -115,6 +115,7 @@ const render = async (hash: string, admin: boolean) => {
     await Promise.resolve();
   });
   await act(async () => {
+    if (!live) return;
     listener({ t: "state", state: { phase: "live", hub: "devbox:4790", protocol: 1, version: "0.9.0" } });
     listener(snapshot);
     await new Promise((r) => setTimeout(r, 0));
@@ -137,45 +138,75 @@ const click = async (el: HTMLElement) => {
   for (let i = 0; i < 3; i++) await settle();
 };
 const screen = () => host.querySelector("[data-screen]")?.getAttribute("data-screen");
+/** Picks a tab of a set's pages: Radix's tabs open on a pointer press, not a click. */
+const pickTab = async (set: string, name: string) => {
+  const tabs = host.querySelector<HTMLElement>(`[role='tablist'][aria-label='${set}']`);
+  const t = [...(tabs?.querySelectorAll<HTMLElement>("[role='tab']") ?? [])].find((x) => x.textContent === name);
+  if (t === undefined) throw new Error(`no tab ${name}`);
+  await act(async () => {
+    t.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    await Promise.resolve();
+  });
+  for (let i = 0; i < 3; i++) await settle();
+};
 
-it("has You and Projects for a member, with the picked project's five pages, and no Hub group", async () => {
+it("has You and Projects for a member as one flat list, Projects listing the projects, each opening its five pages under tabs", async () => {
   await render("#/settings/general", false);
-  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Your devices", "Hubs", "docs", "Project", "Agents", "Instructions & memory", "Automations", "Prompts"]);
+  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Your devices", "Hubs", "Projects"]);
   expect(nav()?.querySelector("section[aria-label='Hub']")).toBeNull();
-  expect([...(nav()?.querySelectorAll("section") ?? [])].map((x) => x.querySelector("span")?.textContent ?? "")).toEqual(expect.arrayContaining(["You", "Projects"]));
+  // Nothing to pick and nothing nested in the sidebar.
+  expect(nav()?.querySelector("[role='combobox'], [role='group'], select")).toBeNull();
 
-  const group = nav()?.querySelector<HTMLElement>("[role='group'][aria-label='Project']");
-  await click(button("Project", group ?? document));
+  await click(button("Projects", nav() ?? document));
+  expect(window.location.hash).toBe("#/settings/projects");
+  expect(screen()).toBe("settings.projects.list");
+  const list = host.querySelector<HTMLElement>("[role='list'][aria-label='Projects']");
+  expect([...(list?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual(["docsdevbox", "storefrontdevbox"]);
+
+  await click(button("docsdevbox", list ?? document));
   expect(screen()).toBe("settings.projects");
-  // The first project (by title), named in the route so a reload or a copied link lands on it.
+  // Named in the route so a reload or a copied link lands on it.
   expect(window.location.hash).toBe("#/settings/projects?for=devbox/docs");
-  expect(group?.querySelector("#settings-project")?.textContent).toContain("docs");
+  expect(button("Projects", nav() ?? document).getAttribute("aria-current")).toBe("page");
 
-  // Each of the project's pages is one click from there, on the same project.
-  for (const [row, tab, data] of [
+  // Each of the project's pages is one tab from there, on the same project.
+  for (const [name, tab, data] of [
     ["Agents", "agents", "settings.agents"],
     ["Instructions & memory", "instructions", "settings.instructions"],
     ["Automations", "automations", "settings.automations"],
     ["Prompts", "prompts", "settings.prompts"],
     ["Project", "projects", "settings.projects"],
   ]) {
-    await click(button(row ?? "", group ?? document));
-    expect(screen(), row).toBe(data);
-    expect(window.location.hash, row).toMatch(new RegExp(`^#/settings/${tab ?? ""}\\?(.*&)?for=devbox/docs`, "u"));
+    await pickTab("Project", name ?? "");
+    expect(screen(), name).toBe(data);
+    expect(window.location.hash, name).toMatch(new RegExp(`^#/settings/${tab ?? ""}\\?(.*&)?for=devbox/docs`, "u"));
   }
 });
 
-it("keeps the picked project across a project's pages", async () => {
+it("says Projects isn't connected while the hub isn't live, rather than loading for good", async () => {
+  await render("#/settings/projects", false, false);
+  expect(screen()).toBe("settings.projects.list");
+  expect(host.textContent).toContain("Not connected. Connect to a hub to change its projects' settings.");
+  expect(host.textContent).not.toContain("Loading…");
+});
+
+it("keeps the opened project across its tabs, and Projects goes back to the list", async () => {
   await render("#/settings/instructions?for=devbox/storefront", false);
   expect(screen()).toBe("settings.instructions");
   expect(window.location.hash).toBe("#/settings/instructions?for=devbox/storefront");
-  const group = nav()?.querySelector<HTMLElement>("[role='group'][aria-label='Project']");
-  await click(button("Agents", group ?? document));
+  await pickTab("Project", "Agents");
   expect(window.location.hash).toBe("#/settings/agents?for=devbox/storefront");
-  // Leaving the project's pages and coming back finds the same project.
-  await click(button("General", nav() ?? document));
-  await click(button("Project", nav() ?? document));
-  expect(window.location.hash).toBe("#/settings/projects?for=devbox/storefront");
+  await click(button("Projects", nav() ?? document));
+  expect(screen()).toBe("settings.projects.list");
+  expect(window.location.hash).toBe("#/settings/projects");
+});
+
+it("shows a project's prompts on its Prompts tab, with no picker of its own", async () => {
+  await render("#/settings/prompts?for=devbox/storefront", false);
+  expect(screen()).toBe("settings.prompts");
+  expect(host.querySelector("#prompts-scope")).toBeNull();
+  const tabs = host.querySelector<HTMLElement>("[role='tablist'][aria-label='Project']");
+  expect(tabs?.querySelector("[role='tab'][data-state='active']")?.textContent).toBe("Prompts");
 });
 
 it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs and hub links on Hubs", async () => {
@@ -188,15 +219,6 @@ it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs
   await render("#/settings/hubs", false);
   expect(screen()).toBe("settings.hubs");
   expect(parts()).toEqual(["hubs.add", "hubs.hub-links"]);
-});
-
-it("shows a project's prompts under its Prompts, with no picker of its own", async () => {
-  await render("#/settings/prompts?for=devbox/storefront", false);
-  expect(screen()).toBe("settings.prompts");
-  expect(host.querySelector("#prompts-scope")).toBeNull();
-  const group = nav()?.querySelector<HTMLElement>("[role='group'][aria-label='Project']");
-  expect(button("Prompts", group ?? document).getAttribute("aria-current")).toBe("page");
-  expect(group?.querySelector("#settings-project")?.textContent).toContain("storefront");
 });
 
 it("says which fleetd this app runs, with Check for updates, and the hub's standing in one read-only line; the update itself is on Hub › Updates", async () => {
