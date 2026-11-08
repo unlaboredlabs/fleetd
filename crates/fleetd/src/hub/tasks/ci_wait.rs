@@ -1,14 +1,20 @@
 //! `wait_ci`: a task asks to be woken when a GitHub Actions run, or the checks on a PR's head, finish. Each wait is a
 //! row in `ci_waits`; every [`POLL_EVERY`] the hub reads GitHub for each, and one that finished continues its task's
 //! thread (a running task takes it at its next tool boundary) with one line: the outcome and the failing jobs.
+//!
+//! With `merged`, a PR's wait ends only when the PR merges, read from the merge train (a batch merges its PRs by
+//! closing them, so GitHub alone can't say): a writer whose next step needs another PR in waits on it so. It wakes its
+//! task too when the PR fails on the train (and goes on, as its writer fixes it) or is closed unmerged (and ends).
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::lead_calls::WaitCiResult;
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::prim::Text;
 use fleetd_contracts::tasks::{TaskId, TaskKind, TaskState};
+use fleetd_contracts::train::GitHubPrUrl;
 use rusqlite::params;
 
 use super::ports::TaskError;
@@ -16,11 +22,14 @@ use super::{TaskCaller, Tasks, holds_pr, lead_error, store_error};
 use crate::hub::api::Hub;
 use crate::hub::reviews::read::open_blocking;
 use crate::hub::store::{now_ms, parse_ms};
+use crate::hub::train::next::{CLOSED, WAITING_ON};
 use crate::hub::work::BoxFut;
 
 pub const POLL_EVERY: Duration = Duration::from_secs(60);
 /// A wait still open this long ends, telling its task so.
 pub const GIVE_UP_MS: i64 = 6 * 3600 * 1000;
+/// A wait with `merged` still open this long ends: a PR can sit in the train's line for hours.
+pub const MERGE_GIVE_UP_MS: i64 = 24 * 3600 * 1000;
 /// GitHub reads that fail in a row before the wait ends, telling its task why.
 pub const READ_TRIES: i64 = 3;
 /// A PR head counts as finished only once its last check completed this long ago: a workflow another one starts, or
@@ -117,9 +126,23 @@ pub fn head_read(sha: &str, runs: &[String], checks: &[Check], now: i64) -> Read
     }
 }
 
-/// GitHub's reads; the hub's goes through the train's `gh` client, tests fake it.
+/// Where a PR a wait with `merged` names stands.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Merge {
+    /// Neither merged nor failed: in the train's line or CI, back with its writer, or not on the train yet.
+    Pending,
+    Merged,
+    /// It failed on the train, why ("its CI failed"): its writer fixes it, so the wait goes on.
+    Failed(String),
+    /// It won't merge, why: closed unmerged, or of a project the task's person doesn't see (D338).
+    Over(String),
+}
+
+/// GitHub's reads, and the train's for `merged`; the hub's go through the train and its `gh` client, tests fake them.
 pub trait CiReads: Send + Sync {
     fn read<'a>(&'a self, target: &'a Target) -> BoxFut<'a, Result<Read, String>>;
+    /// The PR's way to merging, as `by`'s person may see it.
+    fn merge<'a>(&'a self, by: &'a ProjectRef, target: &'a Target) -> BoxFut<'a, Merge>;
 }
 
 /// The task's line for a finished wait.
@@ -172,9 +195,14 @@ fn refused(message: String, fix: &str) -> TaskError {
 }
 
 impl Tasks {
-    /// Keeps `url` for `task_id` until it finishes. Only a run or PR in one of the task's project's repos, or the
-    /// task's own PR's repo.
-    pub fn wait_ci(&self, task_id: &TaskId, url: &str) -> Result<WaitCiResult, TaskError> {
+    /// Keeps `url` for `task_id` until it finishes, or with `merged` (a PR's only), until it merges. Only a run or PR
+    /// in one of the task's project's repos, or the task's own PR's repo.
+    pub fn wait_ci(
+        &self,
+        task_id: &TaskId,
+        url: &str,
+        merged: bool,
+    ) -> Result<WaitCiResult, TaskError> {
         let Some(task) = self.get(task_id).map_err(store_error)? else {
             return Err(lead_error(
                 ErrorCode::NotFound,
@@ -192,6 +220,12 @@ impl Tasks {
                  or the PR's URL.",
             ));
         };
+        if merged && !matches!(target, Target::Pr { .. }) {
+            return Err(refused(
+                format!("{} is not a pull request: only a PR merges.", target.url()),
+                "Pass the PR's URL with merged, or the run's without it.",
+            ));
+        }
         let url = target.url();
         let own_pr = task
             .pr
@@ -232,36 +266,48 @@ impl Tasks {
                 "Wait on fewer at once: each wakes you when it ends.",
             ));
         }
+        // Asked again, a wait keeps its start and the failure it last woke for; the newest call says which kind it is.
         self.db(|c| {
             c.execute(
-                "INSERT OR IGNORE INTO ci_waits (task_id, url, created_ms) VALUES (?, ?, ?)",
-                params![task_id.as_str(), url, now],
+                "INSERT INTO ci_waits (task_id, url, created_ms, merged) VALUES (?, ?, ?, ?)
+                 ON CONFLICT (task_id, url) DO UPDATE SET
+                   created_ms = CASE WHEN (excluded.merged IS NULL) = (merged IS NULL) THEN created_ms
+                                ELSE excluded.created_ms END,
+                   merged = CASE WHEN excluded.merged IS NULL THEN NULL ELSE COALESCE(merged, '') END",
+                params![task_id.as_str(), url, now, merged.then_some("")],
             )
         })
         .map_err(store_error)?;
+        let next = if merged {
+            "Waiting. End your turn now if you have nothing else to do: this thread continues when the PR merges, \
+             or if it fails on the merge train or is closed unmerged."
+        } else {
+            "Waiting. End your turn now if you have nothing else to do: when it finishes, this thread continues with \
+             the outcome and the failing jobs."
+        };
         Ok(WaitCiResult {
             url: Text::unchecked(url),
-            next: Some(
-                "Waiting. End your turn now if you have nothing else to do: when it finishes, this thread continues \
-                 with the outcome and the failing jobs."
-                    .into(),
-            ),
+            next: Some(next.into()),
         })
     }
 
-    /// Every open wait: task, URL, when asked, GitHub reads failed in a row.
-    fn ci_waits(&self) -> Vec<(TaskId, String, i64, i64)> {
+    /// Every open wait: task, URL, when asked, GitHub reads failed in a row, and for a wait with `merged`, the failure
+    /// it last woke its task for ('' none).
+    fn ci_waits(&self) -> Vec<(TaskId, String, i64, i64, Option<String>)> {
         self.db(|c| {
-            c.prepare("SELECT task_id, url, created_ms, errors FROM ci_waits ORDER BY created_ms")?
-                .query_map([], |r| {
-                    Ok((
-                        TaskId::unchecked(r.get::<_, String>(0)?),
-                        r.get::<_, String>(1)?,
-                        r.get::<_, i64>(2)?,
-                        r.get::<_, i64>(3)?,
-                    ))
-                })?
-                .collect()
+            c.prepare(
+                "SELECT task_id, url, created_ms, errors, merged FROM ci_waits ORDER BY created_ms",
+            )?
+            .query_map([], |r| {
+                Ok((
+                    TaskId::unchecked(r.get::<_, String>(0)?),
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                ))
+            })?
+            .collect()
         })
         .unwrap_or_else(|error| {
             tracing::warn!(%error, "ci waits not read");
@@ -269,10 +315,14 @@ impl Tasks {
         })
     }
 
-    /// Each task's open wait URLs, by task id.
+    /// Each task's open wait URLs, by task id; a wait with `merged` says so.
     pub(super) fn open_ci_waits(&self) -> HashMap<String, Vec<String>> {
         let mut open = HashMap::<String, Vec<String>>::new();
-        for (task_id, url, ..) in self.ci_waits() {
+        for (task_id, url, _, _, merged) in self.ci_waits() {
+            let url = match merged {
+                Some(_) => format!("{url} (until it merges)"),
+                None => url,
+            };
             open.entry(task_id.as_str().to_owned())
                 .or_default()
                 .push(url);
@@ -299,6 +349,17 @@ impl Tasks {
         }
     }
 
+    fn ci_wait_told(&self, task_id: &TaskId, url: &str, why: &str) {
+        if let Err(error) = self.db(|c| {
+            c.execute(
+                "UPDATE ci_waits SET merged = ? WHERE task_id = ? AND url = ?",
+                params![why, task_id.as_str(), url],
+            )
+        }) {
+            tracing::warn!(%error, task = %task_id, "merge wait: failure not kept");
+        }
+    }
+
     fn ci_wait_errors(&self, task_id: &TaskId, url: &str, errors: i64) {
         if let Err(error) = self.db(|c| {
             c.execute(
@@ -315,7 +376,7 @@ impl Tasks {
     pub async fn poll_ci_waits(self: &Arc<Self>, reads: &dyn CiReads) -> usize {
         let now = now_ms(self.d.clock.as_ref());
         let mut woken = 0;
-        for (task_id, url, created, errors) in self.ci_waits() {
+        for (task_id, url, created, errors, merged) in self.ci_waits() {
             let task = match self.get(&task_id) {
                 Ok(Some(t)) if !matches!(t.state, TaskState::Cancelled | TaskState::Failed) => t,
                 Ok(_) => {
@@ -331,38 +392,78 @@ impl Tasks {
                 self.ci_wait_done(&task_id, &url);
                 continue;
             };
-            let line = match reads.read(&target).await {
-                Ok(read) => {
-                    if errors > 0 {
-                        self.ci_wait_errors(&task_id, &url, 0);
+            // The line, and for a merge wait that goes on after it, the failure it tells.
+            let line = match &merged {
+                None => match reads.read(&target).await {
+                    Ok(read) => {
+                        if errors > 0 {
+                            self.ci_wait_errors(&task_id, &url, 0);
+                        }
+                        summary(&target, &read)
                     }
-                    summary(&target, &read)
+                    Err(error) if errors + 1 < READ_TRIES => {
+                        tracing::warn!(%error, %url, "ci wait: GitHub not read");
+                        self.ci_wait_errors(&task_id, &url, errors + 1);
+                        None
+                    }
+                    Err(error) => Some(format!(
+                        "CI you waited on (wait_ci) could not be read: GitHub failed {READ_TRIES} times in a row \
+                         for {url} ({error}). Look at it with `gh`, or call wait_ci again."
+                    )),
                 }
-                Err(error) if errors + 1 < READ_TRIES => {
-                    tracing::warn!(%error, %url, "ci wait: GitHub not read");
-                    self.ci_wait_errors(&task_id, &url, errors + 1);
-                    None
-                }
-                Err(error) => Some(format!(
-                    "CI you waited on (wait_ci) could not be read: GitHub failed {READ_TRIES} times in a row for \
-                     {url} ({error}). Look at it with `gh`, or call wait_ci again."
-                )),
+                .map(|line| (line, None)),
+                Some(told) => match reads.merge(&task.project_ref, &target).await {
+                    Merge::Pending => {
+                        // Back on its way, its next failure wakes the task again.
+                        if !told.is_empty() {
+                            self.ci_wait_told(&task_id, &url, "");
+                        }
+                        None
+                    }
+                    Merge::Failed(why) if why == *told => None,
+                    Merge::Failed(why) => Some((
+                        format!(
+                            "A PR you waited on to merge (wait_ci merged) failed on the merge train: {url}: {why}. \
+                             Its writer gets it back to fix; you still wait on it, and are woken when it merges or \
+                             fails again."
+                        ),
+                        Some(why),
+                    )),
+                    Merge::Merged => Some((
+                        format!("A PR you waited on to merge (wait_ci merged) has merged: {url}."),
+                        None,
+                    )),
+                    Merge::Over(why) => Some((
+                        format!(
+                            "A PR you waited on to merge (wait_ci merged) won't merge: {url}: {why}. Ask your \
+                             lead what to build on instead."
+                        ),
+                        None,
+                    )),
+                },
             };
-            let given_up = now.saturating_sub(created) >= GIVE_UP_MS;
-            let Some(line) = line.or_else(|| {
+            let (give_up_ms, what) = match merged {
+                None => (GIVE_UP_MS, "CI you waited on (wait_ci) has not finished"),
+                Some(_) => (
+                    MERGE_GIVE_UP_MS,
+                    "A PR you waited on to merge (wait_ci merged) has not merged",
+                ),
+            };
+            let given_up = now.saturating_sub(created) >= give_up_ms;
+            let Some((line, goes_on)) = line.or_else(|| {
                 given_up.then(|| {
-                    format!(
-                        "CI you waited on (wait_ci) has not finished after {} h: {url}. Look at it with `gh`, or \
-                         call wait_ci again.",
-                        GIVE_UP_MS / 3_600_000
-                    )
+                    let line = format!(
+                        "{what} after {} h: {url}. Look at it with `gh`, or call wait_ci again.",
+                        give_up_ms / 3_600_000
+                    );
+                    (line, None)
                 })
             }) else {
                 continue;
             };
-            // A PR's wake carries its still-open blocking findings, so a writer back from a rebase still fixes them.
+            // A PR's CI wake carries its still-open blocking findings, so a writer back from a rebase still fixes them.
             let open = match &target {
-                Target::Pr { .. } if task.kind != TaskKind::Review => {
+                Target::Pr { .. } if task.kind != TaskKind::Review && merged.is_none() => {
                     open_blocking(&self.d.db, &target.url())
                 }
                 _ => String::new(),
@@ -386,7 +487,10 @@ impl Tasks {
                     tracing::warn!(message = %error.message, task = %task_id, "ci wait: given up unsent")
                 }
             }
-            self.ci_wait_done(&task_id, &url);
+            match goes_on {
+                Some(why) if !given_up => self.ci_wait_told(&task_id, &url, &why),
+                _ => self.ci_wait_done(&task_id, &url),
+            }
         }
         woken
     }
@@ -398,8 +502,8 @@ fn repo_of(target: &Target) -> String {
     }
 }
 
-/// The hub's GitHub reads, through the train's `gh` client.
-struct HubReads(Arc<Hub>);
+/// The hub's GitHub reads, through the train's `gh` client, and its merge reads, the train's.
+pub(super) struct HubReads(pub(super) Arc<Hub>);
 
 /// Job and check conclusions that pass.
 fn passed(conclusion: Option<&str>) -> bool {
@@ -484,6 +588,30 @@ impl CiReads for HubReads {
                         now_ms(self.0.clock.as_ref()),
                     ))
                 }
+            }
+        })
+    }
+
+    fn merge<'a>(&'a self, by: &'a ProjectRef, target: &'a Target) -> BoxFut<'a, Merge> {
+        Box::pin(async move {
+            let url = GitHubPrUrl::unchecked(target.url());
+            let train = &self.0.train;
+            if !train.sees_pr(by, &url) {
+                return Merge::Over("it is in a project you don't see".into());
+            }
+            let Some(waiting) = train.upstream(&url).await else {
+                return Merge::Merged;
+            };
+            // The train's hold: "held: waiting on owner/name#n: why".
+            let why = waiting
+                .note
+                .strip_prefix(WAITING_ON)
+                .and_then(|rest| rest.split_once(": "))
+                .map_or(waiting.note.as_str(), |(_, why)| why);
+            match why {
+                CLOSED => Merge::Over(why.into()),
+                _ if waiting.failed => Merge::Failed(why.into()),
+                _ => Merge::Pending,
             }
         })
     }
