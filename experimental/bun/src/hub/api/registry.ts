@@ -4,6 +4,7 @@
 import type { AgentKeyInfo, ToolMap } from "../../shared/contracts.ts";
 import { internalError, NotImplemented, ToolError } from "../../shared/errors.ts";
 import { TOOLS, type ToolName } from "../../gen/tools.ts";
+import { DecodeError, decodeInput } from "./decode.ts";
 import { isHuman, requireRole } from "./grants.ts";
 import type { Hub } from "./hub.ts";
 
@@ -24,6 +25,8 @@ const REMOVED: [prefix: string, gone: string][] = [["telegram_", "Telegram was r
 
 export class Registry {
   private readonly tools = new Map<string, Handler<ToolName>>();
+  /** Tools whose handler takes the input as sent and decodes it itself (`addRaw`). */
+  private readonly raw = new Set<string>();
 
   constructor() {
     for (const [name, tool] of Object.entries(TOOLS)) {
@@ -33,9 +36,20 @@ export class Registry {
     }
   }
 
-  /** Registers `name`'s handler, replacing the stub. Input arrives as sent (`{}` when absent): check it yourself. */
+  /**
+   * Registers `name`'s handler, replacing the stub. Its input arrives decoded against the tool's contract
+   * (src/hub/api/decode.ts): types, bounds and patterns checked, defaults filled, unnamed fields dropped. A brand's
+   * own check beyond its pattern and a struct's `checked!` rules aren't in the schema: the handler checks those.
+   */
   add<N extends ToolName>(name: N, handler: Handler<N>): void {
     this.tools.set(name, handler as unknown as Handler<ToolName>);
+    this.raw.delete(name);
+  }
+
+  /** As `add`, for a handler that takes the input as sent (`{}` when absent) and decodes it itself. */
+  addRaw<N extends ToolName>(name: N, handler: (hub: Hub, caller: Caller, input: unknown) => ReturnType<Handler<N>>): void {
+    this.tools.set(name, handler as unknown as Handler<ToolName>);
+    this.raw.add(name);
   }
 
   has(name: string): name is ToolName {
@@ -47,8 +61,8 @@ export class Registry {
   }
 
   /**
-   * Runs one call for an already verified caller: the key must hold the tool's role from the contracts table, then
-   * the handler runs. A thrown ToolError is the call's error (a person's device gets its person-facing fix); any
+   * Runs one call for an already verified caller: the input must decode against the tool's contract (else `invalid`
+   * with serde's detail), the key must hold the tool's role from the contracts table, then the handler runs. A thrown ToolError is the call's error (a person's device gets its person-facing fix); any
    * other throw is logged and answered with the generic `failed`.
    */
   async call(hub: Hub, caller: Caller, tool: string, input: unknown): Promise<{ output: unknown } | { error: CallError }> {
@@ -60,9 +74,18 @@ export class Registry {
     }
     const scope = TOOLS[tool as ToolName].scope;
     // TODO(hub-work): the Navi owner's gate (crates/fleetd/src/hub/navi/owner.rs `guard`) runs here, after the role.
+    let decoded: unknown = input ?? {};
+    if (!this.raw.has(tool)) {
+      try {
+        decoded = decodeInput(tool, decoded);
+      } catch (error) {
+        if (error instanceof DecodeError) return { error: { kind: "invalid", message: error.message } };
+        throw error;
+      }
+    }
     try {
       requireRole(caller, scope);
-      return { output: await handler(hub, caller, (input ?? {}) as never) };
+      return { output: await handler(hub, caller, decoded as never) };
     } catch (error) {
       if (error instanceof ToolError) return { error: { kind: "tool", error: isHuman(caller) ? error.forPerson() : error } };
       if (error instanceof NotImplemented) {
