@@ -153,3 +153,34 @@ test("the status loop turns flips into source events", () => {
   expect(clock(NOW - 2 * 86_400_000, NOW, "UTC")).toMatch(/^[A-Z][a-z]{2} \d\d:\d\d$/);
   expect(clock(NOW - 30 * 86_400_000, NOW, "UTC")).toMatch(/^[A-Z][a-z]{2} \d{1,2} \d\d:\d\d$/);
 });
+
+test("a project's PRs show in its groups: in review, landing and done", () => {
+  const { hub, r } = setup();
+  const put = (n: number, state: string) =>
+    hub.db.conn
+      .query(
+        `INSERT INTO changes (n, repo, pr_number, state, machine_id, project_id, train_order, data)
+         VALUES (?1, 'acme/web', ?2, ?3, 'devbox', 'app', ?1, ?4)`,
+      )
+      .run(
+        n,
+        10 + n,
+        state,
+        JSON.stringify({
+          changeId: `X${n}`, projectRef: r, repo: "acme/web", prNumber: 10 + n, prUrl: `https://github.com/acme/web/pull/${10 + n}`,
+          branch: `b${n}`, workstreamId: "W1", headSha: "a".repeat(40), state, reviews: [],
+          createdAt: isoMs(NOW - 1000), updatedAt: isoMs(NOW - 1000),
+        }),
+      );
+  put(1, "reviewing");
+  put(2, "ci");
+  put(3, "merged");
+  const row = statusRows(hub)[0];
+  expect(row?.state).toBe("working");
+  expect([row?.counts.inReview, row?.counts.landing, row?.counts.done]).toEqual([1, 1, 1]);
+  expect(row?.items.map((i) => [i.group, i.title, i.pr?.number])).toEqual([
+    ["in_review", "b1", 11],
+    ["landing", "b2", 12],
+    ["done", "b3", 13],
+  ]);
+});

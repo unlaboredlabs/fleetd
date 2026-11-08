@@ -5,6 +5,7 @@ import type { HubEventType, Machine, ProjectRef, ProjectRowState, ProjectStatusR
 import type { Hub } from "../api/hub.ts";
 import { hubZone } from "../attention/index.ts";
 import { chat } from "../chat/index.ts";
+import { leadAccountKey } from "../claude_accounts/index.ts";
 import { leads } from "../leads/index.ts";
 import { link } from "../link/index.ts";
 import { store } from "../store/hub_store.ts";
@@ -158,7 +159,7 @@ export const statusInputs = (hub: Hub) =>
     mainCiNote: () => undefined,
     usageGate: () => undefined,
     agentsRunning: () => 0,
-    leadAccountKey: () => undefined,
+    leadAccountKey: (r) => leadAccountKey(h.db, r),
     weeks: () => new Map(),
   }));
 
@@ -262,7 +263,7 @@ export function read(hub: Hub, fresh: Fresh, now: number): ProjectStatusRow[] {
             lastMerged: {
               at: isoMs(merged.atMs),
               ...(merged.prNumber > 0 ? { prNumber: merged.prNumber } : {}),
-              ...(merged.prUrl !== undefined && merged.prUrl !== "" ? { prUrl: merged.prUrl } : {}),
+              ...(merged.prUrl !== undefined && merged.prUrl !== "" && merged.prUrl.length <= 300 ? { prUrl: merged.prUrl } : {}),
               title: line(merged.title, 120),
             },
           }
