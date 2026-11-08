@@ -42,9 +42,13 @@ describe("Notifier", () => {
     });
     n.push(event("storefront", "loud", { project: storefront }));
     n.push(event("api", "loud", { project: api }));
-    expect(n.due(T0 + 40 * MIN, policy, needed)?.target).toEqual({ kind: "status" });
+    // Several projects open the first that needs you.
+    expect(n.due(T0 + 40 * MIN, policy, needed)?.target).toEqual({ kind: "chat", machineId: "devbox", projectId: "storefront" });
     n.push(event("buildbox breaker open", "loud", { type: "usage.breaker" }));
     expect(n.due(T0 + 60 * MIN, policy, needed)?.target).toEqual({ kind: "machines" });
+    // A hub-wide item names no project: home.
+    n.push(event("the hub restarted", "loud", { type: "outage.ended" }));
+    expect(n.due(T0 + 80 * MIN, policy, needed)?.target).toEqual({ kind: "home" });
   });
 
   it("holds loud items in quiet windows and lets urgent ones through", () => {

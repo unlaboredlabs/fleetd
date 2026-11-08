@@ -67,7 +67,7 @@ const mount = (projects: SidebarProject[], jumpHints = false) => {
         <DataProvider layer={createDataLayer(hub)}>
           <Sidebar
             projects={projects.map((p) => ({ ...p, hub: "hub" }))}
-            screen={{ id: "status", at: "hub" }}
+            screen={{ id: "home", at: "hub" }}
             jumpHints={jumpHints}
             collapsed={new Set()}
             onToggleHub={() => undefined}
@@ -185,7 +185,7 @@ describe("each row's avatar", () => {
           <DataProvider layer={createDataLayer(hub)}>
             <Sidebar
               projects={[ADA, pictured, STOREFRONT].map((p) => ({ ...p, hub: "hub" }))}
-              screen={{ id: "status", at: "hub" }}
+              screen={{ id: "home", at: "hub" }}
               jumpHints={false}
               collapsed={new Set()}
               onToggleHub={() => undefined}

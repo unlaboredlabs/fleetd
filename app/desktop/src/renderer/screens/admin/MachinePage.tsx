@@ -22,7 +22,7 @@ import { PagePart, PageHead } from "../settings/parts";
 import { MachineScreens } from "../settings/Screens";
 import { RunOn, Values } from "../setup/Guide";
 import { toHash } from "../shell/routes";
-import { when } from "../status/view";
+import { when } from "../live/when";
 import { checklistOf, fixPlace, MACHINE_WAIT_MS, type ChecklistItem, type ItemState } from "./machines";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";

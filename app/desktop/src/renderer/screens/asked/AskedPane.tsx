@@ -12,7 +12,7 @@ import { Button, EmptyState, StatusChip, Text, cx } from "../../ui";
 import { orderHref } from "../automations/model";
 import { navigate } from "../shell/navigation";
 import type { ProjectKey } from "../shell/routes";
-import { age, fullWhen } from "../status/view";
+import { age, fullWhen } from "../live/when";
 import { ASK_STATE, askRows, orderState, type AskRow } from "./askedModel";
 import s from "./asked.module.css";
 

@@ -2,7 +2,7 @@
 // project on another hub keeps it sealed and reaches that hub's projects through it. Here: what a pasted key text holds,
 // the words for a kept link's state, and the lines for a minted link. Pure, so it is unit-tested.
 import type { HubLink, IssuedLink, ProjectRef } from "../../../shared/contracts";
-import { when } from "../status/view";
+import { when } from "../live/when";
 
 /** As the hub takes a link's label (HubLabel): 1 to 40 characters on one line. */
 export const LABEL_MAX = 40;

@@ -11,7 +11,7 @@
 //
 // With several hubs each hub's projects are a group under its name, which collapses; the footer has a row per hub.
 // With one, there is no name and no group, as before.
-import { Activity, ChevronDown, ChevronRight, Factory, MonitorSmartphone, Plus, Settings } from "lucide-react";
+import { ChevronDown, ChevronRight, Factory, MonitorSmartphone, Plus, Settings } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import type { DataLayer } from "../../src/data/queries";
@@ -236,7 +236,6 @@ export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, f
       })}
 
       <SidebarSection>
-        {nav("Status", <Activity />, { id: "status" }, screen.id === "status", kbd("status.toggle"))}
         <ScreensEntry current={screen.id === "screens"} go={go} />
         {nav(
           "Factory",

@@ -8,7 +8,7 @@ import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { Button, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { when } from "../status/view";
+import { when } from "../live/when";
 import { setUpdatesOpen } from "../updates/state";
 import { projectsLine, whoOf } from "./model";
 import s from "../settings/settings.module.css";

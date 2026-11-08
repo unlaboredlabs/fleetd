@@ -118,7 +118,6 @@ type ScreenOf =
    * view; without it the panel shows what the window last had, if it is open.
    */
   | { readonly id: "project"; readonly project: ProjectKey; readonly message: string | null; readonly panel?: PanelView }
-  | { readonly id: "status" }
   /** Screens (D305): every live and recent screen you can see, or one of them open, which takes the page. */
   | { readonly id: "screens"; readonly open: { readonly project: ProjectKey; readonly session: string } | null }
   /** Merges and what they cost the person (D33), for one project (`?project=<machine>/<project>`) or (null) all. */
@@ -226,8 +225,6 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
       if (panel?.tab === "skills" && panel.skill === null) return projectSkills({ machineId: a, projectId: b });
       return { id: "project", project: { machineId: a, projectId: b }, message: query.get("message") || null, ...(panel === null ? {} : { panel }) };
     }
-    case "status":
-      return { id: "status" };
     case "screens": {
       const id = parts[3];
       return { id: "screens", open: a === undefined || b === undefined || id === undefined ? null : { project: { machineId: a, projectId: b }, session: id } };
@@ -261,7 +258,7 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
     case "setup":
       return { id: "setup", view: a ?? null };
     default:
-      // The removed surfaces (#/board, #/order, #/inbox, #/agents, #/prs) and anything unknown land on the home project.
+      // The removed surfaces (#/board, #/order, #/inbox, #/agents, #/prs, #/status) and anything unknown land on the home project.
       return HOME;
   }
 };
@@ -312,7 +309,6 @@ const path = (screen: Screen): Array<string> => {
       return ["session", screen.project.machineId, screen.project.projectId, screen.session];
     case "screens":
       return screen.open === null ? ["screens"] : ["screens", screen.open.project.machineId, screen.open.project.projectId, screen.open.session];
-    case "status":
     case "factory":
     case "onboarding":
       return [screen.id];
