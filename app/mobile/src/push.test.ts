@@ -350,6 +350,24 @@ describe("a notification's buttons", () => {
     expect(hub.link.closed).toBe(true);
   });
 
+  it("wait for the hub's answer on a slow link, never calling an answer it took one it didn't", async () => {
+    vi.useFakeTimers();
+    try {
+      const hub = fakeHub();
+      const out = act({ t: "approve", requestId: "Q3", route }, push, { hub: "http://devbox:4790", key: "fld_phone", transport: hub.transport }, () => "c1");
+      // The link comes up late (cellular, from the lock screen), and the hub takes its time to answer.
+      await vi.advanceTimersByTimeAsync(READY_TIMEOUT_MS - 2000);
+      hub.ready();
+      await vi.advanceTimersByTimeAsync(5000);
+      hub.answer("approval_answer", { request: { requestId: "Q3", state: "approved" } });
+      await vi.advanceTimersByTimeAsync(0);
+      hub.answer("push_badge", { badge: 1 });
+      expect(await out).toEqual({ followUp: { title: "app", body: "Approved: Push the fix: git push", route }, badge: 1 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("say so when the approved command didn't run, as its machine was offline", async () => {
     const hub = fakeHub();
     const out = act({ t: "approve", requestId: "Q3", route }, push, { hub: "http://devbox:4790", key: "fld_phone", transport: hub.transport }, () => "c1");
