@@ -84,40 +84,9 @@ export const nodeCan = (hub: Hub, m: MachineId, capName: string) => link(hub).ca
 /** Linked, and its hello says it lacks `cap`: too old. Never for a node not linked, which said nothing. */
 export const nodeLacks = (hub: Hub, m: MachineId, capName: string) => link(hub).lacks(m, capName);
 
-// --- the sweep (src/hub/sweep: every 5 minutes, each check registered by its area) ---
+// --- the sweep (src/hub/sweep) ---
 
-export type SweepCheck = { name: string; run: () => Promise<void> };
-export interface SweepLike {
-  register(check: SweepCheck): void;
-}
-
-export const SWEEP_EVERY_MS = 5 * 60_000;
-
-/** The stand-in runs each check every 5 minutes, one after another, until the hub stops. */
-function sweepStandIn(hub: Hub): SweepLike {
-  const checks: SweepCheck[] = [];
-  let started = false;
-  return {
-    register(check) {
-      checks.push(check);
-      if (started) return;
-      started = true;
-      const timer = setInterval(async () => {
-        for (const c of checks) {
-          try {
-            await c.run();
-          } catch (error) {
-            console.warn(`sweep: ${c.name} failed:`, error);
-          }
-        }
-      }, SWEEP_EVERY_MS);
-      timer.unref?.();
-      hub.shutdown.signal.addEventListener("abort", () => clearInterval(timer), { once: true });
-    },
-  };
-}
-
-export const sweep = (hub: Hub): SweepLike => hub.area<SweepLike>("sweep", sweepStandIn);
+export { type SweepCheck, sweep } from "../sweep/index.ts";
 
 // --- other areas' tables, read with the Rust SQL ---
 
