@@ -158,6 +158,16 @@
         {
           "description": "Sent only to a hub whose `ready` names `browser_sessions` in its features.\nWatch one live browser session: `browser_frame`s from now on, replacing any earlier watch; without `session`,\nstop. A key that can read the session's machine may watch. Send it again after a reconnect.",
           "properties": {
+            "acks": {
+              "description": "Sent only to a hub whose `ready` names `frame_acks`. True: the client sends a `browser_frame_ack` for each\n`browser_frame` it gets, and the hub sends the next ones only as the earlier are acked. Absent: frames go\nas fast as the socket takes them.",
+              "type": "boolean"
+            },
+            "fps": {
+              "description": "Sent only to a hub whose `ready` names `frame_acks`, with `acks`. The most frames a second the client\ndraws: the hub sends no more, always the newest, and the last of a burst once its gap is up.",
+              "maximum": 60,
+              "minimum": 1,
+              "type": "integer"
+            },
             "session": {
               "$ref": "#/$defs/BrowserSessionId"
             },
@@ -168,6 +178,25 @@
           },
           "required": [
             "t"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Sent only to a hub whose `ready` names `frame_acks`, while a `browser_watch` with `acks` runs.\nA `browser_frame` came: its `seq`.",
+          "properties": {
+            "seq": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "t": {
+              "const": "browser_frame_ack",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t",
+            "seq"
           ],
           "type": "object"
         },

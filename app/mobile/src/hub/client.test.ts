@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { backoff, FRONT_BACKOFF_CAP_MS, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, QUIET_FRONT_MS, RACE_AFTER_BEHIND_MS, READY_TIMEOUT_MS, REPLAY_MAX, SILENT_DEAD_FRONT_MS, SILENT_DEAD_MS, WAKE_PROBE_MS, socketUrl, type HubFrame } from "./client";
 import { fakeHub } from "./fake";
 import { Deflate, Z_SYNC_FLUSH } from "pako";
+import { MAX_FPS } from "../screen";
 
 const HUB = "http://devbox:4790";
 
@@ -453,6 +454,22 @@ describe("watching a screen", () => {
     expect(hub.sentOf("browser_watch").at(-1)).toEqual({ t: "browser_watch" });
     hub.link.frame(frame("Bsee", 3));
     expect(frames.filter((f) => f.t === "browser_frame")).toHaveLength(1);
+  });
+
+  it("acks each frame of the watched screen to a hub that paces them, and none to one that doesn't", () => {
+    const { hub, client } = setup();
+    client.watch("Bsee");
+    client.start();
+    hub.ready(["browser_sessions"]);
+    hub.link.frame(frame("Bsee", 1));
+    expect(hub.sentOf("browser_frame_ack")).toEqual([]);
+    client.reconnectNow();
+    hub.ready(["browser_sessions", "frame_acks"]);
+    expect(hub.sentOf("browser_watch").at(-1)).toEqual({ t: "browser_watch", session: "Bsee", acks: true, fps: MAX_FPS });
+    hub.link.frame(frame("Bsee", 2));
+    // Another screen's, on its way after a change: acked never.
+    hub.link.frame(frame("Bother", 3));
+    expect(hub.sentOf("browser_frame_ack")).toEqual([{ t: "browser_frame_ack", seq: 2 }]);
   });
 
   it("hands a refusal of what was just sent to the live view, and asks for the events again all the same", () => {

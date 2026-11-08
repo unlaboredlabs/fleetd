@@ -288,8 +288,22 @@ export type AppClientMessage = {
   project?: ProjectRef;
   t: "presence";
 } | {
+  /**
+   * Sent only to a hub whose `ready` names `frame_acks`. True: the client sends a `browser_frame_ack` for each
+   * `browser_frame` it gets, and the hub sends the next ones only as the earlier are acked. Absent: frames go
+   * as fast as the socket takes them.
+   */
+  acks?: boolean;
+  /**
+   * Sent only to a hub whose `ready` names `frame_acks`, with `acks`. The most frames a second the client
+   * draws: the hub sends no more, always the newest, and the last of a burst once its gap is up.
+   */
+  fps?: number;
   session?: BrowserSessionId;
   t: "browser_watch";
+} | {
+  seq: number;
+  t: "browser_frame_ack";
 } | {
   input: BrowserInput;
   session: BrowserSessionId;

@@ -450,6 +450,29 @@ describe("HubClient", () => {
     expect(hub.sent.at(-1)).toEqual({ t: "browser_watch" });
   });
 
+  it("acks each frame of the watched session to a hub that paces them, and none to one that doesn't", () => {
+    const { hub, frames, client } = setup();
+    const session = "B68722f97b065412024c7cda6c636fd9a";
+    const sent = () => hub.sent.filter((m) => m["t"] === "browser_watch" || m["t"] === "browser_frame_ack");
+    const frame = { sessionId: session, seq: 7, jpegB64: "AA==", width: 1280, height: 800, control: "agent" };
+    client.watch(session);
+    client.start();
+    hub.open();
+    // An older hub: a plain watch, and its frames aren't acked.
+    hub.frame({ t: "ready", protocol: 1, features: ["browser_sessions"] });
+    hub.frame({ t: "browser_frame", ...frame });
+    expect(sent()).toEqual([{ t: "browser_watch", session }]);
+    hub.close(1006);
+    vi.advanceTimersByTime(500);
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1, features: ["browser_sessions", "frame_acks"] });
+    hub.frame({ t: "browser_frame", ...frame, seq: 8 });
+    // Another session's, on its way after a change: shown nowhere, acked never.
+    hub.frame({ t: "browser_frame", ...frame, seq: 9, sessionId: "B9a63189230ff64d06936e60523503180" });
+    expect(sent()).toEqual([{ t: "browser_watch", session, acks: true }, { t: "browser_frame_ack", seq: 8 }]);
+    expect(frames.filter((f) => f.t === "browser_frame")).toHaveLength(2);
+  });
+
   it("asks for the Screens page's pictures only from a hub that sends them, again on each connection, and drops them once off", () => {
     const { hub, frames, client } = setup();
     const asks = () => hub.sent.filter((m) => m["t"] === "screen_thumbs");

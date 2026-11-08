@@ -13,7 +13,7 @@
 // time can be watched (browser_watch, sent again on each ready, as the desktop's main does): its frames come as
 // `browser_frame`s, and a person's touches on a screen they took over go as `browser_input`.
 import { leadLaneId, type BrowserFrame, type BrowserInput, type CallOutcome, type ChatDelta, type FleetStatus, type HubError, type HubEvent, type HubState, type LiveFrame, type ProjectRef, type ToolInput, type ToolName, type ToolOutput } from "../desktop";
-import type { Navigation } from "../screen";
+import { MAX_FPS, type Navigation } from "../screen";
 import { DEFLATE_FEATURE, FrameInflater } from "./inflate";
 
 const DEFAULT_CALL_TIMEOUT_MS = 30_000;
@@ -134,6 +134,8 @@ export const INPUT_REFUSAL_MS = 3000;
 
 /** The `ready` feature that says the hub reads browser_watch and browser_input (contracts app.rs APP_FEATURES). */
 const SCREENS_FEATURE = "browser_sessions";
+/** The `ready` feature that says the hub paces a watch's frames to their acks (contracts app.rs APP_FEATURES). */
+const FRAME_ACKS_FEATURE = "frame_acks";
 
 /** A frame this client reads, or null: not JSON, or a `t` it has no use for (a newer hub's). */
 const parseFrame = (text: string): ServerFrame | null => {
@@ -175,6 +177,9 @@ export class HubClient {
   /** The screen watched, which goes again on each ready; null: none. */
   #watching: string | null = null;
   #screens = false;
+  /** The hub paces frames to their acks: the watch asks for it, sent no more than the phone draws, and each frame is
+   * acked as it comes. */
+  #frameAcks = false;
   /** When the last browser_input went: an id-less error soon after refuses it. */
   #inputAt = -Infinity;
   /** A compressed frame failed to inflate: later connections ask for plain text, rather than fail the same way again. */
@@ -488,6 +493,7 @@ export class HubClient {
           ...(frame.features === undefined ? {} : { features: frame.features }),
         });
         this.#screens = frame.features?.includes(SCREENS_FEATURE) === true;
+        this.#frameAcks = frame.features?.includes(FRAME_ACKS_FEATURE) === true;
         if (this.#watching !== null && this.#screens) this.#sendWatch();
         return;
       }
@@ -526,7 +532,10 @@ export class HubClient {
       case "browser_frame": {
         const { t: _t, ...shown } = frame;
         // Only the screen watched now: one from the watch it replaced may still be on its way.
-        if (shown.sessionId === this.#watching) this.#options.emit({ t: "browser_frame", frame: shown });
+        if (shown.sessionId !== this.#watching) return;
+        // As it comes: the hub sends the next frames as these arrive, so a slow link shows the newest, not a backlog.
+        if (this.#frameAcks) this.#send({ t: "browser_frame_ack", seq: shown.seq });
+        this.#options.emit({ t: "browser_frame", frame: shown });
         return;
       }
       case "result": {
@@ -622,7 +631,7 @@ export class HubClient {
   }
 
   #sendWatch(): void {
-    this.#send(this.#watching === null ? { t: "browser_watch" } : { t: "browser_watch", session: this.#watching });
+    this.#send(this.#watching === null ? { t: "browser_watch" } : { t: "browser_watch", session: this.#watching, ...(this.#frameAcks ? { acks: true, fps: MAX_FPS } : {}) });
   }
 
   #send(message: Record<string, unknown>): void {
