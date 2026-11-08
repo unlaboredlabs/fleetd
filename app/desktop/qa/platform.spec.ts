@@ -299,8 +299,10 @@ test("a link clicked in an HTML artifact opens in the browser and the report sta
     await chart.locator("body").evaluate(() => parent.postMessage({ fleetdArtifactLink: "https://example.com/unasked" }, "*"));
     await chart.locator("#source").evaluate((a: HTMLElement) => a.click());
     await chart.locator("#source").click();
-    await page.waitForTimeout(500);
-    expect(await app.evaluate(() => (globalThis as { opened?: string[] }).opened)).toEqual(["https://github.com/acme/storefront/actions/workflows/release.yml"]);
+    // The click goes frame → page → main; a hosted macOS runner has taken more than 500 ms for it.
+    await expect
+      .poll(() => app.evaluate(() => (globalThis as { opened?: string[] }).opened))
+      .toEqual(["https://github.com/acme/storefront/actions/workflows/release.yml"]);
     // The frame never left its page.
     await expect(chart.locator("rect.bar")).toHaveCount(6);
   } finally {
