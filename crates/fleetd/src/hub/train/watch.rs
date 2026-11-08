@@ -1,6 +1,8 @@
 //! The watch after a merge. The train waits only for its fast set, so the repo's other checks finish after it merged:
 //! it watches them on the commit it put on the base, and the checks a batch skips (`batch_skipped`), which never ran on
-//! the merged tree before. A check there that fails is re-run once, its own job only: a flake or a GitHub blip passes
+//! the merged tree before. Its fast checks too: they passed on the batch, but the base's own run of them can still
+//! fail (a check scoped to some paths runs there on a change it skipped on the batch). A check there that fails is
+//! re-run once, its own job only: a flake or a GitHub blip passes
 //! then, and opens nothing. One that fails again opens a fix order for the project's lead (channel `train`), plainly
 //! worded with the run's link, once per failure: the same check failing on later merges, while its order is still
 //! open, is that order's, not a new one, and isn't re-run. Runs a person or a schedule started on the commit (a manual
@@ -30,7 +32,7 @@ const RERAN: &str = "reran";
 const RECOVERED: &str = "recovered";
 const MANUAL: &str = "manual";
 
-/// The checks on a merged commit that failed outside its fast set, or that a batch skips (`batch`): the ones a fix
+/// The checks on a merged commit that failed, in its fast set or not, or that a batch skips (`batch`): the ones a fix
 /// order is for. Outside the checks a batch skips, none for an empty fast set: the train then waited for every check
 /// before the merge.
 pub(super) fn failed_after(
@@ -40,10 +42,7 @@ pub(super) fn failed_after(
 ) -> Vec<CheckRun> {
     let skipped_by_batch = |r: &CheckRun| batch.iter().any(|n| gated_name(n, &r.name));
     runs.iter()
-        .filter(|r| {
-            skipped_by_batch(r)
-                || (!fast.set.is_empty() && r.name != TRAIN_CONTEXT && !fast.holds(&r.name))
-        })
+        .filter(|r| skipped_by_batch(r) || (!fast.set.is_empty() && r.name != TRAIN_CONTEXT))
         .filter(|r| is_red(r) && r.conclusion.as_deref() != Some("cancelled"))
         .cloned()
         .collect()
@@ -91,7 +90,7 @@ impl Train {
         });
     }
 
-    /// Each pass: every watched commit's checks read, each new failure outside the fast set re-run once or given its
+    /// Each pass: every watched commit's checks read, each new failure re-run once or given its
     /// fix order (`failed_check`), and the watch ended once they all finished and no re-run is still to show.
     pub(super) async fn watch_pass(&self, repo: &str) {
         for w in self.records.watches(repo) {

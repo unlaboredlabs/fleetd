@@ -8449,6 +8449,60 @@ async fn a_check_that_fails_on_main_and_on_its_re_run_opens_one_fix_order() {
     );
 }
 
+/// W520: a fast check passed on the batch before the merge, but main's own run of it can still go red: a check scoped
+/// to some paths (`bun (experimental)`, the Bun port's) runs there on a change the batch's run skipped it for. It is
+/// re-run once, and failing again opens exactly one fix order.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_fast_check_red_on_main_after_the_merge_is_re_run_once_then_opens_one_fix_order() {
+    let clock = Arc::new(Dial::default());
+    let kit = Kit::build(FakeCi::Actions, |_| {}, false, clock.clone());
+    *kit.gh.required.lock().unwrap() = Some(vec!["unit".into()]);
+    train_file(&kit, &["bun (experimental)"], &[]);
+    let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let now = failed.clone();
+    answer_checks(&kit, move || {
+        let bun = if now.load(std::sync::atomic::Ordering::SeqCst) {
+            "failure"
+        } else {
+            "success"
+        };
+        vec![
+            job(1, 1, "unit", "success"),
+            job(50, 40, "bun (experimental)", bun),
+        ]
+    });
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(
+        state_of(&kit, &a),
+        ChangeState::Merged,
+        "it passed on the batch"
+    );
+    assert!(kit.host.orders.lock().unwrap().is_empty());
+
+    failed.store(true, std::sync::atomic::Ordering::SeqCst);
+    kit.train.step(REPO).await;
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [50], "re-run once first");
+    assert!(kit.host.orders.lock().unwrap().is_empty());
+    // It fails again on its re-run (`failing_again`).
+    kit.train.step(REPO).await;
+    kit.train.step(REPO).await;
+    let orders = kit.host.orders.lock().unwrap().clone();
+    assert_eq!(orders.len(), 1, "{orders:?}");
+    assert!(
+        orders[0].1.starts_with(
+            "Fix the check `bun (experimental)` on main: it failed after the merge train merged"
+        ) && orders[0]
+            .1
+            .contains("and again when the train re-ran it once."),
+        "{}",
+        orders[0].1
+    );
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [50], "never re-run twice");
+}
+
 /// W520, review of #1303: a blip that fails two jobs of one workflow run on main gives each its one re-run. GitHub re-runs
 /// no job of a run that is going, so the second waits for the next pass rather than taking a refusal for a fix order.
 #[tokio::test(flavor = "multi_thread")]
