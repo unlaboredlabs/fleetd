@@ -1,6 +1,5 @@
 // Why the hub link failed, in plain words with what to do about it. A WebSocket only reports a close code (1006 for
 // nearly everything), so the cause comes from the socket error that preceded the close.
-import { versionLabel } from "../../shared/updates";
 
 /** The socket error behind a close: Node's error code (ECONNREFUSED, CERT_HAS_EXPIRED…) and message. */
 export interface SocketError {
@@ -90,11 +89,11 @@ export const explainLoss = (hub: string, code: number, reason: string, error: So
         };
   }
   if (/handshake has timed out/iu.test(error?.message ?? "")) return unreachable(host, "timed out");
-  // A restart, said whatever words came with it: an update's names its build as people read it.
+  // A restart, said whatever words came with it ("updating to <build>" names a raw build, which says nothing here).
+  // No imports: the fixtures' build runs this file as it is.
   if (code === 1001 || code === 1012) {
-    const to = /^updating to (\S+)$/u.exec(reason.trim())?.[1];
     return {
-      reason: to === undefined ? "The hub is restarting or shutting down" : `The hub is restarting into ${versionLabel(to)}`,
+      reason: reason.startsWith("updating to ") ? "The hub is restarting into a new build" : "The hub is restarting or shutting down",
       fix: `${RECONNECTS} If it doesn't come back, run \`fleetd doctor\` on the hub.`,
     };
   }

@@ -13,9 +13,10 @@ export const useUpdatesView = (): UpdatesView => {
   const app = useAppUpdate();
   const state = useData((s) => s.hub);
   const known = useData((s) => s.machines);
-  const run = useRun();
-  const flow = useFlow();
-  const ready = useReady();
+  const { hub: id } = useDataLayer();
+  const run = useRun(id);
+  const flow = useFlow(id);
+  const ready = useReady(id);
   const administers = useSettledAdministers();
   const url = state.phase === "live" ? state.hub : null;
   const version = state.phase === "live" ? state.version : undefined;
@@ -32,6 +33,7 @@ export const useFlowDeps = (): FlowDeps => {
   const layer = useDataLayer();
   return useMemo(
     (): FlowDeps => ({
+      hub: layer.hub,
       call: layer.call,
       retry: () => layer.retryNow(),
       sleep: (ms) => new Promise((done) => setTimeout(done, ms)),

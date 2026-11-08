@@ -9,6 +9,9 @@ export const CLOSE_UNAUTHORIZED = 4401;
 export const CLOSE_RESTART = 1012;
 export const CLOSE_GOING_AWAY = 1001;
 
+/** The build a restart's close says the hub updates to ("updating to <version>"); null for any other restart or stop. */
+export const updatingTo = (reason: string): string | null => /^updating to (\S+)$/u.exec(reason.trim())?.[1] ?? null;
+
 export type ClientMessage =
   | { t: "auth"; key: string; features?: string[] }
   | { t: "snapshot" }
