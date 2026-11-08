@@ -25,7 +25,7 @@ import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimat
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
-import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, olderOffset, outgoing, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, threadRows, viewOffsetOf, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { attachmentBubbles, bubbleTime, bubbles, cardOf, dayLine, fitPosition, fullTime, landingOf, olderOffset, outgoing, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, threadRows, viewOffsetOf, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, emptyChat, type AttachmentGetOutput, type AttachmentRef, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
@@ -253,19 +253,23 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     if (reading) readSeen();
   }, [reading, readSeen]);
 
-  // Scrolling to a row, at `viewPosition` of what shows between the bar and the composer (chatView viewOffsetOf). A
-  // row not drawn yet is gone to roughly, then again once it is; `done` once it's there.
-  const aim = useRef<{ viewPosition: number; viewOffset: number; animated: boolean; tries: number; done: (() => void) | undefined } | null>(null);
+  // Scrolling to a row, at `viewPosition` of what shows between the bar and the composer (chatView viewOffsetOf), or
+  // starting just under the bar if it's the hit and taller than that (fitPosition). A row not drawn yet is gone to
+  // roughly, then again once it is; `done` once it's there.
+  const aim = useRef<{ viewPosition: number; animated: boolean; tries: number; done: (() => void) | undefined } | null>(null);
   const aimAt = (index: number, a: NonNullable<typeof aim.current>) => {
     const tries = a.tries;
-    list.current?.scrollToIndex({ index, animated: a.animated, viewPosition: a.viewPosition, viewOffset: a.viewOffset });
+    const row = newestFirst[index];
+    const length = row?.t === "item" && row.item.message?.messageId === hit.current?.id ? hit.current?.length : undefined;
+    const viewPosition = fitPosition(a.viewPosition, length, room);
+    list.current?.scrollToIndex({ index, animated: a.animated, viewPosition, viewOffset: viewOffsetOf(viewPosition, top, composerHeight) });
     // It didn't fail (onScrollToIndexFailed counts a try): there.
     if (a.tries === tries) requestAnimationFrame(() => a.done?.());
   };
   const scrollToRow = (find: (r: ThreadRow) => boolean, viewPosition: number, animated = !reduce, done?: () => void) => {
     const at = newestFirst.findIndex(find);
     if (at < 0) return false;
-    aim.current = { viewPosition, viewOffset: viewOffsetOf(viewPosition, top, composerHeight), animated, tries: 0, done };
+    aim.current = { viewPosition, animated, tries: 0, done };
     aimAt(at, aim.current);
     return true;
   };
@@ -276,6 +280,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // chat's notification tapped while it's open: its newest. The thread stays hidden for the moment it moves, so the
   // newest end doesn't show first.
   const { messageId, requestId, tap } = route.params;
+  // The message it lands on, measured as it's drawn, for fitPosition.
+  const hitId = useMemo(() => messageId ?? (requestId === undefined ? undefined : cardOf(items, requestId)), [messageId, requestId, items]);
+  const hit = useRef<{ id: string; length: number } | null>(null);
   const landed = useRef<string | null>(null);
   const [moving, setMoving] = useState(false);
   useLayoutEffect(() => {
@@ -300,9 +307,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       return;
     }
     const at = target !== undefined ? newestFirst.findIndex((r) => r.t === "item" && r.item.message?.messageId === target) : newestFirst.findIndex((r) => r.t === "unread");
-    // Near the bottom already: nothing to jump to.
-    if (at < 6) {
-      if (target !== undefined && at >= 0) setLit(target);
+    // Unread near the bottom already: nothing to jump to. A hit is gone to wherever it is, as newer rows or its own
+    // length can leave it under the bar at the newest end.
+    if (at < 0 || (target === undefined && at < 6)) {
       setPlaced(true);
       return;
     }
@@ -407,6 +414,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const measureStream = useCallback((e: LayoutChangeEvent) => {
     if (room > 0 && e.nativeEvent.layout.height >= room) setTall(true);
   }, [room]);
+  const measureHit = useCallback((e: LayoutChangeEvent) => {
+    if (hitId !== undefined) hit.current = { id: hitId, length: e.nativeEvent.layout.height };
+  }, [hitId]);
   const renderRow = useCallback(
     ({ item: row, index: at }: { item: ThreadRow; index: number }) => (
       <RowView
@@ -419,10 +429,10 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
         enter={row.t === "item" ? entering.get(rowKeyOf(row.item)) : undefined}
         reduce={reduce}
         still={row.t === "turn" && awayFrom !== null}
-        onLayout={at === streamAt ? measureStream : undefined}
+        onLayout={at === streamAt ? measureStream : row.t === "item" && hitId !== undefined && row.item.message?.messageId === hitId ? measureHit : undefined}
       />
     ),
-    [chatKey, title, index, lastHuman, actions, lit, entering, reduce, awayFrom, streamAt, measureStream],
+    [chatKey, title, index, lastHuman, actions, lit, entering, reduce, awayFrom, streamAt, measureStream, hitId, measureHit],
   );
 
   // An artifact link in a message opens it as its card does.
@@ -648,7 +658,7 @@ interface RowProps {
   readonly reduce: boolean;
   /** The turn line, scrolled away from: it holds still. */
   readonly still: boolean;
-  /** The reply streaming in: its height, as it grows. */
+  /** The reply streaming in, or the message the chat lands on: its height. */
   readonly onLayout: ((e: LayoutChangeEvent) => void) | undefined;
 }
 

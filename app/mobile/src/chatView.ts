@@ -372,6 +372,13 @@ export const listTime = (at: string, clock: Clock): string => {
 export const viewOffsetOf = (viewPosition: number, top: number, composer: number): number => (1 - viewPosition) * composer - viewPosition * top;
 
 /**
+ * The viewPosition a row lands at: `viewPosition`, unless the row (`length`, once measured) is taller than `room`, what
+ * shows between the bar and the composer. Centred, its first lines would sit under the bar, so it starts just under it,
+ * as the unread bar does.
+ */
+export const fitPosition = (viewPosition: number, length: number | undefined, room: number): number => (length !== undefined && length > room ? 1 : viewPosition);
+
+/**
  * Where the status bar's tap takes the thread: most of a screen (`room`, what shows between the bar and the composer)
  * older than `y`, no further than the oldest end of `length`, in a list `height` tall.
  */

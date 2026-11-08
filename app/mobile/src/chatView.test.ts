@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyDelta, applyHistory, chatItems, emptyChat, type Chat, type ChatItem, type ChatMessage } from "./desktop";
-import { attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, sendWait, SLOW_SEND_MS, streamingAt, threadRows, timeLine, viewOffsetOf, type ThreadRow } from "./chatView";
+import { attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fitPosition, fullTime, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, sendWait, SLOW_SEND_MS, streamingAt, threadRows, timeLine, viewOffsetOf, type ThreadRow } from "./chatView";
 
 const message = (text: string, parts?: ChatMessage["parts"]): ChatMessage => ({
   messageId: "m1",
@@ -354,6 +354,24 @@ describe("viewOffsetOf", () => {
     const offset = offsetOf(2000, 40, visible, 0.5, viewOffsetOf(0.5, top, composer));
     const middle = 2000 + 20 - offset;
     expect(middle).toBe((visible - top + composer) / 2);
+  });
+
+  it("lands a hit wholly between the bar and the composer, or one taller than that starting just under the bar", () => {
+    // Bars and composers of any height (Dynamic Type), hits of any length: from the screen's top, the hit's first line.
+    for (const [barOver, composerUnder] of [[116, 90], [150, 140], [62, 60]] as const) {
+      const room = visible - barOver - composerUnder;
+      for (const length of [40, room / 2 + 1, room, room + 1, 2000]) {
+        const at = fitPosition(0.5, length, room);
+        const offset = offsetOf(5000, length, visible, at, viewOffsetOf(at, barOver, composerUnder));
+        const hitTop = visible - (5000 + length - offset);
+        const hitBottom = visible - (5000 - offset);
+        expect(hitTop).toBeGreaterThanOrEqual(barOver);
+        if (length <= room) expect(hitBottom).toBeLessThanOrEqual(visible - composerUnder);
+        else expect(hitTop).toBe(barOver);
+      }
+    }
+    // Not measured yet: as asked.
+    expect(fitPosition(0.5, undefined, 400)).toBe(0.5);
   });
 });
 
