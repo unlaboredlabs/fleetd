@@ -75,7 +75,7 @@ check(await problem { _ = try pairing(.locked) } == .locked, "locked")
 check(await problem { _ = try pairing(.missing) } == .unpaired, "not paired")
 check(await problem { _ = try pairing(.found(json(#"{"hub":""}"#))) } == .unpaired, "stored but no pairing")
 check((try? pairing(.found(json(#"{"hub":"http://devbox:4790","key":"fk_test","hubName":"devbox"}"#)))) == devbox, "paired")
-check(Problem.locked.line == "Unlock your iPhone. fleetd's key to your hub opens only while this iPhone is unlocked. Unlock it, then run the shortcut again.", "one line")
+check(Problem.locked.line == "Unlock your iPhone. fleetd's key to your hub opens once this iPhone has been unlocked since it started. Unlock it, then run the shortcut again.", "one line")
 
 // The chat picker: what's known keeps its name; an unknown id is named by itself, for the hub to check.
 let resolved = Chats.resolve(["m1/p1", "m9/p9", "bad"], known: [inbox, billing])

@@ -144,8 +144,9 @@ final class HubLink: HubCalls {
 }
 
 /// The paired hub, as expo-secure-store keeps it in the keychain group the app shares (src/vault.ts): service
-/// "app:no-auth" (or "app", from older versions), account "fleetd.hub". Read only, never copied. It opens only while
-/// the phone is unlocked (secure storage's default), so a locked phone reads as locked rather than unpaired.
+/// "app:no-auth" (or "app", from older versions), account "fleetd.hub". Read only, never copied. It opens once the
+/// phone has been unlocked since it started, so an automation on a locked phone reads it; before that first unlock it
+/// reads as locked rather than unpaired.
 enum Keychain {
   static func read() -> Stored {
     var locked = false

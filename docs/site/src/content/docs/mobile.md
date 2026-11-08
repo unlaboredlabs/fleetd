@@ -229,8 +229,8 @@ urgent one (money, irreversible commands) always does. A filter with no chats pi
 
 If an action can't run, it says why:
 
-- **Unlock your iPhone:** the phone's key to the hub opens only while the phone is unlocked. An automation that runs
-  while it's locked fails until you unlock it.
+- **Unlock your iPhone:** the phone's key to the hub opens once the phone has been unlocked since it started. After
+  that, automations run while it's locked too; only one that runs after a restart, before the first unlock, fails.
 - **Pair fleetd first:** the phone isn't paired. Open the app and pair it.
 - **Your hub refused this phone:** its key was revoked or the hub was set up again. Pair it again.
 - **Can't reach your hub:** the hub is down, or the phone can't reach it (on a tailnet, Tailscale is off).

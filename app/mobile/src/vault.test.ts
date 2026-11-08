@@ -26,15 +26,15 @@ beforeEach(() => {
 });
 
 describe("the hub's key", () => {
-  it("stays on this phone: never in a backup, nor restored onto another one", async () => {
+  it("stays on this phone, and opens after first unlock so an automation on a locked phone reads it", async () => {
     await pairWith({ hub: "http://devbox:4790", key: "fleetd_a", hubName: "devbox" });
-    expect(access.get("/fleetd.hub")).toBe(1);
+    expect(access.get("/fleetd.hub")).toBe(0);
   });
 
   it("moves there from an older version's keychain item as it is read", async () => {
     store.set("/fleetd.hub", JSON.stringify({ hub: "http://devbox:4790", key: "fleetd_a", hubName: "devbox" }));
     expect((await loadPaired())?.key).toBe("fleetd_a");
-    expect(access.get("/fleetd.hub")).toBe(1);
+    expect(access.get("/fleetd.hub")).toBe(0);
     expect(store.get("/fleetd.hub")).toContain("fleetd_a");
   });
 });

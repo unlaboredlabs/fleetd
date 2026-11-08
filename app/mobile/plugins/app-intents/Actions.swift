@@ -42,10 +42,10 @@ extension Problem {
     symbol: "qrcode.viewfinder"
   )
 
-  /// The phone's key to the hub opens only while it is unlocked, as secure storage keeps it.
+  /// The phone's key to the hub opens once the phone has been unlocked since it started (src/vault.ts).
   static let locked = Problem(
     title: "Unlock your iPhone",
-    message: "fleetd's key to your hub opens only while this iPhone is unlocked. Unlock it, then run the shortcut again.",
+    message: "fleetd's key to your hub opens once this iPhone has been unlocked since it started. Unlock it, then run the shortcut again.",
     retry: true,
     symbol: "lock"
   )
