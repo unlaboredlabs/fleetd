@@ -90,9 +90,9 @@ mod tests {
         }
     }
 
-    /// fleetd's own `.fleetd/train.json`: its fast checks are jobs of its CI that run on each PR's push on Linux; its
-    /// after-merge checks, besides mac.yml's, are Linux jobs of ci.yml too; none is a name no job has, which no run
-    /// would ever report. Linux QA blocks merges (D158): every Linux shard of
+    /// fleetd's own `.fleetd/train.json`: its fast checks are jobs of its CI (ci.yml, or bun.yml's Bun experiment) that
+    /// run on each PR's push on Linux; its after-merge checks, besides mac.yml's, are Linux jobs of ci.yml too; none is
+    /// a name no job has, which no run would ever report. Linux QA blocks merges (D158): every Linux shard of
     /// desktop-qa.yml's `qa` is in it, so a shard renamed or added fails here rather than drop out of the gate. No PR
     /// runs a macOS job (ci.no-macos-on-prs): each check mac.yml reports, and the iOS build of a manual Mobile run, is
     /// after merge only, so a red one on a branch someone ran it on never holds a merge.
@@ -107,6 +107,9 @@ mod tests {
         };
         let ci = workflow("ci.yml");
         let jobs = ci["jobs"].as_mapping().unwrap();
+        // bun.yml runs on every PR's push like ci.yml (a scope step, never a paths filter, so it always reports).
+        let bun = workflow("bun.yml");
+        assert!(bun["on"]["pull_request"]["paths"].is_null());
         // The Linux shards' check names: `qa`'s name with each Linux entry of its matrix (a `fromJSON` of literal
         // entries) put in.
         let qa = &workflow("desktop-qa.yml")["jobs"]["qa"];
@@ -149,11 +152,12 @@ mod tests {
             }
             let job = jobs
                 .iter()
+                .chain(bun["jobs"].as_mapping().unwrap())
                 .find(|(id, job)| job["name"].as_str().or(id.as_str()) == Some(check))
                 .map(|(_, job)| job);
             let Some(job) = job else {
                 panic!(
-                    "{PATH} names {check}, which no job of ci.yml or Linux shard of desktop-qa.yml is"
+                    "{PATH} names {check}, which no job of ci.yml or bun.yml, or Linux shard of desktop-qa.yml, is"
                 );
             };
             assert_eq!(job["runs-on"].as_str(), Some("ubuntu-latest"), "{check}");
