@@ -25,8 +25,8 @@ export const PREVIEW_SIDE = { phone: 1024, desktop: 720 } as const;
 
 const sleep: Wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** The wait before each try again: half a second, doubling, at most 4 s. */
-const backoff = (n: number): number => Math.min(4000, 500 * 2 ** n);
+/** The wait before each try again: half a second, doubling, at most 2 s, so a link back is used within 2 s. */
+const backoff = (n: number): number => Math.min(2000, 500 * 2 ** n);
 
 /** The bytes a base64 string holds, without decoding it. */
 export const b64Bytes = (b64: string): number => {
@@ -103,8 +103,11 @@ export type Read = { readonly ok: true; readonly file: AttachmentGetOutput } | {
 
 const readFailed = (o: TransferOutcome): Read => ({ ok: false, message: o.ok ? "The hub sent no file." : o.error.message });
 
+/** Pieces asked for at once while a file is read: the next is on its way while one comes, so no round trip idles. */
+export const READS_IN_FLIGHT = 2;
+
 /**
- * A file of the chat, whole, read in pieces: each from where the last ended, again from there after a drop.
+ * A file of the chat, whole, read in pieces, READS_IN_FLIGHT at a time: each again from its offset after a drop.
  * `progress` hears the share read so far. An older hub sends it whole on the first call.
  */
 export const readFile = async (
@@ -113,26 +116,33 @@ export const readFile = async (
   progress: (done: number) => void = () => undefined,
   wait: Wait = sleep,
 ): Promise<Read> => {
-  const pieces: string[] = [];
-  let at = 0;
-  let first: AttachmentGetOutput | undefined;
-  for (;;) {
-    const { outcome } = await answered(call, "attachment_get", { ...ref, offset: at, length: READ_PIECE_BYTES }, wait);
+  const piece = async (offset: number): Promise<Read> => {
+    const { outcome } = await answered(call, "attachment_get", { ...ref, offset, length: READ_PIECE_BYTES }, wait);
     if (!outcome.ok) return readFailed(outcome);
     const out = outcome.output as AttachmentGetOutput;
-    if (typeof out.dataB64 !== "string") return readFailed(outcome);
-    // No offset: a hub that reads whole files only, and this is the file.
-    if (out.offset === undefined) return { ok: true, file: out };
-    first ??= out;
-    const got = b64Bytes(out.dataB64);
-    pieces.push(out.dataB64);
-    at += got;
-    progress(out.bytes === 0 ? 1 : at / out.bytes);
-    if (at >= out.bytes || got === 0) {
-      const { offset: _, ...file } = first;
-      return { ok: true, file: { ...file, dataB64: pieces.join("") } };
-    }
+    return typeof out.dataB64 === "string" ? { ok: true, file: out } : readFailed(outcome);
+  };
+  const head = await piece(0);
+  // No offset: a hub that reads whole files only, and this is the file.
+  if (!head.ok || head.file.offset === undefined) return head;
+  const { offset: _, ...first } = head.file;
+  const offsets: number[] = [];
+  for (let at = b64Bytes(first.dataB64); at < first.bytes; at += READ_PIECE_BYTES) offsets.push(at);
+  // Each piece is asked for once the one READS_IN_FLIGHT before it has come.
+  const reads: Promise<Read>[] = [];
+  offsets.forEach((at, i) => {
+    const before = reads[i - READS_IN_FLIGHT];
+    reads.push(before === undefined ? piece(at) : before.then((r) => (r.ok ? piece(at) : r)));
+  });
+  const pieces = [first.dataB64];
+  for (const [i, read] of reads.entries()) {
+    const r = await read;
+    if (!r.ok) return r;
+    pieces.push(r.file.dataB64);
+    progress(Math.min(1, ((offsets[i] ?? 0) + READ_PIECE_BYTES) / first.bytes));
   }
+  progress(1);
+  return { ok: true, file: { ...first, dataB64: pieces.join("") } };
 };
 
 /**

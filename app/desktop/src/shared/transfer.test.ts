@@ -2,7 +2,7 @@
 // that resumes; an older hub still gets the whole file, sent again from its start, and sends whole files back.
 import { describe, expect, it } from "vitest";
 import { ATTACHMENT_PART_BYTES } from "./contracts";
-import { b64Bytes, READ_PIECE_BYTES, readFile, readPreview, RECONNECT_BUDGET_MS, sendFile, type TransferCall, type TransferOutcome } from "./transfer";
+import { b64Bytes, READ_PIECE_BYTES, READS_IN_FLIGHT, readFile, readPreview, RECONNECT_BUDGET_MS, sendFile, type TransferCall, type TransferOutcome } from "./transfer";
 
 const b64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64");
 const unb64 = (s: string): Uint8Array => new Uint8Array(Buffer.from(s, "base64"));
@@ -147,7 +147,23 @@ describe("reading a file", () => {
     const got = await readFile(hub.call, ref, undefined, noWait);
     expect(got.ok && Buffer.from(got.file.dataB64, "base64").equals(Buffer.from(bytes))).toBe(true);
     expect(got.ok && got.file.offset).toBeUndefined();
-    expect(hub.calls.map((c) => c.input["offset"])).toEqual([0, READ_PIECE_BYTES, READ_PIECE_BYTES, READ_PIECE_BYTES * 2]);
+    // The second and third go together; the second again once the link is back.
+    expect(hub.calls.map((c) => c.input["offset"])).toEqual([0, READ_PIECE_BYTES, READ_PIECE_BYTES * 2, READ_PIECE_BYTES]);
+  });
+
+  it("keeps two pieces on their way at once, no more", async () => {
+    const { hub, bytes } = await stored(true, READ_PIECE_BYTES * 5);
+    let waiting = 0;
+    let most = 0;
+    const slow: TransferCall = async (tool, input, ms) => {
+      most = Math.max(most, ++waiting);
+      await new Promise((r) => setTimeout(r, 1));
+      waiting--;
+      return hub.call(tool, input, ms);
+    };
+    const got = await readFile(slow, ref, undefined, noWait);
+    expect(got.ok && Buffer.from(got.file.dataB64, "base64").equals(Buffer.from(bytes))).toBe(true);
+    expect(most).toBe(READS_IN_FLIGHT);
   });
 
   it("takes an older hub's whole file from the first call", async () => {
