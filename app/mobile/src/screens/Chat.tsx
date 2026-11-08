@@ -255,8 +255,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
 
   // Scrolling to a row, at `viewPosition` of what shows between the bar and the composer (chatView viewOffsetOf), or
   // starting just under the bar if it's the hit and taller than that (fitPosition). A row not drawn yet is gone to
-  // roughly, then again once it is; `done` once it's there.
-  const aim = useRef<{ viewPosition: number; animated: boolean; tries: number; done: (() => void) | undefined } | null>(null);
+  // roughly, then again until it is; `done` once it's there.
+  const aim = useRef<{ viewPosition: number; animated: boolean; tries: number; reached: number; done: (() => void) | undefined } | null>(null);
   const aimAt = (index: number, a: NonNullable<typeof aim.current>) => {
     const tries = a.tries;
     const row = newestFirst[index];
@@ -269,7 +269,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const scrollToRow = (find: (r: ThreadRow) => boolean, viewPosition: number, animated = !reduce, done?: () => void) => {
     const at = newestFirst.findIndex(find);
     if (at < 0) return false;
-    aim.current = { viewPosition, animated, tries: 0, done };
+    aim.current = { viewPosition, animated, tries: 0, reached: -1, done };
     aimAt(at, aim.current);
     return true;
   };
@@ -477,7 +477,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
                 const a = aim.current;
                 if (a === null) return;
                 a.tries += 1;
-                if (a.tries > 3) return void a.done?.();
+                // Each try draws more of the thread, a few rows at a time (far fewer of them fit a screen at large text
+                // sizes): it gives up only once one draws no more.
+                const more = info.highestMeasuredFrameIndex > a.reached;
+                a.reached = Math.max(a.reached, info.highestMeasuredFrameIndex);
+                if (a.tries > 3 && !more) return void a.done?.();
                 setTimeout(() => aimAt(info.index, a), 80);
               }}
               onEndReached={() => void session.loadOlder(chatKey)}
