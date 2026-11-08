@@ -1,14 +1,18 @@
-// The steer area's start (crates/fleetd/src/hub/steer/mod.rs `wire`, `run_sweep`): node receipts reach the steers,
-// the lead's `task message` goes through them, and once a minute the sweep closes steers whose receipt can't come.
+// The steer area's start (crates/fleetd/src/hub/steer/mod.rs `wire`, `run_sweep`): node receipts and the offline
+// queue's expiries reach the steers, the lead's `task message` goes through them, and once a minute the sweep closes
+// steers whose receipt can't come.
 import type { Hub } from "../api/hub.ts";
 import { executors } from "../executor/index.ts";
 import { leadCalls } from "../lead_calls/index.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { TaskRecords } from "../tasks/records.ts";
-import { onReceipt, send, sweep } from "./index.ts";
+import { writeQueue } from "../queue/index.ts";
+import { expired, onReceipt, send, sweep } from "./index.ts";
 
 export function start(hub: Hub): void {
   executors(hub).sinks.steer = (machineId, receipt) => onReceipt(hub, machineId, receipt);
+  // Steers the offline queue gave up on are closed.
+  writeQueue(hub).onSteerExpired((id, reason) => expired(hub, id, reason));
   // `fleetd task message T88 "<text>" [--now]`: the lead steers its own task, with the same modes and receipts.
   leadCalls(hub).register("task_message", async (caller, call) => {
     const { taskId, message, now } = call as { taskId?: unknown; message?: unknown; now?: unknown };

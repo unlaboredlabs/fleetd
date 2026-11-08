@@ -10,12 +10,14 @@ import type { Hub } from "../api/hub.ts";
 import { requireRole } from "../api/grants.ts";
 import type { Caller } from "../api/registry.ts";
 import { jsTake } from "../chat/index.ts";
-import { executors, uuidFrom } from "../executor/index.ts";
+import { uuidFrom } from "../executor/index.ts";
+import { withdraw as withdrawRun } from "../executor/sessions.ts";
 import { renderEvent } from "../leads/events.ts";
 import { leads } from "../leads/index.ts";
 import { isClosed } from "../leads/records.ts";
-import { leadWakes, queuePorts } from "../leads/seams.ts";
+import { leadWakes } from "../leads/seams.ts";
 import { prompts } from "../prompts/store.ts";
+import { writeQueue } from "../queue/index.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -176,7 +178,7 @@ export async function send(hub: Hub, by: By, req: SteerRequest): Promise<Steer> 
     }
   }
   try {
-    const sent = await queuePorts(hub).send(to.thread, body, crid, undefined, { mode: req.mode === "now" ? "now" : "boundary", steer: steer.id, riders: [] });
+    const sent = await writeQueue(hub).send(to.thread, body, crid, undefined, { mode: req.mode === "now" ? "now" : "boundary", steer: steer.id, riders: [] });
     if (sent.queued) {
       steer = { ...steer, detail: `waiting for ${to.thread.machineId} (until ${sent.queuedUntil ? hhmm(sent.queuedUntil) : ""})` };
       steers.put(hub.db, steer);
@@ -268,8 +270,26 @@ export function rehold(hub: Hub, id: string): void {
   }
 }
 
+/** The offline queue gave up on a steer's write: past its limit (`ttl`), or the node refused it. */
+export function expired(hub: Hub, id: string, reason: "ttl" | "refused"): void {
+  const got = steers.get(hub.db, id);
+  if (!got || isFinal(got.steer.stage)) return;
+  const steer: Steer = {
+    ...got.steer,
+    stage: reason === "ttl" ? "expired" : "failed",
+    detail: reason === "ttl" ? `${got.steer.thread.machineId} stayed offline past the queue's limit` : "the node refused it",
+  };
+  try {
+    steers.put(hub.db, steer);
+    emit(hub, steer, "steer.failed");
+  } catch {
+    // As the Rust hub: a steer not stored stays as it was.
+  }
+}
+
 function fail(hub: Hub, steer: Steer, why: string): void {
-  const failed: Steer = { ...steer, stage: "failed", ...(why ? { detail: jsTake(why, 400) } : {}) };
+  const { detail: _, ...rest } = steer;
+  const failed: Steer = { ...rest, stage: "failed", ...(why ? { detail: jsTake(why, 400) } : {}) };
   steers.put(hub.db, failed);
   emit(hub, failed, "steer.failed");
 }
@@ -408,11 +428,10 @@ export async function withdraw(hub: Hub, caller: Caller, id: string): Promise<St
     emit(hub, steer, "steer.withdrawn");
     return steer;
   }
-  let dropped = queuePorts(hub).withdrawSteer(id);
+  let dropped = writeQueue(hub).withdrawSteer(id);
   if (!dropped) {
     try {
-      const out = await executors(hub).call(steer.thread.machineId, "send", { op: "withdraw", sessionId: steer.thread.threadId, runId: steer.runId }, 15_000);
-      dropped = (out as { kind?: string; cancelled?: boolean }).kind === "withdrawn" && (out as { cancelled?: boolean }).cancelled === true;
+      dropped = await withdrawRun(hub, steer.thread, steer.runId);
     } catch (error) {
       throw new ToolError("failed", (error as Error).message);
     }
@@ -440,7 +459,7 @@ export function sweep(hub: Hub): number {
     return 0;
   }
   for (const { steer, at } of list) {
-    if (now - at < RECEIPT_GRACE_MS || queuePorts(hub).hasSteer(steer.id)) continue;
+    if (now - at < RECEIPT_GRACE_MS || writeQueue(hub).hasSteer(steer.id)) continue;
     const status = store(hub).threadGet(steer.thread)?.thread.status;
     if (status === "running" || status === "waiting") continue;
     const m = steer.thread.machineId;

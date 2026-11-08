@@ -1,13 +1,15 @@
 // steer_send and steer_withdraw (crates/fleetd/src/hub/steer/tools.rs), with the "References:" lines an order's
 // note or steer carries (orders/notes.rs `render_refs`).
 import type { IntakeRef, SteerStage } from "../../shared/contracts.ts";
-import { NotImplemented, ToolError } from "../../shared/errors.ts";
+import { ToolError } from "../../shared/errors.ts";
 import { allows } from "../auth/index.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
+import * as attachments from "../intake/attachments.ts";
 import { leads } from "../leads/index.ts";
 import { requireHuman } from "../leads/seams.ts";
 import { oneLine } from "../leads/text.ts";
+import { TaskRecords } from "../tasks/records.ts";
 import { ChangeRecords, parsePrUrl } from "../train/records.ts";
 import { send, withdraw } from "./index.ts";
 
@@ -38,14 +40,29 @@ export function register(tools: Registry): void {
   tools.add("steer_send", async (hub, caller, input) => {
     requireHuman(caller, "steer_send");
     const refs = renderRefs(hub, caller, input.refs ?? []);
-    // Files go to the agent's machine through the intake area, which is not ported yet.
-    if ((input.attachments ?? []).length > 0) throw new NotImplemented("src/hub/intake (a steer's attachments)");
+    const ids = input.attachments ?? [];
+    let attached: string[] = [];
+    if (ids.length > 0) {
+      // The files go to the agent's machine, under the order's folder.
+      const target = input.target;
+      const workstreamId =
+        "workstreamId" in target
+          ? target.workstreamId
+          : (() => {
+              const task = TaskRecords.get(hub.db.conn, target.taskId)?.task;
+              if (!task) throw new ToolError("not_found", `No task ${target.taskId}.`);
+              return task.workstreamId;
+            })();
+      const w = leads(hub).records.workstreamGet(workstreamId);
+      if (!w) throw unknownOrder(workstreamId);
+      attached = await attachments.deliver(hub, caller, ids, w.projectRef, workstreamId, workstreamId);
+    }
     const steer = await send(hub, { kind: "human", caller }, {
       target: input.target,
       text: input.text,
       mode: input.mode ?? "queue",
       refs,
-      attached: [],
+      attached,
       clientRequestId: input.clientRequestId,
     });
     const n = next(steer.stage);

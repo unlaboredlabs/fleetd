@@ -125,6 +125,8 @@ function withLead() {
   const t = testHub();
   const launches: { machineId: string; prompt: string; system?: string; role: string }[] = [];
   const sends: [string, string][] = [];
+  // After the start, which wires the real ports: these stand in for the executor and the queue.
+  start(t.hub);
   Object.assign(leadWiring(t.hub).ports, {
     launch: async (machineId: string, input: { prompt: string; systemPrompt?: string }, role: string) => {
       launches.push({ machineId, prompt: input.prompt, ...(input.systemPrompt ? { system: input.systemPrompt } : {}), role });
@@ -135,7 +137,6 @@ function withLead() {
       return false;
     },
   });
-  start(t.hub);
   return { ...t, launches, sends };
 }
 
@@ -222,4 +223,18 @@ test("the intake area opens an order once per request, announced, and wakes the 
   expect(leads(hub).wakes.pending(PROJECT)).toBe(true);
   expect(await intake(hub).close(PROJECT, "W1", "fixed", "train")).toMatchObject({ state: "done" });
   done();
+});
+
+test("with the real ports, a lead start reaches the executor, and autoStart holds with why", async () => {
+  const t = testHub();
+  start(t.hub);
+  const tools = new Registry();
+  registerAll(tools);
+  const out = (await tools.call(t.hub, caller("operate"), "lead_start", { machineId: "lab-a", projectId: "p1" })) as { error?: { error?: Error } };
+  expect(out.error?.error?.message).toBeDefined();
+  expect(out.error?.error?.message).not.toContain("not wired");
+  const held = await leads(t.hub).autoStart(PROJECT);
+  expect(held.kind).toBe("held");
+  if (held.kind === "held") expect(held.message).toBe(held.error.message);
+  t.done();
 });

@@ -282,6 +282,8 @@ export class LeadWakes {
   }
 
   private async flushInner(r: ProjectRef, all: Trigger[]): Promise<void> {
+    // A flush due after the hub stopped has no store to read.
+    if (this.hub.shutdown.signal.aborted) return;
     const key = keyOf(r);
     if (archivedNote(this.hub, r)) return void console.info(`lead wake of ${key} dropped: archived`);
     const lead = this.records.leadGet(r);

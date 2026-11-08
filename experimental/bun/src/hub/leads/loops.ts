@@ -21,6 +21,7 @@ import { registerLeadCalls as leadCallsOfLeads } from "./calls.ts";
 import { end } from "./cut_off.ts";
 import { leads } from "./index.ts";
 import { leadWiring } from "./ports.ts";
+import { wire as wirePorts } from "./wiring.ts";
 import { intake } from "./workstreams.ts";
 
 export const STOPPED_REASON = "its project was removed";
@@ -89,6 +90,8 @@ function projectsWithLiveWork(hub: Hub): ProjectRef[] {
 
 export function start(hub: Hub): void {
   const area = leads(hub);
+  // The executor's launch and the write queue behind the lead's ports.
+  wirePorts(hub);
   // The real wakes behind the seam other areas trigger.
   leadWakes(hub).trigger = (r, t) => area.wakes.trigger(r, t);
   // Order intake for the areas that open orders (the train's fixes).

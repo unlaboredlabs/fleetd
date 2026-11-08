@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { registerAll } from "../src/gen/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { leads } from "../src/hub/leads/index.ts";
-import { queuePorts } from "../src/hub/leads/seams.ts";
+import { type SendOpts, WriteQueue } from "../src/hub/queue/index.ts";
 import { digestLine, onReceipt, RECEIPT_GRACE_MS, sweep } from "../src/hub/steer/index.ts";
 import { events } from "../src/hub/store/events.ts";
 import { caller, PROJECT, testHub } from "./hub-helpers.ts";
@@ -17,13 +17,21 @@ function setup() {
   const { workstream } = leads(t.hub).records.workstreamCreate({ projectRef: PROJECT, title: "Dark mode", text: "add dark mode", channel: "app", by: "human", at: "2026-11-08T10:00:00.000Z" });
   leads(t.hub).records.leadPut({ projectRef: PROJECT, threadId: "lead-1", startedAt: "2026-11-08T10:00:00.000Z", sessionGeneration: 1 });
   const sends: [string, string, string | undefined][] = [];
-  Object.assign(queuePorts(t.hub), {
-    send: async (_thread: unknown, message: string, _crid: string, _wake: unknown, opts?: { mode?: string; steer?: string }) => {
-      sends.push([message, opts?.mode ?? "", opts?.steer]);
-      return { queued: false };
-    },
-  });
-  return { ...t, w: workstream.workstreamId, sends };
+  // The real write queue over a node writer that records what reaches the node.
+  const node = { online: true };
+  t.hub.area(
+    "write_queue",
+    (h) =>
+      new WriteQueue(h, {
+        isConnected: () => node.online,
+        awaitLive: () => new Promise<void>(() => {}),
+        sendWith: async (_thread, message: string, _crid: string, opts: SendOpts) => {
+          sends.push([message, opts.mode ?? "", opts.steer]);
+          return {};
+        },
+      }),
+  );
+  return { ...t, w: workstream.workstreamId, sends, node };
 }
 
 test("a steer to an order's lead goes out once with its receipts, then can't be withdrawn", async () => {
@@ -80,5 +88,18 @@ test("a closed order takes no steer; the digest names a person's steers to tasks
   });
   expect(digestLine(hub, w)).toBeUndefined();
   expect(await tools.call(hub, person, "steer_send", { target: { taskId: "T9" }, text: "x", clientRequestId: "c2" })).toMatchObject({ error: { error: { code: "not_found" } } });
+  done();
+});
+
+test("a steer to an offline machine waits in the write queue, and withdrawing it drops it there", async () => {
+  const { hub, w, sends, node, done } = setup();
+  node.online = false;
+  const input = { target: { workstreamId: w }, text: "hold on", mode: "queue", clientRequestId: "c9" };
+  const out = (await tools.call(hub, person, "steer_send", input)) as { output: any };
+  expect(out.output.detail).toStartWith("waiting for lab-a (until ");
+  expect(sends.length).toBe(0);
+  expect(sweep(hub)).toBe(0);
+  const back = (await tools.call(hub, person, "steer_withdraw", { steerId: out.output.id })) as { output: any };
+  expect(back.output.stage).toBe("withdrawn");
   done();
 });

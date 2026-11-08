@@ -7,6 +7,7 @@ lead:lead call `automation_pause`
 lead:lead call `automation_run`
 lead:lead call `automation_runs`
 lead:lead call `automation_update`
+lead:lead call `brief_create`
 lead:lead call `browser_recording_part`
 lead:lead call `browser_session`
 lead:lead call `browser_takeover`
@@ -15,6 +16,7 @@ lead:lead call `chat_image`
 lead:lead call `chat_read`
 lead:lead call `chat_search`
 lead:lead call `checklist`
+lead:lead call `close`
 lead:lead call `confirm_step`
 lead:lead call `decide`
 lead:lead call `decisions_search`
@@ -36,6 +38,7 @@ lead:lead call `session_route`
 lead:lead call `session_step`
 lead:lead call `skill_install`
 lead:lead call `skill_save`
+lead:lead call `task_message`
 lead:lead call `usage_resume`
 link:hub→node `lead_result` send
 link:node→hub `lead_call` handle

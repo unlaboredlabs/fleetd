@@ -28,7 +28,10 @@ export { leadState } from "./lead_state.ts";
 export type ParkedOf = (thread: { machineId: string; threadId: string }) => UsageParked | undefined;
 
 /** What an order for a project without a lead did about the lead: it had one, this call started it, or it waits. */
-export type AutoStart = { kind: "running"; lead: Lead } | { kind: "started"; lead: Lead } | { kind: "held"; error: ToolError };
+/** `held` carries why, as the error and its message (the automations area reads `message`). */
+export type AutoStart = { kind: "running"; lead: Lead } | { kind: "started"; lead: Lead } | { kind: "held"; error: ToolError; message: string };
+
+const heldBy = (error: ToolError): AutoStart => ({ kind: "held", error, message: error.message });
 
 /** A lead idle this long has lost its prompt cache (1 hour for leads). */
 export const LEAD_FRESH_AFTER_MS = 3_600_000;
@@ -132,14 +135,14 @@ export class Leads {
     try {
       this.refuseArchived(r);
       const held = this.archived(r);
-      if (held) return { kind: "held", error: held };
+      if (held) return heldBy(held);
       const lead = this.get(r);
       if (lead) return { kind: "running", lead };
       const out = await this.startWith(r, first);
       return out.launched ? { kind: "started", lead: out.lead } : { kind: "running", lead: out.lead };
     } catch (error) {
-      if (error instanceof ToolError) return { kind: "held", error };
-      throw error;
+      // Every refusal holds the message, as Rust's `LeadError`: an executor's or store's too.
+      return heldBy(error instanceof ToolError ? error : new ToolError("failed", error instanceof Error ? error.message : String(error)));
     }
   }
 

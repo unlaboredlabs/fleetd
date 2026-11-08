@@ -1,7 +1,7 @@
 // What the leads area reads from the rest of the hub (crates/fleetd/src/hub/leads/ports.rs, hooks.rs, wiring.rs): the
 // executor's launch and send, the node's one-lead mode, open requests and decisions, and the hooks of later areas
-// (tasks, usage, train, work). Launch and send stay Rust's `Unwired` until the executor area sets them on
-// `leadPorts(hub)`; the reads are wired to the stores they read.
+// (tasks, usage, train, work). Launch and send stay Rust's `Unwired` until the leads start sets them on
+// `leadWiring(hub)` (wiring.ts); the reads are wired to the stores they read.
 import type { Decision, HumanRequest, ProjectRef, ThreadRef, UsageParked } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
