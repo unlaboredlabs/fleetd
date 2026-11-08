@@ -30,6 +30,10 @@ pub enum HubEventType {
     /// `data.nodeVersion`.
     #[serde(rename = "machine.linked")]
     MachineLinked,
+    /// What the machine's node can host (each screen kind's check) came with its first heartbeat after it linked, or
+    /// changed since: the views that read machine_roles (Hub › Machines' roles and screens) read it again.
+    #[serde(rename = "machine.hosts")]
+    MachineHosts,
     /// The machine's disk or load stopped new agents there, or no longer does; `data.paused`, and the summary says
     /// why. Agents already running keep going.
     #[serde(rename = "machine.guard")]
@@ -304,6 +308,7 @@ impl HubEventType {
             Self::MachineDegraded => "machine.degraded",
             Self::MachineSlept => "machine.slept",
             Self::MachineLinked => "machine.linked",
+            Self::MachineHosts => "machine.hosts",
             Self::MachineGuard => "machine.guard",
             Self::MachineRecoveryPaused => "machine.recovery_paused",
             Self::ThreadOrphaned => "thread.orphaned",
