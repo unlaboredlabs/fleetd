@@ -1,28 +1,28 @@
-// Hub › Updates: where the hub and its machines stand, with Update now; Update automatically with what it last did and
-// does next; and which fleetd the hub and each machine run. The same switch and status are in the updates sheet.
+// Hub › Updates: where the hub and its machines stand, or how an update goes, with its one Update button; one line per
+// part with Retry on one that didn't come through; Update automatically with what it last did and does next; and
+// which fleetd the hub and each machine run. The hub row's popover says the same in short.
 import { useEffect } from "react";
-import { Button, Text } from "../../ui";
-import { useDataLayer } from "../../src/data/react";
+import { Text } from "../../ui";
 import { PageHead, PagePart } from "../settings/parts";
 import { AutoUpdates } from "../updates/AutoUpdates";
-import { loadRun, startUpdate } from "../updates/flow";
+import { loadRun, retryMachine, startOver, startUpdate, updateNow } from "../updates/flow";
 import { useFlowDeps, useUpdatesView } from "../updates/hooks";
-import { hubStanding } from "../updates/model";
-import { setUpdatesOpen } from "../updates/state";
-import { HubSection, Line } from "../updates/UpdatesSheet";
+import { hubStanding, type AppAction, type Retry } from "../updates/model";
+import { runApp } from "../updates/UpdatesHost";
+import { HubSection, Line, UpdatesSheet } from "../updates/UpdatesSheet";
 import s from "../settings/settings.module.css";
 import u from "../updates/updates.module.css";
 
 export function UpdatesPage() {
   const view = useUpdatesView();
   const deps = useFlowDeps();
-  const { hub } = useDataLayer();
   const standing = hubStanding(view);
   // Fresh as the page opens: what automatic updates did and do next, not as the last few-minute poll had it.
   useEffect(() => void loadRun(deps), [deps]);
-  const now = () => {
-    setUpdatesOpen(true, hub);
-    void startUpdate(deps);
+  const retry = (r: Retry) => {
+    if (r.kind === "machine") void retryMachine(deps, r.machineId);
+    else if (r.kind === "update") void startUpdate(deps);
+    else runApp(r.run);
   };
   return (
     <div className={s.scroll} data-screen="settings.hub.updates">
@@ -34,33 +34,27 @@ export function UpdatesPage() {
           </Text>
         ) : (
           <>
-            <div className={u.head} data-updates-standing>
-              <div className={u.words}>
+            {view.update !== null || view.progress !== null ? null : (
+              <div className={u.head} data-updates-standing>
                 <Text strong tone={standing.tone === "quiet" ? "default" : standing.tone}>
-                  <Line text={view.update?.title ?? standing.text} />
+                  <Line text={standing.text} />
                 </Text>
-                {view.update === null ? null : (
-                  <Text size="sm" tone="quiet">
-                    {view.update.note}
-                  </Text>
-                )}
               </div>
-              <div className={u.actions}>
-                {view.update !== null ? (
-                  <Button variant="primary" onClick={now} data-updates-start>
-                    Update now
-                  </Button>
-                ) : (
-                  <Button variant="secondary" onClick={() => setUpdatesOpen(true, hub)}>
-                    {view.going ? "Show the update…" : "Open updates…"}
-                  </Button>
-                )}
-              </div>
-            </div>
-            <AutoUpdates />
-            <PagePart title="Versions" reveal="hub.updates.versions" intro="Updates go to the hub, then every machine, then this app.">
-              <HubSection part={view.hub} nodes={view.nodes} />
-            </PagePart>
+            )}
+            <UpdatesSheet
+              view={view}
+              onUpdate={() => void startUpdate(deps)}
+              onStartOver={() => void startOver(deps)}
+              onUpdateNow={() => void updateNow(deps)}
+              onRetry={retry}
+              onApp={(a: AppAction) => runApp(a)}
+              auto={<AutoUpdates />}
+              versions={
+                <PagePart title="Versions" reveal="hub.updates.versions" intro="Updates go to the hub, then every machine, then this app.">
+                  <HubSection part={view.hub} nodes={view.nodes} />
+                </PagePart>
+              }
+            />
           </>
         )}
       </div>

@@ -383,6 +383,20 @@ describe("sending", () => {
     expect(fake.of("chat_send")).toHaveLength(1);
   });
 
+  it("while the hub restarts, the chat stays as it was and a message typed meanwhile goes once it's back", async () => {
+    const { fake, layer } = await connected();
+    fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "restarting", retryAt: Date.now() + 250, restarting: Date.now() } });
+    // Held, not offline: no skeleton and no "as of" mark, but nothing goes on a link that isn't there.
+    expect(selectChat(KEY)(layer.store.getState())).toMatchObject({ held: false, offline: false });
+    expect(await layer.chat.send(KEY, { text: "hold the release" }, "c1")).toBe("pending");
+    expect(fake.of("chat_send")).toHaveLength(0);
+    expect(items(layer)?.at(-1)).toEqual(["c1", "queued"]);
+    fake.send(live());
+    fake.send(snapshot(9, true));
+    await vi.waitFor(() => expect(fake.of("chat_send")).toHaveLength(1));
+    expect(fake.of("chat_send")[0]?.input).toMatchObject({ clientRequestId: "c1", text: "hold the release" });
+  });
+
   it("a call that finds no hub queues the message, and the next snapshot sends it even with no drop seen", async () => {
     const { fake, layer } = await connected();
     const out = layer.chat.send(KEY, { text: "hello" }, "c1");

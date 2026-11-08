@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Call, UpdatePart, UpdateRun } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import type { AppUpdate, UpdatesState } from "../../../shared/updates";
-import { BEFORE_UPDATE, currentAuto, currentFlow, currentReady, currentRun, loadRun, resetFlow, retryMachine, setAutoUpdates, startOver, startUpdate, updateNow, type FlowDeps } from "./flow";
+import { BEFORE_UPDATE, currentAuto, currentFlow, currentReady, currentRun, loadRun, resetFlow, retryMachine, retryMachines, setAutoUpdates, startOver, startUpdate, updateNow, type FlowDeps } from "./flow";
 
 const NEXT = "0.0.0-edge.202610261056+1b563d7";
 
@@ -165,6 +165,23 @@ describe("the Update button's run", () => {
     expect(inputs[0]).toEqual({ machine: "mac" });
     expect(d.app.install).not.toHaveBeenCalled();
     expect(currentFlow()).toEqual({ phase: "finished", updated: true });
+  });
+
+  it("retries each machine that didn't come through, one after another, and keeps it to its own hub", async () => {
+    const run = runOf("done", true);
+    const again = { ...run, parts: [...run.parts, { part: "node", machineId: "mac", name: "mac", from: "0.0.0", state: "done" }] };
+    const { d, calls, inputs } = deps(
+      { ok: true, run: { ...again, finishedAt: undefined } as unknown as UpdateRun },
+      [{ ok: true, run: again }, { ok: true, run: again }],
+      { kind: "ready", version: NEXT },
+    );
+    await retryMachines({ ...d, hub: "h2" }, ["mac", "builder"]);
+    expect(calls).toEqual(["hub_update", "hub_update_status", "hub_update", "hub_update_status"]);
+    expect([inputs[0], inputs[2]]).toEqual([{ machine: "mac" }, { machine: "builder" }]);
+    expect(currentFlow("h2")).toEqual({ phase: "finished", updated: true });
+    // Another hub's row reads its own: nothing ran there.
+    expect(currentFlow()).toEqual({ phase: "idle" });
+    expect(currentRun()).toBeNull();
   });
 
   it("says why the hub wouldn't retry", async () => {

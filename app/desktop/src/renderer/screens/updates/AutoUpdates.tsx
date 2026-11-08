@@ -1,4 +1,4 @@
-// Update automatically, its switch and its status lines, the same on Hub › Updates and in the updates sheet: the hub's
+// Update automatically, its switch and its status lines, on Hub › Updates: the hub's
 // owners and admins turn it on or off; a member, whom the hub doesn't tell, is told whom to ask.
 import { useState } from "react";
 import { Switch, Text, toast } from "../../ui";
@@ -14,9 +14,9 @@ import s from "./updates.module.css";
 const noInput = {};
 
 export function AutoUpdates() {
-  const auto = useAutoUpdates();
-  const ready = useReady();
   const layer = useDataLayer();
+  const auto = useAutoUpdates(layer.hub);
+  const ready = useReady(layer.hub);
   const role = useHubRole();
   const member = !role.pending && !role.offline && !role.administers;
   const people = useToolQuery("people_list", noInput, { enabled: member });
