@@ -222,6 +222,46 @@ fn a_display_thrown_away_frees_its_number() {
     assert!(!socket.exists(), "{} is left", socket.display());
 }
 
+/// Displays started at once (a pool refilling while a session starts, the suite's tests) each get a number of their own.
+/// They all picked the lowest free one, and Xvfb's lock doesn't stop servers started together: several ran on one
+/// number, only the last one's socket answered, and the others' sessions were refused or reset.
+#[test]
+fn displays_started_at_once_each_get_their_own_number() {
+    let Some(config) = test_config() else { return };
+    let home = tempfile::tempdir().unwrap();
+    let settings = super::prepare(home.path(), &config, &|_| {}).unwrap();
+    if settings.backend != DesktopBackend::Xvfb {
+        return;
+    }
+    let go = std::sync::Barrier::new(6);
+    let displays: Vec<_> = std::thread::scope(|s| {
+        let starts: Vec<_> = (0..6)
+            .map(|_| {
+                s.spawn(|| {
+                    go.wait();
+                    super::display::Display::start(&settings, None)
+                })
+            })
+            .collect();
+        starts.into_iter().map(|t| t.join().unwrap()).collect()
+    });
+    let displays: Vec<_> = displays
+        .into_iter()
+        .map(|d| d.unwrap_or_else(|why| panic!("a start failed: {why}")))
+        .collect();
+    let mut names: Vec<&str> = displays.iter().map(|d| d.name.as_str()).collect();
+    names.sort_unstable();
+    names.dedup();
+    assert_eq!(names.len(), 6, "{names:?}");
+    for display in &displays {
+        assert!(
+            display.connect().is_ok(),
+            "{} answers its own",
+            display.name
+        );
+    }
+}
+
 #[test]
 fn an_image_that_doesnt_build_falls_back_to_xvfb() {
     let home = tempfile::tempdir().unwrap();
