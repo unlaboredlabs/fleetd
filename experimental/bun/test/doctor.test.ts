@@ -625,6 +625,8 @@ test("the hub's own sources read a fresh hub as nothing set up", async () => {
   expect(s.claudeSetup()).toEqual({ configured: false, machines: [] });
   expect(await s.probe("lab-a")).toEqual({ ok: false, why: "lab-a's node is not linked to the hub" });
   expect(await s.runnerInfo("lab-a")).toBeUndefined();
+  // The usage area's own view of the machine's breaker: closed on a hub with no limit hit.
+  expect(await s.usageBreaker("lab-a")).toMatchObject({ state: "closed" });
   // A full run over it: the hub's checks only, none of them throwing.
   const d = doctor(t.hub);
   d.health = async () => ({ ok: true });
