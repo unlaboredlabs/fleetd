@@ -466,7 +466,7 @@ The node that starts a task adds a short section to the end of its brief, after 
 - Builds get 2 parallel jobs per agent, your share of this machine's CPUs: CARGO_BUILD_JOBS, MAKEFLAGS, CMAKE_BUILD_PARALLEL_LEVEL, GOFLAGS are set to it. Keep any other build to 2 jobs too.
 - Test runners get 4 workers: VITEST_MAX_WORKERS is set to it. Keep any other test runner to 4 workers too.
 - Scratch files go in $TMPDIR, a directory of your own on disk; never in /tmp, which may be held in memory.
-- Cargo builds, tests, checks and clippy runs take turns for this machine's 4 build slots, one each; a `cargo test` takes two (a lib's tests beside the lib) unless it builds only `--lib` of one package or only named targets (`--test <name>`), so pick one of those when you can. One with too few free prints that it is queued for a build slot and starts by itself once they free, within the same command: give it Bash's longest timeout, since one stopped and started again goes to the back of the queue.
+- Cargo builds, tests, checks and clippy runs take turns for this machine's 3 build slots, one each; a `cargo test` takes two (a lib's tests beside the lib) unless it builds only `--lib` of one package or only named targets (`--test <name>`), so pick one of those when you can. One with too few free prints that it is queued for a build slot and starts by itself once they free, within the same command: give it Bash's longest timeout, since one stopped and started again goes to the back of the queue.
 ```
 
 The jobs and test lines name only the variables fleetd set: one you set in `claude.env` stands, and drops out of its line. The
