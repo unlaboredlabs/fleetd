@@ -1089,4 +1089,6 @@ fn item_request(item: &ChatItem) -> &str {
 }
 
 #[cfg(test)]
+mod held_files_tests;
+#[cfg(test)]
 mod tests;

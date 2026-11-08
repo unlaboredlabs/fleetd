@@ -19,6 +19,7 @@ use fleetd_contracts::mcp::{
     AttachmentPartInput, AttachmentPartOutput, AttachmentPutInput, AttachmentPutOutput, ErrorCode,
     UploadId,
 };
+use fleetd_contracts::node_link::CAP_HAS_FILE;
 use fleetd_contracts::prim::{Count, List, Text};
 use rusqlite::{OptionalExtension, params};
 use sha2::{Digest, Sha256};
@@ -815,19 +816,13 @@ pub async fn place(
             }
             _ => None,
         };
-        let put = hub
-            .executors
-            .put_file(project, &rel, B64.encode(&data))
-            .await;
+        let put = put_once(hub, project, &rel, &data, &r.sha256).await;
         let line = match (put, text) {
             (Err(e), _) => format!("  - {what}: not delivered ({e}); ask the human to resend it."),
             (Ok(()), Some(text)) => {
                 let beside = format!("{rel}.txt");
-                match hub
-                    .executors
-                    .put_file(project, &beside, B64.encode(text.as_bytes()))
-                    .await
-                {
+                let sha = hex(&Sha256::digest(text.as_bytes()));
+                match put_once(hub, project, &beside, text.as_bytes(), &sha).await {
                     Ok(()) => format!("  - {what}; its text is in {beside}: open that with Read."),
                     Err(_) => format!("  - {what}; read it with a tool that opens it."),
                 }
@@ -857,6 +852,24 @@ pub async fn place(
         })?;
     }
     Ok(lines)
+}
+
+/// Puts `data`, whose sha256 is `sha256`, at `rel` in the project, unless its node already holds those bytes there
+/// (`has_file`): a held chat message's files go once, not again on every retry while its lead can't start. A node
+/// from before `has_file`, or a check that fails, gets the file.
+async fn put_once(
+    hub: &Hub,
+    project: &ProjectRef,
+    rel: &str,
+    data: &[u8],
+    sha256: &str,
+) -> Result<(), crate::hub::executor::ExecutorError> {
+    if hub.link.node_can(&project.machine_id, CAP_HAS_FILE)
+        && let Ok(true) = hub.executors.has_file(project, rel, sha256).await
+    {
+        return Ok(());
+    }
+    hub.executors.put_file(project, rel, B64.encode(data)).await
 }
 
 #[cfg(test)]

@@ -1814,6 +1814,15 @@ impl SessionService {
                     .map_err(invalid)?;
                 Ok(SessionOutput::Done)
             }
+            SessionCall::HasFile {
+                project_id,
+                rel_path,
+                sha256,
+            } => {
+                let root = self.project_root(&project_id)?;
+                let has = blocking(move || files::has_file(&root, &rel_path, &sha256)).await;
+                Ok(SessionOutput::HasFile { has })
+            }
             SessionCall::ReadImage {
                 session_id,
                 path,

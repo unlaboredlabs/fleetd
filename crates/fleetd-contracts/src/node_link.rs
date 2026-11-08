@@ -99,6 +99,10 @@ pub const CAP_MCP_SERVERS: &str = "mcp_servers";
 /// node ignores.
 pub const CAP_SKILLS: &str = "skills";
 
+/// `has_file`: whether a file under the project's `.fleetd/attachments/` already holds given bytes, so the hub sends
+/// a held chat message's files once rather than on every retry. An older node gets every file each time.
+pub const CAP_HAS_FILE: &str = "has_file";
+
 /// `order:` secret sinks and `order_env_drop` (a variable for one order's agents), and the masking of a session's own
 /// fleetd tool calls.
 pub const CAP_ORDER_ENV: &str = "order_env";
