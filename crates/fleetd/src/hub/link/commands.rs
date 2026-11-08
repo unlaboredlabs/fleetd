@@ -89,7 +89,6 @@ struct Pending {
 struct State {
     links: HashMap<MachineId, Link>,
     pending: HashMap<String, Pending>,
-    next_link_id: u64,
 }
 
 /// Request/reply over each welcomed link. The link server calls `attach` and `resolve`; other areas call the rest.
@@ -117,7 +116,9 @@ impl Drop for AttachedLink {
             state.links.remove(&self.machine_id);
         }
         // Dropping their senders wakes the waiters with "lost".
-        state.pending.retain(|_, p| p.link_id != self.id);
+        state
+            .pending
+            .retain(|_, p| p.link_id != self.id || p.machine_id != self.machine_id);
     }
 }
 
@@ -147,16 +148,19 @@ fn new_id() -> String {
 }
 
 impl NodeCommands {
-    /// The node link registers each welcomed link here.
+    /// The node link registers each welcomed link here, `id` its number from the link server. Two links of one machine
+    /// can attach in either order, so the newer one keeps the entry: an older link attaching late, then ending, left
+    /// the machine with no link while the newer one was still up.
     pub fn attach(
         &self,
         machine_id: &MachineId,
+        id: u64,
         send: mpsc::UnboundedSender<HubToNode>,
     ) -> AttachedLink {
         let mut state = self.state.lock().unwrap();
-        state.next_link_id += 1;
-        let id = state.next_link_id;
-        state.links.insert(machine_id.clone(), Link { id, send });
+        if !state.links.get(machine_id).is_some_and(|l| l.id > id) {
+            state.links.insert(machine_id.clone(), Link { id, send });
+        }
         AttachedLink {
             state: self.state.clone(),
             machine_id: machine_id.clone(),
@@ -600,13 +604,47 @@ mod tests {
         })
     }
 
+    /// A node that redials while the hub is stalled has two links welcomed at once (link 11, which it gave up on, and
+    /// link 12), and they reach this registry in either order. Link 11 attaching after 12, then ending, must leave 12.
+    #[tokio::test]
+    async fn an_older_link_attaching_late_then_ending_leaves_the_newer_one() {
+        let commands = NodeCommands::default();
+        let mac = MachineId::unchecked("mac");
+        let (newer_tx, mut newer_rx) = mpsc::unbounded_channel();
+        let (older_tx, _older_rx) = mpsc::unbounded_channel();
+        let _newer = commands.attach(&mac, 12, newer_tx);
+        let older = commands.attach(&mac, 11, older_tx);
+        assert_eq!(commands.link_id(&mac), Some(12));
+        drop(older);
+        assert_eq!(commands.link_id(&mac), Some(12));
+        let hb: HubToNode =
+            serde_json::from_value(json!({ "t": "hb", "at": "2026-11-08T00:32:47.510Z" })).unwrap();
+        commands.send(&mac, hb).unwrap();
+        assert!(newer_rx.try_recv().is_ok());
+    }
+
+    /// In the usual order the newer link takes over, and the older one ending leaves it too.
+    #[tokio::test]
+    async fn a_newer_link_takes_over_and_outlives_the_older() {
+        let commands = NodeCommands::default();
+        let mac = MachineId::unchecked("mac");
+        let (older_tx, _older_rx) = mpsc::unbounded_channel();
+        let (newer_tx, _newer_rx) = mpsc::unbounded_channel();
+        let older = commands.attach(&mac, 11, older_tx);
+        let newer = commands.attach(&mac, 12, newer_tx);
+        drop(older);
+        assert_eq!(commands.link_id(&mac), Some(12));
+        drop(newer);
+        assert!(!commands.linked(&mac));
+    }
+
     /// A node whose restart was refused answers its update twice; the second answer reaches the update's wait.
     #[tokio::test]
     async fn an_update_hears_a_second_answer_when_the_restart_was_refused() {
         let commands = Arc::new(NodeCommands::default());
         let builder = MachineId::unchecked("builder");
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let _link = commands.attach(&builder, tx);
+        let _link = commands.attach(&builder, 1, tx);
         let update = NodeUpdate {
             version: Text::unchecked("0.0.0-edge.202610261056+1b563d7".to_owned()),
             channel: fleetd_contracts::mcp::HubChannel::Edge,

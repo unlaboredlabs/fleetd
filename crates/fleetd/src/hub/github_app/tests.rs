@@ -1423,7 +1423,7 @@ async fn fake_link(
     let secret = machine_record(hub, machine);
     hub.link.set_capabilities(&m, &[CAP_ORDER_ENV]);
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let link = hub.node_commands.attach(&m, tx);
+    let link = hub.node_commands.attach(&m, 1, tx);
     let kept: Arc<Mutex<Vec<_>>> = Arc::default();
     let (seen, hub) = (kept.clone(), hub.clone());
     tokio::spawn(async move {
