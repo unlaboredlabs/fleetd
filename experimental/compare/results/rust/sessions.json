@@ -8,44 +8,44 @@
     "memGb": 59,
     "kernel": "7.0.0-42-generic",
     "loadavg": [
-      3.3,
-      4.3,
-      3.67
+      2.53,
+      1.14,
+      0.61
     ],
-    "at": "2026-11-08T14:49:24.176Z"
+    "at": "2026-11-08T15:52:16.348Z"
   },
   "data": {
     "sessions": 20,
     "callsPerSession": 250,
     "followed": 5,
     "turnsFailed": 0,
-    "wallMs": 6205,
-    "spawnMs": 5945,
+    "wallMs": 732,
+    "spawnMs": 790,
     "hub": {
-      "peakRssMb": 78.3,
-      "lastRssMb": 78.3,
-      "cpuMs": 730,
-      "cpuPct": 11.7
+      "peakRssMb": 81.5,
+      "lastRssMb": 81.5,
+      "cpuMs": 300,
+      "cpuPct": 40.6
     },
     "node": {
-      "peakRssMb": 35.5,
-      "lastRssMb": 35.5,
-      "cpuMs": 980,
-      "cpuPct": 15.8
+      "peakRssMb": 46.7,
+      "lastRssMb": 46.7,
+      "cpuMs": 690,
+      "cpuPct": 93.4
     },
     "hosts": {
-      "peakRssMb": 310.3,
-      "lastRssMb": 310.3,
-      "cpuMs": 10,
-      "cpuPct": 0.2
+      "peakRssMb": 311.8,
+      "lastRssMb": 311.5,
+      "cpuMs": 210,
+      "cpuPct": 28.4
     },
     "framesPerWatcher": {
       "n": 5,
-      "median": 95,
-      "p90": 96,
-      "min": 95,
-      "max": 96
+      "median": 71,
+      "p90": 71,
+      "min": 70,
+      "max": 71
     },
-    "benchWallS": 18
+    "benchWallS": 5
   }
 }
