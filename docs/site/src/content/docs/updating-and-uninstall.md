@@ -9,7 +9,7 @@ Keep fleetd up to date, or remove it.
 
 ### From the app {#everything}
 
-The hub looks for a newer build on its channel every 10 minutes. When it finds one, it downloads it ahead, checks it
+The hub looks for a newer build on its channel every 2 minutes. When it finds one, it downloads it ahead, checks it
 against the release's `SHA256SUMS` and keeps it, and its machines fetch it too. Each downloads the build packed, about
 a third of its size, and checks it once unpacked; a cut-off download goes on from where it stopped. Nothing is installed
 yet. The app then
@@ -50,13 +50,13 @@ The 10 minutes are `drainMinutes` in `~/.fleetd/hub/update/settings.json` (`{"dr
 read at each update.
 
 **Update automatically**, in Settings › Hub › Updates and in the update sheet (`"auto": true` in the same file), is off by default.
-On, the hub installs a new build by itself, at most once an hour: an hour after the last update started (yours or its
-own), it updates to the channel's newest build, so builds that came out in between install once, as the newest. It waits
-for agents as **Update** does; **Update now** works on it too. A build the hub didn't come up healthy on, and put back,
+On, the hub installs a new build by itself as soon as it is ready, at most one update in 10 minutes: a build that comes
+out within 10 minutes of the last update (yours or its own) waits for those 10 minutes to end, so builds that came out
+in between install once, as the newest. It waits for agents as **Update** does; **Update now** works on it too. A build the hub didn't come up healthy on, and put back,
 isn't tried again by itself: the switch says it skips that build, a newer one installs as usual, and **Update** still
 installs it. A machine an update left behind the hub (offline then, or failed) is brought to the hub's build the same
-way, at the next hour, even with nothing newer out. Beside the switch, the hub says how its last automatic update went,
-when it looks at the channel next (every 10 minutes), and why it holds back, if it does: a build it put back, a local
+way, at the next look, even with nothing newer out. Beside the switch, the hub says how its last automatic update went,
+when it looks at the channel next (every 2 minutes), and why it holds back, if it does: a build it put back, a local
 build of fleetd, or a channel it couldn't read.
 
 A machine installs the build it downloaded and checked when the update started, even if the channel has a newer one

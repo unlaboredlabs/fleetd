@@ -3110,8 +3110,8 @@ export type HubUpdateInput = {
 
 export type HubUpdateOutput = {
   /**
-   * With `settings.auto`: when the build that is ready installs by itself, an hour after the last update started at
-   * the earliest. Absent when nothing is ready, or automatic updates are off.
+   * With `settings.auto`: when the build that is ready installs by itself, 10 minutes after the last update started
+   * at the earliest. Absent when nothing is ready, or automatic updates are off.
    */
   autoAt?: Timestamp;
   /**
@@ -3130,7 +3130,7 @@ export type HubUpdateOutput = {
    */
   leftOver?: boolean;
   next?: string;
-  /** With `settings.auto`: when the hub next looks at the channel for a newer build (every 10 minutes). */
+  /** With `settings.auto`: when the hub next looks at the channel for a newer build (every 2 minutes). */
   nextCheck?: Timestamp;
   /**
    * The channel's newest build, already downloaded and checked on the hub (and fetched by its nodes), so an update
@@ -3151,8 +3151,8 @@ export type HubUpdateOutput = {
 
 export type HubUpdateSettingsInput = {
   /**
-   * Updates install by themselves, at most once an hour: the channel's newest build an hour after the last update
-   * started, whichever builds came out in between. Off by default.
+   * Updates install by themselves as soon as a build is ready, at most one in 10 minutes: builds that come out within
+   * 10 minutes of the last update install once, as the newest, at the end of those 10 minutes. Off by default.
    */
   auto?: boolean;
   /** How long a node waits for its agents to finish their step, in minutes, 0 to 240; 0 doesn't wait. */
@@ -8409,7 +8409,7 @@ export type UpdateRun = {
 
 /** How the hub updates: `<hub home>/update/settings.json`. */
 export type UpdateSettings = {
-  /** Updates install by themselves, at most once an hour. */
+  /** Updates install by themselves as soon as a build is ready, at most one in 10 minutes. */
   auto: boolean;
   /** How long a node waits for its agents to finish their step, in minutes. */
   drainMinutes: number;

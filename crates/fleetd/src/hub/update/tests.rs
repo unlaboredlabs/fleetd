@@ -1108,7 +1108,7 @@ async fn a_build_that_was_put_back_is_skipped_until_a_newer_one() {
     assert_eq!(fake.plans.lock().unwrap()[0].to, NEWER);
     assert_eq!(updates.auto_skips(), None);
 
-    // A build that failed another way (a download, say) is tried again at the next hour.
+    // A build that failed another way (a download, say) is tried again once the window is over.
     let home = tempfile::tempdir().unwrap();
     let fake = Arc::new(Fake::new(home.path(), b"new"));
     let updates = auto_area_after(
@@ -1155,13 +1155,14 @@ async fn automatic_updates_are_off_until_turned_on() {
     );
 }
 
-/// Two builds that come out within the hour after an update install once, an hour after it, as the newer one; and a
-/// person's update counts toward the hour as an automatic one does.
+/// Two builds that come out within 10 minutes of an update install once, at the window's end, as the newer one; and a
+/// person's update opens the window as an automatic one does.
 #[tokio::test]
-async fn two_builds_within_an_hour_install_once() {
+async fn two_builds_within_ten_minutes_install_once() {
     let home = tempfile::tempdir().unwrap();
     let fake = Arc::new(Fake::new(home.path(), b"new"));
-    let gap = Duration::from_secs(3600);
+    let gap = Timing::default().auto_gap;
+    assert_eq!(gap, Duration::from_secs(600));
     let clock = ManualClock::at(1_794_088_000_000);
     let updates = auto_area_on(
         home.path(),
@@ -1172,23 +1173,26 @@ async fn two_builds_within_an_hour_install_once() {
         clock.clone(),
     );
     // The first build, minutes after a person's update.
-    clock.advance(Duration::from_secs(5 * 60));
-    assert!(updates.auto_tick().await.is_none(), "within the hour");
+    clock.advance(Duration::from_secs(3 * 60));
+    assert!(updates.auto_tick().await.is_none(), "within the window");
     assert_eq!(updates.ready().as_deref(), Some(NEW));
     let due = updates.auto_at().unwrap();
-    assert_eq!(due, 1_794_088_000_000 + 3_600_000, "due at the hour's end");
+    assert_eq!(due, 1_794_088_000_000 + 600_000, "due at the window's end");
     // The second build replaces it.
     publish(&fake, NEWER, b"newer");
-    assert!(updates.auto_tick().await.is_none(), "still within the hour");
+    assert!(
+        updates.auto_tick().await.is_none(),
+        "still within the window"
+    );
     assert_eq!(updates.ready().as_deref(), Some(NEWER));
-    assert_eq!(updates.auto_at(), Some(due), "the same hour");
+    assert_eq!(updates.auto_at(), Some(due), "the same window");
     assert!(
         fake.plans.lock().unwrap().is_empty(),
         "nothing installed yet"
     );
 
-    clock.advance(Duration::from_secs(55 * 60));
-    let run = updates.auto_tick().await.expect("the hour is over");
+    clock.advance(Duration::from_secs(7 * 60));
+    let run = updates.auto_tick().await.expect("the window is over");
     until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
     assert!(updates.auto_tick().await.is_none());
     let plans = fake.plans.lock().unwrap();
@@ -1197,16 +1201,18 @@ async fn two_builds_within_an_hour_install_once() {
     assert_eq!(updates.status().unwrap().id, run.id);
 }
 
-/// An update that started more than an hour ago holds nothing up: a build ready installs at the next look.
+/// A build ready with no update in the last 10 minutes installs at once, at the look that found it: the hub looks
+/// every 2 minutes.
 #[tokio::test]
-async fn a_build_after_a_quiet_hour_installs_at_once() {
+async fn a_build_ready_after_a_quiet_ten_minutes_installs_at_once() {
+    assert_eq!(Timing::default().prefetch_every, Duration::from_secs(120));
     let home = tempfile::tempdir().unwrap();
     let fake = Arc::new(Fake::new(home.path(), b"new"));
     let updates = auto_area(
         home.path(),
         &fake,
-        Duration::from_secs(3600),
-        Duration::from_secs(3700),
+        Timing::default().auto_gap,
+        Duration::from_secs(11 * 60),
     );
     assert!(updates.auto_tick().await.is_some());
 }
