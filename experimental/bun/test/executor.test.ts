@@ -221,3 +221,21 @@ test("a link that refuses the frame fails the call at once as offline", async ()
   ex.attach("devbox", { linkId: 1, send: () => false });
   await expect(ex.call("devbox", "read", { op: "runner_info" }, 5000)).rejects.toThrow("has no live node link");
 });
+
+test("fleetd_status always carries chats and the slot board, as the Rust hub's does", async () => {
+  const k = kit();
+  // An empty hub: both keys, empty, never left out (the apps read them from the snapshot).
+  const empty = await k.ok(key("read"), "fleetd_status", {});
+  expect(empty.chats).toEqual([]);
+  expect(empty.slots).toMatchObject({ cap: expect.any(Number), used: 0, queued: 0, perProject: [] });
+  // With a project: its chat state, for a key that reads its machine only.
+  store(k.hub).machineUpsert(machine());
+  store(k.hub).projectsUpsertMany("devbox", [
+    { machineId: "devbox", projectId: "app", title: "App", workspaceRoot: "/w", threads: { running: 0, waiting: 0, idle: 0, failed: 0 } as never, lastActivityAt: AT },
+  ]);
+  const one = await k.ok(key("read"), "fleetd_status", {});
+  expect(one.chats.map((c: { projectRef: { projectId: string } }) => c.projectRef.projectId)).toEqual(["app"]);
+  expect(Object.keys(one)).toEqual(expect.arrayContaining(["chats", "slots"]));
+  const elsewhere = await k.ok(key("read", { machines: ["laptop"] }), "fleetd_status", {});
+  expect([elsewhere.chats, elsewhere.slots.perProject]).toEqual([[], []]);
+});
