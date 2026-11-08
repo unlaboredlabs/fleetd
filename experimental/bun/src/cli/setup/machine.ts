@@ -10,6 +10,7 @@ import type { ProjectRef } from "../../shared/contracts.ts";
 import { NotImplemented } from "../../shared/errors.ts";
 import { relocated } from "../../shared/home.ts";
 import type { HubDb } from "../../hub/store/db.ts";
+import { eraseIn } from "../../hub/navi/erase.ts";
 import { HubStore } from "../../hub/store/hub_store.ts";
 import { ArgError, parse } from "../args.ts";
 import {
@@ -803,8 +804,7 @@ async function removeCommand(argv: string[]): Promise<number> {
     return fail((error as Error).message);
   }
   try {
-    // The erase comes from src/hub/navi/erase.ts by its literal path once that module lands (T2285's).
-    const side: HubSide = { db, home, by: "the fleetd CLI (machine remove)" };
+    const side: HubSide = { db, home, by: "the fleetd CLI (machine remove)", erase: eraseIn };
     if (!v.flag("force")) {
       const leads = leadsOn(side, machineId);
       if (leads !== undefined) {

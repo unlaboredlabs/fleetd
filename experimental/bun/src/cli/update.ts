@@ -3,10 +3,10 @@
 // hub at once, the node once its agents finish the step they're on (held meanwhile, node/hold), 10 minutes at most;
 // `--now` doesn't wait. The desktop app's Update button does the same through the hub (`hub_update`).
 //
-// Not here: replacing the pre-Electron GPUI app (the Rust CLI's App migration), which no Bun-built machine has, and
-// `update-claude`, which waits on the node's Claude Code installer.
+// Not here: replacing the pre-Electron GPUI app (the Rust CLI's App migration), which no Bun-built machine has.
 import { spawnSync } from "node:child_process";
-import { NotImplemented } from "../shared/errors.ts";
+import { claudeBinary, TESTED } from "../node/runner/claude.ts";
+import { bringTo, RealClaude } from "../node/runner/install.ts";
 import { VERSION } from "../shared/version.ts";
 import { ArgError, parse } from "./args.ts";
 import { resolveHome } from "./common.ts";
@@ -155,7 +155,19 @@ async function restart(services: { name: string; unit: string }[], wait: boolean
   );
 }
 
-/** `fleetd update-claude`: brings this machine's Claude Code to the version this build was tested with. */
+/** `fleetd update-claude`: brings this machine's Claude Code to the version this build was tested with, saying how it
+ * went. Sessions already running finish on the version they started with. */
 export async function runClaude(): Promise<number> {
-  throw new NotImplemented("src/node/runner/claude: fleetd update-claude (the node's Claude Code installer)");
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
+  try {
+    const done = await bringTo(new RealClaude(claudeBinary(), env), TESTED);
+    if (done.kind === "current") console.log(`Claude Code ${done.version} is the version fleetd is tested with`);
+    else if (done.kind === "left") console.log(done.said);
+    else console.log(`Claude Code ${done.from} -> ${done.to}: new sessions start on ${done.to}, running ones finish on ${done.from}`);
+    return 0;
+  } catch (error) {
+    process.stderr.write(`${(error as Error).message}\n`);
+    return 1;
+  }
 }

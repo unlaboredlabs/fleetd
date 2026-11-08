@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "",
+  "stderr": "builder-8 was not set up by fleetd machine add from this hub, so only its key is revoked here; stop its node by hand.\nthe hub held no node key for builder-8.\n"
+}

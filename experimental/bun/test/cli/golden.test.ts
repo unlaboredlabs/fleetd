@@ -1,6 +1,6 @@
 // The Bun CLI against the Rust one, case by case (test/cli/golden.ts says how).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Fleet, fixture, record, RECORD, RUST, UNSET } from "./golden.ts";
 
@@ -19,7 +19,7 @@ const feed = Bun.serve({
 });
 const feedAt = (dir: string) => ({ FLEETD_BASE_URL: `http://127.0.0.1:${feed.port}/${dir}` });
 
-type Case = { name: string; argv: string[]; cwd?: string; env?: Record<string, string>; stdin?: string; setup?: (f: Fleet) => Promise<void> };
+type Case = { name: string; argv: string[]; cwd?: string; /** Compared live only: its output names this machine's own resolver or tools. */ live?: boolean; env?: Record<string, string>; stdin?: string; setup?: (f: Fleet) => Promise<void> };
 
 /** No hub needed: usage, parse errors, and what opens the hub's database directly. */
 const OFFLINE: Case[] = [
@@ -271,6 +271,23 @@ const OFFLINE: Case[] = [
   { name: "update-bad-channel", argv: ["update", "--check", "--channel", "beta"], env: feedAt("newer") },
   { name: "update-no-services", argv: ["update"], env: feedAt("newer") },
   { name: "node-restart-none", argv: ["node", "restart"] },
+  // update-claude with a stand-in claude in the scratch home: PATH has no other.
+  { name: "update-claude-current", argv: ["update-claude"], env: { PATH: "/usr/bin:/bin" }, setup: async (f) => {
+      mkdirSync(join(f.home, ".local/bin"), { recursive: true });
+      writeFileSync(join(f.home, ".local/bin/claude"), "#!/bin/sh\necho '2.1.314 (Claude Code)'\n", { mode: 0o755 });
+    } },
+  { name: "update-claude-other", argv: ["update-claude"], env: { PATH: "/usr/bin:/bin" }, setup: async (f) => {
+      mkdirSync(join(f.home, ".local/bin"), { recursive: true });
+      writeFileSync(join(f.home, ".local/bin/claude"), "#!/bin/sh\necho '2.1.200 (Claude Code)'\n", { mode: 0o755 });
+    } },
+  { name: "update-claude-none", argv: ["update-claude"], env: { PATH: "/usr/bin:/bin" } },
+  // machine remove never on a local record here: its undo would reach this machine's own node service.
+  { name: "machine-remove-unknown", argv: ["machine", "remove", "builder-8"] },
+  { name: "machine-remove-unreachable", live: true, argv: ["machine", "remove", "builder-9", "--purge"], setup: async (f) => {
+      await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"]);
+      writeFileSync(join(f.hubHome, "setup.json"), JSON.stringify({ listen: "127.0.0.1:1", url: "http://127.0.0.1:1", machines: { "builder-9": { sshHost: "builder-9.invalid", platform: "linux", home: "/home/dev", configHome: "/home/dev/.config", uid: 1000 } } }));
+    } },
+  { name: "machine-remove-bad-id", argv: ["machine", "remove", "Bad_Id"] },
   { name: "hub-key-missing", argv: ["hub", "key"] },
   { name: "hub-key-unknown", argv: ["hub", "key", "frob"] },
   { name: "hub-key-create-no-name", argv: ["hub", "key", "create"] },
@@ -380,10 +397,10 @@ describe("offline", () => {
         if (RUST) {
           const rust = fleets[0]!.normalize(await fleets[0]!.run("rust", c.argv, c));
           const bun = fleets[1]!.normalize(await fleets[1]!.run("bun", c.argv, c));
-          if (RECORD) record(c.name, rust);
+          if (RECORD && !c.live) record(c.name, rust);
           expect(bun).toEqual(rust);
         } else {
-          const want = fixture(c.name);
+          const want = c.live ? undefined : fixture(c.name);
           if (want === undefined) return;
           expect(fleets[0]!.normalize(await fleets[0]!.run("bun", c.argv, c))).toEqual(want);
         }

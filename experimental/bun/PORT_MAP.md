@@ -519,7 +519,7 @@ every `fleetd` command.
 - [x] `fleetd invite revoke` → `src/cli/people` <!-- cli:`fleetd invite revoke` -->
 - [x] `fleetd mac` → `src/cli/mac_tool` <!-- cli:`fleetd mac` -->
 - [x] `fleetd machine add` → `src/cli/setup` <!-- cli:`fleetd machine add` -->
-- [ ] `fleetd machine remove` → `src/cli/setup` <!-- cli:`fleetd machine remove` -->
+- [x] `fleetd machine remove` → `src/cli/setup` <!-- cli:`fleetd machine remove` -->
 - [x] `fleetd machine set` → `src/cli/setup` <!-- cli:`fleetd machine set` -->
 - [x] `fleetd metrics` → `src/cli/metrics` <!-- cli:`fleetd metrics` -->
 - [x] `fleetd navi` → `src/cli/navi` <!-- cli:`fleetd navi` -->
@@ -563,7 +563,7 @@ every `fleetd` command.
 - [x] `fleetd time` → `src/cli/time` <!-- cli:`fleetd time` -->
 - [x] `fleetd uninstall` → `src/cli/setup` <!-- cli:`fleetd uninstall` -->
 - [x] `fleetd update` → `src/cli/update` <!-- cli:`fleetd update` -->
-- [ ] `fleetd update-claude` → `src/cli/update` <!-- cli:`fleetd update-claude` -->
+- [x] `fleetd update-claude` → `src/cli/update` <!-- cli:`fleetd update-claude` -->
 - [x] `fleetd update-finish` → `src/update` <!-- cli:`fleetd update-finish` -->
 - [x] `fleetd update-hold` → `src/node/hold` <!-- cli:`fleetd update-hold` -->
 - [x] `fleetd usage` → `src/cli/usage` <!-- cli:`fleetd usage` -->
