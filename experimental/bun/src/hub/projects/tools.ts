@@ -17,6 +17,7 @@ export function register(tools: Registry): void {
     requireRole(caller, "operate", r.machineId);
     return { project: icon.set(hub, r, input.icon) };
   });
+  tools.add("project_avatar_set", (hub, caller, input) => avatar.set(hub, caller, input));
   tools.add("project_avatar_get", (hub, caller, input) => {
     requireRole(caller, "read", input.machineId);
     return avatar.get(hub.db.conn, { machineId: input.machineId, projectId: input.projectId });
