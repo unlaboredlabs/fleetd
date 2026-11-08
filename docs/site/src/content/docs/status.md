@@ -11,7 +11,7 @@ Status has one row per project:
 
 | Column | Shows |
 |---|---|
-| State | `waiting on you`, `blocked`, `working` or `idle`. Blocked means something outside the work stops it: its machine is offline, at its usage limit, or short of disk or CPU for new agents. |
+| State | `waiting on you`, `blocked`, `working` or `idle`. Blocked means something outside the work stops it: its machine is offline, at its usage limit, or short of disk for new agents. |
 | Work | How many pieces of work are in each group: "1 waiting on you · 2 working · 1 landing · 9 done". |
 | Agents | How many agents are running. |
 | Last merged | When the latest pull request merged, with its day: "today 09:46", "yesterday 16:40", "Fri 15:12", "Oct 7". |

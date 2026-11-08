@@ -1,6 +1,6 @@
-//! The disk and load guard and the usage soft brake over a real hub with a fake node: new agents wait while the
-//! machine is short of disk or its login's window is nearly used, running ones keep going, and room again starts the
-//! waiting ones. A merged writer's worktree goes.
+//! The disk guard and the usage soft brake over a real hub with a fake node: new agents wait while the machine is
+//! short of disk or its login's window is nearly used, running ones keep going, and room again starts the waiting
+//! ones. Load and memory never hold them back. A merged writer's worktree goes.
 use std::sync::Arc;
 
 use fleetd_contracts::ids::MachineId;
@@ -140,6 +140,28 @@ async fn low_disk_holds_new_agents_keeps_running_ones_and_room_again_starts_them
     catch_up(&hub.tasks).await;
     assert_eq!(state(&hub, "T2").state, TaskState::Running);
     assert_eq!(state(&hub, "T1").state, TaskState::Running);
+}
+
+#[tokio::test]
+async fn a_new_agent_under_the_cap_starts_at_high_load_and_full_memory() {
+    let (hub, _home) = hub();
+    let _calls = serve(&hub, Node::link(&hub).await);
+    running(&hub, 1);
+    insert(
+        &hub,
+        json!({ "taskId": "T2", "title": "next slice", "state": "queued", "queuedReason": "Max agents: 1 of 1 running" }),
+    );
+
+    let mut busy = load(500, 70.2);
+    busy.mem_used_pct = Some(fleetd_contracts::prim::Int::unchecked(97));
+    busy.swap_used_pct = Some(fleetd_contracts::prim::Int::unchecked(100));
+    busy.mem_pressure_pct = Some(fleetd_contracts::prim::NonNegative::new(40.0).unwrap());
+    hub.link.observe_load(&lab_a(), Some(busy), NODE_AT);
+    assert_eq!(hub.link.paused(&lab_a()), None);
+    start_queued(&hub.tasks).await;
+    hub.tasks.starts_recorded().await;
+    assert_eq!(state(&hub, "T2").state, TaskState::Running);
+    assert_eq!(guard_events(&hub), Vec::<bool>::new());
 }
 
 /// The heartbeat's time on the node's clock: the test clock's, when the 5-hour reading below was taken.

@@ -116,7 +116,7 @@ const THREAD_EVENTS: [HubEventType; 10] = [
     HubEventType::ThreadUsageLimited,
     // M4 usage: a lifted pause lets queued tasks start.
     HubEventType::UsageResumed,
-    // The disk and load guard: the same, for a machine with room again.
+    // The disk guard: the same, for a machine with room again.
     HubEventType::MachineGuard,
     // A merged writer's worktree goes.
     HubEventType::PrMerged,
@@ -1030,7 +1030,7 @@ impl Tasks {
                 )
                 .map(Reserved::Now);
         }
-        // The disk and load guard holds new agents only; machine.guard runs the queue again. One with a thread
+        // The disk guard holds new agents only; machine.guard runs the queue again. One with a thread
         // continues in the worktree it has, a fresh restart too.
         if !continuing
             && !fresh
