@@ -3,6 +3,7 @@ pub mod commands;
 pub mod cwd;
 pub mod guard;
 pub mod lead_calls;
+pub mod network;
 pub mod server;
 
 pub use commands::NodeCommands;

@@ -4917,6 +4917,22 @@ export type NodeLoad = {
   memTotalBytes?: number;
   /** Memory in use (total minus available), percent. */
   memUsedPct?: number;
+  /**
+   * Whether the machine's own network hardware holds an IPv4 address; absent off Linux, on a machine with no network
+   * hardware of its own (a container), and from older nodes.
+   */
+  network?: NodeNetwork;
+};
+
+/**
+ * The machine's IPv4, as its node reads its network interfaces (node/network.rs): only those of its own hardware
+ * count, not loopback, tunnels (Tailscale), bridges or containers' veths.
+ */
+export type NodeNetwork = {
+  /** While `ipv4` is false, the interface to bring back: the one holding a link-local address, else the first. */
+  iface?: string;
+  /** One of them holds a routable IPv4 address: not 169.254.x link-local, which is what's left when DHCP times out. */
+  ipv4: boolean;
 };
 
 /**
