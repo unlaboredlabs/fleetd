@@ -135,3 +135,15 @@ test("the lead digest's merge train lines", async () => {
   expect(lines[1]).toEndWith("Back with its author; the train retries its next push");
   expect(trainUnlanded(hub, PROJECT, "W1")).toEqual(["#10 ci_failed"]);
 });
+
+test("a stopped order's PRs leave the train through the chat area's stop hooks", async () => {
+  const { k, hub } = lab();
+  const stops: { takeLeftovers?: (r: typeof PROJECT, w: string, why: string) => number[] } = {};
+  hub.area("chat_stop_hooks", () => stops);
+  start(hub);
+  k.train.stop();
+  k.pr(11, "fleetd/T11-a", { "a.md": "a\n" }, { labels: ["hold"] });
+  await k.enqueue(11);
+  expect(stops.takeLeftovers!(PROJECT, "W1", "its order was stopped")).toEqual([11]);
+  expect(k.change(11)).toMatchObject({ state: "abandoned", lastError: "its order was stopped" });
+});

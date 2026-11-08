@@ -1,5 +1,6 @@
 // `train.start` (crates/fleetd/src/hub/serve start_loops): the train follows finished writers and removed projects and
 // runs each repo's loop; its lead calls and its project_get fields go in with it.
+import type { ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { executorHooks } from "../executor/hooks.ts";
 import { reviewedHeads } from "../reviews/verdicts.ts";
@@ -43,5 +44,8 @@ export function start(hub: Hub): void {
     const task = JSON.parse(row.data) as { kind?: string; projectRef?: { machineId: string; projectId: string } };
     if (task.kind === "write" && task.projectRef) train.writerOpenedPr(task.projectRef);
   });
+  // A stopped order's PRs leave the train (chat_stop, project_stop): the chat area's holder, filled here once it exists.
+  const stops = hub.peek<{ takeLeftovers?: (r: ProjectRef, workstreamId: string, why: string) => number[] }>("chat_stop_hooks");
+  if (stops) stops.takeLeftovers = (r, workstreamId, why) => train.takeLeftovers(r, workstreamId, why).map((c) => c.prNumber);
   train.start();
 }
