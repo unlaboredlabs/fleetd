@@ -18,6 +18,7 @@ import type {
 } from "../../shared/sessions.ts";
 import { jsPrefix } from "../../shared/text.ts";
 import type { Hub } from "../api/hub.ts";
+import { ProfileStore } from "../projects/profiles.ts";
 import { events, type NewEvent } from "../store/events.ts";
 import { type StoredThread as StoreThread, store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
@@ -32,6 +33,18 @@ import {
   toThread,
   transitionEvent,
 } from "./shell_mapper.ts";
+import { Views } from "./views.ts";
+
+/** The activity tracker's entry (T2253's src/hub/executor/activity.ts), looked up at run time until it lands. */
+type ActivityArea = { onThreadEvent(machineId: MachineId, frame: ThreadEventFrame): void };
+let activityOf: ((hub: Hub) => ActivityArea) | undefined;
+const ACTIVITY = "./activity.ts";
+void import(ACTIVITY).then(
+  (m: { activity?: (hub: Hub) => ActivityArea }) => {
+    activityOf = m.activity;
+  },
+  () => {},
+);
 
 /** A hub -> node frame the executor sends: a session call (node_link.rs `HubToNode::SessionCall`). */
 export type HubToNodeSession = { t: "session_call" } & SessionCallFrame;
@@ -222,7 +235,20 @@ export class Executors {
     spansAfter?: (machineId: MachineId) => number | undefined;
   } = {};
 
-  constructor(private readonly hub: Hub) {}
+  /** The followed sessions: tail, actions, work, window. */
+  readonly views: Views = new Views(this);
+
+  constructor(readonly hub: Hub) {}
+
+  /** Each thread event to the activity tracker (src/hub/executor/activity.ts, looked up at run time) and the sink. */
+  feedActivity(machineId: MachineId, frame: ThreadEventFrame): void {
+    try {
+      activityOf?.(this.hub).onThreadEvent(machineId, frame);
+    } catch (error) {
+      console.error("executor: activity failed on a thread event:", error);
+    }
+    this.sinks.thread?.(machineId, frame);
+  }
 
   private slot(machineId: MachineId): Slot {
     let slot = this.machines.get(machineId);
@@ -276,6 +302,7 @@ export class Executors {
   private endLive(machineId: MachineId, slot: Slot): void {
     slot.live = false;
     slot.wake?.();
+    this.views.dropMachine(machineId);
     this.live.set(machineId, false);
   }
 
@@ -345,6 +372,7 @@ export class Executors {
           const { type: _type, ...info } = frame.event;
           this.rememberRunner(machineId, info);
         }
+        if (frame.event.type === "session_updated") this.views.touched(threadRef(machineId, frame.event.sessionId));
         const slot = this.machines.get(machineId);
         if (!slot?.link) return;
         slot.inbox.push({ seq: frame.seq, at: frame.at, event: frame.event });
@@ -353,7 +381,8 @@ export class Executors {
       }
       case "thread_event": {
         const { t: _t, ...thread } = frame;
-        this.sinks.thread?.(machineId, thread);
+        this.views.applyFrame(machineId, thread);
+        this.feedActivity(machineId, thread);
         return;
       }
       case "clone_progress": {
@@ -461,6 +490,8 @@ export class Executors {
   /** Applies one machine stream event: caches, the event log, the cursor. */
   async handleMachineEvent(machineId: MachineId, seq: number | undefined, event: MachineEvent, baseline: boolean): Promise<void> {
     if (event.type === "caught_up") return this.caughtUpNow(machineId);
+    this.followActive(machineId, event);
+    this.flagRefused(machineId, event);
     if (event.type === "steer") {
       const { type: _type, ...receipt } = event;
       this.sinks.steer?.(machineId, receipt);
@@ -515,6 +546,37 @@ export class Executors {
         store(this.hub).cursorSet(machineId, applied.cursor);
       } catch (error) {
         console.error("executor: cursor write failed:", error);
+      }
+    }
+  }
+
+  /**
+   * Follows a session the moment a run of it is active, and lets the follow idle out once none is, so the live lanes
+   * see its tool calls, text and usage from the start.
+   */
+  private followActive(machineId: MachineId, event: MachineEvent): void {
+    const sessions = event.type === "snapshot" ? event.sessions : event.type === "session_updated" ? [event] : [];
+    for (const s of sessions) {
+      const active = s.activeRunId !== undefined || s.status === "running" || s.status === "waiting";
+      const r = threadRef(machineId, s.sessionId);
+      if (active) {
+        if (!this.views.pin(r)) void this.views.follow(r).catch(() => {});
+      } else if (this.views.isFollowed(r)) this.views.release(r);
+    }
+  }
+
+  /** A session whose model claude refused runs on the runner's own: the profiles on that model are marked refused. */
+  private flagRefused(machineId: MachineId, event: MachineEvent): void {
+    const sessions = event.type === "snapshot" ? event.sessions : event.type === "session_updated" ? [event] : [];
+    for (const s of sessions) {
+      if (s.modelRefused === undefined) continue;
+      const why = `claude on ${machineId} refused ${s.modelRefused} at ${s.createdAt}: agents run on ${s.model} instead until you set this again.`;
+      try {
+        if (new ProfileStore(this.hub.db.conn).refuse(s.modelRefused, s.createdAt, why)) {
+          console.warn(`claude on ${machineId} refused ${s.modelRefused}; its profiles flagged`);
+        }
+      } catch (error) {
+        console.warn("a refused model was not flagged:", error);
       }
     }
   }
