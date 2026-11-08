@@ -257,7 +257,7 @@
   display: inline-block;
 }
 .sw_model {
-  background: var(--accent);
+  background: var(--series-1);
 }
 .sw_tools {
   background: var(--quiet);

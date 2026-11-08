@@ -158,7 +158,7 @@ export function ArtifactTile({ format, size = 29 }: { format: ArtifactFormat; si
   const t = useTheme();
   const glyph = size * 0.58;
   return (
-    <View style={[styles.tile, { width: size, height: size, borderRadius: size * 0.24, backgroundColor: format === "html" ? (t.tints[6] ?? t.indigo) : t.accentFill }]}>
+    <View style={[styles.tile, { width: size, height: size, borderRadius: size * 0.24, backgroundColor: format === "html" ? (t.tints[6] ?? t.indigo) : t.accentDeep }]}>
       {format === "html" ? (
         <Symbol ios="chart.bar.doc.horizontal.fill" android="insert_chart" size={glyph} color="#FFFFFF" weight="medium" />
       ) : (
