@@ -5,6 +5,7 @@
 use super::contract::Change;
 use super::github::CheckRun;
 use super::next::{Reruns, reran};
+use super::repeats::warn_hourly;
 use super::service::{TRAIN_BY, Train, short};
 use crate::hub::leads::events::Event;
 
@@ -136,7 +137,7 @@ impl Train {
                 Some(job) => match self.github.job_log(repo, job).await {
                     Ok(log) => failed_test(&log),
                     Err(e) => {
-                        tracing::warn!(repo, job, error = %e.message, "train: job log not read");
+                        warn_hourly!(self, [repo, job], e.message; repo, job, error = %e.message, "train: job log not read");
                         None
                     }
                 },
@@ -164,7 +165,7 @@ impl Train {
                 .message_task(&change.project_ref, TRAIN_BY, task_id, message)
                 .await
             {
-                tracing::warn!(change_id = %change.change_id, task_id = %task_id, error = %e, "train: author not messaged");
+                warn_hourly!(self, [change.change_id, task_id], e; change_id = %change.change_id, task_id = %task_id, error = %e, "train: author not messaged");
             }
         }
         let line = Event::PrNote {

@@ -16,6 +16,7 @@ use std::sync::Mutex;
 use super::contract::{Change, ChangeId, ChangeState, GitHubPrUrl, ProjectRef, parse_pr_url};
 use super::github::{CheckRun, GhError, NEXT_LABEL, Pull};
 use super::records::{HEAD_STATES, QUEUED_STATES};
+use super::repeats::warn_hourly;
 use super::service::{Train, lock, timed_out};
 use crate::hub::leads::events::Event;
 use crate::hub::reviews::service::BLOCKED;
@@ -579,7 +580,7 @@ impl Train {
                 Some(workflows)
             }
             Err(e) => {
-                tracing::warn!(repo, error = %e.message, "train: workflows not read");
+                warn_hourly!(self, [repo], e.message; repo, error = %e.message, "train: workflows not read");
                 let last = known.or_else(|| {
                     lock(&self.next_labels.gated)
                         .iter()
@@ -623,7 +624,7 @@ impl Train {
                     jobs
                 }
                 Err(e) => {
-                    tracing::warn!(repo, sha, error = %e.message, "train: the tree's workflows not read");
+                    warn_hourly!(self, [repo, sha], e.message; repo, sha, error = %e.message, "train: the tree's workflows not read");
                     return Vec::new();
                 }
             },
@@ -705,7 +706,7 @@ impl Train {
                         rerun.refused += 1;
                         rerun.at = now + (RERUN_BACKOFF_MS << (rerun.refused - 1));
                         let tries = rerun.refused;
-                        tracing::warn!(repo, run, job, tries, error = %e.message, "train: cancelled job not re-run");
+                        warn_hourly!(self, [repo, run, job], e.message; repo, run, job, tries, error = %e.message, "train: cancelled job not re-run");
                         if tries >= RERUN_TRIES {
                             out.gave_up = true;
                         } else {

@@ -256,6 +256,21 @@ impl ChangeRecords {
         })
     }
 
+    /// Every Change not merged, refused or abandoned, oldest first.
+    pub fn unlanded_all(&self) -> Vec<Change> {
+        sql(&self.db, |conn| {
+            let mut stmt = conn
+                .prepare_cached(
+                    "SELECT data FROM changes WHERE state NOT IN ('merged', 'refused', 'abandoned') ORDER BY n",
+                )
+                .expect("prepare");
+            stmt.query_map([], |r| r.get::<_, String>(0))
+                .expect("query")
+                .map(|r| decode(&r.expect("row")))
+                .collect()
+        })
+    }
+
     /// The repos of the Changes not merged, refused or abandoned that wait on `pr_url` (their `after`).
     pub fn after_repos(&self, pr_url: &str) -> Vec<String> {
         sql(&self.db, |conn| {

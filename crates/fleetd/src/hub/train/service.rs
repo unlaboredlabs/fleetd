@@ -25,6 +25,7 @@ use super::main_ci::{GithubSync, MainCi, ci_state};
 use super::next::{Reruns, gated_name, proven_runs, upstreams};
 use super::records::{ChangeRecords, DRAFT, Db, HEAD_STATES, ListFilter, is_draft};
 use super::regen::Conflict;
+use super::repeats::warn_hourly;
 use super::reverts;
 use super::rules::Refusal;
 use crate::clock::Clock;
@@ -166,6 +167,8 @@ pub const NEVER_RAN_WAIT: Duration = Duration::from_secs(5 * 60);
 /// The start of `last_error` on a Change whose CI timed out rather than went red: the train keeps reading its head's
 /// checks, and puts it back in the queue when they finish green.
 pub(super) const CI_TIMED_OUT: &str = "CI timed out";
+/// The `last_error` of a Change that left the train with its project (`drop_removed_changes`).
+pub(super) const REMOVED_PROJECT: &str = "its project was removed from fleetd";
 /// What becomes of a Change whose CI timed out; it needs nothing from its author.
 pub(super) const CI_WATCHED: &str = "the train keeps watching its checks: once they finish green it goes back in the queue, with no push needed";
 /// Why a Change whose PR was pushed to during its CI is back in line: the train takes the new head next.
@@ -556,6 +559,8 @@ pub struct Train {
     pub(super) regen_tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
     /// One regeneration at a time per checkout, by its machine and project: the rest wait their turn.
     pub(super) regen_turns: RepoLocks,
+    /// The warnings logged, so one that repeats every pass logs at most hourly (`warn_hourly!`).
+    pub(super) repeats: super::repeats::Repeats,
 }
 
 pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -617,6 +622,7 @@ impl Train {
             migrations_read: Mutex::default(),
             regen_tasks: Mutex::default(),
             regen_turns: Mutex::default(),
+            repeats: Default::default(),
         })
     }
 
@@ -839,10 +845,11 @@ impl Train {
     /// Each train whose project was removed goes with it, unless another project has the same repo: the train moves
     /// to that one, as `train_project` would on its next PR. A train on a removed project can't run, and only fails
     /// its reads every pass. Re-adding the project makes a new train on its next PR, as for any repo. Its Changes
-    /// stay, as history.
+    /// stay, as history, and its PRs not already on their way in leave the train (`drop_removed_changes`).
     pub(super) fn drop_removed(&self) {
+        self.drop_removed_changes();
         for train in self.records.trains() {
-            if self.host.project_root(&train.project_ref).is_some() {
+            if !self.host.project_removed(&train.project_ref) {
                 continue;
             }
             let (repo, gone) = (&train.repo, &train.project_ref);
@@ -863,6 +870,34 @@ impl Train {
                     );
                 }
             }
+        }
+    }
+
+    /// The PRs of removed projects not already on their way in leave the train as abandoned, as a stopped order's do
+    /// (`take_leftovers`): no lead or writer is left to hear of them, and their reads would only fail every pass. One
+    /// line for all of them, and a `change.state` event each. They stay open on GitHub.
+    fn drop_removed_changes(&self) {
+        let mut gone = HashMap::new();
+        let left = self
+            .records
+            .unlanded_all()
+            .into_iter()
+            .filter(|c| leaves_the_train(c.state))
+            .filter(|c| {
+                *gone
+                    .entry(c.project_ref.clone())
+                    .or_insert_with(|| self.host.project_removed(&c.project_ref))
+            })
+            .filter_map(|c| {
+                self.update(&c.change_id, Some(&[c.state]), |mut c| {
+                    c.state = ChangeState::Abandoned;
+                    c.last_error = Some(last_error(REMOVED_PROJECT));
+                    c
+                })
+            })
+            .count();
+        if left > 0 {
+            tracing::info!(left, "train: the PRs of removed projects left the train");
         }
     }
 
@@ -924,7 +959,7 @@ impl Train {
             {
                 Ok(()) => return,
                 Err(e) => {
-                    tracing::warn!(change_id = %change.change_id, task_id = %task_id, error = %e, "train: author not messaged")
+                    warn_hourly!(self, [change.change_id, task_id], e; change_id = %change.change_id, task_id = %task_id, error = %e, "train: author not messaged")
                 }
             }
         }
@@ -1025,7 +1060,7 @@ impl Train {
                 Some((why, reverts::details(&restores, &base)))
             }
             Err(e) => {
-                tracing::warn!(change_id = %change.change_id, error = %e.message, "train: undone work not checked");
+                warn_hourly!(self, [change.change_id], e.message; change_id = %change.change_id, error = %e.message, "train: undone work not checked");
                 None
             }
         }
@@ -1421,7 +1456,7 @@ impl Train {
                     Some(super::github::latest(runs))
                 }
                 Err(e) => {
-                    tracing::warn!(repo, sha, error = %e.message, "train: check runs not read");
+                    warn_hourly!(self, [repo, sha], e.message; repo, sha, error = %e.message, "train: check runs not read");
                     None
                 }
             };
@@ -1530,7 +1565,7 @@ impl Train {
                              and won't merge it on a skipped check; check the repo's label workflow.",
                             names.join(", ")
                         );
-                        tracing::warn!(change_id = %change.change_id, text, "train: label run missing");
+                        warn_hourly!(self, [change.change_id], text; change_id = %change.change_id, text, "train: label run missing");
                         let line = Event::PrNote {
                             change: change.change_id.as_str(),
                             pr_url: change.pr_url.as_str(),
@@ -1708,7 +1743,7 @@ impl Train {
                 (required_checks(runs, &statuses, required), missing)
             }
             Err(e) => {
-                tracing::warn!(repo, sha, error = %e.message, "train: commit statuses not read");
+                warn_hourly!(self, [repo, sha], e.message; repo, sha, error = %e.message, "train: commit statuses not read");
                 (Checks::Pending, Vec::new())
             }
         }
@@ -1737,7 +1772,7 @@ impl Train {
         match self.github.pull(repo, change.pr_number.get()).await {
             Ok(pull) => pull.head.sha.to_lowercase() != sha,
             Err(e) => {
-                tracing::warn!(change_id = %change.change_id, error = %e.message, "train: PR not read");
+                warn_hourly!(self, [change.change_id], e.message; change_id = %change.change_id, error = %e.message, "train: PR not read");
                 false
             }
         }
@@ -2012,7 +2047,7 @@ impl Train {
     /// A pass that could not finish: the Change goes back to ready in its place in line with the reason, and the loop
     /// retries later.
     pub(super) fn put_back(&self, change: &Change, why: &str) {
-        tracing::warn!(change_id = %change.change_id, why, "train: pass failed");
+        warn_hourly!(self, [change.change_id], why; change_id = %change.change_id, why, "train: pass failed");
         let from = [
             ChangeState::Ready,
             ChangeState::Rebasing,
@@ -2508,7 +2543,7 @@ impl Train {
             let pull = match self.github.pull(repo, change.pr_number.get()).await {
                 Ok(pull) => pull,
                 Err(e) => {
-                    tracing::warn!(change_id = %change.change_id, error = %e.message, "train: refresh failed");
+                    warn_hourly!(self, [change.change_id], e.message; change_id = %change.change_id, error = %e.message, "train: refresh failed");
                     continue;
                 }
             };
@@ -2646,11 +2681,13 @@ impl Train {
             Ok(_) => match self.github.statuses(&change.repo, head).await {
                 Ok(statuses) => statuses.iter().any(|s| counts(&s.context)),
                 Err(e) => {
-                    return tracing::warn!(change_id = %change.change_id, error = %e.message, "train: statuses not read");
+                    warn_hourly!(self, [change.change_id], e.message; change_id = %change.change_id, error = %e.message, "train: statuses not read");
+                    return;
                 }
             },
             Err(e) => {
-                return tracing::warn!(change_id = %change.change_id, error = %e.message, "train: check runs not read");
+                warn_hourly!(self, [change.change_id], e.message; change_id = %change.change_id, error = %e.message, "train: check runs not read");
+                return;
             }
         };
         if let Some(entry) = lock(&self.unstarted).get_mut(&change.change_id) {
@@ -2672,7 +2709,7 @@ impl Train {
                 .message_task(&change.project_ref, TRAIN_BY, task_id, message)
                 .await
             {
-                tracing::warn!(change_id = %change.change_id, task_id = %task_id, error = %e, "train: author not messaged");
+                warn_hourly!(self, [change.change_id, task_id], e; change_id = %change.change_id, task_id = %task_id, error = %e, "train: author not messaged");
             }
         }
         let line = Event::PrNote {
@@ -2705,13 +2742,15 @@ impl Train {
         {
             Ok(runs) => runs,
             Err(e) => {
-                return tracing::warn!(change_id = %change.change_id, error = %e.message, "train: check runs not read");
+                warn_hourly!(self, [change.change_id], e.message; change_id = %change.change_id, error = %e.message, "train: check runs not read");
+                return;
             }
         };
         let base = match self.github.pull(&change.repo, change.pr_number.get()).await {
             Ok(pull) => pull.base.ref_,
             Err(e) => {
-                return tracing::warn!(change_id = %change.change_id, error = %e.message, "train: PR not read");
+                warn_hourly!(self, [change.change_id], e.message; change_id = %change.change_id, error = %e.message, "train: PR not read");
+                return;
             }
         };
         let fast = self.fast(&change.repo, &base).await;
@@ -2836,7 +2875,7 @@ impl Train {
         let pulls = match self.github.open_pulls(repo).await {
             Ok(pulls) => pulls,
             Err(e) => {
-                tracing::warn!(repo, error = %e.message, "train: open PRs not read");
+                warn_hourly!(self, [repo], e.message; repo, error = %e.message, "train: open PRs not read");
                 return;
             }
         };
@@ -2985,8 +3024,7 @@ impl Train {
             }
             last.insert(repo.to_string(), now);
         }
-        let failed =
-            |e: GhError| tracing::warn!(repo, error = %e.message, "train: merged PRs not read");
+        let failed = |e: GhError| warn_hourly!(self, [repo], e.message; repo, error = %e.message, "train: merged PRs not read");
         let merged = match self.github.merged_pulls(repo, watch_since_ms).await {
             Ok(merged) => merged,
             Err(e) => return failed(e),
@@ -3162,13 +3200,17 @@ impl Train {
                     base
                 }
                 Err(e) => {
-                    return tracing::warn!(repo, error = %e.message, "train: default branch not read");
+                    warn_hourly!(self, [repo], e.message; repo, error = %e.message, "train: default branch not read");
+                    return;
                 }
             },
         };
         let runs = match self.github.check_runs(repo, &base).await {
             Ok(runs) => runs,
-            Err(e) => return tracing::warn!(repo, error = %e.message, "train: main CI not read"),
+            Err(e) => {
+                warn_hourly!(self, [repo], e.message; repo, error = %e.message, "train: main CI not read");
+                return;
+            }
         };
         let (state, failing) = ci_state(&runs);
         let sha = runs
@@ -3712,17 +3754,21 @@ pub fn leftovers<'a>(changes: &'a [Change], workstream_id: &WorkstreamId) -> Vec
     changes
         .iter()
         .filter(|c| &c.workstream_id == workstream_id)
-        .filter(|c| {
-            matches!(
-                c.state,
-                ChangeState::Queued
-                    | ChangeState::Reviewing
-                    | ChangeState::Ready
-                    | ChangeState::NeedsRebase
-                    | ChangeState::CiFailed
-            )
-        })
+        .filter(|c| leaves_the_train(c.state))
         .collect()
+}
+
+/// Not merged, and not already on its way in (rebasing, in CI or merging): a Change its order or project going takes
+/// off the train.
+fn leaves_the_train(state: ChangeState) -> bool {
+    matches!(
+        state,
+        ChangeState::Queued
+            | ChangeState::Reviewing
+            | ChangeState::Ready
+            | ChangeState::NeedsRebase
+            | ChangeState::CiFailed
+    )
 }
 
 fn change_lane(change: &Change) -> String {
