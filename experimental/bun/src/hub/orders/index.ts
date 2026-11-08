@@ -49,11 +49,22 @@ export const TITLE_CHARS = 60;
 export type Lookups = {
   /** The thread's status, model and effort as the hub last saw them. */
   thread(r: ThreadRef): { status: string; model?: string; effort?: string } | undefined;
-  /** A lane's live parts (activity, tokens, spark); none until the executor's activity tracker is ported. */
+  /** A lane's live parts (activity, tokens, spark), from the executor's activity tracker. */
   live(r: ThreadRef): Pick<LiveLane, "activity" | "tokens" | "spark"> | undefined;
   /** The profile the project's lead session started on: the default for one started before fleetd kept it. */
   leadProfile(r: ProjectRef): string | undefined;
 };
+
+/** The executor's activity (T2253's src/hub/executor/activity.ts), looked up at run time until it lands. */
+type ActivityLive = { live(r: ThreadRef): ReturnType<Lookups["live"]> };
+let liveOf: ((hub: Hub) => ActivityLive) | undefined;
+const ACTIVITY = "../executor/activity.ts";
+void import(ACTIVITY).then(
+  (m: { activity?: (hub: Hub) => ActivityLive }) => {
+    liveOf = m.activity;
+  },
+  () => {},
+);
 
 export function lookups(hub: Hub): Lookups {
   return {
@@ -61,7 +72,7 @@ export function lookups(hub: Hub): Lookups {
       const s = executors(hub).tracked(r)?.summary;
       return s ? { status: s.status, ...(s.model !== undefined ? { model: s.model } : {}), ...(s.effort !== undefined ? { effort: s.effort } : {}) } : undefined;
     },
-    live: () => undefined,
+    live: (r) => liveOf?.(hub).live(r),
     leadProfile: (r) => {
       const name = leadProfile(hub, r);
       if (name !== undefined) return name;
