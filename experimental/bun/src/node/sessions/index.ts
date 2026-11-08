@@ -38,6 +38,7 @@ import { forgetSignins, signinsKept } from "../actions/signins.ts";
 import * as skills from "../actions/skills.ts";
 import * as state from "./state.ts";
 import { Steers } from "./steers.ts";
+import { tilde } from "../runner/claude/setup.ts";
 import * as setup from "../worktree/setup.ts";
 import * as hooks from "../worktree/hooks.ts";
 import * as warm from "../worktree/warm.ts";
@@ -204,7 +205,7 @@ export function runnerEnv(config: SessionConfig): Env {
   const env: Env = { ...config.baseEnv };
   try {
     const extra = parseEnvFile(readFileSync(config.claudeEnv, "utf8"));
-    if (extra.some(([k]) => k === "ANTHROPIC_BASE_URL")) env[claude.FLEETD_ENV_SOURCE] = config.claudeEnv;
+    if (extra.some(([k]) => k === "ANTHROPIC_BASE_URL")) env[claude.FLEETD_ENV_SOURCE] = tilde(config.claudeEnv);
     for (const [k, v] of extra) env[k] = v;
   } catch {}
   for (const [k, v] of claude.DEFAULT_ENV) if (!(k in env)) env[k] = v;

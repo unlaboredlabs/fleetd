@@ -44,3 +44,26 @@ test("a probe's report reads as a person's words; the proxy and the login label 
   expect(proxyOf({ HOME: "/nowhere", ANTHROPIC_BASE_URL: "https://api.anthropic.com/" })).toBeUndefined();
   expect(proxyOf({ HOME: "/nowhere", ANTHROPIC_BASE_URL: "http://gw:1/", FLEETD_ENV_SOURCE: "~/.fleetd/claude.env" })).toEqual({ url: "http://gw:1", source: "~/.fleetd/claude.env" });
 });
+
+test("describe()'s default is a session's own environment: the claude.env a gateway's proxy lives in is read", async () => {
+  const home = tempHome();
+  const saved = { HOME: process.env.HOME, FLEETD_HOME: process.env.FLEETD_HOME, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR };
+  try {
+    const fake = join(home.dir, "fake-claude");
+    writeFileSync(fake, `#!/bin/sh\nexec '${process.execPath}' '${join(import.meta.dir, "../../../../tests/lab/factory/fakeClaude.ts")}' "$@"\n`);
+    chmodSync(fake, 0o755);
+    mkdirSync(join(home.dir, ".fleetd"), { recursive: true });
+    writeFileSync(join(home.dir, ".fleetd/claude.env"), "ANTHROPIC_BASE_URL=http://gateway.devbox:9000\n");
+    process.env.HOME = home.dir;
+    process.env.FLEETD_HOME = join(home.dir, ".fleetd");
+    delete process.env.CLAUDE_CONFIG_DIR;
+    const setup = await describeSetup(fake);
+    expect(setup).toMatchObject({ proxy: "http://gateway.devbox:9000", proxySource: "~/.fleetd/claude.env", configDir: join(home.dir, ".claude") });
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    home.done();
+  }
+});
