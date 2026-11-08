@@ -1,14 +1,14 @@
 // What a message carries besides words: a picture, shown as itself with rounded corners as Messages does, which opens
 // full screen to pinch, zoom and share; and any other file, as a card with its kind, name and size that opens the
 // share sheet (Save to Files, another app). Each is read from the hub once (attachment_get) as its bubble shows.
-import { File, Paths } from "expo-file-system";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { bubble, bubbleMax, photoSize } from "../bubble";
 import { fileSize } from "../chatView";
 import { glyphOf, kindOf, type AttachmentGetOutput, type FileGlyph } from "../desktop";
 import { useSession } from "../hubContext";
+import { shareFile } from "../shareFile";
 import type { Key } from "../store";
 import { space, type, useTheme, type Palette } from "../theme";
 import { Glass } from "./Glass";
@@ -34,13 +34,6 @@ export const useAttachment = (chatKey: Key, attachmentId: string): AttachmentGet
 };
 
 const uriOf = (a: AttachmentGetOutput): string => `data:${a.mime};base64,${a.dataB64}`;
-
-/** Shares a file as itself (its name and type), through iOS's share sheet. */
-export const shareFile = async (a: AttachmentGetOutput): Promise<void> => {
-  const file = new File(Paths.cache, a.name.replace(/[/\\]/gu, "-"));
-  await file.write(a.dataB64, { encoding: "base64" });
-  await Share.share({ url: file.uri });
-};
 
 /**
  * A picture in the thread, sized as Messages sizes one (../bubble.ts): its own shape, a soft block while it loads. The

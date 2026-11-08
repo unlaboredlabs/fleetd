@@ -94,3 +94,12 @@ export const safeFileName = (name: string, mime: string): string => {
   const usual = Object.entries(BY_EXTENSION).find(([, m]) => m === mime)?.[0] ?? "bin";
   return `${base}.${usual}`;
 };
+
+/** Text a computer runs, rather than shows, when asked to open it: macOS's Python Launcher takes a .py. */
+const RUNS_WHEN_OPENED: ReadonlySet<string> = new Set(["py", "js"]);
+
+/** The name a file is opened under: safeFileName's, and code that would run opens as text (`tool.py.txt`). */
+export const openedFileName = (name: string, mime: string): string => {
+  const safe = safeFileName(name, mime);
+  return RUNS_WHEN_OPENED.has(extensionOf(safe)) ? `${safe}.txt` : safe;
+};

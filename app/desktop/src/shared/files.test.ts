@@ -1,6 +1,6 @@
 // What a chat takes, by a file's name and whether its bytes are text, and the name a file is opened or saved under.
 import { expect, it } from "vitest";
-import { glyphOf, kindOf, mimeOfFile, safeFileName } from "./files";
+import { glyphOf, kindOf, mimeOfFile, openedFileName, safeFileName } from "./files";
 
 const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -27,4 +27,14 @@ it("keeps a file under a name of its type, with no folders, so opening it never 
   expect(safeFileName("../../.ssh/key.pdf", "application/pdf")).toBe("_.._.ssh_key.pdf");
   expect(safeFileName("receipts.pdf", "text/csv")).toBe("receipts.pdf.csv");
   expect(safeFileName("...", "application/pdf")).toBe("file.pdf");
+});
+
+it("opens code a computer would run when opened as text", () => {
+  // macOS's Python Launcher runs a .py it is asked to open.
+  expect(openedFileName("tool.py", "text/plain")).toBe("tool.py.txt");
+  expect(openedFileName("page.JS", "text/plain")).toBe("page.JS.txt");
+  expect(openedFileName("notes.md", "text/plain")).toBe("notes.md");
+  expect(openedFileName("run.command", "text/plain")).toBe("run.command.txt");
+  // Saving keeps the name the person sees in the dialog.
+  expect(safeFileName("tool.py", "text/plain")).toBe("tool.py");
 });

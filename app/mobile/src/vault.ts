@@ -6,19 +6,26 @@ import type { Paired } from "./hub/pair";
 import { fromBase64, keyPairOf, toBase64, type KeyPair } from "./seal";
 
 const KEY = "fleetd.hub";
+// Readable while the phone is unlocked, as before, and never in a backup nor restored onto another phone: the key is
+// this phone's alone. Its service stays expo-secure-store's own ("app:no-auth"), where the Share Extension reads it.
+const HUB = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
 
 export const loadPaired = async (): Promise<Paired | null> => {
   const text = await SecureStore.getItemAsync(KEY);
   if (text === null) return null;
   try {
     const { hub, key, hubName } = JSON.parse(text) as Partial<Paired>;
-    return typeof hub === "string" && typeof key === "string" ? { hub, key, hubName: typeof hubName === "string" ? hubName : hub } : null;
+    if (typeof hub !== "string" || typeof key !== "string") return null;
+    // An older version kept it under the default, which a backup carries: written again, it stays here from now on.
+    // Awaited, so a Disconnect that follows can't be undone by this write landing after it.
+    await SecureStore.setItemAsync(KEY, text, HUB).catch(() => undefined);
+    return { hub, key, hubName: typeof hubName === "string" ? hubName : hub };
   } catch {
     return null;
   }
 };
 
-export const savePaired = (paired: Paired): Promise<void> => SecureStore.setItemAsync(KEY, JSON.stringify(paired));
+export const savePaired = (paired: Paired): Promise<void> => SecureStore.setItemAsync(KEY, JSON.stringify(paired), HUB);
 
 export const forgetPaired = (): Promise<void> => SecureStore.deleteItemAsync(KEY);
 

@@ -7,20 +7,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BrowserWindow, dialog, shell, type WebContents } from "electron";
 
-import { safeFileName } from "../shared/files";
+import { openedFileName, safeFileName } from "../shared/files";
 import type { CallOutcome, OpenOutcome } from "../shared/hub";
 import type { FileRequest } from "../shared/ipc";
 
 type Call = (tool: string, input: unknown) => Promise<CallOutcome>;
 
-type Got = { readonly ok: true; readonly name: string; readonly bytes: Buffer } | { readonly ok: false; readonly message: string };
+type Got = { readonly ok: true; readonly name: string; readonly mime: string; readonly bytes: Buffer } | { readonly ok: false; readonly message: string };
 
 const read = async (call: Call, request: FileRequest): Promise<Got> => {
   const got = await call("attachment_get", { projectRef: request.projectRef, attachmentId: request.attachmentId });
   if (!got.ok) return { ok: false, message: `The file couldn't be read: ${got.error.message}` };
   const out = got.output as { name?: unknown; mime?: unknown; dataB64?: unknown };
   if (typeof out.name !== "string" || typeof out.mime !== "string" || typeof out.dataB64 !== "string") return { ok: false, message: "The hub sent no file." };
-  return { ok: true, name: safeFileName(out.name, out.mime), bytes: Buffer.from(out.dataB64, "base64") };
+  return { ok: true, name: safeFileName(out.name, out.mime), mime: out.mime, bytes: Buffer.from(out.dataB64, "base64") };
 };
 
 /** Opens the file in this computer's app for its type, from a folder of its own in the temp directory. */
@@ -28,7 +28,7 @@ export const openFile = async (call: Call, request: FileRequest, dir = tmpdir())
   const got = await read(call, request);
   if (!got.ok) return got;
   const folder = join(dir, "fleetd-files", randomBytes(8).toString("hex"));
-  const path = join(folder, got.name);
+  const path = join(folder, openedFileName(got.name, got.mime));
   try {
     await mkdir(folder, { recursive: true, mode: 0o700 });
     await writeFile(path, got.bytes, { mode: 0o600 });
