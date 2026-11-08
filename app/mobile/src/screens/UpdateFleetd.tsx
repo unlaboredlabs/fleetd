@@ -26,7 +26,14 @@ export function UpdateFleetd() {
   const ready = useReady();
   const section = updateSection({ admin: state.admin, hub: state.hub, machines: state.machines, run, flow, ready });
   useAnnounce(section?.progress?.text);
-  if (section === null || (section.offer === null && section.progress === null)) return <Updated restart={state.restart} />;
+  const updated = updatedOf(state.restart);
+  if (section === null || (section.offer === null && section.progress === null)) {
+    return updated === null ? null : (
+      <ListSection header="Update">
+        <UpdatedRow {...updated} />
+      </ListSection>
+    );
+  }
 
   const confirm = () => {
     const title = section.offer?.title ?? "Update fleetd";
@@ -50,6 +57,7 @@ export function UpdateFleetd() {
 
   return (
     <ListSection header="Update" {...(section.offer === null ? {} : { footer: UPDATE_NOTE })}>
+      {updated === null || section.progress !== null ? null : <UpdatedRow {...updated} />}
       {/* TODO(T2570): t.accentDeep once the neutral accent lands: a white glyph vanishes on dark mode's near-white accentFill. */}
       {section.offer === null ? null : <ListRow icon="update" tint={t.accentFill} title={section.offer.title} detail={section.offer.detail} onPress={confirm} />}
       {section.progress === null ? null : (
@@ -96,24 +104,25 @@ export function UpdateFleetd() {
   );
 }
 
-/** "Updated to 0.9.2", when and how long the hub was away: for a while after it came back on a new build. */
-function Updated({ restart }: { restart: Restart | null }) {
+/** The hub's update as the phone saw it come back, for a while after (hubWord.ts UPDATED_FOR_MS); else null. */
+const updatedOf = (restart: Restart | null): { readonly to: string; readonly at: number; readonly took: number } | null =>
+  restart?.t === "updated" && Date.now() - restart.at < UPDATED_FOR_MS ? { to: restart.to, at: restart.at, took: restart.took } : null;
+
+/** "Updated to 0.9.2", when, and how long the hub was away. */
+function UpdatedRow({ to, at, took }: { to: string; at: number; took: number }) {
   const t = useTheme();
-  if (restart?.t !== "updated" || Date.now() - restart.at >= UPDATED_FOR_MS) return null;
-  const when = new Date(restart.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  const away = Math.max(1, Math.round(restart.took / 1000));
+  const when = new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const away = Math.max(1, Math.round(took / 1000));
   return (
-    <ListSection header="Update">
-      <View style={styles.progress} accessible accessibilityLabel={`Updated to ${shortVersion(restart.to)}, at ${when}, back in ${String(away)} seconds`}>
-        <Icon name="check" size={20} color={t.success} />
-        <View style={styles.grow}>
-          <Text style={[type.subhead, { color: t.label }]}>Updated to {shortVersion(restart.to)}</Text>
-          <Text style={[type.footnote, { color: t.secondary }]}>
-            {when} · back in {String(away)} s
-          </Text>
-        </View>
+    <View style={styles.progress} accessible accessibilityLabel={`Updated to ${shortVersion(to)}, at ${when}, back in ${String(away)} seconds`}>
+      <Icon name="check" size={20} color={t.success} />
+      <View style={styles.grow}>
+        <Text style={[type.subhead, { color: t.label }]}>Updated to {shortVersion(to)}</Text>
+        <Text style={[type.footnote, { color: t.secondary }]}>
+          {when} · back in {String(away)} s
+        </Text>
       </View>
-    </ListSection>
+    </View>
   );
 }
 
