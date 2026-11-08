@@ -5,11 +5,9 @@ message, session and lead call, agent-mcp tool, CLI command and background loop,
 (the Rust module's path under `src/`). Tick an item (`- [x]`) when its module does it and a test covers it;
 `bun run gen` keeps the ticks. Don't add items by hand: a new one comes from the Rust code.
 
-**2 / 574 done.**
-
 ## hub-core
 
-server, auth, keys, people, devices, links, settings, store. 0 / 81 done.
+server, auth, keys, people, devices, links, settings, store.
 
 ### HTTP routes
 
@@ -109,7 +107,7 @@ server, auth, keys, people, devices, links, settings, store. 0 / 81 done.
 
 ## hub-work
 
-projects, orders, tasks, chat, leads, decisions, checklist, memory, automations. 0 / 128 done.
+projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 
 ### HTTP routes
 
@@ -253,7 +251,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 
 ## hub-train+github
 
-merge train, reviews, PRs, checks, GitHub App. 0 / 15 done.
+merge train, reviews, PRs, checks, GitHub App.
 
 ### MCP tools (/mcp and /app `call`)
 
@@ -278,7 +276,7 @@ merge train, reviews, PRs, checks, GitHub App. 0 / 15 done.
 
 ## hub-approvals+secrets+updates+cloud
 
-approvals, secrets, integrations, updates, cloud machines. 0 / 47 done.
+approvals, secrets, integrations, updates, cloud machines.
 
 ### HTTP routes
 
@@ -338,7 +336,7 @@ approvals, secrets, integrations, updates, cloud machines. 0 / 47 done.
 
 ## node-core
 
-link, sessions, runner, worktrees, PTY through the Rust session-host. 0 / 70 done.
+link, sessions, runner, worktrees, PTY through the Rust session-host.
 
 ### Node link messages
 
@@ -424,7 +422,7 @@ link, sessions, runner, worktrees, PTY through the Rust session-host. 0 / 70 don
 
 ## node-browser+screens
 
-CDP proxy, screens, devices, the agents' Mac, session relays. 0 / 50 done.
+CDP proxy, screens, devices, the agents' Mac, session relays.
 
 ### HTTP routes
 
@@ -493,7 +491,7 @@ CDP proxy, screens, devices, the agents' Mac, session relays. 0 / 50 done.
 
 ## cli
 
-every `fleetd` command. 0 / 77 done.
+every `fleetd` command.
 
 ### CLI commands
 
@@ -577,7 +575,7 @@ every `fleetd` command. 0 / 77 done.
 
 ## mcp
 
-/mcp, agent-mcp and the lead calls it makes. 2 / 106 done.
+/mcp, agent-mcp and the lead calls it makes.
 
 ### HTTP routes
 

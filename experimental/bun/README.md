@@ -9,6 +9,7 @@ untouched and stays the product.
 cd experimental/bun
 bun install                # tsc-rs and Bun's types, pinned in bun.lock
 bun run gen                # regenerate src/gen/ and PORT_MAP.md from the Rust tree
+bun run progress           # PORT_MAP.md's ticks, counted per area
 bun run typecheck          # tsc-rs -p tsconfig.json
 bun test
 bun run compile            # dist/fleetd, one binary: fleetd hub start, fleetd node …, every other command
@@ -62,7 +63,8 @@ port, by area, with its module; each area's writer owns its modules' directories
 - **Native pieces.** Only where the research said so: a session's PTY stays with the Rust binary's
   `fleetd session-host`, and the screen helper's JPEG work with its Rust helper; the Bun node starts those binaries.
 - **PORT_MAP.md.** Tick an item when its module does it and a test covers it; `bun run gen` keeps ticks and adds
-  what the Rust code grows. CI fails when a generated file is stale: run `bun run gen` and commit.
+  what the Rust code grows. The file holds no done counts, so parallel PRs ticking different areas don't conflict:
+  `bun run progress` prints them per area. CI fails when a generated file is stale: run `bun run gen` and commit.
 
 ## Notes
 
