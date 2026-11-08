@@ -8,6 +8,7 @@
 // `gate`): the node started with `node.config`, and node.json says what it has now.
 import { statSync } from "node:fs";
 import type { HostCheck, HostOff, SessionHost } from "../../shared/contracts.ts";
+import { CAP_SESSION_ANDROID } from "../../shared/node_link.ts";
 import type { Node } from "../api.ts";
 import { findChrome, installDir } from "../browser/chrome.ts";
 import { type NodeConfig, readConfig } from "../config.ts";
@@ -147,8 +148,22 @@ export function lines(home: string, config: NodeConfig | undefined, kvm: KvmChec
 }
 
 /**
+ * The Android line ready only while the node lists `session_android`: node/device lists it once an agent can drive a
+ * session here (agent-device on its PATH, the emulator ready), and the hub places Android screens by this line alone.
+ */
+export function listed(checks: HostCheck[], caps: string[]): HostCheck[] {
+  if (caps.includes(CAP_SESSION_ANDROID)) return checks;
+  return checks.map((c) =>
+    c.host === "android" && c.ready
+      ? { ...c, ready: false, off: "missing", detail: "not offered yet: this node lists Android sessions once agents can drive one here" }
+      : c,
+  );
+}
+
+/**
  * Adds the machine's lines to each heartbeat's `load.hosts`, around what the other areas put there (node/desktop's
- * line), in Rust's order (browser, android, desktop, mac), each gated by the restart. After every other area's.
+ * line), in Rust's order (browser, android, desktop, mac), each gated by the restart, Android by its sessions being
+ * listed. After every other area's.
  */
 export function start(node: Node, kvm: KvmCheck = kvmNow): void {
   node.area("hb").contribute((hb) => {
@@ -160,6 +175,8 @@ export function start(node: Node, kvm: KvmCheck = kvmNow): void {
       now = node.config;
     }
     const mine = lines(node.home, now, kvm);
-    hb.load.hosts = gate([...mine.before, ...(hb.load.hosts ?? []), ...mine.after], node.config, now);
+    // The restart's word first: a kind turned on since the node started says it waits for that.
+    const all = gate([...mine.before, ...(hb.load.hosts ?? []), ...mine.after], node.config, now);
+    hb.load.hosts = listed(all, node.area("caps").list());
   });
 }
