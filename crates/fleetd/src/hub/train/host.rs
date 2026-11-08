@@ -63,8 +63,8 @@ pub struct NodeRun {
 
 pub trait TrainHost: Send + Sync + 'static {
     fn task(&self, task_id: &TaskId) -> Option<TaskView>;
-    /// The project's write tasks that are running or done, with their branches, whose ready PRs the train takes as
-    /// slices.
+    /// The write tasks of the project's open orders that are running, done or failed, however old, with their
+    /// branches, whose ready PRs the train takes as slices.
     fn writers(&self, project_ref: &ProjectRef) -> Vec<(TaskId, String)>;
     /// Tasks.message from `by`; the error is its message.
     fn message_task<'a>(
