@@ -4,7 +4,8 @@ import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { readable, requireRole } from "../api/grants.ts";
 import type { Registry } from "../api/registry.ts";
-import { cap, otherNavis, queuePorts, threadAmong, unknownMachine, unknownThread } from "../leads/seams.ts";
+import { cap, queuePorts, unknownMachine, unknownThread } from "../leads/seams.ts";
+import { others, type Refs, threadAmong } from "../navi/owner.ts";
 import { store } from "../store/hub_store.ts";
 import { WakeInvalid, wakes } from "./index.ts";
 
@@ -16,7 +17,7 @@ function requireKnownThread(hub: Hub, target: { machineId: string; threadId: str
   if (!store(hub).threadGet(target) && !queuePorts(hub).isConnected(target.machineId)) throw unknownThread(target);
 }
 
-const theirs = (hub: Hub, navis: Set<string>, w: Wake) => threadAmong(hub.db, navis, w.target.machineId, w.target.threadId);
+const theirs = (hub: Hub, navis: Refs, w: Wake) => threadAmong(hub.db, navis, w.target.machineId, w.target.threadId);
 
 export function register(tools: Registry): void {
   tools.add("wake_set", (hub, caller, input) => {
@@ -50,7 +51,7 @@ export function register(tools: Registry): void {
 
   tools.add("wake_list", (hub, caller, input) => {
     if (input.machineId !== undefined) requireRole(caller, "read", input.machineId);
-    const navis = otherNavis(hub.db, caller);
+    const navis = others(hub.db, caller);
     const all = wakes(hub)
       .list({ machineId: input.machineId, threadId: input.threadId, state: input.state })
       .filter((w) => readable(caller, w.target.machineId) && !theirs(hub, navis, w));
@@ -62,7 +63,7 @@ export function register(tools: Registry): void {
   });
 
   tools.add("wake_cancel", (hub, caller, input) => {
-    const navis = otherNavis(hub.db, caller);
+    const navis = others(hub.db, caller);
     const wake = wakes(hub).get(input.wakeId);
     if (!wake || !readable(caller, wake.target.machineId) || theirs(hub, navis, wake)) {
       throw new ToolError("not_found", `No wake ${input.wakeId}.`, "Call wake_list to see wakes.");
