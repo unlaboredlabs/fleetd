@@ -2,7 +2,7 @@
 // actions_list (crates/fleetd/src/hub/executor/tools.rs). Later areas add to fleetd_status and project_get through
 // `executorHooks` (slots, lead, workstreams, tasks, trains).
 import type { HubEvent, Machine, MachineId, ProjectRef, ProjectSummary, ThreadRef } from "../../shared/contracts.ts";
-import { NotImplemented, ToolError } from "../../shared/errors.ts";
+import { ToolError } from "../../shared/errors.ts";
 import { readable, requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { canRead, cap, clip, LIMITS, offline, unknownMachine, unknownProject, unknownThread } from "../api/refusals.ts";
@@ -14,6 +14,7 @@ import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import { executorHooks } from "./hooks.ts";
 import { ExecutorError, executors } from "./index.ts";
+import { toThread } from "./shell_mapper.ts";
 
 const ATTENTION_TYPES = [
   "thread.failed",
@@ -137,32 +138,52 @@ async function projectGet(
   return out;
 }
 
-function threadTail(hub: Hub, caller: Caller, input: { machineId: MachineId; threadId: string; n?: number; kinds?: string[] }) {
+async function threadTail(hub: Hub, caller: Caller, input: { machineId: MachineId; threadId: string; n?: number; kinds?: string[] }) {
   requireRole(caller, "read", input.machineId);
   const { stale, asOf } = freshness(hub, input.machineId);
   const r: ThreadRef = { machineId: input.machineId, threadId: input.threadId };
-  if (!stale) throw new NotImplemented("src/hub/executor (thread_tail of a live thread: the thread views)");
-  // The hub caches shell rows only, so offline the tail is the cached latest message.
-  const stored = store(hub).threadGet(r);
-  if (!stored) throw unknownThread(r);
-  const thread = stored.thread;
-  const wantsMessages = input.kinds === undefined || input.kinds.includes("message");
-  const tail = thread.latestMessageTail;
-  const items =
-    wantsMessages && tail !== ""
-      ? [{ kind: "message", at: thread.lastProgressAt, role: "assistant", text: clip(tail, LIMITS.TAIL_TEXT) }]
-      : [];
-  return {
-    items,
-    thread: markStale(thread, true, asOf),
-    next: `Cached as of ${asOf}: ${input.machineId} is offline, so only the latest message is available.`,
-  };
+  const n = Math.max(0, input.n ?? 10);
+  if (stale) {
+    // The hub caches shell rows only, so offline the tail is the cached latest message.
+    const stored = store(hub).threadGet(r);
+    if (!stored) throw unknownThread(r);
+    const thread = stored.thread;
+    const wantsMessages = input.kinds === undefined || input.kinds.includes("message");
+    const tail = thread.latestMessageTail;
+    const items =
+      wantsMessages && tail !== "" ? [{ kind: "message", at: thread.lastProgressAt, role: "assistant", text: clip(tail, LIMITS.TAIL_TEXT) }] : [];
+    return {
+      items,
+      thread: markStale(thread, true, asOf),
+      next: `Cached as of ${asOf}: ${input.machineId} is offline, so only the latest message is available.`,
+    };
+  }
+  const kinds = input.kinds?.map((k) => (k === "message" ? "message" : "action"));
+  let tail;
+  try {
+    tail = await executors(hub).views.tail(r, n, kinds);
+  } catch (error) {
+    throw fromExecutor(error);
+  }
+  const items = cap(tail.items, n);
+  const rows = items.items.map((row) => (row.kind === "message" ? { kind: "message", at: row.at, role: row.role, text: clip(row.text, LIMITS.TAIL_TEXT) } : row));
+  const truncated = items.truncated ?? (tail.truncated ? true : undefined);
+  return { items: rows, thread: toThread(tail.thread), ...(truncated ? { truncated: true } : {}) };
 }
 
-function actionsList(hub: Hub, caller: Caller, input: { machineId: MachineId; threadId: string }) {
+async function actionsList(hub: Hub, caller: Caller, input: { machineId: MachineId; threadId: string; limit?: number; failedOnly?: boolean }) {
   requireRole(caller, "read", input.machineId);
   if (freshness(hub, input.machineId).stale) throw offline(input.machineId);
-  throw new NotImplemented("src/hub/executor (actions_list: the thread views)");
+  const r: ThreadRef = { machineId: input.machineId, threadId: input.threadId };
+  const limit = Math.max(0, input.limit ?? 50);
+  let actions;
+  try {
+    actions = await executors(hub).views.actions(r, limit, input.failedOnly === true);
+  } catch (error) {
+    throw fromExecutor(error);
+  }
+  const shown = cap(actions, limit);
+  return { actions: shown.items, ...(shown.truncated ? { truncated: true } : {}) };
 }
 
 export function register(tools: Registry): void {

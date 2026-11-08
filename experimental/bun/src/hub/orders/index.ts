@@ -24,7 +24,7 @@ import { jsPrefix } from "../../shared/text.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
-import { executors } from "../executor/index.ts";
+import { executors, peek } from "../executor/index.ts";
 import { others } from "../navi/owner.ts";
 import { profiles } from "../projects/profiles.ts";
 import { isoMs } from "../store/time.ts";
@@ -49,11 +49,14 @@ export const TITLE_CHARS = 60;
 export type Lookups = {
   /** The thread's status, model and effort as the hub last saw them. */
   thread(r: ThreadRef): { status: string; model?: string; effort?: string } | undefined;
-  /** A lane's live parts (activity, tokens, spark); none until the executor's activity tracker is ported. */
+  /** A lane's live parts (activity, tokens, spark), from the executor's activity tracker. */
   live(r: ThreadRef): Pick<LiveLane, "activity" | "tokens" | "spark"> | undefined;
   /** The profile the project's lead session started on: the default for one started before fleetd kept it. */
   leadProfile(r: ProjectRef): string | undefined;
 };
+
+/** The executor's activity (T2253's `hub.area("activity")`), once its area exists. */
+type ActivityLive = { live(r: ThreadRef): ReturnType<Lookups["live"]> };
 
 export function lookups(hub: Hub): Lookups {
   return {
@@ -61,7 +64,7 @@ export function lookups(hub: Hub): Lookups {
       const s = executors(hub).tracked(r)?.summary;
       return s ? { status: s.status, ...(s.model !== undefined ? { model: s.model } : {}), ...(s.effort !== undefined ? { effort: s.effort } : {}) } : undefined;
     },
-    live: () => undefined,
+    live: (r) => peek<ActivityLive>(hub, "activity")?.live(r),
     leadProfile: (r) => {
       const name = leadProfile(hub, r);
       if (name !== undefined) return name;

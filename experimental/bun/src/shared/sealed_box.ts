@@ -462,6 +462,27 @@ export function openSealed(secret: Uint8Array, sealed: Uint8Array): Uint8Array |
   return null;
 }
 
+// --- crypto_secretbox ---
+
+/** NaCl's secretbox (XSalsa20-Poly1305) under a 32-byte `key` and 24-byte `nonce`: the tag, then the ciphertext. */
+export function secretbox(key: Uint8Array, nonce: Uint8Array, plain: Uint8Array): Uint8Array {
+  const out = new Uint8Array(16 + plain.length);
+  const cipher = out.subarray(16);
+  out.set(poly1305(xsalsa20(key, nonce, plain, cipher), cipher), 0);
+  return out;
+}
+
+/** Opens a `secretbox`; null when it was sealed under another key or nonce, or tampered with. */
+export function secretboxOpen(key: Uint8Array, nonce: Uint8Array, boxed: Uint8Array): Uint8Array | null {
+  if (boxed.length < 16) return null;
+  const cipher = boxed.subarray(16);
+  // The tag covers the ciphertext, so decrypting first (which yields the Poly1305 key) is safe: a bad tag wipes it all.
+  const plain = new Uint8Array(cipher.length);
+  if (timingSafeEqual(poly1305(xsalsa20(key, nonce, cipher, plain), cipher), boxed.subarray(0, 16))) return plain;
+  plain.fill(0);
+  return null;
+}
+
 // --- key files ---
 
 /** The raw key of a PKCS #8 PEM X25519 key file, as the Rust node and hub write one; null for anything else. */

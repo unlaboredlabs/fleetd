@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { CAP } from "./wire.ts";
 import { runNodeAction } from "./actions/index.ts";
 import { Node } from "./api.ts";
-import { registerAreas } from "./areas.ts";
+import { registerAreas, stopAreas } from "./areas.ts";
 import { runCmdCheck } from "./cmd/index.ts";
 import { defaultNodeHome, isMachineId, readConfig, writeConfig, type NodeConfig } from "./config.ts";
 import { GatedRuns } from "./gated/index.ts";
@@ -34,11 +34,13 @@ export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-fi
 `;
 
 /** Every capability the Bun node lists in its hello: what its modules take. Self-update, Claude Code's install and
- * login, screens, MCP servers, Claude accounts and 1Password aren't ported, so their capabilities aren't listed. */
+ * login and screens aren't ported, so their capabilities aren't listed. */
 export const CAPABILITIES = [
   CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
   CAP.SESSION_SEAL, CAP.PROFILE_NAMES, CAP.SYSTEM_PROMPT, CAP.ASSISTANT, CAP.FOLDER_MAKE, CAP.ISOLATED, CAP.NAVI_ERASE,
   CAP.PROJECT_ERASE, CAP.ONE_LEAD_MODE, CAP.LINK_DEFLATE, CAP.GATED_RESUME, CAP.HAS_FILE,
+  CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.NAVI_SIGNINS, CAP.CLAUDE_ACCOUNTS, CAP.CLAUDE_RESEAL, CAP.ONEPASSWORD,
+  CAP.ONEPASSWORD_CARDS, CAP.CLAUDE_MODELS,
 ];
 
 /** A hash of the OS's id for this computer (fingerprint.rs): the hub never enrolls a second computer under one id. */
@@ -272,6 +274,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   const stop = async () => {
     shutdown.abort();
     stopSocket();
+    await stopAreas(node);
     await sessions.shutdown();
   };
   return { node, sessions, stop, done };
