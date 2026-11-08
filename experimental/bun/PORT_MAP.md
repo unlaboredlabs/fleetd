@@ -132,7 +132,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] `project_repo_remove` → `src/hub/projects` (operate) <!-- tool:`project_repo_remove` -->
 - [ ] `navi_create` → `src/hub/navi` (operate) <!-- tool:`navi_create` -->
 - [x] `navi_list` → `src/hub/navi` (read) <!-- tool:`navi_list` -->
-- [x] `navi_rename` → `src/hub/navi` (operate) <!-- tool:`navi_rename` -->
+- [ ] `navi_rename` → `src/hub/navi` (operate) <!-- tool:`navi_rename` -->
 - [x] `navi_archive` → `src/hub/navi` (operate) <!-- tool:`navi_archive` -->
 - [x] `project_archive` → `src/hub/navi` (operate) <!-- tool:`project_archive` -->
 - [ ] `project_avatar_set` → `src/hub/projects` (operate) <!-- tool:`project_avatar_set` -->
