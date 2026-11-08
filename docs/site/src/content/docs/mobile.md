@@ -186,6 +186,72 @@ app shares with its extensions, and keeps no copy. If the phone isn't paired, or
 says so and offers **Open fleetd**. If the hub can't be reached, it offers **Try Again** as well. Android doesn't have
 it yet.
 
+A message sent from the share sheet shows **via the Share Sheet** in the chat, on the phone and the desktop, and the
+lead is told it came that way: what another app shared is content to read, not your instructions.
+
+## Shortcuts and the Action Button {#shortcuts}
+
+On an iPhone with iOS 18 or later, fleetd's actions are in the Shortcuts app, Spotlight and Siri with no setup, and any
+of them can go on the Action Button. They sign in to your hub as the app does, with the phone's own pairing.
+
+| Action | What it does | Returns |
+| --- | --- | --- |
+| **Open Chat** | Opens a project's chat. | |
+| **Send Message** | Sends text, files or both to a chat as you, without opening the app. Optionally waits for the reply. | The reply's text, with **Wait for Reply** on |
+| **Run Automation** | Runs one of your [automations](/docs/automations) now, as **Run now** does. | |
+| **Open Approvals** | Opens Chats on **Needs You**. | |
+| **Get Latest Messages** | Reads a chat's newest messages: a count, or the ones since a date. | Each message's author, text and date |
+| **Get Waiting Approvals** | Reads what is waiting on you. | How many, and each with its chat |
+
+None of them approves, denies, enters a secret or pays: those stay in the app. **Wait for Reply** is off by default;
+with it on, the action waits up to **Wait Up To** seconds (20, the most) for the lead's turn to end, then returns
+everything it said. iOS ends an action that runs past about half a minute, so it suits quick answers. If no reply comes
+in time, the action fails with **No reply yet**: the message is still sent, and the reply shows in the chat. For a
+longer job, send without waiting and read the answer later with **Get Latest Messages**.
+
+**Files** on Send Message take what an earlier action hands it: a photo, a PDF, a scanned document, a text file. The
+hub takes images, PDFs, text and CSV files, Word, Excel and PowerPoint documents and zip archives, up to 25 MB each and
+20 in one message. Photos of another type, such as HEIC, go as JPEG; any other file makes the action fail with
+**fleetd doesn't take** and its name, before anything is sent.
+
+A message from **Send Message** shows **via Shortcuts** under it, on the phone and the desktop, and the lead is told it
+came from Shortcuts: it may hold content the shortcut pulled from elsewhere, such as a web page or the
+clipboard, which it reads as content, not as your instructions. Approvals and notifications work as for a message you
+typed.
+
+**Put one on the Action Button:** open **Settings › Action Button**, swipe to **Shortcut**, tap **Choose a Shortcut**,
+then under **fleetd** pick an action. **Open Chat** lists each of your chats as its own shortcut ("Open Errands"), so the
+button opens that chat directly.
+
+**Only some chats notify during a Focus:** open **Settings › Focus**, pick a Focus, then under **Focus Filters** tap
+**Add Filter › fleetd** and choose the chats. While that Focus is on, only those chats' notifications come through; an
+urgent one (money, irreversible commands) always does. A filter with no chats picked lets every chat notify.
+
+If an action can't run, it says why:
+
+- **Unlock your iPhone:** the phone's key to the hub opens once the phone has been unlocked since it started. After
+  that, automations run while it's locked too; only one that runs after a restart, before the first unlock, fails.
+- **Pair fleetd first:** the phone isn't paired. Open the app and pair it.
+- **Your hub refused this phone:** its key was revoked or the hub was set up again. Pair it again.
+- **Can't reach your hub:** the hub is down, or the phone can't reach it (on a tailnet, Tailscale is off).
+- **That chat isn't on your hub any more:** it was archived or deleted. Edit the shortcut and pick another.
+
+### Automation ideas {#automation-ideas}
+
+In the Shortcuts app's **Automation** tab, or on the Action Button:
+
+- **Arrive home → Send Message:** "I'm home" to an Only me project, which can turn the lights on or post your evening
+  plan.
+- **Action Button → Take Screenshot, then Send Message with it as Files:** what's on screen goes to a project with
+  "What's wrong here?".
+- **Work Focus → Focus filter:** only your projects notify while you work.
+- **NFC tag → Run Automation:** tap a tag on your desk to start your morning brief.
+- **CarPlay connects → Get Latest Messages, then Speak Text:** hear a project's last replies on the drive.
+- **Time of day, 9:00 → Get Waiting Approvals, then If Count is greater than 0, Show Notification:** a morning nudge
+  when something waits on you.
+
+Android doesn't have them yet.
+
 ## Notifications {#notifications}
 
 The first time the app connects, it asks to send notifications. They show what happened in full: a lead's reply, an

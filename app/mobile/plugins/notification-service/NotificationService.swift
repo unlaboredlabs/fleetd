@@ -3,7 +3,8 @@
 // `c` with the phone's secret key, from the keychain group it shares with the app (src/vault.ts), and sets the title,
 // the body and the thread (one per chat, so a chat's notifications stack), the buttons (a category the app registers)
 // and the app icon's badge, drops the sound inside quiet hours and makes an urgent one time-sensitive. A chat muted on
-// this phone (the app keeps the list in the same keychain group) arrives quietly, unless it is urgent.
+// this phone (the app keeps the list in the same keychain group) arrives quietly, unless it is urgent. Each is marked
+// with its chat for a Focus's filter.
 // Anything it can't open shows the generic text (Payload.swift), set here rather than kept from what came, and
 // nothing else of it.
 import Foundation
@@ -30,6 +31,9 @@ final class NotificationService: UNNotificationServiceExtension {
     if shown.quiet || muted { content.sound = nil }
     if shown.urgent, #available(iOS 15.0, *) { content.interruptionLevel = .timeSensitive }
     if muted, #available(iOS 15.0, *) { content.interruptionLevel = .passive }
+    // A Focus's fleetd filter (plugins/app-intents) lets only the chats it picks through, by this; an urgent one (money
+    // or irreversible) isn't held to it.
+    if let thread = shown.thread, !shown.urgent, #available(iOS 16.0, *) { content.filterCriteria = thread }
     contentHandler(content)
   }
 

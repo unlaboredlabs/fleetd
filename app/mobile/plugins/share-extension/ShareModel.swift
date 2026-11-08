@@ -10,7 +10,6 @@ import Foundation
 import ImageIO
 import LinkPresentation
 import os
-import Security
 import UIKit
 import UniformTypeIdentifiers
 
@@ -165,26 +164,16 @@ final class ShareModel: ObservableObject {
         } else if let text = out.textFile {
           file = text
         } else { continue }
-        var uploadId: String?
-        var offset = 0
-        let ranges = file.pieceRanges
-        for range in ranges.dropLast() {
-          uploadId = try await link.call("attachment_part", Calls.part(file.data.subdata(in: range), uploadId: uploadId, offset: offset))["uploadId"] as? String
-          offset += range.count
-          done += range.count
+        uploaded[i] = try await link.upload(file) { bytes in
+          done += bytes
           phase = .sending(min(1, Double(done) / Double(total)))
         }
-        let last = ranges.last.map { file.data.subdata(in: $0) } ?? Data()
-        guard let id = try await link.call("attachment_put", Calls.put(file, last: last, uploadId: uploadId))["attachmentId"] as? String else {
-          throw Problem.hub(code: "", message: "The hub didn't store \(file.name).", fix: nil)
-        }
-        uploaded[i] = id
         done = sizes.indices.filter { uploaded[$0] != nil }.reduce(0) { $0 + sizes[$1] }
         phase = .sending(min(1, Double(done) / Double(total)))
         Self.log.info("sent \(file.name, privacy: .public) (\(file.data.count) bytes); footprint \(Self.footprint()) MB")
       }
       let ids = sizes.indices.compactMap { uploaded[$0] }
-      _ = try await link.call("chat_send", Calls.send(chat, text: out.text, attachments: ids, requestId: requestId))
+      _ = try await link.chatSend(Calls.send(chat, text: out.text, attachments: ids, requestId: requestId, client: .share), client: .share)
       phase = .sent
       UINotificationFeedbackGenerator().notificationOccurred(.success)
       link.close()
@@ -370,24 +359,5 @@ struct SharedImage {
   static func at(_ file: URL, name: String?) -> SharedImage? {
     guard let bytes = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int else { return nil }
     return SharedImage(file: file, name: name, bytes: bytes)
-  }
-}
-
-/// The paired hub, as expo-secure-store keeps it in the keychain group the app shares (src/vault.ts): service
-/// "app:no-auth" (or "app", from older versions), account "fleetd.hub". Read only, never copied.
-enum Keychain {
-  static func pairing() -> Data? {
-    for service in ["app:no-auth", "app"] {
-      let query: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: service,
-        kSecAttrAccount as String: Data("fleetd.hub".utf8),
-        kSecReturnData as String: true,
-        kSecMatchLimit as String: kSecMatchLimitOne,
-      ]
-      var item: CFTypeRef?
-      if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data { return data }
-    }
-    return nil
   }
 }

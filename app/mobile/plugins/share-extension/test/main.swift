@@ -39,7 +39,10 @@ if case let .result(id, output)? = Frame.parse(json(#"{"t":"result","id":"s2","o
 if case let .error(id, code, message, fix)? = Frame.parse(json(#"{"t":"error","code":"unauthorized","message":"Unknown key."}"#)) {
   check(id == nil && code == "unauthorized" && message == "Unknown key." && fix == nil, "auth error")
 } else { check(false, "auth error") }
-check(Frame.parse(json(#"{"t":"event","seq":3}"#)) == nil && Frame.parse(json("nope")) == nil, "frames it doesn't read")
+if case let .event(type, data)? = Frame.parse(json(#"{"t":"event","seq":3,"type":"chat.waiting","data":{"leadWorking":true}}"#)) {
+  check(type == "chat.waiting" && data["leadWorking"] as? Bool == true, "event")
+} else { check(false, "event") }
+check(Frame.parse(json(#"{"t":"event","seq":3}"#)) == nil && Frame.parse(json(#"{"t":"chat_delta"}"#)) == nil && Frame.parse(json("nope")) == nil, "frames it doesn't read")
 
 // Chats: who spoke last first; a Navi's archive hides it; a project shows its machine.
 let snapshot = try! JSONSerialization.jsonObject(with: json("""
@@ -106,10 +109,14 @@ check(Outgoing.build(note: "", texts: [String(repeating: "y", count: Limits.text
 
 // The tools' inputs.
 let chat = chats[0]
-check(object(Calls.send(chat, text: "hi", attachments: ["F1", "F2"], requestId: "share-1"))
-  == #"{"attachments":["F1","F2"],"clientRequestId":"share-1","projectRef":{"machineId":"m1","projectId":"p2"},"text":"hi"}"#, "chat_send")
-check(object(Calls.send(chat, text: "hi", attachments: [], requestId: "share-1"))
-  == #"{"clientRequestId":"share-1","projectRef":{"machineId":"m1","projectId":"p2"},"text":"hi"}"#, "chat_send without files")
+check(object(Calls.send(chat, text: "hi", attachments: ["F1", "F2"], requestId: "share-1", client: .share))
+  == #"{"attachments":["F1","F2"],"client":"share","clientRequestId":"share-1","projectRef":{"machineId":"m1","projectId":"p2"},"text":"hi"}"#, "chat_send")
+check(object(Calls.send(chat, text: "hi", attachments: [], requestId: "share-1", client: .share))
+  == #"{"client":"share","clientRequestId":"share-1","projectRef":{"machineId":"m1","projectId":"p2"},"text":"hi"}"#, "chat_send without files")
+// A hub from before the share sheet's client refuses it by name; any other refusal is the hub's word.
+let older = Problem.hub(code: "invalid", message: "chat_send: unknown variant `share`, expected one of `app`, `cli`, `telegram`", fix: nil)
+check(Calls.olderHub(older, client: .share) && !Calls.olderHub(older, client: .shortcuts), "an older hub's refusal")
+check(!Calls.olderHub(Problem.hub(code: "forbidden", message: "`share` is archived", fix: nil), client: .share), "another refusal")
 let file = Upload(name: "a.png", mime: .png, data: Data("abc".utf8))
 check(object(Calls.part(Data("ab".utf8), uploadId: nil, offset: 0)) == #"{"dataB64":"YWI="}"#, "first piece")
 check(object(Calls.part(Data("ab".utf8), uploadId: "U1", offset: 2)) == #"{"dataB64":"YWI=","offset":2,"uploadId":"U1"}"#, "next piece")

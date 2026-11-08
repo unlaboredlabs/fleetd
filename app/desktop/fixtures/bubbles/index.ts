@@ -1,7 +1,8 @@
 // The chat as a messaging app (fixtures/bubbles), in storefront's chat on the typical hub (its PRs answer pr_get):
 // a casual exchange whose lead replies the hub split into bubbles, a pause, and your reply to one of them; a chart, a
 // bar chart and a table; a PR card with its diff; and the lead asking, with an approve-or-deny and a pick-one ask
-// (answered) and a checklist. The typing bubble is chat-streaming's and stream-long's.
+// (answered) and a checklist; and messages sent from Shortcuts, the Share Sheet and Telegram. The typing bubble is
+// chat-streaming's and stream-long's.
 import { firstProject, writeChat, type Draft } from "../kit/chat.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -132,6 +133,16 @@ const ASK: Draft[] = [
   ),
 ];
 
+/** The person's messages from outside the app, each with its quiet "via" line: Shortcuts, the Share Sheet, Telegram. */
+const SOURCES: Draft[] = [
+  { author: "human", text: "I'm home", minutesAgo: 60, extra: { client: "shortcuts" } },
+  lead(59, "Welcome back. Lights are on, and the evening summary is below."),
+  { author: "human", text: "https://example.com/receipts-redesign\n\nthis is the layout I meant", minutesAgo: 30, extra: { client: "share" } },
+  lead(29, "Got it: dates on the right, totals under them. I’ll match it."),
+  { author: "human", text: "ship it once CI is green", minutesAgo: 4, extra: { client: "telegram" } },
+  lead(3, "Will do."),
+];
+
 const chat = (base: Fixture, name: string, note: string, drafts: Draft[], opts: { needsYou?: boolean } = {}): Fixture => {
   const f = Fixture.from(base, name, note);
   writeChat(f, firstProject(f), drafts, opts);
@@ -143,6 +154,7 @@ export default defineGroup({
     chat(base("typical"), "bubbles-casual", "A casual exchange: lead replies split into bubbles, a pause, your reply to one bubble and an emoji.", CASUAL),
     chat(base("typical"), "bubbles-charts", "The lead answers with a line chart, a bar chart and a table.", CHARTS),
     chat(base("typical"), "bubbles-pr", "The lead shows a PR as a live card and the part of its diff that matters.", PR),
+    chat(base("typical"), "bubbles-sources", "Your messages from Shortcuts, the Share Sheet and Telegram, each saying so under it.", SOURCES),
     chat(base("typical"), "bubbles-ask", "The lead asks you to approve, after a pick-one ask you answered, under a checklist.", ASK, { needsYou: true }),
   ],
 });

@@ -141,7 +141,7 @@ jobs:
     # A Release build for the iOS simulator, its Notification Service and Share extensions embedded, signed to run
     # locally (no team: the keychain needs its entitlements even on a simulator), the JavaScript bundled in. A manual
     # run with a Metro address builds Debug instead, which loads the JavaScript from there. First, the notification
-    # extension's crypto against the hub's sealed boxes, and the share extension's decisions. A manual run or mac.yml's
+    # extension's crypto against the hub's sealed boxes, the share extension's decisions and the Shortcuts actions'. A manual run or mac.yml's
     # call only: a pull request's Linux jobs check the same JavaScript, typed, tested and bundled into the APK.
     name: mobile (ios)
     if: ${{ inputs.ios || github.event_name == 'workflow_dispatch' }}
@@ -170,6 +170,11 @@ jobs:
         run: |
           swiftc -O plugins/share-extension/Shared.swift plugins/share-extension/test/main.swift -o "$RUNNER_TEMP/share-test"
           "$RUNNER_TEMP/share-test"
+      - name: Shortcuts actions
+        run: |
+          swiftc -O plugins/share-extension/Shared.swift plugins/app-intents/Actions.swift plugins/app-intents/test/main.swift \
+            -o "$RUNNER_TEMP/actions-test"
+          "$RUNNER_TEMP/actions-test"
       - run: npm ci --no-audit --no-fund
       # Installs the pods too.
       - run: npx expo prebuild --platform ios --clean
@@ -184,6 +189,8 @@ jobs:
           test -x "$appex/FleetdNotifications" || { echo "::error::the app has no Notification Service Extension"; exit 1; }
           share=$app/PlugIns/FleetdShare.appex
           test -x "$share/FleetdShare" || { echo "::error::the app has no Share Extension"; exit 1; }
+          # Xcode's App Intents step writes the actions' metadata into the app: without it, Shortcuts lists none.
+          grep -q SendMessage "$app/Metadata.appintents/extract.actionsdata" || { echo "::error::the app has no Shortcuts actions"; exit 1; }
           # Signed to run locally, with its entitlements, which a simulator reads from the binary's __entitlements
           # section: without the keychain group, secure storage fails there, and the share extension finds no pairing.
           grep -aq keychain-access-groups "$app/fleetd" || { echo "::error::the app is built without its keychain group"; exit 1; }

@@ -578,7 +578,7 @@ forget it. To delete the bot itself, send `/deletebot` to @BotFather.
 
 ### What goes through
 
-- **Your messages** land in the project's chat as yours, marked *From Telegram*. While the lead works on one,
+- **Your messages** land in the project's chat as yours, marked *via Telegram*. While the lead works on one,
   Telegram shows *typing…*.
 - **Photos and documents** arrive as attachments of the message: images, PDFs, text and CSV, Word, Excel and
   PowerPoint files and zips, up to Telegram's 20 MB for bots ([Files](#files)). Anything else gets a short reply

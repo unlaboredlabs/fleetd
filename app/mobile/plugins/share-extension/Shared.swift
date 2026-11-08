@@ -29,6 +29,57 @@ struct Pairing: Equatable {
   }
 }
 
+/// The pairing as the keychain gives it: there, not there, or there and closed while the phone is locked.
+enum Stored {
+  case found(Data)
+  case missing
+  case locked
+}
+
+/// The link to the hub as its senders use it (HubLink; a fake in tests): sign in for the chats, call tools, and follow
+/// the events after the snapshot.
+@MainActor
+protocol HubCalls: AnyObject {
+  func open() async throws -> [ChatTarget]
+  func call(_ tool: String, _ input: [String: Any]) async throws -> [String: Any]
+  func subscribe() async throws
+  /// The next event before `until`; nil once that time is up.
+  func event(until: Date) async throws -> (type: String, data: [String: Any])?
+  func close()
+}
+
+extension HubCalls {
+  /// chat_send as `client`; a hub from before it knew that sender takes it again as from the app (the same request id
+  /// keeps it one message).
+  func chatSend(_ input: [String: Any], client: Client) async throws -> [String: Any] {
+    do {
+      return try await call("chat_send", input)
+    } catch let problem as Problem where Calls.olderHub(problem, client: client) {
+      var plain = input
+      plain.removeValue(forKey: "client")
+      return try await call("chat_send", plain)
+    }
+  }
+
+  /// Stores one file in pieces (attachment_part, then the last with attachment_put), telling `sent` the bytes of each
+  /// piece as it goes: its attachmentId.
+  func upload(_ file: Upload, sent: (Int) -> Void = { _ in }) async throws -> String {
+    var uploadId: String?
+    var offset = 0
+    let ranges = file.pieceRanges
+    for range in ranges.dropLast() {
+      uploadId = try await call("attachment_part", Calls.part(file.data.subdata(in: range), uploadId: uploadId, offset: offset))["uploadId"] as? String
+      offset += range.count
+      sent(range.count)
+    }
+    let last = ranges.last.map { file.data.subdata(in: $0) } ?? Data()
+    guard let id = try await call("attachment_put", Calls.put(file, last: last, uploadId: uploadId))["attachmentId"] as? String else {
+      throw Problem.hub(code: "", message: "The hub didn't store \(file.name).", fix: nil)
+    }
+    return id
+  }
+}
+
 /// Why the sheet can't send, in the phone's words, with what to do.
 struct Problem: Equatable, Error {
   let title: String
@@ -37,6 +88,8 @@ struct Problem: Equatable, Error {
   let retry: Bool
   /// An SF Symbol for it.
   let symbol: String
+  /// The hub's error code, for a refusal it sent.
+  var code: String? = nil
 
   static let notPaired = Problem(
     title: "Pair fleetd first",
@@ -81,7 +134,7 @@ struct Problem: Equatable, Error {
   }
 
   static func hub(code: String, message: String, fix: String?) -> Problem {
-    Problem(title: "The hub didn't take it", message: [message, fix].compactMap { $0 }.joined(separator: " "), retry: true, symbol: "exclamationmark.triangle")
+    Problem(title: "The hub didn't take it", message: [message, fix].compactMap { $0 }.joined(separator: " "), retry: true, symbol: "exclamationmark.triangle", code: code)
   }
 }
 
@@ -90,6 +143,8 @@ enum Frame {
   case ready
   case snapshot([String: Any])
   case result(id: String, output: [String: Any])
+  /// One of the hub's events, after an `events` subscription: its type ("chat.message") and data.
+  case event(type: String, data: [String: Any])
   case error(id: String?, code: String, message: String, fix: String?)
 
   static func parse(_ text: Data) -> Frame? {
@@ -97,6 +152,9 @@ enum Frame {
     switch t {
     case "ready": return .ready
     case "snapshot": return .snapshot(f)
+    case "event":
+      guard let type = f["type"] as? String else { return nil }
+      return .event(type: type, data: f["data"] as? [String: Any] ?? [:])
     case "result":
       guard let id = f["id"] as? String else { return nil }
       return .result(id: id, output: f["output"] as? [String: Any] ?? [:])
@@ -134,7 +192,8 @@ struct ChatTarget: Identifiable, Equatable {
     }
     let chats = (s["projects"] as? [[String: Any]] ?? []).compactMap { p -> ChatTarget? in
       guard let m = p["machineId"] as? String, let id = p["projectId"] as? String, let title = p["title"] as? String else { return nil }
-      let navi = p["kind"] as? String == "assistant"
+      // Only me (an older hub says `kind: assistant` alone).
+      let navi = p["onlyMe"] as? Bool == true || p["kind"] as? String == "assistant"
       if navi && p["archivedAt"] != nil { return nil }
       return ChatTarget(
         machineId: m, projectId: id, title: title, navi: navi, machine: navi ? nil : machines[m],
@@ -189,6 +248,18 @@ enum Mime: String {
   case webp = "image/webp"
   case gif = "image/gif"
   case text = "text/plain"
+  case pdf = "application/pdf"
+  case csv = "text/csv"
+  case docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  case xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  case pptx = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  case zip = "application/zip"
+
+  /// Names that say a file is text (the hub's TEXT_EXTENSIONS).
+  static let textExtensions: Set<String> = [
+    "txt", "md", "markdown", "log", "json", "yaml", "yml", "toml", "xml", "ics", "vcf", "eml", "tsv", "srt", "vtt", "py", "js", "ts",
+    "rs", "go", "sql",
+  ]
 
   /// An image's type by its first bytes (AttachmentMime::of_image); nil for any other, which goes as JPEG.
   static func ofImage(_ data: Data) -> Mime? {
@@ -200,6 +271,32 @@ enum Mime: String {
     return nil
   }
 
+  /// A file's type by its name and bytes, as the hub decides it (AttachmentMime::of_file): an image by its bytes, what
+  /// its name says when its bytes agree, and text for any other name whose start is UTF-8 with no NUL, or UTF-16 with
+  /// its byte-order mark. nil for a file the hub doesn't take (a HEIC photo, which goes as JPEG).
+  static func ofFile(name: String, data: Data) -> Mime? {
+    if let image = ofImage(data) { return image }
+    let head = data.prefix(64 * 1024)
+    let utf16 = head.starts(with: [0xFE, 0xFF]) || head.starts(with: [0xFF, 0xFE])
+    // Any 8-bit text a name says is text (Windows-1252 too); with no such name, UTF-8 only (a character cut at the
+    // 64 KiB mark still is).
+    let eightBit = utf16 || !head.contains(0)
+    let utf8 = (0...3).contains { cut in String(data: head.dropLast(head.count == 64 * 1024 ? cut : 0), encoding: .utf8) != nil }
+    let zipped = data.starts(with: [0x50, 0x4B, 0x03, 0x04])
+    let ext = (name as NSString).pathExtension.lowercased()
+    switch ext {
+    case "png", "jpg", "jpeg", "webp", "gif": return nil
+    case "pdf": return data.starts(with: Array("%PDF-".utf8)) ? .pdf : nil
+    case "csv": return eightBit ? .csv : nil
+    case "docx": return zipped ? .docx : nil
+    case "xlsx": return zipped ? .xlsx : nil
+    case "pptx": return zipped ? .pptx : nil
+    case "zip": return zipped ? .zip : nil
+    case _ where textExtensions.contains(ext): return eightBit ? .text : nil
+    default: return utf16 || (utf8 && !head.contains(0)) ? .text : nil
+    }
+  }
+
   var ext: String {
     switch self {
     case .png: return "png"
@@ -207,6 +304,12 @@ enum Mime: String {
     case .webp: return "webp"
     case .gif: return "gif"
     case .text: return "txt"
+    case .pdf: return "pdf"
+    case .csv: return "csv"
+    case .docx: return "docx"
+    case .xlsx: return "xlsx"
+    case .pptx: return "pptx"
+    case .zip: return "zip"
     }
   }
 }
@@ -224,10 +327,11 @@ struct Upload: Equatable {
   let data: Data
 
   /// The shared file's own name with the extension its type has (IMG_0042.HEIC sent as JPEG is IMG_0042.jpg), or
-  /// image-N; at most 120 characters, the hub's limit.
+  /// image-N (file-N for one that isn't); at most 120 characters, the hub's limit.
   static func name(_ original: String?, mime: Mime, index: Int) -> String {
     let base = (original.map { ($0 as NSString).deletingPathExtension } ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-    let stem = base.isEmpty ? (mime == .text ? "shared" : "image-\(index + 1)") : String(base.prefix(110))
+    let image = [Mime.png, .jpeg, .webp, .gif].contains(mime)
+    let stem = base.isEmpty ? (mime == .text ? "shared" : image ? "image-\(index + 1)" : "file-\(index + 1)") : String(base.prefix(110))
     return "\(stem).\(mime.ext)"
   }
 
@@ -312,14 +416,27 @@ enum Calls {
     return input
   }
 
-  /// The same requestId on a retry returns the message already sent, never a second one.
-  static func send(_ chat: ChatTarget, text: String, attachments: [String], requestId: String) -> [String: Any] {
+  /// The same requestId on a retry returns the message already sent, never a second one. `client` is where it was
+  /// written, which the chat shows under it and the lead reads: each sender names its own, never its input.
+  static func send(_ chat: ChatTarget, text: String, attachments: [String], requestId: String, client: Client) -> [String: Any] {
     var input: [String: Any] = [
       "projectRef": ["machineId": chat.machineId, "projectId": chat.projectId],
       "text": text,
       "clientRequestId": requestId,
+      "client": client.rawValue,
     ]
     if !attachments.isEmpty { input["attachments"] = attachments }
     return input
   }
+
+  /// A hub from before `client` named this sender refuses the input; it goes again without it, as from the app.
+  static func olderHub(_ problem: Problem, client: Client) -> Bool {
+    problem.code == "invalid" && problem.message.contains("`\(client.rawValue)`")
+  }
+}
+
+/// Where a message was written (ChatClient in crates/fleetd-contracts/src/chat.rs), for the senders outside the app.
+enum Client: String {
+  case share
+  case shortcuts
 }

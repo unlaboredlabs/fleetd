@@ -25,7 +25,7 @@ import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimat
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
-import { aimOf, attachmentBubbles, bubbleTime, bubbles, cardOf, dayLine, fullTime, landingOf, olderOffset, outgoing, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { aimOf, attachmentBubbles, bubbleTime, bubbles, cardOf, dayLine, fullTime, landingOf, olderOffset, outgoing, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, emptyChat, type AttachmentGetOutput, type AttachmentRef, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
@@ -790,6 +790,7 @@ function ItemView({
 
   if (side === "me") {
     const note = sendNote(item);
+    const via = viaNote(item);
     const retry = item.state === "failed" || item.state === "unanswered";
     const replied = replyOf(item.text);
     const words = replied?.body ?? item.text;
@@ -846,6 +847,7 @@ function ItemView({
             {retry && words.trim() === "" ? <NotSent chatKey={chatKey} id={item.id} note={note} /> : null}
           </View>
         )}
+        {via === undefined ? null : <Text style={[type.caption, styles.note, { color: t.secondary }]}>{via}</Text>}
       </View>
     );
   }

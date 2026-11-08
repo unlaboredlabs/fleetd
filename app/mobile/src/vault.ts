@@ -6,9 +6,11 @@ import type { Paired } from "./hub/pair";
 import { fromBase64, keyPairOf, toBase64, type KeyPair } from "./seal";
 
 const KEY = "fleetd.hub";
-// Readable while the phone is unlocked, as before, and never in a backup nor restored onto another phone: the key is
-// this phone's alone. Its service stays expo-secure-store's own ("app:no-auth"), where the Share Extension reads it.
-const HUB = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
+// Readable once the phone has been unlocked since it started, as the notification key is, so a Shortcuts action an
+// Apple automation runs on a locked phone reads it too (plugins/app-intents); never in a backup nor restored onto
+// another phone: the key is this phone's alone. Its service stays expo-secure-store's own ("app:no-auth"), where the
+// Share Extension and the Shortcuts actions read it.
+const HUB = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY };
 
 export const loadPaired = async (): Promise<Paired | null> => {
   const text = await SecureStore.getItemAsync(KEY);
@@ -16,7 +18,8 @@ export const loadPaired = async (): Promise<Paired | null> => {
   try {
     const { hub, key, hubName } = JSON.parse(text) as Partial<Paired>;
     if (typeof hub !== "string" || typeof key !== "string") return null;
-    // An older version kept it under the default, which a backup carries: written again, it stays here from now on.
+    // An older version kept it under the default, which a backup carries and only an unlocked phone reads: written
+    // again, it stays here from now on.
     // Awaited, so a Disconnect that follows can't be undone by this write landing after it.
     await SecureStore.setItemAsync(KEY, text, HUB).catch(() => undefined);
     return { hub, key, hubName: typeof hubName === "string" ? hubName : hub };

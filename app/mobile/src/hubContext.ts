@@ -4,6 +4,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { createContext, useContext } from "react";
 import type { SkillOrigin } from "./desktop";
 import type { Paired } from "./hub/pair";
+import type { Filter } from "./lists";
 import type { Session } from "./session";
 import type { Key, State } from "./store";
 
@@ -36,7 +37,8 @@ export const useSession = (): Session => {
 };
 
 export type RootParams = {
-  Home: undefined;
+  /** Chats; Open Approvals (a Shortcuts action) opens it on Needs You. */
+  Home: NavigatorScreenParams<ChatsParams> | undefined;
   /** The person's avatar on Chats opens it. */
   Settings: undefined;
   /**
@@ -48,6 +50,10 @@ export type RootParams = {
   /** A project's or agent's live screen, full screen over its chat (screens/Screen.tsx). */
   Screen: { key: Key; sessionId: string };
 } & ManageParams;
+/** The chats list's own stack: `filter` picks one, each time `at` changes (a link opened again). */
+export type ChatsParams = {
+  Chats: { filter?: Filter; at?: number } | undefined;
+};
 /** A project's own screens (screens/manage): made from the Chats list's +, opened from a chat's header. */
 export type ManageParams = {
   /** `back`: once made, back to where it was opened (Import Memory) rather than to its chat. */
