@@ -39,7 +39,7 @@ import { Views } from "./views.ts";
 type ActivityArea = { onThreadEvent(machineId: MachineId, frame: ThreadEventFrame): void };
 
 /** `hub.peek(name)` (D355): an area another module owns, if it was made; never makes one. */
-export const peek = <T>(hub: Hub, name: string): T | undefined => (hub as unknown as { peek?: (n: string) => unknown }).peek?.(name) as T | undefined;
+export const peek = <T>(hub: Hub, name: string): T | undefined => hub.peek<T>(name);
 
 /** A hub -> node frame the executor sends: a session call (node_link.rs `HubToNode::SessionCall`). */
 export type HubToNodeSession = { t: "session_call" } & SessionCallFrame;

@@ -37,7 +37,7 @@ export function parseCursor(cursor: string): [string, string] | undefined {
   return a !== "" && id !== "" ? [a, id] : undefined;
 }
 
-export const cursorOf = (step: WorkStep) => `${step.kind === "message" ? step.at : step.at}${CURSOR_SEP}${step.id}`;
+export const cursorOf = (step: WorkStep) => `${step.at}${CURSOR_SEP}${step.id}`;
 
 /** One view row as a step, with secrets replaced. */
 export function stepOf(id: string, row: TailRow): WorkStep | undefined {

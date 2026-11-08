@@ -114,7 +114,14 @@ test("an active session is followed at once, and released when it stops", async 
   ex.handleFrame("devbox", { t: "machine_event", seq: 2, at: AT, event: { type: "session_updated", ...session("s1", { status: "running", activeRunId: "r2" }) } });
   await settle();
   expect(calls.shift()?.call).toEqual({ op: "follow", sessionId: "s1" });
-  expect(ex.views.isFollowed({ machineId: "devbox", threadId: "s1" })).toBe(true);
+  const r = { machineId: "devbox", threadId: "s1" };
+  expect(ex.views.isFollowed(r)).toBe(true);
+  expect(ex.views.pin(r)).toBe(true);
+  // The run ends: the follow is released, so it idles out a minute after its last read instead of staying pinned.
+  ex.handleFrame("devbox", { t: "machine_event", seq: 3, at: AT, event: { type: "session_updated", ...session("s1", { status: "idle" }) } });
+  await settle();
+  const w = (ex.views as unknown as { watches: Map<string, { pinned: boolean }> }).watches.get("devbox\u0000s1");
+  expect(w?.pinned).toBe(false);
 });
 
 function followed() {

@@ -7,14 +7,15 @@
 // asks go into chats as "<person> via <label>", reach only the link's projects, and what happens to them goes out on
 // the link's feed (`feed`) instead of a wake. A call that names a linked hub goes there (hub_links/client.ts).
 //
-// The checklist is read from its module. The chat's `sendAsAgent`, the status rows (`statusRows`) and the hub-link
-// client's `ask`, `status` and `linked` are set on `found` by their areas when they start; a call that needs one not
-// set yet says so.
+// The checklist and the chat's `sendAsAgent` come from their modules. The status rows (`statusRows`) and the hub-link
+// client's `ask`, `status` and `linked` are set on `found` by their areas once they are ported; a call that needs one
+// not set yet says so.
 import type { Database } from "bun:sqlite";
 import type { Grant, HubEvent, PersonRef, ProjectRef, ProjectSummary, Role, TodoItem } from "../../shared/contracts.ts";
 import { NotImplemented, ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadWakes } from "../api/leads.ts";
+import { sendAsAgent } from "../chat/index.ts";
 import { read as readChecklist } from "../checklist/index.ts";
 import { workstreamGet, workstreamsList } from "../orders/workstreams.ts";
 import { events } from "../store/events.ts";
@@ -97,9 +98,9 @@ type Found = {
   linked?: (hub: Hub, navi: ProjectRef) => unknown[];
 };
 /**
- * The other areas' parts the bridge calls, set by those areas when they start (the chat sets `sendAsAgent`, the
- * status `statusRows`, the hub links `ask`, `status` and `linked`; a test sets stand-ins). One not set yet makes the
- * call that needs it say so. No import names them, so a module not written yet costs nothing (D355).
+ * The other areas' parts the bridge calls that have no module on main yet, set by those areas with
+ * `Object.assign(found, …)` when they land (the status `statusRows`, the hub links `ask`, `status` and `linked`). One
+ * not set yet makes the call that needs it say so. A test may set `sendAsAgent` in place of the chat's.
  */
 export const found: Found = {};
 
@@ -297,7 +298,6 @@ export async function projectMessage(hub: Hub, asker: Asker, call: ProjectMessag
       "Ask an admin of that hub for operate on its machine.",
     );
   }
-  if (!found.sendAsAgent) throw new NotImplemented("src/hub/chat (sendAsAgent, for project_message)");
   const from = asker.kind === "navi" ? asker.navi : { machineId: "", projectId: "" };
   const via = asker.kind === "link" ? asker.link.linkId : null;
   const text = call.text;
@@ -321,7 +321,7 @@ export async function projectMessage(hub: Hub, asker: Asker, call: ProjectMessag
       .get(from.machineId, from.projectId, toRef.machineId, toRef.projectId, text, now, via)?.n as number);
   const handle = `N${n}`;
   const by = asker.kind === "navi" ? author(hub, asker.navi) : linkAuthor(asker.link);
-  const sent = await found.sendAsAgent(hub, toRef, by, `${text}\n\n${askFooter(handle)}`, `navi:${handle}`);
+  const sent = await (found.sendAsAgent ?? sendAsAgent)(hub, toRef, by, `${text}\n\n${askFooter(handle)}`, `navi:${handle}`);
   const waiting = typeof sent.leadWaiting === "string" ? sent.leadWaiting : undefined;
   return {
     handle,
