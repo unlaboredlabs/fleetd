@@ -1,34 +1,31 @@
-// navi_list, navi_rename, the archive, sites, approvals and sign-ins tools, each under its project name (D310) and its
-// old navi_* name for one release (crates/fleetd/src/hub/navi/mod.rs and tools.rs). navi_create and the asks come
-// with the projects and bridge ports.
+// navi_create, navi_list, navi_rename, the archive, sites, approvals and sign-ins tools, each under its project name
+// (D310) and its old navi_* name for one release (crates/fleetd/src/hub/navi/mod.rs and tools.rs). The asks come with
+// the bridge port.
 import type { ProjectRef, ProjectSummary } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_ASSISTANT, CAP_NAVI_SIGNINS } from "../../shared/node_link.ts";
 import { FOLDER_TAKEN } from "../../shared/sessions.ts";
 import { jsPrefix } from "../../shared/text.ts";
-import type { Caller } from "../api/registry.ts";
-import { ExecutorError, newUuid } from "../executor/index.ts";
-import { slugOr } from "../projects/add.ts";
-import { targetMachine } from "../projects/discover.ts";
-import { fitAdded, folder as folderInspect } from "../projects/inspect.ts";
-import { who } from "./owner.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { offline, unknownProject } from "../api/refusals.ts";
-import type { Registry } from "../api/registry.ts";
+import type { Caller, Registry } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
-import { executors } from "../executor/index.ts";
+import { ExecutorError, executors, newUuid } from "../executor/index.ts";
 import { interruptNow, naviSigninsForget, projectFolder, projectUpsert, stop } from "../executor/projects.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
+import { anyMerged } from "../orders/sources.ts";
+import { workstreamGet } from "../orders/workstreams.ts";
+import { slugOr } from "../projects/add.ts";
+import { targetMachine } from "../projects/discover.ts";
+import { fitAdded, folder as folderInspect } from "../projects/inspect.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
-import { anyMerged } from "../orders/sources.ts";
-import { workstreamGet } from "../orders/workstreams.ts";
 import { asksFrom, projectTitle } from "./bridge.ts";
 import * as checker from "./checker.ts";
-import { others } from "./owner.ts";
+import { others, who } from "./owner.ts";
 import { register as registerPurchases } from "./purchases.ts";
 import { pasted, siteOf } from "./sites.ts";
 import * as navis from "./store.ts";
@@ -168,7 +165,7 @@ async function create(hub: Hub, caller: Caller, input: { name: string; machineId
 }
 
 export function register(tools: Registry): void {
-  tools.add("navi_create", (hub, caller, input) => create(hub, caller, input) as never);
+  tools.add("navi_create", (hub, caller, input) => create(hub, caller, input));
   registerPurchases(tools);
   // The app's read of what a project asked other projects for (`project_message`), with each order opened for it.
   for (const name of ["project_asks", "navi_asks"] as const) {
