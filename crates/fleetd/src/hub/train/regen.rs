@@ -122,19 +122,21 @@ impl Regenerate {
     }
 }
 
-/// Rebases the PR's head onto `origin/<base>` in a scratch worktree of the checkout it runs in, resolves conflicts in
-/// generated files to the base's side, renames migrations that sort too early, runs every command, and commits what
-/// changed: its last line is `done <sha>`, or exit 3 with why. `$@`: base, head, migrations dir (or empty), the number
-/// of generated paths, those paths, then the commands; the repo (`owner/name`) before them all. PR code runs here, so
-/// the script reaches for no credential on purpose: it runs as a node command, which gets no SSH agent; its HOME is a
+/// Rebases the PR's head onto `origin/<base>` in a scratch worktree of the checkout it runs in (a branch with merge
+/// commits goes on as one commit of its whole diff, its PR's title the subject), resolves conflicts in generated files
+/// to the base's side, renames migrations that sort too early, runs every command, and commits what changed: its last
+/// line is `done <sha>`, or exit 3 with why. `$@`: base, head, the PR's title, migrations dir (or empty), the number of
+/// generated paths, those paths, then the commands; the repo (`owner/name`) before them all. PR code runs here, so the
+/// script reaches for no credential on purpose: it runs as a node command, which gets no SSH agent; its HOME is a
 /// scratch directory with no git config (cargo and rustup keep theirs), and every git under it has no credential
-/// helper, no terminal prompt and no hooks. The fetch before it and the push after it are git commands of their own.
+/// helper, no terminal prompt, no hooks and no recorded conflict resolutions (rerere), so a conflict shows as one. The
+/// fetch before it and the push after it are git commands of their own.
 /// The PR's build still runs as the node's user, as an agent's does there, so this keeps credentials from being used
 /// by accident, not from code that reads the user's files. Its build caches live under the node's home, never in the
 /// checkout. Programs are found on the node's PATH, the one its agent sessions get too.
 const SCRIPT: &str = r#"set -u
-repo=$1 base=$2 head=$3 migrations=$4 n=$5
-shift 5
+repo=$1 base=$2 head=$3 title=$4 migrations=$5 n=$6
+shift 6
 paths=
 i=0
 while [ "$i" -lt "$n" ]; do
@@ -183,28 +185,41 @@ export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOM
 export npm_config_cache="$FLEETD_REGENERATE_CACHE/npm"
 mkdir -p "$tmp/home" && export HOME="$tmp/home"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false
-export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= \
-  GIT_CONFIG_KEY_1=core.hooksPath GIT_CONFIG_VALUE_1=/dev/null
+export GIT_CONFIG_COUNT=3 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= \
+  GIT_CONFIG_KEY_1=core.hooksPath GIT_CONFIG_VALUE_1=/dev/null GIT_CONFIG_KEY_2=rerere.enabled GIT_CONFIG_VALUE_2=false
 unset SSH_AUTH_SOCK GIT_SSH_COMMAND GIT_SSH
 trap 'cd "$root"; git worktree remove --force "$work" >/dev/null 2>&1; git worktree prune; rm -rf "$tmp"' EXIT
 git worktree add -q --detach "$work" "$head" >"$tmp/log" 2>&1 || refuse "no scratch worktree: $(tail -n 1 "$tmp/log")"
 cd "$work" || refuse "no scratch worktree"
 
-if ! g rebase -q "$onto" >"$tmp/log" 2>&1; then
+# Conflicts in generated files take the base's side (stage 2, the side being built on); any other is the author's.
+take_base() {
+  git diff --name-only --diff-filter=U >"$tmp/conflicted"
+  [ -s "$tmp/conflicted" ] || refuse "$1: $(tail -n 1 "$tmp/log")"
+  while IFS= read -r f; do
+    generated "$f" || refuse "it conflicts with $base in $f, which is not a generated file"
+    if git cat-file -e ":2:$f" 2>/dev/null; then
+      git checkout -q --ours -- "$f" && git add -- "$f"
+    else
+      git rm -q -- "$f"
+    fi || refuse "the conflict in $f could not be taken from $base"
+  done <"$tmp/conflicted"
+}
+# A branch that merged others goes on as one commit: an old merged-in commit may no longer replay on its own though the
+# branch as a whole merges, and its changes are what the train squashes onto the base anyway.
+if [ -n "$(git rev-list --merges -n 1 "$onto..HEAD")" ]; then
+  git checkout -q --detach "$onto" >"$tmp/log" 2>&1 || refuse "origin/$base could not be checked out: $(tail -n 1 "$tmp/log")"
+  g merge -q --squash "$head" >"$tmp/log" 2>&1 || take_base "the merge with origin/$base stopped"
+  if ! git diff --cached --quiet; then
+    { printf '%s\n\n' "$title"; git log --reverse --no-merges --format='* %B' "$onto..$head"; } >"$tmp/message"
+    g commit -q -F "$tmp/message" || refuse "the PR's changes could not be committed on $base"
+  fi
+elif ! g rebase -q "$onto" >"$tmp/log" 2>&1; then
   steps=0
   while :; do
     steps=$((steps + 1))
     [ "$steps" -le 1000 ] || refuse "the rebase onto origin/$base did not finish"
-    git diff --name-only --diff-filter=U >"$tmp/conflicted"
-    [ -s "$tmp/conflicted" ] || refuse "the rebase onto origin/$base stopped: $(tail -n 1 "$tmp/log")"
-    while IFS= read -r f; do
-      generated "$f" || refuse "it conflicts with $base in $f, which is not a generated file"
-      if git cat-file -e ":2:$f" 2>/dev/null; then
-        git checkout -q --ours -- "$f" && git add -- "$f"
-      else
-        git rm -q -- "$f"
-      fi || refuse "the conflict in $f could not be taken from $base"
-    done <"$tmp/conflicted"
+    take_base "the rebase onto origin/$base stopped"
     if git diff --cached --quiet; then
       g rebase --skip >"$tmp/log" 2>&1 && break
     else
@@ -505,6 +520,7 @@ impl Train {
             change.repo.to_string(),
             base.clone(),
             head.to_string(),
+            pull.title.clone(),
             config.migrations.clone().unwrap_or_default(),
             config.generated.len().to_string(),
         ]);
@@ -634,10 +650,12 @@ impl Train {
         let text = format!(
             "The merge train pushed {} to your PR {} (branch {branch}): it rebased the PR onto origin/{base} and \
              regenerated its generated files, so you don't need to. If you push to this PR again, first run \
-             `git fetch origin` and put your new work on top of origin/{branch} (`git rebase origin/{branch}`); never \
+             `git fetch origin` and put only your commits since {old} on top of origin/{branch} (`git rebase --onto \
+             origin/{branch} {old}`): a branch with merge commits now has their changes as one commit. Never \
              force-push over the train's commit.",
             short(sha),
-            change.pr_url
+            change.pr_url,
+            old = change.head_sha,
         );
         if let Err(e) = self
             .host

@@ -114,7 +114,9 @@ async fn a_conflict_only_in_generated_files_is_regenerated_on_the_node_and_merge
     assert_eq!(sends[0].0, "T1");
     assert!(
         sends[0].1.starts_with("The merge train pushed")
-            && sends[0].1.contains("git rebase origin/add-b"),
+            && sends[0]
+                .1
+                .contains(&format!("git rebase --onto origin/add-b {head}")),
         "{}",
         sends[0].1
     );
@@ -153,6 +155,123 @@ async fn a_conflict_in_a_source_file_still_goes_back_to_its_author() {
         message.contains("a.txt, which is not a generated file"),
         "{message}"
     );
+}
+
+/// An integrator's PR 7 merges two writers' branches: `one` set a.txt's line 5 to its own, `two` added `src/b.txt`
+/// with its `gen/all.txt`, then the integrator set line 5 to `line5`. Meanwhile main set line 5 to "main's line 5"
+/// and added `src/c.txt` with its own `gen/all.txt`. Replayed one by one, `one`'s commit no longer applies on main.
+async fn integrator_pr(kit: &Kit, line5: &str) -> ChangeId {
+    kit.commit(
+        "one",
+        &[("a.txt", Some(&a_with(&[(5, "one's line 5")])))],
+        Some("origin/main"),
+    );
+    kit.commit(
+        "two",
+        &[("src/b.txt", Some("b\n")), ("gen/all.txt", Some("a\nb\n"))],
+        Some("origin/main"),
+    );
+    git(&kit.author, &["fetch", "-q", "origin"]);
+    git(
+        &kit.author,
+        &["checkout", "-q", "-B", "sweep", "origin/main"],
+    );
+    for branch in ["origin/one", "origin/two"] {
+        git(
+            &kit.author,
+            &["merge", "-q", "--no-ff", "--no-edit", branch],
+        );
+    }
+    kit.commit(
+        "sweep",
+        &[("a.txt", Some(&a_with(&[(5, line5)])))],
+        Some("sweep"),
+    );
+    kit.gh
+        .pulls
+        .lock()
+        .unwrap()
+        .insert(7, FakePull::open("sweep", "main", ""));
+    let (_, change) = kit
+        .author_task(Some(&format!("https://github.com/{REPO}/pull/7")))
+        .await;
+    kit.commit(
+        "main",
+        &[
+            ("a.txt", Some(&a_with(&[(5, "main's line 5")]))),
+            ("src/c.txt", Some("c\n")),
+            ("gen/all.txt", Some("a\nc\n")),
+        ],
+        None,
+    );
+    change
+}
+
+/// The PR as a whole merges with main but for its generated files: it goes on main as one commit, is regenerated and
+/// lands, though one of its merged-in commits no longer replays there.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_integrators_pr_whose_old_commit_no_longer_replays_still_lands_when_it_merges() {
+    let kit = regen_kit(MAKE);
+    let change = integrator_pr(&kit, "main's line 5").await;
+    let head = kit.head_of("sweep");
+
+    assert!(kit.train.step(REPO).await);
+    kit.train.regenerations_done().await;
+
+    assert!(kit.host.events_of("change.needs_rebase").is_empty());
+    assert_ne!(kit.head_of("sweep"), head);
+    // On main as one commit with the PR's title, then the train's regeneration.
+    let log = git(
+        &kit.gh.origin,
+        &["log", "--format=%s", "--first-parent", "main..sweep"],
+    );
+    assert_eq!(
+        log.lines().collect::<Vec<_>>(),
+        [
+            "Regenerate the generated files on main (fleetd merge train)",
+            "change sweep"
+        ],
+        "{log}"
+    );
+    assert_eq!(
+        git(&kit.gh.origin, &["rev-list", "--merges", "main..sweep"]),
+        ""
+    );
+    assert_eq!(
+        kit.file_on("sweep", "gen/all.txt").as_deref(),
+        Some("a\nb\nc")
+    );
+
+    // The new head is what is reviewed, tested and merged.
+    until_merged(&kit, &change).await;
+    assert_eq!(kit.main_file("gen/all.txt").as_deref(), Some("a\nb\nc"));
+    assert_eq!(kit.main_file("src/b.txt").as_deref(), Some("b"));
+    assert_eq!(
+        kit.main_file("a.txt"),
+        Some(a_with(&[(5, "main's line 5")]).trim_end().to_string())
+    );
+    assert!(kit.host.events_of("change.needs_rebase").is_empty());
+}
+
+/// The same PR with its own line 5 really conflicts with main: back to its author, nothing pushed.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_integrators_pr_that_really_conflicts_with_main_goes_back_to_its_author() {
+    let kit = regen_kit(MAKE);
+    let change = integrator_pr(&kit, "sweep's line 5").await;
+    let head = kit.head_of("sweep");
+
+    assert!(kit.train.step(REPO).await);
+    kit.train.regenerations_done().await;
+
+    let parked = kit.get(&change);
+    assert_eq!(parked.state, ChangeState::NeedsRebase);
+    let why = parked.last_error.unwrap_or_default();
+    assert!(
+        why.starts_with("conflicts with main, and the train could not regenerate")
+            && why.contains("a.txt, which is not a generated file"),
+        "{why}"
+    );
+    assert_eq!(kit.head_of("sweep"), head);
 }
 
 #[tokio::test(flavor = "multi_thread")]
