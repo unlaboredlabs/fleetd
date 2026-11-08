@@ -8,15 +8,25 @@ export type Snapshot = FleetStatus;
 /** The connection as the UI should present it. The key itself never leaves main. */
 export type HubState =
   | { readonly phase: "unpaired"; readonly note?: string | undefined }
-  | { readonly phase: "connecting"; readonly hub: string; readonly attempt: number }
+  /**
+   * `restarting`: when the hub closed the link to restart (close 1012, or 1001 from a hub before it), epoch ms; it
+   * stays until a link is ready again. Absent for any other drop and at launch.
+   */
+  | { readonly phase: "connecting"; readonly hub: string; readonly attempt: number; readonly restarting?: number | undefined }
   /**
    * `version`: the hub's fleetd version from its ready frame, absent from hubs before it; `features`: what newer the
    * hub serves, from the same frame (`browser_sessions`: the Agents section's Sessions). Both fresh on each connection.
    */
   | { readonly phase: "live"; readonly hub: string; readonly protocol: number; readonly version?: string | undefined; readonly features?: readonly string[] | undefined }
-  /** `retryAt` is epoch ms. */
   /** `reason`: what went wrong, one sentence without a final period; `fix`: what to do about it. `retryAt` is epoch ms. */
-  | { readonly phase: "retrying"; readonly hub: string; readonly reason: string; readonly fix?: string | undefined; readonly retryAt: number }
+  | {
+      readonly phase: "retrying";
+      readonly hub: string;
+      readonly reason: string;
+      readonly fix?: string | undefined;
+      readonly retryAt: number;
+      readonly restarting?: number | undefined;
+    }
   /** The hub refused the key (close 4401 or an auth error). Nothing retries until a new key is saved. */
   | { readonly phase: "refused"; readonly hub: string; readonly message: string };
 

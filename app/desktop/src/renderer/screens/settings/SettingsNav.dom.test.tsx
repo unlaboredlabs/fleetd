@@ -3,7 +3,7 @@
 // project's Project, Agents, Instructions & memory, Automations and Prompts, each a click away and all of that one
 // project) for everyone; the Hub group for owners and admins only (admin/Admin.dom.test.tsx). Old links land on the
 // page that has their option now. General's Version & updates says which fleetd this app,
-// the hub and each machine run, with Check for updates for everyone and the updates sheet for an owner or admin only.
+// the hub and each machine run, with Check for updates for everyone and Hub › Updates for an owner or admin only.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -11,7 +11,6 @@ import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { useUpdatesOpen } from "../updates/state";
 import { SettingsScreen, SettingsSidebar } from "./SettingsScreen";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -78,11 +77,6 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-/** Whether the updates sheet was asked to open. */
-function Sheet() {
-  return useUpdatesOpen() ? <div data-sheet /> : null;
-}
-
 const render = async (hash: string, admin: boolean) => {
   window.location.hash = hash;
   let listener: (frame: HubFrame) => void = () => undefined;
@@ -108,7 +102,6 @@ const render = async (hash: string, admin: boolean) => {
         <DataProvider layer={createDataLayer(hub)}>
           <SettingsSidebar onBack={() => undefined} />
           <SettingsScreen />
-          <Sheet />
         </DataProvider>
       </UiProvider>,
     );
@@ -226,6 +219,4 @@ it("says which fleetd this app runs, with Check for updates, and the hub's stand
   expect(window.location.hash).toBe("#/settings/hub/updates");
   const updates = host.querySelector<HTMLElement>("[data-screen='settings.hub.updates']");
   expect(updates?.querySelector("[data-updates-row='devbox']")).not.toBeNull();
-  await click(button("Open updates…", updates ?? document));
-  expect(host.querySelector("[data-sheet]")).not.toBeNull();
 });

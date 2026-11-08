@@ -100,6 +100,9 @@ export const useDataLayer = (): DataLayer => {
 /** Reads the store through a selector from ./selectors (memoized, so the value is stable between changes). */
 export const useData = <T,>(selector: (s: DataState) => T): T => useStore(useDataLayer().store, selector);
 
+/** Fresh and connected: a restart's held view (store.ts RESTART_HOLD_MS) keeps its answers and asks nothing meanwhile. */
+const linked = (s: DataState): boolean => s.fresh && s.hub.phase === "live";
+
 /**
  * `tool(input)` as a query. It waits for a fresh connection (a call made before the resync would describe the
  * old one) and refetches when an event makes it stale. `keepPrevious` keeps the last input's answer on screen
@@ -107,7 +110,7 @@ export const useData = <T,>(selector: (s: DataState) => T): T => useStore(useDat
  */
 export const useToolQuery = <T extends ToolName>(tool: T, input: ToolInput<T>, options?: { enabled?: boolean; keepPrevious?: boolean }) => {
   const layer = useDataLayer();
-  const fresh = useStore(layer.store, (s) => s.fresh);
+  const fresh = useStore(layer.store, linked);
   return useQuery({
     ...layer.toolQuery(tool, input),
     enabled: fresh && (options?.enabled ?? true),
@@ -127,7 +130,7 @@ export const useToolPages = <T extends ToolName>(
   options?: { enabled?: boolean },
 ) => {
   const layer = useDataLayer();
-  const fresh = useStore(layer.store, (s) => s.fresh);
+  const fresh = useStore(layer.store, linked);
   return useInfiniteQuery({
     queryKey: layer.toolQuery(tool, input).queryKey,
     queryFn: ({ pageParam }) => layer.toolQuery(tool, { ...(input as object), ...(pageParam as object) } as ToolInput<T>).queryFn(),
@@ -140,7 +143,7 @@ export const useToolPages = <T extends ToolName>(
 /** `tool` for each of `inputs`, as one query each: a list whose length changes (the pages of a diff in view). */
 export const useToolQueries = <T extends ToolName>(tool: T, inputs: readonly ToolInput<T>[]) => {
   const layer = useDataLayer();
-  const fresh = useStore(layer.store, (s) => s.fresh);
+  const fresh = useStore(layer.store, linked);
   return useQueries({ queries: inputs.map((input) => ({ ...layer.toolQuery(tool, input), enabled: fresh })) });
 };
 

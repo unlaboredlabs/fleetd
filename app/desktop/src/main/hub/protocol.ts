@@ -5,6 +5,9 @@ import type { AppServerMessage, BrowserInput } from "../../shared/contracts";
 
 /** The hub's close code for a refused key. */
 export const CLOSE_UNAUTHORIZED = 4401;
+/** The hub closes with "service restart" before it restarts (an update), and a hub before that with "going away". */
+export const CLOSE_RESTART = 1012;
+export const CLOSE_GOING_AWAY = 1001;
 
 export type ClientMessage =
   | { t: "auth"; key: string; features?: string[] }
@@ -72,6 +75,11 @@ export const parseServerFrame = (text: string): ServerFrame | null => {
  * found within the cap; a hub has a handful of apps, whose ±25 % jitter (client.ts) keeps them out of step.
  */
 export const backoff = (attempt: number): number => Math.min(500 * 2 ** Math.min(attempt, 5), 10_000);
+
+/** After the hub closed to restart, it redials this often for RESTART_REDIAL_MS: the hub is back in well under a
+ * second, and a backoff would add seconds to that. The usual backoff follows. */
+export const RESTART_REDIAL_EVERY_MS = 250;
+export const RESTART_REDIAL_MS = 60_000;
 
 /** `http(s)://host[:port]` or `ws(s)://host[:port][/path]`, no scheme meaning http, to the hub's `/app` socket URL. */
 export const appUrl = (input: string): { ok: true; url: string } | { ok: false; message: string } => {

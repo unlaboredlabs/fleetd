@@ -12,7 +12,7 @@ import { CallError } from "../../src/data/queries";
 import { Button, Dialog, Select, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { PageHead } from "../settings/parts";
-import { setUpdatesOpen } from "../updates/state";
+import { openUpdates } from "../updates/state";
 import { AllLinks } from "../hubLinks/AllLinks";
 import { Invites } from "./Invites";
 import { useToolQuery } from "../../src/data/react";
@@ -36,7 +36,7 @@ export function NeedsUpdate() {
     <div className={s.stack}>
       <Text tone="quiet">This hub needs updating to manage people. The other Hub pages work as they are.</Text>
       <span>
-        <Button onClick={() => setUpdatesOpen(true)}>Update the hub</Button>
+        <Button onClick={() => openUpdates(true)}>Update the hub</Button>
       </span>
     </div>
   );

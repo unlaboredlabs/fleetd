@@ -92,6 +92,7 @@ export const explainLoss = (hub: string, code: number, reason: string, error: So
   if (reason !== "") return { reason: `The hub closed the connection: ${reason.replace(/\.$/u, "")}`, fix: RECONNECTS };
   switch (code) {
     case 1001:
+    case 1012:
       return { reason: "The hub is restarting or shutting down", fix: `${RECONNECTS} If it doesn't come back, run \`fleetd doctor\` on the hub.` };
     case 1011:
       return { reason: "The hub hit an internal error", fix: "Run `fleetd doctor` on the hub; its log has the details." };
