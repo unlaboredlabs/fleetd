@@ -36,6 +36,7 @@ pub mod metrics;
 pub mod navi;
 pub mod onepassword;
 pub mod orders;
+pub mod outage;
 pub mod pair;
 pub mod people;
 pub mod policy;

@@ -28,12 +28,21 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
 
 /// A hub over `db`, its home in `home`: the same home again is the same hub after a restart.
 fn hub_on(db: Arc<HubDb>, home: &tempfile::TempDir) -> Arc<Hub> {
+    hub_with_clock(db, home, ManualClock::at(1_792_000_000_000))
+}
+
+/// [`hub_on`], on a clock the test moves (hub/outage's tests).
+pub(crate) fn hub_with_clock(
+    db: Arc<HubDb>,
+    home: &tempfile::TempDir,
+    clock: Arc<ManualClock>,
+) -> Arc<Hub> {
     let config = HubConfig {
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: Some("http://devbox:4790".into()),
     };
-    let hub = crate::hub::serve::build_on(db, config, ManualClock::at(1_792_000_000_000)).unwrap();
+    let hub = crate::hub::serve::build_on(db, config, clock).unwrap();
     let project = |id: &str, title: &str| -> fleetd_contracts::model::ProjectSummary {
         serde_json::from_value(json!({
             "machineId": "devbox", "projectId": id, "title": title, "workspaceRoot": format!("/work/{id}"),
@@ -57,7 +66,7 @@ fn redeem(hub: &Hub, code: &str, device: &str) -> Caller {
     hub.auth.verify(out["key"].as_str().unwrap()).unwrap()
 }
 
-fn owner_device(hub: &Hub) -> Caller {
+pub(crate) fn owner_device(hub: &Hub) -> Caller {
     let minted = PairCodes::new(hub.db.clone(), hub.clock.clone())
         .create(None, crate::hub::pair::DEFAULT_ROLE)
         .unwrap();
@@ -73,7 +82,7 @@ async fn call(
     registry().call(hub, caller, tool, input).await
 }
 
-async fn ok(hub: &Arc<Hub>, caller: &Caller, tool: &str, input: Value) -> Value {
+pub(crate) async fn ok(hub: &Arc<Hub>, caller: &Caller, tool: &str, input: Value) -> Value {
     call(hub, caller, tool, input)
         .await
         .unwrap_or_else(|e| panic!("{tool}: {e:?}"))
@@ -87,7 +96,7 @@ async fn refused(hub: &Arc<Hub>, caller: &Caller, tool: &str, input: Value) -> E
 }
 
 /// `owner` invites a member who pairs `device`.
-async fn member(hub: &Arc<Hub>, owner: &Caller, name: &str, device: &str) -> Caller {
+pub(crate) async fn member(hub: &Arc<Hub>, owner: &Caller, name: &str, device: &str) -> Caller {
     let invite = ok(
         hub,
         owner,
@@ -105,7 +114,7 @@ fn keys() -> (crypto_box::SecretKey, String) {
     (secret, public)
 }
 
-async fn phone(
+pub(crate) async fn phone(
     hub: &Arc<Hub>,
     who: &Caller,
     platform: &str,
@@ -124,13 +133,13 @@ async fn phone(
 
 /// A relay that takes every push, answering `dead` for a token starting "dead".
 #[derive(Clone, Default)]
-struct FakeRelay {
-    got: Arc<Mutex<Vec<RelayPush>>>,
+pub(crate) struct FakeRelay {
+    pub(crate) got: Arc<Mutex<Vec<RelayPush>>>,
     /// Each push's Authorization header.
     auth: Arc<Mutex<Vec<Option<String>>>>,
 }
 
-async fn fake_relay() -> (FakeRelay, String) {
+pub(crate) async fn fake_relay() -> (FakeRelay, String) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     (fake_relay_on(listener), url)
@@ -247,7 +256,7 @@ fn human_wrote(hub: &Hub, project: &str, seq: i64, person: &Caller) {
         .unwrap();
 }
 
-fn opened(secret: &crypto_box::SecretKey, push: &RelayPush) -> PushPayload {
+pub(crate) fn opened(secret: &crypto_box::SecretKey, push: &RelayPush) -> PushPayload {
     let sealed = B64.decode(&push.ciphertext).unwrap();
     serde_json::from_slice(&secret.unseal(&sealed).unwrap()).unwrap()
 }

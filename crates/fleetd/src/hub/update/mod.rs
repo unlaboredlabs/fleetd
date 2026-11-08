@@ -440,6 +440,26 @@ impl Updates {
         run.finished_at.is_none() && self.drivers.load(Ordering::SeqCst) > 0
     }
 
+    /// The machine's node is in the update going now and has no result yet: waiting its turn, downloading or
+    /// restarting. Its node being away then is the update's doing (hub/outage pages nobody for it).
+    pub fn updating(&self, machine_id: &MachineId) -> bool {
+        self.status().is_some_and(|run| {
+            self.going(&run)
+                && run.parts.iter().any(|p| {
+                    p.part == UpdatePartKind::Node
+                        && p.machine_id.as_ref() == Some(machine_id)
+                        && !p.state.settled()
+                })
+        })
+    }
+
+    /// A run this process drives, as an update going now looks to the rest of the hub.
+    #[cfg(test)]
+    pub(crate) fn drive_for_test(&self, run: UpdateRun) {
+        *self.run.lock().unwrap() = Some(run);
+        self.drivers.fetch_add(1, Ordering::SeqCst);
+    }
+
     /// The update going now, or the last one.
     pub fn status(&self) -> Option<UpdateRun> {
         self.run.lock().unwrap().clone()

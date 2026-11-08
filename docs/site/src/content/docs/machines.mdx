@@ -435,6 +435,17 @@ A screen on another machine works as one on the agent's own:
 Only machines whose fleetd seals and opens these boxes take part. An agent on a machine with browser screens turned
 off can't start one anywhere: it has no proxy to drive it through.
 
+## When a machine goes down {#down}
+
+A machine whose node says nothing for 45 seconds shows offline. If it is still offline 10 minutes later, the hub's
+owners and admins get one [phone notification](/docs/phone-notifications) and one desktop notification: "devbox has
+been offline for 10m00s". Nothing more comes however long it stays down, a hub restart included, and a short "devbox
+is back online after 1h11m" follows once its node links again. Back within 10 minutes, it notifies nobody.
+
+An update restarting the machine's node doesn't count until the update has its result: one that leaves the node
+offline notifies then. Neither does a [cloud machine](/docs/cloud-machines) the hub stopped or put to sleep, but one
+marked broken does. The agents' Mac counts like any machine; a removed machine never does.
+
 ## Check health {#health}
 
 ```sh
