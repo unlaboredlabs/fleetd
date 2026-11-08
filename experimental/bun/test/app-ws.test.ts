@@ -166,9 +166,9 @@ test("each frame runs on the key as it is now: a person lowered to member loses 
   hub.db.conn.run("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p_demotedd', 'Dem', 'owner', 5)");
   hub.db.conn.run("UPDATE agent_keys SET kind = 'human', person_id = 'p_demotedd' WHERE name = 'demoted'");
   const { app } = await authed(key);
-  // setup_list wants admin: an admin's call passes the role and reaches the unported stub.
+  // setup_list wants admin: an admin's call passes the role and is answered.
   await app.send({ t: "call", id: "a1", tool: "setup_list", input: {} });
-  expect(await app.next((f) => f.id === "a1")).toMatchObject({ t: "error", code: "failed" });
+  expect(await app.next((f) => f.id === "a1")).toMatchObject({ t: "result" });
   hub.db.conn.run("UPDATE people SET role = 'member' WHERE person_id = 'p_demotedd'");
   await app.send({ t: "call", id: "a2", tool: "setup_list", input: {} });
   expect(await app.next((f) => f.id === "a2")).toMatchObject({ t: "error", code: "forbidden" });

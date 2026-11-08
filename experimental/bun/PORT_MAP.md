@@ -48,8 +48,8 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] `hub_link_remove` → `src/hub/hub_links` (operate) <!-- tool:`hub_link_remove` -->
 - [x] `doctor_list` → `src/hub/doctor` (read) <!-- tool:`doctor_list` -->
 - [x] `doctor_fix` → `src/hub/doctor` (operate) <!-- tool:`doctor_fix` -->
-- [ ] `setup_list` → `src/hub/setup` (admin) <!-- tool:`setup_list` -->
-- [ ] `setup_test` → `src/hub/setup` (admin) <!-- tool:`setup_test` -->
+- [x] `setup_list` → `src/hub/setup` (admin) <!-- tool:`setup_list` -->
+- [x] `setup_test` → `src/hub/setup` (admin) <!-- tool:`setup_test` -->
 - [x] `mac_code_create` → `src/hub/pair` (admin) <!-- tool:`mac_code_create` -->
 - [x] `mac_code_status` → `src/hub/pair` (admin) <!-- tool:`mac_code_status` -->
 - [ ] `metrics_get` → `src/hub/metrics` (read) <!-- tool:`metrics_get` -->
