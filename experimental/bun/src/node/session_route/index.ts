@@ -22,6 +22,7 @@ import type {
 } from "../../shared/screens_wire.ts";
 import { type Broker, broker as brokerOf } from "../browser/index.ts";
 import { hubCall, type Node, onHub, onLocal, toHub } from "../browser/node.ts";
+import { hostOf, router as screens } from "../device/router.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
 import { dial, relayUrl } from "./relay.ts";
 
@@ -54,7 +55,7 @@ export class Router {
 
   /** One `session_route` call to the hub. */
   private async ask(thread: string, frame: BrowserCallFrame, sealed?: { runner: string; dataB64: string }): Promise<SessionRouteResult> {
-    const call = { frame: { ...frame, threadId: thread }, host: "browser", ...(sealed ? { sealed } : {}) };
+    const call = { frame: { ...frame, threadId: thread }, host: hostOf(frame), ...(sealed ? { sealed } : {}) };
     const answer = await Promise.race([
       hubCall(this.node, "session_route", call, { threadId: thread, cwd: frame.cwd, waitMs: ROUTE_WAIT }),
       Bun.sleep(ROUTE_WAIT).then(() => {
@@ -67,7 +68,7 @@ export class Router {
   /** An agent's session call: here, or wherever the hub placed its session. */
   async route(thread: string, frame: BrowserCallFrame): Promise<Record<string, unknown>> {
     const op = frame.call.op;
-    if (this.broker.live(thread)) return this.here(thread, frame);
+    if (screens(this.node).live(thread)) return this.here(thread, frame);
     let routed = await this.ask(thread, frame);
     if (!routed.here && !routed.answer && routed.sealTo) {
       // Placed on another machine, which needs the session's relay key first: sealed to it. The Bun node holds no
@@ -98,15 +99,9 @@ export class Router {
     return result;
   }
 
-  private async here(thread: string, frame: BrowserCallFrame): Promise<{ op: string } & Record<string, unknown>> {
-    switch (frame.call.op) {
-      case "session_start":
-        return { op: "session_start", ...(await this.broker.open(thread, String(frame.call.purpose ?? "a browser session"))) };
-      case "session_end":
-        return { op: "session_end", ...(await this.broker.end(thread)) };
-      default:
-        throw new ToolError("invalid", `${frame.call.op} isn't taken by the Bun node yet.`, "do without it and say so in your result");
-    }
+  /** A call for a screen on this machine, of whichever kind (node/device's router). */
+  private here(thread: string, frame: BrowserCallFrame): Promise<{ op: string } & Record<string, unknown>> {
+    return screens(this.node).handle(thread, frame);
   }
 
   /** The hub's `session_host`: a session call for one this machine hosts for an agent elsewhere, under `hostKey`. */

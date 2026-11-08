@@ -1,4 +1,16 @@
 import type { Hub } from "../api/hub.ts";
+import { sweep } from "../sweep/index.ts";
+import { run as bindRun } from "./bind.ts";
+import { work } from "./index.ts";
+import { landingStore } from "./landings.ts";
 
-/** Starts this module's loops (Rust: work::bind::run, work::landings::run); each stops on `hub.shutdown`. Not ported yet. */
-export function start(_hub: Hub): void {}
+/**
+ * Starts this module's loops (Rust: work::bind::run, work::landings::run, and the sweep's `work-claims` check): binds
+ * projects at start and as their nodes connect, expires claims on every sweep, and reads landings from their table.
+ */
+export function start(hub: Hub): void {
+  const w = work(hub);
+  w.setLandings(landingStore(hub.db.conn));
+  sweep(hub).register({ name: "work-claims", run: () => void w.expireDue() });
+  bindRun(hub).catch((error) => console.warn(`work: bind loop stopped: ${error}`));
+}

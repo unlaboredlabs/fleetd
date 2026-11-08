@@ -53,7 +53,7 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] `mac_code_create` → `src/hub/pair` (admin) <!-- tool:`mac_code_create` -->
 - [x] `mac_code_status` → `src/hub/pair` (admin) <!-- tool:`mac_code_status` -->
 - [ ] `metrics_get` → `src/hub/metrics` (read) <!-- tool:`metrics_get` -->
-- [ ] `status_get` → `src/hub/status` (read) <!-- tool:`status_get` -->
+- [x] `status_get` → `src/hub/status` (read) <!-- tool:`status_get` -->
 - [x] `hub_info` → `src/hub/info` (read) <!-- tool:`hub_info` -->
 - [x] `people_list` → `src/hub/people` (read) <!-- tool:`people_list` -->
 - [x] `invite_create` → `src/hub/people` (admin) <!-- tool:`invite_create` -->
@@ -101,7 +101,7 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] hub loop `pair::prune_on_sweep` → `src/hub/pair` <!-- loop:hub loop `pair::prune_on_sweep` -->
 - [x] hub loop `push::run` → `src/hub/push` <!-- loop:hub loop `push::run` -->
 - [ ] hub loop `queue::start_loops` → `src/hub/queue` <!-- loop:hub loop `queue::start_loops` -->
-- [ ] hub loop `status.run` → `src/hub/status` <!-- loop:hub loop `status.run` -->
+- [x] hub loop `status.run` → `src/hub/status` <!-- loop:hub loop `status.run` -->
 - [x] hub loop `sweep.start` → `src/hub/sweep` <!-- loop:hub loop `sweep.start` -->
 - [x] hub loop `watchdog.start` → `src/hub/watchdog` <!-- loop:hub loop `watchdog.start` -->
 
@@ -225,9 +225,9 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `agents_list` → `src/hub/agents` (read) <!-- tool:`agents_list` -->
 - [x] `agent_work` → `src/hub/agents` (read) <!-- tool:`agent_work` -->
 - [ ] `chat_stop` → `src/hub/chat` (operate) <!-- tool:`chat_stop` -->
-- [ ] `work_claim` → `src/hub/work` (operate) <!-- tool:`work_claim` -->
-- [ ] `work_list` → `src/hub/work` (read) <!-- tool:`work_list` -->
-- [ ] `work_done` → `src/hub/work` (operate) <!-- tool:`work_done` -->
+- [x] `work_claim` → `src/hub/work` (operate) <!-- tool:`work_claim` -->
+- [x] `work_list` → `src/hub/work` (read) <!-- tool:`work_list` -->
+- [x] `work_done` → `src/hub/work` (operate) <!-- tool:`work_done` -->
 
 ### Background loops
 
@@ -246,7 +246,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] hub loop `tasks::worktrees::run` → `src/hub/tasks` <!-- loop:hub loop `tasks::worktrees::run` -->
 - [x] hub loop `time.start` → `src/hub/time` <!-- loop:hub loop `time.start` -->
 - [x] hub loop `usage::wire::start` → `src/hub/usage` <!-- loop:hub loop `usage::wire::start` -->
-- [ ] hub loop `work::bind::run` → `src/hub/work` <!-- loop:hub loop `work::bind::run` -->
+- [x] hub loop `work::bind::run` → `src/hub/work` <!-- loop:hub loop `work::bind::run` -->
 - [ ] hub loop `work::landings::run` → `src/hub/work` <!-- loop:hub loop `work::landings::run` -->
 
 ## hub-train+github
