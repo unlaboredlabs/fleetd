@@ -10,7 +10,7 @@ for try in 1 2 3; do
   "$@" 2>&1 | tee "$log"
   status=${PIPESTATUS[0]}
   [ "$status" -eq 0 ] && exit 0
-  if [ "$try" -eq 3 ] || ! grep -qE 'Response code 5[0-9]{2}|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up' "$log"; then
+  if [ "$try" -eq 3 ] || ! grep -qE 'Response code 5[0-9]{2}|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|fetch failed' "$log"; then
     exit "$status"
   fi
   echo "::warning::Download failed (try $try of 3), retrying in $((try * 30)) s"
