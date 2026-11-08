@@ -372,6 +372,20 @@ export const listTime = (at: string, clock: Clock): string => {
 export const viewOffsetOf = (viewPosition: number, top: number, composer: number): number => (1 - viewPosition) * composer - viewPosition * top;
 
 /**
+ * scrollToIndex's viewPosition and viewOffset for a row: at `viewPosition` of what shows between the bar and the
+ * composer (viewOffsetOf), or, once measured (`length`) and taller than that, starting just under the bar rather than
+ * under it. Measured, the bar and the composer go into the viewPosition with no viewOffset: VirtualizedList keeps the
+ * offset from going past the newest end before it takes the viewOffset off, so a row near the newest end lands there,
+ * not a little older or past it.
+ */
+export const aimOf = (viewPosition: number, length: number | undefined, visible: number, top: number, composer: number): { viewPosition: number; viewOffset: number } => {
+  const at = length !== undefined && length > visible - top - composer ? 1 : viewPosition;
+  const viewOffset = viewOffsetOf(at, top, composer);
+  if (length === undefined || Math.abs(visible - length) < 1) return { viewPosition: at, viewOffset };
+  return { viewPosition: at + viewOffset / (visible - length), viewOffset: 0 };
+};
+
+/**
  * Where the status bar's tap takes the thread: most of a screen (`room`, what shows between the bar and the composer)
  * older than `y`, no further than the oldest end of `length`, in a list `height` tall.
  */
