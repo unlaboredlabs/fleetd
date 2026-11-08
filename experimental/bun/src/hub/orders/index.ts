@@ -24,7 +24,7 @@ import { jsPrefix } from "../../shared/text.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
-import { executors } from "../executor/index.ts";
+import { executors, peek } from "../executor/index.ts";
 import { others } from "../navi/owner.ts";
 import { profiles } from "../projects/profiles.ts";
 import { isoMs } from "../store/time.ts";
@@ -55,16 +55,8 @@ export type Lookups = {
   leadProfile(r: ProjectRef): string | undefined;
 };
 
-/** The executor's activity (T2253's src/hub/executor/activity.ts), looked up at run time until it lands. */
+/** The executor's activity (T2253's `hub.area("activity")`), once its area exists. */
 type ActivityLive = { live(r: ThreadRef): ReturnType<Lookups["live"]> };
-let liveOf: ((hub: Hub) => ActivityLive) | undefined;
-const ACTIVITY = "../executor/activity.ts";
-void import(ACTIVITY).then(
-  (m: { activity?: (hub: Hub) => ActivityLive }) => {
-    liveOf = m.activity;
-  },
-  () => {},
-);
 
 export function lookups(hub: Hub): Lookups {
   return {
@@ -72,7 +64,7 @@ export function lookups(hub: Hub): Lookups {
       const s = executors(hub).tracked(r)?.summary;
       return s ? { status: s.status, ...(s.model !== undefined ? { model: s.model } : {}), ...(s.effort !== undefined ? { effort: s.effort } : {}) } : undefined;
     },
-    live: (r) => liveOf?.(hub).live(r),
+    live: (r) => peek<ActivityLive>(hub, "activity")?.live(r),
     leadProfile: (r) => {
       const name = leadProfile(hub, r);
       if (name !== undefined) return name;

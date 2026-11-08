@@ -35,16 +35,11 @@ import {
 } from "./shell_mapper.ts";
 import { Views } from "./views.ts";
 
-/** The activity tracker's entry (T2253's src/hub/executor/activity.ts), looked up at run time until it lands. */
+/** The activity tracker (T2253's src/hub/executor/activity.ts, `hub.area("activity")`), once its area exists. */
 type ActivityArea = { onThreadEvent(machineId: MachineId, frame: ThreadEventFrame): void };
-let activityOf: ((hub: Hub) => ActivityArea) | undefined;
-const ACTIVITY = "./activity.ts";
-void import(ACTIVITY).then(
-  (m: { activity?: (hub: Hub) => ActivityArea }) => {
-    activityOf = m.activity;
-  },
-  () => {},
-);
+
+/** `hub.peek(name)` (D355): an area another module owns, if it was made; never makes one. */
+export const peek = <T>(hub: Hub, name: string): T | undefined => (hub as unknown as { peek?: (n: string) => unknown }).peek?.(name) as T | undefined;
 
 /** A hub -> node frame the executor sends: a session call (node_link.rs `HubToNode::SessionCall`). */
 export type HubToNodeSession = { t: "session_call" } & SessionCallFrame;
@@ -243,7 +238,7 @@ export class Executors {
   /** Each thread event to the activity tracker (src/hub/executor/activity.ts, looked up at run time) and the sink. */
   feedActivity(machineId: MachineId, frame: ThreadEventFrame): void {
     try {
-      activityOf?.(this.hub).onThreadEvent(machineId, frame);
+      peek<ActivityArea>(this.hub, "activity")?.onThreadEvent(machineId, frame);
     } catch (error) {
       console.error("executor: activity failed on a thread event:", error);
     }

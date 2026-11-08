@@ -7,9 +7,9 @@
 // asks go into chats as "<person> via <label>", reach only the link's projects, and what happens to them goes out on
 // the link's feed (`feed`) instead of a wake. A call that names a linked hub goes there (hub_links/client.ts).
 //
-// The checklist is read from its module. The parts of areas not ported yet are looked up at run time, so the bridge
-// runs without them: the chat's `sendAsAgent` (src/hub/chat), the status rows (`statusRows`, src/hub/status) and the
-// hub-link client's `ask`, `status` and `linked` (src/hub/hub_links). A call that needs a missing one says so.
+// The checklist is read from its module. The chat's `sendAsAgent`, the status rows (`statusRows`) and the hub-link
+// client's `ask`, `status` and `linked` are set on `found` by their areas when they start; a call that needs one not
+// set yet says so.
 import type { Database } from "bun:sqlite";
 import type { Grant, HubEvent, PersonRef, ProjectRef, ProjectSummary, Role, TodoItem } from "../../shared/contracts.ts";
 import { NotImplemented, ToolError } from "../../shared/errors.ts";
@@ -96,26 +96,12 @@ type Found = {
   status?: (hub: Hub, navi: ProjectRef, label: string, call: FactoryStatusCall) => Promise<FactoryStatusResult>;
   linked?: (hub: Hub, navi: ProjectRef) => unknown[];
 };
-/** What the lookups found; a test sets its own stand-ins here. */
+/**
+ * The other areas' parts the bridge calls, set by those areas when they start (the chat sets `sendAsAgent`, the
+ * status `statusRows`, the hub links `ask`, `status` and `linked`; a test sets stand-ins). One not set yet makes the
+ * call that needs it say so. No import names them, so a module not written yet costs nothing (D355).
+ */
 export const found: Found = {};
-const look = async (path: string, names: (keyof Found)[]) => {
-  try {
-    const m = (await import(path)) as Record<string, unknown>;
-    for (const name of names) if (typeof m[name] === "function") (found as Record<string, unknown>)[name] = m[name];
-  } catch {}
-};
-// Paths in variables, so a module not written yet is no type error; a missing one leaves its names unset.
-const CHAT = "../chat/index.ts";
-const STATUS = "../status/index.ts";
-const LINKS_CLIENT = "../hub_links/client.ts";
-const LINKS = "../hub_links/index.ts";
-const loading = Promise.all([
-  look(CHAT, ["sendAsAgent"]),
-  look(STATUS, ["statusRows"]),
-  look(LINKS_CLIENT, ["ask", "status"]),
-  look(LINKS, ["linked"]),
-]);
-export const bridgeReady = () => loading;
 
 const refOf = (p: { machineId: string; projectId: string }): ProjectRef => ({ machineId: p.machineId, projectId: p.projectId });
 const same = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
