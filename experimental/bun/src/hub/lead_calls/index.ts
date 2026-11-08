@@ -9,6 +9,7 @@ import type { MachineId, ProjectRef, ThreadId, ThreadRef } from "../../shared/co
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { outsideEveryProject, projectIndexForCwd } from "./cwd.ts";
+import { decodeFrame } from "./decode.ts";
 import { checkCall } from "./policy.ts";
 import { directoryOver, projectsOn, type Directory, type WorkspaceProject } from "./store.ts";
 import type {
@@ -119,15 +120,19 @@ export class LeadCalls {
     return own;
   }
 
-  /** Attributes a forwarded call to the project its cwd is in, on the machine whose node sent it, and answers it. */
-  async answer(machineId: MachineId, frame: LeadCallFrame): Promise<LeadResultFrame> {
-    const { id } = frame;
+  /**
+   * Decodes a forwarded call against its contract, attributes it to the project its cwd is in, on the machine whose
+   * node sent it, and answers it. Handlers only ever see a decoded call.
+   */
+  async answer(machineId: MachineId, sent: LeadCallFrame): Promise<LeadResultFrame> {
+    const { id } = sent;
     try {
+      const frame = decodeFrame(sent);
       const result = await this.outcome(machineId, frame);
       return { id, result: { ...result, op: frame.call.op } };
     } catch (error) {
       if (error instanceof ToolError) return { id, error: error.toJSON() };
-      console.error(`lead call ${frame.call?.op} failed:`, error);
+      console.error(`lead call ${sent.call?.op} failed:`, error);
       return { id, error: failedHandling().toJSON() };
     }
   }

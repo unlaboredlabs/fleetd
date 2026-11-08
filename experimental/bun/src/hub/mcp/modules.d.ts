@@ -8,3 +8,7 @@ declare module "*/McpTools.json" {
   const text: string;
   export default text;
 }
+declare module "*/LeadCall.json" {
+  const text: string;
+  export default text;
+}
