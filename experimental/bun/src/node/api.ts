@@ -71,6 +71,10 @@ export class LocalArea {
   get any(): boolean {
     return this.#handlers.size > 0;
   }
+  /** Whether an area takes `op`. */
+  has(op: string): boolean {
+    return this.#handlers.has(op);
+  }
   /** Answers a `browser_call` frame by its call's op. */
   async answer(session: string, frame: Record<string, unknown>): Promise<Record<string, unknown>> {
     const op = String((frame.call as { op?: unknown } | undefined)?.op ?? "");
