@@ -141,6 +141,33 @@ export function watchAt(db: Database, scope: WorkScope, lastSha: string, nowMs: 
   ).run(scope.repoKey, scope.base, lastSha, nowMs);
 }
 
+/**
+ * A landing as the Rust hub writes its `data`: every field in `Landing`'s order, an absent one as null (it has no
+ * skip_serializing_none), so a row reads the same whichever hub wrote it.
+ */
+export function encodeLanding(l: Landing): string {
+  return JSON.stringify({
+    repoKey: l.repoKey,
+    base: l.base,
+    sha: l.sha,
+    at: l.at,
+    seenAt: l.seenAt,
+    route: l.route,
+    prNumber: l.prNumber ?? null,
+    prUrl: l.prUrl ?? null,
+    headBranch: l.headBranch ?? null,
+    subject: l.subject,
+    authorEmail: l.authorEmail ?? null,
+    paths: l.paths,
+    changeId: l.changeId ?? null,
+    taskId: l.taskId ?? null,
+    claimIds: l.claimIds,
+  });
+}
+
+/** A landing's `data` as either hub wrote it: the Rust hub's nulls are absent fields. */
+export const decodeLanding = (data: string): Landing => JSON.parse(data, (_key, value) => (value === null ? undefined : value)) as Landing;
+
 /** Stores the landing with what a rebase keeps of its commit; false when the commit was already recorded on that base. */
 export function insertLanding(db: Database, landing: Landing, rewriteKey: string): boolean {
   const added = db
@@ -156,7 +183,7 @@ export function insertLanding(db: Database, landing: Landing, rewriteKey: string
       landing.route satisfies LandingRoute,
       landing.prNumber ?? null,
       rewriteKey,
-      JSON.stringify(landing),
+      encodeLanding(landing),
     ).changes;
   return added === 1;
 }
@@ -179,7 +206,7 @@ export function landingsSince(db: Database, scope: WorkScope, sinceMs: number, l
        ORDER BY at_ms DESC, rowid DESC LIMIT ?`,
     )
     .all(scope.repoKey, scope.base, sinceMs, outside ? 1 : 0, limit)
-    .map((r) => JSON.parse(r.data) as Landing);
+    .map((r) => decodeLanding(r.data));
 }
 
 /** The newest write task of one of `projects` on `branch`, in any state. */
