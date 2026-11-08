@@ -160,6 +160,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
     ];
   }, [shown, all, split, query, state.corpus, state.latest, state.chats, state.projects]);
   const arrived = useArrived(lines.map((l) => l.key));
+  const pinArrived = useArrived(split.grid.map((r) => r.key));
 
   const open = (key: Key, messageId?: string) => root.navigate("Chat", messageId === undefined ? { key } : { key, messageId });
   const pin = (row: ChatRow) => {
@@ -262,7 +263,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
               </Text>
             )}
             {Platform.OS === "android" && query === "" && all !== undefined && all.length > 0 ? <Filters choices={choices} value={filter} onChange={pick} counts={counts} /> : null}
-            {split.grid.length === 0 ? null : <PinnedGrid rows={split.grid} onOpen={(row) => open(row.key)} menu={(row) => rowActions(row, pin)} label={rowLabel} />}
+            {split.grid.length === 0 ? null : <PinnedGrid rows={split.grid} arrived={pinArrived} onOpen={(row) => open(row.key)} menu={(row) => rowActions(row, pin)} label={rowLabel} />}
           </>
         }
         // Every chat pinned: the grid is the list, with nothing under it.

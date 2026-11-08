@@ -12,6 +12,7 @@
 import { createNavigationContainerRef, NavigationContainer, useNavigation } from "@react-navigation/native";
 import { createNativeStackNavigator, type NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { requireOptionalNativeModule } from "expo";
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -46,6 +47,14 @@ import { forgetPaired, forgetPush, loadPaired, pairWith } from "./src/vault";
 
 const nav = createNavigationContainerRef<RootParams>();
 const pairNav = createNavigationContainerRef<PairParams>();
+
+// The splash stays until the first screen is on screen (its stack's transitionEnd, iOS's viewDidAppear), with the chats
+// as last seen (cache.ts): left to itself it goes on React's first frame, an empty one while secure storage is read,
+// and the app opened on a blank screen for a moment. It never stays longer than SPLASH_MOST_MS.
+const SPLASH_MOST_MS = 3000;
+void SplashScreen.preventAutoHideAsync().catch(() => undefined);
+const firstScreen = (): void => SplashScreen.hide();
+setTimeout(firstScreen, SPLASH_MOST_MS);
 
 /** Where a Shortcuts action opens the app, left by it (modules/shortcut-link): iOS opens no scheme of ours for one. */
 const shortcutLinks =
@@ -173,7 +182,7 @@ const PairStack = createNativeStackNavigator<PairParams>();
 function Pairing({ note, onPaired }: { note: string | undefined; onPaired: (p: Paired) => Promise<void> }) {
   const t = useTheme();
   return (
-    <PairStack.Navigator screenOptions={{ headerTintColor: t.label, headerTitleStyle: { color: t.label }, headerShadowVisible: false, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.grouped } }), contentStyle: { backgroundColor: t.grouped } }}>
+    <PairStack.Navigator screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, headerTitleStyle: { color: t.label }, headerShadowVisible: false, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.grouped } }), contentStyle: { backgroundColor: t.grouped } }}>
       <PairStack.Screen name="Welcome" options={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
         {(props) => <Welcome {...props} note={note} />}
       </PairStack.Screen>
@@ -304,7 +313,7 @@ function Root() {
   return (
     // A screen under another (the chats list under a chat) doesn't draw again while it's covered: a streamed reply
     // changes the state with every word.
-    <RootStack.Navigator screenOptions={{ headerTintColor: t.label, contentStyle: { backgroundColor: t.bg }, freezeOnBlur: true }}>
+    <RootStack.Navigator screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, contentStyle: { backgroundColor: t.bg }, freezeOnBlur: true }}>
       <RootStack.Screen name="Home" component={ChatsHome} options={{ headerShown: false, title: "Chats" }} />
       <RootStack.Screen name="Settings" component={SettingsScreens} options={{ headerShown: false }} />
       {/* One screen per chat, and per live screen: opening another pushes it, never swaps the open one's in place. */}

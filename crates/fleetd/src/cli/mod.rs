@@ -366,7 +366,11 @@ pub fn main() -> ExitCode {
         return update::run_claude();
     }
     if is_long_running(&argv) {
-        return ExitCode::from(block_on_bounded(run_long_running(&argv)));
+        let grace = match argv.get(..2) {
+            Some([node, run]) if node == "node" && run == "run" => NODE_SHUTDOWN_GRACE,
+            _ => SHUTDOWN_GRACE,
+        };
+        return ExitCode::from(block_on_bounded(run_long_running(&argv), grace));
     }
     let result = run(&argv);
     use std::io::Write;
@@ -377,17 +381,20 @@ pub fn main() -> ExitCode {
 
 /// How long a finished command waits for tasks still running before it exits anyway.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(3);
+/// `node run`'s, as the hub's: the node has stopped gracefully by then, and every moment more is blackout when it
+/// restarts for an update (the 3 s grace was most of it).
+const NODE_SHUTDOWN_GRACE: Duration = Duration::from_millis(100);
 
-/// Runs `command` on a fresh runtime, then exits within [`SHUTDOWN_GRACE`]: dropping the runtime instead waits on
-/// every worker with no limit, so one task stuck in a poll (or a blocking call) kept a finished command alive forever.
+/// Runs `command` on a fresh runtime, then exits within `grace`: dropping the runtime instead waits on every worker
+/// with no limit, so one task stuck in a poll (or a blocking call) kept a finished command alive forever.
 /// Long-running commands (`node run`) stop gracefully inside `command`, before this grace starts.
-fn block_on_bounded(command: impl std::future::Future<Output = u8>) -> u8 {
+fn block_on_bounded(command: impl std::future::Future<Output = u8>, grace: Duration) -> u8 {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .expect("a tokio runtime starts");
     let code = runtime.block_on(command);
-    runtime.shutdown_timeout(SHUTDOWN_GRACE);
+    runtime.shutdown_timeout(grace);
     code
 }
 
@@ -501,18 +508,21 @@ mod tests {
     fn a_finished_command_exits_with_a_task_stuck_in_a_poll() {
         let (done, finished) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let code = block_on_bounded(async {
-                // A task that never yields: its worker never comes back to the runtime.
-                let (started, running) = tokio::sync::oneshot::channel();
-                tokio::spawn(async move {
-                    let _ = started.send(());
-                    loop {
-                        std::thread::sleep(Duration::from_secs(1));
-                    }
-                });
-                let _ = running.await;
-                7
-            });
+            let code = block_on_bounded(
+                async {
+                    // A task that never yields: its worker never comes back to the runtime.
+                    let (started, running) = tokio::sync::oneshot::channel();
+                    tokio::spawn(async move {
+                        let _ = started.send(());
+                        loop {
+                            std::thread::sleep(Duration::from_secs(1));
+                        }
+                    });
+                    let _ = running.await;
+                    7
+                },
+                SHUTDOWN_GRACE,
+            );
             let _ = done.send(code);
         });
         let code = finished.recv_timeout(SHUTDOWN_GRACE + Duration::from_secs(10));
