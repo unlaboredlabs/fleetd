@@ -1530,3 +1530,36 @@ fn forgetting_a_removed_machines_project_leaves_its_other_project_and_anothers_w
     }
     assert_eq!(store.machine_project_forget(&r).unwrap(), 0);
 }
+
+#[test]
+fn a_projects_page_walks_its_index_newest_first() {
+    let db = HubDb::open_memory().unwrap();
+    let plan: Vec<String> = db
+        .with(|c| {
+            let rows = c
+                .prepare(&format!(
+                    "EXPLAIN QUERY PLAN {}",
+                    super::event_log::PROJECT_PAGE
+                ))?
+                .query_map(
+                    rusqlite::named_params! {
+                        "$before": None::<i64>, "$types": None::<String>, "$machine": "devbox",
+                        "$project": "app", "$hub_wide": true, "$limit": 51,
+                    },
+                    |r| r.get(3),
+                )?
+                .collect::<Result<_, _>>()?;
+            Ok(rows)
+        })
+        .unwrap();
+    // Both halves search the index, so a project with few events reads no more than its own rows.
+    let searches = plan
+        .iter()
+        .filter(|d| d.starts_with("SEARCH events USING INDEX events_by_project"))
+        .count();
+    assert_eq!(searches, 2, "{plan:#?}");
+    assert!(
+        !plan.iter().any(|d| d.starts_with("SCAN events")),
+        "{plan:#?}"
+    );
+}
