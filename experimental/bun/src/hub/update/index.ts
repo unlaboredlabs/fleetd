@@ -361,6 +361,25 @@ export class Updates {
     return this.run ? structuredClone(this.run) : undefined;
   }
 
+  /**
+   * The machine's node is in the update going now and has no result yet: waiting its turn, downloading or restarting.
+   * Its node being away then is the update's doing (hub/outage pages nobody for it).
+   */
+  updating(machineId: string): boolean {
+    const run = this.run;
+    return (
+      run !== undefined &&
+      this.going(run) &&
+      run.parts.some((p) => p.part === "node" && p.machineId === machineId && !settled(p.state))
+    );
+  }
+
+  /** For tests: `run` as an update this process drives now looks to the rest of the hub. */
+  driveForTest(run: UpdateRun): void {
+    this.run = run;
+    this.drives.add({ id: run.id, stop: new AbortController() });
+  }
+
   ready(): string | undefined {
     return this.ready_;
   }

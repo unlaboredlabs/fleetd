@@ -1,11 +1,8 @@
 // The safety-net sweep (crates/fleetd/src/hub/sweep/mod.rs): every 5 min, deterministic, no LLM. Built in: re-open
-// streams for running threads that lost theirs, and report each machine that is offline with running threads (once
-// per offline spell). Other areas add checks with `sweep(hub).register` (overdue wakes, the doctor, spent codes); each
-// check is isolated, so one failing does not stop the rest.
+// streams for running threads that lost theirs. A machine offline is hub/outage's to page, once. Other areas add checks
+// with `sweep(hub).register` (overdue wakes, the doctor, spent codes); each check is isolated, so one failing does not
+// stop the rest.
 import type { Hub } from "../api/hub.ts";
-import { events } from "../store/events.ts";
-import { store } from "../store/hub_store.ts";
-import { isoMs } from "../store/time.ts";
 import { watchdog } from "../watchdog/index.ts";
 
 export const SWEEP_EVERY_MS = 5 * 60_000;
@@ -37,8 +34,6 @@ export function every(hub: Hub, ms: number, fn: () => Promise<void> | void): voi
 
 export class Sweep {
   private readonly checks: SweepCheck[] = [];
-  /** Offline machines already reported, by the lastSeenAt of their offline spell. */
-  private readonly reported = new Map<string, string>();
 
   constructor(private readonly hub: Hub) {}
 
@@ -57,30 +52,6 @@ export class Sweep {
     if (opened > 0) console.info(`sweep: re-opened ${opened} thread streams`);
   }
 
-  private offlineMachines(): void {
-    const machines = store(this.hub).machinesList();
-    const running = store(this.hub).threadsRunning();
-    for (const machine of machines) {
-      if (machine.status !== "offline") {
-        this.reported.delete(machine.machineId);
-        continue;
-      }
-      const threads = running.filter((t) => t.machineId === machine.machineId);
-      const since = machine.lastSeenAt;
-      if (threads.length === 0 || this.reported.get(machine.machineId) === since) continue;
-      this.reported.set(machine.machineId, since);
-      const n = threads.length;
-      events(this.hub).append({
-        at: isoMs(this.hub.clock.now()),
-        type: "machine.offline",
-        machineId: machine.machineId,
-        summary: `${machine.machineId} is still offline with ${n} running thread${n === 1 ? "" : "s"}; their runs are not being watched`,
-        data: { since, runningThreads: threads.slice(0, 20).map((t) => t.threadId), count: n },
-        attention: "loud",
-      });
-    }
-  }
-
   /** One sweep now: the built-in checks, then the registered ones in order (those registered later included). */
   async runOnce(): Promise<void> {
     const report = async (name: string, run: () => Promise<void> | void) => {
@@ -91,7 +62,6 @@ export class Sweep {
       }
     };
     await report("streams", () => this.streams());
-    await report("offline-machines", () => this.offlineMachines());
     for (const check of [...this.checks]) await report(check.name, check.run);
   }
 }
