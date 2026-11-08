@@ -42,6 +42,11 @@ pub enum HubEventType {
     /// resumes them again; `data` is `RecoveryPausedData`, and the summary says why.
     #[serde(rename = "machine.recovery_paused")]
     MachineRecoveryPaused,
+    /// The machine was removed: the hub forgot it and erased its projects, so the app drops it and them. Sent by
+    /// `machine_remove`, and when a removed node's link ends (`fleetd machine remove` runs outside the hub), so a node
+    /// still linked at its removal may bring a second one.
+    #[serde(rename = "machine.removed")]
+    MachineRemoved,
     /// The machine's node runs a session no task or lead of this hub owns; `data` is `ThreadOrphanedData`.
     #[serde(rename = "thread.orphaned")]
     ThreadOrphaned,
@@ -64,7 +69,9 @@ pub enum HubEventType {
     ProjectFetchFailed,
     /// A project's settings changed (`project_set`): `data.profiles`, the profiles it allows; or a repo was removed from it
     /// (`project_repo_remove`): `data.repoRemoved`, its name; or its picture (`project_avatar_set`): `data.avatar`, the
-    /// new one's id, null once removed; or its icon (`project_icon_set`): `data.icon`.
+    /// new one's id, null once removed; or its icon (`project_icon_set`): `data.icon`; or a linked hub was removed from it
+    /// (`hub_link_remove`): `data.hubLinkRemoved`, the link's id; or its Telegram bridge unpaired or removed
+    /// (`telegram_unpair`, `telegram_remove`): `data.telegram`.
     #[serde(rename = "project.settings")]
     ProjectSettings,
     #[serde(rename = "thread.started")]
@@ -294,7 +301,8 @@ pub enum HubEventType {
     #[serde(rename = "machine_add.step")]
     MachineAddStep,
     /// An MCP server's sign-in changed: one started, finished or failed, or its token couldn't be renewed
-    /// (`data.projectRef`, `data.name`, `data.status`). mcp_servers_get reads the rest; never a token.
+    /// (`data.projectRef`, `data.name`, `data.status`), or the server was removed (`data.removed`, no status).
+    /// mcp_servers_get reads the rest; never a token.
     #[serde(rename = "mcp.oauth")]
     McpOauth,
 }
@@ -311,6 +319,7 @@ impl HubEventType {
             Self::MachineHosts => "machine.hosts",
             Self::MachineGuard => "machine.guard",
             Self::MachineRecoveryPaused => "machine.recovery_paused",
+            Self::MachineRemoved => "machine.removed",
             Self::ThreadOrphaned => "thread.orphaned",
             Self::ProjectRemoved => "project.removed",
             Self::ProjectAdded => "project.added",

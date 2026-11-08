@@ -815,3 +815,250 @@ async fn removing_a_project_leaves_a_checkout_another_project_holds() {
     assert_eq!(removed(&mut calls), [("shop".into(), false)]);
     assert_eq!(shown(&hub), ["app"]);
 }
+
+/// W465: a deleted project's project.removed stays in the event log once its erase has run, so every open desktop and
+/// phone (reading the log after it, `events_wait`) drops it without a restart. The erase deleted it with the project's
+/// other events, so an open app never heard the project went.
+#[tokio::test]
+async fn a_deleted_projects_removal_reaches_open_apps_after_its_erase() {
+    let (hub, _home) = hub();
+    let _calls = node(&hub).await;
+    let cursor = hub.events.head();
+    call(
+        &hub,
+        "project_remove",
+        json!({ "machineId": "devbox", "projectId": "app", "removeWorktrees": true }),
+    )
+    .await
+    .unwrap();
+    let page = hub
+        .events
+        .page(cursor, Some(&[HubEventType::ProjectRemoved]), None)
+        .unwrap();
+    let removed: Vec<_> = page
+        .events
+        .iter()
+        .map(|e| e.project_id.as_ref().map(ProjectId::to_string))
+        .collect();
+    assert_eq!(removed, [Some("app".to_owned())]);
+}
+
+/// W465: a deleted project's agents give their slots back and its own max agents goes: neither the agents it had
+/// running or queued nor its max stays on the slot board (Settings › Agents' rows, the fleet cap's warning), and the
+/// machine's slots are free for the other projects. The erase deleted its tasks before their slots were released.
+#[tokio::test]
+async fn a_deleted_projects_slots_and_max_agents_go_with_it() {
+    use crate::hub::slots::{CapInput, SlotPriority, SlotRequest};
+    let (hub, _home) = hub();
+    let _calls = node(&hub).await;
+    hub.slots
+        .set_cap(CapInput {
+            max_agents: Some((project("app"), Some(5))),
+            ..Default::default()
+        })
+        .unwrap();
+    for holder in ["T1", "T2"] {
+        hub.slots
+            .acquire(SlotRequest {
+                holder,
+                project_ref: &project("app"),
+                priority: SlotPriority::Work,
+                on: None,
+            })
+            .unwrap();
+    }
+    let rows = |hub: &Hub| -> Vec<String> {
+        hub.slots
+            .state()
+            .per_project
+            .iter()
+            .map(|p| p.project_ref.project_id.to_string())
+            .collect()
+    };
+    assert_eq!(rows(&hub), ["app"]);
+
+    call(
+        &hub,
+        "project_remove",
+        json!({ "machineId": "devbox", "projectId": "app", "removeWorktrees": true }),
+    )
+    .await
+    .unwrap();
+    let state = hub.slots.state();
+    assert_eq!(rows(&hub), Vec::<String>::new());
+    assert_eq!((state.used.get(), state.queued.get()), (0, 0));
+    let shares: i64 = hub
+        .db
+        .with(|c| Ok(c.query_row("SELECT COUNT(*) FROM slot_shares", [], |r| r.get(0))?))
+        .unwrap();
+    assert_eq!(shares, 0);
+}
+
+/// W465: what older hubs left of deleted projects (a chat, a max agents, a place in a sidebar order) is erased at the
+/// hub's start, once: a second run finds nothing. A project any machine has under that id is left alone, even
+/// another machine's rows under it.
+#[tokio::test]
+async fn what_older_hubs_left_of_deleted_projects_is_pruned_once() {
+    use crate::hub::chat::NewMessage;
+    use crate::hub::navi::erase::prune_orphans;
+    use crate::hub::slots::CapInput;
+    use fleetd_contracts::chat::ChatAuthor;
+    let (hub, _home) = hub();
+    let _calls = node(&hub).await;
+    let gone = project("gone");
+    let elsewhere = ProjectRef {
+        machine_id: MachineId::unchecked("worker"),
+        project_id: ProjectId::unchecked("app"),
+    };
+    for r in [&gone, &project("app"), &elsewhere] {
+        hub.chat
+            .add(
+                r,
+                NewMessage {
+                    author: Some(ChatAuthor::Human),
+                    text: "hi".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        hub.slots
+            .set_cap(CapInput {
+                max_agents: Some((r.clone(), Some(3))),
+                ..Default::default()
+            })
+            .unwrap();
+    }
+    let order = serde_json::to_string(&[&gone, &project("app")]).unwrap();
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO sidebar_orders (person_id, refs) VALUES ('p_ann', ?)",
+                [&order],
+            )?;
+            c.execute(
+                "INSERT INTO chat_pins (person_id, refs) VALUES ('p_ann', ?)",
+                [&order],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+    assert_eq!(prune_orphans(&hub).unwrap(), 1);
+    let chat = |r: &ProjectRef| hub.chat.page(r, None, None, 10).unwrap().0.len();
+    assert_eq!(
+        (chat(&gone), chat(&project("app")), chat(&elsewhere)),
+        (0, 1, 1)
+    );
+    let maxes: Vec<String> = hub
+        .slots
+        .state()
+        .per_project
+        .iter()
+        .map(|p| format!("{}/{}", p.project_ref.machine_id, p.project_ref.project_id))
+        .collect();
+    assert_eq!(maxes, ["devbox/app", "worker/app"]);
+    for table in ["sidebar_orders", "chat_pins"] {
+        let refs: String = hub
+            .db
+            .with(|c| Ok(c.query_row(&format!("SELECT refs FROM {table}"), [], |r| r.get(0))?))
+            .unwrap();
+        assert_eq!(
+            refs,
+            serde_json::to_string(&[project("app")]).unwrap(),
+            "{table}"
+        );
+    }
+    assert_eq!(prune_orphans(&hub).unwrap(), 0);
+}
+
+/// W465: a deleted project's links to other hubs go with it, their sealed keys too, so nothing follows another hub
+/// for a project that is gone. Only a removed machine dropped them.
+#[tokio::test]
+async fn a_deleted_projects_links_to_other_hubs_go_with_it() {
+    let (hub, _home) = hub();
+    let _calls = node(&hub).await;
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO hub_links (link_id, machine_id, project_id, label, url, sealed, cursor, state, created_ms)
+                 VALUES ('hl_1', 'devbox', 'app', 'acme', 'https://acme.example', x'00', 0, 'ok', 0)",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    call(
+        &hub,
+        "project_remove",
+        json!({ "machineId": "devbox", "projectId": "app", "removeWorktrees": true }),
+    )
+    .await
+    .unwrap();
+    let links: i64 = hub
+        .db
+        .with(|c| Ok(c.query_row("SELECT COUNT(*) FROM hub_links", [], |r| r.get(0))?))
+        .unwrap();
+    assert_eq!(links, 0);
+}
+
+/// W465 review: hub-wide rows are keyed by an empty machine and project (a hub-wide MCP server, a hub-wide skill's
+/// versions and switches), which no project has: the start's prune is no delete of theirs. Before, it took ('', '')
+/// for a deleted project and erased them, and every project's memory and skills with them (an empty project's
+/// folders are those folders' roots).
+#[tokio::test]
+async fn the_starts_prune_leaves_hub_wide_rows_and_every_projects_files() {
+    use crate::hub::navi::erase::prune_orphans;
+    use fleetd_contracts::skills::SkillScope;
+    let (hub, _home) = hub();
+    let _calls = node(&hub).await;
+    hub.db
+        .with(|c| {
+            c.execute_batch(
+                "INSERT INTO mcp_servers (machine_id, project_id, name, data) VALUES ('', '', 'docs', '{}');
+                 INSERT INTO skill_versions (machine_id, project_id, name, version, author, by_name, text, at_ms)
+                   VALUES ('', '', 'review', 1, 'person', 'Ann', 'Review it.', 0);
+                 INSERT INTO skill_uses (machine_id, project_id, name, off) VALUES ('', '', 'review', 1);",
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let memory = hub
+        .db
+        .memory()
+        .project_dir(&project("app"))
+        .unwrap()
+        .join("MEMORY.md");
+    let skill = hub
+        .db
+        .skills()
+        .scope_dir(SkillScope::Project, Some(&project("app")))
+        .unwrap()
+        .join("deploy/SKILL.md");
+    for file in [&memory, &skill] {
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, "kept").unwrap();
+    }
+
+    assert_eq!(prune_orphans(&hub).unwrap(), 0);
+    // Nor is an empty ref erased or forgotten when asked directly.
+    let none = ProjectRef {
+        machine_id: MachineId::unchecked(""),
+        project_id: ProjectId::unchecked(""),
+    };
+    assert!(crate::hub::navi::erase::erase(&hub, &none).is_err());
+    assert!(hub.store.machine_project_forget(&none).is_err());
+    let rows = |table: &str| -> i64 {
+        hub.db
+            .with(|c| Ok(c.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))?))
+            .unwrap()
+    };
+    assert_eq!(
+        (
+            rows("mcp_servers"),
+            rows("skill_versions"),
+            rows("skill_uses")
+        ),
+        (1, 1, 1)
+    );
+    assert!(memory.exists() && skill.exists());
+}

@@ -310,15 +310,16 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
 };
 
 /**
- * What an event asks the session to read again: the open requests, a whole snapshot when the projects changed, the
- * pinned chats when this person changed them on another device, or a chat's screens when one of them started, changed
- * hands or ended.
+ * What an event asks the session to read again: the open requests, a whole snapshot when the projects changed (a
+ * machine removed too), the pinned chats when this person changed them on another device, or a chat's screens when one
+ * of them started, changed hands or ended.
  */
 export const effectsOf = (event: HubEvent): { readonly requests: boolean; readonly snapshot: boolean; readonly pins: boolean; readonly screens?: Key } => {
   const screen = event.type === "browser.session" ? (event.data as BrowserSessionEventData | undefined)?.projectRef : undefined;
   return {
     requests: event.type.startsWith("request."),
-    snapshot: event.type === "project.added" || event.type === "project.removed" || event.type === "project.settings",
+    // A removed machine's projects went with it.
+    snapshot: event.type === "project.added" || event.type === "project.removed" || event.type === "project.settings" || event.type === "machine.removed",
     pins: event.type === "chat.pins",
     ...(screen === undefined ? {} : { screens: keyOf(screen) }),
   };

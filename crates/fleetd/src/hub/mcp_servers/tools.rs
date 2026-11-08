@@ -440,6 +440,7 @@ async fn remove(
     if before.oauth.is_some() {
         crate::hub::mcp_oauth::forget(&hub, &input.scope, &input.name).await;
     }
+    crate::hub::mcp_oauth::removed(&hub, &input.scope, &input.name)?;
     // Each node holding its secrets forgets them; one offline keeps them unused until the server is saved again.
     let holders: BTreeSet<MachineId> = before
         .values()

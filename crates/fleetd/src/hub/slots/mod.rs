@@ -427,6 +427,12 @@ impl Slots {
         self.locked(|b| ((), b.release(holder)))
     }
 
+    /// The project is gone (`navi::erase`): its agents' slots go back, its queued ones leave the queue, and its own
+    /// max agents goes, so neither shows on the board nor holds the machine's slots from the other projects.
+    pub fn forget_project(&self, r: &ProjectRef) -> Result<(), StoreError> {
+        self.locked(|b| ((), b.forget_project(r)))
+    }
+
     /// Registers `listener` and runs it once now, after re-evaluating the queue.
     pub fn on_release(&self, listener: ReleaseListener) -> Result<(), StoreError> {
         self.listeners.lock().unwrap().push(listener.clone());

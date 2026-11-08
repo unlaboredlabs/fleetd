@@ -83,9 +83,31 @@ pub fn row(db: &HubDb, r: &ProjectRef) -> Result<Option<Row>, StoreError> {
     }))
 }
 
+/// Whether the project's owner was removed from the hub: its bridge takes and sends nothing more, or the removed person
+/// would go on talking to the hub, and answering its approvals, from Telegram.
+pub fn owner_removed(db: &HubDb, r: &ProjectRef) -> Result<bool, StoreError> {
+    db.with(|c| {
+        Ok(c.prepare_cached(
+            "SELECT 1 FROM project_settings s JOIN people p ON p.person_id = s.owner_person
+             WHERE s.machine_id = ? AND s.project_id = ? AND p.removed_ms IS NOT NULL",
+        )?
+        .query_row(
+            params![r.machine_id.as_str(), r.project_id.as_str()],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+    })
+}
+
+/// The bridges that run: none of a project whose owner was removed ([`owner_removed`]).
 pub fn rows(db: &HubDb) -> Result<Vec<Row>, StoreError> {
     let refs: Vec<(String, String)> = db.with(|c| {
-        let mut stmt = c.prepare("SELECT machine_id, project_id FROM telegram_bridges")?;
+        let mut stmt = c.prepare(
+            "SELECT b.machine_id, b.project_id FROM telegram_bridges b WHERE NOT EXISTS (
+               SELECT 1 FROM project_settings s JOIN people p ON p.person_id = s.owner_person
+               WHERE s.machine_id = b.machine_id AND s.project_id = b.project_id AND p.removed_ms IS NOT NULL)",
+        )?;
         let rows = stmt
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<rusqlite::Result<_>>()?;
@@ -467,6 +489,12 @@ async fn unpair(
     let row = saved(&hub, r)?;
     let state = state_of(node_call(&hub, r, TelegramCall::Unpair, CALL_WAIT).await?)?;
     let bridge = keep(&hub, r, &row.bridge, &state)?;
+    crate::hub::projects::settings::announce(
+        &hub,
+        r,
+        "Telegram unpaired".into(),
+        serde_json::json!({ "telegram": "unpaired" }),
+    )?;
     if let Some(was) = &row.bridge.paired {
         let _ = hub.chat.system_line(
             r,
@@ -527,6 +555,12 @@ async fn remove(
     node_call(&hub, r, TelegramCall::Token { sealed: None }, CALL_WAIT).await?;
     drop_rows(&hub.db, r)?;
     hub.telegram.wake();
+    crate::hub::projects::settings::announce(
+        &hub,
+        r,
+        "Telegram removed".into(),
+        serde_json::json!({ "telegram": "removed" }),
+    )?;
     Ok(TelegramRemoveOutput {
         ok: True,
         next: Some(

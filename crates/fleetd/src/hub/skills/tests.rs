@@ -229,6 +229,89 @@ async fn a_person_creates_lists_edits_and_deletes_project_and_global_skills() {
     assert_eq!(list["skills"][0]["shadowedBy"], Value::Null);
 }
 
+/// The standup skill as skills_list shows it in `r`, from `origin`.
+async fn listed(hub: &Arc<Hub>, r: &ProjectRef, origin: &str) -> Value {
+    let list = call(hub, &person(), "skills_list", json!({ "projectRef": r }))
+        .await
+        .unwrap();
+    list["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == "standup" && s["origin"] == origin)
+        .cloned()
+        .unwrap()
+}
+
+/// A hub-wide skill's off switch and last use are kept per project, and its delete forgot only the hub-wide scope's
+/// rows: a new hub-wide skill of the same name came back off in a project that had turned the old one off, last used
+/// when the old one was. Its delete forgets them in every project but one with a skill of its own of that name.
+#[tokio::test]
+async fn deleting_a_hub_wide_skill_forgets_it_was_off_or_used_in_each_project() {
+    let (hub, _home) = hub();
+    let shop = project();
+    let cafe = ProjectRef {
+        machine_id: MachineId::unchecked("devbox"),
+        project_id: ProjectId::unchecked("cafe"),
+    };
+    hub.store
+        .projects_upsert_many(
+            &MachineId::unchecked("devbox"),
+            &[serde_json::from_value(json!({
+                "machineId": "devbox", "projectId": "cafe", "title": "cafe", "workspaceRoot": "/work/cafe",
+                "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+            }))
+            .unwrap()],
+        )
+        .unwrap();
+    let standup = SkillName::new("standup").unwrap();
+    let global = |says: &str| json!({ "scope": "global", "name": "standup", "text": md("standup", says), "create": true });
+    call(&hub, &admin(), "skill_set", global("Write the standup."))
+        .await
+        .unwrap();
+    // The cafe has a standup of its own, which shadows the hub-wide one there.
+    call(
+        &hub,
+        &person(),
+        "skill_set",
+        json!({ "scope": "project", "projectRef": cafe, "name": "standup",
+                "text": md("standup", "The cafe's standup."), "create": true }),
+    )
+    .await
+    .unwrap();
+    for r in [&shop, &cafe] {
+        call(
+            &hub,
+            &person(),
+            "skill_off",
+            json!({ "projectRef": r, "name": "standup", "off": true }),
+        )
+        .await
+        .unwrap();
+        super::versions::used(&hub.db, r, &standup, 1_791_000_000_000).unwrap();
+    }
+
+    call(
+        &hub,
+        &admin(),
+        "skill_delete",
+        json!({ "scope": "global", "name": "standup" }),
+    )
+    .await
+    .unwrap();
+    call(&hub, &admin(), "skill_set", global("A new standup."))
+        .await
+        .unwrap();
+
+    let new = listed(&hub, &shop, "global").await;
+    assert_ne!(new["off"], true, "{new}");
+    assert_eq!(new["lastUsedAt"], Value::Null, "{new}");
+    // The cafe's own skill keeps its switch and its use.
+    let own = listed(&hub, &cafe, "project").await;
+    assert_eq!(own["off"], true, "{own}");
+    assert_ne!(own["lastUsedAt"], Value::Null, "{own}");
+}
+
 #[tokio::test]
 async fn a_bad_skill_md_a_secret_and_an_agent_key_are_refused() {
     let (hub, _home) = hub();

@@ -993,3 +993,67 @@ async fn memory_and_skill_lines_and_one_usage_pause_reach_telegram_and_a_reply_n
     send_once(&hub, &navi()).await.unwrap();
     assert!(texts(sent(&node)).contains(&"On it.".to_owned()));
 }
+
+/// A person removed from the hub stops talking to their project from Telegram: what they send there never lands in
+/// its chat, and its replies never reach them. Removed from the hub's home too (`fleetd people remove`), where the
+/// hub can't reach the node.
+#[tokio::test]
+async fn a_removed_owners_bridge_takes_and_sends_nothing() {
+    let (hub, _home, bob, node) = setup().await;
+    paired(&hub, &bob, &node).await;
+    crate::hub::people::People::new(hub.db.clone(), hub.clock.clone())
+        .remove(&bob)
+        .unwrap();
+    node.lock().unwrap().event(TelegramEventKind::Message {
+        message_id: 60,
+        text: "still here?".into(),
+        forwarded_from: None,
+        files: Vec::new(),
+    });
+    take_once(&hub, &navi(), 0).await.unwrap();
+    assert!(
+        chat(&hub).iter().all(|m| m.author != ChatAuthor::Human),
+        "{:#?}",
+        chat(&hub)
+    );
+    lead_says(&hub, "Nobody should read this on Telegram.");
+    send_once(&hub, &navi()).await.unwrap();
+    assert!(sent(&node).is_empty());
+    assert!(super::rows(&hub.db).unwrap().is_empty());
+}
+
+/// Unpairing or removing a bridge tells every open app (`project.settings`), so a page showing it on another device
+/// reads it again rather than keeping the gone bridge.
+#[tokio::test]
+async fn unpair_and_remove_tell_every_open_app() {
+    let (hub, _home, bob, node) = setup().await;
+    let desk = paired(&hub, &bob, &node).await;
+    let told = |hub: &Hub| -> Vec<Value> {
+        hub.events
+            .page(
+                0,
+                Some(&[fleetd_contracts::events::HubEventType::ProjectSettings]),
+                None,
+            )
+            .unwrap()
+            .events
+            .into_iter()
+            .filter(|e| e.project_id.as_ref().map(ProjectId::as_str) == Some("ada"))
+            .map(|e| e.data.unwrap_or_default())
+            .collect()
+    };
+    let before = told(&hub).len();
+    call(&hub, &desk, "telegram_unpair", json!({ "navi": r() }))
+        .await
+        .unwrap();
+    call(&hub, &desk, "telegram_remove", json!({ "navi": r() }))
+        .await
+        .unwrap();
+    assert_eq!(
+        told(&hub)[before..],
+        [
+            json!({ "telegram": "unpaired" }),
+            json!({ "telegram": "removed" })
+        ]
+    );
+}

@@ -285,11 +285,27 @@ pub fn allows(info: &AgentKeyInfo, role: Role, machine_id: Option<&MachineId>) -
 pub struct Auth {
     db: Arc<HubDb>,
     clock: Arc<dyn Clock>,
+    /// Counts this hub's revokes: an open app connection checks its key again on each (app_ws).
+    revoked: tokio::sync::watch::Sender<u64>,
 }
 
 impl Auth {
     pub fn new(db: Arc<HubDb>, clock: Arc<dyn Clock>) -> Self {
-        Self { db, clock }
+        Self {
+            db,
+            clock,
+            revoked: tokio::sync::watch::Sender::new(0),
+        }
+    }
+
+    /// Changes on each key this hub revokes; [`Auth::revoked_some`] marks one revoked outside [`Auth::revoke`].
+    pub fn revokes(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.revoked.subscribe()
+    }
+
+    /// Tells open connections that keys were revoked, so each checks its own again.
+    pub fn revoked_some(&self) {
+        self.revoked.send_modify(|n| *n += 1);
     }
 
     fn now(&self) -> i64 {
@@ -448,6 +464,7 @@ impl Auth {
                 key_id: key_id.to_owned(),
             });
         }
+        self.revoked_some();
         Ok(())
     }
 

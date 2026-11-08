@@ -1,6 +1,6 @@
 //! project_discover, project_add and project_remove: thin over the projects service. A project's settings are in
-//! settings.rs, its repos in repos.rs; project_remove removes the checkouts of its repos with it, and erases a Navi
-//! (`navi::erase`). A project whose machine the hub no longer has is only forgotten in the hub.
+//! settings.rs, its repos in repos.rs; project_remove removes the checkouts of its repos with it, erases a Navi
+//! (`navi::erase`), and asks each hub it is linked to to revoke its link. A project whose machine the hub no longer has is only forgotten in the hub.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
@@ -56,8 +56,12 @@ async fn remove(
         machine_id: m.clone(),
         project_id: input.project_id.clone(),
     };
+    // Its linked hubs, read before the erase deletes their keys: each is asked to revoke its link once it is gone.
+    let links = crate::hub::hub_links::kept(&hub.db, Some(&r))?;
     if hub.store.machine_get(m)?.is_none() {
-        return forget_gone(&hub, &r);
+        let forgot = forget_gone(&hub, &r)?;
+        crate::hub::hub_links::client::revoke_all_there(&hub, links);
+        return Ok(forgot);
     }
     if !hub.executors.is_connected(m) {
         return Err(offline(m));
@@ -100,8 +104,9 @@ async fn remove(
             .map_err(from_executor)?;
     }
     crate::hub::navi::erase::erase(&hub, &r)?;
+    crate::hub::hub_links::client::revoke_all_there(&hub, links);
     const ERASED: &str = "Erased: its chat, memory, skills, approvals and purchases, asks and decisions, orders and \
-                          tasks, automations, kept browser sign-ins, Telegram link, transcripts, attachments and \
+                          tasks, automations, kept browser sign-ins, Telegram link, linked hubs, transcripts, attachments and \
                           screen recordings";
     let next = if remove_folder {
         format!("{ERASED}, and its folder with everything in it.")

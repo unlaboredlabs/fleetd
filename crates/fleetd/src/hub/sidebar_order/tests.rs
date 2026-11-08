@@ -146,3 +146,36 @@ async fn only_its_owners_devices_hear_of_a_change() {
     let bobs = call(&hub, &bob_desk, "events_wait", wait).await.unwrap();
     assert!(!types(bobs).contains(&"sidebar.order".to_owned()));
 }
+
+/// W465: a deleted project leaves every person's order, so it isn't ranked in anyone's sidebar again (a project
+/// back under its id, or one the order still names, would take the gone one's place).
+#[tokio::test]
+async fn a_deleted_project_leaves_everyones_order() {
+    use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
+    let (hub, _home) = hub();
+    let ann = owner(&hub);
+    let bob = member(&hub, "Bob");
+    let ann_desk = device(&hub, &ann, "admin");
+    let bob_desk = device(&hub, &bob, "operate");
+    for (desk, ids) in [
+        (&ann_desk, ["web", "navi", "api"]),
+        (&bob_desk, ["navi", "api", "web"]),
+    ] {
+        call(
+            &hub,
+            desk,
+            "sidebar_order_set",
+            json!({ "order": refs(&ids) }),
+        )
+        .await
+        .unwrap();
+    }
+    hub.store
+        .project_remove(&ProjectRef {
+            machine_id: MachineId::unchecked("lab"),
+            project_id: ProjectId::unchecked("navi"),
+        })
+        .unwrap();
+    assert_eq!(order_of(&hub, &ann_desk).await, refs(&["web", "api"]));
+    assert_eq!(order_of(&hub, &bob_desk).await, refs(&["api", "web"]));
+}

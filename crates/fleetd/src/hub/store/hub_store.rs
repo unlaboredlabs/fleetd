@@ -22,7 +22,7 @@ pub struct StoredThread {
 
 /// The tables [`HubStore::machine_remove`] clears by `machine_id`: the machine itself, what its node reported (its
 /// projects, sessions, checkouts) and what the hub holds for them (chats, settings, secrets, leads, slots, Navis).
-pub(super) const MACHINE_TABLES: &[&str] = &[
+pub(crate) const MACHINE_TABLES: &[&str] = &[
     "machines",
     "node_keys",
     "enroll_tokens",
@@ -79,7 +79,8 @@ pub(super) const MACHINE_TABLES: &[&str] = &[
 
 /// Tables with a `machine_id` that [`HubStore::machine_remove`] keeps. The event log, the time inspector and the
 /// factory metrics are the record of work done, which each prunes by its own retention; its orders and their train
-/// changes and reviews are what the metrics and the train name by id. `navi_erases` is a Navi's delete still to
+/// changes and reviews are what the metrics and the train name by id (`machine remove` erases those of the projects
+/// the hub lists for it first, as deleting each project would: `navi::erase`). `navi_erases` is a Navi's delete still to
 /// finish (`navi::erase`), which also removes its files. `pair_codes` names the machine an agents' Mac setup code
 /// joins (hub/pair/mac.rs): the code outlives the old Mac's removal, which is how a new Mac replaces it, and the sweep
 /// prunes it with the other codes. A test holds every table to one list or the other.
@@ -272,6 +273,8 @@ impl HubStore {
     /// [`MACHINE_TABLES`] that name it or one of its threads, as [`Self::machine_remove`] does for the whole machine.
     /// Another machine's rows under the same project id stay. How many rows went.
     pub fn machine_project_forget(&self, r: &ProjectRef) -> Result<usize, StoreError> {
+        // A hub-wide row's empty key is no project's: forgetting it would delete every hub-wide server and skill.
+        crate::hub::navi::erase::a_project(r)?;
         let (m, p) = (r.machine_id.as_str(), r.project_id.as_str());
         self.db.transaction(|conn| {
             let mut n = conn
@@ -313,6 +316,8 @@ impl HubStore {
             ] {
                 n += conn.prepare_cached(sql)?.execute([m, p])?;
             }
+            crate::hub::sidebar_order::forget(conn, r)?;
+            crate::hub::chat_pins::forget(conn, r)?;
             Ok(n)
         })
     }
@@ -450,6 +455,8 @@ impl HubStore {
                 .execute(params![r.machine_id.as_str(), r.project_id.as_str()])?;
             }
             crate::hub::repos::store::remove_project(conn, r)?;
+            crate::hub::sidebar_order::forget(conn, r)?;
+            crate::hub::chat_pins::forget(conn, r)?;
             Ok(())
         })
     }
