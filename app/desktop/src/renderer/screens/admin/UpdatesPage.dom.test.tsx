@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Hub › Updates: where the hub and its machines stand with Update now, Update automatically with its last update, next
-// check and why it holds back, and each one's version; the same switch and status in the updates sheet.
+// check and why it holds back, and each one's version.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -9,8 +9,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { resetFlow } from "../updates/flow";
-import { setUpdatesOpen } from "../updates/state";
-import { UpdatesHost } from "../updates/UpdatesHost";
+import { AutoUpdates } from "../updates/AutoUpdates";
 import { UpdatesPage } from "./UpdatesPage";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -57,7 +56,6 @@ beforeEach(() => {
 });
 afterEach(() => {
   act(() => root.unmount());
-  setUpdatesOpen(false);
   host.remove();
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
@@ -108,8 +106,8 @@ const statusLines = (within: ParentNode) => [...within.querySelectorAll<HTMLElem
 it("shows Update now, the switch with its last update, next check and why it holds back, and each version", async () => {
   await render(<UpdatesPage />);
   const page = host.querySelector<HTMLElement>("[data-screen='settings.hub.updates']");
-  expect(page?.querySelector("[data-updates-standing]")?.textContent).toContain("is ready");
-  expect(page?.querySelector("[data-updates-start]")?.textContent).toBe("Update now");
+  expect(page?.querySelector("[data-updates-part='all']")?.textContent).toContain("is ready");
+  expect(page?.querySelector("[data-updates-part='all'] button")?.textContent).toBe("Update");
   expect(page?.querySelector("[data-auto-updates='on']")?.textContent).toContain("Update automatically");
   expect(statusLines(page ?? document)).toEqual([
     expect.stringMatching(/^last: Last updatePartly updated .*\. mac1 didn't come back on it\.$/u),
@@ -128,18 +126,8 @@ it("shows Update now, the switch with its last update, next check and why it hol
   expect(statusLines(page ?? document)).toEqual(["off: Off: the hub and its machines update only when someone presses Update."]);
 });
 
-it("puts the same switch and status in the updates sheet", async () => {
-  setUpdatesOpen(true);
-  await render(<UpdatesHost />);
-  const sheet = document.querySelector<HTMLElement>("[data-screen='updates']");
-  expect(sheet?.querySelector("[data-auto-updates='on']")).not.toBeNull();
-  expect(statusLines(sheet ?? document)).toHaveLength(3);
-});
-
 it("tells a member whom to ask", async () => {
-  setUpdatesOpen(true);
-  await render(<UpdatesHost />, false);
-  const sheet = document.querySelector<HTMLElement>("[data-screen='updates']");
-  expect(sheet?.querySelector("[data-auto-updates='member']")?.textContent).toContain("ask Ana.");
-  expect(sheet?.querySelector("[role='switch']")).toBeNull();
+  await render(<AutoUpdates />, false);
+  expect(document.querySelector("[data-auto-updates='member']")?.textContent).toContain("ask Ana.");
+  expect(document.querySelector("[role='switch']")).toBeNull();
 });

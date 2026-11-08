@@ -139,7 +139,8 @@ export const createChatActions = (
       subscribe(key);
     }
     const s = store.getState();
-    if (s.fresh && !chatOf(s, key).loaded) void readLatest(key);
+    // Not while a restart's held view waits for the link: the next snapshot reads it.
+    if (s.fresh && s.hub.phase === "live" && !chatOf(s, key).loaded) void readLatest(key);
   };
 
   const close: ChatActions["close"] = () => {
@@ -152,7 +153,7 @@ export const createChatActions = (
     const s = store.getState();
     const chat = chatOf(s, key);
     const oldest = chat.messages[0];
-    if (!s.fresh || !chat.loaded || !chat.hasOlder || chat.loadingOlder || oldest === undefined) return;
+    if (!s.fresh || s.hub.phase !== "live" || !chat.loaded || !chat.hasOlder || chat.loadingOlder || oldest === undefined) return;
     update((st) => ({ chats: { ...st.chats, [key]: { ...chatOf(st, key), loadingOlder: true } } }));
     const generation = s.generation;
     void call("chat_history", { projectRef: refOf(key), before: oldest.seq, limit: CHAT_PAGE }).then((r) => {
