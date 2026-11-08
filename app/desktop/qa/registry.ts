@@ -313,6 +313,9 @@ export interface Screen {
   // Runs on the real clock, not the fixture's fixed one. Playwright's fake clock formats an invalid date as now
   // (Intl.DateTimeFormat#format(NaN)), where the real one throws: a crash that blanked the window hid behind it.
   realClock?: true;
+  // Shown in a frameless window of its own (the menu bar's popover), which has no traffic lights: the test's window
+  // draws them, but nothing is held to their place.
+  frameless?: true;
 }
 
 // The fixtures' storefront project, a real hub project from the sanitized recording, so its id is a UUID; it shows
@@ -1525,7 +1528,7 @@ export const screens: readonly Screen[] = [
   },
   // The agents' Mac's menu bar popover, on a computer that isn't the agents' Mac: it says so, with Set up. Its states on
   // a Mac joined already (FLEETD_FIXTURE_MAC, macSetupFixture.ts) are main's to open, so its DOM test covers them.
-  { id: "menu-bar", route: "#/menubar", fixtures: ["typical"], sizes: ["narrow"], realClock: true },
+  { id: "menu-bar", route: "#/menubar", fixtures: ["typical"], sizes: ["narrow"], realClock: true, frameless: true },
   // Set up this Mac for agents (D309), its own window: a Mac under the fixture (src/main/macSetupFixture.ts), on the
   // real clock, as main's steps take their time. Each step the window goes through, as a variant.
   { id: "mac-setup", route: "#/mac-setup", fixtures: ["typical"], sizes: ["narrow"], realClock: true },
