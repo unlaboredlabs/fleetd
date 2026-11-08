@@ -160,8 +160,8 @@ function removeRow(hub: Hub, scope: McpScope, name: string): void {
   hub.db.conn.query("DELETE FROM mcp_oauth WHERE machine_id = ? AND project_id = ? AND name = ?").run(m, p, name);
 }
 
-/** The hub's own box key (hub_links.rs `box_key`), read once. */
-export const hubBoxKey = (hub: Hub) => hub.area("hub_box_key", (h) => loadOrCreateBoxKey(h.config.home));
+/** The hub's own box key (hub_links.rs `box_key`, the same `<home>/node-box-key.pem`), read once for this area (D354: under its own name). */
+export const hubBoxKey = (hub: Hub) => hub.area("mcp_oauth_box_key", (h) => loadOrCreateBoxKey(h.config.home));
 export const hubBoxPublic = (hub: Hub) => Buffer.from(publicKeyOf(hubBoxKey(hub))).toString("base64");
 
 function sealOwn(hub: Hub, plain: string): Uint8Array {
