@@ -1238,6 +1238,26 @@
         }
       ]
     },
+    "AutoUpdateResult": {
+      "oneOf": [
+        {
+          "const": "done",
+          "description": "The hub and every machine run its build.",
+          "type": "string"
+        },
+        {
+          "const": "partial",
+          "description": "The hub updated, but a machine didn't (`message` says which and why).",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "The hub didn't update (`message` says why), so no machine was asked.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "Automation": {
       "properties": {
         "automationId": {
@@ -8186,12 +8206,20 @@
           "minLength": 1,
           "type": "string"
         },
+        "lastAuto": {
+          "$ref": "#/$defs/LastAutoUpdate",
+          "description": "The last automatic update that finished, kept apart from `run`: a person's update after it doesn't hide it.\nAbsent until one has finished."
+        },
         "leftOver": {
           "description": "True when the run isn't finished but nothing in the hub drives it any more: it won't change again, and Update\nstarts a new one. Absent otherwise.",
           "type": "boolean"
         },
         "next": {
           "type": "string"
+        },
+        "nextCheck": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "With `settings.auto`: when the hub next looks at the channel for a newer build (every 10 minutes)."
         },
         "ready": {
           "description": "The channel's newest build, already downloaded and checked on the hub (and fetched by its nodes), so an update\nonly swaps and restarts: what \"fleetd <version> is ready\" names. Absent when there is none newer.",
@@ -8206,6 +8234,12 @@
         "settings": {
           "$ref": "#/$defs/UpdateSettings",
           "description": "The hub's update settings."
+        },
+        "skipReason": {
+          "description": "With `settings.auto`: why automatic updates hold back now, in one sentence (the hub runs a local build, the\nbuild ready was put back, the last look at the channel failed). Absent while nothing holds them back.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
         },
         "truncated": {
           "type": "boolean"
@@ -8941,6 +8975,35 @@
           "type": "string"
         }
       ]
+    },
+    "LastAutoUpdate": {
+      "description": "How an automatic update went.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it started."
+        },
+        "message": {
+          "description": "What didn't go, in one sentence: the hub's failure, or the first machine that didn't update and why.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/AutoUpdateResult"
+        },
+        "to": {
+          "description": "The build it moved to; absent when it never got that far.",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "result"
+      ],
+      "type": "object"
     },
     "LastMerged": {
       "description": "The project's latest merge, as the train recorded it.",

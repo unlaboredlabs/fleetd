@@ -1000,8 +1000,19 @@ fn auto_area_after(
     ago: Duration,
     (to, hub): (&str, UpdateState),
 ) -> Arc<Updates> {
-    let started = chrono::Utc::now() - chrono::Duration::from_std(ago).unwrap();
-    let at = started.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    auto_area_on(home, fake, gap, ago, (to, hub), Arc::new(SystemClock))
+}
+
+/// [`auto_area_after`] on `clock`.
+fn auto_area_on(
+    home: &Path,
+    fake: &Arc<Fake>,
+    gap: Duration,
+    ago: Duration,
+    (to, hub): (&str, UpdateState),
+    clock: Arc<dyn crate::clock::Clock>,
+) -> Arc<Updates> {
+    let at = super::iso_ms(super::now_ms(clock.as_ref()) - super::ms(ago));
     let hub = super::part(UpdatePartKind::Hub, None, "the hub", OLD, hub);
     let run = json!({
         "id": "U0", "channel": "edge", "to": to, "startedAt": at, "finishedAt": at, "parts": [hub],
@@ -1010,7 +1021,7 @@ fn auto_area_after(
     fs::write(home.join("update/run.json"), run.to_string()).unwrap();
     let updates = Updates::new(
         home,
-        Arc::new(SystemClock),
+        clock,
         Timing {
             auto_gap: gap,
             ..fast()
@@ -1104,13 +1115,22 @@ async fn automatic_updates_are_off_until_turned_on() {
 async fn two_builds_within_an_hour_install_once() {
     let home = tempfile::tempdir().unwrap();
     let fake = Arc::new(Fake::new(home.path(), b"new"));
-    let gap = Duration::from_millis(400);
-    let updates = auto_area(home.path(), &fake, gap, Duration::ZERO);
+    let gap = Duration::from_secs(3600);
+    let clock = ManualClock::at(1_794_088_000_000);
+    let updates = auto_area_on(
+        home.path(),
+        &fake,
+        gap,
+        Duration::ZERO,
+        (OLD, UpdateState::Current),
+        clock.clone(),
+    );
     // The first build, minutes after a person's update.
+    clock.advance(Duration::from_secs(5 * 60));
     assert!(updates.auto_tick().await.is_none(), "within the hour");
     assert_eq!(updates.ready().as_deref(), Some(NEW));
     let due = updates.auto_at().unwrap();
-    assert!(due > super::now_ms(&SystemClock), "due at the hour's end");
+    assert_eq!(due, 1_794_088_000_000 + 3_600_000, "due at the hour's end");
     // The second build replaces it.
     publish(&fake, NEWER, b"newer");
     assert!(updates.auto_tick().await.is_none(), "still within the hour");
@@ -1121,7 +1141,7 @@ async fn two_builds_within_an_hour_install_once() {
         "nothing installed yet"
     );
 
-    tokio::time::sleep(gap).await;
+    clock.advance(Duration::from_secs(55 * 60));
     let run = updates.auto_tick().await.expect("the hour is over");
     until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
     assert!(updates.auto_tick().await.is_none());
@@ -1863,4 +1883,204 @@ async fn a_cloud_machine_that_slept_through_an_update_catches_up_at_its_hello() 
         .unwrap_err();
     assert!(why.contains("fleetd update"), "{why}");
     assert_eq!(fake.asked.lock().unwrap().len(), 1);
+}
+
+/// A machine an update left behind (the devbox's node, 7 Nov, found a newer edge build out after waiting for its agents,
+/// and didn't update). Once the hub runs the channel's newest, nothing is ready any more, so before, no automatic
+/// update ever came for it: it stayed behind until a person pressed Update. Now the next hour's look brings a machine
+/// left behind to the hub's build, and says how it went.
+#[tokio::test]
+async fn a_machine_an_update_left_behind_catches_up_by_itself() {
+    let home = tempfile::tempdir().unwrap();
+    let fake =
+        Fake::new(home.path(), b"new").node("devbox", OLD, true, true, Some(Answer::BackOn(NEW)));
+    *fake.running.lock().unwrap() = NEW.into();
+    for n in fake.nodes.lock().unwrap().iter_mut() {
+        n.claude = Some("2.1.314 (Claude Code)".into());
+    }
+    let fake = Arc::new(fake);
+    let now = 1_794_088_000_000_i64;
+    let clock = ManualClock::at(u64::try_from(now).unwrap());
+    let two_hours_ago = super::iso_ms(now - 2 * 3_600_000);
+    let hub = super::part(UpdatePartKind::Hub, None, "the hub", OLD, UpdateState::Done);
+    let mut node = super::part(
+        UpdatePartKind::Node,
+        Some(MachineId::unchecked("devbox")),
+        "devbox",
+        OLD,
+        UpdateState::Failed,
+    );
+    node.message = Some(Text::unchecked(format!(
+        "the channel's newest build is now {NEWER}, not the hub's {NEW}: update again"
+    )));
+    let run = json!({
+        "id": "U1", "channel": "edge", "to": NEW, "startedAt": two_hours_ago, "finishedAt": two_hours_ago,
+        "parts": [hub, node], "auto": true,
+    });
+    fs::create_dir_all(home.path().join("update")).unwrap();
+    fs::write(home.path().join("update/run.json"), run.to_string()).unwrap();
+    let updates = Updates::new(home.path(), clock.clone(), fast());
+    updates.set_ports(fake.clone());
+    updates.set_settings(Some(true), None).unwrap();
+
+    assert_eq!(updates.ready(), None, "the hub runs the channel's newest");
+    assert_eq!(
+        updates.auto_at(),
+        Some(now),
+        "due: a machine is behind the hub"
+    );
+    let run = updates
+        .auto_tick()
+        .await
+        .expect("it starts by itself for the machine left behind");
+    assert_eq!(run.auto, Some(true));
+    let run = until(&updates, |r| r.finished_at.is_some()).await;
+    assert_eq!(
+        hub_state(&run),
+        UpdateState::Current,
+        "the hub isn't restarted"
+    );
+    assert_eq!(state(&run, Some("devbox")).0, UpdateState::Done);
+    assert_eq!(*fake.asked.lock().unwrap(), ["devbox"]);
+    assert!(fake.plans.lock().unwrap().is_empty());
+
+    let last = updates.last_auto().expect("its result is kept");
+    assert_eq!(last.result, fleetd_contracts::mcp::AutoUpdateResult::Done);
+    assert_eq!(last.to.as_deref(), Some(NEW));
+    assert_eq!(
+        updates.auto_at(),
+        None,
+        "every machine runs the hub's build"
+    );
+}
+
+/// What the app shows beside the switch: when the hub looks next, the last automatic update's result even after a
+/// person's, and why automatic updates hold back.
+#[tokio::test]
+async fn automatic_updates_say_when_they_look_next_how_the_last_went_and_why_they_hold_back() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new").node(
+        "devbox",
+        OLD,
+        true,
+        true,
+        Some(Answer::Refuses(
+            UpdateStage::Download,
+            "the release is gone",
+        )),
+    ));
+    let clock = ManualClock::at(1_794_088_000_000);
+    let updates = Updates::new(home.path(), clock.clone(), fast());
+    updates.set_ports(fake.clone());
+    assert_eq!(updates.skip_reason(), None, "off: nothing to say");
+
+    // A channel the hub can't read: said, and gone once it can.
+    updates.set_settings(Some(true), None).unwrap();
+    let release = fake
+        .feed
+        .files
+        .lock()
+        .unwrap()
+        .remove("release.json")
+        .unwrap();
+    updates.prefetch().await;
+    let why = updates.skip_reason().expect("why nothing installs");
+    assert!(why.starts_with("couldn't look at the"), "{why}");
+    fake.feed
+        .files
+        .lock()
+        .unwrap()
+        .insert("release.json".into(), release);
+
+    tokio::spawn(updates.clone().prefetch_loop());
+    let next = loop {
+        if let Some(next) = updates.next_check() {
+            break next;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    };
+    assert_eq!(next, 1_794_088_000_000 + 600_000, "ten minutes on");
+    assert_eq!(updates.skip_reason(), None);
+
+    // That look started an automatic update; its node refused.
+    let run = until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    assert_eq!(run.auto, Some(true));
+    let back = hub_restarted(home.path(), &updates, &fake).await;
+    until(&back, |r| r.finished_at.is_some()).await;
+    let last = back.last_auto().expect("kept");
+    assert_eq!(
+        last.result,
+        fleetd_contracts::mcp::AutoUpdateResult::Partial
+    );
+    assert_eq!(last.message.as_deref(), Some("devbox: the release is gone"));
+
+    // A person's update after it doesn't hide it.
+    back.start(None, true).unwrap();
+    until(&back, |r| r.auto.is_none() && r.finished_at.is_some()).await;
+    assert_eq!(back.last_auto(), Some(last));
+}
+
+/// A machine that refused the hub's build in a way asking again won't change (a local build, not run as the service) is
+/// not asked again every hour, holding its agents each time: only once the hub has another build. One that was offline
+/// is.
+#[tokio::test]
+async fn a_machine_that_refused_the_hubs_build_for_good_isnt_asked_every_hour() {
+    let left = |state: UpdateState, stage: Option<UpdateStage>, message: &str| {
+        let home = tempfile::tempdir().unwrap();
+        let fake = Fake::new(home.path(), b"new").node("devbox", OLD, true, true, None);
+        *fake.running.lock().unwrap() = NEW.into();
+        let fake = Arc::new(fake);
+        let now = 1_794_088_000_000_i64;
+        let ago = super::iso_ms(now - 2 * 3_600_000);
+        let hub = super::part(UpdatePartKind::Hub, None, "the hub", OLD, UpdateState::Done);
+        let mut node = super::part(
+            UpdatePartKind::Node,
+            Some(MachineId::unchecked("devbox")),
+            "devbox",
+            OLD,
+            state,
+        );
+        node.stage = stage;
+        node.message = Some(Text::unchecked(message.to_owned()));
+        let run = json!({
+            "id": "U1", "channel": "edge", "to": NEW, "startedAt": ago, "finishedAt": ago,
+            "parts": [hub, node], "auto": true,
+        });
+        fs::create_dir_all(home.path().join("update")).unwrap();
+        fs::write(home.path().join("update/run.json"), run.to_string()).unwrap();
+        let updates = Updates::new(
+            home.path(),
+            ManualClock::at(u64::try_from(now).unwrap()),
+            fast(),
+        );
+        updates.set_ports(fake.clone());
+        updates.set_settings(Some(true), None).unwrap();
+        (home, fake, updates)
+    };
+    let (_home, _fake, local) = left(
+        UpdateState::Failed,
+        Some(UpdateStage::Install),
+        "this node runs a local build of fleetd: install a release with curl -fsSL https://fleetd.sh | sh",
+    );
+    assert_eq!(local.auto_at(), None, "not again for this build");
+    assert!(local.auto_tick().await.is_none());
+
+    let (_home, _fake, put_back) = left(
+        UpdateState::RolledBack,
+        Some(UpdateStage::Health),
+        "it didn't come up healthy",
+    );
+    assert_eq!(put_back.auto_at(), None);
+
+    let (_home, _fake, offline) = left(UpdateState::Skipped, None, super::OFFLINE);
+    assert!(offline.auto_at().is_some(), "online now: asked again");
+
+    // The hub on another build: asked once more.
+    let (_home, fake, local) = left(
+        UpdateState::Failed,
+        Some(UpdateStage::Restart),
+        "this node doesn't run as the service",
+    );
+    *fake.running.lock().unwrap() = NEWER.into();
+    assert!(local.auto_at().is_some());
 }

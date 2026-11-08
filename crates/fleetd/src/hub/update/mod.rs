@@ -8,7 +8,9 @@
 //!
 //! Ahead of any update, every 10 minutes, the hub downloads the channel's newest build and checks it ([`Updates::
 //! prefetch`]), and asks its nodes to do the same, so that pressing Update only swaps and restarts; the app says
-//! "fleetd <version> is ready" then ([`Updates::ready`]).
+//! "fleetd <version> is ready" then ([`Updates::ready`]). With automatic updates on, the same look starts an update
+//! by itself, at most once an hour ([`Updates::auto_tick`]): to the build ready, or to the hub's own build for a
+//! machine an update left behind; the last one's result stays in `<hub home>/update/last-auto.json`.
 //!
 //! The hub downloads the build and checks it against the release's SHA256SUMS (a failure changes nothing), while
 //! every online node that can downloads it too (`node_action` `fetch`, nothing installed), then keeps the running
@@ -30,8 +32,8 @@ use std::time::Duration;
 
 use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::mcp::{
-    DRAIN_MINUTES_MAX, HubChannel, UpdatePart, UpdatePartKind, UpdateRun, UpdateSettings,
-    UpdateStage, UpdateState,
+    AutoUpdateResult, DRAIN_MINUTES_MAX, HubChannel, LastAutoUpdate, UpdatePart, UpdatePartKind,
+    UpdateRun, UpdateSettings, UpdateStage, UpdateState,
 };
 use fleetd_contracts::node_link::{NodeActionResult, NodeUpdate};
 use fleetd_contracts::prim::{List, Text};
@@ -190,6 +192,10 @@ pub struct Updates {
     /// Held while a build downloads to [`Self::kept`] and while Update installs it: Update waits for a download ahead
     /// rather than writing the same file alongside it.
     fetching: tokio::sync::Mutex<()>,
+    /// When [`Self::prefetch_loop`] looks at the channel next, ms.
+    next_check: Mutex<Option<i64>>,
+    /// Why the last look at the channel came to nothing, in a sentence; None when it went.
+    check_failed: Mutex<Option<String>>,
 }
 
 /// How long a node waits for its agents to finish their step by default.
@@ -269,6 +275,8 @@ impl Updates {
             tasks: Mutex::default(),
             hurry: tokio::sync::Notify::new(),
             fetching: tokio::sync::Mutex::const_new(()),
+            next_check: Mutex::default(),
+            check_failed: Mutex::default(),
         })
     }
 
@@ -327,10 +335,42 @@ impl Updates {
         (put_back && run.to.as_ref().is_some_and(|to| to.as_str() == ready)).then_some(ready)
     }
 
-    /// With automatic updates on and a build ready: when it installs by itself, ms (now, when the last update started
-    /// an hour ago or more). None otherwise, while an update goes on, or for a build put back ([`Self::auto_skips`]).
+    /// An online machine that can update runs an older build than the hub: an update left it behind (it was offline,
+    /// or failed). Automatic updates bring it to the hub's build, even with nothing newer out. Not one the last update
+    /// already asked for this build that refused it in a way asking again won't change ([`refused_for_good`]): every
+    /// hour its agents would wait for it again.
+    fn behind(&self) -> bool {
+        let Some(ports) = self.ports() else {
+            return false;
+        };
+        let running = ports.running();
+        let last = self
+            .status()
+            .filter(|r| r.to.as_ref().is_some_and(|to| to.as_str() == running));
+        ports.release_build()
+            && ports.nodes().iter().any(|n| {
+                let refused = last.as_ref().is_some_and(|r| {
+                    r.parts.iter().any(|p| {
+                        p.part == UpdatePartKind::Node
+                            && p.machine_id.as_ref() == Some(&n.machine_id)
+                            && refused_for_good(p)
+                    })
+                });
+                n.live_since.is_some()
+                    && n.can_update
+                    && !refused
+                    && !crate::at_least(&n.version, &running)
+            })
+    }
+
+    /// With automatic updates on, and a build ready or a machine left behind ([`Self::behind`]): when the update
+    /// starts by itself, ms (now, when the last update started an hour ago or more). None otherwise, while an update
+    /// goes on, or for a build put back ([`Self::auto_skips`]).
     pub fn auto_at(&self) -> Option<i64> {
-        if !self.settings().auto || self.ready().is_none() || self.auto_skips().is_some() {
+        if !self.settings().auto || self.auto_skips().is_some() {
+            return None;
+        }
+        if self.ready().is_none() && !self.behind() {
             return None;
         }
         if self.status().is_some_and(|r| self.going(&r)) {
@@ -344,9 +384,9 @@ impl Updates {
     }
 
     /// Automatic updates: downloads the channel's newest build ahead ([`Self::prefetch`]), and, when the settings turn
-    /// them on, starts an update to it once the last update started an hour ago or more. Builds that come out within
-    /// the hour aren't installed one by one: the one update that follows takes the newest. It waits for agents as the
-    /// Update button does. The update it started, if any.
+    /// them on, starts an update to it once the last update started an hour ago or more, or to the hub's build for a
+    /// machine left behind. Builds that come out within the hour aren't installed one by one: the one update that
+    /// follows takes the newest. It waits for agents as the Update button does. The update it started, if any.
     pub async fn auto_tick(self: &Arc<Self>) -> Option<UpdateRun> {
         self.prefetch().await;
         let due = self.auto_at()?;
@@ -420,8 +460,60 @@ impl Updates {
             if let Some(run) = self.auto_tick().await {
                 tracing::info!("update: started {} by itself (automatic updates)", run.id);
             }
+            *self.next_check.lock().unwrap() =
+                Some(now_ms(self.clock.as_ref()) + ms(self.timing.prefetch_every));
             self.clock.sleep(self.timing.prefetch_every).await;
         }
+    }
+
+    /// With automatic updates on: when the hub looks at the channel next, ms.
+    pub fn next_check(&self) -> Option<i64> {
+        self.settings()
+            .auto
+            .then(|| *self.next_check.lock().unwrap())
+            .flatten()
+    }
+
+    /// With automatic updates on: why they hold back now, in a sentence. None while nothing does.
+    pub fn skip_reason(&self) -> Option<String> {
+        if !self.settings().auto {
+            return None;
+        }
+        if self.ports().is_some_and(|p| !p.release_build()) {
+            return Some(
+                "the hub runs a local build of fleetd, which never updates itself: install a release with curl \
+                 -fsSL https://fleetd.sh | sh"
+                    .into(),
+            );
+        }
+        if let Some(build) = self.auto_skips() {
+            return Some(format!(
+                "{} was put back, as the hub didn't come up healthy on it: automatic updates skip it until a newer \
+                 build is out (Update still installs it)",
+                crate::version_label(&build)
+            ));
+        }
+        self.check_failed.lock().unwrap().clone()
+    }
+
+    /// The last automatic update that finished.
+    pub fn last_auto(&self) -> Option<LastAutoUpdate> {
+        fs::read(self.dir.join("last-auto.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+    }
+
+    /// Why the look at the channel came to nothing (None: it went), for [`Self::skip_reason`].
+    fn checked(&self, failed: Option<String>) {
+        let mut held = self.check_failed.lock().unwrap();
+        // Once per reason: a channel that stays unreachable isn't a line every 10 minutes.
+        let same = |a: &str, b: &str| a.split(" at ").next() == b.split(" at ").next();
+        if let Some(why) = &failed
+            && !held.as_deref().is_some_and(|was| same(was, why))
+        {
+            tracing::info!("update: {why}");
+        }
+        *held = failed;
     }
 
     /// Downloads the channel's newest build when the hub doesn't run it, checks it against the release's SHA256SUMS
@@ -435,24 +527,48 @@ impl Updates {
         let running = ports.running();
         let channel = Channel::of(&running, true);
         let feed = ports.feed(channel);
-        let Ok(Some(to)) = crate::update::release(&*feed).await.map(|r| r.cli_version) else {
-            return;
+        let at = chrono::DateTime::from_timestamp_millis(now_ms(self.clock.as_ref()))
+            .map(|t| t.format("%H:%M UTC").to_string())
+            .unwrap_or_default();
+        let to = match crate::update::release(&*feed).await.map(|r| r.cli_version) {
+            Ok(Some(to)) => to,
+            Ok(None) => {
+                return self.checked(Some(format!(
+                    "the {} channel had no fleetd build at {at}",
+                    channel.as_str()
+                )));
+            }
+            Err(e) => {
+                return self.checked(Some(format!(
+                    "couldn't look at the {} channel at {at}: {e}",
+                    channel.as_str()
+                )));
+            }
         };
         if to == running {
             *self.ready.lock().unwrap() = None;
-            return;
+            return self.checked(None);
         }
-        let (Ok(asset), Ok(sums)) = (ports.asset(), crate::update::sums(&*feed).await) else {
-            return;
+        let label = crate::version_label(&to);
+        let (asset, sums) = match (ports.asset(), crate::update::sums(&*feed).await) {
+            (Ok(asset), Ok(sums)) => (asset, sums),
+            (Err(e), _) => {
+                return self.checked(Some(format!("couldn't download {label} ahead: {e}")));
+            }
+            (_, Err(e)) => {
+                return self.checked(Some(format!("couldn't download {label} ahead: {e}")));
+            }
         };
         let fetching = self.fetching.lock().await;
         if !crate::update::is_build(&self.kept(), &sums, &asset)
             && let Err(e) = crate::update::checked_to(&*feed, &sums, &asset, &self.kept()).await
         {
-            tracing::info!("update: couldn't download {to} ahead: {e}");
-            return;
+            return self.checked(Some(format!(
+                "couldn't download {label} ahead at {at}: {e}"
+            )));
         }
         drop(fetching);
+        self.checked(None);
         let update = NodeUpdate {
             version: text(&to),
             channel: match channel {
@@ -772,6 +888,9 @@ impl Updates {
     }
 
     fn save(&self, run: &UpdateRun) {
+        if run.auto == Some(true) && run.finished_at.is_some() {
+            self.save_last_auto(run);
+        }
         let wrote = fs::create_dir_all(&self.dir).and_then(|()| {
             crate::update::replace_file(
                 &self.dir.join("run.json"),
@@ -784,6 +903,34 @@ impl Updates {
                 self.dir.join("run.json").display()
             );
         }
+    }
+
+    /// An automatic update that finished: its result in `last-auto.json`, and in the hub's log.
+    fn save_last_auto(&self, run: &UpdateRun) {
+        let last = last_auto(run);
+        if self.last_auto().as_ref() == Some(&last) {
+            return;
+        }
+        let path = self.dir.join("last-auto.json");
+        let wrote = fs::create_dir_all(&self.dir).and_then(|()| {
+            crate::update::replace_file(
+                &path,
+                &serde_json::to_vec_pretty(&last).unwrap_or_default(),
+            )
+        });
+        if let Err(e) = wrote {
+            tracing::warn!("update: couldn't write {}: {e}", path.display());
+        }
+        let said = last
+            .message
+            .as_ref()
+            .map(|m| format!(": {m}"))
+            .unwrap_or_default();
+        tracing::info!(
+            "update: {} (automatic) ended {:?}{said}",
+            run.id,
+            last.result
+        );
     }
 
     fn hub_failed(&self, failure: &Failure) {
@@ -1494,6 +1641,60 @@ impl Updates {
 }
 
 const OFFLINE: &str = "offline: press Update again once it's online, or run `fleetd update` on it";
+
+/// A machine's node part that refused its build in a way asking again won't change: its build didn't come up healthy,
+/// it can't install or restart itself (a local build, not run as the service), or it was skipped other than offline.
+/// A failed download (the channel moved on, say) or a node that didn't come back is worth asking again.
+fn refused_for_good(p: &UpdatePart) -> bool {
+    match p.state {
+        UpdateState::RolledBack => true,
+        UpdateState::Failed => matches!(p.stage, Some(UpdateStage::Install | UpdateStage::Restart)),
+        UpdateState::Skipped => p.message.as_ref().is_none_or(|m| m.as_str() != OFFLINE),
+        _ => false,
+    }
+}
+
+/// How a finished run went, as [`Updates::last_auto`] keeps it: failed when the hub didn't update, partial when a
+/// machine didn't (its first such part says why), else done.
+fn last_auto(run: &UpdateRun) -> LastAutoUpdate {
+    let hub_ok = run.parts.iter().any(|p| {
+        p.part == UpdatePartKind::Hub && matches!(p.state, UpdateState::Done | UpdateState::Current)
+    });
+    let missed = |p: &&UpdatePart| match p.part {
+        UpdatePartKind::Hub => false,
+        UpdatePartKind::Node => !matches!(p.state, UpdateState::Done | UpdateState::Current),
+        _ => matches!(p.state, UpdateState::Failed | UpdateState::RolledBack),
+    };
+    let (result, message) = if hub_ok {
+        let missed: Vec<&UpdatePart> = run.parts.iter().filter(missed).collect();
+        match missed.first() {
+            None => (AutoUpdateResult::Done, None),
+            Some(p) => {
+                let why = p.message.as_ref().map_or("didn't update", |m| m.as_str());
+                let more = match missed.len() {
+                    1 => String::new(),
+                    n => format!(" ({} more didn't update)", n - 1),
+                };
+                (
+                    AutoUpdateResult::Partial,
+                    Some(format!("{}: {why}{more}", p.name)),
+                )
+            }
+        }
+    } else {
+        let hub = run.parts.iter().find(|p| p.part == UpdatePartKind::Hub);
+        (
+            AutoUpdateResult::Failed,
+            hub.and_then(|p| p.message.as_ref()).map(|m| m.to_string()),
+        )
+    };
+    LastAutoUpdate {
+        at: run.started_at.clone(),
+        to: run.to.clone().filter(|_| hub_ok),
+        result,
+        message: message.map(|m| text(&m)),
+    }
+}
 
 fn ms(d: Duration) -> i64 {
     i64::try_from(d.as_millis()).unwrap_or(i64::MAX)

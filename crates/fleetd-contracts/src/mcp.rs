@@ -2956,7 +2956,45 @@ output!(HubUpdateOutput {
     /// With `settings.auto`: the build ready that automatic updates skip, as the hub didn't come up healthy on it and
     /// it was put back; a newer build installs as usual, and Update still installs this one.
     auto_skips: Option<Text<1, 200>>,
+    /// The last automatic update that finished, kept apart from `run`: a person's update after it doesn't hide it.
+    /// Absent until one has finished.
+    last_auto: Option<LastAutoUpdate>,
+    /// With `settings.auto`: when the hub next looks at the channel for a newer build (every 10 minutes).
+    next_check: Option<Timestamp>,
+    /// With `settings.auto`: why automatic updates hold back now, in one sentence (the hub runs a local build, the
+    /// build ready was put back, the last look at the channel failed). Absent while nothing holds them back.
+    skip_reason: Option<Text<1, 500>>,
 });
+
+/// How an automatic update went.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LastAutoUpdate {
+    /// When it started.
+    pub at: Timestamp,
+    /// The build it moved to; absent when it never got that far.
+    pub to: Option<Text<1, 200>>,
+    pub result: AutoUpdateResult,
+    /// What didn't go, in one sentence: the hub's failure, or the first machine that didn't update and why.
+    pub message: Option<Text<1, 500>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum AutoUpdateResult {
+    /// The hub and every machine run its build.
+    Done,
+    /// The hub updated, but a machine didn't (`message` says which and why).
+    Partial,
+    /// The hub didn't update (`message` says why), so no machine was asked.
+    Failed,
+    /// A result this build doesn't know (a newer hub). Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
+}
 // hub_update_status: the update going now, or the last one.
 input!(HubUpdateStatusInput {});
 // hub_update_settings: changes the hub's update settings; a field left out stays as it is. Admin on every machine, a
