@@ -137,9 +137,9 @@ also copies the hub's binary to a worker.
 The app checks for updates when it opens, every 10 minutes and when you come back to its window, and downloads them
 in the background; a newer build than one already downloaded replaces it. It downloads only the parts that changed since
 the build it runs: about 7% of the AppImage, and about half of the Mac app (from its third update after an install on,
-as it keeps the previous download to compare with). It has its own line on Settings › Hub › Updates,
-and its own **Update and restart** there and in Settings › General. Once it is downloaded, the hub's row ends in
-**Update** for everyone, and a click offers **Restart to update**. An update you don't install now installs the next time you quit.
+as it keeps the previous download to compare with). It has its own line on Settings › Hub › Updates, and its own
+**Update and restart** in Settings › General. Once it is downloaded, the hub's row ends in **Update** for everyone, and
+a click offers **Restart to update**. An update you don't install now installs the next time you quit.
 
 - **Check for Updates…** is in the fleetd menu on macOS, in Help on Linux, and in the command palette.
 - The `.deb` install can't update itself: the app offers the download and the `sudo apt install` command.
