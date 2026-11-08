@@ -47,6 +47,16 @@ for (const op of ["decide", "ask_lead", "remember", "forget", "task_spawn", "bro
     return { echoed: call.op };
   });
 }
+const DECIDE = { op: "decide" as const, key: "a.b", value: "v" };
+const SPAWN = { op: "task_spawn", workstreamId: "W1", title: "t", prompt: "p" };
+const SESSION = {
+  op: "browser_session",
+  sessionId: `B${"0".repeat(32)}`,
+  threadId: "th-1",
+  purpose: "check the page",
+  state: "live",
+  startedAt: "2026-11-08T10:00:00Z",
+};
 const answer = (cwd: string, call: Record<string, unknown>, threadId?: string, machineId = "devbox") =>
   calls.answer(machineId, { id: "c1", cwd, call: call as never, ...(threadId === undefined ? {} : { threadId }) });
 const error = (frame: LeadResultFrame) => ("error" in frame ? frame.error : undefined);
@@ -66,18 +76,18 @@ test("cwd matching: the deepest root wins, siblings sharing a prefix don't count
 });
 
 test("a person's shell acts on the project its cwd is in, and the result carries the op", async () => {
-  const frame = await answer("/work/app/tools/x", { op: "decide", key: "a.b" });
+  const frame = await answer("/work/app/tools/x", DECIDE);
   expect(frame).toEqual({ id: "c1", result: { echoed: "decide", op: "decide" } });
   expect(seen.at(-1)).toEqual({ projectRef: { machineId: "devbox", projectId: "p2" }, by: "lead:devbox/p2", agent: { kind: "person" } });
 });
 
 test("a cwd outside every workspace is refused, naming the roots", async () => {
-  expect(error(await answer("/elsewhere", { op: "decide" }))).toEqual({
+  expect(error(await answer("/elsewhere", DECIDE))).toEqual({
     code: "forbidden",
     message: "/elsewhere is not inside any project workspace on devbox",
     fix: "run fleetd from the project's workspace or a worktree under it (/work/app, /work/app/tools, /work/other)",
   });
-  expect(error(await answer("/x", { op: "decide" }, undefined, "laptop"))?.message).toBe(
+  expect(error(await answer("/x", DECIDE, undefined, "laptop"))?.message).toBe(
     "the hub knows no projects on laptop yet, so it cannot tell which project /x belongs to",
   );
 });
@@ -93,7 +103,7 @@ test("a writer's worktree outside every workspace is known by its session", asyn
 });
 
 test("a session acting from another project's workspace is refused", async () => {
-  expect(error(await answer("/work/app", { op: "decide" }, "th-other"))).toEqual({
+  expect(error(await answer("/work/app", DECIDE, "th-other"))).toEqual({
     code: "forbidden",
     message: "this session works for project devbox/p3, not for the project its working directory is in",
     fix: "act only on your own project, from its workspace",
@@ -101,19 +111,19 @@ test("a session acting from another project's workspace is refused", async () =>
 });
 
 test("leads, tasks and the memory refresh are told apart, and the policy holds", async () => {
-  expect("result" in (await answer("/work/app", { op: "task_spawn" }, "th-lead"))).toBe(true);
+  expect("result" in (await answer("/work/app", SPAWN, "th-lead"))).toBe(true);
   expect(seen.at(-1)?.agent).toEqual({ kind: "lead" });
-  expect(error(await answer("/work/app", { op: "task_spawn" }, "th-task"))?.message).toBe(
+  expect(error(await answer("/work/app", SPAWN, "th-task"))?.message).toBe(
     "T4 is a task, and a task's agent can't start agents: fleetd runs one level, a lead and its tasks.",
   );
-  expect(error(await answer("/work/app", { op: "decide" }, "th-task"))?.message).toBe("decide is a lead's call, and T4 is a task.");
-  expect(error(await answer("/work/app", { op: "ask_lead" }, "th-lead"))?.code).toBe("invalid");
-  expect("result" in (await answer("/work/app", { op: "remember", scope: "user" }, "th-refresh"))).toBe(true);
-  expect(error(await answer("/work/app", { op: "forget", scope: "user" }, "th-refresh"))?.message).toBe(
+  expect(error(await answer("/work/app", DECIDE, "th-task"))?.message).toBe("decide is a lead's call, and T4 is a task.");
+  expect(error(await answer("/work/app", { op: "ask_lead", question: "?" }, "th-lead"))?.code).toBe("invalid");
+  expect("result" in (await answer("/work/app", { op: "remember", scope: "user", text: "a lesson" }, "th-refresh"))).toBe(true);
+  expect(error(await answer("/work/app", { op: "forget", scope: "user", entry: "a lesson" }, "th-refresh"))?.message).toBe(
     "The nightly refresh only adds to user memory: it never replaces or removes an entry there.",
   );
-  expect(error(await answer("/work/app", { op: "decide" }, "th-refresh"))?.code).toBe("forbidden");
-  expect(error(await answer("/work/app", { op: "decide" }, "th-nobody"))).toEqual({
+  expect(error(await answer("/work/app", DECIDE, "th-refresh"))?.code).toBe("forbidden");
+  expect(error(await answer("/work/app", DECIDE, "th-nobody"))).toEqual({
     code: "forbidden",
     message: "session th-nobody is neither a project's lead nor a task, so it can't make fleetd's lead calls",
     fix: "a person runs these commands from their own shell; agents use their fleetd tools",
@@ -121,15 +131,15 @@ test("leads, tasks and the memory refresh are told apart, and the policy holds",
 });
 
 test("an op nobody registered, a refusal and a crash", async () => {
-  expect(error(await answer("/work/app", { op: "close" }))).toEqual({
+  expect(error(await answer("/work/app", { op: "close", workstreamId: "W1", why: "done" }))).toEqual({
     code: "forbidden",
     message: "this hub does not take lead-side calls yet",
     fix: "carry on without this call and say so in your result",
   });
-  expect(error(await answer("/work/app", { op: "decide", key: "no" }))).toEqual({ code: "invalid", message: "not that key", fix: "pick another" });
+  expect(error(await answer("/work/app", { ...DECIDE, key: "no" }))).toEqual({ code: "invalid", message: "not that key", fix: "pick another" });
   const quiet = console.error;
   console.error = () => {};
-  const crashed = await answer("/work/app", { op: "decide", key: "boom" });
+  const crashed = await answer("/work/app", { ...DECIDE, key: "boom" });
   console.error = quiet;
   expect(error(crashed)).toEqual({ code: "failed", message: "the hub failed while handling this call", fix: "try again shortly" });
 });
@@ -140,7 +150,7 @@ test("a runner's browser call for a session it hosts is answered in the agent's 
       ? { projectRef: { machineId: "devbox", projectId: "p3" }, agent: { kind: "task", taskId: "T5" }, threadId: "th-other" }
       : undefined,
   );
-  const frame = await answer("/anywhere", { op: "browser_session", threadId: "key-1" }, "key-1", "runner1");
+  const frame = await answer("/anywhere", { ...SESSION, threadId: "key-1" }, "key-1", "runner1");
   expect("result" in frame).toBe(true);
   expect(seen.at(-1)).toEqual({
     projectRef: { machineId: "devbox", projectId: "p3" },
@@ -149,12 +159,12 @@ test("a runner's browser call for a session it hosts is answered in the agent's 
     threadId: "th-other",
   });
   // Anything else from the runner is its own, and it has no projects.
-  expect(error(await answer("/anywhere", { op: "decide" }, "key-1", "runner1"))?.code).toBe("forbidden");
+  expect(error(await answer("/anywhere", DECIDE, "key-1", "runner1"))?.code).toBe("forbidden");
 });
 
 test("the link's frame is answered as a lead_result", async () => {
   const sent = await new Promise<unknown>((resolve) =>
-    onLeadCallFrame(hub, "devbox", { id: "n7", cwd: "/work/app", call: { op: "decide" } }, resolve),
+    onLeadCallFrame(hub, "devbox", { id: "n7", cwd: "/work/app", call: DECIDE }, resolve),
   );
   expect(sent).toEqual({ t: "lead_result", id: "n7", result: { echoed: "decide", op: "decide" } });
   expect(leadCalls(hub)).toBe(calls);
