@@ -97,7 +97,7 @@ taken, `mac sim start` says so; the agent tries again later or does without.
 
 ## Each agent's folder {#folders}
 
-The Mac keeps a folder per agent, `~/work/<task>` in the `agents` user's home:
+The Mac keeps a folder per agent, `~/work/<task>` in the home of the account its node runs in:
 
 - `repo/`: the worktree as the agent's last `mac push` left it. Files git ignores there (builds, `node_modules`, Pods)
   stay between pushes.
@@ -105,10 +105,10 @@ The Mac keeps a folder per agent, `~/work/<task>` in the `agents` user's home:
   build, test and archive unless the command names its own `-derivedDataPath`.
 - `tmp/` (a job's `TMPDIR`) and `jobs/` (each run's output).
 
-A job gets `$FLEETD_MAC_DIR`, `$FLEETD_MAC_REPO`, `$FLEETD_MAC_DERIVED_DATA` and `$FLEETD_MAC_CACHE`, a folder every
-agent shares (the `agents` user's own caches, such as Swift packages', are shared too). Homebrew belongs to you, not
-to `agents`: a job finds its commands (`pod` among them) at the end of its `PATH`, and an agent that needs another
-tool installs it under its own home. A job runs in UTF-8 (`LANG=en_US.UTF-8`) unless the node has a `LANG` of its own.
+A job gets `$FLEETD_MAC_DIR`, `$FLEETD_MAC_REPO`, `$FLEETD_MAC_DERIVED_DATA` and `$FLEETD_MAC_CACHE` (`~/work/.cache`),
+a folder every agent shares (the account's own caches, such as Swift packages', are shared too). A job finds
+Homebrew's commands (`pod` among them) at the end of its `PATH`; an agent that needs another tool installs it under its
+own folder. A job runs in UTF-8 (`LANG=en_US.UTF-8`) unless the node has a `LANG` of its own.
 
 A folder nothing touched for 3 days goes. Jobs end with the Mac's node: a restart or an update ends them.
 
@@ -394,4 +394,4 @@ read the node's own key, as on any worker. Loopback ports are shared between mac
 | `"agentsMac": true` | This machine is the agents' Mac: a tool, never a runner. Only `--mac` sets it; no switch in the app turns it off. The node offers agents its tool on macOS, in whatever account it runs. |
 | `"mac": {"enabled": true}` | Its own screen, which one agent at a time drives ([the Mac's screen](/docs/browser-sessions#mac)), and the only screen it hosts: `browser`, `device` and `desktop` are ignored there. Settings › Hub › Machines › Screens turns it off and on; the Mac stays a tool either way. |
 | `"mac": {"simulators": N}` | How many [iOS simulators](#sim) agents may have booted at once. Absent: from the Mac's memory. Not written by `--mac`. |
-| `"ios": {…}` | The [simulators](#sim)' golden and warm pool, by hand only: `enabled` (`false` turns them off; absent, on), `pool` (clones kept booted, absent 1, each 1–2 GB of memory) and `deviceType` (such as `iPhone 17 Pro`; absent, the newest plain iPhone on the newest iOS runtime that runs one; the node makes the golden again when it starts with another). Not written by `--mac`. |
+| `"ios": {…}` | The [simulators](#sim)' golden and warm pool, by hand only: `pool` (clones kept booted, absent 1, each 1–2 GB of memory) and `deviceType` (such as `iPhone 17 Pro`; absent, the newest plain iPhone on the newest iOS runtime that runs one; the node makes the golden again when it starts with another). Its `enabled` is ignored on the agents' Mac: simulators are always on there. Not written by `--mac`. |

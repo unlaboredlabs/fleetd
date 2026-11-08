@@ -29,7 +29,7 @@ projects you can see, in three groups:
 
 Opening a screen gives its live view or replay the whole page, with a back arrow to the wall. **New screen** at the top
 right opens a short sentence: the kind, the machine with its slots in use, and the project. A full machine
-gives you its next free slot. **All screens** at the top of a project's Screens tab opens the page too.
+gives you its next free slot. **All screens** at the top of a project's **Screens** view (the panel's Agents section) opens the page too.
 
 The pictures are cheap by design. While the page is on screen, the hub takes one frame of each live screen every 20
 seconds, shrinks it to at most 640 pixels a side and sends it to each app showing the page. It takes no capture of its
@@ -97,7 +97,7 @@ its recording. MCP clients use `browser_control` to take over and hand back.
 
 ## Open one yourself {#yours}
 
-You can open a screen of your own: **New screen** at the top of a project's **Screens** tab, on the
+You can open a screen of your own: **New screen** at the top of a project's **Screens** view, on the
 [Screens page](#page), or **New screen…** in the command palette (⌘K) for the project on screen. On the phone, **New Screen** is on a project's
 ⓘ page ([Phone app](/docs/mobile#screens)).
 
@@ -472,7 +472,7 @@ Settings go under `desktop` in [node.json](/docs/config-and-files#node-json):
 
 ## The agents' Mac's screen {#mac}
 
-A Mac set aside for agents runs its fleetd node as a standard `agents` user, and that user's desktop is a screen too:
+On a Mac set aside for agents, the desktop of the account its fleetd node runs in (yours is fine) is a screen too:
 **`session_start`** with `kind` `mac`, the only kind the agents' Mac hosts (its node's `browser`, `device` and
 `desktop` settings are ignored). Unlike the other kinds there is only one, so agents take turns on it:
 

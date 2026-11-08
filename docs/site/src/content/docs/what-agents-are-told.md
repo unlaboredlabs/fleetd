@@ -170,7 +170,7 @@ Leads and tasks reach fleetd through MCP tools from a `fleetd` server in their s
 
 - Results come back in the lead's next wake, never by polling.
 - The hub enforces the split whatever a prompt says: a task can't start, steer or stop agents.
-- A lead has at most 32 tasks open at once.
+- A lead has at most 32 tasks open at once, or twice its project's max agents when that is more.
 - A refusal says why and what to do instead.
 
 Every tool and its inputs: [Agent tools](/docs/reference/agent-tools). The lead-side `fleetd` commands stay, for you.
@@ -331,15 +331,15 @@ no longer holds stops misleading the agents:
   failed, is stopped; what it changed until then is still listed, and the next night reads the same chat again.
 - **What you see:** one line in the chat when it's done, such as "Memory refreshed: +2 ~1 −3" (added, changed,
   removed), with each change below it, each with Undo, and Undo all. A line lists at most 200 changes and says how
-  many more there were; Undo all takes those back too, and stays while any of them is left. A night that changed nothing shows nothing. In Settings →
-  Memory, an entry the refresh wrote links to its line.
+  many more there were; Undo all takes those back too, and stays while any of them is left. A night that changed nothing shows nothing. In Settings
+  (Your memory, or a project's Instructions & memory), an entry the refresh wrote links to its line.
 
 ## The checklist {#checklist}
 
 Each project's lead keeps a checklist with its `checklist` tool: a few plain items per piece of work you approved,
 each to do, doing or done, linked to its pull request or agent. Its start prompt tells it to keep the list current,
 moving items along in the turn their news arrives; every wake shows it how many are done and the items still open.
-You see the list in the panel's [Checklist tab](/docs/desktop-app#checklist), where you can delete items and clear
+You see the list in the panel, under Plan › [To-do](/docs/desktop-app#checklist), where you can delete items and clear
 the done ones. The lead's next wake names what you took off (`- the human took 1 item off the checklist: 3 "Dark
 mode"; leave it off unless they ask again`), its digest shows the list as it is now, and its start prompt tells it
 never to add those back unless you ask. Writers can't change the list, and nothing is worked out from it: no
@@ -386,7 +386,7 @@ chat messages before the one it answers.
 
 ## See exactly what an agent was told {#told}
 
-Open an agent in the Agents tab beside a project's chat (⌥⌘B), then **What it was told**. It shows the exact first
+Open an agent in the panel's Agents beside a project's chat (⌥⌘B), then **What it was told**. It shows the exact first
 message, which version of each prompt it used, and the tools it never gets.
 
 On the hub machine:

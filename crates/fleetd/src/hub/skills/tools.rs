@@ -349,7 +349,7 @@ pub async fn install_from(
             ErrorCode::Forbidden,
             "A lead installs from a remote source only.",
             Some(
-                "Give owner/repo or a GitHub URL; a person can install a local one from Settings > Skills.",
+                "Give owner/repo or a GitHub URL; a person can install a local one on the project's Settings › Agents.",
             ),
         ));
     }

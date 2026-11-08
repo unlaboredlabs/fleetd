@@ -86,9 +86,10 @@ body, oldest first. A call that comes after the open run ended but before that o
 wait per automation (each body is at most 16 KiB); one past that is skipped. Pausing the automation skips new calls,
 but calls kept before the pause still go once the open run ends.
 
-In a project with no repo, a run closes its order by itself once the lead's turn for it ends, whether it replied,
-failed or was cut off, so one run it never closed can't hold up the next ones. A project with repos has its lead close
-its runs' orders itself, as it does any order. An automation you wrote in the app, or let run on its own on the card
+In an [Only me](/docs/projects#only-me) project, a run closes its order by itself once the lead's turn for it ends,
+whether it replied, failed or was cut off, so one run it never closed can't hold up the next ones. A run whose order
+still has agents at work or PRs on the train waits for a later turn's end. In a shared project the lead closes its
+runs' orders itself, as it does any order. An automation you wrote in the app, or let run on its own on the card
 the lead shows you, counts as your go-ahead for what its prompt names on each run, so a weekly send doesn't ask every
 week ([Approvals](/docs/projects#automations-go-ahead)).
 

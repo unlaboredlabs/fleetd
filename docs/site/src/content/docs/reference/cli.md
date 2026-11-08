@@ -69,7 +69,7 @@ make this machine a worker of that hub, without SSH from the hub: the command `f
 ### fleetd init {#init-step}
 
 ```text
-fleetd init --step <address|machines|claude|github|people|mac>
+fleetd init --step <address|machines|claude|github|onepassword|people|mac|cloud>
 ```
 
 open one of the hub's setup steps: why, the values to paste and the pages to open, then Test it, or put it off for later. The app's Settings › Hub › Setup has the same steps
@@ -204,7 +204,7 @@ fleetd people role <personId> <owner|admin|member>
 fleetd people remove <personId>
 ```
 
-signs out all their devices; one device: `fleetd hub` key revoke \<keyId\>. The hub always keeps an owner
+signs out all their devices; one device: `fleetd hub key revoke` \<keyId\>. The hub always keeps an owner
 
 ### fleetd github-app {#github-app}
 

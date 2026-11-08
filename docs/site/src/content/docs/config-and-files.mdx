@@ -16,7 +16,11 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
   hub/                   the hub's home (hub machine only)
     hub.sqlite           everything the hub knows, timelines included
     browser/<session>/   browser screen recordings (see Screens)
+    attachments/         files sent in chats
+    skills/              hub-wide and project skills: global/, projects/<machine>/<project>/
     setup.json           what fleetd init and machine add set up: address, commit identity, machines
+    node-box-key.pem     the hub's own box key: opens what the app sealed to the hub (the boat.dev key, hub link keys)
+    update/              the update in progress, its settings (Update automatically) and the last automatic run
     hub.log              the hub service's log
     cli.key              the admin key the CLI on this machine uses (an agent key)
     keys/<name>.key      agent keys made with fleetd hub key create --agent
@@ -33,8 +37,16 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     bin/                 the running node's own binary, linked here so its agents' fleetd tools survive an update
     sessions.sqlite      the node's sessions, and timings not yet sent to the hub
     worktrees/           one git worktree per task session, readers' and reviewers' too
+    tmp/<id>/            each session's scratch folder, its TMPDIR (never /tmp, which may be held in memory)
+    cache/targets/       warm cargo builds handed from one reader or reviewer to the next (warmBuilds)
+    build-slots/         the cargo wrapper first on agents' PATH, and the build turns
+    navi/<name>/         the folders of projects made with fleetd navi create
     project-env/<project>.json   a project's environment variables, secrets included (mode 0600; Settings → Projects)
+    order-env/<project>/ one order's variables, the secrets a person entered for its agents (mode 0600)
+    claude-accounts/     the Claude API key and subscription tokens sealed to this machine (mode 0600)
+    onepassword-tokens/  each person's 1Password service account token (mode 0600)
     mcp-secrets/         the secrets of the MCP servers agents get, global and per project (mode 0600; Settings › Hub › Every project › Tools & skills, and a project's Agents)
+    update/              the build fetched ahead for the next update, with its checksums
     browser/             browser screens: the pinned Chrome, ffmpeg and agent-browser, and recordings not yet on the hub
     device/              Android screens: the pinned SDK, emulator, snapshot and agent-device, and recordings not yet on the hub
       ios/               the agents' Mac's iOS simulators: the node's simulator set, its golden and agent-device's runner
@@ -83,7 +95,7 @@ after you change it.
 | `diskPerAgentGb` | GB of disk to allow per new agent's worktree when the hub works out how many more fit above `minFreeGb`. Absent or `0`: 5 GB, about a Rust worktree with a build cache; a JS project needs 1 to 2. Read with every heartbeat. |
 | `warmBuilds` | Warm cargo builds each checkout keeps for its next readers and reviewers: a finished reviewer's `target/` goes to the next one. Absent: 2; `0` keeps none. Each is a whole target, often many GB; the node prunes them to this many once a day and drops any older than a week. |
 | `buildSlots` | Agents' cargo builds (`build`, `check`, `clippy`, `test` and the like) that run at once on this machine; one more waits its turn and says it is queued. Absent: one per 8 GB of memory left after a quarter of it (4 to 16 GB) is kept back, at least 1. `0` turns the turns off. Read by each build, no restart needed. See [Build turns](/docs/machines#fair-share). |
-| `browser` | How this machine runs [browser screens](/docs/browser-sessions#setup): `enabled`, `chrome`, `ffmpeg`, `pool`, `sandbox`, `idleMinutes`. |
+| `browser` | How this machine runs [browser screens](/docs/browser-sessions#setup): `enabled`, `chrome`, `ffmpeg`, `pool`, `sandbox`, `idleMinutes`. Settings › Hub › Machines › Screens writes each kind's `enabled`, and every kind's `idleMinutes`, for you. |
 | `device` | How this machine runs [Android screens](/docs/browser-sessions#android-setup): `enabled`, `pool`, `idleMinutes`. |
 | `ios` | How [the agents' Mac](/docs/agents-mac#node-json) keeps the iOS simulators it lends agents: `enabled`, `pool`, `deviceType`. |
 | `desktop` | How this machine runs [Linux desktop screens](/docs/browser-sessions#desktop-setup): `enabled`, `backend`, `runtime`, `image`, `xvfb`, `ffmpeg`, `pool`, `idleMinutes`. |
@@ -110,7 +122,7 @@ fleetd adds its own settings on top of yours, per session:
 | fleetd adds | Why |
 |---|---|
 | `--mcp-config` | fleetd's agent tools. |
-| A `--settings` overlay | Pins claude's version, turns claude's auto memory and its own subagents off ([why](/docs/what-agents-are-told#no-subagents)), and denies tools agents never get: plan mode, worktrees, cron. |
+| A `--settings` overlay | Pins claude's version, turns claude's auto memory, its own subagents ([why](/docs/what-agents-are-told#no-subagents)) and the [heavy language servers](/docs/what-agents-are-told#language-servers) off, and denies tools agents never get: asking you questions, plan mode, worktrees, cron and scheduled wakeups. |
 | agent-browser on `PATH`, its `AGENT_BROWSER_*` variables and its skill | A lead's and a task's [browser screen](/docs/browser-sessions#use). |
 | agent-device on `PATH` (it alone: the node's SDK and adb stay inside it), its `AGENT_DEVICE_*` variables and its skill, on a machine with Android screens | A lead's and a task's [Android screen](/docs/browser-sessions#android). |
 | A folder first on `PATH` that holds a forwarding agent-device only while the session holds a simulator on the agents' Mac, then `mac` | A lead's and a task's [agents' Mac](/docs/agents-mac). |
@@ -137,7 +149,9 @@ ANTHROPIC_BASE_URL=https://gateway.example.com
 ANTHROPIC_AUTH_TOKEN=<token>
 ```
 
-Nodes put every line in each session's environment, re-read at each session start.
+Nodes put every line in each session's environment, re-read at each session start. `HEAVY_LANGUAGE_SERVERS=1` here
+turns the [heavy language servers](/docs/what-agents-are-told#language-servers) back on for every project on the
+machine.
 
 The `env` in your `~/.claude/settings.json` outranks it, as it does for your own `claude`.
 

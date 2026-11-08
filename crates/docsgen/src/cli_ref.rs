@@ -127,6 +127,12 @@ pub fn page(_root: &std::path::Path) -> Result<String, String> {
         .flat_map(|g| g.entries.iter())
         .filter_map(|e| e.name.split(' ').next())
         .collect();
+    // Every word of every command, for what follows the first: `fleetd hub key revoke`.
+    let words: Vec<&str> = groups
+        .iter()
+        .flat_map(|g| g.entries.iter())
+        .flat_map(|e| e.name.split(' '))
+        .collect();
     let mut md = String::from(
         "---
 title: CLI reference
@@ -197,7 +203,10 @@ Every `fleetd` command, from `fleetd help` in the binary this site was built wit
                 synopsis.join("\n")
             ));
             if !entry.desc.is_empty() {
-                md.push_str(&format!("{}\n\n", prose(&entry.desc.join(" "), &commands)));
+                md.push_str(&format!(
+                    "{}\n\n",
+                    prose(&entry.desc.join(" "), &commands, &words)
+                ));
             }
         }
     }
@@ -211,8 +220,8 @@ fn capitalize(s: &str) -> String {
 const TRAILING: [char; 6] = [',', ';', ':', '.', ')', '"'];
 
 /// Description prose with machine text set as code: anything in backticks, `--options`, `~/paths`, and `fleetd`
-/// followed by command words.
-pub fn prose(text: &str, commands: &[&str]) -> String {
+/// followed by a command (one of `commands`, the first words) and its further words (`subcommands`, any command's).
+pub fn prose(text: &str, commands: &[&str], subcommands: &[&str]) -> String {
     let is_code = |c: &str| (c.starts_with("--") && c.len() > 2) || c.starts_with("~/");
     let mut out = String::new();
     for (i, part) in text.split('`').enumerate() {
@@ -242,7 +251,7 @@ pub fn prose(text: &str, commands: &[&str]) -> String {
                 let mut j = t + 1;
                 while let Some(next) = tokens.get(j) {
                     let c = next.trim_end_matches(TRAILING);
-                    if !tail.is_empty() || !(commands.contains(&c) || is_code(c)) {
+                    if !tail.is_empty() || !(subcommands.contains(&c) || is_code(c)) {
                         break;
                     }
                     words.push(c);
@@ -294,20 +303,30 @@ mod tests {
 
     #[test]
     fn prose_marks_machine_text() {
-        let commands = ["pair", "doctor"];
+        let commands = ["pair", "doctor", "hub"];
+        let words = ["pair", "doctor", "hub", "key", "revoke"];
         assert_eq!(
             prose(
                 "the command fleetd pair --worker prints, then fleetd doctor. --yes (or ~/.fleetd/hub) and `fleetd node join`",
-                &commands
+                &commands,
+                &words
             ),
             "the command `fleetd pair --worker` prints, then `fleetd doctor`. `--yes` (or `~/.fleetd/hub`) and `fleetd node join`"
         );
         assert_eq!(
-            prose("replace this fleetd with", &commands),
+            prose(
+                "one device: fleetd hub key revoke <keyId>. The",
+                &commands,
+                &words
+            ),
+            "one device: `fleetd hub key revoke` \\<keyId\\>. The"
+        );
+        assert_eq!(
+            prose("replace this fleetd with", &commands, &words),
             "replace this fleetd with"
         );
         assert_eq!(
-            prose("print the fleetd doctor", &commands),
+            prose("print the fleetd doctor", &commands, &words),
             "print the fleetd doctor"
         );
     }

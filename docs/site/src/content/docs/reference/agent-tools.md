@@ -67,7 +67,7 @@ Every lead gets these.
 | [`automation_runs`](#automation_runs) | An automation's runs, newest first, with the order each opened; with runId, that run and its whole webhook body. | No |
 | [`automation_confirm`](#automation_confirm) | A lead's call: ask the person to let one of your automations run on its own. | No |
 | [`checklist`](#checklist) | Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done. | No |
-| [`skill_install`](#skill_install) | Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. | No |
+| [`skill_install`](#skill_install) | Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it on the project's Settings › Agents. | No |
 | [`skill_save`](#skill_save) | A lead's call: save one of your own skills, new or changed, as its whole SKILL.md (frontmatter with name and description, then the steps), with why in one line. | No |
 | [`project_message`](#project_message) | A lead's call: write to another project's lead in its chat, as this project, never as the person: "please add X", or a question. | No |
 | [`factory_status`](#factory_status) | A lead's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this project's asks to it with the orders opened for them, plus the hubs this project is linked to. | No |
@@ -675,7 +675,7 @@ Keep the project's checklist: the to-dos the human sees beside the chat, each to
 
 ### skill_install
 
-Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. Agents list it as fleetd:&lt;name> and run it with the Skill tool. The chat shows what it installed.
+Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it on the project's Settings › Agents. Agents list it as fleetd:&lt;name> and run it with the Skill tool. The chat shows what it installed.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
